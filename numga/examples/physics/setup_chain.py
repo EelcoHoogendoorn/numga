@@ -29,12 +29,13 @@ def setup_bodies(
 
 	def point_embed(distance: jnp.ndarray):
 		"""Move away from the origin"""
-		return translator(distance) >> origin.dual()
-
+		# need the dual-inverse to avoid picking up that annoying minus sign in alternating dimensions
+		return translator(distance) >> origin.dual_inverse()
 
 	# single body for starters
 	points = point_embed(make_cube(ndim) * size)
-	bodies = Body.from_point_cloud(points=points).copy(gravity=axes[0] * 2e-1)
+	bodies = Body.from_point_cloud(points=points)
+	bodies = bodies.copy(gravity=axes[0] * 5e-2)
 	bodies = bodies.copy(damping=bodies.damping + damping)
 
 	d = jnp.arange(n_bodies) * distance
@@ -42,14 +43,8 @@ def setup_bodies(
 	qs = translator(d)
 
 	zeros = jnp.zeros(n_bodies, int)
-	bodies = Body(
-		motor=bodies.motor * qs,    # broadcast body to a whole range of them
-		rate=bodies.rate[None][zeros],
-		gravity=bodies.gravity[None][zeros],
-		damping=bodies.damping[None][zeros],
-		inertia=bodies.inertia[None][zeros],
-		inertia_inv=bodies.inertia_inv[None][zeros],
-	)
+	bodies = bodies[None][zeros]
+	bodies = bodies.copy(motor=bodies.motor * qs)
 
 	# init constraints, defining anchor points
 	i = jnp.arange(n_bodies - 1)
@@ -63,7 +58,6 @@ def setup_bodies(
 		body_idx,
 		anchors,
 		compliance=ones * compliance,
-		# play=ones*5e-3
 	)
 	# apply static constraints; zero out translation-like directions (in a way that generalizes to curved spaces)
 	if fixing:

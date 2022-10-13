@@ -62,7 +62,7 @@ def render(context, c_motor, c_plane, c_rays, bodies):
 	assert context.algebra.n_dimensions == 4
 	assert context.algebra.description.pqr == (3, 0, 1)
 	*axes, origin = context.multivector.basis()
-	origin_dual = origin.dual() * (origin.dual() * origin).dual()
+	origin_dual = origin.dual_inverse()
 
 	# local = body.motor << global;  pulls global into body local space
 	# relative motor between camera and bodies; camera_local = r_motor << body_local

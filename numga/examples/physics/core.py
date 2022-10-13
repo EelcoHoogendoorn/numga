@@ -43,7 +43,7 @@ class Body(BodyBase):
 	def forques(self) -> Line:
 		"""External forque line on each body, in body local space"""
 		damping = -(self.rate * self.damping)
-		gravity = self.origin ^ (self.motor << self.gravity)
+		gravity = self.centroid.dual() ^ (self.motor << self.gravity)
 		return (damping + gravity).dual()
 
 	def rate_derivative(self) -> BiVector:
@@ -66,8 +66,10 @@ class Body(BodyBase):
 	def post_integrate(self, old, dt: float) -> "Body":
 		"""Verlet post integration step; deduce rates from change in motors, after constraint relaxation"""
 		motor = self.motor.normalized()  # NOTE: should not be required if keeping normalized between updates
-		rate: BiVector = motor_relative_step(old.motor, motor) / dt # computes rate in global frame
-		return self.copy(rate=motor << rate, motor=motor)           # rate is tracked in body local frame
+		# computes rate in motor local frame; equivalent to
+		#  motor << motor_relative_step(old.motor, motor)
+		rate: BiVector = motor_relative_step(motor.reverse(), old.motor.reverse()) / dt
+		return self.copy(rate=rate, motor=motor)           # rate is tracked in body local frame
 	def integrate(self, dt: float, constraint_sets=[]) -> "Body":
 		"""Verlet style integrator"""
 		new = self.pre_integrate(dt)
@@ -95,10 +97,10 @@ class Constraint(ConstraintBase):
 		in a least-action sense at the end of the timestep dt,
 		balancing work done by the constraint, and inertial work
 		"""
-		anchors = motors >> self.anchors        # transform anchors on both bodies into world space
-		forque: Line = anchors[0] & anchors[1]  # their connecting line in world space
-		magnitude: Scalar = forque.norm()
-		direction: Line = forque / (magnitude + 1e-26)
+		anchors: Point = motors >> self.anchors         # [2, c]; transform anchors on both bodies into world space
+		forque: Line = anchors[0] & anchors[1]          # [c]; their connecting line in world space
+		magnitude: Scalar = forque.norm()               # [c]; constraint violation magnitude
+		direction: Line = forque / (magnitude + 1e-26)  # [c]; constrain violation direction
 
 		steps: BiVector = self.distribute_forque(
 			motors << direction,    # map the total required motion to satisfy the constraint back to body local space

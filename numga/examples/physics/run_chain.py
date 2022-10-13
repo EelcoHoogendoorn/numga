@@ -17,9 +17,9 @@ from numga.backend.jax.operator import JaxEinsumOperator, JaxSparseOperator
 # want this to work at least for 2d-3d-4d pga/elliptical; still need to add 4d elliptical rendering!
 context = Context(
 	# 'x+y+',
-	# 'x+y+z+',       # for some reason this is my favorite
+	'x+y+z+',       # for some reason this is my favorite
 	# 'x+y+w0',
-	'x+y+z+w0',   # should really make the setup a bit more interesting here; not really showing off 3d atm
+	# 'x+y+z+w0',   # should really make the setup a bit more interesting here; not really showing off 3d atm
 	otype=JaxEinsumOperator,
 	# otype=JaxSparseOperator,
 	dtype=jnp.float64

@@ -33,7 +33,7 @@ def render(context, states):
 		write_animation_simulation(
 			states,
 			jax.jit(lambda bodies: render(rays, mask, bodies)),
-			output_filename=f'animation_{context.algebra.description.pqr}.gif'
+			output_filename=f'animation_{context.algebra.description.pqr_str}.gif'
 		)
 
 	if context.algebra.n_dimensions == 4:
@@ -42,5 +42,5 @@ def render(context, states):
 		write_animation_simulation(
 			states,
 			jax.jit(lambda bodies: render(context, c_motor, plane, rays, bodies)),
-			output_filename=f'animation_{context.algebra.description.pqr}.gif'
+			output_filename=f'animation_{context.algebra.description.pqr_str}.gif'
 		)

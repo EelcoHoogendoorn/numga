@@ -29,7 +29,7 @@ class BodyBase:
 	inertia_inv: "UnaryOperator"   # inverse inertia map, in body local frame
 
 
-	def __init__(self, motor, rate, inertia, inertia_inv, damping, gravity):
+	def __init__(self, motor, rate, centroid, inertia, inertia_inv, damping, gravity):
 		assert motor.subspace.equals.motor()
 		assert rate.subspace.equals.bivector()
 		assert gravity.subspace.inside.vector()
@@ -43,13 +43,14 @@ class BodyBase:
 		self.inertia_inv = inertia_inv
 		self.damping = damping
 		self.gravity = gravity
-		self.origin = context.multivector.basis()[-1]
+		self.centroid = centroid
 
 	def __getitem__(self, idx):
 		"""slice up body set"""
 		return type(self)(
 			self.motor[idx],
 			self.rate[idx],
+			self.centroid[idx],
 			# FIXME: these slices on the operator cause a copy and thus a recompute on cached properties like the kernels.
 			#  this is a design flaw. undecided what to do about it, but good to keep tabs on it
 			self.inertia[idx],
@@ -62,6 +63,7 @@ class BodyBase:
 		return type(self)(
 			self.motor.concatenate(other.motor, axis=0),
 			self.rate.concatenate(other.rate, axis=0),
+			self.centroid.concatenate(other.centroid, axis=0),
 			self.inertia.concatenate(other.inertia, axis=0),
 			self.inertia_inv.concatenate(other.inertia_inv, axis=0),
 			self.damping.concatenate(other.damping, axis=0),
@@ -74,6 +76,7 @@ class BodyBase:
 			rate=rate or self.rate,
 			damping=damping or self.damping,
 			gravity=gravity or self.gravity,
+			centroid=self.centroid,
 			inertia=self.inertia,
 			inertia_inv=self.inertia_inv,
 		)
@@ -84,10 +87,12 @@ class BodyBase:
 		context = points.context
 		assert points.subspace.inside.antivector()
 		inertia = points.inertia_map().sum(axis=-3)
+		centroid = points.sum(axis=-2)
 
 		return cls(
 			motor=context.multivector.motor(),
 			rate=context.multivector.bivector(),
+			centroid=centroid,
 			inertia=inertia,
 			inertia_inv=inertia.inverse(),
 			damping=context.multivector.scalar() * 0,
@@ -115,7 +120,7 @@ class ConstraintBase:
 		self.anchors = anchors
 		self.compliance = compliance
 		self.unique = np.unique(body_idx).size == body_idx.size
-		# numerically encode how constraints connect to anchors
+		# numerically encode how constraints connect to anchors; from one to the other
 		self.connectivity = context.multivector.scalar([[+1 / 2], [-1 / 2]])[:, None]
 		assert self.connectivity.shape == (2, 1)
 
