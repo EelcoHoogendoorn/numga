@@ -64,12 +64,12 @@ def study_square_root(s: Study) -> Study:
 	return c + s4 * ci
 
 # NOTE: put under motor name, since this formula only works for normalized input
-mv.motor_square_root = SubspaceDispatch("""Square root s of x such that s * s == x""")
-@mv.motor_square_root.register(lambda s: s.inside.motor())
+mv.motor_square_root = SubspaceDispatch("""Square root s of x such that s * s == x. Input motor assumed normalized!""")
+@mv.motor_square_root.register(lambda s: s.inside.even_grade())
 def motor_square_root(m: Motor):
 	return (m + 1).normalized()
-mv.motor_geometric_mean = SubspaceDispatch("""Geometric mean of two motors""")
-@mv.motor_geometric_mean.register(lambda l, r: l.inside.motor() and r.inside.motor())
+mv.motor_geometric_mean = SubspaceDispatch("""Geometric mean of two motors. Input motors assumed normalized!""")
+@mv.motor_geometric_mean.register(lambda l, r: l.inside.even_grade() and r.inside.even_grade())
 def motor_geometric_mean(l: Motor, r: Motor):
 	return (l + r).normalized()
 

@@ -63,6 +63,15 @@ It is this attribute that extends the MultiVector type, and allows it to invoke 
 
 Using this approach, we can also implement multiple-dynamic-dispatch, which is very useful in a GA context, but isnt available in the python language.
 
+For instance, we can dispatch functionality, based on arbitrarily complicated matching functions to the underlying subspaces:
+```python
+mv.decompose_invariant = SubspaceDispatch()
+@mv.decompose_invariant.register(lambda s: s.inside.bivector() and s.squared().inside.scalar())
+def bivector_decompose_simple(b: BiVector) -> Tuple[BiVector, BiVector]:
+    return b, b.context.multivector.empty()
+```
+If compiled using JAX tracing, abstractions like these that do not touch any JAX arrays carry zero overhead; but even without compilation, the only code executed on repeated calls is akin to ```func = cache[id(s)]```; par for the course in a dynamic language like python.
+
 gatype
 ------
 Currently, all type information of a multivector is encoded into its subspace object.
@@ -85,7 +94,7 @@ All linear GA operations are internally represented by an Operator object.
 For instance, a dual operator is a unary operator, a geometric product a binary operator, and a sandwich product a ternary operator; and so on. 
 Whereby an n-ary operator maps n multivectors to a multivector.
 In future version of this library, we might choose to represent multivectors themselves as nullary GA-operators. 
-This might seem like the kind of dumb thing that only appeals to theoretical mathematicians, but it would result in quite some code reduction, and generalization in terms of how slicing, braodcasting (partial) binding, and composition works, between operators and multivectors.
+This might seem like the kind of dumb thing that only appeals to theoretical mathematicians, but it would result in quite some code reduction, and generalization in terms of how slicing, broadcasting, (partial) binding, and composition works, between operators and multivectors.
 
 Execution
 ---------

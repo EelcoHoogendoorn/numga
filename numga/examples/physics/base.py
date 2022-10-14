@@ -36,7 +36,6 @@ class BodyBase:
 		assert inertia.output.equals.antibivector()
 		assert inertia_inv.output.equals.bivector()
 		assert damping.subspace.equals.scalar()
-		context = motor.context
 		self.motor = motor
 		self.rate = rate
 		self.inertia = inertia

@@ -23,7 +23,7 @@ from numga.multivector.multivector import AbstractMultiVector as mv
 	# FIXME: the tie-in with specific axes names isnt really required is it?
 	#  s.algebra.description.signature_str == '+++0' should suffice?
 	#  it does depend on the internals of the subspace class and how it chooses to order its blades
-	#  this method doesnt couple to those subspace internal details
+	#  this method tied-in to basis names doesnt couple to those subspace internal details
 	lambda s:
 	s.named_str == '1,xy,xz,yz,xw,yw,zw,xyzw' and
 	s.algebra.description.description_str == 'x+y+z+w0',

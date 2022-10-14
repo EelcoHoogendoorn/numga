@@ -11,7 +11,7 @@ mv.decompose_polar = SubspaceDispatch("""
 	L * s0, L * s4 gives two orthogonal bivectors, with commuting exponent,
 	which coincide with the invariant decomposition
 
-	In 4d space, his describes a screw motion
+	In 4d space, this describes a screw motion
 
 	References
 	----------
@@ -20,18 +20,17 @@ mv.decompose_polar = SubspaceDispatch("""
 @mv.decompose_polar.register(lambda s: s.inside.bivector() and s.squared().inside.study())
 def decompose_polar(b: BiVector) -> Tuple[BiVector, Study]:
 	# FIXME: special case the b=0 or not s.inv() case?
-	s = b.symmetric_reverse_product().square_root()
-	si = s.inverse().nan_to_num(0)
+	s: Study = b.symmetric_reverse_product().square_root()
+	si: Study = s.inverse().nan_to_num(0)
 	return b.bivector_product(si), s
 
 
 mv.decompose_invariant = SubspaceDispatch("""
 	Decompose a bivector b into two orthogonal simple bivectors (l, r) such that,
+
 		b = l + r
 		l.inner(r) = 0
 		(l*l).subspace == (r*r).subspace == subspace.scalar
-
-	Also called the invariant decomposition
 
 	References
 	----------
