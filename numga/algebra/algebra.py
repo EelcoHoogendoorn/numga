@@ -48,13 +48,13 @@ class Algebra:
 		return Algebra(self.description * other.description)
 
 	@cached_property
-	def negatives(self):
+	def negatives(self) -> np.ndarray:
 		return bit_pack(self.description.negatives).astype(self.blade_dtype)
 	@cached_property
-	def positives(self):
+	def positives(self) -> np.ndarray:
 		return bit_pack(self.description.positives).astype(self.blade_dtype)
 	@cached_property
-	def zeros(self):
+	def zeros(self) -> np.ndarray:
 		return bit_pack(self.description.zeros).astype(self.blade_dtype)
 
 	@cached_property

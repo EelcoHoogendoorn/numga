@@ -47,6 +47,11 @@ class Body(BodyBase):
 		return (damping + gravity).dual()
 
 	def rate_derivative(self) -> BiVector:
+		"""Generalized Euler's rotation equation
+			F = dP/dt
+			P = Inertia(rate)
+		Thats all there is to it really.
+		"""
 		return self.inertia_inv(self.forques() - self.inertia(self.rate).commutator(self.rate))
 	# def motor_derivative(self) -> Motor:
 	# 	return (self.motor * self.rate) * (-1/2)

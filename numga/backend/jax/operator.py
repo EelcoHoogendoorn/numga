@@ -202,5 +202,3 @@ class JaxSparseOperator(JaxOperator):
 			)
 			output.values = output.values.at[..., oi].set(q)
 		return output
-
-

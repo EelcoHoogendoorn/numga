@@ -164,3 +164,19 @@ class SubSpaceFactory(FlyweightFactory):
 		even-grade and self-reverse
 		"""
 		return self.from_grades(self.grades[0::4])
+
+
+	@cache
+	def degenerate(self) -> "SubSpace":
+		"""Degenerate subspace"""
+		blades = self.full().blades
+		zeros = self.algebra.bit_dot(blades, self.algebra.zeros)
+		return self.from_blades(blades[zeros > 0])
+	@cache
+	def scalar_degenerate(self) -> "SubSpace":
+		"""Degenerate subspace plus scalars; """
+		return self.degenerate().union(self.scalar())
+	@cache
+	def nondegenerate(self) -> "SubSpace":
+		"""Create non-degenerate subspace"""
+		return self.full().difference(self.degenerate())

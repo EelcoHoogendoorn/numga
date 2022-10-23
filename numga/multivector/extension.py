@@ -29,6 +29,8 @@ from numga.multivector.types import Scalar, BiVector, Motor, Study
 from numga.multivector.multivector import AbstractMultiVector as mv
 
 
+# NOTE: these methods have a study_ prefix;
+# since otherwise theyd shadow equally named functionality with subtly different outcomes
 mv.study_conjugate = SubspaceDispatch("""Study conjugation; tack a minus sign on grade 4 components""")
 @mv.study_conjugate.register(lambda s: s.inside.study())
 def study_conjugate(s: Study) -> Study:
@@ -40,7 +42,7 @@ def study_norm_squared(s: Study) -> Scalar:
 mv.study_norm = SubspaceDispatch("""Study norm""")
 @mv.study_norm.register(lambda s: s.inside.study())
 def study_norm(x: Study) -> Scalar:
-	return x.study_norm_squared().square_root()
+	return x.study_norm_squared().sqrt()
 
 
 mv.norm_squared = SubspaceDispatch("""Norm squared; note it does not always yield a positive value, or a scalar for that matter! To the mathematical purist, this isnt really a norm, but we are going by prevailing GA convention here""")
@@ -49,6 +51,9 @@ def reverse_simple_norm_squared(x) -> Scalar:
 	return x.symmetric_reverse_product()
 @mv.norm_squared.register(lambda s: s.inside.even_grade())
 def motor_norm_squared(x: Motor):
+	return x.symmetric_reverse_product()
+@mv.norm_squared.register()
+def default_norm_squared(x):
 	return x.symmetric_reverse_product()
 
 
@@ -59,11 +64,11 @@ def scalar_square_root(s: Scalar) -> Scalar:
 @mv.square_root.register(lambda s: s.inside.study())
 def study_square_root(s: Study) -> Study:
 	s0, s4 = s.select[0], s.restrict[4]
-	c = ((s0 + study_norm(s)) / 2).square_root()
+	c = ((s0 + study_norm(s)) / 2).sqrt()   # +- study_norm should both be roots; why pick one over the other?
 	ci = (c * 2).inverse().nan_to_num(0)
 	return c + s4 * ci
 
-# NOTE: put under motor name, since this formula only works for normalized input
+# NOTE: we put this under motor prefix, since this formula only works for normalized input
 mv.motor_square_root = SubspaceDispatch("""Square root s of x such that s * s == x. Input motor assumed normalized!""")
 @mv.motor_square_root.register(lambda s: s.inside.even_grade())
 def motor_square_root(m: Motor):
@@ -83,13 +88,14 @@ def default_norm(x):
 	return x.norm_squared().square_root()
 
 
-mv.normalized = SubspaceDispatch("""Yeah... what does it mean anyway?""")
+mv.normalized = SubspaceDispatch("""Normalisation, such that x ~x == 1""")
 @mv.normalized.register(lambda s: s.equals.empty())
 def empty_normalized(e):
 	raise NotImplementedError
+# Note; this does not provide 1-grade preservation for motors in dimensions >= 6!
 @mv.normalized.register()
 def default_normalized(x):
-	return x / x.norm()
+	return x.norm_squared().inverse_square_root() * x
 
 
 mv.motor_inverse = SubspaceDispatch("""Inversion, assuming normalization""")
@@ -120,20 +126,15 @@ def even_inverse(m: Motor) -> Motor:
 	return m.reverse() / m.norm_squared()
 
 
-mv.inverse_square_root = SubspaceDispatch("""invsqrt(x), such that invsqrt(x) * sqrt(x) = 1""")
+mv.inverse_square_root = SubspaceDispatch("""invsqrt(x), such that invsqrt(x) * x * invsqrt(x) = 1""")
 @mv.inverse_square_root.register(lambda s: s.equals.scalar())
 def scalar_inverse_square_root(s: Scalar) -> Scalar:
 	return s.copy(s.values ** (-0.5))
-@mv.inverse_square_root.register(lambda s: s.is_reverse_simple)
-def reverse_simple_inverse_square_root(s):
-	return s.reverse() / s.norm()
-@mv.inverse_square_root.register(lambda s: s.inside.study())
-def study_inverse_square_root(s: Study) -> Study:
-	return study_conjugate(s) / study_norm(s)
+# FIXME: there should be a fused optimized version of this for study numbers?
+# @mv.inverse_square_root.register(lambda s: s.inside.study())
 @mv.inverse_square_root.register()
 def default_inverse_square_root(x):
 	return x.square_root().inverse()
-
 
 
 mv.exp = SubspaceDispatch("""Exponentials you know and love""")
@@ -165,7 +166,7 @@ def scalar_log(s: Scalar) -> Scalar:
 
 
 mv.motor_log = SubspaceDispatch("""Logarithm; inverse of exponential. Normalized motor is assumed as input""")
-@mv.motor_log.register(lambda s: s.is_degenerate_motor)
+@mv.motor_log.register(lambda s: s.inside.bireflection() and s.is_degenerate_scalar)
 def degenerate_log(m: Motor) -> BiVector:
 	"""This should bind to translators"""
 	return m.restrict[2]

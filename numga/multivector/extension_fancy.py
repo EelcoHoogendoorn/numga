@@ -42,5 +42,5 @@ def bivector_decompose_simple(b: BiVector) -> Tuple[BiVector, BiVector]:
 @mv.decompose_invariant.register(lambda s: s.inside.bivector() and s.squared().inside.study())
 def bivector_decompose_bisimple(b: BiVector) -> Tuple[BiVector, BiVector]:
 	b2 = b.squared()
-	s = b2.inverse_square_root() / 2
+	s = b2.study_conjugate() / (b2.study_norm() * 2)
 	return (1/2 + s).bivector_product(b), (1/2 - s).bivector_product(b)

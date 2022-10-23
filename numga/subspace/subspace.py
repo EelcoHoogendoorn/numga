@@ -144,6 +144,10 @@ class SubSpace(FlyweightMixin):
 	def nondegenerate(self) -> "SubSpace":
 		"""Select non-degenerate subspace"""
 		return self.algebra.subspace.from_blades(self.blades[self._zeros() == 0])
+	@cache
+	def scalar_degenerate(self) -> "SubSpace":
+		"""Degenerate subspace of self, plus scalars"""
+		return self.algebra.subspace.scalar().union(self.degenerate())
 
 	# FIXME: better to generate these from getattr i suppose.
 	#  could place them in .operator. namespace?
@@ -220,22 +224,21 @@ class SubSpace(FlyweightMixin):
 		"""Check if elements of this subspace square to a scalar"""
 		return self.squared().inside.scalar()
 	@cached_property
+	def is_bisimple(self) -> bool:
+		"""Check if elements of this subspace square to a study number"""
+		return self.squared().inside.study()
+	@cached_property
 	def is_reverse_simple(self) -> bool:
 		"""Check if elements of this subspace reverse-square to a scalar; s * ~s ~= 1"""
 		return self.symmetric_reverse().inside.scalar()
 	@cached_property
-	def is_bisimple(self) -> bool:
+	def is_reverse_bisimple(self) -> bool:
 		"""Check if elements of this subspace square to a study number"""
 		# FIXME: is there a better name for this?
-		return self.squared().inside.study()
+		return self.symmetric_reverse().inside.study()
 
 	@cached_property
-	def is_simple_motor(self) -> bool:
-		"""Check if a motor is the exponent of a simple bivector"""
-		# FIXME: motor naming inappropriate for subspace
-		return self.inside.bireflection()
-	@cached_property
-	def is_degenerate_motor(self) -> bool:
+	def is_degenerate_scalar(self) -> bool:
 		return self == self.algebra.subspace.scalar().union(self.degenerate())
 
 

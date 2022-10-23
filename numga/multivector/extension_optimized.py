@@ -17,7 +17,7 @@ References
 [2] May the Forque Be with You; Dynamics in PGA
 
 """
-
+# FIXME: move this to numpy backend module?
 from numga.multivector.multivector import AbstractMultiVector as mv
 @mv.normalized.register(
 	# FIXME: the tie-in with specific axes names isnt really required is it?

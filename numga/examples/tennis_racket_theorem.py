@@ -10,14 +10,10 @@ from numga.examples.physics.core import Body
 dt = 1 / 4
 runtime = 200
 
-# works for p=2,3,4.
-# p=4 is fascinating; 3rd axis somehow seems stable, whereas 4th axis appears chaotic?
+# works for p=2,3,4,5
+# p>3 is fascinating; some medial axes become seemingly chaotic
+# but stranger still, some medial axes actually stabilize?
 
-# somehow in 5d things blow up; limitation of the integrator?
-# even when clamping the kinetic energy of each body at every timestep,
-# the 5d bodies seem to work themselves into a corner of state-space,
-# where the energy keeps growing without bound within a single timestep,
-# even if starting from the same fixed energy at every timestep
 context = Context(Algebra.from_pqr(4, 0, 0), dtype=np.float64)
 
 
@@ -41,12 +37,11 @@ E = body.kinetic_energy()
 states = []
 for i in range(int(runtime / dt)):
 	body = body.integrate(dt)
-	print('e before norm')
-	print(body.kinetic_energy())
-	energy_violation = body.kinetic_energy() / E
-	body = body.copy(rate=body.rate / energy_violation.sqrt())
-	print('e after norm')
-	print(body.kinetic_energy())
+
+	if True:
+		# optionally, enforce strict energy conservation
+		energy_violation = body.kinetic_energy() / E
+		body = body.copy(rate=body.rate / energy_violation.sqrt())
 
 	print(i)
 	states.append(body.motor)
@@ -57,6 +52,6 @@ v = np.array([s.values for s in states])
 fig, ax = plt.subplots(nb, squeeze=False)
 for i in range(nb):
 	ax[i, 0].plot(v[:, i])
-	# this shows initial energy; so we can identify median axis
+	# this shows initial energy; so we can distinguish medial axes from extrema
 	ax[i, 0].set_ylabel(int(E.values[i]))
 plt.show()

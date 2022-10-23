@@ -24,8 +24,7 @@ def test_complex():
 
 	full = complex.subspace.full()
 	even = complex.subspace.even_grade()
-	assert even.is_simple_motor
-
+	assert even.is_reverse_simple
 	c, s = complex.product(even.blades, even.blades)
 	print(c)
 	print(s)
@@ -41,7 +40,7 @@ def test_quat():
 	quat, full = r3.subspace.even_grade(), r3.subspace.full()
 	print()
 	assert quat.is_subalgebra
-	assert quat.is_simple_motor
+	assert quat.is_reverse_simple
 	print(full.bit_blades())
 	print(full.blades)
 	print(quat.bit_blades())
@@ -64,8 +63,7 @@ def test_2d_pga():
 	rotation_vector = bivector.nondegenerate()
 	translation_vector = bivector.degenerate()
 
-	assert scalar.is_simple_motor
-	assert scalar.is_degenerate_motor
+	assert scalar.is_simple
 	assert vector.is_simple
 	assert bivector.is_simple
 	assert rotation_vector.is_simple
@@ -77,16 +75,12 @@ def test_2d_pga():
 
 	assert not even_grade.is_simple
 	assert even_grade.is_reverse_simple
-	assert even_grade.is_simple_motor
+	assert even_grade.is_subalgebra
 
 	print(full.bit_blades())
 
-	assert even_grade.is_subalgebra
 	print(even_grade.bit_blades())
 
-	# c, s = ga.dual(even_grade.blades)
-	# print(c)
-	# print(s)
 	S = ga.operator.sandwich(full, vector)
 	assert S.output == vector
 
@@ -113,6 +107,7 @@ def test_3d_pga():
 
 	assert vector.is_simple
 	assert not bivector.is_simple
+	assert bivector.is_bisimple
 	assert rotation_vector.is_simple
 	assert not rotation_vector.is_degenerate
 	assert len(rotation_vector) == 3
@@ -121,10 +116,9 @@ def test_3d_pga():
 	assert len(translation_vector) == 3
 	assert trivector.is_simple
 	assert not even_grade.is_simple
-	assert not even_grade.is_simple_motor
 	assert not even_grade.is_reverse_simple
+	assert even_grade.is_reverse_bisimple
 	assert not quaternion.is_simple
-	assert quaternion.is_simple_motor
 	assert quaternion.is_reverse_simple
 
 	print(full.bit_blades())
