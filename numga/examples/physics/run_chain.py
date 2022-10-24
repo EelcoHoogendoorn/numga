@@ -35,7 +35,7 @@ bodies, constraint_sets = setup_bodies(
 
 
 def step(bodies, constraint_sets, dt, unroll=10):
-	"""Jax specific part of main loop, to be comppiled"""
+	"""Jax specific part of main loop, to be compiled"""
 	def loop_body(_, bodies):
 		return bodies.integrate(dt / unroll, constraint_sets)
 	return jax.lax.fori_loop(0, unroll, loop_body, bodies)

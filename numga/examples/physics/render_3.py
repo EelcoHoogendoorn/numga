@@ -99,7 +99,7 @@ def render(context, c_motor, c_plane, c_rays, bodies):
 
 	closest_weight = cplane_to_intersection_distance_min / closest_to_cplane_distance_min
 	cplane_weight = closest_to_intersection_distance_min / closest_to_cplane_distance_min
-	intersection_point = c_plane * cplane_weight + closest_min * closest_weight
+	intersection_point = c_plane * cplane_weight - closest_min * closest_weight
 
 	# coloring
 	r_motors = r_motor[None, None, ...].take_along_axis(idx[..., None], axis=2)[..., 0, :]
