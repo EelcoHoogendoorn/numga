@@ -66,3 +66,25 @@ def test_commutator():
 			except:
 				pass
 	print(r)
+
+from numga.multivector.test.util import random_subspace
+import numpy.testing as npt
+
+def test_inertia():
+	"""Test equivalence of composed ternary operators to their direct expression form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z0')
+	context = NumpyContext(algebra)
+
+	P = context.subspace.antivector()
+	B = context.subspace.bivector()
+	# I = context.operator.inertia(P, B)
+
+	p = random_subspace(context, P, (10,))
+	b = random_subspace(context, B, (10,))
+
+	p = p.normalized()
+	direct = p.regressive(p.commutator(b))
+	I = p.inertia_map()
+	operator = I(b)
+	npt.assert_allclose(direct.values, operator.values)

@@ -35,7 +35,7 @@ def setup_bodies(
 	# single body for starters
 	points = point_embed(make_cube(ndim) * size)
 	bodies = Body.from_point_cloud(points=points)
-	bodies = bodies.copy(gravity=axes[0] * 5e-2)
+	bodies = bodies.copy(gravity=(axes[0] * 5e-2).dual_inverse())
 	bodies = bodies.copy(damping=bodies.damping + damping)
 
 	d = jnp.arange(n_bodies) * distance

@@ -479,7 +479,9 @@ class OperatorFactory:
 	@cache
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Compute inertia operator; l.regressive(l x r)"""
-		return self.regressive(l, self.commutator(l, r)).symmetry((0, 1), +1)
+		# FIXME: it is tempting to enforce symmetry here, but it does not improve sparsity,
+		#  and does force us to use a float kernel, so nevermind
+		return self.regressive(l, self.commutator(l, r))#.symmetry((0, 1), +1)
 
 
 	# # projections according to erik lengyel

@@ -11,8 +11,7 @@ https://matthias-research.github.io/pages/challenges/pendulum.html
 Presumably those conditions applied to the algorithm, not the implementation thereof.
 
 But as far as the implementation goes, this is how it compares:
- * Unlike the code linked above, actually implements the X in XPBD.
-   That is, this is a rigid body physics engine; not just a point-particle system.
+ * Unlike the code linked above, this is a rigid body physics engine; not just a point-particle system.
  * Dimension independent (tested in 1d 2d and 3d, but no restrictions in theory)
  * Signature independent (tested in euclidian and spherical spaces)
  * Faster, by virtue of being JAX compilable code
@@ -42,14 +41,17 @@ def motor_relative_step(old: Motor, new: Motor) -> BiVector:
 class Body(BodyBase):
 	def forques(self) -> Line:
 		"""External forque line on each body, in body local space"""
-		damping = -(self.rate * self.damping)
-		gravity = self.centroid.dual() ^ (self.motor << self.gravity)
-		return (damping + gravity).dual()
+		# simple linear damping, proportional to rates
+		damping = -(self.rate * self.damping).dual()
+		# gravity forque line is the join of the mass distributions first moment,
+		# with the gravity direction in local space
+		gravity = self.first_moment & (self.motor << self.gravity)
+		return damping + gravity
 
 	def rate_derivative(self) -> BiVector:
 		"""Generalized Euler's rotation equation
-			F = dP/dt
-			P = Inertia(rate)
+			forque = d/dt momentum
+			momentum = Inertia(rate)
 		Thats all there is to it really.
 		"""
 		return self.inertia_inv(self.forques() - self.inertia(self.rate).commutator(self.rate))
@@ -128,9 +130,9 @@ class Constraint(ConstraintBase):
 		# reaction bivector steps, to impulse applied along this line
 		steps: BiVector = inertias_inv(directions)
 		# scalar inertial compliance of each body to movement in this direction
-		compliances: Scalar = steps & directions
+		inertial_compliances: Scalar = steps & directions
 		# sum to get total compliance towards motion along this direction
-		total_compliance: Scalar = constraint_compliance + compliances.sum(axis=0)
+		total_compliance: Scalar = constraint_compliance + inertial_compliances.sum(axis=0)
 		# lagrange multiplier for each constraint
 		multiplier: Scalar = magnitude / total_compliance
 

@@ -121,6 +121,8 @@ class Operator:
 			# FIXME: integer division not always appropriate.
 			#  if not, user responsible for slapping on a multiplication factor?
 			#  or do runtime check for inappropriate divisions / remainders?
+
+			# FIXME: yeah such a check would be good... already burned myself here with ineria map!
 			(self.kernel + sign * np.swapaxes(self.kernel, *axes)) // 2,
 			self.axes
 		).squeeze()

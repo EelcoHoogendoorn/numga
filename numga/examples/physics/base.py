@@ -25,31 +25,40 @@ class BodyBase:
 	motor: Motor                # rigid body state; global = motor >> local; local = motor << global
 	rate: BiVector              # rates of change in state; to be interpreted in body-local frame
 
+	# This is equal to the sum of all mass points that make up the rigid body
+	# This not only encodes the location of the centroid, but is a non-normalized vector, encoding scale
+	# Note that it isnt used for any inertial mass purposes;
+	# but it encodes the magnitude and position of gravitational mass effects on the rigid body
+	# To emphasize the difference with the inertia maps below,
+	# note that for points on a great circle, the first moment is zero, while the second moments are not
+	# Indeed the net gravitational pull in any constant global gravitational field should be zero,
+	# but such a ring will have well-defined inertial properties
+	first_moment: Point
 	inertia: "UnaryOperator"      # inertia map, in body local frame
 	inertia_inv: "UnaryOperator"   # inverse inertia map, in body local frame
 
 
-	def __init__(self, motor, rate, centroid, inertia, inertia_inv, damping, gravity):
+	def __init__(self, motor, rate, first_moment, inertia, inertia_inv, damping, gravity):
 		assert motor.subspace.equals.motor()
 		assert rate.subspace.equals.bivector()
-		assert gravity.subspace.inside.vector()
+		assert gravity.subspace.inside.antivector()
 		assert inertia.output.equals.antibivector()
 		assert inertia_inv.output.equals.bivector()
 		assert damping.subspace.equals.scalar()
 		self.motor = motor
 		self.rate = rate
+		self.first_moment = first_moment
 		self.inertia = inertia
 		self.inertia_inv = inertia_inv
 		self.damping = damping
 		self.gravity = gravity
-		self.centroid = centroid
 
 	def __getitem__(self, idx):
 		"""slice up body set"""
 		return type(self)(
 			self.motor[idx],
 			self.rate[idx],
-			self.centroid[idx],
+			self.first_moment[idx],
 			# FIXME: these slices on the operator cause a copy and thus a recompute on cached properties like the kernels.
 			#  this is a design flaw. undecided what to do about it, but good to keep tabs on it
 			self.inertia[idx],
@@ -62,7 +71,7 @@ class BodyBase:
 		return type(self)(
 			self.motor.concatenate(other.motor, axis=0),
 			self.rate.concatenate(other.rate, axis=0),
-			self.centroid.concatenate(other.centroid, axis=0),
+			self.first_moment.concatenate(other.first_moment, axis=0),
 			self.inertia.concatenate(other.inertia, axis=0),
 			self.inertia_inv.concatenate(other.inertia_inv, axis=0),
 			self.damping.concatenate(other.damping, axis=0),
@@ -75,27 +84,42 @@ class BodyBase:
 			rate=rate or self.rate,
 			damping=damping or self.damping,
 			gravity=gravity or self.gravity,
-			centroid=self.centroid,
+			first_moment=self.first_moment,
 			inertia=self.inertia,
 			inertia_inv=self.inertia_inv,
 		)
 
 	@classmethod
 	def from_point_cloud(cls, points: Point) -> "BodyBase":
-		"""Initialize a body from a point cloud"""
+		"""Initialize a body from a point cloud
+
+		Parameters
+		----------
+		points: [..., n_points], Point
+
+		Returns
+		-------
+		[...], Body
+		"""
 		context = points.context
 		assert points.subspace.inside.antivector()
+		first_moment = points.sum(axis=-2)
+		# the inertia-map maps bivector rates to anti-bivector momentum lines
+		# it follows the definition momentum = point & (point x rate)
+		# point x rate gives the motion direction at the point, given the rate,
+		# and the regressive joins that direction and point into the momentum line.
+		# Its a type of second moment; quadratic in the point position, so should we call it that?
+		# feels like that property does not uniquely define it though
 		inertia = points.inertia_map().sum(axis=-3)
-		centroid = points.sum(axis=-2)
 
 		return cls(
 			motor=context.multivector.motor(),
 			rate=context.multivector.bivector(),
-			centroid=centroid,
+			first_moment=first_moment,
 			inertia=inertia,
 			inertia_inv=inertia.inverse(),
 			damping=context.multivector.scalar() * 0,
-			gravity=context.multivector.vector()
+			gravity=context.multivector.antivector()
 		)
 
 	def kinetic_energy(self) -> Scalar:
