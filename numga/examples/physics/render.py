@@ -1,4 +1,3 @@
-import jax
 import numpy as np
 
 
@@ -18,13 +17,13 @@ def write_animation_simulation(
 	writer.close()
 
 
-def render(context, states):
+def render(context, states, jit=lambda x: x):
 	if context.algebra.n_dimensions == 2:
 		from numga.examples.physics.render_1 import setup_rays, render
 		rays, mask = setup_rays(context)
 		write_animation_simulation(
 			states,
-			jax.jit(lambda bodies: render(rays, mask, bodies)),
+			jit(lambda bodies: render(rays, mask, bodies)),
 			output_filename=f'animation_{context.algebra.description.pqr_str}.gif'
 		)
 	if context.algebra.n_dimensions == 3:
@@ -32,7 +31,7 @@ def render(context, states):
 		rays, mask = setup_rays(context)
 		write_animation_simulation(
 			states,
-			jax.jit(lambda bodies: render(rays, mask, bodies)),
+			jit(lambda bodies: render(rays, mask, bodies)),
 			output_filename=f'animation_{context.algebra.description.pqr_str}.gif'
 		)
 
@@ -41,6 +40,6 @@ def render(context, states):
 		c_motor, plane, rays = setup_rays(context)
 		write_animation_simulation(
 			states,
-			jax.jit(lambda bodies: render(context, c_motor, plane, rays, bodies)),
+			jit(lambda bodies: render(context, c_motor, plane, rays, bodies)),
 			output_filename=f'animation_{context.algebra.description.pqr_str}.gif'
 		)

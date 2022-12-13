@@ -46,8 +46,8 @@ class SubSpace(FlyweightMixin):
 		return len(self.blades)
 
 	def __repr__(self):
-		return self.pretty_str
-		# return f'{self.pretty_str}: {self.named_str}'
+		# return self.pretty_str
+		return f'{self.pretty_str}: {self.named_str}'
 		# return str(self.bit_blades())
 
 	def bit_blades(self):
@@ -207,6 +207,8 @@ class SubSpace(FlyweightMixin):
 	def slice_subspace(self, indices) -> "SubSpace":
 		"""slice out part of subspace using indices relative to the indices of the subspace"""
 		return self.algebra.subspace.from_blades(self.blades[indices])
+	def __index__(self, idx):
+		return self.slice_subspace(idx)
 
 	def to_relative_indices(self, blades):
 		"""convert blades to indices that index the subspace

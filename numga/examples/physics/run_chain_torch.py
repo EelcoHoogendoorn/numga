@@ -1,29 +1,25 @@
 """XPBD swinging rigid body chain link"""
 
-from jax.config import config
-config.update("jax_enable_x64", True)
+import torch
 
-import jax
-import jax.numpy as jnp
+from numga.backend.torch.context import TorchContext as Context
+from numga.backend.torch.operator import TorchEinsumOperator, TorchSparseOperator
 
-from numga.examples.physics.core import Body, Constraint
-from numga.backend.jax.pytree import register
-Body = register(Body)
-Constraint = register(Constraint)
 
-from numga.backend.jax.context import JaxContext as Context
-from numga.backend.jax.operator import JaxEinsumOperator, JaxSparseOperator
+# from numga.examples.physics.core import Body, Constraint
+# Body = torch.jit.script(Body)
+# Constraint = torch.jit.script(Constraint)
 
 
 # want this to work at least for 2d-3d-4d pga/elliptical; still need to add 4d elliptical rendering!
 context = Context(
-	# 'x+y+',
-	'x+y+z+',       # for some reason this is my favorite
+	'x+y+',
+	# 'x+y+z+',       # for some reason this is my favorite
 	# 'x+y+w0',
 	# 'x+y+z+w0',   # should really make the setup a bit more interesting here; not really showing off 3d atm
-	otype=JaxEinsumOperator,
-	# otype=JaxSparseOperator,
-	dtype=jnp.float64
+	otype=TorchEinsumOperator,
+	# otype=TorchSparseOperator,
+	dtype=torch.float64
 )
 
 from numga.examples.physics.setup_chain import setup_bodies
@@ -35,10 +31,10 @@ bodies, constraint_sets = setup_bodies(
 
 
 def step(bodies, constraint_sets, dt, unroll=10):
-	"""Jax specific part of main loop, to be compiled"""
-	def loop_body(_, bodies):
-		return bodies.integrate(dt / unroll, constraint_sets)
-	return jax.lax.fori_loop(0, unroll, loop_body, bodies)
+	"""Torch specific part of main loop, to be compiled"""
+	for i in range(10):
+		bodies = bodies.integrate(dt / unroll, constraint_sets)
+	return bodies
 
 
 dt = 1 / 20
@@ -49,22 +45,23 @@ print('time jitting plus warmup call')
 t = time.time()
 func = step
 # cache warmup call; to avoid leaks of cached vectors created during compilation
-q = step(bodies, constraint_sets, dt)
-print(q)
-func = jax.jit(step)
-_ = func(bodies, constraint_sets, dt)
+# q = step(bodies, constraint_sets, dt, unroll=10)
+# print(q)
+# func = torch.jit.script(step)
+# _ = func(bodies, constraint_sets, dt)
 print('compile time')
 print(time.time() - t)
 
 
 t = time.time()
 states = []
-for i in range(1000):
-	bodies = func(bodies, constraint_sets, dt)
+for i in range(20):
+	bodies = func(bodies, constraint_sets, dt, unroll=10)
 	# print(i)
 	# print('energy: ', bodies.kinetic_energy().values.sum())
 	if i % 10 == 0:
 		states.append(bodies)
+		print(i)
 print('simulation time')
 print(time.time() - t)
 

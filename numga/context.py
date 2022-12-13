@@ -79,6 +79,12 @@ class AbstractContext:
 		return self.algebra.subspace
 
 
+	@abc.abstractmethod
+	def set_array(self, idx, value):
+		"""Backend specific array mutation"""
+		raise NotImplementedError
+
+
 	# backend needs to provide some elementary math implementations
 	@abc.abstractmethod
 	def sqrt(self, x):

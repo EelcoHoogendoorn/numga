@@ -92,6 +92,9 @@ mv.normalized = SubspaceDispatch("""Normalisation, such that x ~x == 1""")
 @mv.normalized.register(lambda s: s.equals.empty())
 def empty_normalized(e):
 	raise NotImplementedError
+@mv.normalized.register(lambda s: s.inside.study())
+def study_normalized(s):
+	return s / s.study_norm()
 # Note; this does not provide 1-grade preservation for motors in dimensions >= 6!
 @mv.normalized.register()
 def default_normalized(x):
@@ -150,7 +153,7 @@ def scalar_exp(s: Scalar) -> Scalar:
 def degenerate_exp(b: BiVector) -> Motor:
 	"""If we know all basis elements square to zero, might as well use that information"""
 	return b + 1
-@mv.exp.register(lambda s: s.inside.bivector())
+@mv.exp.register(lambda s: s.equals.bivector)
 def default_exp(b: BiVector) -> "Motor":
 	"""default to numerical brute force"""
 	return b.exp_bisect()
@@ -214,7 +217,7 @@ def motor_log_bisect(m: Motor, n=16) -> BiVector:
 mv.exp_bisect = SubspaceDispatch("""
 	Bisection based exponential.
 	Exact inverse to motor_log_bisect""")
-@mv.exp_bisect.register(lambda s: s.inside.bivector())
+@mv.exp_bisect.register()
 def exp_bisect(b: BiVector, n=16) -> Motor:
 	m = exp_linear_normalized(b / (2 ** n))
 	for i in range(n):

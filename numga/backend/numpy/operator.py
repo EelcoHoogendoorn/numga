@@ -7,6 +7,7 @@ from numga.backend.numpy.multivector import NumpyMultiVector
 from numga.operator.abstract import AbstractConcreteOperator
 from numga.operator.operator import Operator
 from numga.subspace.subspace import SubSpace
+from numga.multivector.helper import IndexHelper
 
 
 class NumpyOperator(AbstractConcreteOperator):
@@ -26,6 +27,9 @@ class NumpyOperator(AbstractConcreteOperator):
 		slice = self.copy(self.operator.copy(self.kernel[idx]))
 		# assert self.kernel_shape == slice.kernel_shape, 'Dont slice off any kernel axes!'
 		return slice
+	@property
+	def at(self):
+		return IndexHelper(lambda k: self.copy(self.operator.copy(k)), self.kernel, self.context)
 
 	def concatenate(self, other, axis):
 		assert self.operator.axes == other.operator.axes
@@ -105,10 +109,6 @@ class NumpyOperator(AbstractConcreteOperator):
 	# 		optimize=True
 	# 	)
 	# 	return output
-	# def __mul__(self, other):
-	# 	# FIXME:
-	# 	operator = self.operator.product(other.subspace)
-	# 	operator.bind()
 
 
 class NumpyEinsumOperator(NumpyOperator):

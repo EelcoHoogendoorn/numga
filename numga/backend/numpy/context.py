@@ -18,12 +18,17 @@ class NumpyContext(AbstractContext):
 			mvtype=NumpyMultiVector
 		)
 
-	def coerce_array(self, values):
-		return np.asarray(values, dtype=self.dtype, order=self.order)
+	def coerce_array(self, values, dtype=None):
+		return np.asarray(values, dtype=dtype or self.dtype, order=self.order)
 
 	def allocate_array(self, shape):
 		# FIXME: empty might be more appropriate, usually?
 		return np.zeros(shape, dtype=self.dtype, order=self.order)
+
+	def set_array(self, arr, idx, values):
+		arr = arr.copy()
+		arr[idx] = values
+		return arr
 
 
 	# math forward functions.
@@ -61,3 +66,16 @@ class NumpyContext(AbstractContext):
 
 	def nan_to_num(self, x, nan):
 		return np.nan_to_num(x, nan=nan)
+	def min(self, x, **kwargs):
+		return np.min(x, **kwargs)
+	def argmin(self, x, **kwargs):
+		return np.argmin(x, **kwargs)
+	def all(self, x, **kwargs):
+		return np.all(x, **kwargs)
+	def isnan(self, x):
+		return np.isnan(x)
+	def logical_xor(self, x, y):
+		return np.logical_xor(x, y)
+	def logical_or(self, x, y):
+		return np.logical_or(x, y)
+

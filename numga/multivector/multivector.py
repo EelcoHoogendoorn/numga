@@ -1,3 +1,5 @@
+import abc
+
 from numga.dynamic_dispatch import SubspaceDispatch
 from numga.multivector.namespaces import SelectNamespace, RestrictNamespace
 from numga.subspace.subspace import SubSpace
@@ -51,10 +53,10 @@ class AbstractMultiVector:
 
 	@property
 	def at(self):
-		return IndexHelper(lambda v: self.copy(values=v), self.values)
+		return IndexHelper(lambda v: self.copy(values=v), self.values, self.context)
 
 	def __repr__(self):
-		return f"{self.subspace}: <{self.subspace.named_str}>\n{self.values}"
+		return f"{self.subspace.pretty_str}: <{self.subspace.named_str}>\n{self.values}"
 
 	# FIXME: register below boilerplate in automated fashion?
 	#  or forward to operator factory in getattr fashion?

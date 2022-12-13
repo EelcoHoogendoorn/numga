@@ -63,7 +63,7 @@ class JaxOperator(AbstractConcreteOperator):
 		return slice
 	@property
 	def at(self):
-		return IndexHelper(lambda k: self.copy(self.operator.copy(k)), self.kernel)
+		return IndexHelper(lambda k: self.copy(self.operator.copy(k)), self.kernel, self.context)
 
 	def concatenate(self, other, axis):
 		assert self.operator.axes == other.operator.axes

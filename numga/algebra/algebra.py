@@ -119,7 +119,7 @@ class Algebra:
 		# we are fully vectorized over n_elements, which is what matters most,
 		# but we vectorize over one of the bit axes too in our registers
 		swaps = sum(self.bit_dot(a, shifted_b) for shifted_b in downshift(b))
-		return cayley, swaps
+		return cayley, np.asarray(swaps, dtype=np.int8)
 
 	def involute(self, a):
 		"""Tack a minus onto every basis vector

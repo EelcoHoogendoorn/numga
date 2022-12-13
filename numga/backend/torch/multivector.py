@@ -1,20 +1,14 @@
-from jax import numpy as jnp
-
-from numga.backend.jax import pytree
+import torch
 from numga.multivector.multivector import AbstractMultiVector
 from numga.subspace.subspace import SubSpace
 
 
-@pytree.register
-class JaxMultiVector(AbstractMultiVector):
-	"""Concrete realization of abstract type in JAX"""
-	# override these fields as static
+class TorchMultiVector(AbstractMultiVector):
+	"""Concrete realization of abstract type in torch"""
 	subspace: SubSpace
-	context: "JaxContext"
-
-	__pytree_ignore__ = ('subspace', 'context')
+	context: "TorchContext"
 	# dense contiguous backing array
-	values: jnp.array
+	values: torch.tensor
 
 	@classmethod
 	def construct(cls, context, values, subspace):
@@ -35,27 +29,33 @@ class JaxMultiVector(AbstractMultiVector):
 		)
 
 	def __getitem__(self, idx):
+		# FIXME: torch indexing with ndarray behavior differs!
+		try:
+			idx = torch.asarray(idx)
+		except:
+			pass
 		v = self.values[idx]
 		return self.copy(values=v)
+
 	@property
 	def shape(self):
 		"""Shape of the array, modulo subspace axis"""
-		return self.values.shape[:-1]
+		return tuple(self.values.size())[:-1]
 
 	def take_along_axis(self, idx, axis):
 		values = self.values
-		values = jnp.take_along_axis(values, idx[..., None], axis=axis)
+		values = torch.take_along_dim(values, idx[..., None], dim=axis)
 		return self.copy(values=values)
 
 	def concatenate(self, other, axis):
 		assert self.subspace == other.subspace
-		return self.copy(jnp.concatenate([self.values, other.values], axis=axis))
+		return self.copy(torch.cat([self.values, other.values], dim=axis))
 
 	# FIXME: in the below, assert that subspace axes remain untouched?
 	def sum(self, axis):
-		return self.copy(values=self.values.sum(axis))
+		return self.copy(values=self.values.sum(dim=axis))
 	def mean(self, axis):
-		return self.copy(values=self.values.mean(axis))
+		return self.copy(values=self.values.mean(dim=axis))
 
 	def rearrange(self, pattern):
 		from einops import rearrange

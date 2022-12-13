@@ -1,8 +1,6 @@
 
-# FIXME: adopt .at syntax at base level? makes it easier to unify jax/numpy code
-
 class SetterHelper:
-	"""Helper objects to extend .at[].set syntax of jax arrays to jax multivectors and jax operators"""
+	"""Helper objects to extend .at[].set syntax of jax arrays to multivectors and operators"""
 	def __init__(self, helper, idx):
 		self.helper = helper
 		self.idx = idx
@@ -11,9 +9,10 @@ class SetterHelper:
 
 
 class IndexHelper:
-	def __init__(self, copy, arr):
-		self.copy = copy    # callable to propagate the mutation to the object owning arr.
-		self.arr = arr      # underlying jnp.array to mutate
+	def __init__(self, copy, arr, context):
+		self.copy = copy        # callable to propagate the mutation to the object owning arr.
+		self.arr = arr          # array to mutate
+		self.context = context  # context object, implementing appropriate set_array method
 	def __getitem__(self, item):
 		"""This is the whole point of this construct; to capture indexing syntax while being able to return the copy"""
 		return SetterHelper(self, item)
@@ -21,4 +20,4 @@ class IndexHelper:
 		from numga.multivector.multivector import AbstractMultiVector
 		if isinstance(values, AbstractMultiVector):
 			values = values.values
-		return self.copy(self.arr.at[idx].set(values))
+		return self.copy(self.context.set_array(self.arr, idx, values))

@@ -1,5 +1,4 @@
 import numpy as np
-from jax import numpy as jnp
 
 from numga.util import summation
 
@@ -25,17 +24,17 @@ def setup_rays(context, n=200):
 	def translator(distance) -> "Motor":
 		return ((origin / -2) ^ context.multivector(model_space, distance)).exp()
 
-	def point_embed(distance: jnp.ndarray):
+	def point_embed(distance: np.ndarray):
 		"""Move away from the origin"""
 		return translator(distance) >> origin.dual()
 
 	scale = 1e-1
-	ones = jnp.ones((n, n)) * scale
-	x = jnp.linspace(-1, +1, n)[:, None] * ones
-	y = jnp.linspace(-1, +1, n)[None, :] * ones
+	ones = np.ones((n, n)) * scale
+	x = np.linspace(-1, +1, n)[:, None] * ones
+	y = np.linspace(-1, +1, n)[None, :] * ones
 	z = ones
-	p = jnp.array([x, y, z])
-	p = jnp.moveaxis(p, 0, 2)
+	p = np.array([x, y, z])
+	p = np.moveaxis(p, 0, 2)
 	# v = axes[0] * x + axes[1] * y
 	camera_plane = point_embed(p)
 	camera_origin = point_embed([0, 0, 0])
@@ -90,7 +89,7 @@ def render(context, c_motor, c_plane, c_rays, bodies):
 	cplane_to_intersection_distance: "Scalar" = closest_to_cplane_distance - closest_to_intersection_distance
 
 	# get idx of intersection point closest to cplane
-	idx = jnp.argmin(jnp.nan_to_num(cplane_to_intersection_distance.values[..., 0], nan=1e9), axis=-1)
+	idx = context.argmin(context.nan_to_num(cplane_to_intersection_distance.values[..., 0], nan=1e9), axis=-1)
 
 	cplane_to_intersection_distance_min = cplane_to_intersection_distance.take_along_axis(idx[..., None], axis=2)[:, :, 0]
 	closest_min = closest.take_along_axis(idx[..., None], axis=2)[:, :, 0]
@@ -106,7 +105,7 @@ def render(context, c_motor, c_plane, c_rays, bodies):
 	# hit points in closest body local space
 	local_hit_point = (r_motors >> intersection_point).dual()
 
-	mask = jnp.all(jnp.isnan(cplane_to_intersection_distance.values[..., 0]), axis=2)
+	mask = context.all(context.isnan(cplane_to_intersection_distance.values[..., 0]), axis=2)
 	q = local_hit_point.nondegenerate().values
 	# q = np.dot(q, ico.T)
 	idx = 1 + ((q > 0).sum(axis=-1) % 2)

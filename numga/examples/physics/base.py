@@ -139,8 +139,9 @@ class ConstraintBase:
 		context = anchors.context
 		assert anchors.subspace.equals.antivector()
 		assert compliance.subspace.equals.scalar()
-		self.body_idx = body_idx
+		self.body_idx = context.coerce_array(body_idx, dtype=int)
 		self.anchors = anchors
+		self.anchors_map = self.anchors.inertia_map()    # precompute mapping from rates to velocities at the anchor
 		self.compliance = compliance
 		self.unique = np.unique(body_idx).size == body_idx.size
 		# numerically encode how constraints connect to anchors; from one to the other

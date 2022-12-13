@@ -1,5 +1,5 @@
 import numpy as np
-from jax import numpy as jnp
+# from jax import numpy as jnp
 
 from numga.util import summation
 from numga.examples.physics.core import Body, Constraint
@@ -25,9 +25,9 @@ def setup_bodies(
 
 	def make_cube(n):
 		# FIXME: its actually an octagon...
-		return jnp.array(np.kron(np.diag(np.arange(n) + 1) / n, [+1, -1]).T)
+		return np.array(np.kron(np.diag(np.arange(n) + 1) / n, [+1, -1]).T)
 
-	def point_embed(distance: jnp.ndarray):
+	def point_embed(distance: np.ndarray):
 		"""Move away from the origin"""
 		# need the dual-inverse to avoid picking up that annoying minus sign in alternating dimensions
 		return translator(distance) >> origin.dual_inverse()
@@ -38,19 +38,19 @@ def setup_bodies(
 	bodies = bodies.copy(gravity=(axes[0] * 5e-2).dual_inverse())
 	bodies = bodies.copy(damping=bodies.damping + damping)
 
-	d = jnp.arange(n_bodies) * distance
-	d = jnp.array([d*0] * (ndim - 1) + [d]).T
+	d = np.arange(n_bodies) * distance
+	d = np.array([d*0] * (ndim - 1) + [d]).T
 	qs = translator(d)
 
-	zeros = jnp.zeros(n_bodies, int)
+	zeros = np.zeros(n_bodies, int)
 	bodies = bodies[None][zeros]
 	bodies = bodies.copy(motor=bodies.motor * qs)
 
 	# init constraints, defining anchor points
-	i = jnp.arange(n_bodies - 1)
-	body_idx = jnp.array([i, i+1])
-	a = jnp.array([[0] * (ndim-1) + [distance], [0] * (ndim-1) + [-distance]]) / 2
-	ones = jnp.ones((1, n_bodies - 1, 1))
+	i = np.arange(n_bodies - 1)
+	body_idx = np.array([i, i+1])
+	a = np.array([[0] * (ndim-1) + [distance], [0] * (ndim-1) + [-distance]]) / 2
+	ones = np.ones((1, n_bodies - 1, 1))
 	a = a[:, None, :] * ones
 	anchors = point_embed(a)
 	ones = context.multivector.scalar(np.ones((n_bodies-1, 1)))

@@ -14,15 +14,15 @@ class JaxContext(AbstractContext):
 			mvtype=JaxMultiVector
 		)
 
-	def coerce_array(self, values):
-		return jnp.asarray(values, dtype=self.dtype)
+	def coerce_array(self, values, dtype=None):
+		return jnp.asarray(values, dtype=dtype or self.dtype)
 
 	def allocate_array(self, shape):
 		# FIXME: empty might be more appropriate, usually?
 		return jnp.zeros(shape, dtype=self.dtype)
 
-	def where(self, cond, a, b):
-		return jnp.where(cond, a, b)
+	def set_array(self, arr, idx, values):
+		return arr.at[idx].set(values)
 
 	# def trigonometry(self, t):
 	# 	"""Implement trigonometry required for exponentiation for a specific backend"""
@@ -31,6 +31,9 @@ class JaxContext(AbstractContext):
 	# 	sinh = jnp.where(norm==0+0j, 1, jnp.sinh(norm) / norm)
 	# 	return cosh.real, sinh.real
 
+	# plain array operation forwarding. can this be more elegant?
+	def where(self, cond, a, b):
+		return jnp.where(cond, a, b)
 	def nan_to_num(self, x, nan):
 		return jnp.nan_to_num(x, nan=nan)
 	def abs(self, x):
@@ -47,3 +50,17 @@ class JaxContext(AbstractContext):
 
 	def pow(self, x1, x2):
 		return jnp.pow(x1, x2)
+
+	def min(self, x, **kwargs):
+		return jnp.min(x, **kwargs)
+	def argmin(self, x, **kwargs):
+		return jnp.argmin(x, **kwargs)
+	def all(self, x, **kwargs):
+		return jnp.all(x, **kwargs)
+	def isnan(self, x):
+		return jnp.isnan(x)
+	def logical_xor(self, x, y):
+		return jnp.logical_xor(x, y)
+	def logical_or(self, x, y):
+		return jnp.logical_or(x, y)
+	# where = jnp.where

@@ -7,11 +7,11 @@ try:
 	from functools import cached_property
 except:
 	# python < 3.9 compatibility
-	from functools import lru_cache as _cache
+	from functools import lru_cache as cache
 	from functools import cached_property
 	# override stupid default
-	def cache(*args, **kwargs):
-		return _cache(*args, **{**kwargs, 'maxsize': None})
+	# def cache(*args, **kwargs):
+	# 	return _cache(*args, **{**kwargs, 'maxsize': None})
 
 
 def match(args):

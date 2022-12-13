@@ -56,10 +56,16 @@ class SubSpaceFactory(FlyweightFactory):
 		return blades
 
 	@cache
-	def __getattr__(self, blade: str) -> SubSpace:
-		"""retrieve a single basis blade (generator)"""
-		i = self.algebra.description.basis_names.index(blade)
-		return self.basis()[i]
+	def __getattr__(self, subspace: str) -> SubSpace:
+		"""Attribute subspace construction syntax
+		Example: 'xy_zt' produces a bivector with these two components
+		"""
+		names = self.algebra.description.basis_names
+		basis = self.basis()
+		return self.from_blades(np.array([
+			sum(basis[names.index(b)].blades for b in blade)[0]
+			for blade in subspace.split('_')
+		]))
 
 	@cache
 	def basis(self) -> List[SubSpace]:

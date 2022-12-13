@@ -274,6 +274,8 @@ class OperatorFactory:
 	def antify(self, op, *inputs: Tuple[SubSpace]) -> Operator:
 		"""Compute *op(l*, v*); wrap the operator in left/right dualizatiom"""
 		return self.left_complement(op(*(self.right_complement(i) for i in inputs))).squeeze()
+		# not sure we want complement here; isnt hodge more general?
+		# return self.right_hodge_inverse(op(*(self.right_hodge(i) for i in inputs))).squeeze()
 
 	@cache
 	def anti_geometric_product(self, l: SubSpace, r: SubSpace) -> Operator:

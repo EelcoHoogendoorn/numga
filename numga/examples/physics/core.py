@@ -82,8 +82,10 @@ class Body(BodyBase):
 		new = self.pre_integrate(dt)
 		for c in constraint_sets:
 			new = c.apply(new, dt=dt)
-		return new.post_integrate(self, dt=dt)
-
+		new = new.post_integrate(self, dt=dt)
+		for c in constraint_sets:
+			new = c.v_apply(new, dt=dt)
+		return new
 
 class Constraint(ConstraintBase):
 	"""A simple point-to-point constraint between rigid bodies
@@ -110,12 +112,38 @@ class Constraint(ConstraintBase):
 		direction: Line = forque / (magnitude + 1e-26)  # [c]; constrain violation direction
 
 		steps: BiVector = self.distribute_forque(
-			motors << direction,    # map the total required motion to satisfy the constraint back to body local space
+			motors << direction,    # map the directions back to body local space
 			magnitude,
 			inertia_inv,
 			self.compliance / dt**2
 		)
 		return motor_add_step(motors, steps)
+
+	def v_apply(self, bodies: Body, dt: float) -> Body:
+		"""velocity-Relax the constraint set for one step"""
+		idx = self.body_idx
+		# note: pre-slice the inertia tensors since they are constant anyway?
+		rates = self.v_apply_indexed(bodies.motor[idx], bodies.rate[idx], bodies.inertia_inv[idx], dt)
+		return bodies.copy(rate=bodies.rate.at[idx].set(rates))
+
+	def v_apply_indexed(self, motors: Motor, rates, inertia_inv: "Operator", dt: float) -> Motor:
+		"""solve for velocity impulse exchange """
+		# FIXME: what to do about position error? should it impact damping calc? dont think so
+		# velocities = motors >> self.anchors.regressive(self.anchors.commutator(rates))
+		velocities: Line = motors >> self.anchors_map(rates)  # [2, c]; velocities on both bodies in world space
+		# FIXME: comp using connectivity?
+		# forque: Line = velocities[1] - velocities[0]  # [c]; impulse to be exchanged is velocity delta
+		forque: Line = -(self.connectivity * velocities).sum(axis=0)
+		magnitude: Scalar = forque.norm()  # [c]; constraint violation magnitude
+		direction: Line = forque / (magnitude + 1e-26)  # [c]; constraint violation direction
+
+		steps: BiVector = self.distribute_forque(
+			motors << direction,  # map the directions back to body local space
+			magnitude,
+			inertia_inv,
+			self.compliance * 0 # FIXME: add damping compliance?
+		)
+		return rates + steps
 
 	def distribute_forque(
 			self,
