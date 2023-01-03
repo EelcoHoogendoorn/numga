@@ -14,7 +14,7 @@ setup(
     description=("A geometric algebra library for JAX/numpy."),
     author="Eelco Hoogendoorn",
     author_email="hoogendoorn.eelco@gmail.com",
-    long_description=open("README.md").read(),
+    long_description=open("readme.md").read(),
     long_description_content_type="text/markdown",
     url="http://github.com/eelcohoogendoorn/numga",
     license="MIT",
