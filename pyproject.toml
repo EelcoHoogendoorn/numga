@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Geometric Algebra in numpy and JAX"
 authors = ["Eelco Hoogendoorn <hoogendoorn.eelco@gmail.com>"]
 license = "MIT"
-readme = "README.md"
+readme = "readme.md"
 
 [tool.poetry.dependencies]
 python = "^3.7"
