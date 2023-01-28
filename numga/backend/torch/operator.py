@@ -15,7 +15,7 @@ class TorchOperator(AbstractConcreteOperator):
 	@property
 	def shape(self):
 		"""Shape of the kernel, modulo subspace axis"""
-		return tuple(self.kernel.size)[:-(self.arity+1)]
+		return tuple(self.kernel.shape)[:-(self.arity+1)]
 	# @property
 	# def kernel_shape(self):
 	# 	"""Shape of the kernel, modulo subspace axis"""
