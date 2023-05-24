@@ -108,15 +108,15 @@ class OperatorFactory:
 		# FIXME: could make anti version of this, using anti-reverse
 		return self.involute(self.reverse(v))
 
-	@cache
-	def right_dual(self, v: SubSpace) -> Operator:
-		"""Compute right pss complement; d(v) = v * I
-		"""
-		return self.product(v, self.algebra.subspace.pseudoscalar())
-	@cache
-	def left_dual(self, v: SubSpace) -> Operator:
-		"""Compute left complement; d(v) = I * v"""
-		return self.product(self.algebra.subspace.pseudoscalar(), v)
+	# @cache
+	# def right_dual(self, v: SubSpace) -> Operator:
+	# 	"""Compute right pss complement; d(v) = v * I
+	# 	"""
+	# 	return self.product(v, self.algebra.subspace.pseudoscalar())
+	# @cache
+	# def left_dual(self, v: SubSpace) -> Operator:
+	# 	"""Compute left complement; d(v) = I * v"""
+	# 	return self.product(self.algebra.subspace.pseudoscalar(), v)
 	@cache
 	def right_complement(self, v: SubSpace) -> Operator:
 		"""Compute right complement; d(v) = v * I

@@ -62,3 +62,7 @@ class NumpyMultiVector(AbstractMultiVector):
 	def repeat(self, pattern, **kwargs):
 		from einops import repeat
 		return self.copy(repeat(self.values, pattern, **kwargs))
+	def reshape(self, shape):
+		return self.copy(self.values.reshape(shape+(self.values.shape[-1],)))
+	def flatten(self):
+		return self.reshape((-1,))

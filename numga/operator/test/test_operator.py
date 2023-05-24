@@ -88,3 +88,33 @@ def test_inertia():
 	I = p.inertia_map()
 	operator = I(b)
 	npt.assert_allclose(direct.values, operator.values)
+
+
+def test_quat_matrix():
+	"""Test reduction of quat multiplication to matrix form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+')
+	context = NumpyContext(algebra)
+
+	Q = context.subspace.even_grade()
+	q = context.multivector(Q, [1, 2, 3, 4])
+	op = context.operator.product(Q, Q)
+	o = op.partial({0:q})
+	print()
+	print(o.kernel)
+
+
+def test_quat_sandwich_matrix():
+	"""Test reduction of quat sandwich multiplication to matrix form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+w0')
+	context = NumpyContext(algebra)
+
+	Q = context.subspace.even_grade()
+	V = context.subspace.vector()
+	q = random_subspace(context, Q, (1,)).normalized()
+	op = context.operator.sandwich(Q, V)
+	o = op.partial({0:q, 2:q})
+	print()
+	print(o.kernel)
+

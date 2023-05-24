@@ -63,10 +63,10 @@ class AbstractMultiVector:
 	# unary ops
 	def dual(self):
 		"""Hodge dual"""
-		return self.operator.dual(self.subspace)(self)
+		return self.operator.right_hodge(self.subspace)(self)
 	def dual_inverse(self):
 		"""Hodge dual inverse"""
-		return self.operator.dual_inverse(self.subspace)(self)
+		return self.operator.right_hodge_inverse(self.subspace)(self)
 	def reverse(self):
 		"""~ operator, or blade-reversal"""
 		return self.operator.reverse(self.subspace)(self)

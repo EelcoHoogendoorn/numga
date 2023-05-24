@@ -62,6 +62,15 @@ class MatrixContainer(AbstractContainer):
 			idx,
 			x
 		)
+	@classmethod
+	def from_scipy(cls, context, sparse):
+		sparse = sparse.tocoo()
+		return cls(
+			sparse.shape,
+			sparse.row,
+			sparse.col,
+			context.multivector.scalar(sparse.data[:, None])
+		)
 	def copy(self, values):
 		return MatrixContainer(
 			self.shape,
@@ -90,7 +99,7 @@ class MatrixContainer(AbstractContainer):
 		values = values.copy(V)
 
 		self.shape = shape
-		self.rows = rows
+		self.rows = rows    # given group-by above, rows will be in sorted order
 		self.columns = columns
 		self.values = values
 
@@ -114,12 +123,11 @@ class MatrixContainer(AbstractContainer):
 			self.shape,
 			np.concatenate([self.rows, other.rows]),
 			np.concatenate([self.columns, other.columns]),
-			self.values.select_subspace(subspace).concatenate(other.values.select_subspace(subspace))
+			self.values.select_subspace(subspace).concatenate(other.values.select_subspace(subspace), axis=0)
 		)
+
 	def __sub__(self, other):
 		return self + (-other)
-
-	# operator overloads
 	def __neg__(self):
 		return self.copy(values=-self.values)
 	def __pos__(self):
@@ -162,19 +170,19 @@ class MatrixOperator:
 	def generate_pair_idx(a, b):
 		from collections import defaultdict
 		l2_pos = defaultdict(list)
-		for (p, k) in enumerate(b):
+		for (p, k) in enumerate(b): # NOTE: given that b is sorted in our application, could just find its slices rather than defaultdict
 			l2_pos[k].append(p)
 		return np.array([(p1, p2) for (p1, k) in enumerate(a) for p2 in l2_pos[k]]).T
 
 	def matmat(self, B: MatrixContainer) -> MatrixContainer:
 		A = self.container
 		assert A.shape[1] == B.shape[0]
-		aidx, bidx = self.generate_pair_idx(A.columns, B.rows)
+		a_idx, b_idx = self.generate_pair_idx(A.columns, B.rows)
 		op = self.operator(A.subspace, B.subspace)
 		return MatrixContainer(
 			(A.shape[0], B.shape[1]),
-			A.rows[aidx], B.columns[bidx],
-			op(A.values[aidx], B.values[bidx])
+			A.rows[a_idx], B.columns[b_idx],
+			op(A.values[a_idx], B.values[b_idx])
 		)
 
 	def __call__(self, x):
@@ -191,12 +199,14 @@ class MatrixOperator:
 
 class BoundMatrixOperator:
 	"""matrix with a specific operator and bound operand subspace
-	to be used for efficient matrix-vector products
+	given knowledge of what product and subspace we are multiplying with,
+	we can 'write our GA entries in matrix form',
+	which should speed up repeated matrix-vector products
 	"""
 	def __init__(self, container, operator):
 		self.container = container
 		self.operator = operator
-		# pre-bind the matrix entries; presumably gaster execution of repeated products
+		# pre-bind the matrix entries; presumably faster execution of repeated products
 		self.bound = self.operator.partial({0: container.values})
 
 	def matvec(self, x):
@@ -240,8 +250,6 @@ class BoundMatrixOperator:
 
 
 
-
-
 def test_dirac():
 	"""Test formation of quat matrix from dirac operator"""
 	print()
@@ -272,48 +280,12 @@ def test_dirac():
 	d = MatrixContainer.diag(x)
 	print((d*I).values)
 	print(d.dual().values)
-	# r = D.product(d).product(Q).as_dense()
-	# print(np.around(r, 2))
-	# return
 
 	SPD = ~D * D
 	# SPD = D * ~D
 	r = SPD.product(Q).as_dense()
 	print(np.around(r, 2))
 	assert SPD.subspace.equals.even_grade()
-
-
-
-def test_quat():
-	"""Test quaternionic geometric product matrix"""
-	print()
-	from numga.algebra.algebra import Algebra
-	from numga.backend.numpy.context import NumpyContext as Context
-	from numga.multivector.test.util import random_subspace
-
-	context = Context(Algebra.from_pqr(3, 0, 0))
-
-	Q = context.subspace.even_grade()
-	B = context.subspace.bivector()
-
-	builder = Builder((3, 3), Q)
-	v = random_subspace(context, Q, (10,))
-	builder.add(0, 1, v[0])
-	builder.add(0, 1, v[1])
-	builder.add(0, 2, v[2])
-	builder.add(2, 2, v[3])
-	builder.add(1, 1, v[4])
-	builder.add(0, 0, v[5])
-	builder.add(2, 0, v[6])
-	crs = builder.finalize()
-
-	x = random_subspace(context, Q, (3,))
-
-	SPD = crs.reverse() * (crs)
-	r = SPD.product(Q).as_dense()
-	print(np.around(r, 2))
-	r = SPD.reverse().product(Q).as_dense()
-	print(np.around(r, 2))
 
 
 def test_other():
@@ -358,8 +330,9 @@ def test_matmul():
 	r, c = [np.random.randint(0, s, e) for s in shape]
 	v = np.random.normal(size=e)
 
-	A = MatrixContainer(shape, r, c, context.multivector.scalar(v[:,None]))
 	As = scipy.sparse.coo_matrix((v,(r,c)), shape)
 	vs = (As.T * As).data
+	A = MatrixContainer.from_scipy(context, As)
+
 	v = (~A*A).values.values
 	assert np.allclose(np.sort(vs.flatten()), np.sort(v.flatten()))

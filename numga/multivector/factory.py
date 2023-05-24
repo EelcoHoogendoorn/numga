@@ -71,6 +71,8 @@ class MultiVectorFactory:
 	def k_vector(self, k: int, values=None):
 		return self.multivector(values, self.algebra.subspace.k_vector(k))
 
+	def even_grade(self, values=None):
+		return self.multivector(values, self.algebra.subspace.even_grade())
 	def rotor(self, values=None):
 		return self.multivector(values, self.algebra.subspace.even_grade())
 	def motor(self, values=None):
