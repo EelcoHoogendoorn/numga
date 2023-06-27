@@ -42,6 +42,8 @@ class NumpyMultiVector(AbstractMultiVector):
 	def shape(self):
 		"""Shape of the array, modulo subspace axis"""
 		return self.values.shape[:-1]
+	def __len__(self):
+		return self.shape[0]
 
 	def take_along_axis(self, idx, axis):
 		values = self.values
@@ -66,3 +68,14 @@ class NumpyMultiVector(AbstractMultiVector):
 		return self.copy(self.values.reshape(shape+(self.values.shape[-1],)))
 	def flatten(self):
 		return self.reshape((-1,))
+
+	def la_inverse(self):
+		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
+		op = self.operator.product(self.subspace, self.subspace)
+		k = op.partial({0: self}).kernel
+		idx, = np.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
+		r = np.linalg.solve(    # use least squares to solve for inverse
+			np.einsum('...ji,...ki->...jk', k, k), # k.T * k
+			k[..., idx],    #equal to  k.T * unit_scalar
+		)
+		return self.copy(r)

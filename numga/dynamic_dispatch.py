@@ -32,7 +32,7 @@ class DynamicDispatch:
 		Might not be desirable for free functions though; keep it optional?
 		"""
 		from types import MethodType
-		return MethodType(self, instance) if instance else self
+		return MethodType(self, instance) if not instance is None else self
 
 	def register(self, condition=lambda *s: True, position=None):
 		"""Add an implementation to our list of options"""

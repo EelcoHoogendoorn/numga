@@ -107,26 +107,34 @@ def motor_inverse_normalized(m: Motor) -> Motor:
 	return m.reverse()
 
 
-mv.inverse = SubspaceDispatch("""Inversion inv(x), such that inv(x) * x = 1, not assuming normalization""")
+mv.inverse = SubspaceDispatch("""Inversion inv(x), such that inv(x) * x = 1 = x * inv(x), not assuming normalization""")
 @mv.inverse.register(lambda s: s.equals.empty())
-def empty_inverse(s: Scalar) -> Scalar:
+def empty_inverse(s: "Empty") -> Scalar:
+	# note; this is a bit of a lie; inv(x) x != 1. why provide this franken-codepath again?
+	# to be more compatible with normal float semantics?
 	s = s.context.multivector.scalar()
-	return s / (s * 0) # note; this is a bit of a lie; inv(x) x != 1. why provide this franken-codepath again?
+	return s / (s * 0)
 @mv.inverse.register(lambda s: s.equals.scalar())
 def scalar_inverse(s: Scalar) -> Scalar:
 	return s.copy(1 / s.values)
-# @mv.inverse.register(lambda s: s.is_simple)   # reverse-simple seems to be the more general pattern; is there a real need for this?
-# def simple_inverse(s):
-# 	return s / s.squared()
+@mv.inverse.register(lambda s: s.is_simple)
+def simple_inverse(s):
+	return s / s.squared()
 @mv.inverse.register(lambda s: s.is_reverse_simple)
 def reverse_simple_inverse(s):
 	return s.reverse() / s.symmetric_reverse_product()
 @mv.inverse.register(lambda s: s.inside.study())
 def study_inverse(s: Study) -> Study:
+	"""make sure to register before even_inverse"""
 	return s.study_conjugate() / s.study_norm_squared()
 @mv.inverse.register(lambda s: s.inside.even_grade())
 def even_inverse(m: Motor) -> Motor:
+	"""use .motor_inverse if you dont like the norm-squared!"""
 	return m.reverse() / m.norm_squared()
+@mv.inverse.register()
+def default_inverse(mv) -> "MultiVector":
+	"""most general fallback"""
+	return mv.la_inverse()
 
 
 mv.inverse_square_root = SubspaceDispatch("""invsqrt(x), such that invsqrt(x) * x * invsqrt(x) = 1""")

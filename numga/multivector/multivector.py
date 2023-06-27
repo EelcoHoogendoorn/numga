@@ -274,6 +274,10 @@ class AbstractMultiVector:
 		else:
 			return self * other.inverse()
 
+	def la_inverse(self):
+		"""linear algebra based inverse"""
+		raise NotImplementedError('implementation is backend specific')
+
 	def __truediv__(self, other):
 		other = self.upcast(other)
 		return self._divide(other)

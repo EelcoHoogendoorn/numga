@@ -25,6 +25,26 @@ def test_print_quat():
 	print(op)
 
 
+def test_print_Levi_Civita():
+	"""Visualize Levi-Civita symbol"""
+	algebra = Algebra('x+y+z+')
+	V = algebra.subspace.vector()
+	op = algebra.operator.dual(algebra.operator.outer(V, V))
+	op = algebra.operator.cross_product(V, V)
+	print()
+	print(op)
+	print(op.kernel)
+
+
+def test_print_sta():
+	"""Visualize sta multiplication table"""
+	algebra = Algebra('w+x+y+t-')
+	even = algebra.subspace.even_grade()
+	op = algebra.operator.symmetric_reverse_product(even)
+	print()
+	print(op)
+
+
 def test_squared_norm():
 	"""Visualize squared norm of motor in 4d"""
 	algebra = Algebra('x+y+z+w+')
@@ -37,18 +57,22 @@ def test_squared_norm():
 def test_basic():
 	"""Test some operator output spaces"""
 	ga = Algebra('x+y+z+w0')
-	V = ga.subspace.vector()
+	V = ga.subspace.bivector()
 	Q = ga.subspace.even_grade()
 
 	# we can slice operators over all subalgebras; including such nonclassical ones
 	# we can get operators and subalgebras thereof without instantiating any vectors
 	sandwich = ga.operator.sandwich(Q, V)
 	assert sandwich.output == V, "sandwich should be grade preserving"
+	kernel = sandwich.kernel
+	sparsity = np.count_nonzero(kernel) / kernel.size
+	print(1/sparsity)
+	print(np.count_nonzero(kernel))
 
-	dot = ga.operator.dot(Q, V)
-	assert dot.output.equals.empty()
-	dot = ga.operator.dot(V, V)
-	assert dot.output.equals.scalar()
+	# dot = ga.operator.dot(Q, V)
+	# assert dot.output.equals.empty()
+	# dot = ga.operator.dot(V, V)
+	# assert dot.output.equals.scalar()
 
 
 def test_commutator():
@@ -66,6 +90,15 @@ def test_commutator():
 			except:
 				pass
 	print(r)
+
+
+def test_square_signs():
+	print()
+	algebra = Algebra('w+x+y+z+t-')
+	op = algebra.operator.squared(algebra.subspace.full())
+	# op = algebra.operator.dual(algebra.subspace.full())
+	print(op)
+
 
 from numga.multivector.test.util import random_subspace
 import numpy.testing as npt
@@ -118,3 +151,63 @@ def test_quat_sandwich_matrix():
 	print()
 	print(o.kernel)
 
+
+def test_projection_matrix():
+	"""Test reduction of camera projection to matrix form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+w0')
+	context = NumpyContext(algebra)
+
+	V = context.subspace.vector()
+	B = context.subspace.bivector()
+	T = context.subspace.antivector()
+
+	# tet = random_subspace(context, T, (4,)).normalized()
+	# camera_origin = tet[0]
+	# camera_plane = tet[1] & tet[2] & tet[3]
+
+	camera_origin = random_subspace(context, T).normalized()
+	camera_plane = random_subspace(context, V).normalized()
+
+	M = context.multivector
+	camera_origin = (M.vector() + M.z*0 + M.w).dual_inverse()
+	camera_plane = M.vector() + M.z + M.w
+
+
+	def projection(S):
+		op = algebra.operator.wedge(V, algebra.operator.regressive(T, S))
+		assert op.output == S
+		return op
+
+	def static_projection(origin, plane, S):
+		P = projection(S)
+		return context.operator(P).partial({0: plane, 1: origin})
+
+	# P = projection(B)
+	P = static_projection(camera_origin, camera_plane, T)
+	# P = projection(B)
+	print()
+	print(P.kernel.T)
+	print(P.operator.axes)
+	# print(P.inverse().kernel)
+
+
+# def test_projection_matrix_aspirational():
+# 	"""Test reduction of camera projection to matrix form"""
+# 	from numga.backend.numpy.context import NumpyContext
+# 	algebra = Algebra('x+y+z+w0')
+# 	context = NumpyContext(algebra)
+#
+# 	V = context.subspace.vector()
+# 	B = context.subspace.bivector()
+# 	T = context.subspace.antivector()
+# 	Q = context.subspace.even_grade()
+#
+# 	camera_origin = random_subspace(context, T).normalized()
+# 	camera_plane = random_subspace(context, V).normalized()
+# 	camera_frame = random_subspace(context, Q).normalized()
+#
+# 	rotation = camera_frame << T
+# 	# camera_frame.sandwich
+# 	projection = camera_plane ^ (camera_origin & T)
+# 	camera_transform = projection(rotation)

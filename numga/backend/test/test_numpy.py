@@ -1,6 +1,9 @@
+import numpy as np
+
 from numga.backend.numpy.context import *
 from numga.backend.numpy.operator import NumpySparseOperator
 
+import pytest
 
 def test_basic():
 	print()
@@ -103,3 +106,34 @@ def test_operator_composition():
 	print(op.partial({0:R}).kernel)
 	print(R ^ ga.multivector.x)
 	print()
+
+
+def test_inverse():
+	def check_inverse(x, i):
+		assert np.allclose((x * i - 1).values, 0, atol=1e-9)
+		assert np.allclose((i * x - 1).values, 0, atol=1e-9)
+
+	ga = NumpyContext('x+y+z+w+')
+	V = ga.subspace.vector()
+	x = ga.multivector.vector(values=np.random.normal(size=(2, len(V))))
+	check_inverse(x, x.la_inverse())
+	check_inverse(x, x.inverse())
+
+	V = ga.subspace.even_grade()
+	x = ga.multivector.even_grade(values=np.random.normal(size=(len(V))))
+	check_inverse(x, x.la_inverse())
+	check_inverse(x, x.inverse())
+
+	V = ga.subspace.multivector()
+	x = ga.multivector.multivector(values=np.random.normal(size=(len(V))))
+	check_inverse(x, x.la_inverse())
+
+	x = ga.multivector.x + 2
+	check_inverse(x, x.la_inverse())
+
+	with pytest.raises(Exception):
+		ga = NumpyContext('x+w0')
+		x = ga.multivector.w
+		i = x.la_inverse()
+
+

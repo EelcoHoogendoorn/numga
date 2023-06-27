@@ -87,9 +87,10 @@ class MatrixContainer(AbstractContainer):
 		return self.values.context
 	@cached_property
 	def indices(self):
+		"""compute indices for reduceat expression, assuming rows idx are in sorted order"""
 		# need to change indices logic if we want to support empty rows
 		# FIXME: reduceat does not even work with empty slices wtf?
-		indices = npi.as_index(self.rows).start  # slices for reduceat
+		indices = np.concatenate(([0], np.flatnonzero(np.diff(self.rows)) + 1))
 		assert len(indices) == self.shape[0]
 		return indices
 
@@ -331,8 +332,14 @@ def test_matmul():
 	v = np.random.normal(size=e)
 
 	As = scipy.sparse.coo_matrix((v,(r,c)), shape)
-	vs = (As.T * As).data
 	A = MatrixContainer.from_scipy(context, As)
 
+	xs = np.random.normal(size=shape[1])
+	ys = As * xs
+	x = context.multivector.scalar(xs[:,None])
+	y = A * x
+	assert np.allclose(ys, y.values.flatten())
+
+	vs = (As.T * As).data
 	v = (~A*A).values.values
 	assert np.allclose(np.sort(vs.flatten()), np.sort(v.flatten()))
