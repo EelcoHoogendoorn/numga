@@ -79,7 +79,7 @@ class SubSpaceFactory(FlyweightFactory):
 		blades = np.arange(self.algebra.n_blades)
 		grades, blades = npi.group_by(self.algebra.grade(blades), blades)
 		assert np.array_equal(grades, self.grades)
-		return np.array(blades, dtype=np.object)
+		return np.array(blades, dtype=object)
 
 	def from_blades(self, blades: List[int]) -> SubSpace:
 		blades = self.order_blades(blades)

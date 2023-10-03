@@ -16,11 +16,15 @@ except:
 
 def match(args):
 	"""Return unique value in sequence, if it exists"""
-	f = args[0]
-	if all(a == f for a in args):
-		return f
+	if len(args):
+		f = args[0]
+		if all(a == f for a in args):
+			return f
+		else:
+			raise Exception(f'Not all elements are equal: {args}')
 	else:
-		raise Exception(f'Not all elements are equal: {args}')
+
+		raise Exception(f'Empty sequence does not have a unique value')
 
 
 def reduce(s, op):
