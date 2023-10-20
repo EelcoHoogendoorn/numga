@@ -67,7 +67,7 @@ class Operator:
 	def is_diagonal(self, axes: Tuple[int, int]) -> bool:
 		"""Test if a particular axes pair represents a diagonal"""
 		sym = self.symmetry(axes, -1)
-		return np.alltrue(sym.kernel == 0)
+		return np.all(sym.kernel == 0)
 
 	@cached_property
 	def arity(self) -> int:
@@ -248,10 +248,10 @@ class Operator:
 			{a: np.binary_repr(a, d)[::-1] for a in axis.blades}
 			for axis in self.axes
 		]
-		assert np.alltrue(np.abs(self.kernel).sum(axis=-1) <= 1)
+		assert np.all(np.abs(self.kernel).sum(axis=-1) <= 1)
 
 		idx = np.nonzero(self.kernel)
-		signmap ={-1:'-', 0:' ', +1:'+'}
+		signmap = {-1: '-', 0: ' ', +1: '+'}
 		tokens = {}
 		for foo in zip(*idx):
 			*bar , baz = tuple(a[oa.blades[f]] for f, a, oa in zip(foo, axes, self.axes))
