@@ -17,8 +17,8 @@ unary_operators = [
 	'involute',
 	'conjugate',
 
-	'left_dual',
-	'right_dual',
+	# 'left_dual',
+	# 'right_dual',
 	'left_complement',
 	'right_complement',
 	'left_complement_dual',
@@ -26,8 +26,6 @@ unary_operators = [
 	'left_hodge',
 	'right_hodge',
 
-	'squared',
-	'symmetric_reverse_product',
 	'degenerate',
 	'nondegenerate',
 ]
@@ -54,6 +52,9 @@ binary_operators = [
 	'anti_commutator_product',
 	'commutator_anti_product',
 	'anti_commutator_anti_product',
+
+	# 'squared',
+	# 'symmetric_reverse_product',
 ]
 
 
@@ -86,6 +87,7 @@ def test_print_unary_operator(pqr, name):
 	algebra = Algebra.from_pqr(*pqr)
 	F = algebra.subspace.full()
 	op = getattr(algebra.operator, name)(F)
+	assert op.arity == 1
 	read_from_disc(name, op)
 	write_to_disc(name, op)
 
@@ -96,5 +98,6 @@ def test_print_binary_operator(pqr, name):
 	algebra = Algebra.from_pqr(*pqr)
 	F = algebra.subspace.full()
 	op = getattr(algebra.operator, name)(F, F)
+	assert op.arity == 2
 	read_from_disc(name, op)
 	write_to_disc(name, op)

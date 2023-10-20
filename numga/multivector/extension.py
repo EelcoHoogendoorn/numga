@@ -145,7 +145,8 @@ def scalar_inverse_square_root(s: Scalar) -> Scalar:
 # @mv.inverse_square_root.register(lambda s: s.inside.study())
 @mv.inverse_square_root.register()
 def default_inverse_square_root(x):
-	return x.square_root().inverse()
+	# FIXME: with order of operations reversed this fails! bug or feature?
+	return x.inverse().square_root()
 
 
 mv.exp = SubspaceDispatch("""Exponentials you know and love""")

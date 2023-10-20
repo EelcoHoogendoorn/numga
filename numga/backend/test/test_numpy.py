@@ -127,9 +127,17 @@ def test_inverse():
 	V = ga.subspace.multivector()
 	x = ga.multivector.multivector(values=np.random.normal(size=(len(V))))
 	check_inverse(x, x.la_inverse())
+	q = x.conjugate() * x.involute() * x.reverse()
+	qq = x.inverse_factor()
+	op = ga.operator.inverse_factor(x.subspace)
+	print(np.count_nonzero(op.kernel))
+	assert np.allclose(q.values, qq.values)
+
 
 	x = ga.multivector.x + 2
 	check_inverse(x, x.la_inverse())
+	q = x.inverse_factor()
+	check_inverse(x, q / x.scalar_product(q))
 
 	with pytest.raises(Exception):
 		ga = NumpyContext('x+w0')

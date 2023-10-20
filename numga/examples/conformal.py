@@ -202,20 +202,19 @@ class Conformal:
 		return pos
 
 	def split_points(self, T):
+		"""split point-pair bivector into two vector-valued points"""
 		assert T.subspace.inside.bivector()
 		b = (T.norm_squared() * -1).sqrt()
 		F = T / b
 		# FIXME: is this related to the invariant decomposition?
-		P = (F + 1) / +2
-		Pb = (F - 1) / -2
+		S = self.context.multivector.scalar([[1], [-1]])
+		P = (F * S + 1) / 2
 		Tn = T.inner(self.ni)
 		# Lasenby et al. - A Covariant Approach to Geometry using Geometric A.pdf 4.11
 		#  uses geo prod here; but 3-vec part is zero anyway?
-		B = P.inner(Tn)
-		A = Pb.inner(Tn)
-		assert A.subspace.inside.vector()
-		assert B.subspace.inside.vector()
-		return A, B
+		AB = P.inner(Tn)
+		assert AB.subspace.inside.vector()
+		return AB
 
 	def normalize(self, o):
 		"""normalize a CGA object o such that o.dot(ni) == -1"""

@@ -471,12 +471,23 @@ class OperatorFactory:
 		S = self.sandwich(R, v)
 		sign_mask = parity_to_sign(v.grades() * parity)
 		return Operator(kernel=S.kernel * sign_mask[None, :, None], axes=S.axes)
+
 	@cache
 	def inverse_transform(self, R: SubSpace, v: SubSpace) -> Operator:
 		"""Compute (R * v) * ~R, while preserving the outermorphism
 		Note; R is assumed normalized/motorized
 		"""
 		return self.transform(R.reverse(), v)
+
+	@cache
+	def inverse_factor(self, x: SubSpace) -> Operator:
+		"""Compute inverse_factor(x) = conj(x) * involute(x) * reverse(x)
+
+		inverse(x) = (x * inverse_factor(x))<0>
+		"""
+		p = self.product(self.conjugate(x), self.involute(x)).symmetry((0, 1), +1)
+		q = self.product(p, x.reverse())#.symmetry((1, 2), +1)
+		return q
 
 	@cache
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:

@@ -146,7 +146,7 @@ class AbstractMultiVector:
 	def symmetric_reverse_product(self):
 		return self.operator.symmetric_reverse_product(self.subspace)(self, self)
 
-	# our two ternary operators
+	# our ternary operators
 	def sandwich(self, other):
 		# FIXME: allow other to be a subspace; then do partial application?
 		#  one extra if of runtime overhead...
@@ -156,10 +156,14 @@ class AbstractMultiVector:
 		return self.operator.sandwich(self.subspace, other.subspace)(self, other, self)
 	def reverse_sandwich(self, other):
 		return self.operator.reverse_sandwich(self.subspace, other.subspace)(self, other, self)
+	def full_sandwich(self, other):
+		return self.operator.full_sandwich(self.subspace, other.subspace)(self, other, self)
 	def transform(self, other):
 		return self.operator.transform(self.subspace, other.subspace)(self, other, self)
 	def reverse_transform(self, other):
 		return self.operator.reverse_transform(self.subspace, other.subspace)(self, other, self)
+	def inverse_factor(self):
+		return self.operator.inverse_factor(self.subspace)(self, self, self)
 
 	def project(self, other):
 		return self.operator.project(self.subspace, other.subspace)(self, other, self)

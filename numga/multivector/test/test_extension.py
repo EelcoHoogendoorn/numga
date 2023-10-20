@@ -48,6 +48,8 @@ def test_study(descr):
 	Irs = s.inverse().square_root()
 
 	print(Irs)
+
+	# s.inverse_square_root()
 	r = s * Irs * Irs - 1
 	npt.assert_allclose(r.values, 0, atol=1e-9)
 
@@ -71,3 +73,43 @@ def test_bisect(descr):
 		# check exact inverse props
 		r = m.motor_log().exp()
 		npt.assert_allclose(m.values, r.values, atol=1e-9)
+
+
+def test_interpolate():
+	"""test various methods of motor interpolation"""
+	descr = (3, 0, 0)
+	print(descr)
+	algebra = Algebra.from_pqr(*descr)
+	ga = NumpyContext(algebra)
+
+	a = random_motor(ga)
+	b = random_motor(ga)
+
+	t = 0.33
+	def relative_lerp(a, b, t):
+		d = (~a * b).motor_log()
+		return a * (d * t).exp()
+	def absolute_lerp(a, b, t):
+		"""Note: this one is broken!"""
+		a, b = a.motor_log(), b.motor_log()
+		i = (a * (1 - t) + b * t)
+		return i.exp()
+	def linear_lerp(a, b, t):
+		return (a * (1-t) + b * t).normalized()
+	def bisection_lerp(a, b, t, n=3):
+		if 0 == n:
+			return linear_lerp(a, b, t)
+		else:
+			m = (a + b).normalized()
+			if t < 0.5:
+				return bisection_lerp(a, m, t*2, n - 1)
+			else:
+				return bisection_lerp(m, b, t*2-1, n - 1)
+
+	print(a)
+	print(b)
+	print()
+	# print(absolute_lerp(a, b, t))
+	print(relative_lerp(a, b, t))
+	print(bisection_lerp(a, b, t))
+	# print(linear_lerp(a, b, t))
