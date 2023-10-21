@@ -14,14 +14,16 @@ description = "Geometric Algebra in numpy and JAX"
 authors = ["Eelco Hoogendoorn <hoogendoorn.eelco@gmail.com>"]
 license = "MIT"
 readme = "readme.md"
+homepage = "https://github.com/EelcoHoogendoorn/numga"
+repository = "https://github.com/EelcoHoogendoorn/numga"
 
 [tool.poetry.dependencies]
 python = "^3.8"
 numpy = "^1.22"
 numpy-indexed = "^0.3.5"
 einops = "^0.7.0"
-jax = { version = "^0.3.25", optional = true }
-jaxlib = { version = "^0.3.25", optional = true }
+jax = { version = "^0.4", optional = true }
+jaxlib = { version = "^0.4", optional = true }
 # TODO: Poetry and torch are a bit annoying together (https://github.com/python-poetry/poetry/issues/4231)
 # Having CPU torch installed and installing without this extra will remove torch.
 # Having CPU torch installed and installing this extra will remove it and install the GPU version.
@@ -32,7 +34,7 @@ pytest = "^7"
 pytest-xdist = "^3.3.1"
 # These are only used in examples
 matplotlib = "^3"
-imageio = "*"
+imageio = "^2.9"
 
 [tool.poetry.extras]
 jax = ["jax", "jaxlib"]
