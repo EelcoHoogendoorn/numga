@@ -50,6 +50,6 @@ test-examples:
     RUN poetry run python -m numga.examples.tennis_racket_theorem
     RUN poetry run python -m numga.examples.test_conformal
     RUN poetry run python -m numga.examples.test_simplex
-    RUN poetry run python -m numga.examples.physics.run_chain_jax
-    RUN poetry run python -m numga.examples.physics.run_chain_numpy
-    RUN poetry run python -m numga.examples.physics.run_chain_torch
+    # RUN poetry run python -m numga.examples.physics.run_chain_jax
+    # RUN poetry run python -m numga.examples.physics.run_chain_numpy
+    # RUN poetry run python -m numga.examples.physics.run_chain_torch

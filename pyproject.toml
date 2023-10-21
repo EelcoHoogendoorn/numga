@@ -1,4 +1,13 @@
 [tool.poetry]
+classifiers = [
+    "Development Status :: 4 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["geometric algebra", "GA", "jax", "numpy"]
 name = "numga"
 version = "0.1.0"
 description = "Geometric Algebra in numpy and JAX"
