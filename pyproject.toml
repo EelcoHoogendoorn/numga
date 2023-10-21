@@ -16,6 +16,7 @@ license = "MIT"
 readme = "readme.md"
 homepage = "https://github.com/EelcoHoogendoorn/numga"
 repository = "https://github.com/EelcoHoogendoorn/numga"
+packages = [{ include = "numga" }]
 
 [tool.poetry.dependencies]
 python = "^3.8"
