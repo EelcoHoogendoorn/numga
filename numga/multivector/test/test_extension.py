@@ -27,29 +27,25 @@ def test_study(descr):
 	s = m.symmetric_reverse_product()
 	assert s.subspace.inside.study()
 
-	print(s)
 	print('inverse')
 	Is = s.inverse()
-	print(Is)
 	r = Is * s - 1
 	npt.assert_allclose(r.values, 0, atol=1e-9)
 
 	print('square root')
 	rs = s.square_root()
-	print(rs)
 	r = rs * rs - s
 	npt.assert_allclose(r.values, 0, atol=1e-9)
 	zero = s * 0
 	rs = zero.square_root()
-	print(rs)
 	npt.assert_allclose(rs.values, 0, atol=1e-9)
 
 	print('inverse square root')
 	Irs = s.inverse().square_root()
 
-	print(Irs)
+	Irs2 = s.square_root().inverse()
+	npt.assert_allclose(Irs2.values, Irs.values, atol=1e-6)
 
-	# s.inverse_square_root()
 	r = s * Irs * Irs - 1
 	npt.assert_allclose(r.values, 0, atol=1e-9)
 

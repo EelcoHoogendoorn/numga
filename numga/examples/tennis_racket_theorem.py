@@ -14,7 +14,7 @@ runtime = 200
 # p>3 is fascinating; some medial axes become seemingly chaotic
 # but stranger still, some medial axes actually stabilize?
 
-context = Context(Algebra.from_pqr(4, 0, 0), dtype=np.float64)
+context = Context(Algebra.from_pqr(3, 0, 0), dtype=np.float64)
 
 
 def make_n_cube(N):
@@ -38,7 +38,7 @@ states = []
 for i in range(int(runtime / dt)):
 	body = body.integrate(dt)
 
-	if True:
+	if False:
 		# optionally, enforce strict energy conservation
 		energy_violation = body.kinetic_energy() / E
 		body = body.copy(rate=body.rate / energy_violation.sqrt())

@@ -7,14 +7,12 @@ def write_animation_simulation(
 	output_filename,
 ):
 	"""write an animation based on a set of states"""
-	import imageio
-	writer = imageio.get_writer(output_filename)
-	for body in bodies:
-		im = render(body)[..., None]
-		# w, h, c = im.shape
-		# im = im.reshape(w//2, 2, h//2, 2, c).mean(axis=(1, 3)).astype(im.dtype)
-		writer.append_data(np.array(im))
-	writer.close()
+	animation = np.array([render(body) for body in bodies])
+	import imageio.v3 as iio
+	animation -= animation.min()
+	animation = animation / animation.max()
+	animation = (animation * 255).astype(np.uint8)
+	iio.imwrite(output_filename, animation, loop=0, format='GIF', duration=50)
 
 
 def render(context, states, jit=lambda x: x):
