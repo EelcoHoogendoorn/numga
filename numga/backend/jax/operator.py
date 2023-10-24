@@ -132,10 +132,11 @@ class JaxDenseOperator(JaxOperator):
 	@partial(jax.jit, static_argnums=(0,))
 	def __call__(self, *inputs: Tuple[JaxMultiVector]) -> JaxMultiVector:
 		# kernel, shapes = self.precompute
+		shape = jnp.broadcast_shapes(*(i.shape for i in inputs))
 		return self.context.multivector(
 			values=jnp.sum(
-				math.prod((i.values.reshape(s) for i, s in zip(inputs, self.shapes)), start=self.kernel),
-				axis=range(self.arity)
+				math.prod((i.values.reshape(i.shape + s) for i, s in zip(inputs, self.shapes)), start=self.kernel),
+				axis=range(len(shape), len(shape)+self.arity)# FIXME: negative indexing rather than len(shape)?
 			),
 			subspace=self.output
 		)
@@ -167,7 +168,6 @@ class JaxEinsumOperator(JaxOperator):
 
 	@partial(jax.jit, static_argnums=(0,))
 	def __call__(self, *inputs: Tuple[JaxMultiVector]) -> JaxMultiVector:
-		# NOTE: it is assumed here broadcasting is left purely to vmap
 		return self.context.multivector(
 			subspace=self.output,
 			values=jnp.einsum(
