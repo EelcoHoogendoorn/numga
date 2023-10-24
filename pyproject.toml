@@ -1,23 +1,44 @@
 [tool.poetry]
+classifiers = [
+    "Development Status :: 4 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["geometric algebra", "GA", "jax", "numpy"]
 name = "numga"
 version = "0.1.0"
 description = "Geometric Algebra in numpy and JAX"
 authors = ["Eelco Hoogendoorn <hoogendoorn.eelco@gmail.com>"]
 license = "MIT"
 readme = "readme.md"
+homepage = "https://github.com/EelcoHoogendoorn/numga"
+repository = "https://github.com/EelcoHoogendoorn/numga"
+packages = [{ include = "numga" }]
 
 [tool.poetry.dependencies]
-python = "^3.7"
-numpy = "^1.1"
+python = "^3.8"
+numpy = "^1.22"
 numpy-indexed = "^0.3.5"
+einops = "^0.7.0"
+jax = { version = "^0.4", optional = true }
+jaxlib = { version = "^0.4", optional = true }
+# TODO: Poetry and torch are a bit annoying together (https://github.com/python-poetry/poetry/issues/4231)
+# Having CPU torch installed and installing without this extra will remove torch.
+# Having CPU torch installed and installing this extra will remove it and install the GPU version.
+# torch = { version = "^2.0.0", optional = true }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7"
+pytest-xdist = "^3.3.1"
+# These are only used in examples
 matplotlib = "^3"
-jax = "^0.3.25"
-jaxlib = "*"
-einops = "*"
-imageio = "*"
+imageio = "^2.9"
+
+[tool.poetry.extras]
+jax = ["jax", "jaxlib"]
 
 [build-system]
 requires = ["poetry-core"]
