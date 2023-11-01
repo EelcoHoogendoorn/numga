@@ -97,18 +97,6 @@ class NumpyOperator(AbstractConcreteOperator):
 				axes=(self.operator.axes[1], self.operator.axes[0]),
 			)
 		)
-	# def quadratic(self, l, r=None):
-	# 	"""Compute quadratic form of unary operator; l*O*r"""
-	# 	assert self.arity == 1
-	# 	r = l if r is None else r
-	# 	output = self.broadcast_allocate((l, r), self.algebra.subspace.scalar())
-	# 	np.einsum(
-	# 		'...ij,...i,...j->...',
-	# 		self.kernel, l.values, r.values,
-	# 		out=output.values[..., 0],
-	# 		optimize=True
-	# 	)
-	# 	return output
 
 
 class NumpyEinsumOperator(NumpyOperator):

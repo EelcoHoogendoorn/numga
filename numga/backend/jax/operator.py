@@ -35,10 +35,6 @@ class JaxOperator(AbstractConcreteOperator):
 	def shape(self):
 		"""Shape of the kernel, modulo subspace axis"""
 		return self.kernel.shape[:-(self.arity+1)]
-	# @property
-	# def kernel_shape(self):
-	# 	"""Shape of the kernel, modulo subspace axis"""
-	# 	return self.kernel.shape[self.arity:]
 
 	def broadcast_allocate(self, inputs: Tuple[JaxMultiVector], output=None) -> JaxMultiVector:
 		"""Allocation for a set of inputs, with multivector components as last axis,
@@ -124,19 +120,20 @@ class JaxDenseOperator(JaxOperator):
 
 	def __init__(self, *args, **kwargs):
 		super(JaxDenseOperator, self).__init__(*args, **kwargs)
-		# put kernel on device
-		# self.jax_kernel = np.array(self.kernel)
 		# precompute reshape operations
 		self.shapes = self.broadcasting_shapes
+		# contraction over all kernel input axes
+		self.sum_axes = tuple(-(a + 2) for a in range(self.arity))
 
 	@partial(jax.jit, static_argnums=(0,))
 	def __call__(self, *inputs: Tuple[JaxMultiVector]) -> JaxMultiVector:
-		# kernel, shapes = self.precompute
-		shape = jnp.broadcast_shapes(*(i.shape for i in inputs))
 		return self.context.multivector(
 			values=jnp.sum(
-				math.prod((i.values.reshape(i.shape + s) for i, s in zip(inputs, self.shapes)), start=self.kernel),
-				axis=range(len(shape), len(shape)+self.arity)# FIXME: negative indexing rather than len(shape)?
+				math.prod(
+					(i.values.reshape(i.shape + s) for i, s in zip(inputs, self.shapes)),
+					start=self.kernel
+				),
+				axis=self.sum_axes
 			),
 			subspace=self.output
 		)

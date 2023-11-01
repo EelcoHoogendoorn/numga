@@ -78,18 +78,20 @@ def test_basic():
 def test_commutator():
 	"""Visualize the output grade of the commutator of pairs of i-j vectors"""
 	print()
-	algebra = Algebra('x+y+z+w+')
+	algebra = Algebra.from_pqr(8, 0, 0)
 	n = algebra.n_dimensions + 1
 	dims = range(n)
 	v = [algebra.subspace.k_vector(i) for i in dims]
-	r = -np.ones((n, n))
+	r = np.empty((n, n), dtype=object)
+
 	for i in dims:
 		for j in dims:
 			try:
-				r[i, j] = algebra.operator.anti_commutator(v[i], v[j]).output.grade()
+				s = str(np.unique(algebra.operator.commutator(v[i], v[j]).output.grades()))
+				r[i, j] = s.rjust(5, ' ')
 			except:
 				pass
-	print(r)
+	print('\n'.join(' '.join(q) for q in r))
 
 
 def test_square_signs():
@@ -102,6 +104,7 @@ def test_square_signs():
 
 from numga.multivector.test.util import random_subspace
 import numpy.testing as npt
+
 
 def test_inertia():
 	"""Test equivalence of composed ternary operators to their direct expression form"""

@@ -71,11 +71,12 @@ class NumpyMultiVector(AbstractMultiVector):
 
 	def la_inverse(self):
 		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
-		op = self.operator.product(self.subspace, self.subspace)
+		inverse_subspace = self.operator.inverse_factor(self.subspace).output
+		op = self.operator.product(self.subspace, inverse_subspace)
 		k = op.partial({0: self}).kernel
 		idx, = np.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
 		r = np.linalg.solve(    # use least squares to solve for inverse
 			np.einsum('...ji,...ki->...jk', k, k), # k.T * k
 			k[..., idx],    #equal to  k.T * unit_scalar
 		)
-		return self.copy(r)
+		return self.context.multivector(values=r, subspace=inverse_subspace)

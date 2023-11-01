@@ -39,7 +39,7 @@ class SubSpaceInterface:
 	def __hash__(self):
 		return hash((id(self.algebra), hash(self.blades.tostring())))
 	def __eq__(self, other: "SubSpaceInterface"):
-		return (self is other) or ((self.algebra is other.algebra) and np.alltrue(self.blades == other.blades))
+		return (self is other) or ((self.algebra is other.algebra) and np.all(self.blades == other.blades))
 
 	def __contains__(self, other: "SubSpaceInterface"):
 		return set(other.blades) in set(self.blades)
