@@ -1,5 +1,6 @@
 import numpy as np
 
+from numga.algebra.algebra import Algebra
 from numga.backend.numpy.context import *
 from numga.backend.numpy.operator import NumpySparseOperator
 
@@ -40,7 +41,6 @@ def test_basic():
 	print_op(S)
 	S = ga.operator.product(Q, Q)
 	print_op(S)
-
 
 
 def test_operator():
@@ -87,7 +87,6 @@ def test_translate():
 	yz = y ^ z
 	zx = z ^ x
 
-
 	T = xw * yw
 	print(T)
 	print(T.symmetric_reverse_product())
@@ -121,55 +120,71 @@ def check_inverse(x, i):
 	assert np.allclose((i * x - 1).values, 0, atol=1e-9)
 
 
-def test_inverse_counterexample():
-	"""test counterexample that inverse_factor method fails to solve
-	afaik, the inverse_factor method should work for all multivectors < 6d
-	"""
-	ga = NumpyContext('x+y+z+a+b+c+')
-	mv = ga.multivector
-	x = 2 + mv.xy + mv.ab + mv.xyzabc
-
-	i = x.la_inverse()
-	check_inverse(x, i)
-
-	with pytest.raises(Exception):
-		i = x.inverse()
-		check_inverse(x, i)
-
-
 def test_inverse():
-	"""test some general inversion cases"""
-	ga = NumpyContext('x+y+z+w+')
+	"""Test some general inversion cases in dimension < 6"""
+	ga = NumpyContext(Algebra.from_pqr(4, 1, 0))
 	V = ga.subspace.vector()
-	x = ga.multivector.vector(values=np.random.normal(size=(2, len(V))))
+	x = random_subspace(ga, V, (10,))
 	check_inverse(x, x.la_inverse())
 	check_inverse(x, x.inverse())
 
 	V = ga.subspace.even_grade()
-	x = ga.multivector.even_grade(values=np.random.normal(size=(len(V))))
+	x = random_subspace(ga, V, (10,))
 	check_inverse(x, x.la_inverse())
 	check_inverse(x, x.inverse())
 
 	V = ga.subspace.multivector()
-	x = ga.multivector.multivector(values=np.random.normal(size=(len(V))))
+	x = random_subspace(ga, V, (10,))
 	check_inverse(x, x.la_inverse())
+	check_inverse(x, x.inverse())
+
 	q = x.conjugate() * x.involute() * x.reverse()
 	qq = x.inverse_factor()
 	op = ga.operator.inverse_factor(x.subspace)
 	print(np.count_nonzero(op.kernel))
 	assert np.allclose(q.values, qq.values)
 
-
-	x = ga.multivector.x + 2
+	x = ga.multivector.a + 2
 	check_inverse(x, x.la_inverse())
 	q = x.inverse_factor()
 	check_inverse(x, q / x.scalar_product(q))
 
 
+def test_inverse_la():
+	"""test some inversion in 6 dimensions"""
+	ga = NumpyContext(Algebra.from_pqr(5, 1, 0))
+	V = ga.subspace.vector()
+	x = random_subspace(ga, V, (10,))
+	check_inverse(x, x.la_inverse())
+
+	V = ga.subspace.even_grade()
+	x = random_subspace(ga, V, (10,))
+	check_inverse(x, x.la_inverse())
+
+	V = ga.subspace.multivector()
+	x = random_subspace(ga, V, (10,))
+	check_inverse(x, x.la_inverse())
+
+
 def test_inverse_degenerate():
+	"""Test that degenerate vectors may not be invertable"""
 	with pytest.raises(Exception):
 		ga = NumpyContext('x+w0')
 		x = ga.multivector.w
 		i = x.la_inverse()
 
 
+def test_inverse_counterexample():
+	"""test counterexample that inverse_factor method fails to solve,
+	but works using the more general linear algebra approach
+	"""
+	ga = NumpyContext('x+y+z+a+b+c+')
+	mv = ga.multivector
+	x = 1 + mv.xy + mv.ab + mv.xyzabc
+	i = x.la_inverse()
+	print(i)    # note this particular 4-component multivector has an 8-component inverse
+	check_inverse(x, i)
+
+	with pytest.raises(Exception):
+		i = x.inverse()
+		check_inverse(x, i)
