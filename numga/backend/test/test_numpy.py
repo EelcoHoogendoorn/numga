@@ -246,7 +246,6 @@ def test_inverse_simplicifation_failure():
 	print(x)
 	print(y)
 	print(z)
-	return
 
 
 def test_inverse_6d():
@@ -263,6 +262,5 @@ def test_inverse_6d():
 	print(i)
 	check_inverse(x, i)
 
-	# m = random_motor(ga, (1,))
-	# check_inverse(m, m.inverse())
-
+	m = random_motor(ga, (1,))
+	check_inverse(m, m.inverse())

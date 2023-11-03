@@ -105,12 +105,8 @@ class OperatorFactory:
 			grades = (1, subspace.algebra.n_dimensions - 1)
 		else:
 			grades = (1, )
+		grades = (0, subspace.algebra.n_dimensions)
 		sign = -parity_to_sign(np.array([int(g) in grades for g in subspace.grades()]))
-		# sign = parity_to_sign(np.logical_and(
-		# 	subspace.grades() > 0,
-		# 	subspace.grades() < subspace.algebra.n_dimensions)
-		# )
-		# sign = -parity_to_sign(subspace.grades() < subspace.algebra.n_dimensions)
 		return self.diagonal(subspace, sign)
 
 
