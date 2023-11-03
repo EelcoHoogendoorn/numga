@@ -90,9 +90,34 @@ class OperatorFactory:
 		"""Restrict i to o; drop terms not in o"""
 		return self.select(i, o.intersection(i))
 
+	# @cache
+	# def grade_negation(self, subspace, grades: Tuple[int]) -> "Operator":
+	# 	sign = parity_to_sign([g in grades for g in subspace.grades()])
+	# 	return self.diagonal(subspace, sign)
+	@cache
+	def scalar_negation(self, subspace) -> "Operator":
+		sign = parity_to_sign(subspace.grades() > 0)
+		return self.diagonal(subspace, sign)
+	@cache
+	def pseudoscalar_negation(self, subspace) -> "Operator":
+		# grades = (1, subspace.algebra.n_dimensions - 1)
+		if self.algebra.n_dimensions % 2 == 1:
+			grades = (1, subspace.algebra.n_dimensions - 1)
+		else:
+			grades = (1, )
+		sign = -parity_to_sign(np.array([int(g) in grades for g in subspace.grades()]))
+		# sign = parity_to_sign(np.logical_and(
+		# 	subspace.grades() > 0,
+		# 	subspace.grades() < subspace.algebra.n_dimensions)
+		# )
+		# sign = -parity_to_sign(subspace.grades() < subspace.algebra.n_dimensions)
+		return self.diagonal(subspace, sign)
+
+
 	@cache
 	def reverse(self, v: SubSpace) -> Operator:
 		"""Reverse the order of all basis blades"""
+		# return self.grade_negation(self.algebra.n_grades())
 		reverse_sign = parity_to_sign(self.algebra.grade(v.subspace.blades) // 2)
 		return self.diagonal(v, reverse_sign)
 
@@ -376,6 +401,27 @@ class OperatorFactory:
 		"""l * ~r"""
 		return self.product(l, self.reverse(r))
 	@cache
+	def involute_product(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""l * r.involute()"""
+		return self.product(l, self.involute(r))
+	@cache
+	def conjugate_product(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""l * r.conjugate()"""
+		return self.product(l, self.conjugate(r))
+	@cache
+	def scalar_negation_product(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""l * r.scalar_negation()"""
+		return self.product(l, self.scalar_negation(r))
+	@cache
+	def pseudoscalar_negation_product(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""l * r.pseudoscalar_negation()"""
+		return self.product(l, self.pseudoscalar_negation(r))
+
+	@cache
+	def study_conjugate_product(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""l * r.study_conjugate()"""
+		return self.product(l, self.study_conjugate(r))
+	@cache
 	def anti_reverse_product(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""l * ~r"""
 		return self.antify(self.reverse_product, l, r)
@@ -384,6 +430,24 @@ class OperatorFactory:
 	def symmetric_reverse_product(self, x: SubSpace) -> Operator:
 		"""x * ~x"""
 		return self.reverse_product(x, x).symmetry((0, 1), +1)
+	@cache
+	def symmetric_involute_product(self, x: SubSpace) -> Operator:
+		"""x * x.involute()"""
+		return self.involute_product(x, x).symmetry((0, 1), +1)
+	@cache
+	def symmetric_conjugate_product(self, x: SubSpace) -> Operator:
+		"""x * x.conjugate()"""
+		return self.conjugate_product(x, x).symmetry((0, 1), +1)
+	@cache
+	def symmetric_study_conjugate_product(self, x: SubSpace) -> Operator:
+		"""x * x.conjugate()"""
+		return self.study_conjugate_product(x, x).symmetry((0, 1), +1)
+	@cache
+	def symmetric_scalar_negation_product(self, x: SubSpace) -> Operator:
+		return self.scalar_negation_product(x, x).symmetry((0, 1), +1)
+	@cache
+	def symmetric_pseudoscalar_negation_product(self, x: SubSpace) -> Operator:
+		return self.pseudoscalar_negation_product(x, x).symmetry((0, 1), +1)
 
 	@cache
 	def squared(self, v: SubSpace) -> Operator:

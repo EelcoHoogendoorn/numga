@@ -63,18 +63,17 @@ def test_2d_pga():
 	rotation_vector = bivector.nondegenerate()
 	translation_vector = bivector.degenerate()
 
-	assert scalar.is_simple
-	assert vector.is_simple
-	assert bivector.is_simple
-	assert rotation_vector.is_simple
+	assert scalar.is_n_simple(0)
+	assert vector.is_n_simple(1)
+	assert bivector.is_n_simple(1)
+	assert rotation_vector.is_n_simple(1)
 	assert not rotation_vector.is_degenerate
 	assert len(rotation_vector) == 1
-	assert translation_vector.is_simple
+	assert translation_vector.is_n_simple(1)
 	assert translation_vector.is_degenerate
 	assert len(translation_vector) == 2
 
-	assert not even_grade.is_simple
-	assert even_grade.is_reverse_simple
+	assert even_grade.is_reverse_n_simple(1)
 	assert even_grade.is_subalgebra
 
 	print(full.bit_blades())
@@ -105,21 +104,17 @@ def test_3d_pga():
 	# FIXME: translation motor would be translation_vector + scalar
 	#  should we call it rotor/translator? and is there a natural way to construct it?
 
-	assert vector.is_simple
-	assert not bivector.is_simple
-	assert bivector.is_bisimple
-	assert rotation_vector.is_simple
+	assert vector.is_n_simple(1)
+	assert bivector.is_n_simple(2)
+	assert rotation_vector.is_n_simple(1)
 	assert not rotation_vector.is_degenerate
 	assert len(rotation_vector) == 3
-	assert translation_vector.is_simple
+	assert translation_vector.is_n_simple(1)
 	assert translation_vector.is_degenerate
 	assert len(translation_vector) == 3
-	assert trivector.is_simple
-	assert not even_grade.is_simple
-	assert not even_grade.is_reverse_simple
-	assert even_grade.is_reverse_bisimple
-	assert not quaternion.is_simple
-	assert quaternion.is_reverse_simple
+	assert trivector.is_n_simple(1)
+	assert even_grade.is_n_simple(2)
+	assert quaternion.is_n_simple(1)
 
 	print(full.bit_blades())
 

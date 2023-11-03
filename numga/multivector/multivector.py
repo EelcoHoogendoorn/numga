@@ -76,6 +76,15 @@ class AbstractMultiVector:
 	def conjugate(self):
 		"""Conjugation; or combined reversion and involution"""
 		return self.operator.conjugate(self.subspace)(self)
+	def study_conjugate(self):
+		"""Conjugation; or combined reversion and involution"""
+		return self.operator.study_conjugate(self.subspace)(self)
+	def scalar_negation(self):
+		""""""
+		return self.operator.scalar_negation(self.subspace)(self)
+	def pseudoscalar_negation(self):
+		""""""
+		return self.operator.pseudoscalar_negation(self.subspace)(self)
 
 	# binary ops
 	def product(self, other: "AbstractMultiVector") -> "AbstractMultiVector":
@@ -130,21 +139,38 @@ class AbstractMultiVector:
 		return self.operator.right_contract(self.subspace, other.subspace)(self, other)
 
 
-	def squared(self):
-		return self.operator.squared(self.subspace)(self, self)
-	# def norm_squared(self):
-	# 	return self.operator.norm_squared(self.subspace)(self, self)
-	# def weight_norm_squared(self):
-	# 	return self.operator.weight_norm_squared(self.subspace)(self, self)
-	# def bulk_norm_squared(self):
-	# 	return self.operator.bulk_norm_squared(self.subspace)(self, self)
-
 	def reverse_product(self, other):
 		return self.operator.reverse_product(self.subspace, other.subspace)(self, other)
+	def involute_product(self, other):
+		return self.operator.involute_product(self.subspace, other.subspace)(self, other)
+	def conjugate_product(self, other):
+		return self.operator.conjugate_product(self.subspace, other.subspace)(self, other)
+	def scalar_negation_product(self, other):
+		return self.operator.scalar_negation_product(self.subspace, other.subspace)(self, other)
+	def pseudoscalar_negation_product(self, other):
+		return self.operator.pseudoscalar_negation_product(self.subspace, other.subspace)(self, other)
+
 	def anti_reverse_product(self, other):
 		return self.operator.anti_reverse_product(self.subspace, other.subspace)(self, other)
+
+	def squared(self):
+		# print(' squared', end='')
+		return self.operator.squared(self.subspace)(self, self)
 	def symmetric_reverse_product(self):
+		# print(' reversed', end='')
 		return self.operator.symmetric_reverse_product(self.subspace)(self, self)
+	def symmetric_involute_product(self):
+		# print(' involute', end='')
+		return self.operator.symmetric_involute_product(self.subspace)(self, self)
+	def symmetric_conjugate_product(self):
+		# print(' conjugate', end='')
+		return self.operator.symmetric_conjugate_product(self.subspace)(self, self)
+	def symmetric_scalar_negation_product(self):
+		# print(' scalar-neg', end='')
+		return self.operator.symmetric_scalar_negation_product(self.subspace)(self, self)
+	def symmetric_pseudoscalar_negation_product(self):
+		# print(' scalar-pss-neg', end='')
+		return self.operator.symmetric_pseudoscalar_negation_product(self.subspace)(self, self)
 
 	# our ternary operators
 	def sandwich(self, other):
@@ -278,9 +304,32 @@ class AbstractMultiVector:
 		else:
 			return self * other.inverse()
 
-	def la_inverse(self):
+	def inverse_hitzer(self):
+		"""Hitzer factor based inverse"""
+		i = self.inverse_factor()
+		return i / self.scalar_product(i)
+
+	def inverse_la(self):
 		"""linear algebra based inverse"""
 		raise NotImplementedError('implementation is backend specific')
+
+	def inverse_shirokov(self):
+		"""Returns the inverted multivector
+		`X^-1` such that `X * X^-1 = 1`.
+
+		Using Shirokov's inverse algorithm that works in arbitrary dimensions,
+		see https://arxiv.org/abs/2005.04015 Theorem 4.
+		"""
+		a = self
+		n = 2 ** ((self.algebra.n_dimensions + 1) // 2)
+		u = a
+		for k in range(1, n):
+			c = (n / k) * u.select[0]
+			u_minus_c = u - c
+			u = a * u_minus_c
+
+		# adj / det
+		return u_minus_c / u.restrict[0]
 
 	def __truediv__(self, other):
 		other = self.upcast(other)

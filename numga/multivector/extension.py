@@ -31,10 +31,10 @@ from numga.multivector.multivector import AbstractMultiVector as mv
 
 # NOTE: these methods have a study_ prefix;
 # since otherwise theyd shadow equally named functionality with subtly different outcomes
-mv.study_conjugate = SubspaceDispatch("""Study conjugation; tack a minus sign on grade 4 components""")
-@mv.study_conjugate.register(lambda s: s.inside.study())
-def study_conjugate(s: Study) -> Study:
-	return s.operator.study_conjugate(s.subspace)(s)
+# mv.study_conjugate = SubspaceDispatch("""Study conjugation; tack a minus sign on grade 4 components""")
+# @mv.study_conjugate.register(lambda s: s.inside.study())
+# def study_conjugate(s: Study) -> Study:
+# 	return s.operator.study_conjugate(s.subspace)(s)
 mv.study_norm_squared = SubspaceDispatch("""Study norm squared""")
 @mv.study_norm_squared.register(lambda s: s.inside.study())
 def study_norm_squared(s: Study) -> Scalar:
@@ -46,7 +46,7 @@ def study_norm(x: Study) -> Scalar:
 
 
 mv.norm_squared = SubspaceDispatch("""Norm squared; note it does not always yield a positive value, or a scalar for that matter! To the mathematical purist, this isnt really a norm, but we are going by prevailing GA convention here""")
-@mv.norm_squared.register(lambda s: s.is_reverse_simple)
+@mv.norm_squared.register(lambda s: s.is_reverse_n_simple(1))
 def reverse_simple_norm_squared(x) -> Scalar:
 	return x.symmetric_reverse_product()
 @mv.norm_squared.register(lambda s: s.inside.even_grade())
@@ -110,31 +110,49 @@ def motor_inverse_normalized(m: Motor) -> Motor:
 mv.inverse = SubspaceDispatch("""Inversion inv(x), such that inv(x) * x = 1 = x * inv(x), not assuming normalization""")
 @mv.inverse.register(lambda s: s.equals.empty())
 def empty_inverse(s: "Empty") -> Scalar:
-	# note; this is a bit of a lie; inv(x) x != 1. why provide this franken-codepath again?
-	# to be more compatible with normal float semantics?
+	"""note; this is a bit of a lie; inv(x) x != 1.
+	why provide this franken-codepath again?
+	to be more compatible with normal float semantics?"""
 	s = s.context.multivector.scalar()
 	return s / (s * 0)
 @mv.inverse.register(lambda s: s.equals.scalar())
 def scalar_inverse(s: Scalar) -> Scalar:
 	return s.copy(1 / s.values)
-@mv.inverse.register(lambda s: s.is_simple)
-def simple_inverse(s):
-	return s / s.squared()
-@mv.inverse.register(lambda s: s.is_reverse_simple)
-def reverse_simple_inverse(s):
-	return s.reverse() / s.symmetric_reverse_product()
-@mv.inverse.register(lambda s: s.inside.study())
-def study_inverse(s: Study) -> Study:
-	"""make sure to register before even_inverse"""
-	return s.study_conjugate() / s.study_norm_squared()
-@mv.inverse.register(lambda s: s.inside.even_grade())
-def even_inverse(m: Motor) -> Motor:
-	"""use .motor_inverse if you dont like the norm-squared!"""
-	return m.reverse() / m.norm_squared()
-@mv.inverse.register()
-def default_inverse(mv) -> "MultiVector":
-	"""most general fallback"""
-	return mv.la_inverse()
+
+def simplify_inverses(n):
+	"""Register inversion rules based on simplifying the expression by self-involutions
+	We register the simplest paths first and only go 3 levels of recursion deep;
+	This suffices to invert in dimension < 6,
+	and in higher dimensions we need different strats not more recursion
+	see: https://arxiv.org/pdf/1712.05204.pdf
+	"""
+	@mv.inverse.register(lambda s: s.is_squared_n_simple(n))
+	def squared_simple_inverse(s):
+		"""Gives squared option precedence since it has the lowest op count"""
+		return s / s.squared()
+	@mv.inverse.register(lambda s: s.is_reverse_n_simple(n))
+	def reverse_simple_inverse(s):
+		"""This is the classic complex-number-like case"""
+		return s.reverse() / s.symmetric_reverse_product()
+	@mv.inverse.register(lambda s: s.is_conjugate_n_simple(n))
+	def conjugate_simple_inverse(s):
+		"""This is the classic complex-number-like case"""
+		return s.conjugate() / s.symmetric_conjugate_product()
+	@mv.inverse.register(lambda s: s.is_scalar_negation_n_simple(n))
+	def scalar_negation_simple_inverse(s):
+		"""This is the defacto study-inverse"""
+		return s.scalar_negation() / s.symmetric_scalar_negation_product()
+	@mv.inverse.register(lambda s: s.is_pseudoscalar_negation_n_simple(n))
+	def pseudoscalar_negation_simple_inverse(s):
+		# FIXME: need to find optimal formulation and name for this one; many options
+		return s.pseudoscalar_negation() / s.symmetric_pseudoscalar_negation_product()
+	@mv.inverse.register(lambda s: s.is_involute_n_simple(n))
+	def involute_simple_inverse(s):
+		"""Does not seem like we ever need this one"""
+		return s.involute() / s.symmetric_involute_product()
+# register 3 levels of recursion in inversion
+for n in [1, 2, 3]:
+	simplify_inverses(n)
 
 
 mv.inverse_square_root = SubspaceDispatch("""invsqrt(x), such that invsqrt(x) * x * invsqrt(x) = 1""")

@@ -63,3 +63,16 @@ class JaxMultiVector(AbstractMultiVector):
 	def repeat(self, pattern, **kwargs):
 		from einops import repeat
 		return self.copy(repeat(self.values, pattern, **kwargs))
+
+	def inverse_la(self):
+		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
+		# FIXME: is there a simpler / more complete way of constructing these candidate subspaces?
+		inverse_subspace = self.operator.inverse_factor(self.subspace).output
+		op = self.operator.product(self.subspace, inverse_subspace)
+		k = op.partial({0: self}).kernel
+		idx, = jnp.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
+		r = jnp.linalg.solve(    # use least squares to solve for inverse
+			jnp.einsum('...ji,...ki->...jk', k, k), # k.T * k
+			k[..., idx],    #equal to  k.T * unit_scalar
+		)
+		return self.context.multivector(values=r, subspace=inverse_subspace)

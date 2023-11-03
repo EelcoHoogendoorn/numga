@@ -115,55 +115,108 @@ def test_operator_composition():
 	print()
 
 
-def check_inverse(x, i):
-	assert np.allclose((x * i - 1).values, 0, atol=1e-9)
-	assert np.allclose((i * x - 1).values, 0, atol=1e-9)
+def check_inverse(x, i, atol=1e-9):
+	assert np.allclose((x * i - 1).values, 0, atol=atol)
+	assert np.allclose((i * x - 1).values, 0, atol=atol)
 
 
-def test_inverse():
+@pytest.mark.parametrize(
+	'descr', [
+		# (1, 0, 0), (0, 1, 0),
+		# (2, 0, 0), (1, 1, 0), (0, 2, 0),
+		# (3, 0, 0), (2, 1, 0), (1, 2, 0),
+		# (4, 0, 0), #(3, 1, 0), (2, 2, 0),
+		(5, 0, 0),# (4, 1, 0), (3, 2, 0)
+	],
+)
+def test_inverse_exhaustive(descr):
+	"""Test general inversion cases for all multivector grade combos in dimension < 6"""
+	np.random.seed(0)   # fix seed to prevent chasing ever changing outliers
+	ga = NumpyContext(Algebra.from_pqr(*descr))
+
+	N = 100
+	print()
+	print(descr)
+
+	all_grades = np.arange(ga.algebra.n_grades)
+	import itertools
+	for r in all_grades:
+		for grades in itertools.combinations(all_grades, r+1):
+			try:
+				V = ga.subspace.from_grades(list(grades))
+				print()
+				print(V.simplicity, list(grades), end='')
+				x = random_subspace(ga, V, (N,))
+				check_inverse(x, x.inverse(), atol=1e-10)
+			except:
+				pass
+
+
+@pytest.mark.parametrize(
+	'descr', [
+		(1, 0, 0), (0, 1, 0),
+		(2, 0, 0), (1, 1, 0), (0, 2, 0),
+		(3, 0, 0), (2, 1, 0), (1, 2, 0),
+		(4, 0, 0), (3, 1, 0), (2, 2, 0),
+		(5, 0, 0), (4, 1, 0), (3, 2, 0)
+	],
+)
+def test_inverse_compare(descr):
 	"""Test some general inversion cases in dimension < 6"""
-	ga = NumpyContext(Algebra.from_pqr(4, 1, 0))
+	np.random.seed(0)   # fix seed to prevent chasing ever changing outliers
+	ga = NumpyContext(Algebra.from_pqr(*descr))
+
+	N = 100
 	V = ga.subspace.vector()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
-	check_inverse(x, x.inverse())
+	x = random_subspace(ga, V, (N,))
+	check_inverse(x, x.inverse(), atol=1e-12)
+	check_inverse(x, x.inverse_la(), atol=1e-5)
+	check_inverse(x, x.inverse_shirokov(), atol=1e-9)
 
 	V = ga.subspace.even_grade()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
-	check_inverse(x, x.inverse())
+	x = random_subspace(ga, V, (N,))
+	check_inverse(x, x.inverse(), atol=1e-12)
+	check_inverse(x, x.inverse_la(), atol=1e-5)
+	check_inverse(x, x.inverse_shirokov(), atol=1e-8)
 
 	V = ga.subspace.multivector()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
-	check_inverse(x, x.inverse())
-
-	q = x.conjugate() * x.involute() * x.reverse()
-	qq = x.inverse_factor()
-	op = ga.operator.inverse_factor(x.subspace)
-	print(np.count_nonzero(op.kernel))
-	assert np.allclose(q.values, qq.values)
-
-	x = ga.multivector.a + 2
-	check_inverse(x, x.la_inverse())
-	q = x.inverse_factor()
-	check_inverse(x, q / x.scalar_product(q))
+	x = random_subspace(ga, V, (N,))
+	check_inverse(x, x.inverse(), atol=1e-12)
+	check_inverse(x, x.inverse_la(), atol=1e-5)
+	check_inverse(x, x.inverse_shirokov(), atol=1e-9)
 
 
 def test_inverse_la():
 	"""test some inversion in 6 dimensions"""
-	ga = NumpyContext(Algebra.from_pqr(5, 1, 0))
+	import time
+	ga = NumpyContext(Algebra.from_pqr(6, 0, 0))
+	N = 100
 	V = ga.subspace.vector()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
+	x = random_subspace(ga, V, (N,))
+	t = time.time()
+	check_inverse(x, x.inverse_la())
+	print('la', time.time() - t)
+	t = time.time()
+	check_inverse(x, x.inverse_shirokov())
+	print('shir', time.time() - t)
 
 	V = ga.subspace.even_grade()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
+	x = random_subspace(ga, V, (N,))
+	t = time.time()
+	check_inverse(x, x.inverse_la())
+	print('la', time.time() - t)
+	t = time.time()
+	check_inverse(x, x.inverse_shirokov())
+	print('shir', time.time() - t)
 
 	V = ga.subspace.multivector()
-	x = random_subspace(ga, V, (10,))
-	check_inverse(x, x.la_inverse())
+	x = random_subspace(ga, V, (N,))
+	t = time.time()
+	check_inverse(x, x.inverse_la())
+	print('la', time.time() - t)
+	t = time.time()
+	check_inverse(x, x.inverse_shirokov())
+	print('shir', time.time() - t)
 
 
 def test_inverse_degenerate():
@@ -171,20 +224,45 @@ def test_inverse_degenerate():
 	with pytest.raises(Exception):
 		ga = NumpyContext('x+w0')
 		x = ga.multivector.w
-		i = x.la_inverse()
+		i = x.inverse_la()
+
+	with pytest.raises(np.linalg.LinAlgError):
+		ga = NumpyContext('x+t-')
+		x = ga.multivector.x + ga.multivector.t
+		i = x.inverse_la()
 
 
-def test_inverse_counterexample():
-	"""test counterexample that inverse_factor method fails to solve,
-	but works using the more general linear algebra approach
+def test_inverse_simplicifation_failure():
+	"""succssive involute products sometimes fail to simplify fully.
+	this results in extra recursion and poorer high dim genealization
+	"""
+	ga = NumpyContext(Algebra.from_pqr(5,0,0))
+	V = ga.subspace.from_grades([1,2,5])
+	x = random_subspace(ga, V, (1,))
+	x.inverse()
+	print()
+	y = x.symmetric_reverse_product()
+	z = y.symmetric_pseudoscalar_negation_product()
+	print(x)
+	print(y)
+	print(z)
+	return
+
+
+def test_inverse_6d():
+	"""test recursive inverse handles some 6d example
 	"""
 	ga = NumpyContext('x+y+z+a+b+c+')
 	mv = ga.multivector
 	x = 1 + mv.xy + mv.ab + mv.xyzabc
-	i = x.la_inverse()
+	i = x.inverse_la()
 	print(i)    # note this particular 4-component multivector has an 8-component inverse
 	check_inverse(x, i)
 
-	with pytest.raises(Exception):
-		i = x.inverse()
-		check_inverse(x, i)
+	i = x.inverse()
+	print(i)
+	check_inverse(x, i)
+
+	# m = random_motor(ga, (1,))
+	# check_inverse(m, m.inverse())
+

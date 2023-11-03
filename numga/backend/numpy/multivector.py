@@ -69,12 +69,14 @@ class NumpyMultiVector(AbstractMultiVector):
 	def flatten(self):
 		return self.reshape((-1,))
 
-	def la_inverse(self):
+	def inverse_la(self):
 		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
+		# FIXME: is there a simpler / more complete way of constructing these candidate subspaces?
 		inverse_subspace = self.operator.inverse_factor(self.subspace).output
 		op = self.operator.product(self.subspace, inverse_subspace)
 		k = op.partial({0: self}).kernel
 		idx, = np.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
+		# FIXME: manual squaring reduces numerical accuracy; but np.linalg.slqr is not vectorized
 		r = np.linalg.solve(    # use least squares to solve for inverse
 			np.einsum('...ji,...ki->...jk', k, k), # k.T * k
 			k[..., idx],    #equal to  k.T * unit_scalar

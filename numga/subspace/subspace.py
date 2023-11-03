@@ -161,6 +161,7 @@ class SubSpace(FlyweightMixin):
 	@cache
 	def inner(self, other) -> "SubSpace":
 		return self.algebra.operator.inner(self, other).subspace
+
 	@cache
 	def squared(self) -> "SubSpace":
 		return self.algebra.operator.squared(self).subspace
@@ -168,8 +169,33 @@ class SubSpace(FlyweightMixin):
 	def symmetric_reverse(self) -> "SubSpace":
 		return self.algebra.operator.symmetric_reverse_product(self).subspace
 	@cache
+	def symmetric_involute(self) -> "SubSpace":
+		return self.algebra.operator.symmetric_involute_product(self).subspace
+	@cache
+	def symmetric_conjugate(self) -> "SubSpace":
+		return self.algebra.operator.symmetric_conjugate_product(self).subspace
+	@cache
+	def symmetric_scalar_negation(self) -> "SubSpace":
+		return self.algebra.operator.symmetric_scalar_negation_product(self).subspace
+	@cache
+	def symmetric_pseudoscalar_negation(self) -> "SubSpace":
+		return self.algebra.operator.symmetric_pseudoscalar_negation_product(self).subspace
+
+	@cache
 	def reverse_product(self, other) -> "SubSpace":
 		return self.algebra.operator.reverse_product(self, other).subspace
+	@cache
+	def involute_product(self, other) -> "SubSpace":
+		return self.algebra.operator.involute_product(self, other).subspace
+	@cache
+	def conjugate_product(self, other) -> "SubSpace":
+		return self.algebra.operator.conjugate_product(self, other).subspace
+	@cache
+	def scalar_negation_product(self, other) -> "SubSpace":
+		return self.algebra.operator.scalar_negation_product(self, other).subspace
+	@cache
+	def pseudoscalar_negation_product(self, other) -> "SubSpace":
+		return self.algebra.operator.pseudoscalar_negation_product(self, other).subspace
 	@cache
 	def anti_reverse_product(self, other) -> "SubSpace":
 		return self.algebra.operator.anti_reverse_product(self, other).subspace
@@ -221,23 +247,51 @@ class SubSpace(FlyweightMixin):
 	def is_subalgebra(self) -> bool:
 		"""Check that this subspace represents a subalgebra under the action of the geometric product"""
 		return self.squared() in self
+
+
+	@cache
+	def is_n_simple(self, n):
+		"""A subspace is n-simple if it maps to a scalar under n self-involution products"""
+		if n == 0:
+			return self.inside.scalar()
+		return (
+				self.is_squared_n_simple(n) or
+				self.is_reverse_n_simple(n) or
+				self.is_involute_n_simple(n) or
+				self.is_conjugate_n_simple(n) or
+				self.is_scalar_negation_n_simple(n) or
+				self.is_pseudoscalar_negation_n_simple(n)
+		)
+
 	@cached_property
-	def is_simple(self) -> bool:
-		"""Check if elements of this subspace square to a scalar"""
-		return self.squared().inside.scalar()
-	@cached_property
-	def is_bisimple(self) -> bool:
-		"""Check if elements of this subspace square to a study number"""
-		return self.squared().inside.study()
-	@cached_property
-	def is_reverse_simple(self) -> bool:
-		"""Check if elements of this subspace reverse-square to a scalar; s * ~s ~= 1"""
-		return self.symmetric_reverse().inside.scalar()
-	@cached_property
-	def is_reverse_bisimple(self) -> bool:
-		"""Check if elements of this subspace square to a study number"""
-		# FIXME: is there a better name for this?
-		return self.symmetric_reverse().inside.study()
+	def simplicity(self) -> int:
+		"""Return minimum number of products found to reduce this subspace to a scalar"""
+		for n in range(self.algebra.n_dimensions // 2 + 2):
+			if self.is_n_simple(n):
+				return n
+		return None
+
+	# a subspace is simple in any of the specific senses below if its simplicity reduces under the given operator
+	@cache
+	def is_squared_n_simple(self, n) -> bool:
+		return self.squared().is_n_simple(n-1)
+	@cache
+	def is_reverse_n_simple(self, n) -> bool:
+		return self.symmetric_reverse().is_n_simple(n-1)
+	@cache
+	def is_involute_n_simple(self, n) -> bool:
+		return self.symmetric_involute().is_n_simple(n-1)
+	@cache
+	def is_conjugate_n_simple(self, n) -> bool:
+		return self.symmetric_conjugate().is_n_simple(n-1)
+	@cache
+	def is_scalar_negation_n_simple(self, n) -> bool:
+		return self.symmetric_scalar_negation().is_n_simple(n-1)
+	@cache
+	def is_pseudoscalar_negation_n_simple(self, n) -> bool:
+		return self.symmetric_pseudoscalar_negation().is_n_simple(n-1)
+
+
 
 	@cached_property
 	def is_degenerate_scalar(self) -> bool:

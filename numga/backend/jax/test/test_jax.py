@@ -1,7 +1,11 @@
 import numpy as np
+from jax.config import config
+config.update("jax_enable_x64", True)
 
+from numga.algebra.algebra import Algebra
 from numga.backend.jax.context import JaxContext
 from numga.backend.jax.operator import *
+from numga.multivector.test.util import random_motor, random_subspace
 
 
 def test_sparse_operator():
@@ -87,5 +91,44 @@ def test_performance():
 	print(time()-t)
 
 
-def test_expr():
-	"""check and see what a compiled expression looks like"""
+def check_inverse(x, i):
+	print(x.subspace, i.subspace)
+	assert np.allclose((x * i - 1).values, 0, atol=1e-9)
+	assert np.allclose((i * x - 1).values, 0, atol=1e-9)
+
+
+def test_inverse():
+	"""test some inversion in 6 dimensions"""
+	import time
+	ga = JaxContext(Algebra.from_pqr(6, 0, 0), dtype=jnp.float64)
+	N = 100
+	V = ga.subspace.vector()
+	x = random_subspace(ga, V, (N,))
+	t = time.time()
+	check_inverse(x, x.inverse_la())
+	print('la', time.time() - t)
+	t = time.time()
+	check_inverse(x, x.inverse_shirokov())
+	print('shir', time.time() - t)
+
+	V = ga.subspace.even_grade()
+	x = random_subspace(ga, V, (N,))
+	t = time.time()
+	check_inverse(x, x.inverse_la())
+	print('la', time.time() - t)
+	t = time.time()
+	check_inverse(x, x.inverse_shirokov())
+	print('shir', time.time() - t)
+
+	V = ga.subspace.multivector()
+	x = random_subspace(ga, V, (N,))
+	foo = (lambda x: x.inverse_la())
+	foo(x)
+	t = time.time()
+	check_inverse(x, foo(x))
+	print('la', time.time() - t)
+	foo = jax.jit(lambda x: x.inverse_shirokov())
+	foo(x)
+	t = time.time()
+	check_inverse(x, foo(x))
+	print('shir', time.time() - t)
