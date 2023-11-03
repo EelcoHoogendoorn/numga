@@ -24,7 +24,7 @@ def test_complex():
 
 	full = complex.subspace.full()
 	even = complex.subspace.even_grade()
-	assert even.is_reverse_simple
+	assert even.is_n_simple(1)
 	c, s = complex.product(even.blades, even.blades)
 	print(c)
 	print(s)
@@ -40,7 +40,7 @@ def test_quat():
 	quat, full = r3.subspace.even_grade(), r3.subspace.full()
 	print()
 	assert quat.is_subalgebra
-	assert quat.is_reverse_simple
+	assert quat.is_n_simple(1)
 	print(full.bit_blades())
 	print(full.blades)
 	print(quat.bit_blades())
