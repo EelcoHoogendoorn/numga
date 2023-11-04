@@ -117,15 +117,11 @@ class Operator:
 		# FIXME: is it appropriate to view everything as real numbers at this point?
 		#  i think so; but i keep confusing myself
 		assert self.axes[axes[0]] == self.axes[axes[1]]
-		return Operator(
-			# FIXME: integer division not always appropriate.
-			#  if not, user responsible for slapping on a multiplication factor?
-			#  or do runtime check for inappropriate divisions / remainders?
-
-			# FIXME: yeah such a check would be good... already burned myself here with ineria map!
-			(self.kernel + sign * np.swapaxes(self.kernel, *axes)) // 2,
-			self.axes
-		).squeeze()
+		kernel2 = self.kernel + sign * np.swapaxes(self.kernel, *axes)
+		kernel = kernel2 // 2
+		if not np.all(kernel * 2 == kernel2):
+			raise Exception('inappropriate integer division')
+		return Operator(kernel, self.axes).squeeze()
 
 	def fuse(self, other: "Operator", axis: int) -> "Operator":
 		"""Fuse to operators; feed output of `self` into nth input argument of `other`"""

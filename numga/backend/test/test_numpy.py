@@ -144,10 +144,14 @@ def test_inverse_exhaustive(descr):
 		for grades in itertools.combinations(all_grades, r+1):
 			try:
 				V = ga.subspace.from_grades(list(grades))
-				print()
-				print(V.simplicity, list(grades), end='')
+				# print()
 				x = random_subspace(ga, V, (N,))
-				check_inverse(x, x.inverse(), atol=1e-10)
+				i = x.inverse()
+				check_inverse(x, i, atol=1e-10)
+
+				print(V.simplicity, list(grades), list(np.unique(i.subspace.grades())), end='')
+				print()
+				print(i)
 			except:
 				pass
 
@@ -234,18 +238,28 @@ def test_inverse_degenerate():
 
 def test_inverse_simplicifation_failure():
 	"""succssive involute products sometimes fail to simplify fully.
-	this results in extra recursion and poorer high dim genealization
+	this results in extra recursion and poorer high dim generalization,
+	and also sometimes dummy zero output grades
 	"""
 	ga = NumpyContext(Algebra.from_pqr(5,0,0))
 	V = ga.subspace.from_grades([1,2,5])
+	assert V.simplicity == 3    # in reality its two but we lack the symbolic logic to see it
 	x = random_subspace(ga, V, (1,))
-	x.inverse()
-	print()
+	# can still invert correctly in 3 steps tho
+	check_inverse(x, x.inverse())
+
 	y = x.symmetric_reverse_product()
 	z = y.symmetric_pseudoscalar_negation_product()
-	print(x)
-	print(y)
-	print(z)
+	assert z.subspace == ga.subspace.from_grades([0, 5])
+	assert np.allclose(z.select[5].values, 0)
+
+	V = ga.subspace.from_grades([2])
+	assert V.simplicity == 2    # need two steps; but can do without the extra zeros
+	x = random_subspace(ga, V, (1,))
+	i = x.inverse()
+	assert i.subspace == ga.subspace.from_grades([2, 4])
+	check_inverse(x, i)
+	assert np.allclose(i.select[4].values, 0)
 
 
 def test_inverse_6d():

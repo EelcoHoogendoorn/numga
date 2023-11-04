@@ -31,10 +31,6 @@ from numga.multivector.multivector import AbstractMultiVector as mv
 
 # NOTE: these methods have a study_ prefix;
 # since otherwise theyd shadow equally named functionality with subtly different outcomes
-# mv.study_conjugate = SubspaceDispatch("""Study conjugation; tack a minus sign on grade 4 components""")
-# @mv.study_conjugate.register(lambda s: s.inside.study())
-# def study_conjugate(s: Study) -> Study:
-# 	return s.operator.study_conjugate(s.subspace)(s)
 mv.study_norm_squared = SubspaceDispatch("""Study norm squared""")
 @mv.study_norm_squared.register(lambda s: s.inside.study())
 def study_norm_squared(s: Study) -> Scalar:
