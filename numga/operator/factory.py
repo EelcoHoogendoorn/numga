@@ -48,6 +48,8 @@ class OperatorFactory:
 
 	Caching of al created operators happens on the basis of the subspace arguments,
 	and the subspace class implement a flyweight pattern, to make this efficient.
+	NOTE: we also may bother the cache with operator intermediate arguments
+	these are not flyweighted probably a bad idea?
 	"""
 
 	def __init__(self, algebra: Algebra):
@@ -543,18 +545,39 @@ class OperatorFactory:
 	def inverse_factor(self, x: SubSpace) -> Operator:
 		"""Compute inverse_factor(x) = conj(x) * involute(x) * reverse(x)
 
+		For many multivectors, this gives:
 		inverse(x) = (x * inverse_factor(x))<0>
 		"""
-		p = self.product(self.conjugate(x), self.involute(x))
-		q = self.product(p, x.reverse())
-		return q.symmetry((0,1,2))
+		p = self.product(x, self.reverse(x)).symmetry((0, 1))
+		q = self.product(self.reverse(x), self.conjugate(p))
+		return q.symmetry((0, 1, 2))
+
+	@cache
+	def inverse_factor_completed(self, x: SubSpace) -> Operator:
+		"""Compute x * inverse_factor(x)
+		"""
+		p = self.symmetric_reverse_product(x)
+		q = self.product(p, self.conjugate(p)).symmetry((0, 1, 2, 3))
+		return q
+
+	@cache
+	def inverse_factor_completed_alt(self, x: SubSpace) -> Operator:
+		"""Fusing with scalar negation gives different reduction possibilities
+		"""
+		p = self.symmetric_reverse_product(x)
+		q = self.product(p, self.pseudoscalar_negation(p)).symmetry((0, 1, 2, 3))
+		return q
+
+	def compose_symmetry_ops(self, x: SubSpace, op1, op2):
+		"""constructed fused higher order hitzer ops"""
+
 
 	@cache
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Compute inertia operator; l.regressive(l x r)"""
 		# FIXME: it is tempting to enforce symmetry here, but it does not improve sparsity,
 		#  and does force us to use a float kernel, so nevermind
-		return self.regressive(l, self.commutator(l, r))#.symmetry((0, 1), +1)
+		return self.regressive(l, self.commutator(l, r))#.symmetry((0, 1))
 
 
 	# # projections according to erik lengyel

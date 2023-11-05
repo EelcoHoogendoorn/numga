@@ -13,7 +13,7 @@ from numga.util import cache, cached_property, match
 # FIXME: some texts seem to prefer element over blade; not sure which is more ideomatic
 class SubSpace(FlyweightMixin):
 	"""Describes a subspace of a full geometric algebra,
-	by means of an array of bit-blades, denoting the blades present in the subalgebra
+	by means of an array of bit-blades, denoting the blades present in the subspace
 	"""
 	def __init__(self, algebra: Algebra, blades: np.array):
 		# parent algebra
@@ -124,6 +124,8 @@ class SubSpace(FlyweightMixin):
 	# FIXME: these compete with getattr operator construction syntax, perhaps? not working atm anyway tho...
 	#  perhaps forego subspace construction in favor of operator construction; pretty easy to write V.wedge(B).subspace, after all.
 	#  alternatively, write V.operator.wedge(B), if operator is desired?
+	#  note we are hung up on requiring context previously
+	#  just optionally pass in context? only invoked when constructing operators
 	@cache
 	def complement(self) -> "SubSpace":
 		"""Complementary set of blades, such that self * self.complement() == I"""

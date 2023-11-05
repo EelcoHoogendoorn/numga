@@ -122,19 +122,20 @@ def check_inverse(x, i, atol=1e-9):
 
 @pytest.mark.parametrize(
 	'descr', [
-		# (1, 0, 0), (0, 1, 0),
-		# (2, 0, 0), (1, 1, 0), (0, 2, 0),
-		# (3, 0, 0), (2, 1, 0), (1, 2, 0),
-		# (4, 0, 0), #(3, 1, 0), (2, 2, 0),
-		(5, 0, 0),# (4, 1, 0), (3, 2, 0)
+		(1, 0, 0), (0, 1, 0),
+		(2, 0, 0), (1, 1, 0), (0, 2, 0),
+		(3, 0, 0), (2, 1, 0), (1, 2, 0),
+		(4, 0, 0), (3, 1, 0), (2, 2, 0),
+		(5, 0, 0), (4, 1, 0), (3, 2, 0)
 	],
+	# 'descr', [(4, 0, 0)],
 )
 def test_inverse_exhaustive(descr):
 	"""Test general inversion cases for all multivector grade combos in dimension < 6"""
 	np.random.seed(0)   # fix seed to prevent chasing ever changing outliers
 	ga = NumpyContext(Algebra.from_pqr(*descr))
 
-	N = 100
+	N = 10
 	print()
 	print(descr)
 
@@ -142,18 +143,45 @@ def test_inverse_exhaustive(descr):
 	import itertools
 	for r in all_grades:
 		for grades in itertools.combinations(all_grades, r+1):
-			try:
-				V = ga.subspace.from_grades(list(grades))
-				# print()
-				x = random_subspace(ga, V, (N,))
-				i = x.inverse()
-				check_inverse(x, i, atol=1e-10)
+			V = ga.subspace.from_grades(list(grades))
+			print()
+			x = random_subspace(ga, V, (N,))
+			i = x.inverse()
+			check_inverse(x, i, atol=1e-11)
 
-				print(V.simplicity, list(grades), list(np.unique(i.subspace.grades())), end='')
-				print()
-				print(i)
-			except:
-				pass
+			print(V.simplicity, list(grades), list(np.unique(i.subspace.grades())), end='')
+			# print()
+			# print(i)
+
+
+@pytest.mark.parametrize(
+	'descr', [
+		(1, 0, 0), (0, 1, 0),
+		(2, 0, 0), (1, 1, 0), (0, 2, 0),
+		(3, 0, 0), (2, 1, 0), (1, 2, 0),
+	],
+)
+def test_inverse_hitzer(descr):
+	"""Test non recursive hitzer inversion cases for all multivector grade combos in dimension < 4"""
+	np.random.seed(0)   # fix seed to prevent chasing ever changing outliers
+	ga = NumpyContext(Algebra.from_pqr(*descr))
+
+	N = 10
+	print()
+	print(descr)
+
+	all_grades = np.arange(ga.algebra.n_grades)
+	import itertools
+	for r in all_grades:
+		for grades in itertools.combinations(all_grades, r+1):
+			V = ga.subspace.from_grades(list(grades))
+			print()
+			x = random_subspace(ga, V, (N,))
+
+			i = x.inverse_hitzer()
+			check_inverse(x, i, atol=1e-8)
+
+			print(list(grades), list(np.unique(i.subspace.grades())), end='')
 
 
 @pytest.mark.parametrize(
@@ -253,6 +281,10 @@ def test_inverse_simplicifation_failure():
 	assert z.subspace == ga.subspace.from_grades([0, 5])
 	assert np.allclose(z.select[5].values, 0)
 
+	# second-order optimized hitzer term does reduce to scalar
+	op = ga.operator.inverse_factor_completed2(V)
+	assert op.output.equals.scalar()
+
 	V = ga.subspace.from_grades([2])
 	assert V.simplicity == 2    # need two steps; but can do without the extra zeros
 	x = random_subspace(ga, V, (1,))
@@ -278,3 +310,69 @@ def test_inverse_6d():
 
 	# m = random_motor(ga, (1,))
 	# check_inverse(m, m.inverse())
+
+
+# def test_inverse_hitzer2():
+# 	"""see if higher order hitzer terms add value"""
+# 	ga = NumpyContext(Algebra.from_pqr(5,0,0))
+# 	V = ga.subspace.from_grades([1,2,5])
+# 	x = random_subspace(ga, V, (1,))
+# 	q = x.inverse_factor()
+# 	print(q)
+# def test_inverse_hitzer():
+# 	"""see if higher order hitzer terms add value"""
+# 	np.random.seed(0)
+# 	ga = NumpyContext(Algebra.from_pqr(3,0,0))
+# 	V = ga.subspace.from_grades([0,1])
+# 	x = random_subspace(ga, V, (1,))
+# 	y = x#.symmetric_reverse_product()
+# 	q = y.inverse_factor()
+# 	z = x.reverse() * x.scalar_negation() * x
+# 	print(z)
+# 	print(q)
+
+
+@pytest.mark.parametrize(
+	'descr', [
+		# (1, 0, 0), (0, 1, 0),
+		# (2, 0, 0), (1, 1, 0), (0, 2, 0),
+		# (3, 0, 0), (2, 1, 0), (1, 2, 0),
+		(5, 0, 0), #(3, 1, 0), (2, 2, 0),
+		# (5, 0, 0), #(4, 1, 0), (3, 2, 0)
+	],
+)
+def test_inverse_factor_exhaustive(descr):
+	"""Test general inversion cases for all multivector grade combos in dimension < 6"""
+	np.random.seed(0)   # fix seed to prevent chasing ever changing outliers
+	ga = NumpyContext(Algebra.from_pqr(*descr))
+
+	N = 1
+	print()
+	print(descr)
+
+	all_grades = np.arange(ga.algebra.n_grades)
+	import itertools
+	for r in all_grades:
+		for grades in itertools.combinations(all_grades, r+1):
+			try:
+				V = ga.subspace.from_grades(list(grades))
+				print()
+				print('grades: ', grades)
+				x = random_subspace(ga, V, (N,))
+				op = ga.operator.inverse_factor_completed2(V)
+				print(V)
+				print('inv-fac-2', op.output)
+				# print(x.symmetric_reverse_product().inverse_factor().subspace)
+				op=ga.operator(op)
+				y = op(x,x,x,x)
+				print(y)
+				i = x.inverse()
+				assert i.values.size > 0
+				check_inverse(x, i, atol=1e-10)
+				print(i)
+				# check_inverse(x, x.inverse_la(), atol=1e-5)
+
+				# print(V.simplicity, list(grades), list(np.unique(i.subspace.grades())), end='')
+				# print(i)
+			except:
+				pass

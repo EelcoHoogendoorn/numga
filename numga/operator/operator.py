@@ -106,7 +106,7 @@ class Operator:
 		return self.mul(s)
 
 	def symmetry(self, axes: Tuple[int]) -> "Operator":
-		"""Enforce symmetry on the given axes [a, b]
+		"""Enforce symmetry on the given input axes [a, b]
 		That is the output op will have the property
 			op(a, b) = op(b, a)
 
@@ -118,14 +118,13 @@ class Operator:
 		match([self.axes[a] for a in axes])
 
 		import itertools
-		k = 0
 		P = list(itertools.permutations(axes, len(axes)))
-		for a in P:
-			k = k + np.moveaxis(self.kernel, axes, a)
-
+		k = sum(np.moveaxis(self.kernel, axes, a) for a in P)
 		kernel = k // len(P)
-		if not np.all(kernel * len(k) == k):
-			kernel = k / len(P) # fallback to float division if required
+		if not np.all(kernel * len(P) == k):
+			# inherit nonzero pattern without explicit symmetric structure
+			mask = k.any(axis=tuple(range(self.arity)), keepdims=True)
+			kernel = self.kernel * mask
 		return Operator(kernel, self.axes).squeeze()
 
 	def fuse(self, other: "Operator", axis: int) -> "Operator":
@@ -207,13 +206,17 @@ class Operator:
 
 	def squeeze(self) -> "Operator":
 		"""Drop known zero terms from output subspace"""
-		indices = np.flatnonzero(self.kernel.any(axis=tuple(range(self.arity))))
+		k = self.kernel
+		# if np.issubdtype(k, np.floating):
+		# 	eps = 1e-6   # need to consider an epsilon to make chained float kernel simplifications work
+		# 	k = np.abs(k) > eps
+		# get nonzero output indices
+		indices = np.flatnonzero(k.any(axis=tuple(range(self.arity))))
 		output: SubSpace = self.output.slice_subspace(indices)
 
 		axes = list(self.axes)
 		axes[-1] = output
-		kernel = self.kernel.take(indices, axis=-1)
-		return Operator(kernel, tuple(axes))
+		return Operator(self.kernel.take(indices, axis=-1), tuple(axes))
 
 	def grade_selection(self, formula) -> "Operator":
 		"""Apply a grade selection formula"""
