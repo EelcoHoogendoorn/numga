@@ -64,10 +64,10 @@ class Operator:
 			tuple(axes)
 		)
 
-	def is_diagonal(self, axes: Tuple[int, int]) -> bool:
-		"""Test if a particular axes pair represents a diagonal"""
-		sym = self.symmetry(axes, -1)
-		return np.all(sym.kernel == 0)
+	# def is_diagonal(self, axes: Tuple[int, int]) -> bool:
+	# 	"""Test if a particular axes pair represents a diagonal"""
+	# 	sym = self.symmetry(axes, -1)
+	# 	return np.all(sym.kernel == 0)
 
 	@cached_property
 	def arity(self) -> int:
@@ -105,22 +105,27 @@ class Operator:
 	def __rmul__(self, s):
 		return self.mul(s)
 
-	def symmetry(self, axes: Tuple[int, int], sign: int) -> "Operator":
-		"""Enforce commutativity symmetry of the given sign on the given axes [a, b]
+	def symmetry(self, axes: Tuple[int]) -> "Operator":
+		"""Enforce symmetry on the given axes [a, b]
 		That is the output op will have the property
-			op(a, b) = sign * op(b, a)
+			op(a, b) = op(b, a)
 
 		We may choose to apply this to our operator,
 		to encode knowledge about inputs being numerically identical,
 		such as encountered in the sandwich product or norm calculations.
+		which usually allows simplification of the resulting expressions
 		"""
-		# FIXME: is it appropriate to view everything as real numbers at this point?
-		#  i think so; but i keep confusing myself
-		assert self.axes[axes[0]] == self.axes[axes[1]]
-		kernel2 = self.kernel + sign * np.swapaxes(self.kernel, *axes)
-		kernel = kernel2 // 2
-		if not np.all(kernel * 2 == kernel2):
-			raise Exception('inappropriate integer division')
+		match([self.axes[a] for a in axes])
+
+		import itertools
+		k = 0
+		P = list(itertools.permutations(axes, len(axes)))
+		for a in P:
+			k = k + np.moveaxis(self.kernel, axes, a)
+
+		kernel = k // len(P)
+		if not np.all(kernel * len(k) == k):
+			kernel = k / len(P) # fallback to float division if required
 		return Operator(kernel, self.axes).squeeze()
 
 	def fuse(self, other: "Operator", axis: int) -> "Operator":

@@ -95,19 +95,19 @@ class OperatorFactory:
 	# 	sign = parity_to_sign([g in grades for g in subspace.grades()])
 	# 	return self.diagonal(subspace, sign)
 	@cache
-	def scalar_negation(self, subspace) -> "Operator":
-		sign = parity_to_sign(subspace.grades() > 0)
-		return self.diagonal(subspace, sign)
+	def scalar_negation(self, v) -> "Operator":
+		sign = parity_to_sign(v.subspace.grades() > 0)
+		return self.diagonal(v, sign)
 	@cache
-	def pseudoscalar_negation(self, subspace) -> "Operator":
+	def pseudoscalar_negation(self, v) -> "Operator":
 		# grades = (1, subspace.algebra.n_dimensions - 1)
 		if self.algebra.n_dimensions % 2 == 1:
-			grades = (1, subspace.algebra.n_dimensions - 1)
+			grades = (1, v.subspace.algebra.n_dimensions - 1)
 		else:
 			grades = (1, )
-		grades = (0, subspace.algebra.n_dimensions)
-		sign = -parity_to_sign(np.array([int(g) in grades for g in subspace.grades()]))
-		return self.diagonal(subspace, sign)
+		grades = (0, v.subspace.algebra.n_dimensions)
+		sign = -parity_to_sign(np.array([int(g) in grades for g in v.subspace.grades()]))
+		return self.diagonal(v, sign)
 
 
 	@cache
@@ -425,30 +425,30 @@ class OperatorFactory:
 	@cache
 	def symmetric_reverse_product(self, x: SubSpace) -> Operator:
 		"""x * ~x"""
-		return self.reverse_product(x, x).symmetry((0, 1), +1)
+		return self.reverse_product(x, x).symmetry((0, 1))
 	@cache
 	def symmetric_involute_product(self, x: SubSpace) -> Operator:
 		"""x * x.involute()"""
-		return self.involute_product(x, x).symmetry((0, 1), +1)
+		return self.involute_product(x, x).symmetry((0, 1))
 	@cache
 	def symmetric_conjugate_product(self, x: SubSpace) -> Operator:
 		"""x * x.conjugate()"""
-		return self.conjugate_product(x, x).symmetry((0, 1), +1)
+		return self.conjugate_product(x, x).symmetry((0, 1))
 	@cache
 	def symmetric_study_conjugate_product(self, x: SubSpace) -> Operator:
 		"""x * x.conjugate()"""
-		return self.study_conjugate_product(x, x).symmetry((0, 1), +1)
+		return self.study_conjugate_product(x, x).symmetry((0, 1))
 	@cache
 	def symmetric_scalar_negation_product(self, x: SubSpace) -> Operator:
-		return self.scalar_negation_product(x, x).symmetry((0, 1), +1)
+		return self.scalar_negation_product(x, x).symmetry((0, 1))
 	@cache
 	def symmetric_pseudoscalar_negation_product(self, x: SubSpace) -> Operator:
-		return self.pseudoscalar_negation_product(x, x).symmetry((0, 1), +1)
+		return self.pseudoscalar_negation_product(x, x).symmetry((0, 1))
 
 	@cache
 	def squared(self, v: SubSpace) -> Operator:
 		"""x * x"""
-		return self.product(v, v).symmetry((0, 1), +1)
+		return self.product(v, v).symmetry((0, 1))
 
 	# FIXME: should we introduce dual/anti norms as well?
 	# @cache
@@ -493,7 +493,7 @@ class OperatorFactory:
 		however if the motor being sandwiched is indeed satisfies the requirements of a motor,
 		the product will be grade preserving and the grade-5 part will be numericailly zero.
 		"""
-		return self.product(self.product(R, v), self.reverse(R)).symmetry((0, 2), +1)
+		return self.product(self.product(R, v), self.reverse(R)).symmetry((0, 2))
 		# return self.product(R, self.product(v, self.reverse(R))
 
 	# @cache

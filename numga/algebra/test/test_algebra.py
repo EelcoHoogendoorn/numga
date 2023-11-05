@@ -179,7 +179,7 @@ def test_norm_squared():
 	kv = ga.subspace.k_vector(grade)
 	# kv = ga.subspace.from_grades([0, 4, 8])
 	# construct symbolically simplified operator for (x * ~x)
-	S = ga.operator.reverse_product(kv, kv).symmetry((0, 1), +1)
+	S = ga.operator.reverse_product(kv, kv).symmetry((0, 1))
 	print(np.unique(ga.grade(S.output.blades)))
 	assert S.output == ga.subspace.from_grades(output_grades)
 
