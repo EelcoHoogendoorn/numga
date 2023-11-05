@@ -545,9 +545,9 @@ class OperatorFactory:
 
 		inverse(x) = (x * inverse_factor(x))<0>
 		"""
-		p = self.product(self.conjugate(x), self.involute(x)).symmetry((0, 1), +1)
-		q = self.product(p, x.reverse())#.symmetry((1, 2), +1)
-		return q
+		p = self.product(self.conjugate(x), self.involute(x))
+		q = self.product(p, x.reverse())
+		return q.symmetry((0,1,2))
 
 	@cache
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
