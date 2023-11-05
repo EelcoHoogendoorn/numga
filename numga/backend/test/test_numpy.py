@@ -282,7 +282,7 @@ def test_inverse_simplicifation_failure():
 	assert np.allclose(z.select[5].values, 0)
 
 	# second-order optimized hitzer term does reduce to scalar
-	op = ga.operator.inverse_factor_completed2(V)
+	op = ga.operator.inverse_factor_completed_alt(V)
 	assert op.output.equals.scalar()
 
 	V = ga.subspace.from_grades([2])
