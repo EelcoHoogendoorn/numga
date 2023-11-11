@@ -17,7 +17,7 @@ def test_invariant_decomposition(descr):
 	print(descr)
 	algebra = Algebra.from_pqr(*descr)
 	ga = NumpyContext(algebra)
-	from numga.multivector.extension import fancy
+	from numga.multivector.extension import decompose
 	for i in range(10):
 		b = random_motor(ga).select[2]
 
