@@ -33,3 +33,4 @@ def test_5d_rotor_quality(descr):
 	r = r.normalized()  # enforce R~R=1
 	q = r.full_sandwich(v)  # use full sandwich which will yield grade-5 elements
 	npt.assert_allclose(q.select[5].values, 0, atol=1e-10)
+

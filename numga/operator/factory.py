@@ -260,9 +260,14 @@ class OperatorFactory:
 		"""Bivector product (l * r)<2>; only grade-2 part of geometric product
 		occurs quite often in code, so it gets a precompiled version here
 		"""
+		return self.n_product(l, r, self.algebra.subspace.bivector())
+	@cache
+	def n_product(self, l: SubSpace, r: SubSpace, o: SubSpace) -> Operator:
+		"""geometric product with fused output grade restriction"""
 		gp = self.geometric_product(l, r)
 		# FIXME: make delayed binding version of restrict
-		return self.restrict(gp.subspace, self.algebra.subspace.bivector()).bind(gp)
+		return self.restrict(gp.subspace, o).bind(gp)
+
 
 	@cache
 	def left_contraction_product(self, l: SubSpace, r: SubSpace) -> Operator:
@@ -451,6 +456,10 @@ class OperatorFactory:
 	def squared(self, v: SubSpace) -> Operator:
 		"""x * x"""
 		return self.product(v, v).symmetry((0, 1))
+	@cache
+	def cubed(self, v: SubSpace) -> Operator:
+		"""x * x * x"""
+		return self.product(self.squared(v), v).symmetry((0, 1, 2))
 
 	# FIXME: should we introduce dual/anti norms as well?
 	# @cache
@@ -465,8 +474,8 @@ class OperatorFactory:
 
 	@cache
 	def study_conjugate(self, subspace) -> "Operator":
-		assert subspace in self.algebra.subspace.study()
-		sign = parity_to_sign(subspace.grades() // 4)
+		# assert subspace in self.algebra.subspace.study()
+		sign = parity_to_sign(subspace.grades() > 0)
 		return self.diagonal(subspace, sign)
 	@cache
 	def study_norm_squared(self, subspace) -> "Operator":
@@ -544,11 +553,13 @@ class OperatorFactory:
 	@cache
 	def inverse_factor(self, x: SubSpace) -> Operator:
 		"""Compute inverse_factor(x) = conj(x) * involute(x) * reverse(x)
+		reverse -> conjugate recursion
 
 		For many multivectors, this gives:
 		inverse(x) = (x * inverse_factor(x))<0>
 		"""
-		p = self.product(x, self.reverse(x)).symmetry((0, 1))
+		# p = self.product(x, self.reverse(x)).symmetry((0, 1))
+		p = self.symmetric_reverse_product(x)
 		q = self.product(self.reverse(x), self.conjugate(p))
 		return q.symmetry((0, 1, 2))
 
@@ -557,27 +568,39 @@ class OperatorFactory:
 		"""Compute x * inverse_factor(x)
 		"""
 		p = self.symmetric_reverse_product(x)
-		q = self.product(p, self.conjugate(p)).symmetry((0, 1, 2, 3))
-		return q
+		q = self.product(p, self.conjugate(p))
+		return q.symmetry((0, 1, 2, 3))
+
+	@cache
+	def inverse_factor_alt(self, x: SubSpace) -> Operator:
+		"""Fusing with scalar negation gives different reduction possibilities
+		"""
+		p = self.symmetric_reverse_product(x)
+		q = self.product(self.reverse(x), self.scalar_negation(p))
+		return q.symmetry((0, 1, 2))
 
 	@cache
 	def inverse_factor_completed_alt(self, x: SubSpace) -> Operator:
 		"""Fusing with scalar negation gives different reduction possibilities
 		"""
 		p = self.symmetric_reverse_product(x)
-		q = self.product(p, self.pseudoscalar_negation(p)).symmetry((0, 1, 2, 3))
-		return q
+		q = self.product(p, self.scalar_negation(p))
+		return q.symmetry((0, 1, 2, 3))
 
 	def compose_symmetry_ops(self, x: SubSpace, op1, op2):
 		"""constructed fused higher order hitzer ops"""
+		p = self.product(x, op1(x)).symmetry((0, 1))
+		q = self.product(op1(x), op2(p))
+		return q.symmetry((0, 1, 2))
+	def complete_op(self, x, op):
+		c = self.product(x, op)
+		return c.symmetry(range(c.arity))
 
 
 	@cache
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Compute inertia operator; l.regressive(l x r)"""
-		# FIXME: it is tempting to enforce symmetry here, but it does not improve sparsity,
-		#  and does force us to use a float kernel, so nevermind
-		return self.regressive(l, self.commutator(l, r))#.symmetry((0, 1))
+		return self.regressive(l, self.commutator(l, r)).symmetry((0, 1))
 
 
 	# # projections according to erik lengyel

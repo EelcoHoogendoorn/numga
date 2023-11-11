@@ -45,6 +45,15 @@ def test_print_sta():
 	print(op)
 
 
+def test_print_maxwell():
+	"""Visualize sta multiplication table"""
+	algebra = Algebra('x+y+z+t-')
+	one, bi = algebra.subspace.vector(), algebra.subspace.bivector()
+	op = algebra.operator.product(one, bi)
+	print()
+	print(op)
+
+
 def test_squared_norm():
 	"""Visualize squared norm of motor in 4d"""
 	algebra = Algebra('x+y+z+w+')
@@ -135,7 +144,7 @@ def test_quat_matrix():
 	Q = context.subspace.even_grade()
 	q = context.multivector(Q, [1, 2, 3, 4])
 	op = context.operator.product(Q, Q)
-	o = op.partial({0:q})
+	o = op.partial({0: q})
 	print()
 	print(o.kernel)
 
@@ -193,6 +202,24 @@ def test_projection_matrix():
 	print(P.kernel.T)
 	print(P.operator.axes)
 	# print(P.inverse().kernel)
+
+
+def test_hitzer_fusion():
+	"""Test fused vs nonfused hitzer operator difference"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra.from_pqr(5,0,0)
+
+	# V = context.subspace.vector()
+	B = algebra.subspace.bivector()
+	# T = context.subspace.antivector()
+	op = algebra.operator
+	rp = op.product(B, op.reverse(B)).symmetry((0,1))
+	foo = op.product(rp, op.scalar_negation(rp)).symmetry((0,1,2,3))
+	# bar = op.product(rp.subspace, op.scalar_negation(rp.subspace)).symmetry((0,1))
+	bar = B.squared().symmetric_scalar_negation()
+	print(foo.subspace)
+	print(bar.subspace)
+
 
 
 # def test_projection_matrix_aspirational():

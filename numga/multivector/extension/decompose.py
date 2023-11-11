@@ -1,3 +1,5 @@
+"""Implement some decomposition algorithms"""
+
 from typing import Tuple
 
 from numga.dynamic_dispatch import SubspaceDispatch
@@ -39,7 +41,7 @@ mv.decompose_invariant = SubspaceDispatch("""
 @mv.decompose_invariant.register(lambda s: s.inside.bivector() and s.squared().inside.scalar())
 def bivector_decompose_simple(b: BiVector) -> Tuple[BiVector, BiVector]:
 	return b, b.context.multivector.empty()
-@mv.decompose_invariant.register(lambda s: s.inside.bivector() and s.squared().inside.study())
+@mv.decompose_invariant.register(lambda s: s.inside.bivector() and s.squared().is_study)
 def bivector_decompose_bisimple(b: BiVector) -> Tuple[BiVector, BiVector]:
 	b2 = b.squared()
 	s = b2.study_conjugate() / (b2.study_norm() * 2)

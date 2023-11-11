@@ -76,7 +76,7 @@ class ConformalContextMixin:
 		return ((self.ni * (p.norm_squared() - r*r) / 2 + self.no) + p)
 
 	@cached_property
-	def unembed(self):
+	def unembed(self) -> "Operator":
 		V = self.subspace.vector()
 		# FIXME: need to add syntactic sugar to be able to construct operators from subspaces
 		#  get to this syntax: op = (V ^ self.N) * self.N

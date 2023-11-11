@@ -111,6 +111,8 @@ class AbstractMultiVector:
 		return self.operator.scalar_product(self.subspace, other.subspace)(self, other)
 	def bivector_product(self, other):
 		return self.operator.bivector_product(self.subspace, other.subspace)(self, other)
+	def trivector_product(self, other):
+		return self.operator.n_product(self.subspace, other.subspace, self.context.subspace.k_vector(3))(self, other)
 	def join(self, other):
 		return self.operator.join(self.subspace, other.subspace)(self, other)
 	def meet(self, other):
@@ -155,21 +157,27 @@ class AbstractMultiVector:
 
 	def squared(self):
 		# print(' squared', end='')
+		# print(self.subspace)
 		return self.operator.squared(self.subspace)(self, self)
 	def symmetric_reverse_product(self):
 		# print(' reversed', end='')
+		# print(self.subspace)
 		return self.operator.symmetric_reverse_product(self.subspace)(self, self)
 	def symmetric_involute_product(self):
 		# print(' involute', end='')
+		# print(self.subspace)
 		return self.operator.symmetric_involute_product(self.subspace)(self, self)
 	def symmetric_conjugate_product(self):
 		# print(' conjugate', end='')
+		# print(self.subspace)
 		return self.operator.symmetric_conjugate_product(self.subspace)(self, self)
 	def symmetric_scalar_negation_product(self):
 		# print(' scalar-neg', end='')
+		# print(self.subspace)
 		return self.operator.symmetric_scalar_negation_product(self.subspace)(self, self)
 	def symmetric_pseudoscalar_negation_product(self):
 		# print(' scalar-pss-neg', end='')
+		# print(self.subspace)
 		return self.operator.symmetric_pseudoscalar_negation_product(self.subspace)(self, self)
 
 	# our ternary operators

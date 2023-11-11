@@ -85,3 +85,16 @@ def motor_properties(m):
 	v1 = np.linalg.norm(v1.values, axis=-1)
 	return v0, v1
 	return np.allclose(v0, 0, atol=1e-6), np.allclose(v1, 0, atol=1e-6)
+
+
+def all_grade_combinations(algebra):
+	all_grades = np.arange(algebra.n_grades)
+	import itertools
+	for r in all_grades:
+		for grades in itertools.combinations(all_grades, r+1):
+			yield list(grades)
+
+
+def check_inverse(x, i, atol=1e-9):
+	assert np.allclose((x * i - 1).values, 0, atol=atol)
+	assert np.allclose((i * x - 1).values, 0, atol=atol)

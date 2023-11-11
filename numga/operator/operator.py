@@ -200,16 +200,17 @@ class Operator:
 	def select_grade(self, k: int) -> "Operator":
 		"""Remap to new output space; dropping outputs or adding implicit zeros"""
 		return self.select_subspace(self.algebra.subspace.k_vector(k))
-	def restrict_grade(self, k: int) -> "Operator":
-		"""Remap to new output space; dropping outputs"""
-		return self.select_subspace(self * self.algebra.subspace.k_vector(k))
+
+	# def restrict_grade(self, k: int) -> "Operator":
+	# 	"""Remap to new output space; dropping outputs"""
+	# 	return self.select_subspace(self * self.algebra.subspace.k_vector(k))
 
 	def squeeze(self) -> "Operator":
 		"""Drop known zero terms from output subspace"""
 		k = self.kernel
-		# if np.issubdtype(k, np.floating):
-		# 	eps = 1e-6   # need to consider an epsilon to make chained float kernel simplifications work
-		# 	k = np.abs(k) > eps
+		if np.issubdtype(k.dtype, np.floating):
+			eps = 1e-6   # need to consider an epsilon to make chained float kernel simplifications work
+			k = np.abs(k) > eps
 		# get nonzero output indices
 		indices = np.flatnonzero(k.any(axis=tuple(range(self.arity))))
 		output: SubSpace = self.output.slice_subspace(indices)

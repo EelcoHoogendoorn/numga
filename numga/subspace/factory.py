@@ -123,6 +123,11 @@ class SubSpaceFactory(FlyweightFactory):
 		return self.k_vector(-4)
 	def antiquadvector(self) -> SubSpace:
 		return self.k_vector(-5)
+	def scalar_pseudoscalar(self):
+		return self.from_grades([0, -1])
+
+	def nonscalar(self):
+		return self.from_grades(self.grades[1:])
 
 	@cache
 	def multivector(self) -> SubSpace:
@@ -158,16 +163,17 @@ class SubSpaceFactory(FlyweightFactory):
 	def self_reverse(self) -> SubSpace:
 		"""Subspace of multivectors that are self-reverse; that is, x == x.reverse()"""
 		return self.from_grades(self.grades[(self.grades // 2 % 2) == 0])
-		# return self.from_blades(self.blades[self.algebra.reverse(self.blades) == 1])
-	@cache
-	def study(self) -> SubSpace:
-		"""Study numbers; or grades of [0, 4]"""
-		return self.self_reverse().intersection(self.quadreflection())
+
+	# return self.from_blades(self.blades[self.algebra.reverse(self.blades) == 1])
+	# @cache
+	# def study(self) -> SubSpace:
+	# 	"""Study numbers; or grades of [0, 4]"""
+	# 	# FIXME: need to drop this terminology. study==symmetric_nonscalar_product==scalar
+	# 	return self.self_reverse().intersection(self.quadreflection())
 	@cache
 	def mod4(self) -> SubSpace:
-		"""Subspace of generalized study numbers;
-		output space of motor * motor.reverse()
-		even-grade and self-reverse
+		"""output space of motor * motor.reverse()
+		even-grade and self-reverse and self-involute
 		"""
 		return self.from_grades(self.grades[0::4])
 

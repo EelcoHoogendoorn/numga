@@ -17,7 +17,7 @@ def test_normalize_extended():
 	print(n1)
 	print(n1.norm())
 
-	from numga.multivector import extension_optimized
+	from numga.multivector.extension import optimized
 	print()
 	n2 = m.normalized()
 	print(n2)

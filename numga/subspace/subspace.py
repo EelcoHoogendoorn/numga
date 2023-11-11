@@ -4,7 +4,7 @@ import numpy_indexed as npi
 from numga.flyweight import FlyweightMixin
 from numga.algebra.algebra import Algebra
 from numga.algebra.bitops import biterator
-from numga.subspace.namespaces import InNamespace, IsNamespace, SelectNamespace
+from numga.subspace.namespaces import InNamespace, IsNamespace, SelectNamespace, RestrictNamespace
 from numga.util import cache, cached_property, match
 
 
@@ -21,6 +21,7 @@ class SubSpace(FlyweightMixin):
 		self.inside = InNamespace(self)
 		self.equals = IsNamespace(self)
 		self.select = SelectNamespace(self)
+		self.restrict = RestrictNamespace(self)
 		assert npi.all_unique(blades)
 		# lets throw up some defences against accidental mutations of our backing storage
 		self.blades = blades.copy()
@@ -95,6 +96,7 @@ class SubSpace(FlyweightMixin):
 			'quadvector',
 			'antiquadvector',
 
+			'scalar_pseudoscalar',
 			'study',
 			'even_grade',
 			'odd_grade',
@@ -103,6 +105,7 @@ class SubSpace(FlyweightMixin):
 			'trireflection',
 			'quadreflection',
 			'self_reverse',
+			'nonscalar',
 			'multivector',
 		]
 		for m in matches:
@@ -137,6 +140,7 @@ class SubSpace(FlyweightMixin):
 	dual = complement
 
 	def _zeros(self):
+		"""bool for each blade in the subspace, if it contains a degenerate basis vector"""
 		return self.algebra.bit_dot(self.blades, self.algebra.zeros)
 	@cache
 	def degenerate(self) -> "SubSpace":
@@ -155,11 +159,22 @@ class SubSpace(FlyweightMixin):
 	#  could place them in .operator. namespace?
 	#  current namespace is getting rather cluttered
 	@cache
-	def wedge(self, other) -> "SubSpace":
-		return self.algebra.operator.wedge(self, other).subspace
-	@cache
 	def product(self, other) -> "SubSpace":
 		return self.algebra.operator.product(self, other).subspace
+	# @cache
+	# def division(self, other) -> "SubSpace":
+	# 	"""do recursive hitzer logic"""
+	# 	return self.product(other.inverse())
+	# @cache
+	# def inverse(self) -> "SubSpace":
+	# 	"""do recursive hitzer logic. subspace inverse of self lives in
+	# 	note; this is an 'estimate'; the returned subspace may be larger than the actual inverse
+	# 	"""
+	# 	# return self.algebra.subspace.scalar() / self
+
+	@cache
+	def wedge(self, other) -> "SubSpace":
+		return self.algebra.operator.wedge(self, other).subspace
 	@cache
 	def inner(self, other) -> "SubSpace":
 		return self.algebra.operator.inner(self, other).subspace
@@ -167,6 +182,9 @@ class SubSpace(FlyweightMixin):
 	@cache
 	def squared(self) -> "SubSpace":
 		return self.algebra.operator.squared(self).subspace
+	@cache
+	def cubed(self) -> "SubSpace":
+		return self.algebra.operator.cubed(self).subspace
 	@cache
 	def symmetric_reverse(self) -> "SubSpace":
 		return self.algebra.operator.symmetric_reverse_product(self).subspace
@@ -228,6 +246,12 @@ class SubSpace(FlyweightMixin):
 		Contains a shortcircuit to optimize the common case of identical subspaces being tested
 		"""
 		return (self == other) or set(self.blades).issubset(set(other.blades))
+	@cache
+	def select_subspace(self, other: "SubSpace") -> "SubSpace":
+		return other.union(self.restrict_subspace(other))
+	@cache
+	def restrict_subspace(self, other: "SubSpace") -> "SubSpace":
+		return self.intersection(other)
 
 	def __contains__(self, other: "SubSpace") -> bool:
 		return other.is_subspace(self)
@@ -248,8 +272,28 @@ class SubSpace(FlyweightMixin):
 	@cached_property
 	def is_subalgebra(self) -> bool:
 		"""Check that this subspace represents a subalgebra under the action of the geometric product"""
-		return self.squared() in self
+		return self.product(self) in self
 
+	@cached_property
+	def minimal_subalgebra(self) -> "SubSpace":
+		"""Find the smallest closed subalgebra this subspace is a part of
+		Useful in finding square roots? not sure; cant find sqrt of -1 in the scalars...
+		"""
+		subspace, previous = self, None
+		while subspace != previous:
+			previous = subspace
+			subspace = subspace.union(self.product(subspace))
+		return subspace
+	@cached_property
+	def minimal_exponential(self) -> "SubSpace":
+		"""Find the smallest closed subalgebra this subspace is a part of under exponentiation
+		Can be used to deduce subspace exponential lives in?
+		"""
+		subspace, previous = self.union(self.algebra.subspace.scalar()), None
+		while subspace != previous:
+			previous = subspace
+			subspace = subspace.union(subspace.squared())
+		return subspace
 
 	@cache
 	def is_n_simple(self, n):
@@ -268,6 +312,10 @@ class SubSpace(FlyweightMixin):
 	@cached_property
 	def simplicity(self) -> int:
 		"""Return minimum number of products found to reduce this subspace to a scalar"""
+		# FIXME: our use of simplicity is an abuse of terminology
+		#  simple means can be factored as wedge of one vectors (which means it squares scalar)
+		#  not the other way around
+
 		for n in range(self.algebra.n_dimensions // 2 + 2):
 			if self.is_n_simple(n):
 				return n
@@ -294,9 +342,23 @@ class SubSpace(FlyweightMixin):
 		return self.symmetric_pseudoscalar_negation().is_n_simple(n-1)
 
 
+	@cache
+	def symmetric_alt_product(self) -> "SubSpace":
+		# of = self.algebra.operator
+		# # op = of.compose_symmetry_ops(self, of.reverse, of.conjugate)
+		# op = of.compose_symmetry_ops(self, of.reverse, of.scalar_negation)
+		# op = of.complete_op(op)
+		op = self.algebra.operator.inverse_factor_completed_alt(self)
+		return op.subspace
+	@cache
+	def is_alt_n_simple(self, n) -> bool:
+		return self.symmetric_alt_product().is_n_simple(n-2)
+
+
 
 	@cached_property
 	def is_degenerate_scalar(self) -> bool:
+		# rename to nonscalar_degenerate?
 		return self == self.algebra.subspace.scalar().union(self.degenerate())
 
 
@@ -323,6 +385,10 @@ class SubSpace(FlyweightMixin):
 	def in_self_reverse(self) -> bool:
 		"""check that this subspace is self-reverse"""
 		return self in self.algebra.subspace.self_reverse()
+	@cached_property
+	def is_study(self) -> bool:
+		"""Check that this is a generalized study number"""
+		return self.is_scalar_negation_n_simple(1)
 
 
 	# FIXME: this is a bit of a hack. can we make subspace a super-type of our type-hierarchy instead?
