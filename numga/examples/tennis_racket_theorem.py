@@ -6,16 +6,13 @@ from numga.algebra.algebra import Algebra
 from numga.backend.numpy.context import NumpyContext as Context
 from numga.examples.physics.core import Body
 
-
 dt = 1 / 4
 runtime = 200
 
 # works for p=2,3,4,5
 # p>3 is fascinating; some medial axes become seemingly chaotic
 # but stranger still, some medial axes actually stabilize?
-
 context = Context(Algebra.from_pqr(3, 0, 0), dtype=np.float64)
-
 
 def make_n_cube(N):
 	b = ((np.arange(2 ** N)[:, None] & (1 << np.arange(N))) > 0)
@@ -26,11 +23,15 @@ def make_point_cloud():
 	points = make_n_rect(context.algebra.description.n_dimensions)
 	return context.multivector.vector(points).dual()
 
+# create a point cloud with distinct moments of inertia
 points = make_point_cloud()
+# set up independent identical copies of the point cloud
+# equal to the number of independent spin planes
 nb = len(context.subspace.bivector())
 body = Body.from_point_cloud(points=points.repeat('... -> b ...', b=nb))
 
-# set up some initial conditions; equal push along all axes; plus jitter.
+# set up initial conditions;
+# each body gets a spin in a different plane; plus some jitter.
 body.rate = body.rate + context.multivector.bivector(np.eye(nb) + np.random.normal(size=(nb, nb)) * 1e-5)
 E = body.kinetic_energy()
 

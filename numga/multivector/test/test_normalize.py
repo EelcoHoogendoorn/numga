@@ -18,7 +18,7 @@ from numga.multivector.numerical_normalize import normalize_motor
 	(7, 0, 0), (6, 0, 1), (6, 1, 0), (5, 1, 1), #(5, 2, 0),
 ])
 def test_motor_properties(descr):
-	"""Test ability to construct proper motors in a variety of spaces"""
+	"""Test ability to construct proper normalized motors in a variety of spaces"""
 	algebra = Algebra.from_pqr(*descr)
 	context = NumpyContext(algebra)
 
@@ -69,28 +69,6 @@ def test_object_normalize(descr):
 	# have to normalize their duals if interested in that
 	v = random_subspace(context, algebra.subspace.antivector().degenerate(), (10,))
 	print(v.dual().normalized().dual_inverse())
-
-
-def test_object_square_root():
-	"""Test square roots of some simple objects"""
-	# we can take square roots of bivectors in a positive sig
-	algebra = Algebra.from_pqr(2, 0, 0)
-	context = NumpyContext(algebra)
-	v = random_subspace(context, algebra.subspace.bivector(), (10,))
-	sqrt = v.square_root()
-	r = sqrt.squared() - v
-	npt.assert_allclose(r.values, 0, atol=1e-9)
-
-
-	# we can take square roots of 1-vectors in a negative sig
-	algebra = Algebra.from_pqr(0, 2, 0)
-	context = NumpyContext(algebra)
-	v = random_subspace(context, algebra.subspace.vector(), (10,))
-	sqrt = v.square_root()
-	r = sqrt.squared() - v
-	npt.assert_allclose(r.values, 0, atol=1e-9)
-
-
 
 
 @pytest.mark.parametrize('descr', [

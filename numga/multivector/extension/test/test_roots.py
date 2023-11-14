@@ -38,3 +38,23 @@ def test_study_sqrt(descr):
 			r = sqrt.squared() - x
 			npt.assert_allclose(r.values, 0, atol=1e-9)
 			print('PASS')
+
+
+def test_object_square_root():
+	"""Test square roots of some simple objects"""
+	# we can take real square roots of bivectors in a positive sig
+	algebra = Algebra.from_pqr(2, 0, 0)
+	context = NumpyContext(algebra)
+	v = random_subspace(context, algebra.subspace.bivector(), (10,))
+	sqrt = v.square_root()
+	r = sqrt.squared() - v
+	npt.assert_allclose(r.values, 0, atol=1e-9)
+
+
+	# we can take real square roots of 1-vectors in a negative sig
+	algebra = Algebra.from_pqr(0, 2, 0)
+	context = NumpyContext(algebra)
+	v = random_subspace(context, algebra.subspace.vector(), (10,))
+	sqrt = v.square_root()
+	r = sqrt.squared() - v
+	npt.assert_allclose(r.values, 0, atol=1e-9)
