@@ -84,11 +84,11 @@ def test_exp_high_dim():
 		# interestingly shirokov has dodgy accuracy for these kind of inputs
 		i = q.inverse_shirokov()
 		r = h.squared() * i
-	elif False:
+	elif True:
 		i = q.inverse_la()
 		r = h.squared() * i
-	else:
-		r = h.squared().solve(q)
+	# else:
+	# 	r = h.squared().solve(q)
 	res = r.symmetric_reverse_product() - 1
 	print(res)
 	npt.assert_allclose(res.values, 0, atol=1e-9)
