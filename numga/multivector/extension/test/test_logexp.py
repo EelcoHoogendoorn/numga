@@ -21,12 +21,16 @@ def test_bisect(descr):
 	algebra = Algebra.from_pqr(*descr)
 	ga = NumpyContext(algebra)
 
-	for i in range(10):
-		m = random_motor(ga)
+	m = random_motor(ga, (10, ))
 
-		# check exact inverse props
-		r = m.motor_log().exp()
-		npt.assert_allclose(m.values, r.values, atol=1e-9)
+	# check exact inverse props
+	r = m.motor_log().exp()
+	npt.assert_allclose(m.values, r.values, atol=1e-9)
+
+	# check for low iteration count
+	from numga.multivector.extension.logexp import exp_bisect, motor_log_bisect
+	r = exp_bisect(motor_log_bisect(m, 2), 2)
+	npt.assert_allclose(m.values, r.values, atol=1e-9)
 
 
 def test_interpolate():
@@ -67,3 +71,24 @@ def test_interpolate():
 	print(relative_lerp(a, b, t))
 	print(bisection_lerp(a, b, t))
 	# print(linear_lerp(a, b, t))
+
+
+def test_exp_high_dim():
+	"""Exps in dim > 5"""
+	ga = NumpyContext((6, 0, 0))
+
+	b = random_subspace(ga, ga.subspace.bivector())
+	h = 1 + b / 2
+	q = h.symmetric_reverse_product()
+	if False:
+		# interestingly shirokov has dodgy accuracy for these kind of inputs
+		i = q.inverse_shirokov()
+		r = h.squared() * i
+	elif False:
+		i = q.inverse_la()
+		r = h.squared() * i
+	else:
+		r = h.squared().solve(q)
+	res = r.symmetric_reverse_product() - 1
+	print(res)
+	npt.assert_allclose(res.values, 0, atol=1e-9)

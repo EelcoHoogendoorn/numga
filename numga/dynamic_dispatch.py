@@ -2,7 +2,10 @@
 
 class DynamicDispatch:
 	"""Register methods that dynamically dispatch
-	according to static type-like attributes of an object"""
+	according to static type-like attributes of its arguments
+
+	This is an abstract base class; specific implementations should averride the 'attribute' method
+	"""
 
 	def __init__(self, doc=""):
 		self.cache = {}

@@ -11,13 +11,13 @@ Here we have a rigid body physics engine with constraint solver, implemented in 
 Note that the exact same lines of code are responsible for all the above simulations; and they should work just the same in more exotic spaces too.
 
 Not only can we implement very clean, generic, geometric, and coordinate free physics simulations via the power of geometric algebra;
-by using the [JAX](https://github.com/google/jax) backend, we can have all the nice things provided by geometric algebra, while generating optimizable compiled code, that will run on all compilation targets supported by JAX.
+by using the [JAX](https://github.com/google/jax) backend (torch backend also available), we can have all the nice things provided by geometric algebra, while generating optimizable compiled code, that will run on all compilation targets supported by JAX.
 
 
 Overview
 --------
 Numga is primary designed to work with JAX, but it can be used as a pure numpy library as well. 
-It is set up with the potential to generate code for other backends in the future.
+A torch backend is available too, and it is set up with the potential to generate code for other backends in the future.
 
 The primary supported algebras are those with dimension under 6.
 For these algebras, normalizations, logarithms and exponentials are provided by this library 'batteries included'. 
@@ -26,7 +26,7 @@ Algebras with dimensions > 10 will suffer substantial compilation overheads.
 The primary goal of this libray is to support modest dimensional algebras and their applications; although improvements to the support for higher dimensions are welcome.
 
 numga strives to fuse ga-expressions as much as possible, into single optimized linear operators, in a symbolic manner.
-This permits numga to deduce useful properties; it 'knows' that the product of two quaternions returns a quaternion, not a full multivector.
+This permits numga to deduce useful properties; for example, it 'knows' that the product of two quaternions returns a quaternion, not a full multivector.
 In theory, a compiler like JAX might come to the same conclusion, but even if it did so consistently,
 it would massively bloat our JAX compilation graphs, and JAX compilation times tend to be already a bottleneck.
 

@@ -91,22 +91,37 @@ mv.exp_linear_normalized = SubspaceDispatch("""
 def exp_linear_normalized(b: BiVector) -> Motor:
 	return (b + 1).normalized()
 
+mv.exp_quadratic = SubspaceDispatch("""
+	Quadratic exponential approximation.
+	Exact inverse to log_quadratic""")
+@mv.exp_quadratic.register()
+def exp_cayley(b: BiVector) -> Motor:
+	r = 1 + b / 2
+	return r.squared() / r.symmetric_reverse_product()
+mv.motor_log_quadratic = SubspaceDispatch("""
+	Quadratic logarithm approximation.
+	Exact inverse to exp_quadratic""")
+@mv.motor_log_quadratic.register()
+def motor_log_cayley(m: Motor) -> BiVector:
+	return motor_log_linear_normalized(m.motor_square_root()) * 2
+
 
 # # FIXME: can i make kwargs work with dynamic dispatch?
 mv.motor_log_bisect = SubspaceDispatch("""
 	Bisection based logarithm
 	Exact inverse to exp_bisect""")
 @mv.motor_log_bisect.register(lambda s: s.inside.even_grade())
-def motor_log_bisect(m: Motor, n=16) -> BiVector:
+def motor_log_bisect(m: Motor, n=15) -> BiVector:
 	for i in range(n):  # FIXME: should prefer jax looping construct in jax context!
 		m = m.motor_square_root()
-	return motor_log_linear_normalized(m) * (2 ** n)
+	return motor_log_cayley(m) * (2 ** n)
 mv.exp_bisect = SubspaceDispatch("""
 	Bisection based exponential.
 	Exact inverse to motor_log_bisect""")
 @mv.exp_bisect.register()
-def exp_bisect(b: BiVector, n=16) -> Motor:
-	m = exp_linear_normalized(b / (2 ** n))
+def exp_bisect(b: BiVector, n=15) -> Motor:
+	m = exp_cayley(b / (2 ** n))
 	for i in range(n):
 		m = m.squared()
 	return m
+

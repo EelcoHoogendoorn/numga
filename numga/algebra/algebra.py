@@ -19,8 +19,12 @@ class Algebra:
 	def __init__(self, signature: Dict[str, int]):
 		if isinstance(signature, AlgebraDescription):
 			self.description = signature
-		else:
+		elif isinstance(signature, str):
 			self.description = AlgebraDescription.from_str(signature)
+		elif isinstance(signature, tuple):
+			self.description = AlgebraDescription.from_pqr(*signature)
+		else:
+			raise Exception(f'Cant instantiate algebra with {signature}')
 
 		self.blade_nbytes, self.blade_dtype = minimal_uint_type(self.n_dimensions)
 
