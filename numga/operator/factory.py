@@ -629,8 +629,8 @@ class OperatorFactory:
 		alternatively:
 		t = (m * ~m.select.rotor()).select.translator()
 		"""
-		op = self.bivector_product(m, self.dual(m)).symmetry((0, 1))
-		return self.dual(op)
+		op = self.product(m, self.dual(m))
+		return self.dual(op).select_grade(2).symmetry((0, 1))
 
 	# # projections according to erik lengyel
 	# @cache

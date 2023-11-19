@@ -40,11 +40,15 @@ def test_invariant_decomposition(descr):
 		npt.assert_allclose((L * R).values, (R * L).values)
 
 
-def test_motor_decompose_euclidean():
+@pytest.mark.parametrize('descr', [
+	(1, 0, 1), (2, 0, 1), (3, 0, 1), (4, 0, 1),
+])
+def test_motor_decompose_euclidean(descr):
 
-	ga = NumpyContext('x+y+z+w0')
+	ga = NumpyContext(descr)
 	m = random_motor(ga, (10,))
 	t = m.motor_translator()
+	print(t)
 	r = m.motor_rotor()
 
 	assert np.allclose((t * r - m).values, 0, atol=1e-9)
