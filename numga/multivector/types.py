@@ -8,6 +8,10 @@ class Blade:
 	"""single grade that squares to a scalar"""
 
 
+class Vector:
+	pass
+
+
 class BiVector:
 	pass
 

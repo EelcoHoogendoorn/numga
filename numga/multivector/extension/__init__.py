@@ -22,3 +22,4 @@ from numga.multivector.extension.inverse import *
 from numga.multivector.extension.roots import *
 from numga.multivector.extension.logexp import *
 from numga.multivector.extension.norms import *
+from numga.multivector.extension.decompose import *

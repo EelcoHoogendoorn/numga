@@ -140,8 +140,16 @@ class SubSpaceFactory(FlyweightFactory):
 	@cache
 	def even_grade(self) -> SubSpace:
 		return self.from_grades(self.grades[0::2])
-	# FIXME: this is abuse of terminology; subspace isnt a motor per se
+	# FIXME: this is abuse of terminology; subspace isnt a motor per se? its the subspace of motors tho
 	motor = even_grade
+	@cache
+	def translator(self):
+		return self.bireflection().difference(self.bivector().nondegenerate())
+	@cache
+	def rotor(self):
+		return self.even_grade().nondegenerate()
+
+
 	self_involute = even_grade
 	@cache
 	def odd_grade(self) -> SubSpace:

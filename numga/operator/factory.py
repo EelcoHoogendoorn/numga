@@ -558,7 +558,6 @@ class OperatorFactory:
 		For many multivectors, this gives:
 		inverse(x) = (x * inverse_factor(x))<0>
 		"""
-		# p = self.product(x, self.reverse(x)).symmetry((0, 1))
 		p = self.symmetric_reverse_product(x)
 		q = self.product(self.reverse(x), self.conjugate(p))
 		return q.symmetry((0, 1, 2))
@@ -602,6 +601,36 @@ class OperatorFactory:
 		"""Compute inertia operator; l.regressive(l x r)"""
 		return self.regressive(l, self.commutator(l, r)).symmetry((0, 1))
 
+	@cache
+	def solve(self, x: SubSpace, rhs: SubSpace):
+		"""Return operator for solving x * y = rhs, for unknown y"""
+		mv = self.algebra.subspace.multivector()
+		# mv = x
+		op = self.product(x, mv).select_subspace(rhs).squeeze()
+		# squeeze over input axis! retain only parts of y that may contribute
+		# to rhs
+		mask = np.any(op.kernel != 0, axis=(0, 2))
+		y = mv.slice_subspace(mask)
+		foo = self.product(x, y)
+
+		# FIXME: recurse once?
+		#  without spaces can be too small, but with
+		#  the spaces are too big. what gives?
+		op2 = self.product(x, mv).select_subspace(foo.subspace).squeeze()
+
+		mask = np.any(op2.kernel != 0, axis=(0, 2))
+		y = mv.slice_subspace(mask)
+		foo = self.product(x, y)
+		return foo
+		# return Operator(op.kernel[:, mask, :], (x, y, rhs))
+
+	def euclidian_factorization(self, m: "SubSpace"):
+		"""
+		alternatively:
+		t = (m * ~m.select.rotor()).select.translator()
+		"""
+		op = self.bivector_product(m, self.dual(m)).symmetry((0, 1))
+		return self.dual(op)
 
 	# # projections according to erik lengyel
 	# @cache

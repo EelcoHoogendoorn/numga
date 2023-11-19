@@ -40,3 +40,9 @@ def test_mimimal_subalgebra():
 		s = S.minimal_exponential
 		print(list(np.unique(s.grades())))
 
+
+def test_stuff():
+	ga = Algebra.from_pqr(3, 0, 1)
+
+	assert ga.subspace.rotor() != ga.subspace.motor()
+	assert ga.subspace.rotor().product(ga.subspace.translator()) == ga.subspace.motor()

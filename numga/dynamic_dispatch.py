@@ -15,10 +15,10 @@ class DynamicDispatch:
 	def attribute(self, arg):
 		raise NotImplementedError
 
-	def match(self, subspaces):
+	def match(self, attributes):
 		for condition, func in self.options:
-			if condition(*subspaces):
-				self.cache[subspaces] = func
+			if condition(*attributes):
+				self.cache[attributes] = func
 				return func
 		raise Exception('No matching implementation found')
 
