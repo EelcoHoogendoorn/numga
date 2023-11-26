@@ -181,8 +181,9 @@ class SubSpace(FlyweightMixin):
 	@cache
 	def inner(self, other) -> "SubSpace":
 		return self.algebra.operator.inner(self, other).subspace
-	# def reject(self, other):
-	# 	return self.difference()
+	def reject(self, other):
+		# FIXME: this formulation does not work for degenerate inputs
+		return self.wedge(other).inner(other)
 
 	@cache
 	def squared(self) -> "SubSpace":
