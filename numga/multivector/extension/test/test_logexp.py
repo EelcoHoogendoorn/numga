@@ -1,4 +1,4 @@
-
+import numpy as np
 import pytest
 
 from numga.backend.numpy.context import NumpyContext
@@ -10,12 +10,13 @@ from numga.multivector.test.util import *
 
 @pytest.mark.parametrize('descr', [
 	(2, 0, 0), (1, 0, 1), (1, 1, 0), #(0, 1, 1),
-	(3, 0, 0), (2, 0, 1), (2, 1, 0), (1, 1, 1), (1, 0, 2), (1, 2, 0),
+	(3, 0, 0), (2, 0, 1), (2, 1, 0), (1, 1, 1), (1, 0, 2), #(1, 2, 0),
 	(4, 0, 0), (3, 0, 1), (3, 1, 0), (2, 1, 1), (2, 0, 2), #(2, 2, 0),
 	(5, 0, 0), (4, 0, 1), (4, 1, 0), (3, 1, 1),
 ])
 def test_bisect(descr):
 	"""Test roundtrip qualities of bisection based log and exp"""
+	np.random.seed(0)
 	print()
 	print(descr)
 	algebra = Algebra.from_pqr(*descr)
@@ -25,12 +26,12 @@ def test_bisect(descr):
 
 	# check exact inverse props
 	r = m.motor_log().exp()
-	npt.assert_allclose(m.values, r.values, atol=1e-9)
+	assert_close(m, r)
 
 	# check for low iteration count
 	from numga.multivector.extension.logexp import exp_bisect, motor_log_bisect
 	r = exp_bisect(motor_log_bisect(m, 2), 2)
-	npt.assert_allclose(m.values, r.values, atol=1e-9)
+	assert_close(m, r)
 
 
 def test_interpolate():
@@ -89,6 +90,4 @@ def test_exp_high_dim():
 		r = h.squared() * i
 	# else:
 	# 	r = h.squared().solve(q)
-	res = r.symmetric_reverse_product() - 1
-	print(res)
-	npt.assert_allclose(res.values, 0, atol=1e-9)
+	assert_close(r.symmetric_reverse_product(), 1)

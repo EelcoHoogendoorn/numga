@@ -71,10 +71,30 @@ def motor_rotor(m) -> "Translator":
 	""""""
 	return m.nondegenerate()
 
-mv.motor_split = SubspaceDispatch("""Split motor wrt a given origin""")
-@mv.motor_split.register(lambda m, o: m.inside.motor() and o.inside.vector())
-def motor_split(m: Motor, o: Vector) -> Tuple[Motor, Motor]:
-	o = o.dual()
+mv.motor_split = SubspaceDispatch("""
+	Split motor wrt a given origin in two components;
+	one that leaves the origin invariant and one
+	complimentary to that
+	""")
+@mv.motor_split.register(lambda m, o: m.inside.motor() and o.inside.antivector() and o.dual().is_degenerate)
+def motor_split_euclidian(m: Motor, o: AntiVector) -> Tuple[Motor, Motor]:
+	"""If the dual of o is degenerate, it represents the euclidean origin
+	In this special case there is a more optimized solution
+	m = t * r
+	"""
+	return motor_translator(m), motor_rotor(m)
+@mv.motor_split.register(lambda m, o: m.inside.motor() and o.inside.antivector() and o.is_blade)
+def motor_split_blade(m: Motor, o: AntiVector) -> Tuple[Motor, Motor]:
+	"""If the dual of o is a blade, we can also specialize
+	"""
+	# drop translational axes
+	R = m.subspace.reject(o.subspace.dual())
+	T = m.context.subspace.vector().product(o.subspace.dual())
+	t, r = motor_split(m, o)
+	return t.select_subspace(T), r.select_subspace(R)
+@mv.motor_split.register(lambda m, o: m.inside.motor() and o.inside.antivector())
+def motor_split(m: Motor, o: AntiVector) -> Tuple[Motor, Motor]:
 	# construct shortest trajectory from o to m >> o
 	t = ((m >> o) / o).motor_square_root()
+	# the residual is a rotation that leaves o invariant
 	return t, ~t * m

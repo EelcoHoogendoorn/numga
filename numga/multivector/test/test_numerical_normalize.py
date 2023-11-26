@@ -30,8 +30,7 @@ def test_numerical_inverse_sandwich(descr):
 	# should admit an inverse sandwich solve
 	s = e.symmetric_reverse_product()
 	isr = inverse_sandwich(s, n_iter=10)
-	r = (isr >> s) - 1
-	npt.assert_allclose(r.values, 0, atol=1e-9)
+	assert_close(isr >> s, 1)
 
 
 @pytest.mark.parametrize('descr', [

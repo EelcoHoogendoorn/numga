@@ -45,6 +45,9 @@ class SubSpace(FlyweightMixin):
 
 	def __len__(self):
 		return len(self.blades)
+	@property
+	def is_blade(self):
+		return len(self) == 1
 
 	def __repr__(self):
 		# return self.pretty_str
@@ -178,6 +181,8 @@ class SubSpace(FlyweightMixin):
 	@cache
 	def inner(self, other) -> "SubSpace":
 		return self.algebra.operator.inner(self, other).subspace
+	# def reject(self, other):
+	# 	return self.difference()
 
 	@cache
 	def squared(self) -> "SubSpace":

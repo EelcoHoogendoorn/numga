@@ -27,27 +27,25 @@ def test_study(descr):
 	s = m.symmetric_reverse_product()
 	assert s.subspace.is_study
 
+	mn = m.normalized()
+	assert_close(mn * ~mn, 1)
+
 	print('inverse')
 	Is = s.inverse()
-	r = Is * s - 1
-	npt.assert_allclose(r.values, 0, atol=1e-9)
+	assert_close(Is * s, 1)
 
 	print('square root')
 	rs = s.square_root()
-	r = rs * rs - s
-	npt.assert_allclose(r.values, 0, atol=1e-9)
+	assert_close(rs * rs, s)
 	zero = s * 0
 	rs = zero.square_root()
-	npt.assert_allclose(rs.values, 0, atol=1e-9)
+	assert_close(rs, 0)
 
 	print('inverse square root')
 	Irs = s.inverse().square_root()
-
 	Irs2 = s.square_root().inverse()
-	npt.assert_allclose(Irs2.values, Irs.values, atol=1e-6)
-
-	r = s * Irs * Irs - 1
-	npt.assert_allclose(r.values, 0, atol=1e-9)
+	assert_close(Irs2, Irs, atol=1e-6)
+	assert_close(s * Irs * Irs, 1)
 
 
 def test_motor_normalize_6d(descr=[6,0,0]):

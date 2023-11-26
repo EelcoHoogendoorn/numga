@@ -12,6 +12,10 @@ class Vector:
 	pass
 
 
+class AntiVector:
+	pass
+
+
 class BiVector:
 	pass
 

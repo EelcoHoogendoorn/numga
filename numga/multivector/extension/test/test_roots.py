@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from numga.backend.numpy.context import NumpyContext
@@ -34,10 +35,7 @@ def test_study_sqrt(descr):
 		if x.subspace.is_study:
 			print(x.subspace)
 			sqrt = x.square_root()
-			# print(sqrt)
-			r = sqrt.squared() - x
-			npt.assert_allclose(r.values, 0, atol=1e-9)
-			print('PASS')
+			assert_close(sqrt.squared(), x)
 
 
 def test_object_square_root():
@@ -46,15 +44,25 @@ def test_object_square_root():
 	algebra = Algebra.from_pqr(2, 0, 0)
 	context = NumpyContext(algebra)
 	v = random_subspace(context, algebra.subspace.bivector(), (10,))
-	sqrt = v.square_root()
-	r = sqrt.squared() - v
-	npt.assert_allclose(r.values, 0, atol=1e-9)
-
+	assert_close(v.square_root().squared(), v)
 
 	# we can take real square roots of 1-vectors in a negative sig
 	algebra = Algebra.from_pqr(0, 2, 0)
 	context = NumpyContext(algebra)
 	v = random_subspace(context, algebra.subspace.vector(), (10,))
-	sqrt = v.square_root()
-	r = sqrt.squared() - v
-	npt.assert_allclose(r.values, 0, atol=1e-9)
+	assert_close(v.square_root().squared(), v)
+
+
+def test_motor_roots():
+	np.random.seed(0)
+	algebra = Algebra.from_pqr(3, 0, 1)
+	context = NumpyContext(algebra)
+	m = random_motor(context, (10,))
+	assert_close(m.motor_square_root().squared(), m)
+
+	# construct some translators, which can have a specialized sqrt
+	m = m.select.bivector().degenerate() + 1
+	assert_close(m.motor_square_root().squared(), m)
+
+	assert_close(m.motor_geometric_mean(m), m)
+

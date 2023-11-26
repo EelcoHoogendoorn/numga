@@ -68,4 +68,5 @@ def reverse_study_normalized(x):
 	"""Binds to 4d and 5d even grade, as well as many other objects"""
 	s = x.symmetric_reverse_product()
 	s = s.square_root().inverse()
+	# NOTE: order of s and x here is important!
 	return s * x

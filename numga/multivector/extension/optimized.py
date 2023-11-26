@@ -17,6 +17,8 @@ References
 [2] May the Forque Be with You; Dynamics in PGA
 
 """
+import numpy as np
+
 # FIXME: move this to numpy backend module?
 from numga.multivector.multivector import AbstractMultiVector as mv
 @mv.normalized.register(
@@ -54,3 +56,75 @@ def normalize_3dpga_motor_numpy(m: "Motor") -> "Motor":
 
 # reset cache
 mv.normalized.cache = {}
+@mv.exp.register(
+	lambda s:
+	s.named_str == 'xw,yw,zw' and
+	s.algebra.description.description_str == 'x+y+z+w0',
+	position=0      # try and match this before all else
+)
+def exponentiate_degenerate_bivector_numpy(b: "BiVector") -> "Motor":
+	"""Optimized 3d pga exponentiation, for the given memory layout
+	"""
+	M = np.empty(b.shape + (4,))
+	M[..., 0] = 1
+	M[..., 1:] = b.values
+	return b.context.multivector(values=M, subspace=b.context.subspace.translator())
+
+@mv.exp.register(
+	lambda s:
+	s.named_str == 'xy,xz,yz' and
+	s.algebra.description.description_str == 'x+y+z+w0',
+	position=0      # try and match this before all else
+)
+def exponentiate_nondegenerate_bivector_numpy(b: "BiVector") -> "Motor":
+	"""Optimized 3d pga exponentiation, for the given memory layout
+	"""
+	xy, xz, yz = np.moveaxis(b.values, -1, 0)
+	l = xy*xy + xz*xz + yz*yz
+	a = np.sqrt(l)
+	c = np.cos(a)
+	s = np.where(a > 1e-20, np.sin(a) / a, 1)
+
+	M = np.empty(b.shape + (4,))
+	M[..., 0] = c
+	M[..., 1] = s*xy
+	M[..., 2] = s*xz
+	M[..., 3] = s*yz
+	return b.context.multivector(values=M, subspace=b.context.subspace.rotor())
+
+@mv.exp.register(
+	lambda s:
+	s.named_str == 'xy,xz,yz,xw,yw,zw' and
+	s.algebra.description.description_str == 'x+y+z+w0',
+	position=0      # try and match this before all else
+)
+def exponentiate_bivector_numpy(b: "BiVector") -> "Motor":
+	"""Optimized 3d pga exponentiation, for the given memory layout
+
+	Notes
+	-----
+	Terms involving xz are negated compared to the reference [1],
+	since our normalized blade order is to sort the axes alphabetically,
+	and our subspace object does not currently store signs of basis blades
+	"""
+	xy, xz, yz, xw, yw, zw = np.moveaxis(b.values, -1, 0)
+	l = xy*xy + xz*xz + yz*yz
+	a = np.sqrt(l)
+	m = xy*zw - xz*yw + yz*xw
+	c = np.cos(a)
+	s = np.where(a > 1e-20, np.sin(a) / a, 1)
+	t = m * (c - s) / l
+
+	M = np.empty(b.shape + (8,))
+	M[..., 0] = c
+	M[..., 1] = s*xy
+	M[..., 2] = s*xz
+	M[..., 3] = s*yz
+	M[..., 4] = s*xw + t*yz
+	M[..., 5] = s*yw - t*xz
+	M[..., 6] = s*zw + t*xy
+	M[..., 7] = m*s
+	return b.context.multivector(values=M, subspace=b.context.subspace.motor())
+
+# reset cache
+mv.exp.cache = {}

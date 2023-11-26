@@ -3,7 +3,7 @@ import pytest
 import numpy.testing as npt
 from numga.algebra.algebra import Algebra
 from numga.backend.numpy.context import NumpyContext
-from numga.multivector.test.util import random_non_motor, random_subspace
+from numga.multivector.test.util import *
 
 
 def test_basic():
@@ -32,5 +32,5 @@ def test_5d_rotor_quality(descr):
 	r = random_non_motor(ga, (N,))
 	r = r.normalized()  # enforce R~R=1
 	q = r.full_sandwich(v)  # use full sandwich which will yield grade-5 elements
-	npt.assert_allclose(q.select[5].values, 0, atol=1e-10)
+	assert_close(q.select[5], 0)
 

@@ -93,8 +93,7 @@ def test_multivector_normalize(descr):
 		if not s.symmetric_reverse().equals.empty():
 			x = random_subspace(context, s, (1,))
 			y = x.normalized()
-			r = y.symmetric_reverse_product() - 1
-			npt.assert_allclose(r.values, 0, atol=1e-6)
+			assert_close(y.symmetric_reverse_product(), 1, atol=1e-6)
 
 
 @pytest.mark.parametrize('descr', [
@@ -115,6 +114,8 @@ def test_motor_normalize_numerical_equivalence(descr):
 	m = v.normalized()
 	n = normalize_motor(v, inner=6, outer=1)
 
+	assert_close(m, n, atol=1e-9)
+
 	v0, v1 = motor_properties(m)
 	npt.assert_allclose(v0, 0, atol=1e-9)
 	npt.assert_allclose(v1, 0, atol=1e-9)
@@ -122,5 +123,3 @@ def test_motor_normalize_numerical_equivalence(descr):
 	v0, v1 = motor_properties(n)
 	npt.assert_allclose(v0, 0, atol=1e-9)
 	npt.assert_allclose(v1, 0, atol=1e-9)
-
-	npt.assert_allclose(m.values, n.values, atol=1e-9)

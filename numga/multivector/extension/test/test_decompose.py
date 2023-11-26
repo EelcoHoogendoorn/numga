@@ -14,6 +14,7 @@ from numga.multivector.test.util import *
 	(5, 0, 0), (4, 0, 1), (4, 1, 0), (3, 1, 1), #(2, 2, 1),
 ])
 def test_invariant_decomposition(descr):
+	np.random.seed(1)
 	print()
 	print(descr)
 	algebra = Algebra.from_pqr(*descr)
@@ -21,50 +22,66 @@ def test_invariant_decomposition(descr):
 	for i in range(10):
 		b = random_motor(ga).select[2]
 
-		print('decompose')
 		l, r = b.decompose_invariant()
-		# if ga.algebra.pseudo_scalar_squared == 0:
-		# 	assert r.subspace.is_degenerate
-		q = l.inner(r)
-		npt.assert_allclose(q.values, 0, atol=1e-9)
-		q = l.squared() # test they square to a scalar
-		npt.assert_allclose(q.values[1:], 0, atol=1e-9)
-		q = r.squared()
-		npt.assert_allclose(q.values[1:], 0, atol=1e-9)
+		assert_close(l.inner(r), 0)
+		assert_close(l.squared().select.nonscalar(), 0)
+		assert_close(r.squared().select.nonscalar(), 0)
 
-		npt.assert_allclose(b.values, (l+r).values, atol=1e-9)
+		assert_close(b, l + r)
 
 		L = l.exp()
 		R = r.exp()
 		# test that component bivectors commute under exponentiation
-		npt.assert_allclose((L * R).values, (R * L).values)
+		assert_close(L * R, R * L)
 
 
 @pytest.mark.parametrize('descr', [
 	(1, 0, 1), (2, 0, 1), (3, 0, 1), (4, 0, 1),
 ])
 def test_motor_decompose_euclidean(descr):
-
 	ga = NumpyContext(descr)
 	m = random_motor(ga, (10,))
 	t = m.motor_translator()
-	print(t)
+	# print(t)
 	r = m.motor_rotor()
 
-	assert np.allclose((t * r - m).values, 0, atol=1e-9)
+	assert_close(t * r, m)
 	# alternate method of constructing translator
 	tt = (m * ~r).select.translator()
-	assert np.allclose((tt - t).values, 0, atol=1e-9)
+	assert_close(tt, t)
 
 
-def test_motor_decompose_elliptical():
-	ga = NumpyContext((4,0,0))
-	m = random_motor(ga, (10,))
+@pytest.mark.parametrize('descr', [
+	(2, 0, 0), (3, 0, 0), (4, 0, 0), (5, 0, 0),
+	(1, 0, 1), (2, 0, 1), (3, 0, 1), (4, 0, 1),
+	(1, 1, 0), (2, 1, 0), (3, 1, 0), (4, 1, 0),
+	# (3, 0, 0)
+])
+def test_motor_split(descr):
+	"""test splitting of motors relative to a specific point"""
+	np.random.seed(10)
+	ga = NumpyContext(descr)
+	N = 10
+	m = random_motor(ga, (N,))
 
-	t, r = m.motor_split(ga.multivector.a)
+	# test for both canonical origin, or some arbitrary point
+	o = ga.multivector.basis()[-1].dual()
+	os = [o, random_motor(ga, (N,)) >> o]
 
-	assert np.allclose((t * r - m).values, 0, atol=1e-9)
-
-	assert np.allclose((t.symmetric_reverse_product() - 1).values, 0, atol=1e-9)
-	assert np.allclose((r.symmetric_reverse_product() - 1).values, 0, atol=1e-9)
+	for o in os:
+		t, r = m.motor_split(o)
+		# print(m)
+		# print(t.subspace)
+		# print(t.subspace.is_subalgebra)
+		# print(t.subspace)
+		# print(r.subspace.is_subalgebra)
+		# check that it is a valid decomposition of the original motor
+		assert_close(t * r, m)
+		# check that r leaves o invariant
+		assert_close(r >> o, o, atol=1e-6)
+		# in d<6, both of these should be simple motors
+		assert_close(t * ~t, 1, atol=1e-6)
+		assert_close(r * ~r, 1, atol=1e-6)
+		# and their respective bivectors are orthogonal
+		assert_close(t.motor_log().inner(r.motor_log()), 0)
 
