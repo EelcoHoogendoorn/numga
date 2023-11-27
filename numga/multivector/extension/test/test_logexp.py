@@ -34,6 +34,36 @@ def test_bisect(descr):
 	assert_close(m, r)
 
 
+def test_bisect_exp_accuracy():
+	"""Test the accuracy of bisection based exponentiation versus trig based implementation
+
+	for float32, we max out at 7 iterations, with 6e-6 MSE
+	for float64, we max at 17 iterations, with 9e-12 MSE
+	"""
+	def euler_quat_exp(b: "BiVector") -> "Motor":
+		a = np.sqrt(-b.squared().values)
+		c = np.cos(a)
+		s = np.where(a > 1e-20, np.sin(a) / a, 1)
+		return b.context.multivector(
+			values=np.concatenate([c, s * b.values], axis=-1),
+			subspace=b.context.subspace.rotor()
+		)
+
+	np.random.seed(0)
+	ga = NumpyContext((3,0,0), dtype=np.float64)
+	m = random_motor(ga, (100, ))
+	b = m.motor_log()
+
+	m_trig = euler_quat_exp(b)
+
+	from numga.multivector.extension.logexp import exp_bisect
+	for i in range(2, 20):
+		m_bisect = exp_bisect(b, i)
+		res = m_bisect - m_trig
+		print(i, np.sqrt((res.values**2).mean()))
+		# print(res.values)
+
+
 def test_interpolate():
 	"""test various methods of motor interpolation"""
 	descr = (3, 0, 0)
