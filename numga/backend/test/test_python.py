@@ -11,3 +11,12 @@ def test_sparse_operator():
 
 	output = q.sandwich(v)
 	print(output)
+
+
+def test_codegen():
+	from numga.backend.python.operator import PythonCodegenOperator
+	ga = PythonContext('x+y+z+', otype=PythonCodegenOperator)
+	even = ga.subspace.even_grade()
+	op = ga.operator.product(even, even)
+	print()
+	print(op())

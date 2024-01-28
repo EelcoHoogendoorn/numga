@@ -4,10 +4,10 @@ from numga.context import AbstractContext
 
 
 class PythonContext(AbstractContext):
-	def __init__(self, algebra, dtype=float):
+	def __init__(self, algebra, dtype=float, otype=PythonSparseOperator):
 		super(PythonContext, self).__init__(
 			algebra=algebra,
 			dtype=dtype,
-			otype=PythonSparseOperator,
+			otype=otype,
 			mvtype=PythonMultiVector
 		)

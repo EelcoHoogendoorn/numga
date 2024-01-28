@@ -16,9 +16,28 @@ class PythonSparseOperator(AbstractConcreteOperator):
 				math.prod((inp.values[ii] for inp, ii in zip(inputs, idx)), start=scalar)
 				for (idx, scalar) in term
 			)
+
 		return output
 
-	# def partial(self, inputs: Dict[int, PythonMultiVector]) -> "PythonSparseOperator":
+
+class PythonCodegenOperator(AbstractConcreteOperator):
+	"""quick and dirty python codegen example"""
+
+	def __call__(self, *inputs: Tuple[PythonMultiVector]) -> PythonMultiVector:
+		terms = self.precompute_sparse
+		inputs = [f'i{i}' for i in range(self.operator.arity)]
+		inp = ','.join(inputs)
+		text = f'def foo({inp}):\n'
+		def make_term(idx, scalar):
+			q = [inp + f'[{ii}]' for inp, ii in zip(inputs, idx)]
+			return '*'.join([str(scalar)] + q)
+
+		def make_line(ci, term):
+			return f'\to[{ci}] = ' + '+'.join(make_term(idx, scalar) for idx, scalar in term)
+
+		return text + '\n'.join(make_line(ci, term) for ci, term in terms)
+
+# def partial(self, inputs: Dict[int, PythonMultiVector]) -> "PythonSparseOperator":
 	# 	expr = self.precompute_einsum_partial(tuple(inputs.keys()))
 	# 	return PythonSparseOperator(
 	# 		self.context,
