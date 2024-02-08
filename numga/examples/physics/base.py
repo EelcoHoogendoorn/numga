@@ -80,10 +80,10 @@ class BodyBase:
 
 	def copy(self, motor=None, rate=None, gravity=None, damping=None) -> "Body":
 		return type(self)(
-			motor=motor or self.motor,
-			rate=rate or self.rate,
-			damping=damping or self.damping,
-			gravity=gravity or self.gravity,
+			motor=motor if motor is not None else self.motor,
+			rate=rate if rate is not None else self.rate,
+			damping=damping if damping is not None else self.damping,
+			gravity=gravity if gravity is not None else self.gravity,
 			first_moment=self.first_moment,
 			inertia=self.inertia,
 			inertia_inv=self.inertia_inv,
@@ -111,15 +111,16 @@ class BodyBase:
 		# Its a type of second moment; quadratic in the point position, so should we call it that?
 		# feels like that property does not uniquely define it though
 		inertia = points.inertia_map().sum(axis=-3)
+		ones = np.ones(first_moment.shape)
 
 		return cls(
-			motor=context.multivector.motor(),
-			rate=context.multivector.bivector(),
+			motor=context.multivector.motor() * ones,
+			rate=context.multivector.bivector() * ones,
 			first_moment=first_moment,
 			inertia=inertia,
 			inertia_inv=inertia.inverse(),
-			damping=context.multivector.scalar() * 0,
-			gravity=context.multivector.antivector()
+			damping=context.multivector.scalar()  * ones* 0,
+			gravity=context.multivector.antivector() * ones
 		)
 
 	def kinetic_energy(self) -> Scalar:
