@@ -21,12 +21,9 @@ def plot_circle(plt, cga, circle):
 	ang = np.linspace(0, 2 * np.pi, 100, endpoint=True)
 	cx, cy = np.cos(ang), np.sin(ang)
 	r = radius.values
-	px, py = cga.point_position(center).values.T
-	if isinstance(px, float):
-		plt.plot(cx * r + px, cy * r + py)
-	else:
-		for xx, yy, rr in zip(px, py, r):
-			plt.plot(cx * rr + xx, cy * rr + yy)
+	px, py = np.atleast_2d(cga.point_position(center).values).T
+	for xx, yy, rr in zip(px, py, r):
+		plt.plot(cx * rr + xx, cy * rr + yy)
 
 
 def test_circle_reflect():
@@ -40,6 +37,7 @@ def test_circle_reflect():
 	# C = cga.embed_point((-1.5, -1.5), r=2).dual()
 	C = cga.embed_point((0.1, 0.2), r=2).dual()
 
+	# reflect P in C
 	Q = C >> P
 
 	import matplotlib.pyplot as plt
@@ -48,6 +46,8 @@ def test_circle_reflect():
 	plot_circle(plt, cga, C)
 	# plot_point(plt, cga, cga.project(Q, C.dual()))
 	plt.axis('equal')
+	plt.xlim(-10, 10)
+	plt.ylim(-10, 10)
 	plt.show()
 
 
