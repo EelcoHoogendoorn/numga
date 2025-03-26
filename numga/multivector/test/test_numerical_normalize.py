@@ -90,7 +90,8 @@ def test_normalize_random(descr):
 	(6, 0, 0), (5, 0, 1), (5, 1, 0),
 ])
 def test_normalize_sqrt(descr):
-	"""Test normalization of a motor + 1. Our numerical routine seems to work for proper motors + 1"""
+	"""Test normalization of a motor + 1. Our numerical routine seems to work for proper motors + 1,
+	though not in double-negative signatures somehow"""
 	algebra = Algebra.from_pqr(*descr)
 	context = Context(algebra)
 
@@ -99,8 +100,6 @@ def test_normalize_sqrt(descr):
 
 	v0, v1 = motor_properties(m)
 	npt.assert_allclose(v0, 0, atol=1e-9)
-	# our renormalization procedure fails to grade-preserve 1 vecs
-	# starting from pure random numbers in dimensions >= 6
 	npt.assert_allclose(v1, 0, atol=1e-9)
 
 
