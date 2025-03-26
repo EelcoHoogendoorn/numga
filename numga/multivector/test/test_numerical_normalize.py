@@ -82,6 +82,28 @@ def test_normalize_random(descr):
 		npt.assert_allclose(v1, 0, atol=1e-9)
 
 
+@pytest.mark.parametrize('descr', [
+	(2, 0, 0), (1, 0, 1), (1, 1, 0),
+	(3, 0, 0), (2, 0, 1), (2, 1, 0),
+	(4, 0, 0), (3, 0, 1), (3, 1, 0),
+	(5, 0, 0), (4, 0, 1), (4, 1, 0),
+	(6, 0, 0), (5, 0, 1), (5, 1, 0),
+])
+def test_normalize_sqrt(descr):
+	"""Test normalization of a motor + 1. Our numerical routine seems to work for proper motors + 1"""
+	algebra = Algebra.from_pqr(*descr)
+	context = Context(algebra)
+
+	e = random_motor(context, shape=(10,)) + 1
+	m = normalize_motor(e, inner=10, outer=1)
+
+	v0, v1 = motor_properties(m)
+	npt.assert_allclose(v0, 0, atol=1e-9)
+	# our renormalization procedure fails to grade-preserve 1 vecs
+	# starting from pure random numbers in dimensions >= 6
+	npt.assert_allclose(v1, 0, atol=1e-9)
+
+
 def test_normalize_plot():
 	"""Plot the convergence behavior of a grid of random motors being normalized in 6d"""
 	algebra = Algebra.from_pqr(6, 0, 0)
