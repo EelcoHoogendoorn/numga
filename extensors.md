@@ -8,11 +8,11 @@ In the process of laying out this case, we hope to expose two common notions as 
 * geometric algebra is less expressive than tensor algebra
 * geometric algebra forces you to choose between quaternions and matrices
 
-We will go over a few examples to illustrate the utility of extensors.
+We will go over a few examples to illustrate the workings and utility of extensors.
  * [Levi-Civita symbol](#familiar-example-the-levi-civita-symbol)
  * [Complex number multiplication](#simple-example-complex-number-product-in-matrix-form)
  * [Inertia mappings](#advanced-example-inertia-mappings)
- * [Affine transformations](#performance-example-affine-matrices)
+ * [Affine matrices](#performance-example-affine-matrices)
 
 ## Familiar example; the Levi-Civita symbol
 
@@ -36,29 +36,30 @@ print(e_ijk.data)
  [[ 0  1  0]
   [-1  0  0]
   [ 0  0  0]]]
-# two input arguments
+assert e_ijk.data.shape == (3,3,3)
+# the cross product has two input arguments; hence arity=2
 assert e_ijk.arity == 2
 # as noted, all three input/output indices are over the space of vectors
 assert e_ijk.axes == (V, V, V)
-assert e_ijk.data.shape == (3,3,3)
 
-# partially bind with a vector of unique integers for illustration
-v = ctx.multivector.vector([1,2,3])
+# construct a vector of unique integers
+v = ctx.multivector.vector([1, 2, 3])
+# we bind one of the arguments of the extensor `e_ijk`
 m = e_ijk.partial({0: v})
 # m is now a unary mapping from vectors to vectors
 assert m.arity == 1
 assert m.axes == (V, V)
-assert m.data.shape == (3,3)
+assert m.data.shape == (3, 3)
 # the resulting expression is 'the cross product with `v` in matrix form'
 print(m.data)
-[[ 0.  3. -2.]
- [-3.  0.  1.]
- [ 2. -1.  0.]]
+[[ 0  3 -2]
+ [-3  0  1]
+ [ 2 -1  0]]
 # Not coicidentally; this gives the same result
 print(np.einsum('ijk,k->ij', e_ijk.data, v.data))
-[[ 0.  3. -2.]
- [-3.  0.  1.]
- [ 2. -1.  0.]]
+[[ 0  3 -2]
+ [-3  0  1]
+ [ 2 -1  0]]
 ```
 The key realizations to be taken from the above example, are that:
  * It is infact true in general, that we can express *any* GA product in terms of a multiplication table expressed as a sparse array of integer signs [+1, 0, -1]
@@ -87,8 +88,8 @@ matrix = prod.partial({1: r})
 assert matrix.arity == 1
 assert matrix.data.shape == (n,n)
 print(matrix.data)
-[[ 1.  2.]
- [-2.  1.]]
+[[ 1  2]
+ [-2  1]]
 # if we bind a second argument...
 result = matrix.partial({0: r})
 # result is a `nullary extensor of even grade`... 
@@ -132,25 +133,25 @@ B = ctx.subspace.bivector
 N = n + 1
 # N antivector corner points of a simplex
 p = ctx.multivector.vector(np.eye(N)).dual()
-assert p.shape == (N,) and p.data.shape == (N,N)
+assert p.shape == (N,) and p.data.shape == (N, N)
 # collections of mv's can be manipulated using standard numpy semantics
-com = p.mean(axis=0)  
+com = p.mean(axis=0)
 assert com.shape == ()
-# N unary inertia mappings from bivector to dual bivector
-Is = p.regressive(B.commutator(p))  
+# construct N unary inertia mappings from bivector to dual bivector;
+# one for each input point `p`
+Is = p.regressive(B.commutator(p))
 assert Is.shape == (N,)
 assert Is.data.shape == (N, len(B), len(B))
 assert Is.arity == 1
-# sum over the inertia contributions of each point
-I = Is.sum(axis=0) 
-# This give a (full rank) inertia map of the whole triangle
-assert I.axes == (B.dual, B)
+# sum over the inertia contributions of all N points
+I = Is.sum(axis=0)
 assert I.data.shape == (len(B), len(B))
+# This give a (full rank) inertia map of the whole simplex
+assert I.axes == (B.dual, B)
 assert I.arity == 1
 # this also 'just works', as long as the unary mapping is indeed invertable
 Iinv = I.inverse()
 assert Iinv.axes == (B, B.dual)
-assert Iinv.data.shape == (len(B), len(B))
 assert Iinv.arity == 1
 ```
 Note that the example above works identically, regardless of the dimension and signature of the projective space.
@@ -164,7 +165,7 @@ But any GA framework that provides partially bound expressions, or extensors, al
 
 ```python
 ctx = Context('x+y+z+w0')
-# a unit motor
+# construct a unit motor
 m = ctx.multivector.even_grade()
 # the subspace of motors
 M = m.subspace
@@ -173,11 +174,11 @@ P = ctx.subspace.vector.dual
 # an expression of arity 3
 assert M.sandwich(P).arity == 3
 # this is an mv-expression of arity 1; bound over m
-sandwich = m * P * m.reverse()   
+sandwich = m * P * m.reverse()
 # same but more optimized; capable of exploiting m==m
 # a sandwich with the abstract space of dual vectors
-sandwich = m.sandwich(P)   
-# only one unbound argument, a dual-vector
+sandwich = m.sandwich(P)
+# only one unbound argument, a mapping from dual-vectors to dual-vectors
 assert sandwich.arity == 1
 assert sandwich.axes == (P, P)
 # `sandwich` is here represents 'the motor sandwich in matrix form'
@@ -202,7 +203,9 @@ How to implement extensors as such in a language without granular control over c
 
 
 ## Syntax footnote
-The syntax presented here is aspirational; the current numga syntax 1.0 does not allow inline mixing of concrete multivector types and abstract subspaces. Rather, it requires an explicit syntax for constructing operators with unbound arguments The syntax as presented here as is as-planned for numga 2.0. Numga 1.0 has both a 'MultiVector' type as well as an 'Operator' type; but from the numga 2.0 / extensor perspective, this is merely an arbitrary distinction between nullary and non-nullary extensors. This shows itself in the code duplication between the two types, as it pertains to broadcasting semantics and other generic functionality.
+The syntax presented here is partially aspirational; the current numga syntax 1.0 does not allow inline mixing of concrete multivector types and abstract subspaces. Rather, it requires an explicit syntax for constructing operators with unbound arguments The syntax as presented here as is as-planned for numga 2.0. 
+
+Related to this, numga 1.0 has both a 'MultiVector' type as well as an 'Operator' type; but from the numga 2.0 / extensor perspective, this is merely an arbitrary distinction between nullary and non-nullary extensors. This shows itself in an unwanted code duplication between the two types, as it pertains to broadcasting semantics and other generic functionality.
 
 ## Performance footnote
-With regards to performance of implementing extensor functionality; while there is an additional `if` check in each operator invocation required to differentiate concrete multivector arguments, from operations to be constructed over an abstract subspace; these are compile-time-if statements from the perspective of a JIT-compiled expression (wether JAX, torch or some other compilable backend), which is the setting numga concerns itself with. Using the non-compiled numpy backend, enabling expressive extensor syntax does carry this overhead; but the numpy backend is really only there for unit testing and educational purposes, and achieving optimal performance there is considered a non-goal of numga, and one more python conditional is not going to make a material difference.
+With regards to performance of implementing extensor functionality; while there is an additional `if` statement in each operator invocation required to differentiate concrete multivector arguments, from operations to be constructed over an abstract subspace; these are compile-time if-statements from the perspective of a JIT-compiled expression (wether JAX, torch or some other compilable backend), which is the setting numga concerns itself with. Using the non-compiled numpy backend, enabling expressive extensor syntax does carry this overhead; but the numpy backend is really only there for unit testing and educational purposes, and achieving optimal performance there is considered a non-goal of numga, and one more python conditional is not going to make a material difference.
