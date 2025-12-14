@@ -2,7 +2,7 @@
 
 This short article lays out the case for the utility of partially bound geometric product expressions (PBGPE), as first class citizens of a geometric algebra library.
 
-At a risk of abuse of terminology, we will also refer to PBGPE's as 'extensors'; which at any rate is a catchier name.
+At a risk of abuse of [terminology](#terminology-footnote), we will also refer to PBGPE's as 'extensors'; which at any rate is a catchier name.
 
 In the process of laying out this case, we intend to question two common notions:
 * geometric algebra is less expressive than tensor algebra
@@ -14,7 +14,7 @@ We will go over a few examples to illustrate the workings and utility of extenso
  * [Levi-Civita symbol](#familiar-example-the-levi-civita-symbol)
  * [Complex number multiplication](#simple-example-complex-number-product-in-matrix-form)
  * [Inertia mappings](#advanced-example-inertia-mappings)
- * [Affine matrices](#performance-example-affine-matrices)
+ * [Affine matrices and rotations](#performance-example-affine-matrices)
 
 ## Familiar example; the Levi-Civita symbol
 
@@ -220,6 +220,112 @@ Seeing as how numga leans into the multi-staged compilation model of being a pyt
 
 How to implement extensors as such in a language without granular control over compilation stages, such as a more 'traditional' C++ metaprogramming framework, is an open question. 
 
+## Example code
+For illustration, we here work out how a ternary rotor-vector sandwich operation works under the hood, in combined numpy+JAX code.
+
+```python
+ctx = Context('x+y+')
+# the subspace of even grade multivectors; isomorphic to complex numbers
+Q = ctx.subspace.even_grade()
+# the subspace of vectors
+V = ctx.subspace.vector
+
+# Lets examine how the Cl2 rotor-vector sandwich comes to be 
+#  output = q * v * q.reverse()
+sandwich = Q.sandwich(V)
+assert sandwich.data.shape == (2,2,2,2)
+assert sandwich.axes == (V, Q, V, Q)
+print(sandwich.data)
+[[[[ 1  0]
+   [ 0 -1]]
+  [[ 0  1]
+   [ 1  0]]]
+ [[[ 0 -1]
+   [-1  0]]
+  [[ 1  0]
+   [ 0 -1]]]]
+
+reverse = Q.reverse()
+# reversing a simple rotor is just negating its bivector part
+# this just follows the standard GA logic of counting the number of swaps required to map the reversed basis vectors to their original positions
+# We here suppress the urge to prematurely optimize this representation; but rather lean into the general form of a linear map to represent the reverse at this stage; such as to keep the code for combining it with other extensors simple.
+print(reverse.data)
+[[ 1  0]
+ [ 0 -1]]
+
+# left hand side of the sandwich;
+# the product of Q and V produces another V
+# This multiplication table is again construted using the standard GA logic; 
+# eliminating repeating terms that contract via the metric; and then mapping to a standardized ordering of basis blades
+# We may symbolically deduce in this step that the output space is V; 
+# these being the only nonzero terms that emerge from the multiplication table
+left = Q.product(V)
+assert left.data.shape == (2,2,2)
+assert left.axes == (V, Q, V)
+print(left.data)
+[[[ 1  0]
+  [ 0  1]]
+ [[ 0 -1]
+  [ 1  0]]]
+
+# right hand side of the sandwich; (Q * V) * Q.reverse()
+right = V.product(Q)
+assert right.data.shape == (2,2,2)
+assert right.axes == (V, V, Q)
+
+# we can bind the reverse extensor to the Q input slot of the right side product extensor to get the combined extensor
+right_reverse = np.einsum('ijk, kl -> ijl', right.data, reverse.data)
+
+# Now we may bind the output of right_reverse to the V input slot of left Q*V product 
+sandwich = np.einsum('ijk, klm -> ijlm', left.data, right_reverse)
+# we now have a 4d array representing the ternary sandwich operator
+assert sandwich.shape == (2,2,2,2)
+# Since we are merely explicitly retracing the same steps numga takes under the hood,
+# we obtain the same result as we get by letting numga handle the binding of arguments
+print(sandwich)
+[[[[ 1  0]
+   [ 0 -1]]
+  [[ 0  1]
+   [ 1  0]]]
+ [[[ 0 -1]
+   [-1  0]]
+  [[ 1  0]
+   [ 0 -1]]]]
+
+# The below is what happens when binding a specific rotor q to the sandwich extensor
+# note that the (2,2,2,2) sandwich kernel is not an argument of the sandwich_map function
+# rather it is a compile time constant for the purpose of this jitting context.
+# It does not depend on the numerical values of the rotor, but only its type/subspace,
+# and is computed only once in a cached manner.
+@jax.jit
+def sandwich_map_vector(r):
+    # given a rotor r as a shape (2,) array, return a (2,2) matrix 
+    # representing the sandwich operation with a vector space V
+    return jnp.einsum('ijkj, j -> ik', sandwich, r)
+
+def explicit_unroll(r):
+    # since `sandwich` is a compile time constant, we can unroll over the nonzero terms
+    o = np.empty((2,2))
+    o[0,0] = +r[0] * r[0] - r[1] * r[1]
+    o[0,1] = +r[0] * r[1] + r[0] * r[1]
+    o[1,0] = -r[0] * r[1] - r[0] * r[1]
+    o[1,1] = +r[0] * r[0] - r[1] * r[1]
+    return o
+
+def explicit_unroll_opt(r):
+    # after simple term rewriting we may expect of the XLA compiler toolchain, 
+    # we should end up with code similar to the following
+    o = np.empty((2,2))
+    d = r[0] * r[0] - r[1] * r[1]
+    o = 2 * r[0] * r[1]
+    o[0,0] = d
+    o[0,1] = o
+    o[1,0] = -o
+    o[1,1] = d
+    return o
+```
+
+
 ## Sparsity
 
 Note that we can elect to execute the binding of arguments either via contractions over dense arrays; or via unrolling over only the nonzero terms of the expression. This is supported in numga 1.0. 
@@ -237,8 +343,24 @@ Related to this, numga 1.0 has both a 'MultiVector' type as well as an 'Operator
 ## Performance footnote
 With regards to performance of implementing extensor functionality; while there is an additional `if` statement in each operator invocation required to differentiate concrete multivector arguments, from operations to be constructed over an abstract subspace; these are compile-time if-statements from the perspective of a JIT-compiled expression (wether JAX, torch or some other compilable backend), which is the setting numga concerns itself with. Using the non-compiled numpy backend, enabling expressive extensor syntax does carry this overhead; but the numpy backend is really only there for unit testing and educational purposes, and achieving optimal performance there is considered a non-goal of numga, and one more python conditional is not going to make a material difference.
 
+## Terminology footnote
+
+The label 'extensor' is first claimed by [Hestenes](#ref-ca-to-gc), who defines it simply as any multilinear function of multivector arguments.
+
+This defining reference contains several reflections on historical competing ways of defining 'tensors', to which we do not have anything new to add. We note that 'tensors' as multilinear functions of 1-vectors are strictly a subset of the 'extensors'. 
+
+As Hestenes also qualifies subsequently, and is well known, the above definition is incomplete; not every n+1-dimensional block of random numbers defines a valid n-ary extensor, any more than every block of random numbers would define a valid tensor, in the sense of obeying frame-invariance. 
+
+However, any extensor built up from valid operations on multivectors within the algebra is a valid extensor in terms of transformation properties (and also self-evidently a multi-linear map over multivectors). Hence we emphasize this definition as the 'extensors' of numga; as this is the only type of object that we are dealing with, and this definition self-evidently falls within the initial definitions of Hestenes (as well as subsequent clarifications).
+
+Note that this definition of 'extensor', does not include any notion of contravariant or covariant indices; or seperable metric tensors. While one could model a metric tensor as an extensor, it would be an object modelled with the library; not a first class concern of the library or its extensor concept itself. The choice to see the metric as intrinsic to the algebra, rather than as seperate from it, is rather fundamental to the viewpoint difference in geometric algebra versus exterior algabra as a seperate subject. The above reference by Hestenes also goes into this aspect in some depth, for those interested. 
+
+Put more plainly, if you are looking to rotate vectors or build inertia matrices, the numga extensor concept is probably exactly what you are looking for. If you are looking to model the Einstein field equations... maybe numga will be of help to you, but if you have to ask... you should probably first read all the literature on guage-theory-gravity (GTG), which is more than the authors of numga can claim to have read.
+
+
 ## References
 * <a id="ref-gunn-2011"></a>**[Gunn-2011]** Gunn, C. (2011). *Geometry, Kinematics, and Rigid Body Mechanics in Cayley-Klein Geometries*. [Link](https://www.researchgate.net/publication/265672134_Geometry_Kinematics_and_Rigid_Body_Mechanics_in_Cayley-Klein_Geometries)
 * <a id="ref-pgadyn"></a>**[PGADYN]** *PGA Dynamics*. [Link](https://bivector.net/PGADYN.html)
 * <a id="ref-look-ma"></a>**[look-ma-no-matrices]** *Look Ma, No Matrices!* [Link](https://enkimute.github.io/LookMaNoMatrices/)
 * <a id="ref-plane-simplex"></a>**[plane-and-simplex]** *Clean up your Mesh: Plane and Simplex*. [Link](https://www.researchgate.net/publication/397490460_Clean_up_your_Mesh_Plane_and_simplex)
+* <a id="ref-ca-to-gc"></a>**[ca-to-gc]** *Clifford Algebra to Geometric Calculus*. [Link](https://www.researchgate.net/publication/258944244_Clifford_Algebra_to_Geometric_Calculus_A_Unified_Language_for_Mathematics_and_Physics)
