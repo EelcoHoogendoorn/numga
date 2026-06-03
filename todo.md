@@ -1,5 +1,5 @@
 
-This is a non-ordered, tentative list of aspects of this library that may recieve attention in the future. 
+This is a non-ordered, tentative list of aspects of this library that may receive attention in the future. 
 Or potentially, it may serve as inspiration for people who feel inclined to contribute to this library.
 
 * set up proper packaging (pip and conda/conda forge)
