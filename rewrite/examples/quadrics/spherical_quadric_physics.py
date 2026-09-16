@@ -31,6 +31,7 @@ Quadric = ga.gatype((Point, Plane))
 InertiaMap = ga.gatype((AntiBivector, Bivector))
 InverseInertiaMap = ga.gatype((Bivector, AntiBivector))
 Scalar = ga.gatype.scalar()
+Form = ga.gatype((Scalar, Point, Point))       # a quadric with both of its points open: scalar <= point, point
 
 
 # ---------------------------------------------------------------------------
@@ -49,12 +50,10 @@ def compose_quadric(coeffs: np.ndarray, poles: Point) -> Quadric:
     return (dual_projectors * weights).sum(axis=0)
 
 
-def decompose_quadric(Q: Quadric) -> tuple[np.ndarray, Plane]:
-    """Dimension-agnostic SVD decomposition of a dual quadric into singular values and dual tangent planes."""
-    output_space, input_space = Q.axes
-    _, s, vt = np.linalg.svd(Q.kernel)
-    tangents = mv(input_space, vt).normalized()
-    return s, tangents
+def eigenpairs(form: Form) -> tuple[np.ndarray, Point]:
+    """The eigenvalues, ascending, and the eigenvectors as points of a symmetric form on points."""
+    values, vectors = np.linalg.eigh(form.kernel[..., 0, :, :])
+    return values, mv(Point, np.swapaxes(vectors, -1, -2))
 
 
 def make_spherical_quadric(th_x: float, th_y: float) -> Quadric:
@@ -95,48 +94,42 @@ def step_motor(motor: Motor, momentum: AntiBivector, I_inv: InverseInertiaMap, d
 # ---------------------------------------------------------------------------
 # 4. Projective Dual Pencil Collision Engine
 # ---------------------------------------------------------------------------
-def find_contact_parameter(Q1: Quadric, Q2: Quadric) -> tuple[float, float]:
-    """Find peak parameter λ* maximizing det(Q(λ)) analytically in closed form."""
-    y0 = float(np.linalg.det(Q1.kernel))
-    y1 = float(np.linalg.det(Q2.kernel))
-    y2 = float(np.linalg.det((Q2 * 2.0 - Q1).kernel))
-    y3 = float(np.linalg.det((Q1 * 2.0 - Q2).kernel))
+def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[np.ndarray, Point]:
+    """Whether the insides of two quadrics, where their primal forms are negative, meet: they are
+    apart if and only if some member of the pencil A + λB, λ > 0, is positive semidefinite (the
+    S-lemma), so the largest over the pencil of the least eigenvalue is negative exactly when they
+    overlap. The least eigenvalue is concave in λ, hence unimodal in φ = arctan λ over (0, π/2),
+    and golden section finds its maximum; the least eigenvector there is the deepest point, the
+    touching point when the margin is zero. Twelve iterations bracket φ to 0.005 rad; five
+    misreport a separated pair of the hyperbolic scene as touching. Batched over pairs."""
+    def least(phi: np.ndarray) -> np.ndarray:
+        return eigenpairs(Point & (A + B * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
 
-    c3 = (3.0 * y0 - 3.0 * y1 + y2 - y3) / 6.0
-    c2 = -y0 + 0.5 * y1 + 0.5 * y3
-    c1 = -0.5 * y0 + y1 - y2 / 6.0 - y3 / 3.0
-    c0 = y0
-
-    disc = max(c2 * c2 - 3.0 * c3 * c1, 0.0)
-    lam_star = (-c2 - np.sqrt(disc)) / (3.0 * c3)
-    lam_star = float(np.clip(lam_star, 0.001, 0.999))
-    max_det = c3 * lam_star**3 + c2 * lam_star**2 + c1 * lam_star + c0
-    return lam_star, max_det
-
-
-def extract_contact_geometry(
-    Q1: Quadric,
-    Q2: Quadric,
-    lam_star: float,
-) -> tuple[Point, Plane]:
-    """Extract contact point p* and contact normal plane L* at parameter λ*."""
-    Q_star = Q1 * (1.0 - lam_star) + Q2 * lam_star
-    _, tangents = decompose_quadric(Q_star)
-    L_star = tangents[-1]
-    p_star = Q1(L_star)
-    return p_star, L_star
+    golden = (np.sqrt(5.0) - 1.0) / 2.0
+    lo, hi = np.broadcast_to(0.0, np.broadcast_shapes(A.shape, B.shape)), np.broadcast_to(np.pi / 2, np.broadcast_shapes(A.shape, B.shape))
+    c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
+    fc, fd = least(c), least(d)
+    for _ in range(iterations):
+        left = fc > fd                                            # the maximum lies in [lo, d]; the kept probe becomes the other one
+        lo, hi = np.where(left, lo, c), np.where(left, d, hi)
+        c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
+        fresh = least(np.where(left, c, d))
+        fc, fd = np.where(left, fresh, fd), np.where(left, fc, fresh)
+    values, points = eigenpairs(Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point))
+    return values[..., 0], points[..., 0]
 
 
 def resolve_collision(
     body1: SphericalBody,
     body2: SphericalBody,
-    lam_star: float,
+    deepest: Point,
     M_rel: Motor,
-    Q2_in_1: Quadric,
     restitution: float = 1.0,
 ) -> bool:
-    """Detect and resolve elastic collision impulse entirely inside Geometric Algebra."""
-    contact_point, contact_plane = extract_contact_geometry(body1.Q, Q2_in_1, lam_star)
+    """Detect and resolve elastic collision impulse entirely inside Geometric Algebra: the first
+    body's polar plane at the deepest point is the contact plane, its pole the contact point."""
+    contact_plane = body1.Q.inverse()(deepest)
+    contact_point = body1.Q(contact_plane)
     contact_wrench_1: Line = contact_plane.commutator(contact_point)
     contact_wrench_2: Line = M_rel << contact_wrench_1
 
@@ -196,9 +189,9 @@ def simulate(
                     body_i, body_j = bodies[i], bodies[j]
                     M_rel = body_i.motor.inverse() * body_j.motor
                     Q2_in_1 = M_rel >> body_j.Q(M_rel << Plane)
-                    lam_star, max_det = find_contact_parameter(body_i.Q, Q2_in_1)
-                    if max_det < 0.0:
-                        resolve_collision(body_i, body_j, lam_star, M_rel=M_rel, Q2_in_1=Q2_in_1, restitution=1.0)
+                    margin, deepest = overlap(body_i.Q.inverse(), Q2_in_1.inverse())
+                    if margin < 0.0:
+                        resolve_collision(body_i, body_j, deepest, M_rel=M_rel, restitution=1.0)
 
         # Physical invariants:
         frame_w = [np.array(body.I_inv(body.momentum).kernel, copy=True) for body in bodies]

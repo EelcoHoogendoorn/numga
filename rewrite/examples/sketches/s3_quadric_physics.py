@@ -127,13 +127,14 @@ def step_motor(motor: Motor, momentum: Bivector, I_inv: Inertia, dt: float) -> t
     return moved, (motor.inverse() * moved) << momentum
 
 
-def overlap(A: Quadric, B: Quadric, iterations: int = 24) -> tuple[np.ndarray, Point]:
+def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[np.ndarray, Point]:
     """Whether the insides of two quadrics, where their forms are negative, meet: they are apart if
     and only if some member of the pencil A + λB, λ > 0, is positive semidefinite (the S-lemma), so
     the largest over the pencil of the least eigenvalue is negative exactly when they overlap. The
     least eigenvalue is concave in λ, hence unimodal in φ = arctan λ over (0, π/2), and golden
     section finds its maximum; the least eigenvector there is the deepest point, the touching
-    point when the margin is zero. Batched over pairs."""
+    point when the margin is zero. Twelve iterations bracket φ to 0.005 rad; five misreport near
+    pairs as touching. Batched over pairs."""
     def least(phi: np.ndarray) -> np.ndarray:
         return eigenpairs(Point & (A + B * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
 

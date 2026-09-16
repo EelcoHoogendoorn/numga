@@ -9,11 +9,9 @@ from examples.quadrics.spherical_quadric_physics import (
     Plane,
     SphericalBody,
     pointcloud_inertia,
-    decompose_quadric,
     make_spherical_quadric,
     step_motor,
-    find_contact_parameter,
-    extract_contact_geometry,
+    overlap,
     resolve_collision,
     simulate,
 )
@@ -41,32 +39,19 @@ def test_spherical_quadric_tangency():
         assert np.isclose(float(residual.kernel[0]), 0.0, atol=1e-12)
 
 
-def test_dual_pencil_collision_criterion():
-    """Verify max_λ det(Q(λ)) > 0 (separated), ≈ 0 (touching), < 0 (overlapping)."""
+def test_overlap_margin_sign():
+    """The overlap margin is positive when separated, near zero when touching, negative when overlapping."""
     th1 = np.radians(20.0)
     th2 = np.radians(25.0)
-    Q1 = make_spherical_quadric(th1, th1)
+    C1 = make_spherical_quadric(th1, th1).inverse()
 
-    # State 1: Separated (distance = 55 degrees)
-    alpha_sep = np.radians(55.0)
-    R_sep = (mv.xz * (-alpha_sep / 2.0)).exp()
-    Q2_sep = R_sep >> (make_spherical_quadric(th2, th2))(R_sep << Plane)
-    lam_sep, max_sep = find_contact_parameter(Q1, Q2_sep)
-    assert max_sep > 0.005
+    def other(alpha_deg: float):
+        R = (mv.xz * (-np.radians(alpha_deg) / 2.0)).exp()
+        return (R >> (make_spherical_quadric(th2, th2))(R << Plane)).inverse()
 
-    # State 2: Touching (distance = 45 degrees)
-    alpha_touch = np.radians(45.0)
-    R_touch = (mv.xz * (-alpha_touch / 2.0)).exp()
-    Q2_touch = R_touch >> (make_spherical_quadric(th2, th2))(R_touch << Plane)
-    lam_touch, max_touch = find_contact_parameter(Q1, Q2_touch)
-    assert np.isclose(max_touch, 0.0, atol=1e-5)
-
-    # State 3: Overlapping (distance = 35 degrees)
-    alpha_over = np.radians(35.0)
-    R_over = (mv.xz * (-alpha_over / 2.0)).exp()
-    Q2_over = R_over >> (make_spherical_quadric(th2, th2))(R_over << Plane)
-    lam_over, max_over = find_contact_parameter(Q1, Q2_over)
-    assert max_over < -0.005
+    assert overlap(C1, other(55.0))[0] > 0.005                  # separated: centres 55° apart
+    assert np.isclose(overlap(C1, other(45.0))[0], 0.0, atol=2e-3)   # touching: 20° + 25°
+    assert overlap(C1, other(35.0))[0] < -0.005                 # overlapping
 
 
 def test_contour_derived_inertia_intermediate_axis():
@@ -97,19 +82,6 @@ def test_contour_derived_inertia_intermediate_axis():
     I_inv = I_body.inverse()
     w_rec = I_inv(L_x)
     assert np.isclose(abs(float(w_rec.regressive(L_x).kernel[0])), Ix, atol=1e-10)
-
-
-def test_quadric_decomposition_and_composition():
-    """Verify compose_quadric and decompose_quadric are exact decompositions."""
-    th_x, th_y = np.radians(28.0), np.radians(14.0)
-    Q = make_spherical_quadric(th_x, th_y)
-
-    s, tangents = decompose_quadric(Q)
-    assert tangents.shape == (3,)
-    assert len(s) == 3
-
-    for i in range(3):
-        assert np.isclose(float(Q(tangents[i]).norm().kernel[0]), s[i], atol=1e-12)
 
 
 def test_free_flight_energy_and_momentum_conservation():
@@ -247,7 +219,7 @@ def test_spherical_body_resolve_collision():
 
     M_rel = b1.motor.inverse() * b2.motor
     Q2_in_1 = M_rel >> b2.Q(M_rel << Plane)
-    lam_star, max_det = find_contact_parameter(b1.Q, Q2_in_1)
+    margin, deepest = overlap(b1.Q.inverse(), Q2_in_1.inverse())
 
     L_world_1_before = b1.motor >> b1.momentum
     L_world_2_before = b2.motor >> b2.momentum
@@ -257,7 +229,7 @@ def test_spherical_body_resolve_collision():
         + abs(float(((b2.I_inv(b2.momentum)).regressive(b2.momentum) * 0.5).kernel.item()))
     )
 
-    resolved = resolve_collision(b1, b2, lam_star, M_rel=M_rel, Q2_in_1=Q2_in_1, restitution=1.0)
+    resolved = resolve_collision(b1, b2, deepest, M_rel=M_rel, restitution=1.0)
     assert resolved
 
     L_world_1_after = b1.motor >> b1.momentum
@@ -314,8 +286,8 @@ def test_hyperbolic_scenario():
         for j in range(i + 1, len(bodies)):
             Q1 = bodies[i].motor >> bodies[i].Q(bodies[i].motor << Plane)
             Q2 = bodies[j].motor >> bodies[j].Q(bodies[j].motor << Plane)
-            lam_star, max_det = find_contact_parameter(Q1, Q2)
-            assert max_det > 0.0, f"Overlap between {bodies[i].name} and {bodies[j].name} at t=0: max_det={max_det}"
+            margin = overlap(Q1.inverse(), Q2.inverse())[0]
+            assert margin > 0.0, f"Overlap between {bodies[i].name} and {bodies[j].name} at t=0: margin={margin}"
 
     bodies, frame_meshes, e_hist, m_hist, _, snapshots, diag_indices = (
         simulate(bodies, num_frames=60, dt=0.015)
@@ -354,8 +326,8 @@ def test_contact_geometry_projective_invariance():
     R2 = (mv.xz * (np.radians(40.0) / 2.0)).exp()
     Q2 = R2 >> make_spherical_quadric(th_x, th_y)(R2 << Plane)
 
-    lam_star, _ = find_contact_parameter(Q1, Q2)
-    p_star, L_star = extract_contact_geometry(Q1, Q2, lam_star)
+    _, p_star = overlap(Q1.inverse(), Q2.inverse())
+    L_star = Q1.inverse()(p_star)
 
     assert np.linalg.norm(p_star.kernel) > 0.1
     assert np.linalg.norm(L_star.kernel) > 0.1
@@ -423,10 +395,10 @@ def test_pinned_camera_projection():
         "Cyan Baton": (-0.246, 0.010),
         "Rose Disc": (-0.029, -0.254),
         "Amber Needle": (0.717, -0.454),
-        "Emerald Sliver": (0.119, -0.051),
-        "Purple Dart": (0.529, 0.357),
-        "Orange Oval": (0.110, 0.082),
-        "Pink Puck": (-0.894, 0.321),
+        "Emerald Sliver": (0.113, -0.060),
+        "Purple Dart": (0.536, 0.370),
+        "Orange Oval": (0.109, 0.083),
+        "Pink Puck": (-0.892, 0.323),
     }
     k13 = snapshots[diag_indices[1]]
     for b, m in zip(bodies_sim, k13):
@@ -442,10 +414,10 @@ def test_pinned_camera_projection():
     bodies_hyp_sim, _, _, _, _, snapshots_hyp, diag_indices_hyp = simulate(setup_hyperbolic_scene(), num_frames=40, dt=0.015)
     hyperbolic_expected_t13 = {
         "Giant Oval": (-0.430, -0.199),
-        "Ruby Needle": (-0.606, -0.373),
+        "Ruby Needle": (-0.589, -0.361),
         "Amber Puck": (0.308, 0.021),
-        "Emerald Dart": (0.156, 0.025),
-        "Purple Sliver": (-0.683, 0.135),
+        "Emerald Dart": (0.175, 0.019),
+        "Purple Sliver": (-0.605, 0.136),
     }
     k13_hyp = snapshots_hyp[diag_indices_hyp[1]]
     for b, m in zip(bodies_hyp_sim, k13_hyp):
