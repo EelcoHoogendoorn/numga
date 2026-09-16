@@ -21,12 +21,12 @@ from numga import Extensor
 
 from examples import PLOT_DIR
 from examples.animation import save_gif
-from examples.sketches.spherical_raytracer import DualQuadric, Motor, Plane, Point, direction, ga, mv, origin, pixel_chart, render, unit
+from examples.sketches.spherical_raytracer import DualQuadric, Motor, Plane, Point, Quadric, direction, ga, mv, origin, pixel_chart, render, unit
 
 Bivector = ga.gatype.bivector()
 Inertia = ga.gatype((Bivector, Bivector))      # momentum <= rate; in four dimensions the antibivector is a bivector
 Scalar = ga.gatype.scalar()
-Quadric = ga.gatype((Point, Plane))            # primal form: polar plane <= point
+Form = ga.gatype((Scalar, Point, Point))       # a quadric with both of its points open: scalar <= point, point
 
 
 @dataclass
@@ -54,10 +54,9 @@ class Bodies:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def eigenpairs(form: Quadric) -> tuple[np.ndarray, Point]:
-    """The eigenvalues of a primal form, ascending, and its eigenvectors as points: the form with
-    both of its points open is its symmetric matrix on point coordinates."""
-    values, vectors = np.linalg.eigh((Point & form(mv.rotor() >> Point)).kernel[..., 0, :, :])
+def eigenpairs(form: Form) -> tuple[np.ndarray, Point]:
+    """The eigenvalues, ascending, and the eigenvectors as points of a symmetric form on points."""
+    values, vectors = np.linalg.eigh(form.kernel[..., 0, :, :])
     return values, mv(Point, np.swapaxes(vectors, -1, -2))
 
 
@@ -68,7 +67,7 @@ def filled(Q: DualQuadric, mass: np.ndarray, count: int, rng: np.random.Generato
     on their spheres, and the angle between them, up to the angle where the blocks balance; the
     angle is drawn uniformly and weighted by the sphere's measure, cosᵏ⁻¹ sin³⁻ᵏ for k core axes,
     so the weighted points are uniform in the inside. Batched over quadrics of one signature."""
-    values, principal = eigenpairs(Q.inverse())                      # the negative block comes first
+    values, principal = eigenpairs(Point & Q.inverse()(mv.rotor() >> Point))   # the negative block comes first
     k = int((values < 0.0).sum(axis=-1).ravel()[0])                # core axes, the same across the batch
     core = rng.normal(size=values.shape[:-1] + (count, k))
     extent = rng.normal(size=values.shape[:-1] + (count, 4 - k))
@@ -135,7 +134,7 @@ def overlap(A: Quadric, B: Quadric, samples: int = 48, refinements: int = 24) ->
     tan φ is sampled, the best bracket refined by golden section, and the least eigenvector at the
     optimum is the deepest point, the touching point when the margin is zero. Batched over pairs."""
     def least(phi: np.ndarray) -> np.ndarray:
-        return eigenpairs(A[..., None] + B[..., None] * np.tan(phi))[0][..., 0]
+        return eigenpairs(Point & (A[..., None] + B[..., None] * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
 
     phi = np.broadcast_to(np.linspace(0.0, np.pi / 2, samples + 2)[1:-1], np.broadcast_shapes(A.shape, B.shape) + (samples,))
     best = least(phi).argmax(axis=-1)
@@ -149,7 +148,7 @@ def overlap(A: Quadric, B: Quadric, samples: int = 48, refinements: int = 24) ->
         hi, lo = np.where(left, d, hi), np.where(left, lo, c)
         c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
         fc, fd = least(c[..., None])[..., 0], least(d[..., None])[..., 0]
-    values, points = eigenpairs(A + B * np.tan((lo + hi) / 2))
+    values, points = eigenpairs(Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point))
     return values[..., 0], points[..., 0]
 
 
