@@ -136,18 +136,22 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[np.ndarray, P
     point when the margin is zero. Twelve iterations bracket φ to 0.005 rad; five misreport near
     pairs as touching. Batched over pairs."""
     def least(phi: np.ndarray) -> np.ndarray:
-        return eigenpairs(Point & (A + B * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
+        member = Point & (A + B * np.tan(phi))(mv.rotor() >> Point)   # the pencil member at λ = tan φ, both points open
+        return eigenpairs(member)[0][..., 0]
 
+    # Golden section on φ: two probes c < d split the bracket [lo, hi] in the golden ratio; whichever
+    # side holds the larger value keeps the bracket, and the surviving probe already sits at the
+    # golden point of the new bracket, so each step evaluates one fresh probe only.
     golden = (np.sqrt(5.0) - 1.0) / 2.0
     lo, hi = np.broadcast_to(0.0, np.broadcast_shapes(A.shape, B.shape)), np.broadcast_to(np.pi / 2, np.broadcast_shapes(A.shape, B.shape))
     c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
     fc, fd = least(c), least(d)
     for _ in range(iterations):
-        left = fc > fd                                            # the maximum lies in [lo, d]; the kept probe becomes the other one
-        lo, hi = np.where(left, lo, c), np.where(left, d, hi)
-        c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
-        fresh = least(np.where(left, c, d))
-        fc, fd = np.where(left, fresh, fd), np.where(left, fc, fresh)
+        left = fc > fd                                            # the maximum lies in [lo, d], else in [c, hi]
+        lo, hi = np.where(left, lo, c), np.where(left, d, hi)     # shrink the bracket to that side
+        c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)   # new probes; one coincides with the survivor
+        fresh = least(np.where(left, c, d))                       # evaluate only the other
+        fc, fd = np.where(left, fresh, fd), np.where(left, fc, fresh)   # survivor's value moves to its new slot
     values, points = eigenpairs(Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point))
     return values[..., 0], points[..., 0]
 
