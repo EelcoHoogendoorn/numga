@@ -127,27 +127,26 @@ def step_motor(motor: Motor, momentum: Bivector, I_inv: Inertia, dt: float) -> t
     return moved, (motor.inverse() * moved) << momentum
 
 
-def overlap(A: Quadric, B: Quadric, samples: int = 48, refinements: int = 24) -> tuple[np.ndarray, Point]:
+def overlap(A: Quadric, B: Quadric, iterations: int = 24) -> tuple[np.ndarray, Point]:
     """Whether the insides of two quadrics, where their forms are negative, meet: they are apart if
     and only if some member of the pencil A + λB, λ > 0, is positive semidefinite (the S-lemma), so
-    the largest over the pencil of the least eigenvalue is negative exactly when they overlap. λ =
-    tan φ is sampled, the best bracket refined by golden section, and the least eigenvector at the
-    optimum is the deepest point, the touching point when the margin is zero. Batched over pairs."""
+    the largest over the pencil of the least eigenvalue is negative exactly when they overlap. The
+    least eigenvalue is concave in λ, hence unimodal in φ = arctan λ over (0, π/2), and golden
+    section finds its maximum; the least eigenvector there is the deepest point, the touching
+    point when the margin is zero. Batched over pairs."""
     def least(phi: np.ndarray) -> np.ndarray:
-        return eigenpairs(Point & (A[..., None] + B[..., None] * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
+        return eigenpairs(Point & (A + B * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
 
-    phi = np.broadcast_to(np.linspace(0.0, np.pi / 2, samples + 2)[1:-1], np.broadcast_shapes(A.shape, B.shape) + (samples,))
-    best = least(phi).argmax(axis=-1)
-    lo = np.take_along_axis(phi, np.maximum(best - 1, 0)[..., None], -1)[..., 0]
-    hi = np.take_along_axis(phi, np.minimum(best + 1, samples - 1)[..., None], -1)[..., 0]
     golden = (np.sqrt(5.0) - 1.0) / 2.0
+    lo, hi = np.broadcast_to(0.0, np.broadcast_shapes(A.shape, B.shape)), np.broadcast_to(np.pi / 2, np.broadcast_shapes(A.shape, B.shape))
     c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
-    fc, fd = least(c[..., None])[..., 0], least(d[..., None])[..., 0]
-    for _ in range(refinements):
-        left = fc > fd                                            # the maximum lies in [lo, d]
-        hi, lo = np.where(left, d, hi), np.where(left, lo, c)
+    fc, fd = least(c), least(d)
+    for _ in range(iterations):
+        left = fc > fd                                            # the maximum lies in [lo, d]; the kept probe becomes the other one
+        lo, hi = np.where(left, lo, c), np.where(left, d, hi)
         c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
-        fc, fd = least(c[..., None])[..., 0], least(d[..., None])[..., 0]
+        fresh = least(np.where(left, c, d))
+        fc, fd = np.where(left, fresh, fd), np.where(left, fc, fresh)
     values, points = eigenpairs(Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point))
     return values[..., 0], points[..., 0]
 
