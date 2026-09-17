@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from inspect import Parameter, signature
 from types import MethodType
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload as typing_overload
 
 from numga.gatype import GAType, GATypeDispatch, GATypePattern, Trait, TraitSet
 
@@ -26,14 +26,19 @@ class ExtensionMethod:
     class creation does not invoke the descriptor ``__set_name__`` hook.
     """
 
-    __slots__ = ("_name", "_operand_count", "_dispatch")
+    __slots__ = ("_name", "_operand_count", "_dispatch", "_overloads")
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, *, operand_counts: tuple[int, ...] = ()) -> None:
         if not isinstance(name, str) or not name or name.startswith("_"):
             raise TypeError("an extension method name must be a public name")
         self._name = name
         self._operand_count: int | None = None
         self._dispatch: GATypeDispatch | None = None
+        self._overloads = {count: ExtensionMethod(name) for count in operand_counts}
+
+    def overload(self, operand_count: int) -> ExtensionMethod:
+        """The independently registered dispatcher for a positional overload."""
+        return self._overloads[operand_count]
 
     @property
     def name(self) -> str:
@@ -59,6 +64,14 @@ class ExtensionMethod:
 
         if not patterns:
             raise TypeError(f"{self.name!r} registration requires a pattern")
+        if self._overloads:
+            count = (
+                _predicate_operand_count(patterns[0], established=None)
+                if len(patterns) == 1 and callable(patterns[0]) else len(patterns)
+            )
+            return self._overloads[count].register(
+                *patterns, precedence=precedence, position=position,
+            )
         predicate = len(patterns) == 1 and callable(patterns[0])
         if predicate:
             operand_count = _predicate_operand_count(
@@ -109,6 +122,8 @@ class ExtensionMethod:
         return decorate
 
     def __call__(self, *arguments: Any, **kwargs: Any) -> Any:
+        if self._overloads:
+            return self._overloads[len(arguments)](*arguments, **kwargs)
         dispatch = self._dispatch
         if dispatch is None:
             raise LookupError(
@@ -116,14 +131,14 @@ class ExtensionMethod:
             )
         return dispatch(*arguments, **kwargs)
 
-    @overload
+    @typing_overload
     def __get__(
         self,
         instance: None,
         owner: type[Extensor] | None = None,
     ) -> ExtensionMethod: ...
 
-    @overload
+    @typing_overload
     def __get__(
         self,
         instance: Extensor,

@@ -70,6 +70,20 @@ def least_squares(columns: Point, delta: Point) -> Scalar:
     return mv.scalar(np.linalg.lstsq(columns.kernel.T, rhs, rcond=None)[0][:, None])
 
 
+def draw_tracking(states, animation_path: str) -> None:
+    """Render the link geometry and tip trail after solving the tracking motion."""
+    if animation_path:
+        fig = plt.figure(figsize=(5, 5), dpi=100)
+        ax = fig.add_subplot(projection="3d")
+        frames_out, trail = [], []
+        for boxes, target, tip in states:
+            trail.append(euclidean(tip))
+            draw_arm(ax, boxes, target, trail)
+            frames_out.append(capture(fig))
+        plt.close(fig)
+        save_gif(frames_out, animation_path, duration_ms=50)
+
+
 # --- math -----------------------------------------------------------------------------
 def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y.
@@ -83,16 +97,12 @@ def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     tip_home = point(np.array([0.0, 0.0, 3.0]))
     boxes_home = link_boxes(3, width=0.15, depth=0.06)
 
-    def kinematics(joints: Line) -> tuple[Motor, Motor]:
-        """The pose motor, and the frame each joint acts in: the product of the joints before it."""
-        pose, frames = mv.rotor(), []
-        for step in (joints * 0.5).exp():                          # exp of half a bivector: the joint's motor
-            frames.append(pose)                                    # this joint acts in the frame so far
-            pose = pose * step                                     # base to tip: right-multiply
-        return pose, Extensor.stack(frames)
-
     rest = Extensor.stack([yaw * 0.3, pitch_1 * 0.5, pitch_2 * 0.8])   # joint state: axis times angle
-    pose, frames = kinematics(rest)
+    pose, frames = mv.rotor(), []
+    for step in (rest * 0.5).exp():
+        frames.append(pose)
+        pose = pose * step
+    frames = Extensor.stack(frames)
     tip = pose >> tip_home                                         # the tip carried by the pose
 
     # 1. Velocities. Joint rates are bivectors along the axes; carried into their frames and
@@ -114,7 +124,11 @@ def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     target = point(np.array([1.0, 1.5, 1.2]))
     joints = rest
     for iteration in range(8):
-        pose, frames = kinematics(joints)
+        pose, frames = mv.rotor(), []
+        for step in (joints * 0.5).exp():
+            frames.append(pose)
+            pose = pose * step
+        frames = Extensor.stack(frames)
         tip = pose >> tip_home
         columns = (frames >> axis).commutator(tip)                 # tip velocity per unit rate, per joint
         joints = joints + axis * least_squares(columns, target - tip)   # Newton step along the axes
@@ -128,24 +142,26 @@ def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     #    frame after its joint, so the motors themselves are visible, not only the joint points.
     t = np.linspace(0.0, 2 * np.pi, 72, endpoint=False)
     targets = point(np.stack([1.0 + 0.5 * np.sin(t), 1.0 + 0.5 * np.cos(t), 1.2 + 0.3 * np.sin(2 * t)], axis=-1))
-    fig = plt.figure(figsize=(5, 5), dpi=100)
-    ax = fig.add_subplot(projection="3d")
-    frames_out, trail = [], []
+    states = []
     for target in targets:
-        for _ in range(2):                                         # two Newton steps per frame
-            pose, frames = kinematics(joints)
+        for _ in range(2):
+            pose, frames = mv.rotor(), []
+            for step in (joints * 0.5).exp():
+                frames.append(pose)
+                pose = pose * step
+            frames = Extensor.stack(frames)
             tip = pose >> tip_home
             joints = joints + axis * least_squares((frames >> axis).commutator(tip), target - tip)
-        trail.append(euclidean(tip))
         link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])   # frame after each joint
-        draw_arm(ax, link_motors.reshape(3, 1) >> boxes_home, target, trail)   # each box carried by its motor
-        frames_out.append(capture(fig))
-    plt.close(fig)
-    if animation_path:
-        save_gif(frames_out, animation_path, duration_ms=50)
+        states.append((link_motors.reshape(3, 1) >> boxes_home, target, tip))
+    draw_tracking(states, animation_path)
 
     # --- checks: kernel-level assertions, deliberately outside the demonstration ----------
-    finite = (kinematics(rest + rates * 1e-6)[0] >> tip_home) - (kinematics(rest)[0] >> tip_home)
+    steps = (Extensor.stack((rest + rates * 1e-6, rest)) * 0.5).exp()
+    poses = mv.rotor()
+    for index in range(3):
+        poses = poses * steps[:, index]
+    finite = (poses[0] >> tip_home) - (poses[1] >> tip_home)
     np.testing.assert_allclose((velocity * 1e-6 - finite).kernel, 0.0, atol=1e-10)
     assert error.kernel[0] < 1e-8
 

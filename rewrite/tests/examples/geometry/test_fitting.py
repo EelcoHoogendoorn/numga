@@ -22,7 +22,7 @@ from examples.geometry.fitting_plumbing import (
     point,
     same_element,
     segment,
-    smallest_eigenvector,
+    smallest_finite,
 )
 
 POSE = (mv.xw * 0.4 + mv.yw * -0.3 + mv.zw * 0.6).exp() * (mv.yz * 0.3).exp() * (mv.xy * 0.5).exp()
@@ -32,7 +32,9 @@ def fit(Unknown, points: Point):
     """The tutorial's fit, repeated here so each property test stands on its own."""
     residual = points.regressive(Unknown)
     misfit = (residual.reverse() | residual).sum()
-    return smallest_eigenvector(misfit)
+    slot = misfit.context.algebra.gatype(misfit.input_subspaces[0])
+    norm = (mv.rotor() >> slot).reverse() | slot
+    return smallest_finite(*((misfit + misfit.transpose()) * 0.5).eig(norm))
 
 
 def test_unit_forms_are_degenerate_on_the_free_coefficients():

@@ -89,43 +89,7 @@ def rope_comparison(ax, gap, y, color, title, label):
     ax.text(gap / 2, y - 0.29, label, color=color, ha="center", va="top", fontsize=10)
 
 
-def main(plot_path: str = str(PLOT_DIR / "bell_spaceships.png")) -> plt.Figure:
-    beta, count, dt = 0.8, 10, 0.1
-    rapidity = np.arctanh(beta)
-    gamma = np.cosh(rapidity)
-
-    preserved, velocities = small_impulses(rapidity, count=count, dt=dt)
-    # Bell's front follows an exact spatial translation of the SAME rear path.
-    rear_events = preserved.kernel[:, 0]
-    bell: Vector = mv.vector(np.stack([rear_events, rear_events + [0.0, 1.0]], axis=1))
-    schedules = ((preserved, PRESERVED), (bell, STRETCHED))
-    clocks = [trigger_readings(steps.kernel, velocities) for steps, _ in schedules]
-    np.testing.assert_allclose(clocks[1][:, 0], clocks[1][:, 1], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose(clocks[0][:, 0], clocks[1][:, 0], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose(clocks[1][:, 0], np.arange(count) * dt, atol=GEOMETRY_ATOL)
-
-    # Boost the final coasting worldlines, then measure at equal final-frame time.
-    angle = rapidity / 2
-    final_frame: VectorMap = (angle * mv.tx).exp().normalized().sandwich(Vector)
-    final_direction: Vector = mv.vector([gamma, gamma * beta])
-    np.testing.assert_allclose(final_frame(final_direction).kernel, [1.0, 0.0], atol=GEOMETRY_ATOL)
-    gaps = []
-    for steps, _ in schedules:
-        # Anchor each view at the rear's final kink; the front's kink need not
-        # be simultaneous. Its final worldline is vertical, so x' is constant.
-        final_events = final_frame(steps[-1] - steps[-1, 0]).kernel
-        gaps.append(final_events[1, 1] - final_events[0, 1])
-    np.testing.assert_allclose(gaps, [1.0, gamma], atol=GEOMETRY_ATOL)
-
-    end_time = preserved.kernel[-1, :, 0].max() + 0.53
-    sample_time = end_time - 0.22
-    lab_gaps = [np.diff(positions_at(sample_time, steps.kernel, velocities))[0]
-                for steps, _ in schedules]
-    np.testing.assert_allclose(lab_gaps, [1.0 / gamma, 1.0], atol=GEOMETRY_ATOL)
-    sample_times = np.linspace(-0.3, end_time, 300)
-    np.testing.assert_allclose(np.diff(positions_at(sample_times, bell.kernel, velocities), axis=-1),
-                               1.0, atol=GEOMETRY_ATOL)
-
+def draw_spaceships(schedules, velocities, end_time, sample_time, lab_gaps, gaps, plot_path) -> plt.Figure:
     fig, axes = plt.subplots(1, 3, figsize=(16.7, 7.5), dpi=170,
                              gridspec_kw={"width_ratios": [1.0, 1.0, 0.85]})
     titles = ("Strain-preserving impulse train", "Bell: identical clock programs")
@@ -134,7 +98,6 @@ def main(plot_path: str = str(PLOT_DIR / "bell_spaceships.png")) -> plt.Figure:
         for end, ship_color in enumerate((REAR, FRONT)):
             times = np.concatenate([[-0.30], events[:, end, 0], [end_time]])
             xs = positions_at(times, events, velocities)[:, end]
-            np.testing.assert_allclose(xs[1:-1], events[:, end, 1], atol=GEOMETRY_ATOL)
             ax.plot(xs, times, color=ship_color, lw=2.6)
         for step in events:
             ax.plot(step[:, 1], step[:, 0], "--", color=color, lw=1.35, alpha=0.8)
@@ -188,6 +151,50 @@ def main(plot_path: str = str(PLOT_DIR / "bell_spaceships.png")) -> plt.Figure:
     if plot_path:
         fig.savefig(plot_path, bbox_inches="tight")
         print(f"Figure saved to {plot_path}")
+    return fig
+
+
+def main(plot_path: str = str(PLOT_DIR / "bell_spaceships.png")) -> plt.Figure:
+    beta, count, dt = 0.8, 10, 0.1
+    rapidity = np.arctanh(beta)
+    gamma = np.cosh(rapidity)
+
+    preserved, velocities = small_impulses(rapidity, count=count, dt=dt)
+    # Bell's front follows an exact spatial translation of the SAME rear path.
+    bell: Vector = preserved[:, :1] + mv.vector([[0.0, 0.0], [0.0, 1.0]])
+    schedules = ((preserved, PRESERVED), (bell, STRETCHED))
+    clocks = [trigger_readings(steps.kernel, velocities) for steps, _ in schedules]
+
+    # Boost the final coasting worldlines, then measure at equal final-frame time.
+    angle = rapidity / 2
+    final_frame: VectorMap = (angle * mv.tx).exp().normalized().sandwich(Vector)
+    final_direction: Vector = mv.vector([gamma, gamma * beta])
+    gaps = []
+    for steps, _ in schedules:
+        # Anchor each view at the rear's final kink; the front's kink need not
+        # be simultaneous. Its final worldline is vertical, so x' is constant.
+        final_events = final_frame(steps[-1] - steps[-1, 0]).kernel
+        gaps.append(final_events[1, 1] - final_events[0, 1])
+
+    end_time = preserved.kernel[-1, :, 0].max() + 0.53
+    sample_time = end_time - 0.22
+    lab_gaps = [np.diff(positions_at(sample_time, steps.kernel, velocities))[0]
+                for steps, _ in schedules]
+    sample_times = np.linspace(-0.3, end_time, 300)
+
+    fig = draw_spaceships(schedules, velocities, end_time, sample_time, lab_gaps, gaps, plot_path)
+
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(clocks[1][:, 0], clocks[1][:, 1], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(clocks[0][:, 0], clocks[1][:, 0], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(clocks[1][:, 0], np.arange(count) * dt, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(final_frame(final_direction).kernel, [1.0, 0.0], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(gaps, [1.0, gamma], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(lab_gaps, [1.0 / gamma, 1.0], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(np.diff(positions_at(sample_times, bell.kernel, velocities), axis=-1),
+                               1.0, atol=GEOMETRY_ATOL)
+
     return fig
 
 

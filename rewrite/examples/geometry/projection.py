@@ -13,6 +13,7 @@ import numpy as np
 
 from examples import PLOT_DIR
 from examples.geometry.projection_plumbing import (
+    draw_projection,
     ga,
     Line,
     Point,
@@ -23,8 +24,6 @@ from examples.geometry.projection_plumbing import (
     mv,
     origin,
     point,
-    render_shadow_scene,
-    render_stereo_scene,
 )
 
 # Map types (GATypes) read output <= inputs:
@@ -62,7 +61,6 @@ def main(plot_path: str = str(PLOT_DIR / "projection.png")) -> plt.Figure:
     shadow_of_corner: ShadowTrail = Point.regressive(corner).wedge(ground)
     light_path = (mv.yw * -0.5 + mv.zw * 2.0).exp() >> circle(24)
     shadow_trail = shadow_of_corner(light_path)
-    np.testing.assert_allclose(shadow_of_corner(point_light).kernel, point_shadow[7].kernel, atol=1e-14)
 
     # -----------------------------------------------------------------------
     # 2. Cameras: one rig, moved as a map
@@ -103,20 +101,19 @@ def main(plot_path: str = str(PLOT_DIR / "projection.png")) -> plt.Figure:
     # kernel is the fundamental matrix. There is no matrix to slap on at the end here; the
     # form exists only because the rays were never evaluated.
     correspondence: Correspondence = centre_1.regressive(Point).wedge(centre_2.regressive(Point))
-    np.testing.assert_allclose(correspondence(image_1, image_2).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(correspondence.bind({1: epipole_2}).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(epipolar_lines_2.regressive(image_2).kernel, 0.0, atol=1e-12)
 
     # -----------------------------------------------------------------------
     # 4. Draw
     # -----------------------------------------------------------------------
-    fig = plt.figure(figsize=(16, 5), dpi=120)
-    render_shadow_scene(fig.add_subplot(1, 3, 1, projection="3d"), body, point_light, sun, point_shadow, sun_shadow, shadow_trail)
-    render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), rig_1, rig_2, image_1, image_2, epipolar_lines_2)
-    plt.tight_layout()
-    if plot_path:
-        plt.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    fig = draw_projection(body, point_light, sun, point_shadow, sun_shadow, shadow_trail, rig_1, rig_2, image_1, image_2, epipolar_lines_2, plot_path)
+
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(shadow_of_corner(point_light).kernel, point_shadow[7].kernel, atol=1e-14)
+    np.testing.assert_allclose(correspondence(image_1, image_2).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(correspondence.bind({1: epipole_2}).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(epipolar_lines_2.regressive(image_2).kernel, 0.0, atol=1e-12)
+
     return fig
 
 

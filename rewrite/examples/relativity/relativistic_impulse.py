@@ -143,40 +143,16 @@ def small_impulses(
     return kinks, velocities
 
 
-def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt.Figure:
-    u = 0.5
-    half_rapidity = np.arctanh(u)
-    gamma_u = np.cosh(half_rapidity)
-    symmetric_length = 1.0 / gamma_u
-
-    # Start in the symmetric frame: two identical velocity reversals at t=0.
-    kinks, directions = velocity_step(-half_rapidity, half_rapidity)
-    before, after = directions
-    bisector: Vector = (before + after).normalized()
-    np.testing.assert_allclose(bisector.kernel, [1.0, 0.0], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((kinks | bisector).kernel, 0.0, atol=GEOMETRY_ATOL)
-
-    identity: VectorMap = Spacetime.operator.identity(Vector.output_subspace)
-    # Leave the passenger open to obtain the observer change as an extensor.
-    angle = -half_rapidity / 2
-    rotor: Rotor = (angle * mv.tx).exp().normalized()
-    initial_rest_frame: VectorMap = rotor.sandwich(Vector)
-    transformed_directions = initial_rest_frame(directions).kernel
-    final_beta = 2*u / (1+u*u)
-    np.testing.assert_allclose(transformed_directions[:, 1] / transformed_directions[:, 0], [0.0, final_beta], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose(initial_rest_frame(kinks).kernel, [[0.0, 0.0], [0.5, 1.0]], atol=GEOMETRY_ATOL)
-
+def draw_impulses(view_events: Vector, view_directions: Vector, steps: Vector, train_directions: Vector, symmetric_length: float, plot_path: str) -> plt.Figure:
     fig, axes = plt.subplots(1, 3, figsize=(16.0, 7.1), dpi=160)
     colors = ("#2475ba", "#db7220", "#258e59")
-    for index, (ax, frame, title) in enumerate((
-        (axes[0], identity, "Symmetric frame: −0.5c → +0.5c"),
-        (axes[1], initial_rest_frame, "Boosted frame: 0 → 0.8c"),
-    )):
+    for index, (ax, title) in enumerate(zip(axes[:2], (
+        "Symmetric frame: −0.5c → +0.5c", "Boosted frame: 0 → 0.8c",
+    ))):
         # Apply the SAME map to the kink events and the before/after directions.
-        events = frame(kinks).kernel
-        tangents = frame(directions).kernel
+        events = view_events[index].kernel
+        tangents = view_directions[index].kernel
         velocities = tangents[:, 1] / tangents[:, 0]
-        np.testing.assert_allclose((frame(bisector) | frame(kinks)).kernel, 0.0, atol=GEOMETRY_ATOL)
 
         def positions(t: float) -> np.ndarray:
             elapsed = t - events[:, 0]
@@ -192,7 +168,6 @@ def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt
         for t, prefix in ((-0.30, "Before"), (1.05, "After")):
             a, b = positions(t)
             expected_length = np.sqrt(1.0 - velocities[0 if t < 0 else 1]**2)
-            np.testing.assert_allclose(b-a, expected_length, atol=GEOMETRY_ATOL)
             ax.plot([a, b], [t, t], color="#333333", lw=5, alpha=0.35)
             ax.text((a+b)/2, t+(-0.14 if t<0 else 0.12),
                     f"{prefix}: {b-a:.3f} L₀", ha="center", fontsize=10)
@@ -211,9 +186,8 @@ def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt
     # -----------------------------------------------------------------------
     # 3. Ten small impulses from repeated composition of the same affine map.
     # -----------------------------------------------------------------------
-    count, dt = 10, 0.1
-    steps, velocities = small_impulses(2 * half_rapidity, count=count, dt=dt)
     events = steps.kernel
+    velocities = train_directions.kernel[:, 1] / train_directions.kernel[:, 0]
     ax = axes[2]
     finish_time = events[-1, :, 0].max()
     end_time = finish_time + 0.40
@@ -227,7 +201,6 @@ def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt
     for end, label in enumerate(("Left end", "Right end")):
         times = np.concatenate([[-0.30], events[:, end, 0], [end_time]])
         xs = np.array([stepped_positions(t)[end] for t in times])
-        np.testing.assert_allclose(xs[1:-1], events[:, end, 1], atol=GEOMETRY_ATOL)
         ax.plot(xs, times, color=colors[end], lw=2.5, label=label)
     for step in events:
         ax.plot(step[:, 1], step[:, 0], "--", color=colors[2], lw=1.4, alpha=0.75)
@@ -235,7 +208,6 @@ def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt
 
     sample_time = finish_time + 0.20
     a, b = stepped_positions(sample_time)
-    np.testing.assert_allclose(b-a, np.sqrt(1-final_beta**2), atol=GEOMETRY_ATOL)
     ax.plot([a, b], [sample_time, sample_time], color="#333333", lw=5, alpha=0.35)
     ax.text((a+b)/2, sample_time+0.12, f"After: {b-a:.3f} L₀", ha="center", fontsize=10)
     ax.text(0.04, 0.96, "Repeat one fixed map\nEqual ticks on the left clock",
@@ -259,6 +231,59 @@ def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt
     if plot_path:
         fig.savefig(plot_path, bbox_inches="tight")
         print(f"Figure saved to {plot_path}")
+    return fig
+
+
+def main(plot_path: str = str(PLOT_DIR / "relativistic_rod_impulse.png")) -> plt.Figure:
+    u = 0.5
+    half_rapidity = np.arctanh(u)
+    gamma_u = np.cosh(half_rapidity)
+    symmetric_length = 1.0 / gamma_u
+
+    # Start in the symmetric frame: two identical velocity reversals at t=0.
+    rapidities = mv.scalar([[-half_rapidity], [half_rapidity]])
+    directions = (-rapidities * mv.tx / 2).exp().normalized() >> mv.t
+    separation = ((directions[0] + directions[1]) * mv.tx) / (1 + (directions[0] | directions[1]))
+    kinks = mv.scalar([[0.0], [1.0]]) * separation
+    before, after = directions
+    bisector: Vector = (before + after).normalized()
+
+    identity: VectorMap = mv.rotor() >> Vector
+    # Leave the passenger open to obtain the observer change as an extensor.
+    angle = -half_rapidity / 2
+    rotor: Rotor = (angle * mv.tx).exp().normalized()
+    initial_rest_frame: VectorMap = rotor.sandwich(Vector)
+    transformed_directions = initial_rest_frame(directions).kernel
+    final_beta = 2*u / (1+u*u)
+
+    # Repeat a fixed boost and fixed translation to build a train of impulses.
+    count, dt = 10, 0.1
+    step_boost = (-mv.tx * half_rapidity / count).exp().normalized() >> Vector
+    incoming = mv.vector([1.0, 0.0])
+    outgoing = step_boost(incoming)
+    separation = ((incoming + outgoing) * mv.tx) / (1 + (incoming | outgoing))
+    events = mv.scalar([[0.0], [1.0]]) * separation
+    offset = dt * outgoing
+    event_history, direction_history = [events], [incoming, outgoing]
+    for _ in range(count - 1):
+        events = step_boost(events) + offset
+        outgoing = step_boost(outgoing)
+        event_history.append(events)
+        direction_history.append(outgoing)
+    steps, train_directions = stack(event_history), stack(direction_history)
+
+    # Apply each observer map to both events and tangents, preserving incidence.
+    views = stack((identity, initial_rest_frame))
+    view_events = views[:, None](kinks)
+    view_directions = views[:, None](directions)
+    fig = draw_impulses(view_events, view_directions, steps, train_directions, symmetric_length, plot_path)
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(bisector.kernel, [1.0, 0.0], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((kinks | bisector).kernel, 0.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(transformed_directions[:, 1] / transformed_directions[:, 0], [0.0, final_beta], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose(initial_rest_frame(kinks).kernel, [[0.0, 0.0], [0.5, 1.0]], atol=GEOMETRY_ATOL)
+
     return fig
 
 

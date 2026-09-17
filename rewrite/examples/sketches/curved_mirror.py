@@ -40,6 +40,24 @@ def draw_conic(ax, conic: Polarity, box: tuple[float, float, float, float]) -> N
 
 
 # --- math -----------------------------------------------------------------------------
+def draw_mirrors(beam, far, parabola, sphere, hit_p, hit_s, mirrored_p, mirrored_s, focus, plot_path) -> plt.Figure:
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
+    for ax, conic, hit, mirrored, title in (
+        (axes[0], parabola, hit_p, mirrored_p, "parabolic mirror: one focus"),
+        (axes[1], sphere, hit_s, mirrored_s, "spherical mirror: aberration"),
+    ):
+        draw_rays(ax, beam, far, hit & mv.wx, "tab:orange")
+        draw_rays(ax, mirrored, hit & mv.wx, (mv.wx * -0.4).exp() >> (focus & mv.wx), "tab:blue")
+        draw_conic(ax, conic, (-0.2, 3.0, -1.6, 1.6))
+        ax.scatter(*xy(focus), color="tab:red", zorder=3); ax.set_title(title)
+        ax.set_xlim(-0.3, 3.1); ax.set_ylim(-1.7, 1.7); ax.set_aspect("equal")
+    if plot_path:
+        fig.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+
+    return fig
+
+
 def main(plot_path: str = str(PLOT_DIR / "sketch_curved_mirror.png")) -> plt.Figure:
     # Two mirrors with vertex at the origin opening toward +x and the same paraxial focal
     # length f: the parabola x = y²/4f and the sphere of radius 2f, each as the polarity whose
@@ -60,19 +78,7 @@ def main(plot_path: str = str(PLOT_DIR / "sketch_curved_mirror.png")) -> plt.Fig
     mirrored_s = sphere(hit_s).normalized() >> beam
     print("spherical mirror, axis crossings by ray height:", np.round(xy(mirrored_s ^ mv.y)[:, 0], 3))
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=120)
-    for ax, conic, hit, mirrored, title in (
-        (axes[0], parabola, hit_p, mirrored_p, "parabolic mirror: one focus"),
-        (axes[1], sphere, hit_s, mirrored_s, "spherical mirror: aberration"),
-    ):
-        draw_rays(ax, beam, far, hit & mv.wx, "tab:orange")
-        draw_rays(ax, mirrored, hit & mv.wx, (mv.wx * -0.4).exp() >> (focus & mv.wx), "tab:blue")
-        draw_conic(ax, conic, (-0.2, 3.0, -1.6, 1.6))
-        ax.scatter(*xy(focus), color="tab:red", zorder=3); ax.set_title(title)
-        ax.set_xlim(-0.3, 3.1); ax.set_ylim(-1.7, 1.7); ax.set_aspect("equal")
-    if plot_path:
-        fig.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    fig = draw_mirrors(beam, far, parabola, sphere, hit_p, hit_s, mirrored_p, mirrored_s, focus, plot_path)
 
     # --- checks: kernel-level assertions, deliberately outside the demonstration ----------
     # Every parabola reflection passes through the focus; the sphere's crossings spread.

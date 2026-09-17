@@ -31,7 +31,6 @@ Quadric = ga.gatype((Point, Plane))
 InertiaMap = ga.gatype((AntiBivector, Bivector))
 InverseInertiaMap = ga.gatype((Bivector, AntiBivector))
 Scalar = ga.gatype.scalar()
-Form = ga.gatype((Scalar, Point, Point))       # a quadric with both of its points open: scalar <= point, point
 
 
 # ---------------------------------------------------------------------------
@@ -48,12 +47,6 @@ def compose_quadric(coeffs: np.ndarray, poles: Point) -> Quadric:
     dual_projectors = poles * Plane.regressive(poles)
     weights = mv.scalar(coeffs[..., None])
     return (dual_projectors * weights).sum(axis=0)
-
-
-def eigenpairs(form: Form) -> tuple[np.ndarray, Point]:
-    """The eigenvalues, ascending, and the eigenvectors as points of a symmetric form on points."""
-    values, vectors = np.linalg.eigh(form.kernel[..., 0, :, :])
-    return values, mv(Point, np.swapaxes(vectors, -1, -2))
 
 
 def make_spherical_quadric(th_x: float, th_y: float) -> Quadric:
@@ -103,7 +96,7 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[np.ndarray, P
     touching point when the margin is zero. Twelve iterations bracket φ to 0.005 rad; five
     misreport a separated pair of the hyperbolic scene as touching. Batched over pairs."""
     def least(phi: np.ndarray) -> np.ndarray:
-        return eigenpairs(Point & (A + B * np.tan(phi))(mv.rotor() >> Point))[0][..., 0]
+        return (Point & (A + B * np.tan(phi))(mv.rotor() >> Point)).eigvalsh().kernel[..., 0, 0]
 
     golden = (np.sqrt(5.0) - 1.0) / 2.0
     lo, hi = np.broadcast_to(0.0, np.broadcast_shapes(A.shape, B.shape)), np.broadcast_to(np.pi / 2, np.broadcast_shapes(A.shape, B.shape))
@@ -115,8 +108,8 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[np.ndarray, P
         c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
         fresh = least(np.where(left, c, d))
         fc, fd = np.where(left, fresh, fd), np.where(left, fc, fresh)
-    values, points = eigenpairs(Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point))
-    return values[..., 0], points[..., 0]
+    values, points = (Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point)).eigh()
+    return values.kernel[..., 0, 0], points[..., 0]
 
 
 def resolve_collision(
@@ -128,7 +121,7 @@ def resolve_collision(
 ) -> bool:
     """Detect and resolve elastic collision impulse entirely inside Geometric Algebra: the first
     body's polar plane at the deepest point is the contact plane, its pole the contact point."""
-    contact_plane = body1.Q.inverse()(deepest)
+    contact_plane = body1.Q.solve(deepest)
     contact_point = body1.Q(contact_plane)
     contact_wrench_1: Line = contact_plane.commutator(contact_point)
     contact_wrench_2: Line = M_rel << contact_wrench_1

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.linalg
 
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA3D
@@ -21,6 +20,7 @@ Point = ga.gatype.antivector()
 Line = ga.gatype.bivector()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
+Scalar = ga.gatype.scalar()
 
 
 # ---------------------------------------------------------------------------
@@ -85,21 +85,11 @@ def patch_edges(half_width: float) -> Line:
 # ---------------------------------------------------------------------------
 # 3. Numerics, Checks and Rendering
 # ---------------------------------------------------------------------------
-def smallest_eigenvector(form: Extensor) -> Extensor:
-    """The unit element of an arity-2 form's slot type that minimises the form.
-
-    Unit means the slot type's own reverse product. Where that product is degenerate the
-    generalized eigenproblem has infinite eigenvalues on the free coefficients, and the
-    smallest finite eigenvalue is the constrained minimum.
-    """
-    slot = form.gatype.input_subspaces[0]
-    unit = ctx.lower(ga.operator.reverse(slot) | ga.gatype(slot))
-    N = form.kernel.squeeze()
-    N = 0.5 * (N + N.T)
-    M = np.asarray(unit.kernel).squeeze()
-    w, V = scipy.linalg.eig(N, M)
-    w = np.where(np.isfinite(w), w.real, np.inf)
-    return mv(slot, V[:, np.argmin(w)].real)
+def smallest_finite(values: Scalar, vectors: Extensor) -> Extensor:
+    """Select the real mode with the smallest finite eigenvalue."""
+    w = values.kernel[..., 0]
+    index = np.argmin(np.where(np.isfinite(w), w.real, np.inf))
+    return mv(vectors.output_subspace, vectors[index].kernel.real)
 
 
 def same_element(a: Extensor, b: Extensor, atol: float) -> bool:
@@ -160,3 +150,18 @@ def new_figure() -> tuple[plt.Figure, list]:
     for ax in axes:
         ax.set_box_aspect([1, 1, 1])
     return fig, axes
+
+
+def draw_fits(points, line_points, plane_points, rays, pose, centroid, line, plane, meet, plot_path) -> plt.Figure:
+    fig, axes = new_figure()
+    render_point_fit(axes[0], points, pose >> mv.zyx, centroid)
+    render_line_fit(axes[1], line_points, pose >> mv.xz, line, caps=pose >> line_caps(2.5))
+    render_plane_fit(axes[2], plane_points, pose >> mv.z, plane, edges=pose >> patch_edges(2.0))
+    render_bundle_fit(axes[3], rays, pose >> mv.zyx, meet, half_length=2.0)
+    for ax in axes:
+        ax.legend(loc="upper left", fontsize=8)
+    plt.tight_layout()
+    if plot_path:
+        plt.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    return fig

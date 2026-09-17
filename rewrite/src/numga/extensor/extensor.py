@@ -42,6 +42,39 @@ class Extensor:
     exp = ExtensionMethod("exp")
     log = ExtensionMethod("log")
     trace = ExtensionMethod("trace")
+    transpose = ExtensionMethod("transpose")
+    det = ExtensionMethod("det")
+    solve = ExtensionMethod("solve")
+    lstsq = ExtensionMethod("lstsq")
+    pinv = ExtensionMethod("pinv")
+    cholesky = ExtensionMethod("cholesky")
+    eig = ExtensionMethod("eig", operand_counts=(1, 2))
+    eigvals = ExtensionMethod("eigvals", operand_counts=(1, 2))
+    eigh = ExtensionMethod("eigh", operand_counts=(1, 2))
+    eigvalsh = ExtensionMethod("eigvalsh", operand_counts=(1, 2))
+    svd = ExtensionMethod("svd")
+    svdvals = ExtensionMethod("svdvals")
+    sin = ExtensionMethod("sin")
+    cos = ExtensionMethod("cos")
+    tan = ExtensionMethod("tan")
+    arcsin = ExtensionMethod("arcsin")
+    arccos = ExtensionMethod("arccos")
+    arctan = ExtensionMethod("arctan")
+    sinh = ExtensionMethod("sinh")
+    cosh = ExtensionMethod("cosh")
+    tanh = ExtensionMethod("tanh")
+    arcsinh = ExtensionMethod("arcsinh")
+    arccosh = ExtensionMethod("arccosh")
+    arctanh = ExtensionMethod("arctanh")
+    clip = ExtensionMethod("clip")
+    isnan = ExtensionMethod("isnan")
+    isfinite = ExtensionMethod("isfinite")
+    isinf = ExtensionMethod("isinf")
+    less = ExtensionMethod("less")
+    less_equal = ExtensionMethod("less_equal")
+    greater = ExtensionMethod("greater")
+    greater_equal = ExtensionMethod("greater_equal")
+    to_array = ExtensionMethod("to_array")
 
     def __init__(self, context: Context, gatype: GAType, kernel: Any) -> None:
         kernel = context.prepare_kernel(kernel)
@@ -367,19 +400,6 @@ class Extensor:
     def symmetric_involute_product(self) -> "Extensor":
         return self._symmetric_product("involute")
 
-    def transpose(self) -> "Extensor":
-        """Transpose a unary Extensor, preserving every leading batch axis."""
-
-        if self.arity != 1:
-            raise ValueError("transpose requires an arity-1 Extensor")
-        permutation = (
-            tuple(range(self.ndim))
-            + (self.ndim + 1, self.ndim)
-        )
-        kernel = self._kernel.transpose(permutation)
-        gatype = self.gatype.transposed
-        return type(self)._from_prepared_kernel(self.context, gatype, kernel)
-
     def _grade_transform(self, transform: str) -> "Extensor":
         if self.gatype.grade_transform_is_identity(transform):
             return self
@@ -427,6 +447,18 @@ class Extensor:
             self.gatype.subspaces,
         )
         return type(self)._from_prepared_kernel(self.context, gatype, -self._kernel)
+
+    def __lt__(self, other: object) -> Any:
+        return self.less(_scalar_operand(self.context, other))
+
+    def __le__(self, other: object) -> Any:
+        return self.less_equal(_scalar_operand(self.context, other))
+
+    def __gt__(self, other: object) -> Any:
+        return self.greater(_scalar_operand(self.context, other))
+
+    def __ge__(self, other: object) -> Any:
+        return self.greater_equal(_scalar_operand(self.context, other))
 
     def __add__(self, other: object) -> Extensor | NotImplementedType:
         other = _promote_identity(other)
@@ -618,6 +650,10 @@ class _AtIndexer:
 
     def __getitem__(self, index: object) -> "_AtUpdate":
         return _AtUpdate(self._extensor, index)
+
+
+def _scalar_operand(context, value) -> Extensor:
+    return value if isinstance(value, Extensor) else _batch_scalar(context, context.xp.asarray(value))
 
 
 def _batch_scalar(context, values) -> Extensor:

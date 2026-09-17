@@ -8,7 +8,12 @@ from numga.expression import scalar_product
 from numga.gatype.traits import Versor
 
 from examples.geometry.registration import Alignment, main
-from examples.geometry.registration_plumbing import ga, ctx, Rotor, best_rotor, cloud, jitter, mv, same_rotor
+from examples.geometry.registration_plumbing import ga, ctx, Rotor, cloud, jitter, mv, same_rotor
+
+def best_rotor(alignment):
+    values, vectors = ((alignment + alignment.transpose()) * .5).eigh()
+    return values[-1].kernel.item(), vectors[-1].normalized()
+
 
 TRUTH = (mv.xy * 0.4 + mv.yz * -0.3 + mv.zx * 0.7).exp()
 

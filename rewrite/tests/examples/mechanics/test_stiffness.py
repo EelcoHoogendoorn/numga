@@ -2,9 +2,55 @@
 
 import numpy as np
 
+from dataclasses import dataclass
+from unittest.mock import patch
+
 from examples.mechanics.stiffness import (
-    body_inertia, coordinates, mv, normal_modes, point, spring_stiffness, suspension,
+    Twist, coordinates, main, mv, point, suspension as inputs,
 )
+
+
+def spring_stiffness(lines, stiffnesses):
+    extension = Twist & lines
+    return (lines * extension * stiffnesses).sum(axis=0), extension
+
+
+def body_inertia(points, masses):
+    return (points & points.commutator(Twist) * masses).sum(axis=0)
+
+
+def normal_modes(stiffness, inertia):
+    values, modes = (Twist & stiffness).eigh(Twist & inertia)
+    return modes, np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
+
+
+@dataclass
+class System:
+    geometry: object
+    stiffness: object
+    extension: object
+    inertia: object
+
+    def __getattr__(self, name):
+        return getattr(self.geometry, name)
+
+
+def suspension(angled=False):
+    geometry = inputs(angled)
+    stiffness, extension = spring_stiffness(
+        (geometry.anchors & geometry.attachments).normalized(), geometry.stiffnesses,
+    )
+    return System(geometry, stiffness, extension,
+                  body_inertia(geometry.mass_points, geometry.masses))
+
+
+def test_tutorial_passes_analytic_modes_to_renderer():
+    with patch("examples.mechanics.stiffness_plumbing.draw_modes") as draw:
+        main(plot_path="")
+    free, restrained = draw.call_args.args[0]
+    np.testing.assert_allclose((2 * np.pi * free.frequencies)**2,
+                               [0, 12, 12 * .8**2 / (5 / 12)], atol=1e-12)
+    assert np.all(restrained.frequencies > 0)
 
 
 def test_two_springs_have_analytic_slide_bounce_and_rock_frequencies():

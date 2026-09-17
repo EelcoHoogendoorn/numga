@@ -15,7 +15,6 @@ Demonstrates:
        - Poinsot's polhode curves in rigid body dynamics: intersection of the inertia quadric with the angular momentum sphere.
 """
 
-import sys
 import numpy as np
 
 from numga import NumpyContext
@@ -34,76 +33,10 @@ spaces = ga.subspace
 
 Planes = spaces("x y z")
 Points = spaces("yz zx xy")
+Scalar = ga.gatype.scalar()
+Polarity = ga.gatype((Planes, Points))
 
-# 2. Quadrics in plane-based PGA:
-# Primal quadric C maps Points -> Planes:  gatype((Planes, Points))
-# Dual quadric Q maps Planes -> Points:    gatype((Points, Planes))
-# In principal axes, both operators are purely diagonal matrices:
-l1, l2, l3 = 1.0, 0.4, -0.8
-C_diag = ctx.extensor(ga.gatype((Planes, Points)), np.diag([l1, l2, l3]))
-Q_diag = ctx.extensor(ga.gatype((Points, Planes)), np.diag([1.0 / l1, 1.0 / l2, 1.0 / l3]))
-
-# 3. Universal PGA motor transform via inline sandwich:
-rotor = (mv.xy * 0.25 + mv.yz * 0.15).exp()
-C = rotor >> C_diag(rotor << Points)
-Q = rotor >> Q_diag(rotor << Planes)
-
-# 4. Analytic spherical oval parameters in the unrotated frame:
-# Projected ellipse semi-axes: x^2 / x0^2 + y^2 / y0^2 = 1
-x0 = np.sqrt(-l3 / (l1 - l3))
-y0 = np.sqrt(-l3 / (l2 - l3))
-theta_b = np.arcsin(x0)  # semi-minor arc along x
-theta_a = np.arcsin(y0)  # semi-major arc along y
-theta_c = np.arccos(np.cos(theta_a) / np.cos(theta_b))  # focal arc along major axis y
-
-# Foci in unrotated frame as antivectors (points) and rotated into world frame:
-F1_unrot = mv(Points, [0.0, np.sin(theta_c), np.cos(theta_c)])
-F2_unrot = mv(Points, [0.0, -np.sin(theta_c), np.cos(theta_c)])
-F1 = rotor >> F1_unrot
-F2 = rotor >> F2_unrot
-
-# 5. Generate points along the spherical oval:
-t = np.linspace(0, 2 * np.pi, 200)
-x_diag = x0 * np.cos(t)
-y_diag = y0 * np.sin(t)
-z_diag = np.sqrt(1.0 - x_diag**2 - y_diag**2)
-P_diag = mv(Points, np.stack([x_diag, y_diag, z_diag], axis=-1))
-
-# Rotate points to world frame:
-P = rotor >> P_diag
-
-# Primal quadric condition: point lies on quadric iff P v C(P) == 0
-residuals_primal = P.regressive(C(P))
-np.testing.assert_allclose(residuals_primal.kernel, 0.0, atol=1e-14)
-
-# 6. Verify the Spherical Focal Property:
-# In PGA, the distance between unit antivector points on the sphere is arccos(- P . F)
-# The sum of geodesic distances from F1 and F2 to any point on the oval is constant: 2 * theta_a
-dot_PF1 = -(P | F1).kernel.ravel()
-dot_PF2 = -(P | F2).kernel.ravel()
-dist_F1 = np.arccos(np.clip(dot_PF1, -1.0, 1.0))
-dist_F2 = np.arccos(np.clip(dot_PF2, -1.0, 1.0))
-focal_sum = dist_F1 + dist_F2
-
-np.testing.assert_allclose(focal_sum, 2.0 * theta_a, atol=1e-11)
-
-# 7. Plane-based (Dual) Geometry: Tangent Great Circles
-# The polar plane to point P with respect to quadric C is pi = C(P):
-pi_tangent = C(P).normalized()
-
-# Dual quadric condition: every tangent great circle satisfies pi v Q(pi) == 0:
-residuals_dual = pi_tangent.regressive(Q(pi_tangent))
-np.testing.assert_allclose(residuals_dual.kernel, 0.0, atol=1e-14)
-
-# Dual focal property: product of sines of distances from F1, F2 to tangent great circles is constant:
-# In PGA, sin(dist(F, plane)) = |F v pi|
-sin_d1 = np.abs(F1.regressive(pi_tangent).kernel.ravel())
-sin_d2 = np.abs(F2.regressive(pi_tangent).kernel.ravel())
-dual_prod = sin_d1 * sin_d2
-np.testing.assert_allclose(dual_prod, np.mean(dual_prod), atol=1e-14)
-
-
-def plot_spherical_quadric(save_path: str = str(PLOT_DIR / "spherical_quadrics.png")):
+def plot_spherical_quadric(P, dist_F1, dist_F2, pi_tangent, x0, y0, rotor, F1, F2, theta_a, C, save_path: str):
     """Render a 3-panel visualization of the spherical quadric in Cl(3)."""
     import matplotlib.pyplot as plt
     from matplotlib import cm
@@ -145,9 +78,9 @@ def plot_spherical_quadric(save_path: str = str(PLOT_DIR / "spherical_quadrics.p
     ps = pk[idx_sample]
     # Geodesic arc from F1 to ps on S^2 (SLERP)
     slerp_t = np.linspace(0, 1, 30)[:, None]
-    omega1 = dist_F1[idx_sample]
+    omega1 = dist_F1[idx_sample].kernel.item()
     arc1 = (np.sin((1 - slerp_t) * omega1) * f1k + np.sin(slerp_t * omega1) * ps) / np.sin(omega1)
-    omega2 = dist_F2[idx_sample]
+    omega2 = dist_F2[idx_sample].kernel.item()
     arc2 = (np.sin((1 - slerp_t) * omega2) * f2k + np.sin(slerp_t * omega2) * ps) / np.sin(omega2)
 
     ax1.plot(arc1[:, 0], arc1[:, 1], arc1[:, 2], color="lime", linewidth=2.2, label=r"Geodesic $d(P, F_1)$")
@@ -247,20 +180,79 @@ def plot_spherical_quadric(save_path: str = str(PLOT_DIR / "spherical_quadrics.p
     return fig
 
 
+def main(save_path: str = str(PLOT_DIR / "spherical_quadrics.png")):
+    # 2. Quadrics in plane-based PGA:
+    # Primal quadric C maps Points -> Planes:  gatype((Planes, Points))
+    # Dual quadric Q maps Planes -> Points:    gatype((Points, Planes))
+    # In principal axes, both operators are purely diagonal matrices:
+    l1, l2, l3 = 1.0, 0.4, -0.8
+    C_diag = ctx.extensor(Polarity, np.diag([l1, l2, l3]))
+    Q_diag = C_diag.inverse()
+
+    # 3. Universal PGA motor transform via inline sandwich:
+    rotor = (mv.xy * 0.25 + mv.yz * 0.15).exp()
+    C = rotor >> C_diag(rotor << Points)
+    Q = rotor >> Q_diag(rotor << Planes)
+
+    # 4. Analytic spherical oval parameters in the unrotated frame:
+    # Projected ellipse semi-axes: x^2 / x0^2 + y^2 / y0^2 = 1
+    x0 = np.sqrt(-l3 / (l1 - l3))
+    y0 = np.sqrt(-l3 / (l2 - l3))
+    theta_b = np.arcsin(x0)  # semi-minor arc along x
+    theta_a = np.arcsin(y0)  # semi-major arc along y
+    theta_c = np.arccos(np.cos(theta_a) / np.cos(theta_b))  # focal arc along major axis y
+
+    # Foci in unrotated frame as antivectors (points) and rotated into world frame:
+    F1_unrot = mv(Points, [0.0, np.sin(theta_c), np.cos(theta_c)])
+    F2_unrot = mv(Points, [0.0, -np.sin(theta_c), np.cos(theta_c)])
+    F1 = rotor >> F1_unrot
+    F2 = rotor >> F2_unrot
+
+    # 5. Generate points along the spherical oval:
+    t = np.linspace(0, 2 * np.pi, 200)
+    x_diag = x0 * np.cos(t)
+    y_diag = y0 * np.sin(t)
+    z_diag = np.sqrt(1.0 - x_diag**2 - y_diag**2)
+    P_diag = mv(Points, np.stack([x_diag, y_diag, z_diag], axis=-1))
+
+    # Rotate points to world frame:
+    P = rotor >> P_diag
+
+    # Primal quadric condition: point lies on quadric iff P v C(P) == 0
+    residuals_primal = P.regressive(C(P))
+
+    # 6. Verify the Spherical Focal Property:
+    # In PGA, the distance between unit antivector points on the sphere is arccos(- P . F)
+    # The sum of geodesic distances from F1 and F2 to any point on the oval is constant: 2 * theta_a
+    dist_F1 = (-(P | F1)).clip(-1.0, 1.0).arccos()
+    dist_F2 = (-(P | F2)).clip(-1.0, 1.0).arccos()
+    focal_sum = dist_F1 + dist_F2
+
+
+    # 7. Plane-based (Dual) Geometry: Tangent Great Circles
+    # The polar plane to point P with respect to quadric C is pi = C(P):
+    pi_tangent = C(P).normalized()
+
+    # Dual quadric condition: every tangent great circle satisfies pi v Q(pi) == 0:
+    residuals_dual = pi_tangent.regressive(Q(pi_tangent))
+
+    # Dual focal property: product of sines of distances from F1, F2 to tangent great circles is constant:
+    # In PGA, sin(dist(F, plane)) = |F v pi|
+    sin_d1 = F1.regressive(pi_tangent).norm()
+    sin_d2 = F2.regressive(pi_tangent).norm()
+    dual_prod = sin_d1 * sin_d2
+
+
+    fig = plot_spherical_quadric(P, dist_F1, dist_F2, pi_tangent, x0, y0, rotor, F1, F2, theta_a, C, save_path)
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(residuals_primal.kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose(focal_sum.kernel, 2.0 * theta_a, atol=1e-11)
+    np.testing.assert_allclose(residuals_dual.kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose(dual_prod.kernel, dual_prod.mean().kernel.item(), atol=1e-14)
+
+    return fig
+
+
 if __name__ == "__main__":
-    print("=== Cl(3) Spherical Quadrics & Spherical Conics ===")
-    print(f"Eigenvalues: lambda1={l1}, lambda2={l2}, lambda3={l3}")
-    print(f"Spherical semi-minor arc: theta_b = {np.degrees(theta_b):.2f}°")
-    print(f"Spherical semi-major arc: theta_a = {np.degrees(theta_a):.2f}°")
-    print(f"Spherical focal arc:      theta_c = {np.degrees(theta_c):.2f}°")
-    print(f"Primal Quadric residual max |P v C(P)|:  {np.max(np.abs(residuals_primal.kernel)):.2e}")
-    print(f"Dual Quadric residual max |pi v Q(pi)|:  {np.max(np.abs(residuals_dual.kernel)):.2e}")
-    print(f"Geodesic distance sum: {np.mean(focal_sum):.6f} rad (2 * theta_a = {2 * theta_a:.6f} rad)")
-    print(f"Geodesic sum standard deviation: {np.std(focal_sum):.2e} rad")
-    print(f"Dual sine-distance product std: {np.std(dual_prod):.2e}")
-
-    plot_spherical_quadric()
-
-    if "--plot" in sys.argv:
-        import matplotlib.pyplot as plt
-        plt.show()
+    main()

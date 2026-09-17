@@ -216,38 +216,13 @@ def build_celestial_scene(
     return scene
 
 
-def animate_boosted_quadrics(
-    gif_path: str = str(PLOT_DIR / "boosted_quadrics.gif"),
-    n_frames: int = 60,
-    zeta_max: float = 1.4,
-    projection_mode: str = "perspective",
-    view_direction: str = "forward",
-    downsample: int = 4,
-) -> str:
-    """Animate boosted quadric contours on the observation canvas and export to GIF.
-
-    Parameters:
-        gif_path: Destination path for exported GIF.
-        n_frames: Number of animation frames.
-        zeta_max: Peak rapidity oscillation amplitude.
-        projection_mode: 'perspective' (pinhole screen) or 'stereographic' (conformal).
-        view_direction: 'forward' (along +z motion axis) or 'side' (starboard window along +x).
-        downsample: Spatial downsampling factor with area averaging.
-    """
-    scene = build_celestial_scene()
+def draw_boosted_sky(states, gif_path: str, projection_mode: str, downsample: int) -> str:
     frames: list[np.ndarray] = []
 
     fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=100, facecolor="#090d16")
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
 
-    # Camera orientation rotor
-    if view_direction == "side":
-        # Starboard window: 90° rotation in zx plane mapping world +x to camera optical axis
-        R_cam = (mv.zx * (-np.pi / 4.0)).exp()
-    else:
-        R_cam = mv.scalar([1.0])
-
-    for i in range(n_frames):
+    for state in states:
         ax.clear()
         ax.set_facecolor("#090d16")
         ax.set_axis_off()
@@ -259,17 +234,7 @@ def animate_boosted_quadrics(
             ax.set_ylim(-1.6, 1.6)
         ax.set_aspect("equal")
 
-        # Smooth cyclic rapidity oscillation
-        phase = 2.0 * np.pi * i / n_frames
-        zeta = zeta_max * np.sin(phase)
-        boost = (mv.zt * (zeta / 2.0)).exp()
-
-        for name, Q, k, color, lw in scene:
-            # 1. Boost contour rays via Lorentz outermorphism in world frame
-            k_boosted = boost >> k
-
-            # 2. Transform into camera frame
-            k_cam = R_cam >> k_boosted
+        for name, k_cam, color, lw in state:
             coords = k_cam.kernel
             t, z = coords[..., 0], coords[..., 3]
 
@@ -291,13 +256,54 @@ def animate_boosted_quadrics(
     return save_gif(frames, gif_path, duration_ms=40, scale=1.0 / downsample)
 
 
+def animate_boosted_quadrics(
+    gif_path: str = str(PLOT_DIR / "boosted_quadrics.gif"),
+    n_frames: int = 60,
+    zeta_max: float = 1.4,
+    projection_mode: str = "perspective",
+    view_direction: str = "forward",
+    downsample: int = 4,
+) -> str:
+    """Animate boosted quadric contours on the observation canvas and export to GIF.
+
+    Parameters:
+        gif_path: Destination path for exported GIF.
+        n_frames: Number of animation frames.
+        zeta_max: Peak rapidity oscillation amplitude.
+        projection_mode: 'perspective' (pinhole screen) or 'stereographic' (conformal).
+        view_direction: 'forward' (along +z motion axis) or 'side' (starboard window along +x).
+        downsample: Spatial downsampling factor with area averaging.
+    """
+    scene = build_celestial_scene()
+    camera = {"forward": mv.rotor(), "side": (mv.zx * (-np.pi / 4.0)).exp()}[view_direction]
+    rapidities = zeta_max * np.sin(2.0 * np.pi * np.arange(n_frames) / n_frames)
+    boosts = (mv.zt * (rapidities / 2)).exp()
+
+    def scenes():
+        for boost in boosts:
+            # The Lorentz map carries every contour ray; the camera changes the observer.
+            observer = camera * boost
+            yield [(name, observer >> rays, color, width) for name, quadric, rays, color, width in scene]
+
+    return draw_boosted_sky(scenes(), gif_path, projection_mode, downsample)
+
+
 def main(
     gif_path: str = str(PLOT_DIR / "boosted_quadrics.gif"),
     gif_path_stereo: str = str(PLOT_DIR / "boosted_quadrics_stereo.gif"),
 ) -> tuple[str, str]:
     """Generate the forward perspective and forward stereographic animations."""
-    forward = animate_boosted_quadrics(gif_path=gif_path, projection_mode="perspective")
-    stereo = animate_boosted_quadrics(gif_path=gif_path_stereo, projection_mode="stereographic")
+    scene = build_celestial_scene()
+    rapidities = 1.4 * np.sin(2 * np.pi * np.arange(60) / 60)
+    boosts = (mv.zt * (rapidities / 2)).exp()
+
+    def scenes():
+        for boost in boosts:
+            # One observer map carries every contour's null rays into the moving sky.
+            yield [(name, boost >> rays, color, width) for name, quadric, rays, color, width in scene]
+
+    forward = draw_boosted_sky(scenes(), gif_path, "perspective", 4)
+    stereo = draw_boosted_sky(scenes(), gif_path_stereo, "stereographic", 4)
     return forward, stereo
 
 

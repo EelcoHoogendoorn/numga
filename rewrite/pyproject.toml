@@ -12,6 +12,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+linalg = [
+    "scipy>=1.10",
+]
 jax = [
     "jax>=0.4",
 ]

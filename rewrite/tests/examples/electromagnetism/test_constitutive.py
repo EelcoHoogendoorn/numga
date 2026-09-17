@@ -5,7 +5,19 @@ from __future__ import annotations
 import numpy as np
 
 from examples.electromagnetism.constitutive import main
-from examples.electromagnetism.constitutive_plumbing import B, V, mv, phase_speeds, polarisation, t, x, y, z
+from examples.electromagnetism.constitutive_plumbing import B, V, Spatial, mv, minimum_speeds, t, x, y, z
+
+def phase_speeds(chi, direction, speeds):
+    samples = mv.scalar(speeds[:, None])
+    k = samples * t + mv(Spatial, direction)
+    wave = k.commutator(chi(k.wedge(Spatial)))
+    return minimum_speeds(samples, wave.svdvals()[..., -1]).kernel[..., 0]
+
+
+def polarisation(chi, direction, speed):
+    k = t * speed + mv(Spatial, direction)
+    return k.commutator(chi(k.wedge(Spatial))).svd()[2][-1]
+
 
 SPEEDS = np.linspace(0.05, 1.5, 6001)
 Z = np.array([0.0, 0.0, 1.0])

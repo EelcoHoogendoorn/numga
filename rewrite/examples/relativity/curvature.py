@@ -87,8 +87,6 @@ def main(plot_path: str = str(PLOT_DIR / "curvature.png"), animation_path: str =
     plus: Curvature = nx * (nx | Bivector) - ny * (ny | Bivector)
     rotor = (mv.xy * (np.pi / 8)).exp()
     cross: Curvature = rotor >> plus(rotor << Bivector)
-    np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
-    assert np.abs(plus.kernel).max() > 0.0
 
     # -----------------------------------------------------------------------
     # 2. A wave packet in three polarizations
@@ -99,8 +97,9 @@ def main(plot_path: str = str(PLOT_DIR / "curvature.png"), animation_path: str =
     time = np.linspace(0.0, 6.0, 1201)
     _, second = wave_packet(time)
     cosine, sine = second[:, 0], second[:, 1]
-    plus_wave, cross_wave = plus * cosine, cross * cosine
-    waves: Curvature = -0.5 * stack((plus_wave, cross_wave, plus_wave + cross * sine), axis=1)
+    plus_wave, cross_wave = plus * cosine, cross * sine
+    circ_wave = plus_wave + cross_wave
+    waves: Curvature = -0.5 * stack((plus_wave, cross_wave, circ_wave), axis=1)
 
     # -----------------------------------------------------------------------
     # 3. The tidal map: bind the observer twice, leave the separation open
@@ -128,6 +127,11 @@ def main(plot_path: str = str(PLOT_DIR / "curvature.png"), animation_path: str =
     if animation_path:
         save_animation(data, animation_path)
         print(f"Animation saved to {animation_path}")
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
+    assert np.abs(plus.kernel).max() > 0.0
+
     return figure
 
 

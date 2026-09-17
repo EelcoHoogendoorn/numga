@@ -89,7 +89,7 @@ def test_non_square_and_singular_maps_fail_without_pseudoinverse():
     context = NumpyContext(algebra)
     scalar, vector = algebra.subspace.scalar(), algebra.subspace.vector()
     nonsquare = context.extensor(algebra.gatype((scalar, vector)), [[1, 2]])
-    with pytest.raises(ValueError, match="equally sized"):
+    with pytest.raises(LookupError, match="no .* implementation"):
         nonsquare.inverse()
     singular = context.extensor(algebra.gatype((vector, vector)), [[1, 2], [2, 4]])
     with pytest.raises(np.linalg.LinAlgError):

@@ -74,7 +74,7 @@ def draw_scene(ax, subject: Point, planes: list[Line], legs: list[Line], train: 
     for stage, (rays, start, plane) in enumerate(zip(legs, starts, planes)):
         draw_rays(ax, rays, start, plane, f"C{stage}")
         draw_plane(ax, plane, 0.8)
-    handedness = heading(legs[0], starts[0], planes[0]) * np.sign(np.linalg.det(train.kernel))
+    handedness = heading(legs[0], starts[0], planes[0]) * np.sign(train.det().kernel.item())
     draw_onward(ax, legs[-1], planes[-1], handedness, 2.5, f"C{len(planes)}")
     ax.scatter(*xy(subject), color="C0", zorder=3); ax.scatter(*xy(picture), color=f"C{len(planes)}", zorder=3)
     ax.set_xlim(-1.3, 4.7); ax.set_ylim(-1.5, 3.2); ax.set_aspect("equal")
@@ -84,6 +84,38 @@ def draw_plane(ax, plane: Line, half_height: float) -> None:
     """Draw an element's plane between the lines y = ±half_height."""
     a, b = xy(plane ^ (mv.y + mv.w * half_height)), xy(plane ^ (mv.y - mv.w * half_height))
     ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")
+
+
+def draw_lenses(rays, obj, plane_1, plane_2, out, image, parallel, lens_1, focused, focus, plot_path) -> plt.Figure:
+    beyond = (mv.wx * -0.25).exp()                                  # half a unit further along x
+    fig, axes = plt.subplots(2, 1, figsize=(8, 6), dpi=120, sharex=True)
+    draw_rays(axes[0], rays, obj & mv.wx, plane_1, "tab:orange")
+    draw_rays(axes[0], out, plane_1, beyond >> (image & mv.wx), "tab:blue")
+    draw_plane(axes[0], plane_1, 1.0); axes[0].set_title("one thin lens")
+    draw_rays(axes[1], parallel, (mv.wx * 0.5).exp() >> plane_1, plane_1, "tab:orange")
+    draw_rays(axes[1], lens_1(parallel), plane_1, plane_2, "tab:green")
+    draw_rays(axes[1], focused, plane_2, beyond >> (focus & mv.wx), "tab:blue")
+    draw_plane(axes[1], plane_1, 1.0); draw_plane(axes[1], plane_2, 1.0); axes[1].set_title("two lenses")
+    for ax in axes:
+        ax.set_aspect("equal")
+    if plot_path:
+        fig.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+
+    return fig
+
+
+def draw_train(states, subject: Point, animation_path: str) -> None:
+    """Draw the optical train from its completed geometric states."""
+    if animation_path:
+        anim = plt.figure(figsize=(7, 5), dpi=100)
+        ax = anim.add_subplot()
+        frames_out = []
+        for planes, legs, train, picture in states:
+            draw_scene(ax, subject, planes, legs, train, picture)
+            frames_out.append(capture(anim))
+        plt.close(anim)
+        save_gif(frames_out, animation_path, duration_ms=60)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -126,21 +158,6 @@ def main(
     print(f"two-lens focus at {np.round(xy(focus), 4)}")
     print("system map on lines:\n", np.round(system.kernel, 3))
 
-    beyond = (mv.wx * -0.25).exp()                                  # half a unit further along x
-    fig, axes = plt.subplots(2, 1, figsize=(8, 6), dpi=120, sharex=True)
-    draw_rays(axes[0], rays, obj & mv.wx, plane_1, "tab:orange")
-    draw_rays(axes[0], out, plane_1, beyond >> (image & mv.wx), "tab:blue")
-    draw_plane(axes[0], plane_1, 1.0); axes[0].set_title("one thin lens")
-    draw_rays(axes[1], parallel, (mv.wx * 0.5).exp() >> plane_1, plane_1, "tab:orange")
-    draw_rays(axes[1], lens_1(parallel), plane_1, plane_2, "tab:green")
-    draw_rays(axes[1], focused, plane_2, beyond >> (focus & mv.wx), "tab:blue")
-    draw_plane(axes[1], plane_1, 1.0); draw_plane(axes[1], plane_2, 1.0); axes[1].set_title("two lenses")
-    for ax in axes:
-        ax.set_aspect("equal")
-    if plot_path:
-        fig.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
-
     # 3. An optical train in the abstract. Every element is a map on lines defined in one home
     #    plane, x = 0: a thin lens shears a line by its incidence with the centre, a thin prism
     #    by its incidence with an ideal point (the same slope change for every height), and a
@@ -176,20 +193,13 @@ def main(
                 train = placed(train)                              # the train so far, as one map
                 planes.append(motor >> home)                       # where the element sits, for drawing
                 legs.append(rays)
-            yield planes, legs, train
+            back = train(fan)
+            picture = back[0] ^ back[-1]
+            yield planes, legs, train, picture
 
-    anim = plt.figure(figsize=(7, 5), dpi=100)
-    ax = anim.add_subplot()
-    frames_out, residual = [], 0.0
-    for planes, legs, train in scenes():
-        back = train(legs[0])
-        picture = back[0] ^ back[-1]
-        residual = max(residual, np.abs((back ^ picture).kernel).max(), np.abs((back - legs[-1]).kernel).max())
-        draw_scene(ax, subject, planes, legs, train, picture)
-        frames_out.append(capture(anim))
-    plt.close(anim)
-    if animation_path:
-        save_gif(frames_out, animation_path, duration_ms=60)
+    states = list(scenes())
+    fig = draw_lenses(rays, obj, plane_1, plane_2, out, image, parallel, lens_1, focused, focus, plot_path)
+    draw_train(states, subject, animation_path)
 
     # --- checks: kernel-level assertions, deliberately outside the demonstration ----------
     # Every transformed ray passes through the image. A point's incidence with the lens plane
@@ -204,7 +214,9 @@ def main(
     back_focal = f_eff * (focal_1 - gap) / focal_1
     np.testing.assert_allclose(((plane_2 & focus) / (mv.w & focus)).kernel, back_focal.kernel, atol=1e-12)
     np.testing.assert_allclose((mv.y ^ focus).kernel, 0.0, atol=1e-12)
-    assert residual < 1e-10                       # tilted lens still images; train equals the scan
+    for planes, legs, train, picture in states:
+        np.testing.assert_allclose((train(legs[0]) ^ picture).kernel, 0.0, atol=1e-10)
+        np.testing.assert_allclose((train(legs[0]) - legs[-1]).kernel, 0.0, atol=1e-10)
     return fig
 
 

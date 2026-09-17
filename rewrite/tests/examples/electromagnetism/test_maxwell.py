@@ -11,7 +11,7 @@ from examples.electromagnetism.maxwell import (
     main,
     null_cloud,
     normal_stress,
-    principal_values,
+    real_sorted,
 )
 
 t = mv.vector([1.0, 0.0, 0.0, 0.0])   # rest observer with full vector support
@@ -51,7 +51,7 @@ def test_particle_cloud_is_an_ideal_fluid():
     u = isotropic_cloud(4000, speed, rng)
     mass = np.full((4000, 1), 1.0 / 4000)
     T = (u * (u | V) * mv.scalar(mass)).sum()
-    *stresses, energy = principal_values(T)
+    *stresses, energy = real_sorted(T.eigvals()).kernel[..., 0]
     pressure = -np.mean(stresses)
     assert np.isclose(T.trace().kernel, 1.0, atol=1e-14)
     assert np.isclose(pressure, energy * speed**2 / 3.0, rtol=0.05)
@@ -76,7 +76,7 @@ def test_null_cloud_is_exactly_traceless_radiation():
     rng = np.random.default_rng(12)
     rays = null_cloud(3000, rng)
     T = (rays * (rays | V) * mv.scalar(np.full((3000, 1), 2.0 / 3000))).sum()
-    *stresses, energy = principal_values(T)
+    *stresses, energy = real_sorted(T.eigvals()).kernel[..., 0]
     np.testing.assert_allclose(T.trace().kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(-np.mean(stresses), energy / 3.0, atol=1e-12)
     assert np.allclose(stresses, -2.0 / 3.0, rtol=0.08)

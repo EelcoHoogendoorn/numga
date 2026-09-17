@@ -39,6 +39,7 @@ mv = ctx.multivector
 
 V = STA.subspace.vector()
 Vector = STA.gatype.vector()
+Scalar = STA.gatype.scalar()
 StressEnergy = STA.gatype((V, V))            # momentum flux <= observer
 
 
@@ -50,9 +51,9 @@ def normal_stress(T: StressEnergy, n: Vector) -> float:
     return float((n.inverse() | T(n)).kernel.item())
 
 
-def principal_values(T: StressEnergy) -> np.ndarray:
-    """Eigenvalues of the mixed tensor T^mu_nu, sorted ascending."""
-    return np.sort(np.linalg.eigvals(T.kernel).real)
+def real_sorted(values: Scalar) -> Scalar:
+    """Read a real spectrum in ascending order, retaining its scalar type."""
+    return mv.scalar(np.sort(values.kernel.real, axis=-2))
 
 
 def isotropic_cloud(n: int, speed: float, rng: np.random.Generator) -> Vector:
@@ -87,38 +88,24 @@ def main() -> None:
 
     # Observer at rest: energy density and Poynting flux
     flux = T_em(t)
-    energy = float((t | flux).kernel.item())
+    energy = t | flux
     poynting = flux - t * energy
-    np.testing.assert_allclose(energy, 0.5 * (Ex**2 + By**2), atol=1e-14)
-    np.testing.assert_allclose(poynting.kernel, [0.0, 0.0, 0.0, Ex * By], atol=1e-14)
-
-    # No stress across the field, radiation pressure along the propagation direction
-    np.testing.assert_allclose([normal_stress(T_em, mv.x), normal_stress(T_em, mv.y)], 0.0, atol=1e-14)
-    np.testing.assert_allclose(normal_stress(T_em, mv.z), -0.5 * (Ex**2 + By**2), atol=1e-14)
-    np.testing.assert_allclose(T_em.trace().kernel, 0.0, atol=1e-14)
 
     # A pure travelling wave has |E| = |B|, and its tensor is one null dyad along the ray
     # k = t + z: the massless counterpart of the dust tensor below.
     k = t + mv.z
-    np.testing.assert_allclose(T_em.kernel, (Ex**2 * k * (k | V)).kernel, atol=1e-14)
 
     # For any field the same map is the Lorentz force generator F . v iterated, minus the
     # Lagrangian <F^2>_0 = E^2 - B^2 as an isotropic pressure.
     F_any = mv.tx * 0.7 + mv.ty * -0.4 + mv.tz * 1.1 + mv.yz * 0.3 + mv.zx * -0.8 + mv.xy * 0.5
     lagrangian = (F_any * F_any).select.scalar()
-    np.testing.assert_allclose(
-        (0.5 * (F_any >> V)).kernel,
-        (F_any.commutator(F_any.commutator(V)) - 0.5 * lagrangian * V).kernel,
-        atol=1e-14,
-    )
+    stress_from_force = F_any.commutator(F_any.commutator(V)) - 0.5 * lagrangian * V
 
     # -----------------------------------------------------------------------
     # B. Dust Energy-Momentum Extensor: at rest, then boosted
     # -----------------------------------------------------------------------
     rho = 4.0
     T_dust: StressEnergy = rho * t * (t | V)
-    np.testing.assert_allclose([normal_stress(T_dust, n) for n in (mv.x, mv.y, mv.z)], 0.0, atol=1e-14)
-    np.testing.assert_allclose(T_dust.trace().kernel, rho, atol=1e-14)
 
     # The moving observer is the rest observer boosted; gamma and beta follow from the rapidity
     zeta = np.arctanh(0.6)
@@ -126,11 +113,6 @@ def main() -> None:
     u = boost >> t
     gamma, beta = np.cosh(zeta), np.tanh(zeta)
     T_moving: StressEnergy = rho * u * (u | V)
-
-    # Observed energy density scales with gamma^2, dynamic ram pressure develops along z
-    np.testing.assert_allclose(float((t | T_moving(t)).kernel.item()), rho * gamma**2, atol=1e-14)
-    np.testing.assert_allclose(normal_stress(T_moving, mv.z), -rho * gamma**2 * beta**2, atol=1e-14)
-    np.testing.assert_allclose(T_moving.trace().kernel, rho, atol=1e-14)
 
     # -----------------------------------------------------------------------
     # C. Particle Cloud: the dust quadric summed over four-velocities is a fluid
@@ -141,33 +123,27 @@ def main() -> None:
     # one speed the pressure is rho v^2 / 3. The trace is the summed rest mass, exactly.
     speed = 0.5
     u_cloud = isotropic_cloud(2000, speed, rng)
-    mass = np.full((2000, 1), 1.0 / 2000)
-    T_cloud: StressEnergy = (u_cloud * (u_cloud | V) * mv.scalar(mass)).sum()
+    mass = mv.scalar(np.full((2000, 1), 1.0 / 2000))
+    T_cloud: StressEnergy = (u_cloud * (u_cloud | V) * mass).sum()
 
-    *stresses, energy_cloud = principal_values(T_cloud)
-    pressure = -np.mean(stresses)
-    np.testing.assert_allclose(T_cloud.trace().kernel, mass.sum(), atol=1e-14)
-    np.testing.assert_allclose(pressure, energy_cloud * speed**2 / 3.0, rtol=0.05)
-    np.testing.assert_allclose(stresses, -pressure, rtol=0.05)
+    spectrum = real_sorted(T_cloud.eigvals())
+    stresses, energy_cloud = spectrum[:-1], spectrum[-1]
+    pressure = -stresses.mean()
 
     # A cloud of null rays is the massless limit. Each k is null, so every dyad is traceless
     # and the trace vanishes to roundoff rather than statistically: p = rho / 3 exactly.
     rays = null_cloud(2000, rng)
-    T_light: StressEnergy = (rays * (rays | V) * mv.scalar(mass)).sum()
-    *stresses_light, energy_light = principal_values(T_light)
-    np.testing.assert_allclose(T_light.trace().kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(-np.mean(stresses_light), energy_light / 3.0, atol=1e-12)
+    T_light: StressEnergy = (rays * (rays | V) * mass).sum()
+    light_spectrum = real_sorted(T_light.eigvals())
+    stresses_light, energy_light = light_spectrum[:-1], light_spectrum[-1]
 
     # -----------------------------------------------------------------------
     # D. Ideal Fluid Extensor matches the cloud
     # -----------------------------------------------------------------------
     T_fluid: StressEnergy = (energy_cloud + pressure) * t * (t | V) - pressure * V
-    np.testing.assert_allclose(T_fluid.trace().kernel, energy_cloud - 3.0 * pressure, atol=1e-14)
-    np.testing.assert_allclose(T_fluid.kernel, T_cloud.kernel, atol=0.02)
 
     # Conformal radiation fluid: p = rho / 3 gives Tr(T) == 0
     T_radiation: StressEnergy = (rho + rho / 3.0) * t * (t | V) - (rho / 3.0) * V
-    np.testing.assert_allclose(T_radiation.trace().kernel, 0.0, atol=1e-14)
 
     # -----------------------------------------------------------------------
     # E. Lorentz 4-Force Density on a current: f = J x F
@@ -175,12 +151,40 @@ def main() -> None:
     rho_q = 0.5
     J = u * rho_q
     force = J.commutator(F)
-    np.testing.assert_allclose(float((force | mv.x.inverse()).kernel.item()), rho_q * gamma * (Ex - beta * By), atol=1e-14)
 
     # -----------------------------------------------------------------------
     # F. Lorentz Rotor Sandwich Covariance: T' = L >> T(L << V)
     # -----------------------------------------------------------------------
-    np.testing.assert_allclose((boost >> T_em(boost << V)).kernel, (0.5 * ((boost >> F) >> V)).kernel, atol=1e-14)
+
+    transformed_stress = boost >> T_em(boost << V)
+
+    # --- checks -------------------------------------------------------------
+    np.testing.assert_allclose(energy.kernel, 0.5 * (Ex**2 + By**2), atol=1e-14)
+    np.testing.assert_allclose(poynting.kernel, [0.0, 0.0, 0.0, Ex * By], atol=1e-14)
+    np.testing.assert_allclose([normal_stress(T_em, mv.x), normal_stress(T_em, mv.y)], 0.0, atol=1e-14)
+    np.testing.assert_allclose(normal_stress(T_em, mv.z), -0.5 * (Ex**2 + By**2), atol=1e-14)
+    np.testing.assert_allclose(T_em.trace().kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose(T_em.kernel, (Ex**2 * k * (k | V)).kernel, atol=1e-14)
+    np.testing.assert_allclose(
+        (0.5 * (F_any >> V)).kernel,
+        stress_from_force.kernel,
+        atol=1e-14,
+    )
+    np.testing.assert_allclose([normal_stress(T_dust, n) for n in (mv.x, mv.y, mv.z)], 0.0, atol=1e-14)
+    np.testing.assert_allclose(T_dust.trace().kernel, rho, atol=1e-14)
+    np.testing.assert_allclose(float((t | T_moving(t)).kernel.item()), rho * gamma**2, atol=1e-14)
+    np.testing.assert_allclose(normal_stress(T_moving, mv.z), -rho * gamma**2 * beta**2, atol=1e-14)
+    np.testing.assert_allclose(T_moving.trace().kernel, rho, atol=1e-14)
+    np.testing.assert_allclose(T_cloud.trace().kernel, mass.sum().kernel, atol=1e-14)
+    np.testing.assert_allclose(pressure.kernel, (energy_cloud * speed**2 / 3.0).kernel, rtol=0.05)
+    np.testing.assert_allclose(stresses.kernel, np.broadcast_to(-pressure.kernel, stresses.kernel.shape), rtol=0.05)
+    np.testing.assert_allclose(T_light.trace().kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(-stresses_light.mean().kernel, (energy_light / 3.0).kernel, atol=1e-12)
+    np.testing.assert_allclose(T_fluid.trace().kernel, (energy_cloud - 3.0 * pressure).kernel, atol=1e-14)
+    np.testing.assert_allclose(T_fluid.kernel, T_cloud.kernel, atol=0.02)
+    np.testing.assert_allclose(T_radiation.trace().kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose(float((force | mv.x.inverse()).kernel.item()), rho_q * gamma * (Ex - beta * By), atol=1e-14)
+    np.testing.assert_allclose(transformed_stress.kernel, (0.5 * ((boost >> F) >> V)).kernel, atol=1e-14)
     np.testing.assert_allclose((boost >> T_dust(boost << V)).kernel, T_moving.kernel, atol=1e-14)
 
 

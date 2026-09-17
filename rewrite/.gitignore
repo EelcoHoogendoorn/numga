@@ -5,3 +5,10 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+
+# Generated renders; retain only the figures and animations linked by README.md.
+/plots/*
+!/plots/stiffness.png
+!/plots/stiffness.gif
+!/plots/curvature.png
+!/plots/curvature.gif

@@ -97,6 +97,30 @@ class NumpyContext(Context):
             )
         return self.dtype.type(source)
 
+    def generalized_eig(self, matrix: np.ndarray, metric: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Broadcast SciPy's generalized eigensolver, including singular pencils."""
+        from scipy.linalg import eig
+
+        dtype = np.result_type(self.dtype, np.complex64)
+        return np.vectorize(eig, signature="(n,n),(n,n)->(n),(n,n)", otypes=[dtype, dtype])(matrix, metric)
+
+    def generalized_eigh(self, matrix: np.ndarray, metric: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Broadcast SciPy's Hermitian, positive-definite-metric eigensolver."""
+        from scipy.linalg import eigh
+
+        return np.vectorize(eigh, signature="(n,n),(n,n)->(n),(n,n)", otypes=[self.dtype, self.dtype])(matrix, metric)
+
+    def generalized_eigvals(self, matrix: np.ndarray, metric: np.ndarray) -> np.ndarray:
+        from scipy.linalg import eigvals
+
+        dtype = np.result_type(self.dtype, np.complex64)
+        return np.vectorize(eigvals, signature="(n,n),(n,n)->(n)", otypes=[dtype])(matrix, metric)
+
+    def generalized_eigvalsh(self, matrix: np.ndarray, metric: np.ndarray) -> np.ndarray:
+        from scipy.linalg import eigvalsh
+
+        return np.vectorize(eigvalsh, signature="(n,n),(n,n)->(n)", otypes=[self.dtype])(matrix, metric)
+
     def functional_set(
         self, kernel: np.ndarray, index: object, value: object
     ) -> np.ndarray:

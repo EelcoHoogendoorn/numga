@@ -9,7 +9,7 @@ mapping body displacement to the opposing wrench (force and torque).
 Pair the output with another open motion to obtain the bilinear energy form.
 The inertia extensor uses the same input and output spaces; their generalized
 eigenvectors are the body's normal modes. No stiffness or mass matrix entries
-are written by hand: coefficients are exposed only for the eigenproblem.
+are written by hand: the forms go directly to the library eigensolver.
 
 Two vertical springs allow a sideways slide, a bounce and a rocking motion.
 Adding an off-centre angled spring removes the free slide and couples these
@@ -33,7 +33,6 @@ from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.linalg import eigh
 
 from examples import PLOT_DIR
 from numga import NumpyContext
@@ -50,7 +49,6 @@ Wrench = PGA2D.gatype.vector()
 SpringExtension = PGA2D.gatype((Scalar, Twist))
 Stiffness = PGA2D.gatype((Wrench, Twist))
 Inertia = PGA2D.gatype((Wrench, Twist))
-EnergyForm = PGA2D.gatype((Scalar, Twist, Twist))
 
 
 def point(xy: np.ndarray) -> Point:
@@ -64,53 +62,16 @@ def coordinates(points: Point) -> np.ndarray:
     return points.select_subspace(PGA2D.subspace("yw wx")).kernel
 
 
-def spring_stiffness(
-    lines: Wrench, stiffnesses: Scalar,
-) -> tuple[Stiffness, SpringExtension]:
-    """Assemble unprestressed axial springs from unit lines of action.
-
-    Orient lines from anchor to attachment so positive extension means
-    lengthening. K(q) opposes the restoring wrench, which is -K(q).
-    """
-    extension: SpringExtension = Twist.regressive(lines)
-    stiffness: Stiffness = (lines * extension * stiffnesses).sum(axis=0)
-    return stiffness, extension
-
-
-def body_inertia(points: Point, masses: Scalar) -> Inertia:
-    """Sum mass times the open point-velocity-to-momentum construction."""
-    return (points.regressive(points.commutator(Twist)) * masses).sum(axis=0)
-
-
-def normal_modes(stiffness: Stiffness, inertia: Inertia) -> tuple[Twist, np.ndarray]:
-    """Return mass-normalized modes and frequencies in Hz, ordered low to high."""
-    elastic: EnergyForm = Twist.regressive(stiffness)
-    kinetic: EnergyForm = Twist.regressive(inertia)
-    return solve_energy_modes(elastic, kinetic)
-
-
-def solve_energy_modes(elastic: EnergyForm, kinetic: EnergyForm) -> tuple[Twist, np.ndarray]:
-    """Numerical boundary: solve the two forms and rewrap eigenvectors as twists."""
-    squared, vectors = eigh(elastic.kernel[0], kinetic.kernel[0])
-    # A geometric null mode can acquire a tiny eigenvalue through roundoff.
-    tolerance = 1e-12 * max(1.0, float(np.max(np.abs(squared))))
-    if np.min(squared) < -tolerance:
-        raise ValueError("The spring system has negative stiffness.")
-    squared = np.where(np.abs(squared) < tolerance, 0.0, squared)
-    return mv.bivector(vectors.T), np.sqrt(squared) / (2 * np.pi)
-
-
 @dataclass(frozen=True)
 class Suspension:
-    """Geometry and the two mechanical extensors of one planar suspension."""
+    """Geometry and masses prepared for one planar suspension."""
 
     body: Point
     attachments: Point
     anchors: Point
     stiffnesses: Scalar
-    stiffness: Stiffness
-    extension: SpringExtension
-    inertia: Inertia
+    mass_points: Point
+    masses: Scalar
 
 
 def suspension(angled_spring: bool = False) -> Suspension:
@@ -120,50 +81,62 @@ def suspension(angled_spring: bool = False) -> Suspension:
     anchors = np.array([[-.8, 1.55], [.8, 1.55], [1.9, .85]])
     count = 3 if angled_spring else 2
     attachments, anchors = point(attachments[:count]), point(anchors[:count])
-    lines: Wrench = anchors.regressive(attachments).normalized()
     constants = mv.scalar(np.full((count, 1), 6.0))
-    stiffness, extension = spring_stiffness(lines, constants)
 
     # Tensor-product two-point Gauss quadrature integrates the plate's mass
     # and quadratic moments exactly, including its polar inertia of 5/12.
     mass_points = point(coordinates(body) / np.sqrt(3))
-    inertia = body_inertia(mass_points, mv.scalar(np.full((4, 1), .25)))
-    return Suspension(body, attachments, anchors, constants, stiffness, extension, inertia)
+    masses = mv.scalar(np.full((4, 1), .25))
+    return Suspension(body, attachments, anchors, constants, mass_points, masses)
+
+
+def mode_case(system: Suspension, values: Scalar, body_offsets: Point,
+              attachment_offsets: Point, extensions: Scalar, angled: bool):
+    """Read mode geometry into plotting arrays and choose a visible amplitude."""
+    from examples.mechanics.stiffness_plumbing import PlotCase
+
+    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
+    offsets = coordinates(body_offsets)
+    scale = .20 / np.linalg.norm(offsets, axis=-1).max(axis=-1)
+    return PlotCase(
+        title="Add an angled spring" if angled else "Two vertical springs",
+        description=("All three motions now have a restoring force" if angled else
+                     "Sideways motion leaves both springs unchanged to first order"),
+        body=coordinates(system.body), attachments=coordinates(system.attachments),
+        anchors=coordinates(system.anchors), frequencies=frequencies,
+        body_offsets=offsets * scale[:, None, None],
+        attachment_offsets=coordinates(attachment_offsets) * scale[:, None, None],
+        extensions=extensions.kernel[..., 0] * scale[:, None],
+        labels=("Coupled mode 1", "Coupled mode 2", "Coupled mode 3") if angled else
+               ("Free slide", "Bounce", "Rock"),
+    )
 
 
 def main(
     plot_path: str = str(PLOT_DIR / "stiffness.png"),
-    animation_path: str | None = None,
+    animation_path: str = "",
 ) -> plt.Figure:
     """Plot two spring arrangements and all three modes of each."""
-    from examples.mechanics.stiffness_plumbing import PlotCase, draw_modes, save_animation
+    from examples.mechanics.stiffness_plumbing import draw_modes, save_animation
 
+    systems = (suspension(False), suspension(True))
     cases = []
-    for angled in (False, True):
-        system = suspension(angled)
-        modes, frequencies = normal_modes(system.stiffness, system.inertia)
-        # Explicit batch axes: mode x geometric point; no per-point solve.
-        body_offsets = coordinates(system.body[None, :].commutator(modes[:, None]))
-        scale = .20 / np.linalg.norm(body_offsets, axis=-1).max(axis=-1)
-        display_modes = modes * mv.scalar(scale[:, None])
-        body_offsets = coordinates(system.body[None, :].commutator(display_modes[:, None]))
-        attachment_offsets = coordinates(system.attachments[None, :].commutator(display_modes[:, None]))
-        extensions = system.extension(display_modes[:, None]).kernel[..., 0]
-        cases.append(PlotCase(
-            title="Add an angled spring" if angled else "Two vertical springs",
-            description=("All three motions now have a restoring force" if angled else
-                         "Sideways motion leaves both springs unchanged to first order"),
-            body=coordinates(system.body),
-            attachments=coordinates(system.attachments),
-            anchors=coordinates(system.anchors),
-            frequencies=frequencies,
-            body_offsets=body_offsets,
-            attachment_offsets=attachment_offsets,
-            extensions=extensions,
-            labels=("Coupled mode 1", "Coupled mode 2", "Coupled mode 3") if angled else
-                   ("Free slide", "Bounce", "Rock"),
-        ))
-        print(f"{cases[-1].title}: {np.round(frequencies, 4)} Hz")
+    for angled, system in zip((False, True), systems):
+        # A spring measures extension by pairing its line with an open twist.
+        # Sum its force response to get stiffness; sum point momenta to get inertia.
+        lines: Wrench = (system.anchors & system.attachments).normalized()
+        extension: SpringExtension = Twist & lines
+        stiffness: Stiffness = (lines * extension * system.stiffnesses).sum(axis=0)
+        inertia: Inertia = (system.mass_points & system.mass_points.commutator(Twist) * system.masses).sum(axis=0)
+
+        # Pair the response maps with an open twist to obtain the two energy forms.
+        # The generalized eigenvectors are mass-normalized vibration modes.
+        values, modes = (Twist & stiffness).eigh(Twist & inertia)
+        body_offsets = system.body[None, :].commutator(modes[:, None])
+        attachment_offsets = system.attachments[None, :].commutator(modes[:, None])
+        extensions = extension(modes[:, None])
+        cases.append(mode_case(system, values, body_offsets, attachment_offsets, extensions, angled))
+
     figure = draw_modes(cases, plot_path)
     if animation_path:
         save_animation(cases, animation_path)
@@ -174,5 +147,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--animate", action="store_true", help="Also save the normal modes as a GIF.")
     args = parser.parse_args()
-    main(animation_path=str(PLOT_DIR / "stiffness.gif") if args.animate else None)
+    main(animation_path=str(PLOT_DIR / "stiffness.gif") if args.animate else "")
     plt.show()

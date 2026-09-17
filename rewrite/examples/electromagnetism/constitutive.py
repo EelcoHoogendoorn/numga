@@ -16,18 +16,18 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
+
 from examples import PLOT_DIR
 from examples.electromagnetism.constitutive_plumbing import (
     B,
+    Spatial,
+    minimum_speeds,
+    draw_media,
     Constitutive,
     Permittivity,
     V,
     mv,
-    new_figure,
-    phase_speeds,
-    polarisation,
-    dispersion,
-    render_dispersion,
     t,
     x,
     y,
@@ -64,71 +64,43 @@ def main(plot_path: str = str(PLOT_DIR / "constitutive.png")) -> plt.Figure:
     boost = (mv.zt * (np.arctanh(beta) / 2.0)).exp()
     moving: Constitutive = boost >> glass(boost << B)
 
-    # -----------------------------------------------------------------------
-    # 2. Checks on the maps themselves
-    # -----------------------------------------------------------------------
-    # The projector is idempotent and splits a field as expected. Spatial vectors square to
-    # -1 in this signature, which is why the quadrics carry a minus sign: ε(x) = ε_x x. The
-    # isotropic permeability lift reproduces the magnetic projector exactly.
+    # 2. A wave exists where k . chi(k ^ a) loses rank. Leave polarization a open
+    # and evaluate all media and trial speeds as one batch of vector maps.
+    speeds = mv.scalar(np.linspace(0.05, 1.5, 6001)[:, None])
+    media = stack((glass, axion, crystal, ferrite, moving, moving))
+    directions = stack((z, z, z, z, z, -z))
+    k = speeds * t + directions[:, None]
+    wave = k.commutator(media[:, None](k.wedge(Spatial)))
+    curves = wave.svdvals()[..., -1]
+    allowed = [minimum_speeds(speeds, curve) for curve in curves]
+
+    # Bind the crystal's two allowed speeds and take the right singular vectors
+    # of the same wave map. Its null modes give the two polarizations.
+    crystal_k = allowed[2] * t + z
+    crystal_wave = crystal_k.commutator(crystal(crystal_k.wedge(Spatial)))
+    _, _, vectors = crystal_wave.svd()
+    polarizations = vectors[..., -1]
+
+    # Relativistic velocity addition predicts the moving glass's phase speeds.
+    n = np.sqrt(eps * mu)
+    with_flow = (1.0 / n + beta) / (1.0 + beta / n)
+    against_flow = (1.0 / n - beta) / (1.0 - beta / n)
+    expected = [[1.0 / n], [], [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)],
+                [1.0 / np.sqrt(2.25 * 2.0), 1.0 / np.sqrt(2.25)], [with_flow], [against_flow]]
+    fig = draw_media(speeds, curves, expected, plot_path)
+
+    # --- checks -------------------------------------------------------------
     np.testing.assert_allclose(electric(electric).kernel, electric.kernel, atol=1e-14)
     np.testing.assert_allclose((electric(mv.tx) - mv.tx).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose(electric(mv.xy).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose(permittivity(x).kernel, (2.25 * x).kernel, atol=1e-14)
     isotropic_inv = -(x * (x | V) + y * (y | V) + z * (z | V))
     np.testing.assert_allclose(isotropic_inv(B.dual().commutator(t)).wedge(t).dual_inverse().kernel, magnetic.kernel, atol=1e-14)
-
-    # -----------------------------------------------------------------------
-    # 3. Plane waves: the wave map and what it predicts
-    # -----------------------------------------------------------------------
-    # A plane wave with wave vector k and polarisation a has F = k ∧ a, so the source-free
-    # equation k . G = 0 reads k . χ(k ∧ a) = 0. With a open that is a map on polarisations,
-    # and a wave exists exactly where it loses rank. Scanning the phase speed then gives:
-    # 1 / n for glass; two speeds for the crystal, polarised along the axes with ε = 2.25
-    # and 1.5, the null vector of the wave map being the polarisation; two speeds for the
-    # ferrite through μ instead of ε; nothing new for the axion term, which bulk waves
-    # cannot see; and for the moving glass the exact relativistic Fresnel drag, with and
-    # against the flow.
-    speeds = np.linspace(0.05, 1.5, 6001)
-    along_z = np.array([0.0, 0.0, 1.0])
-    n = np.sqrt(eps * mu)
-    with_flow = (1.0 / n + beta) / (1.0 + beta / n)
-    against_flow = (1.0 / n - beta) / (1.0 - beta / n)
-
-    np.testing.assert_allclose(phase_speeds(glass, along_z, speeds), [1.0 / n], atol=1e-3)
-    slow, fast = phase_speeds(crystal, along_z, speeds)
-    np.testing.assert_allclose([slow, fast], [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)], atol=1e-3)
-    np.testing.assert_allclose(polarisation(crystal, along_z, slow).wedge(x).kernel, 0.0, atol=1e-6)
-    np.testing.assert_allclose(polarisation(crystal, along_z, fast).wedge(y).kernel, 0.0, atol=1e-6)
-    np.testing.assert_allclose(phase_speeds(ferrite, along_z, speeds), [1.0 / np.sqrt(2.25 * 2.0), 1.0 / np.sqrt(2.25)], atol=1e-3)
-    np.testing.assert_allclose(phase_speeds(axion, along_z, speeds), phase_speeds(glass, along_z, speeds), atol=1e-12)
-    np.testing.assert_allclose(phase_speeds(moving, along_z, speeds), [with_flow], atol=1e-3)
-    np.testing.assert_allclose(phase_speeds(moving, -along_z, speeds), [against_flow], atol=1e-3)
-
-    # -----------------------------------------------------------------------
-    # 4. Draw
-    # -----------------------------------------------------------------------
-    fig, ax = new_figure()
-    curves = {
-        "glass at rest": dispersion(glass, along_z, speeds),
-        "glass with axion term": dispersion(axion, along_z, speeds),
-        "crystal along z": dispersion(crystal, along_z, speeds),
-        "ferrite along z": dispersion(ferrite, along_z, speeds),
-        "glass moving with the wave": dispersion(moving, along_z, speeds),
-        "glass moving against the wave": dispersion(moving, -along_z, speeds),
-    }
-    expected = {
-        "glass at rest": [1.0 / n],
-        "glass with axion term": [],
-        "crystal along z": [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)],
-        "ferrite along z": [1.0 / np.sqrt(2.25 * 2.0), 1.0 / np.sqrt(2.25)],
-        "glass moving with the wave": [with_flow],
-        "glass moving against the wave": [against_flow],
-    }
-    render_dispersion(ax, speeds, curves, expected)
-    plt.tight_layout()
-    if plot_path:
-        plt.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    for index in (0, 2, 3, 4, 5):
+        np.testing.assert_allclose(allowed[index].kernel[..., 0], expected[index], atol=1e-3)
+    np.testing.assert_allclose(allowed[1].kernel, allowed[0].kernel, atol=1e-12)
+    np.testing.assert_allclose(polarizations[0].wedge(x).kernel, 0.0, atol=1e-6)
+    np.testing.assert_allclose(polarizations[1].wedge(y).kernel, 0.0, atol=1e-6)
     return fig
 
 

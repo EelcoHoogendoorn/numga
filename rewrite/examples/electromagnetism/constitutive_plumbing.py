@@ -18,6 +18,7 @@ mv = ctx.multivector
 V = STA.subspace.vector()
 B = STA.subspace.bivector()
 Spatial = STA.subspace("x y z")                 # polarisations in the temporal gauge a . t = 0
+Scalar = STA.gatype.scalar()
 Vector = STA.gatype(V)
 SpatialVector = STA.gatype(Spatial)
 Constitutive = STA.gatype((B, B))               # excitation bivector G <= field bivector F
@@ -29,32 +30,6 @@ t, x, y, z = mv.vector(np.eye(4))
 # ---------------------------------------------------------------------------
 # 2. Dispersion Scan
 # ---------------------------------------------------------------------------
-def dispersion(chi: Constitutive, direction: np.ndarray, speeds: np.ndarray) -> np.ndarray:
-    """Smallest singular value of the wave map a -> k . chi(k ^ a) at each phase speed.
-
-    k = (speed, direction) is the wave vector; a solution of the source-free Maxwell equation
-    exists where the map loses rank, so the returned curve touches zero at the allowed speeds.
-    """
-    k: Vector = mv.scalar(speeds[..., None]) * t + mv(Spatial, direction)
-    wave = k.commutator(chi(k.wedge(Spatial)))
-    return np.linalg.svd(wave.kernel, compute_uv=False)[..., -1]
-
-
-def phase_speeds(chi: Constitutive, direction: np.ndarray, speeds: np.ndarray) -> np.ndarray:
-    """The phase speeds where the dispersion curve dips to zero."""
-    curve = dispersion(chi, direction, speeds)
-    interior = (curve[1:-1] <= curve[:-2]) & (curve[1:-1] <= curve[2:]) & (curve[1:-1] < 2e-3)
-    return speeds[1:-1][interior]
-
-
-def polarisation(chi: Constitutive, direction: np.ndarray, speed: float) -> SpatialVector:
-    """The polarisation of the wave at a phase speed: the wave map's null vector, as a spatial vector."""
-    k = mv.vector(np.array([speed, *direction]))
-    wave = k.commutator(chi(k.wedge(Spatial)))
-    _, _, Vt = np.linalg.svd(wave.kernel)
-    return mv(Spatial, Vt[-1])
-
-
 # ---------------------------------------------------------------------------
 # 3. Rendering
 # ---------------------------------------------------------------------------
@@ -74,3 +49,23 @@ def render_dispersion(ax, speeds: np.ndarray, curves: dict[str, np.ndarray], exp
 def new_figure() -> tuple[plt.Figure, plt.Axes]:
     fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
     return fig, ax
+
+
+def minimum_speeds(speeds: Scalar, curve: Scalar) -> Scalar:
+    """Select resolved local minima from a sampled dispersion curve."""
+    values = curve.kernel[..., 0]
+    interior = (values[1:-1] <= values[:-2]) & (values[1:-1] <= values[2:]) & (values[1:-1] < 2e-3)
+    return speeds[1:-1][interior]
+
+
+def draw_media(speeds: Scalar, curves: Scalar, expected: list[list[float]], plot_path: str) -> plt.Figure:
+    """Read scalar curves into the dispersion plot."""
+    names = ["glass at rest", "glass with axion term", "crystal along z", "ferrite along z",
+             "glass moving with the wave", "glass moving against the wave"]
+    fig, ax = new_figure()
+    render_dispersion(ax, speeds.kernel[..., 0], dict(zip(names, curves.kernel[..., 0])), dict(zip(names, expected)))
+    plt.tight_layout()
+    if plot_path:
+        fig.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    return fig

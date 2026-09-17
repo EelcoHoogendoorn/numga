@@ -7,8 +7,6 @@ invertible input; the general matrix fallback is numerical only.
 
 from __future__ import annotations
 
-from typing import NoReturn
-
 from numga.extensor import Extensor
 from numga.gatype import (
     CliffordConjugateProductOne,
@@ -134,18 +132,3 @@ def inverse_geometric(value: Extensor) -> Extensor:
     return Extensor._from_prepared_kernel(
         value.context, gatype, coefficients,
     )
-
-
-@Extensor.inverse.register(lambda t: t.is_square_map)
-def inverse_linear(value: Extensor) -> Extensor:
-    """Composition inverse, swapping input and output coefficient layouts."""
-
-    return Extensor._from_prepared_kernel(
-        value.context, value.gatype.transposed.structural,
-        value.context.matrix_inverse(value._kernel),
-    )
-
-
-@Extensor.inverse.register(GATypePattern.map())
-def inverse_nonsquare(value: Extensor) -> NoReturn:
-    raise ValueError("a unary inverse requires equally sized input/output axes")

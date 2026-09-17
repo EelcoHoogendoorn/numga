@@ -16,6 +16,7 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 # Whole-extensor types (GATypes); map types read output <= inputs:
+Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Line = ga.gatype.vector()
 Polarity = ga.gatype((Line.output_subspace, Point.output_subspace))   # polar line <= point
@@ -41,19 +42,6 @@ def grid(box: tuple[float, float, float, float], n: int) -> Point:
     xs = np.linspace(box[0], box[1], n)
     ys = np.linspace(box[2], box[3], n)
     return point(np.stack(np.meshgrid(xs, ys), axis=-1))
-
-
-# ---------------------------------------------------------------------------
-# 3. Numeric Escapes
-# ---------------------------------------------------------------------------
-def arccosh(value: Extensor) -> np.ndarray:
-    """A hyperbolic Cayley measure from its invariant, the only place a distance leaves the algebra."""
-    return np.arccosh(np.maximum(value.kernel[..., 0], 1.0))
-
-
-def arccos(value: Extensor) -> np.ndarray:
-    """An elliptic Cayley measure, or an angle, from its invariant."""
-    return np.arccos(np.clip(value.kernel[..., 0], -1.0, 1.0))
 
 
 # ---------------------------------------------------------------------------
@@ -96,3 +84,37 @@ def style_axis(ax, title: str, box: tuple[float, float, float, float]) -> None:
 
 def new_figure() -> tuple[plt.Figure, np.ndarray]:
     return plt.subplots(1, 2, figsize=(13, 6), dpi=120)
+
+
+BOX = (-1.2, 1.9, -1.2, 1.6)
+
+
+def draw_geometry(C, to_next, perpendicular, vertices, P, foot, reflected, pole, angles, area, circles, centres, plot_path) -> plt.Figure:
+    angles, area = angles.kernel[..., 0], area.kernel.item()
+    fig, (left, right) = new_figure()
+    draw_level_set(left, C, BOX, colors="black", linewidths=2.0)
+    for line in (to_next[0], to_next[1], to_next[2]):
+        draw_line(left, line, BOX, color="#2563eb", linewidth=2.0)
+    draw_line(left, perpendicular, BOX, color="#dc2626", linewidth=1.6)
+    draw_points(left, vertices, color="#1d4ed8", s=40)
+    draw_points(left, P, color="#dc2626", s=50, label="P")
+    draw_points(left, foot, color="#b91c1c", marker="s", s=40, label="foot")
+    draw_points(left, reflected, color="#f97316", s=45, label="reflection")
+    draw_points(left, pole, color="#a855f7", marker="D", s=45, label="pole of BC")
+    for vertex, theta in zip(vertices, angles):
+        left.annotate(f"{np.degrees(theta):.1f}°", euclidean(vertex), textcoords="offset points", xytext=(6, 6), fontsize=9)
+    style_axis(left, f"Triangle area {area:.3f} by Gauss-Bonnet; the perpendicular runs through the pole", BOX)
+    left.legend(loc="lower left", fontsize=8)
+
+    draw_level_set(right, C, BOX, colors="black", linewidths=2.0)
+    for family, colour in zip(circles, ("#3b82f6", "#f97316")):
+        for k in range(family.shape[0]):
+            draw_level_set(right, family[k], BOX, colors=colour, linewidths=1.4)
+    draw_points(right, centres, color="#111827", s=35)
+    style_axis(right, "Circles as level sets of a quadric", BOX)
+
+    plt.tight_layout()
+    if plot_path:
+        plt.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    return fig

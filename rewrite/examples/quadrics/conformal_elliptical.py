@@ -48,9 +48,18 @@ def octahedral_planes(context: NumpyContext) -> Vector:
     return context.multivector.vector(planes).normalized()
 
 
-if __name__ == "__main__":
+def draw_sphere(rays: Vector, planes: Vector, mask: np.ndarray, save_path: str) -> None:
+    """Rasterize and draw the sphere's plane intersections."""
     import matplotlib.pyplot as plt
+    frame = image_downsample((render(rays, planes) + 1.0) * (1.0 - mask))
+    fig, ax = plt.subplots()
+    ax.imshow(frame, cmap="gray"); ax.axis("off")
+    ax.set_title("Octahedral Planes on Unit 2-Sphere")
+    if save_path:
+        fig.savefig(save_path, bbox_inches="tight", dpi=150)
 
+
+def main(save_path: str = str(PLOT_DIR / "sphere_rigid.png")) -> None:
     cga = NumpyContext(ga)
     x = cga.multivector.vector([1.0, 0.0, 0.0])
     y = cga.multivector.vector([0.0, 1.0, 0.0])
@@ -60,7 +69,6 @@ if __name__ == "__main__":
     rays = cga.multivector.vector(rays)
     planes = octahedral_planes(cga)
 
-    render2 = lambda p: image_downsample((render(rays, p) + 1.0) * (1.0 - mask))
     b = -(x.wedge(z)) + (y.wedge(z))
 
     # Vectorized motor batch across all angles:
@@ -68,10 +76,8 @@ if __name__ == "__main__":
     motors = (b.normalized() * alphas).exp()
     rot_planes = motors[:, None].sandwich(planes)  # Shape: (100, 13)
 
-    frame = render2(planes)
-    plt.imshow(frame, cmap="gray")
-    plt.axis("off")
-    plt.title("Octahedral Planes on Unit 2-Sphere")
-    plt.savefig(PLOT_DIR / "sphere_rigid.png", bbox_inches="tight", dpi=150)
-    print(f"Saved {PLOT_DIR / 'sphere_rigid.png'}")
-    plt.show()
+    draw_sphere(rays, planes, mask, save_path)
+
+
+if __name__ == "__main__":
+    main()

@@ -32,6 +32,8 @@ mv = ctx.multivector
 P = ga.subspace.antivector()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
+SensorPoint = ga.gatype.from_blades("zxw xyw zyx")
+SensorPlane = ga.gatype.from_blades("y z w")
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 PointMap = ga.gatype((Point, Point))          # collineation: point <= point
@@ -110,6 +112,49 @@ def xyz(points: Point) -> np.ndarray:
     return k[..., :3] / k[..., 3:]
 
 
+def camera_settings():
+    """Construct placements, focus points, tilts and pupil samples before tracing."""
+    static = [("wide, aperture 0.45, focused at 2.2", 1.4, -2.2, 0.0, .45),
+              ("tele, aperture 0.45, focused at 2.2", 1.8, -2.2, 0.0, .45),
+              ("tele, aperture 0.45, sensor tilted 25°", 1.8, -2.2, np.radians(25), .45)]
+    motion = [(f"rear lens at {1.6 + .2*np.sin(t):.2f}, focused at {2.4 - .8*np.cos(t):.2f}, aperture radius {.3 + .1*np.sin(2*t):.2f}",
+               1.6 + .2*np.sin(t), -2.4 + .8*np.cos(t), 0.0, .3 + .1*np.sin(2*t))
+              for t in np.linspace(0.0, 2*np.pi, 72, endpoint=False)]
+    return [(title, (mv.xw * (rear_at / 2)).exp(), point(np.array([focus_at, 0., 0.])),
+             (mv.xy * (tilt / 2)).exp(), radius,
+             point(np.array([[0., radius, 0.], [0., 0., 0.], [0., -radius, 0.]])))
+            for title, rear_at, focus_at, tilt, radius in static + motion]
+
+
+def draw_camera(states, layer, scene: Point, centre: Point, plot_path: str, animation_path: str):
+    """Consume camera geometry for the three still views and optional animation."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), dpi=120)
+    results = []
+    for ax in axes:
+        title, collineation, cam, frame, cones, radius, planes, legs = next(states)
+        ax.imshow(render(frame, cones, layer, 1.0), interpolation="nearest")
+        ax.set_title(title); ax.axis("off")
+        results.append((collineation, cam, frame, cones))
+        print(f"{title}: camera matrix\n{np.round(cam.bind({1: centre}).kernel, 3)}")
+    if plot_path:
+        fig.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    if animation_path:
+        anim = plt.figure(figsize=(6, 6.6), dpi=100)
+        top, side = anim.subplots(2, 1, height_ratios=(3, 1))
+        anim.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02, hspace=0.08)
+        frames_out = []
+        for title, collineation, cam, frame, cones, radius, planes, legs in states:
+            top.cla()
+            top.imshow(render(frame, cones, layer, (radius / .45)**2), interpolation="nearest")
+            top.set_title(title, fontsize=9); top.axis("off")
+            draw_side(side, planes, [radius, .6, .35], legs, scene)
+            frames_out.append(capture(anim))
+        plt.close(anim)
+        save_gif(frames_out, animation_path, duration_ms=60, colors=128)
+    return fig, results
+
+
 # --- math -----------------------------------------------------------------------------
 def main(
     plot_path: str = str(PLOT_DIR / "sketch_lens_camera.png"),
@@ -134,82 +179,43 @@ def main(
     grid = np.stack(np.meshgrid(depth, np.linspace(-0.8, 0.8, 5), np.linspace(-0.5, 0.5, 4), indexing="ij"), axis=-1)
     scene = point(grid)
 
-    def camera(place_front: Motor, place_rear: Motor, focus: Point, tilt: Motor, ball: Quadric) -> tuple:
-        """The camera for two lens placements, a focus point, a sensor tilt rotor about z, and an aperture ball."""
-        front, rear = place_front >> front_lines(place_front << Line), place_rear >> rear_lines(place_rear << Line)
-        front_plane, rear_plane = place_front >> home, place_rear >> home
-        collineation = (place_rear >> rear_points(place_rear << Point))(place_front >> front_points(place_front << Point))
-        train = rear(front)
-        pupil_ball = place_front >> ball(place_front << Point)
-
-        # Focus: the collineation images the focus point; the sensor frame tilts about z at the
-        # origin, then carries the origin to that image, so the sensor plane passes through it.
-        image = unit(collineation(focus))
-        frame = (image / origin).square_root() * tilt
-        sensor = frame >> home
-        return collineation, train(Point & Point) ^ sensor, front, rear, front_plane, rear_plane, pupil_ball, frame
-
-    def image_cones(collineation: PointMap, aperture: Plane, pupil_ball: Quadric, subject: Point) -> Quadric:
-        """Each subject's cone of rays through the aperture, carried through the train."""
-        # The cone: pull the ball back through the central projection from the subject onto
-        # the aperture plane. The image cone: pull that back through the inverse collineation.
-        project = (subject & Point) ^ aperture
-        cone = (project.transpose()(Plane.dual()).dual_inverse())(pupil_ball(project))
-        back = collineation.inverse()
-        return (back.transpose()(Plane.dual()).dual_inverse())(cone(back))
-
-    # Three settings, each cast into its algebraic elements at once: lens placements as
-    # translators, the focus as a point, the tilt as a rotor, the aperture as the unit ball
-    # rescaled to its radius (the weight term keeps the centre put).
+    # Prepare the camera motion as GA inputs; every setting uses the same optical train.
     layer = np.arange(3)[:, None, None].repeat(5, 1).repeat(4, 2)
     place_front = (mv.xw * 0.5).exp()
-    focus = point(np.array([-2.2, 0.0, 0.0]))
-    ball = unit_ball + mv.w * (mv.w & Point) * (1.0 - 0.45**2)
-    settings = (
-        ("wide, aperture 0.45, focused at 2.2", (mv.xw * 0.7).exp(), mv.rotor()),
-        ("tele, aperture 0.45, focused at 2.2", (mv.xw * 0.9).exp(), mv.rotor()),
-        ("tele, aperture 0.45, sensor tilted 25°", (mv.xw * 0.9).exp(), (mv.xy * (np.radians(25.0) / 2)).exp()),
-    )
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), dpi=120)
-    results = []
-    for ax, (title, place_rear, tilt) in zip(axes, settings):
-        collineation, cam, front, rear, front_plane, rear_plane, pupil_ball, frame = camera(place_front, place_rear, focus, tilt, ball)
-        cones = image_cones(collineation, front_plane, pupil_ball, scene)
-        ax.imshow(render(frame, cones, layer, 1.0), interpolation="nearest")
-        ax.set_title(title); ax.axis("off")
-        results.append((collineation, cam, frame, cones))
-        print(f"{title}: camera matrix\n{np.round(cam.bind({1: place_front >> origin}).kernel, 3)}")
-    if plot_path:
-        fig.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    settings = camera_settings()
 
-    # Zoom on a sine, focus on a cosine, aperture on a faster sine: the rear lens slides, the
-    # focus sweeps through the three layers, and the aperture opens and closes. Each layer's
-    # discs shrink to bright dots as it comes into focus and dim into wide discs as it leaves,
-    # wider for a wider aperture. Below, a side view: the element planes, the sensor, the scene
-    # layers, and a fan of rays from one scene point through the aperture rim.
-    anim = plt.figure(figsize=(6, 6.6), dpi=100)
-    top, side = anim.subplots(2, 1, height_ratios=(3, 1))
-    anim.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.02, hspace=0.08)
-    frames_out = []
-    for t in np.linspace(0.0, 2 * np.pi, 72, endpoint=False):
-        rear_at, focus_at, radius = 1.6 + 0.2 * np.sin(t), -2.4 + 0.8 * np.cos(t), 0.3 + 0.1 * np.sin(2 * t)
-        place_rear, focus = (mv.xw * (rear_at / 2)).exp(), point(np.array([focus_at, 0.0, 0.0]))
-        ball = unit_ball + mv.w * (mv.w & Point) * (1.0 - radius**2)
-        collineation, cam, front, rear, front_plane, rear_plane, pupil_ball, frame = camera(place_front, place_rear, focus, mv.rotor(), ball)
-        top.cla()
-        top.imshow(render(frame, image_cones(collineation, front_plane, pupil_ball, scene), layer, (radius / 0.45)**2), interpolation="nearest")
-        top.set_title(f"rear lens at {rear_at:.2f}, focused at {-focus_at:.2f}, aperture radius {radius:.2f}", fontsize=9); top.axis("off")
+    def scenes():
+        for title, place_rear, focus, tilt, radius, rim in settings:
+            # Place the lenses, then compose their point maps and their line maps.
+            front = place_front >> front_lines(place_front << Line)
+            rear = place_rear >> rear_lines(place_rear << Line)
+            front_plane, rear_plane = place_front >> home, place_rear >> home
+            collineation = (place_rear >> rear_points(place_rear << Point))(place_front >> front_points(place_front << Point))
+            train = rear(front)
+            ball = unit_ball + mv.w * (mv.w & Point) * (1.0 - radius**2)
+            pupil_ball = place_front >> ball(place_front << Point)
 
-        rim = place_front >> point(np.array([[0.0, radius, 0.0], [0.0, 0.0, 0.0], [0.0, -radius, 0.0]]))
-        subject = scene[0, 2, 1]
-        rays = subject & rim                                   # the fan: subject joined with the aperture rim
-        legs = [subject.reshape(1).broadcast_to((3,)), rays ^ front_plane, front(rays) ^ rear_plane, rear(front(rays)) ^ (frame >> home)]
-        draw_side(side, [front_plane, rear_plane, frame >> home], [radius, 0.6, 0.35], legs, scene)
-        frames_out.append(capture(anim))
-    plt.close(anim)
-    if animation_path:
-        save_gif(frames_out, animation_path, duration_ms=60, colors=128)
+            # The focus point's image places the sensor; tilt turns it about that image.
+            image = unit(collineation(focus))
+            frame = (image / origin).square_root() * tilt
+            sensor = frame >> home
+            cam = train(Point & Point) ^ sensor
+
+            # Project through each subject onto the pupil, then pull back its quadric.
+            # Pull back once more through the inverse lens train to get the image cones.
+            project = (scene & Point) ^ front_plane
+            cone = project.transpose()(Plane.dual()).dual_inverse()(pupil_ball(project))
+            back = collineation.inverse()
+            cones = back.transpose()(Plane.dual()).dual_inverse()(cone(back))
+
+            subject = scene[0, 2, 1]
+            rays = subject & (place_front >> rim)
+            legs = [subject.reshape(1).broadcast_to((3,)), rays ^ front_plane,
+                    front(rays) ^ rear_plane, rear(front(rays)) ^ sensor]
+            yield (title, collineation, cam, frame, cones, radius,
+                   [front_plane, rear_plane, sensor], legs)
+
+    fig, results = draw_camera(scenes(), layer, scene, place_front >> origin, plot_path, animation_path)
 
     # --- checks: kernel-level assertions, deliberately outside the demonstration ----------
     def section(cone: Quadric, start: Point, frame: Motor, samples: int = 48) -> Point:
@@ -236,9 +242,9 @@ def main(
         boundary = section(cones[index], start, frame)
         to_sensor = cam.bind({0: scene[index]})
         pushed = to_sensor(pupil(to_sensor.transpose()(Plane.dual()).dual_inverse()))
-        k = (frame << pushed(frame >> Plane)).kernel[1:, 1:]
-        hits = np.concatenate([sensor_yz(frame, boundary), np.ones((48, 1))], axis=-1)
-        np.testing.assert_allclose(np.einsum("ni,ij,nj->n", hits, np.linalg.inv(k), hits), 0.0, atol=1e-10)
+        section_dual = (frame << pushed(frame >> SensorPlane)).cast(SensorPoint.output_subspace)
+        hits = (frame << boundary).cast(SensorPoint.output_subspace)
+        np.testing.assert_allclose((hits & section_dual.solve(hits)).kernel, 0.0, atol=1e-10)
     # A point at the focus depth images to a point: its section collapses onto the chief-ray hit.
     collineation, cam, frame, cones = results[0]
     start = (collineation(scene[1, 2, 1]) & collineation(centre)) ^ (frame >> home)

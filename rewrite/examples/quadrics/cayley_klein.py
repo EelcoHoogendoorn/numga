@@ -15,23 +15,14 @@ import numpy as np
 
 from examples import PLOT_DIR
 from examples.quadrics.cayley_klein_plumbing import (
+    draw_geometry,
     Line,
     Point,
     Polarity,
     Pole,
-    arccos,
-    arccosh,
-    draw_level_set,
-    draw_line,
-    draw_points,
-    euclidean,
     mv,
-    new_figure,
     point,
-    style_axis,
 )
-
-BOX = (-1.2, 1.9, -1.2, 1.6)
 
 
 def main(plot_path: str = str(PLOT_DIR / "cayley_klein.png")) -> plt.Figure:
@@ -52,11 +43,8 @@ def main(plot_path: str = str(PLOT_DIR / "cayley_klein.png")) -> plt.Figure:
     # The invariant of two points is (P₁ ∨ C(P₂)) / √((P₁ ∨ C(P₁))(P₂ ∨ C(P₂))), and Cayley's
     # distance is its arccosh. The invariant of two lines is the same with Q, and the angle
     # is its arccos. Both stay inside the algebra until the very last step.
-    def cosh_distance(A: Point, B: Point):
-        return -A.regressive(C(B)) / (A.regressive(C(A)) * B.regressive(C(B))).square_root()
-
-    def cos_angle(l: Line, m: Line):
-        return l.regressive(Q(m)) / (l.regressive(Q(l)) * m.regressive(Q(m))).square_root()
+    distance_pairing = -Point.regressive(C(mv.rotor() >> Point))
+    angle_pairing = Line.regressive(Q(mv.rotor() >> Line))
 
     # A triangle: its sides are joins of consecutive vertices, batched, and the angle at
     # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the
@@ -64,10 +52,12 @@ def main(plot_path: str = str(PLOT_DIR / "cayley_klein.png")) -> plt.Figure:
     vertices = point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
     to_next = vertices.regressive(vertices[[1, 2, 0]])
     to_prev = vertices.regressive(vertices[[2, 0, 1]])
-    angles = arccos(cos_angle(to_next, to_prev))
-    sides = arccosh(cosh_distance(vertices, vertices[[1, 2, 0]]))
+    angles = (angle_pairing(to_next, to_prev) /
+              (angle_pairing(to_next, to_next) * angle_pairing(to_prev, to_prev)).square_root()).clip(-1.0, 1.0).arccos()
+    neighbours = vertices[[1, 2, 0]]
+    sides = (distance_pairing(vertices, neighbours) /
+             (distance_pairing(vertices, vertices) * distance_pairing(neighbours, neighbours)).square_root()).clip(1.0, np.inf).arccosh()
     area = np.pi - angles.sum()
-    assert area > 0.0
 
     # -----------------------------------------------------------------------
     # 3. Perpendiculars and reflections come from the pole
@@ -81,9 +71,6 @@ def main(plot_path: str = str(PLOT_DIR / "cayley_klein.png")) -> plt.Figure:
     perpendicular = P.regressive(pole)
     foot = side.wedge(perpendicular)
     reflected = P - pole * (2.0 * P.regressive(side) / pole.regressive(side))
-    np.testing.assert_allclose(side.regressive(Q(perpendicular)).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose(foot.regressive(side).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((cosh_distance(P, foot) - cosh_distance(reflected, foot)).kernel, 0.0, atol=1e-12)
 
     # -----------------------------------------------------------------------
     # 4. Circles are quadrics
@@ -94,40 +81,26 @@ def main(plot_path: str = str(PLOT_DIR / "cayley_klein.png")) -> plt.Figure:
     # drawn as the level set P ∨ circle(P) = 0.
     radii = mv.scalar(np.cosh(np.array([0.25, 0.55, 0.9, 1.3]))[:, None] ** 2)
     centres = point(np.array([[0.0, 0.0], [0.45, 0.25]]))
-    circles = []
-    for centre in centres:
-        polar = C(centre)
-        circles.append(polar * polar.regressive(Point) - centre.regressive(C(centre)) * radii * C)
+    centre = centres[:, None]
+    polar = C(centre)
+    circles = polar * polar.regressive(Point) - centre.regressive(polar) * radii * C
 
     # -----------------------------------------------------------------------
     # 5. Draw
     # -----------------------------------------------------------------------
-    fig, (left, right) = new_figure()
-    draw_level_set(left, C, BOX, colors="black", linewidths=2.0)
-    for line in (to_next[0], to_next[1], to_next[2]):
-        draw_line(left, line, BOX, color="#2563eb", linewidth=2.0)
-    draw_line(left, perpendicular, BOX, color="#dc2626", linewidth=1.6)
-    draw_points(left, vertices, color="#1d4ed8", s=40)
-    draw_points(left, P, color="#dc2626", s=50, label="P")
-    draw_points(left, foot, color="#b91c1c", marker="s", s=40, label="foot")
-    draw_points(left, reflected, color="#f97316", s=45, label="reflection")
-    draw_points(left, pole, color="#a855f7", marker="D", s=45, label="pole of BC")
-    for vertex, theta in zip(vertices, angles):
-        left.annotate(f"{np.degrees(theta):.1f}°", euclidean(vertex), textcoords="offset points", xytext=(6, 6), fontsize=9)
-    style_axis(left, f"Triangle area {area:.3f} by Gauss-Bonnet; the perpendicular runs through the pole", BOX)
-    left.legend(loc="lower left", fontsize=8)
+    fig = draw_geometry(C, to_next, perpendicular, vertices, P, foot, reflected, pole, angles, area, circles, centres, plot_path)
 
-    draw_level_set(right, C, BOX, colors="black", linewidths=2.0)
-    for family, colour in zip(circles, ("#3b82f6", "#f97316")):
-        for k in range(family.shape[0]):
-            draw_level_set(right, family[k], BOX, colors=colour, linewidths=1.4)
-    draw_points(right, centres, color="#111827", s=35)
-    style_axis(right, "Circles as level sets of a quadric", BOX)
 
-    plt.tight_layout()
-    if plot_path:
-        plt.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    # --- checks -------------------------------------------------------------
+    assert area.kernel.item() > 0.0
+    np.testing.assert_allclose(side.regressive(Q(perpendicular)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(foot.regressive(side).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(
+        (distance_pairing(P, foot) / (distance_pairing(P, P) * distance_pairing(foot, foot)).square_root()).kernel,
+        (distance_pairing(reflected, foot) / (distance_pairing(reflected, reflected) * distance_pairing(foot, foot)).square_root()).kernel,
+        atol=1e-12,
+    )
+
     return fig
 
 

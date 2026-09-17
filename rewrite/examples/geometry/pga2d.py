@@ -74,6 +74,21 @@ def rotor(angle: float, center: Point = origin) -> Motor:
     return (center * (-angle / 2.0)).exp()
 
 
+def draw_polygons(polygons: Point, centre: Point, save_path: str) -> None:
+    """Read polygon coordinates and draw the family of rotated outlines."""
+    import matplotlib.pyplot as plt
+    xy_subspace = spaces("yw wx")
+    coords = polygons.select_subspace(xy_subspace).kernel
+    centre_xy = centre.select_subspace(xy_subspace).kernel
+    fig, ax = plt.subplots(figsize=(6, 6))
+    for polygon in coords:
+        ax.plot(polygon[:, 0], polygon[:, 1])
+    ax.scatter(*centre_xy, color="red", label="Center of rotation")
+    ax.axis("equal"); ax.grid(True, alpha=0.3); ax.legend()
+    ax.set_title("PGA2D: Affine Operator Transformation")
+    if save_path:
+        fig.savefig(save_path, dpi=150)
+
 
 def run_pga_plot(save_path: str = str(PLOT_DIR / "pga2d_rotation.png")) -> None:
     """Rotate a polygon around an off-center point using a compiled affine operator."""
@@ -81,32 +96,12 @@ def run_pga_plot(save_path: str = str(PLOT_DIR / "pga2d_rotation.png")) -> None:
     poly = point(np.cos(a), np.sin(a))
     p = point(-10.0, 1.0)
 
-    xy_subspace = spaces("yw wx")
-    center_xy = p.select_subspace(xy_subspace).kernel
-
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(6, 6))
-    for alpha in np.linspace(0, 1, 10):
-        # Direct rotor exp and compiled affine operator M
-        m = rotor(alpha, center=p)
-        M = m.sandwich(spaces.antivector())
-        transformed = M(poly)
-        coords = transformed.select_subspace(xy_subspace).kernel
-        ax.plot(coords[:, 0], coords[:, 1])
-
-    ax.scatter([center_xy[0]], [center_xy[1]], color="red", label="Center of rotation")
-    ax.axis("equal")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    ax.set_title("PGA2D: Affine Operator Transformation")
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150)
-        print(f"Saved {save_path}")
-    plt.show()
-
-
+    angles = mv.scalar(np.linspace(0, 1, 10)[:, None])
+    # The point is the rotation generator; leave the passenger open to compile its map.
+    motors = (p * (-angles / 2)).exp()
+    maps = motors >> Point
+    transformed = maps[:, None](poly)
+    draw_polygons(transformed, p, save_path)
 
 
 if __name__ == "__main__":

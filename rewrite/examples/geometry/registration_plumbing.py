@@ -7,6 +7,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebra import Algebra
+from numga.gatype.traits import Versor
 
 # ---------------------------------------------------------------------------
 # 1. Euclidean 3D Setup
@@ -18,6 +19,8 @@ mv = ctx.multivector
 # Whole-extensor types (GATypes):
 Vector = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
+Scalar = ga.gatype.scalar()
+Scale = Scalar.with_traits(Versor)
 Alignment = ga.gatype((ga.subspace.scalar(), ga.subspace.even(), ga.subspace.even()))
 
 
@@ -34,17 +37,9 @@ def jitter(points: Vector, sigma: float, rng: np.random.Generator) -> Vector:
     return mv.vector(points.kernel + rng.normal(scale=sigma, size=points.kernel.shape))
 
 
-def best_rotor(alignment: Alignment) -> tuple[float, Rotor]:
-    """The peak alignment, the form's largest eigenvalue, and the rotor that attains it.
-
-    The eigenvector comes back with unit coefficient norm, and for an even element of
-    Cl(3) that is the rotor norm, so it is constructed as the Rotor type, whose traits
-    assert exactly that.
-    """
-    N = alignment.kernel.squeeze()
-    w, V = np.linalg.eigh(0.5 * (N + N.T))
-    peak_alignment, rotor = float(w[-1]), mv(Rotor, V[:, -1])
-    return peak_alignment, rotor
+def scale_root(value: Scalar) -> Scale:
+    """Construct the positive scalar factor of a similarity from its squared scale."""
+    return ctx.extensor(Scale, np.sqrt(value.kernel))
 
 
 def same_rotor(a: Rotor, b: Rotor, atol: float) -> bool:
@@ -72,3 +67,14 @@ def new_figure() -> tuple[plt.Figure, list]:
     """Two 3D panels side by side."""
     fig = plt.figure(figsize=(11, 5), dpi=120)
     return fig, [fig.add_subplot(1, 2, i + 1, projection="3d") for i in range(2)]
+
+
+def draw_registration(source, target, moved, estimate, similarity, translation, plot_path) -> plt.Figure:
+    fig, axes = new_figure()
+    render_registration(axes[0], source, target, estimate >> source, "Rotation")
+    render_registration(axes[1], source, moved, (similarity >> source) + translation, "Rotation, scale and translation")
+    plt.tight_layout()
+    if plot_path:
+        plt.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    return fig

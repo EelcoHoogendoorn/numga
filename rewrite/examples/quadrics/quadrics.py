@@ -54,96 +54,18 @@ Why Should You Care? (Robotics, Physics, & Computer Vision)
    quadric bounding ellipsoids, enabling analytical tracking of 3D object envelopes.
 """
 
-import sys
 import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D
+from examples import PLOT_DIR
 
 ctx = NumpyContext(PGA3D)
 mv = ctx.multivector
 V = PGA3D.subspace.vector()
 P = PGA3D.subspace.antivector()
 
-# 1. Principal directions (ideal points in PGA) and center point:
-# In PGA, directions are points at infinity (antivectors with zero projective weight).
-vx = mv.antivector([1, 0, 0, 0])
-vy = mv.antivector([0, 1, 0, 0])
-vz = mv.antivector([0, 0, 1, 0])
-origin = mv.antivector([0, 0, 0, 1])
-
-# Shape tensor Sigma = sum(r_i^2 * (v_i (x) v_i)) and center operator:
-# The dual quadric envelope of an ellipsoid centered at c with semi-axes r is:
-#     Q = Sigma - c (x) c
-# which yields the diagonal kernel diag(rx^2, ry^2, rz^2, -1).
-rx, ry, rz = 3.0, 2.0, 1.0
-Sigma = (vx * V.regressive(vx)) * rx**2 + (vy * V.regressive(vy)) * ry**2 + (vz * V.regressive(vz)) * rz**2
-Q_body = Sigma - origin * V.regressive(origin)
-assert Q_body.arity == 1
-assert Q_body.axes == (P, V)
-
-# 2. General rigid motor: rotation (30° in xy-plane) + translation (dx=1, dy=2, dz=3)
-rotor = (mv.xy * (-np.pi / 12.0)).exp()
-translator = (mv.xw * 0.5 + mv.yw * 1.0 + mv.zw * 1.5).exp()
-motor = translator * rotor
-
-# 3. Transform dual quadric via inline GA sandwich:
-# motor << V pulls back planes via M^{-1}, Q_body maps planes to points, motor >> (...) pushes forward points via M
-Q_world = motor >> Q_body(motor << V)
-
-# 4. Form the two distinct 4x4 transformation matrices on planes and points:
-# (Planes and points are dual grades 1 and 3; unlike 4D bivectors, they require separate matrices)
-M_planes = motor >> V      # 4x4 matrix on planes (equivalent to T^{-T})
-M_points = motor >> P      # 4x4 matrix on points (equivalent to T)
-
-# Transform via two-matrix operator composition:
-Q_world_matrices = M_points(Q_body(M_planes.inverse()))
-np.testing.assert_allclose(Q_world.kernel, Q_world_matrices.kernel, atol=1e-10)
-
-# Or using exact GA pullback (avoiding numerical matrix inversion):
-Q_world_pullback = M_points(Q_body(motor << V))
-np.testing.assert_allclose(Q_world.kernel, Q_world_pullback.kernel, atol=1e-14)
-
-# 5. Verify exact equivalence with transforming the generating directions and center:
-rvx, rvy, rvz = motor >> vx, motor >> vy, motor >> vz
-rorigin = motor >> origin
-Q_direct = (
-    (rvx * V.regressive(rvx)) * rx**2 +
-    (rvy * V.regressive(rvy)) * ry**2 +
-    (rvz * V.regressive(rvz)) * rz**2 -
-    (rorigin * V.regressive(rorigin))
-)
-np.testing.assert_allclose(Q_world.kernel, Q_direct.kernel, atol=1e-14)
-
-# 6. Quadric center is the pole of the plane at infinity (pi_inf = w):
-center_body = -Q_body(mv.w)
-center_world = -Q_world(mv.w)
-expected_center = motor >> center_body
-np.testing.assert_allclose(center_world.kernel, expected_center.kernel, atol=1e-14)
-
-# 7. Support planes and contact points (polar reciprocity):
-# For any normal direction n, the support distance from the center is sqrt(n v Q(n)):
-n_dir = mv.vector([1.0, 2.0, 3.0, 0.0]).normalized()
-dist_n = np.sqrt(float(n_dir.regressive(Q_body(n_dir)).kernel.item()))
-pi_body = n_dir - mv.w * dist_n
-contact_body = Q_body(pi_body)
-
-# Tangency condition in body frame: contact point lies on the tangent plane (pi v p == 0)
-tangency_body = pi_body.regressive(contact_body)
-np.testing.assert_allclose(tangency_body.kernel, 0.0, atol=1e-12)
-
-# Tangency condition in world frame under transformed quadric:
-pi_world = motor >> pi_body
-contact_world = Q_world(pi_world)
-tangency_world = pi_world.regressive(contact_world)
-np.testing.assert_allclose(tangency_world.kernel, 0.0, atol=1e-12)
-
-# Contact point transforms covariantly:
-expected_contact = motor >> contact_body.normalized()
-np.testing.assert_allclose(contact_world.normalized().kernel, expected_contact.kernel, atol=1e-12)
-
-
-def plot_quadrics():
+def plot_quadrics(rz, pi_world, rx, ry, motor, n_dir, center_world, dist_n, contact_body, contact_world, save_path: str):
     """Plot 3D visualization of the ellipsoid, tangent plane, and contact point in body and world frames."""
     import matplotlib.pyplot as plt
 
@@ -169,7 +91,7 @@ def plot_quadrics():
 
     px, py = np.meshgrid(np.linspace(cb[0] - 1.5, cb[0] + 1.5, 10), np.linspace(cb[1] - 1.5, cb[1] + 1.5, 10))
     nk = n_dir.kernel[:3]
-    pz = (dist_n - nk[0] * px - nk[1] * py) / nk[2]
+    pz = (dist_n.kernel.item() - nk[0] * px - nk[1] * py) / nk[2]
     ax1.plot_surface(px, py, pz, color="crimson", alpha=0.25)
     ax1.set_title("Body Frame: Ellipsoid & Tangent Plane", fontsize=12, fontweight="bold")
     ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
@@ -192,17 +114,96 @@ def plot_quadrics():
     ax2.legend(loc="upper left")
 
     plt.tight_layout()
-    plt.show()
+    if save_path:
+        fig.savefig(save_path, bbox_inches="tight")
+    return fig
+
+
+def main(save_path: str = str(PLOT_DIR / "quadrics.png")):
+    # 1. Principal directions (ideal points in PGA) and center point:
+    # In PGA, directions are points at infinity (antivectors with zero projective weight).
+    vx = mv.antivector([1, 0, 0, 0])
+    vy = mv.antivector([0, 1, 0, 0])
+    vz = mv.antivector([0, 0, 1, 0])
+    origin = mv.antivector([0, 0, 0, 1])
+
+    # Shape tensor Sigma = sum(r_i^2 * (v_i (x) v_i)) and center operator:
+    # The dual quadric envelope of an ellipsoid centered at c with semi-axes r is:
+    #     Q = Sigma - c (x) c
+    # which yields the diagonal kernel diag(rx^2, ry^2, rz^2, -1).
+    rx, ry, rz = 3.0, 2.0, 1.0
+    Sigma = (vx * V.regressive(vx)) * rx**2 + (vy * V.regressive(vy)) * ry**2 + (vz * V.regressive(vz)) * rz**2
+    Q_body = Sigma - origin * V.regressive(origin)
+
+    # 2. General rigid motor: rotation (30° in xy-plane) + translation (dx=1, dy=2, dz=3)
+    rotor = (mv.xy * (-np.pi / 12.0)).exp()
+    translator = (mv.xw * 0.5 + mv.yw * 1.0 + mv.zw * 1.5).exp()
+    motor = translator * rotor
+
+    # 3. Transform dual quadric via inline GA sandwich:
+    # motor << V pulls back planes via M^{-1}, Q_body maps planes to points, motor >> (...) pushes forward points via M
+    Q_world = motor >> Q_body(motor << V)
+
+    # 4. Form the two distinct 4x4 transformation matrices on planes and points:
+    # (Planes and points are dual grades 1 and 3; unlike 4D bivectors, they require separate matrices)
+    M_planes = motor >> V      # 4x4 matrix on planes (equivalent to T^{-T})
+    M_points = motor >> P      # 4x4 matrix on points (equivalent to T)
+
+    # Transform via two-matrix operator composition:
+    Q_world_matrices = M_points(Q_body(M_planes.inverse()))
+
+    # Or using exact GA pullback (avoiding numerical matrix inversion):
+    Q_world_pullback = M_points(Q_body(motor << V))
+
+    # 5. Verify exact equivalence with transforming the generating directions and center:
+    rvx, rvy, rvz = motor >> vx, motor >> vy, motor >> vz
+    rorigin = motor >> origin
+    Q_direct = (
+        (rvx * V.regressive(rvx)) * rx**2 +
+        (rvy * V.regressive(rvy)) * ry**2 +
+        (rvz * V.regressive(rvz)) * rz**2 -
+        (rorigin * V.regressive(rorigin))
+    )
+
+    # 6. Quadric center is the pole of the plane at infinity (pi_inf = w):
+    center_body = -Q_body(mv.w)
+    center_world = -Q_world(mv.w)
+    expected_center = motor >> center_body
+
+    # 7. Support planes and contact points (polar reciprocity):
+    # For any normal direction n, the support distance from the center is sqrt(n v Q(n)):
+    n_dir = mv.vector([1.0, 2.0, 3.0, 0.0]).normalized()
+    dist_n = n_dir.regressive(Q_body(n_dir)).square_root()
+    pi_body = n_dir - mv.w * dist_n
+    contact_body = Q_body(pi_body)
+
+    # Tangency condition in body frame: contact point lies on the tangent plane (pi v p == 0)
+    tangency_body = pi_body.regressive(contact_body)
+
+    # Tangency condition in world frame under transformed quadric:
+    pi_world = motor >> pi_body
+    contact_world = Q_world(pi_world)
+    tangency_world = pi_world.regressive(contact_world)
+
+    # Contact point transforms covariantly:
+    expected_contact = motor >> contact_body.normalized()
+
+
+    fig = plot_quadrics(rz, pi_world, rx, ry, motor, n_dir, center_world, dist_n, contact_body, contact_world, save_path)
+
+    # --- checks -------------------------------------------------------------
+    assert Q_body.arity == 1
+    assert Q_body.axes == (P, V)
+    np.testing.assert_allclose(Q_world.kernel, Q_world_matrices.kernel, atol=1e-10)
+    np.testing.assert_allclose(Q_world.kernel, Q_world_pullback.kernel, atol=1e-14)
+    np.testing.assert_allclose(Q_world.kernel, Q_direct.kernel, atol=1e-14)
+    np.testing.assert_allclose(center_world.kernel, expected_center.kernel, atol=1e-14)
+    np.testing.assert_allclose(tangency_body.kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(tangency_world.kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(contact_world.normalized().kernel, expected_contact.kernel, atol=1e-12)
+
+    return fig
 
 
 if __name__ == "__main__":
-    print("Body-frame Dual Quadric (4x4, planes -> points):\n", np.around(Q_body.kernel, 2))
-    print("\nWorld-frame Dual Quadric via Inline Sandwich (4x4):\n", np.around(Q_world.kernel, 2))
-    print("\nEllipsoid Center (Body):", center_body.kernel)
-    print("Ellipsoid Center (World):", np.around(center_world.kernel, 2))
-    print(f"\nTangent Plane (World): normal={np.around(pi_world.kernel[:3], 3)}, d={pi_world.kernel[3]:.3f}")
-    print("Contact Point (World):", np.around(contact_world.normalized().kernel, 3))
-    print(f"Tangency Residual: {float(tangency_world.kernel.item()):.2e}")
-
-    if "--plot" in sys.argv:
-        plot_quadrics()
+    main()

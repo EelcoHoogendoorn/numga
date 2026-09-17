@@ -33,6 +33,26 @@ Computed extension results use the trusted zero-copy constructor. Their
 result GATypes and trait refinements are cached; public input construction
 remains separate.
 
+### Scalar numerical operations
+
+Nullary scalars forward trigonometric and hyperbolic functions, their inverses,
+and `clip(minimum, maximum)` to the context's array backend:
+
+```python
+angle = cosine.clip(-1, 1).arccos()
+depth = -polar(pixels) + (-conic(pixels, pixels)).square_root()
+valid = depth.isfinite()
+behind = depth < 0
+```
+
+Numerical functions return scalar extensors. `isnan()`, `isfinite()`, `isinf()`
+and ordering comparisons return backend boolean arrays with exactly the batch
+shape, including any singleton batch axes. At an array consumer such as a
+renderer, `scalar.to_array()` reads the values without exposing the scalar
+blade axis. These methods dispatch on nullary scalar types; scalar-output
+forms are not treated as batches of scalar values. Domain handling is left to
+the backend, and numerical functions drop explicit traits.
+
 ### Other array operations
 
 `map_kernel` forwards to an arbitrary callable without duplicating its API:

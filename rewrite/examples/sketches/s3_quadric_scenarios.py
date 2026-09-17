@@ -15,8 +15,9 @@ import numpy as np
 
 from examples import PLOT_DIR
 from examples.animation import save_gif
-from examples.sketches.s3_quadric_physics import body, cap_quadric, overlap, placed, population, quadric, run
-from examples.sketches.spherical_raytracer import Plane, mv, origin, pixel_chart
+from examples.sketches.s3_quadric_physics import body, cap_quadric, overlap, placed, quadric, run
+from examples.sketches.s3_quadric_physics_plumbing import population
+from examples.sketches.spherical_raytracer import Plane, mv, origin, pixel_chart, project, reproject
 
 
 def gap(animation_path: str = str(PLOT_DIR / "sketch_s3_gap.gif"), shape: tuple[int, int] = (180, 240), supersample: int = 4, frames: int = 240) -> None:
@@ -61,14 +62,19 @@ def tunnel(animation_path: str = str(PLOT_DIR / "sketch_s3_tunnel.gif"), shape: 
     rng = np.random.default_rng(11)
     # The large object: a torus around the great circle x = y = 0, the dual quadric with -1 across
     # the tube in x and -1/1.5² in y, an elliptical cross-section, and 1/tan²ρ along it with ρ = 20°
-    # at the eye (w) and 40° a quarter turn ahead (z), so the tube widens and narrows down the view.
+    # at w and 40° a quarter turn along the core (z), so the tube widens and narrows down the view.
     # Its inside, in the sense of its form, is the complementary solid torus; the crowd lives in the tube.
     tube = quadric(np.array([[-1.0, -1.0 / 1.5**2, 1.0 / np.tan(np.radians(40.0))**2, 1.0 / np.tan(np.radians(20.0))**2]]))
     torus = body(np.array([[0.55, 0.65, 0.75]]), tube, placed(mv.antivector(np.array([[0.0, 0.0, 0.0, 1.0]])), mv.bivector(np.zeros((1, 6)))), mv.bivector(np.zeros((1, 6))), np.array([500.0]), rng)
     bodies = population(rng, 50, 2000, (0.03, 0.1), torus)
-    # The eye on the core circle at the origin looking along it, +z; the light behind the eye.
-    eye = (mv.zx * (np.pi / 2) * 0.5).exp()
-    light = eye * ((mv.xw * -0.3 + mv.yw * 0.15 + mv.zw * 0.15) * 0.5).exp() >> origin
+    # The eye in the wide section at +z, looking toward the narrow waist at -w; the light halfway to the wall, up and right.
+    eye = (mv.zw * (np.pi / 2) * 0.5).exp() * (mv.zx * (np.pi / 2) * 0.5).exp()
+    camera = eye >> origin
+    side_up = (mv.zxw + mv.xyw).normalized()
+    wall_surface = (torus.motor >> torus.Q(torus.motor << Plane)).inverse()
+    conic, polar = project(eye, wall_surface)
+    wall_hit = (camera * reproject(conic, polar, side_up) + (eye >> side_up)).normalized()
+    light = (camera + wall_hit).normalized()
     chart = pixel_chart(np.radians(120.0), (shape[0] * supersample, shape[1] * supersample))
     frames_out, collisions, energies = run(bodies, lambda bodies: (eye, light), frames, chart, shape, supersample)
     if animation_path:
@@ -78,6 +84,8 @@ def tunnel(animation_path: str = str(PLOT_DIR / "sketch_s3_tunnel.gif"), shape: 
     assert np.ptp(energies) / energies[0] < 2e-2
     world = bodies.motor >> bodies.Q(bodies.motor << Plane)
     assert (overlap(world.inverse()[0], world.inverse()[1:])[0] > -1e-2).all()   # nobody ended up in the wall
+    np.testing.assert_allclose((wall_hit & wall_surface(wall_hit)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((camera | light).kernel, (light | wall_hit).kernel, atol=1e-12)
 
 
 def main() -> None:

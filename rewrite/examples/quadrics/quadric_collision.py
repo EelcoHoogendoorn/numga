@@ -101,7 +101,7 @@ def dual_pencil(Q1: Quadric, Q2: Quadric, lam: Scalar) -> Quadric:
 
 def pencil_determinant(Q1: Quadric, Q2: Quadric, lam: Scalar) -> np.ndarray:
     """Evaluate det(Q(lambda)) for a scalar or batched Extensor lambda."""
-    return np.linalg.det(dual_pencil(Q1, Q2, lam).kernel)
+    return dual_pencil(Q1, Q2, lam).dual().det().kernel[..., 0]
 
 
 def find_contact_parameter(Q1: Quadric, Q2: Quadric) -> tuple[float, float]:
@@ -114,11 +114,15 @@ def find_contact_parameter(Q1: Quadric, Q2: Quadric) -> tuple[float, float]:
     Returns:
         (lam_star, max_det): The peak interpolation parameter and maximum determinant value.
     """
-    y0 = float(np.linalg.det(Q1.kernel))
-    y1 = float(np.linalg.det(Q2.kernel))
-    y2 = float(np.linalg.det((Q2 * 2.0 - Q1).kernel))
-    y3 = float(np.linalg.det((Q1 * 2.0 - Q2).kernel))
+    samples = mv.scalar([[0.0], [1.0], [2.0], [-1.0]])
+    values = (Q1 * (1 - samples) + Q2 * samples).dual().det()
+    parameter, maximum = cubic_peak(values)
+    return parameter.kernel.item(), maximum.kernel.item()
 
+
+def cubic_peak(values: Scalar) -> tuple[Scalar, Scalar]:
+    """Locate the interior maximum of a cubic sampled at 0, 1, 2 and -1."""
+    y0, y1, y2, y3 = values.kernel[..., 0]
     c3 = (3.0 * y0 - 3.0 * y1 + y2 - y3) / 6.0
     c2 = -y0 + 0.5 * y1 + 0.5 * y3
     c1 = -0.5 * y0 + y1 - y2 / 6.0 - y3 / 3.0
@@ -134,7 +138,7 @@ def find_contact_parameter(Q1: Quadric, Q2: Quadric) -> tuple[float, float]:
 
     lam_star = float(np.clip(lam_star, 0.001, 0.999))
     max_det = c3 * lam_star**3 + c2 * lam_star**2 + c1 * lam_star + c0
-    return lam_star, max_det
+    return mv.scalar([lam_star]), mv.scalar([max_det])
 
 
 def extract_contact_line_and_point(
@@ -144,9 +148,9 @@ def extract_contact_line_and_point(
 ) -> tuple[Line, Point]:
     """Extract the common tangent line L* and contact point p* at the collision parameter."""
     Q_star = dual_pencil(Q1, Q2, mv.scalar([lam_star]))
-    eigvals, eigvecs = np.linalg.eig(Q_star.kernel)
-    null_idx = int(np.argmin(np.abs(eigvals)))
-    L_contact = mv.vector(eigvecs[:, null_idx].real).normalized()
+    eigvals, eigvecs = Q_star.dual().eigh()
+    null_idx = int(np.argmin(np.abs(eigvals.kernel[..., 0])))
+    L_contact = eigvecs[null_idx].normalized()
 
     # Ensure normal of L points from Q1 towards Q2:
     # Under regressive product, the displacement c2 - c1 must have positive signed projection
@@ -187,90 +191,21 @@ def plot_line_on_ax(ax: plt.Axes, L: Line, color: str = "red", linestyle: str = 
         ax.axvline(x_val, color=color, linestyle=linestyle, linewidth=linewidth, zorder=4, **kw)
 
 
-def run_quadric_collision_demo(save_path: str = str(PLOT_DIR / "quadric_collision_2d.png")) -> None:
-    """Demonstrate 2D dual quadric collision detection across 3 states and plot results."""
-    print("=" * 72)
-    print("2D Dual Quadric (Ellipse) Collision Detection in PGA2D via Pencil Q(lambda)")
-    print("=" * 72)
-
-    # 1. Base Ellipse Q1: rx=2.0, ry=1.0, posed at center=(-1.2, 0.0), angle=25 deg
-    rx1, ry1 = 2.0, 1.0
-    Q1_body = make_quadric(rx1, ry1)
-    m1 = motor(-1.2, 0.0, np.radians(25))
-    Q1 = m1 >> Q1_body(m1 << Lines)
-
-    pts1 = get_xy(quadric_boundary(Q1))
-    c1_xy = get_xy(-(Q1(line_at_infinity)))
-
-    # 2. Ellipse Q2 in exact tangential contact with Q1:
-    rx2, ry2 = 1.6, 0.9
-    Q2_body = make_quadric(rx2, ry2)
-
-    # Contact normal direction: 22 degrees
-    phi_contact = np.radians(22)
-    n_dir = (mv.x * np.cos(phi_contact) + mv.y * np.sin(phi_contact)).normalized()
-    L_target = tangent_line(Q1, n_dir)
-    p_target = normalize_point(Q1(L_target))
-
-    # Rotate Q2 at origin by angle2 to find the contact point for opposite normal:
-    angle2 = np.radians(-35)
-    m2_rot = motor(0.0, 0.0, angle2)
-    Q2_rot = m2_rot >> Q2_body(m2_rot << Lines)
-
-    L2_rot = tangent_line(Q2_rot, -n_dir)
-    p2_rot = normalize_point(Q2_rot(L2_rot))
-
-    # Pure PGA translation motor: takes p2_rot to p_target
-    disp = p_target - p2_rot
-    T_touch = (line_at_infinity.wedge(disp.dual()) * -0.5).exp()
-    m2_touch = T_touch * m2_rot
-    Q2_touch = m2_touch >> Q2_body(m2_touch << Lines)
-
-    # Separated pose: translate away along normal by +0.8
-    T_sep = (line_at_infinity.wedge(n_dir * 0.8) * -0.5).exp()
-    m2_sep = T_sep * m2_touch
-    Q2_sep = m2_sep >> Q2_body(m2_sep << Lines)
-
-    # Overlapping pose: translate inward along normal by -0.6
-    T_over = (line_at_infinity.wedge(n_dir * -0.6) * -0.5).exp()
-    m2_over = T_over * m2_touch
-    Q2_over = m2_over >> Q2_body(m2_over << Lines)
-
-    # Points and centers for plotting (derived directly from the quadric Extensor Q)
-    pts2_touch = get_xy(quadric_boundary(Q2_touch))
-    c2_touch_xy = get_xy(-(Q2_touch(line_at_infinity)))
-
-    pts2_sep = get_xy(quadric_boundary(Q2_sep))
-    c2_sep_xy = get_xy(-(Q2_sep(line_at_infinity)))
-
-    pts2_over = get_xy(quadric_boundary(Q2_over))
-    c2_over_xy = get_xy(-(Q2_over(line_at_infinity)))
-
-    # Solve contact parameters for the 3 states
-    lam_sep, max_sep = find_contact_parameter(Q1, Q2_sep)
-    lam_touch, max_touch = find_contact_parameter(Q1, Q2_touch)
-    lam_over, max_over = find_contact_parameter(Q1, Q2_over)
-
-    # Sample characteristic determinant curves for plotting
-    lams = np.linspace(0.001, 0.999, 500)
-    lams_ext = mv.scalar(lams[:, None])
-    dets_sep = pencil_determinant(Q1, Q2_sep, lams_ext)
-    dets_touch = pencil_determinant(Q1, Q2_touch, lams_ext)
-    dets_over = pencil_determinant(Q1, Q2_over, lams_ext)
-
-    # Extract exact contact line and point for the touching case
-    L_contact_touch, p_contact_touch = extract_contact_line_and_point(Q1, Q2_touch, lam_touch)
+def draw_collision(Q1: Quadric, states, n_dir: Line, L_contact_touch: Line, p_contact_touch: Point, save_path: str) -> None:
+    Q2_sep, lam_sep, max_sep = states[0]
+    Q2_touch, lam_touch, max_touch = states[1]
+    Q2_over, lam_over, max_over = states[2]
+    lam_sep, lam_touch, lam_over = (v.kernel.item() for v in (lam_sep, lam_touch, lam_over))
+    max_sep, max_touch, max_over = (v.kernel.item() for v in (max_sep, max_touch, max_over))
+    pts1, c1_xy = get_xy(quadric_boundary(Q1)), get_xy(-Q1(line_at_infinity))
+    pts2_sep, c2_sep_xy = get_xy(quadric_boundary(Q2_sep)), get_xy(-Q2_sep(line_at_infinity))
+    pts2_touch, c2_touch_xy = get_xy(quadric_boundary(Q2_touch)), get_xy(-Q2_touch(line_at_infinity))
+    pts2_over, c2_over_xy = get_xy(quadric_boundary(Q2_over)), get_xy(-Q2_over(line_at_infinity))
     p_touch_xy = get_xy(p_contact_touch)
-
-    tang1 = L_contact_touch.regressive(Q1(L_contact_touch)).kernel.item()
-    tang2 = (-L_contact_touch).regressive(Q2_touch(-L_contact_touch)).kernel.item()
-
-    print(f"State 1 (Separated)  : max det = {max_sep:+.6f} (> 0  ==>  Separated by gap)")
-    print(f"State 2 (Touching)   : max det = {max_touch:+.6e} (~ 0  ==>  Exact Point Contact!)")
-    print(f"                       Contact Point p* = ({p_touch_xy[0]:.4f}, {p_touch_xy[1]:.4f})")
-    print(f"                       Tangency to Q1: {tang1:.2e}, Tangency to Q2: {tang2:.2e}")
-    print(f"State 3 (Overlapping): max det = {max_over:+.6f} (< 0  ==>  Penetration / Overlap)")
-
+    lams = np.linspace(.001, .999, 500)
+    weights = mv.scalar(lams[:, None])
+    dets_sep, dets_touch, dets_over = [(Q1*(1-weights)+other*weights).dual().det().kernel[..., 0]
+                                    for other in (Q2_sep, Q2_touch, Q2_over)]
     # 3. Create 4-Panel Visualization
     fig, axes = plt.subplots(2, 2, figsize=(15, 12))
     (ax_sep, ax_touch), (ax_over, ax_det) = axes
@@ -307,12 +242,11 @@ def run_quadric_collision_demo(save_path: str = str(PLOT_DIR / "quadric_collisio
     draw_ellipses(ax_sep, pts1, c1_xy, pts2_sep, c2_sep_xy, "State 1: Separated Ellipses", f"max det(Q(λ)) = {max_sep:+.3f} > 0")
     # Low-alpha interpolated hyperbola Q(λ*) separating the two ellipses (signature +, -, -)
     Q_star_sep = dual_pencil(Q1, Q2_sep, mv.scalar([lam_sep]))
-    inv_Q_sep = np.linalg.inv(Q_star_sep.kernel)
     xs_grid = np.linspace(-3.8, 3.8, 250)
     ys_grid = np.linspace(-3.0, 3.0, 250)
     X_grid, Y_grid = np.meshgrid(xs_grid, ys_grid)
-    P_grid = np.stack([X_grid, Y_grid, np.ones_like(X_grid)], axis=-1)
-    F_sep = np.einsum('ijk,kl,ijl->ij', P_grid, inv_Q_sep, P_grid)
+    P_grid = mv.antivector(np.stack([X_grid, Y_grid, np.ones_like(X_grid)], axis=-1))
+    F_sep = P_grid.regressive(Q_star_sep.inverse()(P_grid)).kernel[..., 0]
     ax_sep.contour(X_grid, Y_grid, F_sep, levels=[0.0], colors=["#059669"], linestyles=["-."], linewidths=1.6)
     ax_sep.contourf(X_grid, Y_grid, F_sep, levels=[0.0, F_sep.max()], colors=["#10b981"], alpha=0.10)
 
@@ -383,6 +317,83 @@ def run_quadric_collision_demo(save_path: str = str(PLOT_DIR / "quadric_collisio
         plt.savefig(save_path, dpi=160)
         print(f"Saved visualization to {save_path}")
     plt.close()
+
+
+def run_quadric_collision_demo(save_path: str = str(PLOT_DIR / "quadric_collision_2d.png")) -> None:
+    """Demonstrate 2D dual quadric collision detection across 3 states and plot results."""
+    print("=" * 72)
+    print("2D Dual Quadric (Ellipse) Collision Detection in PGA2D via Pencil Q(lambda)")
+    print("=" * 72)
+
+    # 1. Base Ellipse Q1: rx=2.0, ry=1.0, posed at center=(-1.2, 0.0), angle=25 deg
+    rx1, ry1 = 2.0, 1.0
+    Q1_body = mv.yw * (Lines & mv.yw) * rx1**2 + mv.wx * (Lines & mv.wx) * ry1**2 - mv.xy * (Lines & mv.xy)
+    m1 = motor(-1.2, 0.0, np.radians(25))
+    Q1 = m1 >> Q1_body(m1 << Lines)
+
+
+    # 2. Ellipse Q2 in exact tangential contact with Q1:
+    rx2, ry2 = 1.6, 0.9
+    Q2_body = mv.yw * (Lines & mv.yw) * rx2**2 + mv.wx * (Lines & mv.wx) * ry2**2 - mv.xy * (Lines & mv.xy)
+
+    # Contact normal direction: 22 degrees
+    phi_contact = np.radians(22)
+    n_dir = (mv.x * np.cos(phi_contact) + mv.y * np.sin(phi_contact)).normalized()
+    through_centre = n_dir - line_at_infinity * (n_dir & -Q1(line_at_infinity))
+    L_target = through_centre - line_at_infinity * (through_centre & Q1(through_centre)).square_root()
+    p_target = normalize_point(Q1(L_target))
+
+    # Rotate Q2 at origin by angle2 to find the contact point for opposite normal:
+    angle2 = np.radians(-35)
+    m2_rot = motor(0.0, 0.0, angle2)
+    Q2_rot = m2_rot >> Q2_body(m2_rot << Lines)
+
+    through_centre = -n_dir - line_at_infinity * (-n_dir & -Q2_rot(line_at_infinity))
+    L2_rot = through_centre - line_at_infinity * (through_centre & Q2_rot(through_centre)).square_root()
+    p2_rot = normalize_point(Q2_rot(L2_rot))
+
+    # Pure PGA translation motor: takes p2_rot to p_target
+    disp = p_target - p2_rot
+    T_touch = (line_at_infinity.wedge(disp.dual()) * -0.5).exp()
+    m2_touch = T_touch * m2_rot
+    Q2_touch = m2_touch >> Q2_body(m2_touch << Lines)
+
+    # Separated pose: translate away along normal by +0.8
+    T_sep = (line_at_infinity.wedge(n_dir * 0.8) * -0.5).exp()
+    m2_sep = T_sep * m2_touch
+    Q2_sep = m2_sep >> Q2_body(m2_sep << Lines)
+
+    # Overlapping pose: translate inward along normal by -0.6
+    T_over = (line_at_infinity.wedge(n_dir * -0.6) * -0.5).exp()
+    m2_over = T_over * m2_touch
+    Q2_over = m2_over >> Q2_body(m2_over << Lines)
+
+    # Four determinant samples determine the cubic pencil characteristic exactly.
+    # Only locating its peak leaves the algebra.
+    samples = mv.scalar([[0.0], [1.0], [2.0], [-1.0]])
+    states = []
+    for other in (Q2_sep, Q2_touch, Q2_over):
+        pencil = Q1 * (1 - samples) + other * samples
+        parameter, maximum = cubic_peak(pencil.dual().det())
+        states.append((other, parameter, maximum))
+
+    # At contact the pencil has a null line. Its singular vector is the shared tangent;
+    # each quadric maps that tangent to the same contact point.
+    parameter = states[1][1]
+    contact_pencil = Q1 * (1 - parameter) + Q2_touch * parameter
+    _, _, lines = contact_pencil.dual().svd()
+    contact_line = lines[-1].normalized()
+    centre_delta = normalize_point(-Q2_touch(line_at_infinity)) - normalize_point(-Q1(line_at_infinity))
+    contact_line = (contact_line / (contact_line & centre_delta)).normalized()
+    contact_point = normalize_point(Q1(contact_line))
+    draw_collision(Q1, states, n_dir, contact_line, contact_point, save_path)
+
+    # --- checks -------------------------------------------------------------
+    assert states[0][2].kernel.item() > 0
+    np.testing.assert_allclose(states[1][2].kernel, 0, atol=1e-8)
+    assert states[2][2].kernel.item() < 0
+    np.testing.assert_allclose((contact_line & Q1(contact_line)).kernel, 0, atol=1e-6)
+    np.testing.assert_allclose(normalize_point(Q2_touch(contact_line)).kernel, contact_point.kernel, atol=1e-5)
 
 
 if __name__ == "__main__":

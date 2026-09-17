@@ -150,3 +150,14 @@ def render_stereo_scene(
         ax.set_xlim(-half_width, half_width); ax.set_ylim(-half_width, half_width)
         ax.set_aspect("equal"); ax.set_title(title)
         ax.grid(True, alpha=0.3)
+
+
+def draw_projection(body, point_light, sun, point_shadow, sun_shadow, shadow_trail, rig_1, rig_2, image_1, image_2, epipolar_lines_2, plot_path) -> plt.Figure:
+    fig = plt.figure(figsize=(16, 5), dpi=120)
+    render_shadow_scene(fig.add_subplot(1, 3, 1, projection="3d"), body, point_light, sun, point_shadow, sun_shadow, shadow_trail)
+    render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), rig_1, rig_2, image_1, image_2, epipolar_lines_2)
+    plt.tight_layout()
+    if plot_path:
+        plt.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
+    return fig

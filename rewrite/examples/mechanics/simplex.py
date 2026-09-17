@@ -37,22 +37,16 @@ def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
     corners : Extensor
         Antivector points of shape `[n_corners]`.
     """
-    context = corners.context
-    spaces = context.algebra.subspace
-    bivector = spaces.bivector()
+    samples = barycentric_samples(weights, corners)
+    bivector = corners.context.algebra.subspace.bivector()
+    return samples.regressive(samples.commutator(bivector)).sum(axis=0)
 
-    # Form sample points: [n_samples, coordinate_dim]
-    sample_coords = np.einsum("Ni,ik->Nk", weights, corners.kernel)
-    # The homogeneous point mass is the sum of barycentric weights
-    masses = weights.sum(axis=-1, keepdims=True)
-    # Because inertia is quadratic in point positions (inertia ~ mass * x^2),
-    # scale coordinates by 1 / sqrt(mass) so the resulting inertia is linear in mass.
-    scaled_coords = sample_coords / np.sqrt(masses)
-    samples = context.multivector(corners.subspace, scaled_coords)
 
-    # In PGA, inertia = sum_p p & (p x Rate)
-    per_point = samples.regressive(samples.commutator(bivector))
-    return per_point.sum(axis=0)
+def barycentric_samples(weights: np.ndarray, corners: Extensor) -> Extensor:
+    """Construct mass-weighted points from barycentric samples of a simplex."""
+    coefficients = np.einsum("Ni,ik->Nk", weights, corners.kernel)
+    coefficients /= np.sqrt(weights.sum(axis=-1, keepdims=True))
+    return corners.context.multivector(corners.output_subspace, coefficients)
 
 
 def simplex_inertia_lumped(corners: Extensor) -> Extensor:
@@ -102,7 +96,9 @@ def run_simplex_demo() -> None:
     corners = mv.antivector(corners_coords)
 
     # 1. Compute inertia operators (arity 1: bivector -> antibivector)
-    I_lumped = simplex_inertia_lumped(corners)
+    bivector = PGA3D.gatype.bivector()
+    samples = barycentric_samples(simplex_inertia_weights(corners.shape[0]), corners)
+    I_lumped = (samples & samples.commutator(bivector)).sum(axis=0)
     I_brute = simplex_inertia_brute(corners, n=100)
     I_random = simplex_inertia_random(corners, n_samples=100000)
 

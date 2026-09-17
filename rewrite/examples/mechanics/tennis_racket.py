@@ -125,15 +125,7 @@ def simulate_tennis_racket(
     return np.array(states), energies, np.array(energy_history), np.array(momentum_history)
 
 
-def run_and_plot(
-    p: int = 4,
-    dt: float = 0.25,
-    runtime: float = 200.0,
-    save_path: str = str(PLOT_DIR / "tennis_racket.png"),
-) -> None:
-    """Run simulation and plot angular velocity trajectories for all axes."""
-    context = NumpyContext(Algebra.from_pqr(p, 0, 0), dtype=np.float64)
-    trajectory, energies, _, _ = simulate_tennis_racket(context, dt=dt, runtime=runtime)
+def draw_trajectories(trajectory: np.ndarray, energies: np.ndarray, p: int, save_path: str) -> None:
     nb = trajectory.shape[1]
 
     import matplotlib.pyplot as plt
@@ -155,6 +147,36 @@ def run_and_plot(
     plt.show()
 
 
+def run_and_plot(
+    p: int = 4,
+    dt: float = 0.25,
+    runtime: float = 200.0,
+    save_path: str = str(PLOT_DIR / "tennis_racket.png"),
+) -> None:
+    """Run simulation and plot angular velocity trajectories for all axes."""
+    context = NumpyContext(Algebra.from_pqr(p, 0, 0), dtype=np.float64)
+    trajectory, energies, _, _ = simulate_tennis_racket(context, dt=dt, runtime=runtime)
+    draw_trajectories(trajectory, energies, p, save_path)
+
+
+def draw_integrator_comparison(curves, dims: tuple[int, ...], dt: float, save_path: str) -> None:
+    """Compare conservation errors after all integrations have finished."""
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, len(dims), figsize=(5.0 * len(dims), 4.0), squeeze=False, sharey=True)
+    for p, name, momenta in curves:
+        ax = axes[0, dims.index(p)]
+        drift = np.linalg.norm(momenta - momenta[0], axis=-1) / np.linalg.norm(momenta[0], axis=-1)
+        ax.semilogy(np.arange(len(drift)) * dt, drift.max(axis=1), label=name,
+                    linestyle="--" if name == "rk4" else "-")
+        ax.set_title(f"{p}D, {p * (p - 1) // 2} spin planes, dt = {dt}")
+        ax.set_xlabel("Time"); ax.grid(True, alpha=0.3)
+    axes[0, 0].set_ylabel("World momentum drift"); axes[0, 0].legend()
+    plt.tight_layout()
+    if save_path:
+        fig.savefig(save_path, dpi=150)
+    plt.show()
+
+
 def run_integrator_comparison(
     dims: tuple[int, ...] = (3, 4, 5),
     dt: float = 0.25,
@@ -162,27 +184,13 @@ def run_integrator_comparison(
     save_path: str = str(PLOT_DIR / "tennis_racket_integrators.png"),
 ) -> None:
     """Compare world-momentum drift of the integrators, worst body per step, per dimension."""
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(1, len(dims), figsize=(5.0 * len(dims), 4.0), squeeze=False, sharey=True)
-    for ax, p in zip(axes[0], dims):
+    curves = []
+    for p in dims:
         context = NumpyContext(Algebra.from_pqr(p, 0, 0), dtype=np.float64)
         for name in INTEGRATORS:
             _, _, _, momenta = simulate_tennis_racket(context, dt=dt, runtime=runtime, integrator=name)
-            drift = np.linalg.norm(momenta - momenta[0], axis=-1) / np.linalg.norm(momenta[0], axis=-1)
-            # Verlet and RK4 coincide: both advance the motor with the end-of-step rate.
-            ax.semilogy(np.arange(len(drift)) * dt, drift.max(axis=1), label=name, linestyle="--" if name == "rk4" else "-")
-        ax.set_title(f"{p}D, {len(context.algebra.subspace.bivector())} spin planes, dt = {dt}")
-        ax.set_xlabel("Time")
-        ax.grid(True, alpha=0.3)
-    axes[0, 0].set_ylabel("World momentum drift")
-    axes[0, 0].legend()
-
-    plt.tight_layout()
-    if save_path:
-        plt.savefig(save_path, dpi=150)
-        print(f"Saved {save_path}")
-    plt.show()
+            curves.append((p, name, momenta))
+    draw_integrator_comparison(curves, dims, dt, save_path)
 
 
 if __name__ == "__main__":
