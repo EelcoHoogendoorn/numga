@@ -158,11 +158,7 @@ def test_nonnilpotent_study_root_squares_back_and_normalizes(signature):
     np.testing.assert_allclose((root * root - squared).kernel, 0, atol=1e-14, rtol=1e-14)
     np.testing.assert_allclose((unit * unit.reverse() - mv.scalar([1])).kernel, 0, atol=1e-14, rtol=1e-14)
     assert unit.gatype.entails(ReverseProductOne)
-    if algebra.dimension == 4:
-        assert unit.gatype.entails(Versor)
-    else:
-        # This slice does not make a blanket dimension-five versor claim.
-        assert not unit.gatype.entails(Versor)
+    assert unit.gatype.entails(Versor)
 
 
 def test_exact_reverse_product_is_measured_without_a_transcendental_backend():

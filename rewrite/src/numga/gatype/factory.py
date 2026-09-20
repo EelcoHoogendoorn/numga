@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class GATypeFactory(FlyweightFactory[GAType]):
     """Strong flyweight pool scoped to one Algebra instance."""
 
-    __slots__ = ("_algebra",)
+    __slots__ = ("_algebra", "__dict__")
 
     # Public constructor protocol for namespaces which lift complete GATypes.
     # Structural names come from the selected SubSpace factory; these names
@@ -113,7 +113,6 @@ class GATypeFactory(FlyweightFactory[GAType]):
 
         return self(self.algebra.subspace.even(), ROTOR_TRAITS)
 
-    @lru_cache(maxsize=None)
     def __getattr__(self, name: str) -> Callable[..., GAType]:
         """Lift a declared SubSpace constructor into this GAType namespace."""
 
@@ -132,6 +131,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
         def lifted_constructor(*args: object, **kwargs: object) -> GAType:
             return self.lift(constructor(*args, **kwargs))
 
+        self.__dict__[name] = lifted_constructor
         return lifted_constructor
 
     def __dir__(self) -> list[str]:

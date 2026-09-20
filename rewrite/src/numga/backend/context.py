@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from functools import lru_cache
 from numbers import Number
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -18,6 +17,8 @@ if TYPE_CHECKING:
     from numga.binding import AxisTransform, BindingPlan
     from numga.extensor import Extensor
     from numga.multivector import MultivectorFactory
+    from numga.gatype import GATypeFactory
+    from numga.subspace import SubSpaceFactory
 
 
 class Context(ABC):
@@ -30,13 +31,14 @@ class Context(ABC):
     contexts from static pytree metadata.
     """
 
-    __slots__ = ("_multivector_factory", "_execution", "_execute_bind")
+    __slots__ = ("_multivector_factory", "_execution", "_execute_bind", "_applications", "__weakref__")
 
     def __init__(self, execution: Literal["dense", "sparse"] = "dense") -> None:
         from numga.multivector import MultivectorFactory
         from .dense import execute_dense_bind
         from .sparse import execute_sparse_bind
 
+        object.__setattr__(self, "_applications", {})
         object.__setattr__(self, "_execution", execution)
         object.__setattr__(self, "_execute_bind", {
             "dense": execute_dense_bind, "sparse": execute_sparse_bind,
@@ -80,6 +82,14 @@ class Context(ABC):
         return self._multivector_factory
 
     @property
+    def gatype(self) -> GATypeFactory:
+        return self.algebra.gatype
+
+    @property
+    def subspace(self) -> SubSpaceFactory:
+        return self.algebra.subspace
+
+    @property
     @abstractmethod
     def xp(self) -> Any:
         """Array namespace used by the dense reference executor."""
@@ -107,9 +117,9 @@ class Context(ABC):
     def matrix_inverse(self, kernel: Any) -> Any:
         return self.xp.linalg.inv(kernel)
 
-    def matrix_trace(self, kernel: Any) -> Any:
-        tr = self.xp.trace(self.expose_kernel(kernel), axis1=-2, axis2=-1)
-        return self.xp.expand_dims(tr, axis=-1)
+    def matrix_trace(self, kernel: Any, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> Any:
+        tr = self.xp.trace(self.expose_kernel(kernel), axis1=axis1, axis2=axis2)
+        return self.xp.expand_dims(tr, axis=scalar_axis)
 
     def solve(self, matrix: Any, rhs: Any) -> Any:
         """Solve with a vector RHS, broadcasting its leading batch axes."""
@@ -117,7 +127,6 @@ class Context(ABC):
         rhs = self.xp.broadcast_to(rhs, matrix.shape[:-1])
         return self.xp.linalg.solve(matrix, rhs[..., None])[..., 0]
 
-    @lru_cache(maxsize=None)
     def is_compatible_with(self, other: object) -> bool:
         return (
             isinstance(other, Context)
@@ -215,3 +224,19 @@ def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
 
         return JaxContext.from_key(algebra, key)
     raise ValueError(f"unknown Context backend key {backend!r}")
+
+
+def binding_context(
+    target: Context,
+    operands: tuple[Context, ...],
+) -> "Context":
+    """Resolve context compatibility once per static context signature."""
+
+    concrete = tuple(context for context in (target,) + operands if not context.is_exact)
+    if not concrete:
+        return target
+
+    context = concrete[0]
+    if any(not other.is_compatible_with(context) for other in concrete[1:]):
+        raise ValueError("all concrete operands must use compatible Contexts")
+    return context

@@ -25,13 +25,13 @@ def execute_dense_bind(
     """Execute one deterministic atomic bind with left batch broadcasting."""
 
     current = context.lower(target)._kernel
-    for slot, apply in _binding_steps(context.xp, plan):
+    for slot, apply in binding_steps(context.xp, plan):
         current = apply(current, operands[slot]._kernel)
     return current
 
 
 @lru_cache(maxsize=None)
-def _binding_steps(
+def binding_steps(
     xp: Any, plan: BindingPlan,
 ) -> tuple[tuple[int, Callable[[Any, Any], Any]], ...]:
     """Resolve contractions and necessary coordinate conversions once."""

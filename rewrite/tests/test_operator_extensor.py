@@ -134,7 +134,7 @@ def test_exact_commutator_and_regressive_sign_conventions():
     assert algebra.gatype(xw).regressive(yw) is regressive
 
 
-def test_sandwich_accepts_any_carrier_and_keeps_unrestricted_output_support():
+def test_sandwich_accepts_any_carrier_and_squeezes_exact_symmetry_zeros():
     algebra = Algebra("x+y+")
     spaces = algebra.subspace
     vector = spaces.vector()
@@ -144,7 +144,7 @@ def test_sandwich_accepts_any_carrier_and_keeps_unrestricted_output_support():
     assert vector_sandwich.axes == (vector, vector, vector, vector)
 
     general_sandwich = full.sandwich(vector)
-    assert general_sandwich.axes == (full, full, vector, full)
+    assert general_sandwich.axes == (spaces.from_grades((0, 1)), full, vector, full)
 
 
 def test_positive_arity_operand_inputs_are_spliced_at_the_bound_slot():

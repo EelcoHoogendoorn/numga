@@ -10,6 +10,53 @@ from numga.extensor import Extensor
 from numga.gatype import ReverseProductOne, Versor
 
 
+@Extensor.exp_linear.register(lambda t: t <= t.algebra.gatype.bivector())
+def exp_linear(b: Extensor) -> Extensor:
+    """First-order exponential; the result is not normalized."""
+    return 1 + b
+
+
+@Extensor.exp_linear_normalized.register(lambda t: t <= t.algebra.gatype.bivector())
+def exp_linear_normalized(b: Extensor) -> Extensor:
+    return (1 + b).normalized()
+
+
+@Extensor.exp_cayley.register(lambda t: t <= t.algebra.gatype.bivector())
+@Extensor.exp_quadratic.register(lambda t: t <= t.algebra.gatype.bivector())
+def exp_quadratic(b: Extensor) -> Extensor:
+    """Cayley exponential approximation, inverse of log_quadratic."""
+    r = 1 + b / 2
+    return (r.squared() / r.symmetric_reverse_product()).with_traits(*r.gatype.normalized_traits)
+
+
+@Extensor.log_linear.register(lambda t: t <= t.algebra.gatype.even())
+def log_linear(m: Extensor) -> Extensor:
+    return m.restrict[2]
+
+
+@Extensor.log_linear_normalized.register(lambda t: t <= t.algebra.gatype.rotor())
+def log_linear_normalized(m: Extensor) -> Extensor:
+    denominator = m.restrict_subspace(m.gatype.reverse_fixed_subspace)
+    return m.bivector_product(denominator.inverse())
+
+
+@Extensor.log_quadratic.register(lambda t: t <= t.algebra.gatype.rotor())
+def log_quadratic(m: Extensor) -> Extensor:
+    return m.square_root().log_linear_normalized() * 2
+
+
+@Extensor.log_pade.register(lambda t: t <= t.algebra.gatype.rotor())
+def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
+    """Odd series in (m-1)/(m+1); converges near identity."""
+    f = (m - 1) / (m + 1)
+    square = f.squared()
+    power, result = f, f * 2
+    for k in range(1, n):
+        power = power * square
+        result = result + power * 2 / (2*k + 1)
+    return result.restrict[2]
+
+
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.empty())
 def empty_exp(z: Extensor) -> Extensor:
     return (z + 1).with_traits(ReverseProductOne, Versor)
@@ -50,6 +97,7 @@ def nilpotent_bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
     return (b + 1).with_traits(ReverseProductOne, Versor)
 
 
+@Extensor.exp_bisect.register(lambda t: t <= t.algebra.gatype.bivector())
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector())
 def bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
     """Quadratic exp of the scaled generator, followed by n squarings."""

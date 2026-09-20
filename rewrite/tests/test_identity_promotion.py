@@ -1,5 +1,7 @@
 """A bare SubSpace or nullary GAType in linear arithmetic is the identity map on it."""
 
+from fractions import Fraction
+
 import numpy as np
 
 from numga import NumpyContext
@@ -22,7 +24,7 @@ def test_subspace_promotes_to_identity_beside_a_map():
 def test_scaled_and_negated_subspaces_are_scaled_identities():
     ga = PGA3D
     V = ga.subspace.vector()
-    np.testing.assert_allclose((2.5 * V).kernel.materialize(), 2.5 * np.eye(4))
+    np.testing.assert_allclose((Fraction(5, 2) * V).kernel.materialize(), 2.5 * np.eye(4))
     np.testing.assert_allclose((V * 3).kernel.materialize(), 3 * np.eye(4))
     np.testing.assert_allclose((-V).kernel.materialize(), -np.eye(4))
 

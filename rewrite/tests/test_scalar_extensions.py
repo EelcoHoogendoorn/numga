@@ -65,6 +65,25 @@ def test_signed_and_empty_scalar_layouts(context):
     np.testing.assert_array_equal(empty.isfinite(), np.ones((2, 1), dtype=bool))
 
 
+def test_scalar_index_operations_use_backend_arrays_and_batch_axes(context):
+    values = np.array([[[3, 1, 2]], [[0, 2, 1]]])
+    scalar = context.multivector.scalar(values[..., None]).cast(context.algebra.subspace("-1"))
+    for indices, axis in ((scalar.argsort(), -1), (scalar.argsort(axis=0), 0)):
+        assert indices.shape == scalar.shape == (2, 1, 3)
+        assert indices.dtype.kind in "iu"
+        assert isinstance(indices, type(context.xp.asarray(0)))
+        np.testing.assert_array_equal(indices, np.argsort(values, axis=axis))
+    maximum = scalar.argmax()
+    assert maximum.shape == ()
+    assert maximum.dtype.kind in "iu"
+    np.testing.assert_array_equal(maximum, np.argmax(values))
+    maximum = scalar.argmax(axis=0, keepdims=True)
+    assert maximum.shape == (1, 1, 3)
+    assert maximum.dtype.kind in "iu"
+    assert isinstance(maximum, type(context.xp.asarray(0)))
+    np.testing.assert_array_equal(maximum, np.argmax(values, axis=0, keepdims=True))
+
+
 def test_nonlinear_scalar_methods_do_not_match_vectors_or_open_forms(context):
     mv = context.multivector
     vector = context.algebra.gatype.vector()
@@ -74,5 +93,9 @@ def test_nonlinear_scalar_methods_do_not_match_vectors_or_open_forms(context):
             value.cos()
         with pytest.raises(LookupError):
             value.isnan()
+        with pytest.raises(LookupError):
+            value.argsort()
+        with pytest.raises(LookupError):
+            value.argmax()
         with pytest.raises(LookupError):
             value < 0

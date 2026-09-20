@@ -30,12 +30,12 @@ def execute_sparse_bind(
 ) -> Any:
     if not target.context.is_exact:
         return execute_dense_bind(context, target, operands, plan)
-    execute = _executor(context.xp, context.dtype, target._kernel, plan)
+    execute = compile_sparse_bind(context.xp, context.dtype, target._kernel, plan)
     return execute(tuple(operands[slot] for slot in plan.slots))
 
 
 @lru_cache(maxsize=None)
-def _executor(
+def compile_sparse_bind(
     xp: Any, dtype: np.dtype, kernel: SymbolicKernel, plan: BindingPlan,
 ) -> Callable[[tuple[Extensor, ...]], Any]:
     """Group sparse terms and resolve axis/sign bookkeeping once."""
@@ -96,28 +96,40 @@ def _executor(
             # No contracted labels remain: this is a fused broadcast product.
             return np.einsum(expression, coefficient, *arrays)
 
-        def assign(array: Any, index: tuple[object, ...], value: Any) -> Any:
-            array[index] = value
-            return array
+        def assemble(operands, shapes, component_shape):
+            result = np.zeros(component_shape + retained_shape, dtype=dtype)
+            for coordinate, terms in terms_by_output:
+                result[(Ellipsis,) + coordinate] = component(terms, operands, shapes)
+            return result
     else:
         def term(
             coefficient: Any, arrays: tuple[Any, ...], shapes: tuple[tuple[int, ...], ...],
         ) -> Any:
             return prod((array.reshape(shape) for array, shape in zip(arrays, shapes)), start=coefficient)
 
-        def assign(array: Any, index: tuple[object, ...], value: Any) -> Any:
-            return array.at[index].set(value)
+        # Stack independent components so XLA can fuse their evaluation instead
+        # of threading a partially written output through sequential updates.
+        ordered_terms = tuple(groups.get(coordinate, ()) for coordinate in np.ndindex(retained_shape))
+        if ordered_terms:
+            def assemble(operands, shapes, component_shape):
+                return xp.stack(tuple(
+                    xp.broadcast_to(component(terms, operands, shapes), component_shape)
+                    for terms in ordered_terms
+                ), axis=-1).reshape(component_shape + retained_shape)
+        else:
+            def assemble(operands, shapes, component_shape):
+                return xp.zeros(component_shape + retained_shape, dtype=dtype)
+
+    def component(terms, operands, shapes):
+        return sum((term(coefficient, tuple(
+            operand._kernel[(Ellipsis, row) + indices]
+            for operand, row, indices in zip(operands, rows, row_indices)
+        ), shapes) for coefficient, rows in terms), start=dtype.type(0))
 
     def execute(operands: tuple[Extensor, ...]) -> Any:
         batch_shape = np.broadcast_shapes(*(operand.shape for operand in operands))
         shapes = tuple(operand.shape + reshape for operand, reshape in zip(operands, reshapes))
-        result = xp.zeros(batch_shape + free_shape + retained_shape, dtype=dtype)
-        for coordinate, terms in terms_by_output:
-            component = sum(term(coefficient, tuple(
-                operand._kernel[(Ellipsis, row) + indices]
-                for operand, row, indices in zip(operands, rows, row_indices)
-            ), shapes) for coefficient, rows in terms)
-            result = assign(result, (Ellipsis,) + coordinate, component)
+        result = assemble(operands, shapes, batch_shape + free_shape)
         offset = len(batch_shape)
         return xp.transpose(
             result, tuple(range(offset)) + tuple(offset + axis for axis in permutation),

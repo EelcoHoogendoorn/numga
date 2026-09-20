@@ -189,19 +189,9 @@ def bind_subspaces(plan: "BindingPlan") -> tuple[SubSpace, ...]:
     passenger = _sandwich_passenger(plan)
     algebra = plan.target_gatype.algebra
 
-    passenger_grades = {algebra.grade(mask) for mask in passenger.masks}
-    if sandwicher.entails(Versor):
-        allowed_grades = passenger_grades
-    elif all(algebra.grade(mask) % 2 == 0 for mask in sandwicher.output_subspace.masks):
-        # For even sandwichers A * X * reverse(A), reversion invariance and parity
-        # require surviving grades to satisfy g = k (mod 4). In dimensions <= 4,
-        # this strictly preserves all vector and bivector grades.
-        allowed_grades = {
-            g for g in range(algebra.dimension + 1)
-            if any((g - k) % 4 == 0 for k in passenger_grades)
-        }
-    else:
+    if not sandwicher.entails(Versor):
         return plan.result_subspaces
+    allowed_grades = {algebra.grade(mask) for mask in passenger.masks}
 
     output = plan.result_subspaces[0].restrict(
         mask for mask in plan.result_subspaces[0].masks

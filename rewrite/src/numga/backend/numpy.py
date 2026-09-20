@@ -29,10 +29,12 @@ class NumpyContext(Context):
     __slots__ = ("_algebra", "_dtype")
 
     def __init__(
-        self, algebra: Algebra, dtype: object = np.float64,
+        self, algebra: Algebra | str, dtype: object = np.float64,
         *, execution: Literal["dense", "sparse"] = "dense",
     ) -> None:
-        object.__setattr__(self, "_algebra", algebra)
+        from numga.algebra import Algebra
+
+        object.__setattr__(self, "_algebra", Algebra(algebra) if isinstance(algebra, str) else algebra)
         object.__setattr__(self, "_dtype", _dtype(dtype))
         super().__init__(execution)
 

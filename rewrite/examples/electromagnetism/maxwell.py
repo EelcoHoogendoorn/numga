@@ -104,7 +104,7 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # B. Dust Energy-Momentum Extensor: at rest, then boosted
     # -----------------------------------------------------------------------
-    rho = 4.0
+    rho = mv.scalar([4.0])
     T_dust: StressEnergy = rho * t * (t | V)
 
     # The moving observer is the rest observer boosted; gamma and beta follow from the rapidity
@@ -171,10 +171,10 @@ def main() -> None:
         atol=1e-14,
     )
     np.testing.assert_allclose([normal_stress(T_dust, n) for n in (mv.x, mv.y, mv.z)], 0.0, atol=1e-14)
-    np.testing.assert_allclose(T_dust.trace().kernel, rho, atol=1e-14)
-    np.testing.assert_allclose(float((t | T_moving(t)).kernel.item()), rho * gamma**2, atol=1e-14)
-    np.testing.assert_allclose(normal_stress(T_moving, mv.z), -rho * gamma**2 * beta**2, atol=1e-14)
-    np.testing.assert_allclose(T_moving.trace().kernel, rho, atol=1e-14)
+    np.testing.assert_allclose(T_dust.trace().kernel, rho.to_array(), atol=1e-14)
+    np.testing.assert_allclose(float((t | T_moving(t)).kernel.item()), (rho * gamma**2).to_array(), atol=1e-14)
+    np.testing.assert_allclose(normal_stress(T_moving, mv.z), (-rho * gamma**2 * beta**2).to_array(), atol=1e-14)
+    np.testing.assert_allclose(T_moving.trace().kernel, rho.to_array(), atol=1e-14)
     np.testing.assert_allclose(T_cloud.trace().kernel, mass.sum().kernel, atol=1e-14)
     np.testing.assert_allclose(pressure.kernel, (energy_cloud * speed**2 / 3.0).kernel, rtol=0.05)
     np.testing.assert_allclose(stresses.kernel, np.broadcast_to(-pressure.kernel, stresses.kernel.shape), rtol=0.05)

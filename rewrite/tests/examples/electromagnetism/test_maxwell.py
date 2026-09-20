@@ -86,7 +86,8 @@ def test_fluid_equation_of_state_interpolation():
     """Verify fluid extensor trace matches rho - 3p, yielding dust for p=0 and radiation for p=rho/3."""
     rho = 6.0
     for p in (0.0, 1.5, rho / 3.0):
-        T = (rho + p) * t * (t | V) - p * V
+        pressure = mv.scalar([p])
+        T = (rho + pressure) * t * (t | V) - pressure * V
         assert np.isclose(T.trace().kernel, rho - 3.0 * p, atol=1e-14)
 
 

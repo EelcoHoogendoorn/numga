@@ -2,34 +2,28 @@
 
 from __future__ import annotations
 
-from typing import List, Sequence
-import numpy as np
+from typing import Sequence
 
 from numga import Extensor
 from examples.mechanics.integrators import RK4
-from examples.mechanics.rigid_body.base import BodyBase, ConstraintBase
-
-
-
-def motor_add_step(motor: Extensor, step: Extensor) -> Extensor:
-    """Apply an integrated bivector rate step to a motor state."""
-    return motor * (step * -0.5).exp()
-
-
-def motor_relative_step(old: Extensor, new: Extensor) -> Extensor:
-    """Extract the effective bivector step from relative motor states."""
-    rel = old.reverse() * new
-    return rel.log() * -2.0
+from examples.mechanics.rigid_body.base import BodyBase, ConstraintBase, register_pytree
 
 
 class Body(BodyBase):
     """Rigid body dynamics evaluator."""
 
+    @classmethod
+    def from_point_cloud(cls, points: Extensor) -> Body:
+        # Each point contributes a rate-to-momentum map; add before inverting.
+        Bivector = points.context.gatype.bivector()
+        inertia = (points & points.commutator(Bivector)).sum(axis=-1)
+        return cls.from_mass_properties(points.sum(axis=-1), inertia, inertia.inverse())
+
     def forques(self) -> Extensor:
         """External forque line on each body, in body-local frame."""
         damping = -(self.rate * self.damping).dual()
-        gravity_local = self.motor.reverse().sandwich(self.gravity).restrict_subspace(self.gravity.subspace)
-        gravity = self.first_moment.regressive(gravity_local)
+        gravity_local = self.motor << self.gravity
+        gravity = self.first_moment & gravity_local
         return damping + gravity
 
     def rate_derivative(self) -> Extensor:
@@ -43,13 +37,13 @@ class Body(BodyBase):
     def pre_integrate(self, dt: float) -> Body:
         """Verlet pre-integration step: unconstrained inertial state update."""
         rate = RK4(lambda r: self.copy(rate=r).rate_derivative(), self.rate, dt)
-        motor = motor_add_step(self.motor, rate * dt)
+        motor = self.motor * (rate * (-dt / 2)).exp()
         return self.copy(motor=motor, rate=rate)
 
     def post_integrate(self, old: Body, dt: float) -> Body:
         """Verlet post-integration step: update rates from relaxed motors."""
         motor = self.motor.normalized()
-        rate = motor_relative_step(old.motor, motor) / dt
+        rate = (~old.motor * motor).log() * (-2 / dt)
         return self.copy(motor=motor, rate=rate)
 
     def integrate(self, dt: float, constraint_sets: Sequence[Constraint] = ()) -> Body:
@@ -74,19 +68,19 @@ class Constraint(ConstraintBase):
 
     def apply_indexed(self, motors: Extensor, inertia_inv: Extensor, dt: float) -> Extensor:
         """Compute relaxed motor states minimizing constraint violation."""
-        anchors = motors.sandwich(self.anchors)
-        forque = anchors[0].regressive(anchors[1])
+        anchors = motors >> self.anchors
+        forque = anchors[0] & anchors[1]
         magnitude = forque.norm()
         direction = forque / (magnitude + 1e-26)
 
-        local_dir = motors.reverse().sandwich(direction).restrict[2]
+        local_dir = motors << direction
         steps = self.distribute_forque(
             local_dir,
             magnitude,
             inertia_inv,
             self.compliance / (dt**2),
         )
-        return motor_add_step(motors, steps)
+        return motors * (steps * -0.5).exp()
 
     def v_apply(self, bodies: Body, dt: float) -> Body:
         """Relax velocity constraint violations."""
@@ -98,12 +92,12 @@ class Constraint(ConstraintBase):
         self, motors: Extensor, rates: Extensor, inertia_inv: Extensor, dt: float
     ) -> Extensor:
         """Resolve velocity impulses at anchors."""
-        velocities = motors.sandwich(self.anchors_map(rates)).restrict[2]
+        velocities = motors >> self.anchors_map(rates)
         forque = -(self.connectivity * velocities).sum(axis=0)
         magnitude = forque.norm()
         direction = forque / (magnitude + 1e-26)
 
-        local_dir = motors.reverse().sandwich(direction).restrict[2]
+        local_dir = motors << direction
         steps = self.distribute_forque(
             local_dir,
             magnitude,
@@ -121,45 +115,11 @@ class Constraint(ConstraintBase):
     ) -> Extensor:
         """Distribute an impulse forque line to momentum-conserving bivector displacements."""
         steps = inertia_inv(directions)
-        inertial_compliances = steps.regressive(directions)
+        inertial_compliances = steps & directions
         total_compliance = compliance + inertial_compliances.sum(axis=0) + 1e-26
         multiplier = magnitude / total_compliance
         return steps * self.connectivity * multiplier
 
 
-# Register with JAX pytree if JAX is installed
-try:
-    import jax
-
-    def _flatten_body(b: Body):
-        children = (
-            b.motor,
-            b.rate,
-            b.first_moment,
-            b.inertia,
-            b.inertia_inv,
-            b.damping,
-            b.gravity,
-        )
-        return children, ()
-
-    def _unflatten_body(_aux: tuple[()], children: tuple[Any, ...]) -> Body:
-        return Body(*children)
-
-    jax.tree_util.register_pytree_node(Body, _flatten_body, _unflatten_body)
-
-    def _flatten_constraint(c: Constraint):
-        children = (
-            c.body_idx,
-            c.anchors,
-            c.compliance,
-        )
-        return children, ()
-
-    def _unflatten_constraint(_aux: tuple[()], children: tuple[Any, ...]) -> Constraint:
-        return Constraint(*children)
-
-    jax.tree_util.register_pytree_node(Constraint, _flatten_constraint, _unflatten_constraint)
-
-except ImportError:
-    pass
+register_pytree(Body, ("motor", "rate", "first_moment", "inertia", "inertia_inv", "damping", "gravity"))
+register_pytree(Constraint, ("body_idx", "anchors", "compliance"))

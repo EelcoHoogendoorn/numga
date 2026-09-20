@@ -39,6 +39,7 @@ def main(plot_path: str = str(PLOT_DIR / "constitutive.png")) -> plt.Figure:
     """Build constitutive maps for media at rest and in motion, and read off their wave speeds."""
     eps, mu = 2.25, 1.0
     beta = 0.3
+    axion_coupling = mv.scalar([0.4])
 
     # -----------------------------------------------------------------------
     # 1. Every medium is one bivector map, built from the observer
@@ -59,7 +60,7 @@ def main(plot_path: str = str(PLOT_DIR / "constitutive.png")) -> plt.Figure:
     permeability_inv: Permittivity = -(1.0 * x * (x | V) + 0.5 * y * (y | V) + 1.0 * z * (z | V))
     ferrite: Constitutive = eps * electric + permeability_inv(B.dual().commutator(t)).wedge(t).dual_inverse()
 
-    axion: Constitutive = glass + 0.4 * B.dual()
+    axion: Constitutive = glass + axion_coupling * B.dual()
 
     boost = (mv.zt * (np.arctanh(beta) / 2.0)).exp()
     moving: Constitutive = boost >> glass(boost << B)

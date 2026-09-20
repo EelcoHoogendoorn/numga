@@ -77,32 +77,17 @@ class BodyBase:
         return type(self)(**attrs)
 
     @classmethod
-    def from_point_cloud(cls, points: Extensor) -> BodyBase:
-        """Initialize a rigid body from an antivector point cloud.
-
-        Parameters
-        ----------
-        points : Extensor
-            Antivector points of shape `[..., n_points]`.
-        """
-        context = points.context
-        spaces = context.algebra.subspace
-        bivector = spaces.bivector()
-
-        # Mass centroid (first moment)
-        first_moment = points.sum(axis=-1)
+    def from_mass_properties(cls, first_moment: Extensor, inertia: Extensor, inertia_inv: Extensor) -> BodyBase:
+        """Allocate the resting state around already constructed mass properties."""
+        context = first_moment.context
+        spaces = context.gatype
         batch_shape = first_moment.shape
-
-        # Inertia tensor = sum_p p & (p x Rate): maps rates to momenta
-        per_point = points.regressive(points.commutator(bivector))
-        inertia = per_point.sum(axis=-1)
-        inertia_inv = inertia.inverse()
 
         motor = context.multivector.rotor().broadcast_to(batch_shape)
         rate = context.multivector.bivector().broadcast_to(batch_shape)
         damping = (context.multivector.scalar() * 0.0).broadcast_to(batch_shape)
         gravity = context.multivector.antivector(
-            np.zeros(batch_shape + (len(spaces.antivector()),))
+            np.zeros(batch_shape + (len(spaces.antivector().output_subspace),))
         )
 
         return cls(
@@ -118,7 +103,7 @@ class BodyBase:
     def kinetic_energy(self) -> Extensor:
         """Compute the kinetic energy 0.5 * (Rate & Inertia(Rate))."""
         momentum = self.inertia(self.rate)
-        return momentum.regressive(self.rate) * 0.5
+        return (momentum & self.rate) * 0.5
 
 
 class ConstraintBase:
@@ -141,7 +126,7 @@ class ConstraintBase:
         compliance: Extensor,
     ) -> None:
         context = anchors.context
-        spaces = context.algebra.subspace
+        spaces = context.gatype
         bivector = spaces.bivector()
 
         self.body_idx = body_idx
@@ -150,7 +135,7 @@ class ConstraintBase:
 
         conn = np.array([[[+0.5]], [[-0.5]]], dtype=float)
         self.connectivity = context.multivector.scalar(conn)
-        self.anchors_map = anchors.regressive(anchors.commutator(bivector))
+        self.anchors_map = anchors & anchors.commutator(bivector)
 
     def __getitem__(self, index: Any) -> ConstraintBase:
         return type(self)(
@@ -158,3 +143,16 @@ class ConstraintBase:
             self.anchors[:, index],
             self.compliance[index],
         )
+
+
+def register_pytree(cls, fields: tuple[str, ...]) -> None:
+    """Keep backend registration beside the state layout, outside the dynamics."""
+    try:
+        import jax
+    except ImportError:
+        return
+    jax.tree_util.register_pytree_node(
+        cls,
+        lambda value: (tuple(getattr(value, field) for field in fields), ()),
+        lambda auxiliary, children: cls(*children),
+    )

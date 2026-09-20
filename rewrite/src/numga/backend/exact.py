@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from fractions import Fraction
-from numbers import Integral, Rational, Real
+from numbers import Integral, Rational
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -71,9 +71,9 @@ class ExactContext(Context):
     def matrix_inverse(self, kernel: SymbolicKernel) -> SymbolicKernel:
         raise NotImplementedError("exact matrix inversion is not implemented")
 
-    def matrix_trace(self, kernel: SymbolicKernel) -> SymbolicKernel:
-        tr = np.trace(kernel.to_object_array(), axis1=-2, axis2=-1)
-        return SymbolicKernel(np.expand_dims(tr, axis=-1))
+    def matrix_trace(self, kernel: SymbolicKernel, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> SymbolicKernel:
+        tr = np.trace(kernel.to_object_array(), axis1=axis1, axis2=axis2)
+        return SymbolicKernel(np.expand_dims(tr, axis=scalar_axis))
 
     def solve(self, matrix: SymbolicKernel, rhs: SymbolicKernel) -> SymbolicKernel:
         raise NotImplementedError("exact matrix solves are not implemented")
@@ -83,11 +83,8 @@ class ExactContext(Context):
             return Fraction(int(scalar))
         if isinstance(scalar, Rational):
             return Fraction(scalar.numerator, scalar.denominator)
-        if isinstance(scalar, Real):
-            # A float is a dyadic rational; converting it exactly keeps the kernel exact.
-            return Fraction(float(scalar))
         raise TypeError(
-            "exact Extensor scalars must be integers, rationals or floats; "
+            "exact Extensor scalars must be integers or rationals; "
             f"got {type(scalar).__name__}"
         )
 

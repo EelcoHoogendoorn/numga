@@ -76,7 +76,7 @@ def test_axion_term_is_invisible_to_bulk_waves():
     electric, magnetic = projectors()
     glass = 2.25 * electric + magnetic
     for alpha in (0.4, -1.3):
-        axion = glass + alpha * B.dual()
+        axion = glass + mv.scalar([alpha]) * B.dual()
         np.testing.assert_allclose(phase_speeds(axion, Z, SPEEDS), phase_speeds(glass, Z, SPEEDS), atol=1e-12)
 
 

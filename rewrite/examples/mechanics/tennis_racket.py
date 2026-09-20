@@ -10,12 +10,25 @@ from __future__ import annotations
 
 import numpy as np
 
+from typing import Callable, NamedTuple
+
 from numga.algebra import Algebra
-from numga import NumpyContext
-from examples.mechanics.rigid_body.core import Body
-from examples.mechanics.rigid_body.lie_integrators import explicit_rk4, explicit_rkmk4
+from numga import Extensor, NumpyContext
+from examples.mechanics.lie_integrators import (
+    explicit_verlet,
+    explicit_rk4,
+    explicit_rkmk4,
+    inertia_from_points,
+)
 from examples import PLOT_DIR
 
+
+class RigidBodyState(NamedTuple):
+    """Rigid body dynamical state in Geometric Algebra."""
+    motor: Extensor
+    rate: Extensor
+    inertia: Extensor
+    inertia_inv: Extensor
 
 
 def make_n_cube(n: int) -> np.ndarray:
@@ -29,10 +42,7 @@ def make_n_rect(n: int) -> np.ndarray:
     return make_n_cube(n) * (np.arange(n) + 1.0)
 
 
-def setup_tennis_racket_bodies(
-    context: NumpyContext = NumpyContext(Algebra.from_pqr(4, 0, 0), dtype=np.float64),
-    seed: int = 42,
-) -> tuple[Body, np.ndarray]:
+def setup_tennis_racket_bodies(context: NumpyContext, seed: int) -> RigidBodyState:
     """Set up batched bodies spinning in each independent bivector plane.
 
     Works for p=2, 3, 4, 5.
@@ -45,87 +55,58 @@ def setup_tennis_racket_bodies(
 
     nb = len(context.algebra.subspace.bivector())
     points_batched = points[None, :].broadcast_to((nb, len(coords)))
-    body = Body.from_point_cloud(points_batched)
-
+    inertia, inertia_inv = inertia_from_points(points_batched)
+    motor = context.multivector.rotor().broadcast_to(nb)
 
     # Initial spin in each principal plane with a small perturbation
     rng = np.random.default_rng(seed)
     rates = np.eye(nb) + rng.normal(scale=1e-5, size=(nb, nb))
-    body = body.copy(rate=context.multivector.bivector(rates))
-    return body, body.kinetic_energy().kernel.ravel()
+    rate = context.multivector.bivector(rates)
+    return RigidBodyState(motor, rate, inertia, inertia_inv)
 
 
-def verlet_step(body: Body, dt: float) -> Body:
-    """The body's own XPBD Verlet step."""
-    return body.integrate(dt)
+def verlet_step(body: RigidBodyState, dt: float) -> RigidBodyState:
+    """Explicit Lie-Verlet / symplectic Euler step."""
+    motor, rate = explicit_verlet(body.motor, body.rate, body.inertia, body.inertia_inv, dt)
+    return RigidBodyState(motor, rate, body.inertia, body.inertia_inv)
 
 
-def rk4_step(body: Body, dt: float) -> Body:
+def rk4_step(body: RigidBodyState, dt: float) -> RigidBodyState:
     """Explicit RK4 on the rate, then a rotor step with the new rate."""
     motor, rate = explicit_rk4(body.motor, body.rate, body.inertia, body.inertia_inv, dt)
-    return body.copy(motor=motor, rate=rate)
+    return RigidBodyState(motor, rate, body.inertia, body.inertia_inv)
 
 
-def rkmk4_step(body: Body, dt: float) -> Body:
+def rkmk4_step(body: RigidBodyState, dt: float) -> RigidBodyState:
     """Explicit 4th-order Munthe-Kaas: RK4 in the Lie algebra with the dexpinv correction."""
     motor, rate = explicit_rkmk4(body.motor, body.rate, body.inertia, body.inertia_inv, dt)
-    return body.copy(motor=motor, rate=rate)
-
-
-INTEGRATORS = {"verlet": verlet_step, "rk4": rk4_step, "rkmk4": rkmk4_step}
+    return RigidBodyState(motor, rate, body.inertia, body.inertia_inv)
 
 
 def simulate_tennis_racket(
-    context: NumpyContext = NumpyContext(Algebra.from_pqr(4, 0, 0), dtype=np.float64),
-    dt: float = 0.25,
-    runtime: float = 200.0,
-    seed: int = 42,
-    integrator: str = "verlet",
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Simulate rotation for all independent spin planes.
-
-    Parameters
-    ----------
-    context : NumpyContext
-        Geometric algebra context. Defaults to 4D Euclidean (Algebra.from_pqr(4, 0, 0)).
-        Also works for p=2, 3, 5.
-    dt : float
-        Time step (default 0.25).
-    runtime : float
-        Total simulation duration (default 200.0).
-    integrator : str
-        One of INTEGRATORS: "verlet", "rk4", or "rkmk4".
-
-    Returns
-    -------
-    trajectory : np.ndarray
-        Array of shape `[n_steps, n_bodies, n_bivectors]` containing rates over time.
-    energies : np.ndarray
-        Initial kinetic energies of each body.
-    energy_history : np.ndarray
-        Array of shape `[n_steps, n_bodies]` containing kinetic energies over time.
-    momentum_history : np.ndarray
-        Array of shape `[n_steps, n_bodies, n_bivectors]` containing the world-frame
-        angular momentum `motor >> inertia(rate)` over time. It is conserved exactly by
-        the dynamics, and unlike the energy it sees how the motor is integrated.
-    """
-    body, energies = setup_tennis_racket_bodies(context, seed=seed)
-    step = INTEGRATORS[integrator]
+    context: NumpyContext,
+    dt: float,
+    runtime: float,
+    seed: int,
+    step: Callable,
+) -> list[RigidBodyState]:
+    """Simulate rotation for all independent spin planes."""
+    body = setup_tennis_racket_bodies(context, seed)
     n_steps = int(runtime / dt)
-    states = []
-    energy_history = []
-    momentum_history = []
 
+    states = [body]
     for _ in range(n_steps):
         body = step(body, dt)
-        states.append(body.rate.kernel)
-        energy_history.append(body.kinetic_energy().kernel.ravel())
-        momentum_history.append((body.motor >> body.inertia(body.rate)).kernel)
+        states.append(body)
 
-    return np.array(states), energies, np.array(energy_history), np.array(momentum_history)
+    return states
 
 
-def draw_trajectories(trajectory: np.ndarray, energies: np.ndarray, p: int, save_path: str) -> None:
+def draw_trajectories(states: list[RigidBodyState], p: int, save_path: str) -> None:
+    """Plot angular velocity trajectories for all axes."""
+    trajectory = np.array([b.rate.kernel for b in states])
+    init_body = states[0]
+    energies = (0.5 * (init_body.inertia(init_body.rate) & init_body.rate)).kernel.ravel()
     nb = trajectory.shape[1]
 
     import matplotlib.pyplot as plt
@@ -148,15 +129,17 @@ def draw_trajectories(trajectory: np.ndarray, energies: np.ndarray, p: int, save
 
 
 def run_and_plot(
-    p: int = 4,
-    dt: float = 0.25,
-    runtime: float = 200.0,
-    save_path: str = str(PLOT_DIR / "tennis_racket.png"),
+    p: int,
+    dt: float,
+    runtime: float,
+    seed: int,
+    step: Callable,
+    save_path: str,
 ) -> None:
     """Run simulation and plot angular velocity trajectories for all axes."""
     context = NumpyContext(Algebra.from_pqr(p, 0, 0), dtype=np.float64)
-    trajectory, energies, _, _ = simulate_tennis_racket(context, dt=dt, runtime=runtime)
-    draw_trajectories(trajectory, energies, p, save_path)
+    states = simulate_tennis_racket(context, dt, runtime, seed, step)
+    draw_trajectories(states, p, save_path)
 
 
 def draw_integrator_comparison(curves, dims: tuple[int, ...], dt: float, save_path: str) -> None:
@@ -178,22 +161,43 @@ def draw_integrator_comparison(curves, dims: tuple[int, ...], dt: float, save_pa
 
 
 def run_integrator_comparison(
-    dims: tuple[int, ...] = (3, 4, 5),
-    dt: float = 0.25,
-    runtime: float = 100.0,
-    save_path: str = str(PLOT_DIR / "tennis_racket_integrators.png"),
+    dims: tuple[int, ...],
+    dt: float,
+    runtime: float,
+    seed: int,
+    save_path: str,
 ) -> None:
     """Compare world-momentum drift of the integrators, worst body per step, per dimension."""
+    steppers = [
+        ("verlet", verlet_step),
+        ("rk4", rk4_step),
+        ("rkmk4", rkmk4_step),
+    ]
     curves = []
     for p in dims:
         context = NumpyContext(Algebra.from_pqr(p, 0, 0), dtype=np.float64)
-        for name in INTEGRATORS:
-            _, _, _, momenta = simulate_tennis_racket(context, dt=dt, runtime=runtime, integrator=name)
-            curves.append((p, name, momenta))
+        for label, step in steppers:
+            states = simulate_tennis_racket(context, dt, runtime, seed, step)
+            # World-frame angular momentum: L = motor >> inertia(rate)
+            momenta = np.array([(b.motor >> b.inertia(b.rate)).kernel for b in states])
+            curves.append((p, label, momenta))
     draw_integrator_comparison(curves, dims, dt, save_path)
 
 
 if __name__ == "__main__":
-    run_and_plot()
-    run_integrator_comparison()
+    run_and_plot(
+        p=4,
+        dt=0.25,
+        runtime=200.0,
+        seed=42,
+        step=verlet_step,
+        save_path=str(PLOT_DIR / "tennis_racket.png"),
+    )
+    run_integrator_comparison(
+        dims=(3, 4, 5),
+        dt=0.25,
+        runtime=100.0,
+        seed=42,
+        save_path=str(PLOT_DIR / "tennis_racket_integrators.png"),
+    )
 

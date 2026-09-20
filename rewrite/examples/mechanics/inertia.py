@@ -1,69 +1,113 @@
-"""Maximally compact Extensor demonstration: inertia, summing, and operator rotation in PGA3D.
+"""Recover a principal frame and its motor with two eigenproblems.
 
-Demonstrates:
-1. Defining rigid body inertia as an arity-1 operator via bivector hole and summation:
-       I_body = points.regressive(points.commutator(B)).sum(axis=0)
-2. Forming the 6x6 adjoint rotation matrix on bivectors via sandwich: R = rotor >> B
-3. Rotating the inertia operator via operator composition (I_world = R(I_body(R.inverse()))) or inline sandwich (rotor >> I_body(rotor << B)).
-4. Exact equivalence with rotating the point cloud first and recomputing inertia.
-5. Linear action (momentum = I(rate)), exact inverse (I.inverse()), and kinetic energy.
+Both constructions start from the supplied inertia: an arbitrary mass cloud,
+and a moved diagonal tensor. The reference is just the canonical coordinate
+planes, not a known body pose. The same solve covers spherical and Euclidean
+PGA models in algebra dimensions four and five.
+
+Run from rewrite/ with PYTHONPATH=src:. python -m examples.mechanics.inertia.
 """
 
 import numpy as np
 
-from numga import NumpyContext
-from numga.algebras import PGA3D
+from numga import Algebra, Extensor, NumpyContext
+from examples.mechanics.inertia_plumbing import cloud, report
 
-ctx = NumpyContext(PGA3D)
-mv = ctx.multivector
-B = PGA3D.subspace.bivector()
 
-def main() -> None:
-    # 1. Point cloud (random antivectors normalized to unit projective weight: P ~P == 1)
-    np.random.seed(0)
-    points = mv.antivector(np.random.normal(size=(10, 4))).normalized()
+def second_moment(inertia: Extensor) -> Extensor:
+    """Recover the point cloud's second-moment map from its inertia.
 
-    # 2. Body-frame inertia operator via bivector hole & reduction:
-    # maps bivector rates -> antibivector momenta
-    I_body = points.regressive(points.commutator(B)).sum(axis=0)
+    Args:
+        inertia: A single physical inertia map, AntiBivector <- Bivector,
+            mapping rigid-body velocity to momentum in its current frame.
+    Returns:
+        A Point <- Plane map. Pairing its output with another plane gives
+        the scalar form sum(m * (a & p) * (b & p)) over the mass points p.
+    """
+    ga = inertia.algebra
+    Point, Plane, Bivector = ga.gatype.antivector(), ga.gatype.vector(), ga.gatype.bivector()
+    # This construction has type (AntiBivector <- Point, Plane, Bivector).
+    # Duality turns the second input into a point while keeping its plane slot.
+    construction = Point & Plane.dual().commutator(Bivector)
+    # The supplied inertia matches AntiBivector <- Bivector, leaving Point <- Plane
+    # as the unknown second-moment map. The solve infers these axes from the types.
+    return construction.lstsq(inertia)
 
-    # 3. Rotation motor (90° in the xy-plane)
-    rotor = (mv.xy * (-np.pi / 4.0)).exp()
 
-    # 4. Form the 6x6 adjoint rotation matrix on bivectors via sandwich:
-    R = rotor >> B
+def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
+    """Fit a motor taking the moment's principal planes onto a reference frame.
 
-    # 5. Rotate inertia operator via operator composition:
-    # (In 4D, bivectors and antibivectors coincide, so R acts on both rates and momenta)
-    I_world = R(I_body(R.inverse()))
+    Args:
+        moment: The Point <- Plane second-moment map recovered from inertia.
+        reference: A batch of orthogonal unit target planes, with PGA's null
+            plane last. Their batch order specifies the target correspondence.
+    Returns:
+        A normalized motor mapping the principal planes onto reference,
+        up to orientation signs. Coordinate reference planes diagonalize inertia.
+    """
+    ga = moment.algebra
+    Plane, Rotor = ga.gatype.vector(), ga.gatype.rotor()
 
-    # Alternatively, written directly as an inline expression:
-    I_world_inline = rotor >> I_body(rotor << B)
+    # Pairing with another plane gives the scalar second-moment form: Plane & moment.
+    # For mass points p, this form is sum(m * (a & p) * (b & p)).
+    # Recover principal planes from metric(v, .) = value * moment_form(v, .).
+    # This order gives PGA's plane at infinity a zero eigenvalue, rather than an infinite one.
+    _, planes = (Plane | Plane).eigh(Plane & moment)
+    # Keep the full frame, with PGA's null plane last, matching the reference.
+    source = planes[planes.norm().argsort()[::-1]]
 
-    # 6. Verify equivalence with rotating the points first:
-    rpoints = rotor >> points
-    I_direct = rpoints.regressive(rpoints.commutator(B)).sum(axis=0)
+    # Descending norms and powers of two give distinct eigenvalues for the nonnull sign choices.
+    # The paired null planes contribute zero on the rotor space.
+    weights = 2.0 ** np.arange(source.shape[0])[::-1]
+    # Build a map from rotors to even grade elements
+    # A matching motor is an eigenvector of each term: the product returns R
+    # times the source plane's norm, with either sign for its orientation.
+    # The plane maps commute, so this weighted sum finds their common
+    # eigenvectors in one solve. The weights keep distinct sign choices apart.
+    _, motors = (reference * Rotor * source * weights).sum(axis=0).eig()
+    # Scalar overlap selects a motor; the pure ideal PGA candidates have none.
+    choice = motors.select[0].norm().argmax()
+    return motors[choice].normalized()
 
-    # 7. Evaluate linear map, exact inverse, and kinetic energy:
-    rate = mv.bivector(np.random.normal(size=6))
-    momentum = I_world(rate)
-    energy = 0.5 * rate.regressive(momentum)
-    recovered_rate = I_world.solve(momentum)
 
-    print("Body-frame Inertia (6x6):\n", np.around(I_body.kernel, 2))
-    print("\nWorld-frame Inertia via Operator Rotation (6x6):\n", np.around(I_world.kernel, 2))
-    print("\nAngular rate:", rate.kernel)
-    print("Angular momentum:", np.around(momentum.kernel, 2))
-    print(f"Kinetic energy: {float(energy.kernel.item()):.4f}")
+def main(signature: str = "x+y+z+w0", seed: int = 0) -> tuple[Extensor, Extensor]:
+    # --- plumbing: inputs for the two independent constructions.
+    ga = Algebra(signature)
+    ctx = NumpyContext(ga, dtype=np.complex128)
+    mv = ctx.multivector
+    Bivector = ga.gatype.bivector()
+    points, masses = cloud(ctx, seed)
+    reference = mv.vector(np.eye(ga.dimension))
+    reference = reference[reference.norm().argsort()[::-1]]
+    point_basis = mv.antivector(np.eye(ga.dimension))
+    second_moments = 2.0 ** np.arange(ga.dimension)
+    rng = np.random.default_rng(seed + 1)
+    placement = mv.bivector(rng.normal(size=len(Bivector.output_subspace)) * 0.2).exp()
 
-    # --- checks -------------------------------------------------------------
-    assert I_body.arity == 1
-    assert R.arity == 1
-    np.testing.assert_allclose(I_world.kernel, I_world_inline.kernel, atol=1e-12)
-    np.testing.assert_allclose(I_world.kernel, I_direct.kernel, atol=1e-12)
-    np.testing.assert_allclose(recovered_rate.kernel, rate.kernel, atol=1e-12)
+    # --- math: 1. Construct and diagonalize inertia from arbitrary mass points.
+    cloud_inertia = (points & points.commutator(Bivector) * masses).sum(axis=0)
+    cloud_moment = second_moment(cloud_inertia)
+    cloud_motor = diagonalizing_motor(cloud_moment, reference)
+    cloud_diagonal = cloud_motor >> cloud_inertia(cloud_motor << Bivector)
 
+    # 2. Diagonal second moments induce a diagonal energy form on bivectors.
+    # Move that inertia, then find a diagonalizing motor from the moved tensor.
+    diagonal = (point_basis & point_basis.commutator(Bivector) * second_moments).sum(axis=0)
+    moved = placement >> diagonal(placement << Bivector)
+    moment = second_moment(moved)
+    motor = diagonalizing_motor(moment, reference)
+    recovered = motor >> moved(motor << Bivector)
+
+    # --- plumbing: inspect both results; the recovered frame may permute or reverse axes.
+    report(Bivector & cloud_inertia, Bivector & cloud_diagonal,
+           Bivector & diagonal, Bivector & moved, Bivector & recovered)
+    return cloud_motor, motor
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--signature", default="x+y+z+w0")
+    parser.add_argument("--seed", type=int, default=0)
+    main(**vars(parser.parse_args()))

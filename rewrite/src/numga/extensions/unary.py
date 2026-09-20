@@ -20,11 +20,15 @@ eigenproblems use SciPy on the NumPy backend (the optional linalg extra).
 
 from __future__ import annotations
 
+from functools import lru_cache
+from itertools import combinations
 from math import prod
 from typing import Any
 
 import numpy as np
 
+from numga.backend.context import binding_context
+from numga.binding import AxisTransform, AxisTransformKind
 from numga.extensor import Extensor
 from numga.gatype import GAType, GATypePattern
 
@@ -76,14 +80,16 @@ def _form_map(value: Extensor) -> Extensor:
 
 
 def _pencil(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
-    left = _form_map(value).cast(value.axes[2])
-    right = _form_map(value.context.lower(metric))
+    context = binding_context(value.context, (metric.context,))
+    left = _form_map(context.lower(value)).cast(value.axes[2])
+    right = _form_map(context.lower(metric))
     right = right(value.algebra.operator.identity(value.axes[2])).cast(value.axes[2])
     return left, right
 
 
-def _rhs(value: Extensor, rhs: Extensor) -> Extensor:
-    return value.context.lower(rhs).cast(value.axes[0])
+def _linear_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
+    context = binding_context(value.context, (rhs.context,))
+    return context.lower(value), context.lower(rhs).cast(value.axes[0])
 
 
 @Extensor.transpose.register(GATypePattern.map())
@@ -123,7 +129,7 @@ def det(value: Extensor) -> Extensor:
 )
 def solve(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve A(x)=rhs, preserving every RHS slot and broadcasting both batches."""
-    rhs = _rhs(value, rhs)
+    value, rhs = _linear_system(value, rhs)
     columns = rhs._kernel.reshape(rhs.shape + (len(rhs.output_subspace), prod(rhs.structural_shape[1:])))
     solution = value.context.xp.linalg.solve(value._kernel, columns)
     gatype = value.algebra.gatype((value.axes[1],) + rhs.input_subspaces)
@@ -148,8 +154,54 @@ def lstsq(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
 
     Returns the solution extensor alone; residuals are A(solution)-rhs.
     """
-    rhs = _rhs(value, rhs)
+    value, rhs = _linear_system(value, rhs)
     return value.pinv(rcond=rcond)(rhs)
+
+
+@lru_cache(maxsize=None)
+def _grouped_lstsq_plan(value: GAType, rhs: GAType):
+    if rhs.arity >= value.arity:
+        raise TypeError("lstsq RHS must leave at least one input slot to solve")
+    axes, matches = value.subspaces, []
+    for inputs in combinations(range(1, value.arity + 1), rhs.arity):
+        retained = (0,) + inputs
+        alignment = tuple(AxisTransform.plan(source, axes[i]) for source, i in zip(rhs.subspaces, retained))
+        if all(transform.is_implicit_bind_compatible for transform in alignment):
+            matches.append((retained, alignment))
+    if len(matches) != 1:
+        raise TypeError("lstsq RHS must match exactly one ordered sequence of input slots without projection")
+    retained, alignment = matches[0]
+    selected = tuple(axis for axis in range(1, value.arity + 1) if axis not in retained)
+    transforms = tuple((axis, transform) for axis, transform in enumerate(alignment)
+                       if transform.kind is not AxisTransformKind.EXACT)
+    result = value.algebra.gatype(tuple(axes[i] for i in selected))
+    shape = prod(len(axes[i]) for i in retained), prod(len(axes[i]) for i in selected)
+    return retained + selected, shape, result, transforms
+
+
+@Extensor.lstsq.register(
+    lambda t, r: t.arity > 1
+    and r.output_subspace.support_is_subset_of(t.output_subspace)
+)
+def lstsq_tensor(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
+    """Infer and solve a coefficient contraction from the two extensor signatures.
+
+    RHS inputs must match exactly one ordered subsequence of the operator inputs.
+    The unmatched inputs form the solution's output-first signature in their
+    original order. The operator output and matched inputs form the equations.
+    This is a linear solve over a tensor product, not a nonlinear factor solve;
+    the unknown need not separate into one multivector per unmatched slot.
+    """
+    permutation, (rows, columns), gatype, transforms = _grouped_lstsq_plan(value.gatype, rhs.gatype)
+    context = binding_context(value.context, (rhs.context,))
+    value, rhs = context.lower(value), context.lower(rhs)
+    coefficients = rhs._kernel
+    for axis, transform in transforms:
+        coefficients = value.context.transform_axis(coefficients, rhs.arity + 1, axis, transform)
+    matrix = value._kernel.transpose(tuple(range(value.ndim)) + tuple(value.ndim + i for i in permutation))
+    matrix = matrix.reshape(value.shape + (rows, columns))
+    solution = value.context.xp.linalg.pinv(matrix, rcond) @ coefficients.reshape(rhs.shape + (rows, 1))
+    return _result(value, gatype, solution.reshape(solution.shape[:-2] + gatype.structural_shape))
 
 
 @Extensor.eig.register(_is_endomorphism)
@@ -243,7 +295,7 @@ def cholesky_form(value: Extensor) -> Extensor:
     return _form_map(value).cholesky()
 
 
-@Extensor.trace.register(_is_square_form)
+@Extensor.trace.register(_is_square_form, position=0)
 def trace_form(value: Extensor) -> Extensor:
     return _form_map(value).trace()
 

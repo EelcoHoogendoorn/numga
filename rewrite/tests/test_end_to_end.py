@@ -553,7 +553,7 @@ def test_general_even_sandwich_can_produce_extra_grades_in_five_dimensions():
     )
 
 
-def test_sandwich_grade_guarantee_needs_the_same_sandwicher_not_just_its_type():
+def test_sandwich_isometry_needs_the_same_sandwicher_not_just_its_type():
     algebra = Algebra("x+y+z+")
     mv = NumpyContext(algebra).multivector
     spaces = algebra.subspace
@@ -575,11 +575,11 @@ def test_sandwich_grade_guarantee_needs_the_same_sandwicher_not_just_its_type():
         rotation(x).kernel, [0, -1, 0],
         rtol=1e-14, atol=1e-14, equal_nan=False,
     )
-    # Distinct rotors with the same type instead give (z - xyz) / sqrt(2).
-    assert independent.output_subspace is spaces.vector() + spaces.trivector()
+    # Polarization preserves the exact grade cancellations, but not isometry.
+    assert independent.output_subspace is spaces.vector()
     assert not independent.gatype.entails(CoefficientOrthogonal)
     np.testing.assert_allclose(
-        independent(x).kernel, [0, 0, half, -half],
+        independent(x).kernel, [0, 0, half],
         rtol=1e-14, atol=1e-14, equal_nan=False,
     )
 

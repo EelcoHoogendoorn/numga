@@ -10,6 +10,23 @@ from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductOne, Versor
 
 
+@Extensor.square_root_denman_beavers.register(lambda t: t <= t.algebra.gatype.rotor())
+def square_root_denman_beavers(value: Extensor, *, n: int = 30) -> Extensor:
+    product = root = value
+    for _ in range(n):
+        reciprocal = product.inverse()
+        root = root * (1 + reciprocal) / 2
+        product = (product + reciprocal + 2) / 4
+    return root.with_traits(ReverseProductOne, Versor)
+
+
+@Extensor.geometric_mean.register(
+    lambda a, b: a <= a.algebra.gatype.rotor() and b <= b.algebra.gatype.rotor()
+)
+def geometric_mean(left: Extensor, right: Extensor) -> Extensor:
+    return (left + right).normalized()
+
+
 @Extensor.square_root.register(lambda g: g.is_reoriented_scalar)
 def reoriented_scalar_square_root(value: Extensor) -> Extensor:
     return value.select_subspace(value.subspace.canonical).square_root()

@@ -192,7 +192,7 @@ class OperatorFactory:
     def _inner(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
             "inner", left, right,
-            lambda l, r, output: output == abs(l - r),
+            lambda l, r, output: output == abs(np.subtract(l, r, dtype=np.int16)),
         )
 
     @lru_cache(maxsize=None)
@@ -304,12 +304,12 @@ class OperatorFactory:
         passenger: OperandType,
         output: SubSpace | None = None,
     ) -> Extensor:
-        """Construct ``left * passenger * reverse(right)``.
+        """Polarize ``sandwicher * passenger * reverse(sandwicher)``.
 
         The two sandwicher slots remain distinct. Passing the same nullary
         Extensor into slots 0 and 2 is an atomic diagonal bind at runtime.
-        Arbitrary sandwichers are accepted, so the default codomain is the
-        unrestricted product support. ``output`` requests an explicit cast.
+        Exact symmetrization removes terms that cancel for repeated sandwichers.
+        ``output`` requests an explicit cast.
         """
 
         if output is not None:
@@ -332,6 +332,9 @@ class OperatorFactory:
             passenger.output_subspace,
             output,
         )
+        kernel = result.kernel.to_object_array()
+        kernel = (kernel + kernel.swapaxes(1, 3)) * Fraction(1, 2)
+        result = self.build(result.axes, kernel).squeeze_output()
         if output is not None:
             # A requested projection is not an unrestricted sandwich action.
             return result
@@ -385,9 +388,9 @@ class OperatorFactory:
         self._require_space(right)
         table = self.algebra.geometric_product_table(left.masks, right.masks)
 
-        l_grades = self.algebra.grade(np.asarray(left.masks, dtype=self.algebra.blade_dtype)).astype(int)[:, None]
-        r_grades = self.algebra.grade(np.asarray(right.masks, dtype=self.algebra.blade_dtype)).astype(int)[None, :]
-        o_grades = self.algebra.grade(table.blades).astype(int)
+        l_grades = self.algebra.grade(np.asarray(left.masks, dtype=self.algebra.blade_dtype))[:, None]
+        r_grades = self.algebra.grade(np.asarray(right.masks, dtype=self.algebra.blade_dtype))[None, :]
+        o_grades = self.algebra.grade(table.blades)
         coeffs = table.coefficients
 
         try:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from numbers import Number
 
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Iterable, Tuple
 
@@ -44,7 +44,7 @@ class GAType:
     same algebra object.
     """
 
-    __slots__ = ("_subspaces", "_traits", "_algebra", "_hash")
+    __slots__ = ("_subspaces", "_traits", "_algebra", "_hash", "__dict__")
 
     def __init__(
         self,
@@ -96,8 +96,7 @@ class GAType:
     def axes(self) -> Tuple[SubSpace, ...]:
         return self.subspaces
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def structural_shape(self) -> tuple[int, ...]:
         return tuple(len(axis) for axis in self.subspaces)
 
@@ -121,29 +120,25 @@ class GAType:
     def arity(self) -> int:
         return len(self.subspaces) - 1
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def is_scalar(self) -> bool:
         """A nullary scalar carrier, including the empty zero carrier."""
 
         return self <= self.algebra.subspace.scalar()
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def is_reoriented_scalar(self) -> bool:
         """A scalar stored against the basis element -1 rather than +1."""
 
         return self.is_scalar and self.output_subspace.signs == (-1,)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def is_empty(self) -> bool:
         """A nullary extensor with no coefficient support."""
 
         return self <= self.algebra.subspace.empty()
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def structural(self) -> GAType:
         """The same axes without explicit trait assertions."""
 
@@ -164,15 +159,13 @@ class GAType:
             for mask in self.output_subspace.masks
         )
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def transposed(self) -> GAType:
         from numga.binding import TypeRules
 
         return TypeRules.operation("transpose", (self,), tuple(reversed(self.subspaces)))
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def nonscalar(self) -> GAType:
         """Nonscalar output support, retaining every open input axis."""
 
@@ -181,8 +174,7 @@ class GAType:
         )
         return self.algebra.gatype((space,) + self.input_subspaces)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def reverse_fixed_subspace(self) -> SubSpace:
         """Output blades fixed by reversal, without widening their support."""
 
@@ -191,15 +183,13 @@ class GAType:
             if self.algebra.reverse_sign(mask) == 1
         )
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def is_study(self) -> bool:
         """A generalized Study number: scalar plus a part with scalar square."""
 
         return self.symmetric_scalar_negation.is_scalar
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def is_scalar_bivector(self) -> bool:
         """Nullary support confined to grades zero and two."""
 
@@ -264,8 +254,7 @@ class GAType:
             for transform in _SELF_PRODUCT_TRANSFORMS
         )
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def inverse_traits(self) -> TraitSet:
         """Facts retained by inversion under its invertible-input contract."""
 
@@ -286,8 +275,7 @@ class GAType:
                 traits.append(ProductFact(fact.self_product, result))
         return TraitSet(traits)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def normalized_traits(self) -> TraitSet:
         """Result facts under the reverse-product normalization contract."""
 
@@ -296,15 +284,14 @@ class GAType:
             self.entails(Versor)
             or self <= spaces.scalar()
             or self <= spaces.vector()
-            or (self.algebra.dimension <= 4 and self <= spaces.even())
+            or (self.algebra.dimension < 6 and self <= spaces.even())
         )
         return TraitSet(
             (ReverseProductOne, Versor) if establishes_versor
             else (ReverseProductOne,)
         )
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def minimal_subalgebra(self) -> GAType:
         """Unital blade-generated carrier used by the general inverse solve."""
 
@@ -330,8 +317,7 @@ class GAType:
 
         return self.effective_traits.entails(required)
 
-    @property
-    @lru_cache(maxsize=None)
+    @cached_property
     def effective_traits(self) -> TraitSet:
         """Explicit facts plus universal facts implied by the carrier."""
 
@@ -518,10 +504,5 @@ def _comparison_gatype(value: object) -> GAType | None:
     if isinstance(value, GAType):
         return value
     if isinstance(value, SubSpace):
-        factory = getattr(value.algebra, "gatype", None)
-        if callable(factory):
-            return factory(value)
-        # Keep directly constructed test/dialect SubSpaces semantically usable
-        # even when their minimal algebra object owns no canonical factory.
-        return GAType((value,))
+        return value.algebra.gatype(value)
     return None

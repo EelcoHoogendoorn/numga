@@ -8,14 +8,11 @@ import pytest
 from numga import Algebra, NumpyContext, ReverseProductNonzero
 
 
-def test_empty_inverse_uses_scalar_zero_reciprocal_and_keeps_batch_shape():
+def test_statically_empty_inverse_raises():
     algebra = Algebra((5, 0, 0))
     empty = NumpyContext(algebra).multivector.empty(np.empty((2, 0)))
-    with np.errstate(divide="ignore"):
-        inverse = empty.inverse()
-    assert inverse.subspace is algebra.subspace.scalar()
-    assert inverse.shape == empty.shape
-    np.testing.assert_array_equal(inverse.kernel, [[np.inf], [np.inf]])
+    with pytest.raises(ZeroDivisionError, match="statically null"):
+        empty.inverse()
 
 
 def test_scalar_reciprocal_does_not_square_large_coefficients():

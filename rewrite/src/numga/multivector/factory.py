@@ -31,7 +31,7 @@ class MultivectorFactory:
     value, while ``rotor`` retains the certified rotor traits.
     """
 
-    __slots__ = ("_context",)
+    __slots__ = ("_context", "__dict__")
 
     def __init__(self, context: "Context") -> None:
         if context is None:
@@ -82,8 +82,12 @@ class MultivectorFactory:
             gatype = self.algebra.gatype(gatype.subspaces, complete_traits)
         return self.context.extensor(gatype, coefficients)
 
-    @lru_cache(maxsize=None)
     def __getattr__(self, name: str) -> Callable[..., Extensor] | Extensor:
+        value = self._resolve_name(name)
+        self.__dict__[name] = value
+        return value
+
+    def _resolve_name(self, name: str) -> Callable[..., Extensor] | Extensor:
         """Bind a declared GAType constructor, or a unit basis blade."""
 
         if name.startswith("_"):

@@ -7,20 +7,21 @@ invertible input; the general matrix fallback is numerical only.
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 from numga.extensor import Extensor
 from numga.gatype import (
     CliffordConjugateProductOne,
     CoefficientOrthogonal,
     GATypePattern,
     ReverseProductOne,
+    ReverseProductZero,
 )
 
 
-@Extensor.inverse.register(lambda t: t <= t.algebra.subspace.empty())
-def inverse_empty(value: Extensor) -> Extensor:
-    """Use scalar-zero reciprocal semantics, preserving the batch shape."""
-
-    return (value + 0).inverse()
+@Extensor.inverse.register(lambda t: t.arity == 0 and t.entails(ReverseProductZero))
+def inverse_null(value: Extensor) -> Extensor:
+    raise ZeroDivisionError("a statically null multivector has no inverse")
 
 
 @Extensor.inverse.register(lambda t: t.entails(ReverseProductOne))
@@ -132,3 +133,29 @@ def inverse_geometric(value: Extensor) -> Extensor:
     return Extensor._from_prepared_kernel(
         value.context, gatype, coefficients,
     )
+
+
+@Extensor.inverse_shirokov.register(GATypePattern(arity=0))
+def inverse_shirokov(value: Extensor) -> Extensor:
+    """Characteristic-polynomial inverse; ill-conditioned at high dimensions."""
+    order = 2 ** ((value.algebra.dimension + 1) // 2)
+    power = value
+    adjugate = value.context.multivector.scalar()
+    for k in range(1, order):
+        adjugate = power - power.select[0] * Fraction(order, k)
+        power = value * adjugate
+    return adjugate / power.select[0]
+
+
+@Extensor.inverse_factor.register(GATypePattern(arity=0))
+def inverse_factor(value: Extensor) -> Extensor:
+    """Hitzer's reverse/conjugate factor; inspect its scalar reduction statically."""
+    return ~value * value.symmetric_reverse_product().clifford_conjugate()
+
+
+@Extensor.inverse_hitzer.register(
+    lambda t: t.arity == 0 and t.symmetric_reverse.symmetric_conjugate.is_scalar
+)
+def inverse_hitzer(value: Extensor) -> Extensor:
+    factor = value.inverse_factor()
+    return factor / value.scalar_product(factor)

@@ -12,8 +12,6 @@ except ImportError:
     HAS_IMAGEIO = False
 
 from numga import Context, Extensor
-from examples.mechanics.rigid_body.core import Body
-
 
 
 def quantize_image(data: np.ndarray, n_colors: int = 32) -> np.ndarray:
@@ -27,17 +25,17 @@ def quantize_image(data: np.ndarray, n_colors: int = 32) -> np.ndarray:
     return palette[indices]
 
 
-def render_chain_2d(bodies: Body, resolution: int = 200, radius: float = 0.08) -> np.ndarray:
+def render_chain_2d(bodies: object, resolution: int = 200, radius: float = 0.08) -> np.ndarray:
     """Render a 2D projection of the rigid body positions."""
-    # Body positions from motor sandwich on origin point
-    context = bodies.motor.context
+    motor = bodies if isinstance(bodies, Extensor) else bodies.motor
+    context = motor.context
     ndim = context.algebra.dimension - 1
     origin_coords = np.zeros(len(context.algebra.subspace.antivector()), dtype=float)
     origin_coords[-1] = 1.0
     origin_pt = context.multivector.antivector(origin_coords)
 
     # World positions of each body link: shape (N_bodies, n_coords)
-    world_pts = bodies.motor.sandwich(origin_pt)
+    world_pts = motor >> origin_pt
     # Extract x and y coordinates
     pts = world_pts.kernel[..., :2]
 

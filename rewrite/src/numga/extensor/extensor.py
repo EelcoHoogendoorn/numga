@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 from numbers import Number
 from operator import index as integer_index
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence, SupportsIndex
 
-from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, _nullary_identity_groups
+from numga.backend.context import binding_context
+from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, nullary_identity_groups
 from numga.extension import ExtensionMethod
 from numga.gatype import GAType, Trait
 from numga.subspace import SubSpace
@@ -41,6 +41,25 @@ class Extensor:
     study_norm = ExtensionMethod("study_norm")
     exp = ExtensionMethod("exp")
     log = ExtensionMethod("log")
+    exp_linear = ExtensionMethod("exp_linear")
+    exp_linear_normalized = ExtensionMethod("exp_linear_normalized")
+    exp_quadratic = ExtensionMethod("exp_quadratic")
+    exp_cayley = ExtensionMethod("exp_cayley")
+    exp_bisect = ExtensionMethod("exp_bisect")
+    log_linear = ExtensionMethod("log_linear")
+    log_linear_normalized = ExtensionMethod("log_linear_normalized")
+    log_quadratic = ExtensionMethod("log_quadratic")
+    log_pade = ExtensionMethod("log_pade")
+    square_root_denman_beavers = ExtensionMethod("square_root_denman_beavers")
+    geometric_mean = ExtensionMethod("geometric_mean")
+    decompose_polar = ExtensionMethod("decompose_polar")
+    decompose_invariant = ExtensionMethod("decompose_invariant")
+    motor_translator = ExtensionMethod("motor_translator")
+    motor_rotor = ExtensionMethod("motor_rotor")
+    motor_split = ExtensionMethod("motor_split")
+    inverse_shirokov = ExtensionMethod("inverse_shirokov")
+    inverse_factor = ExtensionMethod("inverse_factor")
+    inverse_hitzer = ExtensionMethod("inverse_hitzer")
     trace = ExtensionMethod("trace")
     transpose = ExtensionMethod("transpose")
     det = ExtensionMethod("det")
@@ -70,6 +89,8 @@ class Extensor:
     isnan = ExtensionMethod("isnan")
     isfinite = ExtensionMethod("isfinite")
     isinf = ExtensionMethod("isinf")
+    argsort = ExtensionMethod("argsort")
+    argmax = ExtensionMethod("argmax")
     less = ExtensionMethod("less")
     less_equal = ExtensionMethod("less_equal")
     greater = ExtensionMethod("greater")
@@ -164,6 +185,22 @@ class Extensor:
         kernel_index = _batch_kernel_index(index, self.ndim, len(self.axes))
         return type(self)._from_prepared_kernel(self.context, self.gatype, self._kernel[kernel_index])
 
+    def __iter__(self):
+        return (self[index] for index in range(self.shape[0]))
+
+    def __invert__(self) -> Extensor:
+        return self.reverse()
+
+    def formula(self) -> str:
+        """Expand an exact extensor into equations for its blade coefficients."""
+        from numga.operator.format import formula
+        return formula(self)
+
+    def to_python(self, name: str = "apply") -> str:
+        """Generate standalone Python for an exact extensor's coefficient map."""
+        from numga.operator.format import python_code
+        return python_code(self, name)
+
     @property
     def at(self) -> "_AtIndexer":
         return _AtIndexer(self)
@@ -228,12 +265,13 @@ class Extensor:
     ) -> "Extensor":
         values = _collection_values(extensors)
         first = values[0]
+        gatype = TypeRules.collection("stack", axis, tuple(value.gatype for value in values))
         logical_axis = _insertion_axis(axis, first.ndim)
         kernel = first.context.xp.stack(
-            tuple(value._kernel for value in values),
+            tuple(_embed_kernel(first.context, value, gatype.subspaces) for value in values),
             axis=logical_axis,
         )
-        return cls._from_prepared_kernel(first.context, first.gatype, kernel)
+        return cls._from_prepared_kernel(first.context, gatype, kernel)
 
     @classmethod
     def concatenate(
@@ -243,12 +281,13 @@ class Extensor:
     ) -> "Extensor":
         values = _collection_values(extensors)
         first = values[0]
+        gatype = TypeRules.collection("concatenate", axis, tuple(value.gatype for value in values))
         logical_axis = _existing_axis(axis, first.ndim)
         kernel = first.context.xp.concatenate(
-            tuple(value._kernel for value in values),
+            tuple(_embed_kernel(first.context, value, gatype.subspaces) for value in values),
             axis=logical_axis,
         )
-        return cls._from_prepared_kernel(first.context, first.gatype, kernel)
+        return cls._from_prepared_kernel(first.context, gatype, kernel)
 
     def bind(self, *args: Extensor | Mapping[int, Extensor]) -> Extensor:
         raw_operands = normalize_bind_arguments(self.arity, args)
@@ -258,7 +297,7 @@ class Extensor:
         plan = BindingPlan.build(self.gatype, raw_operands)
         operands: dict[int, Extensor] = {}
         prepared_operands: dict[int, Extensor] = {}
-        context = _binding_context(
+        context = binding_context(
             self.context, tuple(raw_operands[slot].context for slot in plan.slots),
         )
         target = self
@@ -298,7 +337,7 @@ class Extensor:
         execute = application(
             type(self), self._context, self._gatype,
             tuple((operand._context, operand._gatype) for operand in operands),
-            _nullary_identity_groups(tuple(enumerate(operands))),
+            nullary_identity_groups(tuple(enumerate(operands))),
         )
         return execute(self, *operands)
 
@@ -686,23 +725,6 @@ def _promote_identity(value: object) -> object:
     return value
 
 
-@lru_cache(maxsize=None)
-def _binding_context(
-    target: Context,
-    operands: tuple[Context, ...],
-) -> "Context":
-    """Resolve context compatibility once per static context signature."""
-
-    concrete = tuple(context for context in (target,) + operands if not context.is_exact)
-    if not concrete:
-        return target
-
-    context = concrete[0]
-    if any(not other.is_compatible_with(context) for other in concrete[1:]):
-        raise ValueError("all concrete operands must use compatible Contexts")
-    return context
-
-
 def _common_context(left: Extensor, right: Extensor) -> "Context":
     if left.context.is_compatible_with(right.context):
         return left.context
@@ -767,7 +789,8 @@ def _collection_values(extensors: Iterable[Extensor]) -> tuple[Extensor, ...]:
     values = tuple(extensors)
     first = values[0]
     for value in values[1:]:
-        first._require_compatible(value)
+        if not first.context.is_compatible_with(value.context):
+            raise ValueError("Extensor contexts are incompatible")
     return values
 
 

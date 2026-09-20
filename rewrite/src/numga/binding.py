@@ -123,7 +123,7 @@ class BindingPlan:
         return cls.from_types(
             target_gatype,
             tuple((slot, operand.gatype) for slot, operand in normalized),
-            _nullary_identity_groups(normalized),
+            nullary_identity_groups(normalized),
         )
 
     @classmethod
@@ -287,6 +287,21 @@ class TypeRules:
         if not operand_gatypes:
             raise ValueError("collection inference requires at least one operand")
         first = operand_gatypes[0]
+        if operation in {"stack", "concatenate"}:
+            if all(gatype == first for gatype in operand_gatypes[1:]):
+                return first
+            output = first.output_subspace
+            common_traits = set(first.effective_traits.closure)
+            for gatype in operand_gatypes[1:]:
+                if gatype.input_subspaces != first.input_subspaces:
+                    raise ValueError("collection inference requires equal input axes")
+                output = output.union(gatype.output_subspace)
+                common_traits.intersection_update(gatype.effective_traits.closure)
+            # Whole-value facts survive zero embedding of multivectors. Map
+            # properties such as orthogonality need their original codomain.
+            if first.arity and any(g.output_subspace != output for g in operand_gatypes):
+                common_traits.clear()
+            return first.algebra.gatype((output,) + first.input_subspaces, common_traits)
         if any(
             gatype.subspaces != first.subspaces
             for gatype in operand_gatypes[1:]
@@ -297,8 +312,6 @@ class TypeRules:
             "index",
             "reshape",
             "broadcast_to",
-            "stack",
-            "concatenate",
         }:
             if any(gatype != first for gatype in operand_gatypes[1:]):
                 raise ValueError(
@@ -345,7 +358,7 @@ def normalize_bind_arguments(
     return dict(enumerate(args))
 
 
-def _nullary_identity_groups(
+def nullary_identity_groups(
     normalized: tuple[tuple[int, HasGAType], ...],
 ) -> tuple[tuple[int, ...], ...]:
     slots_by_identity: dict[int, list[int]] = {}

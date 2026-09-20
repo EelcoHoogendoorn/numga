@@ -141,6 +141,109 @@ def test_rank_deficient_least_squares_has_minimum_norm(context):
     np.testing.assert_allclose(inverse(operator(inverse)).kernel, inverse.kernel, atol=2e-6)
 
 
+def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(context):
+    ga = context.algebra
+    output, first, retained, last = (
+        ga.subspace.vector(), ga.subspace("x y"), ga.subspace.bivector(), ga.subspace("-z x"),
+    )
+    rng = np.random.default_rng(7)
+    matrix = rng.normal(size=(2, 1, 9, 4))
+    matrix[..., 3] = 2 * matrix[..., 0]
+    # Equations are (output, retained); unknowns are (first, last).
+    coefficients = matrix.reshape(2, 1, 3, 3, 2, 2).transpose(0, 1, 2, 4, 3, 5)
+    operator = context.extensor(ga.gatype((output, first, retained, last)), coefficients)
+    rhs_coefficients = rng.normal(size=(1, 4, 3, 3))
+    rhs = context.extensor(ga.gatype((output, retained)), rhs_coefficients)
+    rhs = rhs.cast(ga.subspace("z -x y"))(ga.operator.identity(ga.subspace("yz -xy xz")))
+    solution = operator.lstsq(rhs, rcond=1e-5)
+    expected = np.linalg.pinv(matrix, rcond=1e-5) @ rhs_coefficients.reshape(1, 4, 9, 1)
+    assert solution.axes == (first, last)
+    assert solution.shape == (2, 4)
+    np.testing.assert_allclose(solution.kernel, expected.reshape(2, 4, 2, 2), atol=2e-6)
+
+
+@pytest.mark.parametrize("selected", [(2,), (1, 2, 3)])
+def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
+    ga = context.algebra
+    axes = (ga.subspace.vector(), ga.subspace("x y"), ga.subspace("-z y"), ga.subspace("xy xz"))
+    rng = np.random.default_rng(9)
+    coefficients = rng.normal(size=(3, 2, 2, 2))
+    operator = context.extensor(ga.gatype(axes), coefficients)
+    retained = tuple(axis for axis in range(4) if axis not in selected)
+    rhs_type = ga.gatype(tuple(axes[axis] for axis in retained))
+    rhs = context.extensor(rhs_type, rng.normal(size=rhs_type.structural_shape))
+    solution = operator.lstsq(rhs, rcond=1e-5)
+    matrix = coefficients.transpose(retained + selected).reshape(-1, 2 ** len(selected))
+    expected = np.linalg.lstsq(matrix, np.asarray(rhs.kernel).reshape(-1), rcond=1e-5)[0]
+    assert solution.axes == tuple(axes[axis] for axis in selected)
+    assert solution.arity == len(selected) - 1
+    np.testing.assert_allclose(solution.kernel, expected.reshape((2,) * len(selected)), atol=2e-6)
+
+
+@pytest.mark.parametrize("input_slots,rhs_slots", [
+    (("x y", "x y", "xy xz"), ("x y",)),    # Repeated-type ambiguity.
+    (("x y", "-y x", "xy xz"), ("x",)),    # Ambiguous lossless embedding.
+    (("x y", "xy xz"), ("1 z",)),           # Same size, incompatible support.
+    (("x y", "xy xz"), ("x y z",)),         # Would require lossy projection.
+    (("x y", "z", "xy xz"), ("xy xz", "x y")),  # Wrong relative order.
+    (("x y", "xy xz"), ("x y", "xy xz")),  # Leaves no unknown slots.
+    (("x y", "xy xz"), ("x y", "xy xz", "1")),
+])
+def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_slots, rhs_slots):
+    ga = Algebra("x+y+z0")
+    context = NumpyContext(ga)
+    scalar = ga.subspace.scalar()
+    operator_type = ga.gatype((scalar,) + tuple(ga.subspace(slot) for slot in input_slots))
+    operator = context.extensor(operator_type, np.ones(operator_type.structural_shape))
+    rhs_type = ga.gatype((scalar,) + tuple(ga.subspace(slot) for slot in rhs_slots))
+    rhs = context.extensor(rhs_type, np.ones(rhs_type.structural_shape))
+    with pytest.raises(TypeError):
+        operator.lstsq(rhs)
+
+
+def test_grouped_lstsq_infers_lossless_rhs_embedding(context):
+    ga = context.algebra
+    scalar, plane, bivector = ga.subspace.scalar(), ga.subspace("x y"), ga.subspace("xy xz")
+    operator = context.extensor(ga.gatype((scalar, bivector, plane)), np.eye(2)[None])
+    rhs = context.extensor(ga.gatype((scalar, ga.subspace("-y"))), [[3]])
+    solution = operator.lstsq(rhs)
+    assert solution.axes == (bivector,)
+    np.testing.assert_allclose(solution.kernel, [0, -3], atol=2e-6)
+
+
+@pytest.mark.parametrize("method", ["solve", "lstsq"])
+def test_symbolic_linear_operator_uses_rhs_context(context, method):
+    identity = context.algebra.operator.identity(context.algebra.subspace.vector())
+    rhs = context.multivector.vector([[1, 2, 3], [4, 5, 6]])
+    solution = getattr(identity, method)(rhs)
+    assert solution.context is context
+    np.testing.assert_allclose(solution.kernel, rhs.kernel, atol=2e-6)
+
+
+def test_symbolic_grouped_lstsq_uses_rhs_context(context):
+    vector = context.algebra.gatype.vector()
+    rhs = context.multivector.scalar([[2], [4]])
+    solution = (vector | vector).lstsq(rhs)
+    expected = np.array([1, 2])[:, None, None] * np.diag([1, 1, 0])[None]
+    assert solution.axes == (vector.output_subspace, vector.output_subspace)
+    assert solution.context is context
+    np.testing.assert_allclose(solution.kernel, expected, atol=2e-6)
+
+
+@pytest.mark.parametrize("method", ["eig", "eigh", "eigvals", "eigvalsh"])
+def test_symbolic_generalized_eigenproblem_uses_metric_context(method):
+    pytest.importorskip("scipy")
+    ga = Algebra("x+y+z0")
+    context = NumpyContext(ga)
+    vector = ga.gatype.vector()
+    form = vector | vector
+    metric = context.extensor(form.gatype, np.diag([2, 4, 3])[None])
+    result = getattr(form, method)(metric)
+    values = result[0] if method in ("eig", "eigh") else result
+    assert isinstance(values.context, NumpyContext)
+    np.testing.assert_allclose(np.sort_complex(values.to_array()), [0, 0.25, 0.5], atol=1e-12)
+
+
 @pytest.mark.parametrize("arity", [0, 1, 2, 3])
 @pytest.mark.parametrize("method", ["solve", "lstsq"])
 def test_solutions_preserve_all_rhs_slots_and_broadcast_batches(context, arity, method):

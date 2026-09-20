@@ -11,6 +11,18 @@ def to_array(value: Extensor) -> Any:
     return value.cast(value.algebra.subspace.scalar()).kernel[..., 0]
 
 
+@Extensor.argsort.register(lambda g: g.is_scalar)
+def argsort(value: Extensor, *args: Any, **kwargs: Any) -> Any:
+    """Return backend integer indices sorting scalar values over batch axes."""
+    return value.context.xp.argsort(value.to_array(), *args, **kwargs)
+
+
+@Extensor.argmax.register(lambda g: g.is_scalar)
+def argmax(value: Extensor, *args: Any, **kwargs: Any) -> Any:
+    """Return backend indices of maximal scalar values over batch axes."""
+    return value.context.xp.argmax(value.to_array(), *args, **kwargs)
+
+
 def _function(name):
     def apply(value: Extensor) -> Extensor:
         value = value.cast(value.algebra.subspace.scalar())
