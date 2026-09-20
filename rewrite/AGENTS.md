@@ -38,6 +38,12 @@ follow them exactly.
 - Checks are kernel-level assertions in one labelled block at the end of `main`.
 - Do not touch comments or docstrings unasked. Group functions on the type they belong to
   (`Bodies.join`), do not pollute the module namespace.
+- Public-facing code and documentation must stand on their own. Explain the mathematics,
+  behavior, and relevant design decisions; never narrate the editing process, refer to the
+  conversation, or advertise compliance with instructions. Such commentary makes readers
+  interpret our workflow instead of helping them understand the subject. Keep it in chat
+  or review discussion. For example, label a block `checks`, not `kernel-level assertions,
+  deliberately outside the demonstration`.
 
 ## Running
 

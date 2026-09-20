@@ -10,6 +10,8 @@ joint is the pairing of the carried axis with that forque. No transpose is ever 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -19,6 +21,7 @@ from numga.algebras import PGA3D
 from examples import PLOT_DIR
 from examples.animation import capture, save_gif
 
+# --- scenario algebra -----------------------------------------------------------------
 ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
@@ -28,17 +31,71 @@ Motor = ga.gatype.rotor()
 Scalar = ga.gatype.scalar()
 
 
-# --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    return mv.antivector(np.concatenate([coords, np.ones_like(coords[..., :1])], axis=-1))
+# --- math -----------------------------------------------------------------------------
 
 
-def direction(coords: np.ndarray) -> Point:
-    return mv.antivector(np.concatenate([coords, np.zeros_like(coords[..., :1])], axis=-1))
+def forward_kinematics(joints: Line) -> tuple[Motor, Motor]:
+    """Return the tip pose and the frame before each joint's rotation."""
+    pose, frames = mv.rotor(), []
+    for step in (joints * 0.5).exp():
+        frames.append(pose)
+        pose = pose * step
+    return pose, Extensor.stack(frames)
+
+
+def mechanics(joints: Line, axis: Line, rates: Line, tip_home: Point,
+              forque: Line) -> tuple[Point, Scalar]:
+    """Compute tip velocity and joint torques at the supplied configuration."""
+    pose, frames = forward_kinematics(joints)
+    tip = pose >> tip_home
+
+    # Carry each joint's rate into its frame and sum to get the world twist.
+    # Its commutator with the tip gives the tip velocity.
+    twist = (frames >> rates).sum(axis=0)
+    velocity = twist.commutator(tip)
+
+    # Pair each carried axis with the applied forque: work per unit joint rate.
+    joint_torques = (frames >> axis) & forque
+    return velocity, joint_torques
+
+
+def inverse_kinematics(joints: Line, axis: Line, tip_home: Point, target: Point,
+                       iterations: int) -> tuple[Line, Motor, Point]:
+    """Solve towards a target; return updated joints, link poses and the tip."""
+    for _ in range(iterations):
+        pose, frames = forward_kinematics(joints)
+        tip = pose >> tip_home
+        columns = (frames >> axis).commutator(tip)  # Tip velocity per unit rate, per joint.
+        # Fit the desired tip displacement as a weighted sum of these velocities;
+        # apply those weights as joint increments along the original axes.
+        joints = joints + axis * least_squares(columns, target - tip)
+    pose, frames = forward_kinematics(joints)
+    link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])  # Frame after each joint.
+    return joints, link_motors, pose >> tip_home
+
+
+def track(joints: Line, axis: Line, tip_home: Point, targets: Point,
+          iterations: np.ndarray) -> Iterator[tuple[Line, Motor, Point, Point]]:
+    """Follow targets, yielding joints, link poses, target and tip after each solve."""
+    for target, count in zip(targets, iterations):
+        joints, link_motors, tip = inverse_kinematics(joints, axis, tip_home, target, count)
+        yield joints, link_motors, target, tip
+
+
+# --- plumbing: numerical solve --------------------------------------------------------
+
+
+def least_squares(columns: Point, delta: Point) -> Scalar:
+    """The scalars, one per column, whose weighted sum of the columns best matches delta."""
+    rhs = delta.cast(columns.output_subspace).kernel
+    return mv.scalar(np.linalg.lstsq(columns.kernel.T, rhs, rcond=None)[0][:, None])
+
+
+# --- plotting -------------------------------------------------------------------------
 
 
 def euclidean(points: Point) -> np.ndarray:
-    k = points.cast(ga.subspace.antivector()).kernel
+    k = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
     return k[..., :3] / k[..., 3:]
 
 
@@ -64,19 +121,14 @@ def draw_arm(ax, boxes: Point, target: Point, trail: list[np.ndarray]) -> None:
     ax.view_init(elev=22, azim=-50)
 
 
-def least_squares(columns: Point, delta: Point) -> Scalar:
-    """The scalars, one per column, whose weighted sum of the columns best matches delta."""
-    rhs = delta.cast(columns.output_subspace).kernel
-    return mv.scalar(np.linalg.lstsq(columns.kernel.T, rhs, rcond=None)[0][:, None])
-
-
-def draw_tracking(states, animation_path: str) -> None:
+def draw_tracking(states, boxes_home: Point, animation_path: str) -> None:
     """Render the link geometry and tip trail after solving the tracking motion."""
     if animation_path:
         fig = plt.figure(figsize=(5, 5), dpi=100)
         ax = fig.add_subplot(projection="3d")
         frames_out, trail = [], []
-        for boxes, target, tip in states:
+        for _, link_motors, target, tip in states:
+            boxes = link_motors[:, None] >> boxes_home
             trail.append(euclidean(tip))
             draw_arm(ax, boxes, target, trail)
             frames_out.append(capture(fig))
@@ -84,7 +136,17 @@ def draw_tracking(states, animation_path: str) -> None:
         save_gif(frames_out, animation_path, duration_ms=50)
 
 
-# --- math -----------------------------------------------------------------------------
+# --- scenario -------------------------------------------------------------------------
+
+
+def point(coords: np.ndarray) -> Point:
+    return mv("yzw zxw xyw", coords) + mv.zyx
+
+
+def direction(coords: np.ndarray) -> Point:
+    return mv("yzw zxw xyw", coords)
+
+
 def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y.
     origin = point(np.zeros(3))
@@ -98,68 +160,33 @@ def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:
     boxes_home = link_boxes(3, width=0.15, depth=0.06)
 
     rest = Extensor.stack([yaw * 0.3, pitch_1 * 0.5, pitch_2 * 0.8])   # joint state: axis times angle
-    pose, frames = mv.rotor(), []
-    for step in (rest * 0.5).exp():
-        frames.append(pose)
-        pose = pose * step
-    frames = Extensor.stack(frames)
-    tip = pose >> tip_home                                         # the tip carried by the pose
-
-    # 1. Velocities. Joint rates are bivectors along the axes; carried into their frames and
-    #    summed they are the world twist, and the tip velocity is its commutator with the tip.
     rates = Extensor.stack([yaw * 0.5, pitch_1 * -1.0, pitch_2 * 0.25])   # joint rates: axis times angular rate
-    twist = (frames >> rates).sum(axis=0)                          # each rate carried into its frame, summed
-    velocity = twist.commutator(tip)                               # how the tip moves under the twist
-
-    # 2. Statics. A force applied at a point is a forque: the join of the point with the
-    #    weighted direction. Pairing a joint's carried axis with the forque gives a scalar, the
-    #    work the load does per unit joint rate: the torque on that revolute joint.
+    # A force at a point is a forque: join that point with the weighted direction.
     forque = point(np.array([1.0, 0.0, 3.0])) & direction(np.array([0.0, 2.0, -1.0]))
-    joint_torques = (frames >> axis) & forque                      # carried axes paired with the load
 
-    # 3. Inverse kinematics. The commutator of each carried axis with the tip is the tip
-    #    velocity per unit rate of that joint; the least-squares weights of those velocities
-    #    are the joint steps along the axes. The remaining error is the length of the join of
-    #    tip and target.
-    target = point(np.array([1.0, 1.5, 1.2]))
-    joints = rest
-    for iteration in range(8):
-        pose, frames = mv.rotor(), []
-        for step in (joints * 0.5).exp():
-            frames.append(pose)
-            pose = pose * step
-        frames = Extensor.stack(frames)
-        tip = pose >> tip_home
-        columns = (frames >> axis).commutator(tip)                 # tip velocity per unit rate, per joint
-        joints = joints + axis * least_squares(columns, target - tip)   # Newton step along the axes
-        error = (target & tip).norm()                              # distance: the norm of the join
-        print(f"iteration {iteration}: tip error {error.kernel[0]:.2e}")
-    print("joint torques:", np.round(joint_torques.kernel[:, 0], 4))
-    print("final joint angles:", np.round(((joints | axis) / (axis | axis)).kernel[:, 0], 4))   # angle = joint projected on its axis
-
-    # 4. Tracking. The target runs around a loop starting where the solver left the tip; two
-    #    of the same steps per frame keep the tip on it. Each link's box is carried by the
-    #    frame after its joint, so the motors themselves are visible, not only the joint points.
+    # Home at the start of the path, then follow the loop with two steps per frame.
     t = np.linspace(0.0, 2 * np.pi, 72, endpoint=False)
     targets = point(np.stack([1.0 + 0.5 * np.sin(t), 1.0 + 0.5 * np.cos(t), 1.2 + 0.3 * np.sin(2 * t)], axis=-1))
-    states = []
-    for target in targets:
-        for _ in range(2):
-            pose, frames = mv.rotor(), []
-            for step in (joints * 0.5).exp():
-                frames.append(pose)
-                pose = pose * step
-            frames = Extensor.stack(frames)
-            tip = pose >> tip_home
-            joints = joints + axis * least_squares((frames >> axis).commutator(tip), target - tip)
-        link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])   # frame after each joint
-        states.append((link_motors.reshape(3, 1) >> boxes_home, target, tip))
-    draw_tracking(states, animation_path)
+    targets = Extensor.concatenate([targets[:1], targets])
+    iterations = np.full(targets.shape, 2)
+    iterations[0] = 8
 
-    # --- checks: kernel-level assertions, deliberately outside the demonstration ----------
+    velocity, joint_torques = mechanics(rest, axis, rates, tip_home, forque)
+    states = track(rest, axis, tip_home, targets, iterations)
+    joints, _, target, tip = next(states)                           # the homed state
+    error = (target & tip).norm()                                  # distance: the norm of the join
+    angles = (joints | axis) / (axis | axis)                        # angle = joint projected on its axis
+    draw_tracking(list(states), boxes_home, animation_path)
+
+    # --- readout -----------------------------------------------------------------------
+    print(f"homing tip error: {error.kernel[0]:.2e}")
+    print("joint torques:", np.round(joint_torques.kernel[:, 0], 4))
+    print("final joint angles:", np.round(angles.kernel[:, 0], 4))
+
+    # --- checks ------------------------------------------------------------------------
     steps = (Extensor.stack((rest + rates * 1e-6, rest)) * 0.5).exp()
     poses = mv.rotor()
-    for index in range(3):
+    for index in range(axis.shape[0]):
         poses = poses * steps[:, index]
     finite = (poses[0] >> tip_home) - (poses[1] >> tip_home)
     np.testing.assert_allclose((velocity * 1e-6 - finite).kernel, 0.0, atol=1e-10)

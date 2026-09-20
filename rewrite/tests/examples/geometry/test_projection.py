@@ -4,27 +4,28 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.geometry.projection import Camera, Correspondence, ga, main
-from examples.geometry.projection_plumbing import (
-    Line,
-    Plane,
+from examples.geometry.projection import core
+from examples.geometry.projection.scenarios import (
     Point,
-    direction,
+    ga,
+    mv,
     origin,
-    plane,
-    point,
-    rotator,
-    screen_coordinates,
-    translator,
 )
+from examples.geometry.projection.render import screen_coordinates
+from examples.geometry.projection.scenarios import cube, direction, main, point, projection_figure
+
+Line = ga.gatype.antibivector()
+Plane = ga.gatype.vector()
+Camera = ga.gatype((Point, Point))
+Correspondence = ga.gatype((ga.gatype.pseudoscalar(), Point, Point))
 
 
 def dehomogenize(p: Point) -> np.ndarray:
-    k = p.kernel
+    k = p.cast(ga.subspace("yzw zxw xyw zyx")).kernel
     return k[..., :3] / k[..., 3:]
 
 
-SCREEN = plane(np.array([0.0, 0.0, 1.0]), 1.0)
+SCREEN = mv.z - mv.w
 
 
 def test_pinhole_image_is_perspective_division():
@@ -68,7 +69,7 @@ def test_ternary_projector_binds_to_camera():
 
 def test_ideal_centre_is_orthographic():
     """A centre at infinity projects along a fixed direction: shadows of a distant sun."""
-    ground = plane(np.array([0.0, 0.0, 1.0]), 0.0)
+    ground = mv.z
     straight_down = direction(np.array([0.0, 0.0, -1.0])).regressive(Point).wedge(ground)
     world = point(np.array([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0]]))
     np.testing.assert_allclose(dehomogenize(straight_down(world)), [[1.0, 2.0, 0.0], [-3.0, 0.5, 0.0]], atol=1e-14)
@@ -87,20 +88,20 @@ def test_batched_centres_give_batched_cameras():
     np.testing.assert_allclose(dehomogenize(cameras(world)), [[-0.125, 0.5, 1.0], [0.625, 0.5, 1.0]], atol=1e-14)
 
 
-def test_translator_and_rotator_directions():
+def test_bivector_exponentials_translate_and_rotate():
     """The translator adds its displacement; the rotator is right-handed about its axis."""
-    moved = translator(np.array([1.0, -2.0, 0.5])) >> point(np.array([1.0, 2.0, 3.0]))
+    moved = (mv.xw * 0.5 - mv.yw + mv.zw * 0.25).exp() >> point(np.array([1.0, 2.0, 3.0]))
     np.testing.assert_allclose(dehomogenize(moved), [2.0, 0.0, 3.5], atol=1e-14)
 
     y_axis = origin.regressive(direction(np.array([0.0, 1.0, 0.0]))).normalized()
-    turned = rotator(y_axis, np.pi / 2.0) >> point(np.array([1.0, 0.0, 0.0]))
+    turned = (y_axis * (np.pi / 4.0)).exp() >> point(np.array([1.0, 0.0, 0.0]))
     np.testing.assert_allclose(dehomogenize(turned), [0.0, 0.0, -1.0], atol=1e-9)
 
 
 def test_moving_the_rig_equals_moving_centre_and_screen():
     """Transforming the camera map by a motor equals building it from transformed parts."""
     y_axis = origin.regressive(direction(np.array([0.0, 1.0, 0.0]))).normalized()
-    motor = translator(np.array([0.4, -0.3, 2.0])) * rotator(y_axis, 0.7)
+    motor = (mv.xw * 0.2 - mv.yw * 0.15 + mv.zw).exp() * (y_axis * 0.35).exp()
     camera = origin.regressive(Point).wedge(SCREEN)
     moved = motor >> camera(motor << Point)
     rebuilt = (motor >> origin).regressive(Point).wedge(motor >> SCREEN)
@@ -118,8 +119,8 @@ def test_line_camera_commutes_with_join():
     line_camera = centre.regressive(Line).wedge(SCREEN)
     a = point(np.array([1.0, 0.0, 2.0]))
     b = point(np.array([0.0, 1.0, 3.0]))
-    imaged_join = line_camera(a.regressive(b)).kernel
-    joined_images = camera(a).regressive(camera(b)).kernel
+    imaged_join = line_camera(a.regressive(b)).cast(Line.output_subspace).kernel
+    joined_images = camera(a).regressive(camera(b)).cast(Line.output_subspace).kernel
     support = np.abs(joined_images) > 1e-9
     scale = imaged_join[support][0] / joined_images[support][0]
     np.testing.assert_allclose(imaged_join, joined_images * scale, atol=1e-14)
@@ -150,10 +151,52 @@ def test_fundamental_form_and_epipolar_geometry():
     np.testing.assert_allclose(lines_2.regressive(epipole_2).kernel, 0.0, atol=1e-14)
 
 
-def test_tutorial_runs_and_saves(tmp_path):
-    """The tutorial's inline checks pass and it writes its figure."""
+def test_shadow_trail_agrees_with_the_body_shadow():
+    """Reopening the light slot reproduces the corner's shadow under the bound light."""
+    body = cube(1.0)
+    ground = mv.z
+    light = point(np.array([1.0, -1.0, 4.0]))
+    sun = direction(np.array([-1.0, 0.6, -2.5]))
+    point_shadow, _, shadow_trail = core.shadows(body, ground, light, sun, body[7], light)
+    np.testing.assert_allclose(
+        shadow_trail.kernel, point_shadow[7].kernel, atol=1e-14
+    )
+
+
+def test_stereo_correspondence_and_epipolar_lines_vanish():
+    """Corresponding images annihilate the form, and epipolar lines meet their points."""
+    subject = (mv.zw * 2.5).exp() >> cube(1.6)
+    screen = mv.z - mv.w
+    rig_1 = (mv.xw * -0.3).exp() * (mv.xz * +0.06).exp()
+    rig_2 = (mv.xw * +0.3).exp() * (mv.xz * -0.06).exp()
+    image_1, image_2, epipole_2, epipolar_lines_2, correspondence = core.stereo(subject, origin, screen, rig_1, rig_2)
+
+    np.testing.assert_allclose(correspondence(image_1, image_2).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(correspondence.bind({1: epipole_2}).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(epipolar_lines_2.regressive(image_2).kernel, 0.0, atol=1e-12)
+
+
+def test_mathematics_does_not_import_plotting():
+    """The math layer must stay free of the plotting stack, transitively."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import examples.geometry.projection.core as c, sys; "
+        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
+        "print(bad)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
+
+
+def test_scenario_runs_and_saves(tmp_path):
+    """The scenario wires math to render and writes its figure."""
     import matplotlib
     matplotlib.use("Agg")
     out = tmp_path / "projection.png"
-    main(plot_path=str(out))
+    projection_figure(plot_path=str(out))
     assert out.exists()
+    main(plot_path=str(tmp_path / "again.png"))
