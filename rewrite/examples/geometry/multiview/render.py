@@ -160,6 +160,47 @@ def draw_ellipse_2d(
     ax.plot(x_pts, z_pts, color=color, alpha=edge_alpha, linewidth=linewidth, zorder=3)
 
 
+def project_quadric_xz(q_mat: np.ndarray) -> np.ndarray:
+    """Project a 4x4 homogeneous quadric to 3x3 in (x, z, w) via Schur complement on y."""
+    idx = [0, 2, 3]
+    q_sub = q_mat[np.ix_(idx, idx)]
+    q_col = q_mat[idx, 1:2]
+    q_yy = q_mat[1, 1]
+    if abs(q_yy) < 1e-12:
+        return q_sub
+    return q_sub - (q_col @ q_col.T) / q_yy
+
+
+def draw_implicit_conic_2d(
+    ax: Axes,
+    q_mat_xz: np.ndarray,
+    x_grid: np.ndarray,
+    z_grid: np.ndarray,
+    level: float,
+    color: str,
+    alpha_fill: float = 0.10,
+    alpha_edge: float = 0.40,
+    linewidth: float = 1.0,
+    z_min: float | None = None,
+    zorder_fill: int = 2,
+    zorder_edge: int = 3,
+) -> None:
+    """Render a 2D quadric level set f(x, z) <= level as shaded fill and contour edge."""
+    pts = np.stack([x_grid, z_grid, np.ones_like(x_grid)], axis=-1)
+    val = np.einsum("...i,ij,...j->...", pts, q_mat_xz, pts).copy()
+    if z_min is not None:
+        val[z_grid < z_min] = np.nan
+
+    ax.contourf(
+        x_grid, z_grid, val,
+        levels=[0, level], colors=[color], alpha=alpha_fill, zorder=zorder_fill,
+    )
+    ax.contour(
+        x_grid, z_grid, val,
+        levels=[level], colors=[color], linewidths=linewidth, alpha=alpha_edge, zorder=zorder_edge,
+    )
+
+
 def draw_top_down_view(
     ax: Axes,
     cams_true: np.ndarray,
@@ -169,6 +210,8 @@ def draw_top_down_view(
     covariances: np.ndarray,
     cam_colors: list[str],
     rots_est: list[np.ndarray] | None = None,
+    world_cones: np.ndarray | None = None,
+    fused_quadrics: np.ndarray | None = None,
 ) -> None:
     """Render top-down floorplan (X vs Z depth) of camera constellation and landmarks."""
     # Cameras: draw FOV wedge triangle with sensor plane and optical axis
@@ -179,47 +222,78 @@ def draw_top_down_view(
         if idx > 0:
             ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0, zorder=6)
 
-    # 2D Gaussian uncertainty ellipses in the X-Z depth plane:
-    for pt, cov in zip(points_est, covariances):
-        cov_xz = np.array([
-            [cov[0, 0], cov[0, 2]],
-            [cov[2, 0], cov[2, 2]],
-        ])
-        draw_ellipse_2d(ax, pt[[0, 2]], cov_xz, scale_factor=0.08, color="#0ea5e9", alpha=0.18)
-    ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian 1σ ellipse (X–Z)")
+    # If perspective cone quadrics are available, render ray conics and splats implicitly:
+    if world_cones is not None:
+        x_grid = np.linspace(-1.30, 1.30, 260)
+        z_grid = np.linspace(-0.35, 4.85, 260)
+        X, Z = np.meshgrid(x_grid, z_grid)
+        level = 0.018
+
+        n_points, n_cams = world_cones.shape[:2]
+        for p_idx in range(n_points):
+            for c_idx in range(n_cams):
+                q_cone_xz = project_quadric_xz(world_cones[p_idx, c_idx])
+                col = cam_colors[c_idx % len(cam_colors)]
+                draw_implicit_conic_2d(
+                    ax, q_cone_xz, X, Z, level=level, color=col,
+                    alpha_fill=0.08, alpha_edge=0.35, linewidth=0.75,
+                    z_min=cams_est[c_idx, 2] + 0.15,
+                    zorder_fill=2, zorder_edge=2,
+                )
+
+            if fused_quadrics is not None:
+                q_fused_xz = project_quadric_xz(fused_quadrics[p_idx])
+                draw_implicit_conic_2d(
+                    ax, q_fused_xz, X, Z, level=level, color="#10b981",
+                    alpha_fill=0.35, alpha_edge=0.90, linewidth=1.5,
+                    zorder_fill=4, zorder_edge=5,
+                )
+
+        for c_idx in range(n_cams):
+            col = cam_colors[c_idx % len(cam_colors)]
+            ax.plot([], [], color=col, linewidth=1.2, alpha=0.6, label=rf"Cam {c_idx} ray conic ($P^T Q_{c_idx} P \leq c$)")
+        ax.plot([], [], color="#059669", linewidth=1.6, label=r"Fused splat ($P^T \sum Q_c P \leq c$)")
+    else:
+        # Fallback: 2D Gaussian uncertainty ellipses in the X-Z depth plane
+        for pt, cov in zip(points_est, covariances):
+            cov_xz = np.array([
+                [cov[0, 0], cov[0, 2]],
+                [cov[2, 0], cov[2, 2]],
+            ])
+            draw_ellipse_2d(ax, pt[[0, 2]], cov_xz, scale_factor=0.08, color="#0ea5e9", alpha=0.18)
+        ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian 1σ ellipse (X–Z)")
+
+        for c_idx in range(len(cams_est)):
+            cam_col = cam_colors[c_idx % len(cam_colors)]
+            for pt in points_est:
+                ax.plot(
+                    [cams_est[c_idx, 0], pt[0]],
+                    [cams_est[c_idx, 2], pt[2]],
+                    color=cam_col,
+                    linestyle=":",
+                    alpha=0.30,
+                    linewidth=0.9,
+                    zorder=1,
+                )
 
     # Landmarks:
     ax.scatter(
         points_true[:, 0], points_true[:, 2],
-        color="#94a3b8", s=35, marker="o", alpha=0.6, zorder=4, label="Ground truth landmarks",
+        color="#94a3b8", s=35, marker="o", alpha=0.6, zorder=6, label="Ground truth landmarks",
     )
     ax.scatter(
         points_est[:, 0], points_est[:, 2],
-        color="#10b981", s=50, marker="*", zorder=4, label="Triangulated landmarks",
+        color="#059669", s=55, marker="*", zorder=7, label="Triangulated landmarks",
     )
-
-    # Sight lines from all cameras to all landmarks:
-    for c_idx in range(len(cams_est)):
-        cam_col = cam_colors[c_idx % len(cam_colors)]
-        for pt in points_est:
-            ax.plot(
-                [cams_est[c_idx, 0], pt[0]],
-                [cams_est[c_idx, 2], pt[2]],
-                color=cam_col,
-                linestyle=":",
-                alpha=0.30,
-                linewidth=0.9,
-                zorder=1,
-            )
 
     ax.set_aspect("equal")
     ax.set_xlim(-1.30, 1.30)
     ax.set_ylim(-0.35, 4.85)
-    ax.set_title("Top-Down Geometry (X–Z Depth Plane)\nCamera FOV wedges, sight rays & depth-elongated splat ellipses", fontsize=11, pad=10)
+    ax.set_title("Top-Down Geometry (X–Z Depth Plane)\nImplicit ray conics intersect to form Gaussian splats ($Q_{fused} = Q_0 + Q_1$)", fontsize=10.5, pad=10)
     ax.set_xlabel("X (meters)", fontsize=9, labelpad=4)
     ax.set_ylabel("Z (depth, meters)", fontsize=9, labelpad=4)
     ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.92)
+    ax.legend(loc="upper right", fontsize=7.5, framealpha=0.92)
 
 
 def draw_3d_world(

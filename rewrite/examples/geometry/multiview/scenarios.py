@@ -44,36 +44,30 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     """Build a 4-camera synthetic rig, run bundle adjustment, and render figure."""
     rng = np.random.default_rng(42)
 
-    # 1. World landmarks structured symmetrically across depths z in [1.4, 4.0] m:
-    # Clearly illustrates splat size and depth elongation growth from near to far camera ray intersections.
+    # 1. World landmarks structured symmetrically across depths z in [1.45, 3.90] m:
+    # Clearly illustrates ray cone widening and depth elongation growth from near to far camera ray intersections.
     xyz = np.array([
-        [-0.50, -0.20, 1.40],
-        [ 0.50,  0.20, 1.40],
-        [ 0.00, -0.10, 2.00],
-        [-0.55,  0.25, 2.60],
-        [ 0.55, -0.25, 2.60],
-        [ 0.00,  0.10, 3.30],
-        [-0.65, -0.20, 4.00],
-        [ 0.65,  0.20, 4.00],
+        [-0.30, -0.15, 1.45],
+        [ 0.30,  0.15, 1.45],
+        [ 0.00, -0.10, 2.20],
+        [-0.38,  0.20, 3.10],
+        [ 0.38, -0.20, 3.10],
+        [ 0.00,  0.10, 3.90],
     ])
     true_points = mv.yzw * xyz[:, 0] + mv.zxw * xyz[:, 1] + mv.xyw * xyz[:, 2] + mv.zyx
 
-    # 2. 4 cameras with convergent gaze:
-    # Cam 0: origin (reference)
-    # Cam 1: right (+x), panned left
-    # Cam 2: left (-x), panned right
-    # Cam 3: elevated (+y), tilted down
-    theta = np.radians(14.0)
-    m0 = mv.rotor()
-    m1 = ((mv.xw * 0.65) * 0.5).exp() * ((mv.zx * theta) * 0.5).exp()
-    m2 = ((-mv.xw * 0.65) * 0.5).exp() * ((-mv.zx * theta) * 0.5).exp()
-    m3 = ((mv.yw * 0.50) * 0.5).exp() * ((mv.yz * theta) * 0.5).exp()
-    true_motors = type(m0).stack([m0, m1, m2, m3])
+    # 2. 2 cameras in stereo configuration with convergent gaze:
+    # Cam 0: left (-x = -0.55m), panned right (+13°)
+    # Cam 1: right (+x = +0.55m), panned left (-13°)
+    theta = np.radians(13.0)
+    m0 = ((-mv.xw * 0.55) * 0.5).exp() * ((-mv.zx * theta) * 0.5).exp()
+    m1 = ((mv.xw * 0.55) * 0.5).exp() * ((mv.zx * theta) * 0.5).exp()
+    true_motors = type(m0).stack([m0, m1])
 
     c_local = mv.zyx
     screen = mv.z - mv.w  # focal plane at z = 1
     local_cam = (c_local & core.Point) ^ screen
-    cameras = local_cam.broadcast_to((4,))
+    cameras = local_cam.broadcast_to((2,))
 
     # 3. Sensor pixel measurements and sight cones in [n_points, n_cams] layout:
     local_pts = true_motors << true_points[:, None]
@@ -87,14 +81,12 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     sensor_discs = trans >> q_sensor(trans << core.Point)
     local_cones = core.make_cones(cameras, sensor_discs)
 
-    # 4. Initial camera pose estimates (15% angular perturbation):
-    init_m1 = ((mv.xw * 0.65) * 0.5).exp() * ((mv.zx * (theta * 1.15)) * 0.5).exp()
-    init_m2 = ((-mv.xw * 0.65) * 0.5).exp() * ((-mv.zx * (theta * 0.85)) * 0.5).exp()
-    init_m3 = ((mv.yw * 0.50) * 0.5).exp() * ((mv.yz * (theta * 1.12)) * 0.5).exp()
-    initial_motors = type(m0).stack([m0, init_m1, init_m2, init_m3])
+    # 4. Initial camera pose estimates (Cam 0 fixed as reference, Cam 1 perturbed by 6%):
+    init_m1 = ((mv.xw * 0.55) * 0.5).exp() * ((mv.zx * (theta * 1.06)) * 0.5).exp()
+    initial_motors = type(m0).stack([m0, init_m1])
 
-    print("=== Multi-Camera Rig & Perspective Cone Bundle Adjustment ===")
-    print(f"Cameras  : 4 convergent viewpoints (baselines: ±0.65m X, +0.50m Y; convergent gaze: 14.0°)")
+    print("=== 2-Camera Stereo Rig & Perspective Cone Bundle Adjustment ===")
+    print(f"Cameras  : 2 convergent viewpoints (baseline: 1.10m X; convergent gaze: 13.0°)")
     print(f"Landmarks: {len(xyz)} points spanning depth z in [{xyz[:, 2].min():.2f}m, {xyz[:, 2].max():.2f}m]")
 
     # Measure initial error before optimization:
@@ -105,7 +97,7 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     print(f"Initial Landmark RMSE (unoptimized): {init_rmse:.4e} m ({init_rmse * 1000:.1f} mm)")
 
     # 5. Run bundle adjustment purely via perspective cone quadrics:
-    iterations = 15
+    iterations = 12
     est_motors, est_points, quadrics = core.bundle_adjust(
         initial_motors, local_cones, iterations=iterations,
     )
@@ -126,7 +118,7 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     rots_est = [rotation_matrix(m) for m in est_motors]
 
     covariances = extract_covariances(quadrics) * (scale**2)
-    cam_colors = ["#0284c7", "#ec4899", "#8b5cf6", "#f59e0b"]
+    cam_colors = ["#0284c7", "#ec4899"]
 
     print("Gaussian Splat Anisotropy Across Depth (X–Z plane):")
     for i, (pt, cov) in enumerate(zip(xyz_est_scaled, covariances)):
@@ -136,7 +128,14 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
         ratio = radii[1] / radii[0]
         print(f"  Landmark {i} (x={pt[0]:+.2f}m, z={pt[2]:.2f}m): minor={radii[0]:.3f}m, major={radii[1]:.3f}m, ratio={ratio:.2f}")
 
-    top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, covariances, cam_colors, rots_est)
+    # World cones in estimated camera frames:
+    world_cones = est_motors >> local_cones(est_motors << core.Point)
+
+    top_down_data = (
+        cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled,
+        covariances, cam_colors, rots_est,
+        world_cones.kernel, quadrics.kernel,
+    )
     world_3d_data = (cams_true_xyz, rots_true, cams_est_xyz, rots_est, xyz_true, xyz_est_scaled, covariances, cam_colors)
 
     if plot_path is not None:
