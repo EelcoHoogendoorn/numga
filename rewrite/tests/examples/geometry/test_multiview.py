@@ -10,15 +10,18 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from numga import stack
 from examples import PLOT_DIR
 from examples.geometry.multiview import core, render
 from examples.geometry.multiview.scenarios import (
     Point,
     coordinates,
     main,
+    make_cones,
     multiview_figure,
     mv,
     point,
+    sensor_disk,
 )
 
 
@@ -74,10 +77,10 @@ def test_triangulate_cones():
     pixels = projs / (mv.w & projs)
 
     # Pullback cones through camera maps:
-    p0 = point([0.0, 1.0])
+    principal_point = point([0.0, 1.0])
     q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = core.sensor_disk(pixels, p0, q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
+    sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
+    local_cones = make_cones(cameras, sensor_discs)
     pts_cone, q_cone = core.triangulate_cones(motors, local_cones)
     xy_cone = coordinates(pts_cone)
     np.testing.assert_allclose(xy_cone, xy, atol=1e-5)
@@ -105,32 +108,33 @@ def test_multiview_bundle_adjust_convergence():
     theta = np.radians(18.0)
     m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
     m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    true_motors = type(m0).stack([m0, m1])
+    m2 = ((mv.xw * 0.0) * 0.5).exp()
+    true_motors = stack([m0, m1, m2])
 
     c0 = point([0.0, 0.0])
     screen = mv.y - mv.w
     camera = (c0 & Point) ^ screen
-    cameras = camera.broadcast_to((2,))
+    cameras = camera.broadcast_to((3,))
 
     local_pts = true_motors << true_points[:, None]
     projs = cameras(local_pts)
     pixels = projs / (mv.w & projs)
 
-    p0 = point([0.0, 1.0])
+    principal_point = point([0.0, 1.0])
     q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = core.sensor_disk(pixels, p0, q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
+    sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
+    local_cones = make_cones(cameras, sensor_discs)
 
     # Perturb camera 1 orientation by 5%:
     init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
-    initial_motors = type(m0).stack([m0, init_m1])
+    initial_motors = stack([m0, init_m1, m2])
 
     init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
     init_xy = coordinates(init_pts)
     init_scale = np.sum(init_xy * xy) / np.sum(init_xy**2)
     init_rmse = np.sqrt(np.mean(np.sum((init_xy * init_scale - xy)**2, axis=-1)))
 
-    est_motors, est_pts, _ = core.bundle_adjust(initial_motors, local_cones, iterations=12)
+    est_motors, est_pts, _ = core.bundle_adjust(initial_motors, local_cones, iterations=12, anchors=(0, 2))
     est_xy = coordinates(est_pts)
     est_scale = np.sum(est_xy * xy) / np.sum(est_xy**2)
     final_rmse = np.sqrt(np.mean(np.sum((est_xy * est_scale - xy)**2, axis=-1)))
@@ -178,13 +182,13 @@ def test_multiview_3d_bundle_adjust_convergence():
         projs = cameras(local_pts)
         pixels = projs / (types.mv.w & projs)
 
-        p0 = types.point([0.0, 0.0, 1.0])
+        principal_point = types.point([0.0, 0.0, 1.0])
         q_sensor = (types.mv.x * (types.mv.x & types.Point)) + (types.mv.y * (types.mv.y & types.Point))
-        sensor_discs = core.sensor_disk(pixels, p0, q_sensor)
-        local_cones = core.make_cones(cameras, sensor_discs)
+        sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
+        local_cones = make_cones(cameras, sensor_discs)
 
         init_m1 = ((types.mv.xw * baseline_x) * 0.5).exp() * ((types.mv.zx * (theta * 1.05)) * 0.5).exp()
-        motors = type(m0).stack([m0, init_m1])
+        motors = stack([m0, init_m1])
 
         init_pts, _ = core.triangulate_cones(motors, local_cones)
         init_xyz = types.coordinates(init_pts)

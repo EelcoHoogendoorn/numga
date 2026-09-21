@@ -15,13 +15,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples import PLOT_DIR
 from examples.geometry.multiview import core, render
-from examples.geometry.multiview.core import sensor_disk
 from examples.geometry.multiview.types import (
     Camera,
     Line,
     Motor,
+    Plane,
     Point,
     Quadric,
     Twist,
@@ -29,6 +30,30 @@ from examples.geometry.multiview.types import (
     mv,
     point,
 )
+
+
+def sensor_disk(
+    pixels: Point,
+    principal_point: Point | None = None,
+    q_sensor: Quadric | None = None,
+) -> Quadric:
+    """Per-pixel transverse precision dyads on the sensor plane.
+
+    Constructs rank-1 precision dyads (sensor discs) directly from pixel coordinates
+    via transverse normal lines `normal = mv.x - mv.w * (mv.x & pixels)`, or via
+    principal-point translation motor sandwich when provided.
+    """
+    if principal_point is None and q_sensor is None:
+        normal = mv.x - mv.w * (mv.x & pixels)
+        return normal * (normal & Point)
+    trans = (pixels / principal_point).square_root()
+    return trans >> q_sensor(trans << Point)
+
+
+def make_cones(cameras: Camera, sensor_quadrics: Quadric) -> Quadric:
+    """Pull sensor measurement quadrics back through camera maps into perspective cones."""
+    pullback = cameras.transpose()(Plane.dual()).dual_inverse()
+    return pullback(sensor_quadrics(cameras))
 
 
 def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure:
@@ -51,7 +76,7 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     theta = np.radians(18.0)
     m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
     m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    true_motors = type(m0).stack([m0, m1])
+    true_motors = stack([m0, m1])
 
     c0 = point([0.0, 0.0])
     screen = mv.y - mv.w
@@ -63,15 +88,13 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     projs = cameras(local_pts)
     pixels = projs / (mv.w & projs)
 
-    # Place 1D uncertainty dyad on the sensor line:
-    p0 = point([0.0, 1.0])
-    q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = sensor_disk(pixels, p0, q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
+    # Per-pixel transverse precision dyads (sensor discs) pulled back into cones:
+    sensor_discs = sensor_disk(pixels)
+    local_cones = make_cones(cameras, sensor_discs)
 
     # 4. Initial camera pose estimates (Cam 0 fixed as reference, Cam 1 perturbed by 5%):
     init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
-    initial_motors = type(m0).stack([m0, init_m1])
+    initial_motors = stack([m0, init_m1])
 
     print("=== 2-Camera Stereo Rig & Perspective Cone Bundle Adjustment (PGA2D) ===")
     print(f"Cameras  : 2 convergent viewpoints (baseline: {2*baseline_x:.2f}m X; convergent gaze: {np.degrees(theta):.1f}°)")
@@ -108,7 +131,7 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
         cams_dirs=cams_dirs,
         world_cones=world_cones,
         fused_quadrics=quadrics,
-        landmarks=est_points,
+        points=est_points,
         cam_colors=cam_colors,
         motors=est_motors,
         plot_path=plot_path,
@@ -157,7 +180,7 @@ def convergence_animation(
     m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
     m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
     m2 = mv.rotor()
-    true_motors = type(m0).stack([m0, m1, m2])
+    true_motors = stack([m0, m1, m2])
 
     c0 = point([0.0, 0.0])
     screen = mv.y - mv.w
@@ -168,10 +191,9 @@ def convergence_animation(
     projs = cameras(local_pts)
     pixels = projs / (mv.w & projs)
 
-    p0 = point([0.0, 1.0])
-    q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = sensor_disk(pixels, p0, q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
+    # Per-pixel transverse precision dyads (sensor discs) pulled back into cones:
+    sensor_discs = sensor_disk(pixels)
+    local_cones = make_cones(cameras, sensor_discs)
 
     if case == "1cam":
         # Case 1: 1 moving camera (anchors=(0, 2)), Cam 1 has 25% tilt mismatch.
@@ -179,7 +201,7 @@ def convergence_animation(
         anchors = (0, 2)
         damping = 0.38
         init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
-        motors = type(m0).stack([m0, init_m1, m2])
+        motors = stack([m0, init_m1, m2])
     elif case == "2cams":
         # Case 2: 2 moving cameras (anchors=(0,)), Cam 1 & 2 both perturbed.
         # Damping=0.35 yields a steady visual trajectory reaching ~95% progress at step 10.
@@ -187,7 +209,7 @@ def convergence_animation(
         damping = 0.35
         init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
         init_m2 = ((-mv.xw * 0.1) * 0.5).exp() * ((mv.xy * 0.05) * 0.5).exp()
-        motors = type(m0).stack([m0, init_m1, init_m2])
+        motors = stack([m0, init_m1, init_m2])
     elif case == "3cams":
         # Case 3: All 3 cameras updating freely without anchors (anchors=()).
         # Damping=0.32 yields a steady visual trajectory reaching ~95% progress at step 10.
@@ -196,7 +218,7 @@ def convergence_animation(
         init_m0 = ((-mv.xw * (baseline_x * 0.95)) * 0.5).exp() * ((mv.xy * (theta * 1.05)) * 0.5).exp()
         init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
         init_m2 = ((-mv.xw * 0.1) * 0.5).exp() * ((mv.xy * 0.05) * 0.5).exp()
-        motors = type(m0).stack([init_m0, init_m1, init_m2])
+        motors = stack([init_m0, init_m1, init_m2])
     else:
         raise ValueError(f"Unknown case: {case}")
 

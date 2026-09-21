@@ -12,12 +12,13 @@ from pathlib import Path
 import numpy as np
 
 from examples.geometry.multiview import core, types
+from numga import stack
 from numga.algebras import PGA3D
 
 # Bind PGA3D dynamically:
 types.bind(PGA3D)
 
-from examples.geometry.multiview.core import sensor_disk
+from examples.geometry.multiview.scenarios import sensor_disk, make_cones
 from examples.geometry.multiview.types import (
     Camera,
     Motor,
@@ -41,7 +42,7 @@ def build_3d_rig_and_scene():
     m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((-mv.zx * theta) * 0.5).exp()
     m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((mv.zx * theta) * 0.5).exp()
     m2 = ((mv.yw * 0.35) * 0.5).exp() * ((-mv.yz * np.radians(12.0)) * 0.5).exp()
-    true_motors = type(m0).stack([m0, m1, m2])
+    true_motors = stack([m0, m1, m2])
 
     c0 = point([0.0, 0.0, 0.0])
     screen = mv.z - mv.w
@@ -65,10 +66,11 @@ def build_3d_rig_and_scene():
     local_pts = true_motors << true_points[:, None]
     projs = cameras(local_pts)
     pixels = projs / (mv.w & projs)
-    p0 = point([0.0, 0.0, 1.0])
+    # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
+    principal_point = point([0.0, 0.0, 1.0])
     q_sensor = (mv.x * (mv.x & Point)) + (mv.y * (mv.y & Point))
-    sensor_discs = sensor_disk(pixels, p0, q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
+    sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
+    local_cones = make_cones(cameras, sensor_discs)
 
     return cameras, true_motors, true_points, local_cones, xyz
 
@@ -91,7 +93,7 @@ def run_3d_bundle_adjustment(
     pert = t_pert * r_pert
 
     init_m1 = pert * true_motors[1]
-    motors = type(true_motors[0]).stack([true_motors[0], init_m1, true_motors[2]])
+    motors = stack([true_motors[0], init_m1, true_motors[2]])
 
     pts_init, _ = core.triangulate_cones(motors, local_cones)
     lp0 = motors << pts_init[:, None]
