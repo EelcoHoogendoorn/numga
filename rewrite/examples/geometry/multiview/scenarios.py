@@ -139,13 +139,21 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, covariances, cam_colors, rots_est)
     world_3d_data = (cams_true_xyz, rots_true, cams_est_xyz, rots_est, xyz_true, xyz_est_scaled, covariances, cam_colors)
 
-    return render.draw_multiview_figure(
-        top_down_data, world_3d_data, plot_path=plot_path, auto_increment=auto_increment,
-    )
+    if plot_path is not None:
+        stem = plot_path.stem
+        plot_path_3d = plot_path.with_name(f"{stem}_3d{plot_path.suffix}")
+        fig_2d = render.draw_top_down_figure(
+            top_down_data, plot_path=plot_path, auto_increment=auto_increment,
+        )
+        render.draw_3d_figure(
+            world_3d_data, plot_path=plot_path_3d, auto_increment=auto_increment,
+        )
+        return fig_2d
+    return render.draw_top_down_figure(top_down_data)
 
 
 def main(plot_path: Path | None = None, auto_increment: bool = True) -> plt.Figure:
-    """Render the multi-camera bundle adjustment figure."""
+    """Render the multi-camera bundle adjustment figures (separate 2D and 3D plots)."""
     if plot_path is None:
         plot_path = PLOT_DIR / "multiview_bundle_adjustment.png"
     return multiview_figure(plot_path, auto_increment=auto_increment)

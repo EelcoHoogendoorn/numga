@@ -33,8 +33,8 @@ def draw_camera_frustum(
         [ w,  h, scale],
         [-w,  h, scale],
     ])
-    # X_world = center + R.T @ X_cam
-    corners_world = center + (rotation.T @ corners_local.T).T
+    # X_world = center + R @ X_cam
+    corners_world = center + (rotation @ corners_local.T).T
 
     # Sensor frame:
     loop = np.concatenate([corners_world, corners_world[:1]], axis=0)
@@ -52,7 +52,7 @@ def draw_camera_frustum(
         )
 
     # Optical axis:
-    axis_end = center + rotation.T @ np.array([0.0, 0.0, scale * 1.25])
+    axis_end = center + rotation @ np.array([0.0, 0.0, scale * 1.25])
     ax.plot(
         [center[0], axis_end[0]], [center[1], axis_end[1]], [center[2], axis_end[2]],
         color=color, linestyle=linestyle, linewidth=linewidth * 1.2,
@@ -60,6 +60,49 @@ def draw_camera_frustum(
 
     # Camera center:
     ax.scatter([center[0]], [center[1]], [center[2]], color=color, s=50, depthshade=False)
+
+
+def draw_camera_wedge_2d(
+    ax: Axes,
+    center: np.ndarray,
+    rotation: np.ndarray,
+    scale: float = 0.35,
+    half_fov_deg: float = 24.0,
+    color: str = "#0284c7",
+    label: str | None = None,
+) -> None:
+    """Draw a 2D camera FOV wedge, sensor plane, and optical axis in the X-Z plane."""
+    half_fov = np.radians(half_fov_deg)
+    dx = scale * np.tan(half_fov)
+
+    # Sensor plane corners in local camera frame:
+    corners_local = np.array([
+        [-dx, 0.0, scale],
+        [ dx, 0.0, scale],
+    ])
+    corners_world = center + (rotation @ corners_local.T).T
+    c_xz = center[[0, 2]]
+    p_left = corners_world[0, [0, 2]]
+    p_right = corners_world[1, [0, 2]]
+    tip = center + rotation @ np.array([0.0, 0.0, scale * 1.15])
+    tip_xz = tip[[0, 2]]
+
+    # Shaded FOV wedge:
+    triangle = np.stack([c_xz, p_left, p_right], axis=0)
+    ax.fill(triangle[:, 0], triangle[:, 1], color=color, alpha=0.18, zorder=3)
+
+    # FOV boundary rays:
+    ax.plot([c_xz[0], p_left[0]], [c_xz[1], p_left[1]], color=color, linewidth=1.1, linestyle="-", zorder=4)
+    ax.plot([c_xz[0], p_right[0]], [c_xz[1], p_right[1]], color=color, linewidth=1.1, linestyle="-", zorder=4)
+
+    # Sensor plane bar:
+    ax.plot([p_left[0], p_right[0]], [p_left[1], p_right[1]], color=color, linewidth=2.4, linestyle="-", zorder=4)
+
+    # Optical axis centerline:
+    ax.plot([c_xz[0], tip_xz[0]], [c_xz[1], tip_xz[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
+
+    # Camera center:
+    ax.scatter([c_xz[0]], [c_xz[1]], color=color, s=70, edgecolors="#0f172a", linewidths=1.5, zorder=5, label=label)
 
 
 def draw_ellipsoid_3d(
@@ -128,17 +171,13 @@ def draw_top_down_view(
     rots_est: list[np.ndarray] | None = None,
 ) -> None:
     """Render top-down floorplan (X vs Z depth) of camera constellation and landmarks."""
-    # Cameras:
+    # Cameras: draw FOV wedge triangle with sensor plane and optical axis
     for idx, (ct, ce, col) in enumerate(zip(cams_true, cams_est, cam_colors)):
         lbl_true = f"Cam {idx} (Ref)" if idx == 0 else f"Cam {idx}"
-        ax.scatter([ct[0]], [ct[2]], color=col, s=80, marker="o", edgecolors="#1e293b", zorder=5, label=lbl_true)
+        rot = rots_est[idx] if (rots_est is not None and idx < len(rots_est)) else np.eye(3)
+        draw_camera_wedge_2d(ax, ce, rot, scale=0.35, color=col, label=lbl_true)
         if idx > 0:
-            ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0, zorder=5)
-
-        # Draw optical axis pointer in X-Z plane:
-        if rots_est is not None and idx < len(rots_est):
-            axis_dir = rots_est[idx].T @ np.array([0.0, 0.0, 0.35])
-            ax.plot([ce[0], ce[0] + axis_dir[0]], [ce[2], ce[2] + axis_dir[2]], color=col, linewidth=1.4, zorder=4)
+            ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0, zorder=6)
 
     # 2D Gaussian uncertainty ellipses in the X-Z depth plane:
     for pt, cov in zip(points_est, covariances):
@@ -173,13 +212,13 @@ def draw_top_down_view(
                 zorder=1,
             )
 
-    ax.set_xlim(-0.95, 0.95)
-    ax.set_ylim(-0.25, 4.5)
-    ax.set_title("1. Top-Down Geometry (X–Z Depth Plane)\nCamera constellation, sight rays & depth-elongated splat ellipses", fontsize=10, pad=8)
-    ax.set_xlabel("X (meters)", fontsize=8, labelpad=2)
-    ax.set_ylabel("Z (depth, meters)", fontsize=8, labelpad=2)
+    ax.set_xlim(-1.20, 1.20)
+    ax.set_ylim(-0.35, 4.50)
+    ax.set_title("Top-Down Geometry (X–Z Depth Plane)\nCamera FOV wedges, sight rays & depth-elongated splat ellipses", fontsize=11, pad=10)
+    ax.set_xlabel("X (meters)", fontsize=9, labelpad=4)
+    ax.set_ylabel("Z (depth, meters)", fontsize=9, labelpad=4)
     ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="lower left", fontsize=7.5, framealpha=0.90)
+    ax.legend(loc="upper right", fontsize=8, framealpha=0.92)
 
 
 def draw_3d_world(
@@ -214,7 +253,7 @@ def draw_3d_world(
         draw_ellipsoid_3d(ax, pt, cov, scale_factor=0.08, color="#0ea5e9", alpha=0.25)
     ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian Splat 1σ Ellipsoid")
 
-    ax.set_title("2. 3D World Scene & Perspective Cone Quadrics\nFused quadrics form Gaussian splat uncertainty ellipsoids", fontsize=10, pad=8)
+    ax.set_title("3D World Scene & Perspective Cone Quadrics\nFused quadrics form Gaussian splat uncertainty ellipsoids", fontsize=11, pad=10)
     ax.set_xlim(-1.2, 1.2)
     ax.set_ylim(-1.0, 1.0)
     ax.set_zlim(1.0, 4.4)
@@ -224,6 +263,47 @@ def draw_3d_world(
     ax.set_zlabel("Z (m)", fontsize=8, labelpad=-5)
     ax.view_init(elev=20, azim=-60)
     ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85)
+
+
+def draw_top_down_figure(
+    top_down_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[np.ndarray] | None],
+    plot_path: Path | None = None,
+    auto_increment: bool = True,
+) -> plt.Figure:
+    """Render and save a dedicated standalone 2D top-down geometry figure."""
+    fig, ax = plt.subplots(figsize=(8.5, 7.5), dpi=140, layout="constrained")
+    draw_top_down_view(ax, *top_down_data)
+
+    if plot_path is not None:
+        target_path = plot_path
+        if auto_increment:
+            from examples import auto_increment_path
+            target_path = auto_increment_path(plot_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(target_path, bbox_inches="tight")
+        print(f"[render 2D] Figure saved to: {target_path}")
+    return fig
+
+
+def draw_3d_figure(
+    world_3d_data: tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, list[str]],
+    plot_path: Path | None = None,
+    auto_increment: bool = True,
+) -> plt.Figure:
+    """Render and save a dedicated standalone 3D world scene figure."""
+    fig = plt.figure(figsize=(9.0, 8.0), dpi=140, layout="constrained")
+    ax = fig.add_subplot(1, 1, 1, projection="3d")
+    draw_3d_world(ax, *world_3d_data)
+
+    if plot_path is not None:
+        target_path = plot_path
+        if auto_increment:
+            from examples import auto_increment_path
+            target_path = auto_increment_path(plot_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(target_path, bbox_inches="tight")
+        print(f"[render 3D] Figure saved to: {target_path}")
+    return fig
 
 
 def draw_multiview_figure(
