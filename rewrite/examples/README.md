@@ -42,11 +42,12 @@ go to [`../plots/`](../plots/).
 - Leave structural selection to static dispatch and numerical validation to the
   backend. Do not add defensive checks, fallback paths, or arbitrary tolerances
   to the demonstration.
-- No unncessary .kernel operations,
-- no for loops that can be proper array programming
-- no bare coefficient indexing assuming array layout
-- where destructuring extensors is required such as when plotting, explicit prior blade layout casting is required
--
+- No unnecessary .kernel operations.
+- No for loops that can be proper array programming.
+- No bare coefficient indexing assuming array layout.
+- Where destructuring extensors is required such as when plotting, explicit prior blade layout casting is required.
+- No visual noise or text overlays on animations: no intrusive status boxes, iteration labels, or HUD text badges on animated frames; let the clean geometric dynamics speak for itself.
+- Mandatory test-time plot regeneration: running an example's module tests must automatically regenerate its canonical plots and animations in `PLOT_DIR`, verify their freshness and non-zero size, and mirror them to the active artifacts directory.
 
 | Topic | Examples |
 | --- | --- |

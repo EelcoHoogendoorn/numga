@@ -576,6 +576,8 @@ class Extensor:
             scalar = self.context.prepare_scalar(other)
             return self * (1 / scalar)
         if isinstance(other, Extensor):
+            if other.gatype.is_scalar:
+                return self * other.inverse()
             if self.arity or other.arity:
                 raise TypeError("geometric-product division requires nullary Extensors")
             if self.algebra is not other.algebra:
@@ -590,9 +592,39 @@ class Extensor:
             other = _batch_scalar(self.context, other)
         if not isinstance(other, (Number, Extensor)):
             return NotImplemented
+        if self.gatype.is_scalar:
+            return self.inverse() * other
         if self.arity:
             raise TypeError("geometric-product division requires a nullary Extensor")
         return self.inverse() * other
+
+    def __pow__(self, power: int) -> Extensor | NotImplementedType:
+        if not isinstance(power, int):
+            return NotImplemented
+        if power == 2:
+            return self.squared()
+        if power == -1:
+            return self.inverse()
+        if power == -2:
+            return self.squared().inverse()
+        if power == 1:
+            return self
+        if power == 0:
+            if self.gatype.is_scalar:
+                return self.context.prepare_scalar(1)
+        if self.gatype.is_scalar:
+            if power > 0:
+                res = self
+                for _ in range(power - 1):
+                    res = res * self
+                return res
+            elif power < 0:
+                inv = self.inverse()
+                res = inv
+                for _ in range(-power - 1):
+                    res = res * inv
+                return res
+        return NotImplemented
 
     def wedge(self, other: Extensor | GAType | SubSpace) -> Extensor:
         from numga.expression import wedge

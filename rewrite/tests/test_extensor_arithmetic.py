@@ -162,12 +162,14 @@ def test_scalar_affine_and_geometric_inverse_operations_reject_open_extensors():
         lambda: 1 + product,
         lambda: product - 1,
         lambda: 1 - product,
-        lambda: product / scalar,
         lambda: scalar / product,
         lambda: 1 / product,
     ):
         with pytest.raises(TypeError, match="nullary"):
             operation()
+
+    # Scalar extensor division on open extensors behaves consistently with numeric division:
+    assert (product / scalar).gatype.subspaces == (product / 2).gatype.subspaces
 
 
 def test_raw_arrays_are_batch_scalars_in_linear_arithmetic():

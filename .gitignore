@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .idea
+.agent_brain
+.DS_Store
 
 # C extensions
 *.so

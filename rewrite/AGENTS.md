@@ -28,6 +28,11 @@ follow them exactly.
 - Populations are batched state (`Bodies` with batched Extensor fields), stepped in one call;
   never lists of per-body objects stacked and unstacked per step.
 - Any `if`, sentinel value, flag or fallback that can be removed, must be removed.
+- No dimension polymorphism and certainly no `squeeze`. Functions accept clean array inputs
+  (`coords: np.ndarray` of shape `(..., d)`), never varargs (`*coords`) or dimension-branching
+  logic (`if len(coords) ...`). Never call `np.squeeze` or drop axes unpredictably; preserve
+  batch and coordinate axes uniformly.
+
 
 ## Structure
 
@@ -50,3 +55,4 @@ follow them exactly.
 - Never interrupt a running job and never delete files unless explicitly told to.
 - Deliverables (plots, GIFs) go to `rewrite/plots/`; no previews or collages in their place.
 - Vectorize; JIT is not the answer.
+- Always run targeted tests (`pytest path/to/test_file.py`). Only run the full test suite when editing test infrastructure across the entire suite or during explicit pre-commit checks.
