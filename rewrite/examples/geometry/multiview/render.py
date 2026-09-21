@@ -212,8 +212,9 @@ def draw_top_down_view(
                 zorder=1,
             )
 
-    ax.set_xlim(-1.20, 1.20)
-    ax.set_ylim(-0.35, 4.50)
+    ax.set_aspect("equal")
+    ax.set_xlim(-1.30, 1.30)
+    ax.set_ylim(-0.35, 4.85)
     ax.set_title("Top-Down Geometry (X–Z Depth Plane)\nCamera FOV wedges, sight rays & depth-elongated splat ellipses", fontsize=11, pad=10)
     ax.set_xlabel("X (meters)", fontsize=9, labelpad=4)
     ax.set_ylabel("Z (depth, meters)", fontsize=9, labelpad=4)
@@ -271,7 +272,7 @@ def draw_top_down_figure(
     auto_increment: bool = True,
 ) -> plt.Figure:
     """Render and save a dedicated standalone 2D top-down geometry figure."""
-    fig, ax = plt.subplots(figsize=(8.5, 7.5), dpi=140, layout="constrained")
+    fig, ax = plt.subplots(figsize=(7.5, 9.0), dpi=140, layout="constrained")
     draw_top_down_view(ax, *top_down_data)
 
     if plot_path is not None:
