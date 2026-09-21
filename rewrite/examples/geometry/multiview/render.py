@@ -102,7 +102,7 @@ def draw_camera_wedge_2d(
     ax.plot([c_xz[0], tip_xz[0]], [c_xz[1], tip_xz[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
 
     # Camera center:
-    ax.scatter([c_xz[0]], [c_xz[1]], color=color, s=70, edgecolors="#0f172a", linewidths=1.5, zorder=5, label=label)
+    ax.plot(c_xz[0], c_xz[1], marker="o", markersize=6.5, color=color, markeredgecolor="#0f172a", markeredgewidth=1.3, zorder=5, label=label)
 
 
 def draw_ellipsoid_3d(
@@ -160,45 +160,137 @@ def draw_ellipse_2d(
     ax.plot(x_pts, z_pts, color=color, alpha=edge_alpha, linewidth=linewidth, zorder=3)
 
 
-def project_quadric_xz(q_mat: np.ndarray) -> np.ndarray:
-    """Project a 4x4 homogeneous quadric to 3x3 in (x, z, w) via Schur complement on y."""
-    idx = [0, 2, 3]
-    q_sub = q_mat[np.ix_(idx, idx)]
-    q_col = q_mat[idx, 1:2]
-    q_yy = q_mat[1, 1]
-    if abs(q_yy) < 1e-12:
-        return q_sub
-    return q_sub - (q_col @ q_col.T) / q_yy
+def rasterize_implicit_conics(
+    world_cones_mat: np.ndarray,
+    fused_quadrics_mat: np.ndarray,
+    cams_pos: np.ndarray,
+    cams_rots: list[np.ndarray],
+    landmarks_xyz: np.ndarray,
+    shape: tuple[int, int] = (700, 800),
+    x_range: tuple[float, float] = (-1.80, 1.80),
+    z_range: tuple[float, float] = (-0.35, 3.15),
+    theta_0: float = 0.016,
+    splat_scale: float = 1.5,
+) -> np.ndarray:
+    """Rasterize 2D camera ray conics and fused Gaussian splats directly from implicit quadrics.
 
+    Evaluates the homogeneous quadratic forms on the 2D pixel grid and computes anti-aliased
+    logistic edge coverage at the zero locus, fundamentally mirroring the raytracer pattern.
+    """
+    height, width = shape
+    xs = np.linspace(x_range[0], x_range[1], width)
+    zs = np.linspace(z_range[0], z_range[1], height)
+    X, Z = np.meshgrid(xs, zs)
+    pixel_w = xs[1] - xs[0]
 
-def draw_implicit_conic_2d(
-    ax: Axes,
-    q_mat_xz: np.ndarray,
-    x_grid: np.ndarray,
-    z_grid: np.ndarray,
-    level: float,
-    color: str,
-    alpha_fill: float = 0.10,
-    alpha_edge: float = 0.40,
-    linewidth: float = 1.0,
-    z_min: float | None = None,
-    zorder_fill: int = 2,
-    zorder_edge: int = 3,
-) -> None:
-    """Render a 2D quadric level set f(x, z) <= level as shaded fill and contour edge."""
-    pts = np.stack([x_grid, z_grid, np.ones_like(x_grid)], axis=-1)
-    val = np.einsum("...i,ij,...j->...", pts, q_mat_xz, pts).copy()
-    if z_min is not None:
-        val[z_grid < z_min] = np.nan
+    opt_axes = [rot[:, 2] for rot in cams_rots]
 
-    ax.contourf(
-        x_grid, z_grid, val,
-        levels=[0, level], colors=[color], alpha=alpha_fill, zorder=zorder_fill,
-    )
-    ax.contour(
-        x_grid, z_grid, val,
-        levels=[level], colors=[color], linewidths=linewidth, alpha=alpha_edge, zorder=zorder_edge,
-    )
+    image = np.ones((height, width, 3), dtype=np.float32) * 0.99
+    col_cam0 = np.array([0.05, 0.52, 0.88])  # blue
+    col_cam1 = np.array([0.88, 0.18, 0.55])  # pink
+    col_splat = np.array([0.04, 0.70, 0.42]) # emerald
+
+    n_points, n_cams = world_cones_mat.shape[:2]
+
+    # Precompute local depths along each camera optical axis:
+    z_cams = []
+    for c_pos, opt in zip(cams_pos, opt_axes):
+        dx = X.ravel() - c_pos[0]
+        dz = Z.ravel() - c_pos[2]
+        z_loc = dx * opt[0] + dz * opt[2]
+        z_cams.append(z_loc)
+
+    cov0_total = np.zeros((height, width), dtype=np.float32)
+    cov1_total = np.zeros((height, width), dtype=np.float32)
+    covf_total = np.zeros((height, width), dtype=np.float32)
+    covedge_total = np.zeros((height, width), dtype=np.float32)
+
+    col_cam0 = np.array([0.05, 0.52, 0.88])   # blue
+    col_cam1 = np.array([0.88, 0.18, 0.55])   # pink
+    col_splat = np.array([0.98, 0.48, 0.04])  # high-viz radiant amber / orange
+    col_edge = np.array([0.62, 0.18, 0.02])   # deep burnt amber rim
+
+    for i in range(n_points):
+        pt_xyz = landmarks_xyz[i]
+
+        # Common epipolar plane through camera baseline and landmark i: y(Z) = (y_i / z_i) * Z
+        # Ensures cones and fused splats intersect dead-center.
+        slope_y = pt_xyz[1] / max(pt_xyz[2], 1e-4)
+        Y_plane = slope_y * Z.ravel()
+        pts = np.stack([X.ravel(), Y_plane, Z.ravel(), np.ones_like(X.ravel())], axis=-1)
+
+        # Distance from each camera pinhole to all grid points:
+        d0 = pts[:, :3] - cams_pos[0]
+        R0 = np.linalg.norm(d0, axis=-1)
+        z0 = z_cams[0]
+
+        d1 = pts[:, :3] - cams_pos[1]
+        R1 = np.linalg.norm(d1, axis=-1)
+        z1 = z_cams[1]
+
+        # Ray unit directions and cosine angles with optical axis:
+        ray_dir0 = (pt_xyz - cams_pos[0]) / np.linalg.norm(pt_xyz - cams_pos[0])
+        ray_dir1 = (pt_xyz - cams_pos[1]) / np.linalg.norm(pt_xyz - cams_pos[1])
+        cos_phi0 = float(np.dot(ray_dir0, opt_axes[0]))
+        cos_phi1 = float(np.dot(ray_dir1, opt_axes[1]))
+
+        # Camera 0 perspective ray conic with identical angular opening angle theta_0 for all rays:
+        Q0 = world_cones_mat[i, 0]
+        v0 = -np.einsum("...i,ij,...j->...", pts, Q0, pts)
+        d_perp0 = cos_phi0 * np.sqrt(np.maximum(-v0, 0.0))
+        w0 = np.maximum(theta_0 * R0, 0.003)
+        dist0 = w0 - d_perp0
+        cov0 = 1.0 / (1.0 + np.exp(np.clip(-dist0 / (0.75 * pixel_w), -30.0, 30.0))).reshape(height, width)
+        cov0 *= (z0 > 0.05).reshape(height, width)
+        cov0_total = np.maximum(cov0_total, cov0)
+
+        # Camera 1 perspective ray conic with identical angular opening angle theta_0 for all rays:
+        Q1 = world_cones_mat[i, 1]
+        v1 = -np.einsum("...i,ij,...j->...", pts, Q1, pts)
+        d_perp1 = cos_phi1 * np.sqrt(np.maximum(-v1, 0.0))
+        w1 = np.maximum(theta_0 * R1, 0.003)
+        dist1 = w1 - d_perp1
+        cov1 = 1.0 / (1.0 + np.exp(np.clip(-dist1 / (0.75 * pixel_w), -30.0, 30.0))).reshape(height, width)
+        cov1 *= (z1 > 0.05).reshape(height, width)
+        cov1_total = np.maximum(cov1_total, cov1)
+
+        # Fused Gaussian splat from normalized precision quadrics:
+        R_lm0 = float(np.linalg.norm(pt_xyz - cams_pos[0]))
+        R_lm1 = float(np.linalg.norm(pt_xyz - cams_pos[1]))
+        w_lm0 = theta_0 * R_lm0
+        w_lm1 = theta_0 * R_lm1
+        w_avg = 0.5 * (w_lm0 + w_lm1)
+
+        M0 = (cos_phi0**2 / w_lm0**2) * Q0
+        M1 = (cos_phi1**2 / w_lm1**2) * Q1
+        Mf = M0 + M1
+
+        vf = np.einsum("...i,ij,...j->...", pts, Mf, pts)
+        res_f = np.sqrt(np.maximum(vf, 0.0))
+        dist_f = (splat_scale - res_f) * w_avg
+        cov_f = 1.0 / (1.0 + np.exp(np.clip(-dist_f / (0.85 * pixel_w), -30.0, 30.0))).reshape(height, width)
+        cov_f *= ((z0 > 0.05) & (z1 > 0.05)).reshape(height, width)
+        covf_total = np.maximum(covf_total, cov_f)
+
+        # High-viz edge contour ring around the splat boundary:
+        cov_edge = np.exp(-0.5 * (dist_f / (1.1 * pixel_w))**2).reshape(height, width)
+        cov_edge *= ((z0 > 0.05) & (z1 > 0.05)).reshape(height, width)
+        covedge_total = np.maximum(covedge_total, cov_edge)
+
+    # 1. Blend ray conics into background:
+    image -= cov0_total[..., None] * (1.0 - col_cam0) * 0.35
+    image -= cov1_total[..., None] * (1.0 - col_cam1) * 0.35
+    image = np.clip(image, 0.0, 1.0)
+
+    # 2. Overlay Gaussian splats on top with vibrant fill:
+    alpha_f = covf_total[..., None] * 0.92
+    image = image * (1.0 - alpha_f) + col_splat * alpha_f
+
+    # 3. High-viz dark edge stroke:
+    alpha_edge = covedge_total[..., None] * 0.85
+    image = image * (1.0 - alpha_edge) + col_edge * alpha_edge
+
+    return np.clip(image, 0.0, 1.0)
 
 
 def draw_top_down_view(
@@ -214,86 +306,26 @@ def draw_top_down_view(
     fused_quadrics: np.ndarray | None = None,
 ) -> None:
     """Render top-down floorplan (X vs Z depth) of camera constellation and landmarks."""
-    # Cameras: draw FOV wedge triangle with sensor plane and optical axis
-    for idx, (ct, ce, col) in enumerate(zip(cams_true, cams_est, cam_colors)):
-        lbl_true = f"Cam {idx} (Ref)" if idx == 0 else f"Cam {idx}"
-        rot = rots_est[idx] if (rots_est is not None and idx < len(rots_est)) else np.eye(3)
-        draw_camera_wedge_2d(ax, ce, rot, scale=0.35, color=col, label=lbl_true)
-        if idx > 0:
-            ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0, zorder=6)
+    rots = rots_est if rots_est is not None else [np.eye(3)] * len(cams_est)
+    x_range = (-1.25, 1.25)
+    z_range = (-0.30, 2.95)
 
-    # If perspective cone quadrics are available, render ray conics and splats implicitly:
-    if world_cones is not None:
-        x_grid = np.linspace(-1.30, 1.30, 260)
-        z_grid = np.linspace(-0.35, 4.85, 260)
-        X, Z = np.meshgrid(x_grid, z_grid)
-        level = 0.018
+    if world_cones is not None and fused_quadrics is not None:
+        img = rasterize_implicit_conics(
+            world_cones, fused_quadrics, cams_est, rots, points_est,
+            shape=(750, 750), x_range=x_range, z_range=z_range,
+        )
+        ax.imshow(img, extent=[x_range[0], x_range[1], z_range[0], z_range[1]], origin="lower")
 
-        n_points, n_cams = world_cones.shape[:2]
-        for p_idx in range(n_points):
-            for c_idx in range(n_cams):
-                q_cone_xz = project_quadric_xz(world_cones[p_idx, c_idx])
-                col = cam_colors[c_idx % len(cam_colors)]
-                draw_implicit_conic_2d(
-                    ax, q_cone_xz, X, Z, level=level, color=col,
-                    alpha_fill=0.08, alpha_edge=0.35, linewidth=0.75,
-                    z_min=cams_est[c_idx, 2] + 0.15,
-                    zorder_fill=2, zorder_edge=2,
-                )
-
-            if fused_quadrics is not None:
-                q_fused_xz = project_quadric_xz(fused_quadrics[p_idx])
-                draw_implicit_conic_2d(
-                    ax, q_fused_xz, X, Z, level=level, color="#10b981",
-                    alpha_fill=0.35, alpha_edge=0.90, linewidth=1.5,
-                    zorder_fill=4, zorder_edge=5,
-                )
-
-        for c_idx in range(n_cams):
-            col = cam_colors[c_idx % len(cam_colors)]
-            ax.plot([], [], color=col, linewidth=1.2, alpha=0.6, label=rf"Cam {c_idx} ray conic ($P^T Q_{c_idx} P \leq c$)")
-        ax.plot([], [], color="#059669", linewidth=1.6, label=r"Fused splat ($P^T \sum Q_c P \leq c$)")
-    else:
-        # Fallback: 2D Gaussian uncertainty ellipses in the X-Z depth plane
-        for pt, cov in zip(points_est, covariances):
-            cov_xz = np.array([
-                [cov[0, 0], cov[0, 2]],
-                [cov[2, 0], cov[2, 2]],
-            ])
-            draw_ellipse_2d(ax, pt[[0, 2]], cov_xz, scale_factor=0.08, color="#0ea5e9", alpha=0.18)
-        ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian 1σ ellipse (X–Z)")
-
-        for c_idx in range(len(cams_est)):
-            cam_col = cam_colors[c_idx % len(cam_colors)]
-            for pt in points_est:
-                ax.plot(
-                    [cams_est[c_idx, 0], pt[0]],
-                    [cams_est[c_idx, 2], pt[2]],
-                    color=cam_col,
-                    linestyle=":",
-                    alpha=0.30,
-                    linewidth=0.9,
-                    zorder=1,
-                )
-
-    # Landmarks:
-    ax.scatter(
-        points_true[:, 0], points_true[:, 2],
-        color="#94a3b8", s=35, marker="o", alpha=0.6, zorder=6, label="Ground truth landmarks",
-    )
-    ax.scatter(
-        points_est[:, 0], points_est[:, 2],
-        color="#059669", s=55, marker="*", zorder=7, label="Triangulated landmarks",
-    )
+    # Overlay camera frustums:
+    for c_idx in range(len(cams_est)):
+        col = cam_colors[c_idx % len(cam_colors)]
+        draw_camera_wedge_2d(ax, cams_est[c_idx], rots[c_idx], scale=0.28, half_fov_deg=38.0, color=col)
 
     ax.set_aspect("equal")
-    ax.set_xlim(-1.30, 1.30)
-    ax.set_ylim(-0.35, 4.85)
-    ax.set_title("Top-Down Geometry (X–Z Depth Plane)\nImplicit ray conics intersect to form Gaussian splats ($Q_{fused} = Q_0 + Q_1$)", fontsize=10.5, pad=10)
-    ax.set_xlabel("X (meters)", fontsize=9, labelpad=4)
-    ax.set_ylabel("Z (depth, meters)", fontsize=9, labelpad=4)
-    ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper right", fontsize=7.5, framealpha=0.92)
+    ax.set_xlim(x_range[0], x_range[1])
+    ax.set_ylim(z_range[0], z_range[1])
+    ax.axis("off")
 
 
 def draw_3d_world(
@@ -310,34 +342,28 @@ def draw_3d_world(
     """Render 3D world scene with camera frustums and Gaussian splat ellipsoids."""
     # Draw cameras:
     for idx, (ct, rt, ce, re, col) in enumerate(zip(cams_true, rots_true, cams_est, rots_est, cam_colors)):
-        lbl = f"Cam {idx}" if idx <= 1 else None
-        draw_camera_frustum(ax, ce, re, scale=0.3, color=col, linestyle="-", linewidth=1.4, label=lbl)
+        draw_camera_frustum(ax, ce, re, scale=0.3, color=col, linestyle="-", linewidth=1.4)
 
     # Landmarks:
     ax.scatter(
         points_true[:, 0], points_true[:, 1], points_true[:, 2],
-        color="#94a3b8", s=30, alpha=0.6, label="Ground truth 3D",
+        color="#94a3b8", s=25, alpha=0.5,
     )
     ax.scatter(
         points_est[:, 0], points_est[:, 1], points_est[:, 2],
-        color="#10b981", s=65, marker="*", depthshade=False, label="Reconstructed 3D",
+        color="#ea580c", s=55, marker="*", depthshade=False,
     )
 
-    # Draw Gaussian splat precision ellipsoids around landmarks:
+    # Draw Gaussian splat precision ellipsoids around landmarks (1.5x scaled):
     for pt, cov in zip(points_est, covariances):
-        draw_ellipsoid_3d(ax, pt, cov, scale_factor=0.08, color="#0ea5e9", alpha=0.25)
-    ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian Splat 1σ Ellipsoid")
+        draw_ellipsoid_3d(ax, pt, cov, scale_factor=0.12, color="#f97316", alpha=0.35)
 
-    ax.set_title("3D World Scene & Perspective Cone Quadrics\nFused quadrics form Gaussian splat uncertainty ellipsoids", fontsize=11, pad=10)
     ax.set_xlim(-1.2, 1.2)
-    ax.set_ylim(-1.0, 1.0)
-    ax.set_zlim(1.0, 4.4)
-    ax.set_box_aspect([1.8, 1.5, 2.6])
-    ax.set_xlabel("X (m)", fontsize=8, labelpad=-5)
-    ax.set_ylabel("Y (m)", fontsize=8, labelpad=-5)
-    ax.set_zlabel("Z (m)", fontsize=8, labelpad=-5)
-    ax.view_init(elev=20, azim=-60)
-    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85)
+    ax.set_ylim(-0.8, 0.8)
+    ax.set_zlim(-0.3, 3.1)
+    ax.set_box_aspect([2.4, 1.6, 3.4])
+    ax.view_init(elev=28, azim=-65)
+    ax.axis("off")
 
 
 def draw_top_down_figure(
@@ -346,7 +372,7 @@ def draw_top_down_figure(
     auto_increment: bool = True,
 ) -> plt.Figure:
     """Render and save a dedicated standalone 2D top-down geometry figure."""
-    fig, ax = plt.subplots(figsize=(7.5, 9.0), dpi=140, layout="constrained")
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
     draw_top_down_view(ax, *top_down_data)
 
     if plot_path is not None:

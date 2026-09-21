@@ -44,24 +44,26 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     """Build a 4-camera synthetic rig, run bundle adjustment, and render figure."""
     rng = np.random.default_rng(42)
 
-    # 1. World landmarks structured symmetrically across depths z in [1.45, 3.90] m:
-    # Clearly illustrates ray cone widening and depth elongation growth from near to far camera ray intersections.
+    # 1. Asymmetric world landmarks with distinct depths spanning z in [0.85, 2.55] m:
+    # Naturally breaks mirror symmetry while maintaining clean ~7°+ ray separation across
+    # both camera FOVs, showcasing distinct triangulation angles, tilts, and depth ratios:
     xyz = np.array([
-        [-0.30, -0.15, 1.45],
-        [ 0.30,  0.15, 1.45],
-        [ 0.00, -0.10, 2.20],
-        [-0.38,  0.20, 3.10],
-        [ 0.38, -0.20, 3.10],
-        [ 0.00,  0.10, 3.90],
+        [ 0.15, -0.06, 0.85],
+        [-0.43,  0.07, 1.15],
+        [ 0.50, -0.08, 1.50],
+        [ 0.03,  0.06, 1.85],
+        [ 0.65, -0.07, 2.20],
+        [-0.60,  0.09, 2.55],
     ])
     true_points = mv.yzw * xyz[:, 0] + mv.zxw * xyz[:, 1] + mv.xyw * xyz[:, 2] + mv.zyx
 
-    # 2. 2 cameras in stereo configuration with convergent gaze:
-    # Cam 0: left (-x = -0.55m), panned right (+13°)
-    # Cam 1: right (+x = +0.55m), panned left (-13°)
-    theta = np.radians(13.0)
-    m0 = ((-mv.xw * 0.55) * 0.5).exp() * ((-mv.zx * theta) * 0.5).exp()
-    m1 = ((mv.xw * 0.55) * 0.5).exp() * ((mv.zx * theta) * 0.5).exp()
+    # 2. 2 cameras in stereo configuration with 18° convergent gaze:
+    # Cam 0: left (-x = -0.75m), panned right (+18°)
+    # Cam 1: right (+x = +0.75m), panned left (-18°)
+    baseline_x = 0.75
+    theta = np.radians(18.0)
+    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((-mv.zx * theta) * 0.5).exp()
+    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((mv.zx * theta) * 0.5).exp()
     true_motors = type(m0).stack([m0, m1])
 
     c_local = mv.zyx
@@ -81,12 +83,12 @@ def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure
     sensor_discs = trans >> q_sensor(trans << core.Point)
     local_cones = core.make_cones(cameras, sensor_discs)
 
-    # 4. Initial camera pose estimates (Cam 0 fixed as reference, Cam 1 perturbed by 6%):
-    init_m1 = ((mv.xw * 0.55) * 0.5).exp() * ((mv.zx * (theta * 1.06)) * 0.5).exp()
+    # 4. Initial camera pose estimates (Cam 0 fixed as reference, Cam 1 perturbed by 5%):
+    init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((mv.zx * (theta * 1.05)) * 0.5).exp()
     initial_motors = type(m0).stack([m0, init_m1])
 
     print("=== 2-Camera Stereo Rig & Perspective Cone Bundle Adjustment ===")
-    print(f"Cameras  : 2 convergent viewpoints (baseline: 1.10m X; convergent gaze: 13.0°)")
+    print(f"Cameras  : 2 convergent viewpoints (baseline: {2*baseline_x:.2f}m X; convergent gaze: {np.degrees(theta):.1f}°)")
     print(f"Landmarks: {len(xyz)} points spanning depth z in [{xyz[:, 2].min():.2f}m, {xyz[:, 2].max():.2f}m]")
 
     # Measure initial error before optimization:
