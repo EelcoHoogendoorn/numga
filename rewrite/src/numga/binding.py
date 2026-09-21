@@ -40,25 +40,8 @@ class AxisTransform:
     target_from_source: tuple[int | None, ...]
 
     @classmethod
-    @lru_cache(maxsize=None)
     def plan(cls, source: SubSpace, target: SubSpace) -> "AxisTransform":
-        if source.algebra is not target.algebra:
-            return cls(source, target, AxisTransformKind.INCOMPATIBLE, ())
-
-        source_index = {mask: index for index, mask in enumerate(source.masks)}
-        target_from_source = tuple(source_index.get(mask) for mask in target.masks)
-
-        if source == target:
-            kind = AxisTransformKind.EXACT
-        elif source.same_support(target):
-            kind = AxisTransformKind.RELAYOUT
-        elif source.support_is_subset_of(target):
-            kind = AxisTransformKind.EMBED
-        elif target.support_is_subset_of(source):
-            kind = AxisTransformKind.PROJECT
-        else:
-            kind = AxisTransformKind.REFRAME
-        return cls(source, target, kind, target_from_source)
+        return _plan_axis_transform(source, target)
 
     @property
     def is_compatible(self) -> bool:
@@ -77,22 +60,50 @@ class AxisTransform:
         return self.is_lossless
 
     @property
-    @lru_cache(maxsize=None)
     def coordinate_matrix(self) -> tuple[tuple[int, ...], ...]:
         """Dense target-by-source transform in exact integer coordinates.
 
         Fold orientation signs into the permutation/projection/embedding.
         """
+        return _axis_transform_coordinate_matrix(self)
 
-        return tuple(
-            tuple(
-                int(source_index == candidate) * self.source.signs[candidate] * self.target.signs[target_index]
-                if source_index is not None
-                else 0
-                for candidate in range(len(self.source))
-            )
-            for target_index, source_index in enumerate(self.target_from_source)
+
+@lru_cache(maxsize=None)
+def _plan_axis_transform(source: SubSpace, target: SubSpace) -> AxisTransform:
+    if source.algebra is not target.algebra:
+        return AxisTransform(source, target, AxisTransformKind.INCOMPATIBLE, ())
+
+    source_index = {mask: index for index, mask in enumerate(source.masks)}
+    target_from_source = tuple(source_index.get(mask) for mask in target.masks)
+
+    if source == target:
+        kind = AxisTransformKind.EXACT
+    elif source.same_support(target):
+        kind = AxisTransformKind.RELAYOUT
+    elif source.support_is_subset_of(target):
+        kind = AxisTransformKind.EMBED
+    elif target.support_is_subset_of(source):
+        kind = AxisTransformKind.PROJECT
+    else:
+        kind = AxisTransformKind.REFRAME
+    return AxisTransform(source, target, kind, target_from_source)
+
+
+@lru_cache(maxsize=None)
+def _axis_transform_coordinate_matrix(
+    transform: AxisTransform,
+) -> tuple[tuple[int, ...], ...]:
+    return tuple(
+        tuple(
+            int(source_index == candidate)
+            * transform.source.signs[candidate]
+            * transform.target.signs[target_index]
+            if source_index is not None
+            else 0
+            for candidate in range(len(transform.source))
         )
+        for target_index, source_index in enumerate(transform.target_from_source)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,54 +138,15 @@ class BindingPlan:
         )
 
     @classmethod
-    @lru_cache(maxsize=None)
     def from_types(
         cls,
         target_gatype: GAType,
         operands_by_slot: tuple[tuple[int, GAType], ...],
         equality_groups: tuple[tuple[int, ...], ...] = (),
     ) -> "BindingPlan":
-        """Plan once per static signature, never retaining coefficient arrays."""
-
-        entries: list[BoundSlot] = []
-
-        for slot, operand in operands_by_slot:
-            if slot < 0 or slot >= target_gatype.arity:
-                raise IndexError(f"input slot {slot} is out of range for arity {target_gatype.arity}")
-            required = target_gatype.input_subspaces[slot]
-            actual = operand.output_subspace
-            transform = AxisTransform.plan(actual, required)
-            if not transform.is_implicit_bind_compatible:
-                raise ValueError(
-                    "cannot bind output axis "
-                    f"{actual!r} into input slot {slot} requiring {required!r}: "
-                    f"conversion is {transform.kind.value!r}"
-                )
-            entries.append(BoundSlot(slot, operand, transform))
-
-        by_slot = dict(operands_by_slot)
-        result_axes: list[SubSpace] = [target_gatype.output_subspace]
-        for slot, target_axis in enumerate(target_gatype.input_subspaces):
-            operand = by_slot.get(slot)
-            if operand is None:
-                result_axes.append(target_axis)
-            else:
-                result_axes.extend(operand.input_subspaces)
-
-        plan = cls(
-            target_gatype=target_gatype,
-            bindings=tuple(entries),
-            result_subspaces=tuple(result_axes),
-            equality_groups=equality_groups,
-        )
-        subspaces = bind_subspaces(plan)
-        return (
-            replace(plan, result_subspaces=subspaces)
-            if subspaces != plan.result_subspaces else plan
-        )
+        return _binding_plan_from_types(target_gatype, operands_by_slot, equality_groups)
 
     @property
-    @lru_cache(maxsize=None)
     def execution_gatype(self) -> GAType:
         """Target axes after any certified output restriction."""
 
@@ -183,7 +155,6 @@ class BindingPlan:
         )
 
     @property
-    @lru_cache(maxsize=None)
     def output_indices(self) -> tuple[int, ...]:
         """Target rows retained by a certified output-support restriction."""
 
@@ -193,17 +164,14 @@ class BindingPlan:
         return tuple(indices[mask] for mask in self.result_subspaces[0].masks)
 
     @property
-    @lru_cache(maxsize=None)
     def slots(self) -> tuple[int, ...]:
         return tuple(binding.slot for binding in self.bindings)
 
     @property
-    @lru_cache(maxsize=None)
     def operand_gatypes(self) -> tuple[GAType, ...]:
         return tuple(binding.operand_gatype for binding in self.bindings)
 
     @property
-    @lru_cache(maxsize=None)
     def result_input_splices(self) -> tuple[tuple[int, ...], ...]:
         """Result slots contributed by each original target input slot.
 
@@ -240,6 +208,52 @@ class BindingPlan:
             self.result_input_splices,
             self.equality_groups,
         )
+
+
+@lru_cache(maxsize=None)
+def _binding_plan_from_types(
+    target_gatype: GAType,
+    operands_by_slot: tuple[tuple[int, GAType], ...],
+    equality_groups: tuple[tuple[int, ...], ...] = (),
+) -> BindingPlan:
+    """Plan once per static signature, never retaining coefficient arrays."""
+
+    entries: list[BoundSlot] = []
+
+    for slot, operand in operands_by_slot:
+        if slot < 0 or slot >= target_gatype.arity:
+            raise IndexError(f"input slot {slot} is out of range for arity {target_gatype.arity}")
+        required = target_gatype.input_subspaces[slot]
+        actual = operand.output_subspace
+        transform = AxisTransform.plan(actual, required)
+        if not transform.is_implicit_bind_compatible:
+            raise ValueError(
+                "cannot bind output axis "
+                f"{actual!r} into input slot {slot} requiring {required!r}: "
+                f"conversion is {transform.kind.value!r}"
+            )
+        entries.append(BoundSlot(slot, operand, transform))
+
+    by_slot = dict(operands_by_slot)
+    result_axes: list[SubSpace] = [target_gatype.output_subspace]
+    for slot, target_axis in enumerate(target_gatype.input_subspaces):
+        operand = by_slot.get(slot)
+        if operand is None:
+            result_axes.append(target_axis)
+        else:
+            result_axes.extend(operand.input_subspaces)
+
+    plan = BindingPlan(
+        target_gatype=target_gatype,
+        bindings=tuple(entries),
+        result_subspaces=tuple(result_axes),
+        equality_groups=equality_groups,
+    )
+    subspaces = bind_subspaces(plan)
+    return (
+        replace(plan, result_subspaces=subspaces)
+        if subspaces != plan.result_subspaces else plan
+    )
 
 
 class TypeRules:
