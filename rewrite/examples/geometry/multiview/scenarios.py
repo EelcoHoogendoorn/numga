@@ -40,7 +40,7 @@ def extract_covariances(quadrics: core.Quadric) -> np.ndarray:
     return np.linalg.inv(precisions)
 
 
-def multiview_figure(plot_path: Path) -> plt.Figure:
+def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure:
     """Build a 4-camera synthetic rig, run bundle adjustment, and render figure."""
     rng = np.random.default_rng(42)
 
@@ -93,16 +93,28 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     init_m3 = ((mv.yw * 0.50) * 0.5).exp() * ((mv.yz * (theta * 1.12)) * 0.5).exp()
     initial_motors = type(m0).stack([m0, init_m1, init_m2, init_m3])
 
+    print("=== Multi-Camera Rig & Perspective Cone Bundle Adjustment ===")
+    print(f"Cameras  : 4 convergent viewpoints (baselines: ±0.65m X, +0.50m Y; convergent gaze: 14.0°)")
+    print(f"Landmarks: {len(xyz)} points spanning depth z in [{xyz[:, 2].min():.2f}m, {xyz[:, 2].max():.2f}m]")
+
+    # Measure initial error before optimization:
+    init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
+    init_xyz = coordinates(init_pts)
+    init_scale = float(np.sum(init_xyz * xyz) / np.sum(init_xyz**2))
+    init_rmse = float(np.sqrt(np.mean(np.sum((init_xyz * init_scale - xyz)**2, axis=-1))))
+    print(f"Initial Landmark RMSE (unoptimized): {init_rmse:.4e} m ({init_rmse * 1000:.1f} mm)")
+
     # 5. Run bundle adjustment purely via perspective cone quadrics:
+    iterations = 15
     est_motors, est_points, quadrics = core.bundle_adjust(
-        initial_motors, local_cones, iterations=15,
+        initial_motors, local_cones, iterations=iterations,
     )
     xyz_true = coordinates(true_points)
     xyz_est = coordinates(est_points)
     scale = float(np.sum(xyz_est * xyz_true) / np.sum(xyz_est**2))
     xyz_est_scaled = xyz_est * scale
     final_rmse = np.sqrt(np.mean(np.sum((xyz_est_scaled - xyz_true)**2, axis=-1)))
-    print(f"Converged Landmark RMSE: {final_rmse:.4e} m")
+    print(f"Converged Landmark RMSE ({iterations} iters): {final_rmse:.4e} m ({final_rmse * 1000:.2f} mm)")
 
     # 6. Extract camera centers and orientations:
     world_cams = true_motors >> c_local
@@ -116,17 +128,28 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     covariances = extract_covariances(quadrics) * (scale**2)
     cam_colors = ["#0284c7", "#ec4899", "#8b5cf6", "#f59e0b"]
 
+    print("Gaussian Splat Anisotropy Across Depth (X–Z plane):")
+    for i, (pt, cov) in enumerate(zip(xyz_est_scaled, covariances)):
+        cov_xz = np.array([[cov[0, 0], cov[0, 2]], [cov[2, 0], cov[2, 2]]])
+        evals = np.linalg.eigvalsh(cov_xz)
+        radii = np.sqrt(np.maximum(evals, 1e-8))
+        ratio = radii[1] / radii[0]
+        print(f"  Landmark {i} (x={pt[0]:+.2f}m, z={pt[2]:.2f}m): minor={radii[0]:.3f}m, major={radii[1]:.3f}m, ratio={ratio:.2f}")
+
     top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, covariances, cam_colors, rots_est)
     world_3d_data = (cams_true_xyz, rots_true, cams_est_xyz, rots_est, xyz_true, xyz_est_scaled, covariances, cam_colors)
 
-    return render.draw_multiview_figure(top_down_data, world_3d_data, plot_path=plot_path)
+    return render.draw_multiview_figure(
+        top_down_data, world_3d_data, plot_path=plot_path, auto_increment=auto_increment,
+    )
 
 
-def main(plot_path: Path) -> plt.Figure:
+def main(plot_path: Path | None = None, auto_increment: bool = True) -> plt.Figure:
     """Render the multi-camera bundle adjustment figure."""
-    return multiview_figure(plot_path)
+    if plot_path is None:
+        plot_path = PLOT_DIR / "multiview_bundle_adjustment.png"
+    return multiview_figure(plot_path, auto_increment=auto_increment)
 
 
 if __name__ == "__main__":
-    out_file = PLOT_DIR / "multiview_bundle_adjustment.png"
-    main(out_file)
+    main()

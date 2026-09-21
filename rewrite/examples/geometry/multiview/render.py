@@ -231,6 +231,7 @@ def draw_multiview_figure(
     world_3d_data: tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, list[str]],
     convergence_history: list[float] | None = None,
     plot_path: Path | None = None,
+    auto_increment: bool = True,
 ) -> plt.Figure:
     """Render and save the two-panel multi-camera reconstruction figure."""
     fig = plt.figure(figsize=(14.0, 6.0), dpi=140, layout="constrained")
@@ -242,7 +243,11 @@ def draw_multiview_figure(
     draw_3d_world(ax2, *world_3d_data)
 
     if plot_path is not None:
-        plot_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+        target_path = plot_path
+        if auto_increment:
+            from examples import auto_increment_path
+            target_path = auto_increment_path(plot_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(target_path, bbox_inches="tight")
+        print(f"[render] Figure saved to: {target_path}")
     return fig
