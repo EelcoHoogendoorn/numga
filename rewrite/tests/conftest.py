@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+# Force headless matplotlib backend so tests never spawn GUI windows or steal focus:
+os.environ["MPLBACKEND"] = "Agg"
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+except ImportError:
+    pass
 
 import pytest
 

@@ -56,3 +56,5 @@ follow them exactly.
 - Deliverables (plots, GIFs) go to `rewrite/plots/`; no previews or collages in their place.
 - Vectorize; JIT is not the answer.
 - Always run targeted tests (`pytest path/to/test_file.py`). Only run the full test suite when editing test infrastructure across the entire suite or during explicit pre-commit checks.
+- Always run matplotlib headlessly (`MPLBACKEND=Agg` or `matplotlib.use('Agg')`); never spawn GUI plot windows or steal window focus.
+
