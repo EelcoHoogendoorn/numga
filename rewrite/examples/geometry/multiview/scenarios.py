@@ -44,9 +44,18 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     """Build a 4-camera synthetic rig, run bundle adjustment, and render figure."""
     rng = np.random.default_rng(42)
 
-    # 1. World landmarks in front of rig (z in [2.2, 3.8]):
-    n_points = 14
-    xyz = rng.uniform([-0.85, -0.75, 2.2], [0.85, 0.75, 3.8], size=(n_points, 3))
+    # 1. World landmarks structured symmetrically across depths z in [1.4, 4.0] m:
+    # Clearly illustrates splat size and depth elongation growth from near to far camera ray intersections.
+    xyz = np.array([
+        [-0.50, -0.20, 1.40],
+        [ 0.50,  0.20, 1.40],
+        [ 0.00, -0.10, 2.00],
+        [-0.55,  0.25, 2.60],
+        [ 0.55, -0.25, 2.60],
+        [ 0.00,  0.10, 3.30],
+        [-0.65, -0.20, 4.00],
+        [ 0.65,  0.20, 4.00],
+    ])
     true_points = mv.yzw * xyz[:, 0] + mv.zxw * xyz[:, 1] + mv.xyw * xyz[:, 2] + mv.zyx
 
     # 2. 4 cameras with convergent gaze:
@@ -84,22 +93,11 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     init_m3 = ((mv.yw * 0.50) * 0.5).exp() * ((mv.yz * (theta * 1.12)) * 0.5).exp()
     initial_motors = type(m0).stack([m0, init_m1, init_m2, init_m3])
 
-    # 5. Run bundle adjustment and record convergence profile:
-    iterations = 15
-    convergence_history: list[float] = []
-    xyz_true = coordinates(true_points)
-
-    for it in range(1, iterations + 1):
-        m_it, p_it, _ = core.bundle_adjust(initial_motors, local_cones, iterations=it)
-        xyz_it = coordinates(p_it)
-        scale = float(np.sum(xyz_it * xyz_true) / np.sum(xyz_it**2))
-        rmse_it = float(np.sqrt(np.mean(np.sum((xyz_it * scale - xyz_true)**2, axis=-1))))
-        convergence_history.append(rmse_it)
-
-    # Final converged state:
+    # 5. Run bundle adjustment purely via perspective cone quadrics:
     est_motors, est_points, quadrics = core.bundle_adjust(
-        initial_motors, local_cones, iterations=iterations,
+        initial_motors, local_cones, iterations=15,
     )
+    xyz_true = coordinates(true_points)
     xyz_est = coordinates(est_points)
     scale = float(np.sum(xyz_est * xyz_true) / np.sum(xyz_est**2))
     xyz_est_scaled = xyz_est * scale
@@ -121,7 +119,7 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, covariances, cam_colors, rots_est)
     world_3d_data = (cams_true_xyz, rots_true, cams_est_xyz, rots_est, xyz_true, xyz_est_scaled, covariances, cam_colors)
 
-    return render.draw_multiview_figure(top_down_data, world_3d_data, convergence_history, plot_path)
+    return render.draw_multiview_figure(top_down_data, world_3d_data, plot_path=plot_path)
 
 
 def main(plot_path: Path) -> plt.Figure:

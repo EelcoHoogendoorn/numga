@@ -159,17 +159,27 @@ def draw_top_down_view(
         color="#10b981", s=50, marker="*", zorder=4, label="Triangulated landmarks",
     )
 
-    # Sight lines from Camera 0 and Camera 1 to first 4 landmarks:
-    for p_idx in range(min(4, len(points_est))):
-        pt = points_est[p_idx]
-        ax.plot([cams_est[0, 0], pt[0]], [cams_est[0, 2], pt[2]], color=cam_colors[0], linestyle=":", alpha=0.35, linewidth=1.0)
-        ax.plot([cams_est[1, 0], pt[0]], [cams_est[1, 2], pt[2]], color=cam_colors[1], linestyle=":", alpha=0.35, linewidth=1.0)
+    # Sight lines from all cameras to all landmarks:
+    for c_idx in range(len(cams_est)):
+        cam_col = cam_colors[c_idx % len(cam_colors)]
+        for pt in points_est:
+            ax.plot(
+                [cams_est[c_idx, 0], pt[0]],
+                [cams_est[c_idx, 2], pt[2]],
+                color=cam_col,
+                linestyle=":",
+                alpha=0.30,
+                linewidth=0.9,
+                zorder=1,
+            )
 
-    ax.set_title("1. Top-Down Geometry (X–Z Depth Plane)\nCamera constellation & Gaussian uncertainty ellipses", fontsize=10, pad=8)
+    ax.set_xlim(-0.95, 0.95)
+    ax.set_ylim(-0.25, 4.5)
+    ax.set_title("1. Top-Down Geometry (X–Z Depth Plane)\nCamera constellation, sight rays & depth-elongated splat ellipses", fontsize=10, pad=8)
     ax.set_xlabel("X (meters)", fontsize=8, labelpad=2)
     ax.set_ylabel("Z (depth, meters)", fontsize=8, labelpad=2)
     ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85)
+    ax.legend(loc="lower left", fontsize=7.5, framealpha=0.90)
 
 
 def draw_3d_world(
@@ -205,10 +215,10 @@ def draw_3d_world(
     ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian Splat 1σ Ellipsoid")
 
     ax.set_title("2. 3D World Scene & Perspective Cone Quadrics\nFused quadrics form Gaussian splat uncertainty ellipsoids", fontsize=10, pad=8)
-    ax.set_xlim(-1.4, 1.4)
-    ax.set_ylim(-1.2, 1.2)
-    ax.set_zlim(1.8, 4.4)
-    ax.set_box_aspect([1.8, 1.6, 2.6])
+    ax.set_xlim(-1.2, 1.2)
+    ax.set_ylim(-1.0, 1.0)
+    ax.set_zlim(1.0, 4.4)
+    ax.set_box_aspect([1.8, 1.5, 2.6])
     ax.set_xlabel("X (m)", fontsize=8, labelpad=-5)
     ax.set_ylabel("Y (m)", fontsize=8, labelpad=-5)
     ax.set_zlabel("Z (m)", fontsize=8, labelpad=-5)
@@ -216,39 +226,23 @@ def draw_3d_world(
     ax.legend(loc="upper left", fontsize=7.5, framealpha=0.85)
 
 
-def draw_convergence(
-    ax: Axes,
-    iteration_history: list[float],
-) -> None:
-    """Render bundle adjustment Gauss-Newton convergence plot."""
-    iters = list(range(1, len(iteration_history) + 1))
-    ax.semilogy(iters, iteration_history, color="#6366f1", marker="o", linewidth=1.8, markersize=5, label="Landmark RMSE (m)")
-    ax.set_title("3. Gauss-Newton Convergence\nAlternating quadric triangulation & Lie algebra updates", fontsize=10, pad=8)
-    ax.set_xlabel("Iteration", fontsize=8, labelpad=2)
-    ax.set_ylabel("RMSE (meters)", fontsize=8, labelpad=2)
-    ax.grid(True, linestyle=":", alpha=0.6)
-    ax.legend(loc="upper right", fontsize=8, framealpha=0.85)
-
-
 def draw_multiview_figure(
     top_down_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[np.ndarray] | None],
     world_3d_data: tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, list[str]],
-    convergence_history: list[float],
-    plot_path: Path,
+    convergence_history: list[float] | None = None,
+    plot_path: Path | None = None,
 ) -> plt.Figure:
-    """Render and save the three-panel multi-camera reconstruction figure."""
-    fig = plt.figure(figsize=(19.0, 5.8), dpi=140, layout="constrained")
+    """Render and save the two-panel multi-camera reconstruction figure."""
+    fig = plt.figure(figsize=(14.0, 6.0), dpi=140, layout="constrained")
 
-    ax1 = fig.add_subplot(1, 3, 1)
+    ax1 = fig.add_subplot(1, 2, 1)
     draw_top_down_view(ax1, *top_down_data)
 
-    ax2 = fig.add_subplot(1, 3, 2, projection="3d")
+    ax2 = fig.add_subplot(1, 2, 2, projection="3d")
     draw_3d_world(ax2, *world_3d_data)
 
-    ax3 = fig.add_subplot(1, 3, 3)
-    draw_convergence(ax3, convergence_history)
-
-    plot_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(plot_path, bbox_inches="tight")
-    print(f"Figure saved to {plot_path}")
+    if plot_path is not None:
+        plot_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(plot_path, bbox_inches="tight")
+        print(f"Figure saved to {plot_path}")
     return fig
