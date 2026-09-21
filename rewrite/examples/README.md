@@ -50,7 +50,7 @@ go to [`../plots/`](../plots/).
 
 | Topic | Examples |
 | --- | --- |
-| Geometry | [Planar PGA](geometry/pga2d.py), [projection](geometry/projection/), [scenegraph](geometry/scenegraph.py), [fitting](geometry/fitting.py), [registration](geometry/registration.py) |
+| Geometry | [Planar PGA](geometry/pga2d.py), [projection](geometry/projection/), [scenegraph](geometry/scenegraph.py), [fitting](geometry/fitting.py), [registration](geometry/registration.py), [quadric error metrics (QEM)](geometry/qem/), [epipolar geometry & 3D reconstruction](geometry/epipolar/), [multi-view cone reconstruction & bundle adjustment](geometry/multiview/) |
 | Quadrics | [Projective quadrics](quadrics/quadrics.py), [Gaussian fit and 1σ quadric](quadrics/gaussian.py), [spherical quadrics](quadrics/spherical_quadrics.py), [CGA spherical quadrics](quadrics/cga_spherical_quadrics.py), [sphere rendering](quadrics/conformal_elliptical.py), [collision](quadrics/quadric_collision.py), [Cayley–Klein geometry](quadrics/cayley_klein.py), [spherical dynamics](quadrics/spherical_quadric_scenarios.py) |
 | Mechanics | [Inertia](mechanics/inertia.py), [simplex inertia](mechanics/simplex.py), [stiffness and normal modes](mechanics/stiffness.py), [tennis racket instability](mechanics/tennis_racket.py), [Lie integrators](mechanics/lie_integrators.py), [rigid body chains (XPBD)](mechanics/xpbd.py) |
 | Relativity | [Distributed impulses](relativity/relativistic_impulse.py), [ladder paradox](relativity/ladder_paradox.py), [Bell's spaceships](relativity/bell_spaceships.py), [relativistic aberration](relativity/boosted_quadrics.py), [curvature and gravitational waves](relativity/curvature.py) |
@@ -64,6 +64,9 @@ export uses Pillow. The JAX chain runner additionally requires JAX.
 
 ```sh
 PYTHONPATH=src:. python -m examples.geometry.projection.scenarios
+PYTHONPATH=src:. python -m examples.geometry.qem.scenarios
+PYTHONPATH=src:. python -m examples.geometry.epipolar.scenarios
+PYTHONPATH=src:. python -m examples.geometry.multiview.scenarios
 PYTHONPATH=src:. python -m examples.quadrics.cayley_klein
 PYTHONPATH=src:. python -m examples.quadrics.gaussian
 PYTHONPATH=src:. python -m examples.mechanics.stiffness --animate

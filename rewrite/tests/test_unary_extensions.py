@@ -141,6 +141,77 @@ def test_rank_deficient_least_squares_has_minimum_norm(context):
     np.testing.assert_allclose(inverse(operator(inverse)).kernel, inverse.kernel, atol=2e-6)
 
 
+def test_nullary_lstsq_exact_and_minimum_norm(context):
+    ga = context.algebra
+    # Underdetermined: 2 equations (subspace 'x y'), 3 columns
+    basis = context.extensor(ga.gatype(ga.subspace("x y")), [[1, 0], [0, 1], [1, 1]])
+    target = context.extensor(ga.gatype(ga.subspace("x y")), [2, 3])
+    solution = basis.lstsq(target)
+    assert solution.shape == (3,)
+    assert solution.arity == 0
+    assert solution.axes == (ga.subspace.scalar(),)
+    # Expected minimum norm solution
+    expected = np.linalg.pinv([[1, 0, 1], [0, 1, 1]]) @ [2, 3]
+    np.testing.assert_allclose(solution.kernel.squeeze(-1), expected, atol=2e-6)
+    # Reconstruct target via (solution * basis).sum(axis=-1)
+    reconstructed = (solution * basis).sum(axis=-1)
+    np.testing.assert_allclose(reconstructed.kernel, target.kernel, atol=2e-6)
+
+
+def test_nullary_lstsq_batched_and_broadcasting(context):
+    ga = context.algebra
+    rng = np.random.default_rng(12)
+    # Single basis of 4 vectors in 3D
+    basis_single = context.multivector.vector(rng.normal(size=(4, 3)))
+    # Batch of 5 targets
+    targets = context.multivector.vector(rng.normal(size=(5, 3)))
+    solution = basis_single.lstsq(targets)
+    assert solution.shape == (5, 4)
+    reconstructed = (solution * basis_single).sum(axis=-1)
+    np.testing.assert_allclose(reconstructed.kernel, targets.kernel, atol=2e-6)
+
+    # Batched basis (2, 4) against batched targets (2,)
+    basis_batched = context.multivector.vector(rng.normal(size=(2, 4, 3)))
+    targets_batched = context.multivector.vector(rng.normal(size=(2, 3)))
+    solution_batched = basis_batched.lstsq(targets_batched)
+    assert solution_batched.shape == (2, 4)
+    reconstructed_batched = (solution_batched * basis_batched).sum(axis=-1)
+    np.testing.assert_allclose(reconstructed_batched.kernel, targets_batched.kernel, atol=2e-6)
+
+
+def test_nullary_lstsq_user_transposed_axis(context):
+    ga = context.algebra
+    rng = np.random.default_rng(24)
+    data = rng.normal(size=(4, 5, 3))
+    basis = context.multivector.vector(data)
+
+    # To solve along axis 0 (size 4), user transposes axis 0 to the trailing position:
+    basis_t = basis.map_kernel(lambda k: context.xp.swapaxes(k, 0, 1))  # shape (5, 4)
+    target = context.multivector.vector(rng.normal(size=(5, 3)))
+    solution = basis_t.lstsq(target)
+    assert solution.shape == (5, 4)
+    recon = (solution * basis_t).sum(axis=-1)
+    np.testing.assert_allclose(recon.kernel, target.kernel, atol=2e-6)
+
+
+def test_nullary_lstsq_subspace_projection(context):
+    ga = context.algebra
+    # Basis in 2D subspace 'x y'
+    basis = context.extensor(ga.gatype(ga.subspace("x y")), [[1, 0], [0, 1]])
+    # Target in full 3D vector space 'x y z'
+    target = context.multivector.vector([3, 4, 5])
+    solution = basis.lstsq(target)
+    # The 'z' component cannot be matched and should be dropped (cast onto 'x y')
+    expected = [3, 4]
+    np.testing.assert_allclose(solution.kernel.squeeze(-1), expected, atol=2e-6)
+
+
+def test_nullary_lstsq_rejects_unbatched(context):
+    single = context.multivector.vector([1, 2, 3])
+    with pytest.raises(ValueError, match="nullary lstsq requires at least one batch axis"):
+        single.lstsq(single)
+
+
 def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(context):
     ga = context.algebra
     output, first, retained, last = (

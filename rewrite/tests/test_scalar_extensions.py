@@ -82,6 +82,18 @@ def test_scalar_index_operations_use_backend_arrays_and_batch_axes(context):
     assert maximum.dtype.kind in "iu"
     assert isinstance(maximum, type(context.xp.asarray(0)))
     np.testing.assert_array_equal(maximum, np.argmax(values, axis=0, keepdims=True))
+    minimum = scalar.argmin()
+    assert minimum.shape == ()
+    assert minimum.dtype.kind in "iu"
+    np.testing.assert_array_equal(minimum, np.argmin(values))
+    minimum = scalar.argmin(axis=0, keepdims=True)
+    assert minimum.shape == (1, 1, 3)
+    assert minimum.dtype.kind in "iu"
+    assert isinstance(minimum, type(context.xp.asarray(0)))
+    np.testing.assert_array_equal(minimum, np.argmin(values, axis=0, keepdims=True))
+
+    neg = context.multivector.scalar([-2.5])
+    np.testing.assert_allclose(neg.abs().to_array(), 2.5)
 
 
 def test_nonlinear_scalar_methods_do_not_match_vectors_or_open_forms(context):
@@ -92,10 +104,14 @@ def test_nonlinear_scalar_methods_do_not_match_vectors_or_open_forms(context):
         with pytest.raises(LookupError):
             value.cos()
         with pytest.raises(LookupError):
+            value.abs()
+        with pytest.raises(LookupError):
             value.isnan()
         with pytest.raises(LookupError):
             value.argsort()
         with pytest.raises(LookupError):
             value.argmax()
+        with pytest.raises(LookupError):
+            value.argmin()
         with pytest.raises(LookupError):
             value < 0

@@ -91,6 +91,8 @@ class Extensor:
     isinf = ExtensionMethod("isinf")
     argsort = ExtensionMethod("argsort")
     argmax = ExtensionMethod("argmax")
+    argmin = ExtensionMethod("argmin")
+    abs = ExtensionMethod("abs")
     less = ExtensionMethod("less")
     less_equal = ExtensionMethod("less_equal")
     greater = ExtensionMethod("greater")

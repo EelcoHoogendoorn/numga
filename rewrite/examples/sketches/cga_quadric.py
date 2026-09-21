@@ -54,15 +54,15 @@ def render(scene: Scene) -> Iterator[np.ndarray]:
     world_ray_linear = camera_map(ray_linear)
 
     for motors in scene.motors:
-        world = motors >> scene.surfaces(motors << Point)
+        world_quadrics = motors >> scene.surfaces(motors << Point)
         # Pull the world quadrics back through the affine camera map once per body.
-        bodies = camera_map & world(camera_map)
+        bodies = camera_map & world_quadrics(camera_map)
         constant = bodies(origin, origin)
         linear = bodies(origin, ray_linear) * 2
         quadratic = bodies(ray_linear, ray_linear) + bodies(origin, ray_quadratic) * 2
         # The affine camera fixes the ideal point in ray_quadratic. Contract it
         # before the camera pullback to preserve exact zeros in lower-degree surfaces.
-        quadratic_polar = world(ray_quadratic)
+        quadratic_polar = world_quadrics(ray_quadratic)
         cubic = (world_ray_linear & quadratic_polar) * 2
         quartic = ray_quadratic & quadratic_polar
         def traces():

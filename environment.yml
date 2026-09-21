@@ -1,0 +1,17 @@
+name: numga
+channels:
+  - anaconda
+  - conda-forge
+dependencies:
+  - python >= 3.12
+#  - python.app    # [osx]
+  - numpy
+  - scipy
+  - numpy-indexed
+  - matplotlib
+  - cached-property
+  - pytest
+  - jax
+#  - pytorch-cpu
+  - einops
+  - imageio

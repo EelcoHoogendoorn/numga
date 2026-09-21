@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 
-from examples.geometry.fitting import main
-from examples.geometry.fitting_plumbing import (
+from examples.geometry.fitting import (
+    fit,
     ga,
     ctx,
     Line,
@@ -20,22 +20,17 @@ from examples.geometry.fitting_plumbing import (
     mv,
     patch,
     point,
-    same_element,
     segment,
-    smallest_finite,
 )
 
 POSE = (mv.xw * 0.4 + mv.yw * -0.3 + mv.zw * 0.6).exp() * (mv.yz * 0.3).exp() * (mv.xy * 0.5).exp()
 
 
-def fit(Unknown, points: Point):
-    """The tutorial's fit, repeated here so each property test stands on its own."""
-    residual = points.regressive(Unknown)
-    misfit = (residual.reverse() | residual).sum()
-    slot = misfit.context.algebra.gatype(misfit.input_subspaces[0])
-    norm = (mv.rotor() >> slot).reverse() | slot
-    return smallest_finite(*((misfit + misfit.transpose()) * 0.5).eig(norm))
-
+def same_element(a, b, atol: float) -> bool:
+    """Whether two nullary extensors agree as projective elements, up to scale and sign."""
+    ka, kb = a.kernel, b.cast(a.gatype.output_subspace).kernel
+    ka, kb = ka / np.abs(ka).max(), kb / np.abs(kb).max()
+    return np.allclose(ka, kb, atol=atol) or np.allclose(ka, -kb, atol=atol)
 
 def test_unit_forms_are_degenerate_on_the_free_coefficients():
     ranks = {}
@@ -104,9 +99,16 @@ def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     np.testing.assert_allclose(euclidean(meet), np.linalg.solve(A, b), atol=1e-8)
 
 
-def test_tutorial_runs_and_saves(tmp_path):
+def test_tutorial_runs_and_saves(tmp_path, monkeypatch):
     import matplotlib
     matplotlib.use("Agg")
-    out = tmp_path / "fitting.png"
-    main(plot_path=str(out))
-    assert out.exists()
+    from examples.geometry import fitting
+    monkeypatch.setattr(fitting, "PLOT_DIR", tmp_path)
+    fitting.point_to_points()
+    fitting.line_to_points()
+    fitting.plane_to_points()
+    fitting.point_to_lines()
+    assert (tmp_path / "fitting_point_to_points.png").exists()
+    assert (tmp_path / "fitting_line_to_points.png").exists()
+    assert (tmp_path / "fitting_plane_to_points.png").exists()
+    assert (tmp_path / "fitting_point_to_lines.png").exists()

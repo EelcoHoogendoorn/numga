@@ -23,7 +23,9 @@ from examples import PLOT_DIR
 from examples.sketches.spherical_raytracer import DualQuadric, Motor, Plane, Point, Quadric, ScreenPoint, ga, mv, origin, pixel_chart, unit
 
 Bivector = ga.gatype.bivector()
-Inertia = ga.gatype((Bivector, Bivector))      # momentum <= rate; in four dimensions the antibivector is a bivector
+AntiBivector = ga.gatype.antibivector()
+Inertia = ga.gatype((AntiBivector, Bivector))         # momentum <= rate
+InverseInertia = ga.gatype((Bivector, AntiBivector))  # rate <= momentum
 
 
 @dataclass
@@ -31,10 +33,10 @@ class Bodies:
     """The whole population as batched extensors: one leading axis, one entry per body."""
     color: np.ndarray
     motor: Motor
-    momentum: Bivector
+    momentum: AntiBivector
     Q: DualQuadric                                # the body's shape in its own frame, dual: point <= plane
     C: Quadric                                    # and primal: polar plane <= point, negative inside
-    I_inv: Inertia
+    I_inv: InverseInertia
     reach: np.ndarray                             # angular radius of each bounding cap, for the broad phase
 
     @staticmethod
@@ -84,7 +86,7 @@ def cap_quadric(half_widths: np.ndarray) -> DualQuadric:
     return quadric(np.concatenate([half_widths**2, -np.ones_like(half_widths[..., :1])], axis=-1))
 
 
-def step_motor(motor: Motor, momentum: Bivector, I_inv: Inertia, dt: float) -> tuple[Motor, Bivector]:
+def step_motor(motor: Motor, momentum: AntiBivector, I_inv: InverseInertia, dt: float) -> tuple[Motor, AntiBivector]:
     """Advance a body by dt with a Lie midpoint step; momentum is kept in the body frame."""
     half = (motor * (I_inv(momentum) * (0.25 * dt)).exp()).normalized()
     rate = I_inv((motor.inverse() * half) << momentum)

@@ -149,8 +149,7 @@ def extract_contact_line_and_point(
     """Extract the common tangent line L* and contact point p* at the collision parameter."""
     Q_star = dual_pencil(Q1, Q2, mv.scalar([lam_star]))
     eigvals, eigvecs = Q_star.dual().eigh()
-    null_idx = int(np.argmin(np.abs(eigvals.kernel[..., 0])))
-    L_contact = eigvecs[null_idx].normalized()
+    L_contact = eigvecs[eigvals.abs().argmin()].normalized()
 
     # Ensure normal of L points from Q1 towards Q2:
     # Under regressive product, the displacement c2 - c1 must have positive signed projection

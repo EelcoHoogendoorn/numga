@@ -1,107 +1,143 @@
-"""Orientation estimation from point correspondences: Horn's method from an open sandwich.
+"""Compare two motor fits on the same corresponding PGA3D points.
 
-Given points p and their rotated, noisy images q, the best rotor maximises the alignment
-Σ q · (r p r̃). The sandwich is bilinear in r, so with both rotor slots open that sum is a
-quadratic form in r, and the best unit rotor is its largest eigenvector. Nothing is
-derived by hand: the 4x4 matrix Horn wrote out entry by entry is the form's kernel, and
-the eigenvalue next to the eigenvector is the scale.
+The centered sandwich alignment gives a Cartesian least-squares rotation;
+matching the centroids supplies translation. The one-sided equation
+q M - M p = 0 fits rotation and translation together using a coefficient
+least-squares objective, followed by motor normalization. With noisy data
+these are different objectives.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import NumpyContext
+from numga.algebras import PGA3D
 
 from examples import PLOT_DIR
-from examples.geometry.registration_plumbing import (
-    draw_registration,
-    ga,
-    Rotor,
-    scale_root,
-    cloud,
-    jitter,
-    mv,
-    same_rotor,
-)
-
-Scalar = ga.gatype.scalar()
-Alignment = ga.gatype((Scalar, Rotor, Rotor))    # q · (r p r̃) <= (r, r)
 
 
-def main(plot_path: str = str(PLOT_DIR / "registration.png")) -> plt.Figure:
-    """Estimate a rotation, then a similarity, from noisy correspondences."""
-    rng = np.random.default_rng(0)
+# --- scenario algebra ------------------------------------------------------
+ga = PGA3D
+ctx = NumpyContext(ga)
+mv = ctx.multivector
+Point = ga.gatype.antivector()
+Motor = ga.gatype.rotor()
+# The Euclidean rotation subgroup, fixing the chosen PGA origin.
+Rotor = ga.gatype.from_blades("1 yz zx xy")
+Vector = ga.gatype.from_blades("x y z")
 
-    # -----------------------------------------------------------------------
-    # 1. Rotation: leave both rotor slots open
-    # -----------------------------------------------------------------------
-    # The sandwich r p r̃ has r on both sides. With a rotor type in the sandwicher slot
-    # and the source points bound, it is a map bilinear in r, one per point. Contracting
-    # its output with the target point and summing gives the alignment as a form in r.
-    source = cloud(60, rng)
-    truth = (mv.xy * 0.4 + mv.yz * -0.3 + mv.zx * 0.7).exp()
-    target = jitter(truth >> source, 0.02, rng)
 
-    scaled = jitter((truth >> source) * 1.7, 0.02, rng)
-    offset = mv.vector(np.array([1.5, -0.5, 2.0]))
-    moved = jitter((truth >> source) * 1.7 + offset, 0.02, rng)
+# --- math ------------------------------------------------------------------
+def fit_motor(source: Point, target: Point) -> Motor:
+    """Fit a motor by the coefficient residual of the one-sided equations."""
+    source, target = source.normalized(), target.normalized()
+    # q M = M p leaves the unknown motor in a single linear slot.
+    residual = target * Motor - Motor * source
 
-    alignment: Alignment = target.scalar_product(Rotor.sandwich(source)).sum()
+    # Transpose pairs coefficients, retaining errors in ideal components too.
+    # The degenerate PGA scalar product would discard translation information.
+    misfit = residual.transpose()(residual).sum(axis=0)
+    values, motors = misfit.eigh()
+    return motors[values.argmin()].normalized()
 
-    # Maximising r N r subject to r r̃ = 1 is an eigenproblem. A rotor's reverse product is
-    # the Euclidean norm of its four coefficients, so the largest eigenvector is the unit
-    # rotor, and there is no constraint to handle.
+
+def fit_rotor(source: Vector, target: Vector) -> Rotor:
+    """Maximize sandwich alignment of corresponding Euclidean vectors."""
+    alignment = target.scalar_product(Rotor >> source).sum(axis=0)
     values, rotors = ((alignment + alignment.transpose()) * 0.5).eigh()
-    estimate = rotors[-1].normalized()
-
-    # -----------------------------------------------------------------------
-    # 2. Scale: read it off the eigenvalue
-    # -----------------------------------------------------------------------
-    # At the optimum the eigenvalue is the alignment itself, Σ q · (R p R̃), and the least
-    # squares scale is that divided by Σ p · p. Folding the scale into the rotor gives a
-    # single even element, √s R, whose sandwich is the similarity. A float multiplier
-    # cannot promise it is nonzero, so it would strip the versor fact; a scalar asserted
-    # as a versor keeps it, and the log then carries the log-scale next to the rotation.
-    alignment = scaled.scalar_product(Rotor.sandwich(source)).sum()
-    values, rotors = ((alignment + alignment.transpose()) * 0.5).eigh()
-    scale = values[-1] / (source | source).sum()
-    scaled_similarity = rotors[-1].normalized() * scale_root(scale)
-
-    # -----------------------------------------------------------------------
-    # 3. Translation: centre first
-    # -----------------------------------------------------------------------
-    # A translation adds nothing to the form once both clouds are centred, so the
-    # similarity is estimated from the centred clouds and the translation is what is left
-    # between the centroids after applying it.
-    source_centred = source - source.mean(axis=0)
-    moved_centred = moved - moved.mean(axis=0)
-
-    alignment = moved_centred.scalar_product(Rotor.sandwich(source_centred)).sum()
-    values, rotors = ((alignment + alignment.transpose()) * 0.5).eigh()
-    rotor = rotors[-1].normalized()
-    similarity = rotor * scale_root(values[-1] / (source_centred | source_centred).sum())
-    translation = moved.mean(axis=0) - (similarity >> source.mean(axis=0))
-
-    # -----------------------------------------------------------------------
-    # 4. Draw
-    # -----------------------------------------------------------------------
-    fig = draw_registration(source, target, moved, estimate, similarity, translation, plot_path)
+    return rotors[values.argmax()].normalized()
 
 
-    # --- checks -------------------------------------------------------------
-    residual = np.linalg.norm((target - (estimate >> source)).kernel, axis=-1)
-    assert same_rotor(estimate, truth, atol=0.01)
-    assert residual.mean() < 0.05
-    np.testing.assert_allclose(scale.kernel, 1.7, atol=0.01)
-    np.testing.assert_allclose(scaled_similarity.log().kernel[0], 0.5 * np.log(1.7), atol=0.01)
-    assert np.linalg.norm((scaled - (scaled_similarity >> source)).kernel, axis=-1).mean() < 0.05
-    assert same_rotor(rotor, truth, atol=0.01)
-    np.testing.assert_allclose(translation.kernel, offset.kernel, atol=0.05)
+def fit_motor_alignment(source: Point, target: Point) -> Motor:
+    """Fit a rigid pose by centered alignment and centroid matching."""
+    source, target = source.normalized(), target.normalized()
+    source_mean, target_mean = source.mean(axis=0), target.mean(axis=0)
 
+    # Point differences are ideal points. Their duals carry the Euclidean
+    # displacements; the spatial slot discards the homogeneous weight component.
+    source_vectors = (source - source_mean).dual().select_subspace(Vector.output_subspace)
+    target_vectors = (target - target_mean).dual().select_subspace(Vector.output_subspace)
+    rotation = fit_rotor(source_vectors, target_vectors)
+
+    # A product of point reflections translates by twice their separation.
+    # Its square root carries the rotated source centroid onto the target's.
+    translation = (target_mean * (rotation >> source_mean).inverse()).square_root()
+    return translation * rotation
+
+
+# --- plumbing: sampling and coordinate readout ------------------------------
+def point(xyz: np.ndarray) -> Point:
+    return mv.yzw * xyz[..., 0] + mv.zxw * xyz[..., 1] + mv.xyw * xyz[..., 2] + mv.zyx
+
+
+def cloud(n: int, rng: np.random.Generator) -> Point:
+    return point(rng.normal(size=(n, 3)) * [2.0, 1.0, 0.5])
+
+
+def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:
+    """Move each point by an independent Gaussian translation."""
+    noise = rng.normal(scale=sigma, size=(*points.shape, 3))
+    translation = (mv.xw * noise[..., 0] + mv.yw * noise[..., 1] + mv.zw * noise[..., 2]) * 0.5
+    return translation.exp() >> points
+
+
+def coordinates(points: Point) -> np.ndarray:
+    values = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    return values[..., :3] / values[..., 3:]
+
+
+# --- plotting --------------------------------------------------------------
+def draw_registration(source: Point, target: Point, aligned: Point,
+                      title: str, plot_path: Path) -> plt.Figure:
+    fig = plt.figure(figsize=(8, 7), dpi=120, layout="constrained")
+    ax = fig.add_subplot(projection="3d")
+    source_xyz, target_xyz, aligned_xyz = map(coordinates, (source, target, aligned))
+    ax.scatter(*source_xyz.T, color="#94a3b8", s=10, label="source")
+    ax.scatter(*target_xyz.T, color="#0284c7", s=18, marker="x", label="target")
+    ax.scatter(*aligned_xyz.T, color="#f43f5e", s=10, label="aligned source")
+    for p, q in zip(aligned_xyz, target_xyz):
+        ax.plot(*np.stack([p, q]).T, color="#f43f5e", linewidth=0.5, alpha=0.6)
+    ax.set_title(title)
+    ax.set_box_aspect([1, 1, 1])
+    ax.legend(loc="upper left", fontsize=8)
+    plot_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(plot_path, bbox_inches="tight")
+    print(f"Figure saved to {plot_path}")
     return fig
 
 
+# --- scenarios -------------------------------------------------------------
+def correspondences() -> tuple[Point, Point]:
+    """The same seeded, noisy rigid correspondences for both fitting methods."""
+    rng = np.random.default_rng(0)
+    source = cloud(60, rng)
+    truth = (mv.xw * 0.75 - mv.yw * 0.25 + mv.zw).exp() * (mv.xy * 0.4 - mv.yz * 0.3 + mv.zx * 0.7).exp()
+    target = jitter(truth >> source, 0.02, rng)
+
+    return source, target
+
+
+def sandwich_alignment() -> plt.Figure:
+    """Cartesian least squares: center, fit rotation, then match centroids."""
+    source, target = correspondences()
+    estimate = fit_motor_alignment(source, target)
+    return draw_registration(source, target, estimate >> source, "Centered sandwich alignment",
+                             PLOT_DIR / "registration_sandwich_alignment.png")
+
+
+def one_sided_residual() -> plt.Figure:
+    """Coefficient least squares: fit and normalize a motor in one eigenproblem."""
+    source, target = correspondences()
+    estimate = fit_motor(source, target)
+    return draw_registration(source, target, estimate >> source, "One-sided motor residual",
+                             PLOT_DIR / "registration_one_sided_residual.png")
+
+
 if __name__ == "__main__":
-    main()
+    sandwich_alignment()
+    one_sided_residual()
     plt.show()

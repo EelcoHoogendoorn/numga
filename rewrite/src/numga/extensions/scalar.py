@@ -23,6 +23,12 @@ def argmax(value: Extensor, *args: Any, **kwargs: Any) -> Any:
     return value.context.xp.argmax(value.to_array(), *args, **kwargs)
 
 
+@Extensor.argmin.register(lambda g: g.is_scalar)
+def argmin(value: Extensor, *args: Any, **kwargs: Any) -> Any:
+    """Return backend indices of minimal scalar values over batch axes."""
+    return value.context.xp.argmin(value.to_array(), *args, **kwargs)
+
+
 def _function(name):
     def apply(value: Extensor) -> Extensor:
         value = value.cast(value.algebra.subspace.scalar())
@@ -48,7 +54,7 @@ def _comparison(name):
     return apply
 
 
-for _name in ("sin", "cos", "tan", "arcsin", "arccos", "arctan",
+for _name in ("abs", "sin", "cos", "tan", "arcsin", "arccos", "arctan",
               "sinh", "cosh", "tanh", "arcsinh", "arccosh", "arctanh"):
     getattr(Extensor, _name).register(lambda g: g.is_scalar)(_function(_name))
 

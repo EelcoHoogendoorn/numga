@@ -145,6 +145,21 @@ def pinv(value: Extensor, *, rcond: float = 1e-15) -> Extensor:
     )
 
 
+@Extensor.lstsq.register(lambda t, r: t.arity == 0 and r.arity == 0)
+def lstsq_nullary(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
+    """Solve for the scalar coefficients of a linear combination along the trailing batch axis.
+
+    Finds c such that sum_i c_i * value[..., i] ≈ rhs.
+    """
+    if value.ndim < 1:
+        raise ValueError("nullary lstsq requires at least one batch axis on value")
+    value, rhs = _linear_system(value, rhs)
+    matrix = value.context.xp.swapaxes(value._kernel, -2, -1)
+    columns = rhs._kernel[..., None]
+    solution = value.context.xp.linalg.pinv(matrix, rcond) @ columns
+    return _scalars(value, solution[..., 0])
+
+
 @Extensor.lstsq.register(
     lambda t, r: t.arity == 1
     and r.output_subspace.support_is_subset_of(t.output_subspace)

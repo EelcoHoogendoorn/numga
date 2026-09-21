@@ -68,7 +68,7 @@ def inverse_kinematics(joints: Line, axis: Line, tip_home: Point, target: Point,
         columns = (frames >> axis).commutator(tip)  # Tip velocity per unit rate, per joint.
         # Fit the desired tip displacement as a weighted sum of these velocities;
         # apply those weights as joint increments along the original axes.
-        joints = joints + axis * least_squares(columns, target - tip)
+        joints = joints + axis * columns.lstsq(target - tip)
     pose, frames = forward_kinematics(joints)
     link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])  # Frame after each joint.
     return joints, link_motors, pose >> tip_home
@@ -80,15 +80,6 @@ def track(joints: Line, axis: Line, tip_home: Point, targets: Point,
     for target, count in zip(targets, iterations):
         joints, link_motors, tip = inverse_kinematics(joints, axis, tip_home, target, count)
         yield joints, link_motors, target, tip
-
-
-# --- plumbing: numerical solve --------------------------------------------------------
-
-
-def least_squares(columns: Point, delta: Point) -> Scalar:
-    """The scalars, one per column, whose weighted sum of the columns best matches delta."""
-    rhs = delta.cast(columns.output_subspace).kernel
-    return mv.scalar(np.linalg.lstsq(columns.kernel.T, rhs, rcond=None)[0][:, None])
 
 
 # --- plotting -------------------------------------------------------------------------
