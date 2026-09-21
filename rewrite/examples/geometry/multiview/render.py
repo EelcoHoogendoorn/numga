@@ -92,30 +92,71 @@ def draw_ellipsoid_3d(
     )
 
 
+def draw_ellipse_2d(
+    ax: Axes,
+    center_xz: np.ndarray,
+    cov_xz: np.ndarray,
+    scale_factor: float = 0.08,
+    color: str = "#0ea5e9",
+    alpha: float = 0.18,
+    edge_alpha: float = 0.7,
+    linewidth: float = 1.0,
+) -> None:
+    """Draw a 2D Gaussian confidence ellipse in the X-Z depth plane."""
+    evals, evecs = np.linalg.eigh(cov_xz)
+    radii = np.sqrt(np.maximum(evals, 1e-8)) * scale_factor
+
+    theta = np.linspace(0, 2 * np.pi, 60)
+    circle = np.stack([np.cos(theta), np.sin(theta)], axis=0)
+    ellipse = (evecs @ (radii[:, None] * circle)).T
+
+    x_pts = center_xz[0] + ellipse[:, 0]
+    z_pts = center_xz[1] + ellipse[:, 1]
+
+    ax.fill(x_pts, z_pts, color=color, alpha=alpha, zorder=2)
+    ax.plot(x_pts, z_pts, color=color, alpha=edge_alpha, linewidth=linewidth, zorder=3)
+
+
 def draw_top_down_view(
     ax: Axes,
     cams_true: np.ndarray,
     cams_est: np.ndarray,
     points_true: np.ndarray,
     points_est: np.ndarray,
+    covariances: np.ndarray,
     cam_colors: list[str],
+    rots_est: list[np.ndarray] | None = None,
 ) -> None:
     """Render top-down floorplan (X vs Z depth) of camera constellation and landmarks."""
     # Cameras:
     for idx, (ct, ce, col) in enumerate(zip(cams_true, cams_est, cam_colors)):
         lbl_true = f"Cam {idx} (Ref)" if idx == 0 else f"Cam {idx}"
-        ax.scatter([ct[0]], [ct[2]], color=col, s=80, marker="o", edgecolors="#1e293b", label=lbl_true)
+        ax.scatter([ct[0]], [ct[2]], color=col, s=80, marker="o", edgecolors="#1e293b", zorder=5, label=lbl_true)
         if idx > 0:
-            ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0)
+            ax.scatter([ce[0]], [ce[2]], color=col, s=70, marker="x", linewidths=2.0, zorder=5)
+
+        # Draw optical axis pointer in X-Z plane:
+        if rots_est is not None and idx < len(rots_est):
+            axis_dir = rots_est[idx].T @ np.array([0.0, 0.0, 0.35])
+            ax.plot([ce[0], ce[0] + axis_dir[0]], [ce[2], ce[2] + axis_dir[2]], color=col, linewidth=1.4, zorder=4)
+
+    # 2D Gaussian uncertainty ellipses in the X-Z depth plane:
+    for pt, cov in zip(points_est, covariances):
+        cov_xz = np.array([
+            [cov[0, 0], cov[0, 2]],
+            [cov[2, 0], cov[2, 2]],
+        ])
+        draw_ellipse_2d(ax, pt[[0, 2]], cov_xz, scale_factor=0.08, color="#0ea5e9", alpha=0.18)
+    ax.plot([], [], color="#0ea5e9", linewidth=1.2, label="Gaussian 1σ ellipse (X–Z)")
 
     # Landmarks:
     ax.scatter(
         points_true[:, 0], points_true[:, 2],
-        color="#94a3b8", s=35, marker="o", alpha=0.6, label="Ground truth landmarks",
+        color="#94a3b8", s=35, marker="o", alpha=0.6, zorder=4, label="Ground truth landmarks",
     )
     ax.scatter(
         points_est[:, 0], points_est[:, 2],
-        color="#10b981", s=50, marker="*", label="Triangulated landmarks",
+        color="#10b981", s=50, marker="*", zorder=4, label="Triangulated landmarks",
     )
 
     # Sight lines from Camera 0 and Camera 1 to first 4 landmarks:
@@ -124,7 +165,7 @@ def draw_top_down_view(
         ax.plot([cams_est[0, 0], pt[0]], [cams_est[0, 2], pt[2]], color=cam_colors[0], linestyle=":", alpha=0.35, linewidth=1.0)
         ax.plot([cams_est[1, 0], pt[0]], [cams_est[1, 2], pt[2]], color=cam_colors[1], linestyle=":", alpha=0.35, linewidth=1.0)
 
-    ax.set_title("1. Top-Down Geometry (X–Z Depth Plane)\nCamera constellation with convergent gaze", fontsize=10, pad=8)
+    ax.set_title("1. Top-Down Geometry (X–Z Depth Plane)\nCamera constellation & Gaussian uncertainty ellipses", fontsize=10, pad=8)
     ax.set_xlabel("X (meters)", fontsize=8, labelpad=2)
     ax.set_ylabel("Z (depth, meters)", fontsize=8, labelpad=2)
     ax.grid(True, linestyle=":", alpha=0.5)
@@ -190,7 +231,7 @@ def draw_convergence(
 
 
 def draw_multiview_figure(
-    top_down_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]],
+    top_down_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[np.ndarray] | None],
     world_3d_data: tuple[np.ndarray, list[np.ndarray], np.ndarray, list[np.ndarray], np.ndarray, np.ndarray, np.ndarray, list[str]],
     convergence_history: list[float],
     plot_path: Path,

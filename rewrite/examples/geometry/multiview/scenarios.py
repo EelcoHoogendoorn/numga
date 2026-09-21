@@ -118,7 +118,7 @@ def multiview_figure(plot_path: Path) -> plt.Figure:
     covariances = extract_covariances(quadrics) * (scale**2)
     cam_colors = ["#0284c7", "#ec4899", "#8b5cf6", "#f59e0b"]
 
-    top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, cam_colors)
+    top_down_data = (cams_true_xyz, cams_est_xyz, xyz_true, xyz_est_scaled, covariances, cam_colors, rots_est)
     world_3d_data = (cams_true_xyz, rots_true, cams_est_xyz, rots_est, xyz_true, xyz_est_scaled, covariances, cam_colors)
 
     return render.draw_multiview_figure(top_down_data, world_3d_data, convergence_history, plot_path)
