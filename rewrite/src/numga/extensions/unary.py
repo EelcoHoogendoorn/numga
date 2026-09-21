@@ -130,10 +130,13 @@ def det(value: Extensor) -> Extensor:
 def solve(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve A(x)=rhs, preserving every RHS slot and broadcasting both batches."""
     value, rhs = _linear_system(value, rhs)
-    columns = rhs._kernel.reshape(rhs.shape + (len(rhs.output_subspace), prod(rhs.structural_shape[1:])))
+    batch_shape = np.broadcast_shapes(value.shape, rhs.shape)
+    value = value.broadcast_to(batch_shape)
+    rhs = rhs.broadcast_to(batch_shape)
+    columns = rhs._kernel.reshape(batch_shape + (len(rhs.output_subspace), prod(rhs.structural_shape[1:])))
     solution = value.context.xp.linalg.solve(value._kernel, columns)
     gatype = value.algebra.gatype((value.axes[1],) + rhs.input_subspaces)
-    return _result(value, gatype, solution.reshape(solution.shape[:-2] + gatype.structural_shape))
+    return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
 
 
 @Extensor.pinv.register(GATypePattern.map())

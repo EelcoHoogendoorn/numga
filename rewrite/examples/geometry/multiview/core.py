@@ -89,8 +89,8 @@ def triangulate_cones(
     world_cones = motors >> cones(motors << Point)           # [n_points, n_cams] Plane <- Point
     q_fused = world_cones.sum(axis=-1)                       # [n_points] Plane <- Point
 
-    # Invert to dual quadric and evaluate on the plane at infinity (w) to find center:
-    points = q_fused.inverse()(mv.w).normalized()            # [n_points] Point
+    # Solve for the pole of the plane at infinity (w) to find the landmark center:
+    points = q_fused.solve(mv.w).normalized()                # [n_points] Point
     return points, q_fused
 
 
