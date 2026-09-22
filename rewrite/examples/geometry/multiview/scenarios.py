@@ -37,11 +37,11 @@ def sensor_disk(
     principal_point: Point | None = None,
     q_sensor: Quadric | None = None,
 ) -> Quadric:
-    """Per-pixel transverse precision dyads on the sensor plane.
+    """Per-pixel transverse precision quadrics on the sensor plane, as polarity maps.
 
     Constructs rank-1 precision dyads (sensor discs) directly from pixel coordinates
-    via transverse normal lines `normal = mv.x - mv.w * (mv.x & pixels)`, or via
-    principal-point translation motor sandwich when provided.
+    via transverse normal lines `normal = mv.x - mv.w * (mv.x & pixels)`, or moves a
+    given sensor quadric to each pixel by the principal-point translation motor.
     """
     if principal_point is None and q_sensor is None:
         normal = mv.x - mv.w * (mv.x & pixels)
@@ -50,10 +50,13 @@ def sensor_disk(
     return trans >> q_sensor(trans << Point)
 
 
-def make_cones(cameras: Camera, sensor_quadrics: Quadric) -> Quadric:
-    """Pull sensor measurement quadrics back through camera maps into perspective cones."""
-    pullback = cameras.transpose()(Plane.dual()).dual_inverse()
-    return pullback(sensor_quadrics(cameras))
+def make_cones(cameras: Camera, sensor_discs: Quadric) -> Quadric:
+    """Pull sensor precision discs back through the camera maps into perspective cones.
+
+    The camera feeds the disc, and the induced plane map carries the polar lines back:
+    a quadric on scene points whose cross-section widens with depth.
+    """
+    return core.on_planes(cameras)(sensor_discs(cameras))     # [n_points, n_cams] Plane <- Point
 
 
 def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure:
@@ -158,7 +161,8 @@ def convergence_animation(
         Number of bundle adjustment steps. Defaults to 10.
     case : str
         One of '1cam' (1 moving, anchors=(0, 2)), '2cams' (2 moving, anchors=(0,)),
-        or '3cams' (all 3 moving, anchors=()).
+        '3cams' (all 3 moving, anchors=()), or 'schur' (1 moving, anchors=(0, 2), the joint
+        Newton step with the Schur complement, drawing the marginal pose covariance).
     auto_increment : bool
         Whether to auto-increment the output path if it exists.
     """
@@ -219,17 +223,31 @@ def convergence_animation(
         init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
         init_m2 = ((-mv.xw * 0.1) * 0.5).exp() * ((mv.xy * 0.05) * 0.5).exp()
         motors = stack([init_m0, init_m1, init_m2])
+    elif case == "schur":
+        # Case 4: 1 moving camera as in case 1, solved by the joint Newton step. The Schur
+        # complement's marginal information draws each frame's pose covariance.
+        anchors = (0, 2)
+        damping = 0.7
+        init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
+        motors = stack([m0, init_m1, m2])
     else:
         raise ValueError(f"Unknown case: {case}")
 
     history = []
     for it in range(iterations + 1):
         pts, qf = core.triangulate_cones(motors, local_cones)
-        history.append((motors, pts, qf))
-        if it < iterations:
-            motors, _, _ = core.bundle_adjust(
+        if case == "schur":
+            motors_next, _, _, information = core.bundle_adjust_schur(
+                cameras, motors, local_cones, iterations=1, damping=damping, anchors=anchors,
+            )
+            history.append((motors, pts, qf, information))
+        else:
+            motors_next, _, _ = core.bundle_adjust(
                 motors, local_cones, iterations=1, damping=damping, anchors=anchors,
             )
+            history.append((motors, pts, qf))
+        if it < iterations:
+            motors = motors_next
 
     target_path = render.animate_top_down_convergence(
         history=history,
@@ -256,12 +274,14 @@ def main(
         gif1_alias = plot_path.with_name("multiview_convergence_1cam.gif")
         gif2 = plot_path.with_name("multiview_convergence_2cams.gif")
         gif3 = plot_path.with_name("multiview_convergence_3cams.gif")
+        gif4 = plot_path.with_name("multiview_convergence_schur.gif")
 
         convergence_animation(gif_path=gif1, iterations=10, case="1cam", auto_increment=auto_increment)
         if gif1.exists():
             shutil.copy2(gif1, gif1_alias)
         convergence_animation(gif_path=gif2, iterations=10, case="2cams", auto_increment=auto_increment)
         convergence_animation(gif_path=gif3, iterations=10, case="3cams", auto_increment=auto_increment)
+        convergence_animation(gif_path=gif4, iterations=10, case="schur", auto_increment=auto_increment)
     return fig
 
 

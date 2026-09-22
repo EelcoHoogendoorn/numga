@@ -31,6 +31,7 @@ else:
     ctx: Context
     mv: object
     Point: GAType
+    Direction: GAType
     Plane: GAType
     Hyperplane: GAType
     Line: GAType
@@ -39,14 +40,14 @@ else:
     Camera: GAType
     PointMap: GAType
     Projective: GAType
-    Quadric: GAType
-    TwistMap: GAType
     Scalar: GAType
+    Quadric: GAType
+    Information: GAType
     w: Extensor
 
     _SYNC_NAMES = (
         "ga", "ctx", "mv",
-        "Point", "Plane", "Hyperplane", "Line", "Motor", "Twist", "Camera", "PointMap", "Projective", "Quadric", "TwistMap", "Scalar",
+        "Point", "Direction", "Plane", "Hyperplane", "Line", "Motor", "Twist", "Camera", "PointMap", "Projective", "Quadric", "Information", "Scalar",
         "w", "stack",
     )
 
@@ -60,7 +61,7 @@ else:
     def bind(algebra: Algebra | Context = PGA2D, context: Context | None = None) -> None:
         """Bind module-level algebra, context, GATypes, and plane at infinity."""
         global ga, ctx, mv
-        global Point, Plane, Hyperplane, Line, Motor, Twist, Camera, PointMap, Projective, Quadric, TwistMap, Scalar
+        global Point, Direction, Plane, Hyperplane, Line, Motor, Twist, Camera, PointMap, Projective, Quadric, Information, Scalar
         global w
 
         if isinstance(algebra, Context):
@@ -72,6 +73,8 @@ else:
         mv = ctx.multivector
 
         Point = ga.gatype.antivector()
+        ideal = ga.subspace.from_masks(tuple(m for m in Point.output_subspace.masks if m & ga.subspace("w").masks[0]))
+        Direction = ga.gatype(ideal)                       # ideal points: the weightless displacements of points
         Plane = ga.gatype.vector()
         Hyperplane = Plane
         Line = Plane
@@ -80,9 +83,9 @@ else:
         Camera = ga.gatype((Point, Point))
         PointMap = Camera
         Projective = PointMap
-        Quadric = ga.gatype((Hyperplane, Point))
-        TwistMap = ga.gatype((Twist, Twist))
         Scalar = ga.gatype.scalar()
+        Quadric = ga.gatype((Hyperplane, Point))           # a quadric as a polarity map: a point's polar plane
+        Information = ga.gatype((Scalar, Twist, Twist))    # curvature of a cost over pose twists
         w = mv.w
 
         # Sync dynamically into downstream multiview modules if already loaded:

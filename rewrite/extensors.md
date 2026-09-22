@@ -85,20 +85,22 @@ frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)       # [3] Sca
 
 #### Construction
 ```python
-# Pull 1D pixels back into 2D sight cones, fuse across cameras, triangulate via polar duality:
-cones = pullback(sensor_discs(projection))                             # [n_pts, n_cams] Plane <- Point
+# Carry sensor discs back through the camera into sight cones, fuse across cameras, triangulate:
+on_lines = (Plane & Point).solve(Plane & projection)                   # [] Plane <- Plane, induced by the camera
+cones = on_lines(sensor_discs(projection))                             # [n_pts, n_cams] Plane <- Point
 splats = (poses >> cones(poses << Point)).sum(axis=-1)                 # [n_pts] Plane <- Point
-points = splats.solve(w).normalized()                                  # [n_pts] Point
+points = (splats + w * (w & Point)).solve(w).normalized()              # [n_pts] Point
 
-# Differentiate alignment error via Lie algebra bivector commutators for camera pose updates:
-j = -cones(Twist.commutator(poses << points))                          # [n_pts, n_cams] Line <- Twist
-step = (j.T(j)).sum().solve(-(j.T(res)).sum())                         # [n_cams] Twist
+# Newton on the cone value: a local point's motion under a camera twist, joined with its own polar:
+motion = -Twist.commutator(poses << points[:, None])                   # [n_pts, n_cams] Point <- Twist
+curvature, gradient = (cones(motion) & motion).sum(axis=0), (cones(poses << points[:, None]) & motion).sum(axis=0)
+step = curvature.solve(-gradient)                                      # [n_cams] Twist
 ```
 
 #### Key Takeaways
-* **Lifting Precision into Sight Cones**: Pulling back rank-1 sensor precision through camera projection lifts 1D pixel measurements into perspective quadric cones whose uncertainty naturally widens with depth.
-* **Additive Fusion & Closed-Form Triangulation**: Multi-view constraints combine by direct addition (`splats = world_cones.sum()`), and reconstructed point positions are extracted in closed form as poles of infinity (`splats.solve(w)`) without ray-intersection heuristics.
-* **Lie Algebra Sensitivities**: Commutators with open twists (`Twist.commutator(...)`) yield analytic pose Jacobians, and inverting Gauss-Newton curvature directly yields typed pose covariance extensors (`Twist <- Twist`).
+* **Lifting Precision into Sight Cones**: A pixel's precision disc is a polarity map on sensor points. The map on lines induced by the camera, solved from the incidence pairing, carries its polar lines back through the singular projection into a perspective cone whose uncertainty widens with depth. No transpose is written.
+* **Additive Fusion & Closed-Form Triangulation**: Multi-view constraints combine by direct addition (`world_cones.sum(axis=-1)`). A fused cone's polar of its vertex vanishes; a gauge dyad on the weight makes that vertex the pole of the line at infinity, `splats.solve(w)`, without ray-intersection heuristics.
+* **Newton on the Quadric**: The motion of a local point under an open twist (`-Twist.commutator(...)`), joined with its own polar, is the curvature over poses; joined with the point's polar it is the gradient. The cone is the cost, so no residual metric is chosen, and the curvature form is the information on the pose.
 
 ---
 

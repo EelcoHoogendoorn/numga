@@ -38,9 +38,12 @@ def fit_motor(source: Point, target: Point) -> Motor:
     # q M = M p leaves the unknown motor in a single linear slot.
     residual = target * Motor - Motor * source
 
-    # Transpose pairs coefficients, retaining errors in ideal components too.
-    # The degenerate PGA scalar product would discard translation information.
-    misfit = residual.transpose()(residual).sum(axis=0)
+    # The bulk norm alone would discard translation: the PGA scalar product is degenerate on
+    # ideal blades. Adding the weight norm, the bulk norm of the complement, sums the squares
+    # of every coefficient, retaining errors in ideal components too.
+    bulk = residual.reverse().scalar_product(residual)
+    weight = residual.dual().reverse().scalar_product(residual.dual())
+    misfit = (bulk + weight).sum(axis=0)
     values, motors = misfit.eigh()
     return motors[values.argmin()].normalized()
 
@@ -48,7 +51,7 @@ def fit_motor(source: Point, target: Point) -> Motor:
 def fit_rotor(source: Vector, target: Vector) -> Rotor:
     """Maximize sandwich alignment of corresponding Euclidean vectors."""
     alignment = target.scalar_product(Rotor >> source).sum(axis=0)
-    values, rotors = ((alignment + alignment.transpose()) * 0.5).eigh()
+    values, rotors = alignment.eigh()
     return rotors[values.argmax()].normalized()
 
 

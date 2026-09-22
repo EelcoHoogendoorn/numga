@@ -92,21 +92,6 @@ def _linear_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
     return context.lower(value), context.lower(rhs).cast(value.axes[0])
 
 
-@Extensor.transpose.register(GATypePattern.map())
-def transpose_map(value: Extensor) -> Extensor:
-    permutation = tuple(range(value.ndim)) + (value.ndim + 1, value.ndim)
-    return Extensor._from_prepared_kernel(
-        value.context, value.gatype.transposed, value._kernel.transpose(permutation),
-    )
-
-
-@Extensor.transpose.register(_is_form)
-def transpose_form(value: Extensor) -> Extensor:
-    permutation = tuple(range(value.ndim + 1)) + (value.ndim + 2, value.ndim + 1)
-    gatype = value.algebra.gatype((value.axes[0], value.axes[2], value.axes[1]))
-    return Extensor._from_prepared_kernel(value.context, gatype, value._kernel.transpose(permutation))
-
-
 @Extensor.inverse.register(lambda t: t.is_square_map)
 def inverse_linear(value: Extensor) -> Extensor:
     """Composition inverse, swapping input and output coefficient layouts."""
@@ -137,6 +122,57 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     solution = value.context.xp.linalg.solve(value._kernel, columns)
     gatype = value.algebra.gatype((value.axes[1],) + rhs.input_subspaces)
     return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
+
+
+def _is_form_system(value: GAType, rhs: GAType) -> bool:
+    """A form against a scalar-valued extensor whose last input matches the form's last input."""
+    return (
+        _is_form(value)
+        and rhs.arity >= 1
+        and rhs.output_subspace.same_support(value.algebra.subspace.scalar())
+        and rhs.subspaces[-1].same_support(value.subspaces[2])
+    )
+
+
+def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
+    """Rewrite value(x, y) = rhs(..., y) as a coefficient system over y.
+
+    The matrix maps the unknown x to the coefficients of value(x, .) over the last slot;
+    the right-hand side is rhs read out over that same slot, with its leading slots kept
+    as inputs of the solution.
+    """
+    context = binding_context(value.context, (rhs.context,))
+    value = context.lower(value).cast(value.algebra.subspace.scalar())
+    rhs = context.lower(rhs).cast(value.algebra.subspace.scalar())
+    xp = context.xp
+    matrix = Extensor._from_prepared_kernel(
+        context, value.algebra.gatype((value.axes[2], value.axes[1])),
+        xp.swapaxes(value._kernel[..., 0, :, :], -1, -2),
+    )
+    scalar_axis = (slice(None),) * rhs.ndim + (0,)
+    coefficients = xp.moveaxis(rhs._kernel[scalar_axis], -1, rhs.ndim)
+    covector = Extensor._from_prepared_kernel(
+        context, value.algebra.gatype((rhs.axes[-1],) + tuple(rhs.axes[1:-1])), coefficients,
+    )
+    return matrix, covector
+
+
+@Extensor.solve.register(_is_form_system, position=0)
+def solve_form(value: Extensor, rhs: Extensor) -> Extensor:
+    """Solve value(x, y) = rhs(..., y) for all y; x fills the form's first slot.
+
+    Leading input slots of rhs are kept as input slots of the solution, so a bilinear
+    right-hand side yields a map. The last input of rhs must match the form's last input.
+    """
+    matrix, covector = _form_system(value, rhs)
+    return matrix.solve(covector)
+
+
+@Extensor.lstsq.register(_is_form_system, position=0)
+def lstsq_form(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
+    """Least-squares version of solve_form, using pinv's cutoff on the form's coefficients."""
+    matrix, covector = _form_system(value, rhs)
+    return matrix.lstsq(covector, rcond=rcond)
 
 
 @Extensor.pinv.register(GATypePattern.map())

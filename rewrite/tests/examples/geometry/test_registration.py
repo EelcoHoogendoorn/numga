@@ -14,9 +14,9 @@ def test_correspondence_residual_is_linear_in_the_motor():
     residual = target * Motor - Motor * source
     assert residual.arity == 1
     np.testing.assert_allclose(residual(TRUTH).kernel, 0, atol=1e-10)
-    misfit = residual.transpose()(residual).sum(axis=0)
-    assert misfit.kernel.shape == (8, 8)
-    np.testing.assert_allclose(misfit.kernel, misfit.kernel.T, atol=1e-12)
+    misfit = (residual.reverse().scalar_product(residual) + residual.dual().reverse().scalar_product(residual.dual())).sum(axis=0)
+    assert misfit.kernel.shape == (1, 8, 8)
+    np.testing.assert_allclose(misfit.kernel[0], misfit.kernel[0].T, atol=1e-12)
 
 
 def test_exact_correspondences_recover_the_motor():

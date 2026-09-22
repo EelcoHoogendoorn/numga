@@ -37,13 +37,13 @@ def camera(scene: Scene) -> tuple[Extensor, Extensor, Direction]:
 
 def render(scene: Scene) -> Iterator[np.ndarray]:
     # Camera geometry and light directions in its frame.
-    one = mv.scalar([1.0])
+    metric = Direction | Direction      # the Euclidean metric on directions: raises a gradient form to a direction
     camera_map, screen, pixels = camera(scene)
     main_light = camera_map & scene.main_light_source
     fill_light = camera_map & scene.fill_light_source
     main_weight = -(scene.main_light_source | infinity)
     fill_weight = -(scene.fill_light_source | infinity)
-    up = screen.transpose()(mv.z)
+    up = screen.inverse()(mv.z)
 
     # A direction slot generates translations along any ray in camera coordinates.
     ray_translation = -0.5 * (Direction ^ infinity)
@@ -89,11 +89,11 @@ def render(scene: Scene) -> Iterator[np.ndarray]:
                 # Bind the rightmost hit first, reducing the form before the derivative.
                 tangent = ray_translation.commutator(hit) * 2
                 derivative = bodies[body_idx](tangent, hit)
-                normal = derivative.transpose()(one).normalized()
+                normal = metric.solve(derivative).normalized()
                 # A sphere's incidence gradient points away from its centre;
                 # a plane gives a constant direction. Both light types use this map.
-                main_direction = -main_light(tangent).transpose()(one).normalized()
-                fill_direction = -fill_light(tangent).transpose()(one).normalized()
+                main_direction = -metric.solve(main_light(tangent)).normalized()
+                fill_direction = -metric.solve(fill_light(tangent)).normalized()
                 main_strength = (1 + 2 * main_weight * main_light(hit)).inverse()
                 fill_strength = (1 + 2 * fill_weight * fill_light(hit)).inverse()
                 yield (normal, pixel.normalized(), visible, scene.colors[body_idx],

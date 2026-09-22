@@ -28,7 +28,8 @@ def test_cholesky_aligns_layout_and_preserves_batches(context):
     factor = operator.cast(ga.subspace("z -x y")).cholesky()
     assert factor.shape == (2, 1)
     assert factor.axes == (slot, slot)
-    np.testing.assert_allclose(factor(factor.transpose()).kernel, operator.kernel, atol=2e-6)
+    product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
+    np.testing.assert_allclose(product, operator.kernel, atol=2e-6)
     np.testing.assert_allclose(np.triu(factor.kernel, 1), 0)
 
 
@@ -257,7 +258,6 @@ def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     (("x y", "xy xz"), ("1 z",)),           # Same size, incompatible support.
     (("x y", "xy xz"), ("x y z",)),         # Would require lossy projection.
     (("x y", "z", "xy xz"), ("xy xz", "x y")),  # Wrong relative order.
-    (("x y", "xy xz"), ("x y", "xy xz")),  # Leaves no unknown slots.
     (("x y", "xy xz"), ("x y", "xy xz", "1")),
 ])
 def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_slots, rhs_slots):
@@ -343,7 +343,8 @@ def test_rectangular_lstsq_with_binary_rhs(context):
     assert solution.axes == (domain,) + rhs.input_subspaces
     assert solution.shape == rhs.shape
     residual = operator(solution) - rhs
-    np.testing.assert_allclose(operator.transpose()(residual).kernel, 0, atol=2e-6)
+    normal_equations = np.einsum("oi,bo...->bi...", operator.kernel, residual.kernel)
+    np.testing.assert_allclose(normal_equations, 0, atol=2e-6)
 
 
 def test_complex_svd_and_hermitian_eigenvectors():

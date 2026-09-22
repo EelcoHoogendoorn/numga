@@ -45,7 +45,7 @@ def fit(Unknown: GAType, samples: Extensor) -> Extensor:
     # The primitive's reverse product fixes its geometric size, leaving its
     # position free: plane normal, line direction, or point weight has unit norm.
     norm = (mv.rotor() >> Unknown).reverse() | Unknown
-    values, modes = ((misfit + misfit.transpose()) * 0.5).eig(norm)
+    values, modes = misfit.eig(norm)
     return smallest_finite(values, modes)
 
 

@@ -61,7 +61,6 @@ class Extensor:
     inverse_factor = ExtensionMethod("inverse_factor")
     inverse_hitzer = ExtensionMethod("inverse_hitzer")
     trace = ExtensionMethod("trace")
-    transpose = ExtensionMethod("transpose")
     det = ExtensionMethod("det")
     solve = ExtensionMethod("solve")
     lstsq = ExtensionMethod("lstsq")

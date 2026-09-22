@@ -21,19 +21,11 @@ def form(context, first, second, matrix):
     return context.extensor(gatype, np.asarray(matrix)[..., None, :, :])
 
 
-def test_form_transpose_and_svd_preserve_all_axes(context):
+def test_form_svd_preserves_all_axes(context):
     ga = context.algebra
     first, second = ga.subspace.vector(), ga.subspace("xy yz")
     matrix = np.random.default_rng(3).normal(size=(2, 1, 3, 2))
     value = form(context, first, second, matrix)
-    transposed = value.transpose()
-    assert transposed.shape == (2, 1)
-    assert transposed.axes == (value.axes[0], second, first)
-    assert transposed.kernel.shape == (2, 1, 1, 2, 3)
-    np.testing.assert_array_equal(transposed.transpose().kernel, value.kernel)
-    a = context.extensor(first, [1, 2, 3])
-    b = context.extensor(second, [2, -1])
-    np.testing.assert_allclose(value(a, b).kernel, transposed(b, a).kernel, atol=2e-6)
     left, singular, right = value.svd()
     assert left.axes == (first,)
     assert right.axes == (second,)
@@ -83,18 +75,61 @@ def test_form_cholesky_aligns_slots_and_preserves_batches(context):
     factor = changed.cholesky()
     assert factor.shape == (2, 1)
     assert factor.axes == (second, second)
-    rebuilt = factor(factor.transpose())
+    product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
+    rebuilt = context.extensor(ga.gatype((second, second)), product)
     rebuilt = rebuilt(ga.operator.identity(slot)).cast(slot)
     np.testing.assert_allclose(rebuilt.kernel, np.broadcast_to(matrix, (2, 1, 3, 3)), atol=2e-6)
     np.testing.assert_allclose(np.triu(factor.kernel, 1), 0)
 
 
-def test_exact_form_transpose_preserves_rationals():
-    ga = Algebra("x+y+")
-    value = form(ga.exact, ga.subspace.vector(), ga.subspace.scalar(), [[2], [3]])
-    transposed = value.transpose()
-    assert transposed.context is ga.exact
-    assert transposed.kernel.to_object_array().tolist() == [[[2, 3]]]
+def test_form_solve_fills_the_first_slot(context):
+    """value(x, y) == rhs(y) for every y; x lives in the form's first slot."""
+    ga = context.algebra
+    first, second = ga.subspace.vector(), ga.subspace("xy yz")
+    matrix = np.array([[2.0, 1.0], [0.5, 3.0], [1.0, -1.0]])
+    value = form(context, first, second, np.broadcast_to(matrix, (2, 1, 3, 2)))
+    target = context.extensor(ga.gatype((ga.subspace.scalar(), second)), np.array([[1.0, 2.0]]))
+    solution = value.lstsq(target)
+    assert solution.axes == (first,)
+    assert solution.shape == (2, 1)
+    probe = context.extensor(second, [0.3, -0.7])
+    np.testing.assert_allclose(value(solution, probe).kernel, np.broadcast_to(target(probe).kernel, (2, 1, 1)), atol=2e-5)
+
+    square = form(context, second, second, np.broadcast_to([[2.0, 1.0], [1.0, 3.0]], (2, 1, 2, 2)))
+    exact = square.solve(target)
+    assert exact.axes == (second,)
+    np.testing.assert_allclose(square(exact, probe).kernel, np.broadcast_to(target(probe).kernel, (2, 1, 1)), atol=2e-5)
+
+
+def test_form_solve_keeps_leading_rhs_slots_as_a_map(context):
+    """Solving against a bilinear right-hand side yields a map on its leading slot."""
+    ga = context.algebra
+    slot, extra = ga.subspace.vector(), ga.subspace("xy yz")
+    value = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    rhs_matrix = np.random.default_rng(5).normal(size=(2, 3))
+    rhs = context.extensor(ga.gatype((ga.subspace.scalar(), extra, slot)), rhs_matrix[None])
+    solution = value.solve(rhs)
+    assert solution.axes == (slot, extra)
+    e = context.extensor(extra, [1.0, -2.0])
+    y = context.extensor(slot, [0.2, 0.4, -0.6])
+    np.testing.assert_allclose(value(solution(e), y).kernel, rhs(e, y).kernel, atol=2e-5)
+
+
+def test_pairing_solve_induces_the_plane_map_of_a_point_map(context):
+    """(Plane & Point).solve(Plane & T) is the pullback of planes through T: it satisfies
+    induced(l) & p == l & T(p) for every line l and point p, even for a singular T."""
+    ga = context.algebra
+    mv = context.multivector
+    Point, Plane = ga.gatype.antivector(), ga.gatype.vector()
+    pinhole = mv.antivector([0.0, 0.0, 1.0])
+    screen = mv.vector([0.0, 1.0, -1.0])
+    projection = (pinhole & Point) ^ screen                       # Point <- Point, rank two
+    induced = (Plane & Point).solve(Plane & projection)          # Plane <- Plane
+    assert induced.axes == (Plane.output_subspace, Plane.output_subspace)
+    rng = np.random.default_rng(8)
+    line = mv.vector(rng.normal(size=3))
+    point = mv.antivector(rng.normal(size=3))
+    np.testing.assert_allclose((induced(line) & point).kernel, (line & projection(point)).kernel, atol=2e-5)
 
 
 @pytest.mark.parametrize("dtype", [np.float64, np.complex128])
@@ -146,7 +181,7 @@ def test_warm_form_dispatch_does_not_repeat_support_checks(monkeypatch):
     slot = ga.subspace.vector()
     value = form(ctx, slot, slot, [[2, 1], [1, 3]])
     metric = form(ctx, slot, slot, np.eye(2))
-    calls = [value.eig, value.eigh, value.transpose,
+    calls = [value.eig, value.eigh,
              lambda: value.eig(metric), lambda: value.eigh(metric)]
     for call in calls:
         call()

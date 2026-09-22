@@ -15,12 +15,23 @@ from examples.geometry.multiview.types import (
     Motor,
     Point,
     Quadric,
-    TwistMap,
+    Information,
     coordinates,
     mv,
     point,
     w,
 )
+
+
+def pose_covariance(information: Information) -> np.ndarray:
+    """Pose covariance over twist coefficients (yw, wx, xy): the pseudoinverse of the curvature."""
+    return np.linalg.pinv(information.kernel[..., 0, :, :], rcond=1e-4)
+
+
+def pose_sigmas(information: Information) -> np.ndarray:
+    """One-sigma pose uncertainties [..., 3] over twist coefficients, from the curvature form."""
+    covariance = pose_covariance(information)
+    return np.sqrt(np.maximum(np.diagonal(covariance, axis1=-2, axis2=-1), 0.0))
 
 
 def extract_covariances(quadrics: Quadric) -> np.ndarray:
@@ -120,9 +131,12 @@ def draw_camera_pose_covariance_2d(
     R = np.column_stack([u_perp, u_opt])
     cov_world = R @ cov_local @ R.T
 
-    # 3. Position uncertainty ellipse:
+    # 3. Position uncertainty ellipse. An unobservable pose has no finite ellipse: skip it, and
+    #    keep a drawable one inside the axes, or a dashed perimeter of millions of segments stalls Agg:
     evals, evecs = np.linalg.eigh(cov_world)
-    radii = np.sqrt(np.maximum(evals, 1e-8)) * scale_factor
+    if not np.all(np.isfinite(evals)) or evals.max() <= 0.0:
+        return
+    radii = np.minimum(np.sqrt(np.maximum(evals, 1e-8)) * scale_factor, 1.0)
     angle = np.degrees(np.arctan2(evecs[1, 0], evecs[0, 0]))
 
     ell = Ellipse(
@@ -142,7 +156,7 @@ def draw_camera_pose_covariance_2d(
 
     # 4. Angular uncertainty fan (orientation standard deviation on xy generator):
     rot_std_rad = np.sqrt(max(cov_twist[2, 2], 0.0))
-    rot_std_deg = float(np.degrees(rot_std_rad) * 0.35)
+    rot_std_deg = min(float(np.degrees(rot_std_rad) * 0.35), 180.0)
     arc_r = 0.38
     theta_cam = float(np.degrees(np.arctan2(u_opt[1], u_opt[0])))
 
@@ -316,7 +330,7 @@ def draw_top_down_view(
     cams_pos: list[np.ndarray] | None = None,
     cams_dirs: list[np.ndarray] | None = None,
     cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    pose_covariances: TwistMap | np.ndarray | None = None,
+    pose_information: Information | np.ndarray | None = None,
     splats: Quadric | None = None,
     landmarks: Point | None = None,
     poses: Motor | None = None,
@@ -342,7 +356,7 @@ def draw_top_down_view(
         Camera optical axis unit vectors in world frame.
     cam_colors : list[str]
         Color hex strings for each camera.
-    pose_covariances : [n_cams] TwistMap | None
+    pose_information : [n_cams] Information | None
         Camera pose covariance operators.
     splats : [n_points] Quadric | None
         Alias for fused_quadrics.
@@ -403,8 +417,8 @@ def draw_top_down_view(
             lbl = f"Cam {c_idx} (ref)" if c_idx == 0 else f"Cam {c_idx}"
             draw_camera_wedge_2d(ax, cams_pos[c_idx], cams_dirs[c_idx], scale=0.28, half_fov_deg=38.0, color=col, label=lbl)
 
-            if pose_covariances is not None:
-                cov_k = pose_covariances[c_idx].kernel if hasattr(pose_covariances[c_idx], "kernel") else pose_covariances[c_idx]
+            if pose_information is not None:
+                cov_k = pose_covariance(pose_information[c_idx])
                 if np.linalg.norm(cov_k) > 1e-6:
                     draw_camera_pose_covariance_2d(
                         ax=ax,
@@ -430,7 +444,7 @@ def draw_top_down_figure(
     cams_pos: list[np.ndarray] | None = None,
     cams_dirs: list[np.ndarray] | None = None,
     cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    pose_covariances: TwistMap | np.ndarray | None = None,
+    pose_information: Information | np.ndarray | None = None,
     plot_path: Path | None = None,
     auto_increment: bool = True,
     splats: Quadric | None = None,
@@ -456,7 +470,7 @@ def draw_top_down_figure(
         Camera optical axis unit vectors in world frame.
     cam_colors : list[str]
         Color hex strings for each camera.
-    pose_covariances : [n_cams] TwistMap | None
+    pose_information : [n_cams] Information | None
         Camera pose covariance operators.
     plot_path : Path | None
         Output filepath.
@@ -489,7 +503,7 @@ def draw_top_down_figure(
         cams_pos=cams_pos,
         cams_dirs=cams_dirs,
         cam_colors=cam_colors,
-        pose_covariances=pose_covariances,
+        pose_information=pose_information,
     )
 
     handles, labels = ax.get_legend_handles_labels()
@@ -519,7 +533,7 @@ def animate_top_down_convergence(
 
     Parameters
     ----------
-    history : list[tuple[Motor, Point, Quadric] | tuple[Motor, Point, Quadric, TwistMap]]
+    history : list[tuple[Motor, Point, Quadric] | tuple[Motor, Point, Quadric, Information]]
         Per-iteration optimization state tuples.
     local_cones : [n_points, n_cams] Quadric
         Perspective cone quadrics in camera local frames.
@@ -564,7 +578,7 @@ def animate_top_down_convergence(
             fused_quadrics=q_fused_curr,
             points=pts_curr,
             cam_colors=cam_colors,
-            pose_covariances=cov_curr,
+            pose_information=cov_curr,
             motors=m_curr,
         )
 

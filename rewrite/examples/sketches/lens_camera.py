@@ -43,6 +43,11 @@ Camera = ga.gatype((Point, Point, Point))     # sensor point <= (scene point, pu
 SENSOR = (0.225, 0.175)                       # half extents of the sensor window in its own frame
 
 
+def on_planes(collineation: PointMap):
+    """The map on planes induced by a map on points, through incidence: on_planes(T)(p) & q == p & T(q)."""
+    return (Plane & Point).solve(Plane & collineation)
+
+
 # --- plumbing -------------------------------------------------------------------------
 def unit(points: Point) -> Point:
     """The representative of each point with positive unit weight; a unit point is a versor."""
@@ -204,9 +209,9 @@ def main(
             # Project through each subject onto the pupil, then pull back its quadric.
             # Pull back once more through the inverse lens train to get the image cones.
             project = (scene & Point) ^ front_plane
-            cone = project.transpose()(Plane.dual()).dual_inverse()(pupil_ball(project))
+            cone = on_planes(project)(pupil_ball(project))
             back = collineation.inverse()
-            cones = back.transpose()(Plane.dual()).dual_inverse()(cone(back))
+            cones = on_planes(back)(cone(back))
 
             subject = scene[0, 2, 1]
             rays = subject & (place_front >> rim)
@@ -241,7 +246,7 @@ def main(
         start = (collineation(scene[index]) & collineation(centre)) ^ sensor
         boundary = section(cones[index], start, frame)
         to_sensor = cam.bind({0: scene[index]})
-        pushed = to_sensor(pupil(to_sensor.transpose()(Plane.dual()).dual_inverse()))
+        pushed = to_sensor(pupil(on_planes(to_sensor)))
         section_dual = (frame << pushed(frame >> SensorPlane)).cast(SensorPoint.output_subspace)
         hits = (frame << boundary).cast(SensorPoint.output_subspace)
         np.testing.assert_allclose((hits & section_dual.solve(hits)).kernel, 0.0, atol=1e-10)

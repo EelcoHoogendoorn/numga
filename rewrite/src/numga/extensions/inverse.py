@@ -36,7 +36,11 @@ def inverse_unit_conjugate(value: Extensor) -> Extensor:
 
 @Extensor.inverse.register(lambda t: t.entails(CoefficientOrthogonal))
 def inverse_orthogonal(value: Extensor) -> Extensor:
-    return value.transpose()
+    """A coefficient-orthogonal map is inverted by transposing its coefficients."""
+    permutation = tuple(range(value.ndim)) + (value.ndim + 1, value.ndim)
+    return Extensor._from_prepared_kernel(
+        value.context, value.gatype.transposed, value._kernel.transpose(permutation),
+    )
 
 
 @Extensor.inverse.register(lambda t: t.is_scalar)

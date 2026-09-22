@@ -68,7 +68,7 @@ def build_3d_rig_and_scene():
     pixels = projs / (mv.w & projs)
     # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
     principal_point = point([0.0, 0.0, 1.0])
-    q_sensor = (mv.x * (mv.x & Point)) + (mv.y * (mv.y & Point))
+    q_sensor = mv.x * (mv.x & Point) + mv.y * (mv.y & Point)
     sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
     local_cones = make_cones(cameras, sensor_discs)
 
@@ -97,7 +97,7 @@ def run_3d_bundle_adjustment(
 
     pts_init, _ = core.triangulate_cones(motors, local_cones)
     lp0 = motors << pts_init[:, None]
-    cost_init = float(np.sum(local_cones(lp0).kernel**2))
+    cost_init = float((local_cones(lp0) & lp0).sum().to_array())
 
     c0 = point([0.0, 0.0, 0.0])
     pos_init = coordinates(motors[1] >> c0)
@@ -109,7 +109,7 @@ def run_3d_bundle_adjustment(
     )
 
     lp_final = est_motors << est_points[:, None]
-    cost_final = float(np.sum(local_cones(lp_final).kernel**2))
+    cost_final = float((local_cones(lp_final) & lp_final).sum().to_array())
 
     pos_final = coordinates(est_motors[1] >> c0)
     pos_err_final = float(np.linalg.norm(pos_final - [0.75, 0.0, 0.0]))

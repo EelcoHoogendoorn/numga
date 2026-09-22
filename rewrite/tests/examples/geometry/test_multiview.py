@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -23,6 +24,20 @@ from examples.geometry.multiview.scenarios import (
     point,
     sensor_disk,
 )
+
+
+@pytest.fixture(autouse=True)
+def ten_second_budget():
+    """Every test in this module must finish within ten seconds."""
+    def expired(signum, frame):
+        raise TimeoutError("test exceeded the ten second budget")
+    previous = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, 10.0)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous)
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -143,6 +158,44 @@ def test_multiview_bundle_adjust_convergence():
     assert final_rmse < 0.02, f"Final RMSE should be under 2 cm, got {final_rmse}"
 
 
+def test_schur_bundle_adjust_converges_and_yields_information():
+    """The joint Newton step with the Schur complement converges and returns pose information forms."""
+    xy = np.array([[0.15, 0.85], [-0.43, 1.15], [0.50, 1.50], [0.03, 1.85], [0.65, 2.20], [-0.60, 2.55]])
+    true_points = point(xy)
+    baseline_x, theta = 0.75, np.radians(18.0)
+    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
+    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
+    m2 = mv.rotor()
+    true_motors = stack([m0, m1, m2])
+    camera = (point([0.0, 0.0]) & Point) ^ (mv.y - mv.w)
+    cameras = camera.broadcast_to((3,))
+    projs = cameras(true_motors << true_points[:, None])
+    pixels = projs / (mv.w & projs)
+    local_cones = make_cones(cameras, sensor_disk(pixels))
+
+    init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
+    initial_motors = stack([m0, init_m1, m2])
+    init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
+    init_error = (init_pts - true_points).dual()
+    init_rmse = init_error.norm_squared().mean(axis=0).square_root().to_array()
+
+    est_motors, est_pts, fused, information = core.bundle_adjust_schur(
+        cameras, initial_motors, local_cones, iterations=10, anchors=(0, 2),
+    )
+    error = (est_pts - true_points).dual()
+    final_rmse = error.norm_squared().mean(axis=0).square_root().to_array()
+    assert final_rmse < init_rmse
+    assert final_rmse < 0.02, f"Final RMSE should be under 2 cm, got {final_rmse}"
+
+    # The marginal information is a symmetric form on twists, zero on the anchored cameras:
+    assert information.shape == (3,)
+    assert information.gatype == core.Information
+    kernels = information.kernel[:, 0]
+    np.testing.assert_allclose(kernels, np.swapaxes(kernels, -1, -2), atol=1e-9)
+    np.testing.assert_allclose(kernels[[0, 2]], 0.0)
+    assert np.linalg.eigvalsh(kernels[1]).min() > 0
+
+
 def test_scenario_runs_and_saves():
     """The scenario wires math to render and ensures canonical figure and animation are written."""
     fig_path = PLOT_DIR / "multiview_bundle_adjustment.png"
@@ -183,7 +236,7 @@ def test_multiview_3d_bundle_adjust_convergence():
         pixels = projs / (types.mv.w & projs)
 
         principal_point = types.point([0.0, 0.0, 1.0])
-        q_sensor = (types.mv.x * (types.mv.x & types.Point)) + (types.mv.y * (types.mv.y & types.Point))
+        q_sensor = types.mv.x * (types.mv.x & types.Point) + types.mv.y * (types.mv.y & types.Point)
         sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
         local_cones = make_cones(cameras, sensor_discs)
 

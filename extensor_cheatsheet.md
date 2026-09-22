@@ -35,7 +35,7 @@ In Euclidean 3D, leaving both rotor occurrences open makes the alignment objecti
 rotated = Rotor.sandwich(source)
 alignment = target.scalar_product(rotated).sum()
 
-values, rotors = ((alignment + alignment.transpose()) * 0.5).eigh()
+values, rotors = alignment.eigh()
 rotation = rotors[-1].normalized()
 ```
 

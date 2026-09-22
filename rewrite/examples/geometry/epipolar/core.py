@@ -10,9 +10,9 @@ the mutual line intersection error across corresponding screen points without an
 separation of rotation and translation.
 
 With the relative pose solved, the 3D world coordinates are implied: each sight ray
-measures perpendicular distance to an unknown point via the meet `ray & Point`.
-Its transpose square forms a rank-2 distance quadric; summing these quadrics across
-cameras produces an extensor whose nullmode is the reconstructed 3D world point.
+measures distance to an unknown point via the meet `ray & Point`, a plane whose
+squared norm is a rank-2 distance quadric; summing these quadrics across cameras
+produces a form whose nullmode is the reconstructed 3D world point.
 
 This module contains the mathematics alone: GATypes and the geometric narrative
 in one coherent scope.
@@ -32,7 +32,7 @@ Point = ga.gatype.antivector()
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
-RayQuadric = ga.gatype((Point, Point))
+RayQuadric = ga.gatype((ga.gatype.scalar(), Point, Point))
 
 
 # --- math ------------------------------------------------------------------
@@ -63,29 +63,31 @@ def reconstruct(
         Reconstructed 3D coordinates in Camera 1's frame.
     """
     for _ in range(iterations):
-        # Two lines meet (are coplanar) iff their wedge product vanishes.
-        # The residual is a pseudoscalar measuring signed ray separation distance:
-        res = rays_1 ^ (motor >> rays_2)                  # [n_rays] Pseudoscalar
+        # Two lines meet (are coplanar) iff their wedge product vanishes. The residual is
+        # a pseudoscalar, one number per ray pair, read as a scalar through the complement:
+        res = (rays_1 ^ (motor >> rays_2)).dual()         # [n_rays] Scalar
 
-        # Infinitesimal variation: an se(3) twist acts on lines via commutator.
-        # Leaving the Twist slot open yields the Jacobian map:
-        j = rays_1 ^ Twist.commutator(motor >> rays_2)    # [n_rays] Pseudoscalar <- Bivector
+        # Infinitesimal variation: an se(3) twist acts on lines via the commutator.
+        # Leaving the Twist slot open yields the Jacobian, a linear form on twists:
+        j = (rays_1 ^ Twist.commutator(motor >> rays_2)).dual()   # [n_rays] Scalar <- Bivector
 
-        # Accumulate the Gauss-Newton normal equations across all ray pairs:
-        h = (j.transpose()(j)).sum(axis=0)                # [] Bivector <- Bivector
-        rhs = -(j.transpose()(res)).sum(axis=0)           # [] Bivector <- Pseudoscalar
+        # Gauss-Newton normal equations as forms on twists, summed over ray pairs. The residual
+        # is already a number, so squaring it needs no metric: the curvature is the Jacobian
+        # form times itself, and the gradient the residual times the Jacobian form:
+        h = (j * j).sum(axis=0)                           # [] Scalar <- (Bivector, Bivector)
+        rhs = -(res * j).sum(axis=0)                      # [] Scalar <- Bivector
 
         # Solve for the 5 observable degrees of freedom; rcond discards the
         # unobservable translation scale gauge mode without Cartesian decomposition:
         step = h.lstsq(rhs, rcond=1e-4)                   # [] Bivector
         motor = (step * 0.5).exp() * motor                # [] Motor
 
-    # 3D points implied by converged sight rays:
-    # ray & Point measures distance from each ray to an unknown 3D point.
+    # 3D points implied by converged sight rays: ray & Point is the plane through a ray and
+    # an unknown point, and its squared norm is the point's squared distance from the ray.
     # Summing the two ray-distance quadrics, the nullmode yields the world point:
     aligned_rays_2 = motor >> rays_2
-    q1 = (rays_1 & Point).transpose()(rays_1 & Point)
-    q2 = (aligned_rays_2 & Point).transpose()(aligned_rays_2 & Point)
+    q1 = (rays_1 & Point) | (rays_1 & Point)
+    q2 = (aligned_rays_2 & Point) | (aligned_rays_2 & Point)
     values, points = (q1 + q2).eigh()
     idx, = set(values.argmin(axis=-1))
     return motor, points[..., idx].normalized()
