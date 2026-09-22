@@ -2,24 +2,29 @@
 
 In mathematical terms, an extensor is a multi-linear map from multivectors to a multivector.
 
-In programming terms, extensors allow one to leave open arguments to an expression, and bind them at a later time.
+In programming terms, extensors allow one to leave open arguments to an expression, and bind them at a later time. A batch axis is not an open argument: it indexes independent copies of an expression.
 
 When doing mathematics on the blackboard, one often switches between expressions involving a specific vector, or expressions over the entire space of vectors. Extensor syntax brings that same flexibility to geometric algebra in code, combining expressivity with efficiency of the underlying code.
 
-In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
-
-Two consequences follow. A batch axis is not a slot: it indexes independent copies of an expression, and a frame summed against its reciprocal is the coordinate spelling of a trace. A trace pairs an output with one input by matching blades and never consults the metric. The Ricci contraction shows both at once: curvature applied to an open area, contracted with an open vector, and traced against its wedge slot is the Ricci form, with no frame and no reciprocal basis anywhere.
+The term extensor was coined by Hestenes [[ca-to-gc](#ref-ca-to-gc)]. He defines an extensor as any multilinear function of multivector arguments, and notes that tensors, the multilinear functions of vectors, are the special case. Not every block of numbers of the right shape is one, any more than every block of numbers is a tensor. Numga's extensors are built from the products of the algebra, so they transform as the geometry they are built from does. Nothing in the definition mentions a separate metric tensor: the metric is part of the algebra, and a metric tensor is an object one can model with the library rather than a concern of the library itself.
 
 # Motivation
 
 Geometric relationships deserve to be first-class objects alongside the objects they relate. Inertia, stiffness, and material responses are maps that we need to construct, combine, transform, and solve with. Extensors make those relationships part of the geometric algebra library, expressed through the same operations as the geometry that defines them.
 
-Another consequence of extensors is to reconcile geometric algebra with conventional linear algebra. While geometric algebra traditionally focuses on outermorphisms and rotor sandwiches, practical engineering relies on the full spectrum of linear maps: non-orthogonal transformations, polarities, and derivations. Extensors bridge this divide by subsuming matrices into the algebra itself: any linear map between blade subspaces becomes a typed, coordinate-free object. Solvers, spectral decompositions, and least-squares optimizations can be performed directly on geometric relationships, returning geometrically typed results.
+Extensors bridge geometric algebra with conventional linear algebra. The examples below use the full spectrum of linear maps: rotor sandwiches and outermorphisms alongside non-orthogonal transformations, polarities, and derivations. Extensors subsume all of them, matrices included, into the algebra itself: any linear map between blade subspaces becomes a typed, coordinate-free object. Solvers, spectral decompositions, and least-squares optimizations can be performed directly on geometric relationships, returning geometrically typed results.
 
+The same holds against tensor algebra. In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
+
+# Companion documents
+
+* [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
+* [`extensor_advanced.md`](extensor_advanced.md): maps against forms, the pairing that replaces the transpose, traces, norms and gauges.
+* [`extensor_internals.md`](extensor_internals.md): what the library builds from an expression, and what runs when values are supplied.
 
 # Examples
 
-This document will go over some examples demonstrating the practical utility of extensors and the particulars of their implementation in numga. For a syntax and extension methods cheat sheet, see [extensor_syntax.md](extensor_syntax.md). As a convention, Capitalized names represent multivector spaces, and lower case names concrete multivectors. For instance, `v ^ V` represents the wedge product of a specific vector with the space of all vectors; the result is an extensor of bivector output type, that is unary (having one open argument).
+Capitalized names are multivector spaces and lower case names are concrete multivectors: `v ^ V` is the wedge product of a specific vector with the space of all vectors, an extensor with bivector output and one open argument.
 
 ### Index
 1. [**Computer Graphics & Optics (PGA3D)**](#1-scenegraph-forward-kinematics--camera-optics-pga3d): Collapsing affine scales, joint motors, compound lenses, and sensor projection into a single evaluated extensor.
@@ -43,13 +48,13 @@ body = pose >> make_anisotropic_scale(sx, sy, sz)                     # [] Point
 camera = to_sensor(rear_lens(front_lens(ray_constructor)))            # [] Point <- Point
 local_to_pixel = viewport(camera(camera_pose << body))                # [5] Point <- Point
 
-# Evaluates directly as broadcasted 4x4 matrix multiplication over geometry:
+# Evaluates directly as a compiled linear map over geometry:
 pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] Point
 ```
 
 #### Key Takeaways
 * **Full Pipeline Collapse**: Non-uniform scaling (affine), articulated joint motors (rigid), compound lenses (refractive), and sensor projection (perspective) compose into a single batched extensor (`Point <- Point`) *before* touching geometry.
-* **Matrix-Equivalent Execution**: Extensors compile down to broadcasted 4x4 fused-multiple-adds under the hood, matching classical graphics pipeline performance while staying entirely within the GA-typed algebra.
+* **Compiled Linear Execution**: Under the hood, the default dense backend contracts intermediate spaces akin to broadcasted matrix products. This is an implementation detail—sparse and symbolic execution follow the exact same extensor semantics—while matching classical graphics performance natively within GA.
 
 ---
 
@@ -153,3 +158,7 @@ acceleration = response[:, :, None](reference)                         # [n_time
 * **Nilpotent but not zero**: Two null dyads with opposite weights build a vacuum curvature map whose image lies in its own kernel, so all six eigenvalues vanish although the map does not. Pair symmetry, the Bianchi identity and Ricci-flatness are one-line extensor identities; the Ricci form is a trace with no frame or reciprocal basis.
 * **Observer binding is composition, not conjugation**: `curvature(t.wedge(Vector)).commutator(t)` has eigenvalues ±A although the curvature has none, and binding a boosted observer scales them by the Doppler factor squared.
 * **Batches carry through**: Time, polarization and observer rapidity are batch axes on the maps, and the bead ring broadcasts against them, so the detector's whole response is one expression ahead of the numerical integration.
+
+# References
+
+* <a id="ref-ca-to-gc"></a>**[ca-to-gc]** D. Hestenes and G. Sobczyk, *Clifford Algebra to Geometric Calculus: A Unified Language for Mathematics and Physics*. [Link](https://www.researchgate.net/publication/258944244_Clifford_Algebra_to_Geometric_Calculus_A_Unified_Language_for_Mathematics_and_Physics)
