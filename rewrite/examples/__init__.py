@@ -6,15 +6,35 @@ import os
 import re
 from pathlib import Path
 
-# Force headless matplotlib backend so examples never spawn GUI windows or steal focus:
-os.environ.setdefault("MPLBACKEND", "Agg")
-try:
-    import matplotlib
-    matplotlib.use("Agg")
-except ImportError:
-    pass
+# Force headless Agg backend when running CLI scripts outside interactive notebooks,
+# so CLI execution never spawns native GUI windows or steals window focus:
+def _is_interactive_notebook() -> bool:
+    try:
+        import matplotlib
+        if "inline" in matplotlib.get_backend().lower():
+            return True
+        from IPython import get_ipython
+        ip = get_ipython()
+        if ip is not None:
+            if hasattr(ip, "kernel") or "IPKernelApp" in getattr(ip, "config", {}):
+                return True
+            if "google.colab" in str(type(ip)) or ip.__class__.__name__ in ("ZMQInteractiveShell", "Shell"):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+if not _is_interactive_notebook():
+    os.environ.setdefault("MPLBACKEND", "Agg")
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+    except ImportError:
+        pass
 
 PLOT_DIR = Path(__file__).resolve().parents[1] / "plots"
+PLOT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def auto_increment_path(path: Path | str) -> Path:
