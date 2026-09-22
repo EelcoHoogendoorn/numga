@@ -183,50 +183,171 @@ def save_animation(cases: list[PlotCase], animation_path: str) -> None:
     plt.close(fig)
 
 
-def make_plot_case(system, values, modes, extension, angled: bool) -> PlotCase:
-    """Build a PlotCase from algebraic system and solved normal modes."""
+def _to_coords(p):
     from numga.algebras import PGA2D
-
-    def coords(p):
+    if hasattr(p, "select_subspace"):
         return p.select_subspace(PGA2D.subspace("yw wx")).kernel
+    return np.asarray(p, dtype=float)
 
+
+def render_setup(
+    body,
+    anchors_list,
+    attachments_list,
+    titles=("Case A: Two Vertical Springs", "Case B: Two Vertical + One Angled Spring"),
+    plot_path: str = "",
+) -> plt.Figure:
+    """Render the physical suspension layouts at equilibrium (Plot 1)."""
+    if not isinstance(anchors_list, (list, tuple)):
+        anchors_list = [anchors_list]
+        attachments_list = [attachments_list]
+        titles = [titles] if isinstance(titles, str) else [titles[0]]
+
+    fig, axes = plt.subplots(1, len(anchors_list), figsize=(6.5 * len(anchors_list), 4.8), dpi=120, facecolor="white")
+    if len(anchors_list) == 1:
+        axes = [axes]
+
+    b = _to_coords(body)
+    for ax, anc_pts, att_pts, title in zip(axes, anchors_list, attachments_list, titles):
+        anc = _to_coords(anc_pts)
+        att = _to_coords(att_pts)
+
+        # Draw rigid plate
+        plate = Polygon(b, closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=2, zorder=3)
+        ax.add_patch(plate)
+
+        # Draw springs and wall mount fixtures
+        for anchor, attachment in zip(anc, att):
+            fixed_support(ax, anchor, attachment)
+            path = spring_path(anchor, attachment)
+            ax.plot(*path.T, lw=2.2, color=UNCHANGED, zorder=5)
+
+        # Attachment pins
+        ax.scatter(att[:, 0], att[:, 1], s=40, facecolor="white", edgecolor=BODY, linewidth=1.5, zorder=6)
+
+        # Bounds and framing
+        all_pts = np.concatenate([b, anc])
+        lo, hi = all_pts.min(axis=0) - [0.35, 0.35], all_pts.max(axis=0) + [0.35, 0.35]
+        ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
+        ax.set_aspect("equal")
+        ax.set_title(title, fontsize=13, fontweight="bold", pad=9, color=BODY)
+        ax.grid(True, linestyle=":", alpha=0.4)
+
+    plt.tight_layout()
+    if plot_path:
+        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(plot_path, facecolor="white")
+    return fig
+
+
+def build_plot_case(
+    body,
+    anchors,
+    attachments,
+    modes,
+    values,
+    extensions,
+    title: str,
+    description: str,
+    labels: tuple[str, str, str],
+) -> PlotCase:
+    """Construct PlotCase from body points, spring endpoints, and normal mode extensors."""
     frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
-    body_offsets = system.body[None, :].commutator(modes[:, None])
-    attachment_offsets = system.attachments[None, :].commutator(modes[:, None])
-    extensions = extension(modes[:, None])
+    body_offsets = body[None, :].commutator(modes[:, None])
+    attachment_offsets = attachments[None, :].commutator(modes[:, None])
+    ext_values = extensions(modes[:, None]) if callable(extensions) else extensions
 
-    offsets = coords(body_offsets)
+    offsets = _to_coords(body_offsets)
     scale = 0.20 / np.linalg.norm(offsets, axis=-1).max(axis=-1)
     return PlotCase(
-        title="Add an angled spring" if angled else "Two vertical springs",
-        description=("All three motions now have a restoring force" if angled else
-                     "Sideways motion leaves both springs unchanged to first order"),
-        body=coords(system.body),
-        attachments=coords(system.attachments),
-        anchors=coords(system.anchors),
+        title=title,
+        description=description,
+        body=_to_coords(body),
+        attachments=_to_coords(attachments),
+        anchors=_to_coords(anchors),
         frequencies=frequencies,
         body_offsets=offsets * scale[:, None, None],
-        attachment_offsets=coords(attachment_offsets) * scale[:, None, None],
-        extensions=extensions.kernel[..., 0] * scale[:, None],
-        labels=("Coupled mode 1", "Coupled mode 2", "Coupled mode 3") if angled else
-               ("Free slide", "Bounce", "Rock"),
+        attachment_offsets=_to_coords(attachment_offsets) * scale[:, None, None],
+        extensions=(ext_values.kernel[..., 0] if hasattr(ext_values, "kernel") else ext_values) * scale[:, None],
+        labels=labels,
     )
 
 
-def render_modes(systems, values_list, modes_list, extensions_list, plot_path: str = "") -> plt.Figure:
-    """Render 6-panel mode comparison directly from algebraic systems and solved modes."""
+def render_modes(
+    body,
+    anchors_list,
+    attachments_list,
+    modes_list,
+    values_list,
+    extensions_list,
+    titles=("Two Vertical Springs", "Add an Angled Spring"),
+    descriptions=(
+        "Sideways motion leaves both springs unchanged to first order",
+        "All three motions now have a restoring force",
+    ),
+    labels_list=(
+        ("Free slide", "Bounce", "Rock"),
+        ("Coupled mode 1", "Coupled mode 2", "Coupled mode 3"),
+    ),
+    plot_path: str = "",
+) -> plt.Figure:
+    """Render 6-panel mode comparison directly from algebraic modes and endpoints."""
     cases = [
-        make_plot_case(sys, vals, mds, ext, angled=(i == 1))
-        for i, (sys, vals, mds, ext) in enumerate(zip(systems, values_list, modes_list, extensions_list))
+        build_plot_case(
+            body=body,
+            anchors=anc,
+            attachments=att,
+            modes=mds,
+            values=vals,
+            extensions=ext,
+            title=t,
+            description=d,
+            labels=lbls,
+        )
+        for anc, att, mds, vals, ext, t, d, lbls in zip(
+            anchors_list, attachments_list, modes_list, values_list, extensions_list,
+            titles, descriptions, labels_list
+        )
     ]
     return draw_modes(cases, plot_path)
 
 
-def render_animation(systems, values_list, modes_list, extensions_list, animation_path: str = "") -> None:
-    """Render synchronized vibration animation directly from algebraic systems and solved modes."""
+def render_animation(
+    body,
+    anchors_list,
+    attachments_list,
+    modes_list,
+    values_list,
+    extensions_list,
+    titles=("Two Vertical Springs", "Add an Angled Spring"),
+    descriptions=(
+        "Sideways motion leaves both springs unchanged to first order",
+        "All three motions now have a restoring force",
+    ),
+    labels_list=(
+        ("Free slide", "Bounce", "Rock"),
+        ("Coupled mode 1", "Coupled mode 2", "Coupled mode 3"),
+    ),
+    animation_path: str = "examples/plots/stiffness.gif",
+) -> None:
+    """Render synchronized vibration animation directly from algebraic modes and endpoints."""
     cases = [
-        make_plot_case(sys, vals, mds, ext, angled=(i == 1))
-        for i, (sys, vals, mds, ext) in enumerate(zip(systems, values_list, modes_list, extensions_list))
+        build_plot_case(
+            body=body,
+            anchors=anc,
+            attachments=att,
+            modes=mds,
+            values=vals,
+            extensions=ext,
+            title=t,
+            description=d,
+            labels=lbls,
+        )
+        for anc, att, mds, vals, ext, t, d, lbls in zip(
+            anchors_list, attachments_list, modes_list, values_list, extensions_list,
+            titles, descriptions, labels_list
+        )
     ]
     save_animation(cases, animation_path)
+
 
