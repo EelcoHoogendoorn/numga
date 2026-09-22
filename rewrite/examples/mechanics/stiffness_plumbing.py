@@ -269,16 +269,25 @@ def build_plot_case(
     attachments,
     modes,
     values,
-    extensions,
-    title: str,
-    description: str,
-    labels: tuple[str, str, str],
+    extensions=None,
+    title: str = "",
+    description: str = "",
+    labels: tuple[str, str, str] = ("Mode 1", "Mode 2", "Mode 3"),
 ) -> PlotCase:
     """Construct PlotCase from body points, spring endpoints, and normal mode extensors."""
-    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
+    if hasattr(values, "clip"):
+        frequencies = (values.clip(0, np.inf).square_root() / (2 * np.pi)).to_array()
+    else:
+        frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
     body_offsets = body[None, :].commutator(modes[:, None])
     attachment_offsets = attachments[None, :].commutator(modes[:, None])
-    ext_values = extensions(modes[:, None]) if callable(extensions) else extensions
+    if extensions is None:
+        lines = (anchors & attachments).normalized()
+        ext_values = lines[None, :] & modes[:, None]
+    elif callable(extensions):
+        ext_values = extensions(modes[:, None])
+    else:
+        ext_values = extensions
 
     offsets = _to_coords(body_offsets)
     scale = 0.20 / np.linalg.norm(offsets, axis=-1).max(axis=-1)
@@ -331,7 +340,7 @@ def render_modes(
     attachments_list,
     modes_list,
     values_list,
-    extensions_list,
+    extensions_list=None,
     titles=("Baseline Suspension: Two Vertical Springs", "Coupled Suspension: Added Angled Spring"),
     descriptions=(
         "Sideways motion leaves both springs unchanged to first order",
@@ -349,10 +358,12 @@ def render_modes(
         attachments_list = [attachments_list]
         modes_list = [modes_list]
         values_list = [values_list]
-        extensions_list = [extensions_list]
+        extensions_list = [extensions_list] if extensions_list is not None else [None]
         titles = [titles] if isinstance(titles, str) else [titles[0]]
         descriptions = [descriptions] if isinstance(descriptions, str) else [descriptions[0]]
         labels_list = [labels_list] if (isinstance(labels_list, (list, tuple)) and isinstance(labels_list[0], str)) else [labels_list[0]]
+    elif extensions_list is None:
+        extensions_list = [None] * len(anchors_list)
 
     cases = [
         build_plot_case(
@@ -380,7 +391,7 @@ def render_animation(
     attachments_list,
     modes_list,
     values_list,
-    extensions_list,
+    extensions_list=None,
     titles=("Two Vertical Springs", "Add an Angled Spring"),
     descriptions=(
         "Sideways motion leaves both springs unchanged to first order",
@@ -393,6 +404,18 @@ def render_animation(
     animation_path: str = "examples/plots/stiffness.gif",
 ) -> None:
     """Render synchronized vibration animation directly from algebraic modes and endpoints."""
+    if not isinstance(anchors_list, (list, tuple)):
+        anchors_list = [anchors_list]
+        attachments_list = [attachments_list]
+        modes_list = [modes_list]
+        values_list = [values_list]
+        extensions_list = [extensions_list] if extensions_list is not None else [None]
+        titles = [titles] if isinstance(titles, str) else [titles[0]]
+        descriptions = [descriptions] if isinstance(descriptions, str) else [descriptions[0]]
+        labels_list = [labels_list] if (isinstance(labels_list, (list, tuple)) and isinstance(labels_list[0], str)) else [labels_list[0]]
+    elif extensions_list is None:
+        extensions_list = [None] * len(anchors_list)
+
     cases = [
         build_plot_case(
             body=body,
