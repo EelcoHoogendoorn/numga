@@ -15,7 +15,7 @@ def capture(fig: plt.Figure) -> np.ndarray:
     return np.asarray(fig.canvas.buffer_rgba())[..., :3].copy()
 
 
-def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float = 1.0, colors: int = 64) -> str:
+def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float = 1.0, colors: int = 64, verbose: bool = False) -> str:
     """Write RGB frames as a looping palette GIF, optionally box-filtered down by scale."""
     images = [Image.fromarray(frame) for frame in frames]
     if scale != 1.0:
@@ -28,5 +28,6 @@ def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float
         path, save_all=True, append_images=images[1:], palette=palette.getpalette(),
         duration=duration_ms, loop=0, optimize=True,
     )
-    print(f"Animated GIF exported to {path}")
+    if verbose:
+        print(f"Animated GIF exported to {path}")
     return path

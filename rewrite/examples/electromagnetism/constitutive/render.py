@@ -55,8 +55,8 @@ def draw_wave_propagation(
     ax.plot([0, 0], [0, 0], [0, z_max], color="gray", linestyle="--", linewidth=1.2, alpha=0.5)
 
     # Continuous wave envelopes:
-    ax.plot(ex_total, ey_total, z, color="crimson", linewidth=2.0, label=r"Electric field $\mathbf{E}$", zorder=5)
-    ax.plot(bx_total, by_total, z, color="dodgerblue", linewidth=1.6, linestyle="--", label=r"Magnetic field $\mathbf{B}$", zorder=4)
+    ax.plot(ex_total, ey_total, z, color="crimson", linewidth=2.0, label="E", zorder=5)
+    ax.plot(bx_total, by_total, z, color="dodgerblue", linewidth=1.6, linestyle="--", label="B", zorder=4)
 
     # Quiver arrows at discrete stations:
     n_stations = 21
@@ -81,10 +81,10 @@ def draw_wave_propagation(
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_zlim([0, z_max])
-    ax.set_xlabel(r"Transverse $x$")
-    ax.set_ylabel(r"Transverse $y$")
-    ax.set_zlabel(r"Propagation axis $z$")
-    ax.set_title(title, fontsize=10.5, pad=10)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+    ax.set_title(title, fontsize=10, pad=6)
     ax.legend(loc="upper right", fontsize=8.5)
     ax.view_init(elev=20, azim=-60)
 
@@ -100,11 +100,11 @@ def draw_wave_comparison_3d(
     ax2 = fig.add_subplot(1, 2, 2, projection="3d")
     draw_wave_propagation(
         ax1, glass_modes, z_max=z_max,
-        title="Isotropic Glass: Invariant Linear Polarization",
+        title="isotropic glass",
     )
     draw_wave_propagation(
         ax2, crystal_modes, z_max=z_max,
-        title="Birefringent Crystal: Polarization Precession",
+        title="birefringent crystal",
     )
     return ax1, ax2
 
@@ -194,9 +194,9 @@ def draw_dispersion(
         for v in expected.get(name, []):
             ax.axvline(v, color=line.get_color(), linestyle=":", linewidth=1.2, alpha=0.8)
 
-    ax.set_xlabel(r"Phase speed $v = \omega / |\mathbf{k}|$")
-    ax.set_ylabel(r"Smallest singular value $\sigma_{\min}(W_k)$")
-    ax.set_title(r"Resonance Scan: Roots of $W_k(a) = k \cdot \chi(k \wedge a) = 0$", fontsize=11)
+    ax.set_xlabel("phase speed v")
+    ax.set_ylabel(r"smallest $\sigma$")
+    ax.set_title("dispersion scan", fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
 
@@ -220,7 +220,7 @@ def draw_polarizations(
             0, 0, vx, vy,
             angles="xy", scale_units="xy", scale=1,
             color=color, width=0.015,
-            label=f"{label} (v = {speed:.3f})",
+            label=f"{label} (v={speed:.2f})",
         )
         # Bidirectional polarization oscillation line:
         ax.plot([-vx, vx], [-vy, vy], color=color, linestyle=":", alpha=0.6)
@@ -228,9 +228,9 @@ def draw_polarizations(
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_aspect("equal")
-    ax.set_xlabel(r"Transverse Electric $E_x$")
-    ax.set_ylabel(r"Transverse Electric $E_y$")
-    ax.set_title(r"Transverse Polarizations: $k \parallel \hat{\mathbf{z}}$", fontsize=11)
+    ax.set_xlabel("Ex")
+    ax.set_ylabel("Ey")
+    ax.set_title("polarization modes", fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", fontsize=9)
 
@@ -270,7 +270,7 @@ def draw_fresnel_surface_polar(
 
     ax.set_theta_zero_location("N")  # 0 radians along +z (North)
     ax.set_theta_direction(-1)       # Clockwise: +x along East
-    ax.set_title(r"Fresnel Wave Surface $v(\theta)$ in $xz$-plane", va="bottom", fontsize=11)
+    ax.set_title("wave surfaces", va="bottom", fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="lower left", bbox_to_anchor=(1.05, 0.0), fontsize=8.5)
 
@@ -297,18 +297,18 @@ def draw_fresnel_drag_curves(
     fresnel_up = 1.0 / refractive_index - beta_fine * fresnel_drag_coeff
 
     # Eigensolve points from boosted constitutive extensor:
-    ax.plot(betas, v_down, "ro", markersize=5, label=r"Downstream $v_+$ (eigensolve)")
-    ax.plot(betas, v_up, "bs", markersize=5, label=r"Upstream $v_-$ (eigensolve)")
+    ax.plot(betas, v_down, "ro", markersize=5, label="downstream")
+    ax.plot(betas, v_up, "bs", markersize=5, label="upstream")
 
     # Analytical theory curves:
-    ax.plot(beta_fine, einstein_down, "r-", linewidth=1.5, label=r"Einstein exact: $(c/n \pm \beta) / (1 \pm \beta/n)$")
+    ax.plot(beta_fine, einstein_down, "r-", linewidth=1.5, label="Einstein")
     ax.plot(beta_fine, einstein_up, "b-", linewidth=1.5)
-    ax.plot(beta_fine, fresnel_down, "r--", linewidth=1.1, alpha=0.7, label=r"Fresnel 1st-order: $c/n \pm \beta(1 - 1/n^2)$")
+    ax.plot(beta_fine, fresnel_down, "r--", linewidth=1.1, alpha=0.7, label="Fresnel 1st-order")
     ax.plot(beta_fine, fresnel_up, "b--", linewidth=1.1, alpha=0.7)
 
-    ax.set_xlabel(r"Medium boost velocity $\beta = u / c$")
-    ax.set_ylabel(r"Phase velocity $v_{\text{phase}} / c$")
-    ax.set_title(r"Relativistic Fresnel Drag: Fizeau Experiment in Spacetime GA", fontsize=11)
+    ax.set_xlabel(r"boost $\beta$")
+    ax.set_ylabel("phase velocity v")
+    ax.set_title("Fresnel drag", fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.legend(loc="best", fontsize=8.5, framealpha=0.9)
 

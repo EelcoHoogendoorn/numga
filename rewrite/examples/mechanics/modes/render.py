@@ -146,8 +146,12 @@ def draw_modes(cases: list[PlotCase], title: str = "", plot_path: str = "") -> p
     return fig
 
 
-def save_animation(cases: list[PlotCase], animation_path: str) -> None:
+def save_animation(cases: list[PlotCase], animation_path: str | Path | None = None) -> str:
     """Release each isolated mode from rest in synchronized physical time."""
+    if not animation_path:
+        import tempfile
+        animation_path = tempfile.mktemp(suffix=".gif")
+    animation_path_str = str(animation_path)
     fig, axes = _new_figure(cases)
     fig.set_dpi(80)
     updates = [_draw_mode(ax, case, mode)
@@ -163,9 +167,10 @@ def save_animation(cases: list[PlotCase], animation_path: str) -> None:
 
     animation = FuncAnimation(fig, frame, frames=np.linspace(0, duration, 120),
                               interval=50, blit=False)
-    Path(animation_path).parent.mkdir(parents=True, exist_ok=True)
-    animation.save(animation_path, writer=PillowWriter(fps=20), dpi=80)
+    Path(animation_path_str).parent.mkdir(parents=True, exist_ok=True)
+    animation.save(animation_path_str, writer=PillowWriter(fps=20), dpi=80)
     plt.close(fig)
+    return animation_path_str
 
 
 def render_setup(

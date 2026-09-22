@@ -574,15 +574,19 @@ def animate_top_down_convergence(
 
     plt.close(fig)
 
-    target_path = Path(gif_path) if gif_path is not None else None
-    if auto_increment and target_path is not None:
-        from examples import auto_increment_path
-        target_path = auto_increment_path(target_path)
+    if gif_path is None:
+        import tempfile
+        target_path = Path(tempfile.mktemp(suffix=".gif"))
+    else:
+        target_path = Path(gif_path)
+        if auto_increment:
+            from examples import auto_increment_path
+            target_path = auto_increment_path(target_path)
 
-    if target_path is not None:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        duration_ms = int(1000 / fps) if fps > 0 else 330
-        imageio.mimsave(target_path, frames, duration=duration_ms, loop=0)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    duration_ms = int(1000 / fps) if fps > 0 else 330
+    imageio.mimsave(target_path, frames, duration=duration_ms, loop=0)
+    if gif_path is not None:
         print(f"[render animation] GIF saved to: {target_path}")
 
     return target_path
