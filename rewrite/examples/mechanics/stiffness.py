@@ -52,9 +52,15 @@ Inertia = PGA2D.gatype((Wrench, Twist))
 
 
 def point(xy: np.ndarray) -> Point:
-    """Embed (..., 2) Cartesian positions as unit-weight PGA points."""
+    """Embed (..., 2) Cartesian positions as unit-weight PGA points via basis vectors.
+
+    In PGA, a point (x, y) is the meet (wedge) of coordinate lines:
+    the line X = x (mv.x - x * mv.w) and line Y = y (mv.y - y * mv.w).
+    This constructs points explicitly without depending on blade layout.
+    """
     xy = np.asarray(xy, dtype=float)
-    return mv.antivector(np.concatenate([xy, np.ones_like(xy[..., :1])], axis=-1))
+    x, y = xy[..., 0], xy[..., 1]
+    return (mv.x - x * mv.w) ^ (mv.y - y * mv.w)
 
 
 def coordinates(points: Point) -> np.ndarray:
