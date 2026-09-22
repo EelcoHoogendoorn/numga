@@ -10,3 +10,4 @@ dist/
 /plots/*
 !/plots/stiffness.gif
 !/plots/curvature.gif
+examples/plots/
