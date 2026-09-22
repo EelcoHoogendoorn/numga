@@ -15,13 +15,14 @@ Another consequence of extensors is to reconcile geometric algebra with conventi
 
 # Examples
 
-This document will go over some examples demonstrating the practical utility of extensors and the particulars of their implementation in numga. As a convention, Capitalized names represent multivector spaces, and lower case names concrete multivectors. For instance, `v ^ V` represents the wedge product of a specific vector with the space of all vectors; the result is an extensor of bivector output type, that is unary (having one open argument).
+This document will go over some examples demonstrating the practical utility of extensors and the particulars of their implementation in numga. For a syntax and extension methods cheat sheet, see [extensor_syntax.md](extensor_syntax.md). As a convention, Capitalized names represent multivector spaces, and lower case names concrete multivectors. For instance, `v ^ V` represents the wedge product of a specific vector with the space of all vectors; the result is an extensor of bivector output type, that is unary (having one open argument).
 
 ### Index
 1. [**Computer Graphics & Optics (PGA3D)**](#1-scenegraph-forward-kinematics--camera-optics-pga3d): Collapsing affine scales, joint motors, compound lenses, and sensor projection into a single evaluated extensor.
 2. [**Mechanics & Vibrations (PGA2D)**](#2-rigid-body-normal-modes--vibration-pga2d): Additive stiffness and inertia extensors without coordinate origins, generalized eigensolves on energy bilinear forms.
 3. [**Multi-View Vision & Camera Alignment (PGA2D)**](#3-multi-view-scene-reconstruction--camera-alignment-pga2d): Lifting 1D pixels into directional quadric cones, additive multi-view fusion, closed-form triangulation, and Lie algebra pose Jacobians.
 4. [**Electromagnetism & Spacetime Physics (STA)**](#4-spacetime-constitutive-relations-dispersion--relativistic-fresnel-drag-sta): Observer decompositions, lifting 3D material quadrics to 6D spacetime extensors, and detecting wave dispersion and polarizations via SVD.
+5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): Curvature as a nilpotent bivector map built from null dyads, Riemann identities as extensor traces, observer binding into tidal maps, and a bead-ring detector batched over time and polarization.
 
 ---
 
@@ -118,3 +119,31 @@ v_phase = speeds[wave.svdvals()[..., -1].argmin(axis=0)]
 #### Key Takeaways
 * **Observer Decomposition & Quadric Lifting**: An observer's timelike 4-velocity $t$ decomposes 6D field bivectors into 3D electric and magnetic vectors. Spatial material relations lift into 6D bivector extensors without coordinates.
 * **Dispersion & Polarizations via SVD**: Maxwell's equations in media compile into a single linear map $W_k$; physical propagating phase speeds and transverse polarizations emerge directly from SVD nullspaces.
+
+---
+
+## 5. Gravitational Wave Curvature & Tidal Forces (STA)
+
+**Notebook**: [`examples/relativity/curvature/curvature.ipynb`](examples/relativity/curvature/curvature.ipynb)
+
+![Bead ring response to plus, cross and circular gravitational wave packets](plots/curvature.png)
+
+#### Construction
+```python
+# Curvature from null dyads with the area open; cross is plus conjugated by an eighth-turn rotor:
+nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector (null planes)
+plus = nx * (nx | Bivector) - ny * (ny | Bivector)                     # [] Bivector <- Bivector
+cross = eighth_turn >> plus(eighth_turn << Bivector)                   # [] Bivector <- Bivector
+
+# Vacuum: the Ricci form is a trace of the curvature with the observer and separation left open:
+ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector)
+
+# Bind an observer twice, leave the separation open, and broadcast over a ring of beads:
+response = waves(t.wedge(Vector)).commutator(t)                        # [n_time, 3] Vector <- Vector
+acceleration = response[:, :, None](reference)                         # [n_time, 3, n_beads] Vector
+```
+
+#### Key Takeaways
+* **Nilpotent but not zero**: Two null dyads with opposite weights build a vacuum curvature map whose image lies in its own kernel, so all six eigenvalues vanish although the map does not. Pair symmetry, the Bianchi identity and Ricci-flatness are one-line extensor identities; the Ricci form is a trace with no frame or reciprocal basis.
+* **Observer binding is composition, not conjugation**: `curvature(t.wedge(Vector)).commutator(t)` has eigenvalues ±A although the curvature has none, and binding a boosted observer scales them by the Doppler factor squared.
+* **Batches carry through**: Time, polarization and observer rapidity are batch axes on the maps, and the bead ring broadcasts against them, so the detector's whole response is one expression ahead of the numerical integration.

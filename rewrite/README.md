@@ -62,7 +62,7 @@ The [example index](examples/README.md) links the full tutorials and run command
 | [Spring modes](examples/mechanics/stiffness.py) | Spring lines produce stiffness; stiffness and inertia produce vibration modes. |
 | [Lens camera](examples/sketches/lens_camera.py) | Compose lenses and pull aperture quadrics through the optical system. |
 | [Moving materials](examples/electromagnetism/constitutive/) | Build a material response, boost it, and solve for wave polarizations. |
-| [Gravitational waves](examples/relativity/curvature.py) | Construct curvature from spacetime bivectors and extract an observer's tidal map. |
+| [Gravitational waves](examples/relativity/curvature/) | Construct curvature from spacetime bivectors and extract an observer's tidal map. |
 
 | Spring modes | Gravitational waves |
 | :---: | :---: |

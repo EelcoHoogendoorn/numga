@@ -1,13 +1,18 @@
 """Geometric and physical checks of the plane-wave curvature example."""
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from numga import stack
 
-from examples.relativity.curvature import Curvature, Tidal, main
-from examples.relativity.curvature_plumbing import (
-    Bivector, Vector, detector_ring, integrate_acceleration, mv, t, wave_packet, x, y, z,
+from examples.relativity.curvature import main
+from examples.relativity.curvature.core import (
+    Bivector, Curvature, Tidal, Vector, detector_ring, integrate_acceleration, mv, t, wave_packet, x, y, z,
 )
 
 
@@ -31,6 +36,21 @@ def polarizations():
 
 def polarized_wave(plus, cross, profile):
     return stack((plus * profile[:, 0], cross * profile[:, 0], plus * profile[:, 0] + cross * profile[:, 1]), axis=1)
+
+
+def test_mathematics_does_not_import_plotting():
+    """The math layer must stay free of the plotting stack, transitively."""
+    probe = (
+        "import examples.relativity.curvature.core as c, sys; "
+        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
+        "print(bad)"
+    )
+    repo_rewrite = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "PYTHONPATH": f"{repo_rewrite / 'src'}:{repo_rewrite}"}
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True, env=env
+    )
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 @pytest.mark.parametrize("amplitudes", [(1, 0), (0, 1), (.6, -.8)])
@@ -62,6 +82,18 @@ def test_riemann_pair_symmetry_bianchi_identity_and_vacuum_ricci():
     reciprocal = mv.vector(np.diag([1, -1, -1, -1]))
     ricci = curvature(basis.wedge(Vector)).commutator(reciprocal).sum(axis=0)
     np.testing.assert_allclose(ricci.kernel, 0, atol=1e-13)
+    # Frame-free: the Ricci form is the trace of the curvature against its wedge slot,
+    # with the inner-product slot and the separation left open.
+    ricci_form = Vector.commutator(curvature(Vector.wedge(Vector))).trace(slot=1)
+    np.testing.assert_allclose(ricci_form.kernel, 0, atol=1e-13)
+    # The same trace on a non-vacuum curvature reproduces the frame contraction as a form.
+    dyad = curvature + 0.7 * (t ^ x) * ((t ^ x) | Bivector)
+    frame_map = dyad(basis.wedge(Vector)).commutator(reciprocal).sum(axis=0)
+    a, b = mv.vector(np.random.default_rng(11).normal(size=(2, 4)))
+    np.testing.assert_allclose(
+        Vector.commutator(dyad(Vector.wedge(Vector))).trace(slot=1)(a, b).kernel,
+        (a | frame_map(b)).kernel, atol=1e-13,
+    )
 
 
 def test_observer_sees_opposite_transverse_tides_and_doppler_scaling():
@@ -95,7 +127,7 @@ def test_curvature_and_observer_binding_are_lorentz_covariant():
 
 def test_packet_acceleration_matches_the_strain_second_derivative():
     time = np.linspace(-.5, 6.5, 2801)
-    strain, second = wave_packet(time)
+    strain, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
     h, acceleration = strain.kernel[..., 0], second.kernel[..., 0]
     dt = time[1] - time[0]
     numerical = (-h[:-4] + 16 * h[1:-3] - 30 * h[2:-2]
@@ -118,7 +150,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
     errors = []
     for count in (321, 641):
         time = np.linspace(-1, 7, count)
-        _, second = wave_packet(time)
+        _, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
         acceleration = tidal(polarized_wave(plus, cross, second) * -.5, t)[:, :, None](reference)
         displacement = integrate_acceleration(time, acceleration).kernel[..., 1:3]
 

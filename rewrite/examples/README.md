@@ -54,7 +54,7 @@ go to [`../plots/`](../plots/).
 | Geometry | [Planar PGA](geometry/pga2d.py), [projection](geometry/projection/), [scenegraph](geometry/scenegraph.py), [fitting](geometry/fitting.py), [registration](geometry/registration.py), [quadric error metrics (QEM)](geometry/qem/), [epipolar geometry & 3D reconstruction](geometry/epipolar/), [multi-view cone reconstruction & bundle adjustment](geometry/multiview/) |
 | Quadrics | [Projective quadrics](quadrics/quadrics.py), [Gaussian fit and 1σ quadric](quadrics/gaussian.py), [spherical quadrics](quadrics/spherical_quadrics.py), [CGA spherical quadrics](quadrics/cga_spherical_quadrics.py), [sphere rendering](quadrics/conformal_elliptical.py), [collision](quadrics/quadric_collision.py), [Cayley–Klein geometry](quadrics/cayley_klein.py), [spherical dynamics](quadrics/spherical_quadric_scenarios.py) |
 | Mechanics | [Inertia](mechanics/inertia.py), [simplex inertia](mechanics/simplex.py), [stiffness and normal modes](mechanics/modes/), [tennis racket instability](mechanics/tennis_racket.py), [Lie integrators](mechanics/lie_integrators.py), [rigid body chains (XPBD)](mechanics/xpbd.py) |
-| Relativity | [Distributed impulses](relativity/relativistic_impulse.py), [ladder paradox](relativity/ladder_paradox.py), [Bell's spaceships](relativity/bell_spaceships.py), [relativistic aberration](relativity/boosted_quadrics.py), [curvature and gravitational waves](relativity/curvature.py) |
+| Relativity | [Distributed impulses](relativity/relativistic_impulse.py), [ladder paradox](relativity/ladder_paradox.py), [Bell's spaceships](relativity/bell_spaceships.py), [relativistic aberration](relativity/boosted_quadrics.py), [curvature and gravitational waves](relativity/curvature/) |
 | Electromagnetism | [Maxwell maps](electromagnetism/maxwell.py), [constitutive maps](electromagnetism/constitutive/) |
 | Symmetry | [Heat conduction, a flywheel, and a crystal lattice](sketches/symmetry.py): `heat_conduction()` averages conductivity over a rotation group and plots the allowed heat-flow ellipsoid; `flywheel()` sums point-mass inertia over three rotated arms and plots their mass distribution; `crystal_lattice()` averages axial and face-diagonal bond responses over 24 cube rotations to compare isotropic rank-2 conductivity with anisotropic rank-4 imposed-strain elasticity. `main()` runs all three. |
 | Conformal geometry | [CGA quadrics](sketches/cga_quadric.py): sphere/plane constructions, cyclides from the paper, and circle-vortex animations through one shared tracer. |
@@ -102,10 +102,10 @@ supersampling, and final downsampling are controlled by `--width`, `--height`,
 `--supersample`, and `--scale`. The gold vortex ring is a torus traced and shaded
 alongside the moving surface.
 
-Curvature's GIF export is an argument to `main`:
+Curvature's GIF export is a flag of its scenarios module:
 
 ```sh
-PYTHONPATH=src:. python -c 'from examples.relativity.curvature import main; main(animation_path="plots/curvature.gif")'
+PYTHONPATH=src:. python -m examples.relativity.curvature.scenarios --animate
 ```
 
 Use `MPLBACKEND=Agg` when rendering without a display. Example tests mirror these

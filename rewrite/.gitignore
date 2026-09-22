@@ -10,6 +10,7 @@ dist/
 /plots/*
 !/plots/stiffness.gif
 !/plots/curvature.gif
+!/plots/curvature.png
 !/plots/scenegraph.png
 !/plots/modes.png
 !/plots/multiview_reconstruction.png
