@@ -107,9 +107,6 @@ def test_edge_collapse_minimizes_joint_error():
 
 def test_scenario_runs_and_saves(tmp_path: Path):
     """The scenario wires math to render and writes its figure."""
-    import matplotlib
-    matplotlib.use("Agg")
-
     out = tmp_path / "qem.png"
     qem_figure(plot_path=out)
     assert out.exists()

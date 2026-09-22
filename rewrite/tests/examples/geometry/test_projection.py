@@ -194,8 +194,6 @@ def test_mathematics_does_not_import_plotting():
 
 def test_scenario_runs_and_saves(tmp_path):
     """The scenario wires math to render and writes its figure."""
-    import matplotlib
-    matplotlib.use("Agg")
     out = tmp_path / "projection.png"
     projection_figure(plot_path=str(out))
     assert out.exists()

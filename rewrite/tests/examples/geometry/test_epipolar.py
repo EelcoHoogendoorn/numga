@@ -78,9 +78,6 @@ def test_reconstruct_from_screen_space_points():
 
 def test_scenario_runs_and_saves(tmp_path: Path):
     """The scenario wires math to render and writes its figure."""
-    import matplotlib
-    matplotlib.use("Agg")
-
     out = tmp_path / "epipolar.png"
     epipolar_figure(plot_path=out)
     assert out.exists()

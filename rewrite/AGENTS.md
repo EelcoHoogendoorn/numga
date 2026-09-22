@@ -3,6 +3,13 @@
 Rules for code in this tree, especially `examples/`. They are the owner's, stated during review;
 follow them exactly.
 
+> [!CRITICAL]
+> **RULE #1: ZERO ARRAY EXTRACTION IN NOTEBOOKS OR CORE**
+> Absolutely ZERO extraction of arrays (`.kernel`, `.values`, `.cast().kernel`, coordinate slicing, etc.) in notebooks or `core.py`!
+> **Array extraction is JIT; in the render path; just before going into plotting code.**
+> Notebooks and core modules operate purely on algebraic Extensors from start to finish.
+> All array extraction, coordinate readouts, and conversions for matplotlib belong strictly inside `render.py` at the visualization boundary.
+
 ## Code first, not blog posts
 
 - **Max ~8 lines of text before code**: Nobody reads a blog without anchoring it in something that is actually happening. Get to executable code immediately.
@@ -12,6 +19,7 @@ follow them exactly.
 
 ## Algebra first
 
+- **ZERO ARRAY EXTRACTION IN NOTEBOOKS OR CORE**: Numbers exist only at construction. Never extract arrays (`.kernel`, `.values`, coordinate unpacking) in notebooks or `core.py`. **Array extraction is JIT; in the render path; just before going into plotting code.** If a function or notebook cell needs to plot or visualize something, pass the geometric objects (Extensors/Multivectors) directly to `render.py`. Coordinate readout happens strictly inside `render.py`.
 - Numbers exist only at construction. Encode every quantity as an algebraic element as soon as it
   exists: a joint state is `axis * angle`, a rate is a bivector, a placement is a point, a shape
   is a quadric. Raw `np.ndarray` is allowed for scalars (masses, angles, margins), indices, and
@@ -50,7 +58,7 @@ follow them exactly.
   instead of `k`, `stiffness` instead of `s`). Standard loop/iteration variables (`i`, `j`) are
   fine—use sound engineering judgement and loop back when in doubt.
 - No interleaved plotting and math; a generator yields geometry, a draw helper consumes it.
-- **No viewport or coordinate extraction helpers in math or notebooks**: Coordinate unpacking helpers (such as `coordinates(points: Point) -> np.ndarray`, `euclidean()`, or `.kernel` coordinate slicing for matplotlib) belong strictly in `render.py`. Mathematical modules and notebook cells must operate purely on algebraic Extensors from start to finish. They must never define or import coordinate unpacking shims. Viewport conversion happens strictly inside `render.py` JIT when passing points to matplotlib artists.
+- **ZERO ARRAY EXTRACTION IN NOTEBOOKS OR CORE (NO VIEWPORT OR COORDINATE EXTRACTION IN MATH/NOTEBOOKS)**: Absolutely zero array extraction (`.kernel`, `.values`, `.cast().kernel`) or coordinate unpacking helpers (such as `coordinates(points: Point) -> np.ndarray`, `euclidean()`, or `.kernel` coordinate slicing for matplotlib) in math or notebooks. **Array extraction is JIT; in the render path; just before going into plotting code.** Mathematical modules and notebook cells must operate purely on algebraic Extensors from start to finish. They must never extract arrays or define/import coordinate unpacking shims. Viewport conversion and array extraction happen strictly inside `render.py` JIT when passing points/vectors to matplotlib artists.
 - Checks are kernel-level assertions in one labelled block at the end of `main`.
 - Do not touch comments or docstrings unasked. Group functions on the type they belong to
   (`Bodies.join`), do not pollute the module namespace.
@@ -66,8 +74,8 @@ follow them exactly.
 - Never interrupt a running job and never delete files unless explicitly told to.
 - Deliverables (plots, GIFs) go to `rewrite/plots/`; no previews or collages in their place.
 - Vectorize; JIT is not the answer.
-- Always run targeted tests (`pytest path/to/test_file.py`). Only run the full test suite when editing test infrastructure across the entire suite or during explicit pre-commit checks.
-- **Strictly headless execution (NEVER steal user focus)**: Every Python invocation that touches matplotlib must run with `MPLBACKEND=Agg`. Never allow `plt.show()` to spawn a native GUI window or yank OS window focus away from the editor under any circumstances.
+- **Never run full test suites**: Always run targeted tests against only the specific file or test function being worked on (e.g. `pytest tests/examples/electromagnetism/test_constitutive.py`). NEVER run `pytest` across the entire repo. Full suite runs are strictly blocked in `conftest.py` and require `--i-am-a-dunce-for-ignoring-instructions`.
+- **Strictly headless execution (NEVER steal user focus)**: Pytest runs headlessly by default via `conftest.py` (which intercepts `plt.show()` to close figures and sets `Agg` unless `--show-plot` is passed). Agents running terminal commands outside pytest must run with `MPLBACKEND=Agg` so commands never spawn GUI windows or yank OS window focus away from the editor under any circumstances.
 - **NEVER commit or push without explicit user command**: Never execute `git commit` or `git push` autonomously.
   Always leave modifications in the working tree for user review. Only commit or push when the user explicitly commands it.
 

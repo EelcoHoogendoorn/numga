@@ -79,8 +79,6 @@ def test_intermediate_axis_tumbles_and_others_do_not():
 
 
 def test_comparison_figure(tmp_path):
-    import matplotlib
-    matplotlib.use("Agg")
     from examples.mechanics.tennis_racket import run_integrator_comparison
     out = tmp_path / "integrators.png"
     run_integrator_comparison((3,), 0.25, 10.0, 42, str(out))

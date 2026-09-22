@@ -58,3 +58,6 @@ Spherical3D = Algebra(
     ),
 )
 
+
+STA = Algebra("t+x-y-z-")
+

@@ -91,9 +91,6 @@ def test_xpbd_chain_simulation():
 
 def test_main_figure(tmp_path):
     """Verify that main runs and generates the output figure."""
-    import matplotlib
-    matplotlib.use("Agg")
-
     out_file = tmp_path / "test_chain.png"
     states, violations = main(n_bodies=4, n_steps=10, substeps=2, plot_path=str(out_file))
     assert out_file.exists()

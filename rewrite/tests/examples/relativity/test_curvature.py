@@ -148,8 +148,6 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
 
 
 def test_tutorial_runs_and_saves(tmp_path):
-    import matplotlib
-    matplotlib.use("Agg")
     out = tmp_path / "curvature.png"
     main(plot_path=str(out))
     assert out.exists()

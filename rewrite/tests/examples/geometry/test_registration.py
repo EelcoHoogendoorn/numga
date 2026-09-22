@@ -51,8 +51,6 @@ def test_translation_is_recovered_by_the_same_fit():
 
 
 def test_tutorial_runs_and_saves(tmp_path, monkeypatch):
-    import matplotlib
-    matplotlib.use("Agg")
     from examples.geometry import registration
     monkeypatch.setattr(registration, "PLOT_DIR", tmp_path)
     registration.sandwich_alignment()

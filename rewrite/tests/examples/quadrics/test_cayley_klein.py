@@ -77,8 +77,6 @@ def test_circle_quadric_contains_the_points_at_its_radius():
 
 
 def test_tutorial_runs_and_saves(tmp_path):
-    import matplotlib
-    matplotlib.use("Agg")
     out = tmp_path / "cayley_klein.png"
     main(plot_path=str(out))
     assert out.exists()

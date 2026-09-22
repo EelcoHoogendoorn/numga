@@ -55,7 +55,7 @@ go to [`../plots/`](../plots/).
 | Quadrics | [Projective quadrics](quadrics/quadrics.py), [Gaussian fit and 1σ quadric](quadrics/gaussian.py), [spherical quadrics](quadrics/spherical_quadrics.py), [CGA spherical quadrics](quadrics/cga_spherical_quadrics.py), [sphere rendering](quadrics/conformal_elliptical.py), [collision](quadrics/quadric_collision.py), [Cayley–Klein geometry](quadrics/cayley_klein.py), [spherical dynamics](quadrics/spherical_quadric_scenarios.py) |
 | Mechanics | [Inertia](mechanics/inertia.py), [simplex inertia](mechanics/simplex.py), [stiffness and normal modes](mechanics/modes/), [tennis racket instability](mechanics/tennis_racket.py), [Lie integrators](mechanics/lie_integrators.py), [rigid body chains (XPBD)](mechanics/xpbd.py) |
 | Relativity | [Distributed impulses](relativity/relativistic_impulse.py), [ladder paradox](relativity/ladder_paradox.py), [Bell's spaceships](relativity/bell_spaceships.py), [relativistic aberration](relativity/boosted_quadrics.py), [curvature and gravitational waves](relativity/curvature.py) |
-| Electromagnetism | [Maxwell maps](electromagnetism/maxwell.py), [constitutive maps](electromagnetism/constitutive.py) |
+| Electromagnetism | [Maxwell maps](electromagnetism/maxwell.py), [constitutive maps](electromagnetism/constitutive/) |
 | Symmetry | [Heat conduction, a flywheel, and a crystal lattice](sketches/symmetry.py): `heat_conduction()` averages conductivity over a rotation group and plots the allowed heat-flow ellipsoid; `flywheel()` sums point-mass inertia over three rotated arms and plots their mass distribution; `crystal_lattice()` averages axial and face-diagonal bond responses over 24 cube rotations to compare isotropic rank-2 conductivity with anisotropic rank-4 imposed-strain elasticity. `main()` runs all three. |
 | Conformal geometry | [CGA quadrics](sketches/cga_quadric.py): sphere/plane constructions, cyclides from the paper, and circle-vortex animations through one shared tracer. |
 
@@ -72,7 +72,7 @@ PYTHONPATH=src:. python -m examples.quadrics.cayley_klein
 PYTHONPATH=src:. python -m examples.quadrics.gaussian
 PYTHONPATH=src:. python -m examples.mechanics.modes --animate
 PYTHONPATH=src:. python -m examples.relativity.curvature
-PYTHONPATH=src:. python -m examples.electromagnetism.constitutive
+PYTHONPATH=src:. python -m examples.electromagnetism.constitutive.scenarios
 PYTHONPATH=src:. python -m examples.sketches.symmetry
 PYTHONPATH=src:. python -c 'from examples.sketches.symmetry import heat_conduction; heat_conduction()'
 PYTHONPATH=src:. python -c 'from examples.sketches.symmetry import flywheel; flywheel()'

@@ -173,3 +173,4 @@ if __name__ == "__main__":
     parser.add_argument("--animate", action="store_true", help="Also save the normal modes as a GIF.")
     args = parser.parse_args()
     main(animation_path=str(PLOT_DIR / "modes.gif") if args.animate else "")
+    plt.show()

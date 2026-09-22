@@ -100,8 +100,6 @@ def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
 
 
 def test_tutorial_runs_and_saves(tmp_path, monkeypatch):
-    import matplotlib
-    matplotlib.use("Agg")
     from examples.geometry import fitting
     monkeypatch.setattr(fitting, "PLOT_DIR", tmp_path)
     fitting.point_to_points()
