@@ -6,8 +6,12 @@ build/
 dist/
 *.egg-info/
 
-# Generated renders; retain only the figures and animations linked by README.md.
+# Generated renders; retain only the figures and animations linked by README.md and extensors.md.
 /plots/*
 !/plots/stiffness.gif
 !/plots/curvature.gif
+!/plots/scenegraph.png
+!/plots/modes.png
+!/plots/multiview_reconstruction.png
+!/plots/constitutive.png
 examples/plots/
