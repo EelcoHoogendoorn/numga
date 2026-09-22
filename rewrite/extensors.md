@@ -6,6 +6,10 @@ In programming terms, extensors allow one to leave open arguments to an expressi
 
 When doing mathematics on the blackboard, one often switches between expressions involving a specific vector, or expressions over the entire space of vectors. Extensor syntax brings that same flexibility to geometric algebra in code, combining expressivity with efficiency of the underlying code.
 
+In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
+
+Two consequences follow. A batch axis is not a slot: it indexes independent copies of an expression, and a frame summed against its reciprocal is the coordinate spelling of a trace. A trace pairs an output with one input by matching blades and never consults the metric. The Ricci contraction shows both at once: curvature applied to an open area, contracted with an open vector, and traced against its wedge slot is the Ricci form, with no frame and no reciprocal basis anywhere.
+
 # Motivation
 
 Geometric relationships deserve to be first-class objects alongside the objects they relate. Inertia, stiffness, and material responses are maps that we need to construct, combine, transform, and solve with. Extensors make those relationships part of the geometric algebra library, expressed through the same operations as the geometry that defines them.
