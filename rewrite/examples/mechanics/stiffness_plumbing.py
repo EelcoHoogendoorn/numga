@@ -181,3 +181,52 @@ def save_animation(cases: list[PlotCase], animation_path: str) -> None:
     Path(animation_path).parent.mkdir(parents=True, exist_ok=True)
     animation.save(animation_path, writer=PillowWriter(fps=20), dpi=80)
     plt.close(fig)
+
+
+def make_plot_case(system, values, modes, extension, angled: bool) -> PlotCase:
+    """Build a PlotCase from algebraic system and solved normal modes."""
+    from numga.algebras import PGA2D
+
+    def coords(p):
+        return p.select_subspace(PGA2D.subspace("yw wx")).kernel
+
+    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi)
+    body_offsets = system.body[None, :].commutator(modes[:, None])
+    attachment_offsets = system.attachments[None, :].commutator(modes[:, None])
+    extensions = extension(modes[:, None])
+
+    offsets = coords(body_offsets)
+    scale = 0.20 / np.linalg.norm(offsets, axis=-1).max(axis=-1)
+    return PlotCase(
+        title="Add an angled spring" if angled else "Two vertical springs",
+        description=("All three motions now have a restoring force" if angled else
+                     "Sideways motion leaves both springs unchanged to first order"),
+        body=coords(system.body),
+        attachments=coords(system.attachments),
+        anchors=coords(system.anchors),
+        frequencies=frequencies,
+        body_offsets=offsets * scale[:, None, None],
+        attachment_offsets=coords(attachment_offsets) * scale[:, None, None],
+        extensions=extensions.kernel[..., 0] * scale[:, None],
+        labels=("Coupled mode 1", "Coupled mode 2", "Coupled mode 3") if angled else
+               ("Free slide", "Bounce", "Rock"),
+    )
+
+
+def render_modes(systems, values_list, modes_list, extensions_list, plot_path: str = "") -> plt.Figure:
+    """Render 6-panel mode comparison directly from algebraic systems and solved modes."""
+    cases = [
+        make_plot_case(sys, vals, mds, ext, angled=(i == 1))
+        for i, (sys, vals, mds, ext) in enumerate(zip(systems, values_list, modes_list, extensions_list))
+    ]
+    return draw_modes(cases, plot_path)
+
+
+def render_animation(systems, values_list, modes_list, extensions_list, animation_path: str = "") -> None:
+    """Render synchronized vibration animation directly from algebraic systems and solved modes."""
+    cases = [
+        make_plot_case(sys, vals, mds, ext, angled=(i == 1))
+        for i, (sys, vals, mds, ext) in enumerate(zip(systems, values_list, modes_list, extensions_list))
+    ]
+    save_animation(cases, animation_path)
+
