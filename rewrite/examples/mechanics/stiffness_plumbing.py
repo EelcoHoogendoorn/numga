@@ -61,22 +61,44 @@ def fixed_support(ax: plt.Axes, anchor: np.ndarray, attachment: np.ndarray) -> N
 
 
 def _new_figure(cases: list[PlotCase]) -> tuple[plt.Figure, list[list[plt.Axes]]]:
-    if len(cases) != 2:
-        raise ValueError("The mode comparison expects two spring layouts.")
-    fig = plt.figure(figsize=(15, 9), dpi=150, facecolor="white")
-    fig.suptitle("Spring geometry selects the motions of a rigid body", y=0.968,
-                 fontsize=20, fontweight="medium", color=SUPPORT)
-    fig.text(0.5, 0.925, "Each panel isolates one natural mode of the same planar body.",
-             ha="center", fontsize=12, color=SUPPORT)
+    n = len(cases)
+    if n == 2:
+        fig = plt.figure(figsize=(15, 9), dpi=150, facecolor="white")
+        fig.suptitle("Spring geometry selects the motions of a rigid body", y=0.968,
+                     fontsize=20, fontweight="medium", color=SUPPORT)
+        fig.text(0.5, 0.925, "Each panel isolates one natural mode of the same planar body.",
+                 ha="center", fontsize=12, color=SUPPORT)
+        bottoms = (0.535, 0.16)
+        headings = (0.87, 0.495)
+        ax_h = 0.265
+        leg_y = 0.088
+        txt_y1 = 0.062
+        txt_y2 = 0.035
+    elif n == 1:
+        fig = plt.figure(figsize=(15, 5.2), dpi=150, facecolor="white")
+        fig.suptitle(cases[0].title, y=0.96,
+                     fontsize=18, fontweight="medium", color=SUPPORT)
+        fig.text(0.5, 0.90, cases[0].description,
+                 ha="center", fontsize=12, color=SUPPORT)
+        bottoms = (0.24,)
+        headings = (0.84,)
+        ax_h = 0.52
+        leg_y = 0.11
+        txt_y1 = 0.065
+        txt_y2 = 0.030
+    else:
+        raise ValueError(f"Expected 1 or 2 cases, got {n}.")
+
     all_points = np.concatenate([np.concatenate((case.body, case.anchors)) for case in cases])
     lo, hi = all_points.min(axis=0) - [0.36, 0.33], all_points.max(axis=0) + [0.27, 0.25]
     axes = []
-    for case, bottom, heading in zip(cases, (0.535, 0.16), (0.87, 0.495)):
-        fig.text(0.055, heading, case.title, fontsize=14, fontweight="bold", color=SUPPORT)
-        fig.text(0.055, heading - 0.027, case.description, fontsize=11, color=SUPPORT)
+    for case, bottom, heading in zip(cases, bottoms, headings):
+        if n == 2:
+            fig.text(0.055, heading, case.title, fontsize=14, fontweight="bold", color=SUPPORT)
+            fig.text(0.055, heading - 0.027, case.description, fontsize=11, color=SUPPORT)
         row = []
         for mode in range(3):
-            ax = fig.add_axes([0.038 + 0.322 * mode, bottom, 0.286, 0.265])
+            ax = fig.add_axes([0.038 + 0.322 * mode, bottom, 0.286, ax_h])
             ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
             ax.set_aspect("equal")
             ax.set_axis_off()
@@ -92,11 +114,11 @@ def _new_figure(cases: list[PlotCase]) -> tuple[plt.Figure, list[list[plt.Axes]]
         Line2D([], [], color=UNCHANGED, lw=2.5, label="No first-order change"),
         Line2D([], [], color=GHOST, lw=1.5, ls=":", label="Reference body"),
     ]
-    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.088),
+    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, leg_y),
                ncol=4, frameon=False, fontsize=10, handlelength=2.5, columnspacing=2.7)
-    fig.text(0.5, 0.062, "Small-motion modes, with displacements amplified. "
+    fig.text(0.5, txt_y1, "Small-motion modes, with displacements amplified. "
              "Dashed outline: the opposite displacement.", ha="center", fontsize=10, color=SUPPORT)
-    fig.text(0.5, 0.035, "Springs begin relaxed; gravity is omitted. "
+    fig.text(0.5, txt_y2, "Springs begin relaxed; gravity is omitted. "
              "A free mode has no linear restoring force and stays displaced when released at rest.",
              ha="center", fontsize=10, color=SUPPORT)
     return fig, axes
@@ -147,8 +169,9 @@ def draw_modes(cases: list[PlotCase], plot_path: str) -> plt.Figure:
     for case, row in zip(cases, axes):
         for mode, ax in enumerate(row):
             _draw_mode(ax, case, mode, arrows=True)
-    Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(plot_path, facecolor="white")
+    if plot_path:
+        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(plot_path, facecolor="white")
     return fig
 
 
@@ -273,6 +296,35 @@ def build_plot_case(
     )
 
 
+def render_mass_distribution(
+    body,
+    mass_points,
+    plot_path: str = "",
+) -> plt.Figure:
+    """Plot the rigid plate and its 4 Gauss mass points at rest."""
+    b = _to_coords(body)
+    m = _to_coords(mass_points)
+    fig, ax = plt.subplots(figsize=(7, 4.5), dpi=120, facecolor="white")
+    plate = Polygon(b, closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=2, zorder=2)
+    ax.add_patch(plate)
+    ax.scatter(m[:, 0], m[:, 1], s=80, color=STRETCH, edgecolor=BODY, linewidth=1.2,
+               zorder=5, label="Gauss mass points (0.25 kg each)")
+    ax.scatter([0], [0], s=80, color=BODY, marker="+", linewidth=2,
+               zorder=5, label="Center of mass")
+    ax.set_aspect("equal")
+    lo, hi = b.min(axis=0) - [0.4, 0.4], b.max(axis=0) + [0.4, 0.4]
+    ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
+    ax.set_title("Plate Mass Distribution: 4-Point Gauss Quadrature", fontsize=13,
+                 fontweight="bold", pad=9, color=SUPPORT)
+    ax.legend(loc="lower center", frameon=False, fontsize=10)
+    ax.grid(True, linestyle=":", alpha=0.4)
+    plt.tight_layout()
+    if plot_path:
+        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(plot_path, facecolor="white")
+    return fig
+
+
 def render_modes(
     body,
     anchors_list,
@@ -280,7 +332,7 @@ def render_modes(
     modes_list,
     values_list,
     extensions_list,
-    titles=("Two Vertical Springs", "Add an Angled Spring"),
+    titles=("Baseline Suspension: Two Vertical Springs", "Coupled Suspension: Added Angled Spring"),
     descriptions=(
         "Sideways motion leaves both springs unchanged to first order",
         "All three motions now have a restoring force",
@@ -291,7 +343,17 @@ def render_modes(
     ),
     plot_path: str = "",
 ) -> plt.Figure:
-    """Render 6-panel mode comparison directly from algebraic modes and endpoints."""
+    """Render mode plots directly from algebraic modes and endpoints (1 or 2 cases)."""
+    if not isinstance(anchors_list, (list, tuple)):
+        anchors_list = [anchors_list]
+        attachments_list = [attachments_list]
+        modes_list = [modes_list]
+        values_list = [values_list]
+        extensions_list = [extensions_list]
+        titles = [titles] if isinstance(titles, str) else [titles[0]]
+        descriptions = [descriptions] if isinstance(descriptions, str) else [descriptions[0]]
+        labels_list = [labels_list] if (isinstance(labels_list, (list, tuple)) and isinstance(labels_list[0], str)) else [labels_list[0]]
+
     cases = [
         build_plot_case(
             body=body,
