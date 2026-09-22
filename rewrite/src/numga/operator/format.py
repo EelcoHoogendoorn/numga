@@ -3,8 +3,14 @@
 from itertools import product
 
 
+import numpy as np
+
+
 def expressions(value, component):
-    kernel = value.kernel.to_object_array()
+    if hasattr(value.kernel, "to_object_array"):
+        kernel = value.kernel.to_object_array()
+    else:
+        kernel = np.asarray(value.kernel, dtype=object)
     result = []
     for output in range(len(value.output_subspace)):
         terms = []
@@ -15,8 +21,19 @@ def expressions(value, component):
             factors = [component(slot, index) for slot, index in enumerate(indices)]
             magnitude = abs(coefficient)
             if magnitude != 1 or not factors:
-                factors.insert(0, str(magnitude.numerator) if magnitude.denominator == 1
-                               else f"Fraction({magnitude.numerator}, {magnitude.denominator})")
+                if hasattr(magnitude, "denominator"):
+                    num = (
+                        str(magnitude.numerator)
+                        if magnitude.denominator == 1
+                        else f"Fraction({magnitude.numerator}, {magnitude.denominator})"
+                    )
+                else:
+                    num = (
+                        str(int(magnitude))
+                        if int(magnitude) == magnitude
+                        else str(magnitude)
+                    )
+                factors.insert(0, num)
             terms.append(("-" if coefficient < 0 else "+", " * ".join(factors)))
         expression = " ".join(f"{sign} {term}" for sign, term in terms)
         result.append(expression.removeprefix("+ ") or "0")
