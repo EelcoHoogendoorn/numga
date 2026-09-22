@@ -46,7 +46,11 @@ follow them exactly.
 - Math converges visibly in one scope; plumbing (constructors, samplers, rendering, readout)
   lives in helpers under a `# --- plumbing` header, math under `# --- math`.
 - No nullable arguments, no type unions. Annotate with the narrowest named GAType.
+- Avoid cryptic single-letter variable names for domain quantities (e.g., `spring_constants`
+  instead of `k`, `stiffness` instead of `s`). Standard loop/iteration variables (`i`, `j`) are
+  fine—use sound engineering judgement and loop back when in doubt.
 - No interleaved plotting and math; a generator yields geometry, a draw helper consumes it.
+- **No viewport or coordinate extraction helpers in math or notebooks**: Coordinate unpacking helpers (such as `coordinates(points: Point) -> np.ndarray`, `euclidean()`, or `.kernel` coordinate slicing for matplotlib) belong strictly in `render.py`. Mathematical modules and notebook cells must operate purely on algebraic Extensors from start to finish. They must never define or import coordinate unpacking shims. Viewport conversion happens strictly inside `render.py` JIT when passing points to matplotlib artists.
 - Checks are kernel-level assertions in one labelled block at the end of `main`.
 - Do not touch comments or docstrings unasked. Group functions on the type they belong to
   (`Bodies.join`), do not pollute the module namespace.
@@ -57,11 +61,14 @@ follow them exactly.
   or review discussion. For example, label a block `checks`, not `kernel-level assertions,
   deliberately outside the demonstration`.
 
-## Running
+## Running & Git
 
 - Never interrupt a running job and never delete files unless explicitly told to.
 - Deliverables (plots, GIFs) go to `rewrite/plots/`; no previews or collages in their place.
 - Vectorize; JIT is not the answer.
 - Always run targeted tests (`pytest path/to/test_file.py`). Only run the full test suite when editing test infrastructure across the entire suite or during explicit pre-commit checks.
-- Always run matplotlib headlessly (`MPLBACKEND=Agg` or `matplotlib.use('Agg')`); never spawn GUI plot windows or steal window focus.
+- **Strictly headless execution (NEVER steal user focus)**: Every Python invocation that touches matplotlib must run with `MPLBACKEND=Agg`. Never allow `plt.show()` to spawn a native GUI window or yank OS window focus away from the editor under any circumstances.
+- **NEVER commit or push without explicit user command**: Never execute `git commit` or `git push` autonomously.
+  Always leave modifications in the working tree for user review. Only commit or push when the user explicitly commands it.
+
 

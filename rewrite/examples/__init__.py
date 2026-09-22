@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
+
+# Force headless matplotlib backend so examples never spawn GUI windows or steal focus:
+os.environ.setdefault("MPLBACKEND", "Agg")
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+except ImportError:
+    pass
 
 PLOT_DIR = Path(__file__).resolve().parents[1] / "plots"
 
