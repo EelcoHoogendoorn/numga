@@ -32,6 +32,7 @@ def coordinates(points: core.Point) -> np.ndarray:
 
 def rotation_matrix(motor: core.Motor) -> np.ndarray:
     """Extract 3x3 rotation matrix by evaluating the motor's rotor on spatial axes."""
+    # A motor is a translator times a rotor, M = T R = R + (w-terms); without the w blades, R remains.
     rotor = motor.select_subspace(ga.subspace("1 yz zx xy")).normalized()
     axes = (mv.x, mv.y, mv.z)
     rotated = [(rotor >> ax).cast(ga.subspace("x y z")).kernel for ax in axes]

@@ -21,46 +21,69 @@ def form(context, first, second, matrix):
     return context.extensor(gatype, np.asarray(matrix)[..., None, :, :])
 
 
-def test_form_svd_preserves_all_axes(context):
+def test_forms_without_a_metric_use_the_slot_metric(context):
+    """x+y+z0 vectors have a singular metric: eig gives an infinite mode, while eigh, det
+    and trace need an invertible metric and say so; SVD pairs two covector slots, never."""
     ga = context.algebra
-    first, second = ga.subspace.vector(), ga.subspace("xy yz")
-    matrix = np.random.default_rng(3).normal(size=(2, 1, 3, 2))
-    value = form(context, first, second, matrix)
-    left, singular, right = value.svd()
-    assert left.axes == (first,)
-    assert right.axes == (second,)
-    assert left.shape == right.shape == singular.shape == (2, 1, 2)
-    rebuilt = np.einsum("...ki,...k,...kj->...ij", left.kernel,
-                        singular.kernel[..., 0], np.conj(right.kernel))
-    np.testing.assert_allclose(rebuilt, matrix, atol=2e-6)
-    np.testing.assert_allclose(value.svdvals().kernel, singular.kernel, atol=2e-6)
+    slot = ga.subspace.vector()
+    value = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    if isinstance(context, NumpyContext):
+        pytest.importorskip("scipy")
+        values = value.eigvals().kernel[..., 0]
+        assert np.isinf(values).sum() == 1
+        np.testing.assert_allclose(np.sort(np.real(values[np.isfinite(values)])), np.linalg.eigvalsh([[3, 1], [1, 2]]), atol=1e-12)
+    for method in ("eigh", "eigvalsh", "det", "trace"):
+        with pytest.raises(TypeError, match="metric"):
+            getattr(value, method)()
+    for method in ("svd", "svdvals"):
+        with pytest.raises((LookupError, TypeError)):
+            getattr(value, method)()
 
 
+def test_forms_on_a_euclidean_slot_keep_the_plain_solver():
+    ga = Algebra("x+y+z+")
+    context = NumpyContext(ga)
+    slot = ga.subspace.vector()
+    matrix = np.array([[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    value = form(context, slot, slot, matrix)
+    np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], np.linalg.eigvalsh(matrix), atol=1e-12)
+    np.testing.assert_allclose(value.det().kernel, np.linalg.det(matrix), atol=1e-12)
+    np.testing.assert_allclose(value.trace().kernel, np.trace(matrix), atol=1e-12)
+
+
+@pytest.mark.parametrize("execution", ["dense", "sparse"])
 @pytest.mark.parametrize("method", ["eig", "eigh"])
-def test_form_eigenpairs_align_slots_and_keep_singleton_batches(context, method):
-    ga = context.algebra
+def test_form_eigenpairs_against_a_metric_align_slots_and_keep_singleton_batches(execution, method):
+    pytest.importorskip("scipy")
+    ga = Algebra("x+y+z0")
+    context = NumpyContext(ga, execution=execution)
     vector = ga.subspace.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
+    gram = np.diag([1.0, 2.0, 0.5])
     value = form(context, vector, vector, np.broadcast_to(matrix, (2, 1, 3, 3)))
+    metric = form(context, vector, vector, gram)
     first, second = ga.subspace("z -x y"), ga.subspace("-y z x")
     changed = value.bind({0: ga.operator.identity(first), 1: ga.operator.identity(second)})
-    values, vectors = getattr(changed, method)()
+    values, vectors = getattr(changed, method)(metric)
     assert vectors.axes == (second,)
     assert values.shape == vectors.shape == (2, 1, 3)
     coefficients = vectors.cast(vector).kernel
     np.testing.assert_allclose(np.einsum("ij,...kj->...ki", matrix, coefficients),
-                               coefficients * values.kernel, atol=2e-6)
-    np.testing.assert_allclose(changed.det().kernel, np.full((2, 1, 1), 20), atol=2e-6)
-    np.testing.assert_allclose(changed.trace().kernel, np.full((2, 1, 1), 9), atol=2e-6)
-    np.testing.assert_allclose(np.sort(np.real(changed.eigvals().kernel[..., 0]), axis=-1),
-                               changed.eigvalsh().kernel[..., 0], atol=2e-6)
+                               np.einsum("ij,...kj->...ki", gram, coefficients) * values.kernel, atol=2e-6)
+    np.testing.assert_allclose(changed.det(metric).kernel,
+                               np.full((2, 1, 1), np.linalg.det(matrix) / np.linalg.det(gram)), atol=2e-6)
+    np.testing.assert_allclose(np.sort(np.real(changed.eigvals(metric).kernel[..., 0]), axis=-1),
+                               changed.eigvalsh(metric).kernel[..., 0], atol=2e-6)
 
 
-def test_signed_scalar_output_is_not_treated_as_positive(context):
-    ga = context.algebra
+def test_signed_scalar_output_is_not_treated_as_positive():
+    pytest.importorskip("scipy")
+    ga = Algebra("x+y+z0")
+    context = NumpyContext(ga)
     slot = ga.subspace("x")
     value = context.extensor(ga.gatype((ga.subspace("-1"), slot, slot)), [[[[-3.0]]]])
-    values, vectors = value.eigh()
+    metric = form(context, slot, slot, [[1.0]])
+    values, vectors = value.eigh(metric)
     assert values.shape == vectors.shape == (1, 1)
     np.testing.assert_allclose(values.kernel, [[[3.0]]])
 
@@ -181,8 +204,8 @@ def test_warm_form_dispatch_does_not_repeat_support_checks(monkeypatch):
     slot = ga.subspace.vector()
     value = form(ctx, slot, slot, [[2, 1], [1, 3]])
     metric = form(ctx, slot, slot, np.eye(2))
-    calls = [value.eig, value.eigh,
-             lambda: value.eig(metric), lambda: value.eigh(metric)]
+    calls = [value.eig, value.eigh, value.det,
+             lambda: value.eig(metric), lambda: value.eigh(metric), lambda: value.det(metric)]
     for call in calls:
         call()
 
@@ -199,7 +222,7 @@ def test_form_signatures_are_selected_without_values():
     slot = ga.subspace.vector()
     valid = ga.gatype((ga.subspace.scalar(), slot, slot))
     wrong_output = ga.gatype((slot, slot, slot))
-    for name in ("eig", "eigh", "eigvals", "eigvalsh"):
+    for name in ("eig", "eigh", "eigvals", "eigvalsh", "det"):
         method = getattr(Extensor, name)
         method.overload(1)._dispatch.resolve(valid)
         method.overload(2)._dispatch.resolve(valid, valid)

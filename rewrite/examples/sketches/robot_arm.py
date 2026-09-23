@@ -19,6 +19,7 @@ from numga import Extensor, NumpyContext
 from numga.algebras import PGA3D
 
 from examples import PLOT_DIR
+from examples.pga3d import direction, point
 from examples.animation import capture, save_gif
 
 # --- scenario algebra -----------------------------------------------------------------
@@ -128,14 +129,6 @@ def draw_tracking(states, boxes_home: Point, animation_path: str) -> None:
 
 
 # --- scenario -------------------------------------------------------------------------
-
-
-def point(coords: np.ndarray) -> Point:
-    return mv("yzw zxw xyw", coords) + mv.zyx
-
-
-def direction(coords: np.ndarray) -> Point:
-    return mv("yzw zxw xyw", coords)
 
 
 def main(animation_path: str = str(PLOT_DIR / "sketch_robot_arm.gif")) -> None:

@@ -61,24 +61,39 @@ def kalman_filter(estimate: Motor, sigma: Covariance, steps: Motor,
         yield estimate, sigma
 
 
+def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point) -> tuple[Point, Scalar, Line]:
+    """The estimated position, with the principal variances and axes of its uncertainty.
+
+    A readout of position along a line, l & shift(δ), is a readout of the twist through the
+    incidence pairing, so the covariance of those readouts is a form on lines. Against the
+    line metric, which measures a line's normal and not its offset, its principal readouts
+    are the ellipse axes. The offset mode is zero in both forms and has no variance.
+    """
+    here = estimate >> origin                                  # [n] Point
+    shift = Bivector.commutator(here)(estimate >> Bivector)    # [n] Point <- Bivector
+    readout = (Line & Bivector).solve(Line & shift)            # [n] Line <- Line
+    position = readout & sigma(readout)                        # [n] Scalar <- (Line, Line)
+    variances, axes = position.eig()                           # [n, 3] Scalar, [n, 3] Line; the eigenpairs of this symmetric pencil are real
+    return here, variances.real(), axes.real()
+
+
 # --- plumbing: covariance and sampling -------------------------------------------------
-def covariance(std: Bivector) -> Covariance:
-    """Covariance of independent noise along each twist coordinate, one dyad per coordinate,
-    with the standard deviations read from the given bivector."""
-    basis = mv("yw wx xy", np.eye(3))                         # [3] Bivector
-    variance = (basis.dual() & std).squared()                 # [3] Scalar
-    return (basis * (basis & Line) * variance).sum(axis=0)    # [] Bivector <- Line
+def covariance(translation_std: float, rotation_std: float) -> Covariance:
+    """Body-frame noise: isotropic translation, and rotation about the body origin."""
+    translation = mv.yw * (mv.yw & Line) + mv.wx * (mv.wx & Line)   # [] Bivector <- Line
+    rotation = mv.xy * (mv.xy & Line)                               # [] Bivector <- Line
+    return translation * translation_std**2 + rotation * rotation_std**2
 
 
 def sample(cov: Covariance, rng: np.random.Generator) -> Bivector:
     """One bivector drawn from a covariance map.
 
-    Diagonalize the covariance as a form on readouts; each eigen-readout's twist, scaled
-    by its standard deviation, carries an independent unit normal draw.
+    Readouts orthonormal in the covariance's own form carry independent unit normal draws:
+    the twists they select, cov(l), then have covariance cov (Line & cov)^-1 cov = cov.
     """
-    values, lines = (Line & cov).eigh()                       # [3] Scalar, [3] Line
-    twists = cov(lines) / values.square_root()                # [3] Bivector
-    return (twists * rng.normal(size=3)).sum(axis=0)          # [] Bivector
+    readouts = Line & cov                                      # [] Scalar <- (Line, Line)
+    _, lines = readouts.eigh(readouts)                         # [3] Line: orthonormal in the form itself
+    return (cov(lines) * rng.normal(size=3)).sum(axis=0)       # [] Bivector
 
 
 # --- plotting -------------------------------------------------------------------------
@@ -87,26 +102,25 @@ def xy(point: Point) -> np.ndarray:
     return k[..., :2] / k[..., 2:]
 
 
+def principal_axes(variances: Scalar, axes: Line) -> tuple[np.ndarray, np.ndarray]:
+    """(n, 2) finite variances and (n, 2, 2) unit axis directions, the normals of the axis lines."""
+    values = variances.to_array()
+    finite = np.isfinite(values)
+    normals = axes.cast(ga.subspace("x y")).kernel
+    normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True).clip(1e-300)
+    n = values.shape[0]
+    return values[finite].reshape(n, 2), normals[finite].reshape(n, 2, 2).swapaxes(-1, -2)
+
+
 def draw_ellipse(ax, centre: np.ndarray, values: np.ndarray, vectors: np.ndarray, color: str) -> None:
     t = np.linspace(0.0, 2.0 * np.pi, 40)
     ring = vectors @ (2.0 * np.sqrt(np.maximum(values, 0.0))[:, None] * np.stack([np.cos(t), np.sin(t)]))
     ax.plot(centre[0] + ring[0], centre[1] + ring[1], color=color, linewidth=0.8)
 
 
-def draw_tracking(truth: Motor, dead: Motor, track, measurements: list[Motor],
-                  origin: Point, times: np.ndarray, plot_path: str) -> plt.Figure:
-    estimates, covariances = zip(*track)
-    estimate, sigma = Extensor.stack(estimates), Extensor.stack(covariances)
-
-    # Position uncertainty for the ellipse: a readout of position along a line, l & shift(δ),
-    # is a readout of the twist through the incidence pairing; covary those readouts.
-    here = estimate >> origin
-    shift = Bivector.commutator(here)(estimate >> Bivector)   # Point <- Bivector
-    readout = (Line & Bivector).solve(Line & shift)           # Line <- Line
-    position = readout & sigma(readout)                       # Scalar <- (Line, Line): position covariance on readouts
-    axes = mv.vector(np.eye(3)[:2])                           # [2] Line: the x and y readouts
-    covariance = position[:, None, None](axes[:, None], axes[None, :]).kernel[..., 0]   # [n, 2, 2]
-    values, vectors = np.linalg.eigh(covariance)
+def draw_tracking(truth: Motor, dead: Motor, here: Point, variances: Scalar, axes: Line,
+                  measurements: list[Motor], origin: Point, times: np.ndarray, plot_path: str) -> plt.Figure:
+    values, vectors = principal_axes(variances, axes)
     true_xy, dead_xy, est_xy = xy(truth >> origin), xy(dead >> origin), xy(here)
     print(f"mean position error, dead reckoning: {np.linalg.norm(dead_xy - true_xy, axis=1).mean():.3f}")
     print(f"mean position error, filtered:       {np.linalg.norm(est_xy - true_xy, axis=1).mean():.3f}")
@@ -156,15 +170,16 @@ def main(plot_path: str = str(PLOT_DIR / "sketch_kalman.png")) -> plt.Figure:
     turn = 0.9 * np.sin(0.2 * np.arange(readings * steps_per_reading) * dt)
     increments = ((mv.xy * turn - mv.wx) * dt).reshape(readings, steps_per_reading)
     times = np.arange(1, readings + 1) * steps_per_reading * dt
-    Q = covariance(mv("yw wx xy", [0.05, 0.05, 0.12]) * np.sqrt(dt))
-    R = covariance(mv("yw wx xy", [0.3, 0.3, 0.1]))
+    Q = covariance(0.05 * np.sqrt(dt), 0.12 * np.sqrt(dt))
+    R = covariance(0.3, 0.1)
 
     origin = mv.xy
     initial = mv.rotor()
-    sigma = covariance(mv("yw wx xy", [0.0, 0.0, 0.0]))
+    sigma = covariance(0.0, 0.0)
     truth, dead, measurements = simulate_motion(initial, increments, Q, R, rng)
-    track = kalman_filter(initial, sigma, (increments * 0.5).exp(), measurements, Q, R)
-    return draw_tracking(truth, dead, track, measurements, origin, times, plot_path)
+    estimates, covariances = zip(*kalman_filter(initial, sigma, (increments * 0.5).exp(), measurements, Q, R))
+    here, variances, axes = position_ellipse(Extensor.stack(estimates), Extensor.stack(covariances), origin)
+    return draw_tracking(truth, dead, here, variances, axes, measurements, origin, times, plot_path)
 
 
 if __name__ == "__main__":

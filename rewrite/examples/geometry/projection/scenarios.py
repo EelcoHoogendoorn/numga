@@ -13,6 +13,7 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import PGA3D
 from examples import PLOT_DIR
+from examples.pga3d import direction, point
 
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
@@ -37,16 +38,6 @@ CUBE_EDGES = [
     (4, 5), (5, 7), (7, 6), (6, 4),
     (0, 4), (1, 5), (2, 6), (3, 7),
 ]
-
-
-def point(coords: np.ndarray) -> Point:
-    """Construct finite points from xyz coordinates in an explicitly named basis."""
-    return mv("yzw zxw xyw", coords) + mv.zyx
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Construct ideal points from xyz coordinates in an explicitly named basis."""
-    return mv("yzw zxw xyw", coords)
 
 
 def circle(n: int) -> Point:

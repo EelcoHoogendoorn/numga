@@ -13,6 +13,7 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import PGA3D
 from examples import PLOT_DIR
+from examples.pga3d import point
 from examples.geometry.qem import core, render
 
 if TYPE_CHECKING:
@@ -23,11 +24,6 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
-
-
-def point(coords: np.ndarray) -> Point:
-    """Construct finite points from xyz coordinates in an explicitly named basis."""
-    return mv("yzw zxw xyw", coords) + mv.zyx
 
 
 def plane(normal: np.ndarray, point_on_plane: np.ndarray) -> Plane:

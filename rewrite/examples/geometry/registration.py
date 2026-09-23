@@ -2,8 +2,8 @@
 
 The centered sandwich alignment gives a Cartesian least-squares rotation;
 matching the centroids supplies translation. The one-sided equation
-q M - M p = 0 fits rotation and translation together using a coefficient
-least-squares objective, followed by motor normalization. With noisy data
+q M - M p = 0 fits rotation and translation together, minimizing the residual
+against the motor's own metric, followed by motor normalization. With noisy data
 these are different objectives.
 """
 
@@ -18,6 +18,7 @@ from numga import NumpyContext
 from numga.algebras import PGA3D
 
 from examples import PLOT_DIR
+from examples.pga3d import point
 
 
 # --- scenario algebra ------------------------------------------------------
@@ -44,8 +45,14 @@ def fit_motor(source: Point, target: Point) -> Motor:
     bulk = residual.reverse().scalar_product(residual)
     weight = residual.dual().reverse().scalar_product(residual.dual())
     misfit = (bulk + weight).sum(axis=0)
-    values, motors = misfit.eigh()
-    return motors[values.argmin()].normalized()
+    # Against the motor's own metric, the scalar part of M M~, only the rotor coefficients are
+    # measured: translation carries no unit of its own, so the fit does not depend on where the
+    # origin sits or on the scene's scale. The metric is singular on translation, so the general
+    # eigenproblem sends those modes to infinity; the least finite mode is real, and the Study
+    # normalization then enforces the pseudoscalar part of M M~ = 1.
+    values, motors = misfit.eig()
+    values = values.real()
+    return motors[values.argmin()].real().normalized()
 
 
 def fit_rotor(source: Vector, target: Vector) -> Rotor:
@@ -73,10 +80,6 @@ def fit_motor_alignment(source: Point, target: Point) -> Motor:
 
 
 # --- plumbing: sampling and coordinate readout ------------------------------
-def point(xyz: np.ndarray) -> Point:
-    return mv.yzw * xyz[..., 0] + mv.zxw * xyz[..., 1] + mv.xyw * xyz[..., 2] + mv.zyx
-
-
 def cloud(n: int, rng: np.random.Generator) -> Point:
     return point(rng.normal(size=(n, 3)) * [2.0, 1.0, 0.5])
 

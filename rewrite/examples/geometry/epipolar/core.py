@@ -20,6 +20,8 @@ in one coherent scope.
 
 from __future__ import annotations
 
+import numpy as np
+
 from numga import NumpyContext
 from numga.algebras import PGA3D
 
@@ -88,6 +90,9 @@ def reconstruct(
     aligned_rays_2 = motor >> rays_2
     q1 = (rays_1 & Point) | (rays_1 & Point)
     q2 = (aligned_rays_2 & Point) | (aligned_rays_2 & Point)
-    values, points = (q1 + q2).eigh()
-    idx, = set(values.argmin(axis=-1))
-    return motor, points[..., idx].normalized()
+    # Against the point's own metric only the weight is measured, so the least mode minimizes the
+    # summed squared distance of a unit-weight point. That metric is singular on the bulk; the
+    # general eigenproblem sends those modes to infinity and the least finite mode is real.
+    values, points = (q1 + q2).eig()                    # [n, 4] Scalar, [n, 4] Point
+    least = values.real().argmin(axis=-1)                 # [n] mode index per point
+    return motor, points[np.arange(least.shape[0]), least].real().normalized()

@@ -162,9 +162,10 @@ def draw_bundle_fit(rays: Line, truth: Point, fit: Point, half_length: float, pa
     """Draw the bundle as segments through the fitted point along each line's direction."""
     fig, ax = new_figure()
     directions = rays.wedge(mv.w)                       # each line's point at infinity
-    unit = mv.scalar(1.0 / np.linalg.norm(directions.cast(ga.subspace("yzw zxw xyw")).kernel, axis=-1, keepdims=True))
+    # An ideal point has no weight to normalize; its length is the norm of its dual, a direction.
+    unit_directions = directions / directions.dual().norm()
     for sign in (-1.0, 1.0):
-        end = euclidean(fit + directions * unit * (sign * half_length))
+        end = euclidean(fit + unit_directions * (sign * half_length))
         start = np.broadcast_to(euclidean(fit), end.shape)
         for a, b in zip(start, end):
             ax.plot([a[0], b[0]], [a[1], b[1]], [a[2], b[2]], color="#94a3b8", linewidth=0.8, alpha=0.7)

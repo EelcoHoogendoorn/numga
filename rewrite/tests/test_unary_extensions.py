@@ -367,8 +367,7 @@ def test_invalid_spaces_are_rejected_by_dispatch():
     for method in ("eig", "eigh", "eigvals", "eigvalsh", "det"):
         with pytest.raises(LookupError, match="no .* implementation"):
             extension = getattr(Extensor, method)
-            dispatch = extension._dispatch if method == "det" else extension.overload(1)._dispatch
-            dispatch.resolve(polarity)
+            extension.overload(1)._dispatch.resolve(polarity)
     for method in (Extensor.solve, Extensor.lstsq):
         with pytest.raises(LookupError, match="no .* implementation"):
             method._dispatch.resolve(polarity, ga.gatype(bivector))
@@ -398,3 +397,12 @@ def test_warm_calls_do_not_repeat_static_checks(monkeypatch):
     monkeypatch.setattr(GAType, "is_square_map", property(repeated))
     for call in calls:
         call()
+
+
+def test_real_drops_the_imaginary_part_into_a_real_context():
+    ga = Algebra("x+y+")
+    value = NumpyContext(ga, dtype=np.complex128).multivector.vector([1 + 2j, 3 - 1j])
+    real = value.real()
+    assert real.gatype == value.gatype
+    assert real.context.dtype == np.float64
+    np.testing.assert_allclose(real.kernel, [1.0, 3.0])

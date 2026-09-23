@@ -16,10 +16,15 @@ def trace_scalar(value: Extensor) -> Extensor:
 
 
 @Extensor.trace.register(
-    lambda t: any(space.support_is_subset_of(t.output_subspace) for space in t.input_subspaces)
+    lambda t: any(space.same_support(t.output_subspace) for space in t.input_subspaces)
 )
 def trace_square(value: Extensor, *, slot: int = 0) -> Extensor:
-    """Trace the output component matching an input slot, numbered from zero."""
+    """Trace the output against an input slot of the same space, numbered from zero.
+
+    This pairs a vector index with a covector index of one space, which needs no
+    metric. A slot spanning only part of the output is rejected: tracing it would
+    choose a complement by blade label.
+    """
     result_type = _trace_type(value.gatype, slot)
     matched = value.cast(value.input_subspaces[slot])
     kernel = matched.context.matrix_trace(
@@ -37,7 +42,7 @@ def trace_square(value: Extensor, *, slot: int = 0) -> Extensor:
 def _trace_type(gatype: GAType, slot: int) -> GAType:
     """Resolve matching blade layouts and the remaining slots statically."""
     inputs = gatype.input_subspaces
-    if not inputs[slot].support_is_subset_of(gatype.output_subspace):
+    if not inputs[slot].same_support(gatype.output_subspace):
         raise TypeError("trace requires an endomorphism with matching subspace support")
     return gatype.algebra.gatype(
         (gatype.algebra.subspace.scalar(),) + inputs[:slot] + inputs[slot + 1:],
