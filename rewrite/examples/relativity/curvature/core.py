@@ -18,6 +18,15 @@ the cross polarization from plus; quarter-cycle phase separation gives the
 circular case. Geometry stays in GA, with coefficient work confined to the
 waveform and the numerical integration of the detector.
 
+In gauge theory gravity the same wave is carried by a map on vectors, the
+position gauge field, which differs from the identity by a strain map. Half the
+metric perturbation, as a map on separations, is that strain: each bead's
+displacement is the strain map applied to its rest separation, with no
+integration. Its second derivative along the wave, wedged with the wave vector
+and weighted by the overlap with it, is the curvature as a map on pairs of
+vectors, and it agrees with the dyad construction at every time and
+polarization.
+
 This is first-order geodesic deviation for a weak wave and a detector much
 smaller than its wavelength. Acceleration acts on each bead's unperturbed
 separation. A smooth strain packet and its first derivative vanish at both
@@ -39,7 +48,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.integrate import cumulative_simpson
 
-from numga import NumpyContext, stack
+from numga import Extensor, NumpyContext, stack
 from numga.algebras import STA
 
 # ---------------------------------------------------------------------------
@@ -57,6 +66,7 @@ Rotor = STA.gatype.rotor()                          # Even subalgebra: rotations
 # Extensors (linear maps between blade subspaces), read output <- input:
 Curvature = STA.gatype((Bivector, Bivector))        # curvature bivector <- area bivector
 Tidal = STA.gatype((Vector, Vector))                # relative acceleration <- separation
+Strain = STA.gatype((Vector, Vector))               # displacement <- rest separation
 
 # Canonical spacetime basis:
 t, x, y, z = mv.vector(np.eye(4))
@@ -106,7 +116,43 @@ def boosted_observers(rapidities: np.ndarray, direction: Vector) -> Vector:
 
 
 # ---------------------------------------------------------------------------
-# 3. Wave packet and detector
+# 3. The same wave as a strain map
+# ---------------------------------------------------------------------------
+def strain_patterns() -> tuple[Strain, Strain]:
+    """Unit plus and cross strain maps for a wave travelling along +z.
+
+    The plus pattern stretches along x and squeezes along y; the cross pattern is the same map
+    conjugated by an eighth-turn rotor, as the cross curvature is.
+    """
+    plus = y * (y | Vector) - x * (x | Vector)                           # [] Vector <- Vector
+    eighth_turn = (mv.xy * (np.pi / 8)).exp()                            # [] Rotor
+    cross = eighth_turn >> plus(eighth_turn << Vector)                   # [] Vector <- Vector
+    return plus, cross
+
+
+def polarized_strain(plus: Strain, cross: Strain, profile: Scalar) -> Strain:
+    """Weak-wave strain over (time, polarization): half the metric perturbation as a map on separations.
+
+    Applied to a bead's rest separation it gives that bead's displacement. With the profile's second
+    derivative in place of the profile it gives the relative acceleration, the tidal map.
+    """
+    cosine, sine = profile[:, 0], profile[:, 1]                          # [n_time] Scalar
+    plus_wave, cross_wave = plus * cosine, cross * sine                  # [n_time] Vector <- Vector
+    return 0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, 3]
+
+
+def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
+    """Curvature as a map on pairs of vectors, from the strain's second derivative along the wave.
+
+    R(a ^ b) = k ^ second(a) (k . b) - (k . a) k ^ second(b); the two open vectors are the plane's
+    edges, in that order. Binding one edge gives the same map as the dyad curvature applied to the
+    wedge with that edge.
+    """
+    return k.wedge(second) * (k | Vector) - (k | Vector) * k.wedge(second)   # Bivector <- (Vector, Vector)
+
+
+# ---------------------------------------------------------------------------
+# 4. Wave packet and detector
 # ---------------------------------------------------------------------------
 def wave_packet(
     time: np.ndarray, duration: float, cycles: int, amplitude: float,

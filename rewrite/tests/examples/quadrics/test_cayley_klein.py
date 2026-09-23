@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.quadrics.cayley_klein import main
-from examples.quadrics.cayley_klein_plumbing import Point, Polarity, Pole, mv, point
+from examples.quadrics.cayley_klein import render, scenarios
+from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, mv, point
 
 HYPERBOLIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 ELLIPTIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) + mv.w * mv.w.regressive(Point)
@@ -76,7 +80,16 @@ def test_circle_quadric_contains_the_points_at_its_radius():
     np.testing.assert_allclose(on_circle.regressive(circle(on_circle)).kernel, 0.0, atol=1e-12)
 
 
-def test_tutorial_runs_and_saves(tmp_path):
-    out = tmp_path / "cayley_klein.png"
-    main(plot_path=str(out))
-    assert out.exists()
+def test_mathematics_does_not_import_plotting():
+    """The math layer must stay free of the plotting stack, transitively."""
+    probe = (
+        "import examples.quadrics.cayley_klein.core, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
+
+
+def test_scenario_renders():
+    figure = render.draw_hyperbolic_plane(*scenarios.hyperbolic_plane())
+    assert isinstance(figure, plt.Figure)

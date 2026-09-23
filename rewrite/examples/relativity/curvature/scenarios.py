@@ -1,19 +1,13 @@
-"""Scenarios and canonical figures for the plane-wave curvature example.
+"""Scenes of the plane-wave curvature example: one function per figure.
 
-Executes the mathematics in `core` and hands the geometry to `render`. Run from rewrite/:
-    PYTHONPATH=src:. python -m examples.relativity.curvature.scenarios [--animate]
+Each runs the mathematics in `core` and returns the geometry its figure draws.
 """
 
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
-
-import matplotlib.pyplot as plt
 import numpy as np
 
-from examples import PLOT_DIR
-from examples.relativity.curvature import core, render
+from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Curvature, Scalar, Tidal, Vector, t, x, z
 
 # Wave packet and detector parameters (c = 1):
@@ -26,8 +20,23 @@ BEADS = 24
 AMPLIFICATION = 4000    # display magnification of the displacements
 
 
-def detector_scenario() -> tuple[np.ndarray, Vector, Vector, Vector]:
-    """Integrate a ring of beads through the packet in the plus, cross and circular polarizations."""
+def curvature_map_scenario():
+    """The plus wave at one event, with the rest observer, the wave direction and a transverse edge."""
+    plus, _ = core.polarizations()
+
+    # --- checks -------------------------------------------------------------
+    # Nonzero, yet applying the curvature twice gives zero.
+    np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
+    assert np.abs(plus.kernel).max() > 0.0
+    return plus, t, t + z, x
+
+
+def detector_scenario():
+    """Integrate a ring of beads through the packet in the plus, cross and circular polarizations.
+
+    Returns the samples, rest separations, displacements and accelerations, and the display
+    magnification of the displacements.
+    """
     plus, cross = core.polarizations()
     time = np.linspace(0.0, DURATION, SAMPLES)
     _, second = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
@@ -36,7 +45,14 @@ def detector_scenario() -> tuple[np.ndarray, Vector, Vector, Vector]:
     reference: Vector = core.detector_ring(BEADS) * RADIUS                # [n_beads] Vector
     acceleration: Vector = response[:, :, None](reference)                # [n_time, 3, n_beads] Vector
     displacement: Vector = core.integrate_acceleration(time, acceleration)
-    return time, reference, displacement, acceleration
+
+    # --- checks -------------------------------------------------------------
+    # The integrated ring lands on the strain map applied to the rest separations.
+    strain, _ = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
+    plus_strain, cross_strain = core.strain_patterns()
+    predicted = core.polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
+    np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=1e-13)
+    return time, reference, displacement, acceleration, AMPLIFICATION
 
 
 def doppler_scenario() -> tuple[np.ndarray, Scalar]:
@@ -45,39 +61,25 @@ def doppler_scenario() -> tuple[np.ndarray, Scalar]:
     rapidities = np.linspace(-0.7, 0.7, 15)
     observers: Vector = core.boosted_observers(rapidities, z)             # [n] Vector
     responses: Tidal = core.tidal_map(plus, observers)                    # [n] Vector <- Vector
-    return rapidities, responses.svdvals()[..., 0]                        # [n] Scalar
-
-
-def main(plot_path: str = str(PLOT_DIR / "curvature.png"), animation_path: str = "") -> plt.Figure:
-    """Draw the curvature map, the Doppler check and the detector; optionally save the animation."""
-    plot_path = Path(plot_path)
-    plus, _ = core.polarizations()
-    render.draw_curvature_map(
-        plus, observer=t, wave=t + z, edge=x,
-        plot_path=plot_path.with_name(f"{plot_path.stem}_map{plot_path.suffix}"),
-    )
-    rapidities, amplitudes = doppler_scenario()
-    render.draw_doppler(
-        rapidities, amplitudes,
-        plot_path=plot_path.with_name(f"{plot_path.stem}_doppler{plot_path.suffix}"),
-    )
-    time, reference, displacement, acceleration = detector_scenario()
-    figure = render.draw_detector(time, reference, displacement, acceleration, AMPLIFICATION, plot_path)
-    print(f"Figure saved to {plot_path}")
-    if animation_path:
-        render.save_animation(time, reference, displacement, acceleration, AMPLIFICATION, animation_path)
-        print(f"Animation saved to {animation_path}")
+    amplitudes: Scalar = responses.svdvals()[..., 0]                      # [n] Scalar
 
     # --- checks -------------------------------------------------------------
-    np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
-    assert np.abs(plus.kernel).max() > 0.0
-    np.testing.assert_allclose(amplitudes.kernel[..., 0], np.exp(-2 * rapidities), atol=1e-12)
-    return figure
+    # A chasing observer sees the frequency redshifted; the tide scales with its square.
+    np.testing.assert_allclose(amplitudes.to_array(), np.exp(-2 * rapidities), atol=1e-12)
+    return rapidities, amplitudes
 
 
 if __name__ == "__main__":
+    import argparse
+    from examples.animation import save_animation, save_figure
+    from examples.relativity.curvature import render
+
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--animate", action="store_true", help="Also save plots/curvature.gif.")
+    parser.add_argument("--animate", action="store_true", help="Also animate the detector rings.")
     args = parser.parse_args()
-    main(animation_path=str(PLOT_DIR / "curvature.gif") if args.animate else "")
-    plt.show()
+    save_figure(render.draw_curvature_map(*curvature_map_scenario()), "curvature_map")
+    save_figure(render.draw_doppler(*doppler_scenario()), "curvature_doppler")
+    detector = detector_scenario()
+    save_figure(render.draw_detector(*detector), "curvature")
+    if args.animate:
+        save_animation(render.animate_detector(*detector), "curvature", 50)

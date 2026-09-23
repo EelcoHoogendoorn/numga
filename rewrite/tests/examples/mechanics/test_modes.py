@@ -3,24 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import patch
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mechanics.modes import (
+from examples.mechanics.modes import render, scenarios
+from examples.mechanics.modes.core import (
     Inertia,
     Point,
-    Scalar,
     SpringExtension,
     Stiffness,
     Suspension,
     Twist,
     Wrench,
-    coordinates,
-    main,
     mv,
-    point,
     suspension as inputs,
 )
+from examples.mechanics.modes.render import coordinates
 
 
 def spring_stiffness(
@@ -110,36 +108,49 @@ class System:
         return getattr(self.geometry, name)
 
 
-def suspension(angled: bool = False) -> System:
+def suspension(springs: int) -> System:
     """Construct full suspension system including geometry, stiffness, and inertia."""
-    geometry = inputs(angled)
+    geometry = inputs(springs)
     lines: Wrench = (geometry.anchors & geometry.attachments).normalized()       # [n_springs] Wrench
     stiffness, extension = spring_stiffness(lines, geometry.spring_constants)
     return System(geometry, stiffness, extension,
                   body_inertia(geometry.mass_points, geometry.masses))
 
 
-def test_tutorial_passes_analytic_modes_to_renderer():
-    with patch("examples.mechanics.modes.render.draw_modes") as draw:
-        main(plot_path="")
-    free, restrained = draw.call_args.args[0]
-    np.testing.assert_allclose((2 * np.pi * free.frequencies)**2,
+def test_scenario_has_analytic_modes_and_renders():
+    free, restrained = scenarios.suspensions()
+    np.testing.assert_allclose((2 * np.pi * free.frequencies.to_array())**2,
                                [0, 12, 12 * .8**2 / (5 / 12)], atol=1e-12)
-    assert np.all(restrained.frequencies > 0)
+    assert np.all(restrained.frequencies.to_array() > 0)
+    assert isinstance(render.draw_modes([free, restrained], "Normal Modes"), plt.Figure)
+    frames = render.animate_modes([free, restrained], 4)
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
+
+
+def test_mathematics_does_not_import_plotting():
+    import subprocess
+    import sys
+
+    probe = (
+        "import examples.mechanics.modes.core, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", out.stdout
 
 
 def test_two_springs_have_analytic_slide_bounce_and_rock_frequencies():
-    system = suspension()
+    system = suspension(2)
     _, frequencies = normal_modes(system.stiffness, system.inertia)
     # Mass 1, polar inertia (width² + height²)/12, anchors at x = ±.8.
     expected_squared = [0, 2 * 6, 2 * 6 * .8**2 / (5 / 12)]
     np.testing.assert_allclose((2 * np.pi * frequencies)**2, expected_squared, atol=1e-12)
-    _, restrained = normal_modes(suspension(True).stiffness, system.inertia)
+    _, restrained = normal_modes(suspension(3).stiffness, system.inertia)
     assert np.all(restrained > 0)
 
 
 def test_spring_extension_and_energy_match_finite_rigid_displacements():
-    system = suspension(True)
+    system = suspension(3)
     q = mv.bivector([.3, -.4, .25])
     h = 1e-4
     # Independent exact geometry: move points with a motor and measure lengths.
@@ -158,7 +169,7 @@ def test_spring_extension_and_energy_match_finite_rigid_displacements():
 
 
 def test_mass_normalized_modes_and_spring_work():
-    system = suspension(True)
+    system = suspension(3)
     modes, frequencies = normal_modes(system.stiffness, system.inertia)
     mass = modes[:, None].regressive(system.inertia(modes[None, :])).kernel[..., 0]
     elastic = modes[:, None].regressive(system.stiffness(modes[None, :])).kernel[..., 0]
@@ -170,7 +181,7 @@ def test_mass_normalized_modes_and_spring_work():
 
 
 def test_modes_do_not_depend_on_world_pose():
-    system = suspension(True)
+    system = suspension(3)
     motor = (mv.xw * -.9 + mv.yw * .3).exp() * (mv.xy * .37).exp().normalized()
     lines = system.anchors.regressive(system.attachments).normalized()
     stiffness, _ = spring_stiffness(motor >> lines, system.spring_constants)

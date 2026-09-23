@@ -11,18 +11,26 @@ Run from rewrite/ with PYTHONPATH=src:. python -m examples.mechanics.inertia.
 import numpy as np
 
 from numga import Algebra, Extensor, NumpyContext
-from examples.mechanics.inertia_plumbing import cloud, report
 
 
+# --- plumbing -------------------------------------------------------------------------
+def cloud(context: NumpyContext, seed: int) -> tuple[Extensor, np.ndarray]:
+    """Normalize random points and place the cloud with a random motor."""
+    ga, mv = context.algebra, context.multivector
+    rng = np.random.default_rng(seed)
+    points = mv.antivector(rng.normal(size=(80, ga.dimension))).normalized()
+    placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()
+    return placement >> points, rng.uniform(0.5, 1.5, size=80)
+
+
+# --- math -----------------------------------------------------------------------------
 def second_moment(inertia: Extensor) -> Extensor:
     """Recover the point cloud's second-moment map from its inertia.
 
-    Args:
-        inertia: A single physical inertia map, AntiBivector <- Bivector,
-            mapping rigid-body velocity to momentum in its current frame.
-    Returns:
-        A Point <- Plane map. Pairing its output with another plane gives
-        the scalar form sum(m * (a & p) * (b & p)) over the mass points p.
+    The inertia is a single physical inertia map, AntiBivector <- Bivector, mapping
+    rigid-body velocity to momentum in its current frame. The result is a Point <- Plane
+    map: pairing its output with another plane gives the scalar form
+    sum(m * (a & p) * (b & p)) over the mass points p.
     """
     ga = inertia.algebra
     Point, Plane, Bivector = ga.gatype.antivector(), ga.gatype.vector(), ga.gatype.bivector()
@@ -37,13 +45,11 @@ def second_moment(inertia: Extensor) -> Extensor:
 def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
     """Fit a motor taking the moment's principal planes onto a reference frame.
 
-    Args:
-        moment: The Point <- Plane second-moment map recovered from inertia.
-        reference: A batch of orthogonal unit target planes, with PGA's null
-            plane last. Their batch order specifies the target correspondence.
-    Returns:
-        A normalized motor mapping the principal planes onto reference,
-        up to orientation signs. Coordinate reference planes diagonalize inertia.
+    The moment is the Point <- Plane second-moment map recovered from inertia. The
+    reference is a batch of orthogonal unit target planes, with PGA's null plane last;
+    their batch order specifies the target correspondence. The result is a normalized
+    motor mapping the principal planes onto the reference, up to orientation signs.
+    Coordinate reference planes diagonalize inertia.
     """
     ga = moment.algebra
     Plane, Rotor = ga.gatype.vector(), ga.gatype.rotor()
@@ -70,7 +76,7 @@ def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
     return motors[choice].normalized()
 
 
-def main(signature: str = "x+y+z+w0", seed: int = 0) -> tuple[Extensor, Extensor]:
+def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
     # --- plumbing: inputs for the two independent constructions.
     ga = Algebra(signature)
     ctx = NumpyContext(ga, dtype=np.complex128)
@@ -98,9 +104,16 @@ def main(signature: str = "x+y+z+w0", seed: int = 0) -> tuple[Extensor, Extensor
     motor = diagonalizing_motor(moment, reference)
     recovered = motor >> moved(motor << Bivector)
 
-    # --- plumbing: inspect both results; the recovered frame may permute or reverse axes.
-    report(Bivector & cloud_inertia, Bivector & cloud_diagonal,
-           Bivector & diagonal, Bivector & moved, Bivector & recovered)
+    # --- checks
+    # Both aligned inertias have a diagonal energy form on the bivector blades. The round
+    # trip recovers the diagonal it started from, up to a permutation of the axes.
+    blades = mv.bivector(np.eye(len(Bivector.output_subspace)))
+    energies = [(blades[:, None] & aligned(blades[None, :])).to_array().real
+                for aligned in (cloud_diagonal, recovered, diagonal)]
+    for energy in energies[:2]:
+        off_diagonal = energy - np.diag(np.diag(energy))
+        assert np.abs(off_diagonal).max() < 1e-12 * np.abs(energy).max()
+    np.testing.assert_allclose(np.sort(np.diag(energies[1])), np.sort(np.diag(energies[2])), rtol=1e-9)
     return cloud_motor, motor
 
 

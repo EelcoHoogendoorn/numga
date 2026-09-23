@@ -24,24 +24,68 @@ Bundle adjustment works on the cone quadrics directly:
    pose twist, its polar joined with itself, is the curvature; the point's polar joined with
    the motion is the gradient. The cone is the cost, so no residual metric is chosen.
 
-This module contains the mathematics alone: GATypes and the geometric narrative
-in one coherent scope.
+The algebra is not fixed here. `ga` is supplied per instance, by
+`examples.instantiate("examples.geometry.multiview.core", PGA2D)` or PGA3D, and the same
+module serves both.
 """
 
 from __future__ import annotations
 
-from examples.geometry.multiview.types import (
-    Camera,
-    Direction,
-    Information,
-    Motor,
-    Plane,
-    Point,
-    Quadric,
-    Scalar,
-    Twist,
-    w,
-)
+
+import numpy as np
+
+from numga import Algebra, NumpyContext
+
+
+ga: Algebra                                        # supplied by examples.instantiate
+ctx = NumpyContext(ga)
+mv = ctx.multivector
+
+Scalar = ga.gatype.scalar()
+Point = ga.gatype.antivector()
+ideal = ga.subspace.from_masks(tuple(m for m in Point.output_subspace.masks if m & ga.subspace("w").masks[0]))
+Direction = ga.gatype(ideal)                       # ideal points: the weightless displacements of points
+Plane = ga.gatype.vector()
+Motor = ga.gatype.rotor()
+Twist = ga.gatype.bivector()
+Camera = ga.gatype((Point, Point))
+Quadric = ga.gatype((Plane, Point))                # a quadric as a polarity map: a point's polar plane
+Information = ga.gatype((Scalar, Twist, Twist))    # curvature of a cost over pose twists
+w = mv.w
+euclidean = ga.subspace.from_masks(tuple(m for m in Plane.output_subspace.masks if not m & w.gatype.output_subspace.masks[0]))
+
+
+def point(coords: np.ndarray) -> Point:
+    """Finite points at Euclidean coordinates: the dual of the homogeneous vector."""
+    return (mv(euclidean, coords) + w).dual()
+
+
+def sensor_disk(pixels: Point) -> Quadric:
+    """Per-pixel transverse precision dyads on the sensor line of a planar camera.
+
+    The transverse normal line through each pixel, `normal = mv.x - mv.w * (mv.x & pixels)`,
+    joined with its own readout is a rank-1 precision disc.
+    """
+    normal = mv.x - mv.w * (mv.x & pixels)
+    return normal * (normal & Point)
+
+
+def sensor_disk_at(pixels: Point, principal_point: Point, q_sensor: Quadric) -> Quadric:
+    """A sensor precision quadric given at the principal point, moved to each pixel.
+
+    The translation from the principal point to a pixel is the square root of their ratio.
+    """
+    trans = (pixels / principal_point).square_root()
+    return trans >> q_sensor(trans << Point)
+
+
+def make_cones(cameras: Camera, sensor_discs: Quadric) -> Quadric:
+    """Pull sensor precision discs back through the camera maps into perspective cones.
+
+    The camera feeds the disc, and the induced plane map carries the polar lines back:
+    a quadric on scene points whose cross-section widens with depth.
+    """
+    return on_planes(cameras)(sensor_discs(cameras))     # [n_points, n_cams] Plane <- Point
 
 
 def on_planes(collineation: Camera):
@@ -60,19 +104,8 @@ def triangulate_cones(
 ) -> tuple[Point, Quadric]:
     """Triangulate scene points as the vertices of fused perspective cone quadrics.
 
-    Parameters
-    ----------
-    motors : [n_cams] Motor
-        Camera poses in world frame.
-    cones : [n_points, n_cams] Quadric
-        Perspective cone quadrics in each camera local frame.
-
-    Returns
-    -------
-    points : [n_points] Point
-        Reconstructed scene points (fused quadric vertices).
-    fused : [n_points] Quadric
-        Fused perspective cone quadrics (Gaussian splat precision ellipsoids).
+    The cones are [n_points, n_cams] quadrics in each camera's local frame and the motors
+    the [n_cams] camera poses; the result is the [n_points] points and fused quadrics.
     """
     # Move local cones to the world frame and sum them: quadratic constraints add.
     world_cones = motors >> cones(motors << Point)            # [n_points, n_cams] Plane <- Point
@@ -88,32 +121,13 @@ def bundle_adjust(
     initial_motors: Motor,
     local_cones: Quadric,
     iterations: int,
-    damping: float = 0.9,
-    anchors: tuple[int, ...] = (0,),
-) -> tuple[Motor, Point, Quadric]:
+    damping: float,
+    free: np.ndarray,
+):
     """Jointly optimize camera poses and points purely via perspective cone quadrics.
 
-    Parameters
-    ----------
-    initial_motors : [n_cams] Motor
-        Initial camera pose estimates.
-    local_cones : [n_points, n_cams] Quadric
-        Perspective cone quadrics in each camera local frame.
-    iterations : int
-        Number of alternating Newton iterations.
-    damping : float
-        Step damping factor. Defaults to 0.9.
-    anchors : tuple[int, ...]
-        Indices of cameras to anchor as fixed gauge reference frames. Defaults to (0,).
-
-    Returns
-    -------
-    motors : [n_cams] Motor
-        Optimized camera poses.
-    points : [n_points] Point
-        Reconstructed scene points.
-    fused : [n_points] Quadric
-        Fused perspective cone quadrics.
+    Alternates triangulation with damped Newton steps on the camera poses. `free` is 1 for
+    each camera that moves and 0 for the anchored cameras that fix the gauge.
     """
     motors = initial_motors
 
@@ -125,39 +139,16 @@ def bundle_adjust(
         # moves its local points by minus the commutator with the twist; the moved point's polar
         # joined with the motion is the curvature, the point's polar joined with the motion the gradient:
         local_points = motors << points[:, None]                  # [n_points, n_cams] Point
-        motion = -Twist.commutator(local_points)                  # [n_points, n_cams] Point <- Twist: where each local point goes per unit right step of its camera's pose
+        motion = -Twist.commutator(local_points)                  # [n_points, n_cams] Point <- Twist
         curvature = (local_cones(motion) & motion).sum(axis=0)    # [n_cams] Scalar <- (Twist, Twist)
         gradient = (local_cones(local_points) & motion).sum(axis=0)   # [n_cams] Scalar <- Twist
 
-        # Solve the twist steps and anchor reference cameras to fix gauge freedom:
-        step = curvature.lstsq(-gradient, rcond=1e-4)           # [n_cams] Twist
-        for a in anchors:
-            step = step.at[a].set(step[a] * 0)
+        # Solve the twist steps and hold the anchored cameras to fix gauge freedom:
+        step = curvature.lstsq(-gradient, rcond=1e-4) * free    # [n_cams] Twist
         motors = motors * (step * (0.5 * damping)).exp()        # [n_cams] Motor
 
     points, fused = triangulate_cones(motors, local_cones)
     return motors, points, fused
-
-
-def depths(cameras: Camera, motors: Motor, points: Point) -> Scalar:
-    """Perpendicular depth of points from each camera: the weight of the projected point.
-
-    Parameters
-    ----------
-    cameras : [n_cams] Camera
-        Projective camera maps in local frame.
-    motors : [n_cams] Motor
-        Camera poses in world frame.
-    points : [n_points] Point
-        Scene points in world frame.
-
-    Returns
-    -------
-    z : [n_points, n_cams] Scalar
-        Positive perpendicular depth along the optical axis (clamped >= 0.1).
-    """
-    local_points = motors << points[:, None]                  # [n_points, n_cams] Point
-    return (w & cameras(local_points)).abs().clip(0.1, None)  # [n_points, n_cams] Scalar
 
 
 def reweight_cones(
@@ -174,7 +165,9 @@ def reweight_cones(
     weighted_cones = cones
     for _ in range(iterations):
         points, _ = triangulate_cones(motors, weighted_cones)
-        z = depths(cameras, motors, points)
+        # A point's depth in a camera is the weight of its projected point, the pairing of the
+        # image with the plane at infinity; clamped away from the camera plane:
+        z = (w & cameras(motors << points[:, None])).abs().clip(0.1, None)   # [n_points, n_cams] Scalar
         weighted_cones = cones / (z ** 2)
     return weighted_cones
 
@@ -184,42 +177,42 @@ def bundle_adjust_schur(
     initial_motors: Motor,
     local_cones: Quadric,
     iterations: int,
-    damping: float = 0.7,
-    anchors: tuple[int, ...] = (0,),
-) -> tuple[Motor, Point, Quadric, Information]:
+    damping: float,
+    free: np.ndarray,
+):
     """Jointly optimize camera poses with Sampson depth reweighting and a Schur complement.
 
-    Unlike the alternating solver, the joint Newton step accounts for the points moving with
-    the cameras: the points' curvature and the cross term between points and cameras are
-    folded into the cameras' curvature. The result is a true Newton step on the reduced
-    problem, and the reduced curvature is the marginal information on each camera's pose.
+    The cost is the sum over cameras and points of the cone value `cone(p) & p`, with
+    `p = motor << point` the point in its camera's frame. The unknowns are a twist per camera
+    and a direction per point. At the triangulated points the cost is stationary over the
+    points, so their gradient vanishes and only the camera gradient
+    `cones(local_points) & motion` remains. To second order the cost has three curvature
+    forms: `h_cam` with both slots twists of one camera, `h_pt` with both slots directions of
+    one point, and `h_cross` with a twist slot and a direction slot. The joint Newton
+    conditions are then, per point,
+    `h_pt(direction, .) + h_cross(step, .) == 0`, and per camera,
+    `h_cam(step, .) + h_cross(., direction).sum(axis=0) == -gradient`. The point condition
+    solves as `response = h_pt.solve(h_cross)`, the map from a camera step to minus the
+    point's direction. Substituting it into the camera condition folds the points out:
+    `information = h_cam - compliance.sum(axis=0)`, with
+    `compliance = cones(motion) & (motors << response)` the cross form evaluated on the
+    point's response, and the step solves `information(step, .) == -gradient`. Unlike the
+    alternating solver this accounts for the points moving with the cameras, and the reduced
+    curvature is the marginal information on each camera's pose. Anchored cameras have their
+    steps and information zeroed, which removes the rig's global gauge from the solve.
 
-    Parameters
-    ----------
-    cameras : [n_cams] Camera
-        Projective camera maps in local frame.
-    initial_motors : [n_cams] Motor
-        Initial camera pose estimates.
-    local_cones : [n_points, n_cams] Quadric
-        Perspective cone quadrics in each camera local frame.
-    iterations : int
-        Number of Schur Newton iterations.
-    damping : float
-        Step damping factor. Defaults to 0.7.
-    anchors : tuple[int, ...]
-        Indices of cameras to anchor as fixed gauge reference frames. Defaults to (0,).
+    Weighting: the value of an algebraic cone at a scene point is the squared pixel distance
+    of its image times the square of its depth, because the polar planes were carried back
+    through the camera and the image of a point at depth z has weight z. Dividing each cone by
+    z squared puts the cost in pixel units, so a far point and a near point count by their
+    pixel error alone. The depth is the weight of the projected point,
+    `w & cameras(local_points)`, and since the triangulated points depend on the weighted
+    cones the scaling is iterated in `reweight_cones`. A weight is a scalar on a quadric, so
+    the weighted solver is the unweighted one with `scaled_cones` in place of `local_cones`:
+    the gradient, the three curvature forms, the compliance and the returned information are
+    the same expressions, and no weight is carried separately into any of them.
 
-    Returns
-    -------
-    motors : [n_cams] Motor
-        Optimized camera poses.
-    points : [n_points] Point
-        Reconstructed scene points.
-    fused : [n_points] Quadric
-        Fused perspective cone quadrics (Gaussian splat precision ellipsoids).
-    information : [n_cams] Information
-        Marginal curvature of the cost over each camera's pose twist; its inverse on
-        readouts is the pose covariance.
+    `free` is 1 for each camera that moves and 0 for the anchored cameras.
     """
     motors = initial_motors
 
@@ -229,10 +222,12 @@ def bundle_adjust_schur(
 
         # Curvature blocks over camera twists, over point directions, and across the two. Cameras
         # move by twists and points by directions, ideal points, so neither block ever sees a
-        # point's homogeneous scale and no gauge is needed:
+        # point's homogeneous scale and no gauge is needed. The motion is where each local point
+        # goes per unit right step of its camera's pose; moved carries a world displacement of a
+        # point into each camera:
         local_points = motors << points[:, None]                  # [n_points, n_cams] Point
-        motion = -Twist.commutator(local_points)                  # [n_points, n_cams] Point <- Twist: where each local point goes per unit right step of its camera's pose
-        moved = motors << Direction                               # [n_cams] Direction <- Direction: a world displacement into each camera
+        motion = -Twist.commutator(local_points)                  # [n_points, n_cams] Point <- Twist
+        moved = motors << Direction                               # [n_cams] Direction <- Direction
         h_cam = (scaled_cones(motion) & motion).sum(axis=0)       # [n_cams] Scalar <- (Twist, Twist)
         h_pt = (scaled_cones(moved) & moved).sum(axis=1)          # [n_points] Scalar <- (Direction, Direction)
         h_cross = scaled_cones(motion) & moved                    # [n_points, n_cams] Scalar <- (Twist, Direction)
@@ -245,15 +240,11 @@ def bundle_adjust_schur(
         compliance = scaled_cones(motion) & (motors << response)  # [n_points, n_cams] Scalar <- (Twist, Twist)
         information = h_cam - compliance.sum(axis=0)              # [n_cams] Scalar <- (Twist, Twist)
 
-        # Newton step on the reduced curvature; anchor cameras to fix gauge freedom:
+        # Newton step on the reduced curvature; hold the anchored cameras to fix gauge freedom:
         gradient = (scaled_cones(local_points) & motion).sum(axis=0)   # [n_cams] Scalar <- Twist
-        step = information.lstsq(-gradient, rcond=1e-4)           # [n_cams] Twist
-        for a in anchors:
-            step = step.at[a].set(step[a] * 0)
+        step = information.lstsq(-gradient, rcond=1e-4) * free    # [n_cams] Twist
         motors = motors * (step * (0.5 * damping)).exp()          # [n_cams] Motor
 
     points, fused = triangulate_cones(motors, reweight_cones(cameras, motors, local_cones))
-    for a in anchors:
-        information = information.at[a].set(information[a] * 0)
-    return motors, points, fused, information
+    return motors, points, fused, information * free
 

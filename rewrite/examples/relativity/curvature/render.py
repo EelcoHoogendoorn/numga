@@ -9,14 +9,13 @@ arrows share one fixed scale throughout an animation.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
+from examples.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import STA, Bivector, Curvature, Scalar, Vector, mv
 
@@ -46,12 +45,6 @@ def arrow(value: Vector) -> np.ndarray:
     return spacetime(mv.scalar([[0], [1]]) * value)
 
 
-def _save(fig: plt.Figure, plot_path: str | Path) -> None:
-    if str(plot_path):
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(plot_path, facecolor="white", bbox_inches="tight")
-
-
 # --- the curvature map at one event ---------------------------------------------------
 def _arrow(ax, points: np.ndarray, colour: str, width: float = 2.0) -> None:
     start, end = points
@@ -79,7 +72,7 @@ def _patch(ax, vertices: np.ndarray, colour: str) -> None:
 
 
 def draw_curvature_map(
-    curvature: Curvature, observer: Vector, wave: Vector, edge: Vector, plot_path: str | Path = "",
+    curvature: Curvature, observer: Vector, wave: Vector, edge: Vector,
 ) -> plt.Figure:
     """A spacetime ribbon, its image under curvature, and that image's image.
 
@@ -125,12 +118,11 @@ def draw_curvature_map(
                          xycoords=fig.transFigure, textcoords=fig.transFigure,
                          arrowprops={"arrowstyle": "->", "lw": 1.8, "color": INK})
         fig.text((left + right) / 2, 0.53, "curvature", ha="center", fontsize=9, color=INK)
-    _save(fig, plot_path)
     return fig
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
-def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar, plot_path: str | Path = "") -> plt.Figure:
+def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar) -> plt.Figure:
     """Strain profiles and their second derivatives, the weights of the curvature batch."""
     h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, 2] float
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
@@ -142,11 +134,10 @@ def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar, plot_path: str
     top.legend(frameon=False, ncol=2, loc="upper right")
     bottom.set_xlabel("time (c = 1)", color=INK)
     fig.align_ylabels()
-    _save(fig, plot_path)
     return fig
 
 
-def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar, plot_path: str | Path = "") -> plt.Figure:
+def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     """Tidal amplitude measured by observers boosted along the wave, against exp(-2 zeta)."""
     measured = amplitudes.kernel[..., 0]                                 # [n] float
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
@@ -158,7 +149,6 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar, plot_path: str | Pa
     ax.set_ylabel("tidal amplitude / rest-frame amplitude", color=INK)
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False)
-    _save(fig, plot_path)
     return fig
 
 
@@ -243,7 +233,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
 
 def draw_detector(
     time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector,
-    amplification: float, plot_path: str | Path = "",
+    amplification: float,
 ) -> plt.Figure:
     """The three polarizations at one shared instant of largest deformation, with faint full trails."""
     data = _detector(time, reference, displacement, acceleration, amplification)
@@ -260,30 +250,22 @@ def draw_detector(
                Line2D([], [], color=BLUE, marker=">", markersize=6, label="Relative acceleration")]
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.02),
                ncol=3, frameon=False, fontsize=10, columnspacing=3)
-    _save(fig, plot_path)
     return fig
 
 
-def save_animation(
-    time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector,
-    amplification: float, animation_path: str | Path,
-) -> str:
-    """Animate the three bead rings through the packet at 20 frames per unit time."""
+def animate_detector(
+    time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector, amplification: float,
+) -> list[np.ndarray]:
+    """The three bead rings through the packet, as frames at 20 per unit time."""
     data = _detector(time, reference, displacement, acceleration, amplification)
     fig = plt.figure(figsize=(14, 5.2), dpi=80, facecolor="white")
     axes = _ring_axes(fig, data)
     updates = [_ring(ax, data, polarization, static=False) for polarization, ax in enumerate(axes)]
-
-    def frame(index: int):
-        artists = []
-        for update in updates:
-            artists.extend(update(index))
-        return artists
-
     count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * 20) + 1))
-    frames = np.linspace(0, len(data.time) - 1, count, dtype=int)
-    animation = FuncAnimation(fig, frame, frames=frames, interval=50, blit=False)
-    Path(animation_path).parent.mkdir(parents=True, exist_ok=True)
-    animation.save(str(animation_path), writer=PillowWriter(fps=20), dpi=80)
+    frames = []
+    for index in np.linspace(0, len(data.time) - 1, count, dtype=int):
+        for update in updates:
+            update(index)
+        frames.append(capture(fig))
     plt.close(fig)
-    return str(animation_path)
+    return frames

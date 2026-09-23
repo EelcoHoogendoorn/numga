@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 import numpy as np
 
-from examples.electromagnetism.constitutive import core, scenarios, render, main
+import matplotlib.pyplot as plt
+
+from examples.electromagnetism.constitutive import core, scenarios, render
 
 B = core.B
 V = core.V
@@ -106,39 +108,27 @@ def test_moving_glass_shows_exact_fresnel_drag():
 
 
 def test_fresnel_surface_and_drag_scenarios():
-    angles, surfaces = scenarios.fresnel_surface_scenario(n_angles=12)
+    angles, surfaces, speeds = scenarios.fresnel_surface_scenario(n_angles=12)
     assert len(angles) == 12
-    assert "glass (rest)" in surfaces
-    assert "crystal" in surfaces
+    assert surfaces["crystal"].shape == (len(speeds), 12)
 
-    betas, v_down, v_up = scenarios.fresnel_drag_scenario(n_betas=5)
+    betas, v_down, v_up, eps, mu = scenarios.fresnel_drag_scenario(n_betas=5)
     assert len(betas) == 5
-    assert not np.isnan(v_down).any()
-    assert not np.isnan(v_up).any()
+    refractive_index = np.sqrt(eps * mu)
+    np.testing.assert_allclose(v_down, (1 / refractive_index + betas) / (1 + betas / refractive_index), atol=2e-3)
+    np.testing.assert_allclose(v_up, (1 / refractive_index - betas) / (1 - betas / refractive_index), atol=2e-3)
 
 
-def test_tutorial_runs_and_saves(tmp_path):
-    out = tmp_path / "constitutive.png"
-    main(plot_path=str(out))
-    assert out.exists()
-
-
-def test_wave_and_polarization_rendering(tmp_path):
-    import matplotlib.pyplot as plt
-
-    fig2, ax2 = plt.subplots()
-    modes = [("Slow Wave", 0.667, x, "crimson")]
-    render.draw_polarizations(ax2, modes)
-    assert len(ax2.collections) > 0
-
-    fig3 = plt.figure()
-    ax3 = fig3.add_subplot(111, projection="3d")
-    crystal_modes = [(0.667, x), (0.816, y)]
-    render.draw_wave_propagation(ax3, crystal_modes)
-    assert len(ax3.collections) > 0 or len(ax3.lines) > 0
-
-    gif_out = tmp_path / "test_wave.gif"
-    render.animate_wave_propagation(crystal_modes, plot_path=gif_out, n_frames=4)
-    assert gif_out.exists()
-
-    plt.close("all")
+def test_figures_and_animation_draw():
+    """Each scenario feeds its figure; the figures and a short animation draw."""
+    glass_modes, crystal_modes = scenarios.wave_comparison_scenario()
+    figures = [
+        render.draw_wave_comparison_figure(glass_modes, crystal_modes),
+        render.draw_dispersion_figure(*scenarios.dispersion_scenario()),
+        render.draw_polarizations_figure(scenarios.polarization_scenario()),
+        render.draw_fresnel_surface_figure(*scenarios.fresnel_surface_scenario(n_angles=24)),
+        render.draw_fresnel_drag_figure(*scenarios.fresnel_drag_scenario(n_betas=5)),
+    ]
+    assert all(isinstance(figure, plt.Figure) for figure in figures)
+    frames = render.animate_wave_propagation(crystal_modes, n_frames=4)
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

@@ -1,61 +1,23 @@
-"""Scenes and entry points for the projective camera example.
+"""Scenes for the projective camera example.
 
-One function per figure. Each builds the concrete scene, hands it to the
-mathematics in `core`, and hands the resulting geometry to `render`.
+One function per figure. Each builds the concrete scene, hands it to the mathematics
+in `core`, and returns the resulting geometry for `render`.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 
 from numga import NumpyContext
-from numga.algebras import PGA3D
-from examples import PLOT_DIR
-from examples.pga3d import direction, point
+from examples.geometry.projection.core import CUBE_EDGES, circle, cube, direction, ga, point, shadows, stereo
 
-if TYPE_CHECKING:
-    import matplotlib.pyplot as plt
-
-ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Point = ga.gatype.antivector()
-Line = ga.gatype.antibivector()
-Plane = ga.gatype.vector()
-Motor = ga.gatype.rotor()
-Pseudoscalar = ga.gatype.pseudoscalar()
-Camera = ga.gatype((Point, Point))
-LineCamera = ga.gatype((Line, Line))
-ShadowTrail = ga.gatype((Point, Point))
-Correspondence = ga.gatype((Pseudoscalar, Point, Point))
 origin = mv.zyx
 
-# Which corner pairs of `cube` are joined by an edge.
-CUBE_EDGES = [
-    (0, 1), (1, 3), (3, 2), (2, 0),
-    (4, 5), (5, 7), (7, 6), (6, 4),
-    (0, 4), (1, 5), (2, 6), (3, 7),
-]
 
-
-def circle(n: int) -> Point:
-    """Construct n points around the unit circle in the xy plane, centred on the origin."""
-    t = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
-    return point(np.stack([np.cos(t), np.sin(t), np.zeros_like(t)], axis=-1))
-
-
-def cube(size: float) -> Point:
-    """Construct the eight corner points of an axis-aligned cube centred on the origin."""
-    corners = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=float)
-    return point(corners * (size / 2.0))
-
-
-def projection_figure(plot_path: str = str(PLOT_DIR / "projection.png")) -> plt.Figure:
+def projection():
     """A lit body over the ground, and the same rig posed twice over one subject."""
-    from examples.geometry.projection import core, render
-
     body = (mv.zw * 0.75).exp() >> cube(1.0)
     ground = mv.z
     point_light = point(np.array([1.0, -1.0, 4.0]))
@@ -69,21 +31,13 @@ def projection_figure(plot_path: str = str(PLOT_DIR / "projection.png")) -> plt.
     rig_2 = (mv.xw * +0.3).exp() * (mv.xz * -0.06).exp()
     subject = (mv.zw * 2.5).exp() >> cube(1.6)
 
-    shadows = core.shadows(body, ground, point_light, sun, body[7], light_path)
-    stereo = core.stereo(subject, origin, screen, rig_1, rig_2)
-
-    return render.draw_projection(
-        body, CUBE_EDGES, shadows, point_light, sun, stereo, rig_1, rig_2, plot_path
-    )
-
-
-def main(plot_path: str = str(PLOT_DIR / "projection.png")) -> plt.Figure:
-    """Render the projective camera figure."""
-    return projection_figure(plot_path)
+    cast = shadows(body, ground, point_light, sun, body[7], light_path)
+    views = stereo(subject, origin, screen, rig_1, rig_2)
+    return body, CUBE_EDGES, cast, point_light, sun, views, rig_1, rig_2
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
+    from examples.animation import save_figure
+    from examples.geometry.projection import render
 
-    main()
-    plt.show()
+    save_figure(render.draw_projection(*projection()), "projection")

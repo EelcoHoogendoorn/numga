@@ -1,94 +1,90 @@
-"""Scenarios and CLI runner for the scenegraph, robot kinematics, and compound optics example."""
+"""Scenes for the scenegraph, robot kinematics, and compound optics example.
+
+`scenegraph` returns one posed frame for the figures; `robot_sweep` yields the frames of
+the kinematic animation. Both return geometry for `render`.
+"""
 
 from __future__ import annotations
 
-from pathlib import Path
-import matplotlib.pyplot as plt
+import numpy as np
 
 from numga import stack
-from examples import PLOT_DIR
-from . import core, render
+from examples.geometry.scenegraph.core import (
+    canonical_unit_box, lens_camera, lens_train, look_at, mv, origin, project_vertices,
+    robot_arm, trace_rays, viewport,
+)
 
 
-def main(
-    plot_path: str | Path = str(PLOT_DIR / "scenegraph.png"),
-    scene_3d_path: str | Path = str(PLOT_DIR / "scenegraph_scene_3d.png"),
-    camera_image_path: str | Path = str(PLOT_DIR / "scenegraph_camera_image.png"),
-    animation_path: str | Path = str(PLOT_DIR / "scenegraph.gif"),
-    generate_animation: bool = True,
-) -> plt.Figure:
-    """Execute the full scenegraph demonstration, verify algebraic checks, and export deliverables."""
-    print("Running kernel-level algebraic assertions...")
-    core.run_checks()
-    print("All assertions passed.")
+def camera_rig():
+    """The compound camera: pose, objective and relay lens, pupil, sensor, and the world-to-pixel map."""
+    pose = look_at(np.array([0.0, -3.6, 1.3]), np.array([0.0, 0.0, 1.18]))
 
-    # 1. Construct canonical unit box geometry:
-    unit_box = core.canonical_unit_box()
+    # Objective lens L1 at the origin and relay lens L2 0.3 behind it:
+    front_lens, rear_lens, rear_plane = lens_train(1.0, 0.8, -0.3)
+    # Pupil point on the entrance pupil aperture (offset from optical center to induce bending):
+    pupil = (mv.xw * 0.02).exp() >> origin
+    # Sensor plane at z = -1.25: plane equation z + 1.25 * w = 0
+    sensor_plane = mv.z + 1.25 * mv.w
+    camera = lens_camera(pose, front_lens, rear_lens, pupil, sensor_plane)
 
-    # 2. Articulated robot arm forward kinematics:
-    joint_angles = (0.35, -0.45, 0.85, -0.40)
-    links_to_world, joint_pivots = core.make_robot_arm(joint_angles)
+    # Viewport: the physical 1.6 x 1.2 sensor chip onto 640 x 480 pixels.
+    world_to_pixel = viewport(640, 480, 1.6, 1.2)(camera)
+    return pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane, world_to_pixel
 
-    # 3. Compound multi-lens camera (objective lens L1 + relay lens L2):
-    camera_pose = core.make_camera_pose(
-        position=(0.0, -3.6, 1.3),
-        target=(0.0, 0.0, 1.18),
-    )
-    camera = core.make_multi_lens_camera(
-        camera_pose=camera_pose,
-        focal_front=1.0,
-        focal_rear=0.8,
-        rear_gap=-0.3,
-        pupil_radius=0.02,
-        sensor_distance=1.25,
-    )
 
-    # 4. Viewport extensor (640 x 480 px, physical 1.6 x 1.2 sensor chip):
-    viewport = core.make_viewport(width=640, height=480, sensor_width=1.6, sensor_height=1.2)
+def scenegraph():
+    """The robot arm posed once, photographed through the compound camera."""
+    unit_box = canonical_unit_box()
+    pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane, world_to_pixel = camera_rig()
 
-    # 5. Core punchline: collapse entire visual pipeline into a single extensor:
-    local_to_pixel = core.collapse_scenegraph(links_to_world, camera, viewport)
-    print(f"Collapsed extensor shape: {local_to_pixel.shape}")
+    # Articulated robot arm forward kinematics:
+    bodies_to_world, _ = robot_arm((0.35, -0.45, 0.85, -0.40))
 
-    # 6. Batch project all canonical vertices in one pass:
-    projected_pixels = core.project_vertices(local_to_pixel, unit_box)
-    world_vertices = links_to_world[:, None](unit_box[None, :])
+    # The punchline: collapse the entire visual pipeline, kinematics to pixels, into a
+    # single extensor per body, and project all canonical vertices in one pass.
+    local_to_pixel = world_to_pixel(bodies_to_world)                 # [5] Point <- Point
+    projected_pixels = project_vertices(local_to_pixel, unit_box)     # [5, 8] Point
+    world_vertices = bodies_to_world[:, None](unit_box[None, :])      # [5, 8] Point
 
-    # 7. Render split deliverables:
-    # (a) 3D scene only:
-    fig_3d = plt.figure(figsize=(7.5, 6.0), dpi=130)
-    ax_3d = fig_3d.add_subplot(1, 1, 1, projection="3d")
-    render.draw_scenegraph_scene_3d(ax_3d, world_vertices=world_vertices, camera_pose=camera_pose)
-    fig_3d.tight_layout()
-    Path(scene_3d_path).parent.mkdir(parents=True, exist_ok=True)
-    fig_3d.savefig(scene_3d_path, bbox_inches="tight", dpi=140)
-    plt.close(fig_3d)
-    print(f"3D scene saved to {scene_3d_path}")
+    # Three gripper corners traced through the lenses to the sensor:
+    gripper = world_vertices[-1]
+    rays = trace_rays(stack([gripper[7], gripper[6], gripper[2]]), pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane)
 
-    # (b) 2D camera photograph only:
-    fig_2d, ax_2d = plt.subplots(figsize=(6.4, 4.8), dpi=130)
-    render.draw_camera_image(ax_2d, projected_pixels, width=640, height=480)
-    fig_2d.tight_layout()
-    Path(camera_image_path).parent.mkdir(parents=True, exist_ok=True)
-    fig_2d.savefig(camera_image_path, bbox_inches="tight", dpi=140)
-    plt.close(fig_2d)
-    print(f"2D camera photograph saved to {camera_image_path}")
+    # --- checks
+    # The collapsed extensor agrees with applying kinematics, camera and viewport in turn.
+    sequential = world_to_pixel(world_vertices)
+    sequential = sequential / (mv.w & sequential)
+    mismatch = (sequential - projected_pixels).dual().norm_squared()
+    assert mismatch.to_array().max() < 1e-16
 
-    # (c) Combined 2-panel figure:
-    fig = render.draw_scenegraph_figure(
-        world_vertices=world_vertices,
-        projected_pixels=projected_pixels,
-        camera_pose=camera_pose,
-        plot_path=plot_path,
-    )
+    return world_vertices, projected_pixels, pose, rays
 
-    # (d) Animated kinematic sweep:
-    if generate_animation and animation_path:
-        print("Generating forward kinematics animation...")
-        render.animate_robot_kinematics(output_gif_path=animation_path, num_frames=36, duration_ms=60)
 
-    return fig
+def robot_sweep(num_frames: int):
+    """Frames of a looping joint trajectory, each photographed through the compound camera."""
+    unit_box = canonical_unit_box()
+    pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane, world_to_pixel = camera_rig()
+    for t in np.linspace(0, 2 * np.pi, num_frames, endpoint=False):
+        joint_angles = (
+            0.45 * np.sin(t),
+            -0.40 + 0.25 * np.cos(t),
+            0.85 + 0.35 * np.sin(t),
+            -0.45 + 0.25 * np.cos(2 * t),
+        )
+        bodies_to_world, _ = robot_arm(joint_angles)
+        projected = project_vertices(world_to_pixel(bodies_to_world), unit_box)
+        world_vertices = bodies_to_world[:, None](unit_box[None, :])
+        # The ray from the gripper tip:
+        rays = trace_rays(world_vertices[-1, 7:8], pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane)
+        yield world_vertices, projected, pose, rays
 
 
 if __name__ == "__main__":
-    main()
+    from examples.animation import save_animation, save_figure
+    from examples.geometry.scenegraph import render
+
+    world_vertices, projected_pixels, camera_pose, rays = scenegraph()
+    save_figure(render.draw_scenegraph(world_vertices, projected_pixels, camera_pose, rays), "scenegraph")
+    save_figure(render.draw_scene_3d(world_vertices, camera_pose, rays), "scenegraph_scene_3d")
+    save_figure(render.draw_camera_image(projected_pixels), "scenegraph_camera_image")
+    save_animation(render.animate_scenegraph(robot_sweep(36)), "scenegraph", 60)

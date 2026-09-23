@@ -16,3 +16,6 @@ dist/
 !/plots/multiview_reconstruction.png
 !/plots/constitutive.png
 examples/plots/
+
+# The style guide for examples and notebooks is kept locally, out of the repository.
+/examples/STYLE.md

@@ -5,22 +5,64 @@ Here the camera is an expression with a hole, (centre ∨ point) ∧ screen, and
 matrix is what you get by choosing which hole to leave open. Every question below is
 the same expression with a different slot open.
 
-This module is the mathematics alone. It constructs geometry and returns geometry;
-the scenario chooses the algebra, backend and reference frame.
+This module is the mathematics: types, constructors, and the expressions with holes.
+The scenarios choose the scene and the reference frame.
 """
 
 from __future__ import annotations
 
-from examples.geometry.projection.scenarios import (
-    Camera, Correspondence, Line, LineCamera, Motor, Plane, Point, ShadowTrail,
-)
+import numpy as np
+
+from numga import NumpyContext
+from numga.algebras import PGA3D
+
+ga = PGA3D
+mv = NumpyContext(ga).multivector
+Point = ga.gatype.antivector()
+Line = ga.gatype.antibivector()
+Plane = ga.gatype.vector()
+Motor = ga.gatype.rotor()
+Pseudoscalar = ga.gatype.pseudoscalar()
+Camera = ga.gatype((Point, Point))
+LineCamera = ga.gatype((Line, Line))
+ShadowTrail = ga.gatype((Point, Point))
+Correspondence = ga.gatype((Pseudoscalar, Point, Point))
+
+# Which corner pairs of `cube` are joined by an edge.
+CUBE_EDGES = [
+    (0, 1), (1, 3), (3, 2), (2, 0),
+    (4, 5), (5, 7), (7, 6), (6, 4),
+    (0, 4), (1, 5), (2, 6), (3, 7),
+]
+
+
+def point(coords: np.ndarray) -> Point:
+    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
+    return (mv("x y z", coords) + mv.w).dual()
+
+
+def direction(coords: np.ndarray) -> Point:
+    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
+    return mv("x y z", coords).dual()
+
+
+def circle(n: int) -> Point:
+    """Construct n points around the unit circle in the xy plane, centred on the origin."""
+    t = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
+    return point(np.stack([np.cos(t), np.sin(t), np.zeros_like(t)], axis=-1))
+
+
+def cube(size: float) -> Point:
+    """Construct the eight corner points of an axis-aligned cube centred on the origin."""
+    corners = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=float)
+    return point(corners * (size / 2.0))
 
 
 # ---------------------------------------------------------------------------
 # Shadows: leave the point open
 # ---------------------------------------------------------------------------
 def shadows(body: Point, ground: Plane, point_light: Point, sun: Point,
-            corner: Point, light_path: Point) -> tuple[Point, Point, Point]:
+            corner: Point, light_path: Point):
     """Cast a body's shadows, then reopen the light slot to sweep one corner's shadow."""
     # Join the point with the light into a ray, then meet the ray with the ground. With the
     # point slot open this is a linear map Point -> Point: the shadow matrix. Nothing in the
@@ -42,7 +84,7 @@ def shadows(body: Point, ground: Plane, point_light: Point, sun: Point,
 # Cameras and epipolar geometry: one rig, moved as a map
 # ---------------------------------------------------------------------------
 def stereo(subject: Point, centre: Point, screen: Plane,
-           rig_1: Motor, rig_2: Motor) -> tuple[Point, Point, Point, Line, Correspondence]:
+           rig_1: Motor, rig_2: Motor):
     """Move the supplied centre and screen into two poses and relate their images."""
     # The same join-then-meet with a line in the open slot is the camera for lines.
     camera: Camera = (centre & Point) ^ screen

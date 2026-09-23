@@ -6,7 +6,7 @@ In programming terms, extensors allow one to leave open arguments to an expressi
 
 When doing mathematics on the blackboard, one often switches between expressions involving a specific vector, or expressions over the entire space of vectors. Extensor syntax brings that same flexibility to geometric algebra in code, combining expressivity with efficiency of the underlying code.
 
-The term extensor was coined by Hestenes [[ca-to-gc](#ref-ca-to-gc)]. He defines an extensor as any multilinear function of multivector arguments, and notes that tensors, the multilinear functions of vectors, are the special case. Not every block of numbers of the right shape is one, any more than every block of numbers is a tensor. Numga's extensors are built from the products of the algebra, so they transform as the geometry they are built from does. Nothing in the definition mentions a separate metric tensor: the metric is part of the algebra, and a metric tensor is an object one can model with the library rather than a concern of the library itself.
+The term extensor was coined by Hestenes [[ca-to-gc](#ref-ca-to-gc)]. He defines an extensor as any multilinear function of multivector arguments, and notes that tensors, the multilinear functions of vectors, are the special case. Not every block of numbers of the right shape is one, any more than every block of numbers is a tensor. Numga's extensors are built from the products of the algebra, so they transform as the geometry they are built from does. Nothing in the definition mentions a separate metric tensor: the metric is part of the algebra.
 
 # Motivation
 
@@ -20,7 +20,7 @@ The same holds against tensor algebra. In tensor terms, an extensor is a tensor 
 
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
 * [`extensor_advanced.md`](extensor_advanced.md): maps against forms, the pairing that replaces the transpose, traces, norms and gauges.
-* [`extensor_internals.md`](extensor_internals.md): what the library builds from an expression, and what runs when values are supplied.
+* [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
 
 # Examples
 
@@ -152,12 +152,17 @@ ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scal
 # Bind an observer twice, leave the separation open, and broadcast over a ring of beads:
 response = waves(t.wedge(Vector)).commutator(t)                        # [n_time, 3] Vector <- Vector
 acceleration = response[:, :, None](reference)                         # [n_time, 3, n_beads] Vector
+
+# Gauge theory gravity: the wave as a strain map on separations, whose second derivative along k is the curvature:
+strain = 0.5 * profile * (y * (y | Vector) - x * (x | Vector))         # [n_time] Vector <- Vector
+curvature = k.wedge(second) * (k | Vector) - (k | Vector) * k.wedge(second)   # [n_time] Bivector <- (Vector, Vector)
 ```
 
 #### Key Takeaways
 * **Nilpotent but not zero**: Two null dyads with opposite weights build a vacuum curvature map whose image lies in its own kernel, so all six eigenvalues vanish although the map does not. Pair symmetry, the Bianchi identity and Ricci-flatness are one-line extensor identities; the Ricci form is a trace with no frame or reciprocal basis.
 * **Observer binding is composition, not conjugation**: `curvature(t.wedge(Vector)).commutator(t)` has eigenvalues ±A although the curvature has none, and binding a boosted observer scales them by the Doppler factor squared.
 * **Batches carry through**: Time, polarization and observer rapidity are batch axes on the maps, and the bead ring broadcasts against them, so the detector's whole response is one expression ahead of the numerical integration.
+* **The same wave as a strain map**: In gauge theory gravity the wave is a map on vectors. Half the metric perturbation applied to a bead's rest separation is its displacement, the integrated ring lands on it, and the strain's second derivative wedged with the wave vector is the curvature on pairs of vectors, equal to the dyad construction.
 
 # References
 

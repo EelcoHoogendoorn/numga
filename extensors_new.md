@@ -66,7 +66,7 @@ Keep the introduction short and go straight into motivated examples. Each sectio
 
 ### 1. A shadow is a map
 
-* **Example:** [projection.py](rewrite/examples/geometry/projection.py).
+* **Example:** [geometry/projection/](rewrite/examples/geometry/projection/).
 * **Aspects:** 1, 2, 3.
 * **Core LOC:** 4 (2 for a single shadow).
 * **Visual:** a light, an object, the ground, and its projected shadow.
@@ -86,7 +86,7 @@ Start with the shadow portion of the example; save its epipolar geometry for fur
 
 ### 2. Assemble a camera before supplying its subjects
 
-* **Example:** [lens_camera.py](rewrite/examples/sketches/lens_camera.py), with [scenegraph.py](rewrite/examples/geometry/scenegraph.py) as the composition extension.
+* **Example:** [optics/lens_camera/](rewrite/examples/optics/lens_camera/), with [geometry/scenegraph/](rewrite/examples/geometry/scenegraph/) as the composition extension.
 * **Aspects:** 1, 2, 3, 4, 5, 6, 7, 8.
 * **Core LOC:** 22 (5 for the two-lens cheatsheet core).
 * **Visual:** two lenses and their ray paths alongside the image as focus changes.
@@ -104,7 +104,7 @@ Start with the shadow portion of the example; save its epipolar geometry for fur
 
 ### 3. Let the springs tell us how the body moves
 
-* **Example:** [stiffness.py](rewrite/examples/mechanics/stiffness.py).
+* **Example:** [mechanics/modes/](rewrite/examples/mechanics/modes/).
 * **Aspects:** 1, 2, 3, 4, 7, 8, 9.
 * **Core LOC:** 8 (5 through the eigenproblem).
 * **Visual:** the slide/bounce/rock animation, followed by the coupled motions when an angled spring is added.
@@ -122,7 +122,7 @@ Start with the shadow portion of the example; save its epipolar geometry for fur
 
 ### 4. Find the rotation that aligns two clouds
 
-* **Example:** [registration.py](rewrite/examples/geometry/registration.py).
+* **Example:** [geometry/registration/](rewrite/examples/geometry/registration/).
 * **Aspects:** 1, 3, 4, 7, 8, 9.
 * **Core LOC:** 10 (3 for the rotation solve alone).
 * **Visual:** corresponding points before and after alignment.
@@ -139,7 +139,7 @@ Start with the shadow portion of the example; save its epipolar geometry for fur
 
 ### 5. A surface can itself be a map
 
-* **Example:** [quadrics.py](rewrite/examples/quadrics/quadrics.py).
+* **Example:** [quadrics/quadrics/](rewrite/examples/quadrics/quadrics/).
 * **Aspects:** 1, 3, 5, 7, 8, 9.
 * **Core LOC:** 13, including support-plane construction.
 * **Visual:** an ellipsoid, a tangent plane, and their contact point moving together.
@@ -162,7 +162,7 @@ A [CGA vortex animation](rewrite/examples/sketches/cga_quadric.py) could provide
 
 ### 6. What does an observer measure from curvature?
 
-* **Example:** [curvature.py](rewrite/examples/relativity/curvature.py).
+* **Example:** [relativity/curvature/](rewrite/examples/relativity/curvature/).
 * **Aspects:** 1, 2, 3, 5, 6, 8, 9.
 * **Core LOC:** 11.
 * **Visual:** a ring stretching under a gravitational wave.
@@ -182,7 +182,7 @@ A [CGA vortex animation](rewrite/examples/sketches/cga_quadric.py) could provide
 
 ### 7. Depth of field from an aperture cone
 
-* **Example:** the aperture and cone construction in [lens_camera.py](rewrite/examples/sketches/lens_camera.py).
+* **Example:** the aperture and cone construction in [optics/lens_camera/](rewrite/examples/optics/lens_camera/).
 * **Aspects:** 1, 2, 3, 5, 6, 7, 8.
 * **Core LOC:** 7 through image-cone construction, given the composed lens map; 4 if the posed aperture quadric is also supplied. Sensor sampling and rasterization are excluded.
 * **Visual:** points at different depths becoming sharp or blurred as the aperture, focus, and sensor tilt change.
@@ -201,7 +201,7 @@ A [CGA vortex animation](rewrite/examples/sketches/cga_quadric.py) could provide
 
 ### 8. Track a pose and its uncertainty
 
-* **Example:** [kalman.py](rewrite/examples/sketches/kalman.py).
+* **Example:** [geometry/kalman/](rewrite/examples/geometry/kalman/).
 * **Aspects:** 1, 2, 3, 5, 7, 8.
 * **Core LOC:** 10: 7 for prediction and measurement correction, plus 3 to map pose covariance to the position ellipses.
 * **Visual:** the true path, drifting dead reckoning, noisy measurements, and the filtered path with its uncertainty ellipses.
@@ -295,7 +295,7 @@ Extensors are established multilinear algebra. The mathematical interest here is
 
 ### Second moments, inertia, and exterior powers
 
-The [Gaussian](rewrite/examples/quadrics/gaussian.py) and [inertia](rewrite/examples/mechanics/inertia.py) examples start from the same second-moment information. In a positive Euclidean space, a symmetric second-moment map `C` induces a bivector map:
+The [Gaussian](rewrite/examples/quadrics/gaussian/) and [inertia](rewrite/examples/mechanics/inertia.py) examples start from the same second-moment information. In a positive Euclidean space, a symmetric second-moment map `C` induces a bivector map:
 
 ```text
 J(a ∧ b) = C(a) ∧ b + a ∧ C(b)
@@ -324,7 +324,7 @@ The vector basis and its plain dual form the reciprocal plane/point bases. This 
 
 ### What tensors does a symmetry group permit?
 
-The [symmetry example](rewrite/examples/sketches/symmetry.py) averages a map under conjugation by a finite rotor group:
+The [symmetry example](rewrite/examples/mechanics/symmetry/) averages a map under conjugation by a finite rotor group:
 
 ```python
 invariant = (group >> Vector)(tensor(group << Vector)).mean(axis=0)
@@ -334,13 +334,13 @@ This is a Reynolds projection onto the invariant maps. Which components survive 
 
 ### How much geometry can one quadric determine?
 
-The [Cayley–Klein example](rewrite/examples/quadrics/cayley_klein.py) starts with projective incidence and chooses a conic as an absolute. From it come distances, perpendiculars, reflections, and circles.
+The [Cayley–Klein example](rewrite/examples/quadrics/cayley_klein/) starts with projective incidence and chooses a conic as an absolute. From it come distances, perpendiculars, reflections, and circles.
 
 An extensor represents the polarity from points to lines; its inverse sends lines back to points. Projective duality becomes something directly composable in code. This offers a visually accessible mathematical story with little physics background required.
 
 ### A nonzero self-adjoint map whose eigenvalues all vanish
 
-The [curvature example](rewrite/examples/relativity/curvature.py) constructs a nonzero curvature operator on bivectors with `R(R) = 0`. It is self-adjoint with respect to an indefinite pairing, where nilpotence and self-adjointness can coexist.
+The [curvature example](rewrite/examples/relativity/curvature/) constructs a nonzero curvature operator on bivectors with `R(R) = 0`. It is self-adjoint with respect to an indefinite pairing, where nilpotence and self-adjointness can coexist.
 
 Binding an observer produces a tidal-response map with nonzero eigenvalues. That construction is not a similarity transformation: it changes the domain and the observation being made. The example connects null subspaces, metric adjoints, and observer-dependent measurements. See the [bivector classification of the Weyl operator](https://arxiv.org/abs/0909.1160).
 

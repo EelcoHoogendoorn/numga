@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import subprocess
 import sys
-from pathlib import Path
+import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import Extensor
-from examples.geometry.qem import core
-from examples.geometry.qem.core import Plane, Point, Quadric
+from examples.geometry.qem import core, render, scenarios
+from examples.geometry.qem.core import Point, mv, point
 from examples.geometry.qem.render import euclidean
-from examples.geometry.qem.scenarios import main, plane, point, qem_figure
 
 
 def test_mathematics_does_not_import_plotting():
@@ -29,13 +27,12 @@ def test_mathematics_does_not_import_plotting():
 
 def test_plane_dyad_evaluates_to_squared_perpendicular_distance():
     """A rank-1 plane dyad P * (P & Point) evaluates to squared distance (P & X)^2."""
+    # The plane y = 0.5:
     p_on_plane = np.array([1.0, 0.5, -0.5])
-    normal = np.array([0.0, 1.0, 0.0])
-    p = plane(normal, p_on_plane)
+    p = mv.y - mv.w * 0.5
 
     # Build dyad
     q = p * (p & Point)
-    assert q.gatype == Quadric
 
     # Test points at distance +2, -2, and 0
     q1 = point(np.array([1.0, 2.5, -0.5]))
@@ -49,24 +46,8 @@ def test_plane_dyad_evaluates_to_squared_perpendicular_distance():
 
 def test_edge_collapse_minimizes_joint_error():
     """Edge collapse combines incident quadrics and finds the joint minimum."""
-    coords = np.array([
-        [ 0.35,  0.0,   0.25],  # 0: a
-        [-0.35,  0.0,   0.25],  # 1: b
-        [ 0.0,   0.55, -0.15],  # 2: left base
-        [ 0.0,  -0.55, -0.15],  # 3: right base
-        [ 0.75,  0.0,  -0.15],  # 4: front tip
-        [-0.85,  0.0,  -0.15],  # 5: back tip
-    ])
-    verts = point(coords)
-
-    faces = np.array([
-        [0, 1, 2],  # 0: left flank (shared)
-        [1, 0, 3],  # 1: right flank (shared)
-        [0, 2, 4],  # 2: corner front-left
-        [0, 4, 3],  # 3: corner front-right
-        [1, 5, 2],  # 4: ramp back-left
-        [1, 3, 5],  # 5: ramp back-right
-    ])
+    verts, faces = core.ridge_patch()
+    coords = euclidean(verts)
 
     v0 = verts[faces[:, 0]]
     v1 = verts[faces[:, 1]]
@@ -105,12 +86,7 @@ def test_edge_collapse_minimizes_joint_error():
     assert e_opt < e_at_b
 
 
-def test_scenario_runs_and_saves(tmp_path: Path):
-    """The scenario wires math to render and writes its figure."""
-    out = tmp_path / "qem.png"
-    qem_figure(plot_path=out)
-    assert out.exists()
-    assert out.stat().st_size > 1000
-
-    main(plot_path=tmp_path / "again.png")
-    assert (tmp_path / "again.png").exists()
+def test_scenario_renders():
+    """The scenario passes its checks, and its geometry renders as a figure."""
+    figure = render.draw_qem(*scenarios.qem())
+    assert isinstance(figure, plt.Figure)

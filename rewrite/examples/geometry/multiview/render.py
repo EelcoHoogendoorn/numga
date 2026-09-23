@@ -1,31 +1,55 @@
-"""2D visualization and convergence animation for multi-camera bundle adjustment in PGA2D.
+"""Top-down drawing and convergence animation for multi-camera reconstruction in PGA2D.
 
-Renders camera sight ray cones and fused landmark splats natively via NumGA
-quadric evaluation on plane pixels: (Q(pixels) & pixels).
+Sight cones and fused splats are rasterized by evaluating each quadric on a grid of plane
+points, `quadric(grid) & grid`.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-import imageio.v2 as imageio
+from collections.abc import Iterable
+
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+from matplotlib.patches import Arc, Ellipse
 import numpy as np
 
-from examples.geometry.multiview.types import (
-    Motor,
-    Point,
-    Quadric,
-    Information,
-    coordinates,
-    mv,
-    point,
-    w,
-)
+from numga.algebras import PGA2D
+
+from examples import instantiate
+from examples.animation import capture
+
+# The figures are top-down views of the plane: they draw PGA2D geometry.
+core = instantiate("examples.geometry.multiview.core", PGA2D)
+Motor, Point, Quadric, Information = core.Motor, core.Point, core.Quadric, core.Information
+mv, point = core.mv, core.point
+
+CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
+CAMERA_LABELS = ["Cam 0 (ref)", "Cam 1", "Cam 2"]
+SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
+X_RANGE = (-1.25, 1.25)
+Y_RANGE = (-0.30, 2.95)
+RESOLUTION = (750, 750)
+PIXEL_ANGLE = 0.035         # angular half-width of a pixel, the cone radius per unit depth
+
+
+# --- read-out -----------------------------------------------------------------------------
+def coordinates(points: Point) -> np.ndarray:
+    """Cartesian (x, y) of points, read in an explicit blade layout."""
+    k = points.cast(core.ga.subspace("yw wx xy")).kernel
+    return k[..., :2] / k[..., 2:]
+
+
+def optical_axes(motors: Motor) -> np.ndarray:
+    """Unit viewing directions (x, y): the normals of the cameras' focal lines."""
+    normals = (motors >> mv.y).cast(core.ga.subspace("x y")).kernel
+    return normals / np.linalg.norm(normals, axis=-1, keepdims=True)
 
 
 def pose_covariance(information: Information) -> np.ndarray:
     """Pose covariance over twist coefficients (yw, wx, xy): the pseudoinverse of the curvature."""
-    return np.linalg.pinv(information.kernel[..., 0, :, :], rcond=1e-4)
+    basis = mv("yw wx xy", np.eye(3))
+    gram = information[..., None, None](basis[:, None], basis[None, :]).to_array()
+    return np.linalg.pinv(gram, rcond=1e-4)
 
 
 def pose_sigmas(information: Information) -> np.ndarray:
@@ -34,573 +58,216 @@ def pose_sigmas(information: Information) -> np.ndarray:
     return np.sqrt(np.maximum(np.diagonal(covariance, axis1=-2, axis2=-1), 0.0))
 
 
-def extract_covariances(quadrics: Quadric) -> np.ndarray:
-    """Extract Cartesian covariance matrices from fused precision quadrics.
-
-    Parameters
-    ----------
-    quadrics : [n_points] Quadric
-        Fused perspective cone quadrics (Plane <- Point).
-
-    Returns
-    -------
-    covariances : [n_points, 2, 2] np.ndarray
-        Spatial covariance matrices in Cartesian coordinates.
-    """
-    return np.linalg.pinv(quadrics.kernel[..., :-1, :-1], rcond=1e-4)
-
-
-def draw_camera_wedge_2d(
-    ax: plt.Axes,
-    center: np.ndarray,
-    optical_axis: np.ndarray,
-    scale: float = 0.28,
-    half_fov_deg: float = 38.0,
-    color: str = "#0284c7",
-    label: str | None = None,
-) -> None:
-    """Draw a 2D camera FOV wedge, sensor line, and optical axis in the 2D plane."""
-    half_fov = np.radians(half_fov_deg)
-    perp = np.array([-optical_axis[1], optical_axis[0]])
-    p_left = center + optical_axis * scale - perp * (scale * np.tan(half_fov))
-    p_right = center + optical_axis * scale + perp * (scale * np.tan(half_fov))
-    tip = center + optical_axis * (scale * 1.15)
-
-    # Shaded FOV wedge:
-    triangle = np.stack([center, p_left, p_right], axis=0)
-    ax.fill(triangle[:, 0], triangle[:, 1], color=color, alpha=0.18, zorder=3)
-
-    # Boundary rays:
-    ax.plot([center[0], p_left[0]], [center[1], p_left[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
-    ax.plot([center[0], p_right[0]], [center[1], p_right[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
-
-    # Sensor line segment:
-    ax.plot([p_left[0], p_right[0]], [p_left[1], p_right[1]], color=color, linewidth=2.0, zorder=4)
-
-    # Optical axis dashed centerline:
-    ax.plot([center[0], tip[0]], [center[1], tip[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
-
-    # Camera center:
-    ax.plot(
-        center[0], center[1], marker="o", markersize=6.5, color=color,
-        markeredgecolor="#0f172a", markeredgewidth=1.3, zorder=5, label=label,
-    )
-
-
-def draw_camera_pose_covariance_2d(
-    ax: plt.Axes,
-    center: np.ndarray,
-    optical_axis: np.ndarray,
-    cov_twist: np.ndarray,
-    color: str = "#ec4899",
-    scale_factor: float = 0.08,
-    label: str | None = None,
-) -> None:
-    """Draw 2D camera pose uncertainty (position covariance ellipse and angular fan).
-
-    Parameters
-    ----------
-    ax : plt.Axes
-        Matplotlib axes.
-    center : np.ndarray
-        Camera center position in world frame (x, y).
-    optical_axis : np.ndarray
-        Camera optical axis vector in world frame (ux, uy).
-    cov_twist : [3, 3] np.ndarray
-        Pose covariance matrix on se(2) twist generators [yw, xw, xy].
-    color : str
-        Color for ellipse and fan.
-    scale_factor : float
-        Visual scaling factor for 1-sigma uncertainty radii.
-    label : str | None
-        Legend label for the ellipse.
-    """
-    from matplotlib.patches import Ellipse, Arc
-
-    # 1. Extract local Cartesian translation covariance:
-    # Under twist [yw, xw, xy], local displacement is dx = -xw, dy = yw.
-    cov_local = np.array([
-        [ cov_twist[1, 1], -cov_twist[1, 0]],
-        [-cov_twist[0, 1],  cov_twist[0, 0]],
-    ])
-
-    # 2. Rotate to world frame:
-    norm_opt = np.linalg.norm(optical_axis)
-    u_opt = optical_axis / (norm_opt if norm_opt > 0 else 1.0)
-    u_perp = np.array([u_opt[1], -u_opt[0]])
-    R = np.column_stack([u_perp, u_opt])
-    cov_world = R @ cov_local @ R.T
-
-    # 3. Position uncertainty ellipse. An unobservable pose has no finite ellipse: skip it, and
-    #    keep a drawable one inside the axes, or a dashed perimeter of millions of segments stalls Agg:
-    evals, evecs = np.linalg.eigh(cov_world)
-    if not np.all(np.isfinite(evals)) or evals.max() <= 0.0:
-        return
-    radii = np.minimum(np.sqrt(np.maximum(evals, 1e-8)) * scale_factor, 1.0)
-    angle = np.degrees(np.arctan2(evecs[1, 0], evecs[0, 0]))
-
-    ell = Ellipse(
-        xy=center,
-        width=2 * radii[0],
-        height=2 * radii[1],
-        angle=angle,
-        edgecolor=color,
-        facecolor=color,
-        alpha=0.28,
-        linewidth=1.6,
-        linestyle="--",
-        zorder=6,
-        label=label,
-    )
-    ax.add_patch(ell)
-
-    # 4. Angular uncertainty fan (orientation standard deviation on xy generator):
-    rot_std_rad = np.sqrt(max(cov_twist[2, 2], 0.0))
-    rot_std_deg = min(float(np.degrees(rot_std_rad) * 0.35), 180.0)
-    arc_r = 0.38
-    theta_cam = float(np.degrees(np.arctan2(u_opt[1], u_opt[0])))
-
-    arc = Arc(
-        xy=center,
-        width=2 * arc_r,
-        height=2 * arc_r,
-        angle=0,
-        theta1=theta_cam - rot_std_deg,
-        theta2=theta_cam + rot_std_deg,
-        color=color,
-        linewidth=1.3,
-        linestyle=":",
-        zorder=6,
-    )
-    ax.add_patch(arc)
-
-    for sign in [-1, 1]:
-        th = np.radians(theta_cam + sign * rot_std_deg)
-        p_end = center + arc_r * np.array([np.cos(th), np.sin(th)])
-        ax.plot([center[0], p_end[0]], [center[1], p_end[1]], color=color, linestyle=":", linewidth=1.1, zorder=6)
-
-
-def blend_quadric_level_set(
-    image: np.ndarray,
-    quadric_val: np.ndarray,
-    level_set: float | np.ndarray,
-    color: np.ndarray,
-    alpha: float,
-    mask: np.ndarray,
-    pixel_w: float,
-) -> np.ndarray:
-    """Blend an implicit quadric level set into image with anti-aliased hard edge."""
-    dist = level_set - np.sqrt(np.maximum(quadric_val, 0.0))
-    cov = (1.0 / (1.0 + np.exp(np.clip(-dist / (0.75 * pixel_w), -30.0, 30.0)))) * mask
-    return image * (1.0 - (alpha * cov)[..., None]) + color * (alpha * cov)[..., None]
-
-
-def rasterize_implicit_conics(
-    world_cones: Quadric | None = None,
-    fused_quadrics: Quadric | None = None,
-    points: Point | None = None,
-    cams_pos: list[np.ndarray] | None = None,
-    cams_dirs: list[np.ndarray] | None = None,
-    cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    shape: tuple[int, int] = (750, 750),
-    x_range: tuple[float, float] = (-1.25, 1.25),
-    y_range: tuple[float, float] = (-0.30, 2.95),
-    theta_0: float = 0.035,
-    motors: Motor | None = None,
-    landmarks: Point | None = None,
-) -> np.ndarray:
-    """Rasterize camera perspective cones and fused splats via native quadric evaluation on 2D pixels.
-
-    Parameters
-    ----------
-    world_cones : [n_points, n_cams] Quadric | None
-        Perspective cone quadrics in world frame.
-    fused_quadrics : [n_points] Quadric | None
-        Fused precision quadrics (Gaussian splats).
-    points : [n_points] Point | None
-        Reconstructed scene points. If None, extracted from fused quadric centers.
-    cams_pos : list[[2] np.ndarray] | None
-        Camera center positions in world frame.
-    cams_dirs : list[[2] np.ndarray] | None
-        Camera optical axis unit vectors in world frame.
-    cam_colors : list[str]
-        Color hex strings for each camera.
-    shape : tuple[int, int]
-        Output image resolution (height, width).
-    x_range : tuple[float, float]
-        Grid bounding range along X axis.
-    y_range : tuple[float, float]
-        Grid bounding range along Y axis.
-    theta_0 : float
-        Angular pixel half-width.
-    motors : [n_cams] Motor | None
-        Camera poses in world frame.
-    landmarks : [n_points] Point | None
-        Legacy alias for points.
-
-    Returns
-    -------
-    image : [height, width, 3] np.ndarray
-        Rendered RGB image in [0, 1].
-    """
-    import matplotlib.colors as mcolors
-
-    n_cams = len(cams_pos) if cams_pos is not None else 0
-    if world_cones is not None:
-        n_points = world_cones.shape[0]
-    elif fused_quadrics is not None:
-        n_points = fused_quadrics.shape[0]
-    elif points is not None:
-        n_points = len(points)
-    else:
-        n_points = 0
-
-    xs = np.linspace(x_range[0], x_range[1], shape[1])
-    ys = np.linspace(y_range[0], y_range[1], shape[0])
+# --- rasterized quadrics ------------------------------------------------------------------
+def plane_grid() -> tuple[Point, float]:
+    """The viewport as a grid of plane points, and the width of one pixel."""
+    xs = np.linspace(*X_RANGE, RESOLUTION[1])
+    ys = np.linspace(*Y_RANGE, RESOLUTION[0])
     xx, yy = np.meshgrid(xs, ys)
-    pixel_w = (x_range[1] - x_range[0]) / shape[1]
-
-    grid = point(np.stack([xx, yy], axis=-1))
-
-    image = np.ones((*shape, 3), dtype=np.float32)
-
-    # Camera focal planes in world frame:
-    focal_planes = motors >> mv.y if motors is not None else None
-
-    # Optical depth from each camera's focal plane to the 2D grid via native PGA inner product:
-    depths = [
-        (focal_planes[c] & grid).kernel[..., 0]
-        for c in range(n_cams)
-    ] if focal_planes is not None else []
-    front = [d > 0.02 for d in depths] if depths else []
-    front_all = np.zeros(shape, dtype=bool)
-    for f in front:
-        front_all = front_all | f
-
-    if world_cones is not None:
-        for c in range(n_cams):
-            col_rgb = np.array(mcolors.to_rgb(cam_colors[c % len(cam_colors)]))
-            cone_radius = theta_0 * np.maximum(depths[c], 0.05) if depths else 0.05
-            for p in range(n_points):
-                val = np.maximum((world_cones[p, c](grid) & grid).kernel[..., 0], 0.0)
-                image = blend_quadric_level_set(
-                    image=image,
-                    quadric_val=val,
-                    level_set=cone_radius,
-                    color=col_rgb,
-                    alpha=0.30,
-                    mask=front[c] if front else np.ones(shape, dtype=bool),
-                    pixel_w=pixel_w,
-                )
-
-    if fused_quadrics is not None:
-        if points is None:
-            points = landmarks
-        if points is None:
-            points = (fused_quadrics + w * (w & Point)).solve(w).normalized()
-
-        col_splat = np.array([0.98, 0.48, 0.04])
-        f_min = np.maximum((fused_quadrics(points) & points).kernel[..., 0], 0.0)
-
-        # Point depth across cameras is natively the inner product with each focal plane:
-        for p in range(n_points):
-            d_p = float((focal_planes & points[p]).kernel.mean())
-            base_r = theta_0 * np.maximum(d_p, 0.2)
-            eff_r = np.sqrt(base_r**2 + f_min[p])
-            val_splat = (fused_quadrics[p](grid) & grid).kernel[..., 0] - f_min[p]
-            image = blend_quadric_level_set(
-                image=image,
-                quadric_val=val_splat,
-                level_set=eff_r,
-                color=col_splat,
-                alpha=0.95,
-                mask=front_all,
-                pixel_w=pixel_w,
-            )
-
-    return np.clip(image, 0.0, 1.0)
+    return point(np.stack([xx, yy], axis=-1)), (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
 
 
-def draw_top_down_view(
-    ax: plt.Axes,
-    world_cones: Quadric | None = None,
-    fused_quadrics: Quadric | None = None,
-    points: Point | None = None,
-    motors: Motor | None = None,
-    cams_pos: list[np.ndarray] | None = None,
-    cams_dirs: list[np.ndarray] | None = None,
-    cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    pose_information: Information | np.ndarray | None = None,
-    splats: Quadric | None = None,
-    landmarks: Point | None = None,
-    poses: Motor | None = None,
-    cones: Quadric | None = None,
-) -> None:
-    """Render 2D floorplan of camera constellation, perspective cones, and fused splats.
+def depths(motors: Motor, grid: Point) -> np.ndarray:
+    """[n_cams, h, w] depth of each grid point in front of each camera's focal line."""
+    return (((motors >> mv.y)[:, None, None]) & grid).to_array()
 
-    Parameters
-    ----------
-    ax : plt.Axes
-        Target matplotlib axes.
-    world_cones : [n_points, n_cams] Quadric | None
-        Perspective cone quadrics in world frame.
-    fused_quadrics : [n_points] Quadric | None
-        Fused precision quadrics.
-    points : [n_points] Point | None
-        Reconstructed scene points.
-    motors : [n_cams] Motor | None
-        Camera poses in world frame (or poses).
-    cams_pos : list[[2] np.ndarray] | None
-        Camera center positions in world frame.
-    cams_dirs : list[[2] np.ndarray] | None
-        Camera optical axis unit vectors in world frame.
-    cam_colors : list[str]
-        Color hex strings for each camera.
-    pose_information : [n_cams] Information | None
-        Camera pose covariance operators.
-    splats : [n_points] Quadric | None
-        Alias for fused_quadrics.
-    landmarks : [n_points] Point | None
-        Legacy alias for points.
-    poses : [n_cams] Motor | None
-        Alias for motors.
-    cones : [n_points, n_cams] Quadric | None
-        Alias for world_cones.
-    """
-    if splats is not None:
-        fused_quadrics = splats
-    if points is None:
-        points = landmarks
-    if motors is None:
-        motors = poses
-    if world_cones is None:
-        world_cones = cones
-    x_range = (-1.25, 1.25)
-    y_range = (-0.30, 2.95)
 
-    if cams_pos is None and motors is not None:
-        c0 = point([0.0, 0.0])
-        cams_pos = [coordinates(m >> c0) for m in motors]
-    if cams_dirs is None and motors is not None:
-        cams_dirs = [(m >> mv.y).kernel[:2] for m in motors]
+def coverage(quadric_val: np.ndarray, level_set: np.ndarray, pixel_w: float) -> np.ndarray:
+    """Anti-aliased inside-ness of the level set sqrt(value) <= level_set."""
+    dist = level_set - np.sqrt(np.maximum(quadric_val, 0.0))
+    return 1.0 / (1.0 + np.exp(np.clip(-dist / (0.75 * pixel_w), -30.0, 30.0)))
 
-    if world_cones is not None or fused_quadrics is not None:
-        img = rasterize_implicit_conics(
-            world_cones=world_cones,
-            fused_quadrics=fused_quadrics,
-            points=points,
-            cams_pos=cams_pos,
-            cams_dirs=cams_dirs,
-            cam_colors=cam_colors,
-            shape=(750, 750),
-            x_range=x_range,
-            y_range=y_range,
-            motors=motors,
-        )
-        ax.imshow(img, extent=[x_range[0], x_range[1], y_range[0], y_range[1]], origin="lower")
 
-    # Overlay scene landmarks if provided:
-    if points is not None:
-        pts_xy = coordinates(points)
+def blend(image: np.ndarray, coverages: np.ndarray, color: np.ndarray, alpha: float) -> np.ndarray:
+    """Composite a stack of same-coloured coverages over the image, one after another."""
+    keep = np.prod(1.0 - alpha * coverages, axis=0)
+    return image * keep[..., None] + color * (1.0 - keep)[..., None]
+
+
+def blend_cones(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, world_cones: Quadric) -> np.ndarray:
+    """Each camera's sight cones, as wide as a pixel at each depth, in the camera's colour."""
+    depth = depths(motors, grid)
+    for c, color in zip(range(motors.shape[0]), CAMERA_COLORS):
+        values = (world_cones[:, c][:, None, None](grid) & grid).to_array()      # [n_points, h, w]
+        covered = coverage(values, PIXEL_ANGLE * np.maximum(depth[c], 0.05), pixel_w) * (depth[c] > 0.02)
+        image = blend(image, covered, np.array(mcolors.to_rgb(color)), 0.30)
+    return image
+
+
+def blend_splats(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, fused: Quadric, points: Point) -> np.ndarray:
+    """The fused quadrics around their points, at least a pixel wide at the points' depth."""
+    in_front = np.any(depths(motors, grid) > 0.02, axis=0)
+    floor = np.maximum((fused(points) & points).to_array(), 0.0)                  # [n_points]
+    depth = ((motors >> mv.y)[None, :] & points[:, None]).to_array().mean(axis=1)  # [n_points]
+    radius = np.sqrt((PIXEL_ANGLE * np.maximum(depth, 0.2)) ** 2 + floor)
+    values = (fused[:, None, None](grid) & grid).to_array() - floor[:, None, None]
+    covered = coverage(values, radius[:, None, None], pixel_w) * in_front
+    return blend(image, covered, SPLAT_COLOR, 0.95)
+
+
+def show_image(ax: plt.Axes, image: np.ndarray) -> None:
+    ax.imshow(np.clip(image, 0.0, 1.0), extent=[*X_RANGE, *Y_RANGE], origin="lower")
+
+
+# --- overlays -----------------------------------------------------------------------------
+def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
+    """Each camera's field-of-view wedge, sensor line, optical axis and centre."""
+    centers = coordinates(motors >> point(np.zeros(2)))
+    axes = optical_axes(motors)
+    scale, half_fov = 0.28, np.radians(38.0)
+    for center, axis, color, label in zip(centers, axes, CAMERA_COLORS, CAMERA_LABELS):
+        perp = np.array([-axis[1], axis[0]])
+        p_left = center + axis * scale - perp * (scale * np.tan(half_fov))
+        p_right = center + axis * scale + perp * (scale * np.tan(half_fov))
+        tip = center + axis * (scale * 1.15)
+
+        # Shaded FOV wedge, boundary rays, sensor line and dashed optical axis:
+        triangle = np.stack([center, p_left, p_right], axis=0)
+        ax.fill(triangle[:, 0], triangle[:, 1], color=color, alpha=0.18, zorder=3)
+        ax.plot([center[0], p_left[0]], [center[1], p_left[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
+        ax.plot([center[0], p_right[0]], [center[1], p_right[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
+        ax.plot([p_left[0], p_right[0]], [p_left[1], p_right[1]], color=color, linewidth=2.0, zorder=4)
+        ax.plot([center[0], tip[0]], [center[1], tip[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
         ax.plot(
-            pts_xy[:, 0], pts_xy[:, 1],
-            marker="o", markersize=6.0, linestyle="none",
-            color="#ea580c" if fused_quadrics is not None else "#0f172a",
-            markeredgecolor="white", markeredgewidth=1.2, zorder=6,
-            label="Reconstructed Points" if fused_quadrics is not None else "Scene Points",
+            center[0], center[1], marker="o", markersize=6.5, color=color,
+            markeredgecolor="#0f172a", markeredgewidth=1.3, zorder=5, label=label,
         )
 
-    # Overlay camera frustum wedges and pose covariance:
-    if cams_pos is not None and cams_dirs is not None:
-        for c_idx in range(len(cams_pos)):
-            col = cam_colors[c_idx % len(cam_colors)]
-            lbl = f"Cam {c_idx} (ref)" if c_idx == 0 else f"Cam {c_idx}"
-            draw_camera_wedge_2d(ax, cams_pos[c_idx], cams_dirs[c_idx], scale=0.28, half_fov_deg=38.0, color=col, label=lbl)
 
-            if pose_information is not None:
-                cov_k = pose_covariance(pose_information[c_idx])
-                if np.linalg.norm(cov_k) > 1e-6:
-                    draw_camera_pose_covariance_2d(
-                        ax=ax,
-                        center=cams_pos[c_idx],
-                        optical_axis=cams_dirs[c_idx],
-                        cov_twist=cov_k,
-                        color=col,
-                        scale_factor=0.08,
-                        label=f"Cam {c_idx} Pose Covariance (1σ)",
-                    )
+def plot_points(ax: plt.Axes, points: Point, color: str, label: str) -> None:
+    xy = coordinates(points)
+    ax.plot(
+        xy[:, 0], xy[:, 1], marker="o", markersize=6.0, linestyle="none", color=color,
+        markeredgecolor="white", markeredgewidth=1.2, zorder=6, label=label,
+    )
 
+
+def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) -> None:
+    """Each observed camera's position covariance ellipse and orientation fan, from its information form.
+
+    Anchored cameras carry no information and draw nothing.
+    """
+    covariance = pose_covariance(information)
+    observed = np.abs(covariance).max(axis=(-2, -1)) > 0
+    centers = coordinates(motors >> point(np.zeros(2)))[observed]
+    axes = optical_axes(motors)[observed]
+    colors = np.array(CAMERA_COLORS[:len(observed)])[observed]
+    for center, axis, cov_twist, color in zip(centers, axes, covariance[observed], colors):
+        # Local translation covariance: under twist (yw, wx, xy) the local displacement is
+        # dx = -wx, dy = yw. Rotated into the world by the camera's frame:
+        cov_local = np.array([
+            [ cov_twist[1, 1], -cov_twist[1, 0]],
+            [-cov_twist[0, 1],  cov_twist[0, 0]],
+        ])
+        frame = np.column_stack([[axis[1], -axis[0]], axis])
+        evals, evecs = np.linalg.eigh(frame @ cov_local @ frame.T)
+        # One-sigma radii, scaled for display and kept inside the axes:
+        radii = np.minimum(np.sqrt(np.maximum(evals, 1e-8)) * 0.08, 1.0)
+        ax.add_patch(Ellipse(
+            xy=center, width=2 * radii[0], height=2 * radii[1],
+            angle=np.degrees(np.arctan2(evecs[1, 0], evecs[0, 0])),
+            edgecolor=color, facecolor=color, alpha=0.28, linewidth=1.6, linestyle="--", zorder=6,
+        ))
+
+        # Angular uncertainty fan (orientation standard deviation on xy generator):
+        rot_std_deg = min(float(np.degrees(np.sqrt(max(cov_twist[2, 2], 0.0))) * 0.35), 180.0)
+        arc_r = 0.38
+        heading = float(np.degrees(np.arctan2(axis[1], axis[0])))
+        ax.add_patch(Arc(
+            xy=center, width=2 * arc_r, height=2 * arc_r, angle=0,
+            theta1=heading - rot_std_deg, theta2=heading + rot_std_deg,
+            color=color, linewidth=1.3, linestyle=":", zorder=6,
+        ))
+        for sign in (-1, 1):
+            th = np.radians(heading + sign * rot_std_deg)
+            p_end = center + arc_r * np.array([np.cos(th), np.sin(th)])
+            ax.plot([center[0], p_end[0]], [center[1], p_end[1]], color=color, linestyle=":", linewidth=1.1, zorder=6)
+
+
+def frame_axes(ax: plt.Axes) -> None:
     ax.set_aspect("equal")
-    ax.set_xlim(x_range[0], x_range[1])
-    ax.set_ylim(y_range[0], y_range[1])
+    ax.set_xlim(*X_RANGE)
+    ax.set_ylim(*Y_RANGE)
     ax.axis("off")
 
 
-def draw_top_down_figure(
-    world_cones: Quadric | None = None,
-    fused_quadrics: Quadric | None = None,
-    points: Point | None = None,
-    motors: Motor | None = None,
-    cams_pos: list[np.ndarray] | None = None,
-    cams_dirs: list[np.ndarray] | None = None,
-    cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    pose_information: Information | np.ndarray | None = None,
-    plot_path: Path | None = None,
-    auto_increment: bool = True,
-    splats: Quadric | None = None,
-    landmarks: Point | None = None,
-    poses: Motor | None = None,
-    cones: Quadric | None = None,
-) -> plt.Figure:
-    """Render and save 2D floorplan figure.
+def legend(ax: plt.Axes) -> None:
+    ax.legend(loc="upper right", fontsize=8.5, framealpha=0.92, facecolor="#ffffff", edgecolor="#cbd5e1")
 
-    Parameters
-    ----------
-    world_cones : [n_points, n_cams] Quadric | None
-        Perspective cone quadrics in world frame (or cones).
-    fused_quadrics : [n_points] Quadric | None
-        Fused precision quadrics (or splats).
-    points : [n_points] Point | None
-        Reconstructed scene points.
-    motors : [n_cams] Motor | None
-        Camera poses in world frame (or poses).
-    cams_pos : list[[2] np.ndarray] | None
-        Camera center positions in world frame.
-    cams_dirs : list[[2] np.ndarray] | None
-        Camera optical axis unit vectors in world frame.
-    cam_colors : list[str]
-        Color hex strings for each camera.
-    pose_information : [n_cams] Information | None
-        Camera pose covariance operators.
-    plot_path : Path | None
-        Output filepath.
-    auto_increment : bool
-        Whether to increment output filename.
-    splats : [n_points] Quadric | None
-        Alias for fused_quadrics.
-    landmarks : [n_points] Point | None
-        Legacy alias for points.
-    poses : [n_cams] Motor | None
-        Alias for motors.
-    cones : [n_points, n_cams] Quadric | None
-        Alias for world_cones.
-    """
-    if splats is not None:
-        fused_quadrics = splats
-    if points is None:
-        points = landmarks
-    if motors is None:
-        motors = poses
-    if world_cones is None:
-        world_cones = cones
+
+def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> None:
+    """Sight cones, fused splats, reconstructed points and cameras."""
+    ax.clear()
+    grid, pixel_w = plane_grid()
+    image = blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones)
+    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points))
+    plot_points(ax, points, "#ea580c", "Reconstructed Points")
+    plot_cameras(ax, motors)
+    frame_axes(ax)
+
+
+# --- figures ------------------------------------------------------------------------------
+def draw_rig(motors: Motor, points: Point) -> plt.Figure:
+    """Cameras and scene points."""
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
-    draw_top_down_view(
-        ax=ax,
-        world_cones=world_cones,
-        fused_quadrics=fused_quadrics,
-        points=points,
-        motors=motors,
-        cams_pos=cams_pos,
-        cams_dirs=cams_dirs,
-        cam_colors=cam_colors,
-        pose_information=pose_information,
-    )
-
-    handles, labels = ax.get_legend_handles_labels()
-    if labels:
-        ax.legend(loc="upper right", fontsize=8.5, framealpha=0.92, facecolor="#ffffff", edgecolor="#cbd5e1")
-
-    if plot_path is not None:
-        target_path = plot_path
-        if auto_increment:
-            from examples import auto_increment_path
-            target_path = auto_increment_path(plot_path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(target_path, bbox_inches="tight")
-        print(f"[render] Figure saved to: {target_path}")
+    plot_points(ax, points, "#0f172a", "Scene Points")
+    plot_cameras(ax, motors)
+    frame_axes(ax)
+    legend(ax)
     return fig
 
 
-def animate_top_down_convergence(
-    history: list[tuple],
-    local_cones: Quadric,
-    cam_colors: list[str] = ("#0284c7", "#ec4899"),
-    gif_path: Path | str | None = None,
-    fps: int = 3,
-    auto_increment: bool = True,
-) -> Path | None:
-    """Render and save an animated GIF of bundle adjustment convergence in PGA2D.
+def draw_cones(motors: Motor, world_cones: Quadric, points: Point) -> plt.Figure:
+    """Cameras, their sight cones through the scene points, and the points."""
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
+    grid, pixel_w = plane_grid()
+    show_image(ax, blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones))
+    plot_points(ax, points, "#0f172a", "Scene Points")
+    plot_cameras(ax, motors)
+    frame_axes(ax)
+    legend(ax)
+    return fig
 
-    Parameters
-    ----------
-    history : list[tuple[Motor, Point, Quadric] | tuple[Motor, Point, Quadric, Information]]
-        Per-iteration optimization state tuples.
-    local_cones : [n_points, n_cams] Quadric
-        Perspective cone quadrics in camera local frames.
-    cam_colors : list[str]
-        Color hex strings for each camera.
-    gif_path : Path | str | None
-        Target path to save GIF.
-    fps : int
-        Frames per second in GIF.
-    auto_increment : bool
-        Whether to auto-increment file name if target path exists.
 
-    Returns
-    -------
-    target_path : Path | None
-        Path to written GIF file.
-    """
-    mv = history[0][0].context.multivector
-    c_local = mv.antivector([0.0, 0.0, 1.0])
+def draw_reconstruction(motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> plt.Figure:
+    """Sight cones fused into splats around the reconstructed points."""
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
+    plot_reconstruction(ax, motors, world_cones, fused, points)
+    legend(ax)
+    return fig
 
-    frames = []
+
+def draw_reconstruction_with_covariance(
+    motors: Motor, world_cones: Quadric, fused: Quadric, points: Point, information: Information,
+) -> plt.Figure:
+    """The reconstruction with each camera's pose covariance."""
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
+    plot_reconstruction(ax, motors, world_cones, fused, points)
+    plot_pose_covariance(ax, motors, information)
+    legend(ax)
+    return fig
+
+
+def animate_convergence(states: Iterable) -> list[np.ndarray]:
+    """RGB frames of the reconstruction, one per state."""
     fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=120, layout="constrained")
-
-    for it, item in enumerate(history):
-        ax.clear()
-        if len(item) == 4:
-            m_curr, pts_curr, q_fused_curr, cov_curr = item
-        else:
-            m_curr, pts_curr, q_fused_curr = item[:3]
-            cov_curr = None
-
-        c_world = m_curr >> c_local
-        cams_pos = [coordinates(c) for c in c_world]
-        cams_dirs = [(m >> mv.y).kernel[:2] for m in m_curr]
-        world_cones = m_curr >> local_cones(m_curr << Point)
-
-        draw_top_down_view(
-            ax=ax,
-            cams_pos=cams_pos,
-            cams_dirs=cams_dirs,
-            world_cones=world_cones,
-            fused_quadrics=q_fused_curr,
-            points=pts_curr,
-            cam_colors=cam_colors,
-            pose_information=cov_curr,
-            motors=m_curr,
-        )
-
-        fig.canvas.draw()
-        rgba = np.asarray(fig.canvas.buffer_rgba())
-        frames.append(rgba[..., :3].copy())
-
+    frames = []
+    for motors, world_cones, fused, points in states:
+        plot_reconstruction(ax, motors, world_cones, fused, points)
+        frames.append(capture(fig))
     plt.close(fig)
+    return frames
 
-    if gif_path is None:
-        import tempfile
-        target_path = Path(tempfile.mktemp(suffix=".gif"))
-    else:
-        target_path = Path(gif_path)
-        if auto_increment:
-            from examples import auto_increment_path
-            target_path = auto_increment_path(target_path)
 
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    duration_ms = int(1000 / fps) if fps > 0 else 330
-    imageio.mimsave(target_path, frames, duration=duration_ms, loop=0)
-    if gif_path is not None:
-        print(f"[render animation] GIF saved to: {target_path}")
-
-    return target_path
+def animate_convergence_with_covariance(
+    states: Iterable,
+) -> list[np.ndarray]:
+    """RGB frames of the reconstruction and pose covariances, one per state."""
+    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=120, layout="constrained")
+    frames = []
+    for motors, world_cones, fused, points, information in states:
+        plot_reconstruction(ax, motors, world_cones, fused, points)
+        plot_pose_covariance(ax, motors, information)
+        frames.append(capture(fig))
+    plt.close(fig)
+    return frames

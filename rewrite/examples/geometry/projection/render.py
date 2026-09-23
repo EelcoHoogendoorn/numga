@@ -10,7 +10,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.geometry.projection.scenarios import Correspondence, Line, Motor, Point
+from examples.geometry.projection.core import Line, Motor, Point
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -34,7 +34,7 @@ def render_shadow_scene(
     ax,
     body: Point,
     edges,
-    shadows: tuple[Point, Point, Point],
+    shadows: tuple,
     point_light: Point,
     sun: Point,
 ) -> None:
@@ -67,9 +67,9 @@ def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndar
 def render_stereo_scene(
     ax_1, ax_2,
     edges,
-    stereo: tuple[Point, Point, Point, Line, Correspondence],
+    stereo: tuple,
     rig_1: Motor, rig_2: Motor,
-    half_width: float = 0.5,
+    half_width: float,
 ) -> None:
     """Draw both images; camera 2 also shows the epipolar lines of camera 1's corners."""
     image_1, image_2, _epipole_2, epipolar_lines_2, _correspondence = stereo
@@ -89,20 +89,16 @@ def render_stereo_scene(
 def draw_projection(
     body: Point,
     edges,
-    shadows: tuple[Point, Point, Point],
+    shadows: tuple,
     point_light: Point,
     sun: Point,
-    stereo: tuple[Point, Point, Point, Line, Correspondence],
+    stereo: tuple,
     rig_1: Motor,
     rig_2: Motor,
-    plot_path: str,
 ) -> plt.Figure:
-    """Lay out the shadow scene and both camera views, and save the figure."""
+    """Lay out the shadow scene and both camera views."""
     fig = plt.figure(figsize=(16, 5), dpi=120)
     render_shadow_scene(fig.add_subplot(1, 3, 1, projection="3d"), body, edges, shadows, point_light, sun)
-    render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), edges, stereo, rig_1, rig_2)
-    plt.tight_layout()
-    if plot_path:
-        plt.savefig(plot_path, bbox_inches="tight")
-        print(f"Figure saved to {plot_path}")
+    render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), edges, stereo, rig_1, rig_2, 0.5)
+    fig.tight_layout()
     return fig

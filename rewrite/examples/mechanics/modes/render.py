@@ -7,31 +7,17 @@ the linear change in length, rather than the length of the exaggerated drawing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.patches import Polygon
 import numpy as np
 
-from examples.mechanics.modes.modes import Point, Scalar
+from examples.animation import capture
+from examples.mechanics.modes.core import ModeCase, Point
 from numga.algebras import PGA2D
 
 
 BODY, GHOST, SUPPORT = "#254e70", "#929ba7", "#3a414b"
 STRETCH, COMPRESS, UNCHANGED = "#d67721", "#2783b7", "#87909a"
-
-
-@dataclass
-class PlotCase:
-    body: Point                     # [4] Point
-    attachments: Point              # [n_springs] Point
-    anchors: Point                  # [n_springs] Point
-    frequencies: np.ndarray         # [3] float
-    body_offsets: Point             # [3, 4] Point
-    attachment_offsets: Point       # [3, n_springs] Point
-    extensions: Scalar              # [3, n_springs] Scalar
 
 
 def coordinates(points: Point) -> np.ndarray:
@@ -69,9 +55,10 @@ def fixed_support(ax: plt.Axes, anchor: Point, attachment: Point) -> None:
         ax.plot(*np.array([start, end]).T, color=SUPPORT, lw=1)
 
 
-def _new_figure(cases: list[PlotCase], title: str = "") -> tuple[plt.Figure, list[list[plt.Axes]]]:
+def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float) -> tuple[plt.Figure, list[list[plt.Axes]]]:
+    """A row of three mode panels per case, with `header` inches above them."""
     n = len(cases)
-    fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + (0.5 if title else 0)), dpi=150, facecolor="white")
+    fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + header), dpi=150, facecolor="white")
     axes = axes_grid.tolist() if n > 1 else [axes_grid.tolist()]
 
     all_points = np.concatenate([
@@ -85,15 +72,11 @@ def _new_figure(cases: list[PlotCase], title: str = "") -> tuple[plt.Figure, lis
             ax.set_aspect("equal")
             ax.set_axis_off()
 
-    if title:
-        fig.suptitle(title, fontsize=12, color=SUPPORT, y=0.98)
-        fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.91, wspace=0.04, hspace=0.08)
-    else:
-        fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, wspace=0.04, hspace=0.04)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=top, wspace=0.04, hspace=hspace)
     return fig, axes
 
 
-def _draw_mode(ax: plt.Axes, case: PlotCase, mode: int):
+def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
     """Draw one mode panel and return its phase-update function."""
     reference = Polygon(coordinates(case.body), closed=True, facecolor="#eef2f6", edgecolor=GHOST,
                         lw=1.2, linestyle=":", zorder=1)
@@ -134,51 +117,39 @@ def _draw_mode(ax: plt.Axes, case: PlotCase, mode: int):
     return update
 
 
-def draw_modes(cases: list[PlotCase], title: str = "", plot_path: str = "") -> plt.Figure:
+def draw_modes(cases: list[ModeCase], title: str) -> plt.Figure:
     """Render mode plots for one or two suspension cases."""
-    fig, axes = _new_figure(cases, title=title)
+    fig, axes = _new_figure(cases, 0.5, 0.91, 0.08)
+    fig.suptitle(title, fontsize=12, color=SUPPORT, y=0.98)
     for case, row in zip(cases, axes):
         for mode, ax in enumerate(row):
             _draw_mode(ax, case, mode)
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(plot_path, facecolor="white")
     return fig
 
 
-def save_animation(cases: list[PlotCase], animation_path: str | Path | None = None) -> str:
+def animate_modes(cases: list[ModeCase], frames: int) -> list[np.ndarray]:
     """Release each isolated mode from rest in synchronized physical time."""
-    if not animation_path:
-        import tempfile
-        animation_path = tempfile.mktemp(suffix=".gif")
-    animation_path_str = str(animation_path)
-    fig, axes = _new_figure(cases)
+    fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
     fig.set_dpi(80)
     updates = [_draw_mode(ax, case, mode)
                for case, row in zip(cases, axes) for mode, ax in enumerate(row)]
-    frequencies = np.concatenate([case.frequencies for case in cases])
+    frequencies = np.concatenate([case.frequencies.to_array() for case in cases])
     duration = 2 / np.min(frequencies[frequencies > 0])
 
-    def frame(time: float):
-        artists = []
+    images = []
+    for time in np.linspace(0, duration, frames):
         for update, phase in zip(updates, np.cos(2 * np.pi * frequencies * time)):
-            artists.extend(update(phase))
-        return artists
-
-    animation = FuncAnimation(fig, frame, frames=np.linspace(0, duration, 120),
-                              interval=50, blit=False)
-    Path(animation_path_str).parent.mkdir(parents=True, exist_ok=True)
-    animation.save(animation_path_str, writer=PillowWriter(fps=20), dpi=80)
+            update(phase)
+        images.append(capture(fig))
     plt.close(fig)
-    return animation_path_str
+    return images
 
 
 def render_setup(
     body: Point,
     anchors: Point,
     attachments: Point,
-    title: str = "Baseline Suspension: Two Vertical Springs",
-    plot_path: str = "",
+    title: str,
 ) -> plt.Figure:
     """Render the physical suspension layout at equilibrium."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
@@ -199,20 +170,14 @@ def render_setup(
     ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
     ax.set_aspect("equal")
     ax.set_axis_off()
-    if title:
-        ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
-
+    ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
     fig.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(plot_path, facecolor="white")
     return fig
 
 
 def render_mass_distribution(
     body: Point,
-    title: str = "Plate Corner Masses",
-    plot_path: str = "",
+    title: str,
 ) -> plt.Figure:
     """Plot the rigid plate and its 4 corner mass points at rest."""
     fig, ax = plt.subplots(figsize=(5, 3), dpi=120, facecolor="white")
@@ -224,10 +189,6 @@ def render_mass_distribution(
     lo, hi = b.min(axis=0) - [0.3, 0.3], b.max(axis=0) + [0.3, 0.3]
     ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
     ax.set_axis_off()
-    if title:
-        ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
+    ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
     fig.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(plot_path, facecolor="white")
     return fig

@@ -1,290 +1,139 @@
-"""Scenes and entry points for multi-camera bundle adjustment in PGA2D.
+"""Scenes for multi-camera reconstruction and camera alignment in PGA2D.
 
-One function per figure. Builds the synthetic 2D camera rig viewing 2D landmarks,
-hands the geometry to `core`, and hands the resulting geometry to `render`.
+A convergent rig of planar cameras views six landmarks. `bundle_adjustment` returns the
+aligned rig for a figure; the convergence scenarios yield one state per Newton step for an
+animation. All of them return geometry for `render`.
 """
 
 from __future__ import annotations
 
-import sys
-# Prevent local types.py from shadowing Python stdlib types if run directly as a script:
-if sys.path and sys.path[0].endswith("multiview"):
-    sys.path.pop(0)
-
-from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
-from examples import PLOT_DIR
-from examples.geometry.multiview import core, render
-from examples.geometry.multiview.types import (
-    Camera,
-    Line,
-    Motor,
-    Plane,
-    Point,
-    Quadric,
-    Twist,
-    coordinates,
-    mv,
-    point,
-)
+from numga.algebras import PGA2D
+
+from examples import instantiate
+
+core = instantiate("examples.geometry.multiview.core", PGA2D)
+Camera, Information, Motor, Point, Quadric = core.Camera, core.Information, core.Motor, core.Point, core.Quadric
+mv, point = core.mv, core.point
+
+# Landmarks in front of the cameras, at depths y in [0.85, 2.55]:
+LANDMARKS = np.array([
+    [ 0.15, 0.85],
+    [-0.43, 1.15],
+    [ 0.50, 1.50],
+    [ 0.03, 1.85],
+    [ 0.65, 2.20],
+    [-0.60, 2.55],
+])
+BASELINE = 0.75
+GAZE = np.radians(18.0)
 
 
-def sensor_disk(
-    pixels: Point,
-    principal_point: Point | None = None,
-    q_sensor: Quadric | None = None,
-) -> Quadric:
-    """Per-pixel transverse precision quadrics on the sensor plane, as polarity maps.
-
-    Constructs rank-1 precision dyads (sensor discs) directly from pixel coordinates
-    via transverse normal lines `normal = mv.x - mv.w * (mv.x & pixels)`, or moves a
-    given sensor quadric to each pixel by the principal-point translation motor.
-    """
-    if principal_point is None and q_sensor is None:
-        normal = mv.x - mv.w * (mv.x & pixels)
-        return normal * (normal & Point)
-    trans = (pixels / principal_point).square_root()
-    return trans >> q_sensor(trans << Point)
+def rig(offsets: np.ndarray, gazes: np.ndarray) -> Motor:
+    """Camera poses at offsets along the x axis, each panned by its gaze angle."""
+    return (mv.xw * offsets / 2).exp() * (mv.xy * gazes / 2).exp()
 
 
-def make_cones(cameras: Camera, sensor_discs: Quadric) -> Quadric:
-    """Pull sensor precision discs back through the camera maps into perspective cones.
+def observe(true_motors: Motor):
+    """The landmarks, the pinhole cameras, and the sight cones of their pixel measurements."""
+    true_points = point(LANDMARKS)
+    # Pinhole at the origin, sensor line y = 1:
+    camera = (point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
+    cameras = camera.broadcast_to(true_motors.shape)
 
-    The camera feeds the disc, and the induced plane map carries the polar lines back:
-    a quadric on scene points whose cross-section widens with depth.
-    """
-    return core.on_planes(cameras)(sensor_discs(cameras))     # [n_points, n_cams] Plane <- Point
-
-
-def multiview_figure(plot_path: Path, auto_increment: bool = True) -> plt.Figure:
-    """Build a 2-camera stereo rig in PGA2D, run bundle adjustment, and render figure."""
-    # 1. 2D landmarks in front of cameras (depth y in [0.85, 2.55]):
-    xy = np.array([
-        [ 0.15, 0.85],
-        [-0.43, 1.15],
-        [ 0.50, 1.50],
-        [ 0.03, 1.85],
-        [ 0.65, 2.20],
-        [-0.60, 2.55],
-    ])
-    true_points = point(xy)
-
-    # 2. 2 convergent cameras in PGA2D:
-    # Cam 0: left (-x = -0.75m), panned right (+18°)
-    # Cam 1: right (+x = +0.75m), panned left (-18°)
-    baseline_x = 0.75
-    theta = np.radians(18.0)
-    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
-    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    true_motors = stack([m0, m1])
-
-    c0 = point([0.0, 0.0])
-    screen = mv.y - mv.w
-    camera = (c0 & Point) ^ screen
-    cameras = camera.broadcast_to((2,))
-
-    # 3. Sensor pixel measurements and sight cones in [n_points, n_cams] layout:
-    local_pts = true_motors << true_points[:, None]
-    projs = cameras(local_pts)
+    # Sensor pixel measurements, in [n_points, n_cams] layout, pulled back into sight cones:
+    projs = cameras(true_motors << true_points[:, None])
     pixels = projs / (mv.w & projs)
-
-    # Per-pixel transverse precision dyads (sensor discs) pulled back into cones:
-    sensor_discs = sensor_disk(pixels)
-    local_cones = make_cones(cameras, sensor_discs)
-
-    # 4. Initial camera pose estimates (Cam 0 fixed as reference, Cam 1 perturbed by 5%):
-    init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
-    initial_motors = stack([m0, init_m1])
-
-    print("=== 2-Camera Stereo Rig & Perspective Cone Bundle Adjustment (PGA2D) ===")
-    print(f"Cameras  : 2 convergent viewpoints (baseline: {2*baseline_x:.2f}m X; convergent gaze: {np.degrees(theta):.1f}°)")
-    print(f"Landmarks: {len(xy)} points spanning depth y in [{xy[:, 1].min():.2f}m, {xy[:, 1].max():.2f}m]")
-
-    init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
-    init_xy = coordinates(init_pts)
-    init_scale = float(np.sum(init_xy * xy) / np.sum(init_xy**2))
-    init_rmse = float(np.sqrt(np.mean(np.sum((init_xy * init_scale - xy)**2, axis=-1))))
-    print(f"Initial Landmark RMSE (unoptimized): {init_rmse:.4e} m ({init_rmse * 1000:.1f} mm)")
-
-    # 5. Run bundle adjustment purely via perspective cone quadrics:
-    iterations = 8
-    est_motors, est_points, quadrics = core.bundle_adjust(
-        initial_motors, local_cones, iterations=iterations, damping=0.8,
-    )
-    xy_true = xy
-    xy_est = coordinates(est_points)
-    scale = float(np.sum(xy_est * xy_true) / np.sum(xy_est**2))
-    xy_est_scaled = xy_est * scale
-    final_rmse = float(np.sqrt(np.mean(np.sum((xy_est_scaled - xy_true)**2, axis=-1))))
-    print(f"Converged Landmark RMSE ({iterations} iters): {final_rmse:.4e} m ({final_rmse * 1000:.2f} mm)")
-
-    # 6. Extract camera positions and directions:
-    cams_pos = [coordinates(m >> c0) * scale for m in est_motors]
-    cams_dirs = [(m >> mv.y).kernel[:2] for m in est_motors]
-    cam_colors = ["#0284c7", "#ec4899"]
-
-    # World cones in estimated camera frames:
-    world_cones = est_motors >> local_cones(est_motors << Point)
-
-    return render.draw_top_down_figure(
-        cams_pos=cams_pos,
-        cams_dirs=cams_dirs,
-        world_cones=world_cones,
-        fused_quadrics=quadrics,
-        points=est_points,
-        cam_colors=cam_colors,
-        motors=est_motors,
-        plot_path=plot_path,
-        auto_increment=auto_increment,
-    )
+    return true_points, cameras, core.make_cones(cameras, core.sensor_disk(pixels))
 
 
-import shutil
+def cone_cost(motors: Motor, points: Point, local_cones: Quadric) -> core.Scalar:
+    """The objective: every point's cone value, summed over the cameras that see it."""
+    local_points = motors << points[:, None]
+    return (local_cones(local_points) & local_points).sum()
 
 
-def convergence_animation(
-    gif_path: Path | None = None,
-    iterations: int = 10,
-    case: str = "1cam",
-    auto_increment: bool = True,
-) -> Path:
-    """Animate bundle adjustment convergence in a GIF (PGA2D).
+def bundle_adjustment():
+    """Two convergent cameras, the second panned 5% too far, aligned by eight Newton steps."""
+    # Cam 0 on the left panned right, Cam 1 on the right panned left:
+    true_motors = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE]))
+    _, _, local_cones = observe(true_motors)
+    initial_motors = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE * 1.05]))
 
-    Parameters
-    ----------
-    gif_path : Path, optional
-        Destination GIF path.
-    iterations : int
-        Number of bundle adjustment steps. Defaults to 10.
-    case : str
-        One of '1cam' (1 moving, anchors=(0, 2)), '2cams' (2 moving, anchors=(0,)),
-        '3cams' (all 3 moving, anchors=()), or 'schur' (1 moving, anchors=(0, 2), the joint
-        Newton step with the Schur complement, drawing the marginal pose covariance).
-    auto_increment : bool
-        Whether to auto-increment the output path if it exists.
+    # Camera alignment purely via perspective cone quadrics, Cam 0 fixed as reference:
+    motors, points, fused = core.bundle_adjust(initial_motors, local_cones, 8, 0.8, np.array([0.0, 1.0]))
+    world_cones = motors >> local_cones(motors << Point)
+
+    # --- checks
+    # The cone cost falls by orders of magnitude from the perturbed start.
+    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
+    initial_cost = cone_cost(initial_motors, initial_points, local_cones).to_array()
+    assert cone_cost(motors, points, local_cones).to_array() < initial_cost * 1e-3
+
+    return motors, world_cones, fused, points
+
+
+def convergence(
+    true_motors: Motor, initial_motors: Motor, damping: float, free: np.ndarray, iterations: int,
+):
+    """The rig after each alternating Newton step, from the initial poses."""
+    _, _, local_cones = observe(true_motors)
+    motors = initial_motors
+    for _ in range(iterations + 1):
+        points, fused = core.triangulate_cones(motors, local_cones)
+        yield motors, motors >> local_cones(motors << Point), fused, points
+        motors, _, _ = core.bundle_adjust(motors, local_cones, 1, damping, free)
+
+
+def three_camera_truth() -> Motor:
+    """Left and right cameras panned inwards, and a third at the origin looking straight ahead."""
+    return rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE, 0.0]))
+
+
+def one_camera(iterations: int):
+    """One moving camera, Cam 1 with a 25% pan mismatch; Cams 0 and 2 anchored."""
+    # Damping 0.38 yields a steady visual trajectory reaching ~95% progress at step 9-10.
+    initial_motors = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
+    return convergence(three_camera_truth(), initial_motors, 0.38, np.array([0.0, 1.0, 0.0]), iterations)
+
+
+def two_cameras(iterations: int):
+    """Two moving cameras, Cams 1 and 2 both perturbed; Cam 0 anchored."""
+    # Damping 0.35 yields a steady visual trajectory reaching ~95% progress at step 10.
+    initial_motors = rig(np.array([-BASELINE, BASELINE, -0.1]), np.array([GAZE, -GAZE * 1.25, 0.05]))
+    return convergence(three_camera_truth(), initial_motors, 0.35, np.array([0.0, 1.0, 1.0]), iterations)
+
+
+def three_cameras(iterations: int):
+    """All three cameras perturbed and updating freely, without anchors."""
+    # Damping 0.32 yields a steady visual trajectory reaching ~95% progress at step 10.
+    initial_motors = rig(np.array([-BASELINE * 0.95, BASELINE, -0.1]), np.array([GAZE * 1.05, -GAZE * 1.25, 0.05]))
+    return convergence(three_camera_truth(), initial_motors, 0.32, np.array([1.0, 1.0, 1.0]), iterations)
+
+
+def schur(iterations: int):
+    """One moving camera as in `one_camera`, solved by the joint Newton step with the Schur complement.
+
+    Each state carries the marginal information on each camera's pose from the step taken there.
     """
-    if gif_path is None:
-        gif_path = PLOT_DIR / f"multiview_convergence_{case}.gif"
-
-    xy = np.array([
-        [ 0.15, 0.85],
-        [-0.43, 1.15],
-        [ 0.50, 1.50],
-        [ 0.03, 1.85],
-        [ 0.65, 2.20],
-        [-0.60, 2.55],
-    ])
-    true_points = point(xy)
-
-    baseline_x = 0.75
-    theta = np.radians(18.0)
-    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
-    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    m2 = mv.rotor()
-    true_motors = stack([m0, m1, m2])
-
-    c0 = point([0.0, 0.0])
-    screen = mv.y - mv.w
-    camera = (c0 & Point) ^ screen
-    cameras = camera.broadcast_to((3,))
-
-    local_pts = true_motors << true_points[:, None]
-    projs = cameras(local_pts)
-    pixels = projs / (mv.w & projs)
-
-    # Per-pixel transverse precision dyads (sensor discs) pulled back into cones:
-    sensor_discs = sensor_disk(pixels)
-    local_cones = make_cones(cameras, sensor_discs)
-
-    if case == "1cam":
-        # Case 1: 1 moving camera (anchors=(0, 2)), Cam 1 has 25% tilt mismatch.
-        # Damping=0.38 yields a steady visual trajectory reaching ~95% progress at step 9-10.
-        anchors = (0, 2)
-        damping = 0.38
-        init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
-        motors = stack([m0, init_m1, m2])
-    elif case == "2cams":
-        # Case 2: 2 moving cameras (anchors=(0,)), Cam 1 & 2 both perturbed.
-        # Damping=0.35 yields a steady visual trajectory reaching ~95% progress at step 10.
-        anchors = (0,)
-        damping = 0.35
-        init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
-        init_m2 = ((-mv.xw * 0.1) * 0.5).exp() * ((mv.xy * 0.05) * 0.5).exp()
-        motors = stack([m0, init_m1, init_m2])
-    elif case == "3cams":
-        # Case 3: All 3 cameras updating freely without anchors (anchors=()).
-        # Damping=0.32 yields a steady visual trajectory reaching ~95% progress at step 10.
-        anchors = ()
-        damping = 0.32
-        init_m0 = ((-mv.xw * (baseline_x * 0.95)) * 0.5).exp() * ((mv.xy * (theta * 1.05)) * 0.5).exp()
-        init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
-        init_m2 = ((-mv.xw * 0.1) * 0.5).exp() * ((mv.xy * 0.05) * 0.5).exp()
-        motors = stack([init_m0, init_m1, init_m2])
-    elif case == "schur":
-        # Case 4: 1 moving camera as in case 1, solved by the joint Newton step. The Schur
-        # complement's marginal information draws each frame's pose covariance.
-        anchors = (0, 2)
-        damping = 0.7
-        init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.25)) * 0.5).exp()
-        motors = stack([m0, init_m1, m2])
-    else:
-        raise ValueError(f"Unknown case: {case}")
-
-    history = []
-    for it in range(iterations + 1):
-        pts, qf = core.triangulate_cones(motors, local_cones)
-        if case == "schur":
-            motors_next, _, _, information = core.bundle_adjust_schur(
-                cameras, motors, local_cones, iterations=1, damping=damping, anchors=anchors,
-            )
-            history.append((motors, pts, qf, information))
-        else:
-            motors_next, _, _ = core.bundle_adjust(
-                motors, local_cones, iterations=1, damping=damping, anchors=anchors,
-            )
-            history.append((motors, pts, qf))
-        if it < iterations:
-            motors = motors_next
-
-    target_path = render.animate_top_down_convergence(
-        history=history,
-        local_cones=local_cones,
-        cam_colors=["#0284c7", "#ec4899", "#8b5cf6"],
-        gif_path=gif_path,
-        fps=3,
-        auto_increment=auto_increment,
-    )
-    return target_path
-
-
-def main(
-    plot_path: Path | None = None,
-    animate: bool = False,
-    auto_increment: bool = True,
-) -> plt.Figure:
-    """Render the multi-camera bundle adjustment figure and convergence GIFs for all cases."""
-    if plot_path is None:
-        plot_path = PLOT_DIR / "multiview_bundle_adjustment.png"
-    fig = multiview_figure(plot_path, auto_increment=auto_increment)
-    if animate:
-        gif1 = plot_path.with_name("multiview_convergence.gif")
-        gif1_alias = plot_path.with_name("multiview_convergence_1cam.gif")
-        gif2 = plot_path.with_name("multiview_convergence_2cams.gif")
-        gif3 = plot_path.with_name("multiview_convergence_3cams.gif")
-        gif4 = plot_path.with_name("multiview_convergence_schur.gif")
-
-        convergence_animation(gif_path=gif1, iterations=10, case="1cam", auto_increment=auto_increment)
-        if gif1.exists():
-            shutil.copy2(gif1, gif1_alias)
-        convergence_animation(gif_path=gif2, iterations=10, case="2cams", auto_increment=auto_increment)
-        convergence_animation(gif_path=gif3, iterations=10, case="3cams", auto_increment=auto_increment)
-        convergence_animation(gif_path=gif4, iterations=10, case="schur", auto_increment=auto_increment)
-    return fig
+    true_motors = three_camera_truth()
+    _, cameras, local_cones = observe(true_motors)
+    motors = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
+    free = np.array([0.0, 1.0, 0.0])
+    for _ in range(iterations + 1):
+        points, fused = core.triangulate_cones(motors, local_cones)
+        next_motors, _, _, information = core.bundle_adjust_schur(cameras, motors, local_cones, 1, 0.7, free)
+        yield motors, motors >> local_cones(motors << Point), fused, points, information
+        motors = next_motors
 
 
 if __name__ == "__main__":
-    main(animate=True)
+    from examples.animation import save_animation, save_figure
+    from examples.geometry.multiview import render
 
+    save_figure(render.draw_reconstruction(*bundle_adjustment()), "multiview_bundle_adjustment")
+    save_animation(render.animate_convergence(one_camera(10)), "multiview_convergence_1cam", 333)
+    save_animation(render.animate_convergence(two_cameras(10)), "multiview_convergence_2cams", 333)
+    save_animation(render.animate_convergence(three_cameras(10)), "multiview_convergence_3cams", 333)
+    save_animation(render.animate_convergence_with_covariance(schur(10)), "multiview_convergence_schur", 333)

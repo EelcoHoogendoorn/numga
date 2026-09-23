@@ -1,29 +1,22 @@
-"""Unit tests for N-camera projective bundle adjustment with perspective cone quadrics in PGA2D."""
+"""Unit tests for N-camera projective bundle adjustment with perspective cone quadrics."""
 
 from __future__ import annotations
 
-import shutil
 import signal
 import subprocess
 import sys
-import time
-from pathlib import Path
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from numga import stack
-from examples import PLOT_DIR
-from examples.geometry.multiview import core, render
-from examples.geometry.multiview.scenarios import (
-    Point,
-    coordinates,
-    main,
-    make_cones,
-    multiview_figure,
-    mv,
-    point,
-    sensor_disk,
-)
+from numga.algebras import PGA2D, PGA3D
+from examples import instantiate
+from examples.geometry.multiview import render, scenarios
+from examples.geometry.multiview.render import coordinates
+
+core = instantiate("examples.geometry.multiview.core", PGA2D)
+Point, mv, point = core.Point, core.mv, core.point
 
 
 @pytest.fixture(autouse=True)
@@ -40,243 +33,189 @@ def ten_second_budget():
         signal.signal(signal.SIGALRM, previous)
 
 
-@pytest.fixture(autouse=True, scope="module")
-def enforce_regenerate_multiview_plots():
-    """Ensure running multiview tests automatically regenerates and validates all module plots."""
-    t_start = time.time()
-    fig_path = PLOT_DIR / "multiview_bundle_adjustment.png"
-    gif_paths = [
-        PLOT_DIR / "multiview_convergence.gif",
-        PLOT_DIR / "multiview_convergence_1cam.gif",
-        PLOT_DIR / "multiview_convergence_2cams.gif",
-        PLOT_DIR / "multiview_convergence_3cams.gif",
-    ]
+def rmse(points: Point, truth: Point) -> float:
+    """Root mean square distance between unit points: the difference is a direction, its length the norm of its complement."""
+    return float((points - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
 
-    # Regenerate canonical figure and all convergence animations:
-    main(plot_path=fig_path, animate=True, auto_increment=False)
 
-    # Verification: Both figure and GIFs must exist, have valid size, and fresh timestamp
-    assert fig_path.exists(), f"Figure was not created: {fig_path}"
-    assert fig_path.stat().st_size > 1000, f"Figure is empty: {fig_path}"
-    assert fig_path.stat().st_mtime >= t_start - 2.0, f"Figure was not regenerated: {fig_path}"
-
-    for gp in gif_paths:
-        assert gp.exists(), f"Convergence GIF was not created: {gp}"
-        assert gp.stat().st_size > 1000, f"GIF is empty: {gp}"
-        assert gp.stat().st_mtime >= t_start - 2.0, f"GIF was not regenerated: {gp}"
-
+def test_mathematics_does_not_import_plotting():
+    """The math layer core.py must stay free of the plotting stack, transitively."""
+    probe = (
+        "from numga.algebras import PGA2D; from examples import instantiate; "
+        "instantiate('examples.geometry.multiview.core', PGA2D); import sys; "
+        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
+        "print(bad)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_triangulate_cones():
-    """Verify perspective cone pullback and fusion reconstruct landmarks given true poses."""
+    """Perspective cone pullback and fusion reconstruct landmarks given true poses."""
     rng = np.random.default_rng(123)
-
-    # 6 points in front of cameras:
     xy = rng.uniform([-0.6, 1.0], [0.6, 2.5], size=(6, 2))
     true_points = point(xy)
+    motors = scenarios.rig(np.array([-0.75, 0.75]), np.radians([18.0, -18.0]))
 
-    # 2 cameras:
-    baseline_x = 0.75
-    theta = np.radians(18.0)
-    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
-    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    motors = type(m0).stack([m0, m1])
-
-    c0 = point([0.0, 0.0])
-    screen = mv.y - mv.w
-    camera = (c0 & Point) ^ screen
+    camera = (point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
     cameras = camera.broadcast_to((2,))
-
-    local_pts = motors << true_points[:, None]
-    projs = cameras(local_pts)
+    projs = cameras(motors << true_points[:, None])
     pixels = projs / (mv.w & projs)
 
-    # Pullback cones through camera maps:
-    principal_point = point([0.0, 1.0])
+    # A sensor quadric at the principal point, moved to each pixel, pulled back into cones:
     q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
-    local_cones = make_cones(cameras, sensor_discs)
-    pts_cone, q_cone = core.triangulate_cones(motors, local_cones)
-    xy_cone = coordinates(pts_cone)
-    np.testing.assert_allclose(xy_cone, xy, atol=1e-5)
+    sensor_discs = core.sensor_disk_at(pixels, point(np.array([0.0, 1.0])), q_sensor)
+    local_cones = core.make_cones(cameras, sensor_discs)
+    points, fused = core.triangulate_cones(motors, local_cones)
+    np.testing.assert_allclose(coordinates(points), xy, atol=1e-5)
 
-    # Covariances extracted from cone quadrics should be positive-definite:
-    covs = render.extract_covariances(q_cone)
-    for cov in covs:
-        evals = np.linalg.eigvalsh(cov)
-        assert np.all(evals > 0), "Gaussian splat covariance must be positive-definite"
+    # The fused precision is positive on every displacement, so the splat is a bounded ellipse:
+    angles = np.linspace(0.0, np.pi, 12, endpoint=False)
+    displacements = mv("yw wx", np.stack([np.cos(angles), np.sin(angles)], axis=-1))
+    precision = (fused[:, None](displacements[None, :]) & displacements[None, :]).to_array()
+    assert np.all(precision > 0)
 
 
-def test_multiview_bundle_adjust_convergence():
-    """Verify Gauss-Newton bundle adjustment converges from perturbed camera poses."""
-    xy = np.array([
-        [ 0.15, 0.85],
-        [-0.43, 1.15],
-        [ 0.50, 1.50],
-        [ 0.03, 1.85],
-        [ 0.65, 2.20],
-        [-0.60, 2.55],
-    ])
-    true_points = point(xy)
+def test_bundle_adjust_converges():
+    """Alternating Newton steps on the cone value recover the scene from a perturbed camera."""
+    true_motors = scenarios.three_camera_truth()
+    true_points, _, local_cones = scenarios.observe(true_motors)
+    initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
+    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
 
-    baseline_x = 0.75
-    theta = np.radians(18.0)
-    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
-    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    m2 = ((mv.xw * 0.0) * 0.5).exp()
-    true_motors = stack([m0, m1, m2])
-
-    c0 = point([0.0, 0.0])
-    screen = mv.y - mv.w
-    camera = (c0 & Point) ^ screen
-    cameras = camera.broadcast_to((3,))
-
-    local_pts = true_motors << true_points[:, None]
-    projs = cameras(local_pts)
-    pixels = projs / (mv.w & projs)
-
-    principal_point = point([0.0, 1.0])
-    q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
-    local_cones = make_cones(cameras, sensor_discs)
-
-    # Perturb camera 1 orientation by 5%:
-    init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
-    initial_motors = stack([m0, init_m1, m2])
-
-    init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
-    init_xy = coordinates(init_pts)
-    init_scale = np.sum(init_xy * xy) / np.sum(init_xy**2)
-    init_rmse = np.sqrt(np.mean(np.sum((init_xy * init_scale - xy)**2, axis=-1)))
-
-    est_motors, est_pts, _ = core.bundle_adjust(initial_motors, local_cones, iterations=12, anchors=(0, 2))
-    est_xy = coordinates(est_pts)
-    est_scale = np.sum(est_xy * xy) / np.sum(est_xy**2)
-    final_rmse = np.sqrt(np.mean(np.sum((est_xy * est_scale - xy)**2, axis=-1)))
-
-    assert final_rmse < init_rmse, "Bundle adjustment must decrease landmark reconstruction error"
-    assert final_rmse < 0.02, f"Final RMSE should be under 2 cm, got {final_rmse}"
+    _, points, _ = core.bundle_adjust(initial_motors, local_cones, 12, 0.9, np.array([0.0, 1.0, 0.0]))
+    assert rmse(points, true_points) < rmse(initial_points, true_points)
+    assert rmse(points, true_points) < 0.02
 
 
 def test_schur_bundle_adjust_converges_and_yields_information():
     """The joint Newton step with the Schur complement converges and returns pose information forms."""
-    xy = np.array([[0.15, 0.85], [-0.43, 1.15], [0.50, 1.50], [0.03, 1.85], [0.65, 2.20], [-0.60, 2.55]])
-    true_points = point(xy)
-    baseline_x, theta = 0.75, np.radians(18.0)
-    m0 = ((-mv.xw * baseline_x) * 0.5).exp() * ((mv.xy * theta) * 0.5).exp()
-    m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * theta) * 0.5).exp()
-    m2 = mv.rotor()
-    true_motors = stack([m0, m1, m2])
-    camera = (point([0.0, 0.0]) & Point) ^ (mv.y - mv.w)
-    cameras = camera.broadcast_to((3,))
-    projs = cameras(true_motors << true_points[:, None])
-    pixels = projs / (mv.w & projs)
-    local_cones = make_cones(cameras, sensor_disk(pixels))
+    true_motors = scenarios.three_camera_truth()
+    true_points, cameras, local_cones = scenarios.observe(true_motors)
+    initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
+    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
 
-    init_m1 = ((mv.xw * baseline_x) * 0.5).exp() * ((-mv.xy * (theta * 1.05)) * 0.5).exp()
-    initial_motors = stack([m0, init_m1, m2])
-    init_pts, _ = core.triangulate_cones(initial_motors, local_cones)
-    init_error = (init_pts - true_points).dual()
-    init_rmse = init_error.norm_squared().mean(axis=0).square_root().to_array()
-
-    est_motors, est_pts, fused, information = core.bundle_adjust_schur(
-        cameras, initial_motors, local_cones, iterations=10, anchors=(0, 2),
+    _, points, _, information = core.bundle_adjust_schur(
+        cameras, initial_motors, local_cones, 10, 0.7, np.array([0.0, 1.0, 0.0]),
     )
-    error = (est_pts - true_points).dual()
-    final_rmse = error.norm_squared().mean(axis=0).square_root().to_array()
-    assert final_rmse < init_rmse
-    assert final_rmse < 0.02, f"Final RMSE should be under 2 cm, got {final_rmse}"
+    assert rmse(points, true_points) < rmse(initial_points, true_points)
+    assert rmse(points, true_points) < 0.02
 
     # The marginal information is a symmetric form on twists, zero on the anchored cameras:
     assert information.shape == (3,)
-    assert information.gatype == core.Information
-    kernels = information.kernel[:, 0]
-    np.testing.assert_allclose(kernels, np.swapaxes(kernels, -1, -2), atol=1e-9)
-    np.testing.assert_allclose(kernels[[0, 2]], 0.0)
-    assert np.linalg.eigvalsh(kernels[1]).min() > 0
+    basis = mv("yw wx xy", np.eye(3))
+    gram = information[:, None, None](basis[:, None], basis[None, :]).to_array()
+    np.testing.assert_allclose(gram, np.swapaxes(gram, -1, -2), atol=1e-9)
+    np.testing.assert_allclose(gram[[0, 2]], 0.0)
+    assert np.linalg.eigvalsh(gram[1]).min() > 0
 
 
-def test_scenario_runs_and_saves():
-    """The scenario wires math to render and ensures canonical figure and animation are written."""
-    fig_path = PLOT_DIR / "multiview_bundle_adjustment.png"
-    gif_path = PLOT_DIR / "multiview_convergence.gif"
-    assert fig_path.exists() and fig_path.stat().st_size > 1000, f"Missing canonical figure {fig_path}"
-    assert gif_path.exists() and gif_path.stat().st_size > 1000, f"Missing canonical GIF {gif_path}"
+# --- the same module in 3D --------------------------------------------------------------
+core3 = instantiate("examples.geometry.multiview.core", PGA3D)
 
 
-def test_multiview_3d_bundle_adjust_convergence():
-    """Verify Gauss-Newton bundle adjustment works identically in 3D under PGA3D."""
-    from examples.geometry.multiview import types
-    from numga.algebras import PGA3D, PGA2D
-
-    types.bind(PGA3D)
-    try:
-        baseline_x = 0.75
-        theta = np.radians(18.0)
-        m0 = ((-types.mv.xw * baseline_x) * 0.5).exp() * ((-types.mv.zx * theta) * 0.5).exp()
-        m1 = ((types.mv.xw * baseline_x) * 0.5).exp() * ((types.mv.zx * theta) * 0.5).exp()
-        true_motors = type(m0).stack([m0, m1])
-
-        c0 = types.point([0.0, 0.0, 0.0])
-        screen = types.mv.z - types.mv.w
-        cameras = ((c0 & types.Point) ^ screen).broadcast_to((2,))
-
-        xyz = np.array([
-            [ 0.15, -0.06, 0.85],
-            [-0.43,  0.07, 1.15],
-            [ 0.50, -0.08, 1.50],
-            [ 0.03,  0.06, 1.85],
-            [ 0.65, -0.07, 2.20],
-            [-0.60,  0.09, 2.55],
-        ])
-        true_points = types.point(xyz)
-
-        local_pts = true_motors << true_points[:, None]
-        projs = cameras(local_pts)
-        pixels = projs / (types.mv.w & projs)
-
-        principal_point = types.point([0.0, 0.0, 1.0])
-        q_sensor = types.mv.x * (types.mv.x & types.Point) + types.mv.y * (types.mv.y & types.Point)
-        sensor_discs = sensor_disk(pixels, principal_point, q_sensor)
-        local_cones = make_cones(cameras, sensor_discs)
-
-        init_m1 = ((types.mv.xw * baseline_x) * 0.5).exp() * ((types.mv.zx * (theta * 1.05)) * 0.5).exp()
-        motors = stack([m0, init_m1])
-
-        init_pts, _ = core.triangulate_cones(motors, local_cones)
-        init_xyz = types.coordinates(init_pts)
-        init_scale = np.sum(init_xyz * xyz) / np.sum(init_xyz**2)
-        init_rmse = np.sqrt(np.mean(np.sum((init_xyz * init_scale - xyz)**2, axis=-1)))
-
-        est_motors, est_pts, _ = core.bundle_adjust(motors, local_cones, iterations=10)
-        est_xyz = types.coordinates(est_pts)
-        est_scale = np.sum(est_xyz * xyz) / np.sum(est_xyz**2)
-        final_rmse = np.sqrt(np.mean(np.sum((est_xyz * est_scale - xyz)**2, axis=-1)))
-
-        assert final_rmse < init_rmse
-        assert final_rmse < 0.02
-    finally:
-        types.bind(PGA2D)
+def coordinates_3d(points) -> np.ndarray:
+    k = points.cast(PGA3D.subspace("yzw zxw xyw zyx")).kernel
+    return k[..., :3] / k[..., 3:]
 
 
-def test_multiview_3d_crazy_pose_stress():
-    """Verify headless 3D multi-camera bundle adjustment converges under extreme perturbations."""
-    from examples.geometry.multiview import scenarios_3d, types
-    from numga.algebras import PGA2D, PGA3D
+def rig_3d() -> tuple:
+    """Three convergent cameras and eight landmarks in PGA3D, with their sight cones.
 
-    types.bind(PGA3D)
-    try:
-        res = scenarios_3d.run_3d_bundle_adjustment(
-            perturb_rot_deg=(30.0, -20.0, 25.0),
-            perturb_trans_m=(-0.40, 0.30, 0.45),
-            iterations=30,
-            damping=0.7,
-            anchors=(0, 2),
-        )
-        assert res["pos_err_final"] < 0.02, f"3D position error too high: {res['pos_err_final']}"
-        assert res["ang_err_final"] < 0.5, f"3D angular error too high: {res['ang_err_final']}"
-        assert res["landmark_rmse"] < 0.02, f"3D landmark RMSE too high: {res['landmark_rmse']}"
-        assert res["cost_final"] < res["cost_init"] * 1e-3, "Residual did not drop"
-    finally:
-        types.bind(PGA2D)
+    Cam 0 left, panned right; Cam 1 right, panned left; Cam 2 central, raised and looking
+    slightly down. The landmarks span depths z in [1.2, 2.65].
+    """
+    mv3 = core3.mv
+    theta = np.radians(18.0)
+    true_motors = stack([
+        (-mv3.xw * 0.75 / 2).exp() * (-mv3.zx * theta / 2).exp(),
+        (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta / 2).exp(),
+        (mv3.yw * 0.35 / 2).exp() * (-mv3.yz * np.radians(12.0) / 2).exp(),
+    ])
+    camera = (core3.point(np.zeros(3)) & core3.Point) ^ (mv3.z - mv3.w)
+    cameras = camera.broadcast_to((3,))
+    xyz = np.array([
+        [ 0.15, -0.20, 1.20],
+        [-0.43,  0.15, 1.45],
+        [ 0.50, -0.10, 1.70],
+        [ 0.03,  0.25, 1.95],
+        [ 0.65, -0.15, 2.30],
+        [-0.60,  0.10, 2.65],
+        [ 0.20,  0.30, 2.10],
+        [-0.25, -0.25, 1.60],
+    ])
+    projs = cameras(true_motors << core3.point(xyz)[:, None])
+    pixels = projs / (mv3.w & projs)
+    # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
+    q_sensor = mv3.x * (mv3.x & core3.Point) + mv3.y * (mv3.y & core3.Point)
+    sensor_discs = core3.sensor_disk_at(pixels, core3.point(np.array([0.0, 0.0, 1.0])), q_sensor)
+    return true_motors, xyz, core3.make_cones(cameras, sensor_discs)
 
+
+@pytest.mark.parametrize("rotation_deg, translation, iterations", [
+    ((30.0, -20.0, 25.0), (-0.40, 0.30, 0.45), 30),
+    ((50.0, 35.0, -40.0), (0.60, -0.50, 0.80), 40),
+])
+def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, translation, iterations):
+    """In PGA3D, the moving camera returns from pose errors of tens of degrees and most of a metre."""
+    mv3 = core3.mv
+    true_motors, xyz, local_cones = rig_3d()
+    rx, ry, rz = np.radians(rotation_deg)
+    tx, ty, tz = translation
+    perturbation = ((mv3.xw * tx + mv3.yw * ty + mv3.zw * tz) / 2).exp() * ((mv3.yz * rx + mv3.zx * ry + mv3.xy * rz) / 2).exp()
+    motors = stack([true_motors[0], perturbation * true_motors[1], true_motors[2]])
+
+    def cost(motors, points):
+        local_points = motors << points[:, None]
+        return float((local_cones(local_points) & local_points).sum().to_array())
+
+    initial_points, _ = core3.triangulate_cones(motors, local_cones)
+    est_motors, est_points, _ = core3.bundle_adjust(motors, local_cones, iterations, 0.7, np.array([0.0, 1.0, 0.0]))
+
+    origin = core3.point(np.zeros(3))
+    np.testing.assert_allclose(coordinates_3d(est_motors[1] >> origin), [0.75, 0.0, 0.0], atol=0.02)
+    np.testing.assert_allclose(coordinates_3d(est_points), xyz, atol=0.02)
+    # The residual rotation's scalar part is the cosine of half its angle:
+    residual = (est_motors[1] * true_motors[1].reverse()).cast(PGA3D.subspace("1")).kernel[0]
+    assert np.degrees(2.0 * np.arccos(min(abs(residual), 1.0))) < 0.5
+    assert cost(est_motors, est_points) < cost(motors, initial_points) * 1e-3
+
+
+def test_3d_bundle_adjust_converges_from_a_small_perturbation():
+    """In PGA3D, the second camera panned 5% too far aligns with the other two anchored."""
+    mv3 = core3.mv
+    theta = np.radians(18.0)
+    true_motors, xyz, local_cones = rig_3d()
+    motors = stack([
+        true_motors[0],
+        (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta * 1.05 / 2).exp(),
+        true_motors[2],
+    ])
+    truth = core3.point(xyz)
+    initial_points, _ = core3.triangulate_cones(motors, local_cones)
+    _, points, _ = core3.bundle_adjust(motors, local_cones, 10, 0.9, np.array([0.0, 1.0, 0.0]))
+    error = lambda p: float((p - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
+    assert error(points) < error(initial_points)
+    assert error(points) < 0.02
+
+
+# --- scenarios through render -------------------------------------------------------------
+def test_figure_renders():
+    """The figure scenario passes its checks, and renders."""
+    figure = render.draw_reconstruction(*scenarios.bundle_adjustment())
+    assert isinstance(figure, plt.Figure)
+
+
+@pytest.mark.parametrize("name", ["one_camera", "two_cameras", "three_cameras"])
+def test_convergence_animations_render(name):
+    """Each alternating convergence scenario renders a short animation."""
+    frames = render.animate_convergence(getattr(scenarios, name)(1))
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
+
+
+def test_schur_animation_renders():
+    """The Schur convergence scenario renders a short animation with pose covariances."""
+    frames = render.animate_convergence_with_covariance(scenarios.schur(1))
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

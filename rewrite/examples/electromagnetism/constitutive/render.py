@@ -10,18 +10,20 @@ Visualizations:
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Sequence
+from typing import Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import Extensor
+
+from examples.animation import capture
 from examples.electromagnetism.constitutive import core
 
 
 def draw_wave_propagation(
     ax: plt.Axes,
-    modes: Sequence[tuple[float, Any]],
+    modes: Sequence[tuple[float, Extensor]],
     tau: float = 0.0,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
@@ -91,8 +93,8 @@ def draw_wave_propagation(
 
 def draw_wave_comparison_3d(
     fig: plt.Figure,
-    glass_modes: Sequence[tuple[float, Any]],
-    crystal_modes: Sequence[tuple[float, Any]],
+    glass_modes: Sequence[tuple[float, Extensor]],
+    crystal_modes: Sequence[tuple[float, Extensor]],
     z_max: float = 4.0 * np.pi,
 ) -> tuple[plt.Axes, plt.Axes]:
     """Render side-by-side 3D views comparing isotropic vs birefringent medium."""
@@ -110,56 +112,24 @@ def draw_wave_comparison_3d(
 
 
 def draw_wave_comparison_figure(
-    glass_modes: Sequence[tuple[float, Any]],
-    crystal_modes: Sequence[tuple[float, Any]],
+    glass_modes: Sequence[tuple[float, Extensor]],
+    crystal_modes: Sequence[tuple[float, Extensor]],
     z_max: float = 4.0 * np.pi,
-    plot_path: Path | str | None = None,
 ) -> plt.Figure:
     """Render standalone figure with side-by-side 3D views comparing isotropic vs birefringent medium."""
     fig = plt.figure(figsize=(14, 6), dpi=120)
     draw_wave_comparison_3d(fig, glass_modes, crystal_modes, z_max=z_max)
     plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
-    return fig
-
-
-def draw_wave_propagation_figure(
-    modes: Sequence[tuple[float, Any]],
-    tau: float = 0.0,
-    z_max: float = 4.0 * np.pi,
-    omega: float = 1.0,
-    title: str = r"Traveling $\mathbf{E}$ and $\mathbf{B}$ Field Vectors",
-    plot_path: Path | str | None = None,
-) -> plt.Figure:
-    """Render standalone 3D figure of traveling E and B field vectors through medium."""
-    fig = plt.figure(figsize=(7, 6), dpi=120)
-    ax = fig.add_subplot(111, projection="3d")
-    draw_wave_propagation(ax, modes, tau=tau, z_max=z_max, omega=omega, title=title)
-    plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
     return fig
 
 
 def animate_wave_propagation(
-    modes: Sequence[tuple[float, Any]],
-    plot_path: Path | str | None = None,
+    modes: Sequence[tuple[float, Extensor]],
     n_frames: int = 24,
-    duration_ms: int = 50,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
-) -> Path:
-    """Render animated GIF of traveling E and B field vectors through medium."""
-    from examples.animation import capture, save_gif
-
-    if plot_path is None:
-        from examples import PLOT_DIR
-        plot_path = PLOT_DIR / "constitutive_wave.gif"
-    plot_path = Path(plot_path)
-
+) -> list[np.ndarray]:
+    """Frames of the traveling E and B field vectors through one period."""
     fig = plt.figure(figsize=(8, 6), dpi=100)
     ax = fig.add_subplot(111, projection="3d")
 
@@ -170,8 +140,7 @@ def animate_wave_propagation(
         frames.append(capture(fig))
 
     plt.close(fig)
-    save_gif(frames, str(plot_path), duration_ms=duration_ms)
-    return plot_path
+    return frames
 
 
 def draw_dispersion(
@@ -183,10 +152,9 @@ def draw_dispersion(
     """Plot log smallest singular values vs. trial phase speeds, marking expected roots."""
     for name, curve in curves.items():
         is_axion = "axion" in name
-        data = curve.to_array() if hasattr(curve, "to_array") else np.asarray(curve)
         line, = ax.semilogy(
             speeds,
-            data,
+            curve.to_array(),
             label=name,
             linestyle="--" if is_axion else "-",
             linewidth=1.8 if is_axion else 1.5,
@@ -203,13 +171,13 @@ def draw_dispersion(
 
 def draw_polarizations(
     ax: plt.Axes,
-    modes: list[tuple[str, float, Any, str]],
+    modes: list[tuple[float, Extensor]],
 ) -> None:
-    """Draw 2D transverse polarization arrows in the xy plane for the birefringent modes."""
+    """Draw 2D transverse polarization arrows in the xy plane for the slow and fast birefringent modes."""
     ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
     ax.axvline(0, color="gray", linestyle="--", alpha=0.3)
 
-    for label, speed, pol, color in modes:
+    for (speed, pol), label, color in zip(modes, ("Slow Wave (v_x)", "Fast Wave (v_y)"), ("crimson", "dodgerblue")):
         # JIT coordinate readout at visualization boundary:
         xy = pol.cast(core.STA.subspace("x y")).kernel
         vx, vy = float(xy[0]), float(xy[1])
@@ -238,23 +206,22 @@ def draw_polarizations(
 def draw_fresnel_surface_polar(
     ax: plt.Axes,
     angles: np.ndarray,
-    surfaces: dict[str, Any],
-    speeds: np.ndarray | None = None,
+    surfaces: dict[str, Extensor],
+    speeds: np.ndarray,
 ) -> None:
-    """Plot 2D polar Fresnel wave normal surfaces v(theta) in the xz propagation plane."""
+    """Plot 2D polar Fresnel wave normal surfaces v(theta) in the xz propagation plane.
+
+    Each surface is the smallest singular value of the wave map over (speed, angle); its
+    local minima along speed are the sheets.
+    """
     for name, data in surfaces.items():
-        data_arr = data.to_array() if hasattr(data, "to_array") else data
-        if isinstance(data_arr, np.ndarray) and speeds is not None:
-            # Vectorized 2D singular value map [n_speeds, n_angles]: extract local minimum sheets
-            svals = data_arr
-            left, mid, right = svals[:-2], svals[1:-1], svals[2:]
-            interior = (mid <= left) & (mid <= right) & (mid < 4e-3)
-            sheet_speeds = []
-            for j in range(len(angles)):
-                idx = np.where(interior[:, j])[0]
-                sheet_speeds.append(speeds[1:-1][idx].tolist())
-        else:
-            sheet_speeds = data_arr
+        svals = data.to_array()
+        left, mid, right = svals[:-2], svals[1:-1], svals[2:]
+        interior = (mid <= left) & (mid <= right) & (mid < 4e-3)
+        sheet_speeds = []
+        for j in range(len(angles)):
+            idx = np.where(interior[:, j])[0]
+            sheet_speeds.append(speeds[1:-1][idx].tolist())
 
         max_branches = max((len(s) for s in sheet_speeds), default=0)
         for b in range(max_branches):
@@ -317,45 +284,27 @@ def draw_dispersion_figure(
     speeds: np.ndarray,
     curves: dict[str, np.ndarray],
     expected: dict[str, list[float]],
-    plot_path: Path | str | None = None,
 ) -> plt.Figure:
     """Render standalone figure for 1D dispersion resonance notches."""
     fig, ax = plt.subplots(figsize=(7, 5), dpi=120)
     draw_dispersion(ax, speeds, curves, expected)
     plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
     return fig
 
 
-def draw_polarizations_figure(
-    modes: list[tuple[str, float, Any, str]],
-    plot_path: Path | str | None = None,
-) -> plt.Figure:
+def draw_polarizations_figure(modes: list[tuple[float, Extensor]]) -> plt.Figure:
     """Render standalone figure for 2D transverse polarization eigenmode quivers."""
     fig, ax = plt.subplots(figsize=(6, 6), dpi=120)
     draw_polarizations(ax, modes)
     plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
     return fig
 
 
-def draw_fresnel_surface_figure(
-    angles: np.ndarray,
-    surfaces: dict[str, Any],
-    speeds: np.ndarray | None = None,
-    plot_path: Path | str | None = None,
-) -> plt.Figure:
+def draw_fresnel_surface_figure(angles: np.ndarray, surfaces: dict[str, Extensor], speeds: np.ndarray) -> plt.Figure:
     """Render standalone polar figure for 2D Fresnel wave normal surfaces."""
     fig, ax = plt.subplots(figsize=(7, 6), dpi=120, subplot_kw={"projection": "polar"})
-    draw_fresnel_surface_polar(ax, angles, surfaces, speeds=speeds)
+    draw_fresnel_surface_polar(ax, angles, surfaces, speeds)
     plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
     return fig
 
 
@@ -365,46 +314,9 @@ def draw_fresnel_drag_figure(
     v_up: np.ndarray,
     eps: float,
     mu: float,
-    plot_path: Path | str | None = None,
 ) -> plt.Figure:
     """Render standalone figure for relativistic Fresnel drag curves."""
     fig, ax = plt.subplots(figsize=(7, 5), dpi=120)
     draw_fresnel_drag_curves(ax, betas, v_down, v_up, eps=eps, mu=mu)
     plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
-    return fig
-
-
-def draw_canonical_figure(
-    speeds: np.ndarray,
-    dispersion_curves: dict[str, np.ndarray],
-    dispersion_expected: dict[str, list[float]],
-    polar_angles: np.ndarray,
-    polar_surfaces: dict[str, list[list[float]]],
-    betas: np.ndarray,
-    v_down: np.ndarray,
-    v_up: np.ndarray,
-    eps: float,
-    mu: float,
-    plot_path: Path | str | None = None,
-) -> plt.Figure:
-    """Render 3-panel figure or individual standalone figures."""
-    fig = plt.figure(figsize=(15, 5), dpi=120)
-
-    ax1 = fig.add_subplot(1, 3, 1)
-    draw_dispersion(ax1, speeds, dispersion_curves, dispersion_expected)
-
-    ax2 = fig.add_subplot(1, 3, 2, projection="polar")
-    draw_fresnel_surface_polar(ax2, polar_angles, polar_surfaces)
-
-    ax3 = fig.add_subplot(1, 3, 3)
-    draw_fresnel_drag_curves(ax3, betas, v_down, v_up, eps, mu)
-
-    plt.tight_layout()
-    if plot_path:
-        Path(plot_path).parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(str(plot_path), bbox_inches="tight")
-        print(f"Canonical figure saved to {plot_path}")
     return fig

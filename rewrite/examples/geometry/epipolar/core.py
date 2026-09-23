@@ -14,8 +14,9 @@ measures distance to an unknown point via the meet `ray & Point`, a plane whose
 squared norm is a rank-2 distance quadric; summing these quadrics across cameras
 produces a form whose nullmode is the reconstructed 3D world point.
 
-This module contains the mathematics alone: GATypes and the geometric narrative
-in one coherent scope.
+`textbook.py` holds the matrix baseline this is compared against: the 8-point essential
+matrix, its SVD decomposition into four candidate poses, and triangulation by normal
+equations.
 """
 
 from __future__ import annotations
@@ -32,9 +33,48 @@ mv = ctx.multivector
 
 Point = ga.gatype.antivector()
 Line = ga.gatype.bivector()
+Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
 RayQuadric = ga.gatype((ga.gatype.scalar(), Point, Point))
+Camera = ga.gatype((Point, Point))
+
+
+def point(coords: np.ndarray) -> Point:
+    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
+    return (mv("x y z", coords) + mv.w).dual()
+
+
+def direction(coords: np.ndarray) -> Point:
+    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
+    return mv("x y z", coords).dual()
+
+
+# --- plumbing --------------------------------------------------------------
+def house_landmarks() -> Point:
+    """World landmarks: the corners of a wireframe house and a grid of ground markers."""
+    # Base cube corners (8 points):
+    cube = np.array([
+        [-0.5, -0.4, 3.0],
+        [ 0.5, -0.4, 3.0],
+        [ 0.5,  0.4, 3.0],
+        [-0.5,  0.4, 3.0],
+        [-0.5, -0.4, 4.0],
+        [ 0.5, -0.4, 4.0],
+        [ 0.5,  0.4, 4.0],
+        [-0.5,  0.4, 4.0],
+    ])
+    # Roof ridge and apex points (4 points):
+    roof = np.array([
+        [ 0.0, -0.4, 4.6],
+        [ 0.0,  0.4, 4.6],
+        [-0.25, 0.0, 4.3],
+        [ 0.25, 0.0, 4.3],
+    ])
+    # Additional distributed surface / ground markers (12 points):
+    grid_x, grid_y = np.meshgrid(np.linspace(-0.8, 0.8, 4), np.linspace(-0.6, 0.6, 3))
+    ground = np.stack([grid_x.ravel(), grid_y.ravel(), np.full(12, 2.5)], axis=-1)
+    return point(np.concatenate([cube, roof, ground], axis=0))
 
 
 # --- math ------------------------------------------------------------------
@@ -42,27 +82,12 @@ def reconstruct(
     rays_1: Line,
     rays_2: Line,
     motor: Motor,
-    iterations: int = 10,
+    iterations: int,
 ) -> tuple[Motor, Point]:
-    """Jointly solve for relative camera motor and 3D world coordinates.
+    """Jointly solve for the relative camera motor and the world points, in camera 1's frame.
 
-    Parameters
-    ----------
-    rays_1 : Line
-        Calibrated sight rays in Camera 1's frame (reference frame).
-    rays_2 : Line
-        Calibrated sight rays in Camera 2's local frame.
-    motor : Motor
-        Initial relative camera motor estimate (non-unit baseline required).
-    iterations : int
-        Number of Lie-algebra Gauss-Newton updates.
-
-    Returns
-    -------
-    motor : Motor
-        Relative camera motor aligning sight rays in Camera 1's frame.
-    points : Point
-        Reconstructed 3D coordinates in Camera 1's frame.
+    The rays are calibrated sight rays, each in its own camera's frame. The initial motor
+    needs a nonzero baseline; the baseline's length is not observable and stays as given.
     """
     for _ in range(iterations):
         # Two lines meet (are coplanar) iff their wedge product vanishes. The residual is

@@ -2,22 +2,13 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.geometry.projection import core
-from examples.geometry.projection.scenarios import (
-    Point,
-    ga,
-    mv,
-    origin,
-)
+from examples.geometry.projection import core, render, scenarios
+from examples.geometry.projection.core import Camera, Correspondence, Line, Plane, Point, cube, direction, ga, point
 from examples.geometry.projection.render import screen_coordinates
-from examples.geometry.projection.scenarios import cube, direction, main, point, projection_figure
-
-Line = ga.gatype.antibivector()
-Plane = ga.gatype.vector()
-Camera = ga.gatype((Point, Point))
-Correspondence = ga.gatype((ga.gatype.pseudoscalar(), Point, Point))
+from examples.geometry.projection.scenarios import mv, origin
 
 
 def dehomogenize(p: Point) -> np.ndarray:
@@ -192,9 +183,7 @@ def test_mathematics_does_not_import_plotting():
     assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
-def test_scenario_runs_and_saves(tmp_path):
-    """The scenario wires math to render and writes its figure."""
-    out = tmp_path / "projection.png"
-    projection_figure(plot_path=str(out))
-    assert out.exists()
-    main(plot_path=str(tmp_path / "again.png"))
+def test_scenario_renders():
+    """The scenario's geometry renders as a figure."""
+    figure = render.draw_projection(*scenarios.projection())
+    assert isinstance(figure, plt.Figure)

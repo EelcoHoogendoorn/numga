@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-import os
+import importlib.util
 import re
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from numga import Algebra
 
 PLOT_DIR = Path(__file__).resolve().parents[1] / "plots"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -39,3 +45,18 @@ def auto_increment_path(path: Path | str) -> Path:
         if not candidate.exists():
             return candidate
         counter += 1
+
+
+@lru_cache(maxsize=None)
+def instantiate(module: str, ga: Algebra) -> ModuleType:
+    """A copy of a module written against an algebra `ga` that it does not define itself.
+
+    The module declares `ga: Algebra` and derives its types and constants from it at top
+    level. Each algebra gets its own executed copy, so instances for different algebras
+    coexist and nothing is rebound after loading. The copy is not registered in sys.modules.
+    """
+    spec = importlib.util.find_spec(module)
+    instance = importlib.util.module_from_spec(spec)
+    instance.ga = ga
+    spec.loader.exec_module(instance)
+    return instance

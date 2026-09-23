@@ -193,9 +193,9 @@ A frame summed against its reciprocal is the coordinate spelling of a trace; wri
 ### Unary Linear Maps (`Output <- Input`)
 Operate directly on linear transformations while preserving input/output GATypes:
 
-* **`.solve(rhs)`**: Solves the linear equation $T(x) = y$ directly for $x$, returning a typed multivector.
+* **`.solve(rhs)`**: Solves `T(x) == rhs` for `x`: the inverse of composing into the map's input, so `T.solve(T(x)) == x`. A right-hand side with inputs of its own keeps them, so `T.solve(T(Y)) == Y` for a map `Y` too.
   ```python
-  step = stiffness.solve(force)                      # Solves for displacement twist
+  step = stiffness.solve(force)                      # Twist: the displacement the force causes
   ```
 * **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems.
 * **`.inverse()`**: Inverse of the map under composition. On a multivector batch the same method is the geometric-product inverse of each element; a batch of vectors is not a frame, so this is not a reciprocal frame.
@@ -204,7 +204,7 @@ Operate directly on linear transformations while preserving input/output GATypes
   pose_covariance = curvature.pinv()                 # Twist <- Twist
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; the slot's subspace must lie within the output subspace, and the metric is never consulted. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
+* **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; the metric is never consulted. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
   ```python
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(slot=1)   # [] Scalar <- (Vector, Vector)
   ```
@@ -227,8 +227,17 @@ Operate directly on linear transformations while preserving input/output GATypes
 ### Bilinear & Quadratic Forms (`Scalar <- (Space, Space)`)
 Represent metrics, potential/kinetic energy functionals, quadrics, and alignment objectives:
 
-* **`.eigh()`**: Symmetric/Hermitian eigensolve on a single quadratic form ($Q v = \lambda v$).
-  Returns eigenvalues `[n] Scalar` and eigenvectors `[n] Space`.
+A form has two covector slots, so its eigenvalues, determinant and trace exist relative to a metric form. Without one, the metric is the slot's own: the inner product of `S` with its reverse, which is `V | V` on vectors and positive on bivectors and Euclidean points. Its kind follows from the slot type: an identity metric (Euclidean points, rotors) keeps the plain solver, other metrics use the generalized pencil.
+
+* **`.eigh()`**: Symmetric/Hermitian eigensolve against the slot's metric, which must be positive definite; a singular or indefinite slot metric (PGA points and motors, spacetime vectors) is refused with a `TypeError`. Returns eigenvalues `[n] Scalar` and eigenvectors `[n] Space`.
+  ```python
+  values, rotors = alignment.eigh()                  # Scalar <- (Rotor, Rotor): the rotor metric is the identity
+  ```
+* **`.eig()` / `.eigvals()`**: General eigensolve against the slot's metric. A singular metric sends the modes it does not measure to infinity; the eigenpairs of a symmetric pencil are real, and `.real()` keeps them so:
+  ```python
+  values, motors = misfit.eig()                      # Scalar <- (Motor, Motor): translations at infinity
+  motor = motors[values.real().argmin()].real().normalized()
+  ```
 * **`.eigh(metric)`**: **Generalized Hermitian eigensolve** $K v = \lambda M v$.
   Solves the generalized eigenvalue problem directly between two bilinear energy forms without inverting inertia or forming asymmetric coordinate products $M^{-1}K$:
   ```python
@@ -236,12 +245,11 @@ Represent metrics, potential/kinetic energy functionals, quadrics, and alignment
   ke_form = Twist & inertia                          # Scalar <- (Twist, Twist)
   values, modes = pe_form.eigh(ke_form)              # values: [3] Scalar, modes: [3] Twist
   ```
-* **`.eigvalsh()`**: Evaluates only the real eigenvalues of the symmetric form.
-* **`.svdvals()`**: Singular values of the form's coefficient matrix; a vanishing form has all zeros.
-  ```python
-  ricci.svdvals()                                    # [4] Scalar
-  ```
-* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) = linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
+* **`.eigvalsh()`** / **`.eigvalsh(metric)`**: Only the eigenvalues, against the slot's metric or a given one.
+* **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric, `det(metric⁻¹ form)`; the slot's metric must be invertible.
+* **`.trace()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible.
+* A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
+* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form.bind(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
   ```python
   points = (splats + (w & Point) * (w & Point)).solve(w & Point)   # [n] Point: the fused cone's vertex
   response = h_pt.lstsq(h_cross, rcond=1e-4)                      # Point <- Twist, from Scalar <- (Twist, Point)
@@ -263,7 +271,7 @@ Partial calls fill slots in order, `.trace(slot)` lowers the arity by one, and b
 
 Nullary extensors represent concrete multivectors and scalars (carrying no open input slots). Methods on nullary extensors transform or inspect concrete geometric values rather than contracting slots:
 
-* **Scalars (`Scalar`)**: Eigensolvers (`.eigh()`), singular values (`.svdvals()`), and quadratic forms return scalar extensors. Mathematical operations, reductions, and conversions chain directly as methods without unwrapping:
+* **Scalars (`Scalar`)**: Eigensolvers (`.eigh()`), singular values of maps (`.svdvals()`), and quadratic forms return scalar extensors. Mathematical operations, reductions, and conversions chain directly as methods without unwrapping:
   ```python
   # Eigensolve post-processing: clamp, root, and frequency conversion:
   frequencies = eigenvalues.clip(0, np.inf).square_root() / (2 * np.pi)
@@ -273,6 +281,8 @@ Nullary extensors represent concrete multivectors and scalars (carrying no open 
   raw_array = frequencies.to_array()     # Returns backend array matching batch shape
   ```
   Standard elementwise operations (`.abs()`, `.sin()`, `.cos()`, `.isnan()`, `.isfinite()`) execute over batch axes while preserving extensor typing.
+
+* **`.real()`**: The real part of every coefficient, in a real context, for any extensor. It is for results known to be real that a general eigensolve returns as complex, such as the eigenpairs of a symmetric pencil.
 
 * **Bivectors & Motors (`Bivector`, `Motor`, `Rotor`)**: Lie algebra generators and versors:
   * `bivector.exp()` / `motor.log()`: Lie exponential and logarithm between velocity generators and finite motors.

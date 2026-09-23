@@ -5,14 +5,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
 from numga import stack
 
-from examples.relativity.curvature import main
+from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
-    Bivector, Curvature, Tidal, Vector, detector_ring, integrate_acceleration, mv, t, wave_packet, x, y, z,
+    Bivector, Curvature, Tidal, Vector, curvature_of_strain, detector_ring, integrate_acceleration, mv,
+    polarized_strain, polarized_waves, strain_patterns, t, wave_packet, x, y, z,
 )
 
 
@@ -179,7 +181,40 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
     assert np.max(np.abs(prefix.kernel[-1])) > 4e-5
 
 
-def test_tutorial_runs_and_saves(tmp_path):
-    out = tmp_path / "curvature.png"
-    main(plot_path=str(out))
-    assert out.exists()
+def test_strain_map_predicts_the_ring_and_its_second_derivative_is_the_curvature():
+    plus_strain, cross_strain = strain_patterns()
+    # Stretch along x, squeeze along y, nothing along time or the wave.
+    for separation, image in ((x, x), (y, -y), (t, t * 0), (z, z * 0)):
+        np.testing.assert_allclose(plus_strain(separation).kernel, image.kernel, atol=1e-15)
+
+    time = np.linspace(-1, 7, 641)
+    strain, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
+    waves = polarized_waves(*polarizations(), second)
+    reference = detector_ring(12)
+    displacement = integrate_acceleration(time, tidal(waves, t)[:, :, None](reference))
+    predicted = polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
+    np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=2e-11)
+    assert np.abs(predicted.kernel).max() > 4e-5
+
+    # The tidal map is the strain's second time derivative as a map on separations.
+    acceleration_map = polarized_strain(plus_strain, cross_strain, second)
+    np.testing.assert_allclose(tidal(waves, t).kernel, acceleration_map.kernel, atol=1e-15)
+
+    # Wedged with the wave vector, that second derivative is the curvature on pairs of vectors.
+    two_form = curvature_of_strain(t + z, acceleration_map)
+    edge = mv.vector(np.random.default_rng(5).normal(size=4))
+    np.testing.assert_allclose(two_form.bind(edge).kernel, waves(edge.wedge(Vector)).kernel, atol=1e-15)
+
+
+def test_figures_and_animation_draw():
+    """Each scenario runs its checks; the figures and a short animation draw."""
+    detector = scenarios.detector_scenario()
+    figures = [
+        render.draw_curvature_map(*scenarios.curvature_map_scenario()),
+        render.draw_doppler(*scenarios.doppler_scenario()),
+        render.draw_detector(*detector),
+    ]
+    assert all(isinstance(figure, plt.Figure) for figure in figures)
+    time, reference, displacement, acceleration, amplification = detector
+    frames = render.animate_detector(time[::100], reference, displacement[::100], acceleration[::100], amplification)
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

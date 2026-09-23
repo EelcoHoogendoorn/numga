@@ -56,7 +56,7 @@ curvature = (j * j).sum(axis=0)                           # Scalar <- (Twist, Tw
 ```
 
 Where a residual is a multivector and a norm on it is part of the problem, the norm is a
-choice and is written as a form on the open residual. The [registration example](examples/geometry/registration.py) fits a motor
+choice and is written as a form on the open residual. The [registration example](examples/geometry/registration/core.py) fits a motor
 to point correspondences through a residual that is linear in the motor, `target * Motor -
 Motor * source`, and scores it by the sum of its squared coefficients. In PGA that is the bulk
 norm plus the weight norm, the second taken through the complement, because the scalar
@@ -68,7 +68,7 @@ weight = residual.dual().reverse().scalar_product(residual.dual())
 misfit = (bulk + weight).sum(axis=0)
 ```
 
-**Moving a covariance.** The [Kalman sketch](examples/sketches/kalman.py) tracks a pose with an uncertainty `sigma`, the
+**Moving a covariance.** The [Kalman example](examples/geometry/kalman/core.py) tracks a pose with an uncertainty `sigma`, the
 covariance of a small twist perturbing the estimate. A covariance takes a linear readout of
 that twist, which is a line, to the twist correlated with it, so it is a map `Twist <- Line`,
 and when the estimate advances by a motor `step` the covariance moves like any map: pull the
@@ -78,7 +78,7 @@ readout back through the step, push the twist forward.
 sigma = step << sigma(step >> Line) + Q                     # Twist <- Line
 ```
 
-**A direction from a gradient.** The [ray tracer](examples/sketches/cga_quadric.py) needs a surface normal for shading. The
+**A direction from a gradient.** The [ray tracer](examples/geometry/cyclides/core.py) needs a surface normal for shading. The
 derivative of a surface's quadric along a ray, `derivative`, is a linear form on directions,
 `Scalar <- Direction`; the normal is the direction obtained by solving the metric form on
 directions against it.
@@ -136,7 +136,7 @@ and with what sign, and not from index labels.
 The products of the algebra split into two groups. The geometric product, the inner product
 `|`, the commutator, the sandwich, the norm and the inverse of a multivector use the metric.
 The wedge `^`, the complement `dual`, the regressive product `&`, addition, composition of maps
-and `trace` do not. The second group is the exterior algebra inside the geometric algebra. A
+and the trace of a map do not. The second group is the exterior algebra inside the geometric algebra. A
 calculation written entirely in it never uses the metric, and it is the group that carries
 incidence in a projective algebra, where the metric is degenerate.
 
@@ -177,7 +177,7 @@ A map `B <- A` and a form `Scalar <- (A*, A)` hold the same numbers with one slo
 side of the arrow. The two directions of conversion are not symmetric.
 
 Map to form is a pairing. Join the output with an open slot of the dual type and the map
-becomes a bilinear form, as the [modes example](examples/mechanics/modes/modes.py) does with its
+becomes a bilinear form, as the [modes example](examples/mechanics/modes/core.py) does with its
 stiffness:
 
 ```python
@@ -207,7 +207,9 @@ Which to use follows from the operations each supports without conversion. Maps 
 invert, and transport by sandwich. Forms add, are differentiated as costs, are solved against
 linear forms, and are the object of eigenproblems, including the generalized eigenproblem
 between two forms, `potential.eigh(kinetic)`, which uses no metric because both sides are
-forms. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
+forms. A form's eigenproblem on its own is relative to its slot's metric, the inner product of
+`S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eig()` measures a motor by
+its rotor part alone, sending the translations to infinity. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
 tensor; the difference is one pairing.
 
 ## 4. Quadrics
@@ -314,14 +316,15 @@ moment = (points * (Plane & points) * masses).sum(axis=0)              # Point <
 inertia = ((points & points.commutator(Bivector)) * masses).sum(axis=0) # Wrench <- Twist
 ```
 
-Moment to inertia goes through principal points. Diagonalize the moment as a form on planes.
-The moment's images of the eigenplanes are four points, each with mass one over its
-eigenvalue, and their momentum dyads sum to the inertia of the cloud:
+Moment to inertia goes through principal points. Diagonalize the plane metric against the
+moment as a form on planes. The generalized eigensolve normalizes the eigenplanes to unit
+moment, so the moment's images of those planes are four principal points whose momentum
+dyads sum directly to the inertia of the cloud:
 
 ```python
-values, planes = (Plane & moment).eigh()                                # [4] Scalar, [4] Plane
+values, planes = (Plane | Plane).eigh(Plane & moment)                   # [4] Scalar, [4] Plane
 principal = moment(planes)                                              # [4] Point
-inertia = ((principal & principal.commutator(Bivector)) / values).sum(axis=0)
+inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Wrench <- Twist
 ```
 
 Inertia to moment, as in the [inertia example](examples/mechanics/inertia.py), is the tensor
@@ -336,13 +339,14 @@ moment = construction.lstsq(inertia)                                    # Point 
 The two are also related through a trace, but that spelling requires the Euclidean metric and
 a frame, so it is not the geometric one; for comparison, in matrix notation one would write it
 as S = ½ tr(J) 1 − J, with S the spatial second-moment matrix and J the inertia tensor. The
-traces the inertia map does have are these:
+trace the inertia map does have is its own:
 
 ```python
 inertia.trace()                             # 0: momentum has no component along its own screw
-energy = Twist & inertia                    # Scalar <- (Twist, Twist): the kinetic energy form
-energy.trace()                              # the three moments of inertia, plus the mass three times
 ```
+
+Its kinetic energy form, `Twist & inertia`, has a trace only against a metric on twists, and
+the twist metric of PGA is singular: the translations carry no unit of their own.
 
 ## 8. Traces
 
@@ -365,6 +369,10 @@ blade-matching contraction. No frame and no reciprocal basis appear, and the res
 which is what Ricci is. The first Bianchi identity reads the same way, with the third vector
 left open so that the cyclic sum is a map that must vanish. A sum over a basis against its
 reciprocal is the coordinate spelling of this trace.
+
+A form's own `trace()` pairs its two slots through the slot's metric: it is the trace of the
+form with one slot raised, `(S | S).solve(form)` on vectors, and it exists only where that
+metric is invertible.
 
 ## 9. Homogeneous unknowns
 
@@ -410,7 +418,7 @@ removes them from the solve; it does not make them observable.
 The curvature of a cost over twists is a form, `Scalar <- (Twist, Twist)`, and it is the
 information on the pose. Its inverse on readouts is the covariance. A covariance is a map from
 a readout to the twist correlated with it, and a linear readout of a twist is a line, so the
-covariance is `Twist <- Line`. It moves like any map, as in the [Kalman sketch](examples/sketches/kalman.py):
+covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example](examples/geometry/kalman/core.py):
 pull the readout through the step, push the twist back:
 
 ```python

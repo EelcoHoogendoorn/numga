@@ -1,8 +1,11 @@
 """PGA motor estimation from one-sided point correspondence equations."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.geometry.registration import Motor, cloud, coordinates, fit_motor, jitter, mv
+from examples.geometry.registration import render, scenarios
+from examples.geometry.registration.core import Motor, cloud, fit_motor, jitter, mv
+from examples.geometry.registration.render import coordinates
 
 
 TRUTH = (mv.xw * 0.75 - mv.yw * 0.25 + mv.zw).exp() * (mv.xy * 0.4 - mv.yz * 0.3 + mv.zx * 0.7).exp()
@@ -50,10 +53,33 @@ def test_translation_is_recovered_by_the_same_fit():
     np.testing.assert_allclose(coordinates(estimate >> source), coordinates(target), atol=1e-10)
 
 
-def test_tutorial_runs_and_saves(tmp_path, monkeypatch):
-    from examples.geometry import registration
-    monkeypatch.setattr(registration, "PLOT_DIR", tmp_path)
-    registration.sandwich_alignment()
-    registration.one_sided_residual()
-    assert (tmp_path / "registration_sandwich_alignment.png").exists()
-    assert (tmp_path / "registration_one_sided_residual.png").exists()
+def test_sandwich_alignment_is_the_cartesian_optimum():
+    """Centering then aligning minimizes the summed squared point distances, so the one-sided
+    fit cannot beat it on that measure."""
+    _, target, aligned = scenarios.sandwich_alignment()
+    _, _, one_sided = scenarios.one_sided_residual()
+    cartesian = ((coordinates(aligned) - coordinates(target)) ** 2).sum()
+    coefficient = ((coordinates(one_sided) - coordinates(target)) ** 2).sum()
+    assert cartesian <= coefficient * (1 + 1e-12)
+
+
+def test_scenarios_render():
+    """Each scenario's geometry renders as a figure."""
+    figures = [
+        render.draw_registration(*scenarios.sandwich_alignment(), "Centered sandwich alignment"),
+        render.draw_registration(*scenarios.one_sided_residual(), "One-sided motor residual"),
+    ]
+    assert all(isinstance(figure, plt.Figure) for figure in figures)
+
+
+def test_mathematics_does_not_import_plotting():
+    """The math layer stays free of the plotting stack, transitively."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import examples.geometry.registration.core, examples.geometry.registration.scenarios, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"

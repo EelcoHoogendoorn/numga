@@ -2,96 +2,75 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import NumpyContext
-from numga.algebras import PGA3D
-from examples.mechanics.xpbd import (
-    project_distance_constraint,
-    project_velocity_constraint,
-    main,
-)
-from examples.mechanics.xpbd_plumbing import setup_chain, simulate_chain, compute_violations
+from examples.mechanics.xpbd import core, render, scenarios
+
+context = NumpyContext(core.ga)
+mv = context.multivector
 
 
-def test_geometric_distance_constraint_projection():
-    """Verify that project_distance_constraint closes anchor gaps between body pairs."""
-    context = NumpyContext(PGA3D)
-    state, partitions = setup_chain(context, n_bodies=2, distance=0.1, compliance=0.0)
+def test_distance_projection_closes_a_joint():
+    """Repeated projection closes the gap between two displaced anchors."""
+    chain, partitions = scenarios.chain(context, 2, 0.1, 5e-2, 0.0, 1e-3, 0.5)
+    joints = partitions[0]
+    assert core.joint_gaps(chain.motor, partitions).to_array().max() < 1e-12
 
-    part = partitions[0]
-    initial_violations = compute_violations(state.motor, [part])
-    assert initial_violations[0] < 1e-12
+    # Displace link 1 by (2, -1, 3) mm.
+    shift = ((mv.xw * 0.001 - mv.yw * 0.0005 + mv.zw * 0.0015) * np.array([0.0, 1.0])).exp()
+    motor = chain.motor * shift
+    assert core.joint_gaps(motor, partitions).to_array().max() > 0.003
 
-    # Perturb body 1 by a random translation
-    trans = (context.multivector.vector([0.02, -0.01, 0.03, 0.0]) * -0.5).wedge(
-        context.multivector.vector([0.0, 0.0, 0.0, 1.0])
-    ).exp()
-    perturbed_motor = state.motor.at[1].set(state.motor[1] * trans)
-
-    perturbed_violations = compute_violations(perturbed_motor, [part])
-    assert perturbed_violations[0] > 0.01
-
-    # Apply XPBD constraint projections to let non-linear rotational displacement converge
-    m_pair = perturbed_motor[part.body_idx]
-    inv_I_pair = state.inertia_inv[part.body_idx]
-    dt = 0.01
-
-    motor_cur = perturbed_motor
-    for _ in range(6):
-        relaxed_pair = project_distance_constraint(
-            motor_cur[part.body_idx], part.anchors, inv_I_pair, part.compliance, dt=dt
+    # The anchor does not respond parallel to the gap, so each projection removes a fraction of it.
+    pair = motor[joints.bodies]
+    for _ in range(30):
+        pair = core.project_distance_constraint(
+            pair, joints.anchors, chain.inertia_inv[joints.bodies], joints.compliance, 0.01
         )
-        motor_cur = motor_cur.at[part.body_idx].set(relaxed_pair)
-
-    relaxed_violations = compute_violations(motor_cur, [part])
-    assert relaxed_violations[0] < 1e-4
-
-
-def test_velocity_constraint_projection():
-    """Verify that project_velocity_constraint cancels relative anchor velocity."""
-    context = NumpyContext(PGA3D)
-    state, partitions = setup_chain(context, n_bodies=2, distance=0.1)
-    part = partitions[0]
-
-    # Perturb body 1 with a linear velocity along the constraint direction
-    delta_v = np.zeros(state.rate.kernel.shape)
-    delta_v[1, 0] = 0.5
-    perturbed_rate = state.rate.map_kernel(lambda k: k + delta_v, preserve_traits=True)
-
-    m_pair = state.motor[part.body_idx]
-    r_pair = perturbed_rate[part.body_idx]
-    inv_I_pair = state.inertia_inv[part.body_idx]
-
-    bivector = context.algebra.subspace.bivector()
-    anchors_map = part.anchors & part.anchors.commutator(bivector)
-    initial_rel_v = (m_pair >> anchors_map(r_pair))[0] - (m_pair >> anchors_map(r_pair))[1]
-    assert np.max(initial_rel_v.norm().kernel) > 0.01
-
-    # Project velocity
-    resolved_rates = project_velocity_constraint(m_pair, r_pair, part.anchors, inv_I_pair, dt=0.01)
-    final_rel_v = (m_pair >> anchors_map(resolved_rates))[0] - (m_pair >> anchors_map(resolved_rates))[1]
-    assert np.max(final_rel_v.norm().kernel) < 1e-6
+    world_anchors = pair >> joints.anchors
+    assert (world_anchors[0] & world_anchors[1]).norm().select[0].to_array().max() < 1e-6
+    # The fixed link has infinite mass: only link 1 moved.
+    np.testing.assert_allclose(pair[0, 0].kernel, motor[0].kernel)
 
 
-def test_xpbd_chain_simulation():
-    """Simulate a swinging chain and verify all joints remain connected."""
-    state, partitions = setup_chain(n_bodies=4, distance=0.08)
-    states, violations = simulate_chain(
-        state,
-        partitions,
-        n_steps=30,
-        substeps=4,
-        dt=0.02,
+def test_velocity_projection_cancels_relative_anchor_velocity():
+    chain, partitions = scenarios.chain(context, 2, 0.1, 5e-2, 1e-9, 1e-3, 0.5)
+    joints = partitions[0]
+    motors = chain.motor[joints.bodies]
+    rates = chain.rate[joints.bodies] + (mv.xw * 0.5 + mv.yz * 0.3) * np.array([[0.0], [1.0]])
+
+    anchor_velocity = joints.anchors & joints.anchors.commutator(core.Rate)
+
+    def relative(rates):
+        velocities = motors >> anchor_velocity(rates)
+        return (velocities[0] - velocities[1]).norm().select[0].to_array().max()
+
+    assert relative(rates) > 0.01
+    resolved = core.project_velocity_constraint(motors, rates, joints.anchors, chain.inertia_inv[joints.bodies])
+    assert relative(resolved) < 1e-6
+
+
+def test_numpy_chain_draws():
+    """The scenario asserts closed joints and a fixed first link; the figure draws."""
+    assert isinstance(render.draw_chain(*scenarios.swinging_chain(4, 20, 2, 0.02)), plt.Figure)
+
+
+def test_jax_chain_matches_numpy():
+    numpy_centres, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
+    jax_centres, jax_gaps = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
+    np.testing.assert_allclose(render.euclidean(jax_centres), render.euclidean(numpy_centres), atol=1e-5)
+    assert isinstance(render.draw_chain(jax_centres, jax_gaps), plt.Figure)
+
+
+def test_mathematics_does_not_import_plotting():
+    import subprocess
+    import sys
+
+    probe = (
+        "import examples.mechanics.xpbd.core, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
     )
-    assert len(states) == 31
-    for v in violations:
-        assert np.max(v) < 1e-4
-
-
-def test_main_figure(tmp_path):
-    """Verify that main runs and generates the output figure."""
-    out_file = tmp_path / "test_chain.png"
-    states, violations = main(n_bodies=4, n_steps=10, substeps=2, plot_path=str(out_file))
-    assert out_file.exists()
-    assert len(states) == 11
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", out.stdout

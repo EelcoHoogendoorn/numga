@@ -5,16 +5,15 @@ from __future__ import annotations
 import numpy as np
 
 from examples.electromagnetism.maxwell import (
-    mv,
-    V,
+    Vector as V,
     isotropic_cloud,
     main,
     null_cloud,
     normal_stress,
+    mv,
     real_sorted,
+    t,
 )
-
-t = mv.vector([1.0, 0.0, 0.0, 0.0])   # rest observer with full vector support
 
 
 def test_maxwell_stress_tracelessness_and_symmetry():
@@ -33,7 +32,7 @@ def test_dust_extensor_invariants_and_ram_pressure():
     """Verify dust extensor has zero rest stress, exact trace = rho, and correct dynamic ram pressure."""
     rho = 5.0
     T_rest = rho * t * (t | V)
-    assert all(np.isclose(normal_stress(T_rest, n), 0.0, atol=1e-14) for n in (mv.x, mv.y, mv.z))
+    assert all(np.isclose(normal_stress(T_rest, n).to_array(), 0.0, atol=1e-14) for n in (mv.x, mv.y, mv.z))
     assert np.isclose(T_rest.trace().kernel, rho, atol=1e-14)
 
     zeta = np.arctanh(0.6)
@@ -41,7 +40,7 @@ def test_dust_extensor_invariants_and_ram_pressure():
     gamma, beta = np.cosh(zeta), np.tanh(zeta)
     T_moving = rho * u * (u | V)
     assert np.isclose(T_moving.trace().kernel, rho, atol=1e-14)
-    assert np.isclose(normal_stress(T_moving, mv.z), -rho * gamma**2 * beta**2, atol=1e-14)
+    assert np.isclose(normal_stress(T_moving, mv.z).to_array(), -rho * gamma**2 * beta**2, atol=1e-14)
 
 
 def test_particle_cloud_is_an_ideal_fluid():

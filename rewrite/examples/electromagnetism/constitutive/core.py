@@ -159,25 +159,6 @@ def polarization_eigenmodes(k, medium: Extensor):
     return vh[..., -1]
 
 
-def fresnel_wave_surface_1d(
-    medium: Extensor,
-    angles: np.ndarray,
-    speeds: np.ndarray,
-    threshold: float = 3e-3,
-) -> list[tuple[float, list[float]]]:
-    """Compute allowed phase speeds as a function of propagation angle theta in the xz plane."""
-    results = []
-    for theta in angles:
-        # Propagation direction in xz plane:
-        kx = np.sin(theta)
-        kz = np.cos(theta)
-        k_dir = x * kx + z * kz
-        svals = solve_dispersion_scan(speeds, medium, direction=k_dir)
-        mins = minimum_speeds(speeds, svals, threshold=threshold)
-        results.append((float(theta), mins.tolist()))
-    return results
-
-
 def fresnel_drag_velocities(
     eps: float,
     mu: float,

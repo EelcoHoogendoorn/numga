@@ -2,28 +2,16 @@
 
 from __future__ import annotations
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-
-from examples.geometry.fitting import (
-    fit,
-    ga,
-    ctx,
-    Line,
-    Plane,
-    Point,
-    bundle,
-    cloud,
-    euclidean,
-    jitter,
-    line_caps,
-    mv,
-    patch,
-    point,
-    segment,
+from examples.geometry.fitting import render, scenarios
+from examples.geometry.fitting.core import (
+    Line, Plane, Point, bundle, cloud, ctx, fit, ga, jitter, end_planes, mv, patch, point, segment,
 )
+from examples.geometry.fitting.render import euclidean
 
-POSE = (mv.xw * 0.4 + mv.yw * -0.3 + mv.zw * 0.6).exp() * (mv.yz * 0.3).exp() * (mv.xy * 0.5).exp()
+POSE = scenarios.pose
 
 
 def same_element(a, b, atol: float) -> bool:
@@ -62,7 +50,7 @@ def test_line_fit_matches_principal_axis_and_is_a_line():
 
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
-    ends = euclidean(line.wedge(POSE >> line_caps(2.0)))
+    ends = euclidean(line.wedge(POSE >> end_planes(2.0)))
     d = ends[1] - ends[0]
     d = d / np.linalg.norm(d)
     assert np.isclose(abs(d @ vt[0]), 1.0, atol=1e-6)
@@ -92,21 +80,32 @@ def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     directions = directions / np.linalg.norm(directions, axis=1, keepdims=True)
     projector = np.eye(3)[None] - directions[:, :, None] * directions[:, None, :]
     # A point on each line: meet the line with the plane through the origin perpendicular to it.
-    normals = mv.vector(np.concatenate([directions, np.zeros((40, 1))], axis=-1))
+    normals = mv.x * directions[:, 0] + mv.y * directions[:, 1] + mv.z * directions[:, 2]
     on_line = euclidean(rays.wedge(normals))
     A = projector.sum(axis=0)
     b = np.einsum("nij,nj->i", projector, on_line)
     np.testing.assert_allclose(euclidean(meet), np.linalg.solve(A, b), atol=1e-8)
 
 
-def test_tutorial_runs_and_saves(tmp_path, monkeypatch):
-    from examples.geometry import fitting
-    monkeypatch.setattr(fitting, "PLOT_DIR", tmp_path)
-    fitting.point_to_points()
-    fitting.line_to_points()
-    fitting.plane_to_points()
-    fitting.point_to_lines()
-    assert (tmp_path / "fitting_point_to_points.png").exists()
-    assert (tmp_path / "fitting_line_to_points.png").exists()
-    assert (tmp_path / "fitting_plane_to_points.png").exists()
-    assert (tmp_path / "fitting_point_to_lines.png").exists()
+def test_scenarios_render():
+    """Each scenario's geometry renders as a figure."""
+    figures = [
+        render.draw_point_fit(*scenarios.point_to_points()),
+        render.draw_line_fit(*scenarios.line_to_points()),
+        render.draw_plane_fit(*scenarios.plane_to_points()),
+        render.draw_bundle_fit(*scenarios.point_to_lines()),
+    ]
+    assert all(isinstance(figure, plt.Figure) for figure in figures)
+
+
+def test_mathematics_does_not_import_plotting():
+    """The math layer stays free of the plotting stack, transitively."""
+    import subprocess
+    import sys
+
+    probe = (
+        "import examples.geometry.fitting.core, examples.geometry.fitting.scenarios, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"

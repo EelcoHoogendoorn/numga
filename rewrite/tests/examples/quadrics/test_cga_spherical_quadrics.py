@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import numpy as np
 
-from examples.quadrics.cga_spherical_quadrics import (
+from examples.quadrics.cga_spherical_quadrics import render, scenarios
+from examples.quadrics.cga_spherical_quadrics.core import (
     ga,
-    ctx,
     mv,
     Vector,
     Plane,
     Quadric,
     Bivector,
-    Rotor,
     make_spherical_donut,
     make_conical_donut,
     make_bernoulli_lemniscate,
@@ -25,11 +27,9 @@ from examples.quadrics.cga_spherical_quadrics import (
     make_spherical_hourglass,
     make_spherical_parabola,
     make_circle_intersection_vortex,
-    make_hemisphere_pixels,
-    render_frame,
-    render_vortex_animation,
-    SHAPES,
+    point,
 )
+from examples.quadrics.elliptic_physics.render import hemisphere
 
 
 def test_algebra_and_gatypes():
@@ -42,17 +42,12 @@ def test_algebra_and_gatypes():
 
 
 def test_null_cone_pixels():
-    """Verify that all hemisphere pixels are exact null vectors in Cl(3, 1)."""
-    pixels, inside, r2 = make_hemisphere_pixels(resolution=60, supersample=1)
+    """Hemisphere pixels are null vectors of weight one on the unit sphere."""
+    coordinates, inside, rim = hemisphere(60)
     assert inside.sum() > 0
-
-    sq = pixels.squared().kernel
-    np.testing.assert_allclose(sq, 0.0, atol=1e-12)
-
-    coords = pixels.kernel
-    np.testing.assert_allclose(coords[:, 3], 1.0, atol=1e-12)
-    radius_sq = np.sum(coords[:, :3] ** 2, axis=-1)
-    np.testing.assert_allclose(radius_sq, 1.0, atol=1e-12)
+    pixels = point(coordinates)
+    np.testing.assert_allclose((pixels | pixels).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose((pixels | mv.w).to_array(), -1.0, atol=1e-12)
 
 
 def test_conical_donut_topology():
@@ -117,12 +112,28 @@ def test_circle_intersection_vortex():
 
 
 def test_render_all_shapes():
-    """Verify rendering a frame for each of the 13 shapes produces valid non-empty output."""
-    assert len(SHAPES) == 13
-    pixels, inside, r2 = make_hemisphere_pixels(resolution=60, supersample=1)
-    for name, builder in SHAPES:
-        quadrics, colors = builder()
-        frame = render_frame(quadrics, colors, pixels, inside, r2, resolution=60, supersample=1)
+    """A frame of each of the 13 shapes is a non-empty image."""
+    table = scenarios.shapes()
+    assert len(table) == 13
+    for name in table:
+        world, colors = scenarios.vortex([name], 1)
+        frame = render.vortex_frames(world, colors, 60, 1)[0]
         assert frame.shape == (60, 60, 3)
         assert frame.dtype == np.uint8
         assert np.any(frame != frame[0, 0])
+
+
+def test_mathematics_does_not_import_plotting():
+    """The math layer must stay free of the plotting stack, transitively."""
+    probe = (
+        "import examples.quadrics.cga_spherical_quadrics.core, sys; "
+        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
+    )
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
+
+
+def test_vortex_animates():
+    world, colors = scenarios.vortex(["trio"], 6)
+    frames = render.vortex_frames(world, colors, 80, 1)
+    assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
