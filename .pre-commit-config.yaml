@@ -1,0 +1,6 @@
+# Notebooks are committed without outputs; run `pre-commit install` once to strip them on every commit.
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout

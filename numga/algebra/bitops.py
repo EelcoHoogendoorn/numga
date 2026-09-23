@@ -1,61 +1,83 @@
-from typing import List, Iterable
+"""Small, context-free operations on canonical integer blade masks."""
+
+from __future__ import annotations
+
+from operator import index
+from typing import Iterable
 
 import numpy as np
 
 
-# # FIXME: use packbits/unpackbits builtin?
-	# r = np.zeros((), dtype=self.elements_dtype)
-	# for b in reversed(bits):
-	# 	r = np.left_shift(r, 1) + b
-	# return r.astype(self.elements_dtype)
-def parity_to_sign(p: np.array) -> np.array:
-	"""Turn even-odd parity of ints to a sign value
-	[0, 1, 2, 3] -> [+1, -1, +1, -1]
-	"""
-	return (1 - (p % 2) * 2).astype(np.int8)
+_bit_count_radix = (
+    np.unpackbits(np.arange(256, dtype=np.uint8)[:, None], axis=1)
+    .sum(axis=1)
+    .astype(np.uint8)
+)
 
 
-def minimal_uint_type(bits: int):
-	"""Retrieve the minimal integer dtype for holding a given integer value"""
-	bytes = (bits - 1) // 8 + 1
-	dtype = {1: np.uint8, 2: np.uint16, 3: np.uint32, 4: np.uint32}[bytes]
-	return bytes, dtype
+def bit_count(b: int | np.ndarray) -> int | np.ndarray:
+    """Count the set bits in an integer or array of integers."""
+    if isinstance(b, (int, np.integer)):
+        return int(b).bit_count()
+    b = np.asarray(b)
+    if hasattr(np, "bitwise_count"):
+        return np.bitwise_count(b)
+    raw = b.view(np.uint8).reshape(b.shape + (-1,))
+    return _bit_count_radix[raw].sum(axis=-1).astype(np.uint8)
 
 
-def bit_pack(bits: List[bool]) -> np.ndarray:
-	"""Packs a sequence of booleans as a singleton integer array"""
-	return np.array(int(''.join(str(b) for b in reversed(bits)), 2))
+def parity_to_sign(parity: int | np.ndarray) -> int | np.ndarray:
+    """Map even/odd parity to ``+1``/``-1``."""
+    if isinstance(parity, (int, np.integer)):
+        return 1 if index(parity) % 2 == 0 else -1
+    return (1 - (np.asarray(parity) % 2) * 2).astype(np.int8)
 
 
-bit_count_radix = np.unpackbits(np.arange(256, dtype=np.uint8)[:, None], axis=1).sum(axis=1).astype(np.uint8)
-def bit_count(b: np.ndarray, nbytes=None) -> np.ndarray:
-	"""Count the bits in each element of array b
-
-	Parameters
-	----------
-	b: ndarray, [...]
-
-	Returns
-	-------
-	ndarray, [...], uint8
-		bitcounts of each element
-	"""
-	# print(b.dtype.byteorder)
-	bytes = np.ndarray(
-		buffer=b.data,
-		strides=(1,) + b.strides,   # add new axis that steps over one byte at a time
-		# FIXME: not counting all bytes is scary wrt endianness! needs tests!
-		# shape=((nbytes or b.dtype.itemsize),) + b.shape,
-		shape=(b.dtype.itemsize,) + b.shape,
-		dtype=np.uint8          # reinterpret as uint8 so we can do eficient lookup in our radix table
-	)
-	return sum(bit_count_radix[byte] for byte in bytes)
+parity_sign = parity_to_sign
 
 
-def biterator(elements: np.array, stop, skip=0) -> Iterable[np.array]:
-	"""Slice an array of elements into an iterable of its constituent bits"""
-	if skip:
-		elements = np.right_shift(elements, skip)
-	for i in range(stop - skip):
-		yield np.bitwise_and(elements, 1, dtype=np.uint8)
-		elements = np.right_shift(elements, 1)
+def permutation_sign(values: Iterable[int]) -> int:
+    """Return the sign of the permutation represented by unique integers."""
+
+    items = tuple(index(value) for value in values)
+    if len(set(items)) != len(items):
+        raise ValueError("a permutation cannot contain duplicate entries")
+    inversions = sum(
+        left > right
+        for position, left in enumerate(items)
+        for right in items[position + 1 :]
+    )
+    return parity_sign(inversions)
+
+
+def mask_from_indices(indices: Iterable[int]) -> int:
+    """Pack distinct, non-negative generator indices into a blade mask."""
+
+    result = 0
+    for value in indices:
+        generator = index(value)
+        if generator < 0:
+            raise ValueError("generator indices must be non-negative")
+        bit = 1 << generator
+        if result & bit:
+            raise ValueError("a basis blade cannot repeat a generator")
+        result |= bit
+    return result
+
+
+def unsigned_dtype(dimension: int) -> np.dtype:
+    """Return the smallest NumPy dtype able to store this algebra's masks."""
+
+    dimension = index(dimension)
+    if dimension < 0:
+        raise ValueError("dimension must be non-negative")
+    if dimension <= 8:
+        return np.dtype(np.uint8)
+    if dimension <= 16:
+        return np.dtype(np.uint16)
+    if dimension <= 32:
+        return np.dtype(np.uint32)
+    if dimension <= 64:
+        return np.dtype(np.uint64)
+    raise ValueError("NumPy blade-mask arrays support at most 64 generators")
+

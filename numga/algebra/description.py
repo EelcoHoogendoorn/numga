@@ -1,148 +1,188 @@
-from functools import cached_property
-from typing import Tuple, List
+"""Immutable descriptions of finite-dimensional diagonal-metric algebras."""
 
-str_to_sign = {'+': +1, '0': 0, '-': -1}
-sign_to_str = {-1: '-', 0: '0', +1: '+'}
+from __future__ import annotations
 
-
-def parse_description(description: str):
-	"""Parse an algebra description in string format
-
-	Parameters
-	----------
-	description: str
-
-	Returns
-	-------
-	names : Tuple[str]
-	signature: Tuple[Sign]
-
-	Example
-	-------
-	'x+y+z+w0'
-	"""
-
-	def parse(d):
-		last = 0
-		for i, c in enumerate(d):
-			if c in str_to_sign:
-				yield d[last:i], str_to_sign[c]
-				last = i + 1
-		assert last == len(d)
-
-	names, signature = zip(*parse(description))
-	return names, signature
+from dataclasses import dataclass
+from operator import index
+from typing import Iterable, Sequence
 
 
+_CHAR_TO_SIGN = {"+": 1, "-": -1, "0": 0}
+_SIGN_TO_CHAR = {value: key for key, value in _CHAR_TO_SIGN.items()}
+
+
+def _metric_signs(signature: str | Iterable[int]) -> tuple[int, ...]:
+    if isinstance(signature, str):
+        try:
+            return tuple(_CHAR_TO_SIGN[character] for character in signature)
+        except KeyError as error:
+            raise ValueError(
+                "a metric signature string may contain only '+', '-', and '0'"
+            ) from error
+
+    result: list[int] = []
+    for value in signature:
+        try:
+            sign = index(value)
+        except TypeError as error:
+            raise TypeError("metric entries must be integers") from error
+        if sign not in (-1, 0, 1):
+            raise ValueError("metric entries must be -1, 0, or +1")
+        result.append(sign)
+    return tuple(result)
+
+
+def _default_basis_names(dimension: int) -> tuple[str, ...]:
+    """Return deterministic compact names: a..z, aa..az, ba..."""
+
+    def name(number: int) -> str:
+        characters: list[str] = []
+        while True:
+            number, remainder = divmod(number, 26)
+            characters.append(chr(ord("a") + remainder))
+            if number == 0:
+                return "".join(reversed(characters))
+            number -= 1
+
+    return tuple(name(i) for i in range(dimension))
+
+
+def parse_description(specification: str) -> tuple[tuple[str, ...], tuple[int, ...]]:
+    """Parse compact interleaved notation such as ``"x+y+z+w0"``.
+
+    The three metric characters delimit generator names. Structured construction
+    via :class:`AlgebraDescription` remains available for names containing one
+    of those characters.
+    """
+
+    if not isinstance(specification, str):
+        raise TypeError("an algebra description must be a string")
+    if not specification:
+        return (), ()
+
+    names: list[str] = []
+    signs: list[int] = []
+    start = 0
+    for position, character in enumerate(specification):
+        if character not in _CHAR_TO_SIGN:
+            continue
+        name = specification[start:position]
+        if not name:
+            raise ValueError(
+                f"missing generator name before metric character at index {position}"
+            )
+        names.append(name)
+        signs.append(_CHAR_TO_SIGN[character])
+        start = position + 1
+
+    if start != len(specification):
+        raise ValueError("an algebra description must end in '+', '-', or '0'")
+
+    return tuple(names), tuple(signs)
+
+
+@dataclass(frozen=True, slots=True)
 class AlgebraDescription:
-	"""All the boilerplate bookkeeping which is generic
-	to any particular implementation of the algebra's logic"""
-	# FIXME: does this split into description helper class add anything at all? not sure
-	#  basically, this description class contains just boring implementation-aspecific helper classes
+    """The named orthogonal generators and diagonal metric of an algebra."""
 
-	# FIXME: should we support non-diagonal metrics? think im fine without them for now
-	#  but would be good if we dont code ourselves into a corner that demands a complete rewrite...
-	#  hard part about nondiag metric seems to me that each blade product may return not one single blade,
-	#  but a linear combination of them
+    basis_names: tuple[str, ...]
+    signature: tuple[int, ...]
 
-	signature: Tuple[int]
-	# FIXME: generators rather than basis?
-	basis_names: Tuple[str]
+    def __post_init__(self) -> None:
+        names = tuple(self.basis_names)
+        signs = _metric_signs(self.signature)
+        object.__setattr__(self, "basis_names", names)
+        object.__setattr__(self, "signature", signs)
 
-	def __init__(self, basis_names: Tuple[str], signature: Tuple[int]):
-		self.basis_names = tuple(basis_names)
-		self.signature = tuple(signature)
+        if len(names) != len(signs):
+            raise ValueError("basis_names and signature must have the same length")
+        if any(not isinstance(name, str) or not name for name in names):
+            raise ValueError("basis names must be non-empty strings")
+        if len(set(names)) != len(names):
+            raise ValueError("basis names must be unique")
+        if "1" in names:
+            raise ValueError("'1' is reserved as the scalar blade name")
 
-	@staticmethod
-	def from_str(description) -> "AlgebraDescription":
-		"""Construct algebra using interleaved basis names and signatures syntax
+    @classmethod
+    def parse(cls, specification: str) -> "AlgebraDescription":
+        return cls(*parse_description(specification))
 
-		Examples
-		--------
-		'x+y+z+w0' constructs the algebra corresponding to 3d PGA
-		"""
-		basis_names, signature = parse_description(description)
-		return AlgebraDescription(basis_names, signature)
+    @classmethod
+    def from_signature(
+        cls,
+        signature: str | Iterable[int],
+        basis_names: Sequence[str] | None = None,
+    ) -> "AlgebraDescription":
+        signs = _metric_signs(signature)
+        names = (
+            _default_basis_names(len(signs))
+            if basis_names is None
+            else tuple(basis_names)
+        )
+        return cls(names, signs)
 
-	@staticmethod
-	def from_pqr(p: int, q: int, r: int) -> "AlgebraDescription":
-		"""Construct algebra using pqr description
+    @classmethod
+    def from_pqr(
+        cls,
+        p: int,
+        q: int,
+        r: int,
+        basis_names: Sequence[str] | None = None,
+    ) -> "AlgebraDescription":
+        counts: list[int] = []
+        for value in (p, q, r):
+            try:
+                count = index(value)
+            except TypeError as error:
+                raise TypeError("p, q, and r must be integers") from error
+            if count < 0:
+                raise ValueError("p, q, and r must be non-negative")
+            counts.append(count)
+        positive, negative, null = counts
+        return cls.from_signature(
+            (1,) * positive + (-1,) * negative + (0,) * null,
+            basis_names=basis_names,
+        )
 
-		Examples
-		--------
-		(3, 0, 1) constructs the algebra corresponding to 3d PGA
-		"""
-		sig = '+' * p + '-' * q + '0' * r
-		return AlgebraDescription.from_signature(sig)
+    @property
+    def dimension(self) -> int:
+        return len(self.signature)
 
-	@staticmethod
-	def from_signature(sig) -> "AlgebraDescription":
-		"""Construct algebra using signature description
+    @property
+    def pqr(self) -> tuple[int, int, int]:
+        return (
+            self.signature.count(1),
+            self.signature.count(-1),
+            self.signature.count(0),
+        )
 
-		Examples
-		--------
-		'+++0' constructs the algebra corresponding to 3d PGA
-		"""
-		from numga.util import chars
-		return AlgebraDescription.from_str(''.join(c + s for c, s in zip(chars, sig)))
+    @property
+    def signature_string(self) -> str:
+        return "".join(_SIGN_TO_CHAR[sign] for sign in self.signature)
 
-	@property
-	def n_dimensions(self) -> int:
-		"""Number of distinct canonical 1-blades in the algebra"""
-		return len(self.signature)
-	@property
-	def n_blades(self) -> int:
-		"""Number of distinct k-blades in the algebra"""
-		return 2 ** self.n_dimensions
-	@property
-	def n_grades(self) -> int:
-		"""Number of distinct grades present in the algebra"""
-		return self.n_dimensions + 1
+    def to_compact_string(self) -> str:
+        """Return compact notation when all names fit that notation."""
 
-	@cached_property
-	def description_str(self) -> str:
-		return ''.join(b+s for b, s in zip(self.basis_names, self.signature_str))
-	@cached_property
-	def pqr_str(self) -> (int, int, int):
-		return '{0}{1}{2}'.format(*self.pqr)
-	@cached_property
-	def signature_str(self) -> str:
-		return ''.join(sign_to_str[s] for s in self.signature)
-	@cached_property
-	def pqr(self) -> (int, int, int):
-		return (sum(self.positives), sum(self.negatives), sum(self.zeros))
+        if any(
+            any(character in _CHAR_TO_SIGN for character in name)
+            for name in self.basis_names
+        ):
+            raise ValueError(
+                "basis names containing '+', '-', or '0' have no compact representation"
+            )
+        return "".join(
+            name + _SIGN_TO_CHAR[sign]
+            for name, sign in zip(self.basis_names, self.signature)
+        )
 
-	def parse_tokens(self, blade_name: str) -> Tuple[int]:
-		"""Given a string like 'yx' parse it into recognized basis tokens"""
-		def parse(d: str) -> int:
-			last = 0
-			for i, c in enumerate(d):
-				substr = blade_name[last:i+1]
-				if substr in self.basis_names:
-					yield self.basis_names.index(substr)
-					last = i + 1
-			if last < len(d):
-				raise Exception(f'Unrecognized blade name {substr}')
-		return tuple(parse(blade_name))
-
-	@property
-	def zeros(self) -> List[bool]:
-		"""0/1 mask indicating all degenerate basis vectors"""
-		return [1 if s == 0 else 0 for s in self.signature]
-	@property
-	def negatives(self) -> List[bool]:
-		"""0/1 mask indicating all negative basis vectors"""
-		return [1 if s == -1 else 0 for s in self.signature]
-	@property
-	def positives(self) -> List[bool]:
-		"""0/1 mask indicating all positive basis vectors"""
-		return [1 if s == +1 else 0 for s in self.signature]
-	@property
-	def all(self) -> List[bool]:
-		"""0/1 mask indicating all basis vectors"""
-		return [1 for s in self.signature]
-
-	def __mul__(self, other) -> "AlgebraDescription":
-		"""Construct product algebra"""
-		assert not set(self.basis_names).intersection(other.basis_names)
-		return AlgebraDescription.from_str(self.description_str + other.description_str)
+    def __mul__(self, other: object) -> "AlgebraDescription":
+        if not isinstance(other, AlgebraDescription):
+            return NotImplemented
+        overlap = set(self.basis_names).intersection(other.basis_names)
+        if overlap:
+            names = ", ".join(sorted(overlap))
+            raise ValueError(f"product algebra has duplicate basis names: {names}")
+        return AlgebraDescription(
+            self.basis_names + other.basis_names,
+            self.signature + other.signature,
+        )

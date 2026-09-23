@@ -1,644 +1,518 @@
-"""
-Design notes
-------------
-This operator factory is designed to perform 'late binding' of subspace arguments.
-That is, the 'slicing' of full multiplication tables down to the relevant subspace,
-is propagated through the constructed expressions, so at the lowest level,
-we only construct those parts of the multiplication table that are actually required.
+"""Small native factory for exact output-first operation Extensors."""
 
-This should pay off massively in performance for high dimensional algebras;
-but given that this is not really the focus of this library, I somewhat question if its worth the complexity.
-Just eagerly constructing all multiplication tables, and slicing out the relevant parts at the end,
-would result in much more transparent and maintainable code.
+from __future__ import annotations
 
-
-Currently, sparse tensors are only used as an intermediate format, to convert cayley tables to dense tensors.
-Maintaining the sparse format internally in the operator, as different expressions are combined and sliced,
-would be great for scalability to high dimensional algebras. But the code is more likely to move in the other direction.
-
-Probably, it would be best to maintain two implementations; one based on eager construction of cayley tables,
-and dense tensors, for minimum code complexity; and likely optimal performance for low dimensional algebras.
-And then maintain a separate set of classes, with sparse tensors, and late binding of subspace arguments.
-It should then also be easy to test for equality of outcome between the two.
-
-"""
-
-from typing import Tuple
+from fractions import Fraction
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
 
-from numga.algebra.algebra import Algebra
-from numga.algebra.bitops import parity_to_sign
-from numga.operator.operator import Operator
-from numga.operator.sparse_tensor import SparseTensor
-from numga.subspace.subspace import SubSpace
-from numga.util import cache, match
+from numga.algebra.self_product import grade_transform_sign, symmetric_product_terms
+from numga.binding import AxisTransform, TypeRules
+from numga.extensor import Extensor
+from numga.gatype import GAType
+from numga.gatype.traits import Identity
+from numga.operator.kernel import SymbolicKernel
+from numga.subspace import SubSpace
+
+if TYPE_CHECKING:
+    from numga.algebra import Algebra
+
+
+GradeRule = Callable[[int, int, int], bool]
+BasisRule = Callable[[int, int], tuple[int, int | Fraction]]
+OperandType = SubSpace | GAType
 
 
 class OperatorFactory:
-	"""Contains constructors for a rich set of geometric linear operators,
-	and acts as a cache of those operators.
-
-	Note that the operators merely manage the 'symbolic' side of things;
-	we can use these operators to reason about how operators compose, and what their input and output subspace are.
-	But how those operators are stored in memory, or how we execute them,
-	is deferred to backend specific operator classes.
-
-	Perhaps its an OperatorWarehouse, as much as a Factory?
-
-	Caching of al created operators happens on the basis of the subspace arguments,
-	and the subspace class implement a flyweight pattern, to make this efficient.
-	NOTE: we also may bother the cache with operator intermediate arguments
-	these are not flyweighted probably a bad idea?
-	"""
-
-	def __init__(self, algebra: Algebra):
-		self.algebra = algebra
-
-	def build(self, kernel, axes):
-		return Operator.build(kernel, axes)
-
-	@cache
-	def negatives(self, v: SubSpace) -> int:
-		"""Negatives signs picked up by dotting these blades with themselves"""
-		return parity_to_sign(self.algebra.bit_dot(v.subspace.blades, self.algebra.negatives))
-
-	@cache
-	def identity(self, output: SubSpace) -> "Operator":
-		"""Identity operator"""
-		identity = np.identity(len(output), self.algebra.blade_dtype)
-		return self.build(identity, (output, output.subspace))
-	def diagonal(self, output: SubSpace, weights) -> "Operator":
-		"""Diagonal scaling operator"""
-		kernel = np.diag(weights)
-		return self.build(kernel, (output, output.subspace))
-	def _complement(self, v: SubSpace, blades, signs) -> Operator:
-		"""Construct an operator that maps the subspace/operator to a complementary set of blades"""
-		kernel = SparseTensor.from_cayley((v.subspace,), blades, signs)
-		return Operator.build(kernel, (v, v.subspace.complement()))
-
-	@cache
-	def select(self, i: SubSpace, o: SubSpace) -> Operator:
-		"""selection output subspace. think of better name?"""
-		identity = np.identity(self.algebra.n_blades, self.algebra.blade_dtype)
-		# FIXME: construction from dense full identity scales poorly!
-		# NOTE: dont squeeze here; broadcasting to zero blades is part of intended functionality
-		return Operator.build(
-			identity.take(i.subspace.blades, axis=0).take(o.subspace.blades, axis=1),
-			(i.subspace, o.subspace)
-		)
-	@cache
-	def restrict(self, i: SubSpace, o: SubSpace) -> Operator:
-		"""Restrict i to o; drop terms not in o"""
-		return self.select(i, o.intersection(i))
-
-	# @cache
-	# def grade_negation(self, subspace, grades: Tuple[int]) -> "Operator":
-	# 	sign = parity_to_sign([g in grades for g in subspace.grades()])
-	# 	return self.diagonal(subspace, sign)
-	@cache
-	def scalar_negation(self, v) -> "Operator":
-		sign = parity_to_sign(v.subspace.grades() > 0)
-		return self.diagonal(v, sign)
-	@cache
-	def pseudoscalar_negation(self, v) -> "Operator":
-		# grades = (1, subspace.algebra.n_dimensions - 1)
-		if self.algebra.n_dimensions % 2 == 1:
-			grades = (1, v.subspace.algebra.n_dimensions - 1)
-		else:
-			grades = (1, )
-		grades = (0, v.subspace.algebra.n_dimensions)
-		sign = -parity_to_sign(np.array([int(g) in grades for g in v.subspace.grades()]))
-		return self.diagonal(v, sign)
-
-
-	@cache
-	def reverse(self, v: SubSpace) -> Operator:
-		"""Reverse the order of all basis blades"""
-		# return self.grade_negation(self.algebra.n_grades())
-		reverse_sign = parity_to_sign(self.algebra.grade(v.subspace.blades) // 2)
-		return self.diagonal(v, reverse_sign)
-
-	@cache
-	def involute(self, v: SubSpace) -> Operator:
-		"""Reverse the signs on all basis blades"""
-		involute_sign = self.algebra.involute(v.subspace.blades)
-		return self.diagonal(v, involute_sign)
-
-	@cache
-	def conjugate(self, v: SubSpace) -> Operator:
-		"""Reverse the signs and order of all basis blades"""
-		# FIXME: could make anti version of this, using anti-reverse
-		return self.involute(self.reverse(v))
-
-	# @cache
-	# def right_dual(self, v: SubSpace) -> Operator:
-	# 	"""Compute right pss complement; d(v) = v * I
-	# 	"""
-	# 	return self.product(v, self.algebra.subspace.pseudoscalar())
-	# @cache
-	# def left_dual(self, v: SubSpace) -> Operator:
-	# 	"""Compute left complement; d(v) = I * v"""
-	# 	return self.product(self.algebra.subspace.pseudoscalar(), v)
-	@cache
-	def right_complement(self, v: SubSpace) -> Operator:
-		"""Compute right complement; d(v) = v * I
-		"""
-		blades, swaps = self.algebra.cayley(v.subspace.blades, self.algebra.subspace.pseudoscalar().blades)
-		signs = parity_to_sign(swaps) * self.negatives(v.subspace)
-		return self._complement(v, blades, signs)
-	@cache
-	def left_complement(self, v: SubSpace) -> Operator:
-		"""Compute left complement; d(v) = I * v"""
-		blades, swaps = self.algebra.cayley(self.algebra.subspace.pseudoscalar().blades, v.subspace.blades)
-		signs = parity_to_sign(swaps) * self.negatives(v.subspace)
-		return self._complement(v, blades, signs)
-
-	@cache
-	def right_complement_dual(self, v: SubSpace) -> Operator:
-		"""Dual d(x) such that v * d(v) = I
-		See: eq 124 of PGA4CS"""
-		blades, _ = self.algebra.cayley(self.algebra.subspace.pseudoscalar().blades, v.subspace.blades)
-		_, swaps = self.algebra.cayley(v.subspace.blades, blades)
-		signs = parity_to_sign(swaps)
-		return self._complement(v, blades, signs)
-	@cache
-	def left_complement_dual(self, v: SubSpace) -> Operator:
-		"""Dual d(x) such that d(v) * v = I
-		See: eq 124 of PGA4CS"""
-		blades, _ = self.algebra.cayley(self.algebra.subspace.pseudoscalar().blades, v.subspace.blades)
-		_, swaps = self.algebra.cayley(blades, v.subspace.blades)
-		signs = parity_to_sign(swaps)
-		return self._complement(v, blades, signs)
-
-	@cache
-	def left_hodge(self, v: SubSpace) -> Operator:
-		"""Dual d(x) such that v * d(v) = sign * I
-		where sign = e * ~e
-		and e = v.nondegenerate()
-		"""
-		return self.left_complement_dual(self.diagonal(v, self.negatives(v)))
-	@cache
-	def right_hodge(self, v: SubSpace) -> Operator:
-		"""Dual d(x) such that v * d(v) = sign * I
-		where sign = e * ~e
-		and e = v.nondegenerate()
-		"""
-		return self.right_complement_dual(self.diagonal(v, self.negatives(v)))
-
-	def unary_inverse(self, operator: Operator) -> Operator:
-		"""Generate the inverse `inv` of a unary operator 'op', such that inv(op(x)) == x"""
-		assert operator.arity == 1
-		kernel = np.linalg.inv(operator.kernel).astype(operator.kernel.dtype)
-		return Operator.build(kernel, operator.axes[::-1])
-
-	@cache
-	def right_hodge_inverse(self, v: SubSpace) -> Operator:
-		# FIXME: inversion should happen before binding...
-		#  how can we make this more elegant?
-		return self.unary_inverse(self.right_hodge(v.subspace.complement()))._build((v,))
-	@cache
-	def left_hodge_inverse(self, v: SubSpace) -> Operator:
-		return self.unary_inverse(self.left_hodge(v.subspace.complement()))._build((v,))
-
-	dual = right_hodge
-	dual_inverse = right_hodge_inverse
-
-
-	@cache
-	def nondegenerate(self, v: SubSpace) -> Operator:
-		"""Select blades that do not involve a null basis vector"""
-		return self.select(v, v.subspace.nondegenerate())
-	@cache
-	def degenerate(self, v: SubSpace) -> Operator:
-		"""Select blades that do involve a null basis vector"""
-		return self.select(v, v.subspace.degenerate())
-
-	# binary operators start here
-	@cache
-	def make_product(self, l: SubSpace, r: SubSpace, formula) -> Operator:
-		"""Product with selected grades.
-		Grade selection is not a regular linear operation
-		so we need to apply it before binding any other operators
-		"""
-		# defacto output subspace will be deduced by squeeze below
-		o = self.algebra.subspace.full()
-		prod_blades, prod_sign = self.algebra.product(l.subspace.blades, r.subspace.blades)
-		kernel = SparseTensor.from_cayley((l.subspace, r.subspace), prod_blades, prod_sign)
-		return Operator(kernel, (l.subspace, r.subspace, o)).\
-			grade_selection(formula).\
-			_build((l, r))\
-			.squeeze()
-
-	@cache
-	def geometric_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Geometric product"""
-		return self.make_product(l, r, lambda l, r, o: True)
-	gp = product = geometric_product
-
-	# grade selection products
-	@cache
-	def wedge_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Wedge product, or outer product"""
-		return self.make_product(l, r, lambda l, r, o: (l + r) == o)
-	op = outer = wedge = outer_product = wedge_product
-	@cache
-	def inner_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Symmetric inner product; or inner for short"""
-		# NOTE: eric feels inner should be called dot?
-		# http://terathon.com/blog/wedge-products-dot-products-scalars-and-norms/
-		return self.make_product(l, r, lambda l, r, o: np.abs(l - r) == o)
-	ip = inner = inner_product
-	@cache
-	def scalar_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Scalar product (l * r)<0>; only grade-0 part of geometric product"""
-		return self.make_product(l, r, lambda l, r, o: 0 == o)
-	sp = dp = dot = scalar = dot_product = scalar_product
-
-	@cache
-	def bivector_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Bivector product (l * r)<2>; only grade-2 part of geometric product
-		occurs quite often in code, so it gets a precompiled version here
-		"""
-		return self.n_product(l, r, self.algebra.subspace.bivector())
-	@cache
-	def n_product(self, l: SubSpace, r: SubSpace, o: SubSpace) -> Operator:
-		"""geometric product with fused output grade restriction"""
-		gp = self.geometric_product(l, r)
-		# FIXME: make delayed binding version of restrict
-		return self.restrict(gp.subspace, o).bind(gp)
-
-
-	@cache
-	def left_contraction_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Left contraction product"""
-		#  https://enkimute.github.io/ganja.js/examples/coffeeshop.html#IYtlGz1Ld&fullscreen
-		return self.make_product(l, r, lambda l, r, o: (r - l) == o)
-	lc = left_contract = left_contraction_product
-	@cache
-	def right_contraction_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Right contraction product"""
-		return self.make_product(l, r, lambda l, r, o: (l - r) == o)
-	rc = right_contract = right_contraction_product
-
-	# notes: interior products as defined here
-	#   https://projectivegeometricalgebra.org/wiki/index.php?title=Interior_products
-	@cache
-	def left_interior_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute *l v r"""
-		return self.anti_wedge(self.left_complement(l), r).squeeze()
-	lip = left_interior = left_interior_product
-	@cache
-	def right_interior_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute l v r*"""
-		return self.anti_wedge(l, self.right_complement(r)).squeeze()
-	rip = right_interior = right_interior_product
-	# @cache
-	# def self_right_interior_product(self, l: SubSpace) -> Operator:
-	# 	"""Compute l v r*"""
-	# 	return self.right_interior_product(l, l).symmetry((0, 1), +1)
-
-	# anti-products
-	def antify(self, op, *inputs: Tuple[SubSpace]) -> Operator:
-		"""Compute *op(l*, v*); wrap the operator in left/right dualizatiom"""
-		return self.left_complement(op(*(self.right_complement(i) for i in inputs))).squeeze()
-		# not sure we want complement here; isnt hodge more general?
-		# return self.right_hodge_inverse(op(*(self.right_hodge(i) for i in inputs))).squeeze()
-
-	@cache
-	def anti_geometric_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute *(r* l*); """
-		# # FIXME: any symbols for this in utf16? vdot; v*?
-		return self.antify(self.geometric_product, l, r)
-	agp = anti_product = anti_geometric_product
-	@cache
-	def anti_wedge_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute *(r* ^ l*)
-
-		Note: this differs from regressive product, in that regressive uses dual in its definitions
-		which results in some differences in sign
-		"""
-		return self.antify(self.wedge_product, l, r)
-	aop = anti_outer = anti_wedge = anti_outer_product = anti_wedge_product
-
-	@cache
-	def anti_inner_product(self, l, r):
-		"""Compute *(r* . l*)"""
-		return self.antify(self.inner_product, l, r)
-	aip = anti_inner = anti_inner_product
-
-	@cache
-	def anti_scalar_product(self, l, r):
-		"""Compute *(r* . l*)"""
-		return self.antify(self.scalar_product, l, r)
-	asp = adp = anti_dot = anti_dot_product = anti_scalar = anti_scalar_product
-
-	@cache
-	def anti_left_interior_product(self, l: SubSpace = None, r: SubSpace = None) -> Operator:
-		"""Compute *l ^ r"""
-		return self.antify(self.left_interior_product, l, r)
-	alip = anti_left_interior = anti_left_interior_product
-
-	@cache
-	def anti_right_interior_product(self, l: SubSpace = None, r: SubSpace = None) -> Operator:
-		"""Compute l ^ r*"""
-		return self.antify(self.right_interior_product, l, r)
-	arip = anti_right_interior = anti_right_interior_product
-
-	@cache
-	def regressive_product(self, l: SubSpace = None, r: SubSpace = None) -> Operator:
-		"""Like the anti-wedge, but using right complement on both sides"""
-		return self.dual_inverse(
-			self.wedge(
-				self.dual(l),
-				self.dual(r)
-			)
-		).squeeze()
-	rp = regressive = regressive_product
-
-
-	# @cache
-	# def bulk_right_complement(self, l: SubSpace) -> Operator:
-	# 	return self.bulk(self.right_complement(l))
-	# @cache
-	# def weight_right_complement(self, l: SubSpace) -> Operator:
-	# 	return self.weight(self.right_complement(l))
-	# @cache
-	# def bulk_left_complement(self, l: SubSpace) -> Operator:
-	# 	return self.bulk(self.left_complement(l))
-	# @cache
-	# def weight_left_complement(self, l: SubSpace) -> Operator:
-	# 	return self.weight(self.left_complement(l))
-
-	# FIXME: https://projectivegeometricalgebra.org/wiki/index.php?title=Commutators
-	def make_commutator(self, op, sign):
-		def bind(l, r):
-			return (op(l, r) + ((sign * op(r, l)).swapaxes(0, 1))).div(2).squeeze()
-		return bind
-	def commutator_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Commutator of the geometric product"""
-		return self.make_commutator(self.product, -1)(l, r)
-	commutator = commutator_product
-	def anti_commutator_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Anti-commutator of the geometric product"""
-		return self.make_commutator(self.product, +1)(l, r)
-	anti_commutator = anti_commutator_product
-
-	def commutator_anti_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Commutator of the geometric anti-product"""
-		return self.make_commutator(self.anti_product, -1)(l, r)
-	commutator_anti = commutator_anti_product
-	def anti_commutator_anti_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Anti-commutator of the geometric anti-product"""
-		return self.make_commutator(self.anti_product, +1)(l, r)
-	anti_commutator_anti = anti_commutator_anti_product
-
-	@cache
-	def cross_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute (l ^ r)*"""
-		# FIXME: is this meaningfull in general? I think not
-		return self.dual(self.wedge(l, r)).squeeze()
-
-	@cache
-	def reverse_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * ~r"""
-		return self.product(l, self.reverse(r))
-	@cache
-	def involute_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * r.involute()"""
-		return self.product(l, self.involute(r))
-	@cache
-	def conjugate_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * r.conjugate()"""
-		return self.product(l, self.conjugate(r))
-	@cache
-	def scalar_negation_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * r.scalar_negation()"""
-		return self.product(l, self.scalar_negation(r))
-	@cache
-	def pseudoscalar_negation_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * r.pseudoscalar_negation()"""
-		return self.product(l, self.pseudoscalar_negation(r))
-
-	@cache
-	def study_conjugate_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * r.study_conjugate()"""
-		return self.product(l, self.study_conjugate(r))
-	@cache
-	def anti_reverse_product(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""l * ~r"""
-		return self.antify(self.reverse_product, l, r)
-
-	@cache
-	def symmetric_reverse_product(self, x: SubSpace) -> Operator:
-		"""x * ~x"""
-		return self.reverse_product(x, x).symmetry((0, 1))
-	@cache
-	def symmetric_involute_product(self, x: SubSpace) -> Operator:
-		"""x * x.involute()"""
-		return self.involute_product(x, x).symmetry((0, 1))
-	@cache
-	def symmetric_conjugate_product(self, x: SubSpace) -> Operator:
-		"""x * x.conjugate()"""
-		return self.conjugate_product(x, x).symmetry((0, 1))
-	@cache
-	def symmetric_study_conjugate_product(self, x: SubSpace) -> Operator:
-		"""x * x.conjugate()"""
-		return self.study_conjugate_product(x, x).symmetry((0, 1))
-	@cache
-	def symmetric_scalar_negation_product(self, x: SubSpace) -> Operator:
-		return self.scalar_negation_product(x, x).symmetry((0, 1))
-	@cache
-	def symmetric_pseudoscalar_negation_product(self, x: SubSpace) -> Operator:
-		return self.pseudoscalar_negation_product(x, x).symmetry((0, 1))
-
-	@cache
-	def squared(self, v: SubSpace) -> Operator:
-		"""x * x"""
-		return self.product(v, v).symmetry((0, 1))
-	@cache
-	def cubed(self, v: SubSpace) -> Operator:
-		"""x * x * x"""
-		return self.product(self.squared(v), v).symmetry((0, 1, 2))
-
-	# FIXME: should we introduce dual/anti norms as well?
-	# @cache
-	# def norm_squared(self, v: SubSpace) -> Operator:
-	# 	"""<x * ~x>1"""
-	# 	# should produce only nonnegative scalar diagonal contributions, if metric is non-negative
-	# 	return self.scalar_product(v, self.reverse(v)).symmetry((0, 1), +1)
-	@cache
-	def dual_norm_squared(self, v: SubSpace) -> Operator:
-		"""norm_squared(*v)"""
-		return self.norm_squared(self.dual(v))
-
-	@cache
-	def study_conjugate(self, subspace) -> "Operator":
-		# assert subspace in self.algebra.subspace.study()
-		sign = parity_to_sign(subspace.grades() > 0)
-		return self.diagonal(subspace, sign)
-	@cache
-	def study_norm_squared(self, subspace) -> "Operator":
-		return self.scalar_product(subspace, self.study_conjugate(subspace))
-
-
-	# def bulk_norm_squared(self, v: SubSpace) -> Operator:
-	# 	# return self.scalar_product(v, self.reverse(v))
-	# 	return self.norm_squared(self.bulk(v))
-	# def weight_norm_squared(self, v: SubSpace) -> Operator:
-	# 	# return self.anti_scalar_product(v, self.reverse(v))
-	# 	return self.norm_squared(self.weight(v))
-	# def projected_geometric_norm_squared(self, v):
-	# 	# FIXME: this is not a multilinear op; move to vector
-	# 	return self.bulk_norm_squared(v) / self.weight_norm_squared(v)
-
-	@cache
-	def full_sandwich(self, R: SubSpace, v: SubSpace) -> Operator:
-		"""Compute (R * v) * ~R, the full sandwich product
-
-		The output subspace of the sandwich product contains both the input subspace grades,
-		as well as those grades modulo +4. Typically, the full sandwich product is only of academic interest,
-		and its probably the grade-preserving sandwich product you are looking for
-
-		As a practical example, the full sandwich product of a 1-vector in 3d cga with a motor, will be of grade [1, 5],
-		however if the motor being sandwiched is indeed satisfies the requirements of a motor,
-		the product will be grade preserving and the grade-5 part will be numericailly zero.
-		"""
-		return self.product(self.product(R, v), self.reverse(R)).symmetry((0, 2))
-		# return self.product(R, self.product(v, self.reverse(R))
-
-	# @cache
-	# def violating_sandwich(self, R: SubSpace, v: SubSpace) -> Operator:
-	# 	"""Compute (R * v) * ~R
-	#
-	# 	Only retain the grade-violating part of the sandwich product
-	# 	"""
-	# 	grades = np.unique(v.grades())
-	# 	return self.full_sandwich(R, v).grade_selection(lambda l, m, r, o: ~np.any(o[..., None] == grades, axis=-1))
-
-	@cache
-	def sandwich(self, R: SubSpace, v: SubSpace) -> Operator:
-		"""Compute (R * v) * ~R
-
-		Only retain the grade-preserving part of the sandwich,
-		which is usually what we are interested in, since proper motors composed of bireflections,
-		are in fact exactly grade preserving under sandwiching
-		"""
-		grades = np.unique(v.grades())
-		return self.full_sandwich(R, v).grade_selection(lambda l, m, r, o: np.any(o[..., None] == grades, axis=-1))
-
-	@cache
-	def reverse_sandwich(self, R: SubSpace, v: SubSpace) -> Operator:
-		"""Compute (~R * v) * R"""
-		return self.sandwich(R.reverse(), v)
-
-	@cache
-	def transform(self, R: SubSpace, v: SubSpace) -> Operator:
-		"""Compute (~R * v) * R, while preserving the outermorphism
-		That is, transform(R, v) ^ transform(R, u) == transform(R, v ^ u)
-		Note; R is assumed normalized/motorized
-		"""
-		parity = match(R.grades() % 2)  # this throws unless all blades in the subspace have a grade of the same parity
-		S = self.sandwich(R, v)
-		sign_mask = parity_to_sign(v.grades() * parity)
-		return Operator(kernel=S.kernel * sign_mask[None, :, None], axes=S.axes)
-
-	@cache
-	def inverse_transform(self, R: SubSpace, v: SubSpace) -> Operator:
-		"""Compute (R * v) * ~R, while preserving the outermorphism
-		Note; R is assumed normalized/motorized
-		"""
-		return self.transform(R.reverse(), v)
-
-	@cache
-	def inverse_factor(self, x: SubSpace) -> Operator:
-		"""Compute inverse_factor(x) = conj(x) * involute(x) * reverse(x)
-		reverse -> conjugate recursion
-
-		For many multivectors, this gives:
-		inverse(x) = (x * inverse_factor(x))<0>
-		"""
-		p = self.symmetric_reverse_product(x)
-		q = self.product(self.reverse(x), self.conjugate(p))
-		return q.symmetry((0, 1, 2))
-
-	@cache
-	def inverse_factor_completed(self, x: SubSpace) -> Operator:
-		"""Compute x * inverse_factor(x)
-		"""
-		p = self.symmetric_reverse_product(x)
-		q = self.product(p, self.conjugate(p))
-		return q.symmetry((0, 1, 2, 3))
-
-	@cache
-	def inverse_factor_alt(self, x: SubSpace) -> Operator:
-		"""Fusing with scalar negation gives different reduction possibilities
-		"""
-		p = self.symmetric_reverse_product(x)
-		q = self.product(self.reverse(x), self.scalar_negation(p))
-		return q.symmetry((0, 1, 2))
-
-	@cache
-	def inverse_factor_completed_alt(self, x: SubSpace) -> Operator:
-		"""Fusing with scalar negation gives different reduction possibilities
-		"""
-		p = self.symmetric_reverse_product(x)
-		q = self.product(p, self.scalar_negation(p))
-		return q.symmetry((0, 1, 2, 3))
-
-	def compose_symmetry_ops(self, x: SubSpace, op1, op2):
-		"""constructed fused higher order hitzer ops"""
-		p = self.product(x, op1(x)).symmetry((0, 1))
-		q = self.product(op1(x), op2(p))
-		return q.symmetry((0, 1, 2))
-	def complete_op(self, x, op):
-		c = self.product(x, op)
-		return c.symmetry(range(c.arity))
-
-
-	@cache
-	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
-		"""Compute inertia operator; l.regressive(l x r)"""
-		return self.regressive(l, self.commutator(l, r)).symmetry((0, 1))
-
-	@cache
-	def solve(self, x: SubSpace, rhs: SubSpace):
-		"""Return operator for solving x * y = rhs, for unknown y"""
-		mv = self.algebra.subspace.multivector()
-		# mv = x
-		op = self.product(x, mv).select_subspace(rhs).squeeze()
-		# squeeze over input axis! retain only parts of y that may contribute
-		# to rhs
-		mask = np.any(op.kernel != 0, axis=(0, 2))
-		y = mv.slice_subspace(mask)
-		foo = self.product(x, y)
-
-		# FIXME: recurse once?
-		#  without spaces can be too small, but with
-		#  the spaces are too big. what gives?
-		op2 = self.product(x, mv).select_subspace(foo.subspace).squeeze()
-
-		mask = np.any(op2.kernel != 0, axis=(0, 2))
-		y = mv.slice_subspace(mask)
-		foo = self.product(x, y)
-		return foo
-		# return Operator(op.kernel[:, mask, :], (x, y, rhs))
-
-	def euclidian_factorization(self, m: "SubSpace"):
-		"""
-		alternatively:
-		t = (m * ~m.select.rotor()).select.translator()
-		"""
-		op = self.product(m, self.dual(m))
-		return self.dual(op).select_grade(2).symmetry((0, 1))
-
-	# # projections according to erik lengyel
-	# @cache
-	# def project(self, l: SubSpace, r: SubSpace) -> Operator:
-	# 	"""Project r onto l"""
-	# 	return self.anti_wedge(self.wedge(self.weight_left_complement(l), r), l).symmetry((0, 2), +1)
-	#
-	# @cache
-	# def anti_project(self, l: SubSpace, r: SubSpace) -> Operator:
-	# 	"""Project r onto l"""
-	# 	return self.wedge(self.anti_wedge(self.weight_left_complement(l), r), l).symmetry((0, 2), +1)
+    """Construct and cache exact operation Extensors for one algebra."""
+
+    __slots__ = ("algebra", "subspaces")
+
+    def __init__(self, algebra: Algebra) -> None:
+        self.algebra = algebra
+        self.subspaces = algebra.subspace
+
+    def build(
+        self, axes: Iterable[SubSpace], coefficients: Any,
+    ) -> Extensor:
+        axes = tuple(axes)
+        if not axes:
+            raise ValueError("an Extensor requires at least an output axis")
+        if any(axis.algebra is not self.algebra for axis in axes):
+            raise ValueError("every Extensor axis must belong to this factory's algebra")
+        return Extensor(
+            self.algebra.exact,
+            self.algebra.gatype(axes),
+            SymbolicKernel(coefficients),
+        )
+
+    @lru_cache(maxsize=None)
+    def unit(self, space: SubSpace) -> Extensor:
+        """The exact scalar identity projected onto a coefficient layout."""
+
+        return self.algebra.exact.multivector(space)
+
+    @lru_cache(maxsize=None)
+    def identity(self, space: SubSpace) -> Extensor:
+        self._require_space(space)
+        return self.build((space, space), SymbolicKernel.identity(len(space))).with_traits(Identity)
+
+    @lru_cache(maxsize=None)
+    def _grade_transform(self, space: SubSpace, transform: str) -> Extensor:
+        coefficients = np.zeros((len(space), len(space)), dtype=object)
+        for index, mask in enumerate(space.masks):
+            coefficients[index, index] = grade_transform_sign(self.algebra, transform, mask)
+        return self.build((space, space), coefficients)
+
+    def reverse(self, space: SubSpace) -> Extensor:
+        return self._grade_transform(space, "reverse")
+
+    def clifford_conjugate(self, space: SubSpace) -> Extensor:
+        """Reverse blades and negate odd grades, without conjugating scalars."""
+
+        return self._grade_transform(space, "clifford_conjugate")
+
+    def involute(self, space: SubSpace) -> Extensor:
+        return self._grade_transform(space, "involute")
+
+    def scalar_negation(self, space: SubSpace) -> Extensor:
+        return self._grade_transform(space, "scalar_negation")
+
+    def pseudoscalar_negation(self, space: SubSpace) -> Extensor:
+        return self._grade_transform(space, "pseudoscalar_negation")
+
+    @lru_cache(maxsize=None)
+    def _symmetric_product(
+        self, gatype: GAType, transform: str, *, scalar_only: bool = False,
+    ) -> Extensor:
+        """Combine symmetric terms on the result carrier proved by the GAType."""
+
+        space = gatype.output_subspace
+        output = (
+            self.subspaces.scalar() if scalar_only
+            else gatype._self_product(transform).output_subspace
+        )
+        indices = {mask: index for index, mask in enumerate(output.masks)}
+        coefficients = np.zeros((len(output), len(space), len(space)), dtype=object)
+        for mask, left, right, coefficient in symmetric_product_terms(space, transform):
+            if mask not in indices:
+                continue
+            coefficient *= space.signs[left] * space.signs[right] * output.signs[indices[mask]]
+            if left == right:
+                coefficients[indices[mask], left, right] = coefficient
+            else:
+                half = Fraction(coefficient, 2)
+                coefficients[indices[mask], left, right] = half
+                coefficients[indices[mask], right, left] = half
+        return self.build((output, space, space), coefficients)
+
+    def squared(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "identity")
+
+    def symmetric_reverse_product(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "reverse")
+
+    def symmetric_conjugate_product(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "clifford_conjugate")
+
+    def symmetric_scalar_negation_product(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "scalar_negation")
+
+    def study_norm_squared(self, operand: OperandType) -> Extensor:
+        """Scalar self-product for the generalized Study norm."""
+
+        return self._symmetric_product(
+            self._operand_gatype(operand), "scalar_negation", scalar_only=True,
+        )
+
+    def symmetric_pseudoscalar_negation_product(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "pseudoscalar_negation")
+
+    def symmetric_involute_product(self, operand: OperandType) -> Extensor:
+        return self._symmetric_product(self._operand_gatype(operand), "involute")
+
+    @lru_cache(maxsize=None)
+    def cast(self, source: SubSpace, target: SubSpace) -> Extensor:
+        """Explicit signed coordinate conversion, including projection and zero fill."""
+
+        self._require_space(source)
+        self._require_space(target)
+        transform = AxisTransform.plan(source, target)
+        if not transform.is_compatible:
+            raise ValueError("cannot cast between SubSpaces from different algebras")
+        coefficients = SymbolicKernel(
+            transform.coordinate_matrix, shape=(len(target), len(source)),
+        )
+        result = self.build((target, source), coefficients)
+        return result.with_traits(Identity) if transform.is_lossless else result
+
+    select = cast
+
+    @lru_cache(maxsize=None)
+    def restrict(self, source: SubSpace, target: SubSpace) -> Extensor:
+        """Project onto the intersection of the two static blade supports."""
+
+        return self.select(source, source.intersection(target))
+
+    def geometric_product(self, left: OperandType, right: OperandType) -> Extensor:
+        """Build a product selected from the operands' complete GATypes."""
+
+        return self._geometric_product(
+            self._operand_gatype(left),
+            self._operand_gatype(right),
+        )
+
+    @lru_cache(maxsize=None)
+    def _geometric_product(self, left: GAType, right: GAType) -> Extensor:
+        return self._product(
+            "geometric_product",
+            left,
+            right,
+            lambda _left, _right, _output: True,
+        )
+
+    product = geometric_product
+
+    def scalar_product(self, left: OperandType, right: OperandType) -> Extensor:
+        return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 0)
+
+    def bivector_product(self, left: OperandType, right: OperandType) -> Extensor:
+        return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 2)
+
+    def trivector_product(self, left: OperandType, right: OperandType) -> Extensor:
+        return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 3)
+
+    def inner(self, left: OperandType, right: OperandType) -> Extensor:
+        """The inner product: the grade |r - s| part of the product of grades r and s."""
+        return self._inner(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _inner(self, left: GAType, right: GAType) -> Extensor:
+        return self._product(
+            "inner", left, right,
+            lambda l, r, output: output == abs(np.subtract(l, r, dtype=np.int16)),
+        )
+
+    @lru_cache(maxsize=None)
+    def _grade_product(self, left: GAType, right: GAType, grade: int) -> Extensor:
+        """Construct only the requested output grade, retaining sparse support."""
+
+        return self._product(
+            "grade_product", left, right,
+            lambda _left, _right, output: output == grade,
+        )
+
+    def wedge(self, left: OperandType, right: OperandType) -> Extensor:
+        return self._wedge(
+            self._operand_gatype(left),
+            self._operand_gatype(right),
+        )
+
+    @lru_cache(maxsize=None)
+    def _wedge(self, left: GAType, right: GAType) -> Extensor:
+        return self._product(
+            "wedge",
+            left,
+            right,
+            lambda left_grade, right_grade, output_grade: (
+                left_grade + right_grade == output_grade
+            ),
+        )
+
+    exterior_product = wedge
+
+    def commutator(self, left: OperandType, right: OperandType) -> Extensor:
+        """Build ``(left * right - right * left) / 2`` exactly."""
+
+        return self._commutator(
+            self._operand_gatype(left),
+            self._operand_gatype(right),
+        )
+
+    @lru_cache(maxsize=None)
+    def _commutator(self, left: GAType, right: GAType) -> Extensor:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, Fraction]:
+            forward = self.algebra.geometric_product(left_mask, right_mask)
+            reverse = self.algebra.geometric_product(right_mask, left_mask)
+            if forward.blade != reverse.blade:
+                raise AssertionError("basis products must have the same XOR blade")
+            return forward.blade, Fraction(
+                forward.coefficient - reverse.coefficient,
+                2,
+            )
+
+        return self._bilinear("commutator", left, right, basis_rule)
+
+    def regressive(self, left: OperandType, right: OperandType) -> Extensor:
+        """Build ``dual_inverse(dual(left) ^ dual(right))`` exactly."""
+
+        return self._regressive(
+            self._operand_gatype(left),
+            self._operand_gatype(right),
+        )
+
+    @lru_cache(maxsize=None)
+    def _regressive(self, left: GAType, right: GAType) -> Extensor:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
+            left_dual, left_sign = self._right_hodge(left_mask)
+            right_dual, right_sign = self._right_hodge(right_mask)
+            if left_dual & right_dual:
+                return 0, 0
+
+            wedge = self.algebra.geometric_product(left_dual, right_dual)
+            output, inverse_sign = self._right_hodge_inverse(wedge.blade)
+            return (
+                output,
+                left_sign * right_sign * wedge.coefficient * inverse_sign,
+            )
+
+        return self._bilinear("regressive", left, right, basis_rule)
+
+    @lru_cache(maxsize=None)
+    def cross(self, vector: SubSpace) -> Extensor:
+        """The oriented Euclidean 3-vector cross product."""
+
+        self._require_space(vector)
+        if self.algebra.dimension != 3 or self.algebra.signature != (1, 1, 1):
+            raise ValueError("cross is defined here only for Euclidean 3-space")
+        if not vector.same_support(self.subspaces.vector()):
+            raise ValueError("cross requires the algebra's full vector SubSpace")
+
+        coefficients = np.zeros((3, 3, 3), dtype=object)
+        for output in range(3):
+            for left in range(3):
+                for right in range(3):
+                    if len({output, left, right}) != 3:
+                        continue
+                    masks = (vector.masks[output], vector.masks[left], vector.masks[right])
+                    inversions = sum(
+                        first > second
+                        for position, first in enumerate(masks)
+                        for second in masks[position + 1 :]
+                    )
+                    coefficients[output, left, right] = (
+                        (-1 if inversions % 2 else 1)
+                        * vector.signs[output] * vector.signs[left] * vector.signs[right]
+                    )
+        return self.build((vector, vector, vector), coefficients)
+
+    def sandwich(
+        self,
+        sandwicher: OperandType,
+        passenger: OperandType,
+        output: SubSpace | None = None,
+    ) -> Extensor:
+        """Polarize ``sandwicher * passenger * reverse(sandwicher)``.
+
+        The two sandwicher slots remain distinct. Passing the same nullary
+        Extensor into slots 0 and 2 is an atomic diagonal bind at runtime.
+        Exact symmetrization removes terms that cancel for repeated sandwichers.
+        ``output`` requests an explicit cast.
+        """
+
+        if output is not None:
+            self._require_space(output)
+        return self._sandwich(
+            self._operand_gatype(sandwicher),
+            self._operand_gatype(passenger),
+            output,
+        )
+
+    @lru_cache(maxsize=None)
+    def _sandwich(
+        self,
+        sandwicher: GAType,
+        passenger: GAType,
+        output: SubSpace | None,
+    ) -> Extensor:
+        result = self.full_sandwich(
+            sandwicher.output_subspace,
+            passenger.output_subspace,
+            output,
+        )
+        kernel = result.kernel.to_object_array()
+        kernel = (kernel + kernel.swapaxes(1, 3)) * Fraction(1, 2)
+        result = self.build(result.axes, kernel).squeeze_output()
+        if output is not None:
+            # A requested projection is not an unrestricted sandwich action.
+            return result
+        gatype = TypeRules.operation(
+            "sandwich",
+            (sandwicher, passenger, sandwicher),
+            result.axes,
+        )
+        if gatype is result.gatype:
+            return result
+        return Extensor(result.context, gatype, result.kernel)
+
+    @lru_cache(maxsize=None)
+    def full_sandwich(
+        self,
+        sandwicher: SubSpace,
+        passenger: SubSpace,
+        output: SubSpace | None = None,
+    ) -> Extensor:
+        """Unrestricted sandwich tensor, optionally cast to ``output``."""
+
+        self._require_space(sandwicher)
+        self._require_space(passenger)
+        if output is not None:
+            self._require_space(output)
+
+        left_product = self.geometric_product(sandwicher, passenger)
+        right_product = self.geometric_product(
+            left_product.output_subspace, sandwicher
+        )
+        unrestricted = right_product.bind(
+            {
+                0: left_product,
+                1: self.reverse(sandwicher),
+            }
+        )
+        if output is None or unrestricted.output_subspace == output:
+            return unrestricted
+        return self.cast(unrestricted.output_subspace, output).bind({0: unrestricted})
+
+    def _product(
+        self,
+        operation: str,
+        left_type: GAType,
+        right_type: GAType,
+        grade_rule: GradeRule,
+    ) -> Extensor:
+        left = left_type.output_subspace
+        right = right_type.output_subspace
+        self._require_space(left)
+        self._require_space(right)
+        table = self.algebra.geometric_product_table(left.masks, right.masks)
+
+        l_grades = self.algebra.grade(np.asarray(left.masks, dtype=self.algebra.blade_dtype))[:, None]
+        r_grades = self.algebra.grade(np.asarray(right.masks, dtype=self.algebra.blade_dtype))[None, :]
+        o_grades = self.algebra.grade(table.blades)
+        coeffs = table.coefficients
+
+        try:
+            valid = (coeffs != 0) & np.asarray(grade_rule(l_grades, r_grades, o_grades), dtype=bool)
+        except TypeError:
+            valid = np.zeros(coeffs.shape, dtype=bool)
+            for i, lm in enumerate(left.masks):
+                for j, rm in enumerate(right.masks):
+                    if coeffs[i, j]:
+                        valid[i, j] = grade_rule(
+                            int(l_grades[i, 0]), int(r_grades[0, j]), int(o_grades[i, j])
+                        )
+
+        output_masks = np.unique(table.blades[valid])
+        output = self.subspaces.from_masks(output_masks)
+        output_signs = np.asarray(output.signs, dtype=np.int8)
+        l_signs = np.asarray(left.signs, dtype=np.int8)
+        r_signs = np.asarray(right.signs, dtype=np.int8)
+
+        signed_coeffs = coeffs * l_signs[:, None] * r_signs[None, :]
+        coefficients = np.zeros((len(output), len(left), len(right)), dtype=object)
+        for k, mask in enumerate(output.masks):
+            match = valid & (table.blades == mask)
+            coefficients[k, match] = signed_coeffs[match] * output_signs[k]
+
+        gatype = TypeRules.operation(
+            operation,
+            (left_type, right_type),
+            (output, left, right),
+        )
+        return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
+
+    def _bilinear(
+        self,
+        operation: str,
+        left_type: GAType,
+        right_type: GAType,
+        basis_rule: BasisRule,
+    ) -> Extensor:
+        """Build a sparse-by-construction exact bilinear operation."""
+
+        left = left_type.output_subspace
+        right = right_type.output_subspace
+        self._require_space(left)
+        self._require_space(right)
+
+        terms: list[tuple[int, int, int, int | Fraction]] = []
+        output_masks: set[int] = set()
+        for left_index, left_mask in enumerate(left.masks):
+            for right_index, right_mask in enumerate(right.masks):
+                output_mask, coefficient = basis_rule(left_mask, right_mask)
+                if coefficient:
+                    output_masks.add(output_mask)
+                    terms.append(
+                        (output_mask, left_index, right_index, coefficient)
+                    )
+
+        output = self.subspaces.from_masks(output_masks)
+        output_index = {mask: index for index, mask in enumerate(output.masks)}
+        coefficients = np.zeros((len(output), len(left), len(right)), dtype=object)
+        for output_mask, left_index, right_index, coefficient in terms:
+            coefficients[
+                output_index[output_mask], left_index, right_index
+            ] += (
+                coefficient * left.signs[left_index] * right.signs[right_index]
+                * output.signs[output_index[output_mask]]
+            )
+
+        gatype = TypeRules.operation(
+            operation,
+            (left_type, right_type),
+            (output, left, right),
+        )
+        return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
+
+    @lru_cache(maxsize=None)
+    def dual(self, space: SubSpace) -> Extensor:
+        """Right-Hodge dual, expressed on the algebra's default output layout."""
+
+        return self._dual(space, inverse=False)
+
+    @lru_cache(maxsize=None)
+    def dual_inverse(self, space: SubSpace) -> Extensor:
+        return self._dual(space, inverse=True)
+
+    def _dual(self, space: SubSpace, *, inverse: bool) -> Extensor:
+        rule = self._right_hodge_inverse if inverse else self._right_hodge
+        terms = tuple(rule(mask) for mask in space.masks)
+        output = self.subspaces.from_masks(mask for mask, _ in terms)
+        indices = {mask: index for index, mask in enumerate(output.masks)}
+        coefficients = np.zeros((len(output), len(space)), dtype=object)
+        for column, (mask, sign) in enumerate(terms):
+            row = indices[mask]
+            coefficients[row, column] = sign * space.signs[column] * output.signs[row]
+        return self.build((output, space), coefficients)
+
+    def _right_hodge(self, mask: int) -> tuple[int, int]:
+        """Return the complement mask and right-Hodge orientation sign."""
+
+        complement = self.algebra.complement(mask)
+        orientation = self.algebra.geometric_product(mask, complement).coefficient
+        negative_sign = (
+            -1
+            if (mask & self.algebra.negative_mask).bit_count() % 2
+            else 1
+        )
+        return complement, orientation * negative_sign
+
+    def _right_hodge_inverse(self, mask: int) -> tuple[int, int]:
+        """Return the inverse image of one right-Hodge basis blade."""
+
+        complement = self.algebra.complement(mask)
+        _, sign = self._right_hodge(complement)
+        return complement, sign
+
+    def _operand_gatype(self, operand: OperandType) -> GAType:
+        if isinstance(operand, SubSpace):
+            return self.algebra.gatype(operand)
+        if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
+            raise ValueError("operation operand type belongs to another algebra")
+        return operand
+
+    def _require_space(self, space: SubSpace) -> None:
+        if not isinstance(space, SubSpace) or space.algebra is not self.algebra:
+            raise ValueError("SubSpace belongs to another algebra")
