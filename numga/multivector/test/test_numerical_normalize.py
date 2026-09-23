@@ -96,7 +96,7 @@ def test_normalize_sqrt(descr):
 	context = Context(algebra)
 
 	e = random_motor(context, shape=(10,)) + 1
-	m = normalize_motor(e, inner=10, outer=1)
+	m = normalize_motor(e, inner=8, outer=1)
 
 	v0, v1 = motor_properties(m)
 	npt.assert_allclose(v0, 0, atol=1e-9)

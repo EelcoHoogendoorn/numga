@@ -96,6 +96,8 @@ mv.exp_quadratic = SubspaceDispatch("""
 	Exact inverse to log_quadratic""")
 @mv.exp_quadratic.register()
 def exp_cayley(b: BiVector) -> Motor:
+	# b = b / 2
+	# return (1 + b) / (1 - b)
 	r = 1 + b / 2
 	return r.squared() / r.symmetric_reverse_product()
 mv.motor_log_quadratic = SubspaceDispatch("""
@@ -120,8 +122,35 @@ mv.exp_bisect = SubspaceDispatch("""
 	Exact inverse to motor_log_bisect""")
 @mv.exp_bisect.register()
 def exp_bisect(b: BiVector, n=15) -> Motor:
+	# FIXME: is cayley exp indeed superior? for small inputs we have loss of precision;
+	#  perhaps linear approx is to be preferred after all?
+	#  or try taylor again?
 	m = exp_cayley(b / (2 ** n))
 	for i in range(n):
 		m = m.squared()
 	return m
 
+
+mv.motor_log_pade = SubspaceDispatch("""
+	Pade based logarithm
+	Exact inverse to exp_pade""")
+@mv.motor_log_pade.register(lambda s: s.inside.even_grade())
+def motor_log_pade(m: Motor, n=25) -> BiVector:
+	f = (m - 1) / (m+1)
+
+	pows = [f]
+	s = f * f
+	for i in range(n):
+		pows.append(pows[-1] * s)
+
+	q = sum(2/(2*k+1) * pows[k] for k in range(n))
+	return q.select[2]
+
+
+def motor_sqrt_denman_beaver(m: Motor, n=30):
+	M = Y = m
+	for i in range(n):
+		Mi = M.inverse()
+		Y = Y * (1+Mi)/2
+		M = (M + Mi)/4 + 1/2
+	return Y

@@ -152,3 +152,38 @@ class AbstractConcreteOperator:
 
 	def squeeze(self):
 		return self.copy(self.operator.squeeze())
+
+	@cache
+	def precompute_sparse_tensor(self, output_axes: Tuple[int, ...]):
+		"""Generalization of precompute_sparse to arbitrary output axes
+
+		Returns
+		-------
+		Tuple of (output_index, terms)
+		where output_index is a tuple of indices for the output axes
+		and terms is a list of (input_indices, kernel_value)
+		where input_indices is a tuple of indices for the remaining (summation) axes
+		"""
+		kernel = self.kernel
+		ndim = kernel.ndim
+
+		# set of all axes
+		all_axes = set(range(ndim))
+		out_axes_set = set(output_axes)
+		sum_axes = tuple(sorted(list(all_axes - out_axes_set)))
+
+		# We want to iterate over non-zeros.
+		# Using np.nonzero is definitely better for sparsity.
+		indices = np.argwhere(kernel) # Shape (N_nonzeros, ndim)
+		values = kernel[tuple(indices.T)]
+
+		from collections import defaultdict
+		groups = defaultdict(list)
+
+		for idx, val in zip(indices, values):
+			idx = tuple(int(i) for i in idx)
+			out_idx = tuple(int(idx[i]) for i in output_axes)
+			sum_idx = tuple(int(idx[i]) for i in sum_axes)
+			groups[out_idx].append((sum_idx, val))
+
+		return tuple((k, tuple(v)) for k, v in groups.items())

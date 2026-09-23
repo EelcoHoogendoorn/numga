@@ -41,7 +41,7 @@ def log4(r):
 def variational_lie_verlet(motor, rate, inertia, inertia_inv, dt, ext_forque):
 	"""Variational Lie-Verlet"""
 	energy = lambda rate: \
-			inertia(rate).wedge(rate) * rate * (dt / 2)
+			inertia(rate).wedge(rate) * rate# * (dt / 2)
 	forque = lambda motor, rate: \
 			ext_forque(motor, rate) - inertia(rate).commutator(rate)
 
@@ -132,3 +132,30 @@ def explicit_rk4(motor, rate, inertia, inertia_inv, dt, ext_forque):
 	motor = exp2(rate * dt / 2) * motor
 	# motor = (rate * dt / 2).exp() * motor
 	return motor, rate
+
+
+def momentum_world(motor, momentum, inertia, inertia_inv, dt, ext_forque):
+	"""integrate world-space momentum rather than body-space rate
+
+	This should make integration of momentum trivial; after all d/dt momentum = external (= 0 in this case)
+
+	Then if we update our motor according to the rate corresponding to that momentum, we should be good?
+	But cant get it to work somehow. Not getting a functional tennis-racket-theorem. What am I missing?
+
+	note inertia and inertia-inv are both their usual constant tensors in body-local space
+	"""
+	rate = inertia_inv(motor >> momentum)
+	rate = motor << rate
+	dmotor = rate*(motor)/2
+
+	motor = (motor + dmotor * dt).normalized()
+	# motor = exp4(rate * dt/2) * motor
+	# motor = motor * (rate * dt / 2).exp()
+	# motor = exp2(-rate * dt / 2) * motor
+	# motor = motor * exp2(-rate * dt / 2)
+	# motor = motor * exp4(rate * -dt / 2)
+
+	# motor = motor * (rate * dt/2).exp()
+	# motor = motor * (rate * dt/2).exp()
+	# motor = exp2(motor >> rate * dt / 2) * motor
+	return motor, momentum

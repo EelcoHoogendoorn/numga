@@ -200,7 +200,7 @@ class AbstractMultiVector:
 		return self.operator.inverse_factor(self.subspace)(self, self, self)
 
 	def project(self, other):
-		return self.operator.project(self.subspace, other.subspace)(self, other, self)
+		return self.operator.project(self.subspace, other.subspace)(self, other, other)
 
 	def degenerate(self):
 		return self.operator.degenerate(self.subspace)(self)
@@ -317,8 +317,14 @@ class AbstractMultiVector:
 		i = self.inverse_factor()
 		return i / self.scalar_product(i)
 
+	def solve(self, rhs):
+		"""linear algebra based solution of self * y = rhs"""
+		raise NotImplementedError('implementation is backend specific')
+
 	def inverse_la(self):
 		"""linear algebra based inverse"""
+		# FIXME: cant use solve yet; subspace estimates are inferior
+		# return self.solve(self.context.multivector.scalar())
 		raise NotImplementedError('implementation is backend specific')
 
 	def inverse_shirokov(self):
@@ -327,17 +333,24 @@ class AbstractMultiVector:
 
 		Using Shirokov's inverse algorithm that works in arbitrary dimensions,
 		see https://arxiv.org/abs/2005.04015 Theorem 4.
+
+		Note
+		----
+		The numerical stability of this algorithm for poorly conditioned input is quite aweful,
+		and it is not very useful in 7d and upwards for that reason
 		"""
+		output = self.subspace.inverse_subspace_estimate()
 		a = self
 		n = 2 ** ((self.algebra.n_dimensions + 1) // 2)
 		u = a
+
 		for k in range(1, n):
 			c = (n / k) * u.select[0]
 			u_minus_c = u - c
-			u = a * u_minus_c
+			u = (a * u_minus_c)
 
 		# adj / det
-		return u_minus_c / u.restrict[0]
+		return u_minus_c.restrict_subspace(output) / u.restrict[0]
 
 	def __truediv__(self, other):
 		other = self.upcast(other)

@@ -23,19 +23,20 @@ If there is any original idea contained in this code,
 it is that JAX, GA, and XPBD mesh together really well.
 
 """
+import jax
 
 from numga.examples.physics.base import *
 from numga.examples.integrators import RK4
 
 
 # one may be tempted to use full log/exp here;
-# but linearization actually seems to improve convergence of constraint solver
+# but approximate actually seems to improve convergence of constraint solver
 def motor_add_step(motor: Motor, step: BiVector) -> Motor:
 	"""Apply a bivector step, or integrated-rate variable, to a body motor state"""
-	return motor * (step * (-1/2)).exp_linear_normalized()
+	return motor * (step * (-1/2)).exp_quadratic()
 def motor_relative_step(old: Motor, new: Motor) -> BiVector:
 	"""Retrieve a bivector step, or integrated-rate variable, from relative body motor states"""
-	return new.reverse_product(old).motor_log_linear_normalized() * -(2)
+	return new.reverse_product(old).motor_log_quadratic() * -(2)
 
 
 class Body(BodyBase):
@@ -47,6 +48,16 @@ class Body(BodyBase):
 		# with the gravity direction in local space
 		gravity = self.first_moment & (self.motor << self.gravity)
 		return damping + gravity
+
+	# def forques_(self, motor, rate) -> Line:
+	# 	"""External forque line on each body, in body local space"""
+	# 	return 0
+	# 	# simple linear damping, proportional to rates
+	# 	damping = -(rate * self.damping).dual()
+	# 	# gravity forque line is the join of the mass distributions first moment,
+	# 	# with the gravity direction in local space
+	# 	gravity = self.first_moment & (motor << self.gravity)
+	# 	return damping + gravity
 
 	def rate_derivative(self) -> BiVector:
 		"""Generalized Euler's rotation equation
@@ -70,11 +81,13 @@ class Body(BodyBase):
 		rate = RK4(lambda r: self.copy(rate=r).rate_derivative(), self.rate, dt)
 		motor: Motor = motor_add_step(self.motor, rate * dt)      # integrate motor by exponentiation
 		return self.copy(motor=motor, rate=rate)
+
 	def post_integrate(self, old, dt: float) -> "Body":
 		"""Verlet post integration step; deduce rates from change in motors, after constraint relaxation"""
 		motor = self.motor.normalized()  # NOTE: should not be required if keeping normalized between updates
 		# computes rate in motor local frame; equivalent to
 		#  motor << motor_relative_step(old.motor, motor)
+		# FIXME: should we run all pre-integration steps backwards?
 		rate: BiVector = motor_relative_step(motor.reverse(), old.motor.reverse()) / dt
 		return self.copy(rate=rate, motor=motor)           # rate is tracked in body local frame
 	def integrate(self, dt: float, constraint_sets=[]) -> "Body":

@@ -16,6 +16,18 @@ References
 [1] Normalization, Square Roots, and the Exponential and Logarithmic Maps in Geometric Algebras of Less than 6D
 [2] May the Forque Be with You; Dynamics in PGA
 
+Notes
+-----
+Terms involving xz are negated compared to the reference [1],
+since our normalized blade order is to sort the axes alphabetically,
+and our subspace object does not currently store signs of basis blades
+
+Most implementations below are numpy-specific;
+we would need to rewrite the inplace updates for JAX;
+but a more generic method that would work for both
+would add overhead in a non-compiled numpy context,
+which is rather at odds with low level optimization.
+
 """
 import numpy as np
 
@@ -32,20 +44,6 @@ from numga.multivector.multivector import AbstractMultiVector as mv
 	position=0      # try and match this before all else
 )
 def normalize_3dpga_motor_numpy(m: "Motor") -> "Motor":
-	"""Optimized 3d pga motor normalization, for the given memory layout
-
-	Notes
-	-----
-	Terms involving xz are negated compared to the reference [1],
-	since our normalized blade order is to sort the axes alphabetically,
-	and our subspace object does not currently store signs of basis blades
-
-	Note that this implementation is numpy-specific;
-	we would need to rewrite the inplace updates for JAX;
-	but a more generic method that would work for both
-	would add overhead in a non-compiled numpy context,
-	which is rather at odds with low level optimization.
-	"""
 	m = m.copy()
 	# slice backing array into views onto components
 	e, xy, xz, yz, xw, yw, zw, xyzw = [m.values[..., i:i+1] for i in range(8)]
@@ -63,8 +61,6 @@ mv.normalized.cache = {}
 	position=0      # try and match this before all else
 )
 def exponentiate_degenerate_bivector_numpy(b: "BiVector") -> "Motor":
-	"""Optimized 3d pga exponentiation, for the given memory layout
-	"""
 	M = np.empty(b.shape + (4,))
 	M[..., 0] = 1
 	M[..., 1:] = b.values
@@ -77,8 +73,6 @@ def exponentiate_degenerate_bivector_numpy(b: "BiVector") -> "Motor":
 	position=0      # try and match this before all else
 )
 def exponentiate_nondegenerate_bivector_numpy(b: "BiVector") -> "Motor":
-	"""Optimized 3d pga exponentiation, for the given memory layout
-	"""
 	xy, xz, yz = np.moveaxis(b.values, -1, 0)
 	l = xy*xy + xz*xz + yz*yz
 	a = np.sqrt(l)
@@ -99,14 +93,6 @@ def exponentiate_nondegenerate_bivector_numpy(b: "BiVector") -> "Motor":
 	position=0      # try and match this before all else
 )
 def exponentiate_bivector_numpy(b: "BiVector") -> "Motor":
-	"""Optimized 3d pga exponentiation, for the given memory layout
-
-	Notes
-	-----
-	Terms involving xz are negated compared to the reference [1],
-	since our normalized blade order is to sort the axes alphabetically,
-	and our subspace object does not currently store signs of basis blades
-	"""
 	xy, xz, yz, xw, yw, zw = np.moveaxis(b.values, -1, 0)
 	l = xy*xy + xz*xz + yz*yz
 	a = np.sqrt(l)

@@ -241,7 +241,7 @@ class OperatorFactory:
 	def wedge_product(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Wedge product, or outer product"""
 		return self.make_product(l, r, lambda l, r, o: (l + r) == o)
-	op = outer = wedge = outer_product = wedge_product
+	op = outer = wedge = exterior = outer_product = exterior_product = wedge_product
 	@cache
 	def inner_product(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Symmetric inner product; or inner for short"""
@@ -600,6 +600,16 @@ class OperatorFactory:
 	def inertia(self, l: SubSpace, r: SubSpace) -> Operator:
 		"""Compute inertia operator; l.regressive(l x r)"""
 		return self.regressive(l, self.commutator(l, r)).symmetry((0, 1))
+
+	@cache
+	def project(self, l: SubSpace, r: SubSpace) -> Operator:
+		"""PGA projection operator; (l*r)inv(r)"""
+		# FIXME: how to deal with inv symbolically?
+		# grades = np.unique(v.grades())
+		# return self.full_sandwich(R, v).grade_selection(lambda l, m, r, o: np.any(o[..., None] == grades, axis=-1))
+		return self.product(self.product(l, r), r).symmetry((1, 2))
+
+
 
 	@cache
 	def solve(self, x: SubSpace, rhs: SubSpace):

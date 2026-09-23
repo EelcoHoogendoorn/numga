@@ -1,9 +1,4 @@
-"""Use pga to compose motions
-
-why not just use 3x3 affine?
-
-same amount of code, eliminates dependency
-not really using pga features atm
+"""Simple 2d pga utility function examples
 """
 
 from numga.backend.numpy.context import NumpyContext
@@ -46,59 +41,53 @@ from numga.multivector.multivector import AbstractMultiVector as mv
 	s.inside.bivector() and s.algebra.description.n_dimensions <= 3,
 	position=1
 )
-def exponentiate_bivector_numpy(b: "BiVector") -> "Motor":
+def exponentiate_bivector(b: "BiVector") -> "Motor":
 	"""optimized 2d pga bivector exponential"""
 	av = b.norm().values[..., 0]
-	cv = np.cos(av)
-	sv = np.where(av > 1e-20, np.sin(av) / av, 1)
+	cv = pga.cos(av)
+	sv = pga.sinc(av/np.pi)
 	return b * sv + cv
 
 
 
+def as_matrix(motor):
+	return motor.select.motor().sandwich(pga.subspace.antivector()).kernel
 # # god this is so janky... need to add custom subspace ordering to numga to get rid of these signs
 signs = 1 - (np.arange(9).reshape(3,3)%2)*2
 assert pga.subspace.antivector().named_str == 'wx,wy,xy'
-def as_matrix(motor):
-	return motor.select.motor().sandwich(pga.subspace.antivector()).kernel
-def transform_points(motor, p):
-	"""Optimized sandwich implementation for point transformation, eliminating intermediaries"""
+def transform_points_optimized(motor, p):
+	"""Optimized sandwich implementation for point transformation,
+	encoded as [n,2] arrays without homogenous coord, eliminating intermediaries"""
 	m = (as_matrix(motor) * signs)[::-1,::-1]
 	return p.dot(m[1:, 1:]) + m[0:1, 1:]
+def transform_points(motor, p):
+	q = x * p[..., 0] + y * p[..., 1] + w
+	q = (motor >> q.dual()).dual()
+	return q.values[..., 1:]
+
+
+
+
+class PGA2d:
+
+	def __init__(self, ctx):
+		self.ctx = ctx
+		pass
+
 
 
 def test_pga():
-	from pygeartrain.core.profiles import epi_hypo_gear
-	from pygeartrain.core.profiles import Profile, circle
-
-	gear = Profile.concat([epi_hypo_gear(3, 5, 0.5, 100), circle(0.1)])
-	m = translator(1, 2) * rotor(0.1)
-
-	print(origin)
-	print(origin.exp())
-	# return
-	print(point(1, 0))
-	print(translator(1,0) >> point(0,0))
-	# return
+	# create polygon
+	a = np.linspace(0, np.pi*2, 7, endpoint=True)
+	poly = np.array([np.cos(a), np.sin(a)]).T
+	# create random point
 	p = point(-10, 1)
-	print(p)
-	p = plane(0, 1, 1) ^ plane(1, 0, -10)
-	print(p)
+	# rotate around this point in a number of steps
+	motors = (p * np.linspace(0, 1, 10)).exp()
 
-	q=(point(0,0)*0.1).exp().sandwich(point(1,0))
-
-	print(q.dual(), point(0,0))
-	# FIXME why is y negative? xy rotates negatively; why?
-	# return
-	# p = xy
-	print(p)
-	m = p.exp()
-	print(m)
-	print(m * ~m)
 	import matplotlib.pyplot as plt
 	fix, ax = plt.subplots()
-
-	for i in range(10):
-		(gear>> (p*i/10).exp()).plot(ax=ax)
-	# (gear<< (p*0.2).exp()).plot(ax=ax)
+	for m in motors:
+		ax.plot(*transform_points_optimized(m, poly).T)
+	plt.axis('equal')
 	plt.show()
-

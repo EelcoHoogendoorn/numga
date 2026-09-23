@@ -20,6 +20,10 @@ class Operator:
 		self.kernel: np.ndarray = kernel
 		self.axes: Tuple[SubSpace] = tuple(axes)
 
+	def equals(self, other):
+		# NOTE: overloading __eq__ gives annoying hash properties
+		return self.axes == other.axes and np.allclose(self.kernel, other.kernel)
+
 	def copy(self, kernel):
 		return type(self)(kernel, self.axes)
 

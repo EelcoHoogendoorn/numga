@@ -23,7 +23,7 @@ To illustrate the concept of an extensor, we first turn our attention to the Lev
 ```python
 # set up a 3d algebra context
 ctx = Context((3, 0, 0))
-# cons
+# construct the space of 1-vectors
 V = ctx.subspace.vector
 # Construct antisymmetric binary mapping from a pair of vectors to vectors
 #  aka, the 'cross product'
@@ -108,7 +108,7 @@ Since numga makes extensors first class citizens of the library, extensors can a
 The utility thereof is nicely illustrated by the concept of inertia mappings. Since for any PGA dual vector point `p`, the instantaneous rate of change of its rigid body transform is given by the bivector `b`, the dual bivector momentum line `m` is given by:
 
 ```python
-m = p.regressive(b.commutator(p))
+m = p.regressive(p.commutator(b))
 ```
 <i>References: [Gunn-2011](#ref-gunn-2011), [PGADYN](#ref-pgadyn) </i>
 
@@ -117,7 +117,7 @@ Then it follows that the mapping from bivector rates to dual bivector momentum l
 ```python
 # same as above; just with delayed binding of `b`
 B = b.subspace
-I = p.regressive(B.commutator(p))
+I = p.regressive(p.commutator(B))
 m = I(b)
 ```
 
@@ -143,7 +143,7 @@ com = p.mean(axis=0)
 assert com.shape == ()
 # construct N unary inertia mappings from bivector to dual bivector;
 # one for each input point `p`
-Is = p.regressive(B.commutator(p))
+Is = p.regressive(p.commutator(B))
 assert Is.shape == (N,)
 assert Is.data.shape == (N, len(B), len(B))
 assert Is.arity == 1
@@ -342,7 +342,7 @@ The syntax presented here is partially aspirational; the current numga syntax 1.
 Related to this, numga 1.0 has both a 'MultiVector' type as well as an 'Operator' type; but from the numga 2.0 / extensor perspective, this is merely an arbitrary distinction between nullary and non-nullary extensors. This shows itself in an unwanted code duplication between the two types, as it pertains to broadcasting semantics and other generic functionality.
 
 ## Performance footnote
-With regards to performance of implementing extensor functionality; while there is an additional `if` statement in each operator invocation required to differentiate concrete multivector arguments, from operations to be constructed over an abstract subspace; these are compile-time if-statements from the perspective of a JIT-compiled expression (whether JAX, torch or some other compilable backend), which is the setting numga concerns itself with. Using the non-compiled numpy backend, enabling expressive extensor syntax does carry this overhead; but the numpy backend is really only there for unit testing and educational purposes, and achieving optimal performance there is considered a non-goal of numga, and one more python conditional is not going to make a material difference.
+With regards to performance of implementing extensor functionality; while there is an additional `if` statement in each operator invocation required to differentiate concrete multivector arguments, from operations to be constructed over an abstract subspace; these are compile-time if-statements from the perspective of a JIT-compiled expression (whether JAX, torch or some other compilable backend), which is the setting numga concerns itself with. Using the non-compiled numpy backend, enabling expressive extensor syntax does carry the overhead of such an extra conditional; but the numpy backend is really only there for unit testing and educational purposes, and achieving optimal performance there is considered a non-goal of numga, and one more python conditional is not going to make a material difference.
 
 ## Terminology footnote
 
@@ -350,11 +350,11 @@ The label 'extensor' is first claimed by [Hestenes](#ref-ca-to-gc), who defines 
 
 This defining reference contains several reflections on historical competing ways of defining 'tensors', to which we do not have anything new to add. We note that 'tensors' as multilinear functions of 1-vectors are strictly a subset of the 'extensors'. 
 
-As Hestenes also qualifies subsequently, and is well known, the above definition is incomplete; not every n+1-dimensional block of random numbers defines a valid n-ary extensor, any more than every block of random numbers would define a valid tensor, in the sense of obeying frame-invariance. 
+As Hestenes also qualifies subsequently, and is well known, the above definition is incomplete; not every n+1-dimensional block of random numbers defines a valid n-ary extensor, any more than every block of random numbers would define a valid tensor, in the sense of obeying basis-invariance and transformation properties.
 
 However, any extensor built up from valid operations on multivectors within the algebra is a valid extensor in terms of transformation properties (and also self-evidently a multi-linear map over multivectors). Hence we emphasize this definition as the 'extensors' of numga; as this is the only type of object that we are dealing with, and this definition self-evidently falls within the initial definitions of Hestenes (as well as subsequent clarifications).
 
-Note that this definition of 'extensor', does not include any notion of contravariant or covariant indices; or separable metric tensors. While one could model a metric tensor as an extensor, it would be an object modelled with the library; not a first class concern of the library or its extensor concept itself. The choice to see the metric as intrinsic to the algebra, rather than as separate from it, is rather fundamental to the viewpoint difference in geometric algebra versus exterior algabra as a separate subject. The above reference by Hestenes also goes into this aspect in some depth, for those interested. 
+Note that this definition of 'extensor', does not include any notion of contravariant or covariant indices; or separable metric tensors. While one could model a metric tensor as an extensor, it would be an object modelled with the library; not a first class concern of the library or its extensor concept itself. The choice to see the metric as intrinsic to the algebra, rather than as separate from it, is rather fundamental to the viewpoint difference in geometric algebra versus exterior algebra as a separate subject. The above reference by Hestenes also goes into this aspect in some depth, for those interested.
 
 Put more plainly, if you are looking to rotate vectors or build inertia matrices, the numga extensor concept is probably exactly what you are looking for. If you are looking to model the Einstein field equations... maybe numga will be of help to you, but if you have to ask... you should probably first read all the literature on gauge-theory-gravity (GTG), which is more than the authors of numga can claim to have read.
 

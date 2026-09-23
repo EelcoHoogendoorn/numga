@@ -29,7 +29,19 @@ from numga.operator.abstract import AbstractConcreteOperator
 from numga.backend.jax import pytree
 
 
+
+# Register Operator as a Pytree node so that the kernel can be traced
+def flatten_operator(op):
+	return [op.kernel], op.axes
+def unflatten_operator(axes, children):
+	return Operator(children[0], axes)
+jax.tree_util.register_pytree_node(Operator, flatten_operator, unflatten_operator)
+
+
 class JaxOperator(AbstractConcreteOperator):
+
+	# FIXME: JAX operator needs kernel copy that is inside the pytree!
+	__pytree_ignore__ = ('context',)
 
 	@property
 	def shape(self):
@@ -67,12 +79,10 @@ class JaxOperator(AbstractConcreteOperator):
 		return self.copy(self.operator.copy(kernel))
 
 
-	def partial(self, inputs: Dict[int, JaxMultiVector]) -> "JaxEinsumOperator":
+	def partial(self, inputs: Dict[int, JaxMultiVector]) -> "JaxOperator":
 		# NOTE: after partial application we tend to be dealing with dense kernels,
 		# so einsum operator is likely best fit as output. but perhaps not always the case?
 		# infact inertia tensors and their inverses often have substantial numerical sparsity
-		#
-		# FIXME: we should specialize this for sparse operators though; do sparse partial, producing einsum op
 		expr = self.precompute_einsum_partial(tuple(inputs.keys()))
 		return JaxEinsumOperator(
 			self.context,
@@ -116,7 +126,8 @@ class JaxDenseOperator(JaxOperator):
 	Though on cpu at least einsum does tend to bring runtime-performance benefits.
 	Possibly this implementation is advantageous on TPU?
 	"""
-	__pytree_ignore__ = ('context', 'operator')
+	# kernel = jnp.array
+	__pytree_ignore__ = ('context',)
 
 	def __init__(self, *args, **kwargs):
 		super(JaxDenseOperator, self).__init__(*args, **kwargs)
@@ -124,6 +135,8 @@ class JaxDenseOperator(JaxOperator):
 		self.shapes = self.broadcasting_shapes
 		# contraction over all kernel input axes
 		self.sum_axes = tuple(-(a + 2) for a in range(self.arity))
+
+		# self.kernel = self.context.coerce_array(self.operator.kernel)
 
 	@partial(jax.jit, static_argnums=(0,))
 	def __call__(self, *inputs: Tuple[JaxMultiVector]) -> JaxMultiVector:
@@ -145,7 +158,9 @@ class JaxEinsumOperator(JaxOperator):
 	This seems to provide a nice balance between compilation speed and runtime speed,
 	though sparse evaluation seems faster in most circumstances on cpu.
 	"""
-	__pytree_ignore__ = ('context', 'operator')
+	# kernel = jnp.array
+
+	__pytree_ignore__ = ('context',)
 
 	def __init__(self, *args, **kwargs):
 		super(JaxEinsumOperator, self).__init__(*args, **kwargs)
@@ -153,6 +168,7 @@ class JaxEinsumOperator(JaxOperator):
 		# self.jax_kernel = np.array(self.kernel)
 		# precompute reshape operations
 		# self.expr = self.precompute_einsum_partial(range(self.arity))
+		# self.kernel = self.context.coerce_array(self.operator.kernel)
 
 	# @property
 	# def jax_kernel(self):
@@ -187,7 +203,7 @@ class JaxSparseOperator(JaxOperator):
 
 	For debugging/development, dense operator execution is likely preferable
 	"""
-	__pytree_ignore__ = ('context', 'operator')
+	__pytree_ignore__ = ('context',)
 
 	# @partial(jax.jit, static_argnums=(0,))
 	def __call__(self, *inputs: Tuple[JaxMultiVector]) -> JaxMultiVector:
@@ -199,3 +215,32 @@ class JaxSparseOperator(JaxOperator):
 			)
 			output.values = output.values.at[..., oi].set(q)
 		return output
+
+	def partial(self, inputs: Dict[int, JaxMultiVector]) -> "JaxDenseOperator":
+		# identify output axes; which are the ones NOT in inputs
+		# FIXME: this assumes that the last axis is always the output axis of the operator
+		#  and that we want to keep it that way
+		output_axes = tuple(i for i in range(self.arity + 1) if i not in inputs)
+
+		# precompute sparse structure
+		sparse_structure = self.precompute_sparse_tensor(output_axes)
+
+		# Let's compute the new kernel values sparsely
+		new_shape = tuple(self.kernel.shape[i] for i in output_axes)
+		new_kernel = jnp.zeros(new_shape, dtype=self.context.dtype)
+
+		for out_idx, terms in sparse_structure:
+			# sum over terms
+			val = sum(
+				math.prod((inputs[i].values[..., idx] for i, idx in zip(inputs, sum_idx)), start=scalar)
+				for (sum_idx, scalar) in terms
+			)
+			new_kernel = new_kernel.at[out_idx].set(val)
+
+		return JaxDenseOperator(
+			self.context,
+			Operator(
+				new_kernel,
+				tuple(self.operator.axes[i] for i in output_axes)
+			)
+		)

@@ -63,3 +63,14 @@ class TorchMultiVector(AbstractMultiVector):
 	def repeat(self, pattern, **kwargs):
 		from einops import repeat
 		return self.copy(repeat(self.values, pattern, **kwargs))
+
+	def inverse_la(self):
+		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
+		inverse_subspace = self.subspace.inverse_subspace_estimate()
+		op = self.operator.product(self.subspace, inverse_subspace)
+		k = op.partial({0: self}).kernel
+		k = torch.swapaxes(k, -1, -2)
+		unit = op.output.blades == 0
+		r = torch.linalg.lstsq(k, torch.tensor(unit, dtype=k.dtype)[None, :, None])[0][..., 0]
+
+		return self.context.multivector(values=r, subspace=inverse_subspace)

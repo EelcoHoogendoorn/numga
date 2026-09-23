@@ -25,6 +25,28 @@ def test_print_quat():
 	print(op)
 
 
+def test_print_lorentz():
+	"""Visualize lorentz force law"""
+	algebra = Algebra('x+y+z+t-')
+	b = algebra.subspace.bivector()
+	v = algebra.subspace.vector()
+	opi = algebra.operator.inner(v, b)
+	opc = algebra.operator.commutator(v, b)
+	assert opi.equals(opc)
+	print()
+	print(opc)
+
+
+def test_print_dual():
+	"""Visualize dual"""
+	algebra = Algebra((3,0,0))
+	V = algebra.subspace.vector()
+	op = algebra.operator.dual(V)
+	print()
+	print(op)
+	print(op.kernel)
+
+
 def test_print_Levi_Civita():
 	"""Visualize Levi-Civita symbol"""
 	algebra = Algebra('x+y+z+')
@@ -115,6 +137,59 @@ from numga.multivector.test.util import random_subspace
 import numpy.testing as npt
 
 
+def point_embed(
+		context,
+		distances
+):
+	"""Code to embed PGA points in spaces of arbitrary signature
+
+	Distances denote the distances of points away from the origin
+	The origin is the last axis of the algebra
+	"""
+	*axes, origin = context.multivector.basis()     # arbitrarily pick last axis as the origin
+	model_space = context.subspace.vector().difference(origin.subspace)
+	distances = context.multivector(model_space, distances)
+	translator = ((origin / -2) ^ distances).exp()
+	# need the dual-inverse to avoid picking up that annoying minus sign in alternating dimensions
+	return translator >> origin.dual_inverse()
+
+
+def test_inertia_more():
+	"""Test seperability of inertia"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+w0')
+	context = NumpyContext(algebra)
+
+	P = context.subspace.antivector()
+	B = context.subspace.bivector()
+	# I = context.operator.inertia(P, B)
+
+	p = random_subspace(context, P, (10,))
+	b = random_subspace(context, B, (10,))
+
+	def make_n_cube(N):
+		b = ((np.arange(2 ** N)[:, None] & (1 << np.arange(N))) > 0)
+		return (2 * b - 1)
+
+	def make_n_rect(N):
+		return make_n_cube(N) * (np.arange(N) + 1)
+	p = point_embed(context, make_n_rect(algebra.n_dimensions-1) * 0.1)
+
+	p = p.normalized()
+	I = p.inertia_map().sum(axis=0)
+
+	print(I.kernel)
+	momentum = I(b)
+	print(momentum)
+
+	# FIXME: these partial inertia maps return a full antibivector
+	I = p.inertia_map(B.degenerate()).sum(axis=0)
+	print(I.kernel)
+	I = p.inertia_map(B.nondegenerate()).sum(axis=0)
+	print(I.kernel)
+
+
+
 def test_inertia():
 	"""Test equivalence of composed ternary operators to their direct expression form"""
 	from numga.backend.numpy.context import NumpyContext
@@ -138,30 +213,214 @@ def test_inertia():
 def test_quat_matrix():
 	"""Test reduction of quat multiplication to matrix form"""
 	from numga.backend.numpy.context import NumpyContext
-	algebra = Algebra('x+y+z+')
+	algebra = Algebra((2,0,0))
 	context = NumpyContext(algebra)
 
 	Q = context.subspace.even_grade()
-	q = context.multivector(Q, [1, 2, 3, 4])
+	q = context.multivector(Q, np.arange(len(Q))+1)
 	op = context.operator.product(Q, Q)
 	o = op.partial({0: q})
 	print()
 	print(o.kernel)
 
 
+def test_quat_matrix_cl2():
+	"""Test reduction of quat multiplication to matrix form"""
+	import jax
+	import jax.numpy as jnp
+	from numga.backend.jax.context import JaxContext
+	from numga.backend.jax.operator import JaxSparseOperator
+	algebra = Algebra((2,0,0))
+	context = JaxContext(algebra, otype=JaxSparseOperator)
+
+	Q = context.subspace.even_grade()
+	V = context.subspace.vector()
+	q = context.multivector(Q, np.arange(len(Q))+1)
+	op = context.operator.sandwich(Q, V)
+	op = context.operator.reverse(Q)
+
+	op = context.operator.product(Q, V)
+	print(op.kernel)
+	print(op.operator.axes)
+	return
+
+
+
+	for term in op.precompute_sparse_tensor(output_axes=(1, 3)):
+		print(term)
+	# return
+
+	# print(context.operator.sandwich(Q, V))
+	@jax.jit
+	def to_matrix(r):
+		return r.sandwich_map(V)
+	
+	def compute_kernel(values):
+		return to_matrix(context.multivector(Q, values)).kernel
+
+	@jax.jit
+	def explicit(r):
+		# map rotor sandwich to matrix, in vectorized manner
+		s, b = r.values[..., 0], r.values[..., 1] 	# unpack to scalar and bivector
+		d = s**2 - b**2 	# diagonal elements
+		o = 2 * s * b	 	# off-diagonal elements
+		out = jnp.stack([d, o, -o, d], axis=-1)
+		return out.reshape(r.shape[:-1] + (2,2))
+
+	@jax.jit
+	def explicit_for(r):
+		# map rotor sandwich to matrix, in vectorized manner
+		out = jnp.empty(r.shape[:-1] + (2,2))
+		r = r.values
+		def product_term(idx, sign):
+			prod = sign
+			for i in idx:
+				prod *= r[..., i]
+			return prod
+		for idx, terms in op.precompute_sparse_tensor(output_axes=(1, 3)):
+			t = sum(product_term(*foo) for foo in terms)
+			out = out.at[idx].set(t)
+		return out
+
+	def explicit_for_roll(r):
+		# map rotor sandwich to matrix, in vectorized manner
+		o = np.empty((2,2))
+		o[0,0] = +r[0] * r[0] - r[1] * r[1]
+		o[0,1] = +r[0] * r[1] + r[0] * r[1]
+		o[1,0] = -r[0] * r[1] - r[0] * r[1]
+		o[1,1] = +r[0] * r[0] - r[1] * r[1]
+		return o
+
+	def explicit_for_roll_opt(r):
+		# map rotor sandwich to matrix, in vectorized manner
+		o = np.empty((2,2))
+		d = r[0] * r[0] - r[1] * r[1]
+		o = 2 * r[0] * r[1]
+		o[0,0] = d
+		o[0,1] = o
+		o[1,0] = -o
+		o[1,1] = d
+		return o
+
+
+	# lets print the compiled jax code, as traced for a simple rotor/complex number input,
+	# so we can check how the code compiles down.
+	# if all is well, we would expect to see soemthing like
+	# c = r[0]**2-r[1]**2
+	# s = 2*r[0]*r[1]
+	# and this then being packed into a 2x2 matrix output
+	# as the totality of all traced and optimized jax operations
+	print()
+	print(jax.make_jaxpr(explicit)(q))
+	print("--- HLO ---")
+	print()
+	print(jax.make_jaxpr(explicit_for)(q))
+	return
+	# use abstract shape to avoid constant folding
+	abstract_q = jax.ShapeDtypeStruct(q.values.shape, q.values.dtype)
+	print(jax.jit(explicit).lower(abstract_q).compile().as_text())
+	print(op.kernel)
+
+
+def test_sparse_partial_equivalence():
+	"""Test that sparse and dense partial application yield same results"""
+	import jax
+	import numpy as np
+	import numpy.testing as npt
+	from numga.backend.jax.context import JaxContext
+	from numga.backend.jax.operator import JaxSparseOperator, JaxEinsumOperator
+	
+	algebra = Algebra((2,0,0))
+	
+	# Dense context
+	ctx_dense = JaxContext(algebra, otype=JaxEinsumOperator)
+	Q_d = ctx_dense.subspace.even_grade()
+	V_d = ctx_dense.subspace.vector()
+	op_d = ctx_dense.operator.sandwich(Q_d, V_d)
+	
+	# Sparse context
+	ctx_sparse = JaxContext(algebra, otype=JaxSparseOperator)
+	Q_s = ctx_sparse.subspace.even_grade()
+	V_s = ctx_sparse.subspace.vector()
+	op_s = ctx_sparse.operator.sandwich(Q_s, V_s)
+	
+	# Random input
+	rng = np.random.default_rng(42)
+	q_val = rng.normal(size=len(Q_d))
+	
+	q_d = ctx_dense.multivector(Q_d, q_val)
+	q_s = ctx_sparse.multivector(Q_s, q_val)
+	
+	# Partial apply
+	res_d = op_d.partial({0: q_d, 2: q_d})
+	res_s = op_s.partial({0: q_s, 2: q_s})
+	
+	# Check kernels
+	print("Dense kernel shape:", res_d.kernel.shape)
+	print("Sparse kernel shape:", res_s.kernel.shape)
+	
+	npt.assert_allclose(res_d.kernel, res_s.kernel, atol=1e-5)
+	print("Kernels match!")
+
+
+def test_levi_matrix():
+	"""Test reduction of Levi-Civita symbol to matrix form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+')
+	context = NumpyContext(algebra)
+
+	V = context.subspace.vector()
+	op = context.operator.cross_product(V, V)
+	v = context.multivector.vector(np.arange(3)+1)
+	o = op.partial({0: v})
+	print()
+	print(o.kernel)
+	print(np.einsum('i,ijk->jk', v.values, op.kernel))
+
+
+
 def test_quat_sandwich_matrix():
 	"""Test reduction of quat sandwich multiplication to matrix form"""
 	from numga.backend.numpy.context import NumpyContext
 	algebra = Algebra('x+y+z+w0')
+	algebra = Algebra((4,1,0))	# cga
 	context = NumpyContext(algebra)
 
 	Q = context.subspace.even_grade()
-	V = context.subspace.vector()
+	V = context.subspace.k_vector(3)
 	q = random_subspace(context, Q, (1,)).normalized()
+	# q = context.multivector.even_grade(np.array([1,2,3,4]))
 	op = context.operator.sandwich(Q, V)
+	print(np.count_nonzero(op.kernel))
+	return
 	o = op.partial({0:q, 2:q})
 	print()
-	print(o.kernel)
+	# print(o.operator.axes)
+	print(o.kernel[0])
+	A = context.subspace.k_vector(-3)
+	# q = random_subspace(context, Q, (1,)).normalized()
+	op = context.operator.sandwich(Q, A)
+	o = op.partial({0:q, 2:q})
+	print()
+	# print(o.operator.axes)
+	print(o.kernel[0, ::-1,::-1])
+
+
+def test_projection_grade():
+	"""Test reduction of camera projection to matrix form"""
+	from numga.backend.numpy.context import NumpyContext
+	algebra = Algebra('x+y+z+w0')
+	context = NumpyContext(algebra)
+
+	V = context.subspace.vector()
+	B = context.subspace.bivector()
+	T = context.subspace.antivector()
+
+	a = random_subspace(context, V).normalized()
+	b = random_subspace(context, B).normalized()
+
+	print(a.project(b))
+
 
 
 def test_projection_matrix():

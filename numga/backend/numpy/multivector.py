@@ -69,16 +69,42 @@ class NumpyMultiVector(AbstractMultiVector):
 	def flatten(self):
 		return self.reshape((-1,))
 
-	def inverse_la(self):
+
+
+	def inverse_la(self, inverse_subspace=None):
 		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
-		# FIXME: is there a simpler / more complete way of constructing these candidate subspaces?
-		inverse_subspace = self.operator.inverse_factor(self.subspace).output
+		if inverse_subspace is None:
+			inverse_subspace = self.subspace.inverse_subspace_estimate()
 		op = self.operator.product(self.subspace, inverse_subspace)
 		k = op.partial({0: self}).kernel
-		idx, = np.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
-		# FIXME: manual squaring reduces numerical accuracy; but np.linalg.slqr is not vectorized
-		r = np.linalg.solve(    # use least squares to solve for inverse
-			np.einsum('...ji,...ki->...jk', k, k), # k.T * k
-			k[..., idx],    #equal to  k.T * unit_scalar
-		)
+		k = np.swapaxes(k, -1, -2)
+		unit = op.output.blades == 0
+		try:
+			# this works for square matrices
+			r = np.linalg.solve(k, unit[None, ...])
+		except:
+			lstsq = np.vectorize(lambda a, b: np.linalg.lstsq(a, b, rcond=None)[0], signature='(m,n),(m)->(n)')
+			r = lstsq(k, unit)
+			# FIXME: manual squaring reduces numerical accuracy; but np.linalg.lstsq is not vectorized
+			# idx, = np.flatnonzero(unit)  # grab index of scalar of output; zero or raises
+			# r = np.linalg.solve(    # use least squares to solve for inverse
+			# 	np.einsum('...ij,...ik->...jk', k, k), # k.T * k
+			# 	k[..., idx],    #equal to  k.T * unit_scalar
+			# )
 		return self.context.multivector(values=r, subspace=inverse_subspace)
+
+	def solve(self, rhs):
+		"""Solve for y such that self * y = rhs"""
+		op = self.algebra.operator.solve(self.subspace, rhs.subspace)
+		k = self.operator(op).partial({0: self}).kernel
+		rhs = rhs.select_subspace(op.subspace).values
+
+		try:
+			r = np.linalg.solve(k, rhs)
+		except:
+			# use least squares if direct solve fails
+			r = np.linalg.solve(
+				np.einsum('...ji,...ki->...jk', k, k), # k.T * k
+				np.einsum('...ji, ...i->...j', k, rhs),
+			)
+		return self.context.multivector(values=r, subspace=op.axes[1])

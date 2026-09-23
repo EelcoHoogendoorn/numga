@@ -1,5 +1,9 @@
+import time
+
+import contexttimer
+import jax
 import numpy as np
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 
 from numga.algebra.algebra import Algebra
@@ -92,44 +96,99 @@ def test_performance():
 
 
 def check_inverse(x, i, atol=1e-9):
-	print(x.subspace, i.subspace)
+	# print(x.subspace, i.subspace)
+	print(i.values.shape)
 	assert np.allclose((x * i - 1).values, 0, atol=atol)
 	assert np.allclose((i * x - 1).values, 0, atol=atol)
+
+def mytime(callable, msg='', iterations=30):
+	callable = jax.jit(callable)
+	q = callable()	# warmup
+	jax.block_until_ready(q.values)
+	# print(q)		# make sure warmup cant be optimized
+
+	with contexttimer.Timer() as t:
+		for i in range(iterations):
+			rs = callable()
+			jax.block_until_ready(rs.values)
+	print(msg, t.elapsed)
+	return rs
+
+
+def test_isolated():
+
+	n = 128
+	K = np.random.normal(size=(1, n,n))
+	print(K.shape)
+	u = np.arange(n)==0
+
+	def callable():
+		def solve_one_system(a):
+			return jnp.linalg.lstsq(a, u)[0]
+
+		r = jax.vmap(solve_one_system)(K)
+
+		# r = jnp.linalg.solve(K, u)
+		return r
+
+	q = mytime(lambda: callable(), 'isolated', iterations=30)
+	for i in range(1, 100):
+		q = mytime(lambda: callable(), f'isolated {i}', iterations=i)
+
+
 
 
 def test_inverse():
 	"""test some inversion in 6 dimensions"""
+	print()
 	np.random.seed(0)
-	import time
-	ga = JaxContext(Algebra.from_pqr(6, 0, 0), dtype=jnp.float64)
-	N = 100
+	# from numga.backend.jax.operator import JaxSparseOperator	# very slow compile in high dims; no actual performance gain
+
+	ga = JaxContext(Algebra.from_pqr(7, 0, 0), dtype=jnp.float64)#, otype=JaxSparseOperator)
+	N = 10
+
 	V = ga.subspace.vector()
 	x = random_subspace(ga, V, (N,))
-	t = time.time()
-	check_inverse(x, x.inverse_la(), atol=1e-5)
-	print('la', time.time() - t)
-	t = time.time()
-	check_inverse(x, x.inverse_shirokov())
-	print('shir', time.time() - t)
 
+	# check_inverse(x, mytime(lambda: x.inverse_la(), 'la'), atol=1e-9)
+	# check_inverse(x, mytime(lambda: x.inverse_shirokov(), 'sh'), atol=1e-9)
+
+	# V = ga.subspace.even_grade()
+	# x = random_subspace(ga, V, (N,))
+	#
+	# check_inverse(x, mytime(lambda: x.inverse_la(), 'la'), atol=1e-9)
+	# # check_inverse(x, mytime(lambda: x.inverse_shirokov(), 'sh'), atol=1e-6)
+
+	# V = ga.subspace.multivector()
+	# V = ga.subspace.from_grades([0, 1])
 	V = ga.subspace.even_grade()
 	x = random_subspace(ga, V, (N,))
-	t = time.time()
-	check_inverse(x, x.inverse_la(), atol=1e-5)
-	print('la', time.time() - t)
-	t = time.time()
-	check_inverse(x, x.inverse_shirokov())
-	print('shir', time.time() - t)
 
-	V = ga.subspace.multivector()
-	x = random_subspace(ga, V, (N,))
-	foo = (lambda x: x.inverse_la())
-	foo(x)
-	t = time.time()
-	check_inverse(x, foo(x), atol=1e-5)
-	print('la', time.time() - t)
-	foo = jax.jit(lambda x: x.inverse_shirokov())
-	foo(x)
-	t = time.time()
-	check_inverse(x, foo(x))
-	print('shir', time.time() - t)
+	def foo(x):
+		q = x.symmetric_reverse_product()
+		i = q.inverse_la()
+		return ~x * i
+
+	i = mytime(lambda: x.inverse_shirokov(), 'sh')
+	check_inverse(x, i, atol=1e-2)
+	i = mytime(lambda: x.inverse_la(), 'la')
+	check_inverse(x, i, atol=1e-9)
+	# i = mytime(lambda: x.inverse(), 'hitz')
+	# check_inverse(x, i, atol=1e-9)
+	i = mytime(lambda: foo(x), 'lah')
+	check_inverse(x, i, atol=1e-8)
+
+
+def test_solve():
+	"""test some solutions of linear multivector equations"""
+	np.random.seed(0)
+	import time
+	ga = JaxContext((3, 0, 0), dtype=jnp.float64)
+	V = ga.subspace.bivector()
+	b = random_subspace(ga, V) * 0.1
+	h = 1+ b
+	lhs = h.squared()
+	rhs = h.symmetric_reverse_product()
+	r = lhs.solve(rhs)
+	print(r)
+	print(lhs * r - rhs)

@@ -107,3 +107,8 @@ register_special_case_5d()
 
 simplify_inverses(2)
 simplify_inverses(3)
+
+
+# @mv.inverse.register()
+# def inverse_default(mv):
+# 	return mv.inverse_shirokov()

@@ -1,6 +1,6 @@
 """XPBD swinging rigid body chain link"""
 
-from jax.config import config
+from jax import config
 config.update("jax_enable_x64", True)
 
 import jax

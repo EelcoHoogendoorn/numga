@@ -14,10 +14,6 @@ def test_normalize():
 	print(m.norm())
 	n1 = m.normalized()
 
-	print()
-	print(n1)
-	print(n1.norm())
-
 	from numga.multivector.extension import optimized
 	print()
 	n2 = m.normalized()

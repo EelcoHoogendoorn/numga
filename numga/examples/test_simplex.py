@@ -1,4 +1,7 @@
-"""Some code for calculating the inertia maps of simplices in arbitrary dimensions"""
+"""Some code for calculating the inertia maps of simplices in arbitrary dimensions
+
+So,
+"""
 
 import numpy as np
 from functools import lru_cache
@@ -88,4 +91,31 @@ def test_simplex_tet():
 	print('brute')
 	print(np.around(simplex_inertia_brute(C).kernel, 2))
 
+
+def test_ncube():
+	N = 3
+	c = np.meshgrid(*[[-1,1]]*N, indexing='ij')
+	c = (np.array(c)).reshape(N, -1)
+	ctx = Context('x+y+z+w0')
+	M = ctx.multivector
+
+	x,y,z = c
+	C = M.x * x + M.y * y + M.z * z
+	f =  (1-1/np.sqrt(3))
+	f =  (1/np.sqrt(3))
+	C = (C*f + M.w).dual()
+
+	q = C
+	I = q.inertia_map().sum(axis=0)
+	print(I.kernel)
+
+
+def test_simplex_tet():
+	ctx = Context('x+y+')
+	M = ctx.multivector
+	R = ctx.subspace.even_grade()
+	print(R)
+	prod = R.product(R)
+	print(prod)
+	print(prod)
 

@@ -30,6 +30,24 @@ def test_motor_properties(descr):
 
 
 @pytest.mark.parametrize('descr', [
+	(2, 4, 0), #(0, 1, 1),
+])
+def test_motor_properties_24(descr):
+	"""Test ability to construct proper normalized motors in a variety of spaces"""
+	algebra = Algebra.from_pqr(*descr)
+	context = NumpyContext(algebra)
+
+	m = random_non_motor(context, shape=(10,))
+	n = m.reverse_product(m)
+	print(n)
+	# m = m.normalized()
+	# print(v)
+	# v0, v1 = motor_properties(m)
+	# npt.assert_allclose(v0, 0, atol=1e-9)
+	# npt.assert_allclose(v1, 0, atol=1e-9)
+
+
+@pytest.mark.parametrize('descr', [
 	(2, 0, 0), (1, 0, 1), (1, 1, 0), #(0, 1, 1),
 	(3, 0, 0), (2, 0, 1), (2, 1, 0), (1, 1, 1),
 	(4, 0, 0), (3, 0, 1), (3, 1, 0), (2, 1, 1), #(2, 2, 0),
@@ -69,6 +87,23 @@ def test_object_normalize(descr):
 	# have to normalize their duals if interested in that
 	v = random_subspace(context, algebra.subspace.antivector().degenerate(), (10,))
 	print(v.dual().normalized().dual_inverse())
+
+
+def test_hamish_normalize1():
+	context = NumpyContext((3,0,1))
+	v = context.multivector.ab + context.multivector.abdc
+	r = (1+v).normalized()
+	print(r*~r)
+
+def test_hamish_normalize2():
+	context = NumpyContext((4,0,0))
+	v = context.multivector.ab
+
+	r = (1+v).normalized()
+	print(r)
+	q=((1+v))
+	print(r*~r)
+	print(q*~q)
 
 
 @pytest.mark.parametrize('descr', [

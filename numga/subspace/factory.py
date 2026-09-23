@@ -43,11 +43,12 @@ class SubSpaceFactory(FlyweightFactory):
 			# 	-(blades),  # swap sorting order for higher order blades
 			# 	blades,
 			# )
+			b = np.astype(blades, int)
 			order = np.where(
-				(blades * 2 >= self.algebra.n_dimensions),
+				(b * 2 >= self.algebra.n_dimensions),
 				# grade * 2 <= self.algebra.dimensions,
-				blades,
-				blades * -1  # swap sorting order for higher order blades
+				b,
+				b * -1  # swap sorting order for higher order blades
 			)
 			order = blades
 			# order = grade + (blades * 2 >= self.algebra.dimensions)

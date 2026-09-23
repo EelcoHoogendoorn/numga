@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .idea
+.agent_brain
+.DS_Store
 
 # C extensions
 *.so
@@ -159,3 +161,10 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Generated animations; only GIFs embedded in a README belong in Git.
+*.gif
+!/numga/examples/physics/animation_200.gif
+!/numga/examples/physics/animation_201.gif
+!/numga/examples/physics/animation_300.gif
+!/numga/examples/physics/animation_301.gif

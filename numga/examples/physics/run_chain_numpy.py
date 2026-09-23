@@ -38,7 +38,7 @@ import time
 
 t = time.time()
 states = []
-for i in range(10):
+for i in range(20):
 	bodies = step(bodies, constraint_sets, dt)
 	print(i)
 	# print('energy: ', bodies.kinetic_energy().values.sum())

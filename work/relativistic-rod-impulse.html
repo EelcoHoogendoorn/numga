@@ -1,0 +1,162 @@
+<div id="relativistic-rod-impulse">
+  <div class="viz-row"><strong>One push, a travelling front, a contracted moving rod</strong></div>
+  <div class="text-small">Initial rest frame · sound speed = c · final speed = 0.8c</div>
+  <div class="viz-controls">
+    <button id="rod-play" class="btn" type="button">Play</button>
+    <label class="form-label" for="rod-time">Observer time: <span id="rod-time-value" class="tabular-nums">0.65 L₀/c</span>
+      <input id="rod-time" class="form-range" type="range" min="-0.2" max="2.1" step="0.005" value="0.65">
+    </label>
+  </div>
+  <div class="viz-row text-small" aria-label="Worldline legend">
+    <span><span class="rod-left-swatch">━</span> Left end</span>
+    <span><span class="rod-right-swatch">━</span> Right end</span>
+    <span><span class="rod-front-swatch">┄</span> Compression → release front</span>
+  </div>
+  <svg id="rod-diagram" role="img" aria-label="Spacetime diagram with three worldlines: the left end, the right end, and one outward then reflected wavefront. A horizontal segment shows the rod at the selected observer time."></svg>
+  <div id="rod-state" class="text-small tabular-nums" aria-live="polite"></div>
+  <style>
+    #relativistic-rod-impulse { width: 100%; }
+    #relativistic-rod-impulse #rod-diagram { display: block; width: 100%; }
+    #relativistic-rod-impulse svg text { fill: var(--foreground); font-size: 12px; font-weight: 400; }
+    #relativistic-rod-impulse .rod-left-swatch { color: var(--viz-series-1); }
+    #relativistic-rod-impulse .rod-right-swatch { color: var(--viz-series-2); }
+    #relativistic-rod-impulse .rod-front-swatch { color: var(--viz-series-3); }
+  </style>
+  <script>
+    (() => {
+      const root = document.getElementById('relativistic-rod-impulse');
+      const svg = root.querySelector('#rod-diagram');
+      const timeInput = root.querySelector('#rod-time');
+      const play = root.querySelector('#rod-play');
+      const timeValue = root.querySelector('#rod-time-value');
+      const status = root.querySelector('#rod-state');
+      const NS = 'http://www.w3.org/2000/svg';
+      const V = 0.8, v = 0.5, T = 2/(1+v), endTime = 2.1;
+      const colors = { left: 'var(--viz-series-1)', right: 'var(--viz-series-2)', front: 'var(--viz-series-3)', neutral: 'var(--foreground)' };
+      const left = t => t < 0 ? 0 : t < T ? v*t : v*T + V*(t-T);
+      const right = t => t < 1 ? 1 : 1 + V*(t-1);
+      const front = t => t < 0 || t > T ? null : t <= 1 ? t : 2-t;
+      let time = Number(timeInput.value), running = false, previousFrame = null;
+      let currentGroup, xScale, yScale;
+      function node(name, attributes, parent = svg, text) {
+        const item = document.createElementNS(NS, name);
+        for (const [key, value] of Object.entries(attributes)) item.setAttribute(key, value);
+        if (text !== undefined) item.textContent = text;
+        parent.appendChild(item);
+        return item;
+      }
+      function label(text, x, y, extra = {}, parent = svg) {
+        return node('text', { x, y, ...extra }, parent, text);
+      }
+      function line(x1,y1,x2,y2,stroke,extra={},parent=svg) {
+        return node('line',{x1,y1,x2,y2,stroke,'stroke-width':1.2,...extra},parent);
+      }
+      function path(points, stroke, extra={}) {
+        const d = points.map(([x,t],i) => `${i ? 'L' : 'M'} ${xScale(x)} ${yScale(t)}`).join(' ');
+        return node('path',{d,fill:'none',stroke,'stroke-width':2.5,'stroke-linejoin':'round',...extra});
+      }
+      function dot(x,t,color,radius=4,parent=svg) {
+        return node('circle',{cx:xScale(x),cy:yScale(t),r:radius,fill:color},parent);
+      }
+      function marker(x,t,parent=svg) {
+        const px=xScale(x), py=yScale(t), s=6;
+        return node('path',{d:`M ${px} ${py-s} L ${px+s} ${py} L ${px} ${py+s} L ${px-s} ${py} Z`,fill:'var(--background)',stroke:colors.front,'stroke-width':2},parent);
+      }
+      function renderCurrent() {
+        if (!currentGroup) return;
+        currentGroup.replaceChildren();
+        const a=left(time), b=right(time), f=front(time), width=b-a;
+        line(xScale(-0.08),yScale(time),xScale(1.98),yScale(time),colors.neutral,{'stroke-dasharray':'2 5',opacity:0.25},currentGroup);
+        line(xScale(a),yScale(time),xScale(b),yScale(time),colors.neutral,{'stroke-width':9,opacity:0.23,'stroke-linecap':'round'},currentGroup);
+        if (f !== null && time>0 && time<T) line(xScale(a),yScale(time),xScale(f),yScale(time),colors.front,{'stroke-width':9,opacity:0.65,'stroke-linecap':'round'},currentGroup);
+        dot(a,time,colors.left,5,currentGroup);
+        dot(b,time,colors.right,5,currentGroup);
+        if (f !== null) marker(f,time,currentGroup);
+        const labelBelow = time>1.6;
+        label(`L = ${width.toFixed(3)} L₀`,(xScale(a)+xScale(b))/2,yScale(time)+(labelBelow ? 22 : -15),{'text-anchor':'middle','paint-order':'stroke',stroke:'var(--background)','stroke-width':4,'stroke-linejoin':'round'},currentGroup);
+        timeValue.textContent = `${time.toFixed(2)} L₀/c`;
+        const phase = time<0 ? 'Before the push' : time<1 ? 'Compression travelling right' : time<T ? 'Release travelling left' : 'Uniform motion · no residual vibration';
+        const lv = time<0 ? 0 : time<T ? v : V;
+        const rv = time<1 ? 0 : V;
+        status.textContent = `${phase} · vₗ = ${lv.toFixed(1)}c · vᵣ = ${rv.toFixed(1)}c`;
+      }
+      function draw() {
+        const width=Math.max(300,Math.round(root.getBoundingClientRect().width));
+        const small=width<500;
+        // Equal scales on x/L₀ and ct/L₀ keep the light-speed fronts at 45 degrees.
+        const xMin=-0.13, xMax=2.04, tMin=-0.29, tMax=2.22;
+        const scale=Math.min((width-86)/(xMax-xMin),180);
+        const plotW=(xMax-xMin)*scale, plotH=(tMax-tMin)*scale;
+        const plotX=64+Math.max(0,(width-86-plotW)/2), plotY=22;
+        const height=plotY+plotH+52;
+        svg.replaceChildren();
+        svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+        svg.style.height=`${height}px`;
+        xScale=x=>plotX+(x-xMin)*scale;
+        yScale=t=>plotY+(tMax-t)*scale;
+        node('rect',{x:plotX,y:plotY,width:plotW,height:plotH,fill:'none',stroke:'var(--border)','stroke-width':1,'data-chart-frame':''});
+        const ticks=small?[0,1,2]:[0,0.5,1,1.5,2];
+        for (const t of ticks) {
+          line(plotX,yScale(t),plotX+plotW,yScale(t),'var(--border)');
+          label(String(t),plotX-10,yScale(t)+4,{'text-anchor':'end'});
+        }
+        for (const x of ticks) {
+          line(xScale(x),plotY,xScale(x),plotY+plotH,'var(--border)');
+          label(String(x),xScale(x),plotY+plotH+21,{'text-anchor':'middle'});
+        }
+        label('x / L₀',plotX+plotW/2,height-5,{'text-anchor':'middle',class:'axis-title','data-axis':'x'});
+        label('ct / L₀',plotX-43,plotY+plotH/2,{'text-anchor':'middle',transform:`rotate(-90 ${plotX-43} ${plotY+plotH/2})`,class:'axis-title','data-axis':'y'});
+        const compression=[[0,0],[1,1],[v*T,T]];
+        const d=compression.map(([x,t],i)=>`${i?'L':'M'} ${xScale(x)} ${yScale(t)}`).join(' ')+' Z';
+        node('path',{d,fill:colors.front,opacity:0.09});
+        line(xScale(0),yScale(0),xScale(1),yScale(0),colors.neutral,{'stroke-width':7,opacity:0.12});
+        path([[0,-0.23],[0,0],[v*T,T],[left(endTime),endTime]],colors.left,{'data-worldline':'left'});
+        path([[1,-0.23],[1,1],[right(endTime),endTime]],colors.right,{'data-worldline':'right'});
+        path([[0,0],[1,1],[v*T,T]],colors.front,{'stroke-dasharray':'6 4','data-worldline':'front'});
+        dot(0,0,colors.left);
+        dot(1,1,colors.front);
+        dot(v*T,T,colors.front);
+        const outline={'paint-order':'stroke',stroke:'var(--background)','stroke-width':4,'stroke-linejoin':'round'};
+        label('Push starts',xScale(0)+8,yScale(0)+19,outline);
+        label('Reflects',xScale(1)+9,yScale(1)+5,outline);
+        label('Push ends',xScale(v*T)-9,yScale(T)-10,{'text-anchor':'end',...outline});
+        currentGroup=node('g',{'data-current-rod':''});
+        renderCurrent();
+      }
+      function stop() {
+        running=false;
+        previousFrame=null;
+        play.textContent=time>=endTime ? 'Replay' : 'Play';
+        status.setAttribute('aria-live','polite');
+      }
+      function animate(timestamp) {
+        if (!running) return;
+        if (previousFrame!==null) time=Math.min(endTime,time+(timestamp-previousFrame)/1000*0.3);
+        previousFrame=timestamp;
+        timeInput.value=String(time);
+        renderCurrent();
+        if(time>=endTime) stop(); else requestAnimationFrame(animate);
+      }
+      play.addEventListener('click',()=>{
+        if(running) {stop();return;}
+        const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if(reduced) {
+          const events=[0,0.65,1,1.17,T,2.1];
+          time=events.find(t=>t>time+0.001)??-0.2;
+          timeInput.value=String(time);
+          renderCurrent();
+          play.textContent='Next moment';
+          return;
+        }
+        if(time>=endTime) time=-0.2;
+        running=true;previousFrame=null;play.textContent='Pause';
+        status.setAttribute('aria-live','off');
+        requestAnimationFrame(animate);
+      });
+      timeInput.addEventListener('input',()=>{stop();time=Number(timeInput.value);renderCurrent();});
+      if(window.matchMedia('(prefers-reduced-motion: reduce)').matches) play.textContent='Next moment';
+      new ResizeObserver(draw).observe(root);
+      draw();
+    })();
+  </script>
+</div>

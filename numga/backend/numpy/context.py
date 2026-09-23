@@ -33,6 +33,12 @@ class NumpyContext(AbstractContext):
 
 	# math forward functions.
 	# FIXME: should we wrap them in multivectors, or work in backend-specific arrays??
+	def sin(self, x):
+		return np.sin(x)
+	def sinc(self, x):
+		return np.sinc(x)
+	def cos(self, x):
+		return np.cos(x)
 	def arctan2(self, x1, x2):
 		return np.arctan2(x1, x2)
 	def arctan(self, x):

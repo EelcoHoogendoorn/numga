@@ -429,3 +429,31 @@ class SubSpace(FlyweightMixin):
 	# 	"""
 
 
+	@cache
+	def inverse_subspace_estimate(self) -> "SubSpace":
+		"""Compute a bound on the subspace of the inverse"""
+		# FIXME: its kinda infuriating this estimate is 'almost perfect'; sometimes the estimated space is a little too large,
+		#  but the pattern behind it eludes me
+		s = self.algebra.subspace
+		if self.is_empty:
+			raise ZeroDivisionError
+
+		# scalars, vectors and their duals behave in simple ways
+		grades = ([[0], [1], [-1], [-2]]+
+				  [[0, 1], [0, -2], [1, -1], [0, -1], [-1, -2], [1, -2]])
+		if self.algebra.n_dimensions % 2 and self.algebra.n_dimensions > 3:
+			grades += [[0,1,-2, -1]]
+		for g in grades:
+			q = s.from_grades(g)
+			if self in q:
+				return q
+
+		# mod4 rule;
+		q = np.zeros(self.algebra.n_grades, dtype=bool)
+		gs = set(self.grades() % 4)
+		if len(gs) < 3:
+			for g in gs:
+				q[g::4] = 1
+			return s.from_grades(q)
+
+		return s.full()

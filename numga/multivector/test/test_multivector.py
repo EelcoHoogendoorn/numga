@@ -21,6 +21,7 @@ def test_basic():
 	print((1 / v) * v)
 
 
+
 @pytest.mark.parametrize('descr', [
 	(5, 0, 0), (4, 0, 1), (4, 1, 0), (3, 1, 1), (3, 2, 0)
 ])
@@ -33,4 +34,5 @@ def test_5d_rotor_quality(descr):
 	r = r.normalized()  # enforce R~R=1
 	q = r.full_sandwich(v)  # use full sandwich which will yield grade-5 elements
 	assert_close(q.select[5], 0)
+
 

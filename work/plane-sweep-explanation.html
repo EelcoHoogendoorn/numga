@@ -1,0 +1,104 @@
+<div id="plane-sweep-explanation">
+  <div class="viz-controls">
+    <label class="form-label" for="plane-sweep-depth">Candidate depth: <span id="plane-sweep-value" class="tabular-nums">2.50 m</span>
+      <input class="form-range" id="plane-sweep-depth" type="range" min="1.8" max="6" step="0.05" value="2.5">
+    </label>
+  </div>
+  <svg id="plane-sweep-scene" role="img" aria-label="Top view of two cameras. A candidate plane intersects the first camera ray. The second camera projects that intersection to a predicted image position."></svg>
+  <div class="viz-row text-small"><span><span class="sweep-actual">●</span> Actual point / observed image</span><span><span class="sweep-guess">◇</span> Plane hypothesis / predicted image</span></div>
+  <svg id="plane-sweep-image" role="img" aria-label="Observed and predicted horizontal positions in the second image coincide at the true depth of four metres."></svg>
+  <div id="plane-sweep-error" class="text-small tabular-nums" aria-live="polite"></div>
+  <style>
+    #plane-sweep-explanation { width: 100%; }
+    #plane-sweep-explanation svg { display: block; width: 100%; overflow: visible; }
+    #plane-sweep-explanation svg text { fill: var(--foreground); font-size: 12px; }
+    #plane-sweep-explanation .sweep-actual { color: var(--viz-series-2); }
+    #plane-sweep-explanation .sweep-guess { color: var(--viz-series-1); }
+  </style>
+  <script>
+    (() => {
+      const root = document.getElementById('plane-sweep-explanation');
+      const control = root.querySelector('#plane-sweep-depth');
+      const scene = root.querySelector('#plane-sweep-scene');
+      const image = root.querySelector('#plane-sweep-image');
+      const namespace = 'http://www.w3.org/2000/svg';
+      const actualColor = 'var(--viz-series-2)';
+      const guessColor = 'var(--viz-series-1)';
+      function element(svg, name, attributes, text) {
+        const item = document.createElementNS(namespace, name);
+        Object.entries(attributes).forEach(([key, value]) => item.setAttribute(key, value));
+        if (text !== undefined) item.textContent = text;
+        svg.appendChild(item);
+        return item;
+      }
+      function line(svg, x1, y1, x2, y2, color, dashed = false, opacity = 1) {
+        return element(svg, 'line', { x1, y1, x2, y2, stroke: color, 'stroke-width': 1.5, 'stroke-dasharray': dashed ? '5 4' : '', opacity });
+      }
+      function label(svg, x, y, text, anchor = 'start') {
+        return element(svg, 'text', { x, y, 'text-anchor': anchor }, text);
+      }
+      function circle(svg, x, y, radius, color) {
+        return element(svg, 'circle', { cx: x, cy: y, r: radius, fill: color });
+      }
+      function diamond(svg, x, y, color, size = 6) {
+        return element(svg, 'path', { d: `M ${x} ${y-size} L ${x+size} ${y} L ${x} ${y+size} L ${x-size} ${y} Z`, fill: 'var(--background)', stroke: color, 'stroke-width': 2 });
+      }
+      function draw() {
+        const width = Math.max(300, Math.round(root.getBoundingClientRect().width));
+        const depth = Number(control.value);
+        const worldX = -1 + 0.35 * depth;
+        const predictedU = 0.35 - 2 / depth;
+        const observedU = -0.15;
+        const error = predictedU - observedU;
+        root.querySelector('#plane-sweep-value').textContent = depth.toFixed(2) + ' m';
+        scene.replaceChildren();
+        scene.setAttribute('viewBox', `0 0 ${width} 328`);
+        scene.style.height = '328px';
+        const sx = x => 24 + (x + 2) / 4 * (width - 48);
+        const sy = z => 292 - z * 39;
+        label(scene, 12, 18, 'Two parallel cameras · top view');
+        line(scene, sx(-1), sy(0), sx(1.1), sy(6), 'var(--foreground)', false, 0.35);
+        line(scene, sx(1), sy(0), sx(0.4), sy(4), actualColor, false, 0.7);
+        line(scene, sx(1), sy(0), sx(worldX), sy(depth), guessColor, true);
+        line(scene, 12, sy(depth), width-12, sy(depth), guessColor, true, 0.6);
+        label(scene, 14, sy(depth)-9, 'Candidate plane');
+        circle(scene, sx(-1), sy(0), 5, 'var(--foreground)');
+        circle(scene, sx(1), sy(0), 5, 'var(--foreground)');
+        label(scene, sx(-1), 314, 'Camera 1', 'middle');
+        label(scene, sx(1), 314, 'Camera 2', 'middle');
+        line(scene, sx(-1.6), sy(1), sx(-0.1), sy(1), 'var(--foreground)', false, 0.5);
+        line(scene, sx(0.1), sy(1), sx(1.6), sy(1), 'var(--foreground)', false, 0.5);
+        circle(scene, sx(-0.65), sy(1), 4, 'var(--foreground)');
+        circle(scene, sx(0.85), sy(1), 4, actualColor);
+        diamond(scene, sx(1+predictedU), sy(1), guessColor, 5);
+        label(scene, sx(-0.65), sy(1)+20, 'p₁', 'middle');
+        circle(scene, sx(0.4), sy(4), 6, actualColor);
+        diamond(scene, sx(worldX), sy(depth), guessColor, 7);
+        if (Math.abs(depth-4) < 0.3) {
+          label(scene, sx(0.4)+12, sy(4)-16, Math.abs(depth-4)<0.001 ? 'X = X̂ · 4 m' : 'X · 4 m');
+        } else {
+          label(scene, sx(0.4)+12, sy(4)-8, 'X · 4 m');
+          label(scene, sx(worldX)+12, sy(depth)-8, 'X̂');
+        }
+        image.replaceChildren();
+        image.setAttribute('viewBox', `0 0 ${width} 91`);
+        image.style.height = '91px';
+        label(image, 12, 20, 'Image 2 · horizontal position');
+        const ix = u => 24 + (u + 0.85) / 1.1 * (width - 48);
+        line(image, 24, 50, width-24, 50, 'var(--foreground)', false, 0.35);
+        const observedX = ix(observedU), predictedX = ix(predictedU);
+        circle(image, observedX, 50, 6, actualColor);
+        diamond(image, predictedX, 50, guessColor, 8);
+        line(image, observedX, 69, predictedX, 69, guessColor);
+        line(image, observedX, 64, observedX, 74, guessColor);
+        line(image, predictedX, 64, predictedX, 74, guessColor);
+        root.querySelector('#plane-sweep-error').textContent = Math.abs(error)<0.00001
+          ? 'Image positions coincide at 4.00 m.'
+          : 'Horizontal mismatch: ' + Math.abs(error).toFixed(3) + ' normalized image units';
+      }
+      control.addEventListener('input', draw);
+      new ResizeObserver(draw).observe(root);
+      draw();
+    })();
+  </script>
+</div>

@@ -19,7 +19,7 @@ mv.decompose_polar = SubspaceDispatch("""
 	----------
 	PGA4CS eq 68-70
 	""")
-@mv.decompose_polar.register(lambda s: s.inside.bivector() and s.squared().inside.study())
+@mv.decompose_polar.register(lambda s: s.inside.bivector() and s.squared().inside.self_reverse())
 def decompose_polar(b: BiVector) -> Tuple[BiVector, Study]:
 	# FIXME: special case the b=0 or not s.inv() case?
 	s: Study = b.symmetric_reverse_product().square_root()

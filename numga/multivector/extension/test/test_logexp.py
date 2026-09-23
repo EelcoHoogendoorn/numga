@@ -1,3 +1,7 @@
+from jax import config
+config.update("jax_enable_x64", True)
+import jax
+
 import numpy as np
 import pytest
 
@@ -24,7 +28,6 @@ def test_bisect(descr):
 
 	m = random_motor(ga, (10, ))
 
-	# check exact inverse props
 	r = m.motor_log().exp()
 	assert_close(m, r)
 
@@ -33,35 +36,108 @@ def test_bisect(descr):
 	r = exp_bisect(motor_log_bisect(m, 2), 2)
 	assert_close(m, r)
 
+	# check zero bivectors
+	assert_close(ga.multivector.scalar(), exp_bisect(ga.multivector.bivector()))
+
+
+@pytest.mark.parametrize('descr', [
+	(2, 0, 0), (1, 0, 1), (1, 1, 0), #(0, 1, 1),
+	(3, 0, 0), (2, 0, 1), (2, 1, 0), (1, 1, 1), (1, 0, 2), #(1, 2, 0),
+	(4, 0, 0), (3, 0, 1), (3, 1, 0), (2, 1, 1), (2, 0, 2), #(2, 2, 0),
+	(5, 0, 0), (4, 0, 1), (4, 1, 0), (3, 1, 1),
+])
+def test_bisect_perf(descr):
+	"""Test numerical and performance difference between different quadratic exp approximations"""
+	np.random.seed(0)
+	print()
+	print(descr)
+	algebra = Algebra.from_pqr(*descr)
+	from numga.backend.jax.context import JaxContext
+	from numga.backend.jax.operator import JaxSparseOperator
+
+	ga = JaxContext(algebra, otype=JaxSparseOperator, dtype=jax.numpy.float64)
+	import time
+
+	m = random_motor(ga, (1000, ))
+
+	b = m.motor_log()
+
+	def Q1(b):
+		c = 1 + b / 2
+		return c.squared() / c.symmetric_reverse_product()
+	def Q2(b):
+		c = b / 2
+		return (1+c)/(1-c)
+
+	Q1 = jax.jit(Q1)
+	Q2 = jax.jit(Q2)
+	q1 = Q1(b)
+	q2 = Q2(b)
+
+	for i in range(2):
+		t = time.time()
+		q1 = Q1(b)
+		total = time.time() - t
+		if i:
+			print(total)
+
+		t = time.time()
+		q2 = Q2(b)
+		total = time.time() - t
+		if i:
+			print(total)
+
+	assert_close(q1, q2, atol=1e-9)
+
 
 def test_bisect_exp_accuracy():
 	"""Test the accuracy of bisection based exponentiation versus trig based implementation
 
 	for float32, we max out at 7 iterations, with 6e-6 MSE
 	for float64, we max at 17 iterations, with 9e-12 MSE
+
+	Note that scaling down the space of bivectors,
+	gives more digits of accuracy for a lower bisection iteration count
 	"""
-	def euler_quat_exp(b: "BiVector") -> "Motor":
-		a = np.sqrt(-b.squared().values)
+	def euler_simple_exp(b: "BiVector") -> "Motor":
+		a = np.sqrt(b.symmetric_reverse_product().values)
 		c = np.cos(a)
-		s = np.where(a > 1e-20, np.sin(a) / a, 1)
+		s = np.where(a > 1e-20, np.sin(a) / a, 1)	# FIXME: sinc?
 		return b.context.multivector(
 			values=np.concatenate([c, s * b.values], axis=-1),
 			subspace=b.context.subspace.rotor()
 		)
 
 	np.random.seed(0)
-	ga = NumpyContext((3,0,0), dtype=np.float64)
-	m = random_motor(ga, (100, ))
-	b = m.motor_log()
+	ga = NumpyContext((6,0,1), dtype=np.float64)
+	m = random_motor(ga, (10, ))
+	from numga.multivector.extension.logexp import motor_sqrt_denman_beaver
+	ms = motor_sqrt_denman_beaver(m)
+	# print(ms)
+	print(np.max(np.abs((ms*ms - m).values)))
+	return
 
-	m_trig = euler_quat_exp(b)
+	# print(m.values.shape)
+	# print(np.sign(m.select[0].values))
+	# m = m * (np.sign(m.select[0].values[:, 0]))
+	# print(m.values.shape)
+	# return
+	# print(m.values[:, 0])
+	# return
+	# m = m.motor_square_root()
+	b = m.motor_log() #/ 10
+
+	bp = m.motor_log_pade()
+	print(np.abs((b-bp).values).max())
+	return
+
+	m_trig = euler_simple_exp(b)
 
 	from numga.multivector.extension.logexp import exp_bisect
 	for i in range(2, 20):
 		m_bisect = exp_bisect(b, i)
 		res = m_bisect - m_trig
 		print(i, np.sqrt((res.values**2).mean()))
-		# print(res.values)
 
 
 def test_interpolate():

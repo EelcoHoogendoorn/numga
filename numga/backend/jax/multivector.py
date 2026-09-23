@@ -1,3 +1,4 @@
+import jax
 from jax import numpy as jnp
 
 from numga.backend.jax import pytree
@@ -66,13 +67,35 @@ class JaxMultiVector(AbstractMultiVector):
 
 	def inverse_la(self):
 		"""Inverse of x such that x * x.inverse() == 1 == x.inverse() * x"""
-		# FIXME: is there a simpler / more complete way of constructing these candidate subspaces?
-		inverse_subspace = self.operator.inverse_factor(self.subspace).output
+		inverse_subspace = self.subspace.inverse_subspace_estimate()
 		op = self.operator.product(self.subspace, inverse_subspace)
 		k = op.partial({0: self}).kernel
-		idx, = jnp.flatnonzero(op.output.blades == 0)    # grab index of scalar of output; zero or raises
-		r = jnp.linalg.solve(    # use least squares to solve for inverse
-			jnp.einsum('...ji,...ki->...jk', k, k), # k.T * k
-			k[..., idx],    #equal to  k.T * unit_scalar
-		)
+		k = jnp.swapaxes(k, -1, -2)
+		unit = op.output.blades == 0
+
+		# r = jnp.einsum('...k,k', k, unit)
+		try:
+			r = jnp.linalg.solve(k, unit)	# some 10x faster in compiled jax
+		except:
+			def solve_one_system(a):
+				return jnp.linalg.lstsq(a, unit)[0]
+			r = jax.vmap(solve_one_system)(k)
+
+		# idx, = jnp.flatnonzero(unit)    # grab index of scalar of output; zero or raises
+		# r = jnp.linalg.solve(    # use least squares to solve for inverse
+		# 	jnp.einsum('...ji,...ki->...jk', k, k), # k.T * k
+		# 	k[..., idx],    #equal to  k.T * unit_scalar
+		# )
 		return self.context.multivector(values=r, subspace=inverse_subspace)
+
+	def solve(self, rhs):
+		"""Solve for y such that self * y = rhs"""
+		op = self.algebra.operator.solve(self.subspace, rhs.subspace)
+		k = self.operator(op).partial({0: self}).kernel
+		rhs = rhs.select_subspace(op.subspace).values
+
+		r = jnp.linalg.solve(    # use least squares
+			jnp.einsum('...ji,...ki->...jk', k, k), # k.T * k
+			jnp.einsum('...ji, ...i->...j', k, rhs),
+		)
+		return self.context.multivector(values=r, subspace=op.axes[1])

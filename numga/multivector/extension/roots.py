@@ -48,6 +48,16 @@ def default_inverse_square_root(x):
 
 # NOTE: we put this under motor prefix, since this formula only works for normalized input
 mv.motor_square_root = SubspaceDispatch("""Square root s of x such that s * s == x. Input motor assumed normalized!""")
+@mv.motor_square_root.register(lambda s: s.equals.scalar())
+def motor_scalar_square_root(m: Motor):
+	return m
+# @mv.motor_square_root.register(lambda s: s.inside.bireflection() and s.is_degenerate_scalar)
+# def translator_square_root(m: Motor):
+# 	# for translators, can just cut nonscalar part in half
+# 	scale = 1 - (m.subspace.blades > 0) / 2
+# 	# FIXME: this is a little sus; assumes backend specific memory layout
+# 	#  do we need a diagonal scaling operator implemented?
+# 	return m.copy(m.values * scale)
 @mv.motor_square_root.register(lambda s: s.inside.even_grade())
 def motor_square_root(m: Motor):
 	return (m + 1).normalized()

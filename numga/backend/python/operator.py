@@ -16,7 +16,6 @@ class PythonSparseOperator(AbstractConcreteOperator):
 				math.prod((inp.values[ii] for inp, ii in zip(inputs, idx)), start=scalar)
 				for (idx, scalar) in term
 			)
-
 		return output
 
 
@@ -26,16 +25,22 @@ class PythonCodegenOperator(AbstractConcreteOperator):
 	def __call__(self, *inputs: Tuple[PythonMultiVector]) -> PythonMultiVector:
 		terms = self.precompute_sparse
 		inputs = [f'i{i}' for i in range(self.operator.arity)]
-		inp = ','.join(inputs)
-		text = f'def foo({inp}):\n'
-		def make_term(idx, scalar):
+		inp = ','.join(inputs + ['o'])
+
+		algname = self.operator.algebra.description.pqr_str
+		argnames = '__'.join(s.named_str.replace(',','_') for s in self.operator.axes)
+		header = f'def cl{algname}__{argnames}({inp}):'
+		def make_term(idx, sign):
 			q = [inp + f'[{ii}]' for inp, ii in zip(inputs, idx)]
-			return '*'.join([str(scalar)] + q)
+			m = {-1:'-', +1:'+'}
+			return m[sign] + '*'.join(q)
 
 		def make_line(ci, term):
-			return f'\to[{ci}] = ' + '+'.join(make_term(idx, scalar) for idx, scalar in term)
+			return f'\to[{ci}] = ' + ''.join(make_term(idx, scalar) for idx, scalar in term)
 
-		return text + '\n'.join(make_line(ci, term) for ci, term in terms)
+		body = [make_line(ci, term) for ci, term in terms]
+		ret = '\treturn o'
+		return '\n'.join([header] + body + [ret])
 
 # def partial(self, inputs: Dict[int, PythonMultiVector]) -> "PythonSparseOperator":
 	# 	expr = self.precompute_einsum_partial(tuple(inputs.keys()))

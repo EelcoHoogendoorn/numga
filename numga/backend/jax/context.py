@@ -39,6 +39,21 @@ class JaxContext(AbstractContext):
 	def abs(self, x):
 		return jnp.abs(x)
 
+	def sin(self, x):
+		return jnp.sin(x)
+	def sinc(self, x):
+		return jnp.sinc(x)
+	def cos(self, x):
+		return jnp.cos(x)
+	def arctan2(self, x1, x2):
+		return jnp.arctan2(x1, x2)
+	def arctan(self, x):
+		return jnp.arctan(x)
+	def arccos(self, x):
+		return jnp.arccos(x)
+	def arcsinh(self, x):
+		return jnp.arcsinh(x)
+
 	def sqrt(self, x):
 		return jnp.sqrt(x)
 	def log(self, x):

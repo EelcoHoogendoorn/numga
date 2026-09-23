@@ -43,3 +43,8 @@ jax = ["jax", "jaxlib"]
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["numga"]
+python_files = ["test_*.py"]
+addopts = "-v -s"

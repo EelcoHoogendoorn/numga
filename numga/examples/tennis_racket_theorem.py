@@ -12,7 +12,7 @@ runtime = 200
 # works for p=2,3,4,5
 # p>3 is fascinating; some medial axes become seemingly chaotic
 # but stranger still, some medial axes actually stabilize?
-context = Context(Algebra.from_pqr(3, 0, 0), dtype=np.float64)
+context = Context(Algebra.from_pqr(4, 0, 0), dtype=np.float64)
 
 def make_n_cube(N):
 	b = ((np.arange(2 ** N)[:, None] & (1 << np.arange(N))) > 0)
@@ -33,6 +33,10 @@ body = Body.from_point_cloud(points=points.repeat('... -> b ...', b=nb))
 # set up initial conditions;
 # each body gets a spin in a different plane; plus some jitter.
 body.rate = body.rate + context.multivector.bivector(np.eye(nb) + np.random.normal(size=(nb, nb)) * 1e-5)
+# rates = [[]]
+# body.rate = body.rate + context.multivector.bivector(1-np.eye(nb)*0.5+ np.random.normal(size=(nb, nb)) * 1e-5)
+# body.rate = body.rate + context.multivector.bivector(np.eye(nb))/2
+
 E = body.kinetic_energy()
 
 states = []
@@ -45,7 +49,8 @@ for i in range(int(runtime / dt)):
 		body = body.copy(rate=body.rate / energy_violation.sqrt())
 
 	print(i)
-	states.append(body.motor)
+	# states.append(body.motor >> body.rate)
+	states.append(body.rate)
 
 # visualize tumbling behavior
 import matplotlib.pyplot as plt
