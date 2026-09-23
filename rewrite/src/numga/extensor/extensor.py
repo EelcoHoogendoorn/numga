@@ -328,7 +328,22 @@ class Extensor:
         result = context.execute_bind(target, operands, plan)
         return type(self)._from_prepared_kernel(context, result_gatype, result)
 
-    def __call__(self, *operands: Extensor) -> Extensor:
+    def __call__(self, *operands: Extensor | GAType) -> Extensor:
+        """Apply to operands in slot order. Fewer operands than slots bind the leading slots, and the
+        slot's own type as an operand leaves that slot open: form(Vector, v) binds only the second."""
+        if any(isinstance(operand, (GAType, SubSpace)) for operand in operands):
+            # A bare type leaves its slot open; it must be that slot's type.
+            bound = {}
+            for slot, operand in enumerate(operands):
+                if not isinstance(operand, (GAType, SubSpace)):
+                    bound[slot] = operand
+                    continue
+                space = operand.output_subspace if isinstance(operand, GAType) else operand
+                if not space.same_support(self.input_subspaces[slot]):
+                    raise TypeError(f"slot {slot} takes {self.input_subspaces[slot]}; a placeholder of type {space} does not open it")
+            return self.bind(bound)
+        if len(operands) < self.arity:
+            return self.bind(*operands)
         if len(operands) == 1:
             operand = operands[0]
             execute = unary_application(

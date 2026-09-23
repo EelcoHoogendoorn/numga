@@ -10,8 +10,11 @@ import numpy as np
 
 from collections.abc import Iterator
 
-from numga import stack
-from examples.geometry.cyclides.core import Motor, Point, Scalar, Sphere, cone, cylinder, dilation, mv, sensor, trace
+from numga import Extensor, stack
+from examples.geometry.cyclides.core import (
+    Direction, Motor, Point, Quadric, Scalar, Sphere, chart_infinity, chart_origin, cone, cylinder, dilation, mv, sensor,
+    trace,
+)
 
 SHAPE = (240, 320)
 PIXELS = sensor(SHAPE, np.radians(90))
@@ -54,11 +57,183 @@ def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
     deforms the torus. Yields each frame's trace as it is consumed."""
     place = placement(mv.z, 1.1, 0.8) * dilation(mv.z, 2.0)
     torus = place >> cylinder(0.5)(place << Point)
-    circle = ((place * (mv.yw * 0.2).exp()) >> (mv.z ^ mv.w)).restrict[2]      # the meet of two spheres
-    circle = circle / (-(circle * circle).select[0]).square_root()             # circle * circle == -1
+    # The meet of two great spheres, carried by unit versors: a unit circle, circle * circle == -1.
+    circle = (place * (mv.yw * 0.2).exp()) >> (mv.z ^ mv.w)
     flow = (circle * (np.linspace(0.0, 2 * np.pi, frames, endpoint=False) / 2)).exp()
     for surface in flow >> torus(flow << Point):
         yield trace(surface.reshape(1), PIXELS)
+
+
+# --- the flat tracer's scenes -----------------------------------------------------------
+# The shapes of the flat conformal tracer, built in the chart about the eye, and its table of scenes: each a list
+# of (surface, vortex circle) parts, a camera position and target, and a field of view in degrees.
+def torus(radius: float, tube: float) -> Quadric:
+    sphere = chart_origin - chart_infinity * ((radius * radius + tube * tube) / 2)
+    return sphere * (sphere & Point) + radius * radius * (
+        mv.z * (mv.z & Point) - tube * tube * chart_infinity * (chart_infinity & Point)
+    )
+
+
+def cyclide():
+    surface = torus(1.4, 0.5)
+    # An off-centre sphere inversion gives the torus unequal tube widths.
+    shift = (-0.5 * ((mv.x * 3.2) ^ chart_infinity)).exp()
+    inversion = (shift >> (chart_origin - chart_infinity * 4.5)).normalized()
+    pose = (mv.xy * 0.12).exp() * (mv.yz * -0.22).exp()
+    placement = pose * inversion
+    return ((placement >> surface(placement << Point), mv.bivector()),)
+
+
+def peanut():
+    a, b = 1.25, 1.31
+    sphere = chart_origin - chart_infinity * (a * a / 2)
+    surface = sphere * (sphere & Point) + a * a * (
+        mv.y * (mv.y & Point) + mv.z * (mv.z & Point)
+    ) - (b**4 / 4) * chart_infinity * (chart_infinity & Point)
+    pose = (mv.xy * 0.10).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def elliptic_ring():
+    surface = torus(1.4, 0.5) + (0.10 * 1.4**2) * mv.y * (mv.y & Point)
+    pose = (mv.yz * -0.18).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def split_ring():
+    surface = torus(1.4, 0.5) + (0.32 * 1.4**2) * mv.y * (mv.y & Point)
+    pose = (mv.yz * -0.18).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def pinched_surface() -> Quadric:
+    # Inversion closes the hyperboloid's infinite ends at a singular point.
+    surface = (mv.z * (mv.z & Point) - mv.x * (mv.x & Point)
+               - mv.y * (mv.y & Point) + chart_infinity * (chart_infinity & Point))
+    inversion = (chart_origin - chart_infinity).normalized()
+    return inversion >> surface(inversion << Point)
+
+
+def pinched():
+    surface = pinched_surface()
+    pose = (mv.yz * -0.18).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def sphere_family(weights: np.ndarray) -> Quadric:
+    # The paper's diagonal sphere-model quadrics, expressed as dyad sums.
+    spheres = Extensor.stack([mv.x, mv.y, mv.z, chart_origin - chart_infinity * 0.5])
+    return (spheres * (spheres & Point) * weights).sum(axis=0)
+
+
+def six_families():
+    surface = sphere_family(np.array([-2, -1, 1, 2]))
+    pose = (mv.xy * 0.25 + mv.yz * -0.15).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def inverted_hyperboloid():
+    surface = (mv.z * (mv.z & Point) - mv.x * (mv.x & Point)
+               - mv.y * (mv.y & Point) + chart_infinity * (chart_infinity & Point))
+    surface = surface - (1 / 0.65**2 - 1) * mv.y * (mv.y & Point)
+    shift = (-0.5 * ((mv.x * 1.7) ^ chart_infinity)).exp()
+    inversion = (shift >> (chart_origin - chart_infinity)).normalized()
+    # Reverse the sign because this inversion centre lies outside the solid.
+    return -(inversion >> surface(inversion << Point)), inversion
+
+
+def hyperboloid():
+    surface, _ = inverted_hyperboloid()
+    return ((surface, mv.bivector()),)
+
+
+def two_lobed():
+    surface = sphere_family(np.array([-3, -0.25, 1, 1]))
+    pose = (mv.xy * 0.12 + mv.yz * -0.12).exp()
+    return ((pose >> surface(pose << Point), mv.bivector()),)
+
+
+def linked_vortex():
+    surface, inversion = inverted_hyperboloid()
+    # Invert a circle surrounding the original hyperboloid's waist together
+    # with the body. The resulting vortex circle threads its opening transversely.
+    radius = 2.5
+    sphere = chart_origin - chart_infinity * (radius * radius / 2)
+    circle = (inversion >> (mv.z ^ sphere)).normalized()
+    # The inverted circle still lies in z = 0. Normalize its sphere to recover
+    # its world-space radius, then give it a constant-thickness torus tube.
+    sphere = inversion >> sphere
+    sphere = sphere / -(sphere | chart_infinity)
+    radius_squared = sphere.squared()
+    tube = 0.02
+    sphere = sphere - chart_infinity * (tube * tube / 2)
+    ring = sphere * (sphere & Point) + radius_squared * (
+        mv.z * (mv.z & Point) - tube * tube * chart_infinity * (chart_infinity & Point)
+    )
+    return ((surface, circle), (ring, mv.bivector()))
+
+
+def linked_tori():
+    # Matching centreline radii, with a small shift along the tilt axis.
+    # Matching the shift to radius * sin(tilt) keeps the initial gap fairly even.
+    radius, offset = 1.4, 0.45
+    surface = torus(radius, 0.16)
+    placement = (-0.5 * ((mv.x * offset) ^ chart_infinity)).exp() * (
+        mv.yz * (np.arcsin(offset / radius) / 2)
+    ).exp()
+    circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
+    return ((placement >> surface(placement << Point), circle),
+            (torus(radius, 0.02), mv.bivector()))
+
+
+def pinched_vortex():
+    surface = pinched_surface()
+    placement = (-0.5 * ((mv.x * 1.8) ^ chart_infinity)).exp() * (mv.xz * (np.pi / 4)).exp()
+    radius = 1.4
+    circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
+    return ((placement >> surface(placement << Point), circle),
+            (torus(radius, 0.02), mv.bivector()))
+
+
+FLAT_SCENES = {
+    "cyclide": (cyclide, [0.2, -8.5, 5.8], [-0.8, 0, 0], 43),
+    "peanut": (peanut, [0.2, -7, 4.5], [0, 0, 0], 40),
+    "elliptic_ring": (elliptic_ring, [0.2, -7, 4.5], [0, 0, 0], 40),
+    "split_ring": (split_ring, [0.2, -7, 4.5], [0, 0, 0], 40),
+    "pinched": (pinched, [0.2, -7, 4.5], [0, 0, 0], 40),
+    "six_families": (six_families, [0.6, -9, 6.5], [0, 0, 0], 40),
+    "hyperboloid": (hyperboloid, [10, -2, 1.8], [0.6, 0, 0], 40),
+    "two_lobed": (two_lobed, [0.5, -12, 8], [0, 0, 0], 40),
+    "linked_vortex": (linked_vortex, [2.8, -9, 4.8], [1, 0, 0], 44),
+    "linked_tori": (linked_tori, [0.5, -7, 4.8], [0, 0, 0], 40),
+    "pinched_vortex": (pinched_vortex, [0.5, -10, 7], [0.5, 0, 0], 44),
+}
+
+
+def flat_camera(position: Direction, target: Direction) -> Motor:
+    """The motor that brings the flat tracer's camera to the eye: its pose carries a camera at the origin, looking
+    along -x with z up, to `position` looking at `target`, and the eye of S³ sits at the chart's origin looking
+    along -x. Great circles through the eye are the chart's straight lines through the origin, so the view is the
+    flat tracer's."""
+    forward = (target - position).normalized()
+    right = ((forward ^ mv.z) * mv.xyz.inverse()).normalized()
+    aim = (1 - forward * mv.x).normalized()
+    roll = (1 + right * (aim >> mv.y)).normalized()
+    return ((-0.5 * (position ^ chart_infinity)).exp() * roll * aim).inverse()
+
+
+def flat_scene(name: str, frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
+    """One of the flat tracer's scenes on S³: every part turned around its own vortex circle over the frames, all
+    traced from the eye. Yields each frame's trace of the parts; both sides are lit."""
+    build, position, target, degrees = FLAT_SCENES[name]
+    parts = build()
+    surfaces = stack([surface for surface, _ in parts])
+    camera = flat_camera(mv(Direction, position), mv(Direction, target))
+    pixels = sensor(SHAPE, np.radians(degrees))
+    for phase in np.linspace(0.0, 2 * np.pi, frames, endpoint=False):
+        motion = camera * stack([(circle * (phase / 2)).exp() for _, circle in parts])
+        facing, angle = trace(motion >> surfaces(motion << Point), pixels)
+        yield facing.abs(), angle
 
 
 def dupin() -> tuple[Scalar, np.ndarray]:
@@ -95,8 +270,8 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     ]
     views = stack([view(midpoints[i], angles, ahead, yaw, pitch) for i, angles, ahead, yaw, pitch in shots])
     surfaces = stack([bent[i] for i, *_ in shots])
-    facing, visible = trace(views >> surfaces(views << Point), PIXELS)
-    return facing.abs(), visible
+    facing, angle = trace(views >> surfaces(views << Point), PIXELS)
+    return facing.abs(), angle
 
 
 if __name__ == "__main__":
@@ -105,6 +280,9 @@ if __name__ == "__main__":
 
     save_figure(render.draw_facing(*tori(), SHAPE), "cyclides_tori")
     save_animation(render.facing_frames(vortex(48), SHAPE), "cyclides_vortex", 60)
+    for name, (build, *_) in FLAT_SCENES.items():
+        animated = any(circle.kernel.any() for _, circle in build())
+        save_animation(render.scene_frames(flat_scene(name, 48 if animated else 1), render.PALETTE, SHAPE), f"cyclides_{name}", 60)
     save_figure(render.draw_facing(*dupin(), SHAPE), "cyclides_dupin")
     save_figure(render.draw_facing(*spindles(), SHAPE),
                 "cyclides_spindles")

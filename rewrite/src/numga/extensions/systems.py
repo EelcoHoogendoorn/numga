@@ -85,7 +85,7 @@ def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
 @Extensor.solve.register(_is_form_system, position=0)
 def solve_form(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve value(x, y) == rhs(..., y) for all y, with x in the form's first slot: the inverse
-    of binding that slot, so F.solve(F.bind(x)) == x.
+    of binding that slot, so F.solve(F(x)) == x.
 
     Leading input slots of rhs are kept as input slots of the solution, so a bilinear
     right-hand side yields a map. The last input of rhs must match the form's last input.

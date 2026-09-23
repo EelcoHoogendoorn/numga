@@ -117,10 +117,9 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
     return update
 
 
-def draw_modes(cases: list[ModeCase], title: str) -> plt.Figure:
-    """Render mode plots for one or two suspension cases."""
-    fig, axes = _new_figure(cases, 0.5, 0.91, 0.08)
-    fig.suptitle(title, fontsize=12, color=SUPPORT, y=0.98)
+def draw_modes(cases: list[ModeCase]) -> plt.Figure:
+    """The three mode panels of each suspension case, one row per case."""
+    fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
     for case, row in zip(cases, axes):
         for mode, ax in enumerate(row):
             _draw_mode(ax, case, mode)

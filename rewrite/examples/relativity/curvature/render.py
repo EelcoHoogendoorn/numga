@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
@@ -20,13 +19,9 @@ from examples.relativity.curvature import core
 from examples.relativity.curvature.core import STA, Bivector, Curvature, Scalar, Vector, mv
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
-MUTED, LIGHT = "#73808c", "#c3ccd4"
+LIGHT = "#c3ccd4"
 TRACKING = ("#d15a67", "#b48616", "#168676", "#8759a6")
-POLARIZATIONS = (
-    ("Plus", "Stretch and squeeze exchange"),
-    ("Cross", "The same pattern, turned by 45°"),
-    ("Circular", "Turning shape; orbiting beads"),
-)
+POLARIZATIONS = ("Plus", "Cross", "Circular")
 
 
 # --- coordinate readout ---------------------------------------------------------------
@@ -59,9 +54,8 @@ def _spacetime_axes(ax, extent: float) -> None:
     ax.set(xlim=(-extent, extent), ylim=(-extent, extent),
            zlim=(-extent, extent), box_aspect=(1, 1, 1))
     ax.set_axis_off()
-    for end, label in zip(np.eye(3) * extent * 0.88, ("x", "z", "ct")):
+    for end in np.eye(3) * extent * 0.88:
         _arrow(ax, np.array([np.zeros(3), end]), LIGHT, 0.9)
-        ax.text(*(end * 1.12), label, color=MUTED, fontsize=10)
 
 
 def _patch(ax, vertices: np.ndarray, colour: str) -> None:
@@ -89,17 +83,10 @@ def draw_curvature_map(
         (*patches, observer_arrow, wave_arrow, readout_arrow))).max())) * 1.22
 
     fig = plt.figure(figsize=(14, 4.8), dpi=120, facecolor="white")
-    headings = (
-        ("A small spacetime ribbon", "Separation swept forward in time"),
-        ("A nonzero null plane", "The output is a Lorentz generator"),
-        ("Curvature applied again: zero", "Every output lies in the kernel"),
-    )
     axes = []
-    for column, (title, subtitle) in enumerate(headings):
+    for column in range(3):
         ax = fig.add_subplot(1, 3, column + 1, projection="3d")
         _spacetime_axes(ax, extent)
-        ax.set_title(title, fontsize=13, fontweight="bold", color=INK, pad=14)
-        ax.text2D(0.5, 0.96, subtitle, transform=ax.transAxes, ha="center", fontsize=10, color=MUTED)
         axes.append(ax)
     _patch(axes[0], patches[0], BLUE)
     _arrow(axes[0], observer_arrow, ORANGE)
@@ -107,17 +94,12 @@ def draw_curvature_map(
     _arrow(axes[1], wave_arrow, BLUE, 2.3)
     _arrow(axes[1], observer_arrow, ORANGE)
     _arrow(axes[1], readout_arrow, ORANGE, 2.7)
-    axes[1].text(*(readout_arrow[1] * 1.10), "tidal\nreadout", color=ORANGE, fontsize=9, ha="center")
-    axes[1].text(*(wave_arrow[1] * 1.12), "wave", color=BLUE, fontsize=9, ha="center")
     axes[2].scatter([0], [0], [0], s=32, color=INK, depthshade=False)
-    axes[2].text2D(0.5, 0.06, "No oriented area remains", transform=axes[2].transAxes,
-                   color=MUTED, fontsize=10, ha="center")
     for left_ax, right_ax in zip(axes[:-1], axes[1:]):
         left, right = left_ax.get_position().x1 - 0.01, right_ax.get_position().x0 + 0.01
         axes[0].annotate("", xy=(right, 0.5), xytext=(left, 0.5),
                          xycoords=fig.transFigure, textcoords=fig.transFigure,
                          arrowprops={"arrowstyle": "->", "lw": 1.8, "color": INK})
-        fig.text((left + right) / 2, 0.53, "curvature", ha="center", fontsize=9, color=INK)
     return fig
 
 
@@ -126,14 +108,10 @@ def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar) -> plt.Figure:
     """Strain profiles and their second derivatives, the weights of the curvature batch."""
     h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, 2] float
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
-    for ax, values, label in ((top, h, "strain h"), (bottom, h2, "second derivative h''")):
-        ax.plot(time, values[:, 0], color=BLUE, lw=1.6, label="plus (cosine)")
-        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6, label="cross (sine)")
-        ax.set_ylabel(label, color=INK)
+    for ax, values in ((top, h), (bottom, h2)):
+        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)                  # plus
+        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)                # cross
         ax.spines[["top", "right"]].set_visible(False)
-    top.legend(frameon=False, ncol=2, loc="upper right")
-    bottom.set_xlabel("time (c = 1)", color=INK)
-    fig.align_ylabels()
     return fig
 
 
@@ -142,13 +120,10 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     measured = amplitudes.kernel[..., 0]                                 # [n] float
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
     fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white")
-    ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5, label="Doppler squared: exp(−2ζ)")
-    ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5, label="largest singular value of the tidal map")
+    ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)                  # the Doppler factor squared
+    ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)          # the tidal map's largest singular value
     ax.set_yscale("log")
-    ax.set_xlabel("observer rapidity ζ along the wave direction", color=INK)
-    ax.set_ylabel("tidal amplitude / rest-frame amplitude", color=INK)
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(frameon=False)
     return fig
 
 
@@ -180,12 +155,11 @@ def _detector(
 def _ring_axes(fig: plt.Figure, data: _Detector) -> list[plt.Axes]:
     limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
     axes = []
-    for column, (title, detail) in enumerate(POLARIZATIONS):
+    for column, title in enumerate(POLARIZATIONS):
         ax = fig.add_subplot(1, 3, column + 1)
         ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
         ax.set_axis_off()
         ax.set_title(title, fontsize=14, color=INK, fontweight="bold", pad=10)
-        ax.text(0.5, -0.02, detail, transform=ax.transAxes, ha="center", fontsize=10, color=MUTED)
         axes.append(ax)
     return axes
 
@@ -198,7 +172,6 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     radius = np.linalg.norm(reference, axis=-1).mean()
     ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=LIGHT, ls=":", lw=1.5)
     ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
-    ax.text(0.06, 0.06, "observer", fontsize=8, color=ORANGE)
     ax.plot([-radius * 1.08, radius * 1.08], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
     ax.plot([0, 0], [-radius * 1.08, radius * 1.08], color="#edf0f3", lw=0.8, zorder=0)
     outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
@@ -243,13 +216,6 @@ def draw_detector(
     frame = int(np.argmax(np.sum(offsets * offsets, axis=(0, 2, 3))))
     for polarization, ax in enumerate(axes):
         _ring(ax, data, polarization, static=True)(frame)
-    fig.suptitle(f"Freely falling beads {data.time[frame]:.2f} s into the pulse; "
-                 f"displacements magnified ×{amplification:g}", fontsize=12, color=INK, y=0.98)
-    handles = [Line2D([], [], color=LIGHT, ls=":", label="Reference circle"),
-               Line2D([], [], color=TRACKING[0], lw=2, label="Tracked bead and trail"),
-               Line2D([], [], color=BLUE, marker=">", markersize=6, label="Relative acceleration")]
-    fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.02),
-               ncol=3, frameon=False, fontsize=10, columnspacing=3)
     return fig
 
 

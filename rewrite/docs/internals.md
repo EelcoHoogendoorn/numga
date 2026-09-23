@@ -5,7 +5,7 @@ an exact table before any value is supplied. This document shows that table, whe
 live, and what runs when values arrive. It is for a reader of the [guide](extensors.md) who
 wants to see the arrays behind an expression, and for anyone about to extend the library with a
 method or a backend. The design record that preceded the implementation is
-[`extensor_design.md`](../extensor_design.md) at the repository root; where the two differ, this
+[`extensor_design.md`](../../extensor_design.md) at the repository root; where the two differ, this
 document describes what runs.
 
 ## 1. Implementation
@@ -226,8 +226,9 @@ rebuilt from its key on the way out, so no mutable cache is ever hashed by the t
 
 ## 5. Binding plans and types
 
-`bind` is the one primitive. A call is a full bind, and the operators on types and values are
-binds of operation tables:
+`bind` is the one primitive. A call binds its operands to the leading slots, the slot's own type in
+place of an operand leaves it open, and a full call runs on the compiled path. The operators on types
+and values are binds of operation tables:
 
 ```python
 sandwich.bind({0: r, 2: r})                 # partial: Vector <- Vector, what r >> Vector does
@@ -279,7 +280,7 @@ higher dimensional algebras.
 
 That sandwich has 1600 nonzero terms, after the symmetrization over its two versor slots that
 the sandwich construction performs. The array contexts accept `execution="sparse"`, which
-unrolls those terms instead of contracting the table; the [benchmarks](benchmarks/motor_map.py)
+unrolls those terms instead of contracting the table; the [benchmarks](../benchmarks/motor_map.py)
 show it winning for small expressions under JAX and losing for this one. In NumPy it loses by
 a wide margin for any expression: each unrolled term is a separate array traversal, whereas
 the dense contraction is one call into BLAS or einsum. Dense contraction is the default and the

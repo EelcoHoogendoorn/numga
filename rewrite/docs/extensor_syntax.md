@@ -108,6 +108,9 @@ line = join_map(origin, target)                      # Line
 # Partial binding: supplying one argument yields an Arity-1 extensor
 ray_from_origin = join_map(origin)                   # Line <- Point
 ray = ray_from_origin(target)                        # Line
+
+# The slot's own type in place of an argument leaves that slot open:
+ray_to_target = join_map(Point, target)              # Line <- Point
 ```
 
 ### Argument Lifting (Binding Arity $> 0$ Extensors)
@@ -249,7 +252,7 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
 * **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric, `det(metric⁻¹ form)`; the slot's metric must be invertible.
 * **`.trace()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible.
 * A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
-* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form.bind(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
+* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
   ```python
   points = (splats + (w & Point) * (w & Point)).solve(w & Point)   # [n] Point: the fused cone's vertex
   response = h_pt.lstsq(h_cross, rcond=1e-4)                      # Point <- Twist, from Scalar <- (Twist, Point)
@@ -263,7 +266,7 @@ Arity is not limited to forms; any output type is allowed and slots are numbered
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill slots in order, `.trace(slot)` lowers the arity by one, and batch axes broadcast as for unary maps.
+Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace(slot)` lowers the arity by one, and batch axes broadcast as for unary maps.
 
 ---
 

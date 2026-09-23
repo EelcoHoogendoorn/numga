@@ -36,6 +36,12 @@ PointMap = ga.gatype((Point, Point))
 origin = (mv.w + mv.e).dual()                 # the eye, at w on S³
 antipode = (-mv.w + mv.e).dual()              # the point opposite the eye
 
+# A flat chart about the eye, the stereographic projection from its antipode: the eye's null vector is the chart's
+# origin and the antipode's is its point at infinity. Constructions of the flat conformal model, written with these
+# two, draw the same surfaces on S³.
+chart_origin = (mv.w + mv.e) * 0.5
+chart_infinity = mv.e - mv.w
+
 # The eye turned by t towards a unit d: origin + sin(t) ray_linear(d) + (1 - cos(t)) ray_quadratic(d, d).
 metric = Direction | Direction
 ray_rotation = 0.5 * (Direction ^ mv.w)
@@ -100,12 +106,12 @@ def dilation(aim: Sphere, strength: np.ndarray) -> Motor:
 
 # --- math -----------------------------------------------------------------------------
 def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
-    """Headlight facing and hit mask per surface along the leading axis and per unit pixel direction.
+    """Headlight facing, and the angle t of the nearest hit, per surface along the leading axis and per unit pixel
+    direction; t is inf on a miss.
 
     Facing is the cosine between the ray and the surface normal at the nearest hit.
     """
-    camera_map = mv.rotor() >> Point                                        # the eye stays at w
-    form = camera_map & surfaces(camera_map)                                # zero on the surface
+    form = Point & surfaces                                                 # zero on the surface
 
     # form(X, X) along X = origin + 2 u ray_linear(d) + u² ray_bend(d, d), one form per power of u:
     constant = form(origin, origin)
@@ -115,11 +121,10 @@ def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
     quartic = form(ray_bend, ray_bend)
     angle = nearest_angle(constant[:, None], linear[:, None](pixels), quadratic[:, None](pixels, pixels),
                           cubic[:, None](pixels, pixels, pixels), quartic[:, None](pixels, pixels, pixels, pixels))
-    visible = np.isfinite(angle)
-    t = np.where(visible, angle, 0.0)
+    t = np.where(np.isfinite(angle), angle, 0.0)
     hit = origin + ray_linear(pixels) * np.sin(t) + ray_quadratic(pixels, pixels) * (1 - np.cos(t))
     velocity = ray_linear(pixels) * np.cos(t) + ray_quadratic(pixels, pixels) * np.sin(t)
 
     # At the hit the polar sphere is the tangent sphere; its length is that of the surface gradient.
     polar = surfaces[:, None](hit)
-    return -(polar & velocity) / (polar | polar).abs().square_root(), visible
+    return -(polar & velocity) / (polar | polar).abs().square_root(), angle

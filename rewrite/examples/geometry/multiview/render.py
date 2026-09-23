@@ -24,7 +24,6 @@ Motor, Point, Quadric, Information = core.Motor, core.Point, core.Quadric, core.
 mv, point = core.mv, core.point
 
 CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
-CAMERA_LABELS = ["Cam 0 (ref)", "Cam 1", "Cam 2"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
 X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
@@ -111,11 +110,11 @@ def show_image(ax: plt.Axes, image: np.ndarray) -> None:
 
 # --- overlays -----------------------------------------------------------------------------
 def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
-    """Each camera's field-of-view wedge, sensor line, optical axis and centre."""
+    """Each camera's field-of-view wedge, sensor line and optical axis."""
     centers = coordinates(motors >> point(np.zeros(2)))
     axes = optical_axes(motors)
     scale, half_fov = 0.28, np.radians(38.0)
-    for center, axis, color, label in zip(centers, axes, CAMERA_COLORS, CAMERA_LABELS):
+    for center, axis, color in zip(centers, axes, CAMERA_COLORS):
         perp = np.array([-axis[1], axis[0]])
         p_left = center + axis * scale - perp * (scale * np.tan(half_fov))
         p_right = center + axis * scale + perp * (scale * np.tan(half_fov))
@@ -128,18 +127,6 @@ def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
         ax.plot([center[0], p_right[0]], [center[1], p_right[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
         ax.plot([p_left[0], p_right[0]], [p_left[1], p_right[1]], color=color, linewidth=2.0, zorder=4)
         ax.plot([center[0], tip[0]], [center[1], tip[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
-        ax.plot(
-            center[0], center[1], marker="o", markersize=6.5, color=color,
-            markeredgecolor="#0f172a", markeredgewidth=1.3, zorder=5, label=label,
-        )
-
-
-def plot_points(ax: plt.Axes, points: Point, color: str, label: str) -> None:
-    xy = coordinates(points)
-    ax.plot(
-        xy[:, 0], xy[:, 1], marker="o", markersize=6.0, linestyle="none", color=color,
-        markeredgecolor="white", markeredgewidth=1.2, zorder=6, label=label,
-    )
 
 
 def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) -> None:
@@ -191,41 +178,32 @@ def frame_axes(ax: plt.Axes) -> None:
     ax.axis("off")
 
 
-def legend(ax: plt.Axes) -> None:
-    ax.legend(loc="upper right", fontsize=8.5, framealpha=0.92, facecolor="#ffffff", edgecolor="#cbd5e1")
-
-
 def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> None:
     """Sight cones, fused splats, reconstructed points and cameras."""
     ax.clear()
     grid, pixel_w = plane_grid()
     image = blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones)
     show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points))
-    plot_points(ax, points, "#ea580c", "Reconstructed Points")
     plot_cameras(ax, motors)
     frame_axes(ax)
 
 
 # --- figures ------------------------------------------------------------------------------
-def draw_rig(motors: Motor, points: Point) -> plt.Figure:
-    """Cameras and scene points."""
+def draw_rig(motors: Motor) -> plt.Figure:
+    """The cameras."""
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
-    plot_points(ax, points, "#0f172a", "Scene Points")
     plot_cameras(ax, motors)
     frame_axes(ax)
-    legend(ax)
     return fig
 
 
-def draw_cones(motors: Motor, world_cones: Quadric, points: Point) -> plt.Figure:
-    """Cameras, their sight cones through the scene points, and the points."""
+def draw_cones(motors: Motor, world_cones: Quadric) -> plt.Figure:
+    """The cameras and their sight cones through the scene points."""
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
     grid, pixel_w = plane_grid()
     show_image(ax, blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones))
-    plot_points(ax, points, "#0f172a", "Scene Points")
     plot_cameras(ax, motors)
     frame_axes(ax)
-    legend(ax)
     return fig
 
 
@@ -233,7 +211,6 @@ def draw_reconstruction(motors: Motor, world_cones: Quadric, fused: Quadric, poi
     """Sight cones fused into splats around the reconstructed points."""
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
     plot_reconstruction(ax, motors, world_cones, fused, points)
-    legend(ax)
     return fig
 
 
@@ -244,7 +221,6 @@ def draw_reconstruction_with_covariance(
     fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
     plot_reconstruction(ax, motors, world_cones, fused, points)
     plot_pose_covariance(ax, motors, information)
-    legend(ax)
     return fig
 
 

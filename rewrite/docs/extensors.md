@@ -14,7 +14,7 @@ Geometric relationships deserve to be first-class objects alongside the objects 
 
 Extensors bridge geometric algebra with conventional linear algebra. The examples below use the full spectrum of linear maps: rotor sandwiches and outermorphisms alongside non-orthogonal transformations, polarities, and derivations. Extensors subsume all of them, matrices included, into the algebra itself: any linear map between blade subspaces becomes a typed, coordinate-free object. Solvers, spectral decompositions, and least-squares optimizations can be performed directly on geometric relationships, returning geometrically typed results.
 
-The same holds against tensor algebra. In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
+The same holds against tensor algebra. In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Higher rank comes from open slots, not from a tensor product. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
 
 # Companion documents
 
@@ -31,15 +31,17 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 2. [**Mechanics & Vibrations (PGA2D)**](#2-rigid-body-normal-modes--vibration-pga2d): Additive stiffness and inertia extensors without coordinate origins, generalized eigensolves on energy bilinear forms.
 3. [**Multi-View Vision & Camera Alignment (PGA2D)**](#3-multi-view-scene-reconstruction--camera-alignment-pga2d): Lifting 1D pixels into directional quadric cones, additive multi-view fusion, closed-form triangulation, and Lie algebra pose Jacobians.
 4. [**Electromagnetism & Spacetime Physics (STA)**](#4-spacetime-constitutive-relations-dispersion--relativistic-fresnel-drag-sta): Observer decompositions, lifting 3D material quadrics to 6D spacetime extensors, and detecting wave dispersion and polarizations via SVD.
-5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): Curvature as a nilpotent bivector map built from null dyads, Riemann identities as extensor traces, observer binding into tidal maps, and a bead-ring detector batched over time and polarization.
+5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): Curvature as a nilpotent map on bivectors, the Ricci form as a trace, and observers bound into tidal maps.
+6. [**Rigid Bodies on the Sphere (Spherical3D)**](#6-rigid-bodies-on-the-sphere-spherical3d): Implicit rendering, collision as the margin of a blend of forms, and impulses through inertia maps.
+7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): The ray polynomial as open forms, dilations into Dupin cyclides, and vortex flows.
 
 ---
 
 ## 1. Scenegraph, Forward Kinematics & Camera Optics (PGA3D)
 
-**Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](examples/geometry/scenegraph/scenegraph.ipynb)
+**Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
-![Scenegraph 3D scene and 2D sensor photograph](plots/scenegraph.png)
+![Scenegraph 3D scene and 2D sensor photograph](../plots/scenegraph.png)
 
 #### Construction
 ```python
@@ -60,9 +62,9 @@ pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] P
 
 ## 2. Rigid-Body Normal Modes & Vibration (PGA2D)
 
-**Notebook**: [`examples/mechanics/modes/modes.ipynb`](examples/mechanics/modes/modes.ipynb)
+**Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
-![Baseline vs Coupled Normal Vibration Modes](plots/modes.png)
+![Baseline vs Coupled Normal Vibration Modes](../plots/modes.png)
 
 #### Construction
 ```python
@@ -84,9 +86,9 @@ frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)       # [3] Sca
 
 ## 3. Multi-View Scene Reconstruction & Camera Alignment (PGA2D)
 
-**Notebook**: [`examples/geometry/multiview/multiview_reconstruction.ipynb`](examples/geometry/multiview/multiview_reconstruction.ipynb)
+**Notebook**: [`examples/geometry/multiview/multiview_reconstruction.ipynb`](../examples/geometry/multiview/multiview_reconstruction.ipynb)
 
-![Multi-view reconstruction, sight cones, splats, and pose covariance](plots/multiview_reconstruction.png)
+![Multi-view reconstruction, sight cones, splats, and pose covariance](../plots/multiview_reconstruction.png)
 
 #### Construction
 ```python
@@ -111,9 +113,9 @@ step = curvature.solve(-gradient)                                      # [n_cams
 
 ## 4. Spacetime Constitutive Relations, Dispersion & Relativistic Fresnel Drag (STA)
 
-**Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](examples/electromagnetism/constitutive/constitutive.ipynb)
+**Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](../examples/electromagnetism/constitutive/constitutive.ipynb)
 
-![Constitutive dispersion, polarization precession, Fresnel surface, and drag](plots/constitutive.png)
+![Constitutive dispersion, polarization precession, Fresnel surface, and drag](../plots/constitutive.png)
 
 #### Construction
 ```python
@@ -135,34 +137,66 @@ v_phase = speeds[wave.svdvals()[..., -1].argmin(axis=0)]
 
 ## 5. Gravitational Wave Curvature & Tidal Forces (STA)
 
-**Notebook**: [`examples/relativity/curvature/curvature.ipynb`](examples/relativity/curvature/curvature.ipynb)
+**Notebook**: [`examples/relativity/curvature/curvature.ipynb`](../examples/relativity/curvature/curvature.ipynb)
 
-![Bead ring response to plus, cross and circular gravitational wave packets](plots/curvature.png)
+![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.png)
 
 #### Construction
 ```python
-# Curvature from null dyads with the area open; cross is plus conjugated by an eighth-turn rotor:
+# Curvature from null dyads with the area open; cross is plus turned by an eighth-turn rotor:
 nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector (null planes)
 plus = nx * (nx | Bivector) - ny * (ny | Bivector)                     # [] Bivector <- Bivector
 cross = eighth_turn >> plus(eighth_turn << Bivector)                   # [] Bivector <- Bivector
 
-# Vacuum: the Ricci form is a trace of the curvature with the observer and separation left open:
-ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector)
-
-# Bind an observer twice, leave the separation open, and broadcast over a ring of beads:
-response = waves(t.wedge(Vector)).commutator(t)                        # [n_time, 3] Vector <- Vector
-acceleration = response[:, :, None](reference)                         # [n_time, 3, n_beads] Vector
-
-# Gauge theory gravity: the wave as a strain map on separations, whose second derivative along k is the curvature:
-strain = 0.5 * profile * (y * (y | Vector) - x * (x | Vector))         # [n_time] Vector <- Vector
-curvature = k.wedge(second) * (k | Vector) - (k | Vector) * k.wedge(second)   # [n_time] Bivector <- (Vector, Vector)
+ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector): zero in vacuum
+tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vector <- Vector: what observer t measures
 ```
 
 #### Key Takeaways
-* **Nilpotent but not zero**: Two null dyads with opposite weights build a vacuum curvature map whose image lies in its own kernel, so all six eigenvalues vanish although the map does not. Pair symmetry, the Bianchi identity and Ricci-flatness are one-line extensor identities; the Ricci form is a trace with no frame or reciprocal basis.
-* **Observer binding is composition, not conjugation**: `curvature(t.wedge(Vector)).commutator(t)` has eigenvalues ±A although the curvature has none, and binding a boosted observer scales them by the Doppler factor squared.
-* **Batches carry through**: Time, polarization and observer rapidity are batch axes on the maps, and the bead ring broadcasts against them, so the detector's whole response is one expression ahead of the numerical integration.
-* **The same wave as a strain map**: In gauge theory gravity the wave is a map on vectors. Half the metric perturbation applied to a bead's rest separation is its displacement, the integrated ring lands on it, and the strain's second derivative wedged with the wave vector is the curvature on pairs of vectors, equal to the dyad construction.
+* **Nilpotent but not zero**: the vacuum curvature's image lies in its own kernel, so all its eigenvalues vanish; Ricci-flatness is a one-line trace.
+* **Observers are bound, not conjugated**: binding `t` gives a tidal map with eigenvalues ±A, the stretch and squeeze of the bead ring.
+
+---
+
+## 6. Rigid Bodies on the Sphere (Spherical3D)
+
+**Notebook**: [`examples/quadrics/elliptic_physics/s2_physics.ipynb`](../examples/quadrics/elliptic_physics/s2_physics.ipynb)
+
+![Seven ellipses spinning and colliding on the 2-sphere](../plots/spherical_quadric_physics.gif)
+
+#### Construction
+```python
+inside = (pixels & form(pixels)) < 0.0                                     # the implicit render: one test per pixel
+margin, deepest = core.overlap(bodies.C[a], relative >> bodies.C[b](relative << Point))   # the best blend's least eigenvalue
+impulse = -2.0 * closing / (one.regressive(response_one) + other.regressive(response_other))   # through the inverse inertia
+```
+
+#### Key Takeaways
+* **Shapes are forms**: an ellipse is a sum of point dyads, drawn by evaluating it at every pixel, and two ellipses are apart exactly when a blend of their forms is positive definite.
+* **Inertia is a map**: `Momentum <- Rate` from mass points; impulses go through its inverse, and the crowd keeps its energy and momentum.
+
+---
+
+## 7. Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)
+
+**Notebook**: [`examples/geometry/cyclides/cyclides.ipynb`](../examples/geometry/cyclides/cyclides.ipynb)
+
+![A cone-tipped cyclide carried around a vortex circle, linked with a ring on that circle](../plots/cyclides_linked_vortex.gif)
+
+#### Construction
+```python
+form = Point & surfaces                                                    # [n] Scalar <- (Point, Point): zero on the surface
+# The ray X = origin + 2u ray_linear(d) + u² ray_bend(d, d) in form(X, X), one form per power of u:
+constant = form(origin, origin)                                            # [n] Scalar
+linear = 4 * form(origin, ray_linear)                                      # [n] Scalar <- Direction
+quadratic = 4 * form(ray_linear, ray_linear) + 2 * form(origin, ray_bend)  # [n] Scalar <- (Direction, Direction)
+cubic = 4 * form(ray_linear, ray_bend)                                     # [n] Scalar <- (Direction,) * 3
+quartic = form(ray_bend, ray_bend)                                         # [n] Scalar <- (Direction,) * 4
+```
+
+#### Key Takeaways
+* **The ray polynomial is a set of forms**: its coefficients keep the pixel direction open, so one binding gives every pixel's quartic.
+* **Conformal maps make the shapes**: dilations bend tubes into tori and Dupin cyclides, and a circle's exponential carries a surface around it.
 
 # References
 

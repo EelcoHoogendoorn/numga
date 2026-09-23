@@ -101,12 +101,10 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     ax.set_ylim(-4.95, 0.65)
     ax.set_zlim(0.0, 3.1)
     ax.set_box_aspect([2.0, 5.6, 3.1])
-    ax.set_xlabel("x", labelpad=1, fontsize=8)
-    ax.set_ylabel("y", labelpad=1, fontsize=8)
-    ax.set_zlabel("z", labelpad=1, fontsize=8)
-    ax.tick_params(labelsize=7)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
     ax.view_init(elev=18, azim=-55)
-    ax.set_title("3d scene", fontsize=10, pad=8)
 
 
 # --- 2D sensor photograph ---------------------------------------------------------------
@@ -128,7 +126,6 @@ def plot_camera_image(ax: plt.Axes, projected_pixels: Point) -> None:
     ax.set_ylim(height, 0)  # Invert y so image origin (0, 0) is at top-left
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title("camera sensor", fontsize=10, pad=4)
 
 
 # --- figures ----------------------------------------------------------------------------

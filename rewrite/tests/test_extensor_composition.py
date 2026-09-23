@@ -77,3 +77,21 @@ def test_geometric_product_expression_stages_by_operand_kind() -> None:
         atol=1e-14,
         equal_nan=False,
     )
+
+
+def test_a_call_with_fewer_operands_binds_the_leading_slots():
+    import numpy as np
+    from numga import NumpyContext
+    from numga.algebras import PGA3D
+
+    mv = NumpyContext(PGA3D).multivector
+    Point = PGA3D.gatype.antivector()
+    join = Point & Point                                     # Line <- (Point, Point)
+    origin = mv.antivector([0.0, 0.0, 0.0, 1.0])
+    target = mv.antivector([1.0, 2.0, 3.0, 1.0])
+
+    ray = join(origin)                                       # Line <- Point
+
+    assert ray.arity == 1
+    assert ray.gatype == join.bind(origin).gatype
+    np.testing.assert_allclose(ray(target).kernel, join(origin, target).kernel)

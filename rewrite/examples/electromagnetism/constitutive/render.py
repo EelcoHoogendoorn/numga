@@ -21,6 +21,12 @@ from examples.animation import capture
 from examples.electromagnetism.constitutive import core
 
 
+
+def _no_ticks(ax: plt.Axes) -> None:
+    """No tick marks or tick labels."""
+    ax.set_xticks([])
+    ax.set_yticks([])
+
 def draw_wave_propagation(
     ax: plt.Axes,
     modes: Sequence[tuple[float, Extensor]],
@@ -89,6 +95,8 @@ def draw_wave_propagation(
     ax.set_title(title, fontsize=10, pad=6)
     ax.legend(loc="upper right", fontsize=8.5)
     ax.view_init(elev=20, azim=-60)
+    _no_ticks(ax)
+    ax.set_zticks([])
 
 
 def draw_wave_comparison_3d(
@@ -165,7 +173,7 @@ def draw_dispersion(
     ax.set_xlabel("phase speed v")
     ax.set_ylabel(r"smallest $\sigma$")
     ax.set_title("dispersion scan", fontsize=10)
-    ax.grid(True, alpha=0.3)
+    _no_ticks(ax)
     ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
 
 
@@ -199,7 +207,7 @@ def draw_polarizations(
     ax.set_xlabel("Ex")
     ax.set_ylabel("Ey")
     ax.set_title("polarization modes", fontsize=10)
-    ax.grid(True, alpha=0.3)
+    _no_ticks(ax)
     ax.legend(loc="upper right", fontsize=9)
 
 
@@ -238,7 +246,7 @@ def draw_fresnel_surface_polar(
     ax.set_theta_zero_location("N")  # 0 radians along +z (North)
     ax.set_theta_direction(-1)       # Clockwise: +x along East
     ax.set_title("wave surfaces", va="bottom", fontsize=10)
-    ax.grid(True, alpha=0.3)
+    _no_ticks(ax)
     ax.legend(loc="lower left", bbox_to_anchor=(1.05, 0.0), fontsize=8.5)
 
 
@@ -276,7 +284,7 @@ def draw_fresnel_drag_curves(
     ax.set_xlabel(r"boost $\beta$")
     ax.set_ylabel("phase velocity v")
     ax.set_title("Fresnel drag", fontsize=10)
-    ax.grid(True, alpha=0.3)
+    _no_ticks(ax)
     ax.legend(loc="best", fontsize=8.5, framealpha=0.9)
 
 

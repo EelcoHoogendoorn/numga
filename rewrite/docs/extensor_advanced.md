@@ -9,22 +9,52 @@ transpose, the trace, the squared norm of a residual and the reciprocal of a bas
 identify a vector space with its dual through the coefficients, and that in an orthonormal
 basis the identification is invisible.
 
-The sections below treat these in order: the absence of a transpose; the metric and the
+The sections below treat these in order: the absence of a matrix product and of a transpose; the metric and the
 complement; the relation between maps and forms; quadrics; inverses; least squares; the
 conversion between second moments and inertia; traces, with the Ricci contraction as the
 example; homogeneous unknowns; covariance and information; batch axes and slots. The
-expressions are taken from the [examples](examples/README.md).
+expressions are taken from the [examples](../examples/README.md).
 
-## 1. There is no transpose
+## 1. There is no matrix product
+
+Extensors compose. A call fills an input slot with anything of that slot's type, a value or
+another map, and a map's output feeds the next map's input when the types agree:
+
+```python
+world = motor >> inertia(motor << Bivector)              # AntiBivector <- Bivector: the inertia of a placed body
+cone = on_planes(disc(projection))                       # Plane <- Point: a pixel's disc pulled back into the scene
+```
+
+What there is not is an operator like `a @ b`, which contracts two arrays by index position
+whatever the indices stand for. Composition only joins an output to an input of the same
+type. Every other pairing of two slots, the ones matrix code writes as `x.T @ y`, `A.T @ A`
+or a sum of squares, is a product of the algebra, and the product says which pairing it is:
+
+```python
+incidence = Plane & Point                                # Scalar <- (Plane, Point): no metric involved
+metric = Vector | Vector                                 # Scalar <- (Vector, Vector): the algebra's metric
+misfit = residual.reverse().scalar_product(residual)     # a squared norm, in the metric it is measured by
+```
+
+Neither is there a tensor product. Arity grows only by leaving a slot open in an expression,
+and it falls only by binding a slot or by a product of the algebra. A dyad is written as a
+product with an open slot, `a * (b & Point)`, not as a ⊗ b, and a contraction chosen by index,
+the other half of `einsum`, has no counterpart.
+
+Underneath, all of these are contractions of coefficient arrays. The difference is in what can be
+written: every contraction has a meaning in the algebra and a type, and a contraction by index
+alone cannot be expressed. The transpose is the first casualty.
+
+## 2. There is no transpose
 
 Extensors have no transpose. What follows are the correspondences: for each task that would
 call for a transpose in matrix algebra, the expression that does it on extensors. The pairings
-these expressions use are the subject of sections 2 and 3. For comparison, in matrix algebra
+these expressions use are the subject of sections 3 and 4. For comparison, in matrix algebra
 one would write the transpose as swapping rows and columns, which identifies a space with its
 dual by equal coefficient index; that is the metric of a Euclidean orthonormal basis and of no
 other.
 
-**Pulling a quadric back through a map.** In the [multiview example](examples/geometry/multiview/core.py) a camera is a map from
+**Pulling a quadric back through a map.** In the [multiview example](../examples/geometry/multiview/core.py) a camera is a map from
 scene points to sensor points, `projection: Point <- Point`. It has no inverse: every point on
 a sight ray lands on the same pixel. A pixel measurement is a quadric on sensor points,
 `disc`, and the reconstruction needs that quadric on scene points, scoring a scene point by how
@@ -46,7 +76,7 @@ is the value of each cone at the reconstructed point, `cones(local_points) & loc
 a small change of a camera's pose moves its points by `motion`, a map from twists to points.
 A quadric cost is its own square, so its curvature over the pose is the quadric with the motion
 in both slots, and its gradient is the point's polar joined with the motion. When the residual
-is a scalar to begin with, as in the [epipolar example](examples/geometry/epipolar/core.py) where it is the wedge of two lines read
+is a scalar to begin with, as in the [epipolar example](../examples/geometry/epipolar/core.py) where it is the wedge of two lines read
 as a number, the curvature is the product of its Jacobian form `j` with itself.
 
 ```python
@@ -56,7 +86,7 @@ curvature = (j * j).sum(axis=0)                           # Scalar <- (Twist, Tw
 ```
 
 Where a residual is a multivector and a norm on it is part of the problem, the norm is a
-choice and is written as a form on the open residual. The [registration example](examples/geometry/registration/core.py) fits a motor
+choice and is written as a form on the open residual. The [registration example](../examples/geometry/registration/core.py) fits a motor
 to point correspondences through a residual that is linear in the motor, `target * Motor -
 Motor * source`, and scores it by the sum of its squared coefficients. In PGA that is the bulk
 norm plus the weight norm, the second taken through the complement, because the scalar
@@ -68,7 +98,7 @@ weight = residual.dual().reverse().scalar_product(residual.dual())
 misfit = (bulk + weight).sum(axis=0)
 ```
 
-**Moving a covariance.** The [Kalman example](examples/geometry/kalman/core.py) tracks a pose with an uncertainty `sigma`, the
+**Moving a covariance.** The [Kalman example](../examples/geometry/kalman/core.py) tracks a pose with an uncertainty `sigma`, the
 covariance of a small twist perturbing the estimate. A covariance takes a linear readout of
 that twist, which is a line, to the twist correlated with it, so it is a map `Twist <- Line`,
 and when the estimate advances by a motor `step` the covariance moves like any map: pull the
@@ -78,7 +108,7 @@ readout back through the step, push the twist forward.
 sigma = step << sigma(step >> Line) + Q                     # Twist <- Line
 ```
 
-**A direction from a gradient.** The [ray tracer](examples/geometry/cyclides/core.py) needs a surface normal for shading. The
+**A direction from a gradient.** The [ray tracer](../examples/geometry/cyclides/core.py) needs a surface normal for shading. The
 derivative of a surface's quadric along a ray, `derivative`, is a linear form on directions,
 `Scalar <- Direction`; the normal is the direction obtained by solving the metric form on
 directions against it.
@@ -110,7 +140,7 @@ algebra, dispatches `inverse()` to a transposition of its coefficients, because 
 the two coincide. The trait is a promise the type system tracks; a Lorentz boost does not
 carry it, and its inverse is computed as an inverse.
 
-**Moving a map or a form to another frame.** A sight cone in the [multiview example](examples/geometry/multiview/core.py) is built
+**Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/geometry/multiview/core.py) is built
 in its camera's frame and is summed with the other cameras' cones in the world's. As a map it
 moves by pulling its input back through the pose and pushing its output forward; as a form it
 has no output to push, and the pose goes into both slots.
@@ -131,7 +161,7 @@ In coordinates each of these is a permutation of the same numbers, with signs. T
 and the signs come from the structure constants of the product, which blades meet to a scalar
 and with what sign, and not from index labels.
 
-## 2. The metric and the complement
+## 3. The metric and the complement
 
 The products of the algebra split into two groups. The geometric product, the inner product
 `|`, the commutator, the sandwich, the norm and the inverse of a multivector use the metric.
@@ -171,13 +201,13 @@ it. In geometric algebra the metric is in the product, `(a * b + b * a) / 2 == a
 covector is a vector acting through `|`, and raising and lowering happen without notation.
 Numga keeps both pictures, by product rather than by index.
 
-## 3. Maps and forms
+## 4. Maps and forms
 
 A map `B <- A` and a form `Scalar <- (A*, A)` hold the same numbers with one slot on the other
 side of the arrow. The two directions of conversion are not symmetric.
 
 Map to form is a pairing. Join the output with an open slot of the dual type and the map
-becomes a bilinear form, as the [modes example](examples/mechanics/modes/core.py) does with its
+becomes a bilinear form, as the [modes example](../examples/mechanics/modes/core.py) does with its
 stiffness:
 
 ```python
@@ -212,14 +242,14 @@ forms. A form's eigenproblem on its own is relative to its slot's metric, the in
 its rotor part alone, sending the translations to infinity. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
 tensor; the difference is one pairing.
 
-## 4. Quadrics
+## 5. Quadrics
 
-The [multiview example](examples/geometry/multiview/core.py) holds a pixel's precision disc and
+The [multiview example](../examples/geometry/multiview/core.py) holds a pixel's precision disc and
 its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar
-plane. Section 7 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the
+plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the
 pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. Either
 one paired with an open slot is the form, `Scalar <- (Point, Point)`, which is what a cost or
-an eigenproblem takes. The conversions are those of section 3:
+an eigenproblem takes. The conversions are those of section 4:
 
 ```python
 form = quadric & Point                      # Scalar <- (Point, Point)
@@ -249,11 +279,11 @@ disc = normal * (Point & normal)            # value  disc(q) & p == (q & normal)
 Plane-first everywhere is the simplest way to keep every pairing in a file in the same order.
 
 Which to keep depends on the use. Maps to compose, invert, or move by sandwich; forms to
-sum, to differentiate as a cost, or to solve. The [multiview example](examples/geometry/multiview/core.py) keeps its sight cones as
+sum, to differentiate as a cost, or to solve. The [multiview example](../examples/geometry/multiview/core.py) keeps its sight cones as
 polarity maps, moves them with `pose >> cone(pose << Point)`, sums them, and converts to a form
 where a form is required.
 
-## 5. Inverses
+## 6. Inverses
 
 A multivector is inverted under the geometric product, a map under composition, and a form is
 solved against a linear form. In each case the inverse is the element that composes to the
@@ -272,7 +302,7 @@ library has no coefficient-space slot to hold that map. Where a reciprocal is re
 comes from solving the pairing; in most cases a frame summed against its reciprocal is the
 coordinate spelling of a trace or of an identity map, which have frame-free forms.
 
-## 6. Least squares
+## 7. Least squares
 
 `solve` and `lstsq` dispatch on the shape of the problem. There are four cases.
 
@@ -285,7 +315,7 @@ coefficients = vectors.lstsq(target)         # [n] Scalar: sum(coefficients * ve
 
 Unary: a map against a right-hand side, solved exactly or with the pseudoinverse's cutoff.
 Input slots of the right-hand side are kept as input slots of the solution. Triangulation in
-the [multiview example](examples/geometry/multiview/core.py) is this case, a polarity map solved against the plane at
+the [multiview example](../examples/geometry/multiview/core.py) is this case, a polarity map solved against the plane at
 infinity:
 
 ```python
@@ -304,9 +334,9 @@ response = h_pt[:, None].solve(h_cross)                    # Direction <- Twist,
 Tensor: a construction with several open slots, solved for an unknown multilinear part. The
 right-hand side's inputs must match one subsequence of the construction's inputs, and the
 unmatched slots become the solution's signature. Recovering a point cloud's second moment
-from its inertia is this case; section 7 shows it.
+from its inertia is this case; section 8 shows it.
 
-## 7. Second moments and inertia
+## 8. Second moments and inertia
 
 A mass cloud has a second-moment quadric and an inertia map. They hold the same information:
 the moment is a dual quadric on planes, the inertia a map from twists to wrenches.
@@ -327,8 +357,8 @@ principal = moment(planes)                                              # [4] Po
 inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Wrench <- Twist
 ```
 
-Inertia to moment, as in the [inertia example](examples/mechanics/inertia.py), is the tensor
-solve of section 6. Write the construction that turns a
+Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor
+solve of section 7. Write the construction that turns a
 second moment into an inertia with every slot open, and solve it for the unknown map:
 
 ```python
@@ -348,7 +378,7 @@ inertia.trace()                             # 0: momentum has no component along
 Its kinetic energy form, `Twist & inertia`, has a trace only against a metric on twists, and
 the twist metric of PGA is singular: the translations carry no unit of their own.
 
-## 8. Traces
+## 9. Traces
 
 `trace(slot)` contracts a map's output against one of its inputs by matching blades and drops
 that slot. It does not use the metric: an output blade and the same input blade are dual to
@@ -356,7 +386,7 @@ each other by construction. Slots are numbered in order of appearance in the exp
 
 A contraction between two inputs is different: either a metric pairs them or the complement
 does, and one of the two has to be written. The Ricci contraction shows both. The curvature of
-a plane gravitational wave in the [curvature example](examples/relativity/curvature/core.py) is
+a plane gravitational wave in the [curvature example](../examples/relativity/curvature/core.py) is
 `plus`, a map on bivectors. Wedge an open vector into it,
 contract with another open vector, and trace the output against the wedge slot:
 
@@ -374,7 +404,7 @@ A form's own `trace()` pairs its two slots through the slot's metric: it is the 
 form with one slot raised, `(S | S).solve(form)` on vectors, and it exists only where that
 metric is invertible.
 
-## 9. Homogeneous unknowns
+## 10. Homogeneous unknowns
 
 Motors, points and planes are homogeneous: a scalar multiple is the same geometric object, so
 their coordinates contain a direction that is not a degree of freedom. A solve that treats such
@@ -386,12 +416,12 @@ is not homogeneous, and the object is reconstituted from it.
 For a motor the tangent space is the twists, and the update is an exponential:
 
 ```python
-motors = motors * (step * 0.5).exp()                        # step: Twist, the Newton step of section 6
+motors = motors * (step * 0.5).exp()                        # step: Twist, the Newton step of section 7
 ```
 
 For a point it is the directions, the ideal points, and the update is a sum. A Newton step
 over points is therefore taken over directions. Taken over full points instead, the solve
-moves the points along their scale, and in the Schur complement of the [multiview example](examples/geometry/multiview/core.py) it
+moves the points along their scale, and in the Schur complement of the [multiview example](../examples/geometry/multiview/core.py) it
 absorbs the whole camera step: the complement is exactly zero and the cameras appear
 unobservable.
 
@@ -413,12 +443,12 @@ The global gauge of a problem, such as the frame of a camera rig or the scale of
 rig, is the same fact one level up: directions in the unknowns that change nothing. Anchoring
 removes them from the solve; it does not make them observable.
 
-## 10. Information and covariance
+## 11. Information and covariance
 
 The curvature of a cost over twists is a form, `Scalar <- (Twist, Twist)`, and it is the
 information on the pose. Its inverse on readouts is the covariance. A covariance is a map from
 a readout to the twist correlated with it, and a linear readout of a twist is a line, so the
-covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example](examples/geometry/kalman/core.py):
+covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example](../examples/geometry/kalman/core.py):
 pull the readout through the step, push the twist back:
 
 ```python
@@ -435,15 +465,15 @@ position = readout & sigma(readout)                         # Scalar <- (Line, L
 ```
 
 Sampling diagonalizes the readout form: each eigen-readout's twist, scaled by its standard
-deviation, carries one unit normal draw. A Schur complement, as in the [multiview example](examples/geometry/multiview/core.py), is marginalization: the reduced
+deviation, carries one unit normal draw. A Schur complement, as in the [multiview example](../examples/geometry/multiview/core.py), is marginalization: the reduced
 curvature over the cameras is the information on their poses with the points integrated out.
 
-## 11. Batch axes and slots
+## 12. Batch axes and slots
 
 A batch axis indexes independent copies of an expression; a slot is an argument. The two look
 alike in a coefficient array, and a frame is where they get confused: a basis stored as a
 batch, with a reciprocal basis stored as another, is a slot that has been evaluated on each
-basis vector and summed. The Ricci contraction of the [curvature example](examples/relativity/curvature/core.py),
+basis vector and summed. The Ricci contraction of the [curvature example](../examples/relativity/curvature/core.py),
 written both ways, makes this concrete.
 
 ```python

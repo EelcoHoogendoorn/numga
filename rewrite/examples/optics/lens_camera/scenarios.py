@@ -50,7 +50,7 @@ def stills():
     pupil = place_front >> (unit_disc * 0.45**2 - origin * (origin & Plane) * (1.0 - 0.45**2))(place_front << Plane)
     # The train on lines is the join of the collineation's images: the lens is a collineation.
     other = point(np.array([[-1.0, 0.3, 0.1], [-1.5, 0.2, -0.4], [-2.0, -0.5, 0.6]]))
-    np.testing.assert_allclose(cam.bind({1: other})(SCENE[0, 0, 0]).kernel,
+    np.testing.assert_allclose(cam(Point, other)(SCENE[0, 0, 0]).kernel,
                                ((collineation(SCENE[0, 0, 0]) & collineation(other)) ^ sensor).kernel, atol=1e-12)
     # The image cone's vertex is the collineation's image of the subject.
     np.testing.assert_allclose((collineation(SCENE) & cones(collineation(SCENE))).kernel, 0.0, atol=1e-9)
@@ -60,7 +60,7 @@ def stills():
     for index in ((0, 0, 0), (2, 4, 3)):
         start = (collineation(SCENE[index]) & collineation(centre)) ^ sensor
         boundary = section(cones[index], start, frame, 48)
-        to_sensor = cam.bind({0: SCENE[index]})
+        to_sensor = cam(SCENE[index])
         pushed = to_sensor(pupil(on_planes(to_sensor)))
         section_dual = (frame << pushed(frame >> SensorPlane)).cast(SensorPoint.output_subspace)
         hits = (frame << boundary).cast(SensorPoint.output_subspace)

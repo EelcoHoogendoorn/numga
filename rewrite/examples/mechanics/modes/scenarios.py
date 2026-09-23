@@ -19,7 +19,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--animate", action="store_true", help="Also save the normal modes as a GIF.")
     args = parser.parse_args()
-    cases = suspensions()
-    save_figure(render.draw_modes(cases, "Normal Modes: Baseline (top) vs Coupled (bottom)"), "modes")
+    coupled = suspensions()[1:]
+    save_figure(render.draw_modes(coupled), "modes")
     if args.animate:
-        save_animation(render.animate_modes(cases, 120), "modes", 50)
+        save_animation(render.animate_modes(coupled, 120), "modes", 50)

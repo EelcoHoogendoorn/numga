@@ -68,12 +68,18 @@ def test_the_cylinder_polynomial_is_palindromic_and_a_dupin_cyclide_breaks_it():
 
 def test_scenes_are_hit_and_draw():
     for scene, panels in ((scenarios.tori, 3), (scenarios.dupin, 3), (scenarios.spindles, 5)):
-        facing, visible = scene()
-        assert visible.reshape(panels, -1).any(axis=-1).all()
-        assert isinstance(render.draw_facing(facing, visible, scenarios.SHAPE), plt.Figure)
+        facing, angle = scene()
+        assert np.isfinite(angle).reshape(panels, -1).any(axis=-1).all()
+        assert isinstance(render.draw_facing(facing, angle, scenarios.SHAPE), plt.Figure)
 
 
 def test_the_vortex_stays_in_view():
     frames = list(render.facing_frames(scenarios.vortex(3), scenarios.SHAPE))
     assert len(frames) == 3 and all(frame.shape == (*scenarios.SHAPE, 3) for frame in frames)
-    assert all(visible.any() for _, visible in scenarios.vortex(3))
+    assert all(np.isfinite(angle).any() for _, angle in scenarios.vortex(3))
+
+
+def test_the_flat_scenes_are_hit():
+    for name in scenarios.FLAT_SCENES:
+        for _, angle in scenarios.flat_scene(name, 2):
+            assert np.isfinite(angle).any(axis=-1).all(), name

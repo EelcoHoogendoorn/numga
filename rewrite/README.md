@@ -118,11 +118,11 @@ The [`examples/`](examples/README.md) directory contains complete, standalone im
 
 The documentation is organized into four complementary guides:
 
-1. [**Extensors: Introduction & Mental Models**](extensors.md)
+1. [**Extensors: Introduction & Mental Models**](docs/extensors.md)
    The high-level introduction to extensors, slot notation, and canonical domain examples.
-2. [**Syntax Reference & Extension Methods**](extensor_syntax.md)
+2. [**Syntax Reference & Extension Methods**](docs/extensor_syntax.md)
    Exhaustive guide to extensor syntax, open-slot lifting rules, currying, and built-in numerical methods.
-3. [**Advanced Foundations: The Linear Algebra Rosetta Stone**](extensor_advanced.md)
+3. [**Advanced Foundations: The Linear Algebra Rosetta Stone**](docs/extensor_advanced.md)
    Deep theoretical treatment: the absence of transpose, quadric pullbacks, maps vs. forms, gauge and homogeneous variables, traces, and covariance.
 4. [**Examples Index & Tutorials**](examples/README.md)
    Detailed walkthroughs, notebooks, and run instructions for all domain examples.

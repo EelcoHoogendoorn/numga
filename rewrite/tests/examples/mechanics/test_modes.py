@@ -122,7 +122,7 @@ def test_scenario_has_analytic_modes_and_renders():
     np.testing.assert_allclose((2 * np.pi * free.frequencies.to_array())**2,
                                [0, 12, 12 * .8**2 / (5 / 12)], atol=1e-12)
     assert np.all(restrained.frequencies.to_array() > 0)
-    assert isinstance(render.draw_modes([free, restrained], "Normal Modes"), plt.Figure)
+    assert isinstance(render.draw_modes([free, restrained]), plt.Figure)
     frames = render.animate_modes([free, restrained], 4)
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
 
