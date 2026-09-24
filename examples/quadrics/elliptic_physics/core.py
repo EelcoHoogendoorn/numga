@@ -14,7 +14,6 @@ with the algebra of the S³ ray tracer for S³.
 """
 
 from dataclasses import dataclass, fields, replace
-from typing import NamedTuple
 
 import numpy as np
 
@@ -74,7 +73,8 @@ class Bodies:
         return (self.motor >> self.momentum).sum(axis=0)
 
 
-class Trajectory(NamedTuple):
+@dataclass(frozen=True)
+class Trajectory:
     """The simulation, frame by frame: world forms and body rates per body, totals per frame."""
     surfaces: Quadric                              # (frames, bodies)
     rate: Bivector                                 # (frames, bodies), in the body frame

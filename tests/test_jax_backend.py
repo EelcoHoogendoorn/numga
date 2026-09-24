@@ -1,15 +1,26 @@
+from contextlib import contextmanager
+
 import numpy as np
 import pytest
 
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
 
-from jax.experimental import enable_x64
-
 from numga import Algebra, Extensor, NumpyContext
 from numga.algebras import PGA3D, STA
 from numga.backend.jax import JaxContext
 from tests.backend_surface import operations
+
+
+@contextmanager
+def enable_x64():
+    """Double precision for one test, restoring the global setting after."""
+    previous = jax.config.jax_enable_x64
+    jax.config.update("jax_enable_x64", True)
+    try:
+        yield
+    finally:
+        jax.config.update("jax_enable_x64", previous)
 
 
 def _agrees_with_numpy(ga: Algebra, execution: str, transform) -> None:

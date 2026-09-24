@@ -1,5 +1,9 @@
 """Camera pose recovery by gradient descent on the image misfit, in JAX."""
 
+import pytest
+
+pytest.importorskip("jax")
+
 from examples.geometry.camera_fit import main
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from numga import NumpyContext
 from examples.mechanics.xpbd import core, render, scenarios
@@ -58,6 +59,7 @@ def test_numpy_chain_draws():
 
 
 def test_jax_chain_matches_numpy():
+    pytest.importorskip("jax")
     numpy_centres, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
     jax_centres, jax_gaps = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
     np.testing.assert_allclose(render.euclidean(jax_centres), render.euclidean(numpy_centres), atol=1e-5)
