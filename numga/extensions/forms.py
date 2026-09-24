@@ -59,7 +59,7 @@ def _default_metric_kind(slot: SubSpace) -> str:
     'identity' solves as a plain eigenproblem; 'positive' needs the generalized pencil;
     'singular' and 'indefinite' admit only the general eigenproblem.
     """
-    matrix = _default_metric(slot)._kernel.to_object_array()[0].astype(float)
+    matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
     if np.array_equal(matrix, np.eye(len(slot))):
         return "identity"
     spectrum = np.linalg.eigvalsh(matrix)

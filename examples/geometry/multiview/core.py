@@ -20,7 +20,7 @@ Bundle adjustment works on the cone quadrics directly:
 1. Triangulate by summing each point's cones over its cameras. The fused cone's polar of its
    own vertex vanishes; a gauge dyad on the weight makes the vertex the pole of the plane at
    infinity, so `points = (fused + w * (w & Point)).solve(w).normalized()`.
-2. Update poses by Newton's method on the cone value. The motion of a local point under a
+2. Update poses by Gauss-Newton on the cone value. The motion of a local point under a
    pose twist, its polar joined with itself, is the curvature; the point's polar joined with
    the motion is the gradient. The cone is the cost, so no residual metric is chosen.
 
@@ -126,7 +126,7 @@ def bundle_adjust(
 ):
     """Jointly optimize camera poses and points purely via perspective cone quadrics.
 
-    Alternates triangulation with damped Newton steps on the camera poses. `free` is 1 for
+    Alternates triangulation with damped Gauss-Newton steps on the camera poses. `free` is 1 for
     each camera that moves and 0 for the anchored cameras that fix the gauge.
     """
     motors = initial_motors
@@ -135,7 +135,7 @@ def bundle_adjust(
         # Triangulate scene points as the fused quadrics' vertices:
         points, _ = triangulate_cones(motors, local_cones)
 
-        # Newton on the cone value over each camera's pose twist. A right perturbation of a pose
+        # Gauss-Newton on the cone value over each camera's pose twist. A right perturbation of a pose
         # moves its local points by minus the commutator with the twist; the moved point's polar
         # joined with the motion is the curvature, the point's polar joined with the motion the gradient:
         local_points = motors << points[:, None]                  # [n_points, n_cams] Point
@@ -188,7 +188,7 @@ def bundle_adjust_schur(
     points, so their gradient vanishes and only the camera gradient
     `cones(local_points) & motion` remains. To second order the cost has three curvature
     forms: `h_cam` with both slots twists of one camera, `h_pt` with both slots directions of
-    one point, and `h_cross` with a twist slot and a direction slot. The joint Newton
+    one point, and `h_cross` with a twist slot and a direction slot. The joint Gauss-Newton
     conditions are then, per point,
     `h_pt(direction, .) + h_cross(step, .) == 0`, and per camera,
     `h_cam(step, .) + h_cross(., direction).sum(axis=0) == -gradient`. The point condition
@@ -240,7 +240,7 @@ def bundle_adjust_schur(
         compliance = scaled_cones(motion) & (motors << response)  # [n_points, n_cams] Scalar <- (Twist, Twist)
         information = h_cam - compliance.sum(axis=0)              # [n_cams] Scalar <- (Twist, Twist)
 
-        # Newton step on the reduced curvature; hold the anchored cameras to fix gauge freedom:
+        # Gauss-Newton step on the reduced curvature; hold the anchored cameras to fix gauge freedom:
         gradient = (scaled_cones(local_points) & motion).sum(axis=0)   # [n_cams] Scalar <- Twist
         step = information.lstsq(-gradient, rcond=1e-4) * free    # [n_cams] Twist
         motors = motors * (step * (0.5 * damping)).exp()          # [n_cams] Motor

@@ -1,13 +1,13 @@
 """Scalar, generalized Study, and unit or scaled rotor square roots.
 
-These are the original real-algebra branch formulas. They select one root;
-they do not search other blades for roots of negative scalars.
+The formulas are real-algebra branches: they select one root, and do not
+search other blades for roots of negative scalars.
 """
 
 from __future__ import annotations
 
 from numga.extensor import Extensor
-from numga.gatype import GATypePattern, ReverseProductOne, Versor
+from numga.gatype import GATypePattern, ReverseProductNonzero, ReverseProductOne, Versor
 
 
 @Extensor.square_root_denman_beavers.register(lambda t: t <= t.algebra.gatype.rotor())
@@ -54,7 +54,7 @@ def scaled_rotor_square_root(value: Extensor) -> Extensor:
 
     scale = value.norm()
     unit = (value / scale).with_traits(ReverseProductOne, Versor)
-    return (scale.square_root() * unit.square_root()).with_traits(Versor)
+    return (scale.square_root() * unit.square_root()).with_traits(Versor, ReverseProductNonzero)
 
 
 @Extensor.square_root.register(

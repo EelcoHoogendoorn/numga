@@ -290,13 +290,13 @@ def test_reverse_preserves_only_sound_one_sided_reverse_product_facts():
 
     # Concrete Cl(1, 1) witness: x*~x is zero, while ~x*x is not scalar.
     reversed_zero = zero.reverse()
-    assert (zero * reversed_zero).kernel.to_object_array().tolist() == [
+    assert (zero * reversed_zero).kernel.values.tolist() == [
         0,
         0,
         0,
         0,
     ]
-    assert (reversed_zero * zero).kernel.to_object_array().tolist() == [
+    assert (reversed_zero * zero).kernel.values.tolist() == [
         0,
         4,
         4,

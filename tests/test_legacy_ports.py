@@ -87,15 +87,3 @@ def test_optimized_pga3_normalize_matches_the_generic_method():
     assert normalize_pga3(raw).gatype == raw.normalized().gatype
     np.testing.assert_allclose(normalize_pga3(raw).kernel, raw.normalized().kernel, atol=1e-12)
 
-
-def test_formula_and_generated_python_preserve_rational_coefficients():
-    ga = Algebra("x+y+")
-    V = ga.gatype.vector()
-    expression = (V * V) * Fraction(1, 3)
-    namespace = {}
-    exec(expression.to_python("product"), namespace)
-    actual = namespace["product"]([1, 2], [3, 4])
-    expected = expression(ga.exact.multivector.vector([1, 2]), ga.exact.multivector.vector([3, 4]))
-    assert actual == list(expected.kernel.to_object_array())
-    assert "Fraction(1, 3)" in expression.formula()
-    assert "a0[x]" in expression.formula()

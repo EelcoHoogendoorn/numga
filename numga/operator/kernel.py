@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from fractions import Fraction
 from functools import lru_cache
-from numbers import Integral, Rational
+from numbers import Integral, Rational, Real
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
@@ -14,162 +13,140 @@ if TYPE_CHECKING:
     from numpy.typing import DTypeLike
 
 
-ExactScalar = Fraction
-
-
-def _as_fraction(value: object) -> Fraction:
-    """Normalize one supported exact scalar.
-
-    Floating-point values are intentionally rejected.  Accepting them here
-    would reintroduce the epsilon-based symbolic semantics that the rewrite is
-    meant to remove.
-    """
-
-    if isinstance(value, Fraction):
-        return value
-    if isinstance(value, Integral):
-        return Fraction(int(value))
-    if isinstance(value, Rational):
-        return Fraction(value.numerator, value.denominator)
-    raise TypeError(
-        "symbolic coefficients must be exact integers or rational numbers; "
-        f"got {type(value).__name__}"
-    )
+def _scalar(value: object) -> object:
+    if not isinstance(value, Real):
+        raise TypeError(f"symbolic kernels scale by real scalars; got {type(value).__name__}")
+    return float(value) if isinstance(value, Rational) and not isinstance(value, Integral) else value
 
 
 class SymbolicKernel:
-    """Immutable exact-rational tensor used by exact Extensors.
+    """Immutable symbolic tensor used by exact Extensors.
 
-    The tuple-backed representation is deliberately simple.  It is a valid
-    correctness implementation that can remain as a reference if a compact
-    numerator/denominator representation is added later.
+    The operator factory builds its kernels as int8: basis products have unit coefficients.
+    Arithmetic follows NumPy's promotion rules, so scaling by a float makes the kernel floating.
     """
 
-    __slots__ = ("_shape", "_values", "_hash")
+    __slots__ = ("_values", "_hash")
 
-    def __init__(
-        self, values: Any, shape: Sequence[int] | None = None,
-    ) -> None:
+    def __init__(self, values: Any, shape: Sequence[int] | None = None) -> None:
         if isinstance(values, SymbolicKernel):
-            inferred_shape = values.shape
-            flat = values._values
+            array = values._values
         else:
-            array = np.asarray(values, dtype=object)
-            inferred_shape = tuple(int(size) for size in array.shape)
-            flat = tuple(_as_fraction(value) for value in array.flat)
-
-        normalized_shape = (
-            inferred_shape if shape is None else tuple(int(size) for size in shape)
-        )
-        if any(size < 0 for size in normalized_shape):
-            raise ValueError("symbolic kernel dimensions must be non-negative")
-        if int(np.prod(normalized_shape, dtype=int)) != len(flat):
-            raise ValueError(
-                f"shape {normalized_shape} does not contain {len(flat)} values"
-            )
-
-        object.__setattr__(self, "_shape", normalized_shape)
-        object.__setattr__(self, "_values", flat)
-        object.__setattr__(self, "_hash", hash((self._shape, self._values)))
+            array = np.asarray(values)
+            if array.dtype == object:
+                array = np.array([_scalar(value) for value in array.flat]).reshape(array.shape)
+            if array.dtype.kind not in "iubf":
+                raise TypeError(f"symbolic coefficients must be real numbers; got {array.dtype}")
+            if array.dtype.kind == "b":
+                array = array.astype(np.int8)
+        if shape is not None:
+            shape = tuple(int(size) for size in shape)
+            if any(size < 0 for size in shape):
+                raise ValueError("symbolic kernel dimensions must be non-negative")
+            if int(np.prod(shape, dtype=int)) != array.size:
+                raise ValueError(f"shape {shape} does not contain {array.size} values")
+            array = array.reshape(shape)
+        array = np.array(array)
+        array.flags.writeable = False
+        object.__setattr__(self, "_values", array)
+        object.__setattr__(self, "_hash", hash((array.shape, array.dtype.str, array.tobytes())))
 
     def __setattr__(self, _name: str, _value: object) -> None:
         raise AttributeError("SymbolicKernel instances are immutable")
 
     @classmethod
     def zeros(cls, shape: Sequence[int]) -> "SymbolicKernel":
-        normalized_shape = tuple(int(size) for size in shape)
-        count = int(np.prod(normalized_shape, dtype=int))
-        return cls((Fraction(0),) * count, normalized_shape)
+        return cls(np.zeros(tuple(int(size) for size in shape), dtype=np.int8))
 
     @classmethod
     def identity(cls, size: int) -> "SymbolicKernel":
-        values = np.zeros((size, size), dtype=object)
-        for index in range(size):
-            values[index, index] = Fraction(1)
-        return cls(values)
+        return cls(np.eye(size, dtype=np.int8))
+
+    @property
+    def values(self) -> np.ndarray:
+        """The coefficients, read-only."""
+        return self._values
 
     @property
     def shape(self) -> tuple[int, ...]:
-        return self._shape
+        return self._values.shape
 
     @property
     def ndim(self) -> int:
-        return len(self._shape)
+        return self._values.ndim
 
     @property
     def size(self) -> int:
-        return len(self._values)
+        return self._values.size
 
-    def to_object_array(self) -> np.ndarray:
-        """Return a fresh object array containing immutable Fractions."""
-
-        return np.asarray(self._values, dtype=object).reshape(self._shape).copy()
+    def to_array(self) -> np.ndarray:
+        """A writable copy of the coefficients."""
+        return self._values.copy()
 
     @lru_cache(maxsize=None)
     def materialize(self, dtype: DTypeLike = np.float64) -> np.ndarray:
         """Cache immutable host coefficients; never cache traced backend arrays."""
 
-        if np.dtype(dtype) == np.dtype(object):
-            values = self.to_object_array()
-        else:
-            values = np.fromiter((float(value) for value in self._values), dtype=dtype)
+        values = self._values.astype(dtype)
         values.flags.writeable = False
-        result = values.reshape(self._shape)
-        return result
+        return values
 
     def transpose(self, permutation: Sequence[int]) -> "SymbolicKernel":
-        permutation = tuple(int(axis) for axis in permutation)
-        return type(self)(self.to_object_array().transpose(permutation))
+        return type(self)(self._values.transpose(tuple(int(axis) for axis in permutation)))
 
     def moveaxis(
         self,
         source: int | Sequence[int],
         destination: int | Sequence[int],
     ) -> "SymbolicKernel":
-        return type(self)(np.moveaxis(self.to_object_array(), source, destination))
+        return type(self)(np.moveaxis(self._values, source, destination))
 
     def take(self, indices: Iterable[int], axis: int) -> "SymbolicKernel":
         return self._take(tuple(indices), axis)
 
     @lru_cache(maxsize=None)
     def _take(self, indices: tuple[int, ...], axis: int) -> SymbolicKernel:
-        return type(self)(np.take(self.to_object_array(), indices, axis=axis))
+        return type(self)(np.take(self._values, indices, axis=axis))
+
+    def trace(self, axis1: int, axis2: int) -> "SymbolicKernel":
+        return type(self)(np.trace(self._values, axis1=axis1, axis2=axis2))
+
+    def expand_dims(self, axis: int) -> "SymbolicKernel":
+        return type(self)(np.expand_dims(self._values, axis))
 
     def tensordot(
         self,
         other: "SymbolicKernel",
         axes: tuple[int | Sequence[int], int | Sequence[int]],
     ) -> "SymbolicKernel":
-        return type(self)(
-            np.tensordot(
-                self.to_object_array(),
-                other.to_object_array(),
-                axes=axes,
-            )
-        )
+        return type(self)(np.tensordot(self._values, other._values, axes=axes))
+
+    def halved(self) -> "SymbolicKernel":
+        """Division by two that keeps an integer kernel integer when its entries are even, as the
+        symmetrization of basis products always leaves them."""
+        if self._values.dtype.kind == "i" and not np.any(self._values % 2):
+            return type(self)(self._values // 2)
+        return type(self)(self._values / 2)
+
+    def reciprocal(self) -> "SymbolicKernel":
+        return type(self)(1 / self._values)
 
     def output_nonzero_indices(self) -> tuple[int, ...]:
         if self.ndim == 0:
             raise ValueError("a symbolic extensor kernel must have an output axis")
-        array = self.to_object_array()
-        if self.ndim == 1:
-            keep = array != 0
-        else:
-            keep = np.any(array != 0, axis=tuple(range(1, self.ndim)))
+        nonzero = self._values != 0
+        keep = nonzero if self.ndim == 1 else np.any(nonzero, axis=tuple(range(1, self.ndim)))
         return tuple(int(index) for index in np.flatnonzero(keep))
 
     def __neg__(self) -> "SymbolicKernel":
-        return type(self)(tuple(-value for value in self._values), self._shape)
+        return type(self)(-self._values)
 
     def __add__(self, other: object) -> SymbolicKernel | NotImplementedType:
         if not isinstance(other, SymbolicKernel):
             return NotImplemented
         if self.shape != other.shape:
             raise ValueError(f"cannot add kernel shapes {self.shape} and {other.shape}")
-        return type(self)(
-            tuple(left + right for left, right in zip(self._values, other._values)),
-            self._shape,
-        )
+        return type(self)(self._values + other._values)
 
     def __sub__(self, other: object) -> SymbolicKernel | NotImplementedType:
         if not isinstance(other, SymbolicKernel):
@@ -177,25 +154,18 @@ class SymbolicKernel:
         return self + (-other)
 
     def __mul__(self, scalar: object) -> "SymbolicKernel":
-        exact = _as_fraction(scalar)
-        return type(self)(tuple(value * exact for value in self._values), self._shape)
+        return type(self)(self._values * _scalar(scalar))
 
     def __rmul__(self, scalar: object) -> "SymbolicKernel":
         return self * scalar
 
-    def __truediv__(self, scalar: object) -> "SymbolicKernel":
-        exact = _as_fraction(scalar)
-        if exact == 0:
-            raise ZeroDivisionError("cannot divide a symbolic kernel by zero")
-        return type(self)(tuple(value / exact for value in self._values), self._shape)
-
     def __eq__(self, other: object) -> bool | NotImplementedType:
         if not isinstance(other, SymbolicKernel):
             return NotImplemented
-        return self.shape == other.shape and self._values == other._values
+        return self.shape == other.shape and bool(np.all(self._values == other._values))
 
     def __hash__(self) -> int:
         return self._hash
 
     def __repr__(self) -> str:
-        return f"SymbolicKernel(shape={self.shape}, values={self._values!r})"
+        return f"SymbolicKernel(shape={self.shape}, values={self._values.tolist()!r})"

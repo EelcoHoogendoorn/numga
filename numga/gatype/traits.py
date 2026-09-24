@@ -325,7 +325,7 @@ class ProductRelation(Trait):
 
 
 class VersorProduct(Trait):
-    """The output is a versor when every referenced input is a versor."""
+    """The output is a versor, a product of vectors, when every referenced input is one."""
 
     __slots__ = ()
 
@@ -374,6 +374,9 @@ class VersorProduct(Trait):
         return f"VersorProduct(slots={self.slots!r})"
 
 
+# A product of vectors, possibly null and so possibly without inverse. Its sandwich preserves the
+# passenger's grades, and its reverse product is a scalar; invertibility is a separate fact,
+# ReverseProductNonzero.
 Versor = Trait("Versor", valid_arities=(0,))
 ReverseProductScalar = ProductFact(ReverseProduct, ProductResult.SCALAR)
 ReverseProductZero = ProductFact(ReverseProduct, ProductResult.ZERO)
@@ -399,7 +402,7 @@ _BUILTIN_TRAITS = {
 }
 
 _DIRECT_IMPLICATIONS = {
-    Versor: (ReverseProductNonzero,),
+    Versor: (ReverseProductScalar,),
 }
 
 
@@ -555,6 +558,9 @@ def structurally_implied_traits(subspaces: Iterable[SubSpace]) -> TraitSet:
         # or unit coefficients.
         # Pairwise cancellation also captures vectors and small even carriers.
         facts: list[Trait] = []
+        # A scalar or a vector is a product of (at most one) vector.
+        if {axes[0].algebra.grade(mask) for mask in axes[0].masks} in ({0}, {1}):
+            facts.append(Versor)
         for family in (ReverseProduct, CliffordConjugateProduct):
             support = symmetric_product_support(axes[0], family.transform)
             if support <= {0}:

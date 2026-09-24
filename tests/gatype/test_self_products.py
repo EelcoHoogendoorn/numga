@@ -167,7 +167,7 @@ def test_composition_and_binding_carry_both_registered_product_families():
     assert result.gatype.entails(ReverseProductOne)
     assert result.gatype.entails(CliffordConjugateProductNonzero)
     assert not result.gatype.entails(CliffordConjugateProductOne)
-    np.testing.assert_array_equal(result.kernel.to_object_array(), [0, 1, 0, 0])
+    np.testing.assert_array_equal(result.kernel.values, [0, 1, 0, 0])
 
 
 def test_user_family_can_dispatch_without_inventing_a_product_law():
@@ -203,7 +203,7 @@ def test_grade_involution_has_no_anti_automorphism_multiplicativity_rule():
     # The product is even, so involute(product) = product. Its self-product
     # has a bivector part: neither scalar nor one is a sound inferred fact.
     np.testing.assert_array_equal(
-        (product * product).kernel.to_object_array(),
+        (product * product).kernel.values,
         [Fraction(17, 8), 0, 0, Fraction(15, 8)],
     )
     assert not product.gatype.entails(
@@ -229,4 +229,4 @@ def test_zero_factor_keeps_a_separate_scalar_guard_for_each_family():
 
     assert result.gatype.entails(CliffordConjugateProductZero)
     assert not result.gatype.entails(ReverseProductScalar)
-    np.testing.assert_array_equal(result.kernel.to_object_array(), [0, 0, 0, 0])
+    np.testing.assert_array_equal(result.kernel.values, [0, 0, 0, 0])

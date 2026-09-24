@@ -41,6 +41,25 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         "even",
         "multivector",
         "even_grade",
+        "odd",
+        "odd_grade",
+        "quadvector",
+        "antitrivector",
+        "antiquadvector",
+        "scalar_pseudoscalar",
+        "nonscalar",
+        "self_reverse",
+        "mod4",
+        "k_reflection",
+        "reflection",
+        "bireflection",
+        "trireflection",
+        "quadreflection",
+        "degenerate",
+        "nondegenerate",
+        "scalar_degenerate",
+        "translator",
+        "blade",
     )
 
     def __init__(self, algebra: Algebra, default: str | None = None) -> None:
@@ -153,6 +172,77 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         )
 
     @lru_cache(maxsize=None)
+    def odd(self) -> SubSpace:
+        return self.from_grades(range(1, self.algebra.dimension + 1, 2))
+
+    def quadvector(self) -> SubSpace:
+        return self.k_vector(4)
+
+    def antitrivector(self) -> SubSpace:
+        return self.k_vector(self.algebra.dimension - 3)
+
+    def antiquadvector(self) -> SubSpace:
+        return self.k_vector(self.algebra.dimension - 4)
+
+    def scalar_pseudoscalar(self) -> SubSpace:
+        return self.from_grades((0, self.algebra.dimension))
+
+    def nonscalar(self) -> SubSpace:
+        return self.from_grades(range(1, self.algebra.dimension + 1))
+
+    @lru_cache(maxsize=None)
+    def self_reverse(self) -> SubSpace:
+        """The grades a reverse leaves unchanged: 0, 1, 4, 5, 8, ..."""
+        return self.from_grades(k for k in range(self.algebra.dimension + 1) if k // 2 % 2 == 0)
+
+    @lru_cache(maxsize=None)
+    def mod4(self) -> SubSpace:
+        """Grades 0, 4, 8, ...: where a motor times its reverse lands."""
+        return self.from_grades(range(0, self.algebra.dimension + 1, 4))
+
+    @lru_cache(maxsize=None)
+    def k_reflection(self, k: int) -> SubSpace:
+        """Where a product of k vectors lives: grades k, k - 2, ... down to 0 or 1."""
+        return self.from_grades(range(k % 2, min(k, self.algebra.dimension) + 1, 2))
+
+    def reflection(self) -> SubSpace:
+        return self.k_reflection(1)
+
+    def bireflection(self) -> SubSpace:
+        return self.k_reflection(2)
+
+    def trireflection(self) -> SubSpace:
+        return self.k_reflection(3)
+
+    def quadreflection(self) -> SubSpace:
+        return self.k_reflection(4)
+
+    @lru_cache(maxsize=None)
+    def degenerate(self) -> SubSpace:
+        """Every blade containing a null generator."""
+        return self.full().degenerate()
+
+    @lru_cache(maxsize=None)
+    def nondegenerate(self) -> SubSpace:
+        """Every blade free of null generators."""
+        return self.full().nondegenerate()
+
+    def scalar_degenerate(self) -> SubSpace:
+        return self.scalar().union(self.degenerate())
+
+    @lru_cache(maxsize=None)
+    def translator(self) -> SubSpace:
+        """The scalar and the bivectors containing a null generator: where translators live."""
+        return self.bireflection().difference(self.bivector().nondegenerate())
+
+    def blade(self, mask: int) -> SubSpace:
+        return self.from_masks((mask,))
+
+    # Other names for the even and odd subspaces.
+    odd_grade = odd
+    motor = even
+
+    @lru_cache(maxsize=None)
     def named(self) -> tuple[tuple[str, SubSpace], ...]:
         """The named subspaces of this algebra, in order of precedence where two coincide."""
         n = self.algebra.dimension
@@ -161,11 +251,10 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
         return (
             (("empty", self.empty()),)
             + tuple((name, self.k_vector(k)) for name, k in grades if 0 <= k <= n)
-            + (("even", self.even()), ("full", self.full()))
+            + (("even", self.even()), ("odd", self.odd()), ("full", self.full()))
         )
 
-    # Descriptive aliases retained on the new surface; they do not introduce a
-    # second construction path.
+    # Descriptive aliases; they do not introduce a second construction path.
     multivector = full
     even_grade = even
 

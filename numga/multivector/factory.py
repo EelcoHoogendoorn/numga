@@ -28,7 +28,11 @@ class MultivectorFactory:
 
     Named constructors obtain the complete type from ``algebra.gatype``.  This
     is important for semantic constructors: ``even`` creates a plain even
-    value, while ``rotor`` retains the certified rotor traits.
+    value, while ``rotor`` (and its alias ``motor``) retains the certified rotor
+    traits. Those traits are trusted, not checked: ``mv.rotor(values)`` asserts
+    that the values are a unit versor, and methods such as ``inverse`` act on that
+    assertion. Values of unknown provenance enter as ``mv.even(values)`` and are
+    certified by ``.normalized()``.
     """
 
     __slots__ = ("_context", "__dict__")
@@ -49,6 +53,14 @@ class MultivectorFactory:
     @property
     def dtype(self) -> np.dtype:
         return self.context.dtype
+
+    def blade(self, mask: int) -> Extensor:
+        """The unit basis blade with this generator mask."""
+        return self(self.algebra.subspace.blade(mask), [1.0])
+
+    def basis(self) -> Extensor:
+        """The unit basis vectors, as a batch along the first axis: x, y, z = mv.basis()."""
+        return self.vector(np.eye(len(self.algebra.subspace.vector())))
 
     def __call__(
         self,

@@ -1,7 +1,8 @@
-"""Original quadratic/bisection exp and log, with whole-GAType dispatch.
+"""Exp and log by scaling and squaring, with whole-GAType dispatch.
 
-The fixed bisection count is caller-controlled. These are the original
-real-branch formulas, not an unscaled logarithm series around identity.
+exp takes a quadratic step of the generator scaled down by 2**(n + 1) and squares it n times;
+log takes n + 1 square roots and inverts the quadratic step. n is the caller's. These are
+real-branch formulas, not a logarithm series around the identity.
 """
 
 from __future__ import annotations
@@ -92,7 +93,7 @@ def scalar_log(s: Extensor) -> Extensor:
     and t.squared.is_empty
 )
 def nilpotent_bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
-    """The original translator shortcut: exp(B) = 1+B when B²=0."""
+    """exp(B) = 1 + B when B**2 = 0, as for a translation."""
 
     return (b + 1).with_traits(ReverseProductOne, Versor)
 
@@ -120,11 +121,11 @@ def translator_log(m: Extensor, *, n: int = 15) -> Extensor:
 
 @Extensor.log.register(lambda t: t <= t.algebra.gatype.rotor())
 def unit_versor_log(m: Extensor, *, n: int = 15) -> Extensor:
-    """Original motor log: halve first, then apply the quadratic inverse.
+    """Unit motor log: halve by square roots first, then apply the quadratic inverse.
 
-    Each square-root step normalizes m+1 as part of that root's formula;
-    it does not defensively normalize the supplied motor. The original
-    scalar/Study root domain applies; exactly -1 needs a separate branch.
+    Each square-root step normalizes m + 1 as part of that root's formula; the supplied motor
+    is not normalized. The domain is that of the scalar and Study roots: exactly -1 would need
+    a separate branch.
     """
 
     for _ in range(n + 1):

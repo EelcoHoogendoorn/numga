@@ -36,7 +36,7 @@ def test_exact_context_exposes_the_same_nullary_construction_namespace():
 
     assert vector.context is algebra.exact
     assert vector.gatype is algebra.gatype.vector()
-    assert vector.kernel.to_object_array().tolist() == [1, 2]
+    assert vector.kernel.values.tolist() == [1, 2]
 
 
 def test_named_constructors_distinguish_plain_support_from_semantic_type():

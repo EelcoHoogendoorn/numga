@@ -52,7 +52,7 @@ def test_empty_exp_log_have_separate_overloads_and_preserve_batch_shape():
     np.testing.assert_array_equal(logarithm.kernel, np.full((2, 3, 1), -np.inf))
     exact_unit = algebra.exact.multivector.empty().exp()
     assert exact_unit.context is algebra.exact
-    assert exact_unit.kernel.to_object_array().tolist() == [1]
+    assert exact_unit.kernel.values.tolist() == [1]
 
 
 def test_scalar_exp_log_are_batched():
@@ -87,7 +87,7 @@ def test_unit_and_nonunit_versor_logs_dispatch_separately_without_widening(monke
     unit = generator.exp()
     scaled = (2 * unit).with_traits(Versor)
 
-    assert Extensor.log._dispatch.resolve(unit.gatype) is logexp.unit_versor_log
+    assert Extensor.log._dispatch.resolve(unit.gatype) is unit_versor_log
     assert Extensor.log._dispatch.resolve(scaled.gatype) is logexp.versor_log
     forbid_input_normalization(monkeypatch, unit, measured_inputs=(scaled,))
 

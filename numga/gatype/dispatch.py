@@ -98,6 +98,13 @@ class GATypeDispatch:
     def predicates(self) -> tuple[Callable[..., object], ...]:
         return tuple(entry.predicate for entry in self._predicates)
 
+    def position_of(self, implementation: Callable[..., Any]) -> int:
+        """Where a predicate-registered implementation sits in the order predicates are tried."""
+        return next(
+            index for index, entry in enumerate(self._predicates)
+            if entry.implementation is implementation
+        )
+
     @property
     def resolution_cache_size(self) -> int:
         return len(self._cache)

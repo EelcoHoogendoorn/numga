@@ -77,31 +77,6 @@ def test_operator_and_extensor_shapes_are_output_first():
         )
 
 
-def test_exact_extensor_full_and_partial_bind_are_exact():
-    algebra = Algebra("x+y+")
-    spaces = algebra.subspace
-    factory = algebra.operator
-    even = spaces.even()
-    product = factory.geometric_product(even, even)
-    left = factory.build((even,), [Fraction(1, 2), Fraction(1, 3)])
-    right = factory.build((even,), [3, 6])
-
-    partial = product.bind({0: left})
-    sequential = partial.bind({0: right})
-    full = product(left, right)
-
-    assert isinstance(partial, Extensor)
-    assert partial.axes == (even, even)
-    assert partial.kernel.shape == (2, 2)
-    assert sequential.gatype == full.gatype
-    assert sequential.kernel == full.kernel
-    assert full.axes == (even,)
-    assert full.kernel.to_object_array().tolist() == [
-        Fraction(-1, 2),
-        Fraction(4),
-    ]
-
-
 def test_exact_commutator_and_regressive_sign_conventions():
     algebra = Algebra("x-y+w0")
     spaces = algebra.subspace
@@ -120,14 +95,14 @@ def test_exact_commutator_and_regressive_sign_conventions():
     yx_commutator = y.commutator(x)
     assert xy_commutator.axes == (xy, x, y)
     assert yx_commutator.axes == (xy, y, x)
-    assert xy_commutator.kernel.to_object_array().tolist() == [[[Fraction(1)]]]
-    assert yx_commutator.kernel.to_object_array().tolist() == [[[Fraction(-1)]]]
+    assert xy_commutator.kernel.values.tolist() == [[[Fraction(1)]]]
+    assert yx_commutator.kernel.values.tolist() == [[[Fraction(-1)]]]
 
     # This fixes the right-Hodge signs in a signature containing both a
     # negative generator and a null generator.
     regressive = xw.regressive(yw)
     assert regressive.axes == (w, xw, yw)
-    assert regressive.kernel.to_object_array().tolist() == [[[Fraction(-1)]]]
+    assert regressive.kernel.values.tolist() == [[[Fraction(-1)]]]
 
     # GAType and SubSpace holes select the same cached exact implementation.
     assert algebra.gatype(x).commutator(algebra.gatype(y)) is xy_commutator

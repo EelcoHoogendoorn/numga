@@ -37,6 +37,11 @@ class ExtensionMethod:
         self._dispatch: GATypeDispatch | None = None
         self._overloads = {count: ExtensionMethod(name) for count in operand_counts}
 
+    def position_of(self, implementation: Callable[..., Any]) -> int:
+        """Where a predicate-registered implementation sits; register(..., position=...) before it
+        to take precedence over it and nothing else."""
+        return self._dispatch.position_of(implementation)
+
     def overload(self, operand_count: int) -> ExtensionMethod:
         """The independently registered dispatcher for a positional overload."""
         return self._overloads[operand_count]

@@ -270,7 +270,7 @@ def test_normalized_vectors_get_unit_inverse_without_rotor_construction():
     # Every vector has a scalar reverse product; its support proves no value.
     assert vectors.gatype.entails(ReverseProductScalar)
     assert not vectors.gatype.entails(ReverseProductNonzero)
-    assert not vectors.gatype.entails(Versor)
+    assert not vectors.gatype.entails(ReverseProductOne)
 
     unit = vectors.normalized()
     inverse = unit.inverse()

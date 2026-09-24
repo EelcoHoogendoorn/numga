@@ -83,6 +83,6 @@ def test_warm_sparse_execution_does_not_rescan_or_materialize_the_kernel(monkeyp
     def fail(*args, **kwargs):
         raise AssertionError("a warm sparse call inspected the exact kernel again")
 
-    monkeypatch.setattr(SymbolicKernel, "to_object_array", fail)
+    monkeypatch.setattr(SymbolicKernel, "values", property(fail))
     monkeypatch.setattr(SymbolicKernel, "materialize", fail)
     np.testing.assert_allclose(product(points, points).kernel, expected.kernel)

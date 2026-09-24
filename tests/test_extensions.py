@@ -34,7 +34,7 @@ def test_one_inverse_extension_dispatches_nullary_and_unary_extensors():
     exact_inverse = exact_rotation.inverse()
     assert exact_inverse.context is algebra.exact
     assert exact_inverse.gatype is rotation_type
-    assert exact_inverse.kernel.to_object_array().tolist() == [
+    assert exact_inverse.kernel.values.tolist() == [
         [0, 1],
         [-1, 0],
     ]
@@ -281,7 +281,7 @@ def test_trace_extension_square_maps_and_scalars():
     exact_op = algebra.exact.extensor(I_v.gatype, np.eye(3, dtype=int))
     tr_exact = exact_op.trace()
     assert tr_exact.context is algebra.exact
-    assert tr_exact.kernel.to_object_array().tolist() == [Fraction(3, 1)]
+    assert tr_exact.kernel.values.tolist() == [Fraction(3, 1)]
 
     # 4. Permuted blade layout (realigned via AxisTransform)
     V_rev = algebra.subspace.from_blades(["z", "y", "x"])

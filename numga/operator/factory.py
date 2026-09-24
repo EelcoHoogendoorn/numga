@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from fractions import Fraction
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Iterable
 
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
 
 
 GradeRule = Callable[[int, int, int], bool]
-BasisRule = Callable[[int, int], tuple[int, int | Fraction]]
+BasisRule = Callable[[int, int], tuple[int, int]]
 OperandType = SubSpace | GAType
 
 
@@ -61,7 +60,7 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def _grade_transform(self, space: SubSpace, transform: str) -> Extensor:
-        coefficients = np.zeros((len(space), len(space)), dtype=object)
+        coefficients = np.zeros((len(space), len(space)), dtype=np.int8)
         for index, mask in enumerate(space.masks):
             coefficients[index, index] = grade_transform_sign(self.algebra, transform, mask)
         return self.build((space, space), coefficients)
@@ -95,18 +94,19 @@ class OperatorFactory:
             else gatype._self_product(transform).output_subspace
         )
         indices = {mask: index for index, mask in enumerate(output.masks)}
-        coefficients = np.zeros((len(output), len(space), len(space)), dtype=object)
+        # A cross term splits evenly over its two symmetric entries: doubled here, halved exactly
+        # below, since the two orders of a basis product are equal or opposite.
+        coefficients = np.zeros((len(output), len(space), len(space)), dtype=np.int8)
         for mask, left, right, coefficient in symmetric_product_terms(space, transform):
             if mask not in indices:
                 continue
             coefficient *= space.signs[left] * space.signs[right] * output.signs[indices[mask]]
             if left == right:
-                coefficients[indices[mask], left, right] = coefficient
+                coefficients[indices[mask], left, right] = 2 * coefficient
             else:
-                half = Fraction(coefficient, 2)
-                coefficients[indices[mask], left, right] = half
-                coefficients[indices[mask], right, left] = half
-        return self.build((output, space, space), coefficients)
+                coefficients[indices[mask], left, right] = coefficient
+                coefficients[indices[mask], right, left] = coefficient
+        return self.build((output, space, space), SymbolicKernel(coefficients).halved())
 
     def squared(self, operand: OperandType) -> Extensor:
         return self._symmetric_product(self._operand_gatype(operand), "identity")
@@ -195,6 +195,82 @@ class OperatorFactory:
             lambda l, r, output: output == abs(np.subtract(l, r, dtype=np.int16)),
         )
 
+    def left_contraction(self, left: OperandType, right: OperandType) -> Extensor:
+        """The left contraction: the grade s - r part of the product of grades r and s."""
+        return self._left_contraction(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _left_contraction(self, left: GAType, right: GAType) -> Extensor:
+        return self._product(
+            "left_contraction", left, right,
+            lambda l, r, output: output == np.subtract(r, l, dtype=np.int16),
+        )
+
+    def right_contraction(self, left: OperandType, right: OperandType) -> Extensor:
+        """The right contraction: the grade r - s part of the product of grades r and s."""
+        return self._right_contraction(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _right_contraction(self, left: GAType, right: GAType) -> Extensor:
+        return self._product(
+            "right_contraction", left, right,
+            lambda l, r, output: output == np.subtract(l, r, dtype=np.int16),
+        )
+
+    def left_interior(self, left: OperandType, right: OperandType) -> Extensor:
+        """The left interior product: the anti-wedge of the left complement of left with right."""
+        return self._left_interior(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _left_interior(self, left: GAType, right: GAType) -> Extensor:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
+            complement, sign = self._left_complement(left_mask)
+            output, coefficient = self._anti_wedge_rule(complement, right_mask)
+            return output, sign * coefficient
+
+        return self._bilinear("left_interior", left, right, basis_rule)
+
+    def right_interior(self, left: OperandType, right: OperandType) -> Extensor:
+        """The right interior product: the anti-wedge of left with the right complement of right."""
+        return self._right_interior(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _right_interior(self, left: GAType, right: GAType) -> Extensor:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
+            complement, sign = self._right_complement(right_mask)
+            output, coefficient = self._anti_wedge_rule(left_mask, complement)
+            return output, sign * coefficient
+
+        return self._bilinear("right_interior", left, right, basis_rule)
+
+    def _swap_sign(self, left_mask: int, right_mask: int) -> int:
+        """The sign of reordering the generators of left_mask * right_mask, ignoring the metric."""
+        swaps = sum((left_mask >> (bit + 1)).bit_count() for bit in range(right_mask.bit_length()) if right_mask >> bit & 1)
+        return -1 if swaps % 2 else 1
+
+    def _negative_sign(self, mask: int) -> int:
+        return -1 if (mask & self.algebra.negative_mask).bit_count() % 2 else 1
+
+    def _right_complement(self, mask: int) -> tuple[int, int]:
+        """The right complement, mask * I with the metric's negative signs: the blade that follows mask."""
+        pseudoscalar = self.algebra.pseudoscalar_mask
+        return mask ^ pseudoscalar, self._swap_sign(mask, pseudoscalar) * self._negative_sign(mask)
+
+    def _left_complement(self, mask: int) -> tuple[int, int]:
+        """The left complement, I * mask with the metric's negative signs: the blade that precedes mask."""
+        pseudoscalar = self.algebra.pseudoscalar_mask
+        return mask ^ pseudoscalar, self._swap_sign(pseudoscalar, mask) * self._negative_sign(mask)
+
+    def _anti_wedge_rule(self, left_mask: int, right_mask: int) -> tuple[int, int]:
+        """The anti-wedge of two basis blades: the left complement of the wedge of right complements."""
+        left_complement, left_sign = self._right_complement(left_mask)
+        right_complement, right_sign = self._right_complement(right_mask)
+        if left_complement & right_complement:
+            return 0, 0
+        wedge = left_complement | right_complement
+        output, output_sign = self._left_complement(wedge)
+        return output, left_sign * right_sign * self._swap_sign(left_complement, right_complement) * output_sign
+
     @lru_cache(maxsize=None)
     def _grade_product(self, left: GAType, right: GAType, grade: int) -> Extensor:
         """Construct only the requested output grade, retaining sparse support."""
@@ -233,15 +309,13 @@ class OperatorFactory:
 
     @lru_cache(maxsize=None)
     def _commutator(self, left: GAType, right: GAType) -> Extensor:
-        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, Fraction]:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
             forward = self.algebra.geometric_product(left_mask, right_mask)
             reverse = self.algebra.geometric_product(right_mask, left_mask)
             if forward.blade != reverse.blade:
                 raise AssertionError("basis products must have the same XOR blade")
-            return forward.blade, Fraction(
-                forward.coefficient - reverse.coefficient,
-                2,
-            )
+            # Basis blades commute or anticommute: the half difference is 0 or the product itself.
+            return forward.blade, (forward.coefficient - reverse.coefficient) // 2
 
         return self._bilinear("commutator", left, right, basis_rule)
 
@@ -280,7 +354,7 @@ class OperatorFactory:
         if not vector.same_support(self.subspaces.vector()):
             raise ValueError("cross requires the algebra's full vector SubSpace")
 
-        coefficients = np.zeros((3, 3, 3), dtype=object)
+        coefficients = np.zeros((3, 3, 3), dtype=np.int8)
         for output in range(3):
             for left in range(3):
                 for right in range(3):
@@ -332,8 +406,10 @@ class OperatorFactory:
             passenger.output_subspace,
             output,
         )
-        kernel = result.kernel.to_object_array()
-        kernel = (kernel + kernel.swapaxes(1, 3)) * Fraction(1, 2)
+        kernel = result.kernel
+        # The two sandwicher slots hold the same versor: symmetrize them. For basis blades the two
+        # orders are equal or opposite, so the average is exact.
+        kernel = (kernel + kernel.transpose((0, 3, 2, 1))).halved()
         result = self.build(result.axes, kernel).squeeze_output()
         if output is not None:
             # A requested projection is not an unrestricted sandwich action.
@@ -411,7 +487,7 @@ class OperatorFactory:
         r_signs = np.asarray(right.signs, dtype=np.int8)
 
         signed_coeffs = coeffs * l_signs[:, None] * r_signs[None, :]
-        coefficients = np.zeros((len(output), len(left), len(right)), dtype=object)
+        coefficients = np.zeros((len(output), len(left), len(right)), dtype=np.int8)
         for k, mask in enumerate(output.masks):
             match = valid & (table.blades == mask)
             coefficients[k, match] = signed_coeffs[match] * output_signs[k]
@@ -437,7 +513,7 @@ class OperatorFactory:
         self._require_space(left)
         self._require_space(right)
 
-        terms: list[tuple[int, int, int, int | Fraction]] = []
+        terms: list[tuple[int, int, int, int]] = []
         output_masks: set[int] = set()
         for left_index, left_mask in enumerate(left.masks):
             for right_index, right_mask in enumerate(right.masks):
@@ -450,7 +526,7 @@ class OperatorFactory:
 
         output = self.subspaces.from_masks(output_masks)
         output_index = {mask: index for index, mask in enumerate(output.masks)}
-        coefficients = np.zeros((len(output), len(left), len(right)), dtype=object)
+        coefficients = np.zeros((len(output), len(left), len(right)), dtype=np.int8)
         for output_mask, left_index, right_index, coefficient in terms:
             coefficients[
                 output_index[output_mask], left_index, right_index
@@ -481,7 +557,7 @@ class OperatorFactory:
         terms = tuple(rule(mask) for mask in space.masks)
         output = self.subspaces.from_masks(mask for mask, _ in terms)
         indices = {mask: index for index, mask in enumerate(output.masks)}
-        coefficients = np.zeros((len(output), len(space)), dtype=object)
+        coefficients = np.zeros((len(output), len(space)), dtype=np.int8)
         for column, (mask, sign) in enumerate(terms):
             row = indices[mask]
             coefficients[row, column] = sign * space.signs[column] * output.signs[row]

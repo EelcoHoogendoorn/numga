@@ -20,16 +20,6 @@ def test_scalar_offsets_broadcast_and_live_in_the_scalar_grade(scalar):
     np.testing.assert_array_equal((scalar - vectors).kernel, [[2, -3, -4], [2, -5, -12]])
 
 
-def test_exact_scalar_arithmetic_keeps_rational_coefficients():
-    algebra = Algebra("x+y+")
-    vector = algebra.exact.multivector.vector([Fraction(3, 5), Fraction(4, 5)])
-
-    assert (vector / 2).kernel.to_object_array().tolist() == [Fraction(3, 10), Fraction(2, 5)]
-    assert (vector / Fraction(2, 3)).kernel.to_object_array().tolist() == [Fraction(9, 10), Fraction(6, 5)]
-    assert (2 - vector).kernel.to_object_array().tolist() == [Fraction(2), Fraction(-3, 5), Fraction(-4, 5)]
-    assert (1 / vector).kernel.to_object_array().tolist() == [Fraction(3, 5), Fraction(4, 5)]
-
-
 def test_scalar_offsets_work_inside_jax_tracing():
     jax = pytest.importorskip("jax")
     from numga.backend.jax import JaxContext

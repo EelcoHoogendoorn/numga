@@ -18,7 +18,6 @@ dist/
 !/plots/cyclides_linked_vortex.gif
 !/plots/multiview_convergence.gif
 !/plots/spherical_quadric_physics.gif
-examples/plots/
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

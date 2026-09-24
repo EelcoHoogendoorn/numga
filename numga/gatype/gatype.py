@@ -19,6 +19,7 @@ from .traits import (
     Trait,
     TraitSet,
     Versor,
+    _trait_closure,
     normalize_explicit_traits,
     structurally_implied_traits,
     validate_traits_for_subspaces,
@@ -261,7 +262,8 @@ class GAType:
         if self.arity:
             return EMPTY_TRAITS
         traits: list[Trait] = [Versor] if self.entails(Versor) else []
-        for fact in self.effective_traits:
+        # Implied facts count too: a Versor's reverse product is a scalar, and inverting makes it nonzero.
+        for fact in _trait_closure(self.effective_traits.traits):
             if (
                 isinstance(fact, ProductFact)
                 and fact.self_product.product == "geometric_product"

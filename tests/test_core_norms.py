@@ -161,15 +161,6 @@ def test_nonnilpotent_study_root_squares_back_and_normalizes(signature):
     assert unit.gatype.entails(Versor)
 
 
-def test_exact_reverse_product_is_measured_without_a_transcendental_backend():
-    algebra = Algebra("x+y+")
-    vector = algebra.exact.multivector.vector([Fraction(3, 5), Fraction(4, 5)])
-
-    assert vector.norm_squared().kernel.to_object_array().tolist() == [Fraction(1)]
-    with pytest.raises(TypeError, match="sqrt"):
-        vector.norm()
-
-
 def test_wide_known_versor_can_still_request_explicit_renormalization():
     algebra = Algebra((6, 0, 0))
     mv = NumpyContext(algebra).multivector

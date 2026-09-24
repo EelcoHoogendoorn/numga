@@ -1,4 +1,4 @@
-"""Study and reverse-product norms, using the original root formulas.
+"""Study and reverse-product norms, through the Study square root formulas.
 
 Explicit measurements and normalization always recompute their coefficients,
 including when the input carries a unit-product assertion.

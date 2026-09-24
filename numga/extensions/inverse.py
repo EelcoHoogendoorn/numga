@@ -1,4 +1,4 @@
-"""The original recursive inverse formulas, selected by GAType facts.
+"""Recursive inverse formulas, selected by GAType facts.
 
 Self-products reduce to scalars in at most three steps below six dimensions.
 Traits can establish shorter paths on wider carriers. All inverses require
@@ -7,7 +7,6 @@ invertible input; the general matrix fallback is numerical only.
 
 from __future__ import annotations
 
-from fractions import Fraction
 
 from numga.extensor import Extensor
 from numga.gatype import (
@@ -54,7 +53,7 @@ def inverse_scalar(value: Extensor) -> Extensor:
 
 
 def register_reductions(steps: int) -> None:
-    """Prefer shorter reductions, then the original transform order."""
+    """Prefer shorter reductions, then the order in which the transforms are listed."""
 
     @Extensor.inverse.register(
         lambda t: t.squared.reduces_to_scalar(steps - 1)
@@ -146,7 +145,7 @@ def inverse_shirokov(value: Extensor) -> Extensor:
     power = value
     adjugate = value.context.multivector.scalar()
     for k in range(1, order):
-        adjugate = power - power.select[0] * Fraction(order, k)
+        adjugate = power - power.select[0] * (order / k)
         power = value * adjugate
     return adjugate / power.select[0]
 

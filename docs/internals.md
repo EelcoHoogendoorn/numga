@@ -51,9 +51,9 @@ sandwich = Rotor >> Vector
 # the two rotor slots are distinct inputs; only supplying the same value to both makes a rotation
 assert sandwich.arity == 3
 assert sandwich.axes == (V, Q, V, Q)
-# the kernel is exact: a table of rational numbers, output axis first
+# the kernel is exact: a table of integers, output axis first
 assert sandwich.kernel.shape == (2, 2, 2, 2)
-print(sandwich.kernel.to_object_array().astype(int))
+print(sandwich.kernel.values)
 [[[[ 1  0]
    [ 0  1]]
   [[ 0 -1]
@@ -202,7 +202,7 @@ Every extensor has a `context`, and the context decides where the coefficients l
 contraction does:
 
 ```python
-ga.exact                                    # ExactContext: rational coefficients, no batch axes
+ga.exact                                    # ExactContext: integer coefficients, no batch axes
 NumpyContext(ga, dtype=np.float64)          # arrays
 JaxContext(ga, dtype=np.float32)            # arrays that can be traced
 ```
@@ -210,9 +210,10 @@ JaxContext(ga, dtype=np.float32)            # arrays that can be traced
 The exact context is owned by the algebra. Every operation table, the geometric product of
 two types, the wedge, the reverse, the dual, the casts between layouts, is an extensor in it,
 built once per combination of types from the algebra's blade product table and cached on
-`ga.operator`. A `SymbolicKernel` is a tuple of Python fractions with a shape; it rejects
-floats, so an exact kernel stays exact through any number of compositions, which is how the
-sandwich of section 2 was assembled.
+`ga.operator`. A `SymbolicKernel` is an int8 array: the coefficient of a product of basis
+blades is always -1, 0 or +1, and composing products, as the sandwich of section 2 does,
+keeps them integer. Scaling an exact expression by a float follows NumPy and makes its kernel
+floating.
 
 An expression with a bare type in it is built in the exact context. The first array-valued
 operand promotes the whole expression to that operand's context: the exact table is
@@ -254,7 +255,9 @@ again a certified rotor, and one certified rotor in both slots of the sandwich y
 invert. Supplying the same object to two slots is recorded as an equality group; two rotors
 that merely happen to be equal are not identified. Traits on a constructed value, as in
 `mv.rotor(...)`, are trusted assertions, and construction never tests coefficients against
-them.
+them. Methods then act on the trait, not on the numbers: `mv.rotor(values).inverse()` is the
+reverse whatever the values are. Coefficients of unknown provenance enter as their plain type,
+`mv.even(values)`, and earn the trait by a method that establishes it, `mv.even(values).normalized()`.
 
 ## 6. Storage, sparsity and performance
 

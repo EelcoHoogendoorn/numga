@@ -117,6 +117,8 @@ ray_to_target = join_map(Point, target)              # Line <- Point
 Lifting is binding an extensor of arity $> 0$ into an open argument slot. Instead of eliminating the slot, numga contracts the intermediate GAType and inherits the argument's input axes:
 $$M(T) : C \leftarrow A \quad \text{where } M : C \leftarrow B \text{ and } T : B \leftarrow A$$
 
+This is the usual convention for composing linear maps: in matrix terms, $C = AB$ feeds the output of $B$ into the input of $A$, and `M(T)` feeds the output of `T` into the input of `M` in the same way.
+
 ```python
 # 1. Chaining & Pipeline Lifting:
 # 'medium' expects a Bivector input; 'field' is an extensor (Bivector <- Spatial)

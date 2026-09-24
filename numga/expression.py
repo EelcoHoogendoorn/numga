@@ -71,6 +71,38 @@ def commutator(
     return _binary_expression("commutator", left, right)
 
 
+def left_contraction(
+    left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate the left contraction, the grade s - r part of the product."""
+
+    return _binary_expression("left_contraction", left, right)
+
+
+def right_contraction(
+    left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate the right contraction, the grade r - s part of the product."""
+
+    return _binary_expression("right_contraction", left, right)
+
+
+def left_interior(
+    left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate the left interior product: the left complement of left, anti-wedged with right."""
+
+    return _binary_expression("left_interior", left, right)
+
+
+def right_interior(
+    left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate the right interior product: left, anti-wedged with the right complement of right."""
+
+    return _binary_expression("right_interior", left, right)
+
+
 def regressive(
     left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
 ) -> Extensor:

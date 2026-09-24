@@ -14,7 +14,7 @@ def test_cl2_even_geometric_product_is_complex_multiplication():
     product = factory.geometric_product(even, even)
 
     assert product.axes == (even, even, even)
-    assert product.kernel.to_object_array().tolist() == [
+    assert product.kernel.values.tolist() == [
         [[1, 0], [0, -1]],
         [[0, 1], [1, 0]],
     ]

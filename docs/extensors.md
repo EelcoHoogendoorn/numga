@@ -98,7 +98,7 @@ cones = on_lines(sensor_discs(projection))                             # [n_pts,
 splats = (poses >> cones(poses << Point)).sum(axis=-1)                 # [n_pts] Plane <- Point
 points = (splats + w * (w & Point)).solve(w).normalized()              # [n_pts] Point
 
-# Newton on the cone value: a local point's motion under a camera twist, joined with its own polar:
+# Gauss-Newton on the cone value: a local point's motion under a camera twist, joined with its own polar:
 motion = -Twist.commutator(poses << points[:, None])                   # [n_pts, n_cams] Point <- Twist
 curvature, gradient = (cones(motion) & motion).sum(axis=0), (cones(poses << points[:, None]) & motion).sum(axis=0)
 step = curvature.solve(-gradient)                                      # [n_cams] Twist
@@ -107,7 +107,7 @@ step = curvature.solve(-gradient)                                      # [n_cams
 #### Key Takeaways
 * **Lifting Precision into Sight Cones**: A pixel's precision disc is a polarity map on sensor points. The map on lines induced by the camera, solved from the incidence pairing, carries its polar lines back through the singular projection into a perspective cone whose uncertainty widens with depth. No transpose is written.
 * **Additive Fusion & Closed-Form Triangulation**: Multi-view constraints combine by direct addition (`world_cones.sum(axis=-1)`). A fused cone's polar of its vertex vanishes; a gauge dyad on the weight makes that vertex the pole of the line at infinity, `splats.solve(w)`, without ray-intersection heuristics.
-* **Newton on the Quadric**: The motion of a local point under an open twist (`-Twist.commutator(...)`), joined with its own polar, is the curvature over poses; joined with the point's polar it is the gradient. The cone is the cost, so no residual metric is chosen, and the curvature form is the information on the pose.
+* **Gauss-Newton on the Quadric**: The motion of a local point under an open twist (`-Twist.commutator(...)`), joined with its own polar, is the curvature over poses; joined with the point's polar it is the gradient. The cone is the cost, so no residual metric is chosen, and the curvature form is the information on the pose.
 
 ---
 

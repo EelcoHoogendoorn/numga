@@ -1,7 +1,7 @@
 """Scenes for multi-camera reconstruction and camera alignment in PGA2D.
 
 A convergent rig of planar cameras views six landmarks. `bundle_adjustment` returns the
-aligned rig for a figure; the convergence scenarios yield one state per Newton step for an
+aligned rig for a figure; the convergence scenarios yield one state per Gauss-Newton step for an
 animation. All of them return geometry for `render`.
 """
 
@@ -55,7 +55,7 @@ def cone_cost(motors: Motor, points: Point, local_cones: Quadric) -> core.Scalar
 
 
 def bundle_adjustment():
-    """Two convergent cameras, the second panned 5% too far, aligned by eight Newton steps."""
+    """Two convergent cameras, the second panned 5% too far, aligned by eight Gauss-Newton steps."""
     # Cam 0 on the left panned right, Cam 1 on the right panned left:
     true_motors = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE]))
     _, _, local_cones = observe(true_motors)
@@ -77,7 +77,7 @@ def bundle_adjustment():
 def convergence(
     true_motors: Motor, initial_motors: Motor, damping: float, free: np.ndarray, iterations: int,
 ):
-    """The rig after each alternating Newton step, from the initial poses."""
+    """The rig after each alternating Gauss-Newton step, from the initial poses."""
     _, _, local_cones = observe(true_motors)
     motors = initial_motors
     for _ in range(iterations + 1):
@@ -113,7 +113,7 @@ def three_cameras(iterations: int):
 
 
 def schur(iterations: int):
-    """One moving camera as in `one_camera`, solved by the joint Newton step with the Schur complement.
+    """One moving camera as in `one_camera`, solved by the joint Gauss-Newton step with the Schur complement.
 
     Each state carries the marginal information on each camera's pose from the step taken there.
     """

@@ -201,6 +201,36 @@ class SubSpace:
             raise ValueError("cannot intersect SubSpaces from different algebras")
         return self.restrict(other.masks)
 
+    def difference(self, other: "SubSpace") -> "SubSpace":
+        """The blades of this axis that are not in other, preserving this axis's order and signs."""
+
+        if self.algebra is not other.algebra:
+            raise ValueError("cannot subtract SubSpaces from different algebras")
+        return self.restrict(mask for mask in self.masks if mask not in other._mask_set)
+
+    def complement(self) -> "SubSpace":
+        """The complementary blades, each the pseudoscalar with this blade's generators removed."""
+
+        return self.algebra.subspace.from_masks(self.algebra.complement(self.masks).tolist())
+
+    def degenerate(self) -> "SubSpace":
+        """The blades of this axis that contain a null generator."""
+
+        return self.restrict(mask for mask in self.masks if mask & self.algebra.degenerate_mask)
+
+    def nondegenerate(self) -> "SubSpace":
+        """The blades of this axis that contain no null generator."""
+
+        return self.restrict(mask for mask in self.masks if not mask & self.algebra.degenerate_mask)
+
+    def __contains__(self, item: "SubSpace | int") -> bool:
+        """A SubSpace is in this one when its support is contained in it; a mask, when it is one
+        of its blades."""
+
+        if isinstance(item, SubSpace):
+            return item.support_is_subset_of(self)
+        return item in self._mask_set
+
     def __len__(self) -> int:
         return len(self.masks)
 

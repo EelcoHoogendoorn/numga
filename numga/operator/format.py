@@ -7,33 +7,18 @@ import numpy as np
 
 
 def expressions(value, component):
-    if hasattr(value.kernel, "to_object_array"):
-        kernel = value.kernel.to_object_array()
-    else:
-        kernel = np.asarray(value.kernel, dtype=object)
+    kernel = value.kernel.values if hasattr(value.kernel, "values") else np.asarray(value.kernel)
     result = []
     for output in range(len(value.output_subspace)):
         terms = []
         for indices in product(*(range(len(axis)) for axis in value.input_subspaces)):
-            coefficient = kernel[(output,) + indices]
+            coefficient = kernel[(output,) + indices].item()
             if not coefficient:
                 continue
             factors = [component(slot, index) for slot, index in enumerate(indices)]
             magnitude = abs(coefficient)
             if magnitude != 1 or not factors:
-                if hasattr(magnitude, "denominator"):
-                    num = (
-                        str(magnitude.numerator)
-                        if magnitude.denominator == 1
-                        else f"Fraction({magnitude.numerator}, {magnitude.denominator})"
-                    )
-                else:
-                    num = (
-                        str(int(magnitude))
-                        if int(magnitude) == magnitude
-                        else str(magnitude)
-                    )
-                factors.insert(0, num)
+                factors.insert(0, str(int(magnitude)) if int(magnitude) == magnitude else str(magnitude))
             terms.append(("-" if coefficient < 0 else "+", " * ".join(factors)))
         expression = " ".join(f"{sign} {term}" for sign, term in terms)
         result.append(expression.removeprefix("+ ") or "0")
@@ -54,8 +39,7 @@ def python_code(value, name: str = "apply") -> str:
     """Generate a function taking coefficient sequences and returning a list."""
     terms = expressions(value, lambda slot, index: f"a{slot}[{index}]")
     arguments = ", ".join(f"a{slot}" for slot in range(value.arity))
-    return ("from fractions import Fraction\n\n"
-            + f"def {name}({arguments}):\n"
+    return (f"def {name}({arguments}):\n"
             + "    return [\n"
             + "".join(f"        {term},\n" for term in terms)
             + "    ]\n")

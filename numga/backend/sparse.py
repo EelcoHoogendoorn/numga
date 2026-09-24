@@ -1,4 +1,4 @@
-"""Unroll exact nonzero terms, as in the original sparse operators.
+"""Unroll the exact nonzero terms of a kernel into straight-line products.
 
 Only symbolic kernels supply sparsity. Computed maps use the dense executor;
 numeric arrays are never inspected to decide which terms to execute.
@@ -45,9 +45,10 @@ def compile_sparse_bind(
     )
     retained_shape = tuple(kernel.shape[axis] for axis in retained)
     groups = defaultdict(list)
-    for coordinate, coefficient in np.ndenumerate(kernel.to_object_array()):
+    for coordinate, coefficient in np.ndenumerate(kernel.values):
         if not coefficient:
             continue
+        coefficient = int(coefficient)
         rows = []
         for binding in plan.bindings:
             required_row = coordinate[binding.slot + 1]

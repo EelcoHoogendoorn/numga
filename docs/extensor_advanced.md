@@ -242,6 +242,22 @@ forms. A form's eigenproblem on its own is relative to its slot's metric, the in
 its rotor part alone, sending the translations to infinity. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
 tensor; the difference is one pairing.
 
+The distinction matters more than its size suggests. In coordinates a map and a form are the
+same square array, and nothing in the array says which one it is. Here the type says it, and
+the eigenproblems follow the type. A map has eigenvalues only when its output is the same kind
+of thing as its input: a twist that maps to a multiple of itself means nothing when twists come
+out as forques. A form has none on its own terms; its eigenproblem is posed against a second
+form, `potential.eigh(kinetic)`, and has real eigenvalues because both forms are symmetric.
+
+Flattening the distinction produces a familiar pathology. A rigid body's stiffness assembled as
+a map from twists to forques comes out almost symmetric: symmetric in one basis, not quite in
+another, for no reason anyone can name. The usual remedies treat the symptom. Averaging with
+the transpose discards information, and the normal equations are exactly symmetric but square
+the condition number. What is missing is one regressive product, pairing the returned forque
+with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`, symmetric in `a`
+and `b` by construction. The asymmetry was never in the physics; it was a map standing in for
+a form, and a typed algebra does not let one pass for the other.
+
 ## 5. Quadrics
 
 The [multiview example](../examples/geometry/multiview/core.py) holds a pixel's precision disc and

@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from fractions import Fraction
-from numbers import Integral, Rational
+from numbers import Real
 from typing import TYPE_CHECKING, NoReturn
 
 import numpy as np
@@ -63,30 +62,24 @@ class ExactContext(Context):
         return value if isinstance(value, SymbolicKernel) else SymbolicKernel(value)
 
     def reciprocal(self, kernel: SymbolicKernel) -> SymbolicKernel:
-        return SymbolicKernel(1 / kernel.to_object_array())
+        return kernel.reciprocal()
 
-    def scalar_kernel(self, scalar: Fraction) -> SymbolicKernel:
+    def scalar_kernel(self, scalar: float) -> SymbolicKernel:
         return SymbolicKernel((scalar,))
 
     def matrix_inverse(self, kernel: SymbolicKernel) -> SymbolicKernel:
         raise NotImplementedError("exact matrix inversion is not implemented")
 
     def matrix_trace(self, kernel: SymbolicKernel, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> SymbolicKernel:
-        tr = np.trace(kernel.to_object_array(), axis1=axis1, axis2=axis2)
-        return SymbolicKernel(np.expand_dims(tr, axis=scalar_axis))
+        return kernel.trace(axis1, axis2).expand_dims(scalar_axis)
 
     def solve(self, matrix: SymbolicKernel, rhs: SymbolicKernel) -> SymbolicKernel:
         raise NotImplementedError("exact matrix solves are not implemented")
 
-    def prepare_scalar(self, scalar: object) -> Fraction:
-        if isinstance(scalar, Integral):
-            return Fraction(int(scalar))
-        if isinstance(scalar, Rational):
-            return Fraction(scalar.numerator, scalar.denominator)
-        raise TypeError(
-            "exact Extensor scalars must be integers or rationals; "
-            f"got {type(scalar).__name__}"
-        )
+    def prepare_scalar(self, scalar: object) -> object:
+        if isinstance(scalar, Real):
+            return scalar
+        raise TypeError(f"Extensor scalars must be real numbers; got {type(scalar).__name__}")
 
     def execute_bind(
         self,
@@ -137,9 +130,8 @@ def _transform_axis(
 ) -> SymbolicKernel:
     if transform.kind is AxisTransformKind.EXACT:
         return kernel
-    matrix = np.asarray(transform.coordinate_matrix, dtype=object)
-    transformed = np.tensordot(matrix, kernel.to_object_array(), axes=(1, axis))
-    return SymbolicKernel(np.moveaxis(transformed, 0, axis))
+    matrix = SymbolicKernel(np.asarray(transform.coordinate_matrix))
+    return matrix.tensordot(kernel, axes=(1, axis)).moveaxis(0, axis)
 
 
 def _contract(

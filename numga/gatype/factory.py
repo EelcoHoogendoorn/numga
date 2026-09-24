@@ -29,7 +29,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
     # Public constructor protocol for namespaces which lift complete GATypes.
     # Structural names come from the selected SubSpace factory; these names
     # add semantic refinements rather than merely selecting support.
-    semantic_constructor_names = ("rotor",)
+    semantic_constructor_names = ("rotor", "motor")
 
     def __init__(self, algebra: Algebra) -> None:
         if algebra is None:
@@ -112,6 +112,8 @@ class GATypeFactory(FlyweightFactory[GAType]):
         """Return the certified unit-versor refinement of even support."""
 
         return self(self.algebra.subspace.even(), ROTOR_TRAITS)
+
+    motor = rotor
 
     def __getattr__(self, name: str) -> Callable[..., GAType]:
         """Lift a declared SubSpace constructor into this GAType namespace."""

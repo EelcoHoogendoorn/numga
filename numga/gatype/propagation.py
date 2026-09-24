@@ -16,6 +16,7 @@ from .traits import (
     ProductRelation,
     ProductResult,
     ReverseProduct,
+    ReverseProductNonzero,
     ReverseProductOne,
     Sandwich,
     SelfProduct,
@@ -137,8 +138,8 @@ def operation_traits(
             if operand.entails(fact):
                 inferred.append(fact)
                 break
-        # These transforms take products of invertible vectors to products
-        # of invertible vectors, independently of self-product inference.
+        # These transforms take products of vectors to products of vectors,
+        # independently of self-product inference.
         if operand.entails(Versor):
             inferred.append(Versor)
         relation = self_product_relation(operand, family)
@@ -166,7 +167,8 @@ def _sandwicher(plan: "BindingPlan") -> GAType | None:
     if not any(0 in group and 2 in group for group in plan.equality_groups):
         return None
     operand = next(binding.operand_gatype for binding in plan.bindings if binding.slot == 0)
-    return operand if operand.entails(Versor) else None
+    # The inferred self-product relations divide by the versor's reverse product.
+    return operand if operand.entails(Versor) and operand.entails(ReverseProductNonzero) else None
 
 
 def _sandwich_passenger(plan: "BindingPlan") -> SubSpace:
@@ -313,7 +315,7 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
 
 
 def _bind_versor_product(plan: "BindingPlan", relation: VersorProduct) -> Trait | None:
-    """Substitute the separate closure of versors under geometric product."""
+    """Substitute the closure of versors, products of vectors, under geometric product."""
 
     result_slots: list[int] = []
     bindings = {binding.slot: binding for binding in plan.bindings}

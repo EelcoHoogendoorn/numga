@@ -191,6 +191,12 @@ class Extensor:
     def __iter__(self):
         return (self[index] for index in range(self.shape[0]))
 
+    def __len__(self) -> int:
+        """The length of the first batch axis; an unbatched extensor has none."""
+        if not self.shape:
+            raise TypeError("len() of an unbatched Extensor")
+        return self.shape[0]
+
     def __invert__(self) -> Extensor:
         return self.reverse()
 
@@ -497,6 +503,9 @@ class Extensor:
     def pseudoscalar_negation(self) -> "Extensor":
         return self._grade_transform("pseudoscalar_negation")
 
+    def __pos__(self) -> "Extensor":
+        return self
+
     def __neg__(self) -> "Extensor":
         gatype = TypeRules.operation(
             "negative",
@@ -588,7 +597,7 @@ class Extensor:
 
     def __truediv__(self, other: object) -> Extensor | NotImplementedType:
         if isinstance(other, Number):
-            # Prepare first: 1 / Fraction stays exact, unlike 1 / an int.
+            # The context validates the scalar before it is inverted.
             scalar = self.context.prepare_scalar(other)
             return self * (1 / scalar)
         if isinstance(other, Extensor):
@@ -672,6 +681,26 @@ class Extensor:
 
         return commutator(self, other)
 
+    def left_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        from numga.expression import left_contraction
+
+        return left_contraction(self, other)
+
+    def right_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        from numga.expression import right_contraction
+
+        return right_contraction(self, other)
+
+    def left_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        from numga.expression import left_interior
+
+        return left_interior(self, other)
+
+    def right_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        from numga.expression import right_interior
+
+        return right_interior(self, other)
+
     def regressive(self, other: Extensor | GAType | SubSpace) -> Extensor:
         from numga.expression import regressive
 
@@ -749,9 +778,10 @@ def _batch_scalar(context, values) -> Extensor:
 
 
 def _is_array(value: object) -> bool:
-    """An array (or array-like with a shape) of any rank in linear arithmetic is a batch of scalars."""
+    """An array (or array-like with a shape) of any rank in linear arithmetic is a batch of scalars,
+    0-d arrays and traced scalars included; plain numbers, NumPy scalars among them, are not."""
 
-    return hasattr(value, "shape") and not isinstance(value, Extensor) and len(value.shape) > 0
+    return hasattr(value, "shape") and not isinstance(value, (Extensor, Number))
 
 
 def _promote_identity(value: object) -> object:

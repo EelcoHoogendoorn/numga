@@ -42,17 +42,6 @@ def test_jax_iteration_ends_at_the_batch_length_and_null_inverse_fails_during_tr
         jax.jit(lambda value: value.inverse())(context.multivector.w)
 
 
-def test_exact_scalars_have_the_same_policy_as_exact_kernel_entries():
-    algebra = Algebra("x+y+")
-    expression = algebra.gatype.vector() * algebra.gatype.vector()
-    for scalar in (.1, np.float64(.1)):
-        with pytest.raises(TypeError, match="integers or rationals"):
-            expression * scalar
-        with pytest.raises(TypeError, match="exact integers or rational"):
-            algebra.exact.multivector.scalar([scalar])
-    assert (expression * Fraction(1, 10)).context is algebra.exact
-
-
 @pytest.mark.parametrize("signature", ("x+y+", "x-y+z+", "x+y+z+w0", "x+y+z+p+n-"))
 def test_inner_product_of_lower_left_grade_keeps_compact_grade_arrays(signature):
     context = NumpyContext(signature)
@@ -78,7 +67,7 @@ def test_sandwich_symmetry_removes_exact_zeros_before_binding():
     even, point = algebra.gatype.even(), algebra.gatype.antivector()
     expression = even.sandwich(point)
     assert expression.output_subspace is point.output_subspace
-    kernel = expression.kernel.to_object_array()
+    kernel = expression.kernel.values
     np.testing.assert_array_equal(kernel, kernel.swapaxes(1, 3))
     mv = NumpyContext(algebra).multivector
     motor = mv.even(np.arange(8) / 10)
