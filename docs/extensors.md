@@ -64,7 +64,7 @@ pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] P
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
-![Baseline vs Coupled Normal Vibration Modes](../plots/modes.png)
+![The three vibration modes of the coupled suspension](../plots/modes.png)
 
 #### Construction
 ```python
@@ -115,7 +115,7 @@ step = curvature.solve(-gradient)                                      # [n_cams
 
 **Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](../examples/electromagnetism/constitutive/constitutive.ipynb)
 
-![Constitutive dispersion, polarization precession, Fresnel surface, and drag](../plots/constitutive.png)
+![Plane waves in isotropic glass and in a birefringent crystal](../plots/constitutive.png)
 
 #### Construction
 ```python

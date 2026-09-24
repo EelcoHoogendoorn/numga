@@ -33,7 +33,6 @@ def draw_wave_propagation(
     tau: float = 0.0,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
-    title: str = r"Traveling $\mathbf{E}$ and $\mathbf{B}$ Field Vectors",
 ) -> None:
     """Draw 3D spatial snapshot of traveling E and B field vectors in medium along propagation axis z."""
     z = np.linspace(0, z_max, 200)
@@ -63,8 +62,8 @@ def draw_wave_propagation(
     ax.plot([0, 0], [0, 0], [0, z_max], color="gray", linestyle="--", linewidth=1.2, alpha=0.5)
 
     # Continuous wave envelopes:
-    ax.plot(ex_total, ey_total, z, color="crimson", linewidth=2.0, label="E", zorder=5)
-    ax.plot(bx_total, by_total, z, color="dodgerblue", linewidth=1.6, linestyle="--", label="B", zorder=4)
+    ax.plot(ex_total, ey_total, z, color="crimson", linewidth=2.0, zorder=5)
+    ax.plot(bx_total, by_total, z, color="dodgerblue", linewidth=1.6, linestyle="--", zorder=4)
 
     # Quiver arrows at discrete stations:
     n_stations = 21
@@ -89,11 +88,6 @@ def draw_wave_propagation(
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_zlim([0, z_max])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_zlabel("z")
-    ax.set_title(title, fontsize=10, pad=6)
-    ax.legend(loc="upper right", fontsize=8.5)
     ax.view_init(elev=20, azim=-60)
     _no_ticks(ax)
     ax.set_zticks([])
@@ -108,14 +102,8 @@ def draw_wave_comparison_3d(
     """Render side-by-side 3D views comparing isotropic vs birefringent medium."""
     ax1 = fig.add_subplot(1, 2, 1, projection="3d")
     ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-    draw_wave_propagation(
-        ax1, glass_modes, z_max=z_max,
-        title="isotropic glass",
-    )
-    draw_wave_propagation(
-        ax2, crystal_modes, z_max=z_max,
-        title="birefringent crystal",
-    )
+    draw_wave_propagation(ax1, glass_modes, z_max=z_max)             # isotropic glass
+    draw_wave_propagation(ax2, crystal_modes, z_max=z_max)           # birefringent crystal
     return ax1, ax2
 
 
@@ -163,18 +151,13 @@ def draw_dispersion(
         line, = ax.semilogy(
             speeds,
             curve.to_array(),
-            label=name,
             linestyle="--" if is_axion else "-",
             linewidth=1.8 if is_axion else 1.5,
         )
         for v in expected.get(name, []):
             ax.axvline(v, color=line.get_color(), linestyle=":", linewidth=1.2, alpha=0.8)
 
-    ax.set_xlabel("phase speed v")
-    ax.set_ylabel(r"smallest $\sigma$")
-    ax.set_title("dispersion scan", fontsize=10)
     _no_ticks(ax)
-    ax.legend(loc="lower right", fontsize=8.5, framealpha=0.9)
 
 
 def draw_polarizations(
@@ -185,7 +168,7 @@ def draw_polarizations(
     ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
     ax.axvline(0, color="gray", linestyle="--", alpha=0.3)
 
-    for (speed, pol), label, color in zip(modes, ("Slow Wave (v_x)", "Fast Wave (v_y)"), ("crimson", "dodgerblue")):
+    for (speed, pol), color in zip(modes, ("crimson", "dodgerblue")):              # slow wave, fast wave
         # JIT coordinate readout at visualization boundary:
         xy = pol.cast(core.STA.subspace("x y")).kernel
         vx, vy = float(xy[0]), float(xy[1])
@@ -196,7 +179,6 @@ def draw_polarizations(
             0, 0, vx, vy,
             angles="xy", scale_units="xy", scale=1,
             color=color, width=0.015,
-            label=f"{label} (v={speed:.2f})",
         )
         # Bidirectional polarization oscillation line:
         ax.plot([-vx, vx], [-vy, vy], color=color, linestyle=":", alpha=0.6)
@@ -204,11 +186,7 @@ def draw_polarizations(
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_aspect("equal")
-    ax.set_xlabel("Ex")
-    ax.set_ylabel("Ey")
-    ax.set_title("polarization modes", fontsize=10)
     _no_ticks(ax)
-    ax.legend(loc="upper right", fontsize=9)
 
 
 def draw_fresnel_surface_polar(
@@ -240,14 +218,11 @@ def draw_fresnel_surface_polar(
                     branch_r.append(spds[b])
                     branch_theta.append(theta)
             if branch_r:
-                label = name if b == 0 else None
-                ax.plot(branch_theta, branch_r, label=label, linewidth=1.6)
+                ax.plot(branch_theta, branch_r, linewidth=1.6)
 
     ax.set_theta_zero_location("N")  # 0 radians along +z (North)
     ax.set_theta_direction(-1)       # Clockwise: +x along East
-    ax.set_title("wave surfaces", va="bottom", fontsize=10)
     _no_ticks(ax)
-    ax.legend(loc="lower left", bbox_to_anchor=(1.05, 0.0), fontsize=8.5)
 
 
 def draw_fresnel_drag_curves(
@@ -272,20 +247,16 @@ def draw_fresnel_drag_curves(
     fresnel_up = 1.0 / refractive_index - beta_fine * fresnel_drag_coeff
 
     # Eigensolve points from boosted constitutive extensor:
-    ax.plot(betas, v_down, "ro", markersize=5, label="downstream")
-    ax.plot(betas, v_up, "bs", markersize=5, label="upstream")
+    ax.plot(betas, v_down, "ro", markersize=5)
+    ax.plot(betas, v_up, "bs", markersize=5)
 
     # Analytical theory curves:
-    ax.plot(beta_fine, einstein_down, "r-", linewidth=1.5, label="Einstein")
+    ax.plot(beta_fine, einstein_down, "r-", linewidth=1.5)
     ax.plot(beta_fine, einstein_up, "b-", linewidth=1.5)
-    ax.plot(beta_fine, fresnel_down, "r--", linewidth=1.1, alpha=0.7, label="Fresnel 1st-order")
+    ax.plot(beta_fine, fresnel_down, "r--", linewidth=1.1, alpha=0.7)
     ax.plot(beta_fine, fresnel_up, "b--", linewidth=1.1, alpha=0.7)
 
-    ax.set_xlabel(r"boost $\beta$")
-    ax.set_ylabel("phase velocity v")
-    ax.set_title("Fresnel drag", fontsize=10)
     _no_ticks(ax)
-    ax.legend(loc="best", fontsize=8.5, framealpha=0.9)
 
 
 def draw_dispersion_figure(
