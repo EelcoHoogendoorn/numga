@@ -110,9 +110,9 @@ class Extensor:
             )
         if context.is_exact and kernel.shape != gatype.structural_shape:
             raise ValueError("exact Extensors cannot carry batch dimensions")
-        object.__setattr__(self, "_context", context)
-        object.__setattr__(self, "_gatype", gatype)
-        object.__setattr__(self, "_kernel", kernel)
+        self._context = context
+        self._gatype = gatype
+        self._kernel = kernel
 
     @classmethod
     def _from_prepared_kernel(
@@ -124,13 +124,10 @@ class Extensor:
         """Wrap an internal result without coercion, copies, or validation."""
 
         self = cls.__new__(cls)
-        object.__setattr__(self, "_context", context)
-        object.__setattr__(self, "_gatype", gatype)
-        object.__setattr__(self, "_kernel", context.freeze_kernel(kernel))
+        self._context = context
+        self._gatype = gatype
+        self._kernel = kernel
         return self
-
-    def __setattr__(self, _name: str, _value: object) -> None:
-        raise AttributeError("Extensor instances are immutable")
 
     @property
     def context(self) -> "Context":
@@ -142,7 +139,7 @@ class Extensor:
 
     @property
     def kernel(self) -> Any:
-        return self.context.expose_kernel(self._kernel)
+        return self._kernel
 
     @property
     def algebra(self) -> Algebra:

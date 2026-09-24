@@ -1,6 +1,6 @@
 # numga
 
-Geometric algebra with Extensors in numpy and JAX.
+Geometric algebra with Extensors in NumPy, JAX and PyTorch.
 
 | [**Spring modes**](examples/mechanics/modes/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/mechanics/modes/modes.ipynb) | [**Gravitational waves**](examples/relativity/curvature/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/curvature/curvature.ipynb) |
 | :---: | :---: |
@@ -35,6 +35,6 @@ values, modes = (Bivector & stiffness).eigh(Bivector & inertia)
 ## Install and run
 
 ```sh
-python -m pip install -e ".[linalg,examples]"     # add ".[jax]" for JAX
+python -m pip install -e ".[linalg,examples]"     # add ".[jax]" or ".[torch]" for those backends
 python -m examples.mechanics.modes.scenarios --animate
 ```

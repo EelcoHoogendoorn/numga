@@ -47,7 +47,6 @@ def test_warm_matrix_application_reuses_static_plans_without_recoercing_results(
     np.testing.assert_allclose(result.kernel, expected)
     np.testing.assert_allclose(other_left(right).kernel, 2 * expected)
     np.testing.assert_allclose(batched.kernel, np.broadcast_to(expected, (2,) + expected.shape))
-    assert not result.kernel.flags.writeable
 
 
 def test_operator_and_extensor_shapes_are_output_first():
@@ -316,7 +315,7 @@ def test_extensor_addition_unions_structural_axes_and_broadcasts_shape():
     )
 
 
-def test_extensor_and_context_are_immutable_and_extensor_owns_its_buffer():
+def test_extensor_copies_its_coefficients_at_construction():
     algebra = Algebra("x+y+")
     spaces = algebra.subspace
     context = NumpyContext(algebra)
@@ -325,10 +324,6 @@ def test_extensor_and_context_are_immutable_and_extensor_owns_its_buffer():
 
     coefficients[0] = 99
     assert value.kernel.tolist() == [1.0, 2.0]
-    with pytest.raises(ValueError, match="read-only"):
-        value.kernel[0] = 10
-    with pytest.raises(AttributeError, match="immutable"):
-        value.gatype = GAType((spaces.even(),))
     with pytest.raises(AttributeError, match="immutable"):
         context.dtype = np.dtype(np.float32)
 
@@ -404,7 +399,6 @@ def test_map_kernel_passes_raw_storage_and_wraps_the_returned_buffer(monkeypatch
     result = value.map_kernel(transform)
     assert result.context is context
     assert result._kernel is result_buffer
-    assert not result_buffer.flags.writeable
 
 
 def test_numpy_context_rejects_lossy_numeric_kind_changes():

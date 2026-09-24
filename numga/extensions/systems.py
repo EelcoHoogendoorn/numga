@@ -179,7 +179,9 @@ def lstsq_tensor(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Ext
     coefficients = rhs._kernel
     for axis, transform in transforms:
         coefficients = value.context.transform_axis(coefficients, rhs.arity + 1, axis, transform)
-    matrix = value._kernel.transpose(tuple(range(value.ndim)) + tuple(value.ndim + i for i in permutation))
+    matrix = value.context.xp.transpose(
+        value._kernel, tuple(range(value.ndim)) + tuple(value.ndim + i for i in permutation),
+    )
     matrix = matrix.reshape(value.shape + (rows, columns))
     solution = value.context.xp.linalg.pinv(matrix, rcond) @ coefficients.reshape(rhs.shape + (rows, 1))
     return _result(value, gatype, solution.reshape(solution.shape[:-2] + gatype.structural_shape))

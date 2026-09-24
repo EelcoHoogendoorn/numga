@@ -73,18 +73,7 @@ class NumpyContext(Context):
                 f"cannot represent coefficients of dtype {source.dtype} in "
                 f"Context dtype {self.dtype} without changing numeric kind"
             )
-        result = np.array(source, dtype=self.dtype, copy=True)
-        result.flags.writeable = False
-        return result
-
-    def expose_kernel(self, kernel: np.ndarray) -> np.ndarray:
-        view = kernel.view()
-        view.flags.writeable = False
-        return view
-
-    def freeze_kernel(self, kernel: np.ndarray) -> np.ndarray:
-        kernel.flags.writeable = False
-        return kernel
+        return np.array(source, dtype=self.dtype, copy=True)
 
     def prepare_scalar(self, scalar: object) -> np.generic:
         if isinstance(scalar, Rational):

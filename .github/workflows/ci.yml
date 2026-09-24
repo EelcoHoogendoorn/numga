@@ -23,6 +23,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
+      # The CPU wheel of torch; the default index serves the much larger CUDA build.
+      - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -e ".[linalg,jax,examples,test]"
       # The suite guard in tests/conftest.py blocks whole-suite runs by default; CI runs everything.
       - run: python -m pytest --i-am-a-dunce-for-ignoring-instructions

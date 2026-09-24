@@ -100,7 +100,7 @@ def compile_application(
         def prepare_target(kernel: SymbolicKernel) -> Any:
             if restrict:
                 kernel = kernel.take(indices, axis=0)
-            return xp.asarray(kernel.materialize(dtype))
+            return context.materialize(kernel)
     elif restrict:
         index_array = tuple(indices)
         structural_ndim = len(target_type.subspaces)
@@ -117,7 +117,7 @@ def compile_application(
                 left: Any, right: SymbolicKernel,
                 contract: Callable[[Any, Any], Any] = contract,
             ) -> Any:
-                return contract(left, xp.asarray(right.materialize(dtype)))
+                return contract(left, context.materialize(right))
             contract = lowered
         contractions.append((slot, contract))
 

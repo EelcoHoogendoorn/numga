@@ -205,6 +205,7 @@ contraction does:
 ga.exact                                    # ExactContext: integer coefficients, no batch axes
 NumpyContext(ga, dtype=np.float64)          # arrays
 JaxContext(ga, dtype=np.float32)            # arrays that can be traced
+TorchContext(ga, torch.float32, "cuda")     # tensors on a device, with autograd
 ```
 
 The exact context is owned by the algebra. Every operation table, the geometric product of
@@ -224,6 +225,15 @@ process.
 An `Extensor` in a `JaxContext` is a pytree with its kernel as the one leaf and its type and
 context key as static metadata. It crosses `jit` and `vmap` and comes back typed; a context is
 rebuilt from its key on the way out, so no mutable cache is ever hashed by the tracer.
+
+The library calls its array backend through `context.xp`, a namespace with NumPy's names and
+signatures. NumPy and JAX supply one directly. For PyTorch, `numga.backend.torch` translates
+the few spellings that differ, `axis` to `dim` and `concatenate` to `cat` among them, and
+raises NumPy's `LinAlgError` for a singular matrix. Library code is written once against NumPy
+conventions. A torch Extensor is a tensor with a type, so autograd, `torch.vmap` and
+`torch.compile` see ordinary tensor operations; exact tables are uploaded to the device once
+per dtype. Generalized eigenproblems whose metric is singular, as for forms on PGA points,
+need a QZ solver and so run only in NumPy with SciPy.
 
 ## 5. Binding plans and types
 

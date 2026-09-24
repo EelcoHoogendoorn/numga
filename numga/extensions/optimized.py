@@ -95,10 +95,10 @@ class PrincipalInertiaPGA3(Extensor):
 
     def __init__(self, context, upper: np.ndarray, lower: np.ndarray) -> None:
         Bivector = context.algebra.gatype.bivector()
-        object.__setattr__(self, "_context", context)
-        object.__setattr__(self, "_gatype", context.algebra.gatype((Bivector, Bivector)))
-        object.__setattr__(self, "upper", upper)
-        object.__setattr__(self, "lower", lower)
+        self._context = context
+        self._gatype = context.algebra.gatype((Bivector, Bivector))
+        self.upper = upper
+        self.lower = lower
 
     @classmethod
     def _from_prepared_kernel(cls, context, gatype, kernel) -> Extensor:

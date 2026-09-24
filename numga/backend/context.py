@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from numga.extensor import Extensor
     from numga.multivector import MultivectorFactory
     from numga.gatype import GATypeFactory
+    from numga.operator.kernel import SymbolicKernel
     from numga.subspace import SubSpaceFactory
 
 
@@ -96,17 +97,22 @@ class Context(ABC):
 
     @abstractmethod
     def prepare_kernel(self, value: object) -> Any:
-        """Coerce a public value into backend storage under this policy."""
+        """Copy a public value into backend storage under this policy."""
 
-    def expose_kernel(self, kernel: Any) -> Any:
-        """Return the public immutable view of backend storage."""
+    def materialize(self, kernel: SymbolicKernel) -> Any:
+        """Backend storage holding the coefficients of an exact kernel."""
 
-        return kernel
+        return self.xp.asarray(kernel.materialize(self.dtype))
 
-    def freeze_kernel(self, kernel: Any) -> Any:
-        """Adopt a computed result without copying or coercing it."""
+    def with_dtype(self, dtype: object) -> Context:
+        """This storage policy with another coefficient dtype, as complex eigenpairs need."""
 
-        return kernel
+        return type(self)(self.algebra, dtype, execution=self.execution)
+
+    def kernel_dtype(self, kernel: Any) -> np.dtype:
+        """The NumPy dtype of backend storage."""
+
+        return np.dtype(kernel.dtype)
 
     def reciprocal(self, kernel: Any) -> Any:
         return 1 / kernel
@@ -118,7 +124,7 @@ class Context(ABC):
         return self.xp.linalg.inv(kernel)
 
     def matrix_trace(self, kernel: Any, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> Any:
-        tr = self.xp.trace(self.expose_kernel(kernel), axis1=axis1, axis2=axis2)
+        tr = self.xp.trace(kernel, axis1=axis1, axis2=axis2)
         return self.xp.expand_dims(tr, axis=scalar_axis)
 
     def solve(self, matrix: Any, rhs: Any) -> Any:
@@ -126,6 +132,28 @@ class Context(ABC):
 
         rhs = self.xp.broadcast_to(rhs, matrix.shape[:-1])
         return self.xp.linalg.solve(matrix, rhs[..., None])[..., 0]
+
+    def generalized_eigh(self, matrix: Any, metric: Any) -> tuple[Any, Any]:
+        """Eigenpairs of a Hermitian pencil, reduced to a standard problem by the Cholesky
+        factor of the positive-definite metric; eigenvectors are orthonormal in the metric."""
+
+        xp = self.xp
+        inverse = xp.linalg.inv(xp.linalg.cholesky(metric))
+        adjoint = xp.conj(xp.swapaxes(inverse, -1, -2))
+        values, vectors = xp.linalg.eigh(inverse @ matrix @ adjoint)
+        return values, adjoint @ vectors
+
+    def generalized_eigvalsh(self, matrix: Any, metric: Any) -> Any:
+        return self.generalized_eigh(matrix, metric)[0]
+
+    def generalized_eig(self, matrix: Any, metric: Any) -> tuple[Any, Any]:
+        """Eigenpairs of a pencil, reduced to a standard problem by solving with the metric,
+        which must be invertible."""
+
+        return self.xp.linalg.eig(self.xp.linalg.solve(metric, matrix))
+
+    def generalized_eigvals(self, matrix: Any, metric: Any) -> Any:
+        return self.xp.linalg.eigvals(self.xp.linalg.solve(metric, matrix))
 
     def is_compatible_with(self, other: object) -> bool:
         return (
@@ -161,7 +189,7 @@ class Context(ABC):
         if value.context.is_compatible_with(self):
             return Extensor._from_prepared_kernel(self, value.gatype, value._kernel)
         if value.context.is_exact and not self.is_exact:
-            numeric = self.xp.asarray(value._kernel.materialize(self.dtype))
+            numeric = self.materialize(value._kernel)
             return Extensor._from_prepared_kernel(self, value.gatype, numeric)
         raise ValueError("cannot lower an Extensor from an incompatible Context")
 
@@ -223,6 +251,10 @@ def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
         from .jax import JaxContext
 
         return JaxContext.from_key(algebra, key)
+    if backend == "torch":
+        from .torch import TorchContext
+
+        return TorchContext.from_key(algebra, key)
     raise ValueError(f"unknown Context backend key {backend!r}")
 
 

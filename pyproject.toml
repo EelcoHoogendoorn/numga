@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "numga"
 version = "2.0.0a0"
-description = "Geometric algebra and extensors in NumPy and JAX"
+description = "Geometric algebra and extensors in NumPy, JAX and PyTorch"
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Eelco Hoogendoorn", email = "hoogendoorn.eelco@gmail.com" }]
-keywords = ["geometric algebra", "clifford algebra", "extensors", "numpy", "jax"]
+keywords = ["geometric algebra", "clifford algebra", "extensors", "numpy", "jax", "pytorch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -30,6 +30,9 @@ linalg = [
 ]
 jax = [
     "jax>=0.4",
+]
+torch = [
+    "torch>=2.1",
 ]
 examples = [
     "matplotlib>=3.7",

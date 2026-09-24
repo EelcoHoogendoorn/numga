@@ -38,7 +38,7 @@ def inverse_orthogonal(value: Extensor) -> Extensor:
     """A coefficient-orthogonal map is inverted by transposing its coefficients."""
     permutation = tuple(range(value.ndim)) + (value.ndim + 1, value.ndim)
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.transposed, value._kernel.transpose(permutation),
+        value.context, value.gatype.transposed, value.context.xp.transpose(value._kernel, permutation),
     )
 
 

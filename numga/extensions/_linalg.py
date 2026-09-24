@@ -36,9 +36,9 @@ def _is_endomorphism(gatype: GAType) -> bool:
 
 def _result(value: Extensor, gatype: GAType, kernel: Any) -> Extensor:
     context = value.context
-    dtype = np.result_type(context.dtype, kernel.dtype)
+    dtype = np.result_type(context.dtype, context.kernel_dtype(kernel))
     if dtype != context.dtype:
-        context = type(context)(value.algebra, dtype=dtype, execution=context.execution)
+        context = context.with_dtype(dtype)
     return Extensor._from_prepared_kernel(
         context, gatype, context.xp.asarray(kernel, dtype=dtype),
     )

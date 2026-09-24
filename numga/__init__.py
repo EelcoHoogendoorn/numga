@@ -1,4 +1,4 @@
-"""numga: geometric algebra and extensors in NumPy and JAX."""
+"""numga: geometric algebra and extensors in NumPy, JAX and PyTorch."""
 
 from .algebra import Algebra, AlgebraDescription
 from .backend import Context, ExactContext, NumpyContext
@@ -43,3 +43,14 @@ from .subspace import SubSpace, SubSpaceFactory, SupportKey
 from . import extensions as _extensions
 
 __version__ = "2.0.0a0"
+
+
+def __getattr__(name: str) -> type[Context]:
+    # Optional backends import their array library only when asked for.
+    if name == "JaxContext":
+        from .backend.jax import JaxContext
+        return JaxContext
+    if name == "TorchContext":
+        from .backend.torch import TorchContext
+        return TorchContext
+    raise AttributeError(f"module 'numga' has no attribute {name!r}")

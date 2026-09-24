@@ -66,10 +66,8 @@ def bundle_adjustment():
     world_cones = motors >> local_cones(motors << Point)
 
     # --- checks
-    # The cone cost falls by orders of magnitude from the perturbed start.
-    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
-    initial_cost = cone_cost(initial_motors, initial_points, local_cones).to_array()
-    assert cone_cost(motors, points, local_cones).to_array() < initial_cost * 1e-3
+    # The cone cost vanishes at the aligned rig.
+    assert abs(cone_cost(motors, points, local_cones).to_array()) < 1e-12
 
     return motors, world_cones, fused, points
 
