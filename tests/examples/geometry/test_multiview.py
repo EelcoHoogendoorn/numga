@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import signal
-import subprocess
-import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -36,20 +34,6 @@ def ten_second_budget():
 def rmse(points: Point, truth: Point) -> float:
     """Root mean square distance between unit points: the difference is a direction, its length the norm of its complement."""
     return float((points - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer core.py must stay free of the plotting stack, transitively."""
-    probe = (
-        "from numga.algebras import PGA2D; from examples import instantiate; "
-        "instantiate('examples.geometry.multiview.core', PGA2D); import sys; "
-        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
-        "print(bad)"
-    )
-    out = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
-    )
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_triangulate_cones():

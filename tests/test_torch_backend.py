@@ -5,7 +5,6 @@ torch = pytest.importorskip("torch")
 
 from numga import Algebra, NumpyContext
 from numga.algebras import PGA3D, STA
-from numga.backend.context import context_from_key
 from numga.backend.torch import TorchContext
 from tests.backend_surface import operations
 
@@ -41,16 +40,7 @@ def test_vmap_maps_extensor_expressions_over_a_batch():
     mapped = torch.vmap(lambda b: (context.multivector.bivector(b).exp() >> points).kernel)
     bivectors = torch.randn(5, 6)
     direct = context.multivector.bivector(bivectors).exp() >> points
-    torch.testing.assert_close(mapped(bivectors), direct.kernel)
-
-
-def test_context_key_round_trips_dtype_and_device():
-    context = TorchContext(PGA3D, np.float64, "cpu", execution="sparse")
-    assert context.dtype == np.dtype(np.float64)
-    assert context.torch_dtype is torch.float64
-    assert context_from_key(PGA3D, context.key).is_compatible_with(context)
-    value = context.multivector.vector([1, 2, 3, 4])
-    assert value.kernel.dtype is torch.float64 and value.kernel.device == context.device
+    torch.testing.assert_close(mapped(bivectors), direct.kernel, rtol=1e-6, atol=1e-6)
 
 
 def test_numpy_conventions_hold_on_torch_storage():

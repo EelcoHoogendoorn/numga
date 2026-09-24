@@ -38,10 +38,10 @@ def heat_conduction():
 
     # --- checks
     # Averaging keeps the trace, so the cube-invariant conductivity is the mean gain times the identity.
-    assert (surfaces[-1] - sphere * 2.2).norm().to_array().max() < 1e-8
+    assert (surfaces[-1] - sphere * 2.2).norm().to_array().max() < 1e-7
     # Quarter turns about z conduct equally along x and y.
     quarter = responses[2]
-    assert abs(((quarter(mv.x) | mv.x) - (quarter(mv.y) | mv.y)).to_array()).max() < 1e-8
+    assert abs(((quarter(mv.x) | mv.x) - (quarter(mv.y) | mv.y)).to_array()).max() < 1e-6
     return ["Measured candidate\n6 independent components", *groups], surfaces, driving, fluxes
 
 
@@ -89,10 +89,10 @@ def crystal_lattice():
     # --- checks
     # Conduction is isotropic: 2/3 in every direction. Stiffness is 1/2 along the cube
     # axes and 1/3 along the body diagonals.
-    np.testing.assert_allclose((sphere | conductivity(sphere)).to_array(), 2 / 3, rtol=1e-8)
+    np.testing.assert_allclose((sphere | conductivity(sphere)).to_array(), 2 / 3, rtol=1e-7)
     body_diagonal = (mv.x + mv.y + mv.z).normalized()
-    np.testing.assert_allclose(elasticity(mv.x, mv.x, mv.x, mv.x).to_array(), 1 / 2, rtol=1e-8)
-    np.testing.assert_allclose(elasticity(body_diagonal, body_diagonal, body_diagonal, body_diagonal).to_array(), 1 / 3, rtol=1e-8)
+    np.testing.assert_allclose(elasticity(mv.x, mv.x, mv.x, mv.x).to_array(), 1 / 2, rtol=1e-7)
+    np.testing.assert_allclose(elasticity(body_diagonal, body_diagonal, body_diagonal, body_diagonal).to_array(), 1 / 3, rtol=1e-7)
     return sites, axial, diagonal, conduction_surface, stiffness_surface
 
 

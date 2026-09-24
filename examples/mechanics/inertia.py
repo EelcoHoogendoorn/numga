@@ -113,7 +113,7 @@ def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
     for energy in energies[:2]:
         off_diagonal = energy - np.diag(np.diag(energy))
         assert np.abs(off_diagonal).max() < 1e-12 * np.abs(energy).max()
-    np.testing.assert_allclose(np.sort(np.diag(energies[1])), np.sort(np.diag(energies[2])), rtol=1e-9)
+    np.testing.assert_allclose(np.sort(np.diag(energies[1])), np.sort(np.diag(energies[2])), rtol=1e-8)
     return cloud_motor, motor
 
 

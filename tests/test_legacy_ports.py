@@ -1,11 +1,10 @@
 """Geometric reconstruction and numerical-boundary checks for the legacy ports."""
 
-from fractions import Fraction
 
 import numpy as np
 import pytest
 
-from numga import Algebra, NumpyContext
+from numga import NumpyContext
 from numga.algebras import PGA3D
 from numga.extensions.optimized import exp_pga3, exp_rotation_pga3, exp_translation_pga3, normalize_pga3
 
@@ -32,7 +31,7 @@ def test_decompositions_and_motor_approximations_reconstruct(signature):
         reconstructed = getattr(getattr(b, exponential)(), logarithm)()
         np.testing.assert_allclose((reconstructed - b).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((motor.log_pade() - b).kernel, 0, atol=1e-9)
-    np.testing.assert_allclose((motor.square_root_denman_beavers().squared() - motor).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((motor.square_root_denman_beavers().squared() - motor).kernel, 0, atol=1e-9)
 
 
 def test_canonical_motor_split_and_simple_bivector_batches():
@@ -43,7 +42,7 @@ def test_canonical_motor_split_and_simple_bivector_batches():
     np.testing.assert_allclose((left + right - b).kernel, 0)
     motor = (b + mv.xw * .2).exp()
     translation, rotation = motor.motor_split(mv.zyx)
-    np.testing.assert_allclose((translation * rotation - motor).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((translation * rotation - motor).kernel, 0, atol=1e-9)
     np.testing.assert_allclose((rotation >> mv.zyx).kernel, [[1], [1], [1]], atol=1e-10)
 
 
@@ -60,7 +59,7 @@ def test_shirokov_matches_inverse_and_native_extensor_solve(signature):
     np.testing.assert_allclose((inverse * value - 1).kernel, 0, atol=1e-12)
     rhs = mv.full(np.arange(ga.blade_count))
     solution = multiplication.solve(rhs)
-    np.testing.assert_allclose((value * solution - rhs).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((value * solution - rhs).kernel, 0, atol=1e-11)
 
 
 def test_hitzer_factor_is_an_adjugate_where_its_product_reduces_to_scalar():

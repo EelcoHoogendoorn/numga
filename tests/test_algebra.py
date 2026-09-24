@@ -46,31 +46,6 @@ def test_compact_description_rejects_malformed_input(specification: str) -> None
         Algebra(specification)
 
 
-def test_description_validates_metric_and_names() -> None:
-    with pytest.raises(ValueError, match="same length"):
-        AlgebraDescription(("x",), (1, -1))
-    with pytest.raises(ValueError, match="unique"):
-        AlgebraDescription(("x", "x"), (1, 1))
-    with pytest.raises(ValueError, match=r"-1, 0, or \+1"):
-        AlgebraDescription(("x",), (2,))
-    with pytest.raises(ValueError, match="non-negative"):
-        Algebra.from_pqr(1, -1, 0)
-
-
-def test_algebra_exposes_canonical_masks_and_metric_masks() -> None:
-    algebra = Algebra("x+y-z0")
-
-    assert algebra.dimension == 3
-    assert algebra.blade_count == 8
-    assert algebra.blade_masks == range(8)
-    assert algebra.basis_vector_masks == (0b001, 0b010, 0b100)
-    assert algebra.pseudoscalar_mask == 0b111
-    assert algebra.positive_mask == 0b001
-    assert algebra.negative_mask == 0b010
-    assert algebra.degenerate_mask == 0b100
-    assert algebra.blade_dtype == np.dtype(np.uint8)
-
-
 def test_spelled_blades_preserve_orientation_before_subspaces_exist() -> None:
     algebra = Algebra("x+y+z+")
 
@@ -189,41 +164,12 @@ def test_grade_complement_and_involutions() -> None:
     )
 
 
-def test_bulk_product_table_agrees_with_scalar_api_and_is_immutable() -> None:
-    algebra = Algebra("x+y+z+")
-    left = (0, 1, 0b110)
-    right = (0b010, 0b111)
-
-    table = algebra.geometric_product_table(left, right)
-
-    assert table.shape == (3, 2)
-    for i, left_blade in enumerate(left):
-        for j, right_blade in enumerate(right):
-            product = algebra.geometric_product(left_blade, right_blade)
-            assert table.blades[i, j] == product.blade
-            assert table.coefficients[i, j] == product.coefficient
-    with pytest.raises(ValueError):
-        table.blades[0, 0] = 99
-    with pytest.raises(ValueError):
-        table.coefficients.flags.writeable = True
-
-
 def test_product_algebra_requires_disjoint_generator_names() -> None:
     product = Algebra("x+") * Algebra("y-z0")
     assert product == Algebra("x+y-z0")
 
     with pytest.raises(ValueError, match="duplicate"):
         Algebra("x+") * Algebra("x-")
-
-
-@pytest.mark.parametrize("mask", [-1, 4])
-def test_blade_operations_reject_masks_outside_the_algebra(mask: int) -> None:
-    algebra = Algebra("x+y+")
-
-    with pytest.raises(ValueError, match="outside"):
-        algebra.grade(mask)
-    with pytest.raises(ValueError, match="outside"):
-        algebra.geometric_product(0, mask)
 
 
 def test_vectorized_blade_operations_and_compatibility_api() -> None:

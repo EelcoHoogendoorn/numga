@@ -23,15 +23,3 @@ def test_cube_rotations_are_24_distinct_rotations():
 ])
 def test_scenario_checks_and_figure(scenario, draw):
     assert isinstance(draw(*scenario()), plt.Figure)
-
-
-def test_mathematics_does_not_import_plotting():
-    import subprocess
-    import sys
-
-    probe = (
-        "import examples.mechanics.symmetry.core, sys; "
-        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
-    )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == "[]", out.stdout

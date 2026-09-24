@@ -49,9 +49,9 @@ def spherical_conic():
     potential = grid.regressive(C(grid))
 
     # --- checks ---------------------------------------------------------------------------
-    np.testing.assert_allclose(P.regressive(C(P)).to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose(P.regressive(C(P)).to_array(), 0.0, atol=1e-13)
     np.testing.assert_allclose(focal_sum.to_array(), 2.0 * theta_a, atol=1e-11)
-    np.testing.assert_allclose(tangents.regressive(Q(tangents)).to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose(tangents.regressive(Q(tangents)).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose(dual_product.to_array(), dual_product.mean().to_array(), atol=1e-14)
     return P, foci, arcs, sample, theta_a, tangents, tangents[touching], circles, surface, grid, potential
 

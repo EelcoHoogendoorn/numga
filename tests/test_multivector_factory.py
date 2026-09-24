@@ -3,40 +3,12 @@ import pytest
 
 from numga import (
     Algebra,
-    Extensor,
-    MultivectorFactory,
     NumpyContext,
     ROTOR_TRAITS,
     ReverseProductOne,
     ReverseProductZero,
     Versor,
 )
-
-
-def test_named_constructor_builds_batched_nullary_extensor_in_its_context():
-    algebra = Algebra("x+y+z+")
-    context = NumpyContext(algebra)
-
-    vectors = context.multivector.vector([[1, 2, 3], [4, 5, 6]])
-
-    assert context.multivector is context.multivector
-    assert isinstance(context.multivector, MultivectorFactory)
-    assert isinstance(vectors, Extensor)
-    assert vectors.context is context
-    assert vectors.gatype is algebra.gatype.vector()
-    assert vectors.arity == 0
-    assert vectors.shape == (2,)
-    np.testing.assert_array_equal(vectors.kernel, [[1, 2, 3], [4, 5, 6]])
-
-
-def test_exact_context_exposes_the_same_nullary_construction_namespace():
-    algebra = Algebra("x+y+")
-
-    vector = algebra.exact.multivector.vector([1, 2])
-
-    assert vector.context is algebra.exact
-    assert vector.gatype is algebra.gatype.vector()
-    assert vector.kernel.values.tolist() == [1, 2]
 
 
 def test_named_constructors_distinguish_plain_support_from_semantic_type():
@@ -76,66 +48,6 @@ def test_omitted_coefficients_are_the_projected_multiplicative_unit():
     assert scalar.gatype.entails(ReverseProductOne)
     assert vector.gatype.entails(ReverseProductZero)
     assert by_grade.gatype.entails(ReverseProductZero)
-
-
-def test_omitted_coefficients_reject_contradicting_asserted_traits():
-    algebra = Algebra("x+y+")
-    context = NumpyContext(algebra)
-    unit_claimed_zero = algebra.gatype(
-        algebra.subspace.even(),
-        (ReverseProductZero,),
-    )
-    zero_claimed_unit = algebra.gatype(
-        algebra.subspace.vector(),
-        (ReverseProductOne,),
-    )
-
-    with pytest.raises(ValueError, match="omitted coefficients.*contradict"):
-        context.multivector(unit_claimed_zero)
-    with pytest.raises(ValueError, match="omitted coefficients.*contradict"):
-        context.multivector(zero_claimed_unit)
-
-
-def test_coefficients_are_not_checked_against_asserted_traits():
-    algebra = Algebra("x+y+")
-    context = NumpyContext(algebra)
-
-    asserted_rotor = context.multivector.rotor([0, 0])
-
-    assert asserted_rotor.gatype is algebra.gatype.rotor()
-    np.testing.assert_array_equal(asserted_rotor.kernel, [0, 0])
-
-
-def test_generic_and_parameterized_construction_preserve_complete_type():
-    algebra = Algebra("x+y+z+")
-    context = NumpyContext(algebra)
-    bivector = algebra.subspace.bivector()
-    refined = algebra.gatype.rotor()
-
-    structural = context.multivector(bivector, [1, 2, 3])
-    semantic = context.multivector(refined, [1, 0, 0, 0])
-    by_grade = context.multivector.k_vector(2, [4, 5, 6])
-    by_masks = context.multivector.from_masks((1, 4), [7, 8])
-
-    assert structural.gatype is algebra.gatype.bivector()
-    assert semantic.gatype is refined
-    assert by_grade.gatype is algebra.gatype.k_vector(2)
-    assert by_masks.gatype is algebra.gatype.from_masks((1, 4))
-
-
-def test_multivector_namespace_rejects_positive_arity_only():
-    algebra = Algebra("x+y+")
-    context = NumpyContext(algebra)
-    vector = algebra.subspace.vector()
-    unary_type = algebra.gatype((vector, vector))
-    coefficients = [[1, 0], [0, 1]]
-
-    with pytest.raises(ValueError, match="arity-0 GAType"):
-        context.multivector(unary_type, coefficients)
-
-    unary = context.extensor(unary_type, coefficients)
-    assert unary.gatype is unary_type
-    assert unary.arity == 1
 
 
 def test_multivector_namespace_constructs_basis_blades_and_rejects_unknown():

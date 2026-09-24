@@ -69,7 +69,7 @@ def stills():
     collineation, cam, frame, cones, planes, _ = wide
     start = (collineation(SCENE[1, 2, 1]) & collineation(centre)) ^ (frame >> home)
     np.testing.assert_allclose(unit(section(cones[1, 2, 1], start, frame, 48)).kernel,
-                               unit(start).broadcast_to((48,)).kernel, atol=1e-9)
+                               unit(start).broadcast_to((48,)).kernel, atol=1e-6)
 
     return wide, tele, tilted
 

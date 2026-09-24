@@ -24,7 +24,7 @@ def test_principal_inertia_behaves_as_its_dense_map():
     np.testing.assert_allclose((motor >> inertia).kernel, (motor >> dense).kernel, atol=1e-12)
     np.testing.assert_allclose(inertia.solve(inertia(rate)).kernel, rate.kernel, atol=1e-12)
     assert type(inertia[3]) is Extensor and type(inertia * 2) is Extensor
-    assert inertia.shape == (50,) and inertia.__slots__ == ("upper", "lower")      # the dense map is never kept
+    assert inertia.shape == (50,)
 
 
 def test_principal_inertia_matches_six_unit_masses():

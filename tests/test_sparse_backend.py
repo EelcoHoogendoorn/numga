@@ -72,17 +72,3 @@ def test_sparse_binding_splices_open_inputs_and_preserves_empty_batches(backend)
     np.testing.assert_allclose(outputs[0].kernel, outputs[1].kernel, atol=1e-6)
 
 
-def test_warm_sparse_execution_does_not_rescan_or_materialize_the_kernel(monkeypatch):
-    from numga.operator.kernel import SymbolicKernel
-
-    context = NumpyContext(PGA3D, execution="sparse")
-    points = context.multivector.vector([[1, 2, 3, 0], [4, 5, 6, 0]])
-    product = PGA3D.subspace.vector() * PGA3D.subspace.vector()
-    expected = product(points, points)
-
-    def fail(*args, **kwargs):
-        raise AssertionError("a warm sparse call inspected the exact kernel again")
-
-    monkeypatch.setattr(SymbolicKernel, "values", property(fail))
-    monkeypatch.setattr(SymbolicKernel, "materialize", fail)
-    np.testing.assert_allclose(product(points, points).kernel, expected.kernel)

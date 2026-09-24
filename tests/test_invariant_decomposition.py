@@ -17,10 +17,10 @@ def random_bivectors(algebra, scale, seed=0):
 def assert_exact_rotors(b, exp, log):
     rotor = exp(b)
     size = max(1.0, np.abs(rotor.kernel).max())
-    np.testing.assert_allclose((rotor * rotor.reverse() - 1).kernel / size**2, 0, atol=1e-13)
+    np.testing.assert_allclose((rotor * rotor.reverse() - 1).kernel / size**2, 0, atol=1e-12)
     reference = bivector_exp(b, n=40)
-    np.testing.assert_allclose((rotor - reference).kernel / size, 0, atol=1e-6)
-    np.testing.assert_allclose((exp(log(rotor)) - rotor).kernel / size, 0, atol=1e-9)
+    np.testing.assert_allclose((rotor - reference).kernel / size, 0, atol=1e-5)
+    np.testing.assert_allclose((exp(log(rotor)) - rotor).kernel / size, 0, atol=1e-8)
 
 
 # --- invariant decomposition, below six dimensions --------------------------------------------

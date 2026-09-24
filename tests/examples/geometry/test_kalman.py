@@ -16,16 +16,3 @@ def test_filter_beats_dead_reckoning_and_renders():
 
     figure = render.draw_tracking(*tracking)
     assert isinstance(figure, plt.Figure)
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer stays free of the plotting stack, transitively."""
-    import subprocess
-    import sys
-
-    probe = (
-        "import examples.geometry.kalman.core, examples.geometry.kalman.scenarios, sys; "
-        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
-    )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"

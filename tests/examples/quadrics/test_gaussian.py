@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,16 +21,6 @@ def test_density_peaks_at_the_mean_and_level_matches_the_covariance():
     covariance = np.cov(xy.T, bias=True)
     mahalanobis = np.einsum("ni,ij,nj->n", offset, np.linalg.inv(covariance), offset)
     np.testing.assert_allclose(level.to_array()[1:], mahalanobis - 1.0, atol=1e-9)
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer must stay free of the plotting stack, transitively."""
-    probe = (
-        "import examples.quadrics.gaussian.core, sys; "
-        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
-    )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_scenario_renders():

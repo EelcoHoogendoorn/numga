@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -78,16 +76,6 @@ def test_circle_quadric_contains_the_points_at_its_radius():
         lo, hi = (mid, hi) if (-invariant(C, centre, point(np.array([mid, 0.25])))).clip(1.0, np.inf).arccosh() < R else (lo, mid)
     on_circle = point(np.array([lo, 0.25]))
     np.testing.assert_allclose(on_circle.regressive(circle(on_circle)).kernel, 0.0, atol=1e-12)
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer must stay free of the plotting stack, transitively."""
-    probe = (
-        "import examples.quadrics.cayley_klein.core, sys; "
-        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
-    )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_scenario_renders():

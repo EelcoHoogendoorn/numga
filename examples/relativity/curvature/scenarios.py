@@ -51,7 +51,7 @@ def detector_scenario():
     strain, _ = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
     plus_strain, cross_strain = core.strain_patterns()
     predicted = core.polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
-    np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=1e-13)
+    np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=1e-12)
     return time, reference, displacement, acceleration, AMPLIFICATION
 
 

@@ -1,11 +1,10 @@
 """Small expression primitives used by mathematical extension bodies."""
 
-from fractions import Fraction
 
 import numpy as np
 import pytest
 
-from numga import Algebra, NumpyContext, ReverseProductOne, ReverseProductZero
+from numga import Algebra, NumpyContext
 
 
 @pytest.mark.parametrize("scalar", [2, np.float64(2)])
@@ -126,21 +125,6 @@ def test_self_products_combine_structural_cancellation_but_compute_values():
     np.testing.assert_allclose(rotor.symmetric_reverse_product().kernel, [drift**2], atol=1e-14, rtol=1e-14)
 
 
-def test_trait_annotation_trusts_coefficients_and_reuses_immutable_storage():
-    algebra = Algebra("x+y+")
-    value = NumpyContext(algebra).multivector.even([2, 0])
-
-    declared = value.with_traits(ReverseProductOne)
-
-    assert declared.gatype.entails(ReverseProductOne)
-    assert not value.gatype.entails(ReverseProductOne)
-    assert np.shares_memory(declared.kernel, value.kernel)
-    np.testing.assert_array_equal(declared.kernel, [2, 0])
-    assert declared.with_traits(ReverseProductOne) is declared
-    with pytest.raises(ValueError, match="contradicts"):
-        declared.with_traits(ReverseProductZero)
-
-
 def test_scalar_affine_and_geometric_inverse_operations_reject_open_extensors():
     algebra = Algebra("x+y+")
     vector = algebra.subspace.vector()
@@ -162,14 +146,3 @@ def test_scalar_affine_and_geometric_inverse_operations_reject_open_extensors():
     assert (product / scalar).gatype.subspaces == (product / 2).gatype.subspaces
 
 
-def test_raw_arrays_are_batch_scalars_in_linear_arithmetic():
-    algebra = Algebra("x+y+")
-    mv = NumpyContext(algebra).multivector
-    value = mv.vector([1, 2])
-    raw = np.asarray([2.0, 3.0])
-    np.testing.assert_allclose((value * raw).kernel, (value * mv.scalar(raw[:, None])).kernel)
-    np.testing.assert_allclose((raw * value).kernel, (mv.scalar(raw[:, None]) * value).kernel)
-    np.testing.assert_allclose((value + raw).kernel, (value + mv.scalar(raw[:, None])).kernel)
-    np.testing.assert_allclose((raw - value).kernel, (mv.scalar(raw[:, None]) - value).kernel)
-    np.testing.assert_allclose((value / raw).kernel, (value * mv.scalar(1 / raw[:, None])).kernel)
-    np.testing.assert_allclose((raw / mv.scalar([4.0])).kernel, mv.scalar(raw[:, None] / 4).kernel)

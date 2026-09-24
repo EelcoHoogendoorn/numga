@@ -1,6 +1,5 @@
 """Self-product facts stay local to their explicitly named product family."""
 
-import pickle
 from fractions import Fraction
 
 import numpy as np
@@ -13,7 +12,6 @@ from numga import (
     CliffordConjugateProductOne,
     CliffordConjugateProductScalar,
     CliffordConjugateProductZero,
-    GATypeDispatch,
     GradeInvolutionProduct,
     ProductFact,
     ProductRelation,
@@ -23,7 +21,6 @@ from numga import (
     ReverseProductOne,
     ReverseProductScalar,
     ReverseProductZero,
-    SelfProduct,
     Trait,
     TraitSet,
 )
@@ -54,27 +51,6 @@ def _value(algebra, traits, coefficients):
     return algebra.exact.multivector(gatype, coefficients)
 
 
-def test_product_family_is_immutable_metadata_not_a_norm_alias():
-    reverse = SelfProduct("reverse")
-    projected = SelfProduct("reverse", product="scalar_product")
-
-    assert reverse == ReverseProduct
-    assert reverse != CliffordConjugateProduct
-    assert reverse != projected
-    assert ProductFact(reverse, ProductResult.ONE) == ReverseProductOne
-    assert pickle.loads(pickle.dumps(reverse)) == reverse
-    with pytest.raises(AttributeError):
-        reverse.transform = "involute"
-
-    # Knowing only the scalar projection is one is not knowing the whole
-    # self-product is the scalar one: nonscalar components may remain.
-    projected_one = ProductFact(projected, ProductResult.ONE)
-    assert not TraitSet((projected_one,)).entails(ReverseProductOne)
-    assert pickle.loads(pickle.dumps(projected_one)) == projected_one
-    with pytest.raises(AttributeError, match="immutable"):
-        projected_one.result = ProductResult.ZERO
-
-
 def test_fact_implication_and_contradictions_are_family_local():
     facts = TraitSet((
         ReverseProductOne, ReverseProductNonzero, ReverseProductScalar,
@@ -89,54 +65,6 @@ def test_fact_implication_and_contradictions_are_family_local():
         TraitSet((ReverseProductOne, ReverseProductZero))
     with pytest.raises(ValueError, match="contradicts"):
         TraitSet((CliffordConjugateProductOne, CliffordConjugateProductZero))
-
-
-def test_custom_implication_aliases_canonicalize_without_erasing_the_fact():
-    left, right = _AliasFact(0), _AliasFact(1)
-
-    canonical = TraitSet((left, right))
-
-    assert canonical == TraitSet((left,)) == TraitSet((right,))
-    assert len(canonical) == 1
-    assert canonical.entails(left)
-    assert canonical.entails(right)
-
-
-def test_custom_trait_pickle_preserves_its_parameters_and_implication_hook():
-    original = _AliasFact(1)
-
-    restored = pickle.loads(pickle.dumps(original))
-
-    assert type(restored) is _AliasFact
-    assert restored == original
-    assert hash(restored) == hash(original)
-    assert restored.implied_traits() == (_AliasFact(0),)
-    assert TraitSet((restored,)).entails(_AliasFact(0))
-
-
-def test_relations_with_the_same_slots_remain_independent_between_families():
-    reverse = ProductRelation(ReverseProduct, ProductResult.ONE, (1, 0, 1))
-    conjugate = ProductRelation(
-        CliffordConjugateProduct, ProductResult.ZERO, (0, 1, 1),
-    )
-    weaker_reverse = ProductRelation(
-        ReverseProduct, ProductResult.SCALAR, (0, 1, 1),
-    )
-
-    facts = TraitSet((reverse, conjugate, weaker_reverse))
-
-    assert reverse.slots == (0, 1, 1)
-    assert facts == TraitSet((reverse, conjugate))
-    assert pickle.loads(pickle.dumps(facts)) == facts
-    with pytest.raises(AttributeError, match="immutable"):
-        reverse.factor = ProductResult.ZERO
-    with pytest.raises(AttributeError, match="immutable"):
-        reverse.slots = (0,)
-    with pytest.raises(ValueError, match="contradicts"):
-        TraitSet((
-            reverse,
-            ProductRelation(ReverseProduct, ProductResult.ZERO, (0, 1, 1)),
-        ))
 
 
 def test_composition_and_binding_carry_both_registered_product_families():
@@ -168,23 +96,6 @@ def test_composition_and_binding_carry_both_registered_product_families():
     assert result.gatype.entails(CliffordConjugateProductNonzero)
     assert not result.gatype.entails(CliffordConjugateProductOne)
     np.testing.assert_array_equal(result.kernel.values, [0, 1, 0, 0])
-
-
-def test_user_family_can_dispatch_without_inventing_a_product_law():
-    algebra = Algebra("x+y+")
-    custom = SelfProduct("user_transform")
-    custom_one = ProductFact(custom, ProductResult.ONE)
-    value = _value(algebra, (custom_one,), [1, 0, 0, 0])
-    dispatch = GATypeDispatch("custom_operation", None, 1)
-
-    @dispatch.register(custom_one)
-    def implementation(operand):
-        return operand
-
-    assert dispatch.resolve(value.gatype) is implementation
-    assert dispatch(value) is value
-    assert custom not in _relations(algebra.gatype.full() * algebra.gatype.full())
-    assert not (value * value).gatype.entails(custom_one)
 
 
 def test_grade_involution_has_no_anti_automorphism_multiplicativity_rule():

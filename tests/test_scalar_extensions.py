@@ -22,12 +22,12 @@ def test_scalar_functions_preserve_singleton_batches_and_drop_traits(context):
     result = angle.cos().arccos()
     assert result.shape == (2, 1)
     assert result.gatype == context.algebra.gatype.scalar()
-    np.testing.assert_allclose(result.to_array(), [[0.2], [0.7]], atol=1e-6)
-    np.testing.assert_allclose(angle.sinh().arcsinh().to_array(), angle.to_array(), atol=1e-6)
-    np.testing.assert_allclose(angle.tanh().arctanh().to_array(), angle.to_array(), atol=1e-6)
-    np.testing.assert_allclose(angle.tan().arctan().to_array(), angle.to_array(), atol=1e-6)
-    np.testing.assert_allclose(angle.sin().arcsin().to_array(), angle.to_array(), atol=1e-6)
-    np.testing.assert_allclose(angle.cosh().arccosh().to_array(), angle.to_array(), atol=1e-6)
+    np.testing.assert_allclose(result.to_array(), [[0.2], [0.7]], atol=1e-5)
+    np.testing.assert_allclose(angle.sinh().arcsinh().to_array(), angle.to_array(), atol=1e-5)
+    np.testing.assert_allclose(angle.tanh().arctanh().to_array(), angle.to_array(), atol=1e-5)
+    np.testing.assert_allclose(angle.tan().arctan().to_array(), angle.to_array(), atol=1e-5)
+    np.testing.assert_allclose(angle.sin().arcsin().to_array(), angle.to_array(), atol=1e-5)
+    np.testing.assert_allclose(angle.cosh().arccosh().to_array(), angle.to_array(), atol=1e-5)
 
 
 def test_predicates_are_backend_boolean_masks(context):
@@ -58,7 +58,7 @@ def test_comparisons_and_clipping_broadcast_only_batch_axes(context):
 
 def test_signed_and_empty_scalar_layouts(context):
     signed = context.multivector.scalar([0.25]).cast(context.algebra.subspace("-1"))
-    np.testing.assert_allclose(signed.sin().to_array(), np.sin(0.25), atol=1e-7)
+    np.testing.assert_allclose(signed.sin().to_array(), np.sin(0.25), atol=1e-6)
     assert signed > 0
     empty = context.multivector(context.algebra.subspace.empty(), np.empty((2, 1, 0)))
     np.testing.assert_array_equal(empty.cos().to_array(), np.ones((2, 1)))

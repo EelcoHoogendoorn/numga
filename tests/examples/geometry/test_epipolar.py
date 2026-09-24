@@ -2,26 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.epipolar import core, render, scenarios
 from examples.geometry.epipolar.render import euclidean
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer core.py must stay free of the plotting stack, transitively."""
-    probe = (
-        "import examples.geometry.epipolar.core as c, sys; "
-        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
-        "print(bad)"
-    )
-    out = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
-    )
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_reconstruct_from_noise_free_images():

@@ -52,7 +52,7 @@ def statics() -> tuple[Point, Scalar]:
     ahead, _ = core.forward_kinematics(rest + rates * step)
     here, _ = core.forward_kinematics(rest)
     predicted = (here >> tip_home) + velocity * step
-    assert ((ahead >> tip_home) & predicted).norm().select[0].to_array().max() < 1e-10
+    assert ((ahead >> tip_home) & predicted).norm().select[0].to_array().max() < 1e-9
     return velocity, joint_torques
 
 

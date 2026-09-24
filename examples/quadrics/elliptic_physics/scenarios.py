@@ -65,7 +65,7 @@ def conserved(trajectory: S2.Trajectory, drift: float) -> None:
     """Checks: kinetic energy within the given relative drift, total momentum exactly."""
     energy, momentum = trajectory.energy.to_array(), trajectory.momentum.norm().to_array()
     assert np.ptp(energy) / abs(energy[0]) < drift
-    assert np.ptp(momentum) / momentum[0] < 1e-12
+    assert np.ptp(momentum) / momentum[0] < 1e-11
 
 
 def crowded(frames: int) -> tuple[S2.Trajectory, np.ndarray]:

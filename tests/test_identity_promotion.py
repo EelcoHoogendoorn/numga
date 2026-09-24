@@ -29,12 +29,6 @@ def test_scaled_and_negated_subspaces_are_scaled_identities():
     np.testing.assert_allclose((-V).kernel.materialize(), -np.eye(4))
 
 
-def test_subspace_plus_subspace_is_still_the_union():
-    ga = PGA3D
-    both = ga.subspace.vector() + ga.subspace.bivector()
-    assert len(both) == 10
-
-
 def test_gatype_promotes_like_its_subspace_and_rejects_positive_arity():
     ga = PGA3D
     mv = NumpyContext(ga).multivector

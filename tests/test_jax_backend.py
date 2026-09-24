@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from itertools import islice
 
 import numpy as np
 import pytest
@@ -114,3 +115,16 @@ def test_jit_vector_sandwich_agrees_in_staged_and_direct_forms():
             atol=1e-6,
             equal_nan=False,
         )
+
+
+def test_jax_iteration_ends_at_the_batch_length_and_null_inverse_fails_during_trace():
+    jax = pytest.importorskip("jax")
+    from numga.backend.jax import JaxContext
+
+    context = JaxContext("x+y+z+w0")
+    rows = context.multivector.vector(np.eye(4))
+    assert len(list(islice(rows, 6))) == 4
+    x, y, z, w = rows
+    np.testing.assert_array_equal(w.kernel, [0, 0, 0, 1])
+    with pytest.raises(ZeroDivisionError, match="statically null"):
+        jax.jit(lambda value: value.inverse())(context.multivector.w)

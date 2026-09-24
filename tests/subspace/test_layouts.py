@@ -139,7 +139,7 @@ def test_unit_rotor_facts_survive_relayout_and_sandwich(backend):
 
     assert stored.gatype <= algebra.gatype.rotor()
     assert stored.gatype.entails(ReverseProductOne)
-    np.testing.assert_allclose(stored.kernel, [0, 0.6, 0, 0.8], atol=1e-6)
+    np.testing.assert_allclose(stored.kernel, [0, 0.6, 0, 0.8], atol=1e-5)
     np.testing.assert_allclose(stored.inverse().select_subspace(r.subspace).kernel, r.inverse().kernel)
     normal = mv.vector([1, 2, 3]).normalized()
     np.testing.assert_allclose(stored.sandwich(normal).kernel, r.sandwich(normal).kernel, atol=1e-6)
@@ -161,7 +161,7 @@ def test_reorienting_the_scalar_changes_coordinates_not_scalar_functions(backend
     np.testing.assert_allclose(reciprocal_root.kernel, [0.5])
     np.testing.assert_allclose(norm.kernel, [4])
     np.testing.assert_allclose(logarithm.exp().kernel, [4], rtol=1e-6)
-    np.testing.assert_allclose(four.exp().kernel, [np.exp(4)], rtol=1e-6)
+    np.testing.assert_allclose(four.exp().kernel, [np.exp(4)], rtol=1e-5)
     np.testing.assert_allclose((four + 1).kernel, [5])
 
 

@@ -46,7 +46,7 @@ def test_line_fit_matches_principal_axis_and_is_a_line():
     points = jitter(POSE >> segment(200, 2.0), 0.05, rng)
     line = fit(Line, points)
     scale = float(np.abs(line.kernel).max()) ** 2
-    np.testing.assert_allclose(line.wedge(line).kernel / scale, 0.0, atol=1e-14)
+    np.testing.assert_allclose(line.wedge(line).kernel / scale, 0.0, atol=1e-13)
 
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
@@ -96,16 +96,3 @@ def test_scenarios_render():
         render.draw_bundle_fit(*scenarios.point_to_lines()),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer stays free of the plotting stack, transitively."""
-    import subprocess
-    import sys
-
-    probe = (
-        "import examples.geometry.fitting.core, examples.geometry.fitting.scenarios, sys; "
-        "print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])"
-    )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, check=True)
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"

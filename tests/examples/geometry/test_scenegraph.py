@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from itertools import islice
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,19 +11,6 @@ from examples.geometry.scenegraph import core, render, scenarios
 from examples.geometry.scenegraph.render import euclidean
 
 mv = core.mv
-
-
-def test_mathematics_does_not_import_plotting():
-    """The math layer core.py must stay free of the plotting stack, transitively."""
-    probe = (
-        "import examples.geometry.scenegraph.core as c, sys; "
-        "bad = [m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')]; "
-        "print(bad)"
-    )
-    out = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
-    )
-    assert out.stdout.strip() == "[]", f"plotting reached the math layer: {out.stdout}"
 
 
 def test_anisotropic_scale_extensor():

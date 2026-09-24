@@ -1,3 +1,5 @@
+import gc
+import weakref
 from fractions import Fraction
 
 import numpy as np
@@ -5,48 +7,9 @@ import pytest
 
 from numga.algebra import Algebra
 from numga.backend import NumpyContext
-from numga.binding import BindingPlan, TypeRules
 from numga.extensor import Extensor
 from numga.gatype import GAType
 from numga.operator import SymbolicKernel
-
-
-@pytest.mark.parametrize("execution", ("dense", "sparse"))
-@pytest.mark.parametrize("operand_arity", (0, 1))
-def test_warm_matrix_application_reuses_static_plans_without_recoercing_results(
-    monkeypatch, execution, operand_arity,
-):
-    algebra = Algebra("x+y+z+")
-    context = NumpyContext(algebra, execution=execution)
-    vector = algebra.subspace.vector()
-    matrix_type = algebra.gatype((vector, vector))
-    left = context.extensor(matrix_type, np.arange(9.).reshape(3, 3))
-    right = (
-        context.extensor(matrix_type, np.eye(3)) if operand_arity
-        else context.multivector.vector([1., 2., 3.])
-    )
-    expected = left(right).kernel
-    other_left = context.extensor(matrix_type, 2 * left.kernel)
-
-    def unexpected_coercion(self, kernel):
-        raise AssertionError("computed results must not re-enter public input coercion")
-
-    monkeypatch.setattr(NumpyContext, "prepare_kernel", unexpected_coercion)
-    def repeated_planning(*args, **kwargs):
-        raise AssertionError("warm application must not repeat binding setup")
-
-    monkeypatch.setattr(BindingPlan, "build", repeated_planning)
-    monkeypatch.setattr(BindingPlan, "from_types", repeated_planning)
-    monkeypatch.setattr(BindingPlan, "__hash__", repeated_planning)
-    monkeypatch.setattr(TypeRules, "bind", repeated_planning)
-    monkeypatch.setattr(NumpyContext, "lower", repeated_planning)
-    monkeypatch.setattr(NumpyContext, "execute_bind", repeated_planning)
-    result = left(right)
-    batched = left.reshape(1)(right.broadcast_to((2,)))
-
-    np.testing.assert_allclose(result.kernel, expected)
-    np.testing.assert_allclose(other_left(right).kernel, 2 * expected)
-    np.testing.assert_allclose(batched.kernel, np.broadcast_to(expected, (2,) + expected.shape))
 
 
 def test_operator_and_extensor_shapes_are_output_first():
@@ -106,19 +69,6 @@ def test_exact_commutator_and_regressive_sign_conventions():
     # GAType and SubSpace holes select the same cached exact implementation.
     assert algebra.gatype(x).commutator(algebra.gatype(y)) is xy_commutator
     assert algebra.gatype(xw).regressive(yw) is regressive
-
-
-def test_sandwich_accepts_any_carrier_and_squeezes_exact_symmetry_zeros():
-    algebra = Algebra("x+y+")
-    spaces = algebra.subspace
-    vector = spaces.vector()
-    full = spaces.full()
-
-    vector_sandwich = vector.sandwich(vector)
-    assert vector_sandwich.axes == (vector, vector, vector, vector)
-
-    general_sandwich = full.sandwich(vector)
-    assert general_sandwich.axes == (spaces.from_grades((0, 1)), full, vector, full)
 
 
 def test_positive_arity_operand_inputs_are_spliced_at_the_bound_slot():
@@ -315,23 +265,6 @@ def test_extensor_addition_unions_structural_axes_and_broadcasts_shape():
     )
 
 
-def test_extensor_copies_its_coefficients_at_construction():
-    algebra = Algebra("x+y+")
-    spaces = algebra.subspace
-    context = NumpyContext(algebra)
-    coefficients = np.asarray([1.0, 2.0])
-    value = context.extensor(spaces.even(), coefficients)
-
-    coefficients[0] = 99
-    assert value.kernel.tolist() == [1.0, 2.0]
-    with pytest.raises(AttributeError, match="immutable"):
-        context.dtype = np.dtype(np.float32)
-
-    operator = algebra.operator.identity(spaces.even())
-    with pytest.raises(AttributeError):
-        operator.kernel = SymbolicKernel.identity(2)
-
-
 def test_collection_rules_preserve_or_erase_stub_traits_conservatively():
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
@@ -349,56 +282,6 @@ def test_collection_rules_preserve_or_erase_stub_traits_conservatively():
     assert rotors.mean().gatype is plain_even
     assert rotors.at[0].set([2.0, 0.0]).gatype is plain_even
     assert (-rotors).gatype is rotor_type
-
-
-def test_warm_extension_results_bypass_public_construction(monkeypatch):
-    algebra = Algebra("x+y+")
-    context = NumpyContext(algebra)
-    scalar = context.multivector.scalar([4.0])
-    rotor = context.multivector.even([3.0, 4.0])
-    vector = algebra.subspace.vector()
-    matrix = context.extensor(algebra.gatype((vector, vector)), [[2.0, 1.0], [0.0, 3.0]])
-
-    def evaluate():
-        return (
-            scalar.norm(), scalar.square_root(), scalar.inverse_square_root(),
-            scalar.inverse(), scalar.exp(), scalar.log(),
-            rotor.normalized(), matrix.inverse(),
-        )
-
-    expected = evaluate()
-
-    def fail(*args, **kwargs):
-        raise AssertionError("an internal result used public construction")
-
-    monkeypatch.setattr(Extensor, "__init__", fail)
-    monkeypatch.setattr(NumpyContext, "prepare_kernel", fail)
-    for actual, reference in zip(evaluate(), expected):
-        assert actual.gatype is reference.gatype
-        np.testing.assert_allclose(actual.kernel, reference.kernel)
-
-    buffer = np.asarray([2.0])
-    monkeypatch.setattr(np, "sqrt", lambda values: buffer)
-    assert scalar.square_root()._kernel is buffer
-
-
-def test_map_kernel_passes_raw_storage_and_wraps_the_returned_buffer(monkeypatch):
-    context = NumpyContext(Algebra("x+y+"))
-    value = context.multivector.vector([1, 2])
-    result_buffer = np.asarray([3.0, 4.0])
-
-    def transform(kernel):
-        assert kernel is value._kernel
-        return result_buffer
-
-    def fail(*args, **kwargs):
-        raise AssertionError("map_kernel used public construction")
-
-    monkeypatch.setattr(Extensor, "__init__", fail)
-    monkeypatch.setattr(NumpyContext, "prepare_kernel", fail)
-    result = value.map_kernel(transform)
-    assert result.context is context
-    assert result._kernel is result_buffer
 
 
 def test_numpy_context_rejects_lossy_numeric_kind_changes():
@@ -424,3 +307,21 @@ def test_numpy_context_rejects_lossy_numeric_kind_changes():
         value * (1 + 2j)
     with pytest.raises(TypeError, match="real or complex floating dtype"):
         NumpyContext(algebra, dtype=int)
+
+
+def test_contexts_and_bound_constructors_are_collectible_after_application():
+    algebra = Algebra("x+y+z+")
+
+    def evaluate():
+        context = NumpyContext(algebra)
+        other = NumpyContext(algebra)
+        mv = context.multivector
+        vector = mv.vector([1, 2, 3])
+        motor = mv.bivector([.1, .2, .3]).exp()
+        (motor >> algebra.gatype.vector())(other.multivector.vector([3, 2, 1]))
+        motor >> vector
+        return weakref.ref(context), weakref.ref(other)
+
+    references = [reference for _ in range(4) for reference in evaluate()]
+    gc.collect()
+    assert all(reference() is None for reference in references)

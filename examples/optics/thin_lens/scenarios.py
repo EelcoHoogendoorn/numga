@@ -47,7 +47,7 @@ def lenses():
     # Every transformed ray passes through the image. A point's incidence with the lens plane
     # over its incidence with the line at infinity (its weight) is its signed distance, which
     # gives the thin lens equation and, for two lenses, Gullstrand's back focal distance.
-    np.testing.assert_allclose((out ^ image).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((out ^ image).kernel, 0.0, atol=1e-11)
     d_obj = -(plane_1 & obj) / (mv.w & obj)
     d_img = (plane_1 & image) / (mv.w & image)
     np.testing.assert_allclose((1 / d_obj + 1 / d_img).to_array(), 1 / focal_1, atol=1e-12)

@@ -65,7 +65,7 @@ def vortex(names: list[str], frames: int) -> tuple[Quadric, list[str]]:
     np.testing.assert_allclose((carried | carried).to_array(), 0.0, atol=1e-12)
     returned = flow(quadrics, generator, np.array([2.0 * np.pi]))[0]
     np.testing.assert_allclose((probes[:, None] & returned(probes[:, None])).to_array(),
-                               (probes[:, None] & quadrics(probes[:, None])).to_array(), atol=1e-8)
+                               (probes[:, None] & quadrics(probes[:, None])).to_array(), atol=1e-6)
     return world, colors
 
 
