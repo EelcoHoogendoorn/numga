@@ -4,8 +4,36 @@ import pytest
 jax = pytest.importorskip("jax")
 jnp = pytest.importorskip("jax.numpy")
 
-from numga import Algebra, Extensor
+from jax.experimental import enable_x64
+
+from numga import Algebra, Extensor, NumpyContext
+from numga.algebras import PGA3D, STA
 from numga.backend.jax import JaxContext
+from tests.backend_surface import operations
+
+
+def _agrees_with_numpy(ga: Algebra, execution: str, transform) -> None:
+    reference = NumpyContext(ga, execution=execution)
+    with enable_x64():
+        context = JaxContext(ga, np.float64, execution=execution)
+        for name, operation in operations(ga, np.random.default_rng(0)).items():
+            result = transform(lambda: operation(context))()
+            assert isinstance(result.kernel, jax.Array), name
+            np.testing.assert_allclose(
+                np.asarray(result.kernel), operation(reference).kernel, atol=1e-10, err_msg=name,
+            )
+
+
+@pytest.mark.parametrize("execution", ["dense", "sparse"])
+@pytest.mark.parametrize("ga", [PGA3D, STA, Algebra("x+y+z+w+e-")], ids=str)
+def test_jax_agrees_with_numpy_across_the_library_surface(ga, execution):
+    _agrees_with_numpy(ga, execution, lambda function: function)
+
+
+@pytest.mark.parametrize("execution", ["dense", "sparse"])
+@pytest.mark.parametrize("ga", [PGA3D, STA], ids=str)
+def test_jitted_library_surface_agrees_with_numpy(ga, execution):
+    _agrees_with_numpy(ga, execution, jax.jit)
 
 
 def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():

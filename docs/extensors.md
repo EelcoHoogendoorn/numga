@@ -2,19 +2,19 @@
 
 In mathematical terms, an extensor is a multi-linear map from multivectors to a multivector.
 
-In programming terms, extensors allow one to leave open arguments to an expression, and bind them at a later time. A batch axis is not an open argument: it indexes independent copies of an expression.
+In programming terms, extensors allow one to leave open arguments to an expression, and bind them at a later time.
 
 When doing mathematics on the blackboard, one often switches between expressions involving a specific vector, or expressions over the entire space of vectors. Extensor syntax brings that same flexibility to geometric algebra in code, combining expressivity with efficiency of the underlying code.
 
-The term extensor was coined by Hestenes [[ca-to-gc](#ref-ca-to-gc)]. He defines an extensor as any multilinear function of multivector arguments, and notes that tensors, the multilinear functions of vectors, are the special case. Not every block of numbers of the right shape is one, any more than every block of numbers is a tensor. Numga's extensors are built from the products of the algebra, so they transform as the geometry they are built from does. Nothing in the definition mentions a separate metric tensor: the metric is part of the algebra.
+This is the definition of Hestenes and Sobczyk [[ca-to-gc](#ref-ca-to-gc)], for whom extensors are what tensors become when their arguments are multivectors instead of vectors. Numga's extensors are built from the products of the algebra, so they transform as the geometry they are built from does.
 
 # Motivation
 
 Geometric relationships deserve to be first-class objects alongside the objects they relate. Inertia, stiffness, and material responses are maps that we need to construct, combine, transform, and solve with. Extensors make those relationships part of the geometric algebra library, expressed through the same operations as the geometry that defines them.
 
-Extensors bridge geometric algebra with conventional linear algebra. The examples below use the full spectrum of linear maps: rotor sandwiches and outermorphisms alongside non-orthogonal transformations, polarities, and derivations. Extensors subsume all of them, matrices included, into the algebra itself: any linear map between blade subspaces becomes a typed, coordinate-free object. Solvers, spectral decompositions, and least-squares optimizations can be performed directly on geometric relationships, returning geometrically typed results.
+For readers coming from linear algebra: wherever a geometric computation would use a matrix, numga has an extensor that knows what it maps from and to. The examples below use rotor sandwiches, non-uniform scalings, lenses and projections, and they all compose, invert and apply the same way. Solving, eigen- and singular-value decompositions and least squares work on them directly and return geometry: the vibration modes of example 2 come out as twists, not as columns of numbers.
 
-The same holds against tensor algebra. In tensor terms, an extensor is a tensor whose slots are typed by blade subspaces rather than by index placement. The metric lives in the products of the algebra, so there is no distinction between upper and lower indices to carry through a calculation. A map and a form differ only in whether the inner product has been applied, and that application is written explicitly, once, as an open inner-product slot. Higher rank comes from open slots, not from a tensor product. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
+For readers coming from tensor algebra: an extensor is a tensor whose slots are labelled by the kind of multivector they take, not by upper and lower index positions. The metric is part of the algebra's products, so there is nothing to raise or lower. Turning a map into a form means applying the inner product, and you write that once, as an open slot. More slots come from leaving more arguments open, not from tensor products. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
 
 # Companion documents
 
@@ -27,13 +27,13 @@ The same holds against tensor algebra. In tensor terms, an extensor is a tensor 
 Capitalized names are multivector spaces and lower case names are concrete multivectors: `v ^ V` is the wedge product of a specific vector with the space of all vectors, an extensor with bivector output and one open argument.
 
 ### Index
-1. [**Computer Graphics & Optics (PGA3D)**](#1-scenegraph-forward-kinematics--camera-optics-pga3d): Collapsing affine scales, joint motors, compound lenses, and sensor projection into a single evaluated extensor.
-2. [**Mechanics & Vibrations (PGA2D)**](#2-rigid-body-normal-modes--vibration-pga2d): Additive stiffness and inertia extensors without coordinate origins, generalized eigensolves on energy bilinear forms.
-3. [**Multi-View Vision & Camera Alignment (PGA2D)**](#3-multi-view-scene-reconstruction--camera-alignment-pga2d): Lifting 1D pixels into directional quadric cones, additive multi-view fusion, closed-form triangulation, and Lie algebra pose Jacobians.
-4. [**Electromagnetism & Spacetime Physics (STA)**](#4-spacetime-constitutive-relations-dispersion--relativistic-fresnel-drag-sta): Observer decompositions, lifting 3D material quadrics to 6D spacetime extensors, and detecting wave dispersion and polarizations via SVD.
-5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): Curvature as a nilpotent map on bivectors, the Ricci form as a trace, and observers bound into tidal maps.
-6. [**Rigid Bodies on the Sphere (Spherical3D)**](#6-rigid-bodies-on-the-sphere-spherical3d): Implicit rendering, collision as the margin of a blend of forms, and impulses through inertia maps.
-7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): The ray polynomial as open forms, dilations into Dupin cyclides, and vortex flows.
+1. [**Computer Graphics & Optics (PGA3D)**](#1-scenegraph-forward-kinematics--camera-optics-pga3d): a robot arm, two lenses and a sensor, composed into one map from each part to the screen.
+2. [**Mechanics & Vibrations (PGA2D)**](#2-rigid-body-normal-modes--vibration-pga2d): stiffness and inertia as sums of maps, and vibration modes that come out as motions.
+3. [**Multi-View Vision & Camera Alignment (PGA2D)**](#3-multi-view-scene-reconstruction--camera-alignment-pga2d): pixel uncertainty carried back into cones of sight, fused by addition, and cameras aligned by solving with them.
+4. [**Electromagnetism & Spacetime Physics (STA)**](#4-spacetime-constitutive-relations-dispersion--relativistic-fresnel-drag-sta): materials as maps on fields, moved at relativistic speeds, and wave speeds from an SVD.
+5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): a gravitational wave's curvature as a map on planes, and the tides an observer feels.
+6. [**Rigid Bodies on the Sphere (Spherical3D)**](#6-rigid-bodies-on-the-sphere-spherical3d): shapes as quadric forms, drawn, collided and bounced.
+7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
 
 ---
 
@@ -43,20 +43,15 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 
 ![Scenegraph 3D scene and 2D sensor photograph](../plots/scenegraph.png)
 
-#### Construction
 ```python
-# Non-uniform scale, joint motors, compound optics, and viewport collapse into one extensor:
-body = pose >> make_anisotropic_scale(sx, sy, sz)                     # [] Point <- Point
-camera = to_sensor(rear_lens(front_lens(ray_constructor)))            # [] Point <- Point
-local_to_pixel = viewport(camera(camera_pose << body))                # [5] Point <- Point
-
-# Evaluates directly as a compiled linear map over geometry:
-pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] Point
+body = pose >> scale                                     # [5] Point <- Point: each part, scaled and placed
+camera = to_sensor(rear_lens(front_lens(rays)))          # [] Point <- Point: two lenses and a sensor
+local_to_pixel = viewport(camera(camera_pose << body))   # [5] Point <- Point
+pixels = local_to_pixel[:, None](corners[None, :])       # [5, 8] Point
 ```
 
-#### Key Takeaways
-* **Full Pipeline Collapse**: Non-uniform scaling (affine), articulated joint motors (rigid), compound lenses (refractive), and sensor projection (perspective) compose into a single batched extensor (`Point <- Point`) *before* touching geometry.
-* **Compiled Linear Execution**: Under the hood, the default dense backend contracts intermediate spaces akin to broadcasted matrix products. This is an implementation detail—sparse and symbolic execution follow the exact same extensor semantics—while matching classical graphics performance natively within GA.
+* **One map from part to pixel.** Scaling, rigid motion, refraction and perspective compose into a single `Point <- Point` per part before any point is touched. In a graphics pipeline this is the product of the model, view and projection matrices.
+* **Motors move maps as they move points.** `camera_pose << body` brings a whole map into the camera's frame, the same way `camera_pose << p` brings in a point.
 
 ---
 
@@ -66,21 +61,14 @@ pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] P
 
 ![The three vibration modes of the coupled suspension](../plots/modes.png)
 
-#### Construction
 ```python
-# Measure spring stretch from an open twist, assemble stiffness and inertia, eigensolve:
-extension = Twist & lines                                              # [n_springs] Scalar <- Twist
-stiffness = (lines * extension * spring_constants).sum()               # [] Forque <- Twist
-inertia = (mass_points & mass_points.commutator(Twist) * masses).sum()  # [] Forque <- Twist
-
-# Symmetric bilinear energy forms dispatch to generalized Hermitian eigensolve:
-values, modes = (Twist & stiffness).eigh(Twist & inertia)              # values: [3] Scalar, modes: [3] Twist
-frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)       # [3] Scalar (Hz)
+stiffness = (springs * (springs & Twist) * constants).sum()   # [] Forque <- Twist
+inertia = (points & points.commutator(Twist) * masses).sum()  # [] Forque <- Twist
+values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 ```
 
-#### Key Takeaways
-* **Additive Physical Responses**: Springs are rank-1 dyads (`Forque <- Twist`) and mass points are momentum lines (`Forque <- Twist`). Summing individual extensors synthesizes total stiffness and inertia without selecting coordinate origins or applying Steiner's parallel-axis shifts.
-* **Energy Bilinear Forms & Eigensolve**: Contracting with open twists yields symmetric bilinear forms (`Scalar <- (Twist, Twist)`), allowing a direct generalized eigensolve `pe_form.eigh(ke_form)` without inverting inertia or forming asymmetric coordinate matrices $M^{-1}K$.
+* **Stiffness and inertia are sums.** Each spring and each mass point adds one term. No origin is chosen, and no parallel-axis shift is needed.
+* **The modes are motions.** The eigensolve runs on the two energy forms and returns twists, the motions the body vibrates in.
 
 ---
 
@@ -90,24 +78,20 @@ frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)       # [3] Sca
 
 ![Multi-view reconstruction, sight cones, splats, and pose covariance](../plots/multiview_reconstruction.png)
 
-#### Construction
 ```python
-# Carry sensor discs back through the camera into sight cones, fuse across cameras, triangulate:
-on_lines = (Plane & Point).solve(Plane & projection)                   # [] Plane <- Plane, induced by the camera
-cones = on_lines(sensor_discs(projection))                             # [n_pts, n_cams] Plane <- Point
-splats = (poses >> cones(poses << Point)).sum(axis=-1)                 # [n_pts] Plane <- Point
-points = (splats + w * (w & Point)).solve(w).normalized()              # [n_pts] Point
+on_planes = (Plane & Point).solve(Plane & projection)             # [] Plane <- Plane, induced by the camera
+cones = on_planes(sensor_discs(projection))                       # [n_points, n_cams] Plane <- Point
+splats = (poses >> cones(poses << Point)).sum(axis=-1)            # [n_points] Plane <- Point
+points = (splats + w * (w & Point)).solve(w)                      # [n_points] Point
 
-# Gauss-Newton on the cone value: a local point's motion under a camera twist, joined with its own polar:
-motion = -Twist.commutator(poses << points[:, None])                   # [n_pts, n_cams] Point <- Twist
-curvature, gradient = (cones(motion) & motion).sum(axis=0), (cones(poses << points[:, None]) & motion).sum(axis=0)
-step = curvature.solve(-gradient)                                      # [n_cams] Twist
+motion = -Twist.commutator(poses << points[:, None])              # [n_points, n_cams] Point <- Twist
+curvature = (cones(motion) & motion).sum(axis=0)                  # [n_cams] Scalar <- (Twist, Twist)
+step = curvature.solve(-gradient)                                 # [n_cams] Twist
 ```
 
-#### Key Takeaways
-* **Lifting Precision into Sight Cones**: A pixel's precision disc is a polarity map on sensor points. The map on lines induced by the camera, solved from the incidence pairing, carries its polar lines back through the singular projection into a perspective cone whose uncertainty widens with depth. No transpose is written.
-* **Additive Fusion & Closed-Form Triangulation**: Multi-view constraints combine by direct addition (`world_cones.sum(axis=-1)`). A fused cone's polar of its vertex vanishes; a gauge dyad on the weight makes that vertex the pole of the line at infinity, `splats.solve(w)`, without ray-intersection heuristics.
-* **Gauss-Newton on the Quadric**: The motion of a local point under an open twist (`-Twist.commutator(...)`), joined with its own polar, is the curvature over poses; joined with the point's polar it is the gradient. The cone is the cost, so no residual metric is chosen, and the curvature form is the information on the pose.
+* **Uncertainty travels as a shape.** Each measurement is a quadratic cost on the sensor, and the camera carries it back into a cone of sight that widens with depth.
+* **Combining views is addition.** The cones of all cameras sum into a splat, a confidence ellipsoid around each scene point, and one solve finds its centre.
+* **Camera alignment in pure geometry.** How a point moves under an open camera step is one commutator; joined with the cones it gives curvature and gradient, and one solve gives the Gauss-Newton step.
 
 ---
 
@@ -117,21 +101,17 @@ step = curvature.solve(-gradient)                                      # [n_cams
 
 ![Plane waves in isotropic glass and in a birefringent crystal](../plots/constitutive.png)
 
-#### Construction
 ```python
-# Split 6D bivectors via observer, lift 3D material quadric, and boost via Lorentz sandwich:
-electric = Bivector.commutator(t).wedge(t)                             # [] Bivector <- Bivector
-crystal = permittivity(Bivector.commutator(t)).wedge(t) + magnetic / mu
-moving_crystal = boost >> crystal(boost << Bivector)                   # [n_betas] Bivector <- Bivector
-
-# Detect physical plane waves where Maxwell wave map drops rank:
-wave = k.commutator(moving_crystal(k.wedge(Spatial)))                  # [n_speeds] Vector <- Spatial
-v_phase = speeds[wave.svdvals()[..., -1].argmin(axis=0)]
+electric = Bivector.commutator(t).wedge(t)               # [] Bivector <- Bivector: what observer t calls electric
+glass = eps * electric + (Bivector - electric) / mu      # [] Bivector <- Bivector
+moving = boost >> glass(boost << Bivector)               # [n_betas] Bivector <- Bivector: the glass, moving
+wave = k.commutator(moving(k.wedge(Spatial)))            # [n_speeds, n_betas] Vector <- Spatial
+wave.svdvals()                                           # near zero where light can travel
 ```
 
-#### Key Takeaways
-* **Observer Decomposition & Quadric Lifting**: An observer's timelike 4-velocity $t$ decomposes 6D field bivectors into 3D electric and magnetic vectors. Spatial material relations lift into 6D bivector extensors without coordinates.
-* **Dispersion & Polarizations via SVD**: Maxwell's equations in media compile into a single linear map $W_k$; physical propagating phase speeds and transverse polarizations emerge directly from SVD nullspaces.
+* **An observer is a map.** With the field left open, one line gives the part of any field that observer `t` calls electric, and glass is two such parts, weighted and added.
+* **Moving a material moves a map.** A boost moves the glass the same way it moves a vector. Fresnel drag follows, without transformation rules for ε and μ.
+* **Wave speeds from an SVD.** Leaving the polarization open turns Maxwell's equations for a trial wave into a map. Its singular values, over a batch of trial speeds, show which speeds light can travel at, and with which polarization.
 
 ---
 
@@ -141,20 +121,16 @@ v_phase = speeds[wave.svdvals()[..., -1].argmin(axis=0)]
 
 ![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.png)
 
-#### Construction
 ```python
-# Curvature from null dyads with the area open; cross is plus turned by an eighth-turn rotor:
-nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector (null planes)
+nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector: two planes along the wave
 plus = nx * (nx | Bivector) - ny * (ny | Bivector)                     # [] Bivector <- Bivector
 cross = eighth_turn >> plus(eighth_turn << Bivector)                   # [] Bivector <- Bivector
-
-ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector): zero in vacuum
-tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vector <- Vector: what observer t measures
+ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector): zero
+tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vector <- Vector
 ```
 
-#### Key Takeaways
-* **Nilpotent but not zero**: the vacuum curvature's image lies in its own kernel, so all its eigenvalues vanish; Ricci-flatness is a one-line trace.
-* **Observers are bound, not conjugated**: binding `t` gives a tidal map with eigenvalues ±A, the stretch and squeeze of the bead ring.
+* **Curvature is a map on planes.** A gravitational wave's curvature is two dyads, and its second polarization is the same map turned by an eighth turn.
+* **The textbook quantities are one line each.** The Ricci form is a trace, zero because the wave travels through vacuum. What an observer feels is the curvature with their velocity bound in: a map that stretches a ring of beads one way and squeezes it the other.
 
 ---
 
@@ -164,16 +140,15 @@ tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vect
 
 ![Seven ellipses spinning and colliding on the 2-sphere](../plots/spherical_quadric_physics.gif)
 
-#### Construction
 ```python
-inside = (pixels & form(pixels)) < 0.0                                     # the implicit render: one test per pixel
-margin, deepest = core.overlap(bodies.C[a], relative >> bodies.C[b](relative << Point))   # the best blend's least eigenvalue
-impulse = -2.0 * closing / (one.regressive(response_one) + other.regressive(response_other))   # through the inverse inertia
+inside = (pixels & shape(pixels)) < 0                             # drawing: one test per pixel
+margin, deepest = overlap(shape, relative >> other(relative << Point))   # the other shape, in this one's frame
+wrench = shape(deepest) | shape.inverse()(shape(deepest))         # push along the contact normal
+impulse = -2 * closing / (wrench & inertia.inverse()(wrench))     # one body's share; the pair adds both
 ```
 
-#### Key Takeaways
-* **Shapes are forms**: an ellipse is a sum of point dyads, drawn by evaluating it at every pixel, and two ellipses are apart exactly when a blend of their forms is positive definite.
-* **Inertia is a map**: `Momentum <- Rate` from mass points; impulses go through its inverse, and the crowd keeps its energy and momentum.
+* **Shapes as quadric forms.** Drawing, collision and contact all come from the form: a pixel is inside where it is negative, and two shapes are apart exactly when some blend of their forms is positive.
+* **One formula for the bounce.** The impulse follows from the contact wrench and each body's inverse inertia, and energy and momentum are conserved.
 
 ---
 
@@ -183,21 +158,19 @@ impulse = -2.0 * closing / (one.regressive(response_one) + other.regressive(resp
 
 ![A cone-tipped cyclide carried around a vortex circle, linked with a ring on that circle](../plots/cyclides_linked_vortex.gif)
 
-#### Construction
 ```python
-form = Point & surfaces                                                    # [n] Scalar <- (Point, Point): zero on the surface
-# The ray X = origin + 2u ray_linear(d) + u² ray_bend(d, d) in form(X, X), one form per power of u:
-constant = form(origin, origin)                                            # [n] Scalar
-linear = 4 * form(origin, ray_linear)                                      # [n] Scalar <- Direction
-quadratic = 4 * form(ray_linear, ray_linear) + 2 * form(origin, ray_bend)  # [n] Scalar <- (Direction, Direction)
-cubic = 4 * form(ray_linear, ray_bend)                                     # [n] Scalar <- (Direction,) * 3
-quartic = form(ray_bend, ray_bend)                                         # [n] Scalar <- (Direction,) * 4
+form = Point & surfaces                      # [n] Scalar <- (Point, Point): zero on the surface
+ray_bend                                     # [] Point <- (Direction, Direction): how a ray bends
+quartic = form(ray_bend, ray_bend)           # [n] Scalar <- (Direction, Direction, Direction, Direction)
+
+tori = dilation >> tubes(dilation << Point)  # [3] Sphere <- Point: dilated tubes are tori
+rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried around a vortex
 ```
 
-#### Key Takeaways
-* **The ray polynomial is a set of forms**: its coefficients keep the pixel direction open, so one binding gives every pixel's quartic.
-* **Conformal maps make the shapes**: dilations bend tubes into tori and Dupin cyclides, and a circle's exponential carries a surface around it.
+* **A form with four open slots.** Feeding the ray's bend into both slots of the surface's form leaves four open directions: the leading coefficient of every pixel's quartic, from one binding.
+* **Shapes are made by moving maps.** A dilation bends tubes into tori and Dupin cyclides, and a circle's exponential carries a surface around it.
+
 
 # References
 
-* <a id="ref-ca-to-gc"></a>**[ca-to-gc]** D. Hestenes and G. Sobczyk, *Clifford Algebra to Geometric Calculus: A Unified Language for Mathematics and Physics*. [Link](https://www.researchgate.net/publication/258944244_Clifford_Algebra_to_Geometric_Calculus_A_Unified_Language_for_Mathematics_and_Physics)
+* <a id="ref-ca-to-gc"></a>**[ca-to-gc]** D. Hestenes and G. Sobczyk, *Clifford Algebra to Geometric Calculus: A Unified Language for Mathematics and Physics*, Reidel, 1984. Extensors are defined in Section 3-10, "Tensors"; extensor fields and their differentials in Section 4-1. [Link](https://math.mit.edu/~dunkel/Teach/18.S996_2022S/books/Hestenes-Sobczyk1984_Book_CliffordAlgebraToGeometricCalc.pdf)
