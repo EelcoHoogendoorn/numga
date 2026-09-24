@@ -61,6 +61,7 @@ class Extensor:
     inverse_factor = ExtensionMethod("inverse_factor")
     inverse_hitzer = ExtensionMethod("inverse_hitzer")
     trace = ExtensionMethod("trace")
+    outermorphism = ExtensionMethod("outermorphism")
     det = ExtensionMethod("det", operand_counts=(1, 2))
     real = ExtensionMethod("real")
     solve = ExtensionMethod("solve")
@@ -724,10 +725,7 @@ class Extensor:
             raise ValueError("Extensor GATypes differ")
 
     def __repr__(self) -> str:
-        return (
-            f"Extensor(gatype={self.gatype!r}, shape={self.shape}, "
-            f"context={type(self.context).__name__})"
-        )
+        return f"Extensor({self.gatype.signature}, shape={self.shape})"
 
 
 class _AtIndexer:

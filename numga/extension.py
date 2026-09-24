@@ -18,9 +18,10 @@ class ExtensionMethod:
     """A dynamically installable, whole-GAType-dispatched Extensor method.
 
     Portable registrations use algebra-independent :class:`GATypePattern`
-    values (or unambiguous Trait/TraitSet shorthand). A concrete GAType is a
-    deliberately algebra-local carrier specialization. A callable condition is
-    the explicit low-level escape hatch and receives complete GATypes.
+    values (or unambiguous Trait/TraitSet shorthand). A concrete GAType binds
+    one algebra and matches every operand whose support it contains, in any
+    blade layout. A callable condition receives the complete GATypes, layout
+    included, and is tried before every declarative registration.
 
     The name is explicit because assigning a descriptor to ``Extensor`` after
     class creation does not invoke the descriptor ``__set_name__`` hook.

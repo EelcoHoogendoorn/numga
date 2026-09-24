@@ -43,7 +43,7 @@ Passing an unbound GAType (`Vector`, `Point`, `Twist`, `Plane`, etc.) to any GA 
 
 ### Open Slot Expressions
 ```python
-# Unary linear map (Arity 1): Wrench <- Point
+# Unary linear map (Arity 1): Forque <- Point
 line_map = mv.x & Point
 
 # Binary multilinear map (Arity 2): Line <- (Point, Point)
@@ -61,7 +61,7 @@ magnetic = Bivector - electric                       # [] Bivector <- Bivector (
 ```
 A multivector times a linear form is a rank-one dyad. Sums of dyads build stiffness, curvature, sensor precision and quadric error metrics:
 ```python
-spring = lines * (Twist & lines) * spring_constants  # [n_springs] Wrench <- Twist
+spring = lines * (Twist & lines) * spring_constants  # [n_springs] Forque <- Twist
 plus = nx * (nx | Bivector) - ny * (ny | Bivector)   # [] Bivector <- Bivector
 ```
 
@@ -181,7 +181,7 @@ cone = on_planes(disc(projection))                     # Plane <- Point
 Batch axes lead the structural axes and are not slots: they index independent copies of an expression. `stack` creates a batch axis, `.sum(axis)` removes one, and indexing follows NumPy:
 ```python
 waves = stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)   # [n_time, 3] Bivector <- Bivector
-stiffness = spring_stiffness.sum(axis=0)                                  # [] Wrench <- Twist
+stiffness = spring_stiffness.sum(axis=0)                                  # [] Forque <- Twist
 ```
 Calling a batched map on a batched argument broadcasts the batch axes against each other:
 ```python

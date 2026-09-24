@@ -494,8 +494,16 @@ class GAType:
     def __reduce__(self) -> tuple[type[GAType], tuple[tuple[SubSpace, ...], TraitSet]]:
         return type(self), (self.subspaces, self.traits)
 
+    @property
+    def signature(self) -> str:
+        """Output and inputs by subspace name: in bivector <- bivector, with any traits after a bar."""
+
+        output, *inputs = (space.type_name for space in self.subspaces)
+        text = f"{output} <- {', '.join(inputs)}" if inputs else output
+        return f"{text} | {', '.join(trait.name for trait in self.traits)}" if self.traits else text
+
     def __repr__(self) -> str:
-        return f"GAType(subspaces={self.subspaces!r}, traits={self.traits!r})"
+        return f"GAType({self.signature})"
 
 
 def _comparison_gatype(value: object) -> GAType | None:

@@ -307,5 +307,22 @@ class SubSpace:
     def __reduce__(self) -> tuple[type[SubSpace], tuple[Algebra, tuple[int, ...], tuple[int, ...]]]:
         return type(self), (self.algebra, self.masks, self.signs)
 
+    @property
+    def blade_names(self) -> tuple[str, ...]:
+        """The oriented blade names in coefficient order, as ``algebra.subspace`` reads them."""
+
+        return tuple(self.algebra.oriented_blade_name(mask, sign) for mask, sign in zip(self.masks, self.signs))
+
+    @property
+    def type_name(self) -> str:
+        """The named subspace with this support, or the smallest one containing it: bivector,
+        in bivector. Where two named subspaces coincide, the earlier name wins."""
+
+        named = self.algebra.subspace.named()
+        exact = next((name for name, space in named if space.same_support(self)), None)
+        containing = min((len(space), i, name) for i, (name, space) in enumerate(named)
+                         if self.support_is_subset_of(space))
+        return exact or "in " + containing[2]
+
     def __repr__(self) -> str:
-        return f"SubSpace(algebra={self.algebra!r}, masks={self.masks!r}, signs={self.signs!r})"
+        return f"SubSpace({self.type_name}: {' '.join(self.blade_names)})"

@@ -148,7 +148,6 @@ def render_setup(
     body: Point,
     anchors: Point,
     attachments: Point,
-    title: str,
 ) -> plt.Figure:
     """Render the physical suspension layout at equilibrium."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
@@ -169,25 +168,5 @@ def render_setup(
     ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
     ax.set_aspect("equal")
     ax.set_axis_off()
-    ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
-    fig.tight_layout()
-    return fig
-
-
-def render_mass_distribution(
-    body: Point,
-    title: str,
-) -> plt.Figure:
-    """Plot the rigid plate and its 4 corner mass points at rest."""
-    fig, ax = plt.subplots(figsize=(5, 3), dpi=120, facecolor="white")
-    b = coordinates(body)
-    plate = Polygon(b, closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=2, zorder=2)
-    ax.add_patch(plate)
-    ax.scatter(b[:, 0], b[:, 1], s=60, color=STRETCH, edgecolor=BODY, linewidth=1.2, zorder=5)
-    ax.set_aspect("equal")
-    lo, hi = b.min(axis=0) - [0.3, 0.3], b.max(axis=0) + [0.3, 0.3]
-    ax.set(xlim=(lo[0], hi[0]), ylim=(lo[1], hi[1]))
-    ax.set_axis_off()
-    ax.set_title(title, fontsize=11, color=SUPPORT, pad=6)
     fig.tight_layout()
     return fig

@@ -15,8 +15,9 @@ class GATypePattern:
     A pattern deliberately has no SubSpaces.  The concrete :class:`GAType` on
     every Extensor remains the complete, layout-bearing record; omitted axes
     here mean that an implementation is independent of their representation.
-    Algorithms which do depend on concrete carriers may register a GAType
-    directly instead.
+    A registered GAType binds one algebra and matches by support, in any
+    layout; an algorithm written against one coefficient layout registers a
+    predicate comparing subspaces instead.
     """
 
     __slots__ = ("_arity", "_traits", "_hash")

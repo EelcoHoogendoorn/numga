@@ -491,6 +491,19 @@ class Algebra:
         separator = "" if all(len(name) == 1 for name in self.basis_names) else "^"
         return separator.join(names)
 
+    def oriented_blade_name(self, blade: int, sign: int) -> str:
+        """Name an oriented blade as the subspace parser reads it: a negative orientation swaps
+        the first two generators, zx for -xz, and only a scalar or a vector takes a minus sign."""
+
+        name = self.blade_name(blade)
+        if sign > 0:
+            return name
+        separator = "" if all(len(name) == 1 for name in self.basis_names) else "^"
+        names = name.split(separator) if separator else list(name)
+        if len(names) < 2 or name == "1":
+            return "-" + name
+        return separator.join([names[1], names[0], *names[2:]])
+
     def geometric_product(self, left: int, right: int) -> BladeProduct:
         """Multiply two canonical basis blades.
 

@@ -4,7 +4,7 @@ A spring joins a fixed anchor to a point on the body. Its normalized PGA line
 is both its line of action and a measurement: pairing it with a small rigid
 motion gives the spring's extension. Leave that motion open, multiply by the
 same line and the spring constant, and sum. The result is a stiffness extensor
-mapping body displacement to the opposing wrench (force and torque).
+mapping body displacement to the opposing forque (force and torque).
 
 Pair the output with another open motion to obtain the bilinear energy form.
 The inertia extensor uses the same input and output spaces; their generalized
@@ -42,10 +42,10 @@ mv = ctx.multivector
 Scalar = PGA2D.gatype.scalar()
 Point = PGA2D.gatype.antivector()
 Twist = PGA2D.gatype.bivector()
-Wrench = PGA2D.gatype.antibivector()
+Forque = PGA2D.gatype.antibivector()
 SpringExtension = PGA2D.gatype((Scalar, Twist))
-Stiffness = PGA2D.gatype((Wrench, Twist))
-Inertia = PGA2D.gatype((Wrench, Twist))
+Stiffness = PGA2D.gatype((Forque, Twist))
+Inertia = PGA2D.gatype((Forque, Twist))
 
 
 def point(coords: np.ndarray) -> Point:
@@ -115,19 +115,19 @@ def mode_case(
 def normal_modes(system: Suspension) -> ModeCase:
     """Stiffness and inertia of one suspension, and its three modes."""
     # 1. Spring lines of action in PGA (joining anchor to attachment):
-    lines: Wrench = (system.anchors & system.attachments).normalized()           # [n_springs] Wrench
+    lines: Forque = (system.anchors & system.attachments).normalized()           # [n_springs] Forque
 
     # 2. Pairing an open twist with the spring line measures linear stretch (Twist -> Scalar):
     extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
 
-    # 3. Hooke's law: line of action scaled by extension and spring constant (Wrench <- Twist):
-    spring_stiffness: Stiffness = lines * extension * system.spring_constants    # [n_springs] Wrench <- Twist
-    stiffness: Stiffness = spring_stiffness.sum(axis=0)                          # [] Wrench <- Twist
+    # 3. Hooke's law: line of action scaled by extension and spring constant (Forque <- Twist):
+    spring_stiffness: Stiffness = lines * extension * system.spring_constants    # [n_springs] Forque <- Twist
+    stiffness: Stiffness = spring_stiffness.sum(axis=0)                          # [] Forque <- Twist
 
     # 4. Direction of motion (velocity) of each point under an open twist:
     velocities: Point = system.mass_points.commutator(Twist)                     # [4] Point <- Twist
-    point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [4] Wrench <- Twist
-    inertia: Inertia = point_momenta.sum(axis=0)                                 # [] Wrench <- Twist
+    point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [4] Forque <- Twist
+    inertia: Inertia = point_momenta.sum(axis=0)                                 # [] Forque <- Twist
 
     # 5. Bilinear energy forms (Scalar <- Twist, Twist):
     pe_form = Twist & stiffness                                                  # [] Scalar <- (Twist, Twist)

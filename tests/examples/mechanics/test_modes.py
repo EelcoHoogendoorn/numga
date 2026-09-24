@@ -14,7 +14,7 @@ from examples.mechanics.modes.core import (
     Stiffness,
     Suspension,
     Twist,
-    Wrench,
+    Forque,
     mv,
     suspension as inputs,
 )
@@ -22,14 +22,14 @@ from examples.mechanics.modes.render import coordinates
 
 
 def spring_stiffness(
-    lines: Wrench,
+    lines: Forque,
     spring_constants: np.ndarray,
 ) -> tuple[Stiffness, SpringExtension]:
     """Compute total stiffness extensor and extension linear form from spring lines.
 
     Parameters
     ----------
-    lines : [n_springs] Wrench
+    lines : [n_springs] Forque
         Normalized lines of action of the springs.
     spring_constants : [n_springs] float
         Spring elastic constants.
@@ -37,13 +37,13 @@ def spring_stiffness(
     Returns
     -------
     stiffness : [] Stiffness
-        Total stiffness extensor (Wrench <- Twist).
+        Total stiffness extensor (Forque <- Twist).
     extension : [n_springs] SpringExtension
         Linear form measuring spring extension from twist displacement (Scalar <- Twist).
     """
     extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
-    spring_stiffness_dyads: Stiffness = lines * extension * spring_constants     # [n_springs] Wrench <- Twist
-    stiffness: Stiffness = spring_stiffness_dyads.sum(axis=0)                   # [] Wrench <- Twist
+    spring_stiffness_dyads: Stiffness = lines * extension * spring_constants     # [n_springs] Forque <- Twist
+    stiffness: Stiffness = spring_stiffness_dyads.sum(axis=0)                   # [] Forque <- Twist
     return stiffness, extension
 
 
@@ -63,11 +63,11 @@ def body_inertia(
     Returns
     -------
     Inertia
-        [] Inertia extensor (Wrench <- Twist).
+        [] Inertia extensor (Forque <- Twist).
     """
     velocities: Point = points.commutator(Twist)                                # [n_points] Point <- Twist
-    point_momenta: Inertia = (points & velocities) * masses                     # [n_points] Wrench <- Twist
-    return point_momenta.sum(axis=0)                                            # [] Wrench <- Twist
+    point_momenta: Inertia = (points & velocities) * masses                     # [n_points] Forque <- Twist
+    return point_momenta.sum(axis=0)                                            # [] Forque <- Twist
 
 
 def normal_modes(
@@ -79,9 +79,9 @@ def normal_modes(
     Parameters
     ----------
     stiffness : [] Stiffness
-        Stiffness extensor (Wrench <- Twist).
+        Stiffness extensor (Forque <- Twist).
     inertia : [] Inertia
-        Inertia extensor (Wrench <- Twist).
+        Inertia extensor (Forque <- Twist).
 
     Returns
     -------
@@ -100,9 +100,9 @@ def normal_modes(
 @dataclass
 class System:
     geometry: Suspension
-    stiffness: Stiffness            # [] Wrench <- Twist
+    stiffness: Stiffness            # [] Forque <- Twist
     extension: SpringExtension      # [n_springs] Scalar <- Twist
-    inertia: Inertia                # [] Wrench <- Twist
+    inertia: Inertia                # [] Forque <- Twist
 
     def __getattr__(self, name: str) -> object:
         return getattr(self.geometry, name)
@@ -111,7 +111,7 @@ class System:
 def suspension(springs: int) -> System:
     """Construct full suspension system including geometry, stiffness, and inertia."""
     geometry = inputs(springs)
-    lines: Wrench = (geometry.anchors & geometry.attachments).normalized()       # [n_springs] Wrench
+    lines: Forque = (geometry.anchors & geometry.attachments).normalized()       # [n_springs] Forque
     stiffness, extension = spring_stiffness(lines, geometry.spring_constants)
     return System(geometry, stiffness, extension,
                   body_inertia(geometry.mass_points, geometry.masses))

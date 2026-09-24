@@ -12,7 +12,7 @@ basis the identification is invisible.
 The sections below treat these in order: the absence of a matrix product and of a transpose; the metric and the
 complement; the relation between maps and forms; quadrics; inverses; least squares; the
 conversion between second moments and inertia; traces, with the Ricci contraction as the
-example; homogeneous unknowns; covariance and information; batch axes and slots. The
+example; homogeneous unknowns; covariance and information; batch axes and slots; outermorphisms. The
 expressions are taken from the [examples](../examples/README.md).
 
 ## 1. There is no matrix product
@@ -211,7 +211,7 @@ becomes a bilinear form, as the [modes example](../examples/mechanics/modes/core
 stiffness:
 
 ```python
-energy = Twist & stiffness                  # Scalar <- (Twist, Twist), from Wrench <- Twist
+energy = Twist & stiffness                  # Scalar <- (Twist, Twist), from Forque <- Twist
 ```
 
 Form to map is a solve of that pairing. The pairing form is solved against the given form,
@@ -223,7 +223,7 @@ polarity = (Plane & Point).solve(form)      # Plane <- Point, from Scalar <- (Po
 
 Two pairings are available, and they differ in whether the metric is involved. The regressive
 product pairs a space with its complement, so the output of the resulting map is in the dual
-space: a plane for a point, a wrench for a twist. The inner product `|` uses the metric and
+space: a plane for a point, a forque for a twist. The inner product `|` uses the metric and
 keeps the output in the same space:
 
 ```python
@@ -339,11 +339,11 @@ from its inertia is this case; section 8 shows it.
 ## 8. Second moments and inertia
 
 A mass cloud has a second-moment quadric and an inertia map. They hold the same information:
-the moment is a dual quadric on planes, the inertia a map from twists to wrenches.
+the moment is a dual quadric on planes, the inertia a map from twists to forques.
 
 ```python
 moment = (points * (Plane & points) * masses).sum(axis=0)              # Point <- Plane
-inertia = ((points & points.commutator(Bivector)) * masses).sum(axis=0) # Wrench <- Twist
+inertia = ((points & points.commutator(Bivector)) * masses).sum(axis=0) # Forque <- Twist
 ```
 
 Moment to inertia goes through principal points. Diagonalize the plane metric against the
@@ -354,7 +354,7 @@ dyads sum directly to the inertia of the cloud:
 ```python
 values, planes = (Plane | Plane).eigh(Plane & moment)                   # [4] Scalar, [4] Plane
 principal = moment(planes)                                              # [4] Point
-inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Wrench <- Twist
+inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Forque <- Twist
 ```
 
 Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor
@@ -362,7 +362,7 @@ solve of section 7. Write the construction that turns a
 second moment into an inertia with every slot open, and solve it for the unknown map:
 
 ```python
-construction = Point & Plane.dual().commutator(Bivector)                # Wrench <- (Point, Plane, Twist)
+construction = Point & Plane.dual().commutator(Bivector)                # Forque <- (Point, Plane, Twist)
 moment = construction.lstsq(inertia)                                    # Point <- Plane
 ```
 
@@ -501,3 +501,23 @@ coordinate-free subspace contractions, and alternative execution strategies—su
 kernel contraction or symbolic unrolling—follow the exact same algebraic rules without changing
 the interface.
 
+## 13. Outermorphisms
+
+A map on vectors extends to every grade by mapping each factor of a product. The product is
+the one that multiplies the map's own space: `^` for vectors, `&` for antivectors. So a vector
+map raises grade and a point map lowers it, with the same construction and no metric:
+
+```python
+t.outermorphism(Bivector)(a ^ b) == t(a) ^ t(b)         # t: Vector <- Vector
+T.outermorphism(Line)(p & q) == T(p) & T(q)             # T: Point <- Point, in PGA3D
+T.outermorphism(Plane)(p & q & r) == T(p) & T(q) & T(r)
+t.outermorphism(Pseudoscalar)(I) == t.det() * I         # the top grade is the determinant
+t(s).outermorphism(Bivector) == t.outermorphism(Bivector)(s.outermorphism(Bivector))
+```
+
+A point map moves lines and planes this way even when it is singular, such as a camera's
+central projection, where no inverse exists to pull planes back through. Building the extension
+costs a product per basis blade of the grade; applying it is a single map call.
+
+This is the extension operator of A. M. Moya, V. V. Fernández and W. A. Rodrigues Jr.,
+[Extensors in Geometric Algebras](https://arxiv.org/abs/math/0501558).

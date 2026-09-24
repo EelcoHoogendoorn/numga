@@ -310,16 +310,37 @@ NumPy code is written: batch the data, as one would anyway, and the array work d
 ## 7. Extension methods
 
 `inverse`, `solve`, `trace`, `eigh`, `exp` and the rest are `ExtensionMethod` descriptors on
-`Extensor`. Each is a dispatch table keyed on the complete type of its operands: arity,
-subspaces and traits. A registration is a pattern over that type, ranked by specificity, or a
-predicate on it, tried before the patterns in registration order. Adding a method, or a
-specialization of one, is a registration:
+`Extensor`. Each holds a dispatch table over the GATypes of its operands. There are two kinds
+of registration, and they differ in what they can see.
+
+A declarative registration matches on meaning. A GAType matches every operand whose support
+lies inside its own, in any blade layout, carrying at least its traits, in that one algebra. A
+`GATypePattern` states only an arity and traits, and matches in every algebra. Among the
+declarative matches the most specific wins, and a specialization must be registered before the
+more general registration it refines:
 
 ```python
-@Extensor.inverse.register(lambda t: t.entails(CoefficientOrthogonal))
-def inverse_orthogonal(value: Extensor) -> Extensor:
-    ...                                     # a transposition of the kernel, typed as the transposed map
+@Extensor.exp.register(ga.gatype.bivector())         # yz zx xy xw yw zw, xy xz yz ..., or only yz zx xy
+@Extensor.inverse.register(GATypePattern.map())      # any map in any algebra
 ```
+
+A predicate registration is a function of the complete GATypes, and sees everything the
+declarative rules abstract away: the algebra, the exact layout, the types of derived products.
+Predicates are tried before every declarative registration, in the order they were registered;
+`position=0` puts one first. Code written against specific coefficient indices is registered this
+way, with a predicate that compares subspaces, which includes blade order and signs:
+
+```python
+PGA3 = AlgebraDescription(("x", "y", "z", "w"), (1, 1, 1, 0))
+@Extensor.exp.register(lambda t: t.algebra.description == PGA3
+                       and t.subspaces == (t.algebra.subspace("yz zx xy xw yw zw"),), position=0)
+@Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector() and t.squared.is_empty)
+```
+
+The first is how the opt-in closed forms in `numga.extensions.optimized` bind to one layout;
+another layout of the same bivectors falls through to the generic method, not into a
+conversion. At runtime a call is one dictionary lookup on its operands' GATypes; predicates and
+patterns are evaluated only the first time a type is seen.
 
 `inverse` is the fullest table and shows the pattern. A certified unit versor inverts by its
 reverse; an orthogonal map by transposition; a scalar by its reciprocal; a square map by a
@@ -328,9 +349,27 @@ multivector by dividing out a self-product, choosing the involution and the numb
 that its type needs to reach a scalar, falling back to a linear solve in the subalgebra its
 blades generate. `solve` dispatches on the shape of the problem: a map against a value, a form
 against a linear form, two values, or a multilinear construction against a map, as
-[`extensor_advanced.md`](extensor_advanced.md) describes from the outside. An implementation
-takes extensors and returns an extensor with a type it declares. The numeric escape, a call
-into `linalg`, lives inside the registration and nowhere else.
+[`extensor_advanced.md`](extensor_advanced.md) describes from the outside.
+
+An implementation takes extensors and returns an extensor with a type it declares. The numeric
+escape, a call into `linalg` or a formula over kernel columns, lives inside the registration
+and nowhere else.
+
+Dense coefficients and contraction are one way to store and apply an extensor, not part of its
+contract. `PrincipalInertiaPGA3` in `numga.extensions.optimized` is a rigid-body inertia stored
+as four numbers, a mass and three moments, and it is an `Extensor` of type
+`Bivector <- Bivector` like any other:
+
+```python
+inertia = principal_inertia_pga3(mass, moments)
+inertia(rate)                   # six products on the stored numbers
+inertia.inverse()               # four reciprocals, not a 6x6 inverse
+motor >> inertia                # anything else sees the dense map, and returns an ordinary Extensor
+```
+
+A subclass does this by overriding `__call__` and whichever methods it can do better, providing
+`shape` from its own numbers and `_kernel` as the dense map built for each use, and overriding
+`_from_prepared_kernel` so that derived results are plain extensors.
 
 ## References
 

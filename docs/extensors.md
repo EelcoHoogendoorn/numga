@@ -70,8 +70,8 @@ pixels = local_to_pixel[:, None](unit_box[None, :])                   # [5, 8] P
 ```python
 # Measure spring stretch from an open twist, assemble stiffness and inertia, eigensolve:
 extension = Twist & lines                                              # [n_springs] Scalar <- Twist
-stiffness = (lines * extension * spring_constants).sum()               # [] Wrench <- Twist
-inertia = (mass_points & mass_points.commutator(Twist) * masses).sum()  # [] Wrench <- Twist
+stiffness = (lines * extension * spring_constants).sum()               # [] Forque <- Twist
+inertia = (mass_points & mass_points.commutator(Twist) * masses).sum()  # [] Forque <- Twist
 
 # Symmetric bilinear energy forms dispatch to generalized Hermitian eigensolve:
 values, modes = (Twist & stiffness).eigh(Twist & inertia)              # values: [3] Scalar, modes: [3] Twist
@@ -79,7 +79,7 @@ frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)       # [3] Sca
 ```
 
 #### Key Takeaways
-* **Additive Physical Responses**: Springs are rank-1 dyads (`Wrench <- Twist`) and mass points are momentum lines (`Wrench <- Twist`). Summing individual extensors synthesizes total stiffness and inertia without selecting coordinate origins or applying Steiner's parallel-axis shifts.
+* **Additive Physical Responses**: Springs are rank-1 dyads (`Forque <- Twist`) and mass points are momentum lines (`Forque <- Twist`). Summing individual extensors synthesizes total stiffness and inertia without selecting coordinate origins or applying Steiner's parallel-axis shifts.
 * **Energy Bilinear Forms & Eigensolve**: Contracting with open twists yields symmetric bilinear forms (`Scalar <- (Twist, Twist)`), allowing a direct generalized eigensolve `pe_form.eigh(ke_form)` without inverting inertia or forming asymmetric coordinate matrices $M^{-1}K$.
 
 ---

@@ -152,6 +152,18 @@ class SubSpaceFactory(FlyweightFactory[SubSpace]):
             if index(self.algebra.grade(mask)) % 2 == 0
         )
 
+    @lru_cache(maxsize=None)
+    def named(self) -> tuple[tuple[str, SubSpace], ...]:
+        """The named subspaces of this algebra, in order of precedence where two coincide."""
+        n = self.algebra.dimension
+        grades = (("scalar", 0), ("pseudoscalar", n), ("vector", 1), ("bivector", 2),
+                  ("antivector", n - 1), ("antibivector", n - 2), ("trivector", 3))
+        return (
+            (("empty", self.empty()),)
+            + tuple((name, self.k_vector(k)) for name, k in grades if 0 <= k <= n)
+            + (("even", self.even()), ("full", self.full()))
+        )
+
     # Descriptive aliases retained on the new surface; they do not introduce a
     # second construction path.
     multivector = full

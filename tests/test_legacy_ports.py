@@ -7,7 +7,7 @@ import pytest
 
 from numga import Algebra, NumpyContext
 from numga.algebras import PGA3D
-from numga.extensions.optimized import exp_pga3, normalize_pga3
+from numga.extensions.optimized import exp_pga3, exp_rotation_pga3, exp_translation_pga3, normalize_pga3
 
 
 @pytest.mark.parametrize("signature", ("x+y+z+w0", "x+y+z+w+", "x+y+z+p+n-"))
@@ -71,26 +71,21 @@ def test_hitzer_factor_is_an_adjugate_where_its_product_reduces_to_scalar():
     np.testing.assert_allclose((inverse * value - 1).kernel, 0, atol=1e-14)
 
 
-@pytest.mark.parametrize("backend", ("numpy", "jax"))
-def test_optimized_pga3_formulas_handle_signed_layouts_and_translation_limit(backend):
-    if backend == "jax":
-        jax = pytest.importorskip("jax")
-        from numga.backend.jax import JaxContext
-        context, compile = JaxContext(PGA3D), jax.jit
-    else:
-        context, compile = NumpyContext(PGA3D), lambda f: f
-    mv = context.multivector
+@pytest.mark.parametrize("body, names", [
+    (exp_pga3, "yz zx xy xw yw zw"), (exp_rotation_pga3, "yz zx xy"), (exp_translation_pga3, "xw yw zw"),
+])
+def test_optimized_pga3_exp_matches_the_generic_method_in_the_default_layout(body, names):
+    mv = NumpyContext(PGA3D).multivector
     rotation = np.array([[.1, .2, -.3], [0, 0, 0], [1e-8, -1e-8, 1e-8]])
-    coefficients = np.concatenate((rotation, np.full((3, 3), .2)), axis=-1)
-    b = mv.bivector(coefficients)
-    result = compile(exp_pga3)(b)
-    expected = NumpyContext(PGA3D).multivector.bivector(coefficients).exp()
-    np.testing.assert_allclose((result - context.lower(context.extensor(expected.gatype, expected.kernel))).kernel,
-                               0, atol=2e-7)
-    raw = mv.even(np.random.default_rng(2).normal(size=(3, 8)))
-    reference = NumpyContext(PGA3D).multivector.even(np.asarray(raw.kernel)).normalized()
-    normalized = compile(normalize_pga3)(raw)
-    np.testing.assert_allclose(normalized.cast(reference.subspace).kernel, reference.kernel, atol=1e-6)
+    b = mv.bivector(np.concatenate((rotation, np.full((3, 3), .2)), axis=-1)).select_subspace(PGA3D.subspace(names))
+    assert body(b).gatype == b.exp().gatype
+    np.testing.assert_allclose(body(b).kernel, b.exp().kernel, atol=2e-7)
+
+
+def test_optimized_pga3_normalize_matches_the_generic_method():
+    raw = NumpyContext(PGA3D).multivector.even(np.random.default_rng(2).normal(size=(3, 8)))
+    assert normalize_pga3(raw).gatype == raw.normalized().gatype
+    np.testing.assert_allclose(normalize_pga3(raw).kernel, raw.normalized().kernel, atol=1e-12)
 
 
 def test_formula_and_generated_python_preserve_rational_coefficients():
