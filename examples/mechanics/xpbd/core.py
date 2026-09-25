@@ -62,8 +62,8 @@ class Chain(NamedTuple):
 
 class Joints(NamedTuple):
     """A disjoint set of pairwise joints that can be relaxed simultaneously."""
-    bodies: np.ndarray            # [2, joints] indices of the joined bodies
-    anchors: Point                # [2, joints] anchor points, each in its own body frame
+    bodies: np.ndarray            # [ends, joints] indices of the joined bodies
+    anchors: Point                # [ends, joints] anchor points, each in its own body frame
     compliance: Scalar            # [joints] inverse stiffness alpha
 
 

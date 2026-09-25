@@ -106,7 +106,7 @@ def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Vector
     it does not establish uniqueness for general dynamical histories. The
     proper rod length is 1.
     """
-    directions: Vector = boost(np.array([before_rapidity, after_rapidity]))(mv.t)   # [2] Vector
+    directions: Vector = boost(np.array([before_rapidity, after_rapidity]))(mv.t)   # [step + 1] Vector
     return strain_preserving_kinks(directions[0], directions[1]), directions
 
 
@@ -155,8 +155,8 @@ def worldline_events(times: Scalar, kinks: Vector, directions: Vector) -> Vector
 
 
 def worldlines(kinks: Vector, directions: Vector, span: Scalar) -> Vector:
-    """Each end's worldline as a polyline over the observer times span [2], through its kinks: [step + 2, end]."""
-    ends: Vector = worldline_events(span, kinks, directions)             # [2, end]
+    """Each end's worldline as a polyline over the observer times span [limit], through its kinks: [step + 2, end]."""
+    ends: Vector = worldline_events(span, kinks, directions)             # [limit, end]
     return concatenate((ends[:1], kinks, ends[1:]))
 
 

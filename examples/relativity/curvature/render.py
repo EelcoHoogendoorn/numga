@@ -106,7 +106,7 @@ def draw_curvature_map(
 # --- the strain packet and the Doppler check ------------------------------------------
 def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar) -> plt.Figure:
     """Strain profiles and their second derivatives, the weights of the curvature batch."""
-    h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, 2] float
+    h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, n_phases] float
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
     for ax, values in ((top, h), (bottom, h2)):
         ax.plot(time, values[:, 0], color=BLUE, lw=1.6)                  # plus
@@ -132,8 +132,8 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
 class _Detector:
     time: np.ndarray            # [n_time]
     reference: np.ndarray       # [n_beads, 2] in initial-radius units
-    positions: np.ndarray       # [3, n_time, n_beads, 2]
-    accelerations: np.ndarray   # [3, n_time, n_beads, 2]
+    positions: np.ndarray       # [n_polarizations, n_time, n_beads, 2]
+    accelerations: np.ndarray   # [n_polarizations, n_time, n_beads, 2]
     amplification: float
 
 
@@ -141,7 +141,7 @@ def _detector(
     time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector, amplification: float,
 ) -> _Detector:
     """Read the beads out in initial-radius units, with displacements magnified for display."""
-    positions: Vector = reference + amplification * displacement         # [n_time, 3, n_beads] Vector
+    positions: Vector = reference + amplification * displacement         # [n_time, n_polarizations, n_beads] Vector
     radius = float(np.linalg.norm(transverse(reference), axis=-1).mean())
     return _Detector(
         time=np.asarray(time),

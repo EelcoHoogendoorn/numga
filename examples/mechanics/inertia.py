@@ -33,12 +33,17 @@ def second_moment(inertia: Extensor) -> Extensor:
     sum(m * (a & p) * (b & p)) over the mass points p.
     """
     ga = inertia.algebra
-    Point, Plane, Bivector = ga.gatype.antivector(), ga.gatype.vector(), ga.gatype.bivector()
+    Point = ga.gatype.antivector()
+    Plane = ga.gatype.vector()
+    Bivector = ga.gatype.bivector()
     # This construction has type (AntiBivector <- Point, Plane, Bivector).
     # Duality turns the second input into a point while keeping its plane slot.
     construction = Point & Plane.dual().commutator(Bivector)
     # The supplied inertia matches AntiBivector <- Bivector, leaving Point <- Plane
-    # as the unknown second-moment map. The solve infers these axes from the types.
+    # as the unknown second-moment map: lstsq unbinds both unmatched slots at once,
+    # inferring them from the types. The inertia has more entries than the second
+    # moment, but the construction loses none of it: the system is overdetermined yet
+    # consistent, and lstsq solves it exactly rather than fitting it.
     return construction.lstsq(inertia)
 
 
@@ -52,7 +57,8 @@ def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
     Coordinate reference planes diagonalize inertia.
     """
     ga = moment.algebra
-    Plane, Rotor = ga.gatype.vector(), ga.gatype.rotor()
+    Plane = ga.gatype.vector()
+    Rotor = ga.gatype.rotor()
 
     # Pairing with another plane gives the scalar second-moment form: Plane & moment.
     # For mass points p, this form is sum(m * (a & p) * (b & p)).

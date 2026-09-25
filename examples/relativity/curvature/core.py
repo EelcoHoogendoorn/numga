@@ -138,7 +138,7 @@ def polarized_strain(plus: Strain, cross: Strain, profile: Scalar) -> Strain:
     """
     cosine, sine = profile[:, 0], profile[:, 1]                          # [n_time] Scalar
     plus_wave, cross_wave = plus * cosine, cross * sine                  # [n_time] Vector <- Vector
-    return 0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, 3]
+    return 0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, n_polarizations]
 
 
 def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
@@ -186,7 +186,7 @@ def polarized_waves(plus: Curvature, cross: Curvature, second: Scalar) -> Curvat
     """
     cosine, sine = second[:, 0], second[:, 1]                            # [n_time] Scalar
     plus_wave, cross_wave = plus * cosine, cross * sine                  # [n_time] Bivector <- Bivector
-    return -0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, 3]
+    return -0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, n_polarizations]
 
 
 def detector_ring(count: int) -> Vector:
@@ -208,4 +208,4 @@ def plane_patch(area: Bivector, edge: Vector) -> Vector:
     """Four corners of a simple area element, drawn from a unit spacelike edge in its plane."""
     other: Vector = edge.commutator(area) * 0.5
     edge = edge * 0.6
-    return stack((-edge - other, -edge + other, edge + other, edge - other))  # [4] Vector
+    return stack((-edge - other, -edge + other, edge + other, edge - other))  # [n_corners] Vector

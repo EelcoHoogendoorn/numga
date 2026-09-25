@@ -209,7 +209,7 @@ def draw_cones(motors: Motor, world_cones: Quadric) -> plt.Figure:
 
 def draw_reconstruction(motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> plt.Figure:
     """Sight cones fused into splats around the reconstructed points."""
-    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
+    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=75, layout="constrained")
     plot_reconstruction(ax, motors, world_cones, fused, points)
     return fig
 

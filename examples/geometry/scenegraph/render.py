@@ -58,10 +58,10 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
 
     # All faces of all bodies in one collection so matplotlib sorts them globally, each
     # shaded by the diffuse light on its outward normal:
-    polygons = euclidean(world_vertices)[:, faces]                  # [bodies, 6, 4, 3]
+    polygons = euclidean(world_vertices)[:, faces]                  # [bodies, faces, face_corners, 3]
     normals = np.cross(polygons[..., 1, :] - polygons[..., 0, :], polygons[..., 2, :] - polygons[..., 0, :])
     normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
-    shade = 0.50 + 0.50 * np.maximum(normals @ light_dir, 0.0)       # [bodies, 6]
+    shade = 0.50 + 0.50 * np.maximum(normals @ light_dir, 0.0)       # [bodies, faces]
     base = np.array([mcolors.to_rgb(c) for c in BODY_COLORS])[:, None, :]
     face_colors = np.concatenate([base * shade[..., None], np.ones((*shade.shape, 1))], axis=-1)
     ax.add_collection3d(Poly3DCollection(
@@ -91,7 +91,7 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     ax.add_collection3d(Poly3DCollection([sensor], facecolors="#DD6B20", edgecolors="#C05621", linewidths=1.5, alpha=0.55, zorder=3))
 
     # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor.
-    stages = np.stack([euclidean(stage) for stage in rays], axis=-2)      # [rays, 4, 3]
+    stages = np.stack([euclidean(stage) for stage in rays], axis=-2)      # [rays, stages, 3]
     for path, color in zip(stages, RAY_COLORS):
         for leg, width in zip(range(3), (1.4, 1.8, 1.8)):
             ax.plot3D(*path[leg:leg + 2].T, color=color, linewidth=width, alpha=0.9, zorder=4)
@@ -113,7 +113,7 @@ def plot_camera_image(ax: plt.Axes, projected_pixels: Point) -> None:
     ax.clear()
     width, height = 640, 480
     _, faces = unit_box_topology()
-    pixels = euclidean(projected_pixels)[..., :2]                  # [bodies, 8, 2]
+    pixels = euclidean(projected_pixels)[..., :2]                  # [bodies, vertices, 2]
 
     for body, color in zip(pixels, BODY_COLORS):
         for face in faces:

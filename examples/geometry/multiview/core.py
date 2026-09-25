@@ -248,3 +248,68 @@ def bundle_adjust_schur(
     points, fused = triangulate_cones(motors, reweight_cones(cameras, motors, local_cones))
     return motors, points, fused, information * free
 
+
+
+def align_rays_to_splats(
+    initial_motors: Motor,
+    local_cones: Quadric,
+    pinhole: Point,
+    pixels: Point,
+    iterations: int,
+    damping: float,
+    free: np.ndarray,
+) -> tuple[Motor, Quadric]:
+    """Align camera poses so that each pixel's sight line passes through the belief about its point.
+
+    A cone is minus twice the log-likelihood of its pixel, as a function of where the point is:
+    flat along the sight line, since moving the point along it does not change what the camera
+    sees. Adding the cones of a point over the cameras multiplies their likelihoods, so the fused
+    quadric, the splat, is minus twice the log of the belief about the point: a Gaussian wherever
+    the sight lines cross at an angle, sharp where they cross steeply, long where they are nearly
+    parallel. This holds in the units the cones carry; `reweight_cones` puts them in pixel units.
+
+    A pixel's cost is the splat's minimum along its sight line: minus twice the log-likelihood of
+    the most probable point on that line, which is the belief projected onto the sensor and
+    evaluated at the pixel. A sharp belief penalizes a sight line that misses it; a blurry one,
+    from sight lines that cross at a shallow angle, barely does. No point is ever extracted.
+
+    Along the line through the pinhole with heading h, the minimum is the splat on the line over
+    the splat on its heading. The splat on the line is the meet of the two points' polar planes,
+    paired with the line itself; the splat on the heading, the belief's stiffness along the line,
+    is held for each step. A camera step moves each sight line as a whole, so sliding along itself,
+    which leaves the minimum unchanged, never enters. Alternates fusing the beliefs with damped
+    Gauss-Newton steps on the poses. `pinhole` and `pixels` are in the cameras' frames and `free`
+    is 1 for each camera that moves and 0 for the anchored cameras that fix the gauge.
+    """
+    heading = pixels - pinhole                                    # [n_points, n_cams] Direction: each pixel's sight
+    ray = pinhole & heading                                       # [n_points, n_cams] sight lines
+    # How the pinhole, the headings and the sight lines move per unit right step of the pose; all
+    # fixed in the cameras' frames:
+    pinhole_motion = Twist.commutator(pinhole)                    # Point <- Twist
+    heading_motion = Twist.commutator(heading)                    # [n_points, n_cams] Point <- Twist
+    ray_motion = Twist.commutator(ray)                            # [n_points, n_cams] line <- Twist
+    motors = initial_motors
+
+    for _ in range(iterations):
+        # The belief about each point: its cones summed over the cameras, their likelihoods
+        # multiplied. Then each belief as seen from each camera:
+        splats = (motors >> local_cones(motors << Point)).sum(axis=-1)    # [n_points] Plane <- Point
+        local = motors << splats[:, None](motors >> Point)                # [n_points, n_cams] Plane <- Point
+
+        # The polar of each sight line, the meet of its points' polar planes, and how it moves; the
+        # polar paired with the line over the stiffness is the belief's minimum along the line:
+        polar_pinhole, polar_heading = local(pinhole), local(heading)
+        polar = polar_pinhole ^ polar_heading                              # [n_points, n_cams]
+        polar_motion = (local(pinhole_motion) ^ polar_heading) + (polar_pinhole ^ local(heading_motion))
+        stiffness = polar_heading & heading                                # [n_points, n_cams] Scalar
+
+        # How that minimum changes as the camera steps: the polar joined with the line's motion is
+        # the gradient, the polar's motion joined with the line's motion the curvature:
+        gradient = ((polar & ray_motion) / stiffness).sum(axis=0)          # [n_cams] Scalar <- Twist
+        curvature = ((polar_motion & ray_motion) / stiffness).sum(axis=0)  # [n_cams] Scalar <- (Twist, Twist)
+
+        # Solve the twist steps and hold the anchored cameras to fix gauge freedom:
+        step = curvature.lstsq(-gradient, rcond=1e-4) * free            # [n_cams] Twist
+        motors = motors * (step * (0.5 * damping)).exp()                # [n_cams] Motor
+
+    return motors, (motors >> local_cones(motors << Point)).sum(axis=-1)

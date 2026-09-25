@@ -42,9 +42,9 @@ def scenegraph():
 
     # The punchline: collapse the entire visual pipeline, kinematics to pixels, into a
     # single extensor per body, and project all canonical vertices in one pass.
-    local_to_pixel = world_to_pixel(bodies_to_world)                 # [5] Point <- Point
-    projected_pixels = project_vertices(local_to_pixel, unit_box)     # [5, 8] Point
-    world_vertices = bodies_to_world[:, None](unit_box[None, :])      # [5, 8] Point
+    local_to_pixel = world_to_pixel(bodies_to_world)                 # [bodies] Point <- Point
+    projected_pixels = project_vertices(local_to_pixel, unit_box)     # [bodies, vertices] Point
+    world_vertices = bodies_to_world[:, None](unit_box[None, :])      # [bodies, vertices] Point
 
     # Three gripper corners traced through the lenses to the sensor:
     gripper = world_vertices[-1]

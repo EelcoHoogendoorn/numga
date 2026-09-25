@@ -57,25 +57,25 @@ def point(coords: np.ndarray) -> Point:
 class Suspension:
     """Geometry and masses prepared for one planar suspension."""
 
-    body: Point                     # [4] Point
+    body: Point                     # [corners] Point
     attachments: Point              # [n_springs] Point
     anchors: Point                  # [n_springs] Point
     spring_constants: np.ndarray    # [n_springs] float
-    mass_points: Point              # [4] Point
-    masses: np.ndarray              # [4] float
+    mass_points: Point              # [mass_points] Point
+    masses: np.ndarray              # [mass_points] float
 
 
 @dataclass(frozen=True)
 class ModeCase:
     """The mode shapes of one suspension: displacements of body and springs per mode."""
 
-    body: Point                     # [4] Point
+    body: Point                     # [corners] Point
     attachments: Point              # [n_springs] Point
     anchors: Point                  # [n_springs] Point
-    frequencies: Scalar             # [3] Scalar, in Hz
-    body_offsets: Point             # [3, 4] Point
-    attachment_offsets: Point       # [3, n_springs] Point
-    extensions: Scalar              # [3, n_springs] Scalar
+    frequencies: Scalar             # [modes] Scalar, in Hz
+    body_offsets: Point             # [modes, corners] Point
+    attachment_offsets: Point       # [modes, n_springs] Point
+    extensions: Scalar              # [modes, n_springs] Scalar
 
 
 def suspension(springs: int) -> Suspension:
@@ -83,18 +83,18 @@ def suspension(springs: int) -> Suspension:
 
     The first two springs hang vertically; the third is angled and off-centre.
     """
-    body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [4, 2] float (center at (1, 1))
-    attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [3, 2] float
-    anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [3, 2] float
-    body = point(body_xy)                                                         # [4] Point
+    body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [corners, 2] float (center at (1, 1))
+    attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [springs, 2] float
+    anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [springs, 2] float
+    body = point(body_xy)                                                         # [corners] Point
     attachments = point(attachments_xy[:springs])                                 # [n_springs] Point
     anchors = point(anchors_xy[:springs])                                         # [n_springs] Point
     spring_constants = np.full(springs, 6.0)                                      # [n_springs] float
 
     # Tensor-product 2-point Gauss quadrature on the uniform plate:
     center = body.sum(axis=0) * 0.25
-    mass_points = center + (body - center) / np.sqrt(3)                           # [4] Point
-    masses = np.full(4, 0.25)                                                     # [4] float
+    mass_points = center + (body - center) / np.sqrt(3)                           # [mass_points] Point
+    masses = np.full(4, 0.25)                                                     # [mass_points] float
     return Suspension(body, attachments, anchors, spring_constants, mass_points, masses)
 
 
@@ -108,7 +108,7 @@ def mode_case(
     extensions: Scalar,
 ) -> ModeCase:
     """Collect mode geometry, with natural frequencies f = sqrt(lambda) / (2 pi) in Hz."""
-    frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)              # [3] Scalar
+    frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)              # [modes] Scalar
     return ModeCase(body, attachments, anchors, frequencies, body_offsets, attachment_offsets, extensions)
 
 
@@ -125,8 +125,8 @@ def normal_modes(system: Suspension) -> ModeCase:
     stiffness: Stiffness = spring_stiffness.sum(axis=0)                          # [] Forque <- Twist
 
     # 4. Direction of motion (velocity) of each point under an open twist:
-    velocities: Point = system.mass_points.commutator(Twist)                     # [4] Point <- Twist
-    point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [4] Forque <- Twist
+    velocities: Point = system.mass_points.commutator(Twist)                     # [mass_points] Point <- Twist
+    point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [mass_points] Forque <- Twist
     inertia: Inertia = point_momenta.sum(axis=0)                                 # [] Forque <- Twist
 
     # 5. Bilinear energy forms (Scalar <- Twist, Twist):
@@ -134,12 +134,12 @@ def normal_modes(system: Suspension) -> ModeCase:
     ke_form = Twist & inertia                                                    # [] Scalar <- (Twist, Twist)
 
     # 6. Solve generalized symmetric eigenvalue problem directly on bilinear energy forms:
-    values, modes = pe_form.eigh(ke_form)                                        # values: [3] Scalar, modes: [3] Twist
+    values, modes = pe_form.eigh(ke_form)                                        # values: [modes] Scalar, modes: [modes] Twist
 
     # 7. Evaluate physical displacements (Lie bracket) and spring extensions:
-    body_offsets: Point = system.body[None, :].commutator(modes[:, None])        # [3, 4] Point
-    attachment_offsets: Point = system.attachments[None, :].commutator(modes[:, None])  # [3, n_springs] Point
-    extensions: Scalar = extension(modes[:, None])                               # [3, n_springs] Scalar
+    body_offsets: Point = system.body[None, :].commutator(modes[:, None])        # [modes, corners] Point
+    attachment_offsets: Point = system.attachments[None, :].commutator(modes[:, None])  # [modes, n_springs] Point
+    extensions: Scalar = extension(modes[:, None])                               # [modes, n_springs] Scalar
 
     return mode_case(
         body=system.body,

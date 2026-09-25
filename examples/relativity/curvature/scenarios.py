@@ -40,10 +40,10 @@ def detector_scenario():
     plus, cross = core.polarizations()
     time = np.linspace(0.0, DURATION, SAMPLES)
     _, second = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
-    waves: Curvature = core.polarized_waves(plus, cross, second)          # [n_time, 3] Bivector <- Bivector
-    response: Tidal = core.tidal_map(waves, t)                            # [n_time, 3] Vector <- Vector
+    waves: Curvature = core.polarized_waves(plus, cross, second)          # [n_time, n_polarizations] Bivector <- Bivector
+    response: Tidal = core.tidal_map(waves, t)                            # [n_time, n_polarizations] Vector <- Vector
     reference: Vector = core.detector_ring(BEADS) * RADIUS                # [n_beads] Vector
-    acceleration: Vector = response[:, :, None](reference)                # [n_time, 3, n_beads] Vector
+    acceleration: Vector = response[:, :, None](reference)                # [n_time, n_polarizations, n_beads] Vector
     displacement: Vector = core.integrate_acceleration(time, acceleration)
 
     # --- checks -------------------------------------------------------------

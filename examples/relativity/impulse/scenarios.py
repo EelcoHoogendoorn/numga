@@ -24,7 +24,7 @@ def impulse():
     """A symmetric reversal, the same drawing boosted, and a train of ten small impulses.
 
     Returns the worldlines [view, vertex, end], kinks [view, end] and before/after slices
-    [view, 2, end] of the symmetric and boosted views, then the train's worldlines, kinks
+    [view, slice, end] of the symmetric and boosted views, then the train's worldlines, kinks
     [step, end] and final slice [end].
     """
     speed = 0.5
@@ -41,7 +41,7 @@ def impulse():
     initial_rest_frame: VectorMap = boost(half_rapidity)
     views: VectorMap = stack((identity, initial_rest_frame))
     view_kinks: Vector = views[:, None](kinks)                          # [view, end]
-    view_directions: Vector = views[:, None](directions)                # [view, 2]
+    view_directions: Vector = views[:, None](directions)                # [view, step + 1]
     view_worldlines: Vector = stack([
         worldlines(view_kinks[view, None], view_directions[view], times(-0.60, 1.45))
         for view in range(2)
@@ -150,7 +150,7 @@ def ladder():
     # 3. The unchanged-proper-length stop is the same velocity-step building block.
     limits = times(-0.48, 2.12)
     kinks, directions = velocity_step(rapidity, 0.0)
-    steps: Vector = (kinks + mv.vector([0.0, rear_at_closure]))[None]  # [1, end]
+    steps: Vector = (kinks + mv.vector([0.0, rear_at_closure]))[None]  # [step, end]
     contact_time = (barn_length - rear_at_closure - moving_length) / beta
     stopped: Vector = worldline_events(mv.scalar([1.43]), steps, directions)
     strain_preserving = (
@@ -242,7 +242,7 @@ def spaceships():
     https://arxiv.org/abs/0906.1919
 
     Returns, per schedule (strain-preserving, Bell), the worldlines [schedule, vertex, end],
-    kinks [schedule, step, end], lab slices [schedule, 2, end], and the final rest-frame
+    kinks [schedule, step, end], lab slices [schedule, slice, end], and the final rest-frame
     events of both ships [schedule, end].
     """
     beta, count, dt = 0.8, 10, 0.1

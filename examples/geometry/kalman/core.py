@@ -69,7 +69,7 @@ def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
     shift = Bivector.commutator(here)(estimate >> Bivector)    # [n] Point <- Bivector
     readout = (Line & Bivector).solve(Line & shift)            # [n] Line <- Line
     position = readout & sigma(readout)                        # [n] Scalar <- (Line, Line)
-    variances, axes = position.eig()                           # [n, 3] Scalar, [n, 3] Line; the eigenpairs of this symmetric pair of forms are real
+    variances, axes = position.eig()                           # [n, modes] Scalar, [n, modes] Line; the eigenpairs of this symmetric pair of forms are real
     return here, variances.real(), axes.real()
 
 
@@ -88,7 +88,7 @@ def sample(cov: Covariance, rng: np.random.Generator) -> Bivector:
     the twists they select, cov(l), then have covariance cov (Line & cov)^-1 cov = cov.
     """
     readouts = Line & cov                                      # [] Scalar <- (Line, Line)
-    _, lines = readouts.eigh(readouts)                         # [3] Line: orthonormal in the form itself
+    _, lines = readouts.eigh(readouts)                         # [modes] Line: orthonormal in the form itself
     return (cov(lines) * rng.normal(size=3)).sum(axis=0)       # [] Bivector
 
 
