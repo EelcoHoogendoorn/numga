@@ -35,6 +35,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 6. [**Rigid Bodies on the Sphere (Spherical3D)**](#6-rigid-bodies-on-the-sphere-spherical3d): shapes as quadric forms, drawn, collided and bounced.
 7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
 8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
+9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
 
 ---
 
@@ -195,6 +196,23 @@ sample = echo.mean(axis=-1)                                                 # [d
 * **Relaxation is its formula.** The state is left open between the two sides of each term: no flattened density matrix, no Kronecker products.
 * **An experiment is a composition.** Steps doubled into delays, pulses as sandwiches, averaged over the spins: one map for the whole sample.
 
+
+---
+
+## 9. The Hopf Fibration (VGA3D)
+
+**Notebook**: [`examples/math/hopf/hopf.ipynb`](../examples/math/hopf/hopf.ipynb)
+
+![Fibres of the Hopf fibration building up as their direction spirals over the sphere](../plots/hopf_sweep.gif)
+
+```python
+hopf = Even >> mv.z                                        # [] Vector <- (Even, Even): a spinor's direction
+_, spinors = (direction | hopf).eigh()                     # [..., 4] Even: eigenvalues -1, -1, 1, 1
+fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even: every spinor pointing that way
+```
+
+* **A sandwich with the spinor open twice.** `Even >> mv.z` leaves the spinor open in both places it appears, so the Hopf map is a form with two spinor slots that returns a vector.
+* **A fibre is an eigenspace.** Paired with a direction, the form's top eigenspace holds every spinor pointing that way: a circle in the three-sphere, linked once with every other.
 
 # References
 

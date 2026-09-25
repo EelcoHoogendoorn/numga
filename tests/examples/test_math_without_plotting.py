@@ -9,6 +9,8 @@ from numga.algebras import PGA2D, Spherical3D
 from examples import instantiate
 import sys
 import examples.electromagnetism.constitutive.core
+import examples.geometry.belief_propagation.core
+import examples.geometry.belief_propagation.scenarios
 import examples.geometry.cyclides.core
 import examples.geometry.epipolar.core
 import examples.geometry.fitting.core
@@ -23,6 +25,10 @@ import examples.geometry.registration.core
 import examples.geometry.registration.scenarios
 import examples.geometry.scenegraph.core
 import examples.geometry.surface_curvature.core
+import examples.math.hopf.core
+import examples.math.hopf.scenarios
+import examples.math.spin_groups.core
+import examples.math.spin_groups.scenarios
 import examples.mechanics.crystal_waves.core
 import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core

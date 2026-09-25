@@ -19,6 +19,7 @@ dist/
 !/plots/multiview_convergence.gif
 !/plots/spherical_quadric_physics.gif
 !/plots/resonance_echo.gif
+!/plots/hopf_sweep.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md
