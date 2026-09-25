@@ -18,6 +18,8 @@ focus into bright caustics.
 
 from __future__ import annotations
 
+import numpy as np
+
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
@@ -31,8 +33,8 @@ axes = mv.basis()                                                   # [3] Vector
 
 
 # --- math ----------------------------------------------------------------------------------------
-def stiffness(c11: float, c12: float, c44: float) -> Stiffness:
-    """The stiffness of a cubic crystal from its elastic constants.
+def stiffness(c11: np.ndarray, c12: np.ndarray, c44: np.ndarray) -> Stiffness:
+    """The stiffness of cubic crystals from their elastic constants, batched over the constants.
 
     With normal n, displacement v and gradient h: the dilation `v | h` pushes along the normal, the
     shear pulls along v and h, `n | (v ^ h) == (n | v) * h - (n | h) * v` turning one into the other;
@@ -43,7 +45,9 @@ def stiffness(c11: float, c12: float, c44: float) -> Stiffness:
     dilation = Vector * (Vector | Vector)                                        # Vector <- (Vector, Vector, Vector)
     shear = 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))        # Vector <- (Vector, Vector, Vector)
     cubic = (axes * (axes | Vector) * (axes | Vector) * (axes | Vector)).sum()   # Vector <- (Vector, Vector, Vector)
-    return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic
+    # The constants as scalars of the context, which carry their batch into the stiffness.
+    c11, c12, c44 = (mv.scalar(np.asarray(value, dtype=float)[..., None]) for value in (c11, c12, c44))
+    return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic       # [...] Vector <- (Vector, Vector, Vector)
 
 
 def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Vector]:
@@ -55,14 +59,15 @@ def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Vector]:
     return crystal(heading, Vector, heading).eigh()                  # [..., 3] Scalar, [..., 3] Vector
 
 
-def energy_flow(crystal: Stiffness, heading: Vector, polarization: Vector, density: float) -> Vector:
+def energy_flow(crystal: Stiffness, heading: Vector, polarization: Vector, density: np.ndarray) -> Vector:
     """The velocity of each wave's energy: its group velocity.
 
     With the polarization in the normal and displacement slots and the heading in the gradient
     slot, the stiffness returns the flux of the wave's energy. Divided by density times phase speed
     it is the group velocity, whose component along the heading is the phase speed.
     """
-    # The heading against each of the waves, and each wave's density times squared speed.
-    along = heading[..., None]                                          # [..., 1] Vector
+    # The crystal, its density and the heading against each of the waves, and each wave's density
+    # times squared speed.
+    crystal, density, along = crystal[..., None], density[..., None], heading[..., None]   # [..., 1] each
     squared = polarization | crystal(along, polarization, along)        # [..., 3] Scalar
     return crystal(polarization, polarization, along) / (squared * density).square_root()

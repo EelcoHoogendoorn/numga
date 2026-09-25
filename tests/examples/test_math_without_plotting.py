@@ -9,6 +9,8 @@ from numga.algebras import PGA2D, Spherical3D
 from examples import instantiate
 import sys
 import examples.electromagnetism.constitutive.core
+import examples.electromagnetism.second_harmonic.core
+import examples.electromagnetism.second_harmonic.scenarios
 import examples.geometry.belief_propagation.core
 import examples.geometry.belief_propagation.scenarios
 import examples.geometry.cyclides.core
@@ -27,6 +29,12 @@ import examples.geometry.scenegraph.core
 import examples.geometry.surface_curvature.core
 import examples.math.hopf.core
 import examples.math.hopf.scenarios
+import examples.math.klein_quadric.core
+import examples.math.klein_quadric.scenarios
+import examples.math.pascal.core
+import examples.math.pascal.scenarios
+import examples.math.poncelet.core
+import examples.math.poncelet.scenarios
 import examples.math.spin_groups.core
 import examples.math.spin_groups.scenarios
 import examples.mechanics.crystal_waves.core
@@ -44,6 +52,8 @@ import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
+import examples.quantum.two_spins.core
+import examples.quantum.two_spins.scenarios
 import examples.quadrics.cayley_klein.core
 import examples.quadrics.cga_spherical_quadrics.core
 import examples.quadrics.conformal_elliptical.core
@@ -55,6 +65,8 @@ import examples.quadrics.spherical_quadrics.core
 import examples.relativity.curvature.core
 import examples.relativity.dirac.core
 import examples.relativity.dirac.scenarios
+import examples.relativity.gravitational_lensing.core
+import examples.relativity.gravitational_lensing.scenarios
 import examples.relativity.impulse.core
 instantiate('examples.geometry.multiview.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))

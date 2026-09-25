@@ -16,7 +16,7 @@ def components(vectors: core.Vector) -> np.ndarray:
     return vectors.cast(core.ga.subspace("x y z")).kernel
 
 
-def draw_focusing(velocities: list[core.Vector], names: list[str], bins: int) -> plt.Figure:
+def draw_focusing(velocities: core.Vector, names: list[str], bins: int) -> plt.Figure:
     """One row per crystal, one column per wave: how densely the energy of evenly spread headings
     lands on a cube face, seen from a source at the centre of the opposite face."""
     figure, grid = plt.subplots(len(names), len(MODES), figsize=(4 * len(MODES), 4 * len(names)))
@@ -34,7 +34,7 @@ def draw_focusing(velocities: list[core.Vector], names: list[str], bins: int) ->
     return figure
 
 
-def draw_wave_fronts(velocities: list[core.Vector], names: list[str]) -> plt.Figure:
+def draw_wave_fronts(velocities: core.Vector, names: list[str]) -> plt.Figure:
     """One panel per crystal: where each wave's energy is after unit time, in the cube face."""
     figure, row = plt.subplots(1, len(names), figsize=(5 * len(names), 5))
     for ax, velocity, name in zip(np.atleast_1d(row), velocities, names):
