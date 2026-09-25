@@ -10,7 +10,7 @@ from examples.relativity.gravitational_lensing import core
 
 # Two equal masses on the x axis, 1.1 Einstein angles apart: one caustic with six cusps.
 POSITIONS = core.mv.x * np.array([-0.55, 0.55])                               # [masses] Vector
-MASSES = core.mv.scalar(np.array([[0.5], [0.5]]))                             # [masses] Scalar
+MASSES = np.array([0.5, 0.5])
 
 
 # --- math -----------------------------------------------------------------------------

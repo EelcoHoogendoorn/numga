@@ -24,7 +24,7 @@ def hyperbolic_plane():
     pole, normal, foot, reflected = perpendicular(C, side, P)
 
     centres = point(np.array([[0.0, 0.0], [0.45, 0.25]]))
-    radii = mv.scalar(np.array([[0.25], [0.55], [0.9], [1.3]]))
+    radii = np.array([0.25, 0.55, 0.9, 1.3])
     rings = circles(C, centres, radii)
 
     # --- checks ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ PROPAGATION = (mv.x + mv.y) / np.sqrt(2)                                      # 
 TRANSVERSE = Vector - PROPAGATION * (PROPAGATION | Vector)                    # [] Vector <- Vector
 # The four directed bonds of a tetrahedral crystal, with the strength that makes the response's
 # coefficients one.
-BONDS = mv.vector(np.array([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3))   # [bonds] Vector
+BONDS = mv.vector([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)   # [bonds] Vector
 STRENGTH = 3 * np.sqrt(3) / 4
 
 

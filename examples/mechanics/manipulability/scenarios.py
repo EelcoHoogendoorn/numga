@@ -43,7 +43,7 @@ def ellipsoids(joint_angles: tuple, velocity_scale: float, force_scale: float):
     np.testing.assert_allclose((held & unit_force(held)).to_array(), 1 - (torques**2).sum(axis=0), atol=1e-8)
     # The velocity ellipsoid reaches, along a direction, as far as a unit force that way loads the
     # joints: the plane normal to it at that distance from the tip is tangent.
-    reach = core.mv.scalar(np.sqrt((torques**2).sum(axis=0))[:, None])
+    reach = np.sqrt((torques**2).sum(axis=0))
     normal = along.dual()
     tangent = normal - core.w * (normal & (tip + along * reach))
     np.testing.assert_allclose((tangent & unit_velocity(tangent)).to_array(), 0.0, atol=1e-8)

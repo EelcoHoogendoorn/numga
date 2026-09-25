@@ -20,7 +20,7 @@ def heat_conduction():
     # Inputs: a positive conductivity in a tilted principal frame, and candidate symmetries.
     pose = (mv.xy * 0.3 + mv.yz * 0.16).exp()
     axes = pose >> Extensor.stack((mv.x, mv.y, mv.z))
-    gains = mv.scalar([[4.5], [1.5], [0.6]])
+    gains = np.array([4.5, 1.5, 0.6])
     driving = (mv.x + mv.y + mv.z).normalized()
     sphere = core.directions()
     groups = {

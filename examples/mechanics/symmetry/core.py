@@ -71,7 +71,7 @@ def lattice_samples():
 
 
 # --- math -----------------------------------------------------------------------------
-def conductivities(axes: Vector, gains: Scalar, groups: list[Rotor]) -> Extensor:
+def conductivities(axes: Vector, gains: np.ndarray, groups: list[Rotor]) -> Extensor:
     """Which heat-conduction responses are compatible with a crystal's symmetry?
 
     Conductivity maps the negative temperature gradient to heat flow. In an anisotropic

@@ -137,7 +137,7 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
     motor = move(motor, step, pressed)
 
     # Hold against sliding: back toward where the contact's material point was, in the ground's plane.
-    slid = along_ground((contact - (before >> (motor << contact))).cast(Direction), normal)
+    slid = along_ground(contact - (before >> (motor << contact)), normal)
     back = slid.dual().norm()
     step, give = compliance(motor, I_inv, contact & (-slid / (back + 1e-12)))
     motor = move(motor, step, clamp(back / give, pressed * static))
@@ -155,7 +155,7 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
     # Dynamic friction: the rate the corrected step implies, less the contacts' sliding velocity, with
     # at most the dynamic coefficient times the normal impulse, the pressing forque over the step.
     rate = (~before * motor).log() * (-2.0 / dt)
-    sliding = along_ground(contact.commutator(motor >> rate).cast(Direction), normal)
+    sliding = along_ground(contact.commutator(motor >> rate), normal)
     speed = sliding.dual().norm()
     step, give = compliance(motor, I_inv, contact & (-sliding / (speed + 1e-12)))
     return motor, rate + (step * clamp(speed / give, pressed * dynamic / dt)).sum(axis=0)

@@ -40,7 +40,7 @@ Point = ga.gatype.antivector()
 Conic = ga.gatype((Plane, Point))                                              # Plane <- Point
 Envelope = ga.gatype((Point, Plane))                                           # Point <- Plane
 # Both roots of a quadratic, one per sign.
-SIGNS = mv.scalar(np.array([[1.0], [-1.0]]))                                   # [2] Scalar
+SIGNS = np.array([1.0, -1.0])
 # The points at infinity along x and along y.
 HEADINGS = mv("x y", np.eye(2)).dual()                                         # [2] Point
 
@@ -119,4 +119,4 @@ def ellipse(centre: np.ndarray, semi: np.ndarray, tilt: float) -> Conic:
     turn = np.array([[np.cos(tilt), np.sin(tilt)], [-np.sin(tilt), np.cos(tilt)]])
     axes = mv("x y", turn)                                                     # [2] Plane
     through = axes - mv.w * (axes & point(centre))                             # [2] Plane
-    return (through * (through & Point) / mv.scalar(semi[:, None] ** 2)).sum(axis=-1) - mv.w * (mv.w & Point)
+    return (through * (through & Point) / semi**2).sum(axis=-1) - mv.w * (mv.w & Point)

@@ -129,9 +129,9 @@ def confocal(surface: Quadric, points: Point) -> Scalar:
     # The plane through the centre normal to each direction:
     through_centre = Direction.dual() - w * (Direction.dual() & centre)    # [] Plane <- Direction
     # Their poles, as directions, and the planes those are normal to: the quadric's shape.
-    shape = dual_surface(through_centre).cast(Direction).dual()                    # [] Plane <- Direction
+    shape = dual_surface(through_centre).dual()                    # [] Plane <- Direction
     # Each point's offset from the centre, as the plane it is normal to.
-    position = (points - centre).cast(Direction).dual()                    # [...] Plane
+    position = (points - centre).dual()                    # [...] Plane
     # The shape less the point's own dyad; its eigenvalues are the members through the point.
     through_point = Direction & (shape - position * (position & Direction))   # [...] Form
     return pair(through_point.eigvalsh(metric))                            # [..., members] Scalar

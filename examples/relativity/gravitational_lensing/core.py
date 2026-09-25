@@ -40,13 +40,13 @@ LocalMap = ga.gatype((Vector, Vector))                                         #
 
 
 # --- math -----------------------------------------------------------------------------
-def deflected(observed: Vector, positions: Vector, masses: Scalar) -> Vector:
+def deflected(observed: Vector, positions: Vector, masses: np.ndarray) -> Vector:
     """The source direction each observed direction reaches."""
     separation = observed[..., None] - positions                               # [..., masses] Vector
     return observed - (masses * separation.inverse()).sum(axis=-1)             # [...] Vector
 
 
-def local_map(observed: Vector, positions: Vector, masses: Scalar) -> LocalMap:
+def local_map(observed: Vector, positions: Vector, masses: np.ndarray) -> LocalMap:
     """The map from a small displacement of each observed direction to the displacement it makes at
     the source: the identity plus each mass's reflection in the line of its separation."""
     separation = observed[..., None] - positions                               # [..., masses] Vector

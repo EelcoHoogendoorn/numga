@@ -34,7 +34,7 @@ def collision():
 
     # Four determinant samples determine the cubic determinant of the blend exactly.
     # Only locating its peak leaves the algebra.
-    samples = mv.scalar(np.array([[0.0], [1.0], [2.0], [-1.0]]))
+    samples = mv.scalar([[0.0], [1.0], [2.0], [-1.0]])
     parameter, maximum = cubic_peak(blend(Q1, Q2, samples[:, None]).dual().det())
 
     # At contact the blend has a null line. Its singular vector is the shared tangent;

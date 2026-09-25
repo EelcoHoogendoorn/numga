@@ -84,7 +84,7 @@ def flows(azimuths: int, heights: np.ndarray, count: int) -> tuple[core.Extensor
     around = mv.x * np.cos(phi) + mv.y * np.sin(phi)                           # [azimuths] Vector
     starts = around * np.cos(heights)[:, None] + mv.z * np.sin(heights)[:, None]   # [heights, azimuths] Vector
     # One full turn of every plane: the sandwich turns by twice the rotor's angle.
-    turn = mv.scalar(np.linspace(0.0, np.pi, count + 1)[:, None])              # [count + 1] Scalar
+    turn = np.linspace(0.0, np.pi, count + 1)
     left = core.stereographic((2 * along * turn).exp() >> starts[..., None])  # [heights, azimuths, count + 1] Space
     right = core.stereographic((2 * against * turn).exp() >> starts[..., None])   # [heights, azimuths, count + 1] Space
     knotted = core.stereographic(((2 * mv.xy + 3 * mv.zw) * turn).exp() >> starts[:, :1, None])   # [heights, 1, count + 1] Space

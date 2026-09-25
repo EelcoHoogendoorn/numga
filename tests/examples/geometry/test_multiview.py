@@ -101,7 +101,7 @@ core3 = instantiate("examples.geometry.multiview.core", PGA3D)
 
 
 def coordinates_3d(points) -> np.ndarray:
-    k = points.cast(PGA3D.subspace("yzw zxw xyw zyx")).kernel
+    k = points.kernel
     return k[..., :3] / k[..., 3:]
 
 

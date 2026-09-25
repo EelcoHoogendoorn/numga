@@ -111,7 +111,7 @@ def test_line_camera_commutes_with_join():
     a = point(np.array([1.0, 0.0, 2.0]))
     b = point(np.array([0.0, 1.0, 3.0]))
     imaged_join = line_camera(a.regressive(b)).cast(Line.output_subspace).kernel
-    joined_images = camera(a).regressive(camera(b)).cast(Line.output_subspace).kernel
+    joined_images = camera(a).regressive(camera(b)).kernel
     support = np.abs(joined_images) > 1e-9
     scale = imaged_join[support][0] / joined_images[support][0]
     np.testing.assert_allclose(imaged_join, joined_images * scale, atol=1e-14)

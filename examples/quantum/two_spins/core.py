@@ -78,7 +78,7 @@ def bloch(state: Spinor) -> tuple[First, Second]:
     spin = 2 * (state >> IMAGINARY)                                            # [...] Bivector
     first = I_FIRST.inverse() * spin.cast(FirstPlanes)                         # [...] First
     second = I_SECOND.inverse() * spin.cast(SecondPlanes)                      # [...] Second
-    return first.cast(First), second.cast(Second)
+    return first, second
 
 
 def correlation(state: Spinor) -> Correlation:

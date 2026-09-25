@@ -39,14 +39,14 @@ Hamiltonian = ga.gatype((Even, Even))              # Even <- Even
 # The energy of a hop between neighbouring atoms.
 HOPPING = 2.8                                      # eV
 # The bonds from an atom to its three neighbours, in carbon-carbon distances of 0.142 nm.
-BONDS = mv.vector(np.array([[0.5, np.sqrt(3) / 2, 0.0], [0.5, -np.sqrt(3) / 2, 0.0], [-1.0, 0.0, 0.0]]))   # [3] Vector
+BONDS = mv.vector([[0.5, np.sqrt(3) / 2, 0.0], [0.5, -np.sqrt(3) / 2, 0.0], [-1.0, 0.0, 0.0]])   # [3] Vector
 # The two inequivalent corners of the Brillouin zone, where the cones sit.
-VALLEYS = mv.vector(np.array([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0.0],
-                              [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0.0]]))            # [2] Vector
+VALLEYS = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0.0],
+                     [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0.0]])                     # [2] Vector
 
 
 # --- math -----------------------------------------------------------------------------
-def pseudospin(momentum: Vector, gap: Scalar) -> Vector:
+def pseudospin(momentum: Vector, gap: np.ndarray) -> Vector:
     """The pseudospin field: minus the hopping times the sum over the bonds of x turned by the phase
     `momentum | BONDS` across each bond, plus the gap along z."""
     phases = momentum[..., None] | BONDS                                        # [..., 3] Scalar

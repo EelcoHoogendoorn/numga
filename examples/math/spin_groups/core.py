@@ -45,10 +45,8 @@ mv = context.multivector
 POSITIVE, NEGATIVE = "xyzwvu", "tsr"
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-# The four Euclidean directions of the isoclinic rotations, and the three-dimensional space their
-# three-sphere projects into.
+# The four Euclidean directions of the isoclinic rotations.
 Euclidean = ga.gatype(ga.subspace("x y z w"))
-Space = ga.gatype(ga.subspace("x y z"))
 
 
 # --- math -----------------------------------------------------------------------------
@@ -74,18 +72,18 @@ def isoclinic(generator: Extensor, pseudoscalar: Extensor) -> tuple[Extensor, Ex
 
 def stereographic(points: Extensor) -> Extensor:
     """Unit vectors of the four Euclidean directions, projected from -w into the space of x y z."""
-    return ((points - mv.w * (points | mv.w)) / (1 + (points | mv.w))).cast(Space)   # [...] Space
+    return (points - mv.w * (points | mv.w)) / (1 + (points | mv.w))   # [...] Euclidean
 
 
 def linking(first: Extensor, second: Extensor) -> Extensor:
     """Gauss's linking number of two closed polygons in the space of x y z: the volume each pair of
     segments spans with the line between them, over the cube of its length, summed and divided by
     four pi."""
-    step_first = first[1:] - first[:-1]                                          # [n] Space
-    step_second = second[1:] - second[:-1]                                       # [m] Space
-    middle_first = 0.5 * (first[1:] + first[:-1])                                # [n] Space
-    middle_second = 0.5 * (second[1:] + second[:-1])                             # [m] Space
-    separation = middle_first[:, None] - middle_second[None, :]                  # [n, m] Space
+    step_first = first[1:] - first[:-1]                                          # [n] Euclidean
+    step_second = second[1:] - second[:-1]                                       # [m] Euclidean
+    middle_first = 0.5 * (first[1:] + first[:-1])                                # [n] Euclidean
+    middle_second = 0.5 * (second[1:] + second[:-1])                             # [m] Euclidean
+    separation = middle_first[:, None] - middle_second[None, :]                  # [n, m] Euclidean
     # The trivector the separation spans with the two segments, measured against the unit volume xyz.
     volume = (separation ^ step_first[:, None] ^ step_second[None, :]) | mv.xyz.inverse()   # [n, m] Scalar
     return (volume / (separation | separation).square_root() ** 3).sum() / (4 * np.pi)   # [] Scalar

@@ -39,7 +39,7 @@ KLEIN = Bivector ^ Bivector                                                    #
 # The origin, the point dual to the plane at infinity.
 ORIGIN = mv.w.dual()                                                           # [] Point
 # Both roots of a quadratic, one per sign.
-SIGNS = mv.scalar(np.array([[1.0], [-1.0]]))                                   # [2] Scalar
+SIGNS = np.array([1.0, -1.0])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -103,5 +103,5 @@ def spread(line: Bivector, count: int) -> Point:
     the origin turned towards the unit direction by angles spaced evenly over half a turn."""
     unit = line.normalized()                                                   # [...] Bivector
     nearest = (ORIGIN | unit) ^ unit                                           # [...] Point
-    angles = mv.scalar(np.linspace(0.0, np.pi, count, endpoint=False)[:, None])   # [count] Scalar
-    return (nearest / (mv.w & nearest))[..., None] * angles.cos() + (unit ^ mv.w)[..., None] * angles.sin()   # [..., count] Point
+    angles = np.linspace(0.0, np.pi, count, endpoint=False)
+    return (nearest / (mv.w & nearest))[..., None] * np.cos(angles) + (unit ^ mv.w)[..., None] * np.sin(angles)   # [..., count] Point

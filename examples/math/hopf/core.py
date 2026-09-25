@@ -46,7 +46,7 @@ def fibre_start(direction: Vector) -> Even:
 
 def fibre(start: Even, angles: np.ndarray) -> Even:
     """The spinors pointing the same way as each start: the start turned on the right in the xy plane."""
-    return start[..., None] * (mv.xy * mv.scalar(angles[:, None])).exp()       # [..., angles] Even
+    return start[..., None] * (mv.xy * angles).exp()       # [..., angles] Even
 
 
 def stereographic(spinor: Even) -> Vector:

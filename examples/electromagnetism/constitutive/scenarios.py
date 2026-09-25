@@ -68,7 +68,7 @@ def polarization_scenario() -> list[tuple[float, Extensor]]:
 
     modes = []
     for v in mins:
-        k = core.mv.scalar([v]) * core.t + core.z
+        k = v * core.t + core.z
         modes.append((float(v), core.polarization_eigenmodes(k, crystal)))
     return modes
 

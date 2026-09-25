@@ -109,7 +109,7 @@ def ferrite_medium(
 
 def axion_medium(base_medium: Extensor, alpha: float) -> Extensor:
     """Topological axion electrodynamics: adds alpha * dual to the constitutive extensor (Bivector <- Bivector)."""
-    return base_medium + mv.scalar([alpha]) * B.dual()
+    return base_medium + alpha * B.dual()
 
 
 def boost_rotor(beta: float, direction=z):

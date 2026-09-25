@@ -46,7 +46,7 @@ def stiffness(c11: np.ndarray, c12: np.ndarray, c44: np.ndarray) -> Stiffness:
     shear = 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))        # Vector <- (Vector, Vector, Vector)
     cubic = (axes * (axes | Vector) * (axes | Vector) * (axes | Vector)).sum()   # Vector <- (Vector, Vector, Vector)
     # The constants as scalars of the context, which carry their batch into the stiffness.
-    c11, c12, c44 = (mv.scalar(np.asarray(value, dtype=float)[..., None]) for value in (c11, c12, c44))
+    c11, c12, c44 = (mv.scalar(np.asarray(value)[..., None]) for value in (c11, c12, c44))
     return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic       # [...] Vector <- (Vector, Vector, Vector)
 
 

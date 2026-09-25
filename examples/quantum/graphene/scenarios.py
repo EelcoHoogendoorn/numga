@@ -22,7 +22,7 @@ def bands(extent: float, count: int, gap: float):
     along = np.linspace(-extent, extent, count)
     kx, ky = np.meshgrid(along, along)
     momenta = mv.vector(np.stack([kx, ky, np.zeros_like(kx)], axis=-1))          # [count, count] Vector
-    field = core.pseudospin(momenta, mv.scalar([gap]))                            # [count, count] Vector
+    field = core.pseudospin(momenta, gap)                            # [count, count] Vector
     values, _ = core.hamiltonian(field).eigh()                                    # [count, count, 4] Scalar
 
     # --- checks
@@ -30,7 +30,7 @@ def bands(extent: float, count: int, gap: float):
     # vanishes at the valleys, where the cones meet.
     length = (field | field).square_root().to_array()[..., None]
     np.testing.assert_allclose(values.to_array(), np.concatenate([-length, -length, length, length], -1), atol=1e-9)
-    np.testing.assert_allclose(core.pseudospin(core.VALLEYS, mv.scalar([0.0])).kernel, 0.0, atol=1e-6)
+    np.testing.assert_allclose(core.pseudospin(core.VALLEYS, 0.0).kernel, 0.0, atol=1e-6)
     return momenta, field, values
 
 
@@ -39,7 +39,7 @@ def textures(radius: float, count: int, gap: float) -> tuple[core.Vector, core.V
     along = np.linspace(-radius, radius, count)
     kx, ky = np.meshgrid(along, along)
     offsets = mv.vector(np.stack([kx, ky, np.zeros_like(kx)], axis=-1))           # [count, count] Vector
-    field = core.pseudospin(core.VALLEYS[:, None, None] + offsets, mv.scalar([gap]))   # [valleys, count, count] Vector
+    field = core.pseudospin(core.VALLEYS[:, None, None] + offsets, gap)   # [valleys, count, count] Vector
     _, states = core.hamiltonian(field).eigh()                                    # [valleys, count, count, 4] Even
     directions = core.direction(states[..., -1])                                  # [valleys, count, count] Vector
 
@@ -52,8 +52,8 @@ def textures(radius: float, count: int, gap: float) -> tuple[core.Vector, core.V
 def berry(radii: np.ndarray, gaps: np.ndarray, count: int) -> tuple[core.Rotor, core.Vector]:
     """The holonomy of loops of the given radii about each valley, for each gap, with the
     pseudospin direction each loop starts from."""
-    loops = core.VALLEYS[:, None] + core.circle(count)[:, None, None] * mv.scalar(radii[:, None])   # [count + 1, valleys, radii] Vector
-    field = core.pseudospin(loops[:, None], mv.scalar(gaps[:, None, None, None]))  # [count + 1, gaps, valleys, radii] Vector
+    loops = core.VALLEYS[:, None] + core.circle(count)[:, None, None] * radii   # [count + 1, valleys, radii] Vector
+    field = core.pseudospin(loops[:, None], gaps[:, None, None])  # [count + 1, gaps, valleys, radii] Vector
     directions = field.normalized()                                                # [count + 1, gaps, valleys, radii] Vector
     rotors, starts = core.transport(directions)[-1], directions[0]                 # [gaps, valleys, radii] Rotor, Vector
 

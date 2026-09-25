@@ -24,7 +24,7 @@ EQUILIBRIUM = core.state(mv.z)                     # [] State
 def nutation(detunings: np.ndarray, drive: float, seconds: float, dt: float, every: int):
     """Spins switched on to a steady drive at the given detunings, from equilibrium: their states
     every few steps, and the steady states they settle into."""
-    rates = core.generator(mv.scalar(detunings[:, None]), mv.scalar([drive]), T1, T2)   # [detunings] State <- State
+    rates = core.generator(detunings, drive, T1, T2)   # [detunings] State <- State
     states = list(core.evolve(core.evolution(rates, dt), EQUILIBRIUM.broadcast_to(detunings.shape), int(seconds / dt) + 1))
     settled = core.steady(rates)
 
@@ -36,7 +36,7 @@ def nutation(detunings: np.ndarray, drive: float, seconds: float, dt: float, eve
 
 def lines(detunings: np.ndarray, drives: np.ndarray) -> core.State:
     """The steady states over a grid of detunings and drive strengths, in one solve."""
-    rates = core.generator(mv.scalar(detunings[:, None, None]), mv.scalar(drives[None, :, None]), T1, T2)
+    rates = core.generator(detunings[:, None], drives[None, :], T1, T2)
     settled = core.steady(rates)                                                        # [detunings, drives] State
 
     # --- checks
@@ -57,7 +57,7 @@ def echo(spins: int, spread: float, delay: float, seconds: float, dt: float, eve
     refocus. Returns the detunings and the ensemble every few steps."""
     detunings = np.random.default_rng(seed).normal(0.0, spread, spins)
     # No drive between the pulses; the spins start along the field.
-    rates = core.generator(mv.scalar(detunings[:, None]), mv.scalar([0.0]), T1, T2)    # [spins] State <- State
+    rates = core.generator(detunings, 0.0, T1, T2)    # [spins] State <- State
     start = EQUILIBRIUM.broadcast_to(detunings.shape)                                    # [spins] State
     waits = round(delay / dt)
     states = core.echo(core.evolution(rates, dt), start, waits, int(seconds / dt) - waits)
@@ -78,7 +78,7 @@ def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
     `2 ** (count - 1) * dt`, composed with the pulses, and averaged over the spins. Returns the times after
     the first pulse, and the states the two sequences leave from equilibrium."""
     detunings = np.random.default_rng(seed).normal(0.0, spread, spins)
-    rates = core.generator(mv.scalar(detunings[:, None]), mv.scalar([0.0]), T1, T2)     # [spins] State <- State
+    rates = core.generator(detunings, 0.0, T1, T2)     # [spins] State <- State
     waiting = stack(list(core.doublings(core.evolution(rates, dt), count)))              # [delays, spins] State <- State
     tip = core.pulse(np.pi / 2) >> core.State                                            # [] State <- State
     turn = core.pulse(np.pi) >> core.State                                               # [] State <- State

@@ -58,7 +58,7 @@ def wave_fronts(count: int) -> core.Vector:
 
     # --- checks
     # The textbook speeds along a cube edge and a face diagonal.
-    values = core.waves(stiffness[:, None], core.mv.vector(np.array([[1.0, 0, 0], [1, 1, 0]])).normalized())[0]   # [materials, 2, 3] Scalar
+    values = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar
     speeds = (values / density[:, None, None]).square_root().to_array()      # [materials, 2, 3]
     np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
     expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)

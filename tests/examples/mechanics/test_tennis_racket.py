@@ -76,7 +76,7 @@ def test_intermediate_axis_tumbles_and_others_do_not():
     core = racket(3)
     body = core.racket(42)
     _, rates = core.simulate(body, core.lie.explicit_rkmk4, 0.25, 800)
-    trajectory = rates.cast(core.Rate.output_subspace).kernel
+    trajectory = rates.kernel
     flips = [np.any(trajectory[:, i, i] * trajectory[0, i, i] < 0) for i in range(3)]
     assert sum(flips) == 1
 

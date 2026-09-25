@@ -112,8 +112,8 @@ def placed(motion: ProjectiveBivector) -> tuple[ProjectiveBivector, ProjectiveBi
     _, turning = from_spectrum(euclidean, EuclideanVector)                     # [..., 3] EuclideanBivector
     conditions = (NullBivector.commutator(motion[..., None]) + (turning ^ NullBivector)).cast(Conditions)   # [..., 3] Conditions <- NullBivector
     placement = conditions.lstsq(-turning.commutator(motion[..., None]))       # [..., 3] NullBivector
-    planes = (turning + placement).cast(ProjectiveBivector)                    # [..., 3] ProjectiveBivector
-    return planes, (motion - planes.sum(axis=-1)).cast(ProjectiveBivector)     # [..., 3], [...] ProjectiveBivector
+    planes = turning + placement                                               # [..., 3] ProjectiveBivector
+    return planes, motion - planes.sum(axis=-1)                                # [..., 3], [...] ProjectiveBivector
 
 
 def rotor(squares: Scalar, parts: Bivector, times: np.ndarray) -> Rotor:

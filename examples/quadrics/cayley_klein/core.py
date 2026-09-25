@@ -73,12 +73,12 @@ def perpendicular(C: Polarity, side: Line, P: Point):
     return pole, normal, foot, reflected
 
 
-def circles(C: Polarity, centres: Point, radii: Scalar) -> Polarity:
+def circles(C: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
     """Circles of the given radii about the given centres, as quadrics: one per centre and radius."""
     # Fixing the distance to a centre fixes the invariant, and clearing the square root
-    # turns that into a quadric in P: the dyad of the centre's polar minus radii.cosh() ** 2
+    # turns that into a quadric in P: the dyad of the centre's polar minus np.cosh(radii) ** 2
     # times the centre's self-invariant times the absolute. One expression, batched over the
     # radii, drawn as the level set P & circle(P) == 0.
     centre = centres[:, None]
     polar = C(centre)
-    return polar * polar.regressive(Point) - centre.regressive(polar) * radii.cosh() ** 2 * C
+    return polar * polar.regressive(Point) - centre.regressive(polar) * np.cosh(radii) ** 2 * C

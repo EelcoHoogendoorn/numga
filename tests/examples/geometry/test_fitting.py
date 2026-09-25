@@ -16,7 +16,7 @@ POSE = scenarios.pose
 
 def same_element(a, b, atol: float) -> bool:
     """Whether two nullary extensors agree as projective elements, up to scale and sign."""
-    ka, kb = a.kernel, b.cast(a.gatype.output_subspace).kernel
+    ka, kb = a.kernel, b.kernel
     ka, kb = ka / np.abs(ka).max(), kb / np.abs(kb).max()
     return np.allclose(ka, kb, atol=atol) or np.allclose(ka, -kb, atol=atol)
 
@@ -62,7 +62,7 @@ def test_plane_fit_matches_svd_normal_through_centroid():
     plane = fit(Plane, points)
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
-    n = plane.cast(Plane.output_subspace).kernel[:3]
+    n = plane.kernel[:3]
     n = n / np.linalg.norm(n)
     assert np.isclose(abs(n @ vt[-1]), 1.0, atol=1e-6)
     np.testing.assert_allclose(point(xyz.mean(axis=0)).regressive(plane).kernel, 0.0, atol=1e-10)

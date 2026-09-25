@@ -59,7 +59,7 @@ def velocity_ellipsoid(tip: Point, axes: Line) -> DualQuadric:
     in that frame.
     """
     # The tip velocity per unit rate of each joint.
-    velocities = axes.commutator(tip).cast(Direction)            # [n_joints] Direction
+    velocities = axes.commutator(tip)            # [n_joints] Direction
     return (velocities * (Plane & velocities)).sum() - tip * (Plane & tip)
 
 
