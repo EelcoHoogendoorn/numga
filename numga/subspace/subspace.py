@@ -312,6 +312,11 @@ class SubSpace:
 
         return commutator(self, other)
 
+    def anticommutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        from numga.expression import anticommutator
+
+        return anticommutator(self, other)
+
     def regressive(self, other: SubSpace | GAType | Extensor) -> Extensor:
         from numga.expression import regressive
 

@@ -319,6 +319,26 @@ class OperatorFactory:
 
         return self._bilinear("commutator", left, right, basis_rule)
 
+    def anticommutator(self, left: OperandType, right: OperandType) -> Extensor:
+        """Build ``(left * right + right * left) / 2`` exactly."""
+
+        return self._anticommutator(
+            self._operand_gatype(left),
+            self._operand_gatype(right),
+        )
+
+    @lru_cache(maxsize=None)
+    def _anticommutator(self, left: GAType, right: GAType) -> Extensor:
+        def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
+            forward = self.algebra.geometric_product(left_mask, right_mask)
+            reverse = self.algebra.geometric_product(right_mask, left_mask)
+            if forward.blade != reverse.blade:
+                raise AssertionError("basis products must have the same XOR blade")
+            # Basis blades commute or anticommute: the half sum is the product itself or 0.
+            return forward.blade, (forward.coefficient + reverse.coefficient) // 2
+
+        return self._bilinear("anticommutator", left, right, basis_rule)
+
     def regressive(self, left: OperandType, right: OperandType) -> Extensor:
         """Build ``dual_inverse(dual(left) ^ dual(right))`` exactly."""
 

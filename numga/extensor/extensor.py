@@ -700,6 +700,11 @@ class Extensor:
 
         return commutator(self, other)
 
+    def anticommutator(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        from numga.expression import anticommutator
+
+        return anticommutator(self, other)
+
     def left_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
         from numga.expression import left_contraction
 

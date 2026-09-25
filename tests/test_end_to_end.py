@@ -661,6 +661,21 @@ def test_map_collections_preserve_orthogonality_but_reductions_do_not():
         )
 
 
+def test_anticommutator_is_the_half_sum_and_prunes_what_cancels():
+    algebra = Algebra("x+y+z+")
+    mv = NumpyContext(algebra).multivector
+    rng = np.random.default_rng(4)
+    first = mv.scalar(rng.normal(size=(5, 1))) + mv.vector(rng.normal(size=(5, 3)))
+    second = mv.vector(rng.normal(size=(5, 3))) + mv.bivector(rng.normal(size=(5, 3)))
+
+    np.testing.assert_allclose(
+        (first.anticommutator(second) - 0.5 * (first * second + second * first)).kernel, 0,
+        rtol=0, atol=1e-14,
+    )
+    # Two vectors anticommute into their inner product: the wedge cancels by type, not only in value.
+    assert first.select[1].anticommutator(second.select[1]).output_subspace.same_support(algebra.subspace.scalar())
+
+
 def test_cumprod_composes_later_elements_on_the_left_within_a_closed_type():
     algebra = Algebra("x+y+z+")
     mv = NumpyContext(algebra).multivector

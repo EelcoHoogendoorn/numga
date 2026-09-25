@@ -71,6 +71,14 @@ def commutator(
     return _binary_expression("commutator", left, right)
 
 
+def anticommutator(
+    left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate the geometric-product anticommutator."""
+
+    return _binary_expression("anticommutator", left, right)
+
+
 def left_contraction(
     left: SubSpace | GAType | Extensor, right: SubSpace | GAType | Extensor,
 ) -> Extensor:
