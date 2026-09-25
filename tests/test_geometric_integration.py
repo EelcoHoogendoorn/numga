@@ -306,5 +306,14 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         equal_nan=False,
     )
 
-    with pytest.raises(ValueError, match="repeated sandwicher must be nullary"):
-        factory.identity(sandwicher).sandwich(passenger)
+    # The identity map on the carrier, as a sandwicher, leaves both copies of the carrier open:
+    # it is the typed sandwich itself.
+    identity_sandwich = factory.identity(sandwicher).sandwich(passenger)
+    assert identity_sandwich.axes == sandwich.axes
+    np.testing.assert_allclose(
+        np.asarray(identity_sandwich.kernel.materialize(), dtype=float),
+        np.asarray(sandwich.kernel.materialize(), dtype=float),
+        rtol=1e-14,
+        atol=1e-14,
+        equal_nan=False,
+    )

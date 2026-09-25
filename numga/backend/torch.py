@@ -137,6 +137,9 @@ class TorchNamespace:
         # NumPy reduces nothing over axis=(); torch reduces everything over dim=().
         return value if axis == () else torch.sum(value, dim=axis, keepdim=keepdims)
 
+    def cumsum(self, value: torch.Tensor, axis: int) -> torch.Tensor:
+        return torch.cumsum(value, dim=axis)
+
     def mean(self, value: torch.Tensor, axis: Any = None, keepdims: bool = False) -> torch.Tensor:
         return value if axis == () else torch.mean(value, dim=axis, keepdim=keepdims)
 

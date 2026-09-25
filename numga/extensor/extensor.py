@@ -253,6 +253,24 @@ class Extensor:
         kernel = self.context.xp.sum(self._kernel, axis=axes, keepdims=keepdims)
         return type(self)._from_prepared_kernel(self.context, self.gatype.structural, kernel)
 
+    def cumsum(self, axis: int) -> "Extensor":
+        """Running sums along one batch axis."""
+        kernel = self.context.xp.cumsum(self._kernel, axis=_existing_axis(axis, self.ndim))
+        return type(self)._from_prepared_kernel(self.context, self.gatype.structural, kernel)
+
+    def cumprod(self, axis: int) -> "Extensor":
+        """Running geometric products along one batch axis, each later element multiplying from the
+        left: `x0`, `x1 * x0`, `x2 * x1 * x0`, so a running product of rotors applies them in turn.
+        The type must be closed under the product, so that every running product has it."""
+        square = self.algebra.operator.geometric_product(self.gatype, self.gatype)
+        if self.arity or not square.output_subspace.support_is_subset_of(self.output_subspace):
+            raise TypeError(f"cumprod needs a type closed under the geometric product; {self.gatype} is not")
+        leading = (slice(None),) * _existing_axis(axis, self.ndim)
+        running = [self[leading + (0,)]]
+        for position in range(1, self.shape[len(leading)]):
+            running.append(self[leading + (position,)] * running[-1])
+        return type(self).stack(running, axis=len(leading))
+
     def mean(
         self,
         axis: int | tuple[int, ...] | None = None,
@@ -713,16 +731,17 @@ class Extensor:
         return sandwich(self, passenger)
 
     def reverse_sandwich(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
-        return self.reverse().sandwich(passenger)
+        """The sandwich from the other side, `reverse(self) * passenger * self`, as one operator:
+        defined for every value, and for a unit versor the inverse of `self >> passenger`."""
+        from numga.expression import reverse_sandwich
 
-    def inverse_sandwich(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
-        return self.inverse().sandwich(passenger)
+        return reverse_sandwich(self, passenger)
 
     def __rshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return self.sandwich(other)
 
     def __lshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.inverse_sandwich(other)
+        return self.reverse_sandwich(other)
 
     def __xor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return self.wedge(other)

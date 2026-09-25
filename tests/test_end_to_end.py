@@ -546,6 +546,35 @@ def test_sandwich_isometry_needs_the_same_sandwicher_not_just_its_type():
     )
 
 
+
+def test_a_sandwicher_with_open_inputs_sandwiches_its_outputs_and_carries_its_inputs_twice():
+    algebra = Algebra("x+y+z+")
+    mv = NumpyContext(algebra).multivector
+    x, y, z = mv.vector(np.eye(3))
+    vector = algebra.gatype.vector()
+    u, w = mv.vector([0.3, -1.2, 0.7]), mv.vector([1.1, 0.4, -0.5])
+    # The map v -> v * x produces even multivectors; sandwiching acts on those, and the vector it
+    # takes appears once in each copy of the sandwicher.
+    sandwicher = vector * x
+
+    action = sandwicher >> z
+    written_out = sandwicher * z * sandwicher.reverse()
+
+    # Written out, the product keeps the trivector part that cancels when both copies hold the same
+    # vector; the sandwich's symmetrization removes it.
+    assert action.axes == (algebra.subspace.vector(),) * 3
+    assert not written_out.gatype <= algebra.subspace.vector()
+    np.testing.assert_allclose(
+        (action(u, u) - (u * x) * z * (u * x).reverse()).kernel, 0,
+        rtol=1e-14, atol=1e-14, equal_nan=False,
+    )
+    # An open passenger sits between the two copies of the sandwicher's inputs.
+    carried = sandwicher >> vector
+    np.testing.assert_allclose(
+        (carried(u, w, u) - (u * x) * w * (u * x).reverse()).kernel, 0,
+        rtol=1e-14, atol=1e-14, equal_nan=False,
+    )
+
 @pytest.mark.parametrize(
     ("parity", "blade", "expected_scale"),
     [pytest.param(0, "xy", 4, id="even"), pytest.param(1, "x", -4, id="odd")],
@@ -623,13 +652,28 @@ def test_map_collections_preserve_orthogonality_but_reductions_do_not():
     )
     # I and -I cancel: collection membership preserves orthogonality,
     # whereas adding or averaging the represented maps need not do so.
-    for reduced in (rotations.sum(axis=0), rotations.mean(axis=0)):
+    for reduced in (rotations.sum(axis=0), rotations.mean(axis=0), rotations.cumsum(axis=0)[-1]):
         assert reduced.arity == 1
         assert not reduced.gatype.entails(CoefficientOrthogonal)
         np.testing.assert_allclose(
             reduced(mv.vector([2, 3])).kernel, [0, 0],
             rtol=1e-14, atol=1e-14, equal_nan=False,
         )
+
+
+def test_cumprod_composes_later_elements_on_the_left_within_a_closed_type():
+    algebra = Algebra("x+y+z+")
+    mv = NumpyContext(algebra).multivector
+    rotors = (mv.bivector(np.random.default_rng(3).normal(size=(4, 2, 3))) * 0.5).exp()
+
+    running = rotors.cumprod(axis=0)
+    np.testing.assert_allclose(
+        (running[3] - rotors[3] * rotors[2] * rotors[1] * rotors[0]).kernel, 0,
+        rtol=0, atol=1e-14,
+    )
+    # Vectors multiply into the even algebra: their running products have no single type.
+    with pytest.raises(TypeError):
+        mv.vector([[1, 0, 0], [0, 1, 0]]).cumprod(axis=0)
 
 
 def test_lorentz_sandwich_inverse_is_not_a_coefficient_transpose():

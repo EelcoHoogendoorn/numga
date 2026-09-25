@@ -423,6 +423,38 @@ class OperatorFactory:
             return result
         return Extensor(result.context, gatype, result.kernel)
 
+    def reverse_sandwich(
+        self,
+        sandwicher: OperandType,
+        passenger: OperandType,
+        output: SubSpace | None = None,
+    ) -> Extensor:
+        """Polarize ``reverse(sandwicher) * passenger * sandwicher`` as one operator: the sandwich
+        with the carrier's reverse folded into both sandwicher slots."""
+
+        if output is not None:
+            self._require_space(output)
+        return self._reverse_sandwich(
+            self._operand_gatype(sandwicher),
+            self._operand_gatype(passenger),
+            output,
+        )
+
+    @lru_cache(maxsize=None)
+    def _reverse_sandwich(
+        self,
+        sandwicher: GAType,
+        passenger: GAType,
+        output: SubSpace | None,
+    ) -> Extensor:
+        forward = self._sandwich(sandwicher, passenger, output)
+        reverse = self.reverse(sandwicher.output_subspace)
+        # The reverse is diagonal on the carrier: folding it into both slots keeps every axis, the
+        # grade cancellations and the sandwich's type. A versor's reverse is a versor, so the
+        # sandwich's laws hold for it too.
+        folded = forward.bind({0: reverse, 2: reverse})
+        return Extensor(folded.context, forward.gatype, folded.kernel)
+
     @lru_cache(maxsize=None)
     def full_sandwich(
         self,

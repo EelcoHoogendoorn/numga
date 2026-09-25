@@ -185,7 +185,7 @@ rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried aro
 ![Spins fanning out in an uneven field and refocusing into an echo](../plots/resonance_echo.gif)
 
 ```python
-relaxing = L * State * L.reverse() - 0.5 * (back * State + State * back)   # [] State <- State
+relaxing = (L >> State) - 0.5 * (back * State + State * back)             # [] State <- State
 rates = (turning + relaxing).cast(State)                                    # [spins] State <- State
 waiting = stack(list(doublings(evolution(rates, dt), 11)))                  # [delays, spins] State <- State
 turn = pulse(np.pi) >> State                                                # [] State <- State

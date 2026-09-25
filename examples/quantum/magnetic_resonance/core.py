@@ -8,7 +8,7 @@ for a mixture. The pseudoscalar I squares to minus one and commutes with everyth
 The state changes by a linear map, the generator. In the frame that turns with the drive, the
 Hamiltonian is half the detuning along z plus half the drive strength along x, and the state turns
 by -I times its commutator with the Hamiltonian. Relaxation enters through multivectors `process`,
-each adding `process * rho * process.reverse() - 0.5 * (back * rho + rho * back)` to the change of
+each adding `(process >> rho) - 0.5 * (back * rho + rho * back)` to the change of
 the state `rho`, with `back = process.reverse() * process`. One is the vector x times the state of
 a spin against the field, which turns that part of the state over onto the field at the rate
 `1 / t1`; one along z scrambles the phase. Both are built as maps by leaving the state open. Where
@@ -61,10 +61,10 @@ def state(bloch: Vector) -> State:
 
 def relaxation(process: Process) -> Rates:
     """The change of a state `rho` due to a relaxation `process`:
-    `process * rho * process.reverse() - 0.5 * (back * rho + rho * back)`, with
+    `(process >> rho) - 0.5 * (back * rho + rho * back)`, with
     `back = process.reverse() * process`."""
     back = process.reverse().symmetric_reverse_product()   # [] State
-    return process * State * process.reverse() - 0.5 * (back * State + State * back)
+    return (process >> State) - 0.5 * (back * State + State * back)
 
 
 def generator(detuning: Scalar, drive: Scalar, t1: float, t2: float) -> Rates:

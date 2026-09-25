@@ -130,23 +130,23 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
         np.testing.assert_allclose(inverse(reflected).kernel, unit.kernel, atol=1e-14)
 
 
-def test_sandwich_shift_operators_and_inverse_sandwich():
+def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     mv = NumpyContext(PGA3D).multivector
     points = mv.antivector([1, 2, 3, 1])
     lines = PGA3D.subspace.bivector()
 
     motor = mv.bivector([0.2, -0.1, 0.3, 0.5, -0.25, 0.1]).exp()
 
-    # >> is sandwich, << is inverse_sandwich
+    # >> is the sandwich, << the sandwich from the other side; for a unit motor it undoes >>
     moved = motor >> points
     assert moved.gatype == (motor.sandwich(points)).gatype
     np.testing.assert_allclose(moved.kernel, motor.sandwich(points).kernel)
 
     recovered = motor << moved
-    assert recovered.gatype == (motor.inverse().sandwich(moved)).gatype
+    assert recovered.gatype == (motor.reverse().sandwich(moved)).gatype
     np.testing.assert_allclose(recovered.kernel, points.kernel, atol=1e-12)
 
     # SubSpace hole operand works with >> and <<
     pullback = motor << lines
     assert pullback.axes == (lines, lines)
-    np.testing.assert_allclose(pullback.kernel, motor.inverse().sandwich(lines).kernel)
+    np.testing.assert_allclose(pullback.kernel, motor.reverse().sandwich(lines).kernel)

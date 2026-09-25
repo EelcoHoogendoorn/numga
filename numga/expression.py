@@ -118,8 +118,28 @@ def sandwich(
 
     A typed sandwicher declares distinct left and right input slots over one
     carrier. A nullary Extensor binds the same value into both slots atomically.
+    An Extensor with open inputs is bound into both slots too: its inputs appear
+    twice, those of the left copy first, then the passenger's, then those of the
+    right copy, and the result keeps the carrier's symmetrized sandwich type.
     """
 
+    return _sandwich_expression("sandwich", sandwicher, passenger)
+
+
+def reverse_sandwich(
+    sandwicher: SubSpace | GAType | Extensor, passenger: SubSpace | GAType | Extensor,
+) -> Extensor:
+    """Build or evaluate ``reverse(sandwicher) * passenger * sandwicher``, one fused operator bound
+    as a sandwich is: for a unit versor, the inverse of its sandwich."""
+
+    return _sandwich_expression("reverse_sandwich", sandwicher, passenger)
+
+
+def _sandwich_expression(
+    operation_name: str,
+    sandwicher: SubSpace | GAType | Extensor,
+    passenger: SubSpace | GAType | Extensor,
+) -> Extensor:
     from numga.extensor import Extensor
 
     sandwicher_type = _operand_gatype(sandwicher)
@@ -127,12 +147,11 @@ def sandwich(
     if sandwicher_type.algebra is not passenger_type.algebra:
         raise ValueError("sandwich operands belong to different algebras")
     if isinstance(sandwicher, Extensor) and sandwicher.arity:
-        raise ValueError(
-            "a repeated sandwicher must be nullary; identifying the open inputs "
-            "of a positive-arity Extensor is deferred"
-        )
+        # The carrier is what the sandwicher produces; the traits of a map say
+        # nothing about the values it produces.
+        sandwicher_type = sandwicher_type.algebra.gatype(sandwicher.output_subspace)
 
-    operation = sandwicher_type.algebra.operator.sandwich(
+    operation = getattr(sandwicher_type.algebra.operator, operation_name)(
         sandwicher_type, passenger_type
     )
     bindings: dict[int, Extensor] = {}

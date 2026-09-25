@@ -25,11 +25,9 @@ phase of the product of the overlaps of neighbouring eigenvectors around the loo
 
 from __future__ import annotations
 
-from itertools import accumulate
-
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
@@ -70,7 +68,7 @@ def transport(directions: Vector) -> Rotor:
     each direction to the next: from the first direction to each of the others. Around a closed
     curve the last of them is the holonomy."""
     steps = (1 + directions[1:] * directions[:-1]).normalized()                 # [steps, ...] Rotor
-    return stack(list(accumulate(steps, lambda carried, step: step * carried)))  # [steps, ...] Rotor
+    return steps.cumprod(axis=0)                                               # [steps, ...] Rotor
 
 
 # --- plumbing -------------------------------------------------------------------------
