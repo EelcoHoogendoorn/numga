@@ -11,7 +11,7 @@ Geometric algebra with Extensors in NumPy, JAX and PyTorch.
 * [extensors](docs/extensors.md): An introduction to extensors in numga
 * [examples](examples/README.md): An index of runnable example code.
 
-Below a quick example of numga extensor syntax in action, building unary maps, bilinear forms, extensor transformation, and solving an actual problem:
+A short example of the extensor syntax: building unary maps and bilinear forms, transforming an extensor, and solving a problem, the vibration modes of four point masses on springs:
 
 ```python
 from numga import JaxContext
@@ -29,7 +29,7 @@ world_inertia = motor >> inertia(motor << Bivector)            # move the body
 springs = points[[0, 0, 0, 1, 1, 2]] & points[[1, 2, 3, 2, 3, 3]]   # Antibivector
 stiffness = (springs * (springs & Bivector)).sum(axis=0)   # Antibivector <- Bivector
 # the vibration modes, between two bilinear energy forms
-values, modes = (Bivector & stiffness).eigh(Bivector & inertia)   
+values, modes = (Bivector & stiffness).eigh(Bivector & inertia)
 ```
 
 ## Install and run

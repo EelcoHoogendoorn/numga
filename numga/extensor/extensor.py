@@ -381,9 +381,13 @@ class Extensor:
     def materialize(self, context: "Context") -> "Extensor":
         return context.lower(self)
 
-    def cast(self, target_subspace: SubSpace) -> "Extensor":
-        """Explicitly project or embed every output into ``target_subspace``."""
+    def cast(self, target: SubSpace | GAType) -> "Extensor":
+        """Explicitly project or embed every output into a subspace, or into a type's output subspace.
 
+        A type's traits are not asserted: projecting onto rotor coefficients does not make a rotor.
+        """
+
+        target_subspace = target.output_subspace if isinstance(target, GAType) else target
         if self.output_subspace is target_subspace:
             return self
         return self.algebra.operator.cast(

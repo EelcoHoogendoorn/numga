@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import lru_cache, partial
+from math import prod
 from string import ascii_letters
 from typing import TYPE_CHECKING, Any, Callable
+
+import numpy as np
 
 from numga.binding import AxisTransform, AxisTransformKind, BindingPlan
 from numga.gatype import GAType
@@ -24,22 +27,52 @@ def execute_dense_bind(
 ) -> Any:
     """Execute one deterministic atomic bind with left batch broadcasting."""
 
-    current = context.lower(target)._kernel
-    for slot, apply in binding_steps(context.xp, plan):
-        current = apply(current, operands[slot]._kernel)
-    return current
+    kernels = {slot: operand._kernel for slot, operand in operands.items()}
+    return ordered_binding(context.xp, plan)(context.lower(target)._kernel, kernels)
+
+
+@lru_cache(maxsize=None)
+def ordered_binding(xp: Any, plan: BindingPlan) -> Callable[[Any, Mapping[int, Any]], Any]:
+    """Contract the operands, given by slot, smallest batch first.
+
+    The order of pairwise contractions is chosen per call from the operands' batch sizes: an
+    operand with a small batch, such as a motor per camera sandwiching a map per point and
+    camera, contracts into the kernel before the large one does, so the large contraction
+    meets a kernel that no longer carries the small operand's slots. Equal batches keep the
+    order of the slots from last to first.
+    """
+
+    structural = {binding.slot: len(binding.operand_gatype.subspaces) for binding in plan.bindings}
+    last_first = tuple(binding.slot for binding in reversed(plan.bindings))
+    orders: dict[tuple[int, ...], tuple] = {}
+
+    def batch(kernel: Any, slot: int) -> int:
+        return prod(kernel.shape[:kernel.ndim - structural[slot]])
+
+    def contract(target: Any, kernels: Mapping[int, Any]) -> Any:
+        order = tuple(sorted(last_first, key=lambda slot: batch(kernels[slot], slot)))
+        steps = orders.get(order)
+        if steps is None:
+            steps = orders[order] = binding_steps(xp, plan, order)
+        for slot, apply in steps:
+            target = apply(target, kernels[slot])
+        return target
+    return contract
 
 
 @lru_cache(maxsize=None)
 def binding_steps(
-    xp: Any, plan: BindingPlan,
+    xp: Any, plan: BindingPlan, order: tuple[int, ...],
 ) -> tuple[tuple[int, Callable[[Any, Any], Any]], ...]:
-    """Resolve contractions and necessary coordinate conversions once."""
+    """Resolve contractions and necessary coordinate conversions once, binding slots in order."""
 
+    bound = {binding.slot: binding for binding in plan.bindings}
+    widths = [1] * plan.target_gatype.arity                 # kernel axes each target slot spans so far
     current_axes = (plan.result_subspaces[0],) + plan.target_gatype.input_subspaces
     steps = []
-    for binding in reversed(plan.bindings):
-        target_axis = binding.slot + 1
+    for slot in order:
+        binding = bound[slot]
+        target_axis = 1 + sum(widths[:slot])
         operand_type = binding.operand_gatype
         apply = _contractor(
             xp,
@@ -49,12 +82,13 @@ def binding_steps(
         )
         if binding.transform.kind is not AxisTransformKind.EXACT:
             apply = _with_output_transform(xp, apply, operand_type, binding.transform)
-        steps.append((binding.slot, apply))
+        steps.append((slot, apply))
         current_axes = (
             current_axes[:target_axis]
             + operand_type.input_subspaces
             + current_axes[target_axis + 1 :]
         )
+        widths[slot] = len(operand_type.input_subspaces)
     return tuple(steps)
 
 
@@ -132,4 +166,16 @@ def _contractor(
         + target_labels[target_axis + 1 :]
     )
     expression = f"...{target_labels},...{operand_labels}->...{output_labels}"
-    return partial(xp.einsum, expression, optimize=True)
+    if xp is not np:
+        return partial(xp.einsum, expression, optimize=True)
+
+    # NumPy searches for a contraction path on every call; the path depends on shapes only.
+    paths: dict[tuple, list] = {}
+
+    def contract(target: Any, operand: Any) -> Any:
+        key = (target.shape, operand.shape)
+        path = paths.get(key)
+        if path is None:
+            path = paths[key] = np.einsum_path(expression, target, operand, optimize="optimal")[0]
+        return np.einsum(expression, target, operand, optimize=path)
+    return contract

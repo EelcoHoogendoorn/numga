@@ -61,3 +61,6 @@ Spherical3D = Algebra(
 
 STA = Algebra("t+x-y-z-")
 
+
+VGA3D = Algebra("x+y+z+")
+

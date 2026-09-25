@@ -201,3 +201,22 @@ def test_log_requires_declared_unit_input_and_never_repairs_it(monkeypatch):
     np.testing.assert_allclose(
         declared.log().kernel, [effective_angle], rtol=1e-10, atol=1e-10,
     )
+
+
+@pytest.mark.parametrize("signature, blades, coefficients", [
+    ("t+x-y-z-", "txyz", [[0.7], [-1.3], [0.0]]),     # the spacetime pseudoscalar squares to -1
+    ("x+y+z+w+", "xyzw", [[0.8], [0.0]]),             # the Euclidean 4D pseudoscalar squares to +1
+    ("x+y+z+", "xyz", [[1.1]]),
+    ("x+y+z+w0", "xyzw", [[0.4]]),                    # the PGA pseudoscalar squares to 0
+])
+def test_exp_of_an_element_squaring_to_a_scalar_matches_its_power_series(signature, blades, coefficients):
+    ga = Algebra(signature)
+    mv = NumpyContext(ga).multivector
+    x = mv(ga.subspace(blades), np.array(coefficients))
+    total, power = x * 0 + 1, x * 0 + 1
+    for k in range(1, 40):
+        power = power * x / k
+        total = total + power
+    exponential = x.exp()
+    assert exponential.shape == x.shape
+    np.testing.assert_allclose(exponential.kernel, total.kernel, atol=1e-12)

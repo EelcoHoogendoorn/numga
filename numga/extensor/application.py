@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
-from numga.backend.dense import binding_steps
+from numga.backend.dense import binding_steps, ordered_binding
 from numga.binding import BindingPlan, TypeRules
 
 if TYPE_CHECKING:
@@ -94,7 +94,6 @@ def compile_application(
                 return wrap(context, result_type, sparse_executor(target._kernel)(operands))
         return execute
 
-    steps = binding_steps(xp, plan)
     # Preparation is selected statically, not through context.lower per call.
     if target_context.is_exact:
         def prepare_target(kernel: SymbolicKernel) -> Any:
@@ -110,31 +109,27 @@ def compile_application(
     else:
         prepare_target = None
 
-    contractions = []
-    for slot, contract in steps:
-        if signature[slot][0].is_exact:
-            def lowered(
-                left: Any, right: SymbolicKernel,
-                contract: Callable[[Any, Any], Any] = contract,
-            ) -> Any:
-                return contract(left, context.materialize(right))
-            contract = lowered
-        contractions.append((slot, contract))
+    exact_slots = tuple(slot for slot, (c, _) in enumerate(signature) if c.is_exact)
+    if len(signature) > 1:
+        contract_all = ordered_binding(xp, plan)
 
-    if len(contractions) == 1:
-        _, contract = contractions[0]
-        if prepare_target is None:
-            def execute(target: Extensor, operand: Extensor) -> Extensor:
-                return wrap(context, result_type, contract(target._kernel, operand._kernel))
-        else:
-            def execute(target: Extensor, operand: Extensor) -> Extensor:
-                return wrap(context, result_type, contract(prepare_target(target._kernel), operand._kernel))
-    else:
         def execute(target: Extensor, *operands: Extensor) -> Extensor:
-            kernel = target._kernel
-            if prepare_target is not None:
-                kernel = prepare_target(kernel)
-            for slot, contract in contractions:
-                kernel = contract(kernel, operands[slot]._kernel)
-            return wrap(context, result_type, kernel)
+            kernel = target._kernel if prepare_target is None else prepare_target(target._kernel)
+            kernels = {slot: operand._kernel for slot, operand in enumerate(operands)}
+            for slot in exact_slots:
+                kernels[slot] = context.materialize(kernels[slot])
+            return wrap(context, result_type, contract_all(kernel, kernels))
+        return execute
+
+    ((_, contract),) = binding_steps(xp, plan, (0,))
+    if exact_slots:
+        def lowered(left: Any, right: SymbolicKernel, contract: Callable[[Any, Any], Any] = contract) -> Any:
+            return contract(left, context.materialize(right))
+        contract = lowered
+    if prepare_target is None:
+        def execute(target: Extensor, operand: Extensor) -> Extensor:
+            return wrap(context, result_type, contract(target._kernel, operand._kernel))
+    else:
+        def execute(target: Extensor, operand: Extensor) -> Extensor:
+            return wrap(context, result_type, contract(prepare_target(target._kernel), operand._kernel))
     return execute

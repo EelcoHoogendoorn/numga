@@ -2,7 +2,7 @@
 
 An extensor carries no metric in its coefficients. The metric is in the products of the
 algebra, and duality between spaces is given by the regressive product. Several operations
-that are a single reflex in matrix algebra are therefore several different things here. Some
+that are one operation in matrix algebra are therefore several different operations here. Some
 are a product with an open slot. Some require a metric to be named. The transpose is not an
 operation on extensors at all. For comparison, in matrix algebra one would say that the
 transpose, the trace, the squared norm of a residual and the reciprocal of a basis all
@@ -25,8 +25,8 @@ world = motor >> inertia(motor << Bivector)              # AntiBivector <- Bivec
 cone = on_planes(disc(projection))                       # Plane <- Point: a pixel's disc pulled back into the scene
 ```
 
-What there is not is an operator like `a @ b`, which contracts two arrays by index position
-whatever the indices stand for. Composition only joins an output to an input of the same
+There is no operator like `a @ b`, which contracts two arrays by index position whatever the
+indices stand for. Composition only joins an output to an input of the same
 type. Every other pairing of two slots, the ones matrix code writes as `x.T @ y`, `A.T @ A`
 or a sum of squares, is a product of the algebra, and the product says which pairing it is:
 
@@ -41,9 +41,9 @@ and it falls only by binding a slot or by a product of the algebra. A dyad is wr
 product with an open slot, `a * (b & Point)`, not as a ⊗ b, and a contraction chosen by index,
 the other half of `einsum`, has no counterpart.
 
-Underneath, all of these are contractions of coefficient arrays. The difference is in what can be
-written: every contraction has a meaning in the algebra and a type, and a contraction by index
-alone cannot be expressed. The transpose is the first casualty.
+In the implementation all of these are contractions of coefficient arrays. The difference is
+in what can be written: every contraction has a meaning in the algebra and a type, and a
+contraction by index alone cannot be expressed. In particular, there is no transpose.
 
 ## 2. There is no transpose
 
@@ -137,8 +137,8 @@ up = screen.inverse()(mv.z)
 This is the one place a transposition of coefficients does happen, underneath. A map whose
 type carries the trait `CoefficientOrthogonal`, such as a rotor sandwich in a Euclidean
 algebra, dispatches `inverse()` to a transposition of its coefficients, because for such a map
-the two coincide. The trait is a promise the type system tracks; a Lorentz boost does not
-carry it, and its inverse is computed as an inverse.
+the two coincide. The type system tracks this trait; a Lorentz boost does not carry it, and
+its inverse is computed as an inverse.
 
 **Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/geometry/multiview/core.py) is built
 in its camera's frame and is summed with the other cameras' cones in the world's. As a map it
@@ -242,21 +242,19 @@ forms. A form's eigenproblem on its own is relative to its slot's metric, the in
 its rotor part alone, sending the translations to infinity. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
 tensor; the difference is one pairing.
 
-The distinction matters more than its size suggests. In coordinates a map and a form are the
-same square array, and nothing in the array says which one it is. Here the type says it, and
-the eigenproblems follow the type. A map has eigenvalues only when its output is the same kind
+In coordinates a map and a form are the same square array, and nothing in the array says which
+one it is. Here the type says it, and the eigenproblems follow the type. A map has eigenvalues only when its output is the same kind
 of thing as its input: a twist that maps to a multiple of itself means nothing when twists come
 out as forques. A form has none on its own terms; its eigenproblem is posed against a second
 form, `potential.eigh(kinetic)`, and has real eigenvalues because both forms are symmetric.
 
-Flattening the distinction produces a familiar pathology. A rigid body's stiffness assembled as
-a map from twists to forques comes out almost symmetric: symmetric in one basis, not quite in
-another, for no reason anyone can name. The usual remedies treat the symptom. Averaging with
-the transpose discards information, and the normal equations are exactly symmetric but square
-the condition number. What is missing is one regressive product, pairing the returned forque
-with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`, symmetric in `a`
-and `b` by construction. The asymmetry was never in the physics; it was a map standing in for
-a form, and a typed algebra does not let one pass for the other.
+Treating a map as a form causes a common problem. A rigid body's stiffness assembled as a map
+from twists to forques comes out almost symmetric: symmetric in one basis and not quite in
+another. Averaging it with its transpose discards information, and the normal equations are
+exactly symmetric but square the condition number. The fix is one regressive product, pairing
+the returned forque with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`,
+which is symmetric in `a` and `b` by construction. The asymmetry came from using a map where a
+form was meant, and with typed slots the two cannot be confused.
 
 ## 5. Quadrics
 
@@ -349,8 +347,10 @@ response = h_pt[:, None].solve(h_cross)                    # Direction <- Twist,
 
 Tensor: a construction with several open slots, solved for an unknown multilinear part. The
 right-hand side's inputs must match one subsequence of the construction's inputs, and the
-unmatched slots become the solution's signature. Recovering a point cloud's second moment
-from its inertia is this case; section 8 shows it.
+unmatched slots become the solution's signature: several slots are unbound at once, where the
+other cases unbind one. Such a system is rarely square, so this case is `lstsq`'s; when the
+right-hand side is one the construction can produce, it solves it exactly. Recovering a point
+cloud's second moment from its inertia is this case; section 8 shows it.
 
 ## 8. Second moments and inertia
 
@@ -424,9 +424,9 @@ metric is invertible.
 
 Motors, points and planes are homogeneous: a scalar multiple is the same geometric object, so
 their coordinates contain a direction that is not a degree of freedom. A solve that treats such
-an object's coordinates as unknowns will use that direction, and the result is either a step
-that changes nothing or one that absorbs everything. The rule is that a homogeneous object is
-never updated in its own coordinates. It is updated by an element of its tangent space, which
+an object's coordinates as unknowns will move along that direction: the step either changes
+nothing or takes up the whole update. So a homogeneous object is never updated in its own
+coordinates. It is updated by an element of its tangent space, which
 is not homogeneous, and the object is reconstituted from it.
 
 For a motor the tangent space is the twists, and the update is an exponential:
@@ -456,8 +456,8 @@ points = (fused + w * (w & Point)).solve(w).normalized()
 ```
 
 The global gauge of a problem, such as the frame of a camera rig or the scale of a two-camera
-rig, is the same fact one level up: directions in the unknowns that change nothing. Anchoring
-removes them from the solve; it does not make them observable.
+rig, has the same cause: directions in the unknowns that change nothing. Anchoring removes them
+from the solve; it does not make them observable.
 
 ## 11. Information and covariance
 
@@ -487,10 +487,10 @@ curvature over the cameras is the information on their poses with the points int
 ## 12. Batch axes and slots
 
 A batch axis indexes independent copies of an expression; a slot is an argument. The two look
-alike in a coefficient array, and a frame is where they get confused: a basis stored as a
-batch, with a reciprocal basis stored as another, is a slot that has been evaluated on each
-basis vector and summed. The Ricci contraction of the [curvature example](../examples/relativity/curvature/core.py),
-written both ways, makes this concrete.
+alike in a coefficient array, and frames are where they are most often mixed up: a basis stored
+as a batch, with a reciprocal basis stored as another, is a slot that has been evaluated on each
+basis vector and summed. The Ricci contraction of the [curvature example](../examples/relativity/curvature/core.py)
+shows both spellings.
 
 ```python
 basis = mv.vector(np.eye(4))                            # [4] Vector: four copies, one per coordinate vector
@@ -511,11 +511,10 @@ also relies on `basis.inverse()` being the reciprocal frame, which holds for an 
 basis and not otherwise. Anything summed over a basis should be checked for a frame-free
 spelling first: a trace, a bare type standing for the identity, or a solve of the pairing.
 
-Under the hood, numga's default dense backend evaluates slot contractions over dense maps akin
-to a matrix product. This is strictly an implementation detail: extensor semantics are
-coordinate-free subspace contractions, and alternative execution strategies—such as sparse
-kernel contraction or symbolic unrolling—follow the exact same algebraic rules without changing
-the interface.
+numga's default dense backend evaluates slot contractions over dense coefficient arrays, much
+like a matrix product. That is an implementation detail. The semantics are contractions of
+typed subspaces, and other backends, such as sparse contraction or symbolic unrolling, follow
+the same rules through the same interface.
 
 ## 13. Outermorphisms
 

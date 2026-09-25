@@ -46,6 +46,8 @@ def log_quadratic(m: Extensor) -> Extensor:
     return m.square_root().log_linear_normalized() * 2
 
 
+# TODO: review this port. It sums the series 2 artanh((m-1)/(m+1)), not a Pade approximant, and
+#  dispatches on rotors where the legacy motor_log_pade took any even multivector.
 @Extensor.log_pade.register(lambda t: t <= t.algebra.gatype.rotor())
 def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
     """Odd series in (m-1)/(m+1); converges near identity."""
@@ -70,11 +72,16 @@ def empty_log(z: Extensor) -> Extensor:
 
 @Extensor.exp.register(lambda t: t.is_reoriented_scalar)
 def reoriented_scalar_exp(s: Extensor) -> Extensor:
+    """exp of a scalar stored against the basis element -1, as a signed layout can store it: the
+    value is read back against +1 first, so exp acts on the scalar and not on its negation."""
+
     return s.select_subspace(s.subspace.canonical).exp()
 
 
 @Extensor.log.register(lambda t: t.is_reoriented_scalar)
 def reoriented_scalar_log(s: Extensor) -> Extensor:
+    """log of a scalar stored against the basis element -1, read back against +1 first."""
+
     return s.select_subspace(s.subspace.canonical).log()
 
 
@@ -108,6 +115,29 @@ def bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
     for _ in range(n):
         m = m.squared()
     return m.with_traits(ReverseProductOne, Versor)
+
+
+@Extensor.exp.register(lambda t: t.squared.is_empty)
+def nilpotent_exp(x: Extensor) -> Extensor:
+    """exp(x) = 1 + x when x squares to zero by its type, as the pseudoscalar of PGA does."""
+
+    return x + 1
+
+
+@Extensor.exp.register(lambda t: t.squared.is_scalar)
+def scalar_square_exp(x: Extensor) -> Extensor:
+    """exp(x) = C + x S when x squares to a scalar s, as a pseudoscalar or a single blade does:
+    cosh and sinh(r) / r with r = sqrt(s) for s > 0, cos and sin(r) / r with r = sqrt(-s) for s < 0,
+    and 1 and 1 for s = 0. No versor trait is asserted: e^(I b) in four dimensions is not one."""
+
+    xp = x.context.xp
+    square = x.squared().kernel[..., 0]                                # [...] the scalar s
+    root = xp.sqrt(xp.abs(square))
+    safe = xp.where(root > 0, root, 1)
+    even = xp.where(square > 0, xp.cosh(root), xp.cos(root))
+    odd = xp.where(root > 0, xp.where(square > 0, xp.sinh(root), xp.sin(root)) / safe, 1)
+    scalar = x.context.multivector.scalar
+    return scalar(even[..., None]) + x * scalar(odd[..., None])
 
 
 @Extensor.log.register(

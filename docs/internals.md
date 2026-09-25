@@ -10,27 +10,26 @@ document describes what runs.
 
 ## 1. Implementation
 
-The implementation is fairly simple. Every operation is first constructed as an exact
+The implementation is simple. Every operation is first constructed as an exact
 multiplication table, and higher-arity operations are composed from those tables by
 contraction. When bound with multivector arguments, the tables are executed as dense
 contractions in the array backend; unrolling over only the nonzero terms of the expression is
 available as an alternative execution policy, and section 6 says when it pays.
 
-Seeing as how numga leans into the multi-staged compilation model of being a Python library
-that sets out to trace jit-compiled JAX functions, it is easy to delegate the construction of
-the operations to a preprocessing step, which is cached, and the execution of the operations
-to be jit-compiled by JAX. This allows for good JAX performance in a relatively simple library.
+numga is built to be traced inside jit-compiled JAX functions, so constructing the operations
+is a cached preprocessing step and executing them is left to the JAX compiler. That gives good
+JAX performance from a relatively simple library.
 The NumPy backend runs the same tables eagerly, with the same caching: the tables, the binding
 plans and the compiled application closures are built once per signature, and a warm call is
 a few array operations over the batch. Its per-call overhead is in line with NumPy's own
-per-operation overhead, and dense contraction of the tables is by far the most efficient way
-NumPy can evaluate an expression such as a rotor sandwich. Without a separate compilation
-stage to fuse arithmetic, that is as fast as a geometric algebra library in numpy gets. 
+per-operation overhead, and dense contraction of the tables is the most efficient way we know
+for NumPy to evaluate an expression such as a rotor sandwich, since NumPy has no compilation
+stage to fuse the arithmetic.
 
 ## 2. Example code
 
-For illustration, we here work out how the ternary rotor-vector sandwich comes to be, in the
-smallest algebra that has one.
+The following works out how the rotor-vector sandwich, an operation with three slots, is
+built, in the smallest algebra that has one.
 
 ```python
 import numpy as np
@@ -45,7 +44,7 @@ V = ga.subspace.vector()
 Rotor = ga.gatype.rotor()
 Vector = ga.gatype.vector()
 
-# Lets examine how the Cl2 rotor-vector sandwich comes to be
+# The Cl2 rotor-vector sandwich:
 #  output = r * v * r.reverse()
 sandwich = Rotor >> Vector
 # the two rotor slots are distinct inputs; only supplying the same value to both makes a rotation
@@ -69,19 +68,18 @@ out[x] = a0[1] * a1[x] * a2[1] + a0[1] * a1[y] * a2[xy] - a0[xy] * a1[x] * a2[xy
 out[y] = - a0[1] * a1[x] * a2[xy] + a0[1] * a1[y] * a2[1] - a0[xy] * a1[x] * a2[1] - a0[xy] * a1[y] * a2[xy]
 
 reverse = ga.operator.reverse(Q)
-# reversing a rotor is just negating its bivector part
-# this follows the standard GA logic of counting the number of swaps required to map the reversed basis vectors to their original positions
-# We here resist the urge to prematurely optimize this representation; but rather lean into the general form of a linear map to represent the reverse at this stage, so as to keep the code for combining it with other extensors simple.
+# reversing a rotor negates its bivector part: the sign counts the swaps that restore the
+# reversed basis vectors to their original order
+# the reverse is kept as a general linear map, not specialized, so that it combines with other
+# extensors through the same code
 print(reverse.kernel.to_object_array().astype(int))
 [[ 1  0]
  [ 0 -1]]
 
-# left hand side of the sandwich;
-# the product of Rotor and Vector produces another Vector
-# This multiplication table is again constructed using the standard GA logic;
-# eliminating repeating terms that contract via the metric; and then mapping to a standardized ordering of basis blades
-# We may symbolically deduce in this step that the output space is V;
-# these being the only nonzero terms that emerge from the multiplication table
+# left side of the sandwich: the product of a Rotor and a Vector is a Vector
+# the multiplication table contracts repeated basis vectors through the metric and maps each
+# product to the canonical order of basis blades
+# the output space V follows from the table: it holds the only nonzero terms
 left = Rotor * Vector
 assert left.axes == (V, Q, V)
 print(left.kernel.to_object_array().astype(int))
@@ -90,17 +88,16 @@ print(left.kernel.to_object_array().astype(int))
  [[ 0  1]
   [-1  0]]]
 
-# right hand side of the sandwich; (Rotor * Vector) * Rotor.reverse()
+# right side of the sandwich: (Rotor * Vector) * Rotor.reverse()
 right = Vector * Rotor
 assert right.axes == (V, V, Q)
 
-# we can bind the reverse extensor to the Rotor input slot of the right side product,
-# and the left side product to its Vector input slot, to get the combined extensor.
+# binding the reverse into the right side's Rotor slot, and the left side into its Vector slot,
+# gives the combined extensor
 # Slots are numbered over inputs, and a bound map splices its own inputs in place of the slot.
 composed = right.bind({0: left, 1: reverse})
 assert composed.axes == (V, Q, V, Q)
-# Since we are merely explicitly retracing the same steps numga takes under the hood,
-# we obtain the same result as we get by letting numga handle the binding of arguments
+# these are the steps numga takes when binding, so the result is the same table
 assert composed.kernel == sandwich.kernel
 
 # in coefficients, those two binds are two contractions; materialize() converts an exact table to floats
@@ -108,9 +105,8 @@ right_reverse = np.einsum('ijk,kl->ijl', right.kernel.materialize(), reverse.ker
 table = np.einsum('ijk,klm->ijlm', left.kernel.materialize(), right_reverse)
 assert np.array_equal(table, sandwich.kernel.materialize())
 
-# The below is what happens when binding a specific rotor to the sandwich extensor.
-# The rotor goes into both rotor slots at once, and what remains is
-# 'the rotor sandwich in matrix form'
+# binding a specific rotor into both rotor slots at once leaves the rotation as a map on vectors:
+# the rotor sandwich in matrix form
 mv = NumpyContext(ga).multivector
 r = mv.rotor([np.cos(0.3), np.sin(0.3)])
 rotation = r >> Vector
@@ -156,8 +152,7 @@ def apply(a0, a1, a2):
     ]
 
 def rotation_matrix(r):
-    # after simple term rewriting we may expect of the XLA compiler toolchain,
-    # binding r into both rotor slots ends up as code similar to the following
+    # after the term rewriting XLA performs, binding r into both rotor slots becomes code like this
     d = r[0] * r[0] - r[1] * r[1]
     od = 2 * r[0] * r[1]
     return [[d, od], [-od, d]]
@@ -189,8 +184,8 @@ structural axis, with the batch axes broadcasting:
 "...oi,...i->...o"
 ```
 
-That string is how the NumPy backend runs the map. It is not what the map is. The map is the
-geometric expression with a slot left open; the kernel is that expression's coefficient table
+That string is how the NumPy backend evaluates the map. The map itself is the geometric
+expression with a slot left open; the kernel is that expression's coefficient table
 in the blade bases of its slots; the einsum, a matmul, or an XLA dot are ways of evaluating the
 table, chosen by the backend. The dense executor uses matmul for a unary map applied to a
 value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or
@@ -281,15 +276,14 @@ shrink with the batch. An unbatched loop over a thousand points pays it a thousa
 arithmetic that is a fraction of it, which is why the examples batch everything.
 
 The multiplication tables are stored dense. That keeps the implementation simple, and in
-modest dimensional algebras, below six dimensions, it has not been a problem. One of the worst
-case constructions one might encounter in practice is the sandwich of a versor with a
+algebras below six dimensions it has not been a problem. One of the largest constructions in
+practice is the sandwich of a versor with a
 trivector in five dimensions, a CGA point pair. The versor has 16 components and the trivector
 10; prior to binding any arguments to the ternary operation, the table has shape
 (10, 16, 10, 16), or 25,600 entries. Such an object is only constructed outside the scope of an
 innermost jit operation, and is thus a compile-time constant. Fetching it from RAM takes a
-fraction of a microsecond, and dense contractions over it are fast enough. One can also see
-how such dense logic can result in compilation times that get out of hand in more exotic,
-higher dimensional algebras.
+fraction of a microsecond, and dense contractions over it are fast enough. In algebras of
+higher dimension, dense tables can make compilation times grow large.
 
 That sandwich has 1600 nonzero terms, after the symmetrization over its two versor slots that
 the sandwich construction performs. The array contexts accept `execution="sparse"`, which
@@ -297,11 +291,10 @@ unrolls those terms instead of contracting the table; the [benchmarks](../benchm
 show it winning for small expressions under JAX and losing for this one. In NumPy it loses by
 a wide margin for any expression: each unrolled term is a separate array traversal, whereas
 the dense contraction is one call into BLAS or einsum. Dense contraction is the default and the
-two policies have identical semantics. Note that in the Cl(3,0,1) case, performing a well
-optimized versor-point sandwich directly can be [competitive](#ref-look-ma) with a 4x4 matrix
-multiplication. In higher dimensions a conversion to matrix form pays off quickly when there is
-more than one object to transform, as we can see from the 1600 nonzero terms in the sandwich
-expression versus a mere 10x10 = 100 fused multiply-adds in the matrix form. The same
+two policies have identical semantics. In Cl(3,0,1), a well optimized versor-point sandwich
+applied directly can be [competitive](#ref-look-ma) with a 4x4 matrix multiplication. In higher
+dimensions converting to matrix form pays off as soon as there is more than one object to
+transform: the sandwich above has 1600 nonzero terms, its matrix form 10x10 = 100 multiply-adds. The same
 benchmarks measure that trade, construction included:
 
 | Scenario | Result |
@@ -312,10 +305,10 @@ benchmarks measure that trade, construction included:
 
 Each scenario's docstring records the measured times on one machine.
 
-With regards to the cost of the extensor syntax itself: there is a conditional in each
-operator invocation that differentiates concrete arguments, to be bound, from bare types, over
-which an operation is to be constructed. From the perspective of a jit-compiled expression,
-which is the setting numga concerns itself with, that conditional is resolved at trace time.
+The extensor syntax itself costs one conditional per operator call, which tells concrete
+arguments, to be bound, from bare types, over which an operation is constructed. In a
+jit-compiled expression, the setting numga is built for, that conditional is resolved at trace
+time.
 Using the eager NumPy backend it is paid per call, along with the cached plan lookup above, as
 a fixed cost of the same order as NumPy's own per-operation overhead. It does not change how
 NumPy code is written: batch the data, as one would anyway, and the array work dominates.

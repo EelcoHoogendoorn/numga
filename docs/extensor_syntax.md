@@ -9,7 +9,7 @@ In numga, the `Extensor` abstraction unifies multivectors and linear/multilinear
 
 ## 1. The Core Viewpoint: Multivectors Waiting for Arguments
 
-Any normal GA expression involving open slots reads as if operating directly on its **output type**. Conceptually, an extensor *is* a multivector of its output type—it is simply waiting for one or more arguments to be bound at a later time.
+A GA expression with open slots reads as an operation on its **output type**. An extensor behaves as a multivector of its output type with one or more arguments still to be supplied.
 
 When constructing a projection:
 ```python
@@ -21,7 +21,7 @@ vertex = mv.point([1.0, 0.0, 2.0])                   # [] Point
 projected_vertex = shadow(vertex)                    # [] Point
 ```
 
-Because every GA operation treats an open extensor by its output type, multi-stage physical, optical, and kinematic pipelines chain naturally without manual index or representation bookkeeping:
+Because every GA operation treats an open extensor by its output type, several stages chain without index bookkeeping:
 
 ```python
 # 1. Wedge with k produces a field Bivector (waiting for a spatial polarization a):
@@ -33,7 +33,7 @@ excitation = medium(field)                           # [n_speeds] Bivector <- Sp
 # 3. Commutator with k dots the excitation Bivector with k, yielding a spacetime Vector:
 wave_map = k.commutator(excitation)                  # [n_speeds] Vector <- Spatial
 ```
-At every step, the expression reads as standard geometric algebra on the output type, while numga compiles the multi-stage linear transformations under the hood.
+Each step reads as geometric algebra on the output type, and numga composes the linear maps.
 
 ---
 
@@ -74,7 +74,7 @@ scale = ctx.extensor(PointMap, np.diag([sx, sy, sz, 1.0]))
 ```
 
 ### Structural Axis Order
-Extensor axes are strictly **output-first**, trailing any leading batch dimensions:
+Extensor axes are **output-first**, after any leading batch dimensions:
 ```text
 Arity 0 (Multivector):       [batch..., Output]
 Arity 1 (Unary Linear Map):  [batch..., Output, Input]
@@ -155,7 +155,7 @@ Because all GA operations act on an extensor's **output type**, applying a motor
 # Transforms the output space from local to world (WorldOut <- LocalIn):
 world_emitter = motor >> local_emitter               # WorldOut <- LocalIn
 ```
-The sandwich `motor >> T` transforms only the output space—a complete and valid operation whenever a local generator or sensor model should emit world-frame geometric elements.
+The sandwich `motor >> T` transforms only the output space. That is all that is needed when a local generator or sensor model should emit elements in the world frame.
 
 If an extensor is an endomorphism or physical law whose **input space** must also be expressed in the new frame (e.g. transporting a spatial stiffness, inertia, or quadric metric from local to world coordinates), the input is explicitly pulled back via the inverse sandwich:
 
@@ -202,21 +202,24 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   step = stiffness.solve(force)                      # Twist: the displacement the force causes
   ```
-* **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems.
+* **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems. On a construction with several input slots it unbinds every slot the right-hand side does not match, all at once, and returns the unknown map on them:
+  ```python
+  moment = (Point & Plane.dual().commutator(Bivector)).lstsq(inertia)   # Point <- Plane, from Forque <- (Point, Plane, Twist)
+  ```
 * **`.inverse()`**: Inverse of the map under composition. On a multivector batch the same method is the geometric-product inverse of each element; a batch of vectors is not a frame, so this is not a reciprocal frame.
 * **`.pinv(rcond=1e-4)`**: Moore-Penrose pseudoinverse (e.g. converting Gauss-Newton curvature into posterior pose covariance).
   ```python
   pose_covariance = curvature.pinv()                 # Twist <- Twist
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; the metric is never consulted. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
+* **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; it does not use the metric. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
   ```python
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(slot=1)   # [] Scalar <- (Vector, Vector)
   ```
 * **`.svd()`**: Singular value decomposition returning `[U, s, Vh]`.
   * `s`: singular values array.
   * `Vh[-1]`: physical polarization / nullspace eigenmode.
-* **`.svdvals()`**: Evaluates only the singular values across all broadcast batch dimensions (ideal for resonance scans).
+* **`.svdvals()`**: Only the singular values, over all batch dimensions, as in a resonance scan:
   ```python
   resonance_curves = wave_map.svdvals()[..., -1]     # Smallest singular value per speed
   ```
