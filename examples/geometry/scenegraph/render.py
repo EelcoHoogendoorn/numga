@@ -77,8 +77,8 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     theta = np.linspace(0, 2 * np.pi, 36)
     ring = np.stack([np.cos(theta), np.sin(theta), np.zeros_like(theta)], axis=-1)
     # The front lens rim, radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3:
-    front_ring = euclidean(camera_pose >> point(ring * 0.3))                       # [36, 3]
-    rear_ring = euclidean(camera_pose >> point(ring * 0.25 + [0.0, 0.0, -0.3]))   # [36, 3]
+    front_ring = euclidean(camera_pose >> point(ring * 0.3))                       # [theta, 3]
+    rear_ring = euclidean(camera_pose >> point(ring * 0.25 + [0.0, 0.0, -0.3]))   # [theta, 3]
     ax.plot3D(front_ring[:, 0], front_ring[:, 1], front_ring[:, 2], color="#319795", linewidth=2.0, zorder=3)
     ax.plot3D(rear_ring[:, 0], rear_ring[:, 1], rear_ring[:, 2], color="#805AD5", linewidth=2.0, zorder=3)
 

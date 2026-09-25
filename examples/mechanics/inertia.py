@@ -18,9 +18,10 @@ def cloud(context: NumpyContext, seed: int) -> tuple[Extensor, np.ndarray]:
     """Normalize random points and place the cloud with a random motor."""
     ga, mv = context.algebra, context.multivector
     rng = np.random.default_rng(seed)
-    points = mv.antivector(rng.normal(size=(80, ga.dimension))).normalized()
+    count = 80
+    points = mv.antivector(rng.normal(size=(count, ga.dimension))).normalized()
     placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()
-    return placement >> points, rng.uniform(0.5, 1.5, size=80)
+    return placement >> points, rng.uniform(0.5, 1.5, size=count)
 
 
 # --- math -----------------------------------------------------------------------------

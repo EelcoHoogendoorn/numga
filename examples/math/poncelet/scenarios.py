@@ -27,7 +27,7 @@ def run(angles: np.ndarray, steps: int) -> tuple[core.Conic, core.Conic, core.Po
     the given number of sides about each inner conic. Returns the ellipse, the inner conics as maps
     from points, and the vertices of the paths."""
     outer = core.ellipse(CENTRE, SEMI, TILT)                                   # [] Plane <- Point
-    corners = stack([on_ellipse(CORNERS, 1.0), on_ellipse(CORNERS, 0.97)])     # [inners, 5] Point
+    corners = stack([on_ellipse(CORNERS, 1.0), on_ellipse(CORNERS, 0.97)])     # [inners, corners] Point
     inner = core.envelope(corners & corners[..., NEXT])                        # [inners] Point <- Plane
     starts = on_ellipse(angles, 1.0)                                           # [starts] Point
     first = core.tangents(inner[:, None], starts[None, :])[..., 0]             # [inners, starts] Plane

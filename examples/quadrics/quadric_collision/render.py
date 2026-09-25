@@ -68,7 +68,8 @@ def draw_collision(
     draw_ellipses(ax_sep, Q1, Q2[0], f"State 1: Separated Ellipses\nmax det(Q(λ)) = {peak[0]:+.3f} > 0")
     # The blend at the peak is a hyperbola separating the two ellipses; its form has one positive
     # and two negative eigenvalues.
-    xs, ys = np.linspace(*XLIM, 250), np.linspace(*YLIM, 250)
+    resolution = 250
+    xs, ys = np.linspace(*XLIM, resolution), np.linspace(*YLIM, resolution)
     X, Y = np.meshgrid(xs, ys)
     grid = mv.yw * X + mv.wx * Y + mv.xy
     field = (grid & separating(grid)).to_array()

@@ -13,8 +13,9 @@ def gaussian():
     points = point(rng.normal(size=(400, 2)) * [1.5, 0.5])
     placement = (mv.xw * 0.6 - mv.yw * 0.3).exp() * (mv.xy * 0.3).exp()
     points = placement >> points
-    pixels = point(np.stack(np.meshgrid(np.linspace(-5, 6, 320),
-                                        np.linspace(-5, 4, 320)), axis=-1))
+    across = 320
+    pixels = point(np.stack(np.meshgrid(np.linspace(-5, 6, across),
+                                        np.linspace(-5, 4, across)), axis=-1))
 
     density, level = fit_gaussian(points, pixels)
 

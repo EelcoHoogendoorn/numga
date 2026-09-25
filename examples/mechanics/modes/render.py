@@ -31,9 +31,10 @@ def spring_path(start: Point, end: Point) -> np.ndarray:
     p1 = coordinates(end)
     axis = p1 - p0
     normal = np.array([-axis[1], axis[0]]) / np.linalg.norm(axis)
-    along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, 15), 0.84, 1.0]
+    turns = 15
+    along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, turns), 0.84, 1.0]
     across = np.zeros_like(along)
-    across[2:-2] = 0.048 * (-1.0) ** np.arange(15)
+    across[2:-2] = 0.048 * (-1.0) ** np.arange(turns)
     return p0 + along[:, None] * axis + across[:, None] * normal
 
 
