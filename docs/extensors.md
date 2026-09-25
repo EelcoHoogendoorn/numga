@@ -34,6 +34,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 5. [**Gravitational Waves & Tidal Forces (STA)**](#5-gravitational-wave-curvature--tidal-forces-sta): a gravitational wave's curvature as a map on planes, and the tides an observer feels.
 6. [**Rigid Bodies on the Sphere (Spherical3D)**](#6-rigid-bodies-on-the-sphere-spherical3d): shapes as quadric forms, drawn, collided and bounced.
 7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
+8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
 
 ---
 
@@ -169,6 +170,27 @@ rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried aro
 
 * **A form with four open slots.** Feeding the ray's bend into both slots of the surface's form leaves four open directions: the leading coefficient of every pixel's quartic, from one binding.
 * **Shapes are made by moving maps.** A dilation bends tubes into tori and Dupin cyclides, and a circle's exponential carries a surface around it.
+
+---
+
+## 8. Magnetic Resonance & Spin Echoes (VGA3D)
+
+**Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb)
+
+![The echo and the free decay of spins in an uneven field](../plots/resonance_echo_decay.png)
+
+```python
+relaxing = L * State * L.reverse() - 0.5 * (back * State + State * back)   # [] State <- State
+rates = (turning + relaxing).cast(State)                                    # [spins] State <- State
+waiting = stack(list(doublings(evolution(rates, dt), 11)))                  # [delays, spins] State <- State
+turn = pulse(np.pi) >> State                                                # [] State <- State
+echo = waiting(turn(waiting(tip)))                                          # [delays, spins] State <- State
+sample = echo.mean(axis=-1)                                                 # [delays] State <- State
+```
+
+* **Relaxation is its formula.** A relaxation process multiplies the state from both sides. Leaving the state open makes the formula a map. In matrix notation the same map needs the density matrix flattened into a column and each term rewritten as a Kronecker product.
+* **The type picks the basis.** A spin's state is its own reverse, four real numbers, so the generator is a real 4×4 map: the Bloch equations, relaxation toward equilibrium included.
+* **An experiment is a composition.** The evolution over a step is the exponential series of the generator, its powers by composition, and doubling it spans the delays. Pulses are rotor sandwiches with the state left open. Tip, wait, turn, wait is one map per spin, and their average is one map for the sample: its echo keeps exp(−t/T2), while without the turn the uneven field has erased the signal within a microsecond.
 
 
 # References
