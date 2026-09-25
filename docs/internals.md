@@ -337,8 +337,7 @@ Predicates are tried before every declarative registration, in the order they we
 way, with a predicate that compares subspaces, which includes blade order and signs:
 
 ```python
-PGA3 = AlgebraDescription(("x", "y", "z", "w"), (1, 1, 1, 0))
-@Extensor.exp.register(lambda t: t.algebra.description == PGA3
+@Extensor.exp.register(lambda t: t.algebra.description == PGA3D.description
                        and t.subspaces == (t.algebra.subspace("yz zx xy xw yw zw"),), position=0)
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector() and t.squared.is_empty)
 ```

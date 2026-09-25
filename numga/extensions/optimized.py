@@ -12,16 +12,14 @@ would be written separately, against what XLA fuses well.
 
 import numpy as np
 
-from numga.algebra import AlgebraDescription
+from numga.algebras import PGA3D
 from numga.extensor import Extensor
 from numga.gatype import ReverseProductOne, Versor
 
-PGA3 = AlgebraDescription(("x", "y", "z", "w"), (1, 1, 1, 0))
-
-
 def layout(names: str):
-    """A predicate matching exactly this blade layout of PGA3."""
-    return lambda t: t.algebra.description == PGA3 and t.subspaces == (t.algebra.subspace(names),)
+    """A predicate matching exactly this blade layout of PGA3D, or of an algebra built with its
+    description."""
+    return lambda t: t.algebra.description == PGA3D.description and t.subspaces == (t.algebra.subspace(names),)
 
 
 def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
@@ -87,9 +85,9 @@ class PrincipalInertiaPGA3(Extensor):
     upper = m [..., 1] and lower = (I_yz, I_zx, I_xy) [..., 3] for the inertia. The inverse has
     the same form with upper = 1 / lower and lower = 1 / upper, so it is four reciprocals.
 
-    Applying and inverting use these numbers directly, and the batch shape is theirs. Everything
-    else an Extensor does sees the dense 6x6 map, built for that use and not kept, and returns an
-    ordinary Extensor.
+    Applying and inverting use these numbers directly, and the batch shape is theirs. Every other
+    operation works on the dense 6x6 map, rebuilt from the four numbers whenever one needs it
+    rather than stored, and returns an ordinary Extensor.
     """
     __slots__ = ("upper", "lower")
 
@@ -111,7 +109,7 @@ class PrincipalInertiaPGA3(Extensor):
 
     @property
     def _kernel(self) -> np.ndarray:
-        """The dense map, built for each use and never kept."""
+        """The dense 6x6 map, rebuilt from the four numbers on every access; it is not stored."""
         dense = np.zeros(self.shape + (6, 6))
         dense[..., (0, 1, 2), (3, 4, 5)] = self.upper
         dense[..., (3, 4, 5), (0, 1, 2)] = self.lower
