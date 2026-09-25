@@ -3,7 +3,7 @@
 In numga, the `Extensor` abstraction unifies multivectors and linear/multilinear maps under a single value class:
 * **Arity 0**: Multivectors (concrete geometric elements).
 * **Arity 1**: Unary linear maps (`Output <- Input`).
-* **Arity $n$**: Multilinear maps / higher-arity tensors (bilinear forms, energy functionals).
+* **Arity n**: Multilinear maps (bilinear forms, energy functionals, and maps with more slots).
 
 ---
 
@@ -113,11 +113,10 @@ ray = ray_from_origin(target)                        # Line
 ray_to_target = join_map(Point, target)              # Line <- Point
 ```
 
-### Argument Lifting (Binding Arity $> 0$ Extensors)
-Lifting is binding an extensor of arity $> 0$ into an open argument slot. Instead of eliminating the slot, numga contracts the intermediate GAType and inherits the argument's input axes:
-$$M(T) : C \leftarrow A \quad \text{where } M : C \leftarrow B \text{ and } T : B \leftarrow A$$
+### Argument Lifting (Binding Maps into Slots)
+Lifting is binding a map, an extensor with open slots of its own, into an open argument slot. Instead of eliminating the slot, numga contracts the intermediate GAType and inherits the argument's input axes: with `M` a `C <- B` and `T` a `B <- A`, `M(T)` is a `C <- A`, feeding the output of `T` into the input of `M`.
 
-This is the usual convention for composing linear maps: in matrix terms, $C = AB$ feeds the output of $B$ into the input of $A$, and `M(T)` feeds the output of `T` into the input of `M` in the same way.
+In matrix notation this reads as the product $C = AB$, which feeds the output of $B$ into the input of $A$.
 
 ```python
 # 1. Chaining & Pipeline Lifting:
@@ -134,7 +133,7 @@ permittivity = permittivity_tensor(eps_x, eps_y, eps_z) # Vector <- Vector
 # Observer extractor maps 6D spacetime bivectors to 3D electric vectors:
 electric_extractor = B.commutator(observer)             # Vector <- Bivector
 
-# Passing 'electric_extractor' into 'permittivity' lifts the 3D tensor into spacetime:
+# Passing 'electric_extractor' into 'permittivity' lifts the 3D map into spacetime:
 spacetime_d = permittivity(electric_extractor)          # Vector <- Bivector
 
 # 3. Composition Across Kinematic Chains:
@@ -227,7 +226,9 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   eigenvalues = plus.eigvals()                       # [6] Scalar (complex; all zero for a nilpotent map)
   ```
-* **`.cholesky()`**: Cholesky factorization $L L^T$ of a positive-definite extensor.
+* **`.cholesky()`**: Cholesky factorization of a positive-definite extensor.
+
+  In matrix notation it reads as the lower-triangular factor $L$ of $L L^\top$.
 * **`.decompose_polar()`**: Decomposes an extensor into unitary rotation and symmetric stretch components.
 
 ---
@@ -246,15 +247,19 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
   values, motors = misfit.eig()                      # Scalar <- (Motor, Motor): translations at infinity
   motor = motors[values.real().argmin()].real().normalized()
   ```
-* **`.eigh(metric)`**: **Generalized Hermitian eigensolve** $K v = \lambda M v$.
-  Solves the generalized eigenvalue problem directly between two bilinear energy forms without inverting inertia or forming asymmetric coordinate products $M^{-1}K$:
+* **`.eigh(metric)`**: **Generalized Hermitian eigensolve**, one form against another.
+  Solves the generalized eigenvalue problem directly between two bilinear energy forms, without inverting the inertia:
   ```python
   pe_form = Twist & stiffness                        # Scalar <- (Twist, Twist)
   ke_form = Twist & inertia                          # Scalar <- (Twist, Twist)
   values, modes = pe_form.eigh(ke_form)              # values: [3] Scalar, modes: [3] Twist
   ```
+
+  In matrix notation it reads as $K v = \lambda M v$, solved without forming the asymmetric product $M^{-1}K$.
 * **`.eigvalsh()`** / **`.eigvalsh(metric)`**: Only the eigenvalues, against the slot's metric or a given one.
-* **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric, `det(metric⁻¹ form)`; the slot's metric must be invertible.
+* **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric; the slot's metric must be invertible.
+
+  In matrix notation it reads as $\det(G^{-1} A)$, with $G$ the metric and $A$ the form.
 * **`.trace()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible.
 * A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
 * **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
@@ -295,6 +300,6 @@ Nullary extensors represent concrete multivectors and scalars (carrying no open 
 * **Bivectors & Motors (`Bivector`, `Motor`, `Rotor`)**: Lie algebra generators and versors:
   * `bivector.exp()` / `motor.log()`: Lie exponential and logarithm between velocity generators and finite motors.
   * `motor.motor_split()`: Decomposes a motor into translator and rotor components (`motor_translator()`, `motor_rotor()`).
-  * `motor.normalized()` / `mv.norm()`: Gauge normalization ($M \widetilde{M} = 1$) and Study/geometric norms.
+  * `motor.normalized()` / `mv.norm()`: Gauge normalization, to `motor * motor.reverse() == 1`, and Study/geometric norms.
 
-* **`.inverse()`**: On an arity-0 multivector, `.inverse()` is the Clifford / geometric product inverse ($x x^{-1} = 1$). On an arity-1 extensor, it is the operator inverse under map composition ($T^{-1} \circ T = I$).
+* **`.inverse()`**: On an arity-0 multivector, `.inverse()` is the Clifford / geometric product inverse, `x * x.inverse() == 1`. On an arity-1 extensor, it is the operator inverse under map composition: `T.inverse()(T)` is the identity map.

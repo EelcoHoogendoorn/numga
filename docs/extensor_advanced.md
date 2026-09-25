@@ -4,18 +4,20 @@ An extensor carries no metric in its coefficients. The metric is in the products
 algebra, and duality between spaces is given by the regressive product. Several operations
 that are one operation in matrix algebra are therefore several different operations here. Some
 are a product with an open slot. Some require a metric to be named. The transpose is not an
-operation on extensors at all. For comparison, in matrix algebra one would say that the
+operation on extensors at all.
+
+In matrix algebra one would say that the
 transpose, the trace, the squared norm of a residual and the reciprocal of a basis all
 identify a vector space with its dual through the coefficients, and that in an orthonormal
 basis the identification is invisible.
 
-The sections below treat these in order: the absence of a matrix product and of a transpose; the metric and the
+The sections below treat these in order: composition; pullbacks and pairings; the metric and the
 complement; the relation between maps and forms; quadrics; inverses; least squares; the
 conversion between second moments and inertia; traces, with the Ricci contraction as the
 example; homogeneous unknowns; covariance and information; batch axes and slots; outermorphisms. The
 expressions are taken from the [examples](../examples/README.md).
 
-## 1. There is no matrix product
+## 1. Composition
 
 Extensors compose. A call fills an input slot with anything of that slot's type, a value or
 another map, and a map's output feeds the next map's input when the types agree:
@@ -38,21 +40,26 @@ misfit = residual.reverse().scalar_product(residual)     # a squared norm, in th
 
 Neither is there a tensor product. Arity grows only by leaving a slot open in an expression,
 and it falls only by binding a slot or by a product of the algebra. A dyad is written as a
-product with an open slot, `a * (b & Point)`, not as a ⊗ b, and a contraction chosen by index,
-the other half of `einsum`, has no counterpart.
+product with an open slot, `a * (b & Point)`, and a contraction chosen by index, the other half
+of `einsum`, has no counterpart.
+
+In tensor notation that dyad reads as
+$a \otimes b$.
 
 In the implementation all of these are contractions of coefficient arrays. The difference is
 in what can be written: every contraction has a meaning in the algebra and a type, and a
 contraction by index alone cannot be expressed. In particular, there is no transpose.
 
-## 2. There is no transpose
+## 2. Pullbacks and pairings
 
-Extensors have no transpose. What follows are the correspondences: for each task that would
-call for a transpose in matrix algebra, the expression that does it on extensors. The pairings
-these expressions use are the subject of sections 3 and 4. For comparison, in matrix algebra
-one would write the transpose as swapping rows and columns, which identifies a space with its
-dual by equal coefficient index; that is the metric of a Euclidean orthonormal basis and of no
-other.
+Pulling a quadric back through a map, forming the curvature of a cost, moving a covariance,
+turning a gradient into a direction, symmetrizing, inverting an orthogonal map, and moving a map
+or a form to another frame are each one expression on extensors, built from the pairings of
+sections 3 and 4.
+
+In matrix algebra each of these calls for a transpose,
+swapping rows and columns, which identifies a space with its dual by equal coefficient index;
+that is the metric of a Euclidean orthonormal basis and of no other.
 
 **Pulling a quadric back through a map.** In the [multiview example](../examples/geometry/multiview/core.py) a camera is a map from
 scene points to sensor points, `projection: Point <- Point`. It has no inverse: every point on
@@ -151,9 +158,10 @@ world_form = local_form(motor << Point, motor << Point)     # Scalar <- (Point, 
 ```
 
 The pushed output is a plane, and the sandwich moves a plane as it moves a point: the plane
-map induced by the pose, `on_planes(motor << Point)`, is `motor >> Plane`. For comparison, in
-matrix algebra one would store the quadric as a symmetric matrix Q and the pose as a matrix P
-on point coordinates, and move the quadric by congruence, P^{-T} Q P^{-1}. The transpose there
+map induced by the pose, `on_planes(motor << Point)`, is `motor >> Plane`.
+
+In matrix algebra one would store the quadric as a symmetric matrix $Q$ and the pose as a matrix $P$
+on point coordinates, and move the quadric by congruence, $P^{-\top} Q P^{-1}$. The transpose there
 is the pullback of the form's second slot, and the inverse transpose is how a matrix on points
 is made to act on planes. The sandwich is both.
 
@@ -190,16 +198,17 @@ requires one of the two pairings, and the pairing has to be written.
 A slot is typed by its subspace, and the dual of a subspace is either the subspace itself,
 under `|`, or its complement, under `&`. In a Euclidean orthonormal algebra the two coincide
 up to signs. In spacetime the signs differ. In a projective algebra the metric identification
-does not exist for the null direction, and only the complement remains.
+does not exist for the null direction, and only the complement remains. The metric is in the
+product, `(a * b + b * a) / 2 == a | b`, so a vector acts on another through `|` with no
+conversion, and numga keeps both pairings, `|` with the metric and `&` without it, by product
+rather than by index.
 
-For comparison, in tensor notation one would carry the same distinctions by index position:
-a slot is typed as vector or covector by whether its index is up or down; the metric is a
-separate symmetric form with two lower indices; raising and lowering apply it explicitly; a
-contraction pairs one upper index with one lower. In exterior algebra one would drop the
-metric altogether: the wedge, the complement and the regressive product are defined without
-it. In geometric algebra the metric is in the product, `(a * b + b * a) / 2 == a | b`, so a
-covector is a vector acting through `|`, and raising and lowering happen without notation.
-Numga keeps both pictures, by product rather than by index.
+In tensor notation the same distinctions are carried by
+index position: a slot is typed as vector or covector by whether its index is up or down, the
+metric is a separate symmetric form with two lower indices that raising and lowering apply
+explicitly, and a contraction pairs one upper index with one lower; in exterior algebra the
+metric is dropped altogether, and the wedge, the complement and the regressive product are
+defined without it.
 
 ## 4. Maps and forms
 
@@ -239,8 +248,10 @@ linear forms, and are the object of eigenproblems, including the generalized eig
 between two forms, `potential.eigh(kinetic)`, which uses no metric because both sides are
 forms. A form's eigenproblem on its own is relative to its slot's metric, the inner product of
 `S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eig()` measures a motor by
-its rotor part alone, sending the translations to infinity. In tensor notation one would write a map as a (1,1) tensor and a form as a (0,2)
-tensor; the difference is one pairing.
+its rotor part alone, sending the translations to infinity.
+
+In tensor notation a
+map reads as a (1,1) tensor and a form as a (0,2) tensor; the difference is one pairing.
 
 In coordinates a map and a form are the same square array, and nothing in the array says which
 one it is. Here the type says it, and the eigenproblems follow the type. A map has eigenvalues only when its output is the same kind
@@ -383,13 +394,15 @@ moment = construction.lstsq(inertia)                                    # Point 
 ```
 
 The two are also related through a trace, but that spelling requires the Euclidean metric and
-a frame, so it is not the geometric one; for comparison, in matrix notation one would write it
-as S = ½ tr(J) 1 − J, with S the spatial second-moment matrix and J the inertia tensor. The
-trace the inertia map does have is its own:
+a frame, so it is not the geometric one. The trace the inertia map does have is its own:
 
 ```python
 inertia.trace()                             # 0: momentum has no component along its own screw
 ```
+
+In matrix notation the relation through a trace reads as
+$S = \tfrac12 \operatorname{tr}(J)\,\mathbb{1} - J$, with $S$ the spatial second-moment matrix and
+$J$ the inertia tensor.
 
 Its kinetic energy form, `Twist & inertia`, has a trace only against a metric on twists, and
 the twist metric of PGA is singular: the translations carry no unit of their own.

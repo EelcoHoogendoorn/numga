@@ -14,12 +14,12 @@ Geometric relationships deserve to be first-class objects alongside the objects 
 
 For readers coming from linear algebra: wherever a geometric computation would use a matrix, numga has an extensor that knows what it maps from and to. The examples below use rotor sandwiches, non-uniform scalings, lenses and projections, and they all compose, invert and apply the same way. Solving, eigen- and singular-value decompositions and least squares work on them directly and return geometry: the vibration modes of example 2 come out as twists, not as columns of numbers.
 
-For readers coming from tensor algebra: an extensor is a tensor whose slots are labelled by the kind of multivector they take, not by upper and lower index positions. The metric is part of the algebra's products, so there is nothing to raise or lower. Turning a map into a form means applying the inner product, and you write that once, as an open slot. More slots come from leaving more arguments open, not from tensor products. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
+For readers coming from tensor algebra: where a tensor labels its slots by upper and lower index positions, an extensor labels them by the kind of multivector they take. The metric is part of the algebra's products, so there is nothing to raise or lower. Turning a map into a form means applying the inner product, and you write that once, as an open slot. More slots come from leaving more arguments open, not from tensor products. Index gymnastics become slot bookkeeping, and the types do the bookkeeping.
 
 # Companion documents
 
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
-* [`extensor_advanced.md`](extensor_advanced.md): maps against forms, the pairing that replaces the transpose, traces, norms and gauges.
+* [`extensor_advanced.md`](extensor_advanced.md): maps against forms, pullbacks and pairings, traces, norms and gauges.
 * [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
 
 # Examples
@@ -51,7 +51,9 @@ local_to_pixel = viewport(camera(camera_pose << body))   # [5] Point <- Point
 pixels = local_to_pixel[:, None](corners[None, :])       # [5, 8] Point
 ```
 
-* **One map from part to pixel.** Scaling, rigid motion, refraction and perspective compose into a single `Point <- Point` per part before any point is touched. In a graphics pipeline this is the product of the model, view and projection matrices.
+* **One map from part to pixel.** Scaling, rigid motion, refraction and perspective compose into a single `Point <- Point` per part before any point is touched.
+
+  In a graphics pipeline it reads as the product of the model, view and projection matrices.
 * **Motors move maps as they move points.** `camera_pose << body` brings a whole map into the camera's frame, the same way `camera_pose << p` brings in a point.
 
 ---
@@ -77,7 +79,9 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 
 **Notebook**: [`examples/geometry/multiview/multiview_reconstruction.ipynb`](../examples/geometry/multiview/multiview_reconstruction.ipynb)
 
-![Multi-view reconstruction, sight cones, splats, and pose covariance](../plots/multiview_reconstruction.png)
+<p align="center">
+  <img src="../plots/multiview_reconstruction.png" alt="Multi-view reconstruction, sight cones, splats, and pose covariance" width="420" />
+</p>
 
 ```python
 on_planes = (Plane & Point).solve(Plane & projection)             # [] Plane <- Plane, induced by the camera
@@ -111,7 +115,7 @@ wave.svdvals()                                           # near zero where light
 ```
 
 * **An observer is a map.** With the field left open, one line gives the part of any field that observer `t` calls electric, and glass is two such parts, weighted and added.
-* **Moving a material moves a map.** A boost moves the glass the same way it moves a vector. Fresnel drag follows, without transformation rules for ε and μ.
+* **Moving a material moves a map.** A boost moves the glass the same way it moves a vector. Fresnel drag follows, without transformation rules for the permittivity and permeability.
 * **Wave speeds from an SVD.** Leaving the polarization open turns Maxwell's equations for a trial wave into a map. Its singular values, over a batch of trial speeds, show which speeds light can travel at, and with which polarization.
 
 ---
