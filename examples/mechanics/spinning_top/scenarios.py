@@ -63,7 +63,8 @@ def spin(setup: Setup, seconds: float, dt: float, every: int):
     ground = core.bowl(setup.bowl_curvature)
     origin = core.point(np.zeros(3))
     tilt = 0.15
-    # exp(zw a) translates up by 2a, exp(zx a) turns by 2a: lift the centre of mass so the tip clears, then tilt.
+    # `(mv.zw * a).exp()` translates up by `2 * a`, `(mv.zx * a).exp()` turns by `2 * a`: lift the
+    # centre of mass so the tip clears, then tilt.
     motor = ((mv.zw * ((height * np.cos(tilt) + 0.002) / 2)).exp() * (mv.zx * (tilt / 2)).exp()).normalized()
     rate = mv.xy * setup.spin_rate
 
@@ -76,13 +77,15 @@ def spin(setup: Setup, seconds: float, dt: float, every: int):
     started = time.time()
     for i in range(int(seconds / dt)):
         before = motor
-        motor, rate = lie.explicit_rk4(motor, rate, inertia, inertia_inv, dt, forces)   # predict
+        # Predict with a free step, then correct against the ground.
+        motor, rate = lie.explicit_rk4(motor, rate, inertia, inertia_inv, dt, forces)
         motor, rate = core.project_contacts(before, motor.normalized(), inertia_inv, parts, ground,
-                                            STATIC_FRICTION, setup.dynamic_friction, setup.indentation, dt)   # correct
+                                            STATIC_FRICTION, setup.dynamic_friction, setup.indentation, dt)
         if i % every == 0:
             yield motor, parts, ground
         if i % 1000 == 0:
-            lean = ((motor >> UP).dual() | UP.dual()).abs().arccos()           # the axis's angle from vertical
+            # The axis's angle from vertical.
+            lean = ((motor >> UP).dual() | UP.dual()).abs().arccos()
             print(f"t={i * dt:5.1f} tilt={np.degrees(lean.to_array()):5.1f} "
                   f"spin={-(mv.xy | rate).to_array():6.1f} ({time.time() - started:.0f}s)", flush=True)
 

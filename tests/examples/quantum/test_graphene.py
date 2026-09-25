@@ -10,7 +10,7 @@ from examples.quantum.graphene import core, render, scenarios
 
 
 def test_the_hamiltonian_squares_to_the_fields_length():
-    """H(H(psi)) = d d psi z z = |d|^2 psi, so the eigenvalues are plus and minus |d|."""
+    """H(H(psi)) == (field | field) * psi, so the eigenvalues are plus and minus the field's length."""
     field = core.mv.vector(np.array([0.3, -1.1, 0.7]))
     psi = core.mv(core.Even.output_subspace, np.array([0.4, -0.2, 1.3, 0.5]))
     H = core.hamiltonian(field)

@@ -30,7 +30,7 @@ def second_moment(inertia: Extensor) -> Extensor:
     The inertia is a single physical inertia map, AntiBivector <- Bivector, mapping
     rigid-body velocity to momentum in its current frame. The result is a Point <- Plane
     map: pairing its output with another plane gives the scalar form
-    sum(m * (a & p) * (b & p)) over the mass points p.
+    `(masses * (a & points) * (b & points)).sum()` for planes a and b.
     """
     ga = inertia.algebra
     Point = ga.gatype.antivector()
@@ -61,8 +61,9 @@ def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
     Rotor = ga.gatype.rotor()
 
     # Pairing with another plane gives the scalar second-moment form: Plane & moment.
-    # For mass points p, this form is sum(m * (a & p) * (b & p)).
-    # Recover principal planes from metric(v, .) = value * moment_form(v, .).
+    # For mass points, this form is `(masses * (a & points) * (b & points)).sum()` for planes a and b.
+    # Recover principal planes as the generalized eigenvectors of the metric `Plane | Plane`
+    # against the moment form `Plane & moment`.
     # This order gives PGA's plane at infinity a zero eigenvalue, rather than an infinite one.
     _, planes = (Plane | Plane).eigh(Plane & moment)
     # Keep the full frame, with PGA's null plane last, matching the reference.
@@ -72,7 +73,7 @@ def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
     # The paired null planes contribute zero on the rotor space.
     weights = 2.0 ** np.arange(source.shape[0])[::-1]
     # Build a map from rotors to even grade elements
-    # A matching motor is an eigenvector of each term: the product returns R
+    # A matching motor is an eigenvector of each term: the product returns the motor
     # times the source plane's norm, with either sign for its orientation.
     # The plane maps commute, so this weighted sum finds their common
     # eigenvectors in one solve. The weights keep distinct sign choices apart.

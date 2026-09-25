@@ -37,20 +37,23 @@ import numpy as np
 from numga import Algebra, NumpyContext
 
 
-ga: Algebra                                        # supplied by examples.instantiate
+# Supplied by examples.instantiate.
+ga: Algebra
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 ideal = ga.subspace.from_masks(tuple(m for m in Point.output_subspace.masks if m & ga.subspace("w").masks[0]))
-Direction = ga.gatype(ideal)                       # ideal points: the weightless displacements of points
+# Ideal points: the weightless displacements of points.
+Direction = ga.gatype(ideal)
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
 Camera = ga.gatype((Point, Point))
-Quadric = ga.gatype((Plane, Point))                # a quadric as a polarity map: a point's polar plane
-Information = ga.gatype((Scalar, Twist, Twist))    # curvature of a cost over pose twists
+# A quadric as a polarity map, a point to its polar plane, and the curvature of a cost over pose twists.
+Quadric = ga.gatype((Plane, Point))                # Plane <- Point
+Information = ga.gatype((Scalar, Twist, Twist))    # Scalar <- (Twist, Twist)
 w = mv.w
 euclidean = ga.subspace.from_masks(tuple(m for m in Plane.output_subspace.masks if not m & w.gatype.output_subspace.masks[0]))
 
@@ -160,7 +163,7 @@ def reweight_cones(
     """Reweight perspective cone quadrics into pixel units via Sampson depth scaling.
 
     Starts from algebraic cone quadrics and iteratively scales each cone by
-    1 / z^2 using point depths, converging to true inverse pixel variance units.
+    1 / z ** 2 using point depths, converging to true inverse pixel variance units.
     """
     weighted_cones = cones
     for _ in range(iterations):
@@ -190,13 +193,13 @@ def bundle_adjust_schur(
     forms: `h_cam` with both slots twists of one camera, `h_pt` with both slots directions of
     one point, and `h_cross` with a twist slot and a direction slot. The joint Gauss-Newton
     conditions are then, per point,
-    `h_pt(direction, .) + h_cross(step, .) == 0`, and per camera,
-    `h_cam(step, .) + h_cross(., direction).sum(axis=0) == -gradient`. The point condition
+    `h_pt(direction, Direction) + h_cross(step, Direction) == 0`, and per camera,
+    `h_cam(step, Twist) + h_cross(Twist, direction).sum(axis=0) == -gradient`. The point condition
     solves as `response = h_pt.solve(h_cross)`, the map from a camera step to minus the
     point's direction. Substituting it into the camera condition folds the points out:
     `information = h_cam - compliance.sum(axis=0)`, with
     `compliance = cones(motion) & (motors << response)` the cross form evaluated on the
-    point's response, and the step solves `information(step, .) == -gradient`. Unlike the
+    point's response, and the step solves `information(step, Twist) == -gradient`. Unlike the
     alternating solver this accounts for the points moving with the cameras, and the reduced
     curvature is the marginal information on each camera's pose. Anchored cameras have their
     steps and information zeroed, which removes the rig's global gauge from the solve.
@@ -293,13 +296,14 @@ def align_rays_to_splats(
     Gauss-Newton steps on the poses. `pinhole` and `pixels` are in the cameras' frames and `free`
     is 1 for each camera that moves and 0 for the anchored cameras that fix the gauge.
     """
-    heading = pixels - pinhole                                    # [n_points, n_cams] Direction: each pixel's sight
-    ray = pinhole & heading                                       # [n_points, n_cams] sight lines
+    # Each pixel's sight direction and sight line:
+    heading = pixels - pinhole                                    # [n_points, n_cams] Direction
+    ray = pinhole & heading                                       # [n_points, n_cams] antibivector
     # How the pinhole, the headings and the sight lines move per unit right step of the pose; all
     # fixed in the cameras' frames:
     pinhole_motion = Twist.commutator(pinhole)                    # Point <- Twist
     heading_motion = Twist.commutator(heading)                    # [n_points, n_cams] Point <- Twist
-    ray_motion = Twist.commutator(ray)                            # [n_points, n_cams] line <- Twist
+    ray_motion = Twist.commutator(ray)                            # [n_points, n_cams] antibivector <- Twist
     motors = initial_motors
 
     for _ in range(iterations):

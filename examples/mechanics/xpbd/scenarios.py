@@ -19,9 +19,9 @@ def chain(
 ) -> tuple[Chain, list[Joints]]:
     """A chain of links along x, the first one fixed at the origin, hanging in gravity along -z.
 
-    Each link is six unit masses on its axes, at distances size/3, 2 size/3 and size along
-    x, y and z, so its three moments of inertia differ. Adjacent links are joined halfway
-    between their centres. The joints are split red/black: even joints connect
+    Each link is six unit masses on its axes, at distances `size / 3`, `2 * size / 3` and
+    `size` along x, y and z, so its three moments of inertia differ. Adjacent links are joined
+    halfway between their centres. The joints are split red/black: even joints connect
     (0-1, 2-3, ...) and odd joints connect (1-2, 3-4, ...), so the bodies within one
     partition are independent and relax in parallel.
     """

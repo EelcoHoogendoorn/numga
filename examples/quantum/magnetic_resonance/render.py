@@ -97,7 +97,7 @@ def transverse(states: core.State) -> np.ndarray:
 
 def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: float) -> plt.Figure:
     """The signal at each time after the first pulse, on a logarithmic time axis: with a half-turn
-    pulse halfway, the echo, which fades only at the rate 1 / T2; without it, the free decay, which
+    pulse halfway, the echo, which fades only at the rate `1 / t2`; without it, the free decay, which
     the uneven field ends within about a microsecond."""
     fine = np.geomspace(times[0], times[-1], 200)
     figure, ax = plt.subplots(figsize=(8, 3.8))

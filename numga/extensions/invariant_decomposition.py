@@ -4,23 +4,27 @@ After Roelfs and De Keninck, "Normalization, Square Roots, and the Exponential a
 Maps in Geometric Algebras of Less than 6D" (arXiv:2206.07496), equation numbers theirs.
 
 Up to three dimensions a bivector squares to a scalar, and exp and log are Euler's formula and
-its inverse. In four and five dimensions a bivector B squares to a Study number
-B**2 = B.B + B^B, a scalar plus a 4-vector whose square is a scalar, with norm ||B**2|| = sqrt((B.B)**2 - (B^B)**2) (eq. 18). It
-splits into two commuting simple bivectors b+- = P+-(B) B with the projectors
-P+- = (1 +- (B.B - B^B) / ||B**2||) / 2 (eqs. 33-35), of squares
-lambda+- = (B.B +- ||B**2||) / 2, and exp(B) = exp(b+) exp(b-) (eq. 37), each factor Euler's
-formula c(b) + s(b).
+its inverse. In four and five dimensions the square `b.squared()` of a bivector `b` is a Study
+number: a scalar plus the 4-vector `b ^ b`, whose square is a scalar, with Study norm
+`b.squared().study_norm()` (eq. 18). `b.decompose_invariant()` splits `b` into two commuting
+simple bivectors, `b_plus = (1 + b.squared().scalar_negation() / b.squared().study_norm()) * b / 2`
+and `b_minus` with the opposite sign (eqs. 33-35). They square to the scalars `(dot + norm) / 2`
+and `(dot - norm) / 2`, with `dot` the scalar part of `b.squared()` and `norm` its Study norm,
+and `b.exp() == b_plus.exp() * b_minus.exp()` (eq. 37), each factor by Euler's formula.
 
-The logarithm works backwards (section 7): the bivector part <R>_2 splits the same way into
-parts of norms sigma+-, from which the angles theta+- follow by atan2 against <R> (atanh for a
-boost), and B = (alpha + beta I) <R>_2 with alpha and beta I from eqs. 43-44. Of the two
-factorizations R = R+ R- = (-R+)(-R-), the one with c(b+) >= 0 is taken, so that both angles
-follow from <R> in any algebra.
+The logarithm works backwards (section 7): the bivector part `r.restrict[2]` of a rotor `r`
+splits the same way, the squares of its parts give the two angles by `xp.arctan2` against the
+scalar part of `r` (`xp.arctanh` for a boost), and `r.log()` is
+`r.restrict[2] * (r.restrict[4] * beta + alpha)`, with `alpha` and `r.restrict[4] * beta` from
+eqs. 43-44. Of the two factorizations of `r` into commuting simple rotors, which differ by
+negating both factors, the one whose first factor has a nonnegative scalar part is taken, so
+that both angles follow from the scalar part of `r` in any algebra.
 
 Static structure selects simpler paths: up to three dimensions Euler's formula; where the
 4-vectors square to zero, as in PGA, one part is always null and the decomposition collapses to a
-closed form without branches. The decomposition has complex parts only in R(2,2) and the algebras
-containing it, which the paper leaves open; those keep the generic methods.
+closed form without branches. The decomposition has complex parts only in algebras with at least
+two positive and two negative directions, which the paper leaves open; those keep the generic
+methods.
 """
 
 from __future__ import annotations
@@ -45,17 +49,18 @@ def _polynomial(x, coefficients):
 
 _C_SERIES = (1, 1 / 2, 1 / 24, 1 / 720, 1 / 40320)
 _S_SERIES = (1, 1 / 6, 1 / 120, 1 / 5040, 1 / 362880)
-_H_SERIES = (1, -1 / 3, 2 / 15, -2 / 35, 8 / 315)          # in x = p - 1
+_H_SERIES = (1, -1 / 3, 2 / 15, -2 / 35, 8 / 315)          # in powers of p - 1
 
 
 def cosine(xp, z):
-    """C(z) = cosh(sqrt z), which is cos(sqrt(-z)) for z < 0."""
+    """`xp.cosh(xp.sqrt(z))`, which is `xp.cos(xp.sqrt(-z))` for `z < 0`."""
     root = xp.sqrt(xp.abs(z))
     return xp.where(xp.abs(z) < _SMALL, _polynomial(z, _C_SERIES), xp.where(z < 0, xp.cos(root), xp.cosh(root)))
 
 
 def sine(xp, z):
-    """S(z) = sinh(sqrt z) / sqrt z, which is sin(sqrt(-z)) / sqrt(-z) for z < 0."""
+    """`xp.sinh(xp.sqrt(z)) / xp.sqrt(z)`, which is `xp.sin(xp.sqrt(-z)) / xp.sqrt(-z)` for
+    `z < 0`."""
     small = xp.abs(z) < _SMALL
     root = xp.sqrt(xp.abs(z))
     return xp.where(small, _polynomial(z, _S_SERIES),
@@ -63,16 +68,18 @@ def sine(xp, z):
 
 
 def angle(xp, p):
-    """H(p) = acosh(p) / sqrt(p**2 - 1), which is acos(p) / sqrt(1 - p**2) for p < 1."""
+    """`xp.arccosh(p) / xp.sqrt(p**2 - 1)`, which is `xp.arccos(p) / xp.sqrt(1 - p**2)` for
+    `p < 1`."""
     small = xp.abs(p - 1) < _SMALL
     root = xp.where(small, 1, xp.sqrt(xp.abs(1 - p * p)))
-    # acosh(p) = log(p + sqrt(p**2 - 1)) for p >= 1
+    # for p >= 1, xp.arccosh(p) == xp.log(p + xp.sqrt(p**2 - 1))
     return xp.where(small, _polynomial(p - 1, _H_SERIES),
                     xp.where(p < 1, xp.arctan2(root, p), xp.log(xp.abs(p) + root)) / root)
 
 
 def sine_derivative(xp, z):
-    """S'(z) = (C(z) - S(z)) / (2 z), which tends to 1/6 at z = 0."""
+    """The derivative of `sine` in `z`, `(cosine(xp, z) - sine(xp, z)) / (2 * z)`, which tends to
+    1/6 as `z` goes to zero."""
     small = xp.abs(z) < _SMALL
     return xp.where(small, _polynomial(z, (1 / 6, 1 / 60, 1 / 1680, 1 / 90720)),
                     (cosine(xp, z) - sine(xp, z)) / (2 * xp.where(small, 1, z)))
@@ -85,8 +92,9 @@ def _scalar(value: Extensor):
 
 
 def _square(b: Extensor):
-    """B.B, the 4-vector B^B, and ||B**2|| = sqrt((B.B)**2 - (B^B)**2) (eq. 18); the parts of B
-    square to (B.B +- ||B**2||) / 2."""
+    """The scalar part `dot` of `b.squared()`, its 4-vector part `wedge`, which is `b ^ b`, and its
+    Study norm `norm` (eq. 18); the parts of `b` square to `(dot + norm) / 2` and
+    `(dot - norm) / 2`."""
     xp = b.context.xp
     square = b.squared()
     dot = _scalar(square)
@@ -102,15 +110,18 @@ def _where(condition, chosen: Extensor, otherwise: Extensor) -> Extensor:
 
 
 def exp_simple(b: Extensor) -> Extensor:
-    """exp(B) = c(B) + s(B), Euler's formula, for B squaring to a scalar."""
+    """`b.exp()` by Euler's formula, `cosine(xp, a) + b * sine(xp, a)` with `a` the scalar
+    `b.squared()`, for `b` squaring to a scalar."""
     xp = b.context.xp
     square = _scalar(b.squared())
     return (b * sine(xp, square) + cosine(xp, square)).with_traits(ReverseProductOne, Versor)
 
 
 def exp_null_wedge(b: Extensor) -> Extensor:
-    """exp(B) where B^B squares to zero, as in PGA: one part is null and the other squares to
-    a = B.B, and the product of their exponentials is C(a) + S(a) B + S'(a) B (B^B) + S(a) B^B / 2."""
+    """`b.exp()` where `b ^ b` squares to zero, as in PGA: one part is null and the other squares
+    to the scalar part `a` of `b.squared()`, and with `wedge = b ^ b` the product of their
+    exponentials is `cosine(xp, a) + b * sine(xp, a) + b * wedge * sine_derivative(xp, a)
+    + wedge * sine(xp, a) / 2`."""
     xp, algebra = b.context.xp, b.algebra
     square = b.squared()
     a = _scalar(square)
@@ -122,35 +133,41 @@ def exp_null_wedge(b: Extensor) -> Extensor:
 
 
 def exp_decomposed(b: Extensor) -> Extensor:
-    """exp(B) = [c(b+) + s(b+)] [c(b-) + s(b-)] (eq. 37), with b+- from decompose_invariant."""
+    """`b.exp() == b_plus.exp() * b_minus.exp()` (eq. 37), with
+    `b_plus, b_minus = b.decompose_invariant()` and each factor by Euler's formula."""
     xp = b.context.xp
     dot, wedge, norm = _square(b)
     b_plus, b_minus = b.decompose_invariant()
     plus, minus = (dot + norm) / 2, (dot - norm) / 2
     rotor = (b_plus * sine(xp, plus) + cosine(xp, plus)) * (b_minus * sine(xp, minus) + cosine(xp, minus))
-    # ||B**2|| = 0 leaves the parts undefined but squaring alike: lambda = B.B / 2, b+ b- = B^B / 2.
+    # Where norm == 0 the parts are undefined, but both square to dot / 2 and multiply to wedge / 2.
     c, s = cosine(xp, dot / 2), sine(xp, dot / 2)
     equal = b * (c * s) + wedge * (s * s / 2) + c * c
     return _where(norm == 0, equal, rotor).with_traits(ReverseProductOne, Versor)
 
 
 def _angle_square(xp, part_square, scalar):
-    """The square lambda = b**2 of a simple part of B, from the square of the matching part of
-    <R>_2 and <R>: a rotation angle by atan2, a boost rapidity by atanh, zero for a null part."""
+    """The square of a simple part of the logarithm, from the square `part_square` of the matching
+    part of the rotor's bivector part and the rotor's scalar part `scalar`: a rotation angle by
+    `xp.arctan2`, a boost rapidity by `xp.arctanh`, zero for a null part."""
     rotation = xp.arctan2(xp.sqrt(xp.clip(-part_square, 0, None)), scalar)
     boost = xp.arctanh(xp.sqrt(xp.clip(part_square, 0, None)) / scalar)
     return xp.where(part_square < 0, -rotation * rotation, boost * boost)
 
 
 def log_simple(r: Extensor) -> Extensor:
-    """log(R) = <R>_2 theta / sin(theta), with cos(theta) = <R>, for rotors of simple bivectors."""
+    """`r.log()` for rotors of simple bivectors: `r.restrict[2] * angle(xp, c)`, with `c` the
+    scalar part of `r`, is the bivector part times the angle whose cosine is `c`, over its sine."""
     xp = r.context.xp
     return r.restrict_subspace(r.algebra.subspace.bivector()) * angle(xp, _scalar(r))
 
 
 def log_null_wedge(r: Extensor) -> Extensor:
-    """log(R) where the 4-vectors square to zero, as in PGA: <<R>_2**2> = S(a)**2 a gives a against
-    <R> = C(a), B^B = 2 <R>_4 / S(a), and B = <R>_2 (1 / S(a) - 2 S'(a) <R>_4 / S(a)**3)."""
+    """`r.log()` where the 4-vectors square to zero, as in PGA. With `bivector = r.restrict[2]`,
+    `quadvector = r.restrict[4]` and `s = sine(xp, a)`, the scalar part of `bivector.squared()` is
+    `s**2 * a` and the scalar part of `r` is `cosine(xp, a)`, which together give `a`. The
+    logarithm `b` has `b ^ b == 2 * quadvector / s` and is
+    `bivector * (1 / s - 2 * sine_derivative(xp, a) * quadvector / s**3)`."""
     xp, algebra = r.context.xp, r.algebra
     scalar = _scalar(r)
     bivector = r.restrict_subspace(algebra.subspace.bivector())
@@ -162,25 +179,29 @@ def log_null_wedge(r: Extensor) -> Extensor:
 
 
 def log_decomposed(r: Extensor) -> Extensor:
-    """log(R) = (alpha + beta I) <R>_2, with alpha and beta I from eqs. 43-44."""
+    """`r.log()` as `(bivector * (quadvector * beta + alpha)).restrict[2]`, with
+    `bivector = r.restrict[2]`, `quadvector = r.restrict[4]`, and `alpha` and `quadvector * beta`
+    from eqs. 43-44."""
     xp, algebra = r.context.xp, r.algebra
     scalar = _scalar(r)
     bivector = r.restrict_subspace(algebra.subspace.bivector())
     quadvector = r.restrict_subspace(algebra.subspace.k_vector(4))
-    # The parts of <R>_2 square to (<R>_2 . <R>_2 +- n) / 2, with
-    # n = ||<R>_2**2|| = sqrt((<R>_2 . <R>_2)**2 - 4 <R>**2 <R>_4**2), as <R>_2 ^ <R>_2 = 2 <R> <R>_4.
+    # The parts of bivector square to (dot + n) / 2 and (dot - n) / 2, with n the Study norm of
+    # bivector.squared(), whose 4-vector part bivector ^ bivector is quadvector * (2 * scalar).
     dot, _, n = _square(bivector)
     sigma_plus, sigma_minus = (dot + n) / 2, (dot - n) / 2
-    # <R> = c(b+) c(b-), and R = R+ R- = (-R+)(-R-): taking c(b+) >= 0 makes theta- the paper's
-    # atan2(sigma-, <R>), and theta+ the same against |<R>|.
+    # scalar is the product of the scalar parts of the two factors of r, and negating both factors
+    # leaves r unchanged. Taking the plus factor with a nonnegative scalar part gives minus by
+    # xp.arctan2 against scalar, as in the paper, and plus the same way against xp.abs(scalar).
     plus, minus = _angle_square(xp, sigma_plus, xp.abs(scalar)), _angle_square(xp, sigma_minus, scalar)
     c_plus, c_minus, s_plus, s_minus = cosine(xp, plus), cosine(xp, minus), sine(xp, plus), sine(xp, minus)
-    # n is ||s**2(B)|| of eqs. 43-44, and b+ b- = <R>_4 / (s+ s-).
+    # alpha and beta are eqs. 43-44 with n as their norm; the two parts of the logarithm multiply
+    # to quadvector / (s_plus * s_minus).
     safe = xp.where(n == 0, 1, n)
     alpha = (plus * s_plus * c_minus - minus * s_minus * c_plus) / safe
     beta = (s_plus * c_minus - s_minus * c_plus) / (safe * s_plus * s_minus)
     logarithm = (bivector * (quadvector * beta + alpha)).restrict_subspace(algebra.subspace.bivector())
-    # n = 0: R = 1 + <R>_2 up to a null part, whose logarithm is its bivector part.
+    # Where n == 0, r is 1 + bivector up to a null part, and its logarithm is bivector.
     return _where(n == 0, bivector, logarithm)
 
 
@@ -192,8 +213,8 @@ def _null_wedge(t) -> bool:
 
 
 def _decomposable(algebra) -> bool:
-    """Four or five dimensions, without the two directions of each sign that let the parts of a
-    bivector be complex, as in R(2,2)."""
+    """Four or five dimensions, without the two positive and two negative directions that let the
+    parts of a bivector be complex."""
     signature = algebra.signature
     return algebra.dimension in (4, 5) and min(signature.count(1), signature.count(-1)) < 2
 

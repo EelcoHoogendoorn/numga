@@ -104,8 +104,8 @@ def test_explicit_pga_rotor_normalization_repairs_nonscalar_drift():
 def test_nonnilpotent_study_root_squares_back_and_normalizes(signature):
     algebra = Algebra(signature)
     mv = NumpyContext(algebra).multivector
-    # In both dimensions this is 2 + xy + 0.5 xyzw. Its reverse product
-    # is 5.25 + 2 xyzw, whose nonscalar part squares to the scalar 4.
+    # In both dimensions this is 2 + mv.xy + 0.5 * mv.xyzw. Its reverse product
+    # is 5.25 + 2 * mv.xyzw, whose nonscalar part squares to the scalar 4.
     coefficients = np.zeros(len(algebra.subspace.even()))
     for blade, coefficient in (("", 2), ("xy", 1), ("xyzw", 0.5)):
         mask = algebra.parse_blade(blade).mask if blade else 0

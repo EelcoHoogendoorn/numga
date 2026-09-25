@@ -12,8 +12,8 @@ The rate is read back from the motor's step.
 The contact point is found in one pass: the ground's normal is taken at the part's centre, and
 the part's lowest point against that normal is the contact. This is accurate when the part is
 more sharply curved than the ground, a small body on a large one, as here. For two quadrics of
-comparable curvature the exact contact lies on the pencil of the two, p = (ground - m part)^-1 w,
-at the parameter m where p reaches the part's surface.
+comparable curvature the exact contact lies on the pencil of the two, at the point
+`(ground - m * part).inverse()(w)` for the parameter m where that point reaches the part's surface.
 """
 
 import numpy as np
@@ -41,7 +41,8 @@ def point(coords: np.ndarray) -> Point:
 def clamp(value: Scalar, limit: Scalar) -> Scalar:
     """The value with its magnitude held to the limit."""
     magnitude = value.abs()
-    least = (magnitude + limit - (magnitude - limit).abs()) * 0.5          # min(|value|, limit)
+    # The smaller of the magnitude and the limit.
+    least = (magnitude + limit - (magnitude - limit).abs()) * 0.5
     return value * least / (magnitude + 1e-12)
 
 
@@ -53,8 +54,8 @@ def ellipsoid(centre: Point, semi: np.ndarray) -> Quadric:
 
 
 def bowl(curvature: float) -> Quadric:
-    """The ground: solid below z = curvature (x^2 + y^2); negative inside. A bowl for positive
-    curvature, a dome for negative."""
+    """The ground: solid below the paraboloid whose height is the curvature times the squared
+    distance from the z axis; negative inside. A bowl for positive curvature, a dome for negative."""
     return 0.5 * (mv.z * (w & Point) + w * (mv.z & Point)) - curvature * (axes[:2] * (axes[:2] & Point)).sum()
 
 
@@ -90,10 +91,12 @@ def lowest_point(surface: Quadric, normal: Direction) -> Point:
     point. For a part against the ground, the normal is the ground's at the part's centre, so the
     result is the true deepest point only while the ground turns little across the part.
     """
-    dual = surface.inverse()                                                # planes to their poles
+    # Planes to their poles.
+    dual = surface.inverse()
     centre = dual(w) / (w & dual(w))
-    plane = normal.dual() - w * (normal.dual() & centre)                    # through the centre, normal to it
-    conjugate = dual(plane)                                                 # its pole, a direction
+    # The plane through the centre, normal to the direction, and its pole, a direction.
+    plane = normal.dual() - w * (normal.dual() & centre)
+    conjugate = dual(plane)
     return centre + conjugate / (-(plane & conjugate) * (w & dual(w))).square_root()
 
 
@@ -103,23 +106,24 @@ def along_ground(direction: Direction, normal: Direction) -> Direction:
 
 
 def compliance(motor: Motor, I_inv, lines: Line) -> tuple[Line, Scalar]:
-    """The body's twist per unit wrench along each line, and its compliance along that line."""
+    """The body's twist per unit forque along each line, and its compliance along that line."""
     body = motor << lines
     step = I_inv(body)
     return step, step & body
 
 
-def move(motor: Motor, step: Line, wrench: Scalar) -> Motor:
-    """Carry the body by the summed twists of the wrenches."""
-    return (motor * ((step * wrench).sum(axis=0) * -0.5).exp()).normalized()
+def move(motor: Motor, step: Line, forque: Scalar) -> Motor:
+    """Carry the body by the summed twists of the forques."""
+    return (motor * ((step * forque).sum(axis=0) * -0.5).exp()).normalized()
 
 
 def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground: Quadric,
                      static: float, dynamic: float, indentation: float, dt: float) -> tuple[Motor, Line]:
     """Correct the predicted pose: press each part out by its depth, then hold it against sliding
     and against turning about the normal, within the friction cone and the drilling limit."""
-    placed = motor >> parts(motor << Point)                                 # [parts] in the world
-    centre = placed.solve(w)                                                # the pole of the plane at infinity
+    # The parts in the world, and their centres: the poles of the plane at infinity.
+    placed = motor >> parts(motor << Point)                                 # [parts] Plane <- Point
+    centre = placed.solve(w)                                                # [parts] Point
     # Each part's lowest point against the ground's normal at its centre is its contact point.
     contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
     normal = ground_normal(ground, contact)
@@ -139,8 +143,9 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
     motor = move(motor, step, clamp(back / give, pressed * static))
 
     # Hold against turning about the normal: undo the step's turn, with at most static friction times the
-    # pressing wrench times the contact patch's radius, sqrt(radius of curvature * indentation).
-    couple = normal.dual() ^ w                                              # the torque about the normal
+    # pressing forque times the contact patch's radius, the square root of the radius of curvature
+    # times the indentation. The couple is the torque about the normal.
+    couple = normal.dual() ^ w
     turned = couple & ((motor * ~before).log() * -2.0)
     curvatures = principal(placed, contact)
     patch = ((2 / (curvatures[..., 0] + curvatures[..., 1])).abs() * indentation).square_root()
@@ -148,7 +153,7 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
     motor = move(motor, step, clamp(-turned / give, pressed * static * patch))
 
     # Dynamic friction: the rate the corrected step implies, less the contacts' sliding velocity, with
-    # at most the dynamic coefficient times the normal impulse, the pressing wrench over the step.
+    # at most the dynamic coefficient times the normal impulse, the pressing forque over the step.
     rate = (~before * motor).log() * (-2.0 / dt)
     sliding = along_ground(contact.commutator(motor >> rate).cast(Direction), normal)
     speed = sliding.dual().norm()

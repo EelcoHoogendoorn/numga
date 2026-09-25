@@ -18,12 +18,14 @@ def arm():
     origin = point(np.zeros(3))
     elbow = point(np.array([0.0, 0.0, 1.0]))
     wrist = point(np.array([0.0, 0.0, 2.0]))
-    yaw = origin & direction(np.array([0.0, 0.0, 1.0]))          # a line: the join of a point with a direction
+    # Each axis is a line: the join of a point with a direction.
+    yaw = origin & direction(np.array([0.0, 0.0, 1.0]))
     pitch_1 = elbow & direction(np.array([0.0, 1.0, 0.0]))
     pitch_2 = wrist & direction(np.array([0.0, 1.0, 0.0]))
-    axis = Extensor.stack([yaw, pitch_1, pitch_2])           # one batch of three unit lines
+    axis = Extensor.stack([yaw, pitch_1, pitch_2])           # [3] Line
     tip_home = point(np.array([0.0, 0.0, 3.0]))
-    rest = axis * np.array([0.3, 0.5, 0.8])                       # joint state: axis times angle
+    # Joint state: axis times angle.
+    rest = axis * np.array([0.3, 0.5, 0.8])                       # [3] Line
     return axis, tip_home, rest
 
 
@@ -41,7 +43,8 @@ def link_boxes(count: int, width: float, depth: float) -> Point:
 def statics() -> tuple[Point, Scalar]:
     """Tip velocity under joint rates, and the joint torques of a forque at the tip, at rest."""
     axis, tip_home, rest = arm()
-    rates = axis * np.array([0.5, -1.0, 0.25])                    # joint rates: axis times angular rate
+    # Joint rates: axis times angular rate.
+    rates = axis * np.array([0.5, -1.0, 0.25])                    # [3] Line
     # A force at a point is a forque: join that point with the weighted direction.
     forque = point(np.array([1.0, 0.0, 3.0])) & direction(np.array([0.0, 2.0, -1.0]))
     velocity, joint_torques = core.mechanics(rest, axis, rates, tip_home, forque)
@@ -61,8 +64,9 @@ def homing() -> tuple[Scalar, Scalar]:
     axis, tip_home, rest = arm()
     target = loop_targets()[0]
     joints, _, tip = core.inverse_kinematics(rest, axis, tip_home, target, 8)
-    error = (target & tip).norm().select[0]                      # distance: the norm of the join
-    angles = (joints | axis) / (axis | axis)                      # angle = joint projected on its axis
+    # The distance, the norm of the join, and each angle, the joint projected on its axis.
+    error = (target & tip).norm().select[0]
+    angles = (joints | axis) / (axis | axis)
 
     # --- checks
     assert error.to_array().max() < 1e-8

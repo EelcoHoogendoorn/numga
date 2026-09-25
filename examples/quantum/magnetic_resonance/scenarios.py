@@ -4,7 +4,7 @@ a field that is not quite uniform, and the echo and the free decay over a range 
 maps from state to state.
 
 Times are in microseconds and frequencies in radians per microsecond, typical of an electron spin
-in a solid: T1 = 10 us and T2 = 4 us.
+in a solid: `T1` is 10 us and `T2` is 4 us.
 """
 
 from __future__ import annotations
@@ -40,8 +40,8 @@ def lines(detunings: np.ndarray, drives: np.ndarray) -> core.State:
     settled = core.steady(rates)                                                        # [detunings, drives] State
 
     # --- checks
-    # The steady states do not change, and they are the textbook solution of the Bloch equations:
-    # along the field (1 + (D T2)^2) / d and absorbing W T2 / d, with d = 1 + (D T2)^2 + W^2 T1 T2.
+    # The steady states do not change, and they match the closed form: along the field
+    # `(1 + (D * T2) ** 2) / d` and absorbing `W * T2 / d`, with `d = 1 + (D * T2) ** 2 + W**2 * T1 * T2`.
     np.testing.assert_allclose(rates(settled).kernel, 0.0, atol=1e-12)
     D, W = detunings[:, None], drives[None, :]
     d = 1 + (D * T2) ** 2 + W**2 * T1 * T2
@@ -65,7 +65,7 @@ def echo(spins: int, spread: float, delay: float, seconds: float, dt: float, eve
 
     # --- checks
     # At twice the delay the spins have refocused: the mean transverse Bloch vector has decayed only
-    # by the true dephasing, exp(-2 delay / T2), not by the spread of the field.
+    # by the true dephasing, `np.exp(-2 * delay / T2)`, not by the spread of the field.
     r = core.bloch(ensemble[int(round(2 * delay / (dt * every)))])
     transverse = np.hypot((r | mv.x).to_array().mean(), (r | mv.y).to_array().mean())
     np.testing.assert_allclose(transverse, np.exp(-2 * delay / T2), rtol=0.02)
@@ -75,7 +75,7 @@ def echo(spins: int, spread: float, delay: float, seconds: float, dt: float, eve
 def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
     """The echo and the free decay of an ensemble with detunings scattered by an uneven field, as
     maps from state to state: one step on the open state, doubled for delays from dt to
-    2^(count - 1) dt, composed with the pulses, and averaged over the spins. Returns the times after
+    `2 ** (count - 1) * dt`, composed with the pulses, and averaged over the spins. Returns the times after
     the first pulse, and the states the two sequences leave from equilibrium."""
     detunings = np.random.default_rng(seed).normal(0.0, spread, spins)
     rates = core.generator(mv.scalar(detunings[:, None]), mv.scalar([0.0]), T1, T2)     # [spins] State <- State
@@ -88,7 +88,7 @@ def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
     echoed, faded = echo(EQUILIBRIUM), decay(EQUILIBRIUM)                                # [delays] State
 
     # --- checks
-    # The echo has lost only the true dephasing, exp(-t / T2), whatever the spread of the field.
+    # The echo has lost only the true dephasing, `np.exp(-times / T2)`, whatever the spread of the field.
     r = core.bloch(echoed)
     np.testing.assert_allclose(np.hypot((r | mv.x).to_array(), (r | mv.y).to_array()), np.exp(-times / T2), rtol=1e-5)
     return times, echoed, faded

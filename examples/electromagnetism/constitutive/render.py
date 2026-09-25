@@ -102,8 +102,9 @@ def draw_wave_comparison_3d(
     """Render side-by-side 3D views comparing isotropic vs birefringent medium."""
     ax1 = fig.add_subplot(1, 2, 1, projection="3d")
     ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-    draw_wave_propagation(ax1, glass_modes, z_max=z_max)             # isotropic glass
-    draw_wave_propagation(ax2, crystal_modes, z_max=z_max)           # birefringent crystal
+    # Isotropic glass on the left, birefringent crystal on the right.
+    draw_wave_propagation(ax1, glass_modes, z_max=z_max)
+    draw_wave_propagation(ax2, crystal_modes, z_max=z_max)
     return ax1, ax2
 
 
@@ -168,7 +169,8 @@ def draw_polarizations(
     ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
     ax.axvline(0, color="gray", linestyle="--", alpha=0.3)
 
-    for (speed, pol), color in zip(modes, ("crimson", "dodgerblue")):              # slow wave, fast wave
+    # The slow wave in crimson, the fast wave in blue.
+    for (speed, pol), color in zip(modes, ("crimson", "dodgerblue")):
         # JIT coordinate readout at visualization boundary:
         xy = pol.cast(core.STA.subspace("x y")).kernel
         vx, vy = float(xy[0]), float(xy[1])
@@ -195,7 +197,7 @@ def draw_fresnel_surface_polar(
     surfaces: dict[str, Extensor],
     speeds: np.ndarray,
 ) -> None:
-    """Plot 2D polar Fresnel wave normal surfaces v(theta) in the xz propagation plane.
+    """Plot 2D polar Fresnel wave normal surfaces, phase speed against angle, in the xz propagation plane.
 
     Each surface is the smallest singular value of the wave map over (speed, angle); its
     local minima along speed are the sheets.
@@ -220,8 +222,9 @@ def draw_fresnel_surface_polar(
             if branch_r:
                 ax.plot(branch_theta, branch_r, linewidth=1.6)
 
-    ax.set_theta_zero_location("N")  # 0 radians along +z (North)
-    ax.set_theta_direction(-1)       # Clockwise: +x along East
+    # Zero radians along +z (North), angles clockwise: +x along East.
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
     _no_ticks(ax)
 
 

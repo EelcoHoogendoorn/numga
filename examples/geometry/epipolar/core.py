@@ -5,18 +5,18 @@ Two sight rays intersect in 3D if and only if their wedge product vanishes:
     rays_1 ^ rays_2 == 0
 
 For a candidate relative camera motor, both cameras shoot sight rays into the world.
-Infinitesimal motor updates follow the Lie-algebra commutator extensor, minimizing
+Infinitesimal motor updates follow the commutator extensor, minimizing
 the mutual line intersection error across corresponding screen points without any
 separation of rotation and translation.
 
 With the relative pose solved, the 3D world coordinates are implied: each sight ray
-measures distance to an unknown point via the meet `ray & Point`, a plane whose
+measures distance to an unknown point via the join `ray & Point`, a plane whose
 squared norm is a rank-2 distance quadric; summing these quadrics across cameras
 produces a form whose nullmode is the reconstructed 3D world point.
 
-`textbook.py` holds the matrix baseline this is compared against: the 8-point essential
-matrix, its SVD decomposition into four candidate poses, and triangulation by normal
-equations.
+In the matrix notation of projective vision the same reconstruction reads as the 8-point
+essential matrix, its SVD decomposition into four candidate poses, and triangulation by
+normal equations; `textbook.py` implements it.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def reconstruct(
         # a pseudoscalar, one number per ray pair, read as a scalar through the complement:
         res = (rays_1 ^ (motor >> rays_2)).dual()         # [n_rays] Scalar
 
-        # Infinitesimal variation: an se(3) twist acts on lines via the commutator.
+        # Infinitesimal variation: a twist acts on lines via the commutator.
         # Leaving the Twist slot open yields the Jacobian, a linear form on twists:
         j = (rays_1 ^ Twist.commutator(motor >> rays_2)).dual()   # [n_rays] Scalar <- Bivector
 

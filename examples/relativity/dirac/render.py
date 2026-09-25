@@ -12,7 +12,7 @@ COLOURS = ("#2e86c1", "#7d3c98", "#c0392b")
 
 
 def relative(bivectors: core.Bivector) -> np.ndarray:
-    """Components of relative vectors along sigma_k = gamma_k gamma_0, which square to +1."""
+    """Components of relative vectors along the bivectors xt, yt and zt, which square to +1."""
     return bivectors.cast(core.ga.subspace("xt yt zt")).kernel
 
 

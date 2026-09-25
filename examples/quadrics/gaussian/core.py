@@ -33,19 +33,19 @@ def fit_gaussian(points: Point, samples: Point) -> tuple[Scalar, Scalar]:
     Samples are unit-weight query points in the same affine chart. The returned
     density has peak one; the level vanishes at Mahalanobis distance one.
     """
-    # Leave the plane slot open: each point contributes a rank-one Plane -> Point map.
+    # Leave the plane slot open: each point contributes a rank-one Point <- Plane map.
     # Its mean contains both the cloud's location and its spread, without centering.
     moment = (points * (Plane & points)).mean(axis=0)
     precision = moment.inverse()
 
-    # The inverse moment evaluates to 1 + squared Mahalanobis distance.
+    # The inverse moment evaluates to one plus the squared Mahalanobis distance.
     # Removing the constant gives a Gaussian with peak density one.
     squared_distance = (precision(samples) & samples) - 1
     density = (-0.5 * squared_distance).exp()
 
-    # Recover the weight plane from the data: weight & p = 1 for every sample.
-    # Its dyad evaluates to that constant squared; subtract twice to make d² = 1
-    # the zero locus of a Point -> Plane polarity.
+    # Recover the weight plane from the data: weight & samples == 1 for every sample.
+    # Its dyad evaluates to that constant squared; subtract it twice to make Mahalanobis
+    # distance one the zero locus of a Plane <- Point polarity.
     weight = precision(points.mean(axis=0))
     quadric = precision - 2 * weight * (weight & Point)
     level = quadric(samples) & samples

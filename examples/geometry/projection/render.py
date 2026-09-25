@@ -56,7 +56,8 @@ def render_shadow_scene(
 
 
 def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndarray:
-    """Clip lines on a rig's screen to x = ±half_width, returning (..., 2, 2) screen coordinates."""
+    """Clip lines on a rig's screen at x == -half_width and x == half_width, returning (..., 2, 2)
+    screen coordinates."""
     mv = rig.context.multivector
     ends = []
     for x in (-half_width, half_width):

@@ -1,9 +1,9 @@
 """PGA3D scenegraph, robot kinematics, and compound multi-lens camera optics.
 
 All mathematical operations are formulated as coordinate-free extensors (linear maps
-between blade subspaces). The entire visual pipeline—articulated forward kinematics,
+between blade subspaces). The entire visual pipeline of articulated forward kinematics,
 anisotropic box scaling, camera pose transformation, pupil ray formation, compound
-two-lens refraction, sensor plane intersection, and viewport rasterization—collapses
+two-lens refraction, sensor plane intersection, and viewport rasterization collapses
 into a single compiled extensor mapping canonical unit box vertices to 2D screen pixels.
 """
 
@@ -19,16 +19,16 @@ ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-# Blade subspaces:
-Scalar = ga.gatype.scalar()                 # Grade 0: scalar values
-Plane = ga.gatype.vector()                  # Grade 1: planes in 3D (x, y, z, w)
-Line = ga.gatype.bivector()                 # Grade 2: lines in 3D / twists in se(3)
-Point = ga.gatype.antivector()              # Grade 3: projective points (zyx, yzw, zxw, xyw)
-Motor = ga.gatype.rotor()                   # Even subalgebra: rigid transformations in SE(3)
+# Planes, lines and points are the vectors, bivectors and antivectors; motors rotate and translate.
+Scalar = ga.gatype.scalar()
+Plane = ga.gatype.vector()
+Line = ga.gatype.bivector()
+Point = ga.gatype.antivector()
+Motor = ga.gatype.rotor()
 
-# Extensors (linear maps between blade subspaces):
-PointMap = ga.gatype((Point, Point))        # Collineation: Point <- Point
-LineMap = ga.gatype((Line, Line))           # Optical ray transfer map: Line <- Line
+# Extensors (linear maps between blade subspaces): collineations of points, and optical maps of rays.
+PointMap = ga.gatype((Point, Point))        # Point <- Point
+LineMap = ga.gatype((Line, Line))           # Line <- Line
 
 origin = mv.zyx
 
@@ -40,7 +40,7 @@ def point(coords: np.ndarray) -> Point:
 
 # --- geometry primitives --------------------------------------------------------------
 def canonical_unit_box() -> Point:
-    """The 8 vertices of the canonical unit box [-0.5, 0.5]^3."""
+    """The 8 vertices of the canonical unit box: a unit cube centred on the origin."""
     return point(np.array([
         [-0.5, -0.5, -0.5],
         [ 0.5, -0.5, -0.5],
@@ -56,8 +56,8 @@ def canonical_unit_box() -> Point:
 def unit_box_topology() -> tuple[np.ndarray, np.ndarray]:
     """Return (edges, faces) vertex index arrays for the unit box."""
     edges = np.array([
-        [0, 1], [1, 2], [2, 3], [3, 0],  # bottom ring (z = -0.5)
-        [4, 5], [5, 6], [6, 7], [7, 4],  # top ring (z = +0.5)
+        [0, 1], [1, 2], [2, 3], [3, 0],  # bottom ring (z == -0.5)
+        [4, 5], [5, 6], [6, 7], [7, 4],  # top ring (z == 0.5)
         [0, 4], [1, 5], [2, 6], [3, 7],  # vertical pillars
     ], dtype=np.int32)
 
@@ -95,18 +95,18 @@ def robot_arm(joint_angles: tuple) -> tuple[PointMap, list[Motor]]:
     unit-box-to-world maps and the four joint pivots.
     """
     theta_base, theta_shoulder, theta_elbow, theta_wrist = joint_angles
-    # A translator by d along z is exp(zw * d / 2), a rotor by theta about z is exp(xy * theta / 2).
+    # A translator by d along z is (mv.zw * d / 2).exp(), a rotor by theta about z is (mv.xy * theta / 2).exp().
 
-    # Body 0: Base pedestal (fixed stationary block resting on floor z = 0)
+    # Body 0: Base pedestal (fixed stationary block resting on the floor z == 0)
     body_0 = (mv.zw * 0.125 / 2).exp() >> anisotropic_scale(0.9, 0.9, 0.25)
 
-    # Turret base pivot at z = 0.25, yawing around vertical z-axis:
+    # Turret base pivot at height 0.25, yawing around vertical z-axis:
     pivot_turret = (mv.zw * 0.25 / 2).exp() * (mv.xy * theta_base / 2).exp()
 
     # Body 1: Turret rotating body
     body_1 = (pivot_turret * (mv.zw * 0.175 / 2).exp()) >> anisotropic_scale(0.5, 0.5, 0.35)
 
-    # Shoulder pivot at z = 0.35 above turret base, pitching around local y-axis:
+    # Shoulder pivot 0.35 above turret base, pitching around local y-axis:
     pivot_shoulder = pivot_turret * (mv.zw * 0.35 / 2).exp() * (mv.zx * theta_shoulder / 2).exp()
 
     # Body 2: Upper arm (anisotropically elongated along arm length)
@@ -135,7 +135,7 @@ def thin_lens(center: Point, plane: Plane, focal_length: float) -> LineMap:
     """Thin lens extensor (Line <- Line) focusing rays towards its center.
 
     Following Gaussian optics in PGA, a thin lens shears a line proportionally to its
-    incidence with the optical center: Line - (center & (Line ^ plane)) / f.
+    incidence with the optical center: `Line - (center & (Line ^ plane)) / focal_length`.
     """
     return Line - (center & (Line ^ plane)) / focal_length
 
@@ -145,7 +145,7 @@ def lens_train(focal_front: float, focal_rear: float, rear_gap: float):
 
     The front lens sits at the origin. The rear lens is placed along the optical axis by
     transforming the lens extensor with its displacement motor:
-    rear_lens = rear_placement >> base_rear_lens(rear_placement << Line).
+    `rear_lens = rear_placement >> thin_lens(origin, front_plane, focal_rear)(rear_placement << Line)`.
     """
     front_plane = -mv.z
     front_lens = thin_lens(origin, front_plane, focal_front)
@@ -169,7 +169,7 @@ def lens_camera(camera_pose: Motor, front_lens: LineMap, rear_lens: LineMap, pup
 def look_at(position: np.ndarray, target: np.ndarray) -> Motor:
     """Camera motor in world space whose optical axis -z points towards the target."""
     translation = (mv("xw yw zw", position) / 2).exp()
-    # Pitch the optical axis from horizontal towards the target: pi/2 about x turns -z
+    # Pitch the optical axis from horizontal towards the target: np.pi / 2 about x turns -z
     # forward (+y), minus the pitch tilts it downward.
     delta = target - position
     pitch = np.arctan2(delta[2], delta[1])
@@ -180,8 +180,8 @@ def look_at(position: np.ndarray, target: np.ndarray) -> Motor:
 def viewport(width: int, height: int, sensor_width: float, sensor_height: float) -> PointMap:
     """Viewport extensor mapping metric sensor coordinates (x, y) to pixel coordinates (u, v).
 
-    The physical sensor (sensor_width x sensor_height) is mapped to (width x height) pixels.
-    Because raster pixel rows increase downward (y=0 at top), the vertical axis is reflected.
+    The physical sensor, sensor_width by sensor_height, is mapped to width by height pixels.
+    Because raster pixel rows increase downward (row 0 at the top), the vertical axis is reflected.
     """
     scale = anisotropic_scale(width / sensor_width, -height / sensor_height, 1.0)
     return ((mv.xw * width / 2 + mv.yw * height / 2) / 2).exp() >> scale

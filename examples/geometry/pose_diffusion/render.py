@@ -22,7 +22,8 @@ def ellipse(spread: core.Spread) -> np.ndarray:
     as a ring of points about the commanded position."""
     variances, lines = spread.eig()                                # [modes] Scalar, [modes] Line
     variances, lines = variances.real().to_array(), lines.real()
-    finite = np.isfinite(variances)                                # the offset of a line carries no variance
+    # The offset of a line carries no variance.
+    finite = np.isfinite(variances)
     normals = lines.cast(core.ga.subspace("x y")).kernel[finite]
     normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
     angle = np.linspace(0.0, 2.0 * np.pi, 80)
@@ -33,7 +34,8 @@ def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Co
                extent: float) -> None:
     """The bodies as short arrows through their positions along their headings, over the predicted
     ellipse (solid) and the settled one (dashed), in a square of half-width extent."""
-    heading = core.ORIGIN + core.mv.yw * (0.08 * extent)          # a point a short way ahead of the set point
+    # A point a short way ahead of the set point.
+    heading = core.ORIGIN + core.mv.yw * (0.08 * extent)          # [] Point
     here = xy(poses >> core.ORIGIN)                                # [bodies, 2]
     ahead = xy(poses >> heading) - here                            # [bodies, 2]
     ax.quiver(here[:, 0], here[:, 1], ahead[:, 0], ahead[:, 1], angles="xy", scale_units="xy", scale=1,
@@ -86,7 +88,8 @@ def draw_envelope(gains: np.ndarray, spreads: core.Spread, tolerance: float) -> 
     ax.plot(gains, half_widths[:, 0], color="#c0392b", label="long axis")
     ax.plot(gains, half_widths[:, 1], color="#4a6fa5", label="short axis")
     ax.axhline(tolerance, color="0.4", linestyle="--", linewidth=1, label="tolerance")
-    least = gains[half_widths[:, 0] <= tolerance][0]              # the gains are ascending
+    # The gains are ascending.
+    least = gains[half_widths[:, 0] <= tolerance][0]              # 1/s
     ax.axvline(least, color="0.4", linestyle=":", linewidth=1)
     ax.annotate(f"gain {least:.3f} /s", (least, tolerance), textcoords="offset points", xytext=(6, 8))
     ax.set_xlabel("controller gain (1/s)")

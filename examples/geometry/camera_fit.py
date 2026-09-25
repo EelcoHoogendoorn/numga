@@ -42,7 +42,7 @@ def main() -> None:
     camera = (origin & Point) ^ screen
 
     def image(generator: Bivector) -> Point:
-        """Images of the world points, seen from the rig: points on its screen z = 1."""
+        """Images of the world points, seen from the rig: points on its screen z == 1."""
         rig = generator.exp()
         moved = rig >> camera(rig << Point)
         return (rig << moved(world)).normalized()

@@ -1,16 +1,16 @@
 """A zoom camera with depth of field: cones pulled through non-rigid maps, in flat or spherical space.
 
-An ideal thin lens is a projective collineation of space, P ↦ P + centre (P ∨ plane) / f, and
-its action on lines, L ↦ L - (centre ∨ (L ∧ plane)) / f, is the join of the images: the train
-composes either way. The rays a scene point sends through the aperture form a cone, the
+An ideal thin lens is a projective collineation of space, `Point + origin * (home & Point) / focal`,
+and its action on lines, `Line - (origin & (Line ^ home)) / focal`, is the join of the images: the
+train composes either way. The rays a scene point sends through the aperture form a cone, the
 pullback of a ball through the central projection from the point onto the aperture plane.
 The train carries that cone to the image cone, a pullback through the inverse of its point
 map, and the sensor cuts the image cone in the point's blur conic. Nothing asks where the
 point focuses; the cone's vertex is wherever the collineation put it.
 
-The core logic never names the metric: with w² = 1 instead of 0 the same lens maps, quadrics,
-pullbacks and checks run on the 3-sphere, where translators are rotations toward the pole and
-a ball of "radius" r is a ball of angular radius atan r. Only the point constructor, which
+The core logic never names the metric: with w squaring to 1 instead of 0 the same lens maps,
+quadrics, pullbacks and checks run on the 3-sphere, where translators are rotations toward the
+pole and a ball of "radius" r is a ball of angular radius `np.arctan(r)`. Only the point constructor, which
 motors a chosen origin, and the chart readouts for drawing know which space they are in.
 """
 
@@ -32,11 +32,15 @@ SensorPoint = ga.gatype.from_blades("zxw xyw zyx")
 SensorPlane = ga.gatype.from_blades("y z w")
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
-PointMap = ga.gatype((Point, Point))          # collineation: point <= point
+# A collineation maps points to points.
+PointMap = ga.gatype((Point, Point))          # Point <- Point
 LineMap = ga.gatype((Line, Line))
-Quadric = ga.gatype((Plane, Point))           # primal quadric: polar plane <= point
-DualQuadric = ga.gatype((Point, Plane))       # dual quadric: pole <= plane
-Camera = ga.gatype((Point, Point, Point))     # sensor point <= (scene point, pupil point)
+# A primal quadric maps a point to its polar plane.
+Quadric = ga.gatype((Plane, Point))           # Plane <- Point
+# A dual quadric maps a plane to its pole.
+DualQuadric = ga.gatype((Point, Plane))       # Point <- Plane
+# A camera maps a scene point and a pupil point to a sensor point.
+Camera = ga.gatype((Point, Point, Point))     # Point <- (Point, Point)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -45,7 +49,7 @@ def unit(points: Point) -> Point:
     return (points / (mv.w & points)).normalized().with_traits(Versor)
 
 
-# Every element is built in its home frame: centred on the origin, in the plane x = 0.
+# Every element is built in its home frame: centred on the origin, in the plane x == 0.
 origin: Point = unit(mv.zyx)
 home: Plane = mv.x
 
@@ -75,7 +79,8 @@ def ball(radius: float) -> Quadric:
 
 
 def on_planes(collineation: PointMap):
-    """The map on planes induced by a map on points, through incidence: on_planes(T)(p) & q == p & T(q)."""
+    """The map on planes induced by a map on points, through incidence: for a plane p and a point q,
+    `on_planes(collineation)(p) & q == p & collineation(q)`."""
     return (Plane & Point).solve(Plane & collineation)
 
 
@@ -122,5 +127,6 @@ def section(cone: Quadric, start: Point, frame: Motor, samples: int) -> Point:
     theta = np.linspace(0.0, 2 * np.pi, samples)
     across = frame >> direction(np.stack([np.zeros(samples), np.cos(theta), np.sin(theta)], axis=-1))
     a, b, c = across & cone(across), across & cone(start), start & cone(start)
-    root = (b * b - a * c).clip(0.0, np.inf).square_root()              # rounding-level negative at the vertex
+    # Rounding-level negative at the vertex:
+    root = (b * b - a * c).clip(0.0, np.inf).square_root()
     return start + across * ((root - b) / a)

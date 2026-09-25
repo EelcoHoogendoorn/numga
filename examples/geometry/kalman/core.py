@@ -1,10 +1,13 @@
 """Pose filtering on the motor manifold in PGA2D: the covariance is a map from readouts to bivectors.
 
 The state is a motor; its uncertainty is a covariance over body-frame bivector perturbations.
-A linear readout of a bivector is a line, so the covariance is a unary extensor line -> bivector:
+A linear readout of a bivector is a line, so the covariance is a unary extensor, Bivector <- Line:
 the twist correlated with a readout. Prediction moves it like any map, pulling the readout
-through the step and pushing the twist back, and the update solves with the map inverse. The
-3x3 Jacobians of the motion and measurement models are never derived by hand.
+through the step and pushing the twist back, and the update solves with the map inverse.
+
+In the matrix notation of the extended Kalman filter the covariance reads as a three-by-three
+matrix, propagated and updated with the Jacobians of the motion and measurement models; those
+Jacobians are never derived by hand here.
 """
 
 from __future__ import annotations
@@ -24,7 +27,8 @@ Motor = ga.gatype.rotor()
 Bivector = ga.gatype.bivector()
 Scalar = ga.gatype.scalar()
 Line = ga.gatype.vector()
-Covariance = ga.gatype((Bivector, Line))      # twist <- linear readout of a twist (a line)
+# A linear readout of a twist is a line; the covariance takes it to the correlated twist.
+Covariance = ga.gatype((Bivector, Line))      # Bivector <- Line
 
 
 # --- math -----------------------------------------------------------------------------
@@ -32,15 +36,15 @@ def kalman_filter(estimate: Motor, sigma: Covariance, steps: Motor, measurements
                   motion_noise: Covariance, measurement_noise: Covariance) -> Iterator[tuple[Motor, Covariance]]:
     """Kalman filter on motors, driven by body-frame steps and noisy full-pose measurements.
 
-    Pose errors are right perturbations, estimate * exp(delta / 2), with sigma
+    Pose errors are right perturbations, `estimate * (delta * 0.5).exp()`, with sigma
     their covariance on bivectors. motion_noise adds uncertainty at each prediction;
     measurement_noise is the covariance of measurement error in the same perturbation convention.
     Each measurement is paired with the motion steps since the previous reading.
     Predict through those steps, then yield the corrected pose and covariance.
     """
     for prediction_steps, measured in zip(steps, measurements):
-        # Predict. A perturbation on the right of the estimate, m exp(δ/2), is carried through
-        # the step by step⁻¹ δ step: the adjoint of the step is its sandwich with a hole.
+        # Predict. A perturbation on the right of the estimate, estimate * (delta * 0.5).exp(), is
+        # carried through the step by step << delta: the adjoint of the step is its sandwich with a hole.
         for step in prediction_steps:
             estimate = estimate * step
             # The covariance takes a readout of the perturbation to the twist correlated with it,
@@ -60,7 +64,7 @@ def kalman_filter(estimate: Motor, sigma: Covariance, steps: Motor, measurements
 def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
     """The estimated position, with the principal variances and axes of its uncertainty.
 
-    A readout of position along a line, l & shift(δ), is a readout of the twist through the
+    A readout of position along a line l, `l & shift(delta)`, is a readout of the twist through the
     incidence pairing, so the covariance of those readouts is a form on lines. Against the
     line metric, which measures a line's normal and not its offset, its principal readouts
     are the ellipse axes. The offset mode is zero in both forms and has no variance.
@@ -69,7 +73,8 @@ def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
     shift = Bivector.commutator(here)(estimate >> Bivector)    # [n] Point <- Bivector
     readout = (Line & Bivector).solve(Line & shift)            # [n] Line <- Line
     position = readout & sigma(readout)                        # [n] Scalar <- (Line, Line)
-    variances, axes = position.eig()                           # [n, modes] Scalar, [n, modes] Line; the eigenpairs of this symmetric pair of forms are real
+    # The eigenpairs of this symmetric pair of forms are real.
+    variances, axes = position.eig()                           # [n, modes] Scalar, [n, modes] Line
     return here, variances.real(), axes.real()
 
 
@@ -85,10 +90,12 @@ def sample(cov: Covariance, rng: np.random.Generator) -> Bivector:
     """One bivector drawn from a covariance map.
 
     Readouts orthonormal in the covariance's own form carry independent unit normal draws:
-    the twists they select, cov(l), then have covariance cov (Line & cov)^-1 cov = cov.
+    the twists they select, `cov(lines)`, then have covariance
+    `(cov(lines) * (cov(lines) & Line)).sum(axis=0)`, which is `cov` itself.
     """
     readouts = Line & cov                                      # [] Scalar <- (Line, Line)
-    _, lines = readouts.eigh(readouts)                         # [modes] Line: orthonormal in the form itself
+    # Lines orthonormal in the form itself.
+    _, lines = readouts.eigh(readouts)                         # [modes] Line
     return (cov(lines) * rng.normal(size=3)).sum(axis=0)       # [] Bivector
 
 

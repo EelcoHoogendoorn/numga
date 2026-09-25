@@ -19,7 +19,7 @@ from examples.animation import capture
 from examples.geometry.scenegraph.core import Motor, Point, ga, point, unit_box_topology
 
 
-# Colors for robot arm bodies (curated dark/tech modern palette):
+# Colors for the robot arm bodies:
 BODY_COLORS = [
     "#4A5568",  # Body 0: Base pedestal (charcoal slate)
     "#2B6CB0",  # Body 1: Turret (steel blue)
@@ -51,7 +51,7 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     light_dir = np.array([0.4, -0.6, 0.7])
     light_dir = light_dir / np.linalg.norm(light_dir)
 
-    # Floor grid at z = 0 (drawn behind everything at zorder=0):
+    # Floor grid in the plane z == 0 (drawn behind everything at zorder=0):
     for g in np.linspace(-1.2, 1.2, 7):
         ax.plot3D([g, g], [-1.2, 1.2], [0, 0], color="#E2E8F0", linewidth=0.7, zorder=0)
         ax.plot3D([-1.2, 1.2], [g, g], [0, 0], color="#E2E8F0", linewidth=0.7, zorder=0)
@@ -76,12 +76,13 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     # Optical elements in the camera frame, moved into the world by the camera pose:
     theta = np.linspace(0, 2 * np.pi, 36)
     ring = np.stack([np.cos(theta), np.sin(theta), np.zeros_like(theta)], axis=-1)
-    front_ring = euclidean(camera_pose >> point(ring * 0.3))                       # radius 0.3 at z = 0
-    rear_ring = euclidean(camera_pose >> point(ring * 0.25 + [0.0, 0.0, -0.3]))   # radius 0.25 at z = -0.3
+    # The front lens rim, radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3:
+    front_ring = euclidean(camera_pose >> point(ring * 0.3))                       # [36, 3]
+    rear_ring = euclidean(camera_pose >> point(ring * 0.25 + [0.0, 0.0, -0.3]))   # [36, 3]
     ax.plot3D(front_ring[:, 0], front_ring[:, 1], front_ring[:, 2], color="#319795", linewidth=2.0, zorder=3)
     ax.plot3D(rear_ring[:, 0], rear_ring[:, 1], rear_ring[:, 2], color="#805AD5", linewidth=2.0, zorder=3)
 
-    # Sensor plane rectangle matching the physical 1.6 x 1.2 sensor chip at z = -1.25:
+    # Sensor plane rectangle matching the physical 1.6 x 1.2 sensor chip at z == -1.25:
     sensor = euclidean(camera_pose >> point(np.array([
         [-0.8, -0.6, -1.25],
         [ 0.8, -0.6, -1.25],
@@ -123,7 +124,8 @@ def plot_camera_image(ax: plt.Axes, projected_pixels: Point) -> None:
     # Sensor frame boundary:
     ax.add_patch(Rectangle((0, 0), width, height, fill=False, edgecolor="#4A5568", linewidth=1.2, linestyle="-"))
     ax.set_xlim(0, width)
-    ax.set_ylim(height, 0)  # Invert y so image origin (0, 0) is at top-left
+    # Invert y so image origin (0, 0) is at top-left:
+    ax.set_ylim(height, 0)
     ax.set_aspect("equal")
     ax.axis("off")
 

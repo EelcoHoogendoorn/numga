@@ -12,7 +12,7 @@ def tracking():
     """Simulate the drive, filter it, and return the paths, the ellipses and the position errors."""
     rng = np.random.default_rng(2)
     dt, readings, steps_per_reading = 0.1, 12, 25
-    # Body-frame command: drive 1 m/s along +x (exp(-wx) moves +x) while the turn rate
+    # Body-frame command: drive 1 m/s along +x (the generator -mv.wx moves along +x) while the turn rate
     # wanders, so the path meanders instead of retracing itself.
     turn = 0.9 * np.sin(0.2 * np.arange(readings * steps_per_reading) * dt)
     increments = ((mv.xy * turn - mv.wx) * dt).reshape(readings, steps_per_reading)

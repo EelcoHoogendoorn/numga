@@ -1,11 +1,11 @@
 """Textbook matrix algorithms for epipolar geometry and two-view reconstruction.
 
-This module preserves the traditional non-GA matrix baseline (Hartley & Zisserman
-8-point SVD, projection to rank-2 manifold, SVD decomposition via the magic W matrix,
-4-fold candidate branch testing, and manual 2x2 normal equations for triangulation).
+This module is the matrix baseline without geometric algebra: the Hartley and Zisserman
+8-point SVD, projection to the rank-2 manifold, SVD decomposition via the W matrix, testing
+of the four candidate poses, and two-by-two normal equations for triangulation.
 
-It is kept as an explicit point of comparison to demonstrate what numga's
-typed extensors and PGA3D operators replace.
+It is a point of comparison for `core`, which does the same with typed extensors and PGA3D
+operators.
 """
 
 from __future__ import annotations
@@ -20,11 +20,12 @@ def essential_matrix(rays_1: np.ndarray, rays_2: np.ndarray) -> np.ndarray:
     Camera 2. Each corresponding pair satisfies the epipolar coplanarity constraint:
         rays_2[k].T @ E @ rays_1[k] == 0
     """
-    # Form the linear constraint matrix A of shape (N, 9) where row k is the
-    # outer product rays_2[k] (x) rays_1[k]:
+    # Form the linear constraint matrix a of shape (N, 9), whose row k is
+    # np.outer(rays_2[k], rays_1[k]).ravel():
     a = (rays_2[:, :, None] * rays_1[:, None, :]).reshape(len(rays_1), 9)
 
-    # The optimal E minimizes ||A e||^2 subject to ||e|| = 1 (nullspace solve):
+    # The optimal flattened matrix e minimizes np.linalg.norm(a @ e) subject to
+    # np.linalg.norm(e) == 1 (nullspace solve):
     _, _, vh = np.linalg.svd(a)
     e_raw = vh[-1].reshape(3, 3)
 
@@ -42,7 +43,8 @@ def decompose_essential(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Decompose the Essential matrix into relative rotation R and translation direction t.
 
-    E = [t]_x R encodes rotation and translation jointly. SVD factorization yields
+    The essential matrix is the cross-product matrix of t times R, so it encodes rotation
+    and translation jointly. SVD factorization yields
     four mathematically valid (R, t) pairs; the unique physical solution is selected
     by the cheirality condition (positive depth in both camera frames).
     """
@@ -64,8 +66,8 @@ def decompose_essential(
     for r_cand in (r1, r2):
         for sign in (1.0, -1.0):
             t_cand = sign * t_candidate
-            # In Camera 2's frame: R * (d1 * r1) + t = d2 * r2
-            # Rearranging yields [R * r1, -r2] [d1; d2] = -t
+            # In Camera 2's frame: r_cand @ (d1[k] * rays_1[k]) + t_cand == d2[k] * rays_2[k].
+            # Rearranged: np.stack([r_cand @ rays_1[k], -rays_2[k]], axis=-1) @ [d1[k], d2[k]] == -t_cand
             r_r1 = (r_cand @ rays_1.T).T
             m00 = np.sum(r_r1 * r_r1, axis=-1)
             m01 = np.sum(r_r1 * -rays_2, axis=-1)
@@ -127,7 +129,7 @@ def epipolar_lines(
     """Compute 2D epipolar line coefficients in Camera 2 for points in Camera 1.
 
     points_1 has shape (N, 3) in normalized homogeneous coordinates (u, v, 1).
-    Returns normalized line coefficients (a, b, c) where a*x + b*y + c = 0 in Camera 2.
+    Returns normalized line coefficients (a, b, c) where a * x + b * y + c == 0 in Camera 2.
     """
     lines = (essential @ points_1.T).T
     norm = np.linalg.norm(lines[:, :2], axis=-1, keepdims=True)

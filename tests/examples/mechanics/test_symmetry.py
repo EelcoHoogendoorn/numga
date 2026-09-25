@@ -9,7 +9,7 @@ from examples.mechanics.symmetry import core, render, scenarios
 
 
 def test_cube_rotations_are_24_distinct_rotations():
-    """Every pair of the 24 rotors differs, even up to sign: their scalar overlap is not ±1."""
+    """Every pair of the 24 rotors differs, even up to sign: their scalar overlap is not plus or minus one."""
     cube = core.cube_rotations()
     overlap = abs((~cube[:, None] * cube[None, :]).select[0].to_array())
     assert cube.shape == (24,)

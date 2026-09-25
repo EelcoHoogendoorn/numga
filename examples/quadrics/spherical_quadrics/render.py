@@ -59,7 +59,7 @@ def draw_spherical_conic(
     ax2.plot(*normals(tangents).T, color="magenta", linewidth=2.0, linestyle=":", label=r"Dual Plane Conic $\pi \in S^2$")
     style(ax2, r"Plane-Based Dual View" "\n" r"Envelope of Tangent Great Circles $\pi \cdot x = 0$")
 
-    # The quadratic cone through the oval, and the polhodes: level sets P ∨ C(P) = c.
+    # The quadratic cone through the oval, and the polhodes: level sets of P & C(P).
     ax3 = fig.add_subplot(1, 3, 3, projection="3d")
     ax3.plot_wireframe(sx, sy, sz, color="slategray", alpha=0.15, linewidth=0.5)
     ax3.plot_surface(*np.moveaxis(xyz(surface), -1, 0), color="khaki", alpha=0.3, rstride=2, cstride=2, shade=True)

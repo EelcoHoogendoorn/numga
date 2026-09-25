@@ -10,8 +10,8 @@ from examples.quadrics.spherical_quadrics.core import (
 
 
 def spherical_conic():
-    # In principal axes both the primal quadric C (Plane <= Point) and the dual quadric
-    # Q (Point <= Plane) are diagonal. A rotor moves either by the same sandwich.
+    # In principal axes both the primal quadric C (Plane <- Point) and the dual quadric
+    # Q (Point <- Plane) are diagonal. A rotor moves either by the same sandwich.
     eigenvalues = np.array([1.0, 0.4, -0.8])
     rotor = (mv.xy * 0.25 + mv.yz * 0.15).exp()
     C = rotor >> polarity(eigenvalues)(rotor << Point)
@@ -23,22 +23,23 @@ def spherical_conic():
     foci = rotor >> foci
     F1, F2 = foci
 
-    # The distance between unit points on the sphere is arccos(-P · F). The sum of the
-    # geodesic distances from F1 and F2 to any point on the oval is constant: 2 θa.
+    # The distance between unit points on the sphere is (-(P | F)).arccos(). The sum of the
+    # geodesic distances from F1 and F2 to any point on the oval is constant: 2 * theta_a.
     dist_F1 = (-(P | F1)).clip(-1.0, 1.0).arccos()
     dist_F2 = (-(P | F2)).clip(-1.0, 1.0).arccos()
     focal_sum = dist_F1 + dist_F2
 
     # The polar plane of P with respect to C is its tangent great circle, and every tangent
-    # great circle satisfies the dual equation π ∨ Q(π) = 0.
+    # great circle satisfies the dual equation tangents & Q(tangents) == 0.
     tangents = C(P).normalized()
 
     # Dual focal property: the product of the sines of the distances from F1 and F2 to the
-    # tangent great circles is constant; sin(dist(F, π)) = |F ∨ π|.
+    # tangent great circles is constant; the sine of the distance from F1 is
+    # F1.regressive(tangents).norm().
     dual_product = F1.regressive(tangents).norm() * F2.regressive(tangents).norm()
 
     # For the figure: geodesics from both foci to one point of the oval, sixteen tangent
-    # great circles, the cone through the oval, and the potential P ∨ C(P) on the sphere.
+    # great circles, the cone through the oval, and the potential P & C(P) on the sphere.
     sample = P[25]
     arcs = geodesic(foci[:, None], sample, np.linspace(0, 1, 30))
     touching = np.linspace(0, P.shape[0] - 1, 16, dtype=int)

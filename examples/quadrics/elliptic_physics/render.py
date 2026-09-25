@@ -19,7 +19,7 @@ BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
 
 # --- the front hemisphere of S² -------------------------------------------------------
 def hemisphere(size: int):
-    """The front hemisphere seen along z on a size x size grid: coordinates (m, 3) of the pixels
+    """The front hemisphere seen along z on a size by size grid: coordinates (m, 3) of the pixels
     inside the disk, the disk mask, and which of the disk's pixels form its rim."""
     u, v = np.meshgrid(np.linspace(-1.0, 1.0, size), np.linspace(1.0, -1.0, size))
     r2 = u**2 + v**2
@@ -138,7 +138,8 @@ def draw_collisions(trajectory: S2.Trajectory, colors: np.ndarray, dt: float) ->
 
 
 # --- S³ -------------------------------------------------------------------------------
-FOV = np.radians(120.0)                            # a wide pinhole view from the eye
+# A wide pinhole view from the eye.
+FOV = np.radians(120.0)                            # rad
 
 
 def s3_frames(trajectory: S3.Trajectory, colors: np.ndarray, eye: S3.Motor, light: S3.Point,

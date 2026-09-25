@@ -137,7 +137,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
         acceleration = tidal(polarized_wave(plus, cross, second) * -.5, t)[:, :, None](reference)
         displacement = integrate_acceleration(time, acceleration).kernel[..., 1:3]
 
-        # Independent TT-gauge prediction: delta x = h_TT x / 2, for all
+        # Independent prediction: the displacement is half the strain applied to the separation, for all
         # three polarizations and every bead, with the stated sin^4 packet.
         envelope = 1e-4 * np.sin(np.pi * np.clip(time / 6, 0, 1))**4
         hp = (envelope * np.cos(np.pi * (time - 3)))[:, None, None]

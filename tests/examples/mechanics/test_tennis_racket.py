@@ -26,7 +26,8 @@ def momentum_drift(p: int, integrator: str, dt: float) -> float:
 
 
 def test_adjoint_is_the_open_commutator_in_five_dimensions():
-    """Ad(exp H) = exp(ad_H) on the ten-dimensional bivector algebra of Spin(5)."""
+    """The sandwich by h.exp() on bivectors equals the exponential of the commutator with h, on the ten-dimensional
+    bivectors of five dimensions."""
     context = NumpyContext(Algebra.from_pqr(5, 0, 0), dtype=np.float64)
     mv = context.multivector
     bivector = context.algebra.subspace.bivector()

@@ -1,21 +1,23 @@
 """The Dirac electron in the spacetime algebra.
 
-An electron's state at a point is an even multivector, psi = sqrt(rho) e^(I beta / 2) R: a density,
-an angle beta and a Lorentz rotor. Sandwiching a vector with psi applies that rotor and scales by
-rho, so `psi >> Vector` is a map on spacetime: it carries the observer's frame to the electron's.
+An electron's state at a point is an even multivector,
+`psi = (PSEUDOSCALAR * (beta / 2)).exp() * rotor * np.sqrt(density)`: a density, an angle beta and a
+Lorentz rotor. Sandwiching a vector with psi applies that rotor and scales by the density, so
+`psi >> Vector` is a map on spacetime: it carries the observer's frame to the electron's.
 Its image of the time axis is the electron's current, and its image of the z axis is its spin.
 beta does not act on vectors at all. It acts on bivectors, where the spinor's own sandwich differs
-from what its vector map extends to by the factor e^(I beta) / rho.
+from what its vector map extends to by the factor `(PSEUDOSCALAR * beta).exp() / density`.
 
 For a plane wave the Dirac equation becomes a linear map on even multivectors, the Hamiltonian.
 Its eigenvalues are plus and minus the energy, each fourfold. Right multiplication by the spin plane
-gamma2 gamma1 is a map that squares to minus one and commutes with the Hamiltonian. Positive-energy
-states have beta = 0 and negative-energy states beta = pi. A mixture of the two makes the current circulate at twice the energy: the trembling
-motion, Zitterbewegung.
+`SPIN_PLANE` is a map that squares to minus one and commutes with the Hamiltonian. Positive-energy
+states have `beta == 0` and negative-energy states `beta == np.pi`. A mixture of the two makes the
+current circulate at twice the energy: the trembling motion, Zitterbewegung.
 
-For comparison, in matrix notation psi reads as a column of four complex numbers, the frame as the
-bilinear covariants psi-bar gamma^mu psi, the Hamiltonian as alpha . p + beta m, and right
-multiplication by the spin plane as multiplication by the imaginary unit i.
+In matrix notation the spinor reads as a column of four complex numbers, the frame as the
+bilinear covariants of the spinor with the four gamma matrices, the Hamiltonian as the alpha
+matrices contracted with the momentum plus the Dirac beta matrix times the mass, and right
+multiplication by the spin plane as multiplication by the imaginary unit.
 """
 
 from __future__ import annotations
@@ -40,11 +42,11 @@ Frame = ga.gatype((Vector, Vector))                 # Vector <- Vector
 Spatial = ga.gatype.from_blades("x y z")
 # The plane-wave Dirac equation.
 Hamiltonian = ga.gatype((Even, Even))               # Even <- Even
-# The observer's time axis, gamma0.
+# The observer's time axis.
 TIME = mv.t                                         # [] Vector
-# I = gamma0 gamma1 gamma2 gamma3.
+# The unit pseudoscalar, `mv.t ^ mv.x ^ mv.y ^ mv.z`.
 PSEUDOSCALAR = mv.txyz                              # [] Pseudoscalar
-# The spin plane gamma2 gamma1 = I sigma3: right multiplication by it squares to minus one.
+# The spin plane `mv.y ^ mv.x`: right multiplication by it squares to minus one.
 SPIN_PLANE = mv.yx                                  # [] Bivector
 
 
@@ -55,20 +57,20 @@ def spinor(density: float, beta: float, rotor: Even) -> Spinor:
 
 
 def frame(psi: Spinor) -> Frame:
-    """The spinor's map on spacetime: rho times its Lorentz transformation. beta drops out, because
-    the pseudoscalar anticommutes with vectors."""
+    """The spinor's map on spacetime: the density times its Lorentz transformation. beta drops out,
+    because the pseudoscalar anticommutes with vectors."""
     return psi >> Vector
 
 
 def invariants(psi: Spinor) -> Even:
-    """psi times its reverse: rho e^(I beta), a scalar plus a pseudoscalar."""
+    """psi times its reverse: `(PSEUDOSCALAR * beta).exp() * density`, a scalar plus a pseudoscalar."""
     return psi.symmetric_reverse_product()
 
 
 def duality(psi: Spinor):
     """What the spinor does to bivectors beyond what its frame does: its own sandwich on bivectors,
     composed with the inverse of the frame's extension to bivectors. It is multiplication by
-    e^(I beta) / rho."""
+    `(PSEUDOSCALAR * beta).exp() / density`."""
     return (psi >> Bivector)(frame(psi).outermorphism(Bivector).inverse())
 
 
@@ -78,7 +80,7 @@ def current(psi: Spinor) -> Vector:
 
 
 def spin(psi: Spinor) -> Vector:
-    """The electron's spin, in units of hbar / 2: the frame's image of the z axis."""
+    """The electron's spin, in units of half the reduced Planck constant: the frame's image of the z axis."""
     return psi >> mv.z
 
 
@@ -104,12 +106,12 @@ def energy(momentum: Vector, mass: float) -> Scalar:
 def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spinor:
     """The plane wave's spinor at the given times.
 
-    The projector (1 + H / E) / 2 splits the spinor into its positive- and negative-energy parts,
-    which turn in the spin plane at the energy, in opposite senses.
+    The projector onto positive energy, `0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)`,
+    splits the spinor into its positive- and negative-energy parts, which turn in the spin plane at
+    the energy, in opposite senses.
     """
     E = energy(momentum, mass)
     positive = 0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)
-    # e^(I sigma3 E t)
     turn = (SPIN_PLANE * E * times).exp()                                   # [times] Rotor
     return positive * turn.reverse() + (psi - positive) * turn
 

@@ -9,8 +9,9 @@ own antipodal image, a belt around the great sphere orthogonal to its centre, th
 ellipsoid is short and thin where it is long; small ellipsoids bounce in it, and the eye sits in the belt
 looking along it. The needle: an ellipsoid 80° long almost meets itself through the antipode of its
 centre, and the eye looks at the 20° gap between its tips. The tunnel: the other real quadric of
-the 3-sphere, the Clifford torus x² + y² = tan²ρ (z² + w²), is a wall that splits the sphere into
-two linked solid tori; ellipsoids bounce inside one, and the eye on its core circle looks down the tube.
+the 3-sphere, the Clifford torus of the points at a fixed angle from the great circle
+x == y == 0, is a wall that splits the sphere into two linked solid tori; ellipsoids bounce
+inside one, and the eye on its core circle looks down the tube.
 """
 
 from __future__ import annotations
@@ -40,7 +41,8 @@ def ellipse_mesh(half_angles: np.ndarray, mass: np.ndarray, n_phi: int, n_r: int
     # Sphere area element of the gnomonic parametrization, times trapezoid quadrature weights,
     # so the point masses approximate a uniform mass distribution over the ellipse.
     area = tx * ty * R / (1.0 + x**2 + y**2) ** 1.5
-    w_r = np.ones(n_r); w_r[-1] = 0.5  # the omitted R = 0 node has zero area element
+    # The omitted R == 0 node has zero area element.
+    w_r = np.ones(n_r); w_r[-1] = 0.5
     w_phi = np.ones(n_phi + 1); w_phi[[0, -1]] = 0.5
     point_mass = (area * w_phi[:, None] * w_r[None, :]).reshape(area.shape[:-2] + (-1,))
     points = (S2.mv.yz * x + S2.mv.zx * y + S2.mv.xy).normalized().reshape(point_mass.shape)
@@ -48,7 +50,7 @@ def ellipse_mesh(half_angles: np.ndarray, mass: np.ndarray, n_phi: int, n_r: int
 
 
 def toward(theta: np.ndarray, phi: np.ndarray) -> S2.Motor:
-    """Rotors carrying the pole to polar angle θ at azimuth φ."""
+    """Rotors carrying the pole to polar angle theta at azimuth phi."""
     return ((S2.mv.yz * -np.sin(phi) + S2.mv.zx * np.cos(phi)) * (theta / 2.0)).exp()
 
 
@@ -94,8 +96,10 @@ def tumbling(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
 
     # --- checks ---------------------------------------------------------------------------
     conserved(trajectory, 5e-4)
-    spin = (trajectory.rate[:, 0] | S2.mv.yz).to_array()           # the rate about the intermediate axis
-    assert np.count_nonzero(np.diff(np.sign(spin))) >= 2              # it flips over and back: the Dzhanibekov effect
+    # The rate about the intermediate axis changes sign at least twice: it flips over and back,
+    # the Dzhanibekov effect.
+    spin = (trajectory.rate[:, 0] | S2.mv.yz).to_array()
+    assert np.count_nonzero(np.diff(np.sign(spin))) >= 2
     return trajectory, bodies.color
 
 
@@ -133,8 +137,8 @@ def resting(color: np.ndarray, Q: S3.DualQuadric, rate: S3.Bivector, mass: float
 def population(rng: np.random.Generator, candidates: int, sizes: tuple[float, float]) -> S3.Bodies:
     """Random ellipsoids: half-widths log-uniform per axis between the sizes, so needles, discs and blobs;
     placed uniformly on the 3-sphere. Tennis-racket rates: spin about the intermediate axis, the
-    middle half-width, whose bivector is the plane it is normal to (axis x -> yz, y -> zx,
-    z -> xy), plus a nudge and a drift across the sphere."""
+    middle half-width, whose bivector is the plane it is normal to (yz for the x axis, zx for y,
+    xy for z), plus a nudge and a drift across the sphere."""
     half_widths = 10 ** rng.uniform(np.log10(sizes[0]), np.log10(sizes[1]), size=(candidates, 3))
     rate = rng.normal(size=(candidates, 6)) * np.array([0.3, 0.3, 0.3, 0.6, 0.6, 0.6])
     rate[np.arange(candidates), np.argsort(half_widths, axis=-1)[:, 1]] = rng.choice([-5.0, 5.0], size=candidates)
@@ -186,7 +190,7 @@ def crowd(frames: int):
 def gap(frames: int):
     rng = np.random.default_rng(5)
     # The large object: an ellipsoid reaching 60°, 75° and 70° along x, y, z, so the belt around the great
-    # sphere w = 0 between it and its antipodal image is 30°, 15° and 20° thick on either side.
+    # sphere w == 0 between it and its antipodal image is 30°, 15° and 20° thick on either side.
     huge = resting(np.array([0.75, 0.7, 0.6]), S3.ellipsoid(np.tan(np.radians([[60.0, 75.0, 70.0]]))), S3.mv.bivector(np.zeros((1, 6))), 500.0, rng)
     bodies = admitted(S3.Bodies.join(huge, population(rng, 2000, (0.03, 0.15))), 1, 60)
     # The eye a quarter turn along x, in the middle of the belt's thick part, looking along y where
@@ -219,9 +223,10 @@ def needle(frames: int):
 
 def tunnel(frames: int):
     rng = np.random.default_rng(11)
-    # The large object: a torus around the great circle x = y = 0, the dual quadric with -1 across
-    # the tube in x and -1/1.5² in y, an elliptical cross-section, and 1/tan²ρ along it with ρ = 20°
-    # at w and 40° a quarter turn along the core (z), so the tube widens and narrows down the view.
+    # The large object: a torus around the great circle x == y == 0, the dual quadric with -1 across
+    # the tube in x and -1 / 1.5**2 in y, an elliptical cross-section, and 1 / np.tan(radius)**2
+    # along it, with the tube's angular radius 20° at w and 40° a quarter turn along the core (z),
+    # so the tube widens and narrows down the view.
     # Its inside, in the sense of its form, is the complementary solid torus; the crowd lives in the tube.
     tube = S3.quadric(np.array([[-1.0, -1.0 / 1.5**2, 1.0 / np.tan(np.radians(40.0))**2, 1.0 / np.tan(np.radians(20.0))**2]]))
     torus = resting(np.array([0.55, 0.65, 0.75]), tube, S3.mv.bivector(np.zeros((1, 6))), 500.0, rng)
@@ -239,7 +244,8 @@ def tunnel(frames: int):
     # --- checks ---------------------------------------------------------------------------
     collisions_conserve_energy(trajectory)
     final = trajectory.surfaces[-1]
-    assert (S3.overlap(final[0], final[1:])[0] > -1e-2).all()           # nobody ended up in the wall
+    # Nobody ended up in the wall.
+    assert (S3.overlap(final[0], final[1:])[0] > -1e-2).all()
     np.testing.assert_allclose((wall_hit & wall_surface(wall_hit)).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((camera | light).to_array(), (light | wall_hit).to_array(), atol=1e-12)
     return trajectory, bodies.color, eye, light

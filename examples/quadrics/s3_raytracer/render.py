@@ -25,18 +25,21 @@ def shade(hit: Point, surfaces: Quadric, body_idx: np.ndarray, colors: np.ndarra
     """Lighting is done on the 3-sphere itself, not on the projective space: the light is one point of
     S³, and the hit is the point of S³ the ray reaches first, kept with its own sign rather than
     re-signed to a positive weight, since the antipode of a hit is a different point with the
-    opposite facing. The one great circle out of the light through the hit reaches it along the
-    arc of length t; the surface is lit where that arc arrives from outside, which the pairing of
-    the polar plane with the light decides, with the flux falloff 1/sin²t of a point source.
+    opposite facing. The one great circle out of the light through the hit reaches it along an
+    arc; the surface is lit where that arc arrives from outside, which the pairing of the polar
+    plane with the light decides, with the flux falloff 1 / arc.sin()**2 of a point source.
     """
     polar = surfaces[body_idx](hit)
     with np.errstate(invalid="ignore", divide="ignore"):
-        arc = ((hit | light) / (light | light)).clip(-1.0, 1.0).arccos()     # from the light to the hit, 0..π
+        # The arc from the light to the hit, between 0 and np.pi.
+        arc = ((hit | light) / (light | light)).clip(-1.0, 1.0).arccos()
         sine = arc.sin()
-        cosine = (polar & light) / (polar.norm() * sine)                   # negative where the light is outside
+        # Negative where the light is outside.
+        cosine = (polar & light) / (polar.norm() * sine)
         lambert = np.where(cosine < 0.0, (-cosine / (sine * sine)).to_array(), 0.0)
     lambert = np.where(shadowed(hit, surfaces, light), 0.0, lambert)
-    return colors[body_idx] * (0.15 + 0.85 * np.clip(lambert, 0.0, 1.0))[:, None]   # radiance carries undimmed
+    # Radiance carries undimmed.
+    return colors[body_idx] * (0.15 + 0.85 * np.clip(lambert, 0.0, 1.0))[:, None]
 
 
 def render(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, chart: ScreenPoint, shape: tuple[int, int], supersample: int) -> np.ndarray:
@@ -46,13 +49,15 @@ def render(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point
     body_idx = np.zeros(chart.shape, dtype=int)
     for body in range(surfaces.shape[0]):
         candidate = reproject(conics[body], polars[body], chart)
-        candidate = np.where(candidate.isnan(), -np.inf, candidate.to_array())   # a miss is infinitely far
+        # A miss is infinitely far.
+        candidate = np.where(candidate.isnan(), -np.inf, candidate.to_array())
         nearer = candidate > depth
         depth = np.where(nearer, candidate, depth)
         body_idx = np.where(nearer, body, body_idx)
     visible = np.isfinite(depth)
     depth = np.where(visible, depth, 0.0)
-    hit = ((eye_frame >> origin) * depth + (eye_frame >> chart)).normalized()   # the point of S³ hit first, sign and all
+    # The point of S³ hit first, sign and all.
+    hit = ((eye_frame >> origin) * depth + (eye_frame >> chart)).normalized()
     image = np.where(visible[:, None], shade(hit, surfaces, body_idx, colors, light), 0.02)
     rows, cols = shape
     return np.clip(image.reshape(rows, supersample, cols, supersample, 3).mean(axis=(1, 3)), 0.0, 1.0)

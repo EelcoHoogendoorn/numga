@@ -75,7 +75,7 @@ def draw_curvature_map(
     tidal readout. Applying the curvature once more gives zero.
     """
     incoming: Bivector = observer.wedge(edge)                            # [] Bivector
-    outgoing: Bivector = curvature(incoming)                             # [] Bivector (null)
+    outgoing: Bivector = curvature(incoming)                             # [] Bivector
     readout: Vector = outgoing.commutator(observer)                      # [] Vector
     patches = (spacetime(core.plane_patch(incoming, edge)), spacetime(core.plane_patch(outgoing, edge)))
     observer_arrow, wave_arrow, readout_arrow = arrow(observer), arrow(wave), arrow(readout)
@@ -109,19 +109,21 @@ def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar) -> plt.Figure:
     h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, n_phases] float
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
     for ax, values in ((top, h), (bottom, h2)):
-        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)                  # plus
-        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)                # cross
+        # Plus in blue, cross in orange.
+        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
+        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
         ax.spines[["top", "right"]].set_visible(False)
     return fig
 
 
 def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
-    """Tidal amplitude measured by observers boosted along the wave, against exp(-2 zeta)."""
+    """Tidal amplitude measured by observers boosted along the wave, against `np.exp(-2 * rapidities)`."""
     measured = amplitudes.kernel[..., 0]                                 # [n] float
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
     fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white")
-    ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)                  # the Doppler factor squared
-    ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)          # the tidal map's largest singular value
+    # The Doppler factor squared as a line, the tidal map's largest singular value as dots.
+    ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)
+    ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)
     ax.set_yscale("log")
     ax.spines[["top", "right"]].set_visible(False)
     return fig

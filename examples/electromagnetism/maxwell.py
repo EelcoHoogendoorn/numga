@@ -1,26 +1,28 @@
 """Maxwell Stress-Energy Extensor, Relativistic Dust Tensor, and Lorentz Force in Spacetime Algebra (STA).
 
-Mathematical formulation of energy-momentum extensors in STA Cl(1, 3):
-1. Spacetime Algebra R^{1,3}: (+---) signature with generators gamma_0^2 = +1, gamma_i^2 = -1.
+Mathematical formulation of energy-momentum extensors in STA, `Algebra("t+x-y-z-")`:
+1. Spacetime Algebra: `t * t == 1` and `x * x == y * y == z * z == -1`.
 2. Maxwell Energy-Momentum Extensor:
-       T_EM(v) = -0.5 * F * v * F = 0.5 * (F >> v)
-   with exact tracelessness Tr(T_EM) == 0 and Poynting flux S = E x B. The same map is the
-   iterated Lorentz force minus the Lagrangian pressure, F . (F . v) - 0.5 <F^2>_0 v, and for
-   a pure travelling wave it collapses to a single null dyad, E^2 k (k . v): massless dust.
+       T_em(v) == -0.5 * F * v * F == 0.5 * (F >> v)
+   with exact tracelessness `T_em.trace() == 0` and Poynting flux `T_em(t) - t * (t | T_em(t))`.
+   The same map is the iterated Lorentz force minus the Lagrangian pressure,
+   `F.commutator(F.commutator(v)) - 0.5 * (F * F).select.scalar() * v`, and for a pure
+   travelling wave it collapses to a single null dyad, `Ex ** 2 * k * (k | v)`: massless dust.
 3. Relativistic Dust Energy-Momentum Extensor (pressureless matter):
-       T_dust(v) = rho_0 * (u . v) * u
-   with rank 1, zero spatial stress in rest frame, and invariant trace Tr(T_dust) == rho_0.
+       T_moving(v) == rho * u * (u | v)
+   with rank 1, zero spatial stress in rest frame, and invariant trace `T_moving.trace() == rho`.
 4. Particle Cloud Extensor, the same rank-1 quadric summed over a batch of four-velocities:
-       T_cloud(v) = sum_i m_i * (u_i . v) * u_i
+       T_cloud(v) == (u_cloud * (u_cloud | v) * mass).sum()
    whose eigenstructure is an ideal fluid: the timelike eigenvalue is the rest-frame energy
-   density, the spatial eigenvalues are minus the pressure, and Tr(T_cloud) = sum_i m_i.
-   A cloud of null rays is the massless limit: exactly traceless, so p = rho / 3 exactly.
+   density, the spatial eigenvalues are minus the pressure, and `T_cloud.trace() == mass.sum()`.
+   A cloud of null rays is the massless limit: exactly traceless, so the pressure is exactly a
+   third of the energy density.
 5. Ideal Relativistic Fluid Extensor:
-       T_fluid(v) = (rho_0 + p) * (u . v) * u - p * v
-   with Tr(T_fluid) = rho_0 - 3 * p, matched against the cloud.
-6. Lorentz 4-Force Density on a current: f = J x F, the commutator.
+       T_fluid(v) == (energy_cloud + pressure) * t * (t | v) - pressure * v
+   with `T_fluid.trace() == energy_cloud - 3 * pressure`, matched against the cloud.
+6. Lorentz 4-Force Density on a current: `force = J.commutator(F)`.
 7. Lorentz Covariance via Rotor Sandwich:
-       T' = L >> T(L << Vector)
+       boost >> T_em(boost << Vector) == 0.5 * ((boost >> F) >> Vector)
 """
 
 from __future__ import annotations
@@ -31,26 +33,28 @@ from numga import NumpyContext
 from numga.algebras import STA
 
 # ---------------------------------------------------------------------------
-# 1. Spacetime Algebra Setup (STA: R_{1,3}, t+ x- y- z-)
+# 1. Spacetime Algebra Setup (STA: Algebra("t+x-y-z-"))
 # ---------------------------------------------------------------------------
 ctx = NumpyContext(STA)
 mv = ctx.multivector
 
 Scalar = STA.gatype.scalar()
 Vector = STA.gatype.vector()
-StressEnergy = STA.gatype((Vector, Vector))  # momentum flux <= observer
+# A stress-energy map takes an observer to the momentum flux it sees.
+StressEnergy = STA.gatype((Vector, Vector))  # Vector <- Vector
 
 # The rest observer and spatial axes, each with full vector support, so the tensors built on
 # them are endomorphisms.
 t, x, y, z = mv.vector(np.eye(4))
-PARTICLES = 2000                             # sample size of the particle and ray clouds
+# Sample size of the particle and ray clouds.
+PARTICLES = 2000
 
 
 # ---------------------------------------------------------------------------
 # 2. Read-outs and Samples
 # ---------------------------------------------------------------------------
 def normal_stress(T: StressEnergy, n: Vector) -> Scalar:
-    """Normal traction on a face with unit spatial normal n (n^2 = -1): sigma(n) = n^{-1} . T(n)."""
+    """Normal traction on a face with unit spatial normal n, `n * n == -1`: `n.inverse() | T(n)`."""
     return n.inverse() | T(n)
 
 
@@ -62,7 +66,8 @@ def real_sorted(values: Scalar) -> Scalar:
 def sphere_directions(n: int, rng: np.random.Generator) -> Vector:
     """n unit spatial directions, uniform on the sphere."""
     samples: Vector = mv.vector(np.concatenate([np.zeros((n, 1)), rng.normal(size=(n, 3))], axis=1))
-    return samples / (-(samples | samples)).square_root()   # a spatial vector squares to minus its length squared
+    # A spatial vector squares to minus its length squared.
+    return samples / (-(samples | samples)).square_root()
 
 
 def isotropic_cloud(n: int, speed: float, rng: np.random.Generator) -> Vector:
@@ -72,7 +77,7 @@ def isotropic_cloud(n: int, speed: float, rng: np.random.Generator) -> Vector:
 
 
 def null_cloud(n: int, rng: np.random.Generator) -> Vector:
-    """n null rays k = t + direction, directions uniform on the sphere."""
+    """n null rays `t + direction`, directions uniform on the sphere."""
     return t + sphere_directions(n, rng)
 
 
@@ -83,7 +88,8 @@ def main() -> None:
     rng = np.random.default_rng(0)
 
     # -----------------------------------------------------------------------
-    # A. Maxwell Energy-Momentum Extensor: plane wave E = Ex x, B = By y along +z
+    # A. Maxwell Energy-Momentum Extensor: plane wave along +z, electric field Ex along x,
+    #    magnetic field By along y
     # -----------------------------------------------------------------------
     Ex, By = 2.0, 2.0
     F = mv.tx * Ex + mv.zx * By
@@ -94,12 +100,13 @@ def main() -> None:
     energy = t | flux
     poynting = flux - t * energy
 
-    # A pure travelling wave has |E| = |B|, and its tensor is one null dyad along the ray
-    # k = t + z: the massless counterpart of the dust tensor below.
+    # A pure travelling wave has electric and magnetic fields of equal strength, and its tensor
+    # is one null dyad along the ray `k = t + z`: the massless counterpart of the dust tensor below.
     k = t + z
 
-    # For any field the same map is the Lorentz force generator F . v iterated, minus the
-    # Lagrangian <F^2>_0 = E^2 - B^2 as an isotropic pressure.
+    # For any field the same map is the Lorentz force generator `F.commutator(v)` iterated, minus
+    # the Lagrangian `(F * F).select.scalar()`, the squared electric minus the squared magnetic
+    # field strength, as an isotropic pressure.
     F_any = mv.tx * 0.7 + mv.ty * -0.4 + mv.tz * 1.1 + mv.yz * 0.3 + mv.zx * -0.8 + mv.xy * 0.5
     lagrangian = (F_any * F_any).select.scalar()
     stress_from_force = F_any.commutator(F_any.commutator(Vector)) - 0.5 * lagrangian * Vector
@@ -120,10 +127,11 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # C. Particle Cloud: the dust quadric summed over four-velocities is a fluid
     # -----------------------------------------------------------------------
-    # Each particle contributes m u (u . v). Summed over an isotropic cloud, the tensor's
+    # Each particle contributes `mass * u * (u | v)`. Summed over an isotropic cloud, the tensor's
     # eigenstructure is that of an ideal fluid at rest: the timelike eigenvalue is the energy
     # density, the three spatial eigenvalues are minus the pressure, and for particles all at
-    # one speed the pressure is rho v^2 / 3. The trace is the summed rest mass, exactly.
+    # one speed the pressure is `energy_cloud * speed ** 2 / 3`. The trace is the summed rest
+    # mass, exactly.
     speed = 0.5
     u_cloud = isotropic_cloud(PARTICLES, speed, rng)
     mass = mv.scalar(np.full((PARTICLES, 1), 1.0 / PARTICLES))
@@ -133,8 +141,9 @@ def main() -> None:
     stresses, energy_cloud = spectrum[:-1], spectrum[-1]
     pressure = -stresses.mean()
 
-    # A cloud of null rays is the massless limit. Each k is null, so every dyad is traceless
-    # and the trace vanishes to roundoff rather than statistically: p = rho / 3 exactly.
+    # A cloud of null rays is the massless limit. Each ray is null, so every dyad is traceless
+    # and the trace vanishes to roundoff rather than statistically: the pressure is exactly
+    # `energy_light / 3`.
     rays = null_cloud(PARTICLES, rng)
     T_light: StressEnergy = (rays * (rays | Vector) * mass).sum()
     light_spectrum = real_sorted(T_light.eigvals())
@@ -145,18 +154,18 @@ def main() -> None:
     # -----------------------------------------------------------------------
     T_fluid: StressEnergy = (energy_cloud + pressure) * t * (t | Vector) - pressure * Vector
 
-    # Conformal radiation fluid: p = rho / 3 gives Tr(T) == 0
+    # Conformal radiation fluid: pressure `rho / 3` gives `T_radiation.trace() == 0`
     T_radiation: StressEnergy = (rho + rho / 3.0) * t * (t | Vector) - (rho / 3.0) * Vector
 
     # -----------------------------------------------------------------------
-    # E. Lorentz 4-Force Density on a current: f = J x F
+    # E. Lorentz 4-Force Density on a current: `force = J.commutator(F)`
     # -----------------------------------------------------------------------
     rho_q = 0.5
     J = u * rho_q
     force = J.commutator(F)
 
     # -----------------------------------------------------------------------
-    # F. Lorentz Rotor Sandwich Covariance: T' = L >> T(L << Vector)
+    # F. Lorentz Rotor Sandwich Covariance: `boost >> T_em(boost << Vector)`
     # -----------------------------------------------------------------------
 
     transformed_stress = boost >> T_em(boost << Vector)

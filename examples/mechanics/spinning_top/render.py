@@ -5,8 +5,9 @@ from examples.mechanics.spinning_top import core
 
 mv, w, Point = core.mv, core.w, core.Point
 Scalar, Direction, Quadric, Motor = core.Scalar, core.Direction, core.Quadric, core.Motor
-PART_COLOURS = np.array([[0.85, 0.30, 0.25], [0.35, 0.35, 0.40], [0.80, 0.70, 0.35]])   # disc, stem, tip
-SECTOR_CONTRAST = np.array([0.25, 0.0, 0.0])              # alternating sectors, drawn on the disc, show its spin
+# Colours of the disc, the stem and the tip; alternating sectors, drawn on the disc, show its spin.
+PART_COLOURS = np.array([[0.85, 0.30, 0.25], [0.35, 0.35, 0.40], [0.80, 0.70, 0.35]])
+SECTOR_CONTRAST = np.array([0.25, 0.0, 0.0])
 
 
 def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float,
@@ -15,7 +16,8 @@ def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float,
     elevation and azimuth in degrees: one origin per pixel on a screen far behind the scene, one
     shared heading, and the unit direction toward a lamp above the viewer's left shoulder."""
     tilt, turn = np.radians(elevation), np.radians(azimuth)
-    back = np.array([np.cos(tilt) * np.cos(turn), np.cos(tilt) * np.sin(turn), np.sin(tilt)])   # toward the viewer
+    # Toward the viewer.
+    back = np.array([np.cos(tilt) * np.cos(turn), np.cos(tilt) * np.sin(turn), np.sin(tilt)])
     right = np.array([-np.sin(turn), np.cos(turn), 0.0])
     up = np.cross(back, right)
     offsets = np.linspace(-extent, extent, pixels)
@@ -27,8 +29,8 @@ def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float,
 def hits(surface: Quadric, origins: Point, heading: Direction) -> tuple[np.ndarray, Point]:
     """The distance along each ray's line to where it enters the solid quadric, infinite where it
     misses, and the points hit. Bound to a ray in both slots, the form is a quadratic in the distance;
-    at the entering root it falls through zero, so the root is the one with a * distance + b = -root,
-    wherever along the line the ray starts."""
+    at the entering root it falls through zero, so the root is the one with
+    `a * distance + b == -np.sqrt(discriminant)`, wherever along the line the ray starts."""
     a = (surface(heading) & heading).to_array()
     b = (surface(heading) & origins).to_array()
     c = (surface(origins) & origins).to_array()
@@ -61,7 +63,8 @@ def frame(motor: Motor, parts: Quadric, ground: Quadric, view: tuple[float, floa
     carries a checkerboard, and each part alternating sectors about the top's axis, with its own
     contrast."""
     origins, heading, lamp = camera(*view, centre, extent, pixels)
-    placed = motor >> parts(motor << Point)                         # [parts] Quadric in the world
+    # The parts in the world.
+    placed = motor >> parts(motor << Point)                         # [parts] Plane <- Point
     depth = np.full((pixels, pixels), np.inf)
     rgb = np.ones((pixels, pixels, 3))
     distance, hit = hits(ground, origins, heading)
@@ -74,7 +77,8 @@ def frame(motor: Motor, parts: Quadric, ground: Quadric, view: tuple[float, floa
     for part, colour, contrast in zip(placed, PART_COLOURS, SECTOR_CONTRAST):
         distance, hit = hits(part, origins, heading)
         nearer = distance < depth
-        local = coordinates(motor << hit)                            # in the top's own frame
+        # The hit in the top's own frame.
+        local = coordinates(motor << hit)
         sector = (np.floor(np.arctan2(local[..., 1], local[..., 0]) / (np.pi / 4)) % 2)[..., None]
         tint = colour * (1 - contrast * (1 - sector))
         shade = 0.35 + 0.65 * np.abs(normals(part, hit) @ lamp)

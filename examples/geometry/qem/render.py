@@ -57,7 +57,7 @@ def draw_error_ellipsoid(
     color: str,
     alpha: float,
 ) -> None:
-    """Draw the error quadric isosurface Q(x) & x <= epsilon^2 around center."""
+    """Draw the error quadric isosurface quadric(x) & x <= epsilon ** 2 around center."""
     theta = np.linspace(0.0, np.pi, 17)
     phi = np.linspace(0.0, 2.0 * np.pi, 25)
     dx = np.sin(theta)[:, None] * np.cos(phi)[None, :]

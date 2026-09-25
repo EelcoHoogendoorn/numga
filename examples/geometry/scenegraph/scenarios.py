@@ -23,7 +23,7 @@ def camera_rig():
     front_lens, rear_lens, rear_plane = lens_train(1.0, 0.8, -0.3)
     # Pupil point on the entrance pupil aperture (offset from optical center to induce bending):
     pupil = (mv.xw * 0.02).exp() >> origin
-    # Sensor plane at z = -1.25: plane equation z + 1.25 * w = 0
+    # The sensor plane, where z == -1.25:
     sensor_plane = mv.z + 1.25 * mv.w
     camera = lens_camera(pose, front_lens, rear_lens, pupil, sensor_plane)
 
@@ -40,8 +40,8 @@ def scenegraph():
     # Articulated robot arm forward kinematics:
     bodies_to_world, _ = robot_arm((0.35, -0.45, 0.85, -0.40))
 
-    # The punchline: collapse the entire visual pipeline, kinematics to pixels, into a
-    # single extensor per body, and project all canonical vertices in one pass.
+    # Collapse the entire visual pipeline, kinematics to pixels, into a single extensor
+    # per body, and project all canonical vertices in one pass.
     local_to_pixel = world_to_pixel(bodies_to_world)                 # [bodies] Point <- Point
     projected_pixels = project_vertices(local_to_pixel, unit_box)     # [bodies, vertices] Point
     world_vertices = bodies_to_world[:, None](unit_box[None, :])      # [bodies, vertices] Point

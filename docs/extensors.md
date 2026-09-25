@@ -148,12 +148,12 @@ tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vect
 ```python
 inside = (pixels & shape(pixels)) < 0                             # drawing: one test per pixel
 margin, deepest = overlap(shape, relative >> other(relative << Point))   # the other shape, in this one's frame
-wrench = shape(deepest) | shape.inverse()(shape(deepest))         # push along the contact normal
-impulse = -2 * closing / (wrench & inertia.inverse()(wrench))     # one body's share; the pair adds both
+forque = shape(deepest) | shape.inverse()(shape(deepest))         # push along the contact normal
+impulse = -2 * closing / (forque & inertia.inverse()(forque))     # one body's share; the pair adds both
 ```
 
 * **Shapes as quadric forms.** Drawing, collision and contact all come from the form: a pixel is inside where it is negative, and two shapes are apart exactly when some blend of their forms is positive.
-* **One formula for the bounce.** The impulse follows from the contact wrench and each body's inverse inertia, and energy and momentum are conserved.
+* **One formula for the bounce.** The impulse follows from the contact forque and each body's inverse inertia, and energy and momentum are conserved.
 
 ---
 

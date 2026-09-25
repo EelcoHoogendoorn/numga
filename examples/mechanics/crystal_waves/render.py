@@ -24,7 +24,8 @@ def draw_focusing(velocities: list[core.Vector], names: list[str], bins: int) ->
         flow = components(velocity)                                    # [count, waves, 3]
         for ax, wave, mode in zip(row, np.moveaxis(flow, 1, 0), MODES):
             ahead = wave[:, 2] > 0
-            face = wave[ahead, :2] / wave[ahead, 2:]                   # where each ray meets the face z = 1
+            # Where each ray meets the face one unit along z.
+            face = wave[ahead, :2] / wave[ahead, 2:]
             density, _, _ = np.histogram2d(face[:, 0], face[:, 1], bins=bins, range=[[-1.5, 1.5], [-1.5, 1.5]])
             ax.imshow(np.log1p(density.T), cmap="inferno", origin="lower", extent=[-1.5, 1.5, -1.5, 1.5])
             ax.set_title(f"{name}: {mode}", fontsize=10)

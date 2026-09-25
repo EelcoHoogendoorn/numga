@@ -1,12 +1,15 @@
 """Projective cameras, shadows and epipolar geometry from supplied geometric data.
 
-The usual pipeline builds a 4x4 projection matrix and applies it at the very end.
-Here the camera is an expression with a hole, (centre ∨ point) ∧ screen, and the
-matrix is what you get by choosing which hole to leave open. Every question below is
+The camera is an expression with a hole, `(centre & Point) ^ screen`: join the point
+with the centre into a ray, and meet the ray with the screen. Every question below is
 the same expression with a different slot open.
 
 This module is the mathematics: types, constructors, and the expressions with holes.
 The scenarios choose the scene and the reference frame.
+
+In the matrix notation of projective vision the camera reads as a four-by-four projection
+matrix applied at the end of a pipeline, the spotlight and sunlight maps as shadow matrices,
+and the correspondence form as the fundamental matrix.
 """
 
 from __future__ import annotations
@@ -65,16 +68,15 @@ def shadows(body: Point, ground: Plane, point_light: Point, sun: Point,
             corner: Point, light_path: Point):
     """Cast a body's shadows, then reopen the light slot to sweep one corner's shadow."""
     # Join the point with the light into a ray, then meet the ray with the ground. With the
-    # point slot open this is a linear map Point -> Point: the shadow matrix. Nothing in the
-    # expression cares whether the light is a finite point or a direction at infinity, so
-    # the sun's orthographic shadow is the same line of code.
+    # point slot open this is a linear map, Point <- Point. Nothing in the expression cares
+    # whether the light is a finite point or a direction at infinity, so the sun's
+    # orthographic shadow is the same line of code.
     spotlight: Camera = (point_light & Point) ^ ground
     sunlight: Camera = (sun & Point) ^ ground
 
     # Bind a different slot and you ask a different question. Fix one corner and leave
     # the light open: the corner's shadow is now a linear map of the light position, so a
-    # whole path of light positions binds in one call. A fixed pipeline cannot express this
-    # without rebuilding its matrix per light.
+    # whole path of light positions binds in one call.
     shadow_of_corner: ShadowTrail = (Point & corner) ^ ground
 
     return spotlight(body), sunlight(body), shadow_of_corner(light_path)
@@ -91,9 +93,8 @@ def stereo(subject: Point, centre: Point, screen: Plane,
     line_camera: LineCamera = (centre & Line) ^ screen
 
     # The camera moves as a map: pull world points back into the rig frame, push image
-    # points forward. Because the map is an extensor and not a matrix baked at the end, the
-    # line camera moves the same way and stays consistent with the point camera, image of a
-    # join = join of the images.
+    # points forward. The line camera moves the same way and stays consistent with the
+    # point camera: the image of a join is the join of the images.
     camera_1 = rig_1 >> camera(rig_1 << Point)
     camera_2 = rig_2 >> camera(rig_2 << Point)
     line_camera_2 = rig_2 >> line_camera(rig_2 << Line)
@@ -109,9 +110,8 @@ def stereo(subject: Point, centre: Point, screen: Plane,
     epipolar_lines_2 = line_camera_2(centre_1 & image_1)
 
     # Two image points correspond iff their rays meet, and two lines meet iff their wedge
-    # vanishes. Leave both point slots open and that sentence is a bilinear form whose
-    # kernel is the fundamental matrix. There is no matrix to slap on at the end here; the
-    # form exists only because the rays were never evaluated.
+    # vanishes. Leave both point slots open and that sentence is a bilinear form on image
+    # points.
     correspondence: Correspondence = (centre_1 & Point) ^ (centre_2 & Point)
 
     return image_1, image_2, epipole_2, epipolar_lines_2, correspondence

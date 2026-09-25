@@ -13,8 +13,9 @@ from examples.optics.lens_camera.core import (
     on_planes, origin, point, section, unit,
 )
 
-FOCAL = np.array([1.0, 0.6])                  # focal lengths of the front and the rear lens
-FRONT_AT = 1.0                                # the front lens sits at x = 1; the rear lens moves to zoom
+# Focal lengths of the front and the rear lens. The front lens sits at x == 1; the rear lens moves to zoom.
+FOCAL = np.array([1.0, 0.6])
+FRONT_AT = 1.0
 
 
 # A scene: a grid of points at three depths in front of the camera, and one subject on the far

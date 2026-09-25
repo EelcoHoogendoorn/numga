@@ -59,9 +59,9 @@ def berry(radii: np.ndarray, gaps: np.ndarray, count: int) -> tuple[core.Rotor, 
 
     # --- checks
     # Without a gap every loop comes back turned by a full turn: the rotor is -1, a Berry phase of pi.
-    # With one, a small loop's phase is that of a cone, pi (1 - gap / sqrt(gap^2 + (v q)^2)), in
-    # both valleys. The rotor's scalar part is the cosine of the phase; comparing one minus it keeps
-    # small phases visible.
+    # With one, a small loop's phase is that of a cone,
+    # `np.pi * (1 - gaps / np.sqrt(gaps ** 2 + (VELOCITY * radii) ** 2))`, in both valleys. The
+    # rotor's scalar part is the cosine of the phase; comparing one minus it keeps small phases visible.
     np.testing.assert_allclose(rotors[gaps == 0.0].select[0].to_array(), -1.0, atol=1e-12)
     near = np.pi * (1 - gaps / np.sqrt(gaps**2 + (VELOCITY * radii[0]) ** 2))
     assert np.allclose(1 - rotors[:, :, 0].select[0].to_array(), 1 - np.cos(near)[:, None], rtol=1e-2, atol=0)

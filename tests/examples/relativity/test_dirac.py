@@ -10,8 +10,8 @@ from examples.relativity.dirac import core, render, scenarios
 
 
 def test_a_spinor_is_rho_times_a_lorentz_map_and_beta_acts_only_on_bivectors():
-    """psi >> v = rho R v R~ for vectors; on bivectors the spinor's sandwich is its frame's extension
-    times e^(I beta) / rho."""
+    """`psi >> v == density * (rotor >> v)` for vectors; on bivectors the spinor's sandwich is its
+    frame's extension times `(core.PSEUDOSCALAR * beta).exp() / density`."""
     mv = core.mv
     rotor = ((mv.tx * 0.4 + mv.xy * 0.9 + mv.yz * -0.3) * 0.5).exp()
     psi = core.spinor(2.0, 0.7, rotor)

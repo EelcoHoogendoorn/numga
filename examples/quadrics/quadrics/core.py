@@ -33,10 +33,11 @@ def support_plane(quadric: DualQuadric, normal: Plane, infinity: Plane) -> Plane
     The normal's offset is discarded, retaining only its orientation.
     """
     normal = normal.normalized()
-    center = quadric(infinity)                       # pole of the plane at infinity
+    # The pole of the plane at infinity.
+    center = quadric(infinity)
     through_center = normal - infinity * ((normal & center) / (infinity & center))
 
-    # Shift the plane until it contains its own pole: tangent & Q(tangent) = 0.
-    # Dividing by the center's weight makes the distance independent of Q's scale.
+    # Shift the plane until it contains its own pole: tangent & quadric(tangent) == 0.
+    # Dividing by the center's weight makes the distance independent of the quadric's scale.
     radius = (-(through_center & quadric(through_center)) / (infinity & center)).square_root()
     return through_center - infinity * radius

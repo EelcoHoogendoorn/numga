@@ -13,7 +13,8 @@ import numpy as np
 from examples.mechanics.manipulability import core
 
 mv, w = core.mv, core.w
-SLABS = mv("x y z", np.eye(3))                   # [3] Plane: the unit cube is |x|, |y|, |z| <= 1/2
+# The unit cube lies within half a unit of each of these planes.
+SLABS = mv("x y z", np.eye(3))                   # [3] Plane
 BOX_COLOURS = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
 VELOCITY_COLOUR, FORCE_COLOUR = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.55, 0.20])
 QUADRIC_ALPHA = 0.55
@@ -28,7 +29,8 @@ def euclidean(points: core.Point) -> np.ndarray:
 def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float, pixels: int):
     """An orthographic camera: ray origins far out along the view, one per pixel, and the heading."""
     tilt, turn = np.radians(elevation), np.radians(azimuth)
-    back = np.array([np.cos(tilt) * np.cos(turn), np.cos(tilt) * np.sin(turn), np.sin(tilt)])   # toward the viewer
+    # Toward the viewer.
+    back = np.array([np.cos(tilt) * np.cos(turn), np.cos(tilt) * np.sin(turn), np.sin(tilt)])
     right = np.array([-np.sin(turn), np.cos(turn), 0.0])
     up = np.cross(back, right)
     offsets = np.linspace(-extent, extent, pixels)
@@ -50,7 +52,8 @@ def box_hits(body: core.arm.PointMap, origins: core.Point, heading: core.Point):
     enter, leave = near.max(axis=-1), far.min(axis=-1)
     distance = np.where((enter < leave) & (enter > 0), enter, np.inf)
     face = near.argmax(axis=-1)
-    normal = np.eye(3)[face] @ np.linalg.inv(body.kernel[:3, :3])      # face normals: the inverse transpose
+    # Face normals, by the inverse transpose of the body's linear part.
+    normal = np.eye(3)[face] @ np.linalg.inv(body.kernel[:3, :3])
     return distance, normal
 
 

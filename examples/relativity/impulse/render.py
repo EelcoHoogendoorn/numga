@@ -1,7 +1,7 @@
 """Spacetime diagrams of the impulse examples: drawing only.
 
 Coordinates leave the algebra here, at the plotting boundary. Every diagram is drawn with
-x horizontal and ct vertical, in units of the proper length L0.
+x horizontal and ct vertical, in units of the proper length.
 """
 
 from __future__ import annotations
@@ -264,7 +264,8 @@ def draw_spaceships(tracks: Vector, schedules: Vector, slices: Vector, final_eve
         ax.grid(alpha=0.13)
         ax.spines[["top", "right"]].set_visible(False)
 
-    # The rear's final kink sits at the origin of the final frame, so the front's x' is the gap.
+    # The rear's final kink sits at the origin of the final frame, so the front's position in that
+    # frame is the gap.
     gaps = ct_x(final_events)[:, 1, 1]
     ax = axes[2]
     ax.set_title("In the final shared rest frame", fontsize=12, pad=38)

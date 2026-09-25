@@ -12,7 +12,8 @@ def skinning():
     rings, around = 12, 24
     skin, weight = cylinder(rings, around)
     root = mv.rotor()
-    twist = (mv.yz * (np.radians(150.0) / 2)).exp()                     # second bone: 150° about x
+    # The second bone, turned 150° about x:
+    twist = (mv.yz * (np.radians(150.0) / 2)).exp()                     # [] Motor
     motor_skin, slerp_skin, matrix_skin = blend_skin(skin, weight, root, twist)
 
     # --- checks ------------------------------------------------------------------------

@@ -33,7 +33,8 @@ AntiBivector = PGA3D.gatype.antibivector()
 # --- construction ---------------------------------------------------------------------
 def turns(plane: Plane, order: int) -> Rotor:
     """The cyclic group of `order` equal turns in a unit plane, the identity first."""
-    # A rotor turns by twice its angle: exp(plane * pi k / order) turns by 2 pi k / order.
+    # A rotor turns by twice its angle: element k, `(plane * (np.pi * k / order)).exp()`, turns by
+    # `2 * np.pi * k / order`.
     return (plane * (np.pi * np.arange(order) / order)).exp()
 
 
@@ -86,7 +87,7 @@ def conductivities(axes: Vector, gains: Scalar, groups: list[Rotor]) -> Extensor
     conductivity = (axes * (axes | Vector) * gains).sum(axis=0)
     responses = [conductivity]
     for group in groups:
-        # Pull the input into each rotated frame, apply K, and rotate the output back.
+        # Pull the input into each rotated frame, apply the conductivity, and rotate the output back.
         # The mean is unchanged by any rotation in the group: those rotations merely
         # permute the terms. This projects a measured response onto the allowed ones.
         invariant = (group >> Vector)(conductivity(group << Vector)).mean(axis=0)
@@ -120,21 +121,25 @@ def lattice_responses(seeds: Vector, cube: Rotor) -> tuple[Extensor, Extensor]:
     """Average microscopic bond responses over a crystal's cubic point group.
 
     A simple-cubic lattice has axial and face-diagonal bond families. Starting with
-    x and normalized(x+y), the 24 cube rotations generate every direction in each
-    family. Every member has the same weight, so another cube rotation just permutes
-    the terms in the average. This is the microscopic meaning of the group projection.
+    `mv.x` and `(mv.x + mv.y).normalized()`, the 24 cube rotations generate every
+    direction in each family. Every member has the same weight, so another cube
+    rotation just permutes the terms in the average. This is the microscopic meaning
+    of the group projection.
 
     Give the two families equal total response weights. For the elastic model, take
     unstressed central springs with lattice spacing 1, axial stiffness 1/3, and
     face-diagonal stiffness 1/12. Bond counts and squared lengths give weight 1 to
     each family. Diagonal springs provide shear stiffness. This particular model has
-    C12 = C44; a general cubic crystal need not have that extra relation.
+    equal elastic constants c12 and c44; a general cubic crystal need not have that
+    extra relation.
 
-    A unit bond n measures a thermal gradient through n·g. For imposed strain
-    strain(v) = s*d*(d·v), its fractional extension is s*(n·d)^2. Squaring to get
-    spring energy gives four factors of n·d, hence a scalar form with four vector
-    slots. Its value C(d,d,d,d) is the stiffness, with energy density s^2*C/2.
-    It holds transverse strain fixed; it is not the relaxed Young's modulus.
+    A unit bond n measures a thermal gradient g through `n | g`. For an imposed strain
+    of size s along a unit direction d, `strain(v) == s * d * (d | v)`, its fractional
+    extension is `s * (n | d) ** 2`. Squaring to get spring energy gives four factors
+    of `n | d`, hence a scalar form with four vector slots. Its value
+    `elasticity(d, d, d, d)` is the stiffness, with energy density
+    `s ** 2 * elasticity(d, d, d, d) / 2`. It holds transverse strain fixed; it is not
+    the relaxed Young's modulus.
 
     Cubic elasticity background: https://www.ctcms.nist.gov/oof/oof1/Manual/node152.html
     Returns the conductivity and the elasticity.

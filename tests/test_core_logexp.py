@@ -96,7 +96,7 @@ def test_scalar_square_exp_log_covers_zero_rotation_boost_and_translation(
     np.testing.assert_allclose(
         rotor.kernel,
         np.stack((scalar_function(parameters), bivector_function(parameters)), axis=-1),
-        # The quadratic base has angle error |a|³/(12*4**15), in addition
+        # The quadratic base has angle error abs(a)**3 / (12 * 4**15), in addition
         # to rounding accumulated by 15 squarings.
         rtol=1e-8, atol=1e-8,
     )
@@ -174,7 +174,7 @@ def test_general_bivector_exp_supports_independent_rotation_planes(description, 
     assert result.gatype <= algebra.gatype.rotor()
     np.testing.assert_allclose((result - reference).kernel, 0, rtol=0, atol=1e-8)
     if algebra.dimension == 6:
-        # Original motor roots normalize m+1 through scalar/Study roots.
+        # Motor roots normalize m + 1 through scalar or Study roots.
         # The full 6D even carrier has a more general reverse product.
         with pytest.raises(LookupError, match="no 'normalized'"):
             reference.with_traits(Versor, ReverseProductOne).log()
@@ -195,8 +195,8 @@ def test_log_requires_declared_unit_input_and_never_repairs_it(monkeypatch):
     declared = mv.rotor(coefficients)
     forbid_input_normalization(monkeypatch, declared)
     # This assertion deliberately lies about the unit coefficients. The first
-    # root trusts it, so its angle is atan2(b, s+1); subsequent roots are unit.
-    # Normalizing the original motor would instead give atan2(b,s).
+    # root trusts it, so its angle is np.arctan2(0.2, 1.1 + 1); subsequent roots
+    # are unit. Normalizing the supplied motor would instead give np.arctan2(0.2, 1.1).
     effective_angle = 2 * np.arctan2(0.2, 2.1)
     np.testing.assert_allclose(
         declared.log().kernel, [effective_angle], rtol=1e-10, atol=1e-10,

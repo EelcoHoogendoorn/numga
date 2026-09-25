@@ -15,7 +15,7 @@ Methods implemented:
 The last two solve an implicit step by Newton's method, differentiated by JAX.
 
 The algebra is not fixed here: each function reads it from its arguments, so the same lines
-integrate rotors of Spin(n) for any n as well as motors of PGA.
+integrate rotors in any dimension as well as motors of PGA.
 
 References:
 - Hairer, Lubich, Wanner: Geometric Numerical Integration
@@ -40,7 +40,7 @@ def RK4(f: Callable, y: Any, h: float) -> Any:
 
 
 def newton(func: Callable, init: Extensor, iterations: int = 10) -> Extensor:
-    """Solve func(x) = 0 from init by Newton steps, with the Jacobian of the kernel from JAX.
+    """Solve `func(x) == 0` from init by Newton steps, with the Jacobian of the kernel from JAX.
 
     Only the implicit integrators call this, so only they need JAX installed.
     """
@@ -63,9 +63,9 @@ def newton(func: Callable, init: Extensor, iterations: int = 10) -> Extensor:
 def inertia_from_points(points: Extensor) -> tuple[Extensor, Extensor]:
     """Construct inertia and its inverse from a point cloud of unit masses.
 
-    Each point p contributes the rate-to-momentum extensor:
-        p & (p x Bivector)
-    where & is the regressive product and x is the commutator.
+    Each point contributes the rate-to-momentum extensor:
+        points & points.commutator(points.algebra.gatype.bivector())
+    the regressive product of the point with its commutator with an open bivector.
     """
     inertia = (points & points.commutator(points.algebra.gatype.bivector())).sum(axis=-1)
     return inertia, inertia.inverse()
@@ -83,7 +83,7 @@ def free(motor: Extensor, rate: Extensor) -> Extensor:
 
 
 def _net_forque(forque: Callable, inertia: Extensor, motor: Extensor, rate: Extensor) -> Extensor:
-    """External forque minus the gyroscopic term: F_ext - (I(rate) x rate)."""
+    """External forque minus the gyroscopic term: `forque(motor, rate) - inertia(rate).commutator(rate)`."""
     gyro = inertia(rate).commutator(rate)
     return forque(motor, rate).cast(gyro.gatype.output_subspace) - gyro
 
@@ -108,7 +108,7 @@ def explicit_verlet(
 def explicit_rk4(
     motor: Extensor, rate: Extensor, inertia: Extensor, inertia_inv: Extensor, dt: float, forque: Callable,
 ) -> tuple[Extensor, Extensor]:
-    """Explicit RK4 on the rate, then a motor step with the new rate."""
+    """Explicit RK4 on the rate, then a motor step with the stepped rate."""
     def dr(r: Extensor) -> Extensor:
         return inertia_inv(_net_forque(forque, inertia, motor, r))
 
@@ -122,22 +122,23 @@ def explicit_rkmk4(
 ) -> tuple[Extensor, Extensor]:
     """Explicit 4th-order Munthe-Kaas integration of Lie state.
 
-    The motor step is motor * exp(H), with H integrated in the Lie algebra by classical RK4.
-    The vector field for H is the body rate corrected by dexpinv, a polynomial in the adjoint
-    ad_H = [H, .], which is the commutator with an open bivector slot. Nothing here depends
-    on the dimension: the same lines integrate rotors of Spin(n) for any n.
+    The motor step is `motor * h.exp()`, with the bivector h integrated in the Lie algebra by
+    classical RK4. The vector field for h is the body rate corrected by dexpinv, a polynomial in
+    the adjoint `h.commutator(bivector) * 2`, the commutator with an open bivector slot. Nothing
+    here depends on the dimension: the same lines integrate rotors in any dimension.
     """
     def dr(m: Extensor, r: Extensor) -> Extensor:
         return inertia_inv(_net_forque(forque, inertia, m, r))
 
     def dh(h: Extensor, r: Extensor) -> Extensor:
-        # d/dt (M0 exp H) = M0 exp(H) dexp_{-H}(H') must equal M (-r/2), so H' = dexpinv_{-H}(-r/2)
+        # The time derivative of `motor * h.exp()` must equal that motor times `r * -0.5`;
+        # inverting the derivative of the exponential gives the rate of h, `dexpinv(r * -0.5)`.
         bivector = h.algebra.subspace.bivector()
         ad = h.commutator(bivector) * 2.0
         dexpinv = bivector + ad * 0.5 + ad(ad) * (1.0 / 12.0)
         return dexpinv(r * -0.5)
 
-    # The state (H, rate) is a pair of bivectors: stack them and let the plain RK4 step it.
+    # The state (h, rate) is a pair of bivectors: stack them and let the plain RK4 step it.
     def derivative(state: Extensor) -> Extensor:
         h, r = state[0], state[1]
         return Extensor.stack([dh(h, r), dr(motor * h.exp(), r)])

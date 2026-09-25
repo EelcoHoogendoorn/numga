@@ -25,10 +25,10 @@ PGA3D = Algebra(
 
 
 class SphericalSubSpaceFactory(SubSpaceFactory):
-    """Subspace factory for Cl(3) spherical geometry on S².
+    """Subspace factory for spherical geometry on the sphere, in the algebra `x+y+z+`.
 
     Maps cutting planes / great circles to Grade 1 vectors (x, y, z) and
-    points on S² to Grade 2 antivectors with right-handed cyclic basis (yz, zx, xy).
+    points on the sphere to Grade 2 antivectors with right-handed cyclic basis (yz, zx, xy).
     """
 
     constructor_names = SubSpaceFactory.constructor_names + (
@@ -38,15 +38,15 @@ class SphericalSubSpaceFactory(SubSpaceFactory):
     )
 
     def plane(self) -> SubSpace:
-        """Grade 1 cutting planes / great circles on S²."""
+        """Grade 1 cutting planes / great circles on the sphere."""
         return self.vector()
 
     def point(self) -> SubSpace:
-        """Grade 2 antivectors representing points on S²."""
+        """Grade 2 antivectors representing points on the sphere."""
         return self.antivector()
 
     def line(self) -> SubSpace:
-        """Great-circle geodesic lines on S² (identical to cutting planes)."""
+        """Great-circle geodesic lines on the sphere (identical to cutting planes)."""
         return self.plane()
 
 

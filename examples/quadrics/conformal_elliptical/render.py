@@ -7,9 +7,12 @@ import numpy as np
 
 from examples.quadrics.conformal_elliptical.core import Vector, mv
 
-RESOLUTION = 512                                 # pixels across the hemisphere before downsampling
-SHARPNESS = 512.0                                # tanh gain: the antialiased width of a circle
-BIN = 2                                          # downsampling factor
+# Pixels across the hemisphere before downsampling.
+RESOLUTION = 512
+# The tanh gain, which sets the antialiased width of a circle.
+SHARPNESS = 512.0
+# The downsampling factor.
+BIN = 2
 
 
 def hemisphere(n: int) -> tuple[Vector, np.ndarray]:

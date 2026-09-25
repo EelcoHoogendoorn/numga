@@ -1,4 +1,4 @@
-"""Trace contracts a vector index with a covector index of one space; forms need a metric."""
+"""A map's trace pairs its output with an input slot of the same space; forms need a metric."""
 
 import numpy as np
 import pytest
@@ -15,8 +15,9 @@ def random_map(mv, basis, space, rng):
 
 @pytest.mark.parametrize("signature", ["x+y+z+", "t+x-y-z-", "x+y+z+w0", "x+y+z+p+n-"])
 def test_trace_is_the_exterior_contraction(signature):
-    """tr f == sum_i (e_i~ & f(e_i)) / (e_i~ & e_i): the regressive product and complements
-    alone, which holds in degenerate signatures where no reciprocal frame exists."""
+    """`f.trace() == ((basis.dual() & f(basis)) / (basis.dual() & basis)).sum(axis=0)`: the
+    regressive product and complements alone, which holds in degenerate signatures where no
+    reciprocal frame exists."""
     ga = Algebra(signature)
     mv = NumpyContext(ga).multivector
     vector = ga.gatype.vector()

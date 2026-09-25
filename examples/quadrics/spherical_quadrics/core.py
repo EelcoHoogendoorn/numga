@@ -1,11 +1,11 @@
 """Spherical conics in Cl(3): a quadratic cone through the origin, cut by the unit sphere.
 
 A polarity C maps each point of the sphere to its polar plane, and the conic is where a
-point lies on its own polar, P ∨ C(P) = 0. The curve is a spherical ellipse: the sum of
+point lies on its own polar, P & C(P) == 0. The curve is a spherical ellipse: the sum of
 its geodesic distances to two foci is constant. Read through planes instead of points,
-the same curve is the envelope of its tangent great circles, the planes π with
-π ∨ Q(π) = 0 for the inverse Q, and the product of the sines of the foci's distances to
-those circles is constant. The level sets P ∨ C(P) = c are Poinsot's polhodes: the
+the same curve is the envelope of its tangent great circles, the planes with
+plane & Q(plane) == 0 for the inverse Q, and the product of the sines of the foci's distances
+to those circles is constant. The level sets of P & C(P) are Poinsot's polhodes: the
 inertia quadric cut by the momentum sphere.
 """
 
@@ -21,11 +21,13 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
-Point = ga.gatype.point()                        # yz, zx, xy: the poles of the planes x, y, z
+# Points on yz, zx, xy: the poles of the planes x, y, z.
+Point = ga.gatype.point()
 Plane = ga.gatype.plane()
 Rotor = ga.gatype.rotor()
-Polarity = ga.gatype((Plane, Point))             # polar plane <= point
-DualPolarity = ga.gatype((Point, Plane))         # pole <= plane
+# The polarity maps a point to its polar plane, the dual polarity a plane to its pole.
+Polarity = ga.gatype((Plane, Point))             # Plane <- Point
+DualPolarity = ga.gatype((Point, Plane))         # Point <- Plane
 
 
 def polarity(eigenvalues: np.ndarray) -> Polarity:
@@ -47,23 +49,24 @@ def sphere(longitudes: int, latitudes: int) -> Point:
 
 # --- math -----------------------------------------------------------------------------
 def oval(eigenvalues: np.ndarray, t: np.ndarray):
-    """Points of the spherical conic of a diagonal polarity with eigenvalues λ₁ > λ₂ > 0 > λ₃,
-    its two foci, and its semi-major arc θa."""
+    """Points of the spherical conic of a diagonal polarity with eigenvalues l1 > l2 > 0 > l3,
+    its two foci, and its semi-major arc theta_a."""
     l1, l2, l3 = eigenvalues
-    # The cone meets the sphere above the ellipse x² / x0² + y² / y0² = 1 of the xy-plane;
-    # its semi-axes as arcs, and the focal arc along the major axis.
+    # The cone meets the sphere above the ellipse x**2 / x0**2 + y**2 / y0**2 == 1 of the
+    # xy-plane; its semi-axes as arcs, the semi-minor along x and the semi-major along y, and
+    # the focal arc along the major axis y.
     x0 = np.sqrt(-l3 / (l1 - l3))
     y0 = np.sqrt(-l3 / (l2 - l3))
-    theta_b = np.arcsin(x0)                                   # semi-minor arc along x
-    theta_a = np.arcsin(y0)                                   # semi-major arc along y
-    theta_c = np.arccos(np.cos(theta_a) / np.cos(theta_b))    # focal arc along y
+    theta_b = np.arcsin(x0)
+    theta_a = np.arcsin(y0)
+    theta_c = np.arccos(np.cos(theta_a) / np.cos(theta_b))
     curve = cone(eigenvalues, np.ones_like(t), t)
     foci = points(np.array([[0.0, np.sin(theta_c), np.cos(theta_c)], [0.0, -np.sin(theta_c), np.cos(theta_c)]]))
     return curve, foci, theta_a
 
 
 def cone(eigenvalues: np.ndarray, radius: np.ndarray, t: np.ndarray) -> Point:
-    """The quadratic cone P ∨ C(P) = 0 of a diagonal polarity, as points at the given radii."""
+    """The quadratic cone P & C(P) == 0 of a diagonal polarity, as points at the given radii."""
     l1, l2, l3 = eigenvalues
     x, y = np.sqrt(-l3 / (l1 - l3)) * np.cos(t), np.sqrt(-l3 / (l2 - l3)) * np.sin(t)
     return points(radius[..., None] * np.stack([x, y, np.sqrt(1.0 - x**2 - y**2)], axis=-1))

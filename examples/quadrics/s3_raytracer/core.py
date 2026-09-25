@@ -1,12 +1,12 @@
 """Rendering quadrics on the 3-sphere, Cl(4), by projection: a quadric projects to a conic.
 
 A body is an ellipsoid, a dual quadric placed by a motor, exactly as in the spherical quadric physics one
-dimension down. Seen from an eye E, its outline on the image sphere a quarter turn ahead is
-the body projected from E: the dual quadric pushed through the central projection
-M = (E ∨ Point) ∧ image, the same pushforward the lens camera applies to its aperture. Pulled
+dimension down. Seen from an eye, its outline on the image sphere a quarter turn ahead is
+the body projected from the eye: the dual quadric pushed through the central projection
+(eye & Point) ^ image, the same pushforward the lens camera applies to its aperture. Pulled
 into the eye's frame that is a conic in the pixel chart (1, u, v), and a pixel is inside the
 outline where the conic's form is negative. Together with the eye's projected polar plane,
-that conic gives a depth proportional to cot t, with t the angle travelled along the great
+that conic gives a depth proportional to the cotangent of the angle travelled along the great
 circle. The largest depth selects the body per pixel; only that hit is reconstructed and
 shaded with its polar plane. The check is that a pixel passes the 2D test exactly when its
 great circle through the body has real roots.
@@ -36,8 +36,9 @@ ScreenConic = ga.gatype((ga.gatype.scalar(), ScreenPoint, ScreenPoint))
 ScreenPolar = ga.gatype((ga.gatype.scalar(), ScreenPoint))
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
-Quadric = ga.gatype((Plane, Point))           # primal quadric: polar plane <= point
-DualQuadric = ga.gatype((Point, Plane))       # dual quadric: pole <= plane
+# The primal quadric maps a point to its polar plane, the dual quadric a plane to its pole.
+Quadric = ga.gatype((Plane, Point))           # Plane <- Point
+DualQuadric = ga.gatype((Point, Plane))       # Point <- Plane
 
 
 def unit(points: Point) -> Point:
@@ -83,6 +84,7 @@ def project(eye_frame: Motor, surfaces: Quadric) -> tuple[ScreenConic, ScreenPol
 
 
 def reproject(conic: ScreenConic, polar: ScreenPolar, pixels: ScreenPoint) -> Scalar:
-    """First-hit screen depth, proportional to cot(angle): larger is nearer; NaN means a miss."""
+    """First-hit screen depth, proportional to the cotangent of the angle: larger is nearer; NaN
+    means a miss."""
     with np.errstate(invalid="ignore"):
         return -polar(pixels) + (-conic(pixels, pixels)).square_root()

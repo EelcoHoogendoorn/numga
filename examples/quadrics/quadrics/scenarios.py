@@ -14,7 +14,7 @@ def body() -> DualQuadric:
 
 
 def polar_reciprocity():
-    """Construct an ellipsoid, then map tangent -> contact -> tangent."""
+    """Construct an ellipsoid, then map a tangent plane to its contact point and back."""
     dual = body()
     tangent = support_plane(dual, mv.x + mv.y * 2 + mv.z * 3, mv.w)
     contact = dual(tangent)                          # Point <- Plane
@@ -23,7 +23,7 @@ def polar_reciprocity():
     recovered_tangent = primal(contact)
 
     # --- checks ---------------------------------------------------------------------------
-    # Incidence is reciprocal: tangent & contact = contact & primal(contact) = 0.
+    # Incidence is reciprocal: tangent & contact == contact & primal(contact) == 0.
     np.testing.assert_allclose((tangent & contact).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((recovered_tangent & contact).to_array(), 0.0, atol=1e-12)
     return dual, recovered_tangent, contact
@@ -40,11 +40,13 @@ def motor_transport():
     # Pull the input plane into the body frame; push the output point into world.
     world = motor >> local(motor << Plane)
     world_tangent = motor >> tangent
-    world_contact = world(world_tangent)             # same point as motor >> contact
+    # The same point as motor >> contact.
+    world_contact = world(world_tangent)
 
     # --- checks ---------------------------------------------------------------------------
     moved = motor >> contact
-    joined = world_contact & moved                  # the line through both points vanishes: they coincide
+    # The line through both points vanishes: they coincide.
+    joined = world_contact & moved
     np.testing.assert_allclose((joined | joined).to_array(), 0.0, atol=1e-20)
     return local, tangent, contact, world, world_tangent, world_contact
 

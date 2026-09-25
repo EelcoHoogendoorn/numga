@@ -10,7 +10,8 @@ import numpy as np
 BACKGROUND = np.array([0.013, 0.02, 0.036])
 TEAL = np.array([0.055, 0.42, 0.39])
 GOLD = np.array([0.6, 0.42, 0.08])
-PALETTE = np.array([TEAL, [0.65, 0.38, 0.08], [0.35, 0.13, 0.40], [0.12, 0.35, 0.60]])   # per body, in turn
+# One colour per body, in turn.
+PALETTE = np.array([TEAL, [0.65, 0.38, 0.08], [0.35, 0.13, 0.40], [0.12, 0.35, 0.60]])
 
 
 def headlight(facing: np.ndarray, visible: np.ndarray, color: np.ndarray) -> np.ndarray:

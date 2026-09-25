@@ -24,7 +24,8 @@ def ellipsoids(joint_angles: tuple, velocity_scale: float, force_scale: float):
     ellipsoid and shrink the force ellipsoid, whose radii are reciprocal to it.
     """
     bodies, tip, axes = core.arm_axes(joint_angles)
-    velocity = core.velocity_ellipsoid(tip, axes * velocity_scale).inverse()   # as a point quadric
+    # The velocity ellipsoid as a point quadric.
+    velocity = core.velocity_ellipsoid(tip, axes * velocity_scale).inverse()   # [] Plane <- Point
     force = core.force_ellipsoid(tip, axes * force_scale)
 
     # --- checks

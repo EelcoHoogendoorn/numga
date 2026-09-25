@@ -1,11 +1,14 @@
 """Gaussian optics in PGA2D: a thin lens is a linear map on lines, so it is an extensor.
 
-A ray is a line, not a height and a slope at some reference plane. A thin lens of focal
-length f at the origin sends the line a x + b y + c w to (a - c/f) x + b y + c w, which is
-Line - (Line ∨ origin) x / f with the line left open. A lens elsewhere is that map conjugated
-by a translator, and a system of lenses is a composition. There is no free-space propagation
-matrix, because lines are already global; ABCD matrices are what you get when you insist on
-describing a line by where it crosses one particular plane.
+A ray is a line. A thin lens of focal length `focal` at the origin sends the line
+`a * mv.x + b * mv.y + c * mv.w` to `(a - c / focal) * mv.x + b * mv.y + c * mv.w`, which is
+`Line - (Line & origin) * (mv.x / focal)` with the line left open. A lens elsewhere is that map
+conjugated by a translator, and a system of lenses is a composition. Lines are global, so the
+free space between elements needs no map of its own.
+
+In ray-transfer optics a ray reads as its height and slope where it crosses one reference plane,
+each element as an ABCD matrix on that pair, and the free space between elements as a
+propagation matrix of its own.
 """
 
 from __future__ import annotations
@@ -22,7 +25,8 @@ LineMap = ga.gatype((Line, Line))
 Motor = ga.gatype.rotor()
 
 origin: Point = mv.xy
-home: Line = mv.x                                   # every train element is defined in the plane x = 0
+# Every train element is defined in the plane x == 0.
+home: Line = mv.x
 
 
 def point(x: float, y: float) -> Point:
@@ -47,10 +51,14 @@ def thin_lens(plane: Line, focal: float) -> LineMap:
 # with an ideal point (the same slope change for every height), and a flat mirror is the
 # sandwich by the home plane.
 ELEMENTS: tuple[LineMap, ...] = (
-    Line - (Line & origin) * (home / 1.0),          # thin lens, f = 1
-    Line - (Line & mv.wx) * home * 0.15,            # thin prism, slope change 0.15
-    Line - (Line & origin) * (home / -2.0),         # thin lens, f = -2
-    home.normalized() >> Line,                      # flat mirror in the home plane
+    # A thin lens of focal length 1.
+    Line - (Line & origin) * (home / 1.0),
+    # A thin prism, slope change 0.15.
+    Line - (Line & mv.wx) * home * 0.15,
+    # A thin lens of focal length -2.
+    Line - (Line & origin) * (home / -2.0),
+    # A flat mirror in the home plane.
+    home.normalized() >> Line,
 )
 
 
@@ -64,8 +72,9 @@ def trace(rays: Line, motors: tuple[Motor, ...], elements: tuple[LineMap, ...]):
     train: LineMap = mv.rotor() >> Line
     legs = [rays]
     for motor, element in zip(motors, elements):
-        placed: LineMap = motor >> element(motor << Line)   # the element conjugated into place
-        rays = placed(rays)                                 # the bundle after this element
-        train = placed(train)                               # the train so far, as one map
+        # The element conjugated into place, the bundle after it, and the train so far as one map.
+        placed: LineMap = motor >> element(motor << Line)   # [] Line <- Line
+        rays = placed(rays)                                 # [ray] Line
+        train = placed(train)                               # [] Line <- Line
         legs.append(rays)
     return stack([motor >> home for motor in motors]), stack(legs), train

@@ -1,14 +1,15 @@
 """The constitutive extensor of a medium in Spacetime Algebra: core mathematics.
 
 In a medium, Maxwell's equations split into the field bivector F and the excitation
-bivector G, related by a linear map G = χ(F). That map is a Bivector-to-Bivector extensor,
-and every medium is built from it: an observer's electric and magnetic projectors give
-the isotropic dielectric, permittivity and permeability quadrics lifted through the
-observer give a crystal and a ferrite, the pseudoscalar gives the axion term, and
-conjugating by a Lorentz boost gives a moving medium.
+bivector G, related by a linear map, the medium: `G = medium(F)`. That map is a
+Bivector-to-Bivector extensor, and every medium is built from it: an observer's electric
+and magnetic projectors give the isotropic dielectric, permittivity and permeability
+quadrics lifted through the observer give a crystal and a ferrite, the pseudoscalar gives
+the axion term, and conjugating by a Lorentz boost gives a moving medium.
 
-Plane waves exist where the wave map a -> k · χ(k ∧ a) loses rank, which yields phase speeds,
-polarizations, birefringence, and relativistic Fresnel drag.
+Plane waves exist where the wave map, taking a polarization `a` to
+`k.commutator(medium(k.wedge(a)))`, loses rank, which yields phase speeds, polarizations,
+birefringence, and relativistic Fresnel drag.
 
 This module contains pure mathematics: GATypes, constructors, and eigensolvers.
 It never imports any plotting library.
@@ -22,7 +23,7 @@ from numga import NumpyContext
 from numga.algebras import STA
 
 # ---------------------------------------------------------------------------
-# 1. Spacetime Algebra Setup (STA: R_{1,3}, t+ x- y- z-)
+# 1. Spacetime Algebra Setup (STA: Algebra("t+x-y-z-"))
 # ---------------------------------------------------------------------------
 ctx = NumpyContext(STA)
 mv = ctx.multivector
@@ -30,7 +31,8 @@ mv = ctx.multivector
 # Blade Subspaces:
 V = STA.subspace.vector()
 B = STA.subspace.bivector()
-Spatial = STA.subspace("x y z")                 # Polarizations in temporal gauge a · t = 0
+# Polarizations in temporal gauge, `(a | t) == 0`.
+Spatial = STA.subspace("x y z")
 
 from numga.extensor.extensor import Extensor
 
@@ -56,7 +58,8 @@ def observer_projectors(observer=t) -> tuple[Extensor, Extensor]:
 
 
 def isotropic_medium(eps: float, mu: float = 1.0, observer=t) -> Extensor:
-    """Isotropic dielectric & magnetic medium: chi = eps * Pi_E + (1/mu) * Pi_B (Bivector <- Bivector)."""
+    """Isotropic dielectric & magnetic medium: `eps * electric + (1 / mu) * magnetic` over the
+    observer's projectors (Bivector <- Bivector)."""
     electric, magnetic = observer_projectors(observer)
     return eps * electric + (1.0 / mu) * magnetic
 
@@ -117,7 +120,7 @@ def boost_rotor(beta: float, direction=z):
 
 
 def boosted_medium(base_medium: Extensor, beta: float, direction=z) -> Extensor:
-    """Conjugate a rest constitutive map by a Lorentz boost: chi' = L >> chi(L << B) (Bivector <- Bivector)."""
+    """Conjugate a rest constitutive map by a Lorentz boost: `rotor >> base_medium(rotor << B)` (Bivector <- Bivector)."""
     rotor = boost_rotor(beta, direction)
     return rotor >> base_medium(rotor << B)
 
@@ -126,7 +129,8 @@ def boosted_medium(base_medium: Extensor, beta: float, direction=z) -> Extensor:
 # 3. Wave Maps & Dispersion Solvers
 # ---------------------------------------------------------------------------
 def wave_map(k, medium: Extensor) -> Extensor:
-    """Construct the wave operator W_k: a -> k · chi(k ∧ a) mapping Spatial -> Vector."""
+    """Construct the wave operator taking a polarization `a` to `k.commutator(medium(k.wedge(a)))`
+    (Vector <- Spatial)."""
     return k.commutator(medium(k.wedge(Spatial)))
 
 

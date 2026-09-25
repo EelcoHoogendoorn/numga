@@ -3,7 +3,7 @@
 Projective geometry has joins and meets but no distances. Pick one conic, the absolute,
 as a polarity map C from points to lines, and every metric notion follows from C and its
 inverse Q alone: distances and angles are cross ratios against the absolute, the
-perpendiculars to a line all pass through its pole Q(l), and a circle is the quadric of
+perpendiculars to a line l all pass through its pole Q(l), and a circle is the quadric of
 points at fixed cross ratio from its centre. With the unit circle as the absolute this is
 the hyperbolic Beltrami-Klein disk. Flip one sign and the same lines do elliptic geometry.
 """
@@ -19,12 +19,13 @@ ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-# Whole-extensor types (GATypes); map types read output <= inputs:
+# Whole-extensor types (GATypes); map types read output <- inputs. The polarity maps a point
+# to its polar line, and the pole map a line to its pole:
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Line = ga.gatype.vector()
-Polarity = ga.gatype((Line, Point))       # polar line <= point
-Pole = ga.gatype((Point, Line))           # pole <= line
+Polarity = ga.gatype((Line, Point))       # Line <- Point
+Pole = ga.gatype((Point, Line))           # Point <- Line
 
 
 def point(coords: np.ndarray) -> Point:
@@ -42,9 +43,9 @@ def triangle(C: Polarity, vertices: Point):
     """The sides, angles, side lengths and area of a triangle, all from the absolute."""
     Q: Pole = C.inverse()
 
-    # The invariant of two points is (P₁ ∨ C(P₂)) / √((P₁ ∨ C(P₁))(P₂ ∨ C(P₂))), and Cayley's
-    # distance is its arccosh. The invariant of two lines is the same with Q, and the angle
-    # is its arccos. Both stay inside the algebra until the very last step.
+    # The invariant of two points is (P1 & C(P2)) / ((P1 & C(P1)) * (P2 & C(P2))).square_root(),
+    # and Cayley's distance is its arccosh. The invariant of two lines is the same with Q, and
+    # the angle is its arccos. Both stay inside the algebra until the very last step.
     distance_pairing = -Point.regressive(C(mv.rotor() >> Point))
     angle_pairing = Line.regressive(Q(mv.rotor() >> Line))
 
@@ -63,7 +64,7 @@ def triangle(C: Polarity, vertices: Point):
 def perpendicular(C: Polarity, side: Line, P: Point):
     """The pole of a line, the perpendicular to it from P, its foot, and P reflected across the line."""
     # Every line perpendicular to l passes through its pole Q(l), so the perpendicular from
-    # P is the join P ∨ Q(l) and the foot is its meet with l. Reflection across l is the
+    # P is the join P & Q(l) and the foot is its meet with l. Reflection across l is the
     # harmonic homology centred on the pole, and it preserves the distance to the foot.
     pole = C.inverse()(side)
     normal = P.regressive(pole)
@@ -75,9 +76,9 @@ def perpendicular(C: Polarity, side: Line, P: Point):
 def circles(C: Polarity, centres: Point, radii: Scalar) -> Polarity:
     """Circles of the given radii about the given centres, as quadrics: one per centre and radius."""
     # Fixing the distance to a centre fixes the invariant, and clearing the square root
-    # turns that into a quadric in P: the dyad of the centre's polar minus cosh²R times the
-    # centre's self-invariant times the absolute. One expression, batched over the radii,
-    # drawn as the level set P ∨ circle(P) = 0.
+    # turns that into a quadric in P: the dyad of the centre's polar minus radii.cosh() ** 2
+    # times the centre's self-invariant times the absolute. One expression, batched over the
+    # radii, drawn as the level set P & circle(P) == 0.
     centre = centres[:, None]
     polar = C(centre)
     return polar * polar.regressive(Point) - centre.regressive(polar) * radii.cosh() ** 2 * C

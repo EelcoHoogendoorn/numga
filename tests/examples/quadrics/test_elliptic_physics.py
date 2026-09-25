@@ -12,7 +12,7 @@ from examples.quadrics.elliptic_physics.scenarios import S2, S3, ellipse_mesh
 
 
 def test_ellipse_tangency():
-    """Great circles tangent to an ellipse satisfy L ∨ Q(L) = 0."""
+    """Great circles tangent to an ellipse satisfy tangents & Q(tangents) == 0."""
     th_x, th_y = np.radians(30.0), np.radians(15.0)
     Q = S2.ellipsoid(np.tan(np.array([th_x, th_y])))
     phi = np.radians([0.0, 30.0, 75.0, 120.0, 200.0, 310.0])
@@ -23,7 +23,8 @@ def test_ellipse_tangency():
 def test_overlap_margin_sign():
     """The margin is positive when apart, near zero when touching, negative when overlapping."""
     C1 = S2.ellipsoid(np.tan(np.radians([20.0, 20.0]))).inverse()
-    alphas = np.radians([55.0, 45.0, 35.0])                        # centres apart; 20° + 25° touch
+    # Centres apart, touching at 45°, the sum of the radii 20° and 25°, and overlapping.
+    alphas = np.radians([55.0, 45.0, 35.0])
     turn = (S2.mv.xz * (-alphas / 2.0)).exp()
     C2 = turn >> S2.ellipsoid(np.tan(np.radians([25.0, 25.0]))).inverse()(turn << S2.Point)
     margin = S2.overlap(C1, C2)[0].to_array()
@@ -58,7 +59,8 @@ def test_free_flight_conserves_energy_and_momentum():
 
 def test_collision_conserves_energy_and_momentum():
     """Two overlapping, approaching ellipses: one elastic impulse keeps total energy and world momentum."""
-    placement = (S2.mv.yz * (-np.radians([0.0, 28.0]) / 2.0)).exp()          # centres 28° apart, overlapping
+    # Centres 28° apart, overlapping.
+    placement = (S2.mv.yz * (-np.radians([0.0, 28.0]) / 2.0)).exp()
     bodies = scenarios.ellipses(np.array([[25.0, 15.0], [25.0, 15.0]]), np.array([1.0, 1.0]), placement,
                             np.array([[-2.5, 0.0, 0.0], [2.0, 0.0, 0.0]]), ["#38bdf8", "#f43f5e"], 96)
     bodies = replace(bodies, motor=scenarios.CAMERA.inverse() * bodies.motor)

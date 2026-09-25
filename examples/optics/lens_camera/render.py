@@ -13,9 +13,11 @@ from examples.animation import capture
 from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, mv, point
 
 POINT_LAYOUT = ga.subspace("yzw zxw xyw zyx")
-RESOLUTION = (280, 360)     # sensor pixels, rows by columns
+# Sensor pixels, rows by columns.
+RESOLUTION = (280, 360)
 SUPERSAMPLE = 2
-SENSOR = (0.225, 0.175)     # half extents of the sensor window in its own frame
+# Half extents of the sensor window in its own frame.
+SENSOR = (0.225, 0.175)
 STILL_TITLES = ("wide, aperture 0.45, focused at 2.2", "tele, aperture 0.45, focused at 2.2",
                 "tele, aperture 0.45, sensor tilted 25°")
 
@@ -42,7 +44,8 @@ def rasterise(frame: Motor, cones: Quadric, energy: float) -> np.ndarray:
     polar = cones.reshape(-1, 1)(pixels)
     with np.errstate(divide="ignore", invalid="ignore"):
         distance = (pixels & polar).to_array() / (2 * polar.norm().to_array())
-    coverage = 1.0 / (1.0 + np.exp(-distance / (2 * SENSOR[0] / cols * 2)))   # logistic edge, two pixels wide
+    # Logistic edge, two pixels wide:
+    coverage = 1.0 / (1.0 + np.exp(-distance / (2 * SENSOR[0] / cols * 2)))
     share = coverage / np.maximum(coverage.sum(axis=-1, keepdims=True), 1e-12) * energy
     layer = np.broadcast_to(np.arange(cones.shape[0])[:, None, None], cones.shape).ravel()
     image = np.zeros((rows * cols, 3))

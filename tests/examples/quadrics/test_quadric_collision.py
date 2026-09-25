@@ -11,7 +11,7 @@ from examples.quadrics.quadric_collision.core import Line, cubic_peak, ellipse, 
 
 
 def test_dual_ellipse_tangency():
-    """Tangent lines from the support formula satisfy L ∨ Q(L) = 0 for every normal."""
+    """Tangent lines from the support formula satisfy lines & Q(lines) == 0 for every normal."""
     placement = motor(1.5, -0.8, np.radians(35))
     Q = placement >> ellipse(2.0, 1.2)(placement << Line)
     phi = np.radians([0, 45, 90, 135, 210, 315])

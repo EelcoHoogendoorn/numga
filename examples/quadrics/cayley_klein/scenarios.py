@@ -11,9 +11,9 @@ from examples.quadrics.cayley_klein.core import (
 
 def hyperbolic_plane():
     """Build the hyperbolic plane from its absolute and construct a triangle, a perpendicular and circles."""
-    # A line l paired with a point through l ∨ P is a rank-one map from points to lines.
+    # A line l paired with a point P through l & P is a rank-one map from points to lines.
     # Summing the three coordinate lines with signs gives the polarity of the conic
-    # x² + y² - w² = 0, the unit circle. The pole map is the inverse polarity.
+    # x**2 + y**2 - w**2 == 0, the unit circle. The pole map is the inverse polarity.
     C: Polarity = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 
     vertices = point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
@@ -28,10 +28,11 @@ def hyperbolic_plane():
     rings = circles(C, centres, radii)
 
     # --- checks ---------------------------------------------------------------------------
+    # A hyperbolic angle defect, a perpendicular, and a reflection that is an isometry.
     distance_pairing = -Point.regressive(C(mv.rotor() >> Point))
-    assert area.to_array() > 0.0                                                 # hyperbolic angle defect
-    np.testing.assert_allclose((side & C.inverse()(normal)).to_array(), 0.0, atol=1e-12)   # perpendicular
-    np.testing.assert_allclose(                                                  # reflection is an isometry
+    assert area.to_array() > 0.0
+    np.testing.assert_allclose((side & C.inverse()(normal)).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose(
         invariant(distance_pairing, P, foot).to_array(),
         invariant(distance_pairing, reflected, foot).to_array(), atol=1e-12,
     )

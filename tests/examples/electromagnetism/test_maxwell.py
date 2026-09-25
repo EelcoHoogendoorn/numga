@@ -29,7 +29,7 @@ def test_maxwell_stress_tracelessness_and_symmetry():
 
 
 def test_dust_extensor_invariants_and_ram_pressure():
-    """Verify dust extensor has zero rest stress, exact trace = rho, and correct dynamic ram pressure."""
+    """Verify dust extensor has zero rest stress, trace equal to the density, and correct dynamic ram pressure."""
     rho = 5.0
     T_rest = rho * t * (t | V)
     assert all(np.isclose(normal_stress(T_rest, n).to_array(), 0.0, atol=1e-14) for n in (mv.x, mv.y, mv.z))
@@ -44,7 +44,7 @@ def test_dust_extensor_invariants_and_ram_pressure():
 
 
 def test_particle_cloud_is_an_ideal_fluid():
-    """The summed rank-1 quadrics of an isotropic cloud have fluid eigenstructure with p = rho v^2 / 3."""
+    """The summed rank-1 quadrics of an isotropic cloud have fluid eigenstructure with pressure rho * v**2 / 3."""
     rng = np.random.default_rng(7)
     speed = 0.7
     u = isotropic_cloud(4000, speed, rng)
@@ -102,7 +102,7 @@ def test_lorentz_4force_density():
 
 
 def test_lorentz_boost_covariance():
-    """Verify GA sandwich covariance: T' = L >> T(L << V)."""
+    """Verify GA sandwich covariance: boost >> T(boost << Vector)."""
     rho = 4.0
     T_dust = rho * t * (t | V)
     boost = (mv.zt * 0.4).exp()

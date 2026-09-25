@@ -1,6 +1,7 @@
 """One function per figure: the scene of each impulse example, built from `core`.
 
-Each returns the events and worldlines its figure draws. Coordinates are (ct, x), with c = L0 = 1.
+Each returns the events and worldlines its figure draws. Coordinates are time and position along
+`mv.t` and `mv.x`, in units where the speed of light and the relaxed rod length are both one.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ def impulse():
     speed = 0.5
     half_rapidity = np.arctanh(speed)
 
-    # Start in the symmetric frame: two identical velocity reversals at t=0.
+    # Start in the symmetric frame: two identical velocity reversals at time zero.
     kinks, directions = velocity_step(-half_rapidity, half_rapidity)
     before, after = directions
     bisector: Vector = (before + after).normalized()
@@ -53,7 +54,8 @@ def impulse():
 
     # Repeat a fixed boost and fixed translation to build a train of impulses.
     steps, train_directions = small_impulses(2 * half_rapidity, 10, 0.1)
-    finish: Scalar = steps[-1, 1] | mv.t                                # the front's last kink ends the train
+    # The front's last kink ends the train.
+    finish: Scalar = steps[-1, 1] | mv.t
     train: Vector = worldlines(steps, train_directions, stack((mv.scalar([-0.30]), finish + 0.40)))
     train_slice: Vector = worldline_events(finish + 0.20, steps, train_directions)
 
@@ -62,7 +64,7 @@ def impulse():
     np.testing.assert_allclose((bisector | mv.t).to_array(), 1.0, atol=GEOMETRY_ATOL)
     np.testing.assert_allclose((kinks | bisector).to_array(), 0.0, atol=GEOMETRY_ATOL)
     # Boosted, the same drawing is a step from rest to the relativistic sum of the speeds,
-    # and the kinks are no longer simultaneous.
+    # and the kinks are not simultaneous.
     boosted: Vector = view_directions[1]
     np.testing.assert_allclose((-(boosted | mv.x) / (boosted | mv.t)).to_array(),
                                [0.0, 2 * speed / (1 + speed**2)], atol=GEOMETRY_ATOL)
@@ -86,10 +88,10 @@ def ladder():
     short separation becomes compression at rest. Another observer assigns
     different times to those same kinks, but agrees on the resulting compression.
 
-    A ladder of relaxed proper length L0=1 enters a barn of length 0.8 at 0.8c.
-    Its barn-frame length is 0.6, so both doors can close with the ladder inside.
-    An open sandwich transforms the whole scene into the incoming ladder frame:
-    the two door-closure events are no longer simultaneous.
+    A ladder of relaxed proper length 1 enters a barn of length 0.8 at 0.8 of the
+    speed of light. Its barn-frame length is 0.6, so both doors can close with the
+    ladder inside. An open sandwich transforms the whole scene into the incoming
+    ladder frame: there the two door-closure events are not simultaneous.
 
     Closing the doors and stopping the ladder are separate operations. Compare:
 
@@ -97,7 +99,7 @@ def ladder():
       impulse on the rapidity-bisector surface. The before/after proper spacing
       agrees, with no elastic degrees of freedom represented. During stopping,
       the barn-frame length grows from 0.6 to 1; the front crosses the exit.
-    * Stopping every material point on the barn's t=0 slice instead retains the
+    * Stopping every material point on the barn's slice at time zero instead keeps the
       length 0.6 immediately after the stop. At rest, that is actual compression
       relative to the relaxed length 1: the stop has excited a compressive mode.
 
@@ -106,7 +108,7 @@ def ladder():
     the specified before/after velocities. Other timings introduce strain and
     excite the extended body's internal dynamics. We illustrate that excitation
     through its low-energy elastic analogue: damped ringing about the relaxed
-    length L0.
+    length.
 
     The ringing starts at zero velocity, with stored compressive strain. Its
     sinusoidal form, frequency and damping are schematic. The large speed and
@@ -128,8 +130,9 @@ def ladder():
     rapidity = np.arctanh(beta)
     moving_length = 1 / np.cosh(rapidity)
     rear_at_closure = (barn_length - moving_length) / 2
-    closure: Vector = mv.vector([[0.0, 0.0], [0.0, barn_length]])        # [door] closure events
-    incoming: Vector = mv.vector([[0.0, rear_at_closure], [0.0, rear_at_closure + moving_length]])  # [end] at closure
+    # The door-closure events, and the ladder's ends at closure.
+    closure: Vector = mv.vector([[0.0, 0.0], [0.0, barn_length]])        # [door] Vector
+    incoming: Vector = mv.vector([[0.0, rear_at_closure], [0.0, rear_at_closure + moving_length]])  # [end] Vector
     incoming_direction: Vector = boost(rapidity)(mv.t)
     at_rest: Vector = mv.vector([1.0, 0.0])
 
@@ -166,7 +169,8 @@ def ladder():
     lengths = ringing_length(ring_times, damping_ratio, natural_frequency)
     centre = barn_length / 2
     ring: Vector = mv.t * ring_times[:, None] + mv.x * (centre + np.array([-0.5, 0.5]) * lengths[:, None])
-    relaxed: Vector = mv.x * (centre + np.array([-0.5, 0.5]))            # [end] relaxed ends at t=0
+    # The relaxed ends at time zero.
+    relaxed: Vector = mv.x * (centre + np.array([-0.5, 0.5]))            # [end] Vector
     first_peak = ring_times <= np.pi / (natural_frequency * np.sqrt(1.0 - damping_ratio**2))
     ringing_contact = np.interp(barn_length, lengths[first_peak], ring_times[first_peak])
     ringing = (
@@ -196,8 +200,9 @@ def ladder():
 def spaceships():
     """Bell's spaceships: synchronized clocks versus strain-preserving impulses.
 
-    Two ships start at rest, separated by a rope of relaxed proper length L0=1.
-    Compare the same ten rapidity increments, from rest to 0.8c, with two timings:
+    Two ships start at rest, separated by a rope of relaxed proper length 1.
+    Compare the same ten rapidity increments, from rest to 0.8 of the speed of light,
+    with two timings:
 
     * The strain-preserving impulse train from small_impulses gives the
       rear ship the reference program and delays each matching front impulse to
@@ -213,7 +218,7 @@ def spaceships():
       spans a longer segment. The rope must stretch to maintain that connection.
 
     Every impulse changes a worldline's slope without breaking its continuity.
-    Equal clock programs do not make the rope jump to a new contracted length;
+    Equal clock programs do not make the rope jump to a contracted length;
     they demand a change in proper spacing. In the final moving frame the same
     impulses have staggered times. Both observers agree on the required stretch,
     despite describing its development with different simultaneity slices.
@@ -255,18 +260,19 @@ def spaceships():
 
     # Boost the final coasting worldlines, then measure at equal final-frame time. Anchor each
     # view at the rear's final kink; the front's kink need not be simultaneous. Its final
-    # worldline is vertical, so x' is constant.
+    # worldline is vertical, so its position in the final frame is constant.
     final_frame: VectorMap = boost(-rapidity)
     final_events: Vector = final_frame(schedules[:, -1] - schedules[:, -1, :1])   # [schedule, end]
 
-    end_time: Scalar = (preserved[-1, 1] | mv.t) + 0.53                  # the front's last kink ends the train
+    # The front's last kink ends the train.
+    end_time: Scalar = (preserved[-1, 1] | mv.t) + 0.53
     tracks: Vector = stack([worldlines(schedule, directions, stack((mv.scalar([-0.30]), end_time))) for schedule in (preserved, bell)])
     slices: Vector = stack([worldline_events(stack((mv.scalar([-0.18]), end_time - 0.22)), schedule, directions)
                             for schedule in (preserved, bell)])
 
     # --- checks -------------------------------------------------------------
     # Proper time between kinks: the rear keeps one evenly spaced program in both schedules,
-    # and Bell's ships run it on clocks started together at lab t = 0.
+    # and Bell's ships run it on clocks started together at lab time zero.
     ticks: Scalar = (schedules[:, 1:] - schedules[:, :-1]).norm()          # [schedule, step - 1, end]
     np.testing.assert_allclose(ticks[0, :, 0].to_array(), dt, atol=GEOMETRY_ATOL)
     np.testing.assert_allclose(ticks[1].to_array(), dt, atol=GEOMETRY_ATOL)

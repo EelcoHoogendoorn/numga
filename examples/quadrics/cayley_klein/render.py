@@ -8,7 +8,8 @@ import numpy as np
 from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, ga, point
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
-RESOLUTION = 400                                   # grid samples per axis for level sets
+# Grid samples per axis for level sets.
+RESOLUTION = 400
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -23,7 +24,8 @@ def draw_points(ax, points: Point, **style) -> None:
 
 
 def draw_lines(ax, lines: Line, **style) -> None:
-    """Draw lines a x + b y + c w through their foot from the origin, along their direction."""
+    """Draw lines mv.x * a + mv.y * b + mv.w * c through their foot from the origin, along their
+    direction."""
     a, b, c = np.moveaxis(lines.cast(ga.subspace("x y w")).kernel.reshape(-1, 3), -1, 0)
     foot = -np.stack([a, b], axis=-1) * (c / (a * a + b * b))[:, None]
     along = np.stack([-b, a], axis=-1)
@@ -32,7 +34,7 @@ def draw_lines(ax, lines: Line, **style) -> None:
 
 
 def draw_level_sets(ax, quadrics: Polarity, **style) -> None:
-    """Draw each locus P ∨ quadric(P) = 0 by contouring it on a grid."""
+    """Draw each locus P & quadric(P) == 0 by contouring it on a grid."""
     xs = np.linspace(BOX[0], BOX[1], RESOLUTION)
     ys = np.linspace(BOX[2], BOX[3], RESOLUTION)
     samples = point(np.stack(np.meshgrid(xs, ys), axis=-1))

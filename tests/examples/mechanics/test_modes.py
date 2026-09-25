@@ -93,7 +93,7 @@ def normal_modes(
     pe_form = Twist & stiffness                                                 # [] Scalar <- (Twist, Twist)
     ke_form = Twist & inertia                                                   # [] Scalar <- (Twist, Twist)
     values, modes = pe_form.eigh(ke_form)                                       # values: [3] Scalar, modes: [3] Twist
-    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi) # [3] float
+    frequencies = np.sqrt(np.maximum(values.kernel[..., 0], 0.0)) / (2 * np.pi) # [3] Hz
     return modes, frequencies
 
 
@@ -130,7 +130,7 @@ def test_scenario_has_analytic_modes_and_renders():
 def test_two_springs_have_analytic_slide_bounce_and_rock_frequencies():
     system = suspension(2)
     _, frequencies = normal_modes(system.stiffness, system.inertia)
-    # Mass 1, polar inertia (width² + height²)/12, anchors at x = ±.8.
+    # Mass 1, polar inertia `(width ** 2 + height ** 2) / 12`, anchors 0.8 either side of the centre.
     expected_squared = [0, 2 * 6, 2 * 6 * .8**2 / (5 / 12)]
     np.testing.assert_allclose((2 * np.pi * frequencies)**2, expected_squared, atol=1e-12)
     _, restrained = normal_modes(suspension(3).stiffness, system.inertia)

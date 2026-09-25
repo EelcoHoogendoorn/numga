@@ -74,7 +74,9 @@ def flywheel():
 def crystal_lattice():
     """Axial and face-diagonal bonds averaged over the cube rotations, probed on the unit sphere.
 
-    The plotted conduction radius is d · K(d); the plotted stiffness is C(d,d,d,d).
+    For each unit direction `sphere`, the plotted conduction radius is
+    `sphere | conductivity(sphere)` and the plotted stiffness is
+    `elasticity(sphere, sphere, sphere, sphere)`.
     """
     seeds = Extensor.stack((mv.x, (mv.x + mv.y).normalized()))
     sites, axial, diagonal = core.lattice_samples()

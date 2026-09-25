@@ -25,7 +25,8 @@ def outline(Q: Quadric) -> np.ndarray:
 
 
 def draw_line(ax, line: Line, **style) -> None:
-    """Draw a line a x + b y + c w through its foot from the origin, along its direction."""
+    """Draw the line mv.x * a + mv.y * b + mv.w * c through its foot from the origin, along its
+    direction."""
     a, b, c = line.cast(ga.subspace("x y w")).kernel
     foot = -np.array([a, b]) * c / (a * a + b * b)
     ax.axline(foot, foot + np.array([-b, a]), zorder=4, **style)
@@ -65,7 +66,8 @@ def draw_collision(
     fig, ((ax_sep, ax_touch), (ax_over, ax_det)) = plt.subplots(2, 2, figsize=(15, 12), dpi=160)
 
     draw_ellipses(ax_sep, Q1, Q2[0], f"State 1: Separated Ellipses\nmax det(Q(λ)) = {peak[0]:+.3f} > 0")
-    # The blend at the peak is a hyperbola separating the two ellipses (signature +, -, -).
+    # The blend at the peak is a hyperbola separating the two ellipses; its form has one positive
+    # and two negative eigenvalues.
     xs, ys = np.linspace(*XLIM, 250), np.linspace(*YLIM, 250)
     X, Y = np.meshgrid(xs, ys)
     grid = mv.yw * X + mv.wx * Y + mv.xy

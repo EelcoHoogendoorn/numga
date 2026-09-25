@@ -1,7 +1,7 @@
 """Curvature of quadric surfaces in PGA3D: the second form against the first.
 
 A quadric is a polarity, a map Plane <- Point; its surface is where a point lies on its own polar
-plane, p & Q(p) = 0, and that polar plane is the tangent plane. Read on directions, the ideal
+plane, `p & surface(p) == 0`, and that polar plane is the tangent plane. Read on directions, the ideal
 points, the same map is the surface's Hessian, and the Euclidean metric is a sum of plane dyads.
 The principal curvatures and directions are the eigenpairs of the Hessian restricted to the
 tangent plane, against the metric.
@@ -22,15 +22,19 @@ from numga.algebras import PGA3D
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()                     # finite points, and directions: points with no weight
+# Finite points, and directions: points with no weight.
+Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
-Direction = ga.gatype(ga.subspace.antivector().degenerate())   # the directions: tangent vectors
-Quadric = ga.gatype((Plane, Point))                # a polarity: each point to its polar plane
+# The directions: tangent vectors.
+Direction = ga.gatype(ga.subspace.antivector().degenerate())
+# A polarity: each point to its polar plane.
+Quadric = ga.gatype((Plane, Point))                # Plane <- Point
 Form = ga.gatype((Scalar, Direction, Direction))
 
+# The coordinate planes, and the plane at infinity.
 euclidean = ga.subspace("x y z")
-axes = mv(euclidean, np.eye(3))                    # [3] Plane: the coordinate planes
-w = mv.w                                           # the plane at infinity
+axes = mv(euclidean, np.eye(3))                    # [3] Plane
+w = mv.w                                           # [] Plane
 
 # A direction's dual is the plane through the origin it is normal to; the inner product of those
 # planes is the Euclidean metric on directions.
@@ -67,7 +71,7 @@ def pair(values: Scalar) -> Scalar:
 
 
 def nearest_root(a: Scalar, b: Scalar, discriminant: Scalar) -> Scalar:
-    """The smaller positive root of a t^2 + 2 b t + c; zero where there is none."""
+    """The smaller positive root of a * t ** 2 + 2 * b * t + c; zero where there is none."""
     root = np.sqrt(np.clip(discriminant.to_array(), 0, None))
     a, b = a.to_array(), b.to_array()
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -96,14 +100,15 @@ def hit(surface: Quadric, origins: Point, heading: Direction) -> tuple[Point, Sc
 def principal(surface: Quadric, points: Point) -> Scalar:
     """The two principal curvatures at points on the surface, in order; convex surfaces curve positively.
 
-    The Hessian form Point & Q(Point) takes the projector onto the tangent plane in both slots: the
+    The Hessian form `Point & surface(Point)` takes the projector onto the tangent plane in both slots: the
     second fundamental form, up to the length of the gradient. Against the metric, the first
     fundamental form, its eigenvalues on directions are the principal curvatures and the normal's,
     zero.
     """
     tangent = surface(points)                                        # [...] Plane
-    normal = tangent.dual().cast(Direction)                          # [...] Direction: a plane's dual, less its weight
-    project = Direction - normal * ((tangent & Direction) / (tangent & normal))   # [...] onto the tangent plane
+    # The normal is the plane's dual, less its weight; project maps directions onto the tangent plane.
+    normal = tangent.dual().cast(Direction)                          # [...] Direction
+    project = Direction - normal * ((tangent & Direction) / (tangent & normal))   # [...] Direction <- Direction
     second = -(Point & surface(Point))(project, project) / metric(normal, normal).square_root()
     return pair(second.eigvalsh(metric))                             # [..., principal] Scalar
 
@@ -118,8 +123,9 @@ def confocal(surface: Quadric, points: Point) -> Scalar:
     lines of curvature.
     """
     dual_surface = surface.inverse()                                               # [] Point <- Plane
-    pole = dual_surface(w)                                                         # [] Point: the pole of the plane at infinity
-    centre = pole / (w & pole)                                             # [] Point: at unit weight
+    # The pole of the plane at infinity, and the centre: that pole at unit weight.
+    pole = dual_surface(w)                                                         # [] Point
+    centre = pole / (w & pole)                                             # [] Point
     # The plane through the centre normal to each direction:
     through_centre = Direction.dual() - w * (Direction.dual() & centre)    # [] Plane <- Direction
     # Their poles, as directions, and the planes those are normal to: the quadric's shape.

@@ -1,9 +1,9 @@
 """Scenes for the Dirac electron: the energies of plane waves over momentum, and the trembling path
 of an electron with some negative energy mixed in.
 
-Units are natural, hbar = c = 1, with the electron's mass as the unit of energy: lengths are in
-units of the reduced Compton wavelength, 386 femtometres, and times in the time light takes to
-cross it.
+Units are natural, with the reduced Planck constant and the speed of light both one, and the
+electron's mass as the unit of energy: lengths are in units of the reduced Compton wavelength,
+386 femtometres, and times in the time light takes to cross it.
 """
 
 from __future__ import annotations
@@ -14,7 +14,8 @@ from examples.relativity.dirac import core
 
 mv = core.mv
 MASS = 1.0
-MIXTURES = (0.1, 0.25, 0.5)                          # the share of negative energy in each electron
+# The share of negative energy in each electron.
+MIXTURES = (0.1, 0.25, 0.5)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -26,8 +27,9 @@ def mass_shell(extent: float, count: int):
     values, states = core.hamiltonian(momenta, MASS).eigh()                     # [count, count, 8] each
 
     # --- checks
-    # Each momentum has the energies minus and plus E, each fourfold; the positive-energy states
-    # have beta = 0 and the negative-energy states beta = pi, where psi psi~ = -rho.
+    # Each momentum has the energies minus and plus `E`, each fourfold; the positive-energy states
+    # have `beta == 0` and the negative-energy states `beta == np.pi`, where `core.invariants(states)`
+    # has a negative scalar part.
     E = core.energy(momenta, MASS).to_array()[..., None]
     np.testing.assert_allclose(values.to_array(), np.concatenate([-E.repeat(4, -1), E.repeat(4, -1)], -1), atol=1e-12)
     scalar = core.invariants(states).select[0].to_array()
@@ -52,8 +54,8 @@ def trembling(momentum: core.Vector, seconds: float, count: int):
         paths.append(core.path(core.velocity(core.current(psi)), times[1] - times[0]))                   # [times] Bivector
 
     # --- checks
-    # The density the current carries is constant in time, and the Hamiltonian commutes with the
-    # imaginary unit, right multiplication by the spin plane.
+    # The density the current carries is constant in time, and the Hamiltonian commutes with
+    # right multiplication by the spin plane.
     for psi in spinors:
         density = (core.current(psi) | core.TIME).to_array()
         np.testing.assert_allclose(density, density[0], rtol=1e-10)

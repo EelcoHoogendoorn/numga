@@ -28,7 +28,8 @@ SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
 X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
 RESOLUTION = (750, 750)
-PIXEL_ANGLE = 0.035         # angular half-width of a pixel, the cone radius per unit depth
+# Angular half-width of a pixel, the cone radius per unit depth.
+PIXEL_ANGLE = 0.035         # rad
 
 
 # --- read-out -----------------------------------------------------------------------------
@@ -72,7 +73,7 @@ def depths(motors: Motor, grid: Point) -> np.ndarray:
 
 
 def coverage(quadric_val: np.ndarray, level_set: np.ndarray, pixel_w: float) -> np.ndarray:
-    """Anti-aliased inside-ness of the level set sqrt(value) <= level_set."""
+    """Anti-aliased inside-ness of the level set np.sqrt(quadric_val) <= level_set."""
     dist = level_set - np.sqrt(np.maximum(quadric_val, 0.0))
     return 1.0 / (1.0 + np.exp(np.clip(-dist / (0.75 * pixel_w), -30.0, 30.0)))
 
@@ -140,8 +141,9 @@ def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) 
     axes = optical_axes(motors)[observed]
     colors = np.array(CAMERA_COLORS[:len(observed)])[observed]
     for center, axis, cov_twist, color in zip(centers, axes, covariance[observed], colors):
-        # Local translation covariance: under twist (yw, wx, xy) the local displacement is
-        # dx = -wx, dy = yw. Rotated into the world by the camera's frame:
+        # Local translation covariance: a twist with coefficients (yw, wx, xy) displaces the camera
+        # by minus its wx coefficient along local x and by its yw coefficient along local y. Rotated
+        # into the world by the camera's frame:
         cov_local = np.array([
             [ cov_twist[1, 1], -cov_twist[1, 0]],
             [-cov_twist[0, 1],  cov_twist[0, 0]],

@@ -50,16 +50,19 @@ def collision():
     first = tangent_line(Q1, normal)
     second = tangent_line(Q2, -normal)
     midline = ((first - second) * 0.5).normalized()
-    separating = blend(Q1, Q2[0], parameter[0]).inverse()      # a hyperbola between the two
+    # A hyperbola between the two.
+    separating = blend(Q1, Q2[0], parameter[0]).inverse()
     deforming = blend(Q1, Q2[1], 0.45)
     bridging = blend(Q1, Q2[2], parameter[2])
 
     # --- checks ---------------------------------------------------------------------------
-    assert maximum[0].to_array() > 0                            # apart
-    np.testing.assert_allclose(maximum[1].to_array(), 0, atol=1e-8)   # touching
-    assert maximum[2].to_array() < 0                            # overlapping
-    np.testing.assert_allclose((contact_line & Q1(contact_line)).to_array(), 0, atol=1e-6)      # a common tangent
-    np.testing.assert_allclose((Q2[1](contact_line).normalized() & contact_point).norm().to_array(), 0, atol=1e-5)   # one contact point
+    # The poses are apart, touching and overlapping; the contact line is a common tangent, and
+    # both ellipses map it to one contact point.
+    assert maximum[0].to_array() > 0
+    np.testing.assert_allclose(maximum[1].to_array(), 0, atol=1e-8)
+    assert maximum[2].to_array() < 0
+    np.testing.assert_allclose((contact_line & Q1(contact_line)).to_array(), 0, atol=1e-6)
+    np.testing.assert_allclose((Q2[1](contact_line).normalized() & contact_point).norm().to_array(), 0, atol=1e-5)
     return (Q1, Q2, parameter, maximum, sweep, determinants, first, second, midline,
             separating, deforming, bridging, contact_line, contact_point)
 

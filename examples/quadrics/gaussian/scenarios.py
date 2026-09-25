@@ -19,8 +19,9 @@ def gaussian():
     density, level = fit_gaussian(points, pixels)
 
     # --- checks ---------------------------------------------------------------------------
-    # On unit-weight points the level is d² - 1 and the density exp(-d²/2): the 1σ quadric
-    # is exactly the contour where the density falls to exp(-1/2).
+    # On unit-weight points the level is squared_distance - 1 and the density
+    # (-0.5 * squared_distance).exp(): the 1σ quadric is exactly the contour where the
+    # density falls to np.exp(-0.5).
     np.testing.assert_allclose(level.to_array(), -2.0 * np.log(density.to_array()) - 1.0, atol=1e-8)
     return points, pixels, density, level
 

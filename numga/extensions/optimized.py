@@ -1,4 +1,4 @@
-"""Opt-in closed forms for Cl(3,0,1) on the NumPy backend; call register() to prioritize them.
+"""Opt-in closed forms for `PGA3D` on the NumPy backend; call register() to prioritize them.
 
 Each formula is written against one exact coefficient layout, the default one, and is
 dispatched only on that layout: the predicates compare subspaces, blade order and signs
@@ -30,7 +30,7 @@ def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     cosine = np.cos(angle)
     sinc = np.sinc(angle / np.pi)
     pitch = yz*xw + zx*yw + xy*zw
-    # (cos(a) - sinc(a))/a² loses precision near zero; its analytic series does not.
+    # (cosine - sinc) / length_squared loses precision near zero; its analytic series does not.
     small = length_squared < 1e-4
     screw = pitch * np.where(small, -1/3 + length_squared/30 - length_squared**2/840 + length_squared**3/45360,
                              (cosine - sinc) / np.where(small, 1, length_squared))
@@ -82,8 +82,9 @@ class PrincipalInertiaPGA3(Extensor):
 
     Rate and momentum share the bivectors yz zx xy xw yw zw. The map sends the translation block
     to the momentum's first block and the rotation block to its second, each scaled blade-wise:
-    upper = m [..., 1] and lower = (I_yz, I_zx, I_xy) [..., 3] for the inertia. The inverse has
-    the same form with upper = 1 / lower and lower = 1 / upper, so it is four reciprocals.
+    for the inertia, `upper` [..., 1] is the mass and `lower` [..., 3] the moments on yz zx xy.
+    The inverse has the same form with `1 / lower` as its `upper` and `1 / upper` as its `lower`,
+    so it is four reciprocals.
 
     Applying and inverting use these numbers directly, and the batch shape is theirs. Every other
     operation works on the dense 6x6 map, rebuilt from the four numbers whenever one needs it

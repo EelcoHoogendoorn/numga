@@ -65,12 +65,14 @@ def inverse_kinematics(joints: Line, axis: Line, tip_home: Point, target: Point,
     for _ in range(iterations):
         pose, frames = forward_kinematics(joints)
         tip = pose >> tip_home
-        columns = (frames >> axis).commutator(tip)  # Tip velocity per unit rate, per joint.
+        # Tip velocity per unit rate, per joint.
+        columns = (frames >> axis).commutator(tip)
         # Fit the desired tip displacement as a weighted sum of these velocities;
-        # apply those weights as joint increments along the original axes.
+        # apply those weights as joint increments along the home-pose axes.
         joints = joints + axis * columns.lstsq(target - tip)
     pose, frames = forward_kinematics(joints)
-    link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])  # Frame after each joint.
+    # Frame after each joint.
+    link_motors = Extensor.concatenate([frames[1:], pose.reshape(1)])
     return joints, link_motors, pose >> tip_home
 
 

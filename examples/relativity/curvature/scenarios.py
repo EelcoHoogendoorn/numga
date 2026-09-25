@@ -10,14 +10,18 @@ import numpy as np
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Curvature, Scalar, Tidal, Vector, t, x, z
 
-# Wave packet and detector parameters (c = 1):
-DURATION = 6.0          # packet length; the carrier wavelength is DURATION / CYCLES = 2
+# Wave packet and detector parameters, with the speed of light one.
+# Packet length; the carrier wavelength is `DURATION / CYCLES`, 2.
+DURATION = 6.0
 CYCLES = 3
-AMPLITUDE = 1e-4        # peak strain
+# Peak strain.
+AMPLITUDE = 1e-4
 SAMPLES = 1201
-RADIUS = 0.01           # detector radius, much smaller than the wavelength
+# Detector radius, much smaller than the wavelength.
+RADIUS = 0.01
 BEADS = 24
-AMPLIFICATION = 4000    # display magnification of the displacements
+# Display magnification of the displacements.
+AMPLIFICATION = 4000
 
 
 def curvature_map_scenario():

@@ -2,7 +2,7 @@
 
 The centered sandwich alignment gives a Cartesian least-squares rotation;
 matching the centroids supplies translation. The one-sided equation
-q M - M p = 0 fits rotation and translation together, minimizing the residual
+`target * motor - motor * source == 0` fits rotation and translation together, minimizing the residual
 against the motor's own metric, followed by motor normalization. That metric
 measures the rotor part alone, and with it the one-sided fit reaches the same
 least-squares pose as the centered alignment, noisy data included.
@@ -35,7 +35,7 @@ def point(coords: np.ndarray) -> Point:
 def fit_motor(source: Point, target: Point) -> Motor:
     """Fit a motor by the coefficient residual of the one-sided equations."""
     source, target = source.normalized(), target.normalized()
-    # q M = M p leaves the unknown motor in a single linear slot.
+    # target * Motor == Motor * source leaves the unknown motor in a single linear slot.
     residual = target * Motor - Motor * source
 
     # The bulk norm alone would discard translation: the PGA scalar product is degenerate on
@@ -44,11 +44,11 @@ def fit_motor(source: Point, target: Point) -> Motor:
     bulk = residual.reverse().scalar_product(residual)
     weight = residual.dual().reverse().scalar_product(residual.dual())
     misfit = (bulk + weight).sum(axis=0)
-    # Against the motor's own metric, the scalar part of M M~, only the rotor coefficients are
-    # measured: translation carries no unit of its own, so the fit does not depend on where the
-    # origin sits or on the scene's scale. The metric is singular on translation, so the general
-    # eigenproblem sends those modes to infinity; the least finite mode is real, and the Study
-    # normalization then enforces the pseudoscalar part of M M~ = 1.
+    # Against the motor's own metric, the scalar part of motor * motor.reverse(), only the rotor
+    # coefficients are measured: translation carries no unit of its own, so the fit does not depend
+    # on where the origin sits or on the scene's scale. The metric is singular on translation, so the
+    # general eigenproblem sends those modes to infinity; the least finite mode is real, and
+    # normalized() then makes motor * motor.reverse() == 1, its pseudoscalar part included.
     values, motors = misfit.eig()
     values = values.real()
     return motors[values.argmin()].real().normalized()

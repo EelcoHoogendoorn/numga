@@ -18,7 +18,8 @@ import numpy as np
 from numga import Algebra, Extensor, NumpyContext
 from examples.mechanics import lie_integrators as lie
 
-ga: Algebra                                         # supplied by examples.instantiate
+# Supplied by examples.instantiate.
+ga: Algebra
 ctx = NumpyContext(ga, dtype=np.float64)
 mv = ctx.multivector
 
@@ -41,9 +42,9 @@ class Body(NamedTuple):
 def racket(seed: int) -> Body:
     """Batched bodies spinning in each independent bivector plane.
 
-    The body is a rectangular cuboid with distinct axis lengths 1, 2, 3, ... Works for
-    p=2, 3, 4, 5. p > 3 is fascinating: some medial axes become seemingly chaotic, while
-    stranger still, some medial axes actually stabilize.
+    The body is a rectangular cuboid with distinct axis lengths 1, 2, 3, ... Works for p of
+    2, 3, 4 and 5. For `p > 3` some medial axes become seemingly chaotic, and some medial
+    axes stabilize.
     """
     p = ga.dimension
     bits = (np.arange(2**p)[:, None] & (1 << np.arange(p))) > 0
@@ -72,8 +73,8 @@ def simulate(body: Body, step: Callable, dt: float, steps: int) -> tuple[Motor, 
 
 def momentum_drift(motors: Motor, rates: Rate, inertia: Inertia) -> Scalar:
     """Relative drift of the world-frame angular momentum, per time step and body."""
-    # World-frame angular momentum: L = motor >> inertia(rate)
+    # World-frame angular momentum.
     momenta = motors >> inertia(rates)
     change = momenta - momenta[0]
-    # The squared magnitude of a momentum is the scalar part of L ~L, in any dimension.
+    # The squared magnitude of a momentum is the scalar part of `momentum * ~momentum`, in any dimension.
     return ((change * ~change).select[0] / (momenta[0] * ~momenta[0]).select[0]).square_root()

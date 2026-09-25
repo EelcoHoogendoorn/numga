@@ -8,14 +8,15 @@ directions, is a covariance. Knowing it tells you how much clearance the vessel 
 stiff the controller has to be.
 
 The position error is a twist, the small motion from the set point to the actual pose. Its
-covariance is a map from lines to twists. For a line l and a twist t, l & t is one measurement of
-the error, for example its component across the line, and l & P(l) is the variance of that
-measurement. The covariance grows from zero as gusts accumulate and levels off where the
+covariance is a map from lines to twists. For a line l and a twist t, `l & t` is one measurement of
+the error, for example its component across the line, and `l & covariance(l)` is the variance of
+that measurement. The covariance grows from zero as gusts accumulate and levels off where the
 controller balances them. This module computes that level both by integrating the growth over
 time and by solving directly for the covariance at which growth stops.
 
-For comparison, in matrix notation the growth is F P + P F^T + Q and the steady state solves the
-continuous Lyapunov equation.
+In matrix notation the growth reads as the dynamics matrix times the covariance matrix, plus that
+product transposed, plus the noise covariance, and the steady state solves the continuous Lyapunov
+equation.
 """
 
 from __future__ import annotations
@@ -30,12 +31,18 @@ Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
 # A line measures a twist, so it is an antibivector.
 Line = ga.gatype.antibivector()
-Covariance = ga.gatype((Twist, Line))             # Twist <- Line: a measurement line to the correlated twist
-Dynamics = ga.gatype((Twist, Twist))              # Twist <- Twist: rate of change of a position error
-Readouts = ga.gatype((Line, Line))                # Line <- Line: the same rate of change, acting on lines
-Spread = ga.gatype((Scalar, Line, Line))          # Scalar <- (Line, Line): covariance of two position measurements
-Kicks = ga.gatype((Twist, Line))                  # Twist <- Line: white noise to a gust's push on the vessel
-ORIGIN = mv.xy                                    # the set point; in PGA2D a point is a bivector
+# A measurement line to the correlated twist.
+Covariance = ga.gatype((Twist, Line))             # Twist <- Line
+# Rate of change of a position error.
+Dynamics = ga.gatype((Twist, Twist))              # Twist <- Twist
+# The same rate of change, acting on lines.
+Readouts = ga.gatype((Line, Line))                # Line <- Line
+# Covariance of two position measurements.
+Spread = ga.gatype((Scalar, Line, Line))          # Scalar <- (Line, Line)
+# White noise to a gust's push on the vessel.
+Kicks = ga.gatype((Twist, Line))                  # Twist <- Line
+# The set point; in PGA2D a point is a bivector.
+ORIGIN = mv.xy                                    # [] Point
 
 
 # --- math -----------------------------------------------------------------------------
@@ -52,9 +59,11 @@ def drift(rate: Twist, relaxation: float) -> Dynamics:
 def on_readouts(dynamics: Dynamics) -> Readouts:
     """The rate of change of an error, expressed as a map on measurement lines.
 
-    Measuring the changed error dynamics(t) with a line l gives the same number as measuring t
-    itself with the line on_readouts(l). The map is found by solving the incidence form
-    Line & Twist against Line & dynamics. In matrix terms it is the transpose of the dynamics.
+    Measuring the changed error `dynamics(t)` with a line l gives the same number as measuring t
+    itself with the line `on_readouts(l)`. The map is found by solving the incidence form
+    `Line & Twist` against `Line & dynamics`.
+
+    In matrix notation this map reads as the transpose of the dynamics.
     """
     return (Line & Twist).solve(Line & dynamics)
 
@@ -113,6 +122,7 @@ def position_spread(covariance: Covariance) -> Spread:
     the covariance gives a symmetric form on lines. Its eigenpairs are the principal axes and
     variances of the position's uncertainty ellipse.
     """
-    shift = Twist.commutator(ORIGIN)                                          # Point <- Twist: displacement of the set point
-    readout = (Line & Twist).solve(Line & shift)                              # Line <- Line: position measurements as twist measurements
+    # The displacement of the set point, and position measurements as twist measurements.
+    shift = Twist.commutator(ORIGIN)                                          # Point <- Twist
+    readout = (Line & Twist).solve(Line & shift)                              # Line <- Line
     return readout & covariance(readout)

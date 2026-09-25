@@ -50,7 +50,7 @@ def log_quadratic(m: Extensor) -> Extensor:
 #  dispatches on rotors where the legacy motor_log_pade took any even multivector.
 @Extensor.log_pade.register(lambda t: t <= t.algebra.gatype.rotor())
 def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
-    """Odd series in (m-1)/(m+1); converges near identity."""
+    """Odd series in `(m - 1) / (m + 1)`; converges near identity."""
     f = (m - 1) / (m + 1)
     square = f.squared()
     power, result = f, f * 2
@@ -100,7 +100,7 @@ def scalar_log(s: Extensor) -> Extensor:
     and t.squared.is_empty
 )
 def nilpotent_bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
-    """exp(B) = 1 + B when B**2 = 0, as for a translation."""
+    """`b.exp() == 1 + b` when `b` squares to zero by its type, as for a translation."""
 
     return (b + 1).with_traits(ReverseProductOne, Versor)
 
@@ -119,16 +119,18 @@ def bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
 
 @Extensor.exp.register(lambda t: t.squared.is_empty)
 def nilpotent_exp(x: Extensor) -> Extensor:
-    """exp(x) = 1 + x when x squares to zero by its type, as the pseudoscalar of PGA does."""
+    """`x.exp() == 1 + x` when `x` squares to zero by its type, as the pseudoscalar of PGA does."""
 
     return x + 1
 
 
 @Extensor.exp.register(lambda t: t.squared.is_scalar)
 def scalar_square_exp(x: Extensor) -> Extensor:
-    """exp(x) = C + x S when x squares to a scalar s, as a pseudoscalar or a single blade does:
-    cosh and sinh(r) / r with r = sqrt(s) for s > 0, cos and sin(r) / r with r = sqrt(-s) for s < 0,
-    and 1 and 1 for s = 0. No versor trait is asserted: e^(I b) in four dimensions is not one."""
+    """`x.exp() == even + x * odd`, for scalars `even` and `odd`, when `x` squares to a scalar `s`,
+    as a pseudoscalar or a single blade does. With `r = xp.sqrt(xp.abs(s))` they are `xp.cosh(r)`
+    and `xp.sinh(r) / r` for `s > 0`, `xp.cos(r)` and `xp.sin(r) / r` for `s < 0`, and 1 and 1 for
+    `s == 0`. No versor trait is asserted: the exponential of a multiple of the pseudoscalar in four
+    dimensions is not a versor."""
 
     xp = x.context.xp
     square = x.squared().kernel[..., 0]                                # [...] the scalar s

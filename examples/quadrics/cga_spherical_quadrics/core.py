@@ -1,10 +1,11 @@
 """Spherical quadrics in the conformal algebra Cl(3, 1), carried around by a conformal flow.
 
-A point of S² is a null vector (x, y, z, 1). A quadric is a map Q : Vector -> Plane, and the
-point is inside where Q(p) & p < 0. Sums of plane dyads give conical donuts, peanuts, twin
-islands, lemniscates, crescents, Dupin cyclides, pinched horns, spindles, teardrops, triadic
-clovers, hourglasses and parabolic bows. Two off-centre circles on S² meet in a 2-blade, and
-its exponential exp(θ (c1 ^ c2) / 2) is a conformal rotor that moves every quadric along.
+A point of S² is a null vector: its unit coordinates on x, y and z, and weight one on w. A
+quadric Q is a map Plane <- Vector, and a point p is inside where Q(p) & p < 0. Sums of plane
+dyads give conical donuts, peanuts, twin islands, lemniscates, crescents, Dupin cyclides,
+pinched horns, spindles, teardrops, triadic clovers, hourglasses and parabolic bows. Two
+off-centre circles c1 and c2 on S² meet in the 2-blade c1 ^ c2, and its exponential
+((c1 ^ c2) * (phase / 2)).exp() is a conformal rotor that moves every quadric along.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ Quadric = ga.gatype((Plane, Vector))
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 
-# Dual basis planes via pseudoscalar I = xyzw
+# Dual basis planes: the basis vectors times the pseudoscalar I
 I = mv.xyzw
 px = (mv.x * I).cast(Plane.output_subspace)
 py = (mv.y * I).cast(Plane.output_subspace)
@@ -33,7 +34,7 @@ p_wz = pw - pz
 
 
 def point(xyz: np.ndarray) -> Vector:
-    """Null vectors (x, y, z, 1) of the points of S² at (..., 3) unit coordinates."""
+    """Null vectors of the points of S² at (..., 3) unit coordinates, with weight one on w."""
     return mv.x * xyz[..., 0] + mv.y * xyz[..., 1] + mv.z * xyz[..., 2] + mv.w
 
 
@@ -44,7 +45,7 @@ def moved(Q: Quadric, versor: Rotor) -> Quadric:
 
 # --- shapes ---------------------------------------------------------------------------
 def make_spherical_donut(r_core: float, r_tube: float) -> Quadric:
-    """Spherical donut (torus) extensor Q : Vector -> Plane on S²."""
+    """Spherical donut (torus) extensor on S², a map Plane <- Vector."""
     c_out = np.cos(r_core + r_tube)
     c_in = np.cos(r_core - r_tube)
     z0 = (c_out + c_in) / 2.0
@@ -57,13 +58,13 @@ def make_spherical_donut(r_core: float, r_tube: float) -> Quadric:
 
 
 def make_conical_donut(a: float, b: float) -> Quadric:
-    """Spherical donut (Limaçon) with central hole meeting in a razor conical apex on S²."""
+    """Spherical donut (Limaçon) with central hole meeting in a sharp conical apex on S²."""
     line = pw - pz - a * px
     return line * (line & Vector) - b**2 * (px * (px & Vector) + py * (py & Vector))
 
 
 def make_bernoulli_lemniscate(scale_a: float) -> Quadric:
-    """True Lemniscate of Bernoulli figure-8 on S²: (w - z)² - 2 a² (x² - y²) < 0."""
+    """True Lemniscate of Bernoulli figure-8 on S²: (w - z)**2 - 2 * scale_a**2 * (x**2 - y**2) < 0."""
     return p_wz * (p_wz & Vector) - 2.0 * scale_a**2 * (px * (px & Vector) - py * (py & Vector))
 
 
@@ -73,15 +74,17 @@ def make_pinched_horn(r_outer: float) -> Quadric:
 
 
 def make_eccentric_cyclide(r_core: float, r_tube: float, boost_beta: float) -> Quadric:
-    """Eccentric Dupin cyclide on S² with unequal tube width via Lorentz boost."""
+    """Eccentric Dupin cyclide on S² with unequal tube width, by a dilation."""
     return moved(make_spherical_donut(r_core, r_tube), (mv.xw * (boost_beta / 2.0)).exp())
 
 
 def make_spherical_cassini(alpha1: float, alpha2: float, c_threshold: float) -> Quadric:
-    """Spherical Cassini oval quadric (1 - n1.x)(1 - n2.x) < C * w² on S².
+    """Spherical Cassini oval quadric on S²: a point p is inside where
+    (p1 & p) * (p2 & p) < c_threshold * (pw & p)**2, with p1 and p2 the planes tangent to S²
+    at the two foci.
 
-    Yields twin islands (C small), figure-8 lemniscates (C near pinch),
-    pinched-waist peanuts (C larger), or asymmetric teardrops (alpha1 != alpha2).
+    Yields twin islands (c_threshold small), figure-8 lemniscates (c_threshold near pinch),
+    pinched-waist peanuts (c_threshold larger), or asymmetric teardrops (alpha1 != alpha2).
     """
     p1 = pw - (np.sin(alpha1) * px + np.cos(alpha1) * pz)
     p2 = pw - (-np.sin(alpha2) * px + np.cos(alpha2) * pz)
@@ -134,13 +137,13 @@ def make_circle_intersection_vortex(
     center1: np.ndarray, radius1: float, center2: np.ndarray, radius2: float,
 ) -> Bivector:
     """Intersection 2-blade of two off-center circles on S²: each circle is the vector of its
-    centre with weight cos(radius)."""
+    centre with weight the cosine of its radius."""
     c1 = mv.x * center1[0] + mv.y * center1[1] + mv.z * center1[2] + mv.w * np.cos(radius1)
     c2 = mv.x * center2[0] + mv.y * center2[1] + mv.z * center2[2] + mv.w * np.cos(radius2)
     return (c1 ^ c2).normalized()
 
 
 def flow(quadrics: Quadric, generator: Bivector, phases: np.ndarray) -> Quadric:
-    """The quadrics carried by exp(phase · generator / 2), batched as (phases, quadrics)."""
+    """The quadrics carried by (generator * (phase / 2)).exp(), batched as (phases, quadrics)."""
     rotors = (generator * (phases / 2.0)).exp()
     return moved(quadrics, rotors[:, None])

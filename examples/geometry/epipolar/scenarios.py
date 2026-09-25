@@ -13,10 +13,11 @@ from examples.geometry.epipolar.core import Camera, Line, Point, direction, hous
 
 def epipolar():
     """Two cameras view a house; from their noisy images recover the relative pose and the house."""
-    landmarks = house_landmarks()                     # [n] Point, in camera 1's frame
+    # The house, in camera 1's frame:
+    landmarks = house_landmarks()                     # [n] Point
     n_points = landmarks.shape[0]
 
-    # Camera 1 is at the world origin, looking along +z at the screen z = 1:
+    # Camera 1 is at the world origin, looking along +z at the screen z == 1:
     origin = mv.zyx
     screen = mv.z - mv.w
     camera: Camera = (origin & Point) ^ screen
@@ -31,10 +32,10 @@ def epipolar():
     # the weight, the pairing with the plane at infinity, gives the image points unit weight:
     projected_1 = camera(landmarks)
     projected_2 = camera(true_motor << landmarks)
-    image_1 = projected_1 / (mv.w & projected_1)      # [n] Point on z = 1
+    image_1 = projected_1 / (mv.w & projected_1)      # [n] Point
     image_2 = projected_2 / (mv.w & projected_2)
 
-    # Realistic sensor measurement noise (sigma = 0.0015, ~1.5 pixels on a 1000px sensor),
+    # Realistic sensor measurement noise (standard deviation 0.0015, ~1.5 pixels on a 1000px sensor),
     # a displacement within the screen:
     rng = np.random.default_rng(42)
     noise_sigma = 0.0015

@@ -60,9 +60,9 @@ class Suspension:
     body: Point                     # [corners] Point
     attachments: Point              # [n_springs] Point
     anchors: Point                  # [n_springs] Point
-    spring_constants: np.ndarray    # [n_springs] float
+    spring_constants: np.ndarray    # [n_springs] N/m
     mass_points: Point              # [mass_points] Point
-    masses: np.ndarray              # [mass_points] float
+    masses: np.ndarray              # [mass_points] kg
 
 
 @dataclass(frozen=True)
@@ -83,18 +83,19 @@ def suspension(springs: int) -> Suspension:
 
     The first two springs hang vertically; the third is angled and off-centre.
     """
-    body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [corners, 2] float (center at (1, 1))
-    attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [springs, 2] float
-    anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [springs, 2] float
+    # The plate's corners, centred at (1, 1).
+    body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [corners, 2] m
+    attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [springs, 2] m
+    anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [springs, 2] m
     body = point(body_xy)                                                         # [corners] Point
     attachments = point(attachments_xy[:springs])                                 # [n_springs] Point
     anchors = point(anchors_xy[:springs])                                         # [n_springs] Point
-    spring_constants = np.full(springs, 6.0)                                      # [n_springs] float
+    spring_constants = np.full(springs, 6.0)                                      # [n_springs] N/m
 
     # Tensor-product 2-point Gauss quadrature on the uniform plate:
     center = body.sum(axis=0) * 0.25
     mass_points = center + (body - center) / np.sqrt(3)                           # [mass_points] Point
-    masses = np.full(4, 0.25)                                                     # [mass_points] float
+    masses = np.full(4, 0.25)                                                     # [mass_points] kg
     return Suspension(body, attachments, anchors, spring_constants, mass_points, masses)
 
 
@@ -107,7 +108,8 @@ def mode_case(
     attachment_offsets: Point,
     extensions: Scalar,
 ) -> ModeCase:
-    """Collect mode geometry, with natural frequencies f = sqrt(lambda) / (2 pi) in Hz."""
+    """Collect mode geometry, with natural frequencies in Hz: the square root of each eigenvalue
+    over `2 * np.pi`."""
     frequencies = values.clip(0, np.inf).square_root() / (2 * np.pi)              # [modes] Scalar
     return ModeCase(body, attachments, anchors, frequencies, body_offsets, attachment_offsets, extensions)
 
@@ -117,7 +119,7 @@ def normal_modes(system: Suspension) -> ModeCase:
     # 1. Spring lines of action in PGA (joining anchor to attachment):
     lines: Forque = (system.anchors & system.attachments).normalized()           # [n_springs] Forque
 
-    # 2. Pairing an open twist with the spring line measures linear stretch (Twist -> Scalar):
+    # 2. Pairing an open twist with the spring line measures linear stretch (Scalar <- Twist):
     extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
 
     # 3. Hooke's law: line of action scaled by extension and spring constant (Forque <- Twist):

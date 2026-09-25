@@ -10,9 +10,9 @@ import numpy as np
 
 from examples.mechanics.crystal_waves import core
 
-# Cubic elastic constants C11, C12, C44 in GPa and density in g/cm^3: km/s for the speeds.
-# Fused silica is isotropic, C12 = C11 - 2 C44; silicon is moderately and beta-brass strongly
-# anisotropic, measured by the ratio 2 C44 / (C11 - C12): 1, 1.6 and 8.5.
+# Cubic elastic constants c11, c12, c44 in GPa and density in g/cm^3: km/s for the speeds.
+# Fused silica is isotropic, `c12 == c11 - 2 * c44`; silicon is moderately and beta-brass strongly
+# anisotropic, measured by the ratio `2 * c44 / (c11 - c12)`: 1, 1.6 and 8.5.
 MATERIALS = {
     "fused silica": (78.5, 16.1, 31.2, 2.20),
     "silicon": (165.7, 63.9, 79.6, 2.33),
@@ -42,7 +42,7 @@ def focusing(name: str, count: int, seed: int) -> core.Vector:
 
 
 def wave_fronts(name: str, count: int) -> core.Vector:
-    """Group velocities for headings around the cube face z = 0: where each wave's energy is after
+    """Group velocities for headings in the xy plane, a cube face: where each wave's energy is after
     unit time, a section through its wave surface.
 
     The waves are ordered by speed, so where the two shear speeds cross, the slower and the faster

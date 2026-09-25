@@ -6,9 +6,10 @@ Summing these dyads across incident faces yields the quadric error metric (QEM):
 an extensor mapping points to polar planes.
 
 Edge contraction combines the quadrics of its endpoints by extensor addition:
-Q_edge = Q_a + Q_b. The optimal collapsed vertex position has vanishing spatial
-gradient, meaning its polar plane is the plane at infinity: Q_edge(X) ∝ ∞.
-Solving Q_edge.lstsq(mv.w) yields the optimal vertex in a single linear solve.
+`q_edge = qa + qb`. The optimal collapsed vertex position has vanishing spatial
+gradient, meaning its polar plane is the plane at infinity: `q_edge(v_edge)` is a
+multiple of `mv.w`. Solving `q_edge.lstsq(mv.w)` yields the optimal vertex in a single
+linear solve.
 """
 
 from __future__ import annotations
@@ -81,7 +82,7 @@ def edge_collapse(
     q_edge: Quadric = qa + qb
 
     # The optimal vertex has vanishing spatial gradient, so its polar plane
-    # is the plane at infinity: Q(X) ∝ mv.w.
+    # is the plane at infinity: q_edge(v_edge) is a multiple of mv.w.
     v_edge: Point = q_edge.lstsq(mv.w).normalized()
 
     return qa, qb, q_edge, v_edge

@@ -27,7 +27,7 @@ def curvature_lines(pixels: int):
         parameters.append(core.confocal(surface, hits))              # [pixels, pixels, members] Scalar
 
     # --- checks
-    # At the tip of the long axis the principal curvatures are a/b^2 and a/c^2.
+    # At the tip of the long axis the principal curvatures are a / b**2 and a / c**2.
     tip = core.principal(ellipsoid, core.point(np.array([a, 0.0, 0.0])))
     np.testing.assert_allclose(tip.to_array(), [a / b**2, a / c**2], rtol=1e-8)
     # The four umbilics, where the ellipsoid curves equally in every direction, lie in the plane

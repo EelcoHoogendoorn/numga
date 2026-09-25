@@ -65,7 +65,7 @@ def segment(n: int, half_length: float) -> Point:
 
 
 def patch(n: int, half_width: float, rng: np.random.Generator) -> Point:
-    """Points on a square of the plane z = 0."""
+    """Points on a square of the plane z == 0."""
     uv = rng.uniform(-half_width, half_width, size=(n, 2))
     return mv.zyx + mv.yzw * uv[:, 0] + mv.zxw * uv[:, 1]
 
@@ -87,12 +87,12 @@ def bundle(n: int, spread: float, rng: np.random.Generator) -> Line:
 
 # --- clipping geometry -----------------------------------------------------------------
 def end_planes(half_length: float) -> Plane:
-    """The planes y = ±half_length, which cut a segment out of a line along y."""
+    """The planes y == half_length and y == -half_length, which cut a segment out of a line along y."""
     return mv.y - mv.w * np.array([half_length, -half_length])
 
 
 def patch_edges(half_width: float) -> Line:
-    """The four edge lines of a square of the plane z = 0."""
+    """The four edge lines of a square of the plane z == 0."""
     x_planes = mv.x - mv.w * (np.array([1, 1, -1, -1]) * half_width)
     y_planes = mv.y - mv.w * (np.array([1, -1, -1, 1]) * half_width)
     return x_planes ^ y_planes

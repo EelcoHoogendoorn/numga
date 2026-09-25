@@ -95,7 +95,7 @@ def run_simplex_demo() -> None:
     ]
     corners = mv.antivector(corners_coords)
 
-    # 1. Compute inertia operators (arity 1: bivector -> antibivector)
+    # 1. Compute inertia operators (arity 1: Antibivector <- Bivector)
     bivector = PGA3D.gatype.bivector()
     samples = barycentric_samples(simplex_inertia_weights(corners.shape[0]), corners)
     I_lumped = (samples & samples.commutator(bivector)).sum(axis=0)
@@ -107,13 +107,13 @@ def run_simplex_demo() -> None:
     print("Grid-Sampled Brute Inertia Matrix (6x6):\n", np.around(I_brute.kernel, 3))
     print("Monte Carlo Random Inertia Matrix (6x6):\n", np.around(I_random.kernel, 3))
 
-    # 2. Linear map action: momentum = I(rate)
+    # 2. Linear map action: `momentum = I_lumped(rate)`
     rate = mv.bivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     momentum = I_lumped(rate)
     print("\nAngular Rate bivector:", rate.kernel)
     print("Resulting Momentum antibivector:", np.around(momentum.kernel, 4))
 
-    # 3. Exact operator inverse: rate = I_inv(momentum)
+    # 3. Exact operator inverse: `recovered_rate = I_inv(momentum)`
     I_inv = I_lumped.inverse()
     recovered_rate = I_inv(momentum)
     print("Recovered Rate via I.inverse():", np.around(recovered_rate.kernel, 4))

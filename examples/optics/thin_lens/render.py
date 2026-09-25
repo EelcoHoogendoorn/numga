@@ -40,7 +40,7 @@ def draw_rays(ax, rays: Line, start: Line, stop: Line, color: str) -> None:
 
 
 def draw_plane(ax, plane: Line, half_height: float) -> None:
-    """Draw an element's plane between the lines y = ±half_height."""
+    """Draw an element's plane between the lines y == -half_height and y == half_height."""
     a, b = xy(plane ^ (mv.y + mv.w * half_height)), xy(plane ^ (mv.y - mv.w * half_height))
     ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")
 

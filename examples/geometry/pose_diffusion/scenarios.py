@@ -14,8 +14,9 @@ import numpy as np
 from examples.geometry.pose_diffusion import core
 
 mv, Line = core.mv, core.Line
-RELAXATION = 0.6                                                              # controller gain, per second
-RATES = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}                        # the body's rotation rate in each scene
+# The controller gain, and the body's rotation rate in each scene.
+RELAXATION = 0.6                                                              # 1/s
+RATES = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -28,7 +29,8 @@ def shaping(sideways: float, forward: float, turning: float) -> core.Kicks:
     return mv.yw * sideways * (mv.yw & Line) + mv.wx * forward * (mv.wx & Line) + mv.xy * turning * (mv.xy & Line)
 
 
-KICKS = shaping(0.35, 0.08, 0.15)                                             # mostly sideways
+# Mostly sideways.
+KICKS = shaping(0.35, 0.08, 0.15)                                             # [] Twist <- Line
 
 
 # --- math -----------------------------------------------------------------------------
@@ -43,12 +45,15 @@ def diffuse(rate: core.Twist, kicks: core.Kicks, seconds: float, dt: float, bodi
     dynamics, covariance = core.drift(rate, RELAXATION), core.covariance(kicks)
     limit = core.settled(dynamics, covariance)
     rng = np.random.default_rng(seed)
-    errors = mv.bivector(np.zeros((bodies, 3)))                               # [bodies] Twist: all bodies at the commanded pose
-    predicted = covariance * 0.0                                              # zero covariance at the start
+    # All bodies at the commanded pose, and zero covariance at the start.
+    errors = mv.bivector(np.zeros((bodies, 3)))                               # [bodies] Twist
+    predicted = covariance * 0.0                                              # [] Twist <- Line
     for count in range(int(seconds / dt)):
         if count % every == 0:
-            yield (errors * 0.5).exp(), predicted, limit                   # the exponential of a twist is a motor
-        white = mv.vector(rng.normal(size=(bodies, 3))) * np.sqrt(dt)         # [bodies] Line: white noise integrated over the step
+            # The exponential of a twist is a motor.
+            yield (errors * 0.5).exp(), predicted, limit
+        # White noise integrated over the step.
+        white = mv.vector(rng.normal(size=(bodies, 3))) * np.sqrt(dt)         # [bodies] Line
         errors, predicted = core.step(dynamics, covariance, errors, predicted, kicks(white), dt)
 
     # --- checks

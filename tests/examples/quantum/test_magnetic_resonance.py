@@ -10,7 +10,7 @@ from examples.quantum.magnetic_resonance import core, render, scenarios
 
 
 def test_generator_is_the_bloch_equations():
-    """The state's rate of change is dr/dt = w x r - relaxation, with w = (drive, 0, detuning), the
+    """The Bloch vector's rate of change is np.cross(w, r) less the relaxation, with w = (drive, 0, detuning), the
     transverse part decaying at 1 / T2 and the part along the field relaxing to one at 1 / T1."""
     detuning, drive, t1, t2 = 0.7, 1.3, 5.0, 2.0
     rates = core.generator(core.mv.scalar([detuning]), core.mv.scalar([drive]), t1, t2)

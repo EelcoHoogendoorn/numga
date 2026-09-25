@@ -10,17 +10,19 @@ from examples.quadrics.s3_raytracer.core import (
 
 
 def walk(steps: int):
-    # An ellipsoid: the dual quadric with the origin as centre, principal half-widths tan(θ) along the
-    # basis directions, and the -1 on the centre that closes it. Four copies of one shape,
-    # carried to increasing angular distances along +x and offset so they don't overlap.
+    # An ellipsoid: the dual quadric with the origin as centre, principal half-widths along the
+    # basis directions, each the tangent of an angular half-width, and the -1 on the centre that
+    # closes it. Four copies of one shape, carried to increasing angular distances along +x and
+    # offset so they don't overlap.
     axes = direction(np.eye(3))
     ellipsoid = (axes * (axes & Plane) * np.tan(np.array([0.2, 0.28, 0.15])) ** 2).sum(axis=0) - origin * (origin & Plane)
     distances = np.array([0.7, 1.4, 2.1, 2.6])
     sideways, upward = np.array([-0.4, 0.4, -0.4, 0.4]), np.array([-0.3, -0.3, 0.3, 0.3])
     colors = np.array([[0.9, 0.3, 0.3], [0.3, 0.8, 0.4], [0.3, 0.5, 0.95], [0.95, 0.8, 0.3]])
     placed = (mv.xw * (distances / 2)).exp() * (mv.yw * (sideways / 2)).exp() * (mv.zw * (upward / 2)).exp() * (mv.xy * 0.4).exp()
-    bodies = placed >> ellipsoid(placed << Plane)                       # dual quadrics in the world
-    surfaces = bodies.inverse()                                   # their primal forms: polar plane <= point
+    # The dual quadrics in the world, and their primal forms, which map a point to its polar plane.
+    bodies = placed >> ellipsoid(placed << Plane)                       # [bodies] Point <- Plane
+    surfaces = bodies.inverse()                                   # [bodies] Plane <- Point
     light = direction(np.array([-0.4, 0.6, 0.7]))
     fov = np.radians(80.0)
 
@@ -28,8 +30,9 @@ def walk(steps: int):
     eye_frames = (mv.xw * (np.linspace(0.0, 1.2, steps, endpoint=False) / 2)).exp()
 
     # --- checks ---------------------------------------------------------------------------
-    # A ray is inside a body's outline cone exactly when its great circle origin + λ·dir meets the
-    # body: the quadratic a λ² + 2 b λ + c has real roots. Compared away from the outline itself.
+    # A ray is inside a body's outline cone exactly when its great circle origin + chart * lam
+    # meets the body: the quadratic a * lam**2 + 2 * b * lam + c has real roots. Compared away
+    # from the outline itself.
     chart = pixel_chart(fov, (90, 120))
     covered = inside(outlines(mv.rotor(), surfaces), chart)
     k_eye, k_dir = surfaces.reshape(-1, 1)(origin), surfaces.reshape(-1, 1)(chart)

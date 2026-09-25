@@ -22,7 +22,8 @@ def euclidean(points: Point) -> np.ndarray:
 
 
 def screen_line_endpoints(lines: Line, half_width: float) -> np.ndarray:
-    """Clip lines on the screen z = 1 to x = ±half_width, returning (..., 2, 2) screen coordinates."""
+    """Clip lines on the screen z == 1 at x == -half_width and x == half_width, returning (..., 2, 2)
+    screen coordinates."""
     ends = [euclidean(lines ^ (mv.x - mv.w * x))[..., :2] for x in (-half_width, half_width)]
     return np.stack(ends, axis=-2)
 
@@ -37,7 +38,7 @@ def draw_camera_frustum(
     label: str,
 ) -> None:
     """Draw a 3D camera wireframe pyramid: its centre, sensor rectangle and optical axis."""
-    # Camera local sensor corners at distance z = scale, and the optical axis tip, moved by the pose:
+    # Camera local sensor corners at depth `scale`, and the optical axis tip, moved by the pose:
     w, h = 0.5 * scale, 0.38 * scale
     local = np.array([
         [-w, -h, scale],

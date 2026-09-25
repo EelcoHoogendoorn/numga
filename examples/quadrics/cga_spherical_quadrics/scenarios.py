@@ -16,7 +16,7 @@ from examples.quadrics.cga_spherical_quadrics.core import (
 def shapes() -> dict[str, tuple[Quadric, list[str]]]:
     """Every shape, tilted into view, with its colour; the trio combines three of them."""
     single = {
-        # Donut (solid ring + central hole) that narrows and meets in a sharp conical apex.
+        # Donut (solid ring and central hole) that narrows and meets in a sharp conical apex.
         "conical_donut": (moved(make_conical_donut(0.55, 0.22), (mv.xz * -0.20).exp()), "#38bdf8"),
         # Pinched-waist Cassini oval.
         "peanut": (moved(make_spherical_cassini(np.radians(25.0), np.radians(25.0), 0.012), (mv.yz * 0.30).exp()), "#f59e0b"),

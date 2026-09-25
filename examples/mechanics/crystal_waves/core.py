@@ -24,21 +24,25 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-Stiffness = ga.gatype((Vector, Vector, Vector, Vector))             # traction <- (normal, displacement, gradient)
-axes = mv.basis()                                                   # [3] Vector: the crystal's axes
+# The traction on a face, from the face's normal, the displacement and its gradient direction.
+Stiffness = ga.gatype((Vector, Vector, Vector, Vector))             # Vector <- (Vector, Vector, Vector)
+# The crystal's axes.
+axes = mv.basis()                                                   # [3] Vector
 
 
 # --- math ----------------------------------------------------------------------------------------
 def stiffness(c11: float, c12: float, c44: float) -> Stiffness:
     """The stiffness of a cubic crystal from its elastic constants.
 
-    With normal n, displacement v and gradient h: the dilation v . h pushes along the normal, the
-    shear pulls along v and h, n _| (v ^ h) = (n . v) h - (n . h) v turning one into the other;
-    along the crystal's axes the stiffness differs from isotropic by c11 - c12 - 2 c44.
+    With normal n, displacement v and gradient h: the dilation `v | h` pushes along the normal, the
+    shear pulls along v and h, `n | (v ^ h) == (n | v) * h - (n | h) * v` turning one into the other;
+    along the crystal's axes the stiffness differs from isotropic by `c11 - c12 - 2 * c44`.
     """
-    dilation = Vector * (Vector | Vector)                                        # n (v . h)
-    shear = 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))        # v (n . h) + h (n . v)
-    cubic = (axes * (axes | Vector) * (axes | Vector) * (axes | Vector)).sum()   # each axis reading n, v and h
+    # The dilation is `n * (v | h)`, the shear `v * (n | h) + h * (n | v)`, and the cubic term has
+    # each axis reading n, v and h.
+    dilation = Vector * (Vector | Vector)                                        # Vector <- (Vector, Vector, Vector)
+    shear = 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))        # Vector <- (Vector, Vector, Vector)
+    cubic = (axes * (axes | Vector) * (axes | Vector) * (axes | Vector)).sum()   # Vector <- (Vector, Vector, Vector)
     return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic
 
 
@@ -58,6 +62,7 @@ def energy_flow(crystal: Stiffness, heading: Vector, polarization: Vector, densi
     slot, the stiffness returns the flux of the wave's energy. Divided by density times phase speed
     it is the group velocity, whose component along the heading is the phase speed.
     """
-    along = heading[..., None]                                          # against each of the waves
-    squared = polarization | crystal(along, polarization, along)        # [..., 3] density times squared speed
+    # The heading against each of the waves, and each wave's density times squared speed.
+    along = heading[..., None]                                          # [..., 1] Vector
+    squared = polarization | crystal(along, polarization, along)        # [..., 3] Scalar
     return crystal(polarization, polarization, along) / (squared * density).square_root()

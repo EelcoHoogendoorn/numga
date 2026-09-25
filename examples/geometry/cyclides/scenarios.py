@@ -155,12 +155,12 @@ def two_lobed():
 
 def linked_vortex():
     surface, inversion = inverted_hyperboloid()
-    # Invert a circle surrounding the original hyperboloid's waist together
+    # Invert a circle surrounding the uninverted hyperboloid's waist together
     # with the body. The resulting vortex circle threads its opening transversely.
     radius = 2.5
     sphere = chart_origin - chart_infinity * (radius * radius / 2)
     circle = (inversion >> (mv.z ^ sphere)).normalized()
-    # The inverted circle still lies in z = 0. Normalize its sphere to recover
+    # The inverted circle still lies in the plane z == 0. Normalize its sphere to recover
     # its world-space radius, then give it a constant-thickness torus tube.
     sphere = inversion >> sphere
     sphere = sphere / -(sphere | chart_infinity)
@@ -175,7 +175,7 @@ def linked_vortex():
 
 def linked_tori():
     # Matching centreline radii, with a small shift along the tilt axis.
-    # Matching the shift to radius * sin(tilt) keeps the initial gap fairly even.
+    # Matching the shift to radius * np.sin(tilt) keeps the initial gap fairly even.
     radius, offset = 1.4, 0.45
     surface = torus(radius, 0.16)
     placement = (-0.5 * ((mv.x * offset) ^ chart_infinity)).exp() * (
@@ -255,10 +255,12 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     dilations = dilation(mv.x * np.cos(leans) + mv.y * np.sin(leans), 3.0)
     bent = dilations >> cone(0.35)(dilations << Point)
 
-    # The eye aims at the midpoint of the two dilated vertices, z and -z carried by the dilation.
-    vertices = dilations[:, None] >> stack((mv.z + mv.e, -mv.z + mv.e))           # null vectors
-    unit_e = vertices / -(vertices | mv.e)                                    # one unit of e each
-    midpoints = (unit_e[:, 0] + unit_e[:, 1] - 2 * mv.e).normalized()         # points of S³ as unit vectors
+    # The eye aims at the midpoint of the two dilated vertices, z and -z carried by the dilation. The
+    # vertices are null vectors; scaled to one unit of e each, their sum less its e part, normalized, is
+    # the midpoint, a point of S³ as a unit vector.
+    vertices = dilations[:, None] >> stack((mv.z + mv.e, -mv.z + mv.e))           # [spindles, 2] Sphere
+    unit_e = vertices / -(vertices | mv.e)                                    # [spindles, 2] Sphere
+    midpoints = (unit_e[:, 0] + unit_e[:, 1] - 2 * mv.e).normalized()         # [spindles] Sphere
 
     # Which spindle, its orientation in the six planes, the distance, and the eye's yaw and pitch.
     shots = [

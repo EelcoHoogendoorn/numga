@@ -20,7 +20,7 @@ def qem():
     face_planes = (vertices[faces[:, 0]] & vertices[faces[:, 1]] & vertices[faces[:, 2]]).normalized()
 
     # Incident face plane sets for the two endpoints:
-    # Notice faces 0 and 1 (flanking the edge) appear in BOTH sets!
+    # Faces 0 and 1, flanking the edge, appear in both sets.
     incident_a = np.array([0, 1, 2, 3])
     incident_b = np.array([0, 1, 4, 5])
     qa, qb, q_edge, v_edge = edge_collapse(face_planes[incident_a], face_planes[incident_b])

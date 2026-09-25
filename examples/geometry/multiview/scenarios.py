@@ -17,7 +17,7 @@ core = instantiate("examples.geometry.multiview.core", PGA2D)
 Camera, Information, Motor, Point, Quadric = core.Camera, core.Information, core.Motor, core.Point, core.Quadric
 mv, point = core.mv, core.point
 
-# Landmarks in front of the cameras, at depths y in [0.85, 2.55]:
+# Landmarks in front of the cameras, at depths y from 0.85 to 2.55:
 LANDMARKS = np.array([
     [ 0.15, 0.85],
     [-0.43, 1.15],
@@ -38,7 +38,7 @@ def rig(offsets: np.ndarray, gazes: np.ndarray) -> Motor:
 def observe(true_motors: Motor):
     """The landmarks, the pinhole cameras, and the sight cones of their pixel measurements."""
     true_points = point(LANDMARKS)
-    # Pinhole at the origin, sensor line y = 1:
+    # Pinhole at the origin, sensor line y == 1:
     camera = (point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
     cameras = camera.broadcast_to(true_motors.shape)
 

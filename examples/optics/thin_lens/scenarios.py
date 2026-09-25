@@ -74,10 +74,13 @@ def train(frames: int):
     fan: Line = subject & point(1.0, np.linspace(-0.6, 0.6, 7))
     for t in np.linspace(0.0, 2 * np.pi, frames, endpoint=False):
         motors = (
-            (mv.wx * (-(1.0 + 0.3 * np.sin(t)) / 2)).exp() * (mv.xy * (0.3 * np.sin(2 * t) / 2)).exp(),   # slides and tilts
-            (mv.wx * (-1.9 / 2)).exp(),                                                                  # fixed
-            (mv.wx * (-2.2 / 2)).exp(),                                                                  # fixed
-            (mv.wx * (-3.2 / 2)).exp() * (mv.xy * ((np.pi / 4 + 0.1 * np.cos(t)) / 2)).exp(),            # rocks about its pivot
+            # The first lens slides and tilts.
+            (mv.wx * (-(1.0 + 0.3 * np.sin(t)) / 2)).exp() * (mv.xy * (0.3 * np.sin(2 * t) / 2)).exp(),
+            # The prism and the second lens are fixed.
+            (mv.wx * (-1.9 / 2)).exp(),
+            (mv.wx * (-2.2 / 2)).exp(),
+            # The mirror rocks about its pivot.
+            (mv.wx * (-3.2 / 2)).exp() * (mv.xy * ((np.pi / 4 + 0.1 * np.cos(t)) / 2)).exp(),
         )
         planes, legs, composed = trace(fan, motors, ELEMENTS)
         back: Line = composed(fan)

@@ -3,9 +3,10 @@
 An impulse changes a worldline's slope, not its position. In a fixed observer
 frame, the body's equal-time length cannot jump while its endpoint worldlines
 remain continuous. A sudden velocity change therefore cannot simply replace
-the body's old length with the relaxed Lorentz-contracted length of its new
-motion. Arbitrary timing across the body generally leaves compression or
-stretch, which drives an internal response and may relax to a different length.
+the body's length before the change with the relaxed Lorentz-contracted length
+of the motion after it. Arbitrary timing across the body generally leaves
+compression or stretch, which drives an internal response and may relax to a
+different length.
 Changing observer alone introduces no strain: Lorentz contraction compares
 different equal-time cuts of the same worldlines.
 
@@ -14,9 +15,9 @@ keeping the same speed. Each end's incoming and outgoing worldline segments
 are mirror images across that instant, and the measured length is unchanged.
 Both motions have the same proper spacing, so there is no strain mismatch to
 relax. An open sandwich changes the observer of the entire drawing. The line
-joining the kinks tilts, becoming the spacelike hyperbolic bisector of the old
-and new motion. The observer-frame length now changes continuously as the two
-ends reach their kinks at different times.
+joining the kinks tilts, becoming the spacelike hyperbolic bisector of the
+motions before and after. In the boosted drawing the observer-frame length
+changes continuously as the two ends reach their kinks at different times.
 
 Each material point makes one sharp jump between specified uniform velocities.
 For unequal velocities, unchanged proper spacing on both sides fixes this
@@ -48,7 +49,8 @@ Paradox", arXiv:0712.3891 (2007; revised 2020), Sec. 1(III),
 "Non-simultaneous braking", Eq. (9):
 https://arxiv.org/pdf/0712.3891v3#page=13
 
-Coordinates are (ct, x), with c = proper rod length L0 = 1.
+Coordinates are time and position along `mv.t` and `mv.x`, in units where the
+speed of light and the proper rod length are both one.
 """
 
 from __future__ import annotations
@@ -67,8 +69,10 @@ Vector = Spacetime.gatype.vector()
 Rotor = Spacetime.gatype.rotor()
 VectorMap = Spacetime.gatype((Vector, Vector))
 
-GEOMETRY_ATOL = 1e-9  # Allow for the library's approximate bivector exp().
-ENDS: Scalar = mv.scalar([[0.0], [1.0]])  # [end] the rod's two ends, in units of its proper length
+# Allow for the library's approximate bivector exp().
+GEOMETRY_ATOL = 1e-9
+# The rod's two ends, in units of its proper length.
+ENDS: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
 
 
 def boost(rapidity: np.ndarray) -> VectorMap:
@@ -85,8 +89,8 @@ def strain_preserving_kinks(before: Vector, after: Vector) -> Vector:
 
     The summed directions give the midpoint observer's time axis. Its
     spacelike perpendicular supplies the kink line; scale it so that both
-    rest frames measure the original proper spacing. Anchor the left kink
-    at the origin. This construction is specific to the (ct, x) plane.
+    rest frames measure the unit proper spacing. Anchor the left kink
+    at the origin. This construction is specific to the plane of `mv.t` and `mv.x`.
     """
     separation: Vector = ((before + after) * mv.tx) / (1 + (before | after))
     return ENDS * separation
@@ -148,7 +152,8 @@ def worldline_events(times: Scalar, kinks: Vector, directions: Vector) -> Vector
     between and after the steps. Start on the worldline before the first kink,
     then add each velocity jump only after that end has crossed its kink.
     """
-    rates: Vector = directions / (directions | mv.t)                     # [step + 1] per unit observer time
+    # Velocities per unit observer time.
+    rates: Vector = directions / (directions | mv.t)                     # [step + 1] Vector
     elapsed: Scalar = times.reshape(*times.shape, 1, 1) - (kinks | mv.t)  # [..., step, end]
     jumps: Vector = rates[1:] - rates[:-1]                               # [step]
     return kinks[0] + rates[0] * elapsed[..., 0, :] + (jumps[:, None] * elapsed.clip(0.0, np.inf)).sum(axis=-2)
@@ -161,7 +166,7 @@ def worldlines(kinks: Vector, directions: Vector, span: Scalar) -> Vector:
 
 
 def ringing_length(times: np.ndarray, damping_ratio: float, natural_frequency: float) -> np.ndarray:
-    """Underdamped mode with L(0)=0.6, L'(0)=0, and L(infinity)=1.
+    """Underdamped mode that starts at length 0.6 with zero rate of change and settles to length 1.
 
     natural_frequency is the undamped angular frequency; both decay and
     oscillation follow from it and the damping ratio.

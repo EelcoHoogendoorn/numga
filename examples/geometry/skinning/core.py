@@ -1,10 +1,14 @@
 """Linear blend skinning two ways in PGA3D: blend the motors, or blend their maps.
 
-A bone's transform is a motor m; its action on points is the extensor m >> P, a 4x4 matrix.
-Matrix skinning blends the maps and applies the blend; motor skinning (dual quaternion
-blending) blends the motors, renormalises, and applies the sandwich. In this library those
-are the same kind of object, so each blend is one line and the well-known artefact of the
-matrix version, the collapsing radius under a twist, is a one-number comparison.
+A bone's transform is a motor m; its action on points is the extensor `m >> Point`.
+Matrix skinning blends the maps and applies the blend; motor skinning blends the motors,
+renormalises, and applies the sandwich. In this library those are the same kind of object,
+so each blend is one line and the well-known artefact of the matrix version, the collapsing
+radius under a twist, is a one-number comparison.
+
+In the matrix notation of computer graphics the point map reads as a four-by-four matrix. In
+dual quaternion notation a motor reads as a unit dual quaternion, and motor skinning as dual
+quaternion blending.
 """
 
 from __future__ import annotations
@@ -49,7 +53,7 @@ def radius(vertices: Point) -> Scalar:
 
 # --- plumbing -------------------------------------------------------------------------
 def cylinder(rings: int, around: int) -> tuple[Point, Scalar]:
-    """Unit-radius skin around the x axis from x = 0 to 1, and the weight x of the second bone."""
+    """Unit-radius skin around the x axis for x from 0 to 1, and the weight x of the second bone."""
     x, t = np.meshgrid(np.linspace(0.0, 1.0, rings), np.linspace(0.0, 2 * np.pi, around, endpoint=False), indexing="ij")
     coords = np.stack([x, np.cos(t), np.sin(t)], axis=-1).reshape(-1, 3)
     return point(coords), mv.scalar(x.reshape(-1, 1))
