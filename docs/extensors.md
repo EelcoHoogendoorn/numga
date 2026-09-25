@@ -177,7 +177,7 @@ rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried aro
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb)
 
-![The echo and the free decay of spins in an uneven field](../plots/resonance_echo_decay.png)
+![Spins fanning out in an uneven field and refocusing into an echo](../plots/resonance_echo.gif)
 
 ```python
 relaxing = L * State * L.reverse() - 0.5 * (back * State + State * back)   # [] State <- State
@@ -188,9 +188,8 @@ echo = waiting(turn(waiting(tip)))                                          # [d
 sample = echo.mean(axis=-1)                                                 # [delays] State <- State
 ```
 
-* **Relaxation is its formula.** A relaxation process multiplies the state from both sides. Leaving the state open makes the formula a map. In matrix notation the same map needs the density matrix flattened into a column and each term rewritten as a Kronecker product.
-* **The type picks the basis.** A spin's state is its own reverse, four real numbers, so the generator is a real 4×4 map: the Bloch equations, relaxation toward equilibrium included.
-* **An experiment is a composition.** The evolution over a step is the exponential series of the generator, its powers by composition, and doubling it spans the delays. Pulses are rotor sandwiches with the state left open. Tip, wait, turn, wait is one map per spin, and their average is one map for the sample: its echo keeps exp(−t/T2), while without the turn the uneven field has erased the signal within a microsecond.
+* **Relaxation is its formula.** The state is left open between the two sides of each term: no flattened density matrix, no Kronecker products.
+* **An experiment is a composition.** Steps doubled into delays, pulses as sandwiches, averaged over the spins: one map for the whole sample.
 
 
 # References

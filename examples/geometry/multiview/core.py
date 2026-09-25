@@ -273,6 +273,18 @@ def align_rays_to_splats(
     evaluated at the pixel. A sharp belief penalizes a sight line that misses it; a blurry one,
     from sight lines that cross at a shallow angle, barely does. No point is ever extracted.
 
+    Similar formulations differ from this one in one step each. Carrying the splat's dual quadric
+    through the camera onto the sensor and evaluating the conic there at the pixel gives the same
+    cost, at the price of the camera's outermorphism, which the sight line avoids. `bundle_adjust`
+    instead places each point at its splat's centre and aligns the cones to those points,
+    alternating as here, and `bundle_adjust_schur` lets those points move with the cameras through
+    a Schur complement; here no point is shared, and each sight line finds its own best point.
+    Leaving a pixel's own cone out of the splat it is compared against changes neither the cost
+    nor its gradient at the current poses, since that cone vanishes along its own sight line; it
+    removes only that cone's share of the curvature, which holds the step back. Weighting each
+    splat by its value at its centre, the misfit its cones leave between them, is another variant;
+    the cost here keeps the units its cones carry.
+
     Along the line through the pinhole with heading h, the minimum is the splat on the line over
     the splat on its heading. The splat on the line is the meet of the two points' polar planes,
     paired with the line itself; the splat on the heading, the belief's stiffness along the line,

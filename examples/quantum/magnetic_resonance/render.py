@@ -129,7 +129,6 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
         top.set_ylim(-1.1, 1.1)
         top.set_aspect("equal")
         top.set_axis_off()
-        top.set_title(f"t = {times[index]:.2f} µs")
         trace.plot(times[: index + 1], strength[: index + 1], color="#2e86c1")
         trace.plot(times, np.exp(-times / t2), "--", color="0.8")
         trace.axvline(delay, color="0.85", linewidth=0.8)
