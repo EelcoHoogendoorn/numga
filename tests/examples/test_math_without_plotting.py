@@ -40,6 +40,8 @@ import examples.mechanics.crystal_waves.core
 import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core
 import examples.mechanics.modes.core
+import examples.mechanics.riccati.core
+import examples.mechanics.riccati.scenarios
 import examples.mechanics.robot_arm.core
 import examples.mechanics.spinning_top.core
 import examples.mechanics.spinning_top.scenarios
