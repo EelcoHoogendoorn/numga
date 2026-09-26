@@ -75,4 +75,4 @@ def transport(directions: Vector) -> Rotor:
 def circle(count: int) -> Vector:
     """Unit vectors around the circle in the plane, in count steps, the last equal to the first."""
     angle = np.linspace(0.0, 2 * np.pi, count + 1)
-    return mv.vector(np.stack([np.cos(angle), np.sin(angle), 0.0 * angle], axis=-1))   # [count + 1] Vector
+    return (mv.xy * (-angle / 2)).exp() >> mv.x                        # [count + 1] Vector

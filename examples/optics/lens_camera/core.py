@@ -125,7 +125,7 @@ def expose(
 def section(cone: Quadric, start: Point, frame: Motor, samples: int) -> Point:
     """Boundary of the sensor's section of a cone, traced from a point inside it along the sensor plane."""
     theta = np.linspace(0.0, 2 * np.pi, samples)
-    across = frame >> direction(np.stack([np.zeros(samples), np.cos(theta), np.sin(theta)], axis=-1))
+    across = frame >> ((mv.yz * (-theta / 2)).exp() >> mv.y.dual())
     a, b, c = across & cone(across), across & cone(start), start & cone(start)
     # Rounding-level negative at the vertex:
     root = (b * b - a * c).clip(0.0, np.inf).square_root()

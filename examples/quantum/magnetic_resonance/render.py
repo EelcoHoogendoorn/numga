@@ -9,15 +9,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
+from numga.algebras import STA
 from examples.animation import capture
 from examples.quantum.magnetic_resonance import core
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
+# Where the Bloch vector lives in each algebra: the vectors of space, or in spacetime the planes
+# through the observer's time direction t.
+BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("xt yt zt")}
 
 
 def components(rho: core.State) -> np.ndarray:
-    """The Bloch vector's x, y and z components."""
-    return core.bloch(rho).cast(core.ga.subspace("x y z")).kernel
+    """The Bloch vector's x, y and z components: twice the state's part along the Bloch axes."""
+    return 2 * rho.cast(BLOCH_AXES[rho.algebra]).kernel
 
 
 def ball(ax) -> None:

@@ -77,4 +77,4 @@ def momentum_drift(motors: Motor, rates: Rate, inertia: Inertia) -> Scalar:
     momenta = motors >> inertia(rates)
     change = momenta - momenta[0]
     # The squared magnitude of a momentum is the scalar part of `momentum * ~momentum`, in any dimension.
-    return ((change * ~change).select[0] / (momenta[0] * ~momenta[0]).select[0]).square_root()
+    return (change.scalar_norm_squared() / momenta[0].scalar_norm_squared()).square_root()

@@ -57,15 +57,15 @@ def swing(frames: int, count: int) -> Iterator[tuple[core.Bivector, core.Bivecto
 def waist_lines(angles: np.ndarray) -> core.Bivector:
     """Lines of the hyperboloid x² + y² = 1 + z² through the points of its waist at the given angles,
     all leaning the same way."""
-    waist = np.stack([np.cos(angles), np.sin(angles), np.zeros_like(angles)], axis=-1)
-    lean = np.stack([-np.sin(angles), np.cos(angles), np.ones_like(angles)], axis=-1)
-    return core.point(waist) & core.point(waist + lean)
+    # The line through (1, 0, 0) leaning along (0, 1, 1), turned about z by each angle.
+    line = core.point([1.0, 0.0, 0.0]) & core.mv("x y z", [0.0, 1.0, 1.0]).dual()
+    return (core.mv.xy * (-angles / 2)).exp() >> line
 
 
 def steep(offsets: np.ndarray) -> core.Bivector:
     """Steep lines crossing the plane z = 0 at the given offsets along x, beside the x axis."""
-    base = np.stack([offsets, np.full_like(offsets, 0.4), np.zeros_like(offsets)], axis=-1)
-    return core.point(base) & core.point(base + np.array([0.3, -0.2, 1.0]))
+    base = (core.mv.xw * (offsets / 2)).exp() >> core.point([0.0, 0.4, 0.0])
+    return base & core.mv("x y z", [0.3, -0.2, 1.0]).dual()
 
 
 if __name__ == "__main__":

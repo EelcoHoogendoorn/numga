@@ -50,9 +50,9 @@ def tissot(count: int, radius: float) -> tuple[core.Vector, core.Scalar]:
     spread = np.linspace(-1.25, 1.25, count)
     centres = core.mv.x * spread[None, :] + core.mv.y * spread[:, None]       # [rows, columns] Vector
     angles = np.linspace(0, 2 * np.pi, 64)
-    offsets = (core.mv.x * np.cos(angles) + core.mv.y * np.sin(angles)) * radius   # [angles] Vector
+    offsets = ((core.mv.xy * (-angles / 2)).exp() >> core.mv.x) * radius             # [angles] Vector
     local = core.local_map(centres, POSITIONS, MASSES)                        # [rows, columns] Vector <- Vector
-    seen = local.inverse()[..., None](offsets)                                 # [rows, columns, angles] Vector
+    seen = local[..., None].solve(offsets)                                 # [rows, columns, angles] Vector
     area = local.outermorphism(core.Area)(core.mv.xy) / core.mv.xy            # [rows, columns] Scalar
 
     # --- checks

@@ -29,7 +29,7 @@ def turning(frames: int, samples: int) -> tuple[core.Vector, Iterator[tuple[core
     and the doubled-frequency polarization each pump drives."""
     crystal = core.response(core.BONDS)                                        # [] Vector <- (Vector, Vector)
     headings = np.linspace(0, 2 * np.pi, samples)
-    pumps = core.HORIZONTAL * np.cos(headings) + core.VERTICAL * np.sin(headings)   # [pumps] Vector
+    pumps = ((core.HORIZONTAL ^ core.VERTICAL) * (-headings / 2)).exp() >> core.HORIZONTAL   # [pumps] Vector
     turns = np.linspace(0, 2 * np.pi, frames, endpoint=False)
     rotations = ((core.HORIZONTAL ^ core.VERTICAL) * (-turns / 2)).exp()       # [frames] Rotor
 
@@ -47,7 +47,7 @@ def mixing(samples: int) -> tuple[core.Vector, core.Vector, core.Vector]:
     crystal = core.response(core.BONDS)                                        # [] Vector <- (Vector, Vector)
     pumps = stack((core.HORIZONTAL, (core.HORIZONTAL + core.VERTICAL) / np.sqrt(2)))   # [cases] Vector
     headings = np.linspace(0, 2 * np.pi, samples)
-    probes = 0.2 * (core.HORIZONTAL * np.cos(headings) + core.VERTICAL * np.sin(headings))   # [probes] Vector
+    probes = 0.2 * (((core.HORIZONTAL ^ core.VERTICAL) * (-headings / 2)).exp() >> core.HORIZONTAL)   # [probes] Vector
     # Binding a pump into one input leaves a linear map on the other.
     probe_map = core.TRANSVERSE(crystal(pumps[:, None], core.Vector))          # [cases, 1] Vector <- Vector
 

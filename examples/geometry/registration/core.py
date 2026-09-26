@@ -41,8 +41,8 @@ def fit_motor(source: Point, target: Point) -> Motor:
     # The bulk norm alone would discard translation: the PGA scalar product is degenerate on
     # ideal blades. Adding the weight norm, the bulk norm of the complement, sums the squares
     # of every coefficient, retaining errors in ideal components too.
-    bulk = residual.reverse().scalar_product(residual)
-    weight = residual.dual().reverse().scalar_product(residual.dual())
+    bulk = residual.scalar_norm_squared()
+    weight = residual.dual().scalar_norm_squared()
     misfit = (bulk + weight).sum(axis=0)
     # Against the motor's own metric, the scalar part of motor * motor.reverse(), only the rotor
     # coefficients are measured: translation carries no unit of its own, so the fit does not depend

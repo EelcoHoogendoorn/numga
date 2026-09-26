@@ -53,8 +53,8 @@ def vortex(names: list[str], frames: int) -> tuple[Quadric, list[str]]:
     quadrics = Extensor.concatenate([table[name][0] for name in names])
     colors = [color for name in names for color in table[name][1]]
     generator = make_circle_intersection_vortex(
-        np.array([np.sin(0.35), 0.0, np.cos(0.35)]), np.radians(48.0),
-        np.array([0.0, np.sin(0.40), np.cos(0.40)]), np.radians(52.0),
+        (mv.zx * (-0.35 / 2)).exp() >> mv.z, np.radians(48.0),
+        (mv.zy * (-0.40 / 2)).exp() >> mv.z, np.radians(52.0),
     )
     world = flow(quadrics, generator, np.linspace(0.0, 2.0 * np.pi, frames, endpoint=False))
 

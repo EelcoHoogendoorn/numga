@@ -146,7 +146,7 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
     # pressing forque times the contact patch's radius, the square root of the radius of curvature
     # times the indentation. The couple is the torque about the normal.
     couple = normal.dual() ^ w
-    turned = couple & ((motor * ~before).log() * -2.0)
+    turned = couple & ((motor / before).log() * -2.0)
     curvatures = principal(placed, contact)
     patch = ((2 / (curvatures[..., 0] + curvatures[..., 1])).abs() * indentation).square_root()
     step, give = compliance(motor, I_inv, couple)

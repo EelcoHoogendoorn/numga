@@ -131,7 +131,7 @@ def filled(Q: DualQuadric, mass: np.ndarray, count: int, rng: np.random.Generato
     points are uniform in the inside. Batched over quadrics of one signature."""
     n = ga.dimension
     # The negative block comes first; k counts its core axes, the same across the batch.
-    values, principal = (Point & Q.inverse()(mv.rotor() >> Point)).eigh()
+    values, principal = (Point & Q.solve(mv.rotor() >> Point)).eigh()
     k = int((values < 0.0).sum(axis=-1).ravel()[0])
     core = rng.normal(size=values.shape[:-1] + (count, k))
     extent = rng.normal(size=values.shape[:-1] + (count, n - k))

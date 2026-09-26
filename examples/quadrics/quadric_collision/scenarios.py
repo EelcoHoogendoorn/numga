@@ -17,7 +17,7 @@ def collision():
 
     # The second ellipse, turned -35°, is translated so that its tangent point with the
     # opposite normal lands on the first ellipse's tangent point with a 22° normal.
-    normal = (mv.x * np.cos(np.radians(22)) + mv.y * np.sin(np.radians(22))).normalized()
+    normal = (mv.xy * (-np.radians(22) / 2)).exp() >> mv.x
     shape = ellipse(1.6, 0.9)
     turn = motor(0.0, 0.0, np.radians(-35))
     turned = turn >> shape(turn << Line)

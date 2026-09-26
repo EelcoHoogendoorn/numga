@@ -37,7 +37,7 @@ def chain(rounds: int, seed: int) -> tuple[core.Motor, core.Motor, core.Motor, c
     # the chain, each belief's covariance is the exact one.
     np.testing.assert_allclose(core.gradient(graph, poses[-1]).kernel, 0.0, atol=1e-8)
     exact = core.exact_covariance(graph, poses[-1], LINES, POSES)              # [lines, poses] Twist
-    believed = informations[-1].inverse()(LINES[:, None])                      # [lines, poses] Twist
+    believed = informations[-1].solve(LINES[:, None])                      # [lines, poses] Twist
     np.testing.assert_allclose((exact - believed).kernel, 0.0, atol=1e-10)
     return truth, dead, poses, ellipses
 
@@ -50,7 +50,7 @@ def loop(rounds: int, seed: int) -> tuple[core.Motor, core.Motor, core.Motor, co
     poses, informations = settle(graph, dead, rounds)                         # [rounds, poses] Motor, Information
     ellipses = core.position_quadric(poses, informations.inverse(), core.ORIGIN, SIGMAS)   # [rounds, poses] Quadric
     exact = core.exact_covariance(graph, poses[-1], LINES, rounds)             # [lines, poses] Twist
-    believed = informations[-1].inverse()(LINES[:, None])                      # [lines, poses] Twist
+    believed = informations[-1].solve(LINES[:, None])                      # [lines, poses] Twist
     ratios = (LINES[:, None] & believed) / (LINES[:, None] & exact)            # [lines, poses] Scalar
 
     # --- checks

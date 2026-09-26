@@ -68,8 +68,8 @@ def main() -> None:
     # Compare motors, not coordinates: the log of the relative motor is the pose error.
     # Its Euclidean part turns and its ideal part shifts; the dual swaps the two.
     relative = (truth.exp().inverse() * generator.exp()).log()
-    turn = relative.reverse().scalar_product(relative).square_root()
-    shift = relative.dual().reverse().scalar_product(relative.dual()).square_root()
+    turn = relative.scalar_norm_squared().square_root()
+    shift = relative.dual().scalar_norm_squared().square_root()
 
     print(f"mean squared image misfit: {float(loss(start)):.2e} -> {float(loss(generator)):.2e}")
     print(f"pose error: turn {float(turn.to_array()):.4f}, shift {float(shift.to_array()):.4f}")

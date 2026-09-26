@@ -31,7 +31,7 @@ def hyperbolic_plane():
     # A hyperbolic angle defect, a perpendicular, and a reflection that is an isometry.
     distance_pairing = -Point.regressive(C(mv.rotor() >> Point))
     assert area.to_array() > 0.0
-    np.testing.assert_allclose((side & C.inverse()(normal)).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose((side & C.solve(normal)).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose(
         invariant(distance_pairing, P, foot).to_array(),
         invariant(distance_pairing, reflected, foot).to_array(), atol=1e-12,

@@ -113,10 +113,9 @@ def run_simplex_demo() -> None:
     print("\nAngular Rate bivector:", rate.kernel)
     print("Resulting Momentum antibivector:", np.around(momentum.kernel, 4))
 
-    # 3. Exact operator inverse: `recovered_rate = I_inv(momentum)`
-    I_inv = I_lumped.inverse()
-    recovered_rate = I_inv(momentum)
-    print("Recovered Rate via I.inverse():", np.around(recovered_rate.kernel, 4))
+    # 3. The rate back from the momentum: `recovered_rate = I_lumped.solve(momentum)`
+    recovered_rate = I_lumped.solve(momentum)
+    print("Recovered Rate via I.solve():", np.around(recovered_rate.kernel, 4))
 
     # 4. Kinetic energy: 0.5 * (rate & momentum)
     ke = 0.5 * rate.regressive(momentum)

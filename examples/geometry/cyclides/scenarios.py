@@ -22,7 +22,7 @@ PIXELS = sensor(SHAPE, np.radians(90))
 
 def placement(toward: Sphere, ahead: np.ndarray, tilt: np.ndarray) -> Motor:
     """Turn the point `toward` onto the point `ahead` rad in front of the eye, after a tilt that keeps it fixed."""
-    target = mv.w * np.cos(ahead) - mv.x * np.sin(ahead)
+    target = (mv.wx * (ahead / 2)).exp() >> mv.w
     return (1 + target * toward).normalized() * (mv.yw * (tilt / 2)).exp()
 
 
@@ -37,7 +37,7 @@ def orientation(angles: list[float]) -> Motor:
 def view(centre: Sphere, angles: list[float], ahead: float, yaw: float, pitch: float) -> Motor:
     """Turn the shape, carry its centre to `ahead` rad in front of the eye, then turn the eye onto it."""
     turned = orientation(angles)
-    target = mv.w * np.cos(ahead) - mv.x * np.sin(ahead)
+    target = (mv.wx * (ahead / 2)).exp() >> mv.w
     carry = (1 + target * (turned >> centre)).normalized()
     look = (mv.xy * (yaw / 2)).exp() * (mv.xz * (pitch / 2)).exp()
     return look * carry * turned
@@ -58,7 +58,7 @@ def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
     place = placement(mv.z, 1.1, 0.8) * dilation(mv.z, 2.0)
     torus = place >> cylinder(0.5)(place << Point)
     # The meet of two great spheres, carried by unit versors: a unit circle, circle * circle == -1.
-    circle = (place * (mv.yw * 0.2).exp()) >> (mv.z ^ mv.w)
+    circle = (place * (mv.yw * 0.2).exp()) >> mv.zw
     flow = (circle * (np.linspace(0.0, 2 * np.pi, frames, endpoint=False) / 2)).exp()
     for surface in flow >> torus(flow << Point):
         yield trace(surface.reshape(1), PIXELS)
@@ -240,7 +240,7 @@ def dupin() -> tuple[Scalar, np.ndarray]:
     """Dilations aimed off z, leaning towards the core point x: the tube is compressed on the side of
     the aim and swells on the other, the lopsided Dupin cyclides."""
     leans = np.array([0.7, 0.8, 0.5])
-    aims = mv.z * np.cos(leans) + mv.x * np.sin(leans)
+    aims = (mv.zx * (-leans / 2)).exp() >> mv.z
     dilations = dilation(aims, np.array([1.5, 1.2, 1.8]))
     bent = dilations >> cylinder(np.array([0.25, 0.3, 0.2]))(dilations << Point)
     views = placement(aims, np.array([1.2, 1.3, 1.1]), np.array([-0.7, 0.6, 1.0]))
@@ -252,7 +252,7 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     towards y: its two vertices close into a spindle cyclide, and the leaning dilation bends the inner
     sheet into a banana. The eye sees both sides of the sheets, so facing is the unsigned cosine."""
     leans = np.array([0.0, 0.7])
-    dilations = dilation(mv.x * np.cos(leans) + mv.y * np.sin(leans), 3.0)
+    dilations = dilation((mv.xy * (-leans / 2)).exp() >> mv.x, 3.0)
     bent = dilations >> cone(0.35)(dilations << Point)
 
     # The eye aims at the midpoint of the two dilated vertices, z and -z carried by the dilation. The

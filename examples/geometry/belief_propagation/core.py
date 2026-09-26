@@ -111,7 +111,7 @@ def tell(graph: PoseGraph, relative: Motor, mismatch: Twist, information: Inform
     rest = belief.information[far] - told.information[::-1]                   # [2, readings] Information
     mean = rest.solve(belief.weighted_mean[..., far] - told.weighted_mean[..., ::-1, :])   # [..., 2, readings] Twist
     # Carried into the near pose's frame by the relative motor.
-    covariance = relative << rest.inverse()(relative >> Line)                 # [2, readings] Covariance
+    covariance = relative << rest.solve(relative >> Line)                 # [2, readings] Covariance
     # Through the reading, the near pose sits its mismatch behind that mean, and the reading's own
     # covariance adds to the carried one.
     implied = (information.inverse() + covariance).inverse()                  # [2, readings] Information

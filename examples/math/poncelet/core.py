@@ -116,7 +116,6 @@ def ellipse(centre: np.ndarray, semi: np.ndarray, tilt: float) -> Conic:
     """The ellipse about a centre with the given semi-axes, its first axis turned from x by the tilt:
     the lines through the centre along each axis, weighted by the inverse square of the semi-axis, less
     the line at infinity."""
-    turn = np.array([[np.cos(tilt), np.sin(tilt)], [-np.sin(tilt), np.cos(tilt)]])
-    axes = mv("x y", turn)                                                     # [2] Plane
+    axes = (mv.xy * (-tilt / 2)).exp() >> mv("x y", np.eye(2))          # [2] Plane
     through = axes - mv.w * (axes & point(centre))                             # [2] Plane
     return (through * (through & Point) / semi**2).sum(axis=-1) - mv.w * (mv.w & Point)

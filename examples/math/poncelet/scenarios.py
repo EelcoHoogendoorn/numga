@@ -56,8 +56,10 @@ def turn(frames: int) -> Iterator[tuple[core.Conic, core.Conic, core.Point]]:
 # --- plumbing -------------------------------------------------------------------------
 def on_ellipse(angles: np.ndarray, scale: float) -> core.Point:
     """Points at the given angles on the ellipse, drawn in towards its centre by the scale."""
-    turn = np.array([[np.cos(TILT), -np.sin(TILT)], [np.sin(TILT), np.cos(TILT)]])
-    return core.point(CENTRE + scale * (SEMI * np.stack([np.cos(angles), np.sin(angles)], axis=-1)) @ turn.T)
+    # The ellipse about the origin, turned by the tilt and carried to the centre.
+    mv = core.mv
+    motor = ((mv.xw * CENTRE[0] + mv.yw * CENTRE[1]) * 0.5).exp() * (mv.xy * (-TILT / 2)).exp()
+    return motor >> core.point(scale * SEMI * np.stack([np.cos(angles), np.sin(angles)], axis=-1))
 
 
 if __name__ == "__main__":

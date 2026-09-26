@@ -82,7 +82,8 @@ def fresnel_surface_scenario(
     """
     angles = np.linspace(0, 2 * np.pi, n_angles)
     speeds = np.linspace(0.4, 1.0, 601)
-    directions = np.sin(angles) * core.x + np.cos(angles) * core.z      # [n_angles] Vector
+    # z turned toward x by each angle; x and z square to minus one, which turns the sense.
+    directions = (core.mv.zx * (angles / 2)).exp() >> core.z               # [n_angles] Vector
 
     glass = core.isotropic_medium(EPS_GLASS, MU_GLASS)
     crystal = core.crystal_medium(eps_x=2.25, eps_y=1.5, eps_z=1.5, mu=1.0)

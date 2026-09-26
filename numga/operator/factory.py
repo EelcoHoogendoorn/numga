@@ -114,6 +114,11 @@ class OperatorFactory:
     def symmetric_reverse_product(self, operand: OperandType) -> Extensor:
         return self._symmetric_product(self._operand_gatype(operand), "reverse")
 
+    def scalar_norm_squared(self, operand: OperandType) -> Extensor:
+        """The scalar part of ``x * reverse(x)``, with only that part built."""
+
+        return self._symmetric_product(self._operand_gatype(operand), "reverse", scalar_only=True)
+
     def symmetric_conjugate_product(self, operand: OperandType) -> Extensor:
         return self._symmetric_product(self._operand_gatype(operand), "clifford_conjugate")
 

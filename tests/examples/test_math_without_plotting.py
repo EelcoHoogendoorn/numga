@@ -52,6 +52,8 @@ import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
+import examples.quantum.process_tomography.core
+import examples.quantum.process_tomography.scenarios
 import examples.quantum.two_spins.core
 import examples.quantum.two_spins.scenarios
 import examples.quadrics.cayley_klein.core

@@ -470,6 +470,11 @@ class Extensor:
 
         return self._symmetric_product("reverse")
 
+    def scalar_norm_squared(self) -> "Extensor":
+        """The scalar part of ``x * reverse(x)``, with only that part built."""
+
+        return self._symmetric_product("reverse", scalar_only=True)
+
     def symmetric_conjugate_product(self) -> "Extensor":
         return self._symmetric_product("clifford_conjugate")
 

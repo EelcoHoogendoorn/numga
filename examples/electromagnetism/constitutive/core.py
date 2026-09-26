@@ -44,7 +44,7 @@ SpatialVector = STA.gatype(Spatial)
 
 # Canonical Spacetime Basis & Pseudoscalar:
 t, x, y, z = mv.vector(np.eye(4))
-I = t ^ x ^ y ^ z
+I = mv.txyz
 
 
 # ---------------------------------------------------------------------------

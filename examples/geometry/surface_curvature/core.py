@@ -53,14 +53,14 @@ def direction(coords: np.ndarray) -> Direction:
 
 
 def view_rays(elevation: float, azimuth: float, extent: float, pixels: int) -> tuple[Point, Direction]:
-    """An orthographic camera: one ray origin per pixel, far out along the view, and their heading."""
-    e, a = np.radians(elevation), np.radians(azimuth)
-    back = np.array([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)])
-    right = np.array([-np.sin(a), np.cos(a), 0.0])
-    up = np.cross(back, right)
+    """An orthographic camera: one ray origin per pixel, far out along the view, and their heading.
+    The camera looks along -x with y to its right and z up, turned up toward z by the elevation and
+    then about z by the azimuth."""
+    turn = (mv.xy * (-np.radians(azimuth) / 2)).exp() * (mv.xz * (-np.radians(elevation) / 2)).exp()
     s = np.linspace(-extent, extent, pixels)
-    screen = s[None, :, None] * right + s[::-1, None, None] * up + 10 * extent * back
-    return point(screen), direction(-back)
+    # Behind the scene along x, across it along y, and up along z.
+    screen = np.stack(np.broadcast_arrays(10 * extent, s[None, :], s[::-1, None]), axis=-1)
+    return turn >> point(screen), turn >> -mv.x.dual()
 
 
 def pair(values: Scalar) -> Scalar:

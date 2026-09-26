@@ -50,9 +50,8 @@ def directions() -> Vector:
     """A sphere of unit driving fields, sampled for drawing."""
     longitude = np.linspace(0, 2 * np.pi, 65)[None, :]
     latitude = np.linspace(-np.pi / 2, np.pi / 2, 33)[:, None]
-    return (mv.x * (np.cos(latitude) * np.cos(longitude))
-            + mv.y * (np.cos(latitude) * np.sin(longitude))
-            + mv.z * np.broadcast_to(np.sin(latitude), (33, 65)))
+    # x turned up toward z by the latitude, then about z by the longitude.
+    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp() >> mv.x
 
 
 def arm_samples() -> Point:

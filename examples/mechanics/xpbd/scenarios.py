@@ -91,7 +91,7 @@ def trajectory(states: list[Chain], partitions: list[Joints]) -> tuple[Point, Sc
     # The joints stay closed to within 1% of the link spacing.
     assert gaps.to_array().max() < 1e-2 * LINK_SPACING
     # The fixed link has infinite mass: its centre never leaves the origin.
-    assert (centres[:, 0] & origin).norm().select[0].to_array().max() < 1e-6
+    assert (centres[:, 0] & origin).norm().to_array().max() < 1e-6
     return centres, gaps
 
 

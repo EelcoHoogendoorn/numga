@@ -13,10 +13,13 @@ from separation to relative acceleration. This observer binding is a composition
 different maps, not a similarity transformation. Its spatial eigenvalues can
 therefore be positive, negative and zero even though curvature is nilpotent.
 
-The full curvature is assembled from null-bivector dyads. A rotor constructs
-the cross polarization from plus; quarter-cycle phase separation gives the
-circular case. Geometry stays in GA, with coefficient work confined to the
-waveform and the numerical integration of the detector.
+The full curvature is assembled from null-bivector dyads. The cross
+polarization is the dual of plus, `-I * plus`: for a null curvature a duality
+rotation by `(I * theta).exp()` turns the pattern by half that angle about the
+wave axis, the mark of a spin-two field. A wave packet's phase is therefore the
+pseudoscalar's exponential, and the circular case is one phasor times plus.
+Geometry stays in GA, with coefficient work confined to the numerical
+integration of the detector.
 
 In gauge theory gravity the same wave is carried by a map on vectors, the
 position gauge field, which differs from the identity by a strain map: each
@@ -28,8 +31,9 @@ polarization.
 
 This is first-order geodesic deviation for a weak wave and a detector much
 smaller than its wavelength. Acceleration acts on each bead's unperturbed
-separation. A smooth strain packet and its first derivative vanish at both
-ends, so the initially stationary ring returns to rest to first order.
+separation. A Gaussian strain packet is negligible at both ends of its window,
+so the initially stationary ring returns to rest, to first order and to within
+those tails.
 Units set the speed of light to one.
 
 In tensor index notation the curvature map reads as the Riemann tensor and
@@ -67,6 +71,8 @@ Vector = STA.gatype.vector()
 Bivector = STA.gatype.bivector()
 # Even subalgebra: rotations and boosts.
 Rotor = STA.gatype.rotor()
+# A scalar plus a pseudoscalar: an amplitude and a phase.
+Phasor = STA.gatype(STA.subspace.scalar() + STA.subspace.pseudoscalar())
 
 # Extensors (linear maps between blade subspaces), read output <- input. The curvature takes an
 # area bivector to a curvature bivector, the tidal map a separation to a relative acceleration,
@@ -77,6 +83,8 @@ Strain = STA.gatype((Vector, Vector))               # Vector <- Vector
 
 # Canonical spacetime basis:
 t, x, y, z = mv.vector(np.eye(4))
+# The pseudoscalar squares to minus one and commutes with every bivector.
+I = mv.txyz
 
 
 # ---------------------------------------------------------------------------
@@ -96,13 +104,11 @@ def plane_wave_curvature(k: Vector, a: Vector, b: Vector) -> Curvature:
 def polarizations() -> tuple[Curvature, Curvature]:
     """Unit plus and cross curvature maps for a wave travelling along +z.
 
-    The cross polarization is the plus polarization conjugated by an eighth-turn rotor about
-    the wave axis, which turns the stretch and squeeze pattern by 45 degrees.
+    The cross polarization is the dual of plus: a quarter duality turn, `-I * plus`, turns the
+    stretch and squeeze pattern of a null curvature by an eighth turn, 45 degrees about the axis.
     """
     plus = plane_wave_curvature(t + z, x, y)                             # [] Bivector <- Bivector
-    eighth_turn = (mv.xy * (np.pi / 8)).exp()                            # [] Rotor
-    cross = eighth_turn >> plus(eighth_turn << Bivector)                 # [] Bivector <- Bivector
-    return plus, cross
+    return plus, -I * plus
 
 
 def tidal_map(curvature: Curvature, observer: Vector) -> Tidal:
@@ -129,26 +135,31 @@ def strain_patterns() -> tuple[Strain, Strain]:
     """Unit plus and cross strain maps for a wave travelling along +z.
 
     The plus pattern stretches along x and squeezes along y; the cross pattern is the same map
-    conjugated by an eighth-turn rotor, as the cross curvature is.
+    turned by an eighth turn about the wave axis. The transverse plane `xy` squares to minus one and
+    turns each output a quarter turn, which turns the stretch and squeeze pattern by an eighth: on
+    the strain it makes the turn that the duality `-I` makes on the curvature.
     """
     plus = y * (y | Vector) - x * (x | Vector)                           # [] Vector <- Vector
-    eighth_turn = (mv.xy * (np.pi / 8)).exp()                            # [] Rotor
-    cross = eighth_turn >> plus(eighth_turn << Vector)                   # [] Vector <- Vector
+    cross = mv.xy | plus                                                 # [] Vector <- Vector
     return plus, cross
 
 
-def polarized_strain(plus: Strain, cross: Strain, profile: Scalar) -> Strain:
+def polarized_strain(plus: Strain, cross: Strain, profile: Phasor) -> Strain:
     """Weak-wave strain over (time, polarization): half the profile times the unit strain maps, as a
     map on separations.
 
     Applied to a bead's rest separation it gives that bead's displacement. With the profile's second
     derivative in place of the profile it gives the relative acceleration, the tidal map.
 
+    `plus + I * cross` pairs the two patterns the way the phasor pairs its parts: the vector part of
+    the phasor times it is the circular strain, and of the phasor's scalar or pseudoscalar part alone,
+    the plus or the cross strain.
+
     In tensor index notation the strain reads as half the metric perturbation.
     """
-    cosine, sine = profile[:, 0], profile[:, 1]                          # [n_time] Scalar
-    plus_wave, cross_wave = plus * cosine, cross * sine                  # [n_time] Vector <- Vector
-    return 0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, n_polarizations]
+    analytic = plus + I * cross                                          # [] Vector + Trivector <- Vector
+    waves = (profile.select[0] * analytic, profile.select[4] * analytic, profile * analytic)   # [n_time] each
+    return 0.5 * stack(waves, axis=1).select[1]                          # [n_time, n_polarizations] Vector <- Vector
 
 
 def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
@@ -167,49 +178,42 @@ def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
 # ---------------------------------------------------------------------------
 def wave_packet(
     time: np.ndarray, duration: float, cycles: int, amplitude: float,
-) -> tuple[Scalar, Scalar]:
-    """Cosine/sine strain profiles and their second derivatives, as (time, phase) scalar batches.
+) -> tuple[Phasor, Phasor]:
+    """The strain profile and its second derivative as phasors over time: a Gaussian about the middle
+    of the window, a twelfth of it wide, times the carrier `(I * -phase).exp()`. Times plus, the
+    scalar part weights the plus pattern and the pseudoscalar part the cross pattern, a quarter cycle
+    behind.
 
-    The envelope `sine ** 4` has zero value and first two derivatives at its endpoints.
-    Both profiles and their derivatives are zero outside the packet.
+    The packet is the exponential of one phasor quadratic in time, so its rate is the phasor
+    `-s / sigma**2 - I * b` and its second derivative `(rate * rate - 1 / sigma**2) * profile`. At
+    the window's ends it is about `exp(-18)` of its peak.
     """
-    time = np.asarray(time, dtype=float)
-    s = np.clip(time / duration, 0.0, 1.0)
-    a, b = np.pi / duration, 2 * np.pi * cycles / duration
-    sine, cosine = np.sin(np.pi * s), np.cos(np.pi * s)
-    envelope = amplitude * sine**4
-    first = amplitude * 4 * a * sine**3 * cosine
-    second = amplitude * 4 * a**2 * (3 * sine**2 * cosine**2 - sine**4)
-    phase = b * (time - duration / 2)
-    carrier = np.stack((np.cos(phase), np.sin(phase)), axis=-1)
-    derivative = b * np.stack((-np.sin(phase), np.cos(phase)), axis=-1)
-    profile = envelope[:, None] * carrier
-    acceleration = (second - b**2 * envelope)[:, None] * carrier + 2 * first[:, None] * derivative
-    inside = ((time > 0) & (time < duration))[:, None]
-    return mv.scalar((profile * inside)[..., None]), mv.scalar((acceleration * inside)[..., None])
+    s = time - duration / 2
+    sigma, b = duration / 12, 2 * np.pi * cycles / duration
+    profile = (I * -(b * s)).exp() * (amplitude * np.exp(-s**2 / (2 * sigma**2)))   # [n_time] Phasor
+    rate = -s / sigma**2 - I * b                                             # [n_time] Phasor
+    return profile, (rate * rate - 1 / sigma**2) * profile                   # [n_time] Phasor each
 
 
-def polarized_waves(plus: Curvature, cross: Curvature, second: Scalar) -> Curvature:
+def polarized_waves(plus: Curvature, second: Phasor) -> Curvature:
     """Weak-wave curvature over (time, polarization): plus, cross, and circular.
 
-    The weak-wave curvature is minus half the profile's second derivative times the unit map, so
-    the strain's second derivative weights the unit maps. The circular case adds the cross
-    polarization a quarter cycle behind.
+    The weak-wave curvature is minus half the profile's second derivative times the unit map. The
+    circular wave is the phasor times plus; its scalar part alone is the plus wave, and its
+    pseudoscalar part alone the cross wave, since cross is `-I * plus`.
 
     In tensor index notation this reads as the Riemann components with two time indices equal to
     minus half the second time derivative of the metric perturbation.
     """
-    cosine, sine = second[:, 0], second[:, 1]                            # [n_time] Scalar
-    plus_wave, cross_wave = plus * cosine, cross * sine                  # [n_time] Bivector <- Bivector
-    return -0.5 * stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)  # [n_time, n_polarizations]
+    waves = (second.select[0] * plus, second.select[4] * plus, second * plus)   # [n_time] Bivector <- Bivector each
+    return -0.5 * stack(waves, axis=1)                                  # [n_time, n_polarizations]
 
 
 def detector_ring(count: int) -> Vector:
     """Unit reference separations in the plane transverse to the wave."""
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    coordinates = np.zeros((count, 4))
-    coordinates[:, 1:3] = np.stack((np.cos(angles), np.sin(angles)), axis=-1)
-    return mv.vector(coordinates)                                        # [count] Vector
+    # x turned toward y by each angle; x and y square to minus one, which turns the sense.
+    return (mv.xy * (angles / 2)).exp() >> mv.x                         # [count] Vector
 
 
 def integrate_acceleration(time: np.ndarray, acceleration: Vector) -> Vector:

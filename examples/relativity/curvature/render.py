@@ -16,7 +16,7 @@ import numpy as np
 
 from examples.animation import capture
 from examples.relativity.curvature import core
-from examples.relativity.curvature.core import STA, Bivector, Curvature, Scalar, Vector, mv
+from examples.relativity.curvature.core import STA, Bivector, Curvature, I, Phasor, Scalar, Vector, mv
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 LIGHT = "#c3ccd4"
@@ -104,14 +104,14 @@ def draw_curvature_map(
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
-def draw_packet(time: np.ndarray, strain: Scalar, second: Scalar) -> plt.Figure:
-    """Strain profiles and their second derivatives, the weights of the curvature batch."""
-    h, h2 = strain.kernel[..., 0], second.kernel[..., 0]                 # [n_time, n_phases] float
+def draw_packet(time: np.ndarray, strain: Phasor, second: Phasor) -> plt.Figure:
+    """Strain profiles and their second derivatives, the weights of the curvature batch: the plus
+    weight is the phasor's scalar part, the cross weight its pseudoscalar part turned back by I."""
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
-    for ax, values in ((top, h), (bottom, h2)):
+    for ax, phasor in ((top, strain), (bottom, second)):
         # Plus in blue, cross in orange.
-        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
-        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
+        ax.plot(time, phasor.select[0].to_array(), color=BLUE, lw=1.6)
+        ax.plot(time, (phasor * I).select[0].to_array(), color=ORANGE, lw=1.6)
         ax.spines[["top", "right"]].set_visible(False)
     return fig
 

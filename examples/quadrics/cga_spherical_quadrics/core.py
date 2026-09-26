@@ -86,15 +86,16 @@ def make_spherical_cassini(alpha1: float, alpha2: float, c_threshold: float) -> 
     Yields twin islands (c_threshold small), figure-8 lemniscates (c_threshold near pinch),
     pinched-waist peanuts (c_threshold larger), or asymmetric teardrops (alpha1 != alpha2).
     """
-    p1 = pw - (np.sin(alpha1) * px + np.cos(alpha1) * pz)
-    p2 = pw - (-np.sin(alpha2) * px + np.cos(alpha2) * pz)
+    # The plane z turned toward x by the first angle, and away from it by the second.
+    p1 = pw - ((mv.zx * (-alpha1 / 2)).exp() >> pz)
+    p2 = pw - ((mv.zx * (alpha2 / 2)).exp() >> pz)
     return 0.5 * (p1 * (p2 & Vector) + p2 * (p1 & Vector)) - c_threshold * pw * (pw & Vector)
 
 
 def make_spherical_crescent(r_outer: float, r_inner: float, offset: float) -> Quadric:
     """Spherical crescent moon (sickle) bounded by two eccentric circles on S²."""
     c_outer = pz - np.cos(r_outer) * pw
-    c_inner = (np.sin(offset) * px + np.cos(offset) * pz) - np.cos(r_inner) * pw
+    c_inner = ((mv.zx * (-offset / 2)).exp() >> pz) - np.cos(r_inner) * pw
     return 0.5 * (c_outer * (c_inner & Vector) + c_inner * (c_outer & Vector))
 
 
@@ -111,15 +112,17 @@ def make_spherical_spindle(weight_z: float, weight_xy: float, bias: float) -> Qu
 def make_spherical_clover(tilt_angle: float, radius: float, bias: float) -> Quadric:
     """Triadic 3-lobed rounded deltoid (cloverleaf) on S²: three circle dyads, 120° apart."""
     angles = np.radians([0.0, 120.0, 240.0])
-    circles = (px * (np.sin(tilt_angle) * np.cos(angles)) + py * (np.sin(tilt_angle) * np.sin(angles))
-               + np.cos(tilt_angle) * pz - np.cos(radius) * pw)
+    # The plane z tilted toward x, then turned about z to each of the three angles.
+    tilted = (mv.xy * (-angles / 2)).exp() * (mv.zx * (-tilt_angle / 2)).exp() >> pz
+    circles = tilted - np.cos(radius) * pw
     return (circles * (circles & Vector)).sum(axis=0) - bias * pw * (pw & Vector)
 
 
 def make_spherical_hourglass(theta: float, c_waist: float) -> Quadric:
     """True vertical hourglass on S²: two symmetric bulbs connected by a narrow waist."""
-    p1 = pw - (np.sin(theta) * py + np.cos(theta) * pz)
-    p2 = pw - (-np.sin(theta) * py + np.cos(theta) * pz)
+    # The plane z turned toward y and away from it by the same angle.
+    p1 = pw - ((mv.zy * (-theta / 2)).exp() >> pz)
+    p2 = pw - ((mv.zy * (theta / 2)).exp() >> pz)
     return 0.5 * (p1 * (p2 & Vector) + p2 * (p1 & Vector)) - c_waist * pw * (pw & Vector)
 
 
@@ -134,12 +137,12 @@ def make_spherical_parabola(weight_y: float, linear_x: float, bias: float) -> Qu
 
 # --- math -----------------------------------------------------------------------------
 def make_circle_intersection_vortex(
-    center1: np.ndarray, radius1: float, center2: np.ndarray, radius2: float,
+    center1: Vector, radius1: float, center2: Vector, radius2: float,
 ) -> Bivector:
     """Intersection 2-blade of two off-center circles on S²: each circle is the vector of its
     centre with weight the cosine of its radius."""
-    c1 = mv.x * center1[0] + mv.y * center1[1] + mv.z * center1[2] + mv.w * np.cos(radius1)
-    c2 = mv.x * center2[0] + mv.y * center2[1] + mv.z * center2[2] + mv.w * np.cos(radius2)
+    c1 = center1 + mv.w * np.cos(radius1)
+    c2 = center2 + mv.w * np.cos(radius2)
     return (c1 ^ c2).normalized()
 
 

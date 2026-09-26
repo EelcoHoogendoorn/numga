@@ -81,8 +81,8 @@ def flows(azimuths: int, heights: np.ndarray, count: int) -> tuple[core.Extensor
     along, against = core.isoclinic(mv.xy, pseudoscalar)                       # [] Bivector each
     # Starting points at a few heights along z, spread around the xy plane.
     phi = np.linspace(0.0, 2 * np.pi, azimuths, endpoint=False)
-    around = mv.x * np.cos(phi) + mv.y * np.sin(phi)                           # [azimuths] Vector
-    starts = around * np.cos(heights)[:, None] + mv.z * np.sin(heights)[:, None]   # [heights, azimuths] Vector
+    # x turned up toward z by each height, then about z by each azimuth.
+    starts = (mv.xy * (-phi / 2)).exp() * (mv.xz * (-heights[:, None] / 2)).exp() >> mv.x   # [heights, azimuths] Vector
     # One full turn of every plane: the sandwich turns by twice the rotor's angle.
     turn = np.linspace(0.0, np.pi, count + 1)
     left = core.stereographic((2 * along * turn).exp() >> starts[..., None])  # [heights, azimuths, count + 1] Space

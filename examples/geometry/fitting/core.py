@@ -2,8 +2,8 @@
 
 A point, a line and a plane are fitted to noisy samples with the same three lines: the
 join of the samples with the unknown left open, that residual squared and summed into a
-quadratic form, and its smallest unit eigenvector. Unit is the unknown's own reverse
-product, which is degenerate exactly on the coefficients least squares leaves free. The
+quadratic form, and its smallest unit eigenvector. Unit is the scalar part of the unknown's
+own reverse product, which is degenerate exactly on the coefficients least squares leaves free. The
 roles swap freely: a point fitted to a bundle of lines is their point of closest approach.
 """
 
@@ -43,13 +43,15 @@ def fit(Unknown: GAType, samples: Extensor) -> Extensor:
     # Joining each sample with the open unknown measures its incidence error:
     # point & plane is a scalar, point & line a plane, point & point a line.
     residual = samples & Unknown
-    misfit = (residual.reverse() | residual).sum(axis=0)
+    misfit = residual.scalar_norm_squared().sum(axis=0)
 
-    # The primitive's reverse product fixes its geometric size, leaving its
-    # position free: plane normal, line direction, or point weight has unit norm.
+    # The scalar part of the primitive's reverse product fixes its geometric size, leaving
+    # its position free: plane normal, line direction, or point weight has unit norm. For a
+    # line it leaves out the condition to be a line, the pseudoscalar part; the fitted moment
+    # is the centroid's moment about the fitted direction, which meets that condition.
     # The norm is degenerate on ideal components, so those eigenvalues are infinite
     # and the least one belongs to a real, finite mode.
-    norm = (mv.rotor() >> Unknown).reverse() | Unknown
+    norm = (mv.rotor() >> Unknown).scalar_norm_squared()
     values, modes = misfit.eig(norm)
     return modes[values.real().argmin()].real()
 

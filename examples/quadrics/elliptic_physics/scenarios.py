@@ -51,7 +51,8 @@ def ellipse_mesh(half_angles: np.ndarray, mass: np.ndarray, n_phi: int, n_r: int
 
 def toward(theta: np.ndarray, phi: np.ndarray) -> S2.Motor:
     """Rotors carrying the pole to polar angle theta at azimuth phi."""
-    return ((S2.mv.yz * -np.sin(phi) + S2.mv.zx * np.cos(phi)) * (theta / 2.0)).exp()
+    # The plane zx turned about z by the azimuth.
+    return (((S2.mv.xy * (-phi / 2)).exp() >> S2.mv.zx) * (theta / 2.0)).exp()
 
 
 def ellipses(half_angles: np.ndarray, mass: np.ndarray, placement: S2.Motor, rate: np.ndarray, colors: list[str], n_phi: int) -> S2.Bodies:

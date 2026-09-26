@@ -62,9 +62,9 @@ def test_pinched_horn_cusp():
 def test_circle_intersection_vortex():
     """Verify intersection 2-blade of two circles generates a valid conformal rotor."""
     generator = make_circle_intersection_vortex(
-        np.array([np.sin(0.35), 0.0, np.cos(0.35)]),
+        (mv.zx * (-0.35 / 2)).exp() >> mv.z,
         np.radians(48.0),
-        np.array([0.0, np.sin(0.40), np.cos(0.40)]),
+        (mv.zy * (-0.40 / 2)).exp() >> mv.z,
         np.radians(52.0),
     )
     assert generator.gatype.subspaces == Bivector.subspaces

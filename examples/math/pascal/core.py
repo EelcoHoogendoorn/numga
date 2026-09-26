@@ -86,4 +86,4 @@ def point(coords: np.ndarray) -> Point:
 
 def headings(angles: np.ndarray) -> Point:
     """Points at infinity in the directions at the given angles."""
-    return mv("x y", np.stack([np.cos(angles), np.sin(angles)], axis=-1)).dual()
+    return (mv.xy * (-angles / 2)).exp() >> mv.x.dual()

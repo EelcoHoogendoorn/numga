@@ -78,7 +78,7 @@ def project(eye_frame: Motor, surfaces: Quadric) -> tuple[ScreenConic, ScreenPol
     """Project each quadric to its screen conic and eye-polar linear form; the eye must be off-surface."""
     eye = eye_frame >> origin
     screen = eye_frame >> ScreenPoint
-    normalized = surfaces * (eye & surfaces(eye)).inverse()
+    normalized = surfaces / (eye & surfaces(eye))
     polar = screen & normalized(eye)
     return (screen & normalized(screen)) - polar * polar, polar
 

@@ -135,3 +135,20 @@ def test_wide_known_versor_can_still_request_explicit_renormalization():
 
     assert repaired.gatype <= algebra.gatype.rotor()
     np.testing.assert_allclose(repaired.kernel, coefficients / 1.01, atol=1e-14)
+
+
+def test_scalar_norm_squared_is_the_scalar_part_of_the_reverse_product_for_values_and_forms():
+    algebra = Algebra("x+y+z+w0")
+    mv = NumpyContext(algebra).multivector
+    Bivector = algebra.gatype.bivector()
+    # A screw: the reverse product has a pseudoscalar part, which the scalar norm leaves out.
+    bivectors = mv.bivector(np.random.default_rng(3).normal(size=(4, 6)))
+    product = bivectors * bivectors.reverse()
+
+    squared = bivectors.scalar_norm_squared()
+
+    assert squared.subspace is algebra.subspace.scalar()
+    np.testing.assert_allclose(squared.kernel, product.select[0].kernel, atol=1e-13)
+    # With the value left open it is a form, which evaluated on the value gives the same norm.
+    form = (mv.rotor() >> Bivector).scalar_norm_squared()
+    np.testing.assert_allclose(form(bivectors, bivectors).kernel, squared.kernel, atol=1e-13)

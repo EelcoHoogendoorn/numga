@@ -57,10 +57,10 @@ def sweep(frames: int, samples: int) -> Iterator[tuple[core.Vector, core.Vector]
 
 # --- plumbing -------------------------------------------------------------------------
 def sphere(polar: np.ndarray, azimuth: np.ndarray) -> core.Vector:
-    """Unit directions at the given polar angles from z and azimuths about it."""
+    """Unit directions at the given polar angles from z and azimuths about it: z turned toward x by
+    the polar angle, then about z by the azimuth."""
     polar, azimuth = np.broadcast_arrays(polar, azimuth)
-    coordinates = np.stack([np.sin(polar) * np.cos(azimuth), np.sin(polar) * np.sin(azimuth), np.cos(polar)], axis=-1)
-    return mv.vector(coordinates)
+    return (mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-polar / 2)).exp() >> mv.z
 
 
 if __name__ == "__main__":

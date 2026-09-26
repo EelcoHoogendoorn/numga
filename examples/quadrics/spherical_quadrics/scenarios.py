@@ -15,7 +15,7 @@ def spherical_conic():
     eigenvalues = np.array([1.0, 0.4, -0.8])
     rotor = (mv.xy * 0.25 + mv.yz * 0.15).exp()
     C = rotor >> polarity(eigenvalues)(rotor << Point)
-    Q = rotor >> polarity(eigenvalues).inverse()(rotor << Plane)
+    Q = rotor >> polarity(eigenvalues).solve(rotor << Plane)
 
     # Points along the spherical oval and its foci, carried into the world frame.
     curve, foci, theta_a = oval(eigenvalues, np.linspace(0, 2 * np.pi, 200))

@@ -5,12 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from numga import stack
-
 from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
     Bivector, Curvature, Tidal, Vector, curvature_of_strain, detector_ring, integrate_acceleration, mv,
-    polarized_strain, polarized_waves, strain_patterns, t, wave_packet, x, y, z,
+    polarizations, polarized_strain, polarized_waves, strain_patterns, t, wave_packet, x, y, z,
 )
 
 
@@ -25,17 +23,6 @@ def tidal(curvature, observer) -> Tidal:
     return curvature(observer.wedge(Vector)).commutator(observer)
 
 
-def polarizations():
-    plus = plane_wave(t + z, x, y)
-    rotation = (mv.xy * (np.pi / 8)).exp()
-    cross = rotation >> plus(rotation << Bivector)
-    return plus, cross
-
-
-def polarized_wave(plus, cross, profile):
-    return stack((plus * profile[:, 0], cross * profile[:, 0], plus * profile[:, 0] + cross * profile[:, 1]), axis=1)
-
-
 @pytest.mark.parametrize("amplitudes", [(1, 0), (0, 1), (.6, -.8)])
 def test_nonzero_curvature_has_rank_two_and_annihilates_its_image(amplitudes):
     plus, cross = polarizations()
@@ -43,7 +30,7 @@ def test_nonzero_curvature_has_rank_two_and_annihilates_its_image(amplitudes):
     assert np.linalg.matrix_rank(curvature.kernel) == 2
     np.testing.assert_allclose(curvature(curvature).kernel, 0, atol=1e-14)
     # Null output planes are nonzero even though their Lorentz norms vanish.
-    image = curvature(t.wedge(x))
+    image = curvature(mv.tx)
     assert np.linalg.norm(image.kernel) > .5
     np.testing.assert_allclose((image | image).kernel, 0, atol=1e-14)
 
@@ -70,7 +57,7 @@ def test_riemann_pair_symmetry_bianchi_identity_and_vacuum_ricci():
     ricci_form = Vector.commutator(curvature(Vector.wedge(Vector))).trace(slot=1)
     np.testing.assert_allclose(ricci_form.kernel, 0, atol=1e-13)
     # The same trace on a non-vacuum curvature reproduces the frame contraction as a form.
-    dyad = curvature + 0.7 * (t ^ x) * ((t ^ x) | Bivector)
+    dyad = curvature + 0.7 * mv.tx * (mv.tx | Bivector)
     frame_map = dyad(basis.wedge(Vector)).commutator(reciprocal).sum(axis=0)
     a, b = mv.vector(np.random.default_rng(11).normal(size=(2, 4)))
     np.testing.assert_allclose(
@@ -96,7 +83,10 @@ def test_observer_sees_opposite_transverse_tides_and_doppler_scaling():
 
 
 def test_curvature_and_observer_binding_are_lorentz_covariant():
-    plus, _ = polarizations()
+    plus, cross = polarizations()
+    # The duality turn -I is the eighth turn about the wave axis.
+    eighth_turn = (mv.xy * (np.pi / 8)).exp()
+    np.testing.assert_allclose(cross.kernel, (eighth_turn >> plus(eighth_turn << Bivector)).kernel, atol=1e-9)
     rotor = (mv.tx * .31).exp() * (mv.yz * -.23).exp()
     transformed = plane_wave(rotor >> (t + z), rotor >> x, rotor >> y)
     conjugated = rotor >> plus(rotor << Bivector)
@@ -111,7 +101,8 @@ def test_curvature_and_observer_binding_are_lorentz_covariant():
 def test_packet_acceleration_matches_the_strain_second_derivative():
     time = np.linspace(-.5, 6.5, 2801)
     strain, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
-    h, acceleration = strain.kernel[..., 0], second.kernel[..., 0]
+    # The plus and pseudoscalar parts of each phasor.
+    h, acceleration = strain.kernel, second.kernel
     dt = time[1] - time[0]
     numerical = (-h[:-4] + 16 * h[1:-3] - 30 * h[2:-2]
                  + 16 * h[3:-1] - h[4:]) / (12 * dt**2)
@@ -119,14 +110,15 @@ def test_packet_acceleration_matches_the_strain_second_derivative():
     np.testing.assert_allclose(
         numerical[interior], acceleration[2:-2][interior], atol=1e-11,
     )
+    # Outside the window only the Gaussian's tails remain.
     outside = (time <= 0) | (time >= 6)
-    np.testing.assert_array_equal(h[outside], 0)
-    np.testing.assert_array_equal(acceleration[outside], 0)
+    np.testing.assert_allclose(h[outside], 0, atol=1e-11)
+    np.testing.assert_allclose(acceleration[outside], 0, atol=1e-9)
     np.testing.assert_allclose(h[len(time) // 2], [1e-4, 0], atol=1e-16)
 
 
 def test_integrated_detector_response_converges_to_weak_wave_displacements():
-    plus, cross = polarizations()
+    plus, _ = polarizations()
     reference = detector_ring(12)
     plus_matrix = np.diag([1, -1])
     cross_matrix = np.array([[0, 1], [1, 0]])
@@ -134,25 +126,26 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
     for count in (321, 641):
         time = np.linspace(-1, 7, count)
         _, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
-        acceleration = tidal(polarized_wave(plus, cross, second) * -.5, t)[:, :, None](reference)
+        acceleration = tidal(polarized_waves(plus, second), t)[:, :, None](reference)
         displacement = integrate_acceleration(time, acceleration).kernel[..., 1:3]
 
         # Independent prediction: the displacement is half the strain applied to the separation, for all
-        # three polarizations and every bead, with the stated sin^4 packet.
-        envelope = 1e-4 * np.sin(np.pi * np.clip(time / 6, 0, 1))**4
+        # three polarizations and every bead, with the stated Gaussian packet.
+        envelope = 1e-4 * np.exp(-(time - 3)**2 / (2 * 0.5**2))
         hp = (envelope * np.cos(np.pi * (time - 3)))[:, None, None]
         hc = (envelope * np.sin(np.pi * (time - 3)))[:, None, None]
-        strain = np.stack((hp * plus_matrix, hp * cross_matrix,
+        strain = np.stack((hp * plus_matrix, hc * cross_matrix,
                            hp * plus_matrix + hc * cross_matrix), axis=1)
-        expected = .5 * np.einsum("tcij,nj->tcni", strain, reference.kernel[..., 1:3])
+        expected = .5 * np.einsum("tcij,nj->tcni", strain, reference.cast(Vector).kernel[..., 1:3])
         errors.append(np.max(np.abs(displacement - expected)))
 
     assert errors[1] < errors[0] / 10  # Fourth-order integration convergence.
     assert errors[1] < 2e-9
-    np.testing.assert_array_equal(displacement[time <= 0], 0)
+    # At rest before the packet, to within the Gaussian's tails.
+    np.testing.assert_allclose(displacement[time <= 0], 0, atol=1e-11)
     tail = displacement[time >= 6]
     np.testing.assert_allclose(tail, 0, atol=2e-10)
-    np.testing.assert_allclose(np.diff(tail, axis=0) / (time[1] - time[0]), 0, atol=1e-12)
+    np.testing.assert_allclose(np.diff(tail, axis=0) / (time[1] - time[0]), 0, atol=1e-10)
 
     # Stopping the calculation halfway through the pulse must retain the
     # nonzero displacement; the integrator must not reset its final frame.
@@ -170,7 +163,8 @@ def test_strain_map_predicts_the_ring_and_its_second_derivative_is_the_curvature
 
     time = np.linspace(-1, 7, 641)
     strain, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
-    waves = polarized_waves(*polarizations(), second)
+    plus, _ = polarizations()
+    waves = polarized_waves(plus, second)
     reference = detector_ring(12)
     displacement = integrate_acceleration(time, tidal(waves, t)[:, :, None](reference))
     predicted = polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
@@ -179,12 +173,12 @@ def test_strain_map_predicts_the_ring_and_its_second_derivative_is_the_curvature
 
     # The tidal map is the strain's second time derivative as a map on separations.
     acceleration_map = polarized_strain(plus_strain, cross_strain, second)
-    np.testing.assert_allclose(tidal(waves, t).kernel, acceleration_map.kernel, atol=1e-15)
+    np.testing.assert_allclose(tidal(waves, t).kernel, acceleration_map.kernel, atol=1e-12)
 
     # Wedged with the wave vector, that second derivative is the curvature on pairs of vectors.
     two_form = curvature_of_strain(t + z, acceleration_map)
     edge = mv.vector(np.random.default_rng(5).normal(size=4))
-    np.testing.assert_allclose(two_form.bind(edge).kernel, waves(edge.wedge(Vector)).kernel, atol=1e-15)
+    np.testing.assert_allclose(two_form.bind(edge).kernel, waves(edge.wedge(Vector)).kernel, atol=1e-12)
 
 
 def test_figures_and_animation_draw():

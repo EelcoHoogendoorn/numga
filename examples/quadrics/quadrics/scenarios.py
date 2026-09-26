@@ -19,8 +19,7 @@ def polar_reciprocity():
     tangent = support_plane(dual, mv.x + mv.y * 2 + mv.z * 3, mv.w)
     contact = dual(tangent)                          # Point <- Plane
 
-    primal = dual.inverse()                          # Plane <- Point
-    recovered_tangent = primal(contact)
+    recovered_tangent = dual.solve(contact)
 
     # --- checks ---------------------------------------------------------------------------
     # Incidence is reciprocal: tangent & contact == contact & primal(contact) == 0.

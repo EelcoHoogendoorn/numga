@@ -52,7 +52,7 @@ def direction(coords: np.ndarray) -> Point:
 def circle(n: int) -> Point:
     """Construct n points around the unit circle in the xy plane, centred on the origin."""
     t = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
-    return point(np.stack([np.cos(t), np.sin(t), np.zeros_like(t)], axis=-1))
+    return (mv.xy * (-t / 2)).exp() >> (mv.x + mv.w).dual()
 
 
 def cube(size: float) -> Point:

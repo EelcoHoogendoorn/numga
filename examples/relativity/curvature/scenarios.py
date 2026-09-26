@@ -11,9 +11,9 @@ from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Curvature, Scalar, Tidal, Vector, t, x, z
 
 # Wave packet and detector parameters, with the speed of light one.
-# Packet length; the carrier wavelength is `DURATION / CYCLES`, 2.
+# Packet window; the carrier wavelength is `DURATION / CYCLES`, two thirds.
 DURATION = 6.0
-CYCLES = 3
+CYCLES = 9
 # Peak strain.
 AMPLITUDE = 1e-4
 SAMPLES = 1201
@@ -41,10 +41,10 @@ def detector_scenario():
     Returns the samples, rest separations, displacements and accelerations, and the display
     magnification of the displacements.
     """
-    plus, cross = core.polarizations()
+    plus, _ = core.polarizations()
     time = np.linspace(0.0, DURATION, SAMPLES)
     _, second = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
-    waves: Curvature = core.polarized_waves(plus, cross, second)          # [n_time, n_polarizations] Bivector <- Bivector
+    waves: Curvature = core.polarized_waves(plus, second)          # [n_time, n_polarizations] Bivector <- Bivector
     response: Tidal = core.tidal_map(waves, t)                            # [n_time, n_polarizations] Vector <- Vector
     reference: Vector = core.detector_ring(BEADS) * RADIUS                # [n_beads] Vector
     acceleration: Vector = response[:, :, None](reference)                # [n_time, n_polarizations, n_beads] Vector

@@ -66,7 +66,7 @@ def perpendicular(C: Polarity, side: Line, P: Point):
     # Every line perpendicular to l passes through its pole Q(l), so the perpendicular from
     # P is the join P & Q(l) and the foot is its meet with l. Reflection across l is the
     # harmonic homology centred on the pole, and it preserves the distance to the foot.
-    pole = C.inverse()(side)
+    pole = C.solve(side)
     normal = P.regressive(pole)
     foot = side.wedge(normal)
     reflected = P - pole * (2.0 * P.regressive(side) / pole.regressive(side))

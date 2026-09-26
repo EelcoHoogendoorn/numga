@@ -55,5 +55,6 @@ def radius(vertices: Point) -> Scalar:
 def cylinder(rings: int, around: int) -> tuple[Point, Scalar]:
     """Unit-radius skin around the x axis for x from 0 to 1, and the weight x of the second bone."""
     x, t = np.meshgrid(np.linspace(0.0, 1.0, rings), np.linspace(0.0, 2 * np.pi, around, endpoint=False), indexing="ij")
-    coords = np.stack([x, np.cos(t), np.sin(t)], axis=-1).reshape(-1, 3)
-    return point(coords), mv.scalar(x.reshape(-1, 1))
+    # The skin at y = 1 along x, turned about the x axis by each angle.
+    skin = (mv.yz * (-t / 2)).exp() >> point(np.stack([x, np.ones_like(x), np.zeros_like(x)], axis=-1))
+    return skin.reshape(-1), mv.scalar(x.reshape(-1, 1))
