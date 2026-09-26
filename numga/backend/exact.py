@@ -112,6 +112,11 @@ class ExactContext(Context):
     ) -> NoReturn:
         raise TypeError("exact Extensors do not have mutable batch storage")
 
+    def functional_add(
+        self, kernel: SymbolicKernel, index: object, value: object
+    ) -> NoReturn:
+        raise TypeError("exact Extensors do not have mutable batch storage")
+
     def __repr__(self) -> str:
         return f"ExactContext(algebra={self.algebra!r})"
 

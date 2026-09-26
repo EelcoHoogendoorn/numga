@@ -22,11 +22,10 @@ multiplication by the spin plane as multiplication by the imaginary unit.
 
 from __future__ import annotations
 
-from itertools import accumulate
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
@@ -118,4 +117,4 @@ def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spi
 
 def path(velocities: Bivector, dt: float) -> Bivector:
     """The positions a velocity carries a point through, from the origin, one step at a time."""
-    return stack(list(accumulate(velocities[:-1] * dt, initial=velocities[0] * 0.0)))
+    return concatenate([velocities[:1] * 0.0, (velocities[:-1] * dt).cumsum(axis=0)])

@@ -258,6 +258,15 @@ class TorchContext(Context):
         result[index] = torch.as_tensor(value, dtype=kernel.dtype, device=kernel.device)
         return result
 
+    def functional_add(self, kernel: torch.Tensor, index: object, value: object) -> torch.Tensor:
+        # The flat position of every indexed entry, repeated where the index repeats, so that
+        # index_add_ accumulates as NumPy's add.at and JAX's .at[].add do.
+        positions = torch.arange(kernel.numel(), device=kernel.device).reshape(kernel.shape)[index]
+        values = torch.as_tensor(value, dtype=kernel.dtype, device=kernel.device).expand(positions.shape)
+        result = kernel.contiguous().clone()
+        result.view(-1).index_add_(0, positions.reshape(-1), values.reshape(-1))
+        return result
+
     def __repr__(self) -> str:
         return (f"TorchContext(algebra={self.algebra!r}, dtype={self.dtype}, "
                 f"device={str(self.device)!r}, execution={self.execution!r})")

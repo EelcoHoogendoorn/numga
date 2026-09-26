@@ -14,11 +14,21 @@ from PIL import Image
 
 from examples import PLOT_DIR, auto_increment_path
 
+# How many times the figure's resolution a frame is drawn at, per axis, before each block is averaged.
+SUPERSAMPLE = 4
+
 
 def capture(fig: plt.Figure) -> np.ndarray:
-    """Render a figure and return its RGB pixels."""
+    """Render a figure at SUPERSAMPLE times its resolution and return its RGB pixels, each the average of
+    its block: antialiasing that holds for every artist."""
+    dpi = fig.dpi
+    fig.set_dpi(dpi * SUPERSAMPLE)
     fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba())[..., :3].copy()
+    pixels = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(float)
+    fig.set_dpi(dpi)
+    rows, columns = pixels.shape[0] // SUPERSAMPLE, pixels.shape[1] // SUPERSAMPLE
+    blocks = pixels[:rows * SUPERSAMPLE, :columns * SUPERSAMPLE].reshape(rows, SUPERSAMPLE, columns, SUPERSAMPLE, 3)
+    return blocks.mean(axis=(1, 3)).round().astype(np.uint8)
 
 
 def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:

@@ -333,7 +333,7 @@ class TypeRules:
                 )
             return first
 
-        if operation in {"sum", "mean", "set"}:
+        if operation in {"sum", "mean", "set", "add"}:
             return first.algebra.gatype(first.subspaces)
 
         raise NotImplementedError(

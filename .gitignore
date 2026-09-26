@@ -22,7 +22,7 @@ dist/
 !/plots/spherical_quadric_physics.gif
 !/plots/resonance_echo.gif
 !/plots/hopf_sweep.gif
-!/plots/belief_propagation.gif
+!/plots/odometry.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

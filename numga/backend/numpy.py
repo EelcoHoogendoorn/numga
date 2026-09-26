@@ -119,5 +119,12 @@ class NumpyContext(Context):
         result[index] = value
         return result
 
+    def functional_add(
+        self, kernel: np.ndarray, index: object, value: object
+    ) -> np.ndarray:
+        result = np.array(kernel, copy=True)
+        np.add.at(result, index, value)
+        return result
+
     def __repr__(self) -> str:
         return f"NumpyContext(algebra={self.algebra!r}, dtype={self.dtype}, execution={self.execution!r})"

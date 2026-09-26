@@ -281,7 +281,19 @@ def test_collection_rules_preserve_or_erase_stub_traits_conservatively():
     assert rotors.sum().gatype is plain_even
     assert rotors.mean().gatype is plain_even
     assert rotors.at[0].set([2.0, 0.0]).gatype is plain_even
+    assert rotors.at[0].add([2.0, 0.0]).gatype is plain_even
     assert (-rotors).gatype is rotor_type
+
+
+def test_at_add_accumulates_where_the_index_repeats():
+    # Values at the ends of pairs, summed at the items those ends sit at, as a scatter-add.
+    context = NumpyContext(Algebra("x+y+z+"))
+    values = context.multivector.vector(np.arange(24.0).reshape(2, 4, 3))       # [batch, ends] Vector
+    ends = np.array([0, 2, 0, 0])
+    summed = context.multivector.vector(np.zeros((2, 3, 3))).at[..., ends].add(values)
+    expected = np.zeros((2, 3, 3))
+    np.add.at(expected, (slice(None), ends), np.arange(24.0).reshape(2, 4, 3))
+    np.testing.assert_array_equal(summed.kernel, expected)
 
 
 def test_numpy_context_rejects_lossy_numeric_kind_changes():

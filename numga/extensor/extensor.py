@@ -870,6 +870,13 @@ class _AtUpdate:
         self._index = index
 
     def set(self, value: object) -> Extensor:
+        return self._update("set", value)
+
+    def add(self, value: object) -> Extensor:
+        """Add the value at the index; where the index repeats, the additions accumulate."""
+        return self._update("add", value)
+
+    def _update(self, operation: str, value: object) -> Extensor:
         target = self._extensor
         kernel_index = _batch_kernel_index(
             self._index,
@@ -883,12 +890,9 @@ class _AtUpdate:
         else:
             replacement = value
             operand_gatypes = (target.gatype,)
-        gatype = TypeRules.collection("set", self._index, operand_gatypes)
-        kernel = target.context.functional_set(
-            target._kernel,
-            kernel_index,
-            replacement,
-        )
+        gatype = TypeRules.collection(operation, self._index, operand_gatypes)
+        update = target.context.functional_set if operation == "set" else target.context.functional_add
+        kernel = update(target._kernel, kernel_index, replacement)
         return type(target)._from_prepared_kernel(target.context, gatype, kernel)
 
 

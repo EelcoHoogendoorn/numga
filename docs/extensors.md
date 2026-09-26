@@ -36,7 +36,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
 8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
 9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
-10. [**Pose Graphs & Belief Propagation (PGA2D)**](#10-the-most-likely-poses-of-a-lap-belief-propagation-pga2d): each belief a quadric on twists, the bivectors of motion, passed from pose to pose in any dimension.
+10. [**Odometry (PGA2D)**](#10-odometry-the-most-likely-trajectory-pga2d): uncertainties as quadrics on twists, and the information applied reading by reading, never assembled, in any dimension.
 
 ---
 
@@ -217,21 +217,22 @@ fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even:
 
 ---
 
-## 10. The Most Likely Poses of a Lap: Belief Propagation (PGA2D)
+## 10. Odometry: The Most Likely Trajectory (PGA2D)
 
-**Notebook**: [`examples/geometry/belief_propagation/belief_propagation.ipynb`](../examples/geometry/belief_propagation/belief_propagation.ipynb)
+**Notebook**: [`examples/geometry/odometry/odometry.ipynb`](../examples/geometry/odometry/odometry.ipynb)
 
-![Beliefs rolling out along a robot's lap, then pulled onto it when the loop closes](../plots/belief_propagation.gif)
+![A dead-reckoned lap pulled shut a fifth of the way at a time, its ellipses shrinking](../plots/odometry.gif)
 
 ```python
-covariance = relative << rest.solve(relative >> Line)        # [2, readings] Twist <- Line
-implied = (information.inverse() + covariance).inverse()     # [2, readings] Line <- Twist: what a reading tells
-mean = belief.information.solve(belief.weighted_mean)        # [poses] Twist
-readout = (Line & Twist).solve(Plane & shift)                # [poses] Line <- Plane
+measured = twists[..., heads] - (relative << twists[..., tails])        # [..., readings] Twist: what a correction reads
+weighted = weights(measured)                                             # [..., readings] Line
+at_tails = -(relative >> weighted)                                       # [..., readings] Line
+pulled = anchor_weights(twists).at[..., heads].add(weighted)             # [..., poses] Line
+pulled = pulled.at[..., tails].add(at_tails)                             # [..., poses] Line
 ```
 
-* **A belief is a quadric on twists.** Its information, `Line <- Twist`, paired with a twist is a quadratic form on the bivectors of motion, `twist & information(twist)`; its covariance goes back, `Twist <- Line`, and what readings tell a pose adds up as information.
-* **Moving a belief moves a map.** A motor carries a covariance between poses as it carries a point.
+* **An uncertainty is a quadric on twists.** It maps lines to twists, `Twist <- Line`, and its inverse pairs a twist with itself.
+* **One pull, never assembled.** A reading pulls only on the two poses it links. The pull of the mismatches is the gradient, of what a correction measures the information, and of every unit error each pose's uncertainty.
 * **One module, any dimension or signature.**
 
 # References

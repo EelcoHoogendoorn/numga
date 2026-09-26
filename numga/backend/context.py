@@ -229,6 +229,9 @@ class Context(ABC):
     def functional_set(self, kernel: Any, index: object, value: object) -> Any:
         """Return storage with an indexed batch region replaced."""
 
+    def functional_add(self, kernel: Any, index: object, value: object) -> Any:
+        """Return storage with values added at an indexed batch region; repeated indices accumulate."""
+
 
 def context_from_key(algebra: Algebra, key: tuple[object, ...]) -> Context:
     """Reconstruct an immutable context from tracing/static metadata."""

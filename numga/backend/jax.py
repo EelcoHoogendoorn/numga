@@ -105,6 +105,11 @@ class JaxContext(Context):
     ) -> jax.Array:
         return kernel.at[index].set(value)
 
+    def functional_add(
+        self, kernel: jax.Array, index: object, value: object
+    ) -> jax.Array:
+        return kernel.at[index].add(value)
+
     def __repr__(self) -> str:
         return f"JaxContext(algebra={self.algebra!r}, dtype={self.dtype}, execution={self.execution!r})"
 
