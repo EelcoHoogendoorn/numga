@@ -126,3 +126,4 @@ if __name__ == "__main__":
     save_figure(render.draw_fresnel_surface_figure(*fresnel_surface_scenario()), "constitutive_fresnel_surface")
     save_figure(render.draw_fresnel_drag_figure(*fresnel_drag_scenario()), "constitutive_fresnel_drag")
     save_animation(render.animate_wave_propagation(crystal_modes), "constitutive_wave", 50)
+    save_animation(render.animate_wave_comparison(glass_modes, crystal_modes), "constitutive_comparison", 50)

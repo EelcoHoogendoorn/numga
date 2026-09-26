@@ -11,15 +11,18 @@ dist/
 !/plots/curvature.gif
 !/plots/curvature.png
 !/plots/scenegraph.png
+!/plots/scenegraph.gif
 !/plots/modes.png
 !/plots/multiview_reconstruction.png
 !/plots/constitutive.png
+!/plots/constitutive.gif
 !/plots/modes.gif
 !/plots/cyclides_linked_vortex.gif
 !/plots/multiview_convergence.gif
 !/plots/spherical_quadric_physics.gif
 !/plots/resonance_echo.gif
 !/plots/hopf_sweep.gif
+!/plots/belief_propagation.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

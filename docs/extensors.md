@@ -36,6 +36,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
 8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
 9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
+10. [**Pose Graphs & Belief Propagation (PGA2D)**](#10-the-most-likely-poses-of-a-lap-belief-propagation-pga2d): each belief a quadric on twists, the bivectors of motion, passed from pose to pose in any dimension.
 
 ---
 
@@ -43,7 +44,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 
 **Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
-![Scenegraph 3D scene and 2D sensor photograph](../plots/scenegraph.png)
+![Scenegraph 3D scene and 2D sensor photograph](../plots/scenegraph.gif)
 
 ```python
 body = pose >> scale                                     # [5] Point <- Point: each part, scaled and placed
@@ -63,7 +64,7 @@ pixels = local_to_pixel[:, None](corners[None, :])       # [5, 8] Point
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
-![The three vibration modes of the coupled suspension](../plots/modes.png)
+![The three vibration modes of the coupled suspension](../plots/modes.gif)
 
 ```python
 stiffness = (springs * (springs & Twist) * constants).sum()   # [] Forque <- Twist
@@ -81,7 +82,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 **Notebook**: [`examples/geometry/multiview/multiview_reconstruction.ipynb`](../examples/geometry/multiview/multiview_reconstruction.ipynb)
 
 <p align="center">
-  <img src="../plots/multiview_reconstruction.png" alt="Multi-view reconstruction, sight cones, splats, and pose covariance" width="420" />
+  <img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="420" />
 </p>
 
 ```python
@@ -105,7 +106,7 @@ step = curvature.solve(-gradient)                                 # [n_cams] Twi
 
 **Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](../examples/electromagnetism/constitutive/constitutive.ipynb)
 
-![Plane waves in isotropic glass and in a birefringent crystal](../plots/constitutive.png)
+![Plane waves in isotropic glass and in a birefringent crystal](../plots/constitutive.gif)
 
 ```python
 electric = Bivector.commutator(t).wedge(t)               # [] Bivector <- Bivector: what observer t calls electric
@@ -125,7 +126,7 @@ wave.svdvals()                                           # near zero where light
 
 **Notebook**: [`examples/relativity/curvature/curvature.ipynb`](../examples/relativity/curvature/curvature.ipynb)
 
-![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.png)
+![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.gif)
 
 ```python
 nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector: two planes along the wave
@@ -213,6 +214,25 @@ fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even:
 
 * **A sandwich with the spinor open twice.** `Even >> mv.z` leaves the spinor open in both places it appears, so the Hopf map is a form with two spinor slots that returns a vector.
 * **A fibre is an eigenspace.** Paired with a direction, the form's top eigenspace holds every spinor pointing that way: a circle in the three-sphere, linked once with every other.
+
+---
+
+## 10. The Most Likely Poses of a Lap: Belief Propagation (PGA2D)
+
+**Notebook**: [`examples/geometry/belief_propagation/belief_propagation.ipynb`](../examples/geometry/belief_propagation/belief_propagation.ipynb)
+
+![Beliefs rolling out along a robot's lap, then pulled onto it when the loop closes](../plots/belief_propagation.gif)
+
+```python
+covariance = relative << rest.solve(relative >> Line)        # [2, readings] Twist <- Line
+implied = (information.inverse() + covariance).inverse()     # [2, readings] Line <- Twist: what a reading tells
+mean = belief.information.solve(belief.weighted_mean)        # [poses] Twist
+readout = (Line & Twist).solve(Plane & shift)                # [poses] Line <- Plane
+```
+
+* **A belief is a quadric on twists.** Its information, `Line <- Twist`, paired with a twist is a quadratic form on the bivectors of motion, `twist & information(twist)`; its covariance goes back, `Twist <- Line`, and what readings tell a pose adds up as information.
+* **Moving a belief moves a map.** A motor carries a covariance between poses as it carries a point.
+* **One module, any dimension or signature.**
 
 # References
 

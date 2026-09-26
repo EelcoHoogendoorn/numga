@@ -11,7 +11,6 @@ import sys
 import examples.electromagnetism.constitutive.core
 import examples.electromagnetism.second_harmonic.core
 import examples.electromagnetism.second_harmonic.scenarios
-import examples.geometry.belief_propagation.core
 import examples.geometry.belief_propagation.scenarios
 import examples.geometry.cyclides.core
 import examples.geometry.epipolar.core
@@ -70,6 +69,7 @@ import examples.relativity.dirac.scenarios
 import examples.relativity.gravitational_lensing.core
 import examples.relativity.gravitational_lensing.scenarios
 import examples.relativity.impulse.core
+instantiate('examples.geometry.belief_propagation.core', PGA2D)
 instantiate('examples.geometry.multiview.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))
 instantiate('examples.quadrics.elliptic_physics.core', Spherical3D)

@@ -1,4 +1,4 @@
-"""The most likely poses of a robot's lap, by belief propagation, in PGA2D.
+"""The most likely poses of a robot's lap, by belief propagation, in plane-based geometric algebra.
 
 A robot drives a lap and reads, at every stop, how far it moved since the last one; each reading is a
 little off. Passing a spot it saw before, it reads one more relative pose, closing the loop. Wanted
@@ -25,18 +25,21 @@ at the most likely poses, but the covariances do not: what goes round the loop i
 In the notation of Gaussian belief propagation the information reads as the information matrix, the
 weighted mean as the information vector, and what a reading tells a pose as a factor-to-variable
 message.
+
+The algebra is not fixed here. `ga` is supplied per instance, by
+`examples.instantiate("examples.geometry.belief_propagation.core", PGA2D)` for a lap in the plane or
+PGA3D for one in space, and the same module serves both.
 """
 
-from __future__ import annotations
-
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 
 import numpy as np
 
-from numga import NumpyContext, stack
-from numga.algebras import PGA2D as ga
+from numga import Algebra, NumpyContext, concatenate, stack
 
+# Supplied by examples.instantiate.
+ga: Algebra
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
@@ -50,8 +53,6 @@ Information = ga.gatype((Line, Twist))            # Line <- Twist
 Covariance = ga.gatype((Twist, Line))             # Twist <- Line
 # A quadric: the points where its pairing with a point vanishes.
 Quadric = ga.gatype((Plane, Point))               # Plane <- Point
-# The point each pose carries: the origin, dual to the weight direction w.
-ORIGIN = mv.w.dual()                              # [] Point
 
 
 @dataclass(frozen=True)
@@ -69,9 +70,16 @@ class PoseGraph:
         """[2, readings, poses] one where an end of a reading sits at a pose."""
         return (self.ends[..., None] == np.arange(len(self.anchors))).astype(float)
 
-    def untold(self) -> Belief:
+    def untold(self) -> "Belief":
         """What the readings tell their ends before anything has been told: nothing, at either end."""
         return Belief(self.information * np.zeros(self.ends.shape), mv(Line, np.zeros(self.ends.shape + (len(Line.output_subspace),))))
+
+    def continued(self, told: "Belief") -> "Belief":
+        """What was told along the readings of a graph that had only the first of these readings, and
+        nothing yet along the readings added after them."""
+        untold, known = self.untold(), told.information.shape[-1]
+        return Belief(concatenate([told.information, untold.information[:, known:]], axis=1),
+                      concatenate([told.weighted_mean, untold.weighted_mean[:, known:]], axis=1))
 
 
 @dataclass(frozen=True)
@@ -118,10 +126,11 @@ def tell(graph: PoseGraph, relative: Motor, mismatch: Twist, information: Inform
     return Belief(implied, implied((relative << mean) - mismatch))
 
 
-def propagate(graph: PoseGraph, poses: Motor, rounds: int) -> Iterator[tuple[Motor, Information]]:
-    """Belief propagation relinearized every round: every reading tells its ends what it implies, and
-    every pose moves to its belief's mean. Yields the poses and their beliefs' information."""
-    told = graph.untold()
+def propagate(graph: PoseGraph, poses: Motor, told: Belief,
+              rounds: int) -> Generator[tuple[Motor, Information], None, tuple[Motor, Belief]]:
+    """Belief propagation relinearized every round, from what the readings have told so far: every
+    reading tells its ends what it implies, and every pose moves to its belief's mean. Yields the poses
+    and their beliefs' information; returns the poses and what is told after the last round."""
     for _ in range(rounds):
         relative, mismatch, information, offset = linearize(graph, poses)
         told = tell(graph, relative, mismatch, information, beliefs(graph, told, -graph.priors(offset)), told)
@@ -131,6 +140,7 @@ def propagate(graph: PoseGraph, poses: Motor, rounds: int) -> Iterator[tuple[Mot
         # What a pose was told moves with it: its mean is now the move closer.
         told = Belief(told.information, told.weighted_mean - told.information(mean[graph.ends]))
         yield poses, belief.information
+    return poses, told
 
 
 def gradient(graph: PoseGraph, poses: Motor) -> Line:
@@ -158,26 +168,31 @@ def exact_covariance(graph: PoseGraph, poses: Motor, lines: Line, rounds: int) -
 
 
 def position_quadric(poses: Motor, covariance: Covariance, origin: Point, sigmas: float) -> Quadric:
-    """The quadric `sigmas` standard deviations out, within which each pose carries the origin: in the
-    plane, an ellipse.
+    """The quadric `sigmas` standard deviations out, within which each pose carries the origin: an
+    ellipse in the plane, an ellipsoid in space.
 
     A twist moves the carried point by its commutator with the point. Reading that motion with a plane
     is reading the twist with a line, found by solving the incidence form; so the covariance of the
     twist gives the covariance of the point's motion. Added to the point's dyad it is the point's
-    second moment, whose inverse, paired twice with a point of unit weight, is one plus the squared
-    number of standard deviations to it. Less that many weight dyads, it vanishes on the quadric.
+    second moment. Its inverse sends the carried point to a plane, its polar; paired twice with any
+    point, the inverse is that point's pairing with the polar, squared, times one plus the squared
+    number of standard deviations to it. Less that many dyads of the polar, it vanishes on the quadric.
     """
     here = poses >> origin                                                    # [...] Point
     shift = Twist.commutator(here)(poses >> Twist)                            # [...] Point <- Twist
     readout = (Line & Twist).solve(Plane & shift)                             # [...] Line <- Plane
     moment = here * (Plane & here) + shift(covariance(readout))               # [...] Point <- Plane
-    return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)         # [...] Plane <- Point
+    inverse = moment.inverse()                                                # [...] Plane <- Point
+    polar = inverse(here)                                                     # [...] Plane
+    return inverse - (1 + sigmas**2) * polar * (polar & Point) / (polar & here)   # [...] Plane <- Point
 
 
 # --- plumbing -------------------------------------------------------------------------
 def information(translation_std: float, rotation_std: float) -> Information:
     """The information of a reading with isotropic translation noise and rotation noise about the head:
     the inverse of its covariance."""
-    translation = mv.yw * (mv.yw & Line) + mv.wx * (mv.wx & Line)              # [] Twist <- Line
-    rotation = mv.xy * (mv.xy & Line)                                          # [] Twist <- Line
-    return (translation * translation_std**2 + rotation * rotation_std**2).inverse()
+    twists = mv(Twist, np.eye(len(Twist.output_subspace)))                     # [twists] Twist
+    # A basis twist turns if its reverse product is one, and slides if it is zero.
+    turning = twists.scalar_norm_squared()                                     # [twists] Scalar
+    variances = translation_std**2 + (rotation_std**2 - translation_std**2) * turning   # [twists] Scalar
+    return (twists * (twists & Line) * variances).sum(axis=0).inverse()        # [] Line <- Twist

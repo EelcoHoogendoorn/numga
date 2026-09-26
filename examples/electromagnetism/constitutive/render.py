@@ -140,6 +140,32 @@ def animate_wave_propagation(
     return frames
 
 
+def animate_wave_comparison(
+    glass_modes: Sequence[tuple[float, Extensor]],
+    crystal_modes: Sequence[tuple[float, Extensor]],
+    n_frames: int = 24,
+    z_max: float = 4.0 * np.pi,
+    omega: float = 1.0,
+) -> list[np.ndarray]:
+    """Frames of the travelling E and B field vectors through one period, in isotropic glass beside
+    the birefringent crystal."""
+    fig = plt.figure(figsize=(14, 6), dpi=80)
+    glass_axes = fig.add_subplot(1, 2, 1, projection="3d")
+    crystal_axes = fig.add_subplot(1, 2, 2, projection="3d")
+    # One layout for every frame, so the axes stay put while the waves move.
+    fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0, wspace=0.0)
+
+    frames = []
+    for tau in np.linspace(0, 2.0 * np.pi / omega, n_frames, endpoint=False):
+        for ax, modes in ((glass_axes, glass_modes), (crystal_axes, crystal_modes)):
+            ax.cla()
+            draw_wave_propagation(ax, modes, tau=float(tau), z_max=z_max, omega=omega)
+        frames.append(capture(fig))
+
+    plt.close(fig)
+    return frames
+
+
 def draw_dispersion(
     ax: plt.Axes,
     speeds: np.ndarray,
