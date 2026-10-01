@@ -6,33 +6,22 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
+from numga import stack
+
 from examples.electromagnetism.constitutive import core, scenarios, render
 
-B = core.B
-V = core.V
-Spatial = core.Spatial
 mv = core.mv
-minimum_speeds = core.minimum_speeds
 t = core.t
 x = core.x
-y = core.y
 z = core.z
 
 
-def phase_speeds(chi, direction, speeds):
-    samples = mv.scalar(speeds[:, None])
-    k = samples * t + mv(Spatial, direction)
-    wave = k.commutator(chi(k.wedge(Spatial)))
-    return minimum_speeds(samples.kernel[..., 0], wave.svdvals()[..., -1].kernel[..., 0])
-
-
-def polarisation(chi, direction, speed):
-    k = t * speed + mv(Spatial, direction)
-    return k.commutator(chi(k.wedge(Spatial))).svd()[2][-1]
+def phase_speeds(medium, direction, speeds):
+    return core.minimum_speeds(speeds, core.solve_dispersion_scan(speeds, medium, direction))
 
 
 SPEEDS = np.linspace(0.05, 1.5, 6001)
-Z = np.array([0.0, 0.0, 1.0])
+SCAN_TOLERANCE = SPEEDS[1] - SPEEDS[0]
 
 
 def test_observer_projectors_are_complementary_idempotents():
@@ -47,7 +36,7 @@ def test_observer_projectors_are_complementary_idempotents():
 def test_isotropic_medium_speed_is_one_over_n():
     for eps, mu in ((2.25, 1.0), (4.0, 1.5)):
         chi = core.isotropic_medium(eps, mu)
-        np.testing.assert_allclose(phase_speeds(chi, Z, SPEEDS), [1.0 / np.sqrt(eps * mu)], atol=0.01)
+        np.testing.assert_allclose(phase_speeds(chi, z, SPEEDS), [1.0 / np.sqrt(eps * mu)], atol=SCAN_TOLERANCE)
 
 
 def test_crystal_is_birefringent_and_reduces_to_glass_when_isotropic():
@@ -56,27 +45,45 @@ def test_crystal_is_birefringent_and_reduces_to_glass_when_isotropic():
     np.testing.assert_allclose(iso.kernel, glass.kernel, atol=1e-14)
 
     crystal = core.crystal_medium(2.25, 1.5, 1.5, 1.0)
-    np.testing.assert_allclose(phase_speeds(crystal, Z, SPEEDS), [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)], atol=0.01)
-    np.testing.assert_allclose(phase_speeds(crystal, np.array([1.0, 0.0, 0.0]), SPEEDS), [1.0 / np.sqrt(1.5)], atol=0.01)
+    np.testing.assert_allclose(phase_speeds(crystal, z, SPEEDS), [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)], atol=SCAN_TOLERANCE)
+    np.testing.assert_allclose(phase_speeds(crystal, x, SPEEDS), [1.0 / np.sqrt(1.5)], atol=SCAN_TOLERANCE)
 
 
-def test_crystal_polarisations_lie_along_its_axes():
+def test_crystal_fields_satisfy_maxwell_and_lie_in_their_material_planes():
     crystal = core.crystal_medium(2.25, 1.5, 1.5, 1.0)
-    slow, fast = phase_speeds(crystal, Z, SPEEDS)
-    np.testing.assert_allclose(polarisation(crystal, Z, slow).wedge(x).kernel, 0.0, atol=1e-6)
-    np.testing.assert_allclose(polarisation(crystal, Z, fast).wedge(y).kernel, 0.0, atol=1e-6)
+    speeds = 1.0 / np.sqrt(np.array([2.25, 1.5]))
+    wave_covectors = t * speeds + z
+    fields = core.field_eigenmodes(wave_covectors, crystal)
+    electric, magnetic = core.observer_projectors()
+    electric_planes = stack((mv.tx, mv.ty))
+    magnetic_planes = stack((mv.xz, mv.yz))
+
+    np.testing.assert_allclose((wave_covectors ^ fields).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(wave_covectors.commutator(crystal(fields)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((electric(fields) - electric_planes * (electric_planes | fields)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((magnetic(fields) + magnetic_planes * (magnetic_planes | fields)).kernel, 0.0, atol=1e-12)
+
+
+def test_vacuum_wave_has_two_transverse_field_modes():
+    vacuum = core.isotropic_medium(1.0)
+    wave_covector = t + z
+    _, singular_values, fields = core.wave_map(wave_covector, vacuum).svd()
+
+    assert np.count_nonzero(singular_values.kernel < 1e-12) == 2
+    np.testing.assert_allclose((wave_covector ^ fields[-2:]).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(wave_covector.commutator(vacuum(fields[-2:])).kernel, 0.0, atol=1e-12)
 
 
 def test_ferrite_lifts_permeability_through_the_dual_field():
     ferrite = core.ferrite_medium(eps=2.25, mu_inv_x=1.0, mu_inv_y=0.5, mu_inv_z=1.0)
-    np.testing.assert_allclose(phase_speeds(ferrite, Z, SPEEDS), [1.0 / np.sqrt(4.5), 1.0 / np.sqrt(2.25)], atol=0.01)
+    np.testing.assert_allclose(phase_speeds(ferrite, z, SPEEDS), [1.0 / np.sqrt(4.5), 1.0 / np.sqrt(2.25)], atol=SCAN_TOLERANCE)
 
 
 def test_axion_term_is_invisible_to_bulk_waves():
     glass = core.isotropic_medium(2.25, 1.0)
     for alpha in (0.4, -1.3):
         axion = core.axion_medium(glass, alpha)
-        np.testing.assert_allclose(phase_speeds(axion, Z, SPEEDS), phase_speeds(glass, Z, SPEEDS), atol=1e-12)
+        np.testing.assert_allclose(phase_speeds(axion, z, SPEEDS), phase_speeds(glass, z, SPEEDS), atol=SCAN_TOLERANCE)
 
 
 def test_moving_glass_shows_exact_fresnel_drag():
@@ -85,7 +92,7 @@ def test_moving_glass_shows_exact_fresnel_drag():
     glass = core.isotropic_medium(eps, mu)
     for beta in (0.0, 0.3, -0.5):
         moving = core.boosted_medium(glass, beta, direction=z)
-        np.testing.assert_allclose(phase_speeds(moving, Z, SPEEDS), [(1.0 / refractive_index + beta) / (1.0 + beta / refractive_index)], atol=1e-3)
+        np.testing.assert_allclose(phase_speeds(moving, z, SPEEDS), [(1.0 / refractive_index + beta) / (1.0 + beta / refractive_index)], atol=SCAN_TOLERANCE)
 
 
 def test_fresnel_surface_and_drag_scenarios():
@@ -106,7 +113,7 @@ def test_figures_and_animation_draw():
     figures = [
         render.draw_wave_comparison_figure(glass_modes, crystal_modes),
         render.draw_dispersion_figure(*scenarios.dispersion_scenario()),
-        render.draw_polarizations_figure(scenarios.polarization_scenario()),
+        render.draw_polarizations_figure(scenarios.field_modes_scenario()),
         render.draw_fresnel_surface_figure(*scenarios.fresnel_surface_scenario(n_angles=24)),
         render.draw_fresnel_drag_figure(*scenarios.fresnel_drag_scenario(n_betas=5)),
     ]

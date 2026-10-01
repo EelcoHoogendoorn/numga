@@ -1,25 +1,15 @@
-"""The constitutive extensor of a medium in Spacetime Algebra: core mathematics.
+"""Materials map field bivectors to excitation bivectors: `G = medium(F)`.
 
-In a medium, Maxwell's equations split into the field bivector F and the excitation
-bivector G, related by a linear map, the medium: `G = medium(F)`. That map is a
-Bivector-to-Bivector extensor, and every medium is built from it: an observer's electric
-and magnetic projectors give the isotropic dielectric, permittivity and permeability
-quadrics lifted through the observer give a crystal and a ferrite, the pseudoscalar gives
-the axion term, and conjugating by a Lorentz boost gives a moving medium.
-
-Plane waves exist where the wave map, taking a polarization `a` to
-`k.commutator(medium(k.wedge(a)))`, loses rank, which yields phase speeds, polarizations,
-birefringence, and relativistic Fresnel drag.
-
-This module contains pure mathematics: GATypes, constructors, and eigensolvers.
-It never imports any plotting library.
+Electric and magnetic plane weights describe glass, crystals and ferrites;
+duality adds an axion response, and a Lorentz boost sets a medium in motion.
+Plane waves are bivectors annihilated by both source-free Maxwell equations.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import NumpyContext, stack
 from numga.algebras import STA
 
 # ---------------------------------------------------------------------------
@@ -31,8 +21,6 @@ mv = ctx.multivector
 # Blade Subspaces:
 V = STA.subspace.vector()
 B = STA.subspace.bivector()
-# Polarizations in temporal gauge, `(a | t) == 0`.
-Spatial = STA.subspace("x y z")
 
 from numga.extensor.extensor import Extensor
 
@@ -40,10 +28,11 @@ from numga.extensor.extensor import Extensor
 Scalar = STA.gatype.scalar()
 Vector = STA.gatype(V)
 Bivector = STA.gatype(B)
-SpatialVector = STA.gatype(Spatial)
+Modes = tuple[np.ndarray, Bivector]
 
 # Canonical Spacetime Basis & Pseudoscalar:
 t, x, y, z = mv.vector(np.eye(4))
+spatial_axes = stack((x, y, z))
 I = mv.txyz
 
 
@@ -51,8 +40,8 @@ I = mv.txyz
 # 2. Projectors & Media Builders
 # ---------------------------------------------------------------------------
 def observer_projectors(observer=t) -> tuple[Extensor, Extensor]:
-    """Split 6D bivectors into electric and magnetic parts for a given timelike observer (Bivector <- Bivector)."""
-    electric = B.commutator(observer).wedge(observer)
+    """Split bivectors into electric and magnetic parts for a unit timelike observer (Bivector <- Bivector)."""
+    electric = (Bivector - (observer >> Bivector)) / 2
     magnetic = B - electric
     return electric, magnetic
 
@@ -64,19 +53,6 @@ def isotropic_medium(eps: float, mu: float = 1.0, observer=t) -> Extensor:
     return eps * electric + (1.0 / mu) * magnetic
 
 
-def permittivity_tensor(
-    eps_x: float,
-    eps_y: float,
-    eps_z: float,
-) -> Extensor:
-    """Spatial permittivity quadric (Vector <- Vector)."""
-    return -(
-        eps_x * x * (x | V) +
-        eps_y * y * (y | V) +
-        eps_z * z * (z | V)
-    )
-
-
 def crystal_medium(
     eps_x: float,
     eps_y: float,
@@ -84,10 +60,11 @@ def crystal_medium(
     mu: float = 1.0,
     observer=t,
 ) -> Extensor:
-    """Anisotropic dielectric crystal lifting a spatial permittivity quadric through the observer (Bivector <- Bivector)."""
+    """Anisotropic dielectric response along electric bivector planes (Bivector <- Bivector)."""
     _, magnetic = observer_projectors(observer)
-    permittivity = permittivity_tensor(eps_x, eps_y, eps_z)
-    return permittivity(B.commutator(observer)).wedge(observer) + (1.0 / mu) * magnetic
+    permittivity = np.array([eps_x, eps_y, eps_z])
+    planes = spatial_axes ^ observer
+    return (permittivity * planes * (planes | Bivector)).sum(axis=0) + magnetic / mu
 
 
 def ferrite_medium(
@@ -97,14 +74,11 @@ def ferrite_medium(
     mu_inv_z: float,
     observer=t,
 ) -> Extensor:
-    """Anisotropic magnetic ferrite lifting inverse permeability through the dual field (Bivector <- Bivector)."""
+    """Anisotropic magnetic response along magnetic bivector planes (Bivector <- Bivector)."""
     electric, _ = observer_projectors(observer)
-    permeability_inv = -(
-        mu_inv_x * x * (x | V) +
-        mu_inv_y * y * (y | V) +
-        mu_inv_z * z * (z | V)
-    )  # Vector <- Vector
-    return eps * electric + permeability_inv(B.dual().commutator(observer)).wedge(observer).dual_inverse()
+    permeability_inv = np.array([mu_inv_x, mu_inv_y, mu_inv_z])
+    planes = (spatial_axes ^ observer).dual()
+    return eps * electric - (permeability_inv * planes * (planes | Bivector)).sum(axis=0)
 
 
 def axion_medium(base_medium: Extensor, alpha: float) -> Extensor:
@@ -128,17 +102,16 @@ def boosted_medium(base_medium: Extensor, beta: float, direction=z) -> Extensor:
 # ---------------------------------------------------------------------------
 # 3. Wave Maps & Dispersion Solvers
 # ---------------------------------------------------------------------------
-def wave_map(k, medium: Extensor) -> Extensor:
-    """Construct the wave operator taking a polarization `a` to `k.commutator(medium(k.wedge(a)))`
-    (Vector <- Spatial)."""
-    return k.commutator(medium(k.wedge(Spatial)))
+def wave_map(k: Vector, medium: Extensor) -> Extensor:
+    """Source-free Maxwell residual, with separate vector and trivector grades (Odd <- Bivector)."""
+    return (k | medium) + (k ^ Bivector)
 
 
 def solve_dispersion_scan(
     speeds: np.ndarray,
     medium: Extensor,
     direction=z,
-) -> np.ndarray:
+) -> Scalar:
     """Compute smallest singular values of wave map across a range of trial phase speeds."""
     k = speeds * t + direction
     wave = wave_map(k, medium)
@@ -147,7 +120,7 @@ def solve_dispersion_scan(
 
 def minimum_speeds(
     speeds: np.ndarray,
-    svals: np.ndarray | Extensor,
+    svals: Scalar,
     threshold: float = 2e-3,
 ) -> np.ndarray:
     """Detect local minima in singular value curve corresponding to allowed wave speeds."""
@@ -156,8 +129,8 @@ def minimum_speeds(
     return speeds[1:-1][is_dip]
 
 
-def polarization_eigenmodes(k, medium: Extensor):
-    """Extract physical polarization states as right singular vectors of the wave map nullspace."""
+def field_eigenmodes(k: Vector, medium: Extensor) -> Bivector:
+    """Field bivectors in the wave map's nullspace, batched over wave vectors."""
     w = wave_map(k, medium)
     _, _, vh = w.svd()
     return vh[..., -1]
@@ -171,15 +144,7 @@ def fresnel_drag_velocities(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute downstream and upstream phase speeds across a range of medium boost speeds."""
     glass = isotropic_medium(eps, mu)
-    v_down = []
-    v_up = []
-    for beta in betas:
-        moving = boosted_medium(glass, beta, direction=z)
-        svals_down = solve_dispersion_scan(speeds, moving, direction=z)
-        mins_down = minimum_speeds(speeds, svals_down, threshold=3e-3)
-        v_down.append(mins_down[0] if len(mins_down) > 0 else np.nan)
-
-        svals_up = solve_dispersion_scan(speeds, moving, direction=-z)
-        mins_up = minimum_speeds(speeds, svals_up, threshold=3e-3)
-        v_up.append(mins_up[0] if len(mins_up) > 0 else np.nan)
-    return np.array(v_down), np.array(v_up)
+    moving = boosted_medium(glass, betas, direction=z)
+    down = solve_dispersion_scan(speeds[:, None], moving, direction=z)
+    up = solve_dispersion_scan(speeds[:, None], moving, direction=-z)
+    return speeds[down.argmin(axis=0)], speeds[up.argmin(axis=0)]

@@ -1,75 +1,53 @@
-"""A crystal that doubles the frequency of light: its response as a bilinear extensor.
+"""Frequency doubling from an electric-dipole crystal.
 
-A polar bond responds along itself to the product of the two fields along it, so four bonds pointing
-to the corners of a tetrahedron give the crystal's response, `Vector <- (Vector, Vector)`: two
-electric fields in, one polarization out. Turning the crystal turns the output and pulls both inputs
-back; binding a pump into one input leaves a linear map on the other. A real pump `E * cos(t)`
-drives `response(E, E) * cos(t) ** 2`, half of it static and half oscillating at twice the
-frequency, so the doubled-frequency amplitude is `0.5 * response(E, E)`; only the part transverse to
-the beam radiates forward.
-
-Each slice of the crystal launches doubled-frequency light, and along the crystal the driving
-polarization and that light slip out of phase. Inverting the bonds reverses the response, so a
-crystal whose orientation flips every time the slip reaches half a turn keeps adding up where a
-uniform one cancels: quasi-phase-matching. The phase is carried by the pseudoscalar, which squares
-to minus one and commutes with every vector.
-
-In Cartesian tensor notation the response reads as the susceptibility tensor of rank three, and
-turning it as three rotation matrices contracted with it; in complex-amplitude notation the growth
-reads as the integral of the source times the exponential of the mismatch times the depth. The bond
-model follows Hardhienata et al., Bond Model and Group Theory of Second Harmonic Generation in
-GaAs(001), https://arxiv.org/abs/1408.1185.
+Two electric field bivectors drive a polarization source through a bilinear extensor.
+Each directed bond spans an electric plane with the observer's time direction.
+Coherent growth retains two real bivector quadratures of the temporal oscillation.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
-from numga.algebras import VGA3D
+from numga import NumpyContext, stack
+from numga.algebras import STA
 
-ga = VGA3D
+ga = STA
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
+Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-Phasor = ga.gatype(ga.subspace("1 xyz"))
-Response = ga.gatype((Vector, Vector, Vector))                                # Vector <- (Vector, Vector)
+Response = ga.gatype((Bivector, Bivector, Bivector))
 
-# A beam along a face diagonal of the crystal, with horizontal and vertical across it.
-HORIZONTAL = (mv.y - mv.x) / np.sqrt(2)                                       # [] Vector
-VERTICAL = mv.z                                                                # [] Vector
-PROPAGATION = (mv.x + mv.y) / np.sqrt(2)                                      # [] Vector
-# The part of a polarization across the beam: only it radiates forward.
-TRANSVERSE = Vector - PROPAGATION * (PROPAGATION | Vector)                    # [] Vector <- Vector
-# The four directed bonds of a tetrahedral crystal, with the strength that makes the response's
-# coefficients one.
-BONDS = mv.vector([[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)   # [bonds] Vector
+# Electric planes across a beam along a face diagonal of the crystal.
+HORIZONTAL = (mv.ty - mv.tx) / np.sqrt(2)
+VERTICAL = mv.tz
+LONGITUDINAL = (mv.tx + mv.ty) / np.sqrt(2)
+ELECTRIC = (Bivector - (mv.t >> Bivector)) / 2
+TRANSVERSE = ELECTRIC - LONGITUDINAL * (LONGITUDINAL | Bivector)
+# Four directed bond planes, with unit response coefficients.
+BONDS = mv(ga.subspace("tx ty tz"), [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
 STRENGTH = 3 * np.sqrt(3) / 4
 
 
 # --- math -----------------------------------------------------------------------------
-def response(bonds: Vector) -> Response:
-    """The polarization two fields drive: each bond responds along itself to the product of the
-    two fields along it."""
-    return STRENGTH * (bonds * (bonds | Vector) * (bonds | Vector)).sum(axis=-1)   # [...] Vector <- (Vector, Vector)
+def response(bonds: Bivector) -> Response:
+    """Each bond responds to the product of the two electric fields along it."""
+    return STRENGTH * (bonds * (bonds | Bivector) * (bonds | Bivector)).sum(axis=-1)
 
 
 def turned(crystal: Response, rotation: Rotor) -> Response:
-    """The response of the crystal turned by a rotor: both fields pulled back into the crystal,
-    the polarization turned forward."""
-    return rotation >> crystal(rotation << Vector, rotation << Vector)          # [...] Vector <- (Vector, Vector)
+    """Pull both fields into the crystal and turn its response forward."""
+    return rotation >> crystal(rotation << Bivector, rotation << Bivector)
 
 
-def doubled(crystal: Response, pump: Vector) -> Vector:
-    """The doubled-frequency polarization across the beam that a pump drives."""
-    return 0.5 * TRANSVERSE(crystal(pump, pump))                              # [...] Vector
+def doubled(crystal: Response, pump: Bivector) -> Bivector:
+    """The transverse polarization source at twice the pump frequency."""
+    return 0.5 * TRANSVERSE(crystal(pump, pump))
 
 
-def growth(orientation: np.ndarray, mismatch: np.ndarray, depths: np.ndarray) -> Phasor:
-    """The amplitude of the doubled-frequency light after each slice of a crystal, on the last axis,
-    in units of the source of a unit length of crystal: the running sum of each slice's orientation,
-    plus one or minus one, turned by the phase it has slipped at its depth."""
+def growth(source: Bivector, orientation: np.ndarray, mismatch: np.ndarray, depths: np.ndarray) -> Bivector:
+    """Accumulate source fields with their temporal phase; final axes are slices and quadratures."""
     thickness = depths[1] - depths[0]
-    slip = (mv.xyz * (mismatch * depths)).exp()                               # [..., slices] Phasor
-    return (slip * orientation * thickness).cumsum(axis=-1)                    # [..., slices] Phasor
+    phase = mismatch * depths
+    quadratures = stack((source[..., None] * np.cos(phase), source[..., None] * np.sin(phase)), axis=-1)
+    return (quadratures * orientation[..., None] * thickness).cumsum(axis=-2)

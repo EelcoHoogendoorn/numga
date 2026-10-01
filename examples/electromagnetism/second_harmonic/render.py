@@ -20,10 +20,10 @@ CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 
 
 # --- plumbing -------------------------------------------------------------------------
-def transverse(vectors: core.Vector) -> np.ndarray:
-    """Horizontal and vertical components in the plane perpendicular to the beam."""
-    return np.stack(((vectors | core.HORIZONTAL).to_array(),
-                     (vectors | core.VERTICAL).to_array()), axis=-1)          # [..., 2]
+def transverse(fields: core.Bivector) -> np.ndarray:
+    """Electric components across the beam for the observer's screen."""
+    return np.stack(((fields | core.HORIZONTAL).to_array(),
+                     (fields | core.VERTICAL).to_array()), axis=-1)          # [..., 2]
 
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
@@ -35,11 +35,11 @@ def screen_axes(axes: plt.Axes, limit: float) -> None:
     axes.spines[["top", "right"]].set_visible(False)
 
 
-def draw_response(pumps: core.Vector, bonds: core.Vector, harmonic: core.Vector) -> plt.Figure:
+def draw_response(pumps: core.Bivector, bonds: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
     """Crystal bonds, the doubled-frequency polarization over pump polarizations and its power; the
     first pump, horizontal, marked."""
     intensity = (harmonic | harmonic).to_array()                             # [angles]
-    bonds = bonds.cast(core.ga.subspace("x y z")).kernel                     # [4, 3]
+    bonds = (core.mv.t | bonds).cast(core.ga.subspace("x y z")).kernel       # [bonds, 3]
     pumps = transverse(pumps)                                                # [angles, 2]
     harmonic = transverse(harmonic)                                          # [angles, 2]
     pump, generated, power = pumps[0], harmonic[0], intensity[0]
@@ -90,7 +90,7 @@ def draw_response(pumps: core.Vector, bonds: core.Vector, harmonic: core.Vector)
     return figure
 
 
-def draw_waveform(phase: np.ndarray, pump: core.Vector, harmonic: core.Vector) -> plt.Figure:
+def draw_waveform(phase: np.ndarray, pump: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
     """Signed pump and doubled-frequency field components over two pump periods."""
     cycles = phase / (2 * np.pi)                                               # [times]
     pump_field = (pump | core.HORIZONTAL).to_array()                           # [times]
@@ -107,7 +107,7 @@ def draw_waveform(phase: np.ndarray, pump: core.Vector, harmonic: core.Vector) -
     return figure
 
 
-def draw_mixing(pumps: core.Vector, probes: core.Vector, generated: core.Vector) -> plt.Figure:
+def draw_mixing(pumps: core.Bivector, probes: core.Bivector, generated: core.Bivector) -> plt.Figure:
     """A probe circle and its image with each fixed pump, at a shared display scale."""
     pumps = transverse(pumps)                                                # [cases, 2]
     probes = transverse(probes)                                              # [angles, 2]
@@ -132,10 +132,10 @@ def draw_mixing(pumps: core.Vector, probes: core.Vector, generated: core.Vector)
     return figure
 
 
-def draw_growth(depths: np.ndarray, amplitude: core.Phasor) -> plt.Figure:
+def draw_growth(depths: np.ndarray, amplitude: core.Bivector) -> plt.Figure:
     """The amplitude's path in the phase plane and the power along each crystal."""
-    power = amplitude.symmetric_reverse_product().to_array()                 # [cases, slices]
-    amplitude = amplitude.cast(core.ga.subspace("1 xyz")).kernel             # [cases, slices, 2]
+    power = (amplitude | amplitude).sum(axis=-1).to_array()                  # [cases, slices]
+    amplitude = (amplitude | core.VERTICAL).to_array()                      # [cases, slices, quadratures]
     figure, axes = plt.subplots(1, 2, figsize=(9.5, 4), layout="constrained")
     phasor_axes, power_axes = axes
     for label, path, intensity, colour in zip(CASES, amplitude, power, CASE_COLOURS):
@@ -152,7 +152,7 @@ def draw_growth(depths: np.ndarray, amplitude: core.Phasor) -> plt.Figure:
     return figure
 
 
-def animate(pumps: core.Vector, frames: Iterable[tuple[core.Vector, core.Vector]]) -> list[np.ndarray]:
+def animate(pumps: core.Bivector, frames: Iterable[tuple[core.Bivector, core.Bivector]]) -> list[np.ndarray]:
     """The response while the crystal turns about the beam, one frame per turn."""
     images = []
     for bonds, harmonic in frames:

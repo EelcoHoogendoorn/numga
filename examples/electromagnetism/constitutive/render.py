@@ -10,8 +10,6 @@ Visualizations:
 
 from __future__ import annotations
 
-from typing import Sequence
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -29,65 +27,40 @@ def _no_ticks(ax: plt.Axes) -> None:
 
 def draw_wave_propagation(
     ax: plt.Axes,
-    modes: Sequence[tuple[float, Extensor]],
+    modes: core.Modes,
     tau: float = 0.0,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
 ) -> None:
     """Draw 3D spatial snapshot of traveling E and B field vectors in medium along propagation axis z."""
-    z = np.linspace(0, z_max, 200)
+    samples, stations = 200, 21
+    distance = np.linspace(0, z_max, samples)
+    speeds, fields = modes
+    fields = fields / (-(fields | core.t).squared()).square_root()
+    phase = omega * (distance[:, None] / speeds - tau)
+    wave = (fields * np.cos(phase)).sum(axis=-1)
 
-    # Accumulate field trajectories over modes:
-    ex_total = np.zeros_like(z)
-    ey_total = np.zeros_like(z)
-    bx_total = np.zeros_like(z)
-    by_total = np.zeros_like(z)
+    # Observer arrows are read out only when drawing the field.
+    electric = (wave | core.t).cast(core.STA.subspace("x y z")).kernel
+    magnetic = (wave.dual() | core.t).cast(core.STA.subspace("x y z")).kernel
+    electric_amplitudes = (fields | core.t).cast(core.STA.subspace("x y z")).kernel
+    magnetic_amplitudes = (fields.dual() | core.t).cast(core.STA.subspace("x y z")).kernel
+    amplitudes = np.maximum(np.abs(electric_amplitudes).sum(axis=0), np.abs(magnetic_amplitudes).sum(axis=0))
+    transverse_extent = 1.15 * amplitudes[:2].max()
+    longitudinal_extent = 1.15 * amplitudes[2]
 
-    for speed, pol in modes:
-        xy = pol.cast(core.STA.subspace("x y")).kernel
-        px, py = float(xy[0]), float(xy[1])
-        norm = np.hypot(px, py)
-        if norm > 1e-6:
-            px, py = px / norm, py / norm
-        k = omega / speed
-        phase = k * z - omega * tau
-        # Electric field along pol:
-        ex_total += px * np.cos(phase)
-        ey_total += py * np.cos(phase)
-        # Magnetic field: orthogonal to E and z, scaled by 1/speed:
-        bx_total += (-py * np.cos(phase)) * (0.5 / speed)
-        by_total += (px * np.cos(phase)) * (0.5 / speed)
-
-    # Propagation centerline:
     ax.plot([0, 0], [0, 0], [0, z_max], color="gray", linestyle="--", linewidth=1.2, alpha=0.5)
+    ax.plot(electric[:, 0], electric[:, 1], distance + electric[:, 2], color="crimson", linewidth=2.0, zorder=5)
+    ax.plot(magnetic[:, 0], magnetic[:, 1], distance + magnetic[:, 2], color="dodgerblue", linewidth=1.6, linestyle="--", zorder=4)
 
-    # Continuous wave envelopes:
-    ax.plot(ex_total, ey_total, z, color="crimson", linewidth=2.0, zorder=5)
-    ax.plot(bx_total, by_total, z, color="dodgerblue", linewidth=1.6, linestyle="--", zorder=4)
+    station_indices = np.linspace(0, samples - 1, stations, dtype=int)
+    for arrows, color in ((electric, "crimson"), (magnetic, "dodgerblue")):
+        ax.quiver(0, 0, distance[station_indices], *arrows[station_indices].T,
+                  color=color, alpha=0.7, arrow_length_ratio=0.18, linewidth=1.2)
 
-    # Quiver arrows at discrete stations:
-    n_stations = 21
-    z_s = np.linspace(0, z_max, n_stations)
-    for zi in z_s:
-        ex_i, ey_i, bx_i, by_i = 0.0, 0.0, 0.0, 0.0
-        for speed, pol in modes:
-            xy = pol.cast(core.STA.subspace("x y")).kernel
-            px, py = float(xy[0]), float(xy[1])
-            norm = np.hypot(px, py)
-            if norm > 1e-6:
-                px, py = px / norm, py / norm
-            k = omega / speed
-            phase_i = k * zi - omega * tau
-            ex_i += px * np.cos(phase_i)
-            ey_i += py * np.cos(phase_i)
-            bx_i += (-py * np.cos(phase_i)) * (0.5 / speed)
-            by_i += (px * np.cos(phase_i)) * (0.5 / speed)
-        ax.quiver(0, 0, zi, ex_i, ey_i, 0, color="crimson", alpha=0.75, arrow_length_ratio=0.18, linewidth=1.4)
-        ax.quiver(0, 0, zi, bx_i, by_i, 0, color="dodgerblue", alpha=0.6, arrow_length_ratio=0.18, linewidth=1.1)
-
-    ax.set_xlim([-1.3, 1.3])
-    ax.set_ylim([-1.3, 1.3])
-    ax.set_zlim([0, z_max])
+    ax.set_xlim([-transverse_extent, transverse_extent])
+    ax.set_ylim([-transverse_extent, transverse_extent])
+    ax.set_zlim([-longitudinal_extent, z_max + longitudinal_extent])
     ax.view_init(elev=20, azim=-60)
     _no_ticks(ax)
     ax.set_zticks([])
@@ -95,8 +68,8 @@ def draw_wave_propagation(
 
 def draw_wave_comparison_3d(
     fig: plt.Figure,
-    glass_modes: Sequence[tuple[float, Extensor]],
-    crystal_modes: Sequence[tuple[float, Extensor]],
+    glass_modes: core.Modes,
+    crystal_modes: core.Modes,
     z_max: float = 4.0 * np.pi,
 ) -> tuple[plt.Axes, plt.Axes]:
     """Render side-by-side 3D views comparing isotropic vs birefringent medium."""
@@ -109,8 +82,8 @@ def draw_wave_comparison_3d(
 
 
 def draw_wave_comparison_figure(
-    glass_modes: Sequence[tuple[float, Extensor]],
-    crystal_modes: Sequence[tuple[float, Extensor]],
+    glass_modes: core.Modes,
+    crystal_modes: core.Modes,
     z_max: float = 4.0 * np.pi,
 ) -> plt.Figure:
     """Render standalone figure with side-by-side 3D views comparing isotropic vs birefringent medium."""
@@ -121,7 +94,7 @@ def draw_wave_comparison_figure(
 
 
 def animate_wave_propagation(
-    modes: Sequence[tuple[float, Extensor]],
+    modes: core.Modes,
     n_frames: int = 24,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
@@ -141,8 +114,8 @@ def animate_wave_propagation(
 
 
 def animate_wave_comparison(
-    glass_modes: Sequence[tuple[float, Extensor]],
-    crystal_modes: Sequence[tuple[float, Extensor]],
+    glass_modes: core.Modes,
+    crystal_modes: core.Modes,
     n_frames: int = 24,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
@@ -189,27 +162,21 @@ def draw_dispersion(
 
 def draw_polarizations(
     ax: plt.Axes,
-    modes: list[tuple[float, Extensor]],
+    modes: core.Modes,
 ) -> None:
     """Draw 2D transverse polarization arrows in the xy plane for the slow and fast birefringent modes."""
     ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
     ax.axvline(0, color="gray", linestyle="--", alpha=0.3)
 
-    # The slow wave in crimson, the fast wave in blue.
-    for (speed, pol), color in zip(modes, ("crimson", "dodgerblue")):
-        # JIT coordinate readout at visualization boundary:
-        xy = pol.cast(core.STA.subspace("x y")).kernel
-        vx, vy = float(xy[0]), float(xy[1])
-        norm = np.hypot(vx, vy)
-        if norm > 1e-6:
-            vx, vy = vx / norm, vy / norm
-        ax.quiver(
-            0, 0, vx, vy,
-            angles="xy", scale_units="xy", scale=1,
-            color=color, width=0.015,
-        )
-        # Bidirectional polarization oscillation line:
-        ax.plot([-vx, vx], [-vy, vy], color=color, linestyle=":", alpha=0.6)
+    _, fields = modes
+    electric = fields | core.t
+    electric = electric / (-electric.squared()).square_root()
+    arrows = electric.cast(core.STA.subspace("x y")).kernel
+    colors = ("crimson", "dodgerblue")
+    ax.quiver(np.zeros(len(arrows)), np.zeros(len(arrows)), *arrows.T,
+              angles="xy", scale_units="xy", scale=1, color=colors, width=0.015)
+    for (horizontal, vertical), color in zip(arrows, colors):
+        ax.plot([-horizontal, horizontal], [-vertical, vertical], color=color, linestyle=":", alpha=0.6)
 
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
@@ -300,7 +267,7 @@ def draw_dispersion_figure(
     return fig
 
 
-def draw_polarizations_figure(modes: list[tuple[float, Extensor]]) -> plt.Figure:
+def draw_polarizations_figure(modes: core.Modes) -> plt.Figure:
     """Render standalone figure for 2D transverse polarization eigenmode quivers."""
     fig, ax = plt.subplots(figsize=(6, 6), dpi=120)
     draw_polarizations(ax, modes)

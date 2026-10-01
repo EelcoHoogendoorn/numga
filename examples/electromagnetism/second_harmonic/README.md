@@ -1,9 +1,9 @@
 # A crystal that doubles the frequency
 
-Second-harmonic generation from a tetrahedral crystal, written as a bilinear extensor with two
-electric-field inputs and one polarization output. The notebook builds the response from four
-directed bonds, turns the crystal as an extensor, binds a pump to obtain a linear probe map, and
-grows the doubled light along a uniform, a mismatched and a periodically flipped crystal.
+A tetrahedral crystal's nonlinear electric response as `Bivector <- (Bivector, Bivector)`.
+The notebook builds it from bond planes, turns the crystal, binds a pump, and accumulates two
+temporal field quadratures through matched, mismatched and periodically flipped crystals.
+The electric-dipole model uses normalized amplitudes and omits pump depletion and interface transmission.
 
 Open `second_harmonic.ipynb` in Jupyter, or write the figures and the animation to `plots/` from
 the repository root:

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Extensor
-
 from examples.electromagnetism.constitutive import core
 
 # Parameters:
@@ -59,18 +57,12 @@ def dispersion_scenario():
     return speeds, curves, expected
 
 
-def polarization_scenario() -> list[tuple[float, Extensor]]:
-    """Extract physical polarization states for the slow and fast birefringent modes in the crystal."""
+def field_modes_scenario() -> core.Modes:
+    """Field bivectors for the crystal's slow and fast waves along z."""
     crystal = core.crystal_medium(eps_x=2.25, eps_y=1.5, eps_z=1.5, mu=1.0)
-    speeds = np.linspace(0.05, 1.5, 3001)
-    svals = core.solve_dispersion_scan(speeds, crystal, direction=core.z)
-    mins = core.minimum_speeds(speeds, svals, threshold=2e-3)
-
-    modes = []
-    for v in mins:
-        k = v * core.t + core.z
-        modes.append((float(v), core.polarization_eigenmodes(k, crystal)))
-    return modes
+    permittivities = np.array([2.25, 1.5])
+    speeds = 1.0 / np.sqrt(permittivities)
+    return speeds, core.field_eigenmodes(speeds * core.t + core.z, crystal)
 
 
 def fresnel_surface_scenario(
@@ -106,13 +98,14 @@ def fresnel_drag_scenario(
     return betas, v_down, v_up, EPS_GLASS, MU_GLASS
 
 
-def wave_comparison_scenario() -> tuple[list[tuple[float, Extensor]], list[tuple[float, Extensor]]]:
-    """Wave modes along z: both polarizations at one speed in glass, split by speed in the crystal."""
-    v_slow = 1.0 / np.sqrt(EPS_GLASS)
-    v_fast = 1.0 / np.sqrt(1.5)
-    glass_modes = [(v_slow, core.x), (v_slow, core.y)]
-    crystal_modes = [(v_slow, core.x), (v_fast, core.y)]
-    return glass_modes, crystal_modes
+def wave_comparison_scenario() -> tuple[core.Modes, core.Modes]:
+    """Two field modes along z, sharing a speed in glass and splitting in the crystal."""
+    glass = core.isotropic_medium(EPS_GLASS, MU_GLASS)
+    speed = 1.0 / np.sqrt(EPS_GLASS * MU_GLASS)
+    _, _, fields = core.wave_map(speed * core.t + core.z, glass).svd()
+    mode_count = 2
+    glass_modes = np.full(mode_count, speed), fields[-mode_count:]
+    return glass_modes, field_modes_scenario()
 
 
 if __name__ == "__main__":
@@ -122,7 +115,7 @@ if __name__ == "__main__":
     glass_modes, crystal_modes = wave_comparison_scenario()
     save_figure(render.draw_wave_comparison_figure(glass_modes, crystal_modes), "constitutive_birefringence_3d")
     save_figure(render.draw_dispersion_figure(*dispersion_scenario()), "constitutive_dispersion")
-    save_figure(render.draw_polarizations_figure(polarization_scenario()), "constitutive_polarizations")
+    save_figure(render.draw_polarizations_figure(field_modes_scenario()), "constitutive_polarizations")
     save_figure(render.draw_fresnel_surface_figure(*fresnel_surface_scenario()), "constitutive_fresnel_surface")
     save_figure(render.draw_fresnel_drag_figure(*fresnel_drag_scenario()), "constitutive_fresnel_drag")
     save_animation(render.animate_wave_propagation(crystal_modes), "constitutive_wave", 50)
