@@ -40,12 +40,12 @@ def chords(lines: core.Bivector) -> np.ndarray:
 
 
 def draw_on(ax: plt.Axes, lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point) -> None:
-    ax.add_collection3d(Line3DCollection(chords(rulings[0]), colors="#9ecae1", linewidths=0.7))
-    ax.add_collection3d(Line3DCollection(chords(rulings[1]), colors="#c7c7c7", linewidths=0.7))
-    ax.add_collection3d(Line3DCollection(chords(lines[:3]), colors="#08306b", linewidths=2.2))
-    ax.add_collection3d(Line3DCollection(chords(lines[3:]), colors="#e67e22", linewidths=2.2))
+    ax.add_collection(Line3DCollection(chords(rulings[0]), colors="#9ecae1", linewidths=0.7), autolim=False)
+    ax.add_collection(Line3DCollection(chords(rulings[1]), colors="#c7c7c7", linewidths=0.7), autolim=False)
+    ax.add_collection(Line3DCollection(chords(lines[:3]), colors="#08306b", linewidths=2.2), autolim=False)
+    ax.add_collection(Line3DCollection(chords(lines[3:]), colors="#e67e22", linewidths=2.2), autolim=False)
     visible = real(across.kernel)
-    ax.add_collection3d(Line3DCollection(chords(across)[visible], colors="#c0392b", linewidths=2.4))
+    ax.add_collection(Line3DCollection(chords(across)[visible], colors="#c0392b", linewidths=2.4), autolim=False)
     points = coordinates(crossing)[real(crossing.kernel)]
     ax.scatter(*points.T, color="#c0392b", s=45, depthshade=False)
     ax.set_title("two real transversals" if visible.all() else "two complex-conjugate transversals", fontsize=11)
