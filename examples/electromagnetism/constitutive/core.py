@@ -1,7 +1,9 @@
-"""Materials map field bivectors to excitation bivectors: `G = medium(F)`.
+"""Materials map field bivectors to excitation antibivectors: `excitation = medium(field)`.
 
 Electric and magnetic plane weights describe glass, crystals and ferrites;
-duality adds an axion response, and a Lorentz boost sets a medium in motion.
+the identity adds an axion response, and a Lorentz boost sets a medium in motion.
+Pairing with an open field gives the constitutive bilinear form. The field and
+excitation also determine a stress-energy map from vectors to current antivectors.
 Plane waves are bivectors annihilated by both source-free Maxwell equations.
 """
 
@@ -28,6 +30,11 @@ from numga.extensor.extensor import Extensor
 Scalar = STA.gatype.scalar()
 Vector = STA.gatype(V)
 Bivector = STA.gatype(B)
+Antibivector = STA.gatype.antibivector()
+Antivector = STA.gatype.antivector()
+Constitutive = STA.gatype((Antibivector, Bivector))
+StressEnergy = STA.gatype((Antivector, Vector))
+WaveMap = STA.gatype((STA.gatype.odd(), Bivector))
 Modes = tuple[np.ndarray, Bivector]
 
 # Canonical Spacetime Basis & Pseudoscalar:
@@ -46,11 +53,10 @@ def observer_projectors(observer=t) -> tuple[Extensor, Extensor]:
     return electric, magnetic
 
 
-def isotropic_medium(eps: float, mu: float = 1.0, observer=t) -> Extensor:
-    """Isotropic dielectric & magnetic medium: `eps * electric + (1 / mu) * magnetic` over the
-    observer's projectors (Bivector <- Bivector)."""
+def isotropic_medium(eps: float, mu: float = 1.0, observer: Vector = t) -> Constitutive:
+    """Weight the observer's electric and magnetic planes, then apply the Hodge map."""
     electric, magnetic = observer_projectors(observer)
-    return eps * electric + (1.0 / mu) * magnetic
+    return (eps * electric + (1.0 / mu) * magnetic).dual()
 
 
 def crystal_medium(
@@ -58,13 +64,13 @@ def crystal_medium(
     eps_y: float,
     eps_z: float,
     mu: float = 1.0,
-    observer=t,
-) -> Extensor:
-    """Anisotropic dielectric response along electric bivector planes (Bivector <- Bivector)."""
+    observer: Vector = t,
+) -> Constitutive:
+    """Anisotropic electric plane response (Antibivector <- Bivector)."""
     _, magnetic = observer_projectors(observer)
     permittivity = np.array([eps_x, eps_y, eps_z])
     planes = spatial_axes ^ observer
-    return (permittivity * planes * (planes | Bivector)).sum(axis=0) + magnetic / mu
+    return ((permittivity * planes * (planes | Bivector)).sum(axis=0) + magnetic / mu).dual()
 
 
 def ferrite_medium(
@@ -72,18 +78,18 @@ def ferrite_medium(
     mu_inv_x: float,
     mu_inv_y: float,
     mu_inv_z: float,
-    observer=t,
-) -> Extensor:
-    """Anisotropic magnetic response along magnetic bivector planes (Bivector <- Bivector)."""
+    observer: Vector = t,
+) -> Constitutive:
+    """Anisotropic magnetic plane response (Antibivector <- Bivector)."""
     electric, _ = observer_projectors(observer)
     permeability_inv = np.array([mu_inv_x, mu_inv_y, mu_inv_z])
     planes = (spatial_axes ^ observer).dual()
-    return eps * electric - (permeability_inv * planes * (planes | Bivector)).sum(axis=0)
+    return (eps * electric - (permeability_inv * planes * (planes | Bivector)).sum(axis=0)).dual()
 
 
-def axion_medium(base_medium: Extensor, alpha: float) -> Extensor:
-    """Topological axion electrodynamics: adds alpha * dual to the constitutive extensor (Bivector <- Bivector)."""
-    return base_medium + alpha * B.dual()
+def axion_medium(base_medium: Constitutive, alpha: float) -> Constitutive:
+    """Add the axion response, proportional to the identity on field planes."""
+    return base_medium + alpha * Bivector
 
 
 def boost_rotor(beta: float, direction=z):
@@ -93,23 +99,35 @@ def boost_rotor(beta: float, direction=z):
     return boost_bivector.exp()
 
 
-def boosted_medium(base_medium: Extensor, beta: float, direction=z) -> Extensor:
-    """Conjugate a rest constitutive map by a Lorentz boost: `rotor >> base_medium(rotor << B)` (Bivector <- Bivector)."""
+def boosted_medium(base_medium: Constitutive, beta: float, direction=z) -> Constitutive:
+    """Conjugate a rest constitutive map by a Lorentz boost (Antibivector <- Bivector)."""
     rotor = boost_rotor(beta, direction)
     return rotor >> base_medium(rotor << B)
+
+
+def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
+    """Electromagnetic stress-energy current (Antivector <- Vector).
+
+    An observer selects a current; `observer & current(observer)` gives its energy
+    density for a unit timelike observer. In matter this is the electromagnetic
+    Minkowski current, excluding the material's own stress-energy.
+    """
+    lagrangian = (field & excitation) / 2
+    return ((Vector | field) ^ excitation) + lagrangian * Vector.dual()
 
 
 # ---------------------------------------------------------------------------
 # 3. Wave Maps & Dispersion Solvers
 # ---------------------------------------------------------------------------
-def wave_map(k: Vector, medium: Extensor) -> Extensor:
-    """Source-free Maxwell residual, with separate vector and trivector grades (Odd <- Bivector)."""
-    return (k | medium) + (k ^ Bivector)
+def wave_map(k: Vector, medium: Constitutive) -> WaveMap:
+    """Both exterior Maxwell residuals, packed into separate grades (Odd <- Bivector)."""
+    # Dualizing the excitation residual keeps the two equations from cancelling.
+    return (k ^ Bivector) + (k ^ medium).dual()
 
 
 def solve_dispersion_scan(
     speeds: np.ndarray,
-    medium: Extensor,
+    medium: Constitutive,
     direction=z,
 ) -> Scalar:
     """Compute smallest singular values of wave map across a range of trial phase speeds."""
@@ -129,7 +147,7 @@ def minimum_speeds(
     return speeds[1:-1][is_dip]
 
 
-def field_eigenmodes(k: Vector, medium: Extensor) -> Bivector:
+def field_eigenmodes(k: Vector, medium: Constitutive) -> Bivector:
     """Field bivectors in the wave map's nullspace, batched over wave vectors."""
     w = wave_map(k, medium)
     _, _, vh = w.svd()
