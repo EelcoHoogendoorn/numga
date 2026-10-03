@@ -67,6 +67,7 @@ class Extensor:
     solve = ExtensionMethod("solve")
     lstsq = ExtensionMethod("lstsq")
     pinv = ExtensionMethod("pinv")
+    adjoint = ExtensionMethod("adjoint")
     cholesky = ExtensionMethod("cholesky")
     eig = ExtensionMethod("eig", operand_counts=(1, 2))
     eigvals = ExtensionMethod("eigvals", operand_counts=(1, 2))

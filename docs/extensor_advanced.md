@@ -4,15 +4,16 @@ An extensor carries no metric in its coefficients. The metric is in the products
 algebra, and duality between spaces is given by the regressive product. Several operations
 that are one operation in matrix algebra are therefore several different operations here. Some
 are a product with an open slot. Some require a metric to be named. The transpose is not an
-operation on extensors at all.
+operation on extensors at all. A map does have an adjoint, which the regressive product defines
+and coefficient index does not.
 
 In matrix algebra one would say that the
 transpose, the trace, the squared norm of a residual and the reciprocal of a basis all
 identify a vector space with its dual through the coefficients, and that in an orthonormal
 basis the identification is invisible.
 
-The sections below treat these in order: composition; pullbacks and pairings; the metric and the
-complement; the relation between maps and forms; quadrics; inverses; least squares; the
+The sections below treat these in order: composition; pullbacks, pairings and the adjoint; the
+metric and the complement; the relation between maps and forms; quadrics; inverses; least squares; the
 conversion between second moments and inertia; traces, with the Ricci contraction as the
 example; homogeneous unknowns; covariance and information; batch axes and slots; outermorphisms. The
 expressions are taken from the [examples](../examples/README.md).
@@ -24,7 +25,7 @@ another map, and a map's output feeds the next map's input when the types agree:
 
 ```python
 world = motor >> inertia(motor << Bivector)              # AntiBivector <- Bivector: the inertia of a placed body
-cone = on_planes(disc(projection))                       # Plane <- Point: a pixel's disc pulled back into the scene
+cone = projection.adjoint()(disc(projection))            # Plane <- Point: a pixel's disc pulled back into the scene
 ```
 
 There is no operator like `a @ b`, which contracts two arrays by index position whatever the
@@ -48,14 +49,15 @@ $a \otimes b$.
 
 In the implementation all of these are contractions of coefficient arrays. The difference is
 in what can be written: every contraction has a meaning in the algebra and a type, and a
-contraction by index alone cannot be expressed. In particular, there is no transpose.
+contraction by index alone cannot be expressed. In particular, there is no transpose; the
+adjoint of section 2 is a solve of one pairing against another.
 
-## 2. Pullbacks and pairings
+## 2. Pullbacks, pairings and the adjoint
 
-Pulling a quadric back through a map, forming the curvature of a cost, moving a covariance,
-turning a gradient into a direction, symmetrizing, inverting an orthogonal map, and moving a map
-or a form to another frame are each one expression on extensors, built from the pairings of
-sections 3 and 4.
+Pulling a quadric back through a map, carrying a map over to complements, forming the curvature
+of a cost, moving a covariance, turning a gradient into a direction, symmetrizing, inverting an
+orthogonal map, and moving a map or a form to another frame are each one expression on
+extensors, built from the pairings of sections 3 and 4.
 
 In matrix algebra each of these calls for a transpose,
 swapping rows and columns, which identifies a space with its dual by equal coefficient index;
@@ -66,17 +68,50 @@ scene points to sensor points, `projection: Point <- Point`. It has no inverse: 
 a sight ray lands on the same pixel. A pixel measurement is a quadric on sensor points,
 `disc`, and the reconstruction needs that quadric on scene points, scoring a scene point by how
 far its image falls from the pixel. Feeding the camera into the quadric handles its input;
-its output, a polar plane on the sensor, has to be carried back to the scene as well, and
-that needs a map on planes induced by the map on points. Solving the incidence pairing against
-the camera gives that map, and it exists although the camera has no inverse:
+its output, a polar plane on the sensor, has to be carried back to the scene as well. That is
+the camera's adjoint, the map on planes that keeps incidence: a plane joined with the camera's
+image of a point gives the same number as the plane's image under the adjoint joined with the
+point itself. It exists although the camera has no inverse:
 
 ```python
-on_planes = (Plane & Point).solve(Plane & projection)     # Plane <- Plane: on_planes(l) & p == l & projection(p)
+on_planes = projection.adjoint()                          # Plane <- Plane: on_planes(l) & p == l & projection(p)
 cone = on_planes(disc(projection))                        # Plane <- Point: the pixel's disc as a cone in the scene
 ```
 
-A quadric kept as a form needs no induced map: the camera goes into both slots,
+A quadric kept as a form needs no adjoint: the camera goes into both slots,
 `form(projection, projection)`.
+
+**The adjoint.** A map `T` from one subspace to another has an adjoint, `T.adjoint()`, from the
+complement of its output to the complement of its input, with `T.adjoint()(c) & a == c & T(a)`
+for every `c` and `a`. The complement is on the left, plane first as in section 5. The adjoint
+is the solve of the pairing on the map's input against the pairing on its output, which is how
+it is computed. In the [odometry example](../examples/geometry/odometry/render.py) a pose
+uncertainty moves a point by `shift: Point <- Twist`, and reading that motion with a plane is
+reading the twist with a line:
+
+```python
+readout = shift.adjoint()                                 # Line <- Plane in PGA3D, Line <- Line in PGA2D
+readout = (Line & Twist).solve(Plane & shift)             # the same map, its two pairings written out
+```
+
+The types follow from the map, so the one call serves every dimension, where the written-out
+pairings have to name the complements for each. Where a map reaches only part of its output
+space, the adjoint takes the complement of that part: a twist moves a point and never changes
+its weight, so the readout takes only the lines that see a displacement. No metric is
+involved, so the adjoint exists in a projective algebra and for a singular map. For mixed-grade
+types the pairing is the scalar part of the regressive product.
+
+Applied twice, the adjoint returns the map up to the symmetry of its two pairings. Lines and
+twists commute under `&`, while planes and points anticommute in three dimensions (section 5),
+so in PGA3D `shift.adjoint().adjoint()` is `-shift`; in PGA2D it is `shift`. The adjoint of a
+map on points is a map on planes, so no map is its own adjoint; the symmetric object is a form,
+section 4. An adjoint through the metric, where the metric is invertible, is the same solve
+with `|`: `(Vector | Vector).solve(Bivector | T)` for `T: Bivector <- Vector`.
+
+In matrix notation the adjoint reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices
+of the pairings on the input and the output. For the regressive product each is a signed
+permutation of the basis blades. On vectors in an orthonormal Euclidean basis, with the metric
+pairing, both are the identity, leaving the bare transpose $T^\top$.
 
 **The curvature and gradient of a cost.** The same example then aligns the cameras. The cost
 is the value of each cone at the reconstructed point, `cones(local_points) & local_points`, and
@@ -112,7 +147,7 @@ and when the estimate advances by a motor `step` the covariance moves like any m
 readout back through the step, push the twist forward.
 
 ```python
-sigma = step << sigma(step >> Line) + Q                     # Twist <- Line
+sigma = (step << sigma(step >> Line)) + Q                   # Twist <- Line
 ```
 
 **A direction from a gradient.** The [ray tracer](../examples/geometry/cyclides/core.py) needs a surface normal for shading. The
@@ -157,8 +192,8 @@ world_map = motor >> local_map(motor << Point)              # Plane <- Point
 world_form = local_form(motor << Point, motor << Point)     # Scalar <- (Point, Point)
 ```
 
-The pushed output is a plane, and the sandwich moves a plane as it moves a point: the plane
-map induced by the pose, `on_planes(motor << Point)`, is `motor >> Plane`.
+The pushed output is a plane, and the sandwich moves a plane as it moves a point: the
+adjoint of the pose, `(motor << Point).adjoint()`, is `motor >> Plane`.
 
 In matrix algebra one would store the quadric as a symmetric matrix $Q$ and the pose as a matrix $P$
 on point coordinates, and move the quadric by congruence, $P^{-\top} Q P^{-1}$. The transpose there
@@ -481,15 +516,16 @@ covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example]
 pull the readout through the step, push the twist back:
 
 ```python
-sigma = step << sigma(step >> Line) + Q                     # prediction
+sigma = (step << sigma(step >> Line)) + Q                   # prediction
 gain = sigma((sigma + R).inverse())                         # Twist <- Twist
 ```
 
-Readouts go through the pairing. The variance of the position along a line is that line's
-readout, pulled back through the position Jacobian, paired with the covariance of itself:
+Readouts go through the adjoint. The variance of the position along a line is that line's
+readout, pulled back through the position Jacobian by its adjoint, paired with the covariance
+of itself:
 
 ```python
-readout = (Line & Twist).solve(Line & shift)                # Line <- Line
+readout = shift.adjoint()                                   # Line <- Line
 position = readout & sigma(readout)                         # Scalar <- (Line, Line)
 ```
 

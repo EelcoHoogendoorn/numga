@@ -172,9 +172,9 @@ world_form = local_form(pose << Point, pose << Point)
 ```
 Incidence of a plane with a point is written plane first, `plane & point`, and a quadric's value is `quadric(p) & p`. The order is a convention: the regressive product of a plane and a point changes sign with the dimension, so keep the plane on the left, in dyads too (`normal * (normal & Point)`). A polarity map becomes a form by `quadric & Point`, and a form becomes a polarity map by solving the pairing, `(Plane & Point).solve(form)`.
 
-A map on points induces a map on planes through the same pairing, without any transpose. It satisfies `induced(l) & p == l & T(p)` for every plane and point, even when `T` is singular, and carries a quadric's polar planes back through `T`:
+A map on points carries over to a map on planes through the same pairing, its adjoint. `T.adjoint()` satisfies `T.adjoint()(l) & p == l & T(p)` for every plane and point, even when `T` is singular, and carries a quadric's polar planes back through `T`. In general the adjoint goes from the complement of a map's output to the complement of its input, and is the solve of one pairing against the other, `(Plane & Point).solve(Plane & projection)` here:
 ```python
-on_planes = (Plane & Point).solve(Plane & projection)   # Plane <- Plane
+on_planes = projection.adjoint()                       # Plane <- Plane
 cone = on_planes(disc(projection))                     # Plane <- Point
 ```
 
@@ -209,6 +209,10 @@ Operate directly on linear transformations while preserving input/output GATypes
 * **`.pinv(rcond=1e-4)`**: Moore-Penrose pseudoinverse (e.g. converting Gauss-Newton curvature into posterior pose covariance).
   ```python
   pose_covariance = curvature.pinv()                 # Twist <- Twist
+  ```
+* **`.adjoint()`**: The map on complements that the regressive product carries over, `T.adjoint()(c) & x == c & T(x)`, from the complement of the output to the complement of the input. It needs no metric and exists for singular maps.
+  ```python
+  readout = shift.adjoint()                          # Line <- Plane, from Point <- Twist in PGA3D
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
 * **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; it does not use the metric. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:

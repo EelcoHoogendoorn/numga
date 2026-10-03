@@ -86,7 +86,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 </p>
 
 ```python
-on_planes = (Plane & Point).solve(Plane & projection)             # [] Plane <- Plane, induced by the camera
+on_planes = projection.adjoint()                                  # [] Plane <- Plane, the camera's adjoint
 cones = on_planes(sensor_discs(projection))                       # [n_points, n_cams] Plane <- Point
 splats = (poses >> cones(poses << Point)).sum(axis=-1)            # [n_points] Plane <- Point
 points = (splats + w * (w & Point)).solve(w)                      # [n_points] Point

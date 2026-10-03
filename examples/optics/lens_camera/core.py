@@ -78,12 +78,6 @@ def ball(radius: float) -> Quadric:
     return mv.x * (mv.x & Point) + mv.y * (mv.y & Point) + mv.z * (mv.z & Point) - mv.w * (mv.w & Point) * radius**2
 
 
-def on_planes(collineation: PointMap):
-    """The map on planes induced by a map on points, through incidence: for a plane p and a point q,
-    `on_planes(collineation)(p) & q == p & collineation(q)`."""
-    return (Plane & Point).solve(Plane & collineation)
-
-
 def expose(
     scene: Point, subject: Point, focal: np.ndarray, placements: Motor, focus: Point, tilt: Motor, radius: float, rim: Point,
 ):
@@ -112,9 +106,9 @@ def expose(
     # Project through each subject onto the pupil, then pull back its quadric.
     # Pull back once more through the inverse lens train to get the image cones.
     project = (scene & Point) ^ front_plane
-    cone: Quadric = on_planes(project)(pupil_ball(project))
+    cone: Quadric = project.adjoint()(pupil_ball(project))
     back: PointMap = collineation.inverse()
-    cones: Quadric = on_planes(back)(cone(back))
+    cones: Quadric = back.adjoint()(cone(back))
 
     rays: Line = subject & (placements[0] >> rim)
     legs: Point = stack([subject.broadcast_to(rays.shape), rays ^ front_plane,

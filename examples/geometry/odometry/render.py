@@ -30,13 +30,13 @@ def ellipses(poses: core.Motor, uncertainty: core.Covariance) -> Quadric:
     pose's own uncertainty.
 
     A twist moves the carried point by its commutator with the point; reading that motion with a plane
-    is reading the twist with a line, found by solving the incidence form. So the uncertainty of the
+    is reading the twist with a line, found by the motion's adjoint. So the uncertainty of the
     twist gives the uncertainty of the point, whose second moment's inverse, paired twice with a point
     of unit weight, is one plus the squared number of standard deviations to it.
     """
     here = poses >> ORIGIN                                                    # [...] Point
     shift = core.Twist.commutator(here)(poses >> core.Twist)                  # [...] Point <- Twist
-    readout = (core.Line & core.Twist).solve(Plane & shift)                   # [...] Line <- Plane
+    readout = shift.adjoint()                                                 # [...] Line <- Plane
     moment = here * (Plane & here) + shift(uncertainty(readout))              # [...] Point <- Plane
     return moment.inverse() - (1 + SIGMAS**2) * mv.w * (mv.w & Point)         # [...] Plane <- Point
 

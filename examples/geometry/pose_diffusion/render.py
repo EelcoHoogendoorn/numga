@@ -18,16 +18,14 @@ def xy(points: core.Point) -> np.ndarray:
 
 
 def ellipse(spread: core.Spread) -> np.ndarray:
-    """The 2σ ellipse of a position's readouts: its finite principal variances and their normals,
+    """The 2σ ellipse of a position's readouts: its principal variances and their normals,
     as a ring of points about the commanded position."""
     variances, lines = spread.eig()                                # [modes] Scalar, [modes] Line
     variances, lines = variances.real().to_array(), lines.real()
-    # The offset of a line carries no variance.
-    finite = np.isfinite(variances)
-    normals = lines.cast(core.ga.subspace("x y")).kernel[finite]
+    normals = lines.cast(core.ga.subspace("x y")).kernel
     normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
     angle = np.linspace(0.0, 2.0 * np.pi, 80)
-    return normals.T @ (2.0 * np.sqrt(variances[finite])[:, None] * np.stack([np.cos(angle), np.sin(angle)]))
+    return normals.T @ (2.0 * np.sqrt(variances)[:, None] * np.stack([np.cos(angle), np.sin(angle)]))
 
 
 def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Covariance, title: str,
@@ -83,7 +81,7 @@ def draw_envelope(gains: np.ndarray, spreads: core.Spread, tolerance: float) -> 
     """The 2σ half-widths of the position ellipse, along its long and its short axis, against the
     controller gain, with the tolerance on the long axis and the smallest gain that meets it."""
     variances = spreads.eigvals().real().to_array()                # [gains, modes]
-    half_widths = 2.0 * np.sqrt(np.sort(np.where(np.isfinite(variances), variances, 0.0), axis=-1)[:, ::-1][:, :2])
+    half_widths = 2.0 * np.sqrt(np.sort(variances, axis=-1)[:, ::-1])
     figure, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot(gains, half_widths[:, 0], color="#c0392b", label="long axis")
     ax.plot(gains, half_widths[:, 1], color="#4a6fa5", label="short axis")

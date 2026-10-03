@@ -14,16 +14,10 @@ def xy(point: Point) -> np.ndarray:
 
 
 def principal_axes(variances: Scalar, axes: Line) -> tuple[np.ndarray, np.ndarray]:
-    """(n, 2) finite variances and (n, 2, 2) unit axis directions, the normals of the axis lines.
-
-    The third mode, the offset of a line, carries no variance: its eigenvalue is infinite.
-    """
-    values = variances.to_array()
-    finite = np.isfinite(values)
-    n = values.shape[0]
-    normals = axes.cast(ga.subspace("x y")).kernel[finite].reshape(n, 2, 2)
+    """(n, 2) variances and (n, 2, 2) unit axis directions, the normals of the axis lines."""
+    normals = axes.cast(ga.subspace("x y")).kernel
     normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
-    return values[finite].reshape(n, 2), normals.swapaxes(-1, -2)
+    return variances.to_array(), normals.swapaxes(-1, -2)
 
 
 def draw_ellipse(ax, centre: np.ndarray, values: np.ndarray, vectors: np.ndarray, color: str) -> None:

@@ -11,10 +11,10 @@ so the plane always comes first.
 A pixel measurement on the sensor has a precision disc, a quadric on sensor points. Feeding
 the camera into the disc and carrying its polar planes back through the camera lifts it into
 a sight cone on scene points, whose cross-section widens with depth:
-    cone = on_planes(camera)(disc(camera))              # Plane <- Point
-on_planes(T) is the map on planes induced by a map on points, solved from the incidence
-pairing; it satisfies on_planes(T)(l) & p == l & T(p) for every plane and point, singular T
-included. A cone moves between frames like any map, `pose >> cone(pose << Point)`.
+    cone = camera.adjoint()(disc(camera))               # Plane <- Point
+T.adjoint() is the map on planes that incidence carries over from a map on points; it
+satisfies T.adjoint()(l) & p == l & T(p) for every plane and point, singular T included.
+A cone moves between frames like any map, `pose >> cone(pose << Point)`.
 
 Bundle adjustment works on the cone quadrics directly:
 1. Triangulate by summing each point's cones over its cameras. The fused cone's polar of its
@@ -85,20 +85,10 @@ def sensor_disk_at(pixels: Point, principal_point: Point, q_sensor: Quadric) -> 
 def make_cones(cameras: Camera, sensor_discs: Quadric) -> Quadric:
     """Pull sensor precision discs back through the camera maps into perspective cones.
 
-    The camera feeds the disc, and the induced plane map carries the polar lines back:
+    The camera feeds the disc, and its adjoint carries the polar lines back:
     a quadric on scene points whose cross-section widens with depth.
     """
-    return on_planes(cameras)(sensor_discs(cameras))     # [n_points, n_cams] Plane <- Point
-
-
-def on_planes(collineation: Camera):
-    """The map on planes induced by a map on points, through incidence.
-
-    Solving the incidence pairing against `Plane & collineation` gives the plane map with
-    `on_planes(T)(l) & p == l & T(p)` for every plane l and point p, whether or not T is
-    invertible. It carries a quadric's polar planes back through T.
-    """
-    return (Plane & Point).solve(Plane & collineation)       # Plane <- Plane
+    return cameras.adjoint()(sensor_discs(cameras))      # [n_points, n_cams] Plane <- Point
 
 
 def triangulate_cones(

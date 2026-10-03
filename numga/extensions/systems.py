@@ -1,4 +1,4 @@
-"""Linear systems: inverse, solve, least squares and pseudoinverse on maps and forms.
+"""Linear systems: inverse, solve, least squares, pseudoinverse and adjoint on maps and forms.
 
 Pseudoinverse and least-squares use the Euclidean/Hermitian coefficient inner
 product, independently of the Clifford metric.
@@ -47,6 +47,24 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     solution = value.context.xp.linalg.solve(value._kernel, columns)
     gatype = value.algebra.gatype((value.axes[1],) + rhs.input_subspaces)
     return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
+
+
+@Extensor.adjoint.register(GATypePattern.map())
+def adjoint(value: Extensor) -> Extensor:
+    """The map on complements that incidence carries over: A.adjoint()(c) & x == c & A(x).
+
+    The input is the complement of A's output and the output the complement of A's input,
+    paired through the scalar part of the regressive product, with the complement on the left.
+    The pairing needs no metric, so the adjoint exists in degenerate algebras and for singular A.
+    Applied twice it returns A up to the swap signs of the two pairings: c & x and x & c differ
+    by a sign in even dimensions for odd grades, so in PGA3D the adjoint of the adjoint of a
+    `Point <- Twist` is its negative.
+    """
+    algebra = value.algebra
+    output, input = value.axes
+    scalar = algebra.subspace.scalar()
+    pairing = (algebra.gatype(input.complement()) & algebra.gatype(input)).cast(scalar)
+    return pairing.solve((algebra.gatype(output.complement()) & value).cast(scalar))
 
 
 def _is_form_system(value: GAType, rhs: GAType) -> bool:

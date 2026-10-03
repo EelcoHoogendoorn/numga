@@ -49,7 +49,7 @@ def kalman_filter(estimate: Motor, sigma: Covariance, steps: Motor, measurements
             estimate = estimate * step
             # The covariance takes a readout of the perturbation to the twist correlated with it,
             # so it moves like any map: pull the readout through the step, push the twist back.
-            sigma = step << sigma(step >> Line) + motion_noise
+            sigma = (step << sigma(step >> Line)) + motion_noise
 
         # Update on a noisy pose measurement. The innovation is the log of the relative
         # motor, the gain is a ratio of covariance maps, and the correction is exponentiated.
@@ -65,17 +65,16 @@ def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
     """The estimated position, with the principal variances and axes of its uncertainty.
 
     A readout of position along a line l, `l & shift(delta)`, is a readout of the twist through the
-    incidence pairing, so the covariance of those readouts is a form on lines. Against the
-    line metric, which measures a line's normal and not its offset, its principal readouts
-    are the ellipse axes. The offset mode is zero in both forms and has no variance.
+    incidence pairing, so the covariance of those readouts is a form on lines. The readout takes
+    only the lines that see a displacement, those through the origin, which the line metric
+    measures fully, so against it the principal readouts are the ellipse axes.
     """
     here = estimate >> origin                                  # [n] Point
     shift = Bivector.commutator(here)(estimate >> Bivector)    # [n] Point <- Bivector
-    readout = (Line & Bivector).solve(Line & shift)            # [n] Line <- Line
+    readout = shift.adjoint()                                  # [n] Line <- Line
     position = readout & sigma(readout)                        # [n] Scalar <- (Line, Line)
-    # The eigenpairs of this symmetric pair of forms are real.
-    variances, axes = position.eig()                           # [n, modes] Scalar, [n, modes] Line
-    return here, variances.real(), axes.real()
+    variances, axes = position.eigh()                          # [n, modes] Scalar, [n, modes] Line
+    return here, variances, axes
 
 
 # --- plumbing: covariance, sampling and simulation --------------------------------------

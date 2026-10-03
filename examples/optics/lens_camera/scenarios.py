@@ -10,7 +10,7 @@ import numpy as np
 
 from examples.optics.lens_camera.core import (
     Motor, Plane, Point, SensorPlane, SensorPoint, direction, expose, home, mv,
-    on_planes, origin, point, section, unit,
+    origin, point, section, unit,
 )
 
 # Focal lengths of the front and the rear lens. The front lens sits at x == 1; the rear lens moves to zoom.
@@ -62,7 +62,7 @@ def stills():
         start = (collineation(SCENE[index]) & collineation(centre)) ^ sensor
         boundary = section(cones[index], start, frame, 48)
         to_sensor = cam(SCENE[index])
-        pushed = to_sensor(pupil(on_planes(to_sensor)))
+        pushed = to_sensor(pupil(to_sensor.adjoint()))
         section_dual = (frame << pushed(frame >> SensorPlane)).cast(SensorPoint.output_subspace)
         hits = (frame << boundary).cast(SensorPoint.output_subspace)
         np.testing.assert_allclose((hits & section_dual.solve(hits)).kernel, 0.0, atol=1e-10)
