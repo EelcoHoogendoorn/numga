@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numga import Algebra, Extensor, NumpyContext
+from numga import Algebra, Extensor, NumpyContext, SymbolicKernel
 
 
 @pytest.fixture(params=["numpy", "sparse", "jax"])
@@ -154,6 +154,18 @@ def test_adjoint_twice_carries_the_pairing_signs(output, domain):
     np.testing.assert_allclose((operator.adjoint()(covectors) & values).cast(scalar).kernel,
                                (covectors & operator(values)).cast(scalar).kernel, atol=1e-12)
     np.testing.assert_allclose(operator.adjoint().adjoint().kernel, -operator.kernel, atol=1e-12)
+
+
+def test_exact_solve_binds_the_exact_inverse():
+    ga = Algebra("x+y+z+w0")
+    plane, point = ga.gatype.vector(), ga.gatype.antivector()
+    identity = (plane & point).solve(plane & point)
+    assert identity.context.is_exact
+    assert identity.kernel == SymbolicKernel.identity(4)
+    with pytest.raises(np.linalg.LinAlgError):
+        (plane * 2).inverse()
+    with pytest.raises(np.linalg.LinAlgError):
+        (plane | plane).solve(plane | plane)
 
 
 def test_rank_deficient_least_squares_has_minimum_norm(context):

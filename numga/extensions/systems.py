@@ -37,8 +37,11 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve A(x) == rhs for x: the inverse of composing into A's input, so A.solve(A(y)) == y.
 
     Every input slot of rhs is kept as an input of the solution, so A.solve(A(Y)) == Y for a
-    map Y too; both batches broadcast.
+    map Y too; both batches broadcast. An exact A is solved by binding its exact inverse, cached
+    on its kernel, into rhs: one contraction with a constant.
     """
+    if value.context.is_exact:
+        return value.inverse()(rhs)
     value, rhs = _linear_system(value, rhs)
     batch_shape = np.broadcast_shapes(value.shape, rhs.shape)
     value = value.broadcast_to(batch_shape)
@@ -60,11 +63,17 @@ def adjoint(value: Extensor) -> Extensor:
     by a sign in even dimensions for odd grades, so in PGA3D the adjoint of the adjoint of a
     `Point <- Twist` is its negative.
     """
-    algebra = value.algebra
-    output, input = value.axes
-    scalar = algebra.subspace.scalar()
-    pairing = (algebra.gatype(input.complement()) & algebra.gatype(input)).cast(scalar)
-    return pairing.solve((algebra.gatype(output.complement()) & value).cast(scalar))
+    on_input, output_complement = _adjoint_pairing(value.gatype)
+    return on_input.solve((output_complement & value).cast(value.algebra.subspace.scalar()))
+
+
+@lru_cache(maxsize=None)
+def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
+    """The exact pairing form on a map's input, and the complement of its output."""
+    algebra = gatype.algebra
+    output, input = gatype.subspaces
+    on_input = (algebra.gatype(input.complement()) & algebra.gatype(input)).cast(algebra.subspace.scalar())
+    return on_input, algebra.gatype(output.complement())
 
 
 def _is_form_system(value: GAType, rhs: GAType) -> bool:
@@ -82,20 +91,18 @@ def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
 
     The matrix maps the unknown x to the coefficients of value(x, .) over the last slot;
     the right-hand side is rhs read out over that same slot, with its leading slots kept
-    as inputs of the solution.
+    as inputs of the solution. Each stays in its own context, so an exact form gives an
+    exact matrix.
     """
-    context = binding_context(value.context, (rhs.context,))
-    value = context.lower(value).cast(value.algebra.subspace.scalar())
-    rhs = context.lower(rhs).cast(value.algebra.subspace.scalar())
-    xp = context.xp
+    scalar = value.algebra.subspace.scalar()
+    value, rhs = value.cast(scalar), rhs.cast(scalar)
     matrix = Extensor._from_prepared_kernel(
-        context, value.algebra.gatype((value.axes[2], value.axes[1])),
-        xp.swapaxes(value._kernel[..., 0, :, :], -1, -2),
+        value.context, value.algebra.gatype((value.axes[2], value.axes[1])),
+        value.context.first_last_input(value._kernel, value.ndim),
     )
-    scalar_axis = (slice(None),) * rhs.ndim + (0,)
-    coefficients = xp.moveaxis(rhs._kernel[scalar_axis], -1, rhs.ndim)
     covector = Extensor._from_prepared_kernel(
-        context, value.algebra.gatype((rhs.axes[-1],) + tuple(rhs.axes[1:-1])), coefficients,
+        rhs.context, value.algebra.gatype((rhs.axes[-1],) + tuple(rhs.axes[1:-1])),
+        rhs.context.first_last_input(rhs._kernel, rhs.ndim),
     )
     return matrix, covector
 

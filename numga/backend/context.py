@@ -133,6 +133,11 @@ class Context(ABC):
         rhs = self.xp.broadcast_to(rhs, matrix.shape[:-1])
         return self.xp.linalg.solve(matrix, rhs[..., None])[..., 0]
 
+    def first_last_input(self, kernel: Any, batch_ndim: int) -> Any:
+        """A scalar-valued kernel with its output axis dropped and its last input moved first."""
+
+        return self.xp.moveaxis(kernel[(slice(None),) * batch_ndim + (0,)], -1, batch_ndim)
+
     def generalized_eigh(self, matrix: Any, metric: Any) -> tuple[Any, Any]:
         """Eigenpairs of a Hermitian pencil, reduced to a standard problem by the Cholesky
         factor of the positive-definite metric; eigenvectors are orthonormal in the metric."""

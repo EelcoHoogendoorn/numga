@@ -150,6 +150,15 @@ readout back through the step, push the twist forward.
 sigma = (step << sigma(step >> Line)) + Q                   # Twist <- Line
 ```
 
+The two sandwiches are a map and its adjoint. The step moves a twist by `moved = step << Twist`,
+and a sandwich preserves the regressive product, `(step >> l) & t == l & (step << t)`, so the
+readout pulled back through the step, `step >> Line`, is `moved.adjoint()`. The prediction is
+the covariance with the motion on both sides, `moved(sigma(moved.adjoint()))`; for a versor the
+adjoint is the reverse sandwich, and no solve is needed.
+
+In the matrix notation of the extended Kalman filter this reads as $P' = F P F^\top + Q$, with
+$F$ the matrix of the step's action on twists.
+
 **A direction from a gradient.** The [ray tracer](../examples/geometry/cyclides/core.py) needs a surface normal for shading. The
 derivative of a surface's quadric along a ray, `derivative`, is a linear form on directions,
 `Scalar <- Direction`; the normal is the direction obtained by solving the metric form on
@@ -176,11 +185,7 @@ to the world's.
 up = screen.inverse()(mv.z)
 ```
 
-This is the one place a transposition of coefficients does happen, underneath. A map whose
-type carries the trait `CoefficientOrthogonal`, such as a rotor sandwich in a Euclidean
-algebra, dispatches `inverse()` to a transposition of its coefficients, because for such a map
-the two coincide. The type system tracks this trait; a Lorentz boost does not carry it, and
-its inverse is computed as an inverse.
+A map whosetype carries the trait `CoefficientOrthogonal`, such as a rotor sandwich in a Euclidean algebra, dispatches `inverse()` to a transposition of its coefficients, because for such a map the two coincide. The type system tracks this trait; a Lorentz boost does not carry it, and its inverse is computed as an inverse.
 
 **Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/geometry/multiview/core.py) is built
 in its camera's frame and is summed with the other cameras' cones in the world's. As a map it

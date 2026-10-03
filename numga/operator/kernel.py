@@ -131,6 +131,22 @@ class SymbolicKernel:
     def reciprocal(self) -> "SymbolicKernel":
         return type(self)(1 / self._values)
 
+    @lru_cache(maxsize=None)
+    def inverse(self) -> "SymbolicKernel":
+        """The inverse of a square kernel whose inverse has integer coefficients.
+
+        The floating-point inverse, rounded, is kept only if it multiplies back to the identity
+        exactly. A singular kernel, or one whose inverse has fractions, raises LinAlgError.
+        """
+        candidate = np.rint(np.linalg.inv(self._values)).astype(np.int64)
+        if not np.array_equal(self._values @ candidate, np.eye(len(candidate))):
+            raise np.linalg.LinAlgError("the inverse of this kernel has non-integer coefficients")
+        return type(self)(candidate)
+
+    def first_last_input(self) -> "SymbolicKernel":
+        """A scalar-valued kernel with its output axis dropped and its last input moved first."""
+        return type(self)(np.moveaxis(self._values[0], -1, 0))
+
     def output_nonzero_indices(self) -> tuple[int, ...]:
         if self.ndim == 0:
             raise ValueError("a symbolic extensor kernel must have an output axis")

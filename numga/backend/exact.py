@@ -68,13 +68,16 @@ class ExactContext(Context):
         return SymbolicKernel((scalar,))
 
     def matrix_inverse(self, kernel: SymbolicKernel) -> SymbolicKernel:
-        raise NotImplementedError("exact matrix inversion is not implemented")
+        return kernel.inverse()
 
     def matrix_trace(self, kernel: SymbolicKernel, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> SymbolicKernel:
         return kernel.trace(axis1, axis2).expand_dims(scalar_axis)
 
     def solve(self, matrix: SymbolicKernel, rhs: SymbolicKernel) -> SymbolicKernel:
-        raise NotImplementedError("exact matrix solves are not implemented")
+        return matrix.inverse().tensordot(rhs, axes=(1, 0))
+
+    def first_last_input(self, kernel: SymbolicKernel, batch_ndim: int) -> SymbolicKernel:
+        return kernel.first_last_input()
 
     def prepare_scalar(self, scalar: object) -> object:
         if isinstance(scalar, Real):

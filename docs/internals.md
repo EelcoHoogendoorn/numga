@@ -217,6 +217,15 @@ materialized in the context's dtype and the contraction runs there. The material
 cached on the symbolic kernel, so a table is converted once per dtype for the life of the
 process.
 
+A solve whose matrix is exact never reaches a numerical solver. The inverse of an exact map is
+found once and cached on its kernel, and the solve binds it into the right-hand side: one
+contraction with a constant, like any product. The pairings that solves meet most, the
+regressive product of complementary blades and the metric of an orthonormal basis, invert to
+signed permutations, so `T.adjoint()` and raising an index through `(Vector | Vector).solve`
+cost one contraction against a signed permutation, a gather with signs under the sparse
+executor. An exact inverse has integer coefficients; a singular map, or one
+whose inverse would have fractions, raises `LinAlgError`.
+
 An `Extensor` in a `JaxContext` is a pytree with its kernel as the one leaf and its type and
 context key as static metadata. It crosses `jit` and `vmap` and comes back typed; a context is
 rebuilt from its key on the way out, so no mutable cache is ever hashed by the tracer.
