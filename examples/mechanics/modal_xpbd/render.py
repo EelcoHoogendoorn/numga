@@ -117,15 +117,14 @@ def notebook_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point,
 
 
 def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
-    """The chain at one moment: the bars of every moving girder, and the pin it hangs from."""
+    """The chain at one moment."""
     figure, bars = chain_scene(edges, points, points[None])
     update_chain(points, edges, bars)
     return figure
 
 
 def beam(frames: list[Point], edges: np.ndarray) -> list[np.ndarray]:
-    """Frames of the crushed beam `[frames] [cases, bodies, vertices]`, the first case: its moving
-    girders coloured in turn and its clamps grey, the whole span in a strip."""
+    """Frames of the beam, the first case: moving girders coloured, fixed ones grey."""
     positions = stack(frames)[:, 0].dual().cast(ga.subspace("x y")).kernel   # [frames, bodies, vertices, 2]
     bodies = positions.shape[1]
     colours = np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), "#94a3b8",
@@ -146,13 +145,12 @@ def beam(frames: list[Point], edges: np.ndarray) -> list[np.ndarray]:
     return images
 
 
-def buckling(crushing: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
-    """The beam's midspan deflection against how far its end was driven in, the first case, beside
-    the Euler estimate."""
+def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
+    """Midspan deflection against end displacement, the first case, with the critical value."""
     deflection = np.abs(midspans[:, 0].dual().cast(ga.subspace("x y")).kernel[:, 1])
     figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
-    axes.plot(crushing, deflection, color="#0f172a")
-    axes.axvline(critical, linestyle=":", color="#dc2626", label="Euler estimate")
+    axes.plot(displacements, deflection, color="#0f172a")
+    axes.axvline(critical, linestyle=":", color="#dc2626", label="critical")
     axes.set(xlabel="end displacement", ylabel="midspan deflection")
     axes.spines[["top", "right"]].set_visible(False)
     axes.legend(frameon=False)

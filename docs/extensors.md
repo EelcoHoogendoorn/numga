@@ -38,7 +38,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
 10. [**Odometry (PGA2D)**](#10-odometry-the-most-likely-trajectory-pga2d): uncertainties as quadrics on twists, and the information applied reading by reading, never assembled, in any dimension.
 11. [**Edge States of a Graphene Flake (VGA3D)**](#11-edge-states-of-a-graphene-flake-vga3d): a Hamiltonian coupling atoms through multivectors, and spin conservation read off its type.
-12. [**Flexible Bodies, Rigidly Joined (PGA2D)**](#12-flexible-bodies-rigidly-joined-pga2d): the pins between flexible girders as one sparse map, closed together by one solve, and a stiff beam buckling at its Euler load.
+12. [**Flexible Bodies, Rigidly Joined (PGA2D)**](#12-flexible-bodies-rigidly-joined-pga2d): point constraints between flexible bodies as one sparse system, and a beam buckling at its Euler load.
 
 ---
 
@@ -262,19 +262,19 @@ spin = (states * turned[:, None]).sum(axis=0) >> mv.z                           
 
 **Notebook**: [`examples/mechanics/modal_xpbd/modal_xpbd.ipynb`](../examples/mechanics/modal_xpbd/modal_xpbd.ipynb)
 
-![A beam of eight spliced girders, clamped at both ends and crushed, popping sideways past its Euler load](../plots/modal_xpbd_buckle.gif)
+![A beam of eight spliced girders, fixed at both ends and compressed, buckling past its Euler load](../plots/modal_xpbd_buckle.gif)
 
 ```python
-motion = (motor >> local.commutator(Twist)) * signs                          # [pins, ends] Direction <- Twist
-motion = incidence(motion, pin, pins.bodies, (len(pin), bodies))             # [pins, bodies] Direction <- Twist
-system = motion(inertias(motion.adjugate())) + shapes * (mobility * loads) + weld   # [pins, pins] Direction <- Force
-forces = system.solve((-gap - shapes * free_step).cast(Direction))           # [pins] Force
-displacement = inverse_inertia(motion.adjugate()(forces))                    # [bodies] Twist
+motion = (motor >> local.commutator(Twist)) * signs                        # [constraints, ends] Direction <- Twist
+motion = incidence(motion, constraint, constraints.bodies, (len(constraint), bodies))   # [constraints, bodies] Direction <- Twist
+system = motion(inertias(motion.adjugate())) + shapes * (mobility * loads) + constraint_compliance   # [constraints, constraints] Direction <- Force
+forces = system.solve((-gap - shapes * free_step).cast(Direction))         # [constraints] Force
+displacement = inverse_inertia(motion.adjugate()(forces))                  # [bodies] Twist
 ```
 
-* **Pins are a sparse map.** How every pin opens for the bodies' twists is a sparse extensor whose cells are maps, the commutator of each anchor with the open twist, coupling each pin to its two bodies; its adjugate carries the pins' forces back to the bodies as forques.
-* **The joint system is a composition.** `motion(inertias(motion.adjugate()))` is how every pin opens for a force at any other, with no Jacobian matrix assembled, and one sparse solve closes every pin together: what a stiff beam needs to carry its load, and to buckle at its Euler load from rounding alone.
-* **Large turns in motors, small bending in modes.** Each girder's vibration modes are the eigenfields of its stiffness, `~ends * bars(ends * Force)`, a sparse extensor from points to bars and back, against its masses.
+* **Constraints as a sparse extensor.** `anchor.commutator(Twist)` maps a body's twist to an anchor's displacement. Over all constraints and bodies these maps are the cells of a sparse extensor, and its adjugate maps forces at the constraints to forques on the bodies.
+* **One solve for all constraints.** `motion(inertias(motion.adjugate()))`, with the modes' and constraints' compliance added, is the system for all constraint forces, built without assembling a Jacobian and solved once per step. A stiff beam needs this to carry load; solved one constraint at a time, it does not converge.
+* **Rigid motion in motors, deformation in modes.** Each girder's modes are the eigenfields of its sparse stiffness `~ends * bars(ends * Force)` against its masses.
 
 # References
 
