@@ -23,6 +23,7 @@ dist/
 !/plots/resonance_echo.gif
 !/plots/hopf_sweep.gif
 !/plots/odometry.gif
+!/plots/kane_mele_helical.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

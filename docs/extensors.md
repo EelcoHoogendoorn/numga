@@ -37,6 +37,7 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
 9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
 10. [**Odometry (PGA2D)**](#10-odometry-the-most-likely-trajectory-pga2d): uncertainties as quadrics on twists, and the information applied reading by reading, never assembled, in any dimension.
+11. [**Edge States of a Graphene Flake (VGA3D)**](#11-edge-states-of-a-graphene-flake-vga3d): a Hamiltonian coupling atoms through multivectors, and spin conservation read off its type.
 
 ---
 
@@ -233,6 +234,26 @@ pulled = pulled.at[..., tails].add(at_tails)                             # [...,
 * **An uncertainty is a quadric on twists.** It maps lines to twists, `Twist <- Line`, and its inverse pairs a twist with itself.
 * **One pull, never assembled.** A reading pulls only on the two poses it links. The pull of the mismatches is the gradient, of what a correction measures the information, and of every unit error each pose's uncertainty.
 * **One module, any dimension or signature.**
+
+---
+
+## 11. Edge States of a Graphene Flake (VGA3D)
+
+**Notebook**: [`examples/quantum/kane_mele/kane_mele.ipynb`](../examples/quantum/kane_mele/kane_mele.ipynb)
+
+![An electron launched at the edge of a graphene flake, its spin-up half running clockwise and its spin-down half counterclockwise](../plots/kane_mele_helical.gif)
+
+```python
+hop = SparseExtensor(mv.scalar(-np.ones((pairs, 1))), *flake.first.T, (atoms, atoms))   # [atoms, atoms] Scalar
+turn = SparseExtensor(mv.xy * flake.senses, *flake.second.T, (atoms, atoms))            # [atoms, atoms] Bivector
+energy = hop + turn * spin_orbit + stagger * mass                                        # [atoms, atoms] Up
+energies, states = (energy * Up).eigh(unit * Up, count)                                  # [count] Scalar, [count, atoms] Up
+spin = (states * turned[:, None]).sum(axis=0) >> mv.z                                    # [atoms] Vector
+```
+
+* **Couplings are multivectors.** The Hamiltonian is a sparse extensor over the flake's atoms, each coupling a scalar or a plane.
+* **Spin conservation is a type.** `energy * Up` maps the spin-up spinors into themselves, so each spin is solved on its own.
+* **States are spinor fields.** The edge states come out as fields over the flake, and their spin density is a sandwich.
 
 # References
 
