@@ -122,3 +122,31 @@ def test_the_adjoint_carries_the_scalar_product_summed_over_the_elements():
     values, covectors = mv.vector(rng.normal(size=(count, 3))), mv.vector(rng.normal(size=(count, 3)))
     np.testing.assert_allclose(coupling.adjoint()(covectors).scalar_product(values).sum(axis=0).kernel,
                                covectors.scalar_product(coupling(values)).sum(axis=0).kernel, atol=1e-12)
+
+
+def test_leading_axes_hold_separate_maps_of_one_pattern():
+    # Each case of a batched sparse extensor acts as that case alone: on fields, in compositions,
+    # in solves, also against right sides batched beyond it, and in eigenproblems.
+    pytest.importorskip("scipy")
+    context = NumpyContext(Algebra("x+y+z+"))
+    mv, Vector = context.multivector, context.algebra.gatype.vector()
+    rng = np.random.default_rng(3)
+    cases, size, count = 3, 5, 9
+    rows, columns = rng.integers(0, size, count), rng.integers(0, size, count)
+    cells = mv.vector(rng.normal(size=(cases, count, 3)))                      # [cases, count] Vector
+    batched = SparseExtensor(cells, rows, columns, (size, size))
+    one = [SparseExtensor(cells[case], rows, columns, (size, size)) for case in range(cases)]
+    field = mv.vector(rng.normal(size=(size, 3)))                               # [size] Vector
+    for case in range(cases):
+        np.testing.assert_allclose((batched * field)[case].kernel, (one[case] * field).kernel, atol=1e-12)
+        np.testing.assert_allclose(((batched * batched) * field)[case].kernel, ((one[case] * one[case]) * field).kernel, atol=1e-12)
+    # A diagonally dominant map on vectors per case, solved against two sides for each case.
+    diagonal = SparseExtensor.from_diagonal(mv.scalar(np.full((size, 1), 20.0))) * Vector
+    system = (batched * Vector).adjoint()(batched * Vector) + diagonal           # [cases] [size, size] Vector <- Vector
+    sides = mv.vector(rng.normal(size=(2, cases, size, 3)))                      # [sides, cases, size] Vector
+    solved = system.solve(sides)                                                 # [sides, cases, size] Vector
+    np.testing.assert_allclose((system(solved) - sides).kernel, 0.0, atol=1e-10)
+    values, modes = system.eigh(diagonal, 2)                                     # [cases, 2] Scalar, [cases, 2, size] Vector
+    for case in range(cases):
+        alone, _ = SparseExtensor(system.cells[case], system.rows, system.columns, system.shape).eigh(diagonal, 2)
+        np.testing.assert_allclose(values[case].kernel, alone.kernel, rtol=1e-8)

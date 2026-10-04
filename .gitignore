@@ -24,6 +24,7 @@ dist/
 !/plots/hopf_sweep.gif
 !/plots/odometry.gif
 !/plots/kane_mele_helical.gif
+!/plots/modal_xpbd_buckle.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

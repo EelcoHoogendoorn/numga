@@ -3,7 +3,9 @@
 A field is an Extensor whose last batch axis indexes the elements of a collection: the vertices or
 the faces of a mesh, the poses of a graph; leading batch axes hold separate fields. A sparse
 extensor couples a few elements of one field to a few of another; each coupling is a cell, an
-ordinary extensor, and the sparsity is in which elements couple, not in the blades of a cell.
+ordinary extensor, and the sparsity is in which elements couple, not in the blades of a cell. Its
+cells carry the couplings on their last batch axis too, and leading batch axes hold separate maps
+that share one pattern of couplings, broadcasting against the leading axes of what they act on.
 
 A sparse extensor acts as its cells do, and forwards to them what is defined on them. A cell with
 slots is a map, and is applied: `S(field)` and `S(T)`, with `S.adjugate()` and `S.adjoint()` taking
@@ -28,9 +30,10 @@ from numga.gatype import GAType
 
 
 class SparseExtensor:
-    """A linear map from a field of `shape[1]` elements to one of `shape[0]`: extensor cells `[n]`,
-    each coupling the input element its column names to the output element its row names. Cells
-    coupling the same pair are summed at construction, and stored by row."""
+    """A linear map from a field of `shape[1]` elements to one of `shape[0]`: extensor cells
+    `[..., n]`, each coupling the input element its column names to the output element its row
+    names, with leading axes for separate maps of the same pattern. Cells coupling the same pair are
+    summed at construction, and stored by row."""
 
     __slots__ = ("cells", "rows", "columns", "shape")
     product = ExtensionMethod("product")
@@ -43,7 +46,7 @@ class SparseExtensor:
     eigh = ExtensionMethod("eigh")
 
     def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
-        if cells.ndim != 1 or not cells.shape[0] == len(rows) == len(columns):
+        if cells.ndim == 0 or not cells.shape[-1] == len(rows) == len(columns):
             raise ValueError("a sparse extensor needs one row and one column per cell")
         pairs, slots = np.unique(np.asarray(rows) * shape[1] + np.asarray(columns), return_inverse=True)
         self.cells = _scatter(cells, slots, len(pairs))
@@ -53,9 +56,9 @@ class SparseExtensor:
     @classmethod
     def from_columns(cls, columns: np.ndarray, cells: Extensor, size: int) -> SparseExtensor:
         """The map from a field of `size` elements coupling output element r to the input elements
-        `columns[r]` names, `[R, k]`, through `cells[r]` of the same shape."""
+        `columns[r]` names, `[R, k]`, through `cells[..., r, :]` of the same shape."""
         rows = np.repeat(np.arange(len(columns)), columns.shape[1])
-        return cls(cells.reshape(-1), rows, columns.reshape(-1), (len(columns), size))
+        return cls(cells.reshape(cells.shape[:-2] + (-1,)), rows, columns.reshape(-1), (len(columns), size))
 
     @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
@@ -66,7 +69,7 @@ class SparseExtensor:
     def diagonal(self) -> Extensor:
         """The cells on the diagonal as a field, each at its row; zero where a row has none."""
         on = self.rows == self.columns
-        return _scatter(self.cells[on], self.rows[on], self.shape[0])
+        return _scatter(self.cells[..., on], self.rows[on], self.shape[0])
 
     @property
     def gatype(self) -> GAType:
@@ -106,8 +109,10 @@ class SparseExtensor:
     def __add__(self, other: SparseExtensor) -> SparseExtensor:
         if self.shape != other.shape:
             raise ValueError(f"sparse shapes {self.shape} and {other.shape} differ")
+        batch = np.broadcast_shapes(self.cells.shape[:-1], other.cells.shape[:-1])
         return SparseExtensor(
-            concatenate([self.cells, other.cells]),
+            concatenate([self.cells.broadcast_to(batch + self.cells.shape[-1:]),
+                         other.cells.broadcast_to(batch + other.cells.shape[-1:])], axis=-1),
             np.concatenate([self.rows, other.rows]),
             np.concatenate([self.columns, other.columns]),
             self.shape,
@@ -119,6 +124,9 @@ class SparseExtensor:
     def __sub__(self, other: SparseExtensor) -> SparseExtensor:
         return self + (-other)
 
+
+# A sparse extensor with a field on its diagonal, each element its own cell.
+spdiag = SparseExtensor.from_diagonal
 
 # --- products and applications, by cells and by operand ----------------------------------------
 @singledispatch
@@ -159,7 +167,7 @@ def _product_field(other: Extensor, value: SparseExtensor) -> Extensor:
 @_product.register
 def _product_sparse(other: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
     left, right = _chain(value, other)
-    return SparseExtensor(value.cells[left] * other.cells[right], value.rows[left], other.columns[right], (value.shape[0], other.shape[1]))
+    return SparseExtensor(value.cells[..., left] * other.cells[..., right], value.rows[left], other.columns[right], (value.shape[0], other.shape[1]))
 
 
 @singledispatch
@@ -170,7 +178,7 @@ def _application(operand: Extensor, value: SparseExtensor) -> Extensor:
 @_application.register
 def _application_sparse(operand: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
     left, right = _chain(value, operand)
-    return SparseExtensor(value.cells[left](operand.cells[right]), value.rows[left], operand.columns[right], (value.shape[0], operand.shape[1]))
+    return SparseExtensor(value.cells[..., left](operand.cells[..., right]), value.rows[left], operand.columns[right], (value.shape[0], operand.shape[1]))
 
 
 # --- forwarded to the cells -------------------------------------------------------------------
@@ -206,61 +214,80 @@ def _square_maps(cells: GAType, other: GAType) -> bool:
 
 @SparseExtensor.solve.register(_square_maps)
 def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
-    """The fields x with value(x) == rhs, one for each leading index of rhs."""
+    """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
+    the leading axes of rhs that the map lacks as further right sides of it."""
     from scipy.sparse.linalg import spsolve
 
-    matrix = _matrix(value)
-    solved = spsolve(matrix, _coefficients(rhs).T).reshape(matrix.shape[1], -1).T
-    return _field(value, solved.reshape(rhs.shape[:-1] + (-1,)))
+    return _per_map(value, rhs, lambda matrix, right: spsolve(matrix, right.T).reshape(matrix.shape[1], len(right)).T)
 
 
 @SparseExtensor.lstsq.register(_maps)
 def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The smallest fields x, in the sum of their squared coefficients, minimizing that of
-    value(x) - rhs, one for each leading index of rhs: a singular system's gauge, such as a
-    translation, is left at zero."""
+    value(x) - rhs, for each of the map's leading indices and each right side: a singular system's
+    gauge, such as a translation, is left at zero."""
     from scipy.sparse.linalg import lsqr
 
-    matrix = _matrix(value)
-    solved = np.stack([
-        lsqr(matrix, right, atol=0.0, btol=0.0, iter_lim=10 * matrix.shape[1])[0] for right in _coefficients(rhs)
-    ])
-    return _field(value, solved.reshape(rhs.shape[:-1] + (-1,)))
+    return _per_map(value, rhs, lambda matrix, right: np.stack([
+        lsqr(matrix, column, atol=0.0, btol=0.0, iter_lim=10 * matrix.shape[1])[0] for column in right
+    ]))
 
 
 @SparseExtensor.eigh.register(_square_maps)
 def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
     """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
-    value and a positive-definite metric: values `[count] Scalar`, fields `[count, elements]`
-    orthonormal in the metric. The spectrum is inverted about a point below zero by the square root
-    of the precision, relative to the pencil's scale, so a semidefinite value with a null space
-    still factorizes, to half the precision's digits."""
+    value and a positive-definite metric, for each of their leading indices: values `[..., count]
+    Scalar`, fields `[..., count, elements]` orthonormal in the metric. The spectrum is inverted
+    about a point below zero by the square root of the precision, relative to the pencil's scale, so
+    a semidefinite value with a null space still factorizes, to half the precision's digits."""
     from scipy.sparse.linalg import eigsh
 
-    matrix, mass = _matrix(value), _matrix(metric)
-    scale = np.abs(matrix.diagonal()).max() / np.abs(mass.diagonal()).max()
-    shift = -np.sqrt(np.finfo(matrix.dtype).eps) * scale
-    values, vectors = eigsh(matrix, k=count, M=mass, sigma=shift)
-    fields = _field(value, vectors.T)
-    return fields.context.multivector.scalar(values[:, None]), fields
+    batch = np.broadcast_shapes(value.cells.shape[:-1], metric.cells.shape[:-1])
+    values, vectors = [], []
+    for case in np.ndindex(batch):
+        matrix, mass = _matrix(value, _blocks(value, batch)[case]), _matrix(metric, _blocks(metric, batch)[case])
+        scale = np.abs(matrix.diagonal()).max() / np.abs(mass.diagonal()).max()
+        found, modes = eigsh(matrix, k=count, M=mass, sigma=-np.sqrt(np.finfo(matrix.dtype).eps) * scale)
+        values.append(found)
+        vectors.append(modes.T)
+    fields = _field(value, np.reshape(vectors, batch + (count, -1)))
+    return fields.context.multivector.scalar(np.reshape(values, batch + (count, 1))), fields
 
 
-def _matrix(value: SparseExtensor):
-    """The map cells' coefficients as one SciPy matrix of element blocks."""
+def _per_map(value: SparseExtensor, rhs: Extensor, solver) -> Extensor:
+    """The solver's fields for each of the map's leading indices, on its matrix and its right sides
+    `[sides, elements * blades]`: those of rhs at that index, along every leading axis the map
+    lacks or holds once."""
+    batch = np.broadcast_shapes(value.cells.shape[:-1], rhs.shape[:-1])
+    maps = (1,) * (len(batch) - (value.cells.ndim - 1)) + value.cells.shape[:-1]
+    right = np.broadcast_to(np.asarray(rhs.kernel), batch + rhs.kernel.shape[rhs.ndim - 1:])
+    right = right.reshape(batch + (-1,))
+    solved = np.empty(batch + (value.shape[1] * len(value.cells.axes[1]),), dtype=right.dtype)
+    blocks = _blocks(value, maps)
+    for case in np.ndindex(maps):
+        sides = tuple(slice(None) if size == 1 else index for index, size in zip(case, maps))
+        block = right[sides]
+        right_sides = block.reshape(int(np.prod(block.shape[:-1])), block.shape[-1])
+        solved[sides] = solver(_matrix(value, blocks[case]), right_sides).reshape(block.shape[:-1] + (-1,))
+    return _field(value, solved)
+
+
+def _blocks(value: SparseExtensor, batch: tuple[int, ...]) -> np.ndarray:
+    """The map cells' coefficients `[..., n, out blades, in blades]`, broadcast to the batch."""
+    blocks = np.asarray(value.cells.kernel)
+    return np.broadcast_to(blocks, batch + blocks.shape[-3:])
+
+
+def _matrix(value: SparseExtensor, blocks: np.ndarray):
+    """One map's cell coefficients `[n, out blades, in blades]` as a SciPy matrix of element blocks."""
     from scipy.sparse import coo_matrix
 
-    blocks = np.asarray(value.cells.kernel)                                    # [n, out blades, in blades]
     _, height, width = blocks.shape
     rows = (value.rows[:, None, None] * height + np.arange(height)[:, None]).repeat(width, axis=2)
     columns = (value.columns[:, None, None] * width + np.arange(width)[None, :]).repeat(height, axis=1)
     return coo_matrix(
         (blocks.ravel(), (rows.ravel(), columns.ravel())), shape=(value.shape[0] * height, value.shape[1] * width),
     ).tocsc()
-
-
-def _coefficients(field: Extensor) -> np.ndarray:
-    """A field's coefficients `[fields, elements * blades]`, its leading batch axes flattened."""
-    return np.asarray(field.kernel).reshape(int(np.prod(field.shape[:-1])), -1)
 
 
 def _field(value: SparseExtensor, coefficients: np.ndarray) -> Extensor:

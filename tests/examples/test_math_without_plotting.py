@@ -44,6 +44,8 @@ import examples.mechanics.area_transport.scenarios
 import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core
 import examples.mechanics.modes.core
+import examples.mechanics.modal_xpbd.core
+import examples.mechanics.modal_xpbd.scenarios
 import examples.mechanics.riccati.core
 import examples.mechanics.riccati.scenarios
 import examples.mechanics.robot_arm.core
