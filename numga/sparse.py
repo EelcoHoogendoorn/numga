@@ -61,6 +61,13 @@ class SparseExtensor:
         return cls(cells.reshape(cells.shape[:-2] + (-1,)), rows, columns.reshape(-1), (len(columns), size))
 
     @classmethod
+    def from_indices(cls, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> SparseExtensor:
+        """Cells `[..., *indices]`, each coupling the row and the column given at its place in `rows` and
+        `columns`, which broadcast against each other to the cells' trailing axes."""
+        rows, columns = np.broadcast_arrays(rows, columns)
+        return cls(cells.reshape(cells.shape[:cells.ndim - rows.ndim] + (rows.size,)), rows.reshape(-1), columns.reshape(-1), shape)
+
+    @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
         """Each element of the field as the cell on its own row and column."""
         index = np.arange(field.shape[-1])

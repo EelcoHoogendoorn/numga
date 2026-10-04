@@ -48,37 +48,37 @@ InverseInertia = ga.gatype((Twist, Forque))                                # Twi
 @dataclass(frozen=True)
 class Shape:
     """A girder at rest and its retained vibrations."""
-    rest: Point                    # [vertices] Point, centred on mass
-    modes: Direction               # [modes, vertices] Direction
-    frequencies: Scalar            # [modes] Scalar, angular frequencies
-    compliance: Scalar             # [modes] Scalar, inverse squared frequencies
-    masses: np.ndarray             # [vertices]
-    edges: np.ndarray              # [edges, ends]
-    inertia: Inertia               # [] Forque <- Twist
+    rest: Point                                                             # [vertices] Point, centred on mass
+    modes: Direction                                                        # [modes, vertices] Direction
+    frequencies: Scalar                                                     # [modes] Scalar, angular frequencies
+    compliance: Scalar                                                      # [modes] Scalar, inverse squared frequencies
+    masses: np.ndarray                                                      # [vertices]
+    edges: np.ndarray                                                       # [edges, ends]
+    inertia: Inertia                                                        # [] Forque <- Twist
 
 
 @dataclass(frozen=True)
 class Bodies:
     """Bodies in motion, batched over cases."""
-    motor: Motor                   # [..., bodies] Motor
-    rate: Twist                    # [..., bodies] Twist, in each body's frame
-    amplitudes: Scalar             # [..., bodies, modes] Scalar
-    rates: Scalar                  # [..., bodies, modes] Scalar
-    compliance: Scalar             # [..., bodies, modes] Scalar
-    frequencies: Scalar            # [..., bodies, modes] Scalar
-    damping: np.ndarray            # [..., bodies, modes], damping ratio
-    masses: np.ndarray             # [..., bodies]
-    inertia: Inertia               # [..., bodies] Forque <- Twist
-    inverse_inertia: InverseInertia  # [..., bodies] Twist <- Forque, zero for a fixed body
+    motor: Motor                                                            # [..., bodies] Motor
+    rate: Twist                                                             # [..., bodies] Twist, in each body's frame
+    amplitudes: Scalar                                                      # [..., bodies, modes] Scalar
+    rates: Scalar                                                           # [..., bodies, modes] Scalar
+    compliance: Scalar                                                      # [..., bodies, modes] Scalar
+    frequencies: Scalar                                                     # [..., bodies, modes] Scalar
+    damping: np.ndarray                                                     # [..., bodies, modes], damping ratio
+    masses: np.ndarray                                                      # [..., bodies]
+    inertia: Inertia                                                        # [..., bodies] Forque <- Twist
+    inverse_inertia: InverseInertia                                         # [..., bodies] Twist <- Forque, zero for a fixed body
 
 
 @dataclass(frozen=True)
 class Constraints:
     """Point constraints between anchor points of two bodies."""
-    bodies: np.ndarray             # [constraints, ends]
-    anchors: Point                 # [constraints, ends] Point
-    modes: Direction               # [constraints, ends, modes] Direction
-    compliance: Scalar             # [constraints] Scalar
+    bodies: np.ndarray                                                      # [constraints, ends]
+    anchors: Point                                                          # [constraints, ends] Point
+    modes: Direction                                                        # [constraints, ends, modes] Direction
+    compliance: Scalar                                                      # [constraints] Scalar
 
 
 def truss(cells: int, length: float, height: float) -> tuple[Force, np.ndarray]:
@@ -98,91 +98,112 @@ def truss(cells: int, length: float, height: float) -> tuple[Force, np.ndarray]:
     return positions, edges
 
 
-def incidence(cells, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> SparseExtensor:
-    """Cells as a sparse extensor, at the given rows and columns."""
-    return SparseExtensor(cells.reshape(cells.shape[:cells.ndim - rows.ndim] + (rows.size,)), rows.reshape(-1), columns.reshape(-1), shape)
-
-
 # --- math -----------------------------------------------------------------------------
 # Leading ... axes hold independent cases.
 def girder(cells: int, length: float, height: float, stiffness: float, density: float, modes: int) -> Shape:
     """A cross-braced girder, reduced to its lowest vibration modes."""
-    positions, edges = truss(cells, length, height)                       # [vertices] Force, [edges, ends]
+    positions, edges = truss(cells, length, height)                         # [vertices] Force, [edges, ends]
     vertices = positions.shape[0]
     # Each bar's tail taken from its head.
     ends = SparseExtensor.from_columns(edges, mv.scalar((np.ones_like(edges) * [-1, 1])[..., None]), vertices)  # [edges, vertices] Scalar
-    difference = ends * positions                                         # [edges] Force
-    lengths = difference.norm()                                           # [edges] Scalar
-    directions = difference / lengths                                     # [edges] Force
+    difference = ends * positions                                           # [edges] Force
+    lengths = difference.norm()                                             # [edges] Scalar
+    directions = difference / lengths                                       # [edges] Force
     # Each bar's stiffness acts along its direction.
     bars = spdiag(directions * (directions | Force) * stiffness / lengths)  # [edges, edges] Force <- Force
     masses = np.full(vertices, density * length * height / vertices)
     weights = spdiag(mv.scalar(masses[:, None])) * Force                    # [vertices, vertices] Force <- Force
     # The stiffness against the masses; the three zero modes are rigid motions, carried by the motor.
     values, fields = (~ends * bars(ends * Force)).eigh(weights, 3 + modes)  # [3 + modes] Scalar, [3 + modes, vertices] Force
-    values, fields = values[3:], fields[3:]                               # [modes] Scalar, [modes, vertices] Force
-    centre = (positions * masses).sum(axis=0) / masses.sum()              # [] Force
-    rest = (positions - centre + mv.w).dual()                             # [vertices] Point
-    inertia = ((rest & rest.commutator(Twist)) * masses).sum(axis=0)      # [] Forque <- Twist
+    values, fields = values[3:], fields[3:]                                 # [modes] Scalar, [modes, vertices] Force
+    centre = (positions * masses).sum(axis=0) / masses.sum()                # [] Force
+    rest = (positions - centre + mv.w).dual()                               # [vertices] Point
+    inertia = ((rest & rest.commutator(Twist)) * masses).sum(axis=0)        # [] Forque <- Twist
     return Shape(rest, fields.dual(), values.square_root(), 1 / values, masses, edges, inertia)
 
 
 def points(bodies: Bodies, shape: Shape) -> Point:
     """The bodies' points in the world."""
-    local = shape.rest + (shape.modes * bodies.amplitudes[..., None]).sum(axis=-2)  # [..., bodies, vertices] Point
-    return bodies.motor[..., None] >> local                               # [..., bodies, vertices] Point
+    local_points = shape.rest + (shape.modes * bodies.amplitudes[..., None]).sum(axis=-2)  # [..., bodies, vertices] Point
+    return bodies.motor[..., None] >> local_points                               # [..., bodies, vertices] Point
 
 
-def modal_terms(bodies: Bodies, previous: Scalar, dt: float) -> tuple[Scalar, Scalar, Scalar]:
+def modal_terms(bodies: Bodies, previous_amplitudes: Scalar, dt: float) -> tuple[Scalar, Scalar, Scalar]:
     """Each mode's compliance, residual and response to a unit load over the step."""
+    # The implicit dashpot relative to the spring: twice the damping ratio times the frequency, times the
+    # spring's compliance, over the step.
     damping = 2 * bodies.damping * bodies.frequencies * bodies.compliance / dt  # [..., bodies, modes] Scalar
-    compliance = bodies.compliance / dt**2 / (1 + damping)                # [..., bodies, modes] Scalar
-    residual = (bodies.amplitudes + damping * (bodies.amplitudes - previous)) / (1 + damping)  # [..., bodies, modes] Scalar
+    # The spring's compliance over the step squared, softened by the dashpot.
+    compliance = bodies.compliance / dt**2 / (1 + damping)                   # [..., bodies, modes] Scalar
+    # The mode's amplitude, with its change over the step weighted in by the dashpot.
+    residual = (bodies.amplitudes + damping * (bodies.amplitudes - previous_amplitudes)) / (1 + damping)  # [..., bodies, modes] Scalar
+    # A mode has unit mass, so a load on it moves it by 1 / (1 + compliance) of the load.
     return compliance, residual, 1 / (1 + compliance)
 
 
 def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, Direction]:
-    """The constraints' sparse maps and gaps."""
-    count, modes = bodies.motor.shape[-1], bodies.amplitudes.shape[-1]
-    motor = bodies.motor[..., constraints.bodies]                                # [..., constraints, ends] Motor
-    local = constraints.anchors + (constraints.modes * bodies.amplitudes[..., constraints.bodies, :]).sum(axis=-1)  # [..., constraints, ends] Point
+    """The sparse maps from the bodies' rigid motion and modes to the constraint gaps, and the gaps."""
+    body_count, modes = bodies.motor.shape[-1], bodies.amplitudes.shape[-1]
+    # The motor of the body at each end of each constraint, and the anchor there, moved by that body's modes.
+    motor = bodies.motor[..., constraints.bodies]                            # [..., constraints, ends] Motor
+    local_anchors = constraints.anchors + (constraints.modes * bodies.amplitudes[..., constraints.bodies, :]).sum(axis=-1)  # [..., constraints, ends] Point
+    # A gap is the second anchor's position minus the first's.
     signs = np.array([-1, 1])
-    # The displacement of each anchor for an open twist, second end minus first.
-    motion = (motor >> local.commutator(Twist)) * signs                   # [..., constraints, ends] Direction <- Twist
-    shapes = (motor[..., None] >> constraints.modes) * signs[:, None]            # [..., constraints, ends, modes] Direction
-    gap = ((motor >> local) * signs).sum(axis=-1)                         # [..., constraints] Direction
-    constraint = np.broadcast_to(np.arange(len(constraints.bodies))[:, None], constraints.bodies.shape)  # [constraints, ends]
-    mode = constraints.bodies[..., None] * modes + np.arange(modes)              # [constraints, ends, modes]
-    constraint_mode = np.broadcast_to(constraint[..., None], mode.shape)                # [constraints, ends, modes]
+    # How each anchor moves for a twist of its body: the commutator with the open twist, in the world frame.
+    anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs               # [..., constraints, ends] Direction <- Twist
+    # How each anchor moves for each mode amplitude of its body: the mode's shape at the anchor, in the world frame.
+    anchor_modes = (motor[..., None] >> constraints.modes) * signs[:, None]  # [..., constraints, ends, modes] Direction
+    # Each constraint's gap.
+    gap = ((motor >> local_anchors) * signs).sum(axis=-1)                            # [..., constraints] Direction
+    # The row of each cell is its constraint; its column is the body at that end, or that body's mode.
+    constraint_count = len(constraints.bodies)
+    constraint = np.arange(constraint_count)[:, None]                       # [constraints, 1]
+    mode = constraints.bodies[..., None] * modes + np.arange(modes)          # [constraints, ends, modes]
     return (
-        incidence(motion, constraint, constraints.bodies, (len(constraints.bodies), count)),
-        incidence(shapes, constraint_mode, mode, (len(constraints.bodies), count * modes)),
-        incidence(Force & shapes, mode, constraint_mode, (count * modes, len(constraints.bodies))),
+        # the change in each gap for the bodies' twists
+        SparseExtensor.from_indices(anchor_motion, constraint, constraints.bodies, (constraint_count, body_count)),  # [..., constraints, bodies] Direction <- Twist
+        # the change in each gap for the bodies' mode amplitudes
+        SparseExtensor.from_indices(anchor_modes, constraint[..., None], mode, (constraint_count, body_count * modes)),  # [..., constraints, bodies * modes] Direction
+        # the load on each mode for forces at the constraints
+        SparseExtensor.from_indices(Force & anchor_modes, mode, constraint[..., None], (body_count * modes, constraint_count)),  # [..., bodies * modes, constraints] Scalar <- Force
         gap,
     )
 
 
-def project(bodies: Bodies, constraints: Constraints, previous: Scalar, lambdas: Scalar, dt: float) -> tuple[Bodies, Scalar]:
+def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scalar, mode_reactions: Scalar, dt: float) -> tuple[Bodies, Scalar]:
     """The bodies displaced to satisfy all constraints, and the modes' reactions."""
-    compliance, residual, response = modal_terms(bodies, previous, dt)     # [..., bodies, modes] Scalar each
-    motion, shapes, loads, gap = coupling(bodies, constraints)
+    compliance, residual, response = modal_terms(bodies, previous_amplitudes, dt)       # [..., bodies, modes] Scalar each
+    rigid, modal, modal_load, gap = coupling(bodies, constraints)
     batch = bodies.amplitudes.shape[:-2]
-    mode_load = -(residual + compliance * lambdas)                        # [..., bodies, modes] Scalar
-    free_step = (response * mode_load).reshape(batch + (-1,))             # [..., bodies * modes] Scalar
+    # The load of each mode's spring, less the reactions it has already received this step.
+    spring_load = -(residual + compliance * mode_reactions)                         # [..., bodies, modes] Scalar
+    # How far each mode moves under its spring alone.
+    unconstrained_step = (response * spring_load).reshape(batch + (-1,))     # [..., bodies * modes] Scalar
+    # How far each mode moves under a unit load from a constraint, its spring holding back the rest.
     mobility = spdiag((response * compliance).reshape(batch + (-1,)))        # [..., bodies * modes, bodies * modes] Scalar
-    constraint_compliance = spdiag(constraints.compliance / dt**2 * Force.dual())       # [constraints, constraints] Direction <- Force
-    inertias = spdiag(bodies.inverse_inertia)                               # [..., bodies, bodies] Twist <- Forque
-    system = motion(inertias(motion.adjugate())) + shapes * (mobility * loads) + constraint_compliance  # [..., constraints, constraints] Direction <- Force
-    forces = system.solve((-gap - shapes * free_step).cast(Direction))    # [..., constraints] Force
-    displacement = bodies.inverse_inertia(motion.adjugate()(forces))      # [..., bodies] Twist
-    mode_forces = loads(forces).reshape(bodies.amplitudes.shape)          # [..., bodies, modes] Scalar
-    modal_reaction = response * (mode_load - mode_forces)                  # [..., bodies, modes] Scalar
+    # Each constraint's own compliance over the step squared, as a map from force to gap.
+    constraint_compliance = spdiag(constraints.compliance / dt**2 * Force.dual())  # [constraints, constraints] Direction <- Force
+    # Each body's inverse inertia, from forque to twist.
+    inverse_inertias = spdiag(bodies.inverse_inertia)                        # [..., bodies, bodies] Twist <- Forque
+    # The change in the gaps for forces at the constraints: through the bodies' rigid motion, through
+    # their modes, and through the constraints' own compliance.
+    system = rigid(inverse_inertias(rigid.adjugate())) + modal * (mobility * modal_load) + constraint_compliance  # [..., constraints, constraints] Direction <- Force
+    # The reactions at the constraints that close every gap, given how far the modes move on their own.
+    # They are position-level, force times the step squared, so through an inverse inertia they give a
+    # displacement.
+    reactions = system.solve((-gap - modal * unconstrained_step).cast(Direction))  # [..., constraints] Force
+    # Each body's twist, from the forques the reactions exert on it.
+    displacement = bodies.inverse_inertia(rigid.adjugate()(reactions))       # [..., bodies] Twist
+    # Each mode's load from the reactions, and its spring's reaction to the whole.
+    mode_loads = modal_load(reactions).reshape(bodies.amplitudes.shape)      # [..., bodies, modes] Scalar
+    reaction_change = response * (spring_load - mode_loads)                   # [..., bodies, modes] Scalar
+    # The motors moved by the twists, the modes by their loads and the change in their reactions.
     moved = replace(
         bodies,
         motor=bodies.motor * (displacement * -0.5).exp(),
-        amplitudes=bodies.amplitudes + mode_forces + modal_reaction,
+        amplitudes=bodies.amplitudes + mode_loads + reaction_change,
     )
-    return moved, lambdas + modal_reaction
+    return moved, mode_reactions + reaction_change
 
 
 def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Direction) -> Bodies:
@@ -191,13 +212,17 @@ def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Direction
 
     def weight(motor: Motor, rate: Twist) -> Forque:
         # Gravity acts at each body's centre of mass, the origin of its frame.
-        return (mv.w.dual() & (motor << gravity)) * bodies.masses          # [..., bodies] Forque
+        return (mv.w.dual() & (motor << gravity)) * bodies.masses            # [..., bodies] Forque
 
+    # Predict the rigid motion from the rigid-body equations under gravity, and move the modes by their rates.
     motor, _ = lie.explicit_rk4(bodies.motor, bodies.rate, bodies.inertia, bodies.inverse_inertia, dt, weight)
     bodies = replace(bodies, motor=motor, amplitudes=bodies.amplitudes + bodies.rates * dt)
-    _, residual, response = modal_terms(bodies, previous.amplitudes, dt)  # [..., bodies, modes] Scalar each
-    lambdas = -residual * response                                         # [..., bodies, modes] Scalar
-    bodies, _ = project(replace(bodies, amplitudes=bodies.amplitudes + lambdas), constraints, previous.amplitudes, lambdas, dt)
+    # Relax each mode's spring on its own.
+    _, residual, response = modal_terms(bodies, previous.amplitudes, dt)     # [..., bodies, modes] Scalar each
+    mode_reactions = -residual * response                                           # [..., bodies, modes] Scalar
+    # Displace the bodies so that every constraint holds, the springs relaxing with them.
+    bodies, _ = project(replace(bodies, amplitudes=bodies.amplitudes + mode_reactions), constraints, previous.amplitudes, mode_reactions, dt)
+    # The rates are the change over the step, the motor's by the logarithm of its change.
     return replace(
         bodies,
         rate=(~previous.motor * bodies.motor).log() * (-2 / dt),

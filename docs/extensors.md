@@ -265,15 +265,15 @@ spin = (states * turned[:, None]).sum(axis=0) >> mv.z                           
 ![A beam of eight spliced girders, fixed at both ends and compressed, buckling past its Euler load](../plots/modal_xpbd_buckle.gif)
 
 ```python
-motion = (motor >> local.commutator(Twist)) * signs                        # [constraints, ends] Direction <- Twist
-motion = incidence(motion, constraint, constraints.bodies, (len(constraint), bodies))   # [constraints, bodies] Direction <- Twist
-system = motion(inertias(motion.adjugate())) + shapes * (mobility * loads) + constraint_compliance   # [constraints, constraints] Direction <- Force
-forces = system.solve((-gap - shapes * free_step).cast(Direction))         # [constraints] Force
-displacement = inverse_inertia(motion.adjugate()(forces))                  # [bodies] Twist
+anchor_motion = (motor >> local.commutator(Twist)) * signs                 # [constraints, ends] Direction <- Twist
+rigid = SparseExtensor.from_indices(anchor_motion, constraint, constraints.bodies, shape)   # [constraints, bodies] Direction <- Twist
+system = rigid(inverse_inertias(rigid.adjugate())) + modal * (mobility * modal_load) + constraint_compliance
+forces = system.solve((-gap - modal * unconstrained_step).cast(Direction))   # [constraints] Force
+displacement = inverse_inertia(rigid.adjugate()(forces))            # [bodies] Twist
 ```
 
 * **Constraints as a sparse extensor.** `anchor.commutator(Twist)` maps a body's twist to an anchor's displacement. Over all constraints and bodies these maps are the cells of a sparse extensor, and its adjugate maps forces at the constraints to forques on the bodies.
-* **One solve for all constraints.** `motion(inertias(motion.adjugate()))`, with the modes' and constraints' compliance added, is the system for all constraint forces, built without assembling a Jacobian and solved once per step. A stiff beam needs this to carry load; solved one constraint at a time, it does not converge.
+* **One solve for all constraints.** `rigid(inverse_inertias(rigid.adjugate()))`, with the modes' and constraints' compliance added, is the system for all constraint forces, built without assembling a Jacobian and solved once per step. A stiff beam needs this to carry load; solved one constraint at a time, it does not converge.
 * **Rigid motion in motors, deformation in modes.** Each girder's modes are the eigenfields of its sparse stiffness `~ends * bars(ends * Force)` against its masses.
 
 # References
