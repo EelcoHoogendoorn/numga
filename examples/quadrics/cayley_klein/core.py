@@ -46,8 +46,8 @@ def triangle(C: Polarity, vertices: Point):
     # The invariant of two points is (P1 & C(P2)) / ((P1 & C(P1)) * (P2 & C(P2))).square_root(),
     # and Cayley's distance is its arccosh. The invariant of two lines is the same with Q, and
     # the angle is its arccos. Both stay inside the algebra until the very last step.
-    distance_pairing = -Point.regressive(C(mv.rotor() >> Point))
-    angle_pairing = Line.regressive(Q(mv.rotor() >> Line))
+    distance_pairing = -Point.regressive(C(Point))
+    angle_pairing = Line.regressive(Q(Line))
 
     # A triangle: its sides are joins of consecutive vertices, batched, and the angle at
     # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the

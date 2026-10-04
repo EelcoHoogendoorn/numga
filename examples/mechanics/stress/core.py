@@ -18,6 +18,8 @@ In tensor notation the stress reads as $\\sigma_{ij} = \\lambda\\,\\varepsilon_{
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
 from numga import NumpyContext, concatenate
@@ -39,8 +41,7 @@ normals = concatenate([axes, -axes])                       # [6] Vector
 # --- math -----------------------------------------------------------------------------
 def cauchy_stress(strain: Strain, lame: float, shear_modulus: float) -> Stress:
     """The stress of an isotropic material under the strain."""
-    identity = mv.rotor() >> Vector                                            # [] Vector <- Vector
-    return lame * strain.trace() * identity + 2 * shear_modulus * strain     # [] Stress
+    return lame * strain.trace() * Vector + 2 * shear_modulus * strain       # [] Stress
 
 
 def tractions(stress: Stress, faces: Vector) -> tuple[Vector, Vector]:
@@ -65,15 +66,26 @@ def mohr_circle(values: Scalar) -> tuple[Scalar, Scalar]:
     return (values[0] + values[2]) / 2, (values[2] - values[0]).abs() / 2
 
 
-class Views:
-    """The cube seen from each of a batch of frames `[frames]`: its deformed corners `[frames, 8]`, the
-    centres of its deformed faces `[frames, 6]`, the normal and shear traction on each face
-    `[frames, 6]`, and the principal directions `[frames, 3]`."""
+def views(strain: Strain, stress: Stress, directions: Vector, rotors: Rotor) -> Views:
+    """The cube seen from each of a batch of frames `[frames]`: the strain and the stress as each frame
+    sees them, the cube deformed, the tractions on its faces, and the principal directions."""
+    local_strain = rotors << strain(rotors >> Vector)                          # [frames] Strain
+    local_stress = rotors << stress(rotors >> Vector)                          # [frames] Stress
+    normal, shear = tractions(local_stress[:, None], normals)                 # [frames, 6] Vector
+    return Views(corners + local_strain[:, None](corners),                      # [frames, 8] Vector
+                 0.5 * (normals + local_strain[:, None](normals)),             # [frames, 6] Vector
+                 normal, shear, rotors[:, None] << directions)                   # [frames, 3] Vector
 
-    def __init__(self, strain: Strain, stress: Stress, directions: Vector, rotors: Rotor) -> None:
-        local_strain = rotors << strain(rotors >> Vector)                      # [frames] Strain
-        local_stress = rotors << stress(rotors >> Vector)                      # [frames] Stress
-        self.corners = corners + local_strain[:, None](corners)               # [frames, 8] Vector
-        self.centres = 0.5 * (normals + local_strain[:, None](normals))       # [frames, 6] Vector
-        self.normal, self.shear = tractions(local_stress[:, None], normals)  # [frames, 6] Vector
-        self.principal = rotors[:, None] << directions                        # [frames, 3] Vector
+
+# --- plumbing -------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Views:
+    """The cube seen from each of a batch of frames: its deformed corners `[frames, 8]`, the centres
+    of its deformed faces `[frames, 6]`, the normal and shear traction on each face `[frames, 6]`,
+    and the principal directions `[frames, 3]`."""
+
+    corners: Vector
+    centres: Vector
+    normal: Vector
+    shear: Vector
+    principal: Vector

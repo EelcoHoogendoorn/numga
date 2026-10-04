@@ -50,7 +50,7 @@ def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
     # into a velocity twist.
     drag_lines = concatenate([CENTRE & AXES, (AXES[0] & AXES[1])[None]])   # [modes] Forque
     drag = (drag_lines * (drag_lines & Twist) * DRAG_WEIGHTS).sum(axis=0)  # [] Forque <- Twist
-    dynamics = mv.rotor() >> Twist                                     # [] Twist <- Twist: without a push, the vessel stays put
+    dynamics = 1 * Twist                                               # [] Twist <- Twist: without a push, the vessel stays put
     actuation = drag.inverse() * DT                                    # [] Twist <- Forque
 
     # From the deadline back, where whatever error is left is priced LANDING times as stiffly.

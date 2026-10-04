@@ -39,14 +39,20 @@ def draw(ax, vertices: core.Vector, faces: np.ndarray, colours: np.ndarray, titl
     ax.set_title(title)
 
 
+def side_by_side(bar, shapes: list[core.Vector], titles: list[str], cell: np.ndarray) -> plt.Figure:
+    """The bar in each of the given shapes, side by side, checkered by where each triangle sat at rest."""
+    colours = checker(bar.vertices, bar.faces, cell)
+    figure = plt.figure(figsize=(4 * len(shapes), 4), dpi=80)
+    for i, (shape, title) in enumerate(zip(shapes, titles)):
+        draw(figure.add_subplot(1, len(shapes), i + 1, projection="3d"), shape, bar.faces, colours, title)
+    return figure
+
+
 def animate(bar, rigid: core.Vector, laplacian: core.Vector, cell: np.ndarray) -> list[np.ndarray]:
     """Each frame: the bar as rigid as possible beside Laplacian editing."""
-    colours = checker(bar.vertices, bar.faces, cell)
     images = []
     for shape, edited in zip(rigid, laplacian):
-        figure = plt.figure(figsize=(8, 4), dpi=80)
-        draw(figure.add_subplot(1, 2, 1, projection="3d"), shape, bar.faces, colours, "as rigid as possible")
-        draw(figure.add_subplot(1, 2, 2, projection="3d"), edited, bar.faces, colours, "Laplacian editing")
+        figure = side_by_side(bar, [shape, edited], ["as rigid as possible", "Laplacian editing"], cell)
         images.append(capture(figure))
         plt.close(figure)
     return images

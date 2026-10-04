@@ -24,4 +24,4 @@ def test_scenes_pass_their_checks_and_draw():
     plt.close(figure)
     _, values = scenarios.turning()
     strain, stress, _, directions, principal = scenarios.material()
-    assert len(render.animate_turning(core.Views(strain, stress, directions, principal[None]), values)) == 1
+    assert len(render.animate_turning(core.views(strain, stress, directions, principal[None]), values)) == 1

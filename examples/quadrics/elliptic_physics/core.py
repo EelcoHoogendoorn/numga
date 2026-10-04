@@ -131,7 +131,7 @@ def filled(Q: DualQuadric, mass: np.ndarray, count: int, rng: np.random.Generato
     points are uniform in the inside. Batched over quadrics of one signature."""
     n = ga.dimension
     # The negative block comes first; k counts its core axes, the same across the batch.
-    values, principal = (Point & Q.solve(mv.rotor() >> Point)).eigh()
+    values, principal = (Point & Q.inverse()).eigh()
     k = int((values < 0.0).sum(axis=-1).ravel()[0])
     core = rng.normal(size=values.shape[:-1] + (count, k))
     extent = rng.normal(size=values.shape[:-1] + (count, n - k))
@@ -165,7 +165,7 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[Scalar, Point
     Twelve iterations bracket phi to 0.005 rad; five misreport near pairs as touching. Batched
     over pairs."""
     def least(phi: np.ndarray) -> Scalar:
-        blend = Point & (A + B * np.tan(phi))(mv.rotor() >> Point)
+        blend = Point & (A + B * np.tan(phi))(Point)
         return blend.eigvalsh()[..., 0]
 
     def pick(mask: np.ndarray, chosen: Scalar, other: Scalar) -> Scalar:
@@ -189,7 +189,7 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[Scalar, Point
         fresh = least(np.where(left, c, d))
         # The survivor's value moves to its slot.
         fc, fd = pick(left, fresh, fd), pick(left, fc, fresh)
-    values, points = (Point & (A + B * np.tan((lo + hi) / 2))(mv.rotor() >> Point)).eigh()
+    values, points = (Point & (A + B * np.tan((lo + hi) / 2))(Point)).eigh()
     return values[..., 0], points[..., 0]
 
 

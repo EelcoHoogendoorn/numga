@@ -33,7 +33,7 @@ def frames():
     on, where the shear is greatest; with the principal stresses."""
     strain, stress, values, directions, principal = material()
     rotors = stack([mv.rotor(), principal, ((x ^ y) * (-np.pi / 8)).exp() * principal])   # [3] Rotor
-    views = core.Views(strain, stress, directions, rotors)
+    views = core.views(strain, stress, directions, rotors)
 
     # --- checks
     # In the principal frame no face is sheared, and the normal tractions on the faces facing x, y and
@@ -54,7 +54,7 @@ def turning():
     strain, stress, values, directions, principal = material()
     angles = np.linspace(0.0, np.pi, FRAMES, endpoint=False)
     rotors = ((x ^ y) * (-angles / 2)).exp() * principal                      # [frames] Rotor
-    views = core.Views(strain, stress, directions, rotors)
+    views = core.views(strain, stress, directions, rotors)
 
     # --- checks
     # The normal and shear traction on the face facing x go around Mohr's circle.

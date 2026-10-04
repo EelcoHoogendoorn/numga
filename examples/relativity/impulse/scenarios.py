@@ -38,9 +38,8 @@ def impulse():
 
     # Leave the passenger open to obtain the observer change as an extensor. Apply each
     # observer map to both events and tangents, preserving incidence.
-    identity: VectorMap = mv.rotor() >> Vector
-    initial_rest_frame: VectorMap = boost(half_rapidity)
-    views: VectorMap = stack((identity, initial_rest_frame))
+    # The symmetric frame, boosted by nothing, and the initial rest frame.
+    views: VectorMap = boost(np.array([0.0, half_rapidity]))
     view_kinks: Vector = views[:, None](kinks)                          # [view, end]
     view_directions: Vector = views[:, None](directions)                # [view, step + 1]
     view_worldlines: Vector = stack([

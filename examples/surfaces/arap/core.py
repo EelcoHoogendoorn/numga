@@ -6,13 +6,25 @@ The surface's energy is the cotangent-weighted squared mismatch, over every edge
 ends, between the edge as it is and the rest edge turned by a rotor of that end's own. A rotor keeps
 lengths, so an edge's two mismatches add up to `2 * (edge**2 + rest**2 - 2 * edge | turned)`, with
 `turned` the rest edge turned by the mean of its two ends' turns. The energy falls in two alternating
-steps. With the vertices held, each vertex's best rotor turns its rest edges onto its
-edges as they are: the rotor `R` that makes the most of `edge | (R >> rest)`, a form with the rotor
-open twice, `edge | (Even >> rest)`, summed over the vertex's edges, and largest at its top
-eigenvector. With the rotors held, the best vertices match every edge to the mean of its rest edge
-turned by its two ends' rotors: one sparse Poisson solve with the cotangent Laplacian, its right side
-`~T10 * H1 * turned`, as in the last step of a spin transformation. The handles are held to where
-they are moved by a stiff penalty in the same solve.
+steps.
+
+With the vertices held, each vertex's best rotor `R` turns its rest edges onto its edges as they are:
+it makes the most of `edge | (R >> rest)`, summed over the vertex's edges. Leaving the rotor open,
+`Even >> rest` is the rest edge turned by any even multivector, a map `Vector <- (Even, Even)` with the
+rotor open in both places the sandwich holds it. Paired with the edge it is a form
+`Scalar <- (Even, Even)`, a number for every two rotors, with `form(R, R) == edge | (R >> rest)`. The
+sparse mean over each edge's ends sums each vertex's forms as it would sum numbers, weighted by the
+edges, and the rotor that makes the most of each sum is its top eigenvector: one batched `eigh` over
+every vertex.
+
+With the rotors held, the best vertices match every edge to its rest edge turned by its two ends'
+rotors. A rotor bound into the sandwich with the vector left open, `R >> Vector`, is the turn itself, a
+map `Vector <- Vector`; the sparse mean averages the two turns at each edge's ends as maps, and the
+averaged map takes the rest edge. The average of the maps does not depend on the sign the eigensolver
+gives each rotor, as an average of rotors would: `R >> Vector` and `-R >> Vector` are one map. The
+vertices then follow from one sparse Poisson solve with the cotangent Laplacian, its right side
+`~T10 * H1 * turned`, as in the last step of a spin transformation. The handles are held to where they
+are moved by a stiff penalty in the same solve.
 
 Laplacian editing is the same solve without the turns: every rest edge matched as it is, so the
 surface shears and shrinks where it is bent.

@@ -9,6 +9,8 @@ from numga.algebras import PGA2D, Spherical3D
 from examples import instantiate
 import sys
 import examples.electromagnetism.constitutive.core
+import examples.electromagnetism.fresnel.core
+import examples.electromagnetism.fresnel.scenarios
 import examples.electromagnetism.second_harmonic.core
 import examples.electromagnetism.second_harmonic.scenarios
 import examples.estimation.odometry.scenarios
@@ -37,6 +39,8 @@ import examples.math.poncelet.scenarios
 import examples.math.spin_groups.core
 import examples.math.spin_groups.scenarios
 import examples.mechanics.crystal_waves.core
+import examples.mechanics.area_transport.core
+import examples.mechanics.area_transport.scenarios
 import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core
 import examples.mechanics.modes.core
@@ -48,6 +52,8 @@ import examples.mechanics.spinning_top.scenarios
 import examples.mechanics.symmetry.core
 import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
+import examples.optics.crystal_diffraction.core
+import examples.optics.crystal_diffraction.scenarios
 import examples.optics.thin_lens.core
 import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
