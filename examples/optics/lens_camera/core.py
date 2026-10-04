@@ -106,9 +106,9 @@ def expose(
     # Project through each subject onto the pupil, then pull back its quadric.
     # Pull back once more through the inverse lens train to get the image cones.
     project = (scene & Point) ^ front_plane
-    cone: Quadric = project.adjoint()(pupil_ball(project))
+    cone: Quadric = project.adjugate()(pupil_ball(project))
     back: PointMap = collineation.inverse()
-    cones: Quadric = back.adjoint()(cone(back))
+    cones: Quadric = back.adjugate()(cone(back))
 
     rays: Line = subject & (placements[0] >> rim)
     legs: Point = stack([subject.broadcast_to(rays.shape), rays ^ front_plane,

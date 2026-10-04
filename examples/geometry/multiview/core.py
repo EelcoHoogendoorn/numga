@@ -11,9 +11,9 @@ so the plane always comes first.
 A pixel measurement on the sensor has a precision disc, a quadric on sensor points. Feeding
 the camera into the disc and carrying its polar planes back through the camera lifts it into
 a sight cone on scene points, whose cross-section widens with depth:
-    cone = camera.adjoint()(disc(camera))               # Plane <- Point
-T.adjoint() is the map on planes that incidence carries over from a map on points; it
-satisfies T.adjoint()(l) & p == l & T(p) for every plane and point, singular T included.
+    cone = camera.adjugate()(disc(camera))              # Plane <- Point
+T.adjugate() is the map on planes that incidence carries over from a map on points; it
+satisfies T.adjugate()(l) & p == l & T(p) for every plane and point, singular T included.
 A cone moves between frames like any map, `pose >> cone(pose << Point)`.
 
 Bundle adjustment works on the cone quadrics directly:
@@ -85,10 +85,10 @@ def sensor_disk_at(pixels: Point, principal_point: Point, q_sensor: Quadric) -> 
 def make_cones(cameras: Camera, sensor_discs: Quadric) -> Quadric:
     """Pull sensor precision discs back through the camera maps into perspective cones.
 
-    The camera feeds the disc, and its adjoint carries the polar lines back:
+    The camera feeds the disc, and its adjugate carries the polar lines back:
     a quadric on scene points whose cross-section widens with depth.
     """
-    return cameras.adjoint()(sensor_discs(cameras))      # [n_points, n_cams] Plane <- Point
+    return cameras.adjugate()(sensor_discs(cameras))     # [n_points, n_cams] Plane <- Point
 
 
 def triangulate_cones(

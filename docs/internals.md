@@ -221,7 +221,7 @@ A solve whose matrix is exact never reaches a numerical solver. The inverse of a
 found once and cached on its kernel, and the solve binds it into the right-hand side: one
 contraction with a constant, like any product. The pairings that solves meet most, the
 regressive product of complementary blades and the metric of an orthonormal basis, invert to
-signed permutations, so `T.adjoint()` and raising an index through `(Vector | Vector).solve`
+signed permutations, so `T.adjugate()` and raising an index through `(Vector | Vector).solve`
 cost one contraction against a signed permutation, a gather with signs under the sparse
 executor. An exact inverse has integer coefficients; a singular map, or one
 whose inverse would have fractions, raises `LinAlgError`.

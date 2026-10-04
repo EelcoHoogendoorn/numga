@@ -59,13 +59,13 @@ def growth(dynamics: Dynamics, covariance: Covariance, noise: Covariance) -> Cov
 
     The first term applies the dynamics to the twists the covariance returns, the second applies
     them to the lines it takes as input, and the third is the covariance the gusts add per second.
-    On lines the dynamics act through their adjoint: measuring the changed error `dynamics(t)`
+    On lines the dynamics act through their adjugate: measuring the changed error `dynamics(t)`
     with a line l gives the same number as measuring t itself with the line
-    `dynamics.adjoint()(l)`.
+    `dynamics.adjugate()(l)`.
 
-    In matrix notation the adjoint reads as the transpose of the dynamics.
+    In matrix notation the adjugate reads as the transpose of the dynamics.
     """
-    return dynamics(covariance) + covariance(dynamics.adjoint()) + noise
+    return dynamics(covariance) + covariance(dynamics.adjugate()) + noise
 
 
 def covariance(kicks: Kicks) -> Covariance:
@@ -109,11 +109,11 @@ def position_spread(covariance: Covariance) -> Spread:
 
     An error moves the set point, and the commutator gives that displacement per twist. Measuring
     the displacement with a line is the same as measuring the twist with a different line, found
-    by the displacement's adjoint. Pairing two such measurements through
+    by the displacement's adjugate. Pairing two such measurements through
     the covariance gives a symmetric form on lines. Its eigenpairs are the principal axes and
     variances of the position's uncertainty ellipse.
     """
     # The displacement of the set point, and position measurements as twist measurements.
     shift = Twist.commutator(ORIGIN)                                          # Point <- Twist
-    readout = shift.adjoint()                                                 # Line <- Line
+    readout = shift.adjugate()                                                # Line <- Line
     return readout & covariance(readout)

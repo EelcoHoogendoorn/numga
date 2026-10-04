@@ -4,15 +4,15 @@ An extensor carries no metric in its coefficients. The metric is in the products
 algebra, and duality between spaces is given by the regressive product. Several operations
 that are one operation in matrix algebra are therefore several different operations here. Some
 are a product with an open slot. Some require a metric to be named. The transpose is not an
-operation on extensors at all. A map does have an adjoint, which the regressive product defines
-and coefficient index does not.
+operation on extensors at all. A map does have an adjugate, which the regressive product defines
+and coefficient index does not, and, given a metric, an adjoint.
 
 In matrix algebra one would say that the
 transpose, the trace, the squared norm of a residual and the reciprocal of a basis all
 identify a vector space with its dual through the coefficients, and that in an orthonormal
 basis the identification is invisible.
 
-The sections below treat these in order: composition; pullbacks, pairings and the adjoint; the
+The sections below treat these in order: composition; pullbacks, pairings and the adjugate; the
 metric and the complement; the relation between maps and forms; quadrics; inverses; least squares; the
 conversion between second moments and inertia; traces, with the Ricci contraction as the
 example; homogeneous unknowns; covariance and information; batch axes and slots; outermorphisms. The
@@ -25,7 +25,7 @@ another map, and a map's output feeds the next map's input when the types agree:
 
 ```python
 world = motor >> inertia(motor << Bivector)              # AntiBivector <- Bivector: the inertia of a placed body
-cone = projection.adjoint()(disc(projection))            # Plane <- Point: a pixel's disc pulled back into the scene
+cone = projection.adjugate()(disc(projection))           # Plane <- Point: a pixel's disc pulled back into the scene
 ```
 
 There is no operator like `a @ b`, which contracts two arrays by index position whatever the
@@ -50,9 +50,9 @@ $a \otimes b$.
 In the implementation all of these are contractions of coefficient arrays. The difference is
 in what can be written: every contraction has a meaning in the algebra and a type, and a
 contraction by index alone cannot be expressed. In particular, there is no transpose; the
-adjoint of section 2 is a solve of one pairing against another.
+adjugate of section 2 is a solve of one pairing against another.
 
-## 2. Pullbacks, pairings and the adjoint
+## 2. Pullbacks, pairings and the adjugate
 
 Pulling a quadric back through a map, carrying a map over to complements, forming the curvature
 of a cost, moving a covariance, turning a gradient into a direction, symmetrizing, inverting an
@@ -69,60 +69,73 @@ a sight ray lands on the same pixel. A pixel measurement is a quadric on sensor 
 `disc`, and the reconstruction needs that quadric on scene points, scoring a scene point by how
 far its image falls from the pixel. Feeding the camera into the quadric handles its input;
 its output, a polar plane on the sensor, has to be carried back to the scene as well. That is
-the camera's adjoint, the map on planes that keeps incidence: a plane joined with the camera's
-image of a point gives the same number as the plane's image under the adjoint joined with the
+the camera's adjugate, the map on planes that keeps incidence: a plane joined with the camera's
+image of a point gives the same number as the plane's image under the adjugate joined with the
 point itself. It exists although the camera has no inverse:
 
 ```python
-on_planes = projection.adjoint()                          # Plane <- Plane: on_planes(l) & p == l & projection(p)
+on_planes = projection.adjugate()                         # Plane <- Plane: on_planes(l) & p == l & projection(p)
 cone = on_planes(disc(projection))                        # Plane <- Point: the pixel's disc as a cone in the scene
 ```
 
-A quadric kept as a form needs no adjoint: the camera goes into both slots,
+A quadric kept as a form needs no adjugate: the camera goes into both slots,
 `form(projection, projection)`.
 
-**The adjoint.** A map `T` from one subspace to another has an adjoint, `T.adjoint()`, from the
-complement of its output to the complement of its input, with `T.adjoint()(c) & a == c & T(a)`
-for every `c` and `a`. The complement is on the left, plane first as in section 5. The adjoint
+**The adjugate.** A map `T` from one subspace to another has an adjugate, `T.adjugate()`, from the
+complement of its output to the complement of its input, with `T.adjugate()(c) & a == c & T(a)`
+for every `c` and `a`. The complement is on the left, plane first as in section 5. The adjugate
 is the solve of the pairing on the map's input against the pairing on its output, which is how
 it is computed. In the [odometry example](../examples/geometry/odometry/render.py) a pose
 uncertainty moves a point by `shift: Point <- Twist`, and reading that motion with a plane is
 reading the twist with a line:
 
 ```python
-readout = shift.adjoint()                                 # Line <- Plane in PGA3D, Line <- Line in PGA2D
+readout = shift.adjugate()                                # Line <- Plane in PGA3D, Line <- Line in PGA2D
 readout = (Line & Twist).solve(Plane & shift)             # the same map, its two pairings written out
 ```
 
 The types follow from the map, so the one call serves every dimension, where the written-out
 pairings have to name the complements for each. Where a map reaches only part of its output
-space, the adjoint takes the complement of that part: a twist moves a point and never changes
+space, the adjugate takes the complement of that part: a twist moves a point and never changes
 its weight, so the readout takes only the lines that see a displacement. No metric is
-involved, so the adjoint exists in a projective algebra and for a singular map. For mixed-grade
+involved, so the adjugate exists in a projective algebra and for a singular map. For mixed-grade
 types the pairing is the scalar part of the regressive product.
 
-Applied twice, the adjoint returns the map up to the symmetry of its two pairings. Lines and
+The name is the classical one. For an outermorphism, a map on vectors carried to every grade
+(section 13), the adjugate is the determinant times the inverse of the outermorphism on the
+complementary grade, and like the adjugate of a matrix it exists where that inverse does not:
+
+```python
+T.adjugate() == T.det() * T.outermorphism(Bivector).inverse()   # T: Vector <- Vector, in 3D
+```
+
+It does not depend on the scale of the pseudoscalar, since that scale enters both pairings. For a
+map between unrelated spaces, as `shift` above, it is the same construction: the dual map, read
+back through the complement.
+
+Applied twice, the adjugate returns the map up to the symmetry of its two pairings. Lines and
 twists commute under `&`, while planes and points anticommute in three dimensions (section 5),
-so in PGA3D `shift.adjoint().adjoint()` is `-shift`; in PGA2D it is `shift`.
+so in PGA3D `shift.adjugate().adjugate()` is `-shift`; in PGA2D it is `shift`.
 
 A map into the complement of its own input, such as a covariance `Twist <- Line`, an inertia
-`Forque <- Twist` or a polarity `Plane <- Point`, has an adjoint of its own type, and it is
-symmetric when it equals its adjoint up to the swap sign of its pairing. A symmetric covariance
-or inertia is its own adjoint; in PGA3D a symmetric polarity is the negative of its own, since
+`Forque <- Twist` or a polarity `Plane <- Point`, has an adjugate of its own type, and it is
+symmetric when it equals its adjugate up to the swap sign of its pairing. A symmetric covariance
+or inertia is its own adjugate; in PGA3D a symmetric polarity is the negative of its own, since
 planes and points anticommute. Symmetry is then a statement about the map, not about a
-coefficient array, and `(A + A.adjoint()) / 2` is the symmetric part of `A`. A map within one
-space, `Point <- Point`, has its adjoint on planes, and there symmetry is a property of the
+coefficient array, and `(A + A.adjugate()) / 2` is the symmetric part of `A`. A map within one
+space, `Point <- Point`, has its adjugate on planes, and there symmetry is a property of the
 form, section 4.
 
-**Incidence and metric.** An adjoint can be taken through either pairing of section 3. Both are
+**Incidence and metric.** A map can be carried across through either pairing of section 3: the
+adjugate through incidence, the adjoint through the metric. Both are
 one solve: the pairing on the map's input, solved against the pairing on its output with the map
 in its second slot. The solve asks which map, placed in the input pairing's first slot,
-reproduces the output pairing with `T` inside, for every argument. The two adjoints differ only
-in the pairing. For `T: Bivector <- Vector` in Euclidean 3D, where vectors and bivectors are each
+reproduces the output pairing with `T` inside, for every argument. The two differ only in the
+pairing. For `T: Bivector <- Vector` in Euclidean 3D, where vectors and bivectors are each
 other's complements, both exist:
 
 ```python
-incidence = (Bivector & Vector).solve(Vector & T)    # Bivector <- Vector, T.adjoint(): incidence(c) & a == c & T(a)
+incidence = (Bivector & Vector).solve(Vector & T)   # Bivector <- Vector, T.adjugate(): incidence(c) & a == c & T(a)
 metric = (Vector | Vector).solve(Bivector | T)       # Vector <- Bivector: metric(b) | a == b | T(a)
 ```
 
@@ -131,11 +144,11 @@ has rank one, and for a map on points `T: Point <- Point` the metric solve is si
 incidence gives the map on planes:
 
 ```python
-on_planes = (Plane & Point).solve(Plane & T)         # Plane <- Plane, T.adjoint()
+on_planes = (Plane & Point).solve(Plane & T)        # Plane <- Plane, T.adjugate()
 (Point | Point).solve(Point | T)                     # LinAlgError: Point | Point is singular
 ```
 
-| | incidence, `T.adjoint()` | metric |
+| | adjugate, `T.adjugate()` | adjoint |
 |---|---|---|
 | pairing | `&`, a space with its complement | `\|`, a space with itself |
 | type, for `T: B <- A` | complement of `B` to complement of `A` | `B` to `A` |
@@ -143,10 +156,11 @@ on_planes = (Plane & Point).solve(Plane & T)         # Plane <- Plane, T.adjoint
 | in a projective algebra | always exists | fails wherever the ideal blades enter |
 | used for | planes from points, readouts of twists, covariances | the adjoint $\bar f$ of Hestenes and Sobczyk, raising an index |
 
-`T.adjoint()` is the incidence adjoint. The metric adjoint is written as its solve where it is
-wanted, as in raising an index, section 4.
+The adjoint is written as its solve where it is wanted, as in raising an index, section 4. Where
+the metric is invertible it is the adjugate read through the dual on both sides, up to a sign set
+by the signature and the grades: `b` goes to `T.adjugate()(b.dual()).dual_inverse()`.
 
-In matrix notation the adjoint reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices
+In matrix notation either reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices
 of the pairings on the input and the output. For the regressive product each is a signed
 permutation of the basis blades. On vectors in an orthonormal Euclidean basis, with the metric
 pairing, both are the identity, leaving the bare transpose $T^\top$.
@@ -188,11 +202,11 @@ readout back through the step, push the twist forward.
 sigma = (step << sigma(step >> Line)) + Q                   # Twist <- Line
 ```
 
-The two sandwiches are a map and its adjoint. The step moves a twist by `moved = step << Twist`,
+The two sandwiches are a map and its adjugate. The step moves a twist by `moved = step << Twist`,
 and a sandwich preserves the regressive product, `(step >> l) & t == l & (step << t)`, so the
-readout pulled back through the step, `step >> Line`, is `moved.adjoint()`. The prediction is
-the covariance with the motion on both sides, `moved(sigma(moved.adjoint()))`; for a versor the
-adjoint is the reverse sandwich, and no solve is needed.
+readout pulled back through the step, `step >> Line`, is `moved.adjugate()`. The prediction is
+the covariance with the motion on both sides, `moved(sigma(moved.adjugate()))`; for a versor, with
+unit determinant, the adjugate is the inverse, the reverse sandwich, and no solve is needed.
 
 In the matrix notation of the extended Kalman filter this reads as $P' = F P F^\top + Q$, with
 $F$ the matrix of the step's action on twists.
@@ -236,7 +250,7 @@ world_form = local_form(motor << Point, motor << Point)     # Scalar <- (Point, 
 ```
 
 The pushed output is a plane, and the sandwich moves a plane as it moves a point: the
-adjoint of the pose, `(motor << Point).adjoint()`, is `motor >> Plane`.
+adjugate of the pose, `(motor << Point).adjugate()`, is `motor >> Plane`.
 
 In matrix algebra one would store the quadric as a symmetric matrix $Q$ and the pose as a matrix $P$
 on point coordinates, and move the quadric by congruence, $P^{-\top} Q P^{-1}$. The transpose there
@@ -344,8 +358,8 @@ exactly symmetric but square the condition number. The fix is one regressive pro
 the returned forque with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`,
 which is symmetric in `a` and `b` by construction. The asymmetry came from using a map where a
 form was meant, and with typed slots the two cannot be confused. Whether the map itself is
-symmetric does not depend on the basis: a stiffness is symmetric when it is its own adjoint,
-`stiffness.adjoint() == stiffness`, section 2.
+symmetric does not depend on the basis: a stiffness is symmetric when it is its own adjugate,
+`stiffness.adjugate() == stiffness`, section 2.
 
 ## 5. Quadrics
 
@@ -582,12 +596,12 @@ sigma = (step << sigma(step >> Line)) + Q                   # prediction
 gain = sigma((sigma + R).inverse())                         # Twist <- Twist
 ```
 
-Readouts go through the adjoint. The variance of the position along a line is that line's
-readout, pulled back through the position Jacobian by its adjoint, paired with the covariance
+Readouts go through the adjugate. The variance of the position along a line is that line's
+readout, pulled back through the position Jacobian by its adjugate, paired with the covariance
 of itself:
 
 ```python
-readout = shift.adjoint()                                   # Line <- Line
+readout = shift.adjugate()                                  # Line <- Line
 position = readout & sigma(readout)                         # Scalar <- (Line, Line)
 ```
 

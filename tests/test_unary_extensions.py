@@ -130,12 +130,12 @@ def test_solve_broadcasts_rhs_and_preserves_map_slots(context):
     np.testing.assert_allclose(operator.solve(reordered).kernel, solution.kernel, atol=2e-6)
 
 
-def test_adjoint_carries_incidence_for_singular_batched_maps(context):
+def test_adjugate_carries_incidence_for_singular_batched_maps(context):
     ga = context.algebra
     point, twist = ga.subspace.antivector(), ga.subspace.bivector()
     rank_one = np.random.default_rng(4).normal(size=(2, 3, 1)) * np.random.default_rng(5).normal(size=(2, 1, 3))
     shift = make_map(context, point, twist, rank_one)
-    readout = shift.adjoint()
+    readout = shift.adjugate()
     assert readout.axes == (point.complement(), twist.complement())
     lines = context.multivector.vector([[1, 2, 3], [4, -5, 6]])
     twists = context.multivector.bivector([[1, -1, 2], [0, 3, 1]])
@@ -143,7 +143,7 @@ def test_adjoint_carries_incidence_for_singular_batched_maps(context):
 
 
 @pytest.mark.parametrize("output,domain", [("antivector", "bivector"), ("even", "vector")])
-def test_adjoint_twice_carries_the_pairing_signs(output, domain):
+def test_adjugate_twice_carries_the_pairing_signs(output, domain):
     ga = Algebra("x+y+z+w0")
     context = NumpyContext(ga)
     output, domain = getattr(ga.subspace, output)(), getattr(ga.subspace, domain)()
@@ -151,9 +151,9 @@ def test_adjoint_twice_carries_the_pairing_signs(output, domain):
     covectors = context.extensor(output.complement(), np.random.default_rng(7).normal(size=len(output)))
     values = context.extensor(domain, np.random.default_rng(8).normal(size=len(domain)))
     scalar = ga.subspace.scalar()
-    np.testing.assert_allclose((operator.adjoint()(covectors) & values).cast(scalar).kernel,
+    np.testing.assert_allclose((operator.adjugate()(covectors) & values).cast(scalar).kernel,
                                (covectors & operator(values)).cast(scalar).kernel, atol=1e-12)
-    np.testing.assert_allclose(operator.adjoint().adjoint().kernel, -operator.kernel, atol=1e-12)
+    np.testing.assert_allclose(operator.adjugate().adjugate().kernel, -operator.kernel, atol=1e-12)
 
 
 def test_exact_solve_binds_the_exact_inverse():
@@ -166,6 +166,18 @@ def test_exact_solve_binds_the_exact_inverse():
         (plane * 2).inverse()
     with pytest.raises(np.linalg.LinAlgError):
         (plane | plane).solve(plane | plane)
+
+
+@pytest.mark.parametrize("signature", ["x+y+z+", "x+y+z+w0"])
+def test_adjugate_of_an_outermorphism_is_its_determinant_times_its_inverse(signature):
+    """On the complementary grade, as the classical adjugate of a matrix: vectors in Euclidean 3D
+    land on bivectors, and points in PGA3D on planes."""
+    ga = Algebra(signature)
+    context = NumpyContext(ga)
+    space = ga.subspace.vector() if signature == "x+y+z+" else ga.subspace.antivector()
+    operator = make_map(context, space, space, np.random.default_rng(9).normal(size=(len(space), len(space))))
+    adjugate = operator.det().to_array().item() * operator.outermorphism(ga.gatype(space.complement())).inverse()
+    np.testing.assert_allclose(operator.adjugate().kernel, adjugate.kernel, atol=1e-12)
 
 
 def test_rank_deficient_least_squares_has_minimum_norm(context):

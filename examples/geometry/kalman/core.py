@@ -71,7 +71,7 @@ def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
     """
     here = estimate >> origin                                  # [n] Point
     shift = Bivector.commutator(here)(estimate >> Bivector)    # [n] Point <- Bivector
-    readout = shift.adjoint()                                  # [n] Line <- Line
+    readout = shift.adjugate()                                 # [n] Line <- Line
     position = readout & sigma(readout)                        # [n] Scalar <- (Line, Line)
     variances, axes = position.eigh()                          # [n, modes] Scalar, [n, modes] Line
     return here, variances, axes

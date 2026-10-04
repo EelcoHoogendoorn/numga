@@ -86,7 +86,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 </p>
 
 ```python
-cones = projection.adjoint()(sensor_discs(projection))            # [n_points, n_cams] Plane <- Point
+cones = projection.adjugate()(sensor_discs(projection))           # [n_points, n_cams] Plane <- Point
 splats = (poses >> cones(poses << Point)).sum(axis=-1)            # [n_points] Plane <- Point
 points = (splats + w * (w & Point)).solve(w)                      # [n_points] Point
 
@@ -95,7 +95,7 @@ curvature = (cones(motion) & motion).sum(axis=0)                  # [n_cams] Sca
 step = curvature.solve(-gradient)                                 # [n_cams] Twist
 ```
 
-* **Uncertainty travels as a shape.** Each measurement is a quadratic cost on the sensor. The camera feeds it, and the camera's adjoint, `projection.adjoint()`, carries its polar planes back into a cone of sight that widens with depth. The adjoint keeps incidence, `projection.adjoint()(l) & p == l & projection(p)`, and exists although the camera has no inverse.
+* **Uncertainty travels as a shape.** Each measurement is a quadratic cost on the sensor. The camera feeds it, and the camera's adjugate, `projection.adjugate()`, carries its polar planes back into a cone of sight that widens with depth. The adjugate keeps incidence, `projection.adjugate()(l) & p == l & projection(p)`, and exists although the camera has no inverse.
 * **Combining views is addition.** The cones of all cameras sum into a splat, a confidence ellipsoid around each scene point, and one solve finds its centre.
 * **Camera alignment in pure geometry.** How a point moves under an open camera step is one commutator; joined with the cones it gives curvature and gradient, and one solve gives the Gauss-Newton step.
 

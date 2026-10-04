@@ -1,4 +1,4 @@
-"""Linear systems: inverse, solve, least squares, pseudoinverse and adjoint on maps and forms.
+"""Linear systems: inverse, solve, least squares, pseudoinverse and adjugate on maps and forms.
 
 Pseudoinverse and least-squares use the Euclidean/Hermitian coefficient inner
 product, independently of the Clifford metric.
@@ -52,24 +52,27 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
 
 
-@Extensor.adjoint.register(GATypePattern.map())
-def adjoint(value: Extensor) -> Extensor:
-    """The map on complements that incidence carries over: A.adjoint()(c) & x == c & A(x).
+@Extensor.adjugate.register(GATypePattern.map())
+def adjugate(value: Extensor) -> Extensor:
+    """The map on complements that incidence carries over: A.adjugate()(c) & x == c & A(x).
 
-    The input is the complement of A's output and the output the complement of A's input,
-    paired through the scalar part of the regressive product, with the complement on the left.
-    The pairing needs no metric, so the adjoint exists in degenerate algebras and for singular A.
-    Applied twice it returns A up to the swap signs of the two pairings: c & x and x & c differ
-    by a sign in even dimensions for odd grades, so in PGA3D the adjoint of the adjoint of a
-    `Point <- Twist` is its negative. A map into the complement of its own input has an adjoint
-    of its own type, and is symmetric when it equals its adjoint up to that swap sign.
+    The input is the complement of A's output and the output the complement of A's input, paired
+    through the scalar part of the regressive product, with the complement on the left. It needs no
+    metric and does not depend on the scale of the pseudoscalar, so it exists in degenerate algebras
+    and for singular A. For an outermorphism it is the adjugate in the classical sense: the
+    determinant times the inverse of the outermorphism on the complementary grade.
+
+    Applied twice it returns A up to the swap signs of the two pairings: c & x and x & c differ by a
+    sign in even dimensions for odd grades, so in PGA3D the adjugate of the adjugate of a
+    `Point <- Twist` is its negative. A map into the complement of its own input has an adjugate of
+    its own type, and is symmetric when it equals its adjugate up to that swap sign.
     """
-    on_input, output_complement = _adjoint_pairing(value.gatype)
+    on_input, output_complement = _adjugate_pairing(value.gatype)
     return on_input.solve((output_complement & value).cast(value.algebra.subspace.scalar()))
 
 
 @lru_cache(maxsize=None)
-def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
+def _adjugate_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
     """The exact pairing form on a map's input, and the complement of its output."""
     algebra = gatype.algebra
     output, input = gatype.subspaces
