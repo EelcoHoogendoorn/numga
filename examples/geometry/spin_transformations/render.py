@@ -91,8 +91,8 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
 def animate_rounding(frames: list[Mesh]) -> list[np.ndarray]:
     """Each step of the flow, textured with the checkerboard of the first."""
     images = []
-    for step, frame in enumerate(frames):
-        figure = draw_textured(frame, frames[0], f"conformal flow, step {step}")
+    for frame in frames:
+        figure = draw_textured(frame, frames[0], "conformal flow")
         images.append(capture(figure))
         plt.close(figure)
     return images
