@@ -152,6 +152,7 @@ def test_form_lstsq_in_a_metric_leaves_no_gauge_component(context):
     """A singular curvature has a family of solutions; the metric picks the one with no component
     along the gauge direction, measured in that metric. Batches broadcast, and leading slots of the
     right-hand side stay open."""
+    pytest.importorskip("scipy")
     ga = context.algebra
     slot = ga.subspace.vector()
     curvature = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 0.0]])

@@ -47,6 +47,7 @@ def test_products_and_reverse_match_dense_sums(context):
 
 
 def test_open_type_cells_apply_solve_and_take_least_squares():
+    pytest.importorskip("scipy")
     context = NumpyContext(Algebra("x+y+z+"))
     mv, Vector, Even = context.multivector, context.algebra.gatype.vector(), context.algebra.gatype.even()
     rng = np.random.default_rng(3)
@@ -84,6 +85,7 @@ def test_couplings_of_one_pair_sum_exactly():
 
 
 def test_square_maps_between_other_blades_solve_batched_fields():
+    pytest.importorskip("scipy")
     # Cells from twists to lines in the plane: square, between different blades. Fields with a leading
     # batch axis are applied, pulled back and solved one by one in a single call.
     from numga.algebras import PGA2D
