@@ -201,8 +201,10 @@ def log_decomposed(r: Extensor) -> Extensor:
     alpha = (plus * s_plus * c_minus - minus * s_minus * c_plus) / safe
     beta = (s_plus * c_minus - s_minus * c_plus) / (safe * s_plus * s_minus)
     logarithm = (bivector * (quadvector * beta + alpha)).restrict_subspace(algebra.subspace.bivector())
-    # Where n == 0, r is 1 + bivector up to a null part, and its logarithm is bivector.
-    return _where(n == 0, bivector, logarithm)
+    # Where n == 0 the two parts of the logarithm square alike, to minus the square of an angle t,
+    # and r has the scalar part cos(t)**2 and the bivector part sin(t) * cos(t) / t times the
+    # logarithm: the logarithm is bivector times 2 * t / sin(2 * t), with cos(2 * t) == 2 * scalar - 1.
+    return _where(n == 0, bivector * angle(xp, 2 * scalar - 1), logarithm)
 
 
 def _null_wedge(t) -> bool:

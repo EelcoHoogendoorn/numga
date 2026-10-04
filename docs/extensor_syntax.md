@@ -309,6 +309,7 @@ Nullary extensors represent concrete multivectors and scalars (carrying no open 
 
 * **Bivectors & Motors (`Bivector`, `Motor`, `Rotor`)**: Lie algebra generators and versors:
   * `bivector.exp()` / `motor.log()`: Lie exponential and logarithm between velocity generators and finite motors.
+  * `bivector.exp_derivative()`: the derivative of `exp` at the bivector, carried back to the identity, a map `Bivector <- Bivector` with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`. Its solve is the derivative of the log.
   * `motor.motor_split()`: Decomposes a motor into translator and rotor components (`motor_translator()`, `motor_rotor()`).
   * `motor.normalized()` / `mv.norm()`: Gauge normalization, to `motor * motor.reverse() == 1`, and Study/geometric norms.
 

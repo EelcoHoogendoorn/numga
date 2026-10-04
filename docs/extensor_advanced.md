@@ -561,6 +561,22 @@ For a motor the tangent space is the twists, and the update is an exponential:
 motors = motors * (step * 0.5).exp()                        # step: Twist, the Newton step of section 7
 ```
 
+How a change of the step moves the motor is itself a map. `b.exp_derivative()` is the derivative
+of `exp` at `b`, carried back to the identity: a map `Bivector <- Bivector` with
+`(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`. It is the
+mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1: at the identity it is the open
+type itself, and along a large step each change of the generator is turned back by the part of
+the step that follows it. Its solve is
+the derivative of the log: the change of generator that moves `b.exp()` by a tangent `t`, carried
+back, is `b.exp_derivative().solve(t)`.
+
+```python
+motion = (step * 0.5).exp_derivative()                      # Twist <- Twist
+```
+
+In the matrix notation of Lie groups the map reads as the right Jacobian of the exponential,
+$J_r(\xi) = \sum_{k \ge 0} (-\operatorname{ad}_\xi)^k / (k+1)!$.
+
 For a point it is the directions, the ideal points, and the update is a sum. A Newton step
 over points is therefore taken over directions. Taken over full points instead, the solve
 moves the points along their scale, and in the Schur complement of the [multiview example](../examples/estimation/multiview/core.py) it

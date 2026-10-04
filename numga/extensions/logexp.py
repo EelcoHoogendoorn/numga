@@ -1,8 +1,14 @@
 """Exp and log by scaling and squaring, with whole-GAType dispatch.
 
-exp takes a quadratic step of the generator scaled down by 2**(n + 1) and squares it n times;
-log takes n + 1 square roots and inverts the quadratic step. n is the caller's. These are
-real-branch formulas, not a logarithm series around the identity.
+exp takes the eighth-order Taylor step of the generator scaled down by 2**n and squares it n
+times; log takes n square roots and the eighth-order series of the logarithm around the identity,
+the inverse step, scaled back up by 2**n. With n = 8 the truncation stays below round-off for
+generators up to a size of about ten, and more steps only add round-off. n is the caller's.
+
+These are the reference implementations, kept conceptually simple: built from sums and products
+only, they hold for every signature and every backend, and the log undoes the exp step for step.
+Closed forms, special cases and backend-specific versions belong in opt-in modules with their own
+register(), such as `invariant_decomposition` and `optimized`.
 """
 
 from __future__ import annotations
@@ -99,7 +105,7 @@ def scalar_log(s: Extensor) -> Extensor:
     lambda t: t <= t.algebra.subspace.bivector()
     and t.squared.is_empty
 )
-def nilpotent_bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
+def nilpotent_bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
     """`b.exp() == 1 + b` when `b` squares to zero by its type, as for a translation."""
 
     return (b + 1).with_traits(ReverseProductOne, Versor)
@@ -107,14 +113,63 @@ def nilpotent_bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
 
 @Extensor.exp_bisect.register(lambda t: t <= t.algebra.gatype.bivector())
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector())
-def bivector_exp(b: Extensor, *, n: int = 15) -> Extensor:
-    """Quadratic exp of the scaled generator, followed by n squarings."""
+def bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
+    """The Taylor step of the generator scaled down by 2**n, followed by n squarings."""
 
-    r = 1 + b / 2**(n + 1)
-    m = r.squared() / r.symmetric_reverse_product()
+    m = _exp_series(b / 2**n)
     for _ in range(n):
         m = m.squared()
     return m.with_traits(ReverseProductOne, Versor)
+
+
+@Extensor.exp_derivative.register(lambda t: t <= t.algebra.subspace.bivector())
+def exp_derivative(b: Extensor, *, n: int = 8) -> Extensor:
+    """The derivative of exp at `b`, carried back to the identity: the map `Bivector <- Bivector`
+    with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`.
+
+    It is the mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1. Halving `b`
+    splits that mean in two, the second half the first turned by `(b / 2).exp()`, so the mean at
+    `b` is `((b / 2).exp() << Bivector + Bivector)(mean at b / 2) / 2`. n halvings bring `b` down
+    to where the mean is its series in the commutator with the open type, `ad`,
+    `Bivector - ad / 2 + ad(ad) / 6 - ...` to the order of exp's step; the turns of the halved
+    generators are the squarings of its exponential, as in exp itself. A boost's turns grow like
+    the exponential of twice its size, and the round-off with them."""
+
+    Bivector = b.algebra.gatype.bivector()
+    small = b / 2**n
+    # the commutator product with the generator, small * X - X * small
+    ad = small.commutator(Bivector) * 2                                # [...] Bivector <- Bivector
+    # the series 1 - ad / 2! + ad(ad) / 3! - ..., by Horner: 1 - ad / 2 (1 - ad / 3 (1 - ...))
+    mean = Bivector
+    for k in range(_ORDER, 1, -1):
+        mean = Bivector - ad(mean) / k                                 # [...] Bivector <- Bivector
+    turn = _exp_series(small)
+    for _ in range(n):
+        mean = ((turn << Bivector) + Bivector)(mean) / 2
+        turn = turn.squared().with_traits(ReverseProductOne, Versor)
+    return mean
+
+
+# The order of the series steps of exp and log.
+_ORDER = 8
+
+
+def _exp_series(x: Extensor) -> Extensor:
+    """exp of a small bivector by its Taylor series, by Horner: 1 + x (1 + x / 2 (1 + x / 3 (...)))."""
+    result = 1 + x / _ORDER
+    for k in range(_ORDER - 1, 0, -1):
+        result = 1 + x * result / k
+    return result.with_traits(ReverseProductOne, Versor)
+
+
+def _log_series(m: Extensor) -> Extensor:
+    """The bivector log of a rotor near the identity by the series of log(1 + y) in y = m - 1, by
+    Horner: y (1 - y (1 / 2 - y (1 / 3 - ...)))."""
+    y = m - 1
+    result = y / _ORDER
+    for k in range(_ORDER - 1, 0, -1):
+        result = y * (1 / k - result)
+    return result.restrict[2]
 
 
 @Extensor.exp.register(lambda t: t.squared.is_empty)
@@ -147,29 +202,28 @@ def scalar_square_exp(x: Extensor) -> Extensor:
     and t.is_scalar_bivector
     and t.nonscalar.squared.is_empty
 )
-def translator_log(m: Extensor, *, n: int = 15) -> Extensor:
+def translator_log(m: Extensor, *, n: int = 8) -> Extensor:
     return m.restrict[2]
 
 
 @Extensor.log.register(lambda t: t <= t.algebra.gatype.rotor())
-def unit_versor_log(m: Extensor, *, n: int = 15) -> Extensor:
-    """Unit motor log: halve by square roots first, then apply the quadratic inverse.
+def unit_versor_log(m: Extensor, *, n: int = 8) -> Extensor:
+    """Unit motor log: halve by n square roots first, then the series of the logarithm, scaled back.
 
     Each square-root step normalizes m + 1 as part of that root's formula; the supplied motor
     is not normalized. The domain is that of the scalar and Study roots: exactly -1 would need
     a separate branch.
     """
 
-    for _ in range(n + 1):
+    for _ in range(n):
         m = m.square_root()
-    denominator = m.restrict_subspace(m.gatype.reverse_fixed_subspace)
-    return m.bivector_product(denominator.inverse()) * 2**(n + 1)
+    return _log_series(m) * 2**n
 
 
 @Extensor.log.register(
     lambda t: t <= t.algebra.subspace.even() and t.entails(Versor)
 )
-def versor_log(m: Extensor, *, n: int = 15) -> Extensor:
+def versor_log(m: Extensor, *, n: int = 8) -> Extensor:
     """Retain log-scale; requires a positive scalar reverse product."""
 
     scale = m.norm()

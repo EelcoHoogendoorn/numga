@@ -46,6 +46,7 @@ class Extensor:
     exp_quadratic = ExtensionMethod("exp_quadratic")
     exp_cayley = ExtensionMethod("exp_cayley")
     exp_bisect = ExtensionMethod("exp_bisect")
+    exp_derivative = ExtensionMethod("exp_derivative")
     log_linear = ExtensionMethod("log_linear")
     log_linear_normalized = ExtensionMethod("log_linear_normalized")
     log_quadratic = ExtensionMethod("log_quadratic")

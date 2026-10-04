@@ -128,3 +128,22 @@ def test_jax_iteration_ends_at_the_batch_length_and_null_inverse_fails_during_tr
     np.testing.assert_array_equal(w.kernel, [0, 0, 0, 1])
     with pytest.raises(ZeroDivisionError, match="statically null"):
         jax.jit(lambda value: value.inverse())(context.multivector.w)
+
+
+@pytest.mark.parametrize("ga", [Algebra("x+y+z+"), PGA3D, STA, Algebra("x+y+z+w+")], ids=str)
+def test_exp_derivative_carries_a_change_of_the_generator_as_autodiff_of_exp_does(ga):
+    # Generators from zero to well past a half turn; the boosts of STA grow the turns like
+    # exp(2 * size), which sets the largest size kept to round-off.
+    rng = np.random.default_rng(0)
+    sizes = np.array([0.0, 1e-3, 0.3, 1.0, 2.0, 3.0, 5.0])
+    count = len(ga.subspace.bivector())
+    directions = rng.normal(size=(len(sizes), count))
+    generators = directions / np.linalg.norm(directions, axis=-1, keepdims=True) * sizes[:, None]
+    changes = rng.normal(size=(len(sizes), count))
+    with enable_x64():
+        mv = JaxContext(ga, np.float64).multivector
+        value, tangent = jax.jvp(lambda c: mv.bivector(c).exp().kernel, (jnp.array(generators),), (jnp.array(changes),))
+        b = mv.bivector(generators)
+        carried = b.exp() * b.exp_derivative()(mv.bivector(changes))      # [sizes] Even
+        error = np.abs(np.asarray(carried.select_subspace(b.exp().output_subspace).kernel) - np.asarray(tangent))
+        np.testing.assert_array_less(error / np.abs(np.asarray(tangent)).max(axis=-1, keepdims=True), 1e-11)
