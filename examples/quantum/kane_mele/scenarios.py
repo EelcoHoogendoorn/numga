@@ -15,8 +15,8 @@ from examples.quantum.kane_mele import core
 mv = core.mv
 # The flake's size, its edge to centre in half lattice constants, and the outer share of it counted
 # as its rim.
-SIZE = 24
-RIM = 0.2
+SIZE = 12
+RIM = 0.3
 # The spin-orbit coupling, and the masses swept past it.
 SPIN_ORBIT = 0.1
 MASSES = np.linspace(0.0, 0.8, 41)
@@ -28,10 +28,10 @@ LEVELS = 32
 CASES = np.array([0.0, 0.8])
 # The states inside the gap without a mass, each energy four times, and the electron's spinor, spin
 # along x, half up and half down.
-IN_GAP = 64
+IN_GAP = 32
 SPINOR = (1 - mv.zx) * 0.5**0.5
 # The time for the edge states to run once around the flake, and the frames over it.
-LAP = 100.0
+LAP = 50.0
 FRAMES = 50
 
 

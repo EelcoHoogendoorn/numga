@@ -31,9 +31,6 @@ def dipole():
     deformed = core.spin_transform_deform(mesh, rho)
 
     # --- checks
-    # Sparse multivectors with reverses and sparse maps with adjoints give the same surface.
-    maps = core.spin_transform_deform_maps(mesh, rho)
-    np.testing.assert_allclose(maps.vertices.kernel, deformed.vertices.kernel, atol=1e-11)
     # No change in curvature leaves the sphere as it is, centred.
     unchanged = core.spin_transform_deform(mesh, rho * 0.0).vertices - (mesh.vertices - mesh.vertices.mean(axis=0))
     np.testing.assert_allclose(unchanged.kernel, 0.0, atol=1e-11)

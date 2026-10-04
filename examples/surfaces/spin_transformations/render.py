@@ -54,7 +54,7 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
     """The sphere coloured by the curvature change it is given, and the surface that has it,
     textured with the sphere's checkerboard."""
     limit = np.abs(curvature.to_array()).max()
-    figure = plt.figure(figsize=(10, 5))
+    figure = plt.figure(figsize=(7, 3.5))
     draw_mesh(figure.add_subplot(1, 2, 1, projection="3d"), mesh, face_colours(curvature, limit), "change in mean curvature")
     axis = figure.add_subplot(1, 2, 2)
     axis.imshow(render_surface(deformed, mesh))
@@ -66,7 +66,7 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
 
 def draw_textured(mesh: Mesh, reference: Mesh, title: str) -> plt.Figure:
     """The surface rendered with the reference's checkerboard."""
-    figure, axis = plt.subplots(figsize=(5, 5))
+    figure, axis = plt.subplots(figsize=(3, 3))
     axis.imshow(render_surface(mesh, reference))
     axis.set_axis_off()
     axis.set_title(title)
@@ -77,7 +77,7 @@ def draw_textured(mesh: Mesh, reference: Mesh, title: str) -> plt.Figure:
 def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
     """A row of Dirac spheres for each eigenvalue, textured with the sphere's checkerboard."""
     rows, columns = len(gallery), max(len(spheres) for spheres in gallery.values())
-    figure, axes = plt.subplots(rows, columns, figsize=(3 * columns, 3 * rows), squeeze=False)
+    figure, axes = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows), squeeze=False)
     for row, (eigenvalue, spheres) in enumerate(gallery.items()):
         for column, sphere in enumerate(spheres):
             axes[row, column].imshow(render_surface(sphere, reference))
@@ -101,7 +101,7 @@ def animate_rounding(frames: list[Mesh]) -> list[np.ndarray]:
 # The camera's elevation and azimuth in degrees, the rendered image's side in pixels, and how many
 # times finer each side is rasterised before averaging, against jagged edges.
 ELEVATION, AZIMUTH = 20.0, -55.0
-PIXELS = 420
+PIXELS = 300
 SUPERSAMPLE = 2
 # The checkerboard's cubes across the reference surface, the light and dark squares on the outer and inner
 # side of the surface, and the strength and sharpness of the highlight.

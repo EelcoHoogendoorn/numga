@@ -12,7 +12,7 @@ from examples.quantum.kane_mele import core
 
 # The bonds' shade, and the largest dot, in points squared, at the densest atom.
 BONDS = "#d5d8dc"
-DOT = 40.0
+DOT = 160.0
 
 
 def coordinates(points: core.Vector) -> np.ndarray:
@@ -23,7 +23,7 @@ def coordinates(points: core.Vector) -> np.ndarray:
 def draw_bonds(ax, flake: core.Flake) -> None:
     """The flake's bonds, faint, with the axes fitted to it."""
     positions = coordinates(flake.positions)
-    ax.add_collection(LineCollection(positions[flake.first], colors=BONDS, linewidths=0.5, zorder=0))
+    ax.add_collection(LineCollection(positions[flake.first], colors=BONDS, linewidths=0.8, zorder=0))
     ax.set_aspect("equal")
     ax.autoscale_view()
     ax.axis("off")
