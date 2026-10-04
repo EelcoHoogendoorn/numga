@@ -22,17 +22,27 @@ def form(context, first, second, matrix):
 
 
 def test_forms_without_a_metric_use_the_slot_metric(context):
-    """x+y+z0 vectors have a singular metric: eig gives an infinite mode, while eigh, det
-    and trace need an invertible metric and say so; SVD pairs two covector slots, never."""
+    """x+y+z0 vectors have a semidefinite metric, blind to z. eig gives an infinite mode; eigh
+    gives the finite modes, the blind component of each chosen to make the form stationary, so
+    their values are those of the Schur complement; det and trace need an invertible metric and
+    say so; SVD pairs two covector slots, never."""
     ga = context.algebra
     slot = ga.subspace.vector()
-    value = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    value = form(context, slot, slot, [[3.0, 1.0, 1.0], [1.0, 2.0, 0.0], [1.0, 0.0, 4.0]])
+    metric = form(context, slot, slot, np.diag([1.0, 1.0, 0.0]))
+    reduced = np.linalg.eigvalsh([[3.0 - 1.0 / 4.0, 1.0], [1.0, 2.0]])
     if isinstance(context, NumpyContext):
         pytest.importorskip("scipy")
         values = value.eigvals().kernel[..., 0]
         assert np.isinf(values).sum() == 1
-        np.testing.assert_allclose(np.sort(np.real(values[np.isfinite(values)])), np.linalg.eigvalsh([[3, 1], [1, 2]]), atol=1e-12)
-    for method in ("eigh", "eigvalsh", "det", "trace"):
+        np.testing.assert_allclose(np.sort(np.real(values[np.isfinite(values)])), reduced, atol=1e-12)
+    values, modes = value.eigh()
+    assert modes.shape == values.shape == (2,)
+    np.testing.assert_allclose(values.kernel[..., 0], reduced, atol=3e-5)
+    np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], reduced, atol=3e-5)
+    np.testing.assert_allclose(value(modes).kernel, (values * metric(modes)).kernel, atol=3e-5)
+    np.testing.assert_allclose(metric(modes[:, None], modes[None, :]).kernel[..., 0], np.eye(2), atol=3e-5)
+    for method in ("det", "trace"):
         with pytest.raises(TypeError, match="metric"):
             getattr(value, method)()
     for method in ("svd", "svdvals"):
@@ -136,6 +146,28 @@ def test_form_solve_keeps_leading_rhs_slots_as_a_map(context):
     e = context.extensor(extra, [1.0, -2.0])
     y = context.extensor(slot, [0.2, 0.4, -0.6])
     np.testing.assert_allclose(value(solution(e), y).kernel, rhs(e, y).kernel, atol=2e-5)
+
+
+def test_form_lstsq_in_a_metric_leaves_no_gauge_component(context):
+    """A singular curvature has a family of solutions; the metric picks the one with no component
+    along the gauge direction, measured in that metric. Batches broadcast, and leading slots of the
+    right-hand side stay open."""
+    ga = context.algebra
+    slot = ga.subspace.vector()
+    curvature = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 0.0]])
+    metric = form(context, slot, slot, [[2.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 2.0]])
+    gauge = context.multivector.vector([0.0, 0.0, 1.0])
+    rhs = curvature(context.multivector.vector([[1.0, 2.0, 3.0], [0.0, 1.0, -1.0]]))
+    step = curvature.lstsq(rhs, metric, rcond=1e-5)
+    assert step.axes == (slot,) and step.shape == (2,)
+    np.testing.assert_allclose(curvature(step).kernel, rhs.kernel, atol=3e-4)
+    np.testing.assert_allclose(metric(step, gauge).kernel, 0.0, atol=3e-4)
+    bivector = ga.subspace.bivector()
+    response = context.extensor(ga.gatype((slot, bivector)), [[1.0, 0.0, 2.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
+    solved = curvature.lstsq(curvature(response), metric, rcond=1e-5)
+    assert solved.axes == (slot, bivector)
+    np.testing.assert_allclose(curvature(solved).kernel, curvature(response).kernel, atol=3e-4)
+    np.testing.assert_allclose(metric(solved, gauge).kernel, 0.0, atol=3e-4)
 
 
 def test_pairing_solve_induces_the_plane_map_of_a_point_map(context):

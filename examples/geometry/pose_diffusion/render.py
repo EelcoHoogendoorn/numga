@@ -20,8 +20,8 @@ def xy(points: core.Point) -> np.ndarray:
 def ellipse(spread: core.Spread) -> np.ndarray:
     """The 2σ ellipse of a position's readouts: its principal variances and their normals,
     as a ring of points about the commanded position."""
-    variances, lines = spread.eig()                                # [modes] Scalar, [modes] Line
-    variances, lines = variances.real().to_array(), lines.real()
+    variances, lines = spread.eigh()                               # [modes] Scalar, [modes] Line
+    variances = variances.to_array()
     normals = lines.cast(core.ga.subspace("x y")).kernel
     normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
     angle = np.linspace(0.0, 2.0 * np.pi, 80)
@@ -80,7 +80,7 @@ def animate_clouds(runs: dict, dt: float, extent: float) -> list[np.ndarray]:
 def draw_envelope(gains: np.ndarray, spreads: core.Spread, tolerance: float) -> plt.Figure:
     """The 2σ half-widths of the position ellipse, along its long and its short axis, against the
     controller gain, with the tolerance on the long axis and the smallest gain that meets it."""
-    variances = spreads.eigvals().real().to_array()                # [gains, modes]
+    variances = spreads.eigvalsh().to_array()                      # [gains, modes]
     half_widths = 2.0 * np.sqrt(np.sort(variances, axis=-1)[:, ::-1])
     figure, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot(gains, half_widths[:, 0], color="#c0392b", label="long axis")

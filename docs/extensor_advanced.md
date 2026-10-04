@@ -103,10 +103,48 @@ types the pairing is the scalar part of the regressive product.
 
 Applied twice, the adjoint returns the map up to the symmetry of its two pairings. Lines and
 twists commute under `&`, while planes and points anticommute in three dimensions (section 5),
-so in PGA3D `shift.adjoint().adjoint()` is `-shift`; in PGA2D it is `shift`. The adjoint of a
-map on points is a map on planes, so no map is its own adjoint; the symmetric object is a form,
-section 4. An adjoint through the metric, where the metric is invertible, is the same solve
-with `|`: `(Vector | Vector).solve(Bivector | T)` for `T: Bivector <- Vector`.
+so in PGA3D `shift.adjoint().adjoint()` is `-shift`; in PGA2D it is `shift`.
+
+A map into the complement of its own input, such as a covariance `Twist <- Line`, an inertia
+`Forque <- Twist` or a polarity `Plane <- Point`, has an adjoint of its own type, and it is
+symmetric when it equals its adjoint up to the swap sign of its pairing. A symmetric covariance
+or inertia is its own adjoint; in PGA3D a symmetric polarity is the negative of its own, since
+planes and points anticommute. Symmetry is then a statement about the map, not about a
+coefficient array, and `(A + A.adjoint()) / 2` is the symmetric part of `A`. A map within one
+space, `Point <- Point`, has its adjoint on planes, and there symmetry is a property of the
+form, section 4.
+
+**Incidence and metric.** An adjoint can be taken through either pairing of section 3. Both are
+one solve: the pairing on the map's input, solved against the pairing on its output with the map
+in its second slot. The solve asks which map, placed in the input pairing's first slot,
+reproduces the output pairing with `T` inside, for every argument. The two adjoints differ only
+in the pairing. For `T: Bivector <- Vector` in Euclidean 3D, where vectors and bivectors are each
+other's complements, both exist:
+
+```python
+incidence = (Bivector & Vector).solve(Vector & T)    # Bivector <- Vector, T.adjoint(): incidence(c) & a == c & T(a)
+metric = (Vector | Vector).solve(Bivector | T)       # Vector <- Bivector: metric(b) | a == b | T(a)
+```
+
+In PGA3D only the first does. The metric on points sees only their weight, so `Point | Point`
+has rank one, and for a map on points `T: Point <- Point` the metric solve is singular, while
+incidence gives the map on planes:
+
+```python
+on_planes = (Plane & Point).solve(Plane & T)         # Plane <- Plane, T.adjoint()
+(Point | Point).solve(Point | T)                     # LinAlgError: Point | Point is singular
+```
+
+| | incidence, `T.adjoint()` | metric |
+|---|---|---|
+| pairing | `&`, a space with its complement | `\|`, a space with itself |
+| type, for `T: B <- A` | complement of `B` to complement of `A` | `B` to `A` |
+| matrix inverted | the incidence pairing on the input: always invertible, a signed permutation | the metric on the input: invertible only where the metric is nondegenerate |
+| in a projective algebra | always exists | fails wherever the ideal blades enter |
+| used for | planes from points, readouts of twists, covariances | the adjoint $\bar f$ of Hestenes and Sobczyk, raising an index |
+
+`T.adjoint()` is the incidence adjoint. The metric adjoint is written as its solve where it is
+wanted, as in raising an index, section 4.
 
 In matrix notation the adjoint reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices
 of the pairings on the input and the output. For the regressive product each is a signed
@@ -118,8 +156,8 @@ is the value of each cone at the reconstructed point, `cones(local_points) & loc
 a small change of a camera's pose moves its points by `motion`, a map from twists to points.
 A quadric cost is its own square, so its curvature over the pose is the quadric with the motion
 in both slots, and its gradient is the point's polar joined with the motion. When the residual
-is a scalar to begin with, as in the [epipolar example](../examples/geometry/epipolar/core.py) where it is the wedge of two lines read
-as a number, the curvature is the product of its Jacobian form `j` with itself.
+is a scalar to begin with, as in the [epipolar example](../examples/geometry/epipolar/core.py) where it is the regressive product of
+two lines, a number that vanishes when they meet, the curvature is the product of its Jacobian form `j` with itself.
 
 ```python
 curvature = (cones(motion) & motion).sum(axis=0)          # Scalar <- (Twist, Twist)
@@ -287,8 +325,8 @@ invert, and transport by sandwich. Forms add, are differentiated as costs, are s
 linear forms, and are the object of eigenproblems, including the generalized eigenproblem
 between two forms, `potential.eigh(kinetic)`, which uses no metric because both sides are
 forms. A form's eigenproblem on its own is relative to its slot's metric, the inner product of
-`S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eig()` measures a motor by
-its rotor part alone, sending the translations to infinity.
+`S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eigh()` measures a motor by
+its rotor part alone, choosing for each mode the translation that minimizes the misfit.
 
 In tensor notation a
 map reads as a (1,1) tensor and a form as a (0,2) tensor; the difference is one pairing.
@@ -305,7 +343,9 @@ another. Averaging it with its transpose discards information, and the normal eq
 exactly symmetric but square the condition number. The fix is one regressive product, pairing
 the returned forque with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`,
 which is symmetric in `a` and `b` by construction. The asymmetry came from using a map where a
-form was meant, and with typed slots the two cannot be confused.
+form was meant, and with typed slots the two cannot be confused. Whether the map itself is
+symmetric does not depend on the basis: a stiffness is symmetric when it is its own adjoint,
+`stiffness.adjoint() == stiffness`, section 2.
 
 ## 5. Quadrics
 
@@ -395,6 +435,23 @@ this way:
 step = curvature.solve(-gradient)                          # Twist, from Scalar <- (Twist, Twist) and Scalar <- Twist
 response = h_pt[:, None].solve(h_cross)                    # Direction <- Twist, from Scalar <- (Twist, Direction)
 ```
+
+A singular curvature, one with a gauge, has a family of solutions, and choosing one means
+choosing the smallest, which needs a size on the slot. Given as a metric form, it makes the
+choice and the cutoff geometric: of all solutions, `lstsq` returns the one smallest in the
+metric, and it drops the modes whose curvature per unit metric is at most `rcond` times the
+largest. On twists a natural metric is a kinetic energy, so the step is the one of least
+motion:
+
+```python
+step = curvature.lstsq(-gradient, Twist & inertia, rcond=1e-6)   # Twist with no component along the gauge, in the metric
+```
+
+Without a metric, `lstsq` measures the solution and the cutoff by the sum of squared
+coefficients, which compares rotations with translations and changes with the units.
+
+In matrix notation this is the pseudoinverse in a weighted norm, $x = L^{-\top} (L^{-1} H L^{-\top})^{+} L^{-1} g$
+with $M = L L^\top$ the metric's Cholesky factorization.
 
 Tensor: a construction with several open slots, solved for an unknown multilinear part. The
 right-hand side's inputs must match one subsequence of the construction's inputs, and the

@@ -205,6 +205,10 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   moment = (Point & Plane.dual().commutator(Bivector)).lstsq(inertia)   # Point <- Plane, from Forque <- (Point, Plane, Twist)
   ```
+* **`.lstsq(rhs, metric)`**: On a symmetric form, least squares in a metric form on its slot: of all solutions it returns the one smallest in the metric, and `rcond` cuts modes by their curvature per unit metric. Without a metric, sizes are sums of squared coefficients.
+  ```python
+  step = curvature.lstsq(-gradient, Twist & inertia, rcond=1e-6)   # Twist: the least-motion step
+  ```
 * **`.inverse()`**: Inverse of the map under composition. On a multivector batch the same method is the geometric-product inverse of each element; a batch of vectors is not a frame, so this is not a reciprocal frame.
 * **`.pinv(rcond=1e-4)`**: Moore-Penrose pseudoinverse (e.g. converting Gauss-Newton curvature into posterior pose covariance).
   ```python
@@ -242,15 +246,13 @@ Represent metrics, potential/kinetic energy functionals, quadrics, and alignment
 
 A form has two covector slots, so its eigenvalues, determinant and trace exist relative to a metric form. Without one, the metric is the slot's own: the inner product of `S` with its reverse, which is `V | V` on vectors and positive on bivectors and Euclidean points. Its kind follows from the slot type: an identity metric (Euclidean points, rotors) keeps the plain solver, other metrics use the generalized pencil.
 
-* **`.eigh()`**: Symmetric/Hermitian eigensolve against the slot's metric, which must be positive definite; a singular or indefinite slot metric (PGA points and motors, spacetime vectors) is refused with a `TypeError`. Returns eigenvalues `[n] Scalar` and eigenvectors `[n] Space`.
+* **`.eigh()`**: Symmetric/Hermitian eigensolve against the slot's metric. A positive-definite metric gives one mode per blade. A semidefinite one, blind to some blades as PGA's metric is to the ideal ones, gives one finite mode per blade it measures, with the blind components of each chosen to make the form stationary: for a motor, the best translation for each rotation. An indefinite or otherwise singular slot metric (spacetime vectors) is refused with a `TypeError`. Returns eigenvalues `[modes] Scalar` and eigenvectors `[modes] Space`, orthonormal in the metric.
   ```python
   values, rotors = alignment.eigh()                  # Scalar <- (Rotor, Rotor): the rotor metric is the identity
+  values, motors = misfit.eigh()                     # Scalar <- (Motor, Motor): one mode per rotor blade
+  motor = motors[values.argmin()].normalized()
   ```
-* **`.eig()` / `.eigvals()`**: General eigensolve against the slot's metric. A singular metric sends the modes it does not measure to infinity; the eigenpairs of a symmetric pencil are real, and `.real()` keeps them so:
-  ```python
-  values, motors = misfit.eig()                      # Scalar <- (Motor, Motor): translations at infinity
-  motor = motors[values.real().argmin()].real().normalized()
-  ```
+* **`.eig()` / `.eigvals()`**: General eigensolve against the slot's metric. A singular metric sends the modes it does not measure to infinity.
 * **`.eigh(metric)`**: **Generalized Hermitian eigensolve**, one form against another.
   Solves the generalized eigenvalue problem directly between two bilinear energy forms, without inverting the inertia:
   ```python

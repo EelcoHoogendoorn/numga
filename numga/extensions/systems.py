@@ -17,7 +17,7 @@ from numga.binding import AxisTransform, AxisTransformKind
 from numga.extensor import Extensor
 from numga.gatype import GAType, GATypePattern
 
-from numga.extensions._linalg import _is_form, _linear_system, _result, _scalars
+from numga.extensions._linalg import _is_form, _linear_system, _matching_forms, _result, _scalars
 
 
 @Extensor.inverse.register(lambda t: t.is_square_map)
@@ -61,7 +61,8 @@ def adjoint(value: Extensor) -> Extensor:
     The pairing needs no metric, so the adjoint exists in degenerate algebras and for singular A.
     Applied twice it returns A up to the swap signs of the two pairings: c & x and x & c differ
     by a sign in even dimensions for odd grades, so in PGA3D the adjoint of the adjoint of a
-    `Point <- Twist` is its negative.
+    `Point <- Twist` is its negative. A map into the complement of its own input has an adjoint
+    of its own type, and is symmetric when it equals its adjoint up to that swap sign.
     """
     on_input, output_complement = _adjoint_pairing(value.gatype)
     return on_input.solve((output_complement & value).cast(value.algebra.subspace.scalar()))
@@ -125,6 +126,25 @@ def lstsq_form(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Exten
     """Least-squares version of solve_form, using pinv's cutoff on the form's coefficients."""
     matrix, covector = _form_system(value, rhs)
     return matrix.lstsq(covector, rcond=rcond)
+
+
+@Extensor.lstsq.register(lambda t, r, m: _is_form_system(t, r) and _matching_forms(t, m))
+def lstsq_form_metric(value: Extensor, rhs: Extensor, metric: Extensor, *, rcond: float = 1e-15) -> Extensor:
+    """Least squares of a symmetric form in a metric: of the x with value(x, .) == rhs(..., .),
+    the one smallest in metric(x, x).
+
+    The form is diagonalized against the metric, and each mode is solved on its own. Modes whose
+    curvature per unit metric is at most rcond times the largest are dropped, so the cutoff is a
+    ratio of curvatures, independent of basis and units. Leading slots of rhs are kept as input
+    slots of the solution.
+    """
+    values, modes = value.eigh(metric)                       # [..., modes] Scalar, [..., modes] Slot
+    xp = values.context.xp
+    curvatures = values._kernel[..., 0]
+    kept = xp.abs(curvatures) > rcond * xp.max(xp.abs(curvatures), axis=-1, keepdims=True)
+    weights = _scalars(values, xp.where(kept, 1 / xp.where(kept, curvatures, 1), 0))
+    readouts = rhs[..., None].bind({rhs.arity - 1: modes})   # [..., modes] Scalar <- (...)
+    return (modes * (readouts * weights)).sum(axis=-1)
 
 
 @Extensor.pinv.register(GATypePattern.map())

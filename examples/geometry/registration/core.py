@@ -46,12 +46,11 @@ def fit_motor(source: Point, target: Point) -> Motor:
     misfit = (bulk + weight).sum(axis=0)
     # Against the motor's own metric, the scalar part of motor * motor.reverse(), only the rotor
     # coefficients are measured: translation carries no unit of its own, so the fit does not depend
-    # on where the origin sits or on the scene's scale. The metric is singular on translation, so the
-    # general eigenproblem sends those modes to infinity; the least finite mode is real, and
-    # normalized() then makes motor * motor.reverse() == 1, its pseudoscalar part included.
-    values, motors = misfit.eig()
-    values = values.real()
-    return motors[values.argmin()].real().normalized()
+    # on where the origin sits or on the scene's scale. The metric is blind to translation, so for
+    # each rotor mode eigh chooses the translation that minimizes the misfit, and normalized()
+    # then makes motor * motor.reverse() == 1, its pseudoscalar part included.
+    values, motors = misfit.eigh()
+    return motors[values.argmin()].normalized()
 
 
 def fit_rotor(source: Vector, target: Vector) -> Rotor:

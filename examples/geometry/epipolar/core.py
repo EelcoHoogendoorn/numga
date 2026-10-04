@@ -1,8 +1,8 @@
 """Two-view epipolar geometry, relative pose, and 3D reconstruction in PGA3D.
 
 In projective geometric algebra (PGA3D), camera sight rays are lines (bivectors).
-Two sight rays intersect in 3D if and only if their wedge product vanishes:
-    rays_1 ^ rays_2 == 0
+Two sight rays intersect in 3D if and only if their regressive product, a number, vanishes:
+    rays_1 & rays_2 == 0
 
 For a candidate relative camera motor, both cameras shoot sight rays into the world.
 Infinitesimal motor updates follow the commutator extensor, minimizing
@@ -12,7 +12,7 @@ separation of rotation and translation.
 With the relative pose solved, the 3D world coordinates are implied: each sight ray
 measures distance to an unknown point via the join `ray & Point`, a plane whose
 squared norm is a rank-2 distance quadric; summing these quadrics across cameras
-produces a form whose nullmode is the reconstructed 3D world point.
+produces a form whose vertex is the reconstructed 3D world point.
 
 In the matrix notation of projective vision the same reconstruction reads as the 8-point
 essential matrix, its SVD decomposition into four candidate poses, and triangulation by
@@ -87,16 +87,21 @@ def reconstruct(
     """Jointly solve for the relative camera motor and the world points, in camera 1's frame.
 
     The rays are calibrated sight rays, each in its own camera's frame. The initial motor
-    needs a nonzero baseline; the baseline's length is not observable and stays as given.
+    needs a nonzero baseline; the baseline's length is not observable and stays close to the
+    given one.
     """
+    # Camera 2 as a rigid body, unit masses a unit from its centre, and its kinetic energy on
+    # twists in its own frame, to measure the steps by:
+    body = point(np.concatenate([np.eye(3), -np.eye(3)]))                  # [6] Point
+    kinetic = Twist & (body & body.commutator(Twist)).sum(axis=0)          # [] Scalar <- (Bivector, Bivector)
     for _ in range(iterations):
-        # Two lines meet (are coplanar) iff their wedge product vanishes. The residual is
-        # a pseudoscalar, one number per ray pair, read as a scalar through the complement:
-        res = (rays_1 ^ (motor >> rays_2)).dual()         # [n_rays] Scalar
+        # Two lines meet (are coplanar) iff their regressive product vanishes. For two lines
+        # it is a number, one residual per ray pair:
+        res = rays_1 & (motor >> rays_2)                  # [n_rays] Scalar
 
         # Infinitesimal variation: a twist acts on lines via the commutator.
         # Leaving the Twist slot open yields the Jacobian, a linear form on twists:
-        j = (rays_1 ^ Twist.commutator(motor >> rays_2)).dual()   # [n_rays] Scalar <- Bivector
+        j = rays_1 & Twist.commutator(motor >> rays_2)    # [n_rays] Scalar <- Bivector
 
         # Gauss-Newton normal equations as forms on twists, summed over ray pairs. The residual
         # is already a number, so squaring it needs no metric: the curvature is the Jacobian
@@ -104,20 +109,21 @@ def reconstruct(
         h = (j * j).sum(axis=0)                           # [] Scalar <- (Bivector, Bivector)
         rhs = -(res * j).sum(axis=0)                      # [] Scalar <- Bivector
 
-        # Solve for the 5 observable degrees of freedom; rcond discards the
-        # unobservable translation scale gauge mode without Cartesian decomposition:
-        step = h.lstsq(rhs, rcond=1e-4)                   # [] Bivector
+        # Solve for the 5 observable degrees of freedom, measuring a step by the kinetic energy
+        # of camera 2. The flattest mode is the unobservable scale, which moves camera 2 along the
+        # baseline; rcond drops it by its curvature per unit energy, and the step has no
+        # component along it in that energy, so near the solution the baseline keeps its length:
+        metric = kinetic(motor << Twist, motor << Twist)  # [] Scalar <- (Bivector, Bivector)
+        step = h.lstsq(rhs, metric, rcond=1e-4)           # [] Bivector
         motor = (step * 0.5).exp() * motor                # [] Motor
 
     # 3D points implied by converged sight rays: ray & Point is the plane through a ray and
     # an unknown point, and its squared norm is the point's squared distance from the ray.
-    # Summing the two ray-distance quadrics, the nullmode yields the world point:
+    # The world point is the vertex of the summed ray-distance quadrics. A dyad on the point's
+    # weight pins the scale without moving the vertex, so it is one solve:
     aligned_rays_2 = motor >> rays_2
     q1 = (rays_1 & Point) | (rays_1 & Point)
     q2 = (aligned_rays_2 & Point) | (aligned_rays_2 & Point)
-    # Against the point's own metric only the weight is measured, so the least mode minimizes the
-    # summed squared distance of a unit-weight point. That metric is singular on the bulk; the
-    # general eigenproblem sends those modes to infinity and the least finite mode is real.
-    values, points = (q1 + q2).eig()                    # [n, n_modes] Scalar, [n, n_modes] Point
-    least = values.real().argmin(axis=-1)                 # [n] mode index per point
-    return motor, points[np.arange(least.shape[0]), least].real().normalized()
+    weight = mv.w & Point                               # [] Scalar <- Point
+    points = (q1 + q2 + weight * weight).solve(weight)  # [n] Point
+    return motor, points.normalized()

@@ -45,15 +45,14 @@ def fit(Unknown: GAType, samples: Extensor) -> Extensor:
     residual = samples & Unknown
     misfit = residual.scalar_norm_squared().sum(axis=0)
 
-    # The scalar part of the primitive's reverse product fixes its geometric size, leaving
-    # its position free: plane normal, line direction, or point weight has unit norm. For a
-    # line it leaves out the condition to be a line, the pseudoscalar part; the fitted moment
-    # is the centroid's moment about the fitted direction, which meets that condition.
-    # The norm is degenerate on ideal components, so those eigenvalues are infinite
-    # and the least one belongs to a real, finite mode.
-    norm = (mv.rotor() >> Unknown).scalar_norm_squared()
-    values, modes = misfit.eig(norm)
-    return modes[values.real().argmin()].real()
+    # The slot's own metric, the scalar part of the primitive's reverse product, fixes its
+    # geometric size, leaving its position free: plane normal, line direction, or point weight
+    # has unit norm. For a line it leaves out the condition to be a line, the pseudoscalar part;
+    # the fitted moment is the centroid's moment about the fitted direction, which meets that
+    # condition. The metric is blind to the ideal components, so for each mode eigh chooses them
+    # to minimize the misfit:
+    values, modes = misfit.eigh()
+    return modes[values.argmin()]
 
 
 # --- samples ---------------------------------------------------------------------------

@@ -57,15 +57,27 @@ def _default_metric_kind(slot: SubSpace) -> str:
     """Classify the default metric from its exact coefficients: a property of the slot type.
 
     'identity' solves as a plain eigenproblem; 'positive' needs the generalized pencil;
-    'singular' and 'indefinite' admit only the general eigenproblem.
+    'semidefinite', positive but blind to some blades as PGA's ideal ones, admits a Hermitian
+    eigenproblem on the blades it measures; 'singular' and 'indefinite' admit only the general
+    eigenproblem.
     """
     matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
     if np.array_equal(matrix, np.eye(len(slot))):
         return "identity"
     spectrum = np.linalg.eigvalsh(matrix)
     if np.any(np.abs(spectrum) < 1e-12):
-        return "singular"
+        return "semidefinite" if np.all(spectrum > -1e-12) else "singular"
     return "positive" if np.all(spectrum > 0) else "indefinite"
+
+
+@lru_cache(maxsize=None)
+def _measured_blades(slot: SubSpace) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Positions of the blades the slot's metric measures and of those it is blind to, and the
+    order that puts the two back into the slot's layout."""
+    matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
+    blind = ~matrix.any(axis=0)
+    measured, unmeasured = np.flatnonzero(~blind), np.flatnonzero(blind)
+    return measured, unmeasured, np.argsort(np.concatenate([measured, unmeasured]))
 
 
 def _metric_is(*kinds: str) -> Callable[[GAType], bool]:
@@ -123,14 +135,14 @@ def trace_form_identity(value: Extensor) -> Extensor:
 
 
 # --- against the slot's metric: the pencil -----------------------------------------------
-@Extensor.eig.register(_metric_is("positive", "indefinite", "singular"))
+@Extensor.eig.register(_metric_is("positive", "indefinite", "semidefinite", "singular"))
 def eig_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
     """Eigenpairs against the slot's metric; a singular metric gives infinite modes."""
     left, right = _default_pencil(value)
     return _eigenpairs(left, *left.context.generalized_eig(left._kernel, right._kernel))
 
 
-@Extensor.eigvals.register(_metric_is("positive", "indefinite", "singular"))
+@Extensor.eigvals.register(_metric_is("positive", "indefinite", "semidefinite", "singular"))
 def eigvals_form_pencil(value: Extensor) -> Extensor:
     left, right = _default_pencil(value)
     return _scalars(left, left.context.generalized_eigvals(left._kernel, right._kernel))
@@ -163,11 +175,49 @@ def trace_form_pencil(value: Extensor) -> Extensor:
     return right.solve(left).trace()
 
 
+# --- against the slot's metric: semidefinite ---------------------------------------------
+def _reduced_pencil(value: Extensor):
+    """The pencil on the blades the metric measures, with the blind blades eliminated.
+
+    For each mode the blind components are those that make the form stationary, a Schur
+    complement: in PGA, the best translation for each rotation. Returns the form as a map, the
+    reduced form and metric, the map from measured to blind components, and the blade order.
+    """
+    left, right = _default_pencil(value)
+    measured, unmeasured, order = _measured_blades(value.axes[2])
+    xp = left.context.xp
+
+    def block(matrix, rows, columns):
+        return matrix[..., rows, :][..., :, columns]
+
+    form, metric = left._kernel, right._kernel
+    coupling = -xp.linalg.solve(block(form, unmeasured, unmeasured), block(form, unmeasured, measured))
+    reduced = block(form, measured, measured) + block(form, measured, unmeasured) @ coupling
+    return left, reduced, block(metric, measured, measured), coupling, order
+
+
+@Extensor.eigh.register(_metric_is("semidefinite"))
+def eigh_form_semidefinite(value: Extensor) -> tuple[Extensor, Extensor]:
+    """Hermitian eigenpairs against a semidefinite slot metric: one finite mode per blade the
+    metric measures, orthonormal in it, with the blind components chosen to make the form
+    stationary."""
+    left, reduced, metric, coupling, order = _reduced_pencil(value)
+    values, measured = left.context.generalized_eigh(reduced, metric)
+    vectors = left.context.xp.concatenate([measured, coupling @ measured], axis=-2)[..., order, :]
+    return _eigenpairs(left, values, vectors)
+
+
+@Extensor.eigvalsh.register(_metric_is("semidefinite"))
+def eigvalsh_form_semidefinite(value: Extensor) -> Extensor:
+    left, reduced, metric, _, _ = _reduced_pencil(value)
+    return _scalars(left, left.context.generalized_eigvalsh(reduced, metric))
+
+
 # --- against the slot's metric: refused --------------------------------------------------
-Extensor.eigh.register(_metric_is("indefinite", "singular"))(_refusal("eigh", "a positive-definite"))
-Extensor.eigvalsh.register(_metric_is("indefinite", "singular"))(_refusal("eigvalsh", "a positive-definite"))
-Extensor.det.register(_metric_is("singular"))(_refusal("det", "an invertible"))
-Extensor.trace.register(_metric_is("singular"), position=0)(_refusal("trace", "an invertible"))
+Extensor.eigh.register(_metric_is("indefinite", "singular"))(_refusal("eigh", "a positive-semidefinite"))
+Extensor.eigvalsh.register(_metric_is("indefinite", "singular"))(_refusal("eigvalsh", "a positive-semidefinite"))
+Extensor.det.register(_metric_is("semidefinite", "singular"))(_refusal("det", "an invertible"))
+Extensor.trace.register(_metric_is("semidefinite", "singular"), position=0)(_refusal("trace", "an invertible"))
 
 
 # --- against an explicit metric ----------------------------------------------------------

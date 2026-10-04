@@ -65,7 +65,7 @@ class Extensor:
     det = ExtensionMethod("det", operand_counts=(1, 2))
     real = ExtensionMethod("real")
     solve = ExtensionMethod("solve")
-    lstsq = ExtensionMethod("lstsq")
+    lstsq = ExtensionMethod("lstsq", operand_counts=(2, 3))
     pinv = ExtensionMethod("pinv")
     adjoint = ExtensionMethod("adjoint")
     cholesky = ExtensionMethod("cholesky")
