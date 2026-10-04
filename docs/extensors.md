@@ -80,7 +80,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 
 ## 3. Multi-View Scene Reconstruction & Camera Alignment (PGA2D)
 
-**Notebook**: [`examples/geometry/multiview/multiview_reconstruction.ipynb`](../examples/geometry/multiview/multiview_reconstruction.ipynb)
+**Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
 <p align="center">
   <img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="420" />
@@ -161,7 +161,7 @@ impulse = -2 * closing / (forque & inertia.inverse()(forque))     # one body's s
 
 ## 7. Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)
 
-**Notebook**: [`examples/geometry/cyclides/cyclides.ipynb`](../examples/geometry/cyclides/cyclides.ipynb)
+**Notebook**: [`examples/quadrics/cyclides/cyclides.ipynb`](../examples/quadrics/cyclides/cyclides.ipynb)
 
 ![A cone-tipped cyclide carried around a vortex circle, linked with a ring on that circle](../plots/cyclides_linked_vortex.gif)
 
@@ -219,7 +219,7 @@ fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even:
 
 ## 10. Odometry: The Most Likely Trajectory (PGA2D)
 
-**Notebook**: [`examples/geometry/odometry/odometry.ipynb`](../examples/geometry/odometry/odometry.ipynb)
+**Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
 ![A dead-reckoned lap pulled shut a fifth of the way at a time, its ellipses shrinking](../plots/odometry.gif)
 

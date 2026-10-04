@@ -20,7 +20,7 @@ import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from examples.geometry.surface_curvature.core import principal
+from examples.surfaces.surface_curvature.core import principal
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()

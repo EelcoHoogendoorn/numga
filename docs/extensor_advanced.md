@@ -63,7 +63,7 @@ In matrix algebra each of these calls for a transpose,
 swapping rows and columns, which identifies a space with its dual by equal coefficient index;
 that is the metric of a Euclidean orthonormal basis and of no other.
 
-**Pulling a quadric back through a map.** In the [multiview example](../examples/geometry/multiview/core.py) a camera is a map from
+**Pulling a quadric back through a map.** In the [multiview example](../examples/estimation/multiview/core.py) a camera is a map from
 scene points to sensor points, `projection: Point <- Point`. It has no inverse: every point on
 a sight ray lands on the same pixel. A pixel measurement is a quadric on sensor points,
 `disc`, and the reconstruction needs that quadric on scene points, scoring a scene point by how
@@ -85,7 +85,7 @@ A quadric kept as a form needs no adjugate: the camera goes into both slots,
 complement of its output to the complement of its input, with `T.adjugate()(c) & a == c & T(a)`
 for every `c` and `a`. The complement is on the left, plane first as in section 5. The adjugate
 is the solve of the pairing on the map's input against the pairing on its output, which is how
-it is computed. In the [odometry example](../examples/geometry/odometry/render.py) a pose
+it is computed. In the [odometry example](../examples/estimation/odometry/render.py) a pose
 uncertainty moves a point by `shift: Point <- Twist`, and reading that motion with a plane is
 reading the twist with a line:
 
@@ -170,7 +170,7 @@ is the value of each cone at the reconstructed point, `cones(local_points) & loc
 a small change of a camera's pose moves its points by `motion`, a map from twists to points.
 A quadric cost is its own square, so its curvature over the pose is the quadric with the motion
 in both slots, and its gradient is the point's polar joined with the motion. When the residual
-is a scalar to begin with, as in the [epipolar example](../examples/geometry/epipolar/core.py) where it is the regressive product of
+is a scalar to begin with, as in the [epipolar example](../examples/estimation/epipolar/core.py) where it is the regressive product of
 two lines, a number that vanishes when they meet, the curvature is the product of its Jacobian form `j` with itself.
 
 ```python
@@ -192,7 +192,7 @@ weight = residual.dual().reverse().scalar_product(residual.dual())
 misfit = (bulk + weight).sum(axis=0)
 ```
 
-**Moving a covariance.** The [Kalman example](../examples/geometry/kalman/core.py) tracks a pose with an uncertainty `sigma`, the
+**Moving a covariance.** The [Kalman example](../examples/estimation/kalman/core.py) tracks a pose with an uncertainty `sigma`, the
 covariance of a small twist perturbing the estimate. A covariance takes a linear readout of
 that twist, which is a line, to the twist correlated with it, so it is a map `Twist <- Line`,
 and when the estimate advances by a motor `step` the covariance moves like any map: pull the
@@ -211,7 +211,7 @@ unit determinant, the adjugate is the inverse, the reverse sandwich, and no solv
 In the matrix notation of the extended Kalman filter this reads as $P' = F P F^\top + Q$, with
 $F$ the matrix of the step's action on twists.
 
-**A direction from a gradient.** The [ray tracer](../examples/geometry/cyclides/core.py) needs a surface normal for shading. The
+**A direction from a gradient.** The [ray tracer](../examples/quadrics/cyclides/core.py) needs a surface normal for shading. The
 derivative of a surface's quadric along a ray, `derivative`, is a linear form on directions,
 `Scalar <- Direction`; the normal is the direction obtained by solving the metric form on
 directions against it.
@@ -239,7 +239,7 @@ up = screen.inverse()(mv.z)
 
 A map whosetype carries the trait `CoefficientOrthogonal`, such as a rotor sandwich in a Euclidean algebra, dispatches `inverse()` to a transposition of its coefficients, because for such a map the two coincide. The type system tracks this trait; a Lorentz boost does not carry it, and its inverse is computed as an inverse.
 
-**Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/geometry/multiview/core.py) is built
+**Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/estimation/multiview/core.py) is built
 in its camera's frame and is summed with the other cameras' cones in the world's. As a map it
 moves by pulling its input back through the pose and pushing its output forward; as a form it
 has no output to push, and the pose goes into both slots.
@@ -363,7 +363,7 @@ symmetric does not depend on the basis: a stiffness is symmetric when it is its 
 
 ## 5. Quadrics
 
-The [multiview example](../examples/geometry/multiview/core.py) holds a pixel's precision disc and
+The [multiview example](../examples/estimation/multiview/core.py) holds a pixel's precision disc and
 its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar
 plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the
 pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. Either
@@ -398,7 +398,7 @@ disc = normal * (Point & normal)            # value  disc(q) & p == (q & normal)
 Plane-first everywhere is the simplest way to keep every pairing in a file in the same order.
 
 Which to keep depends on the use. Maps to compose, invert, or move by sandwich; forms to
-sum, to differentiate as a cost, or to solve. The [multiview example](../examples/geometry/multiview/core.py) keeps its sight cones as
+sum, to differentiate as a cost, or to solve. The [multiview example](../examples/estimation/multiview/core.py) keeps its sight cones as
 polarity maps, moves them with `pose >> cone(pose << Point)`, sums them, and converts to a form
 where a form is required.
 
@@ -434,7 +434,7 @@ coefficients = vectors.lstsq(target)         # [n] Scalar: sum(coefficients * ve
 
 Unary: a map against a right-hand side, solved exactly or with the pseudoinverse's cutoff.
 Input slots of the right-hand side are kept as input slots of the solution. Triangulation in
-the [multiview example](../examples/geometry/multiview/core.py) is this case, a polarity map solved against the plane at
+the [multiview example](../examples/estimation/multiview/core.py) is this case, a polarity map solved against the plane at
 infinity:
 
 ```python
@@ -561,7 +561,7 @@ motors = motors * (step * 0.5).exp()                        # step: Twist, the N
 
 For a point it is the directions, the ideal points, and the update is a sum. A Newton step
 over points is therefore taken over directions. Taken over full points instead, the solve
-moves the points along their scale, and in the Schur complement of the [multiview example](../examples/geometry/multiview/core.py) it
+moves the points along their scale, and in the Schur complement of the [multiview example](../examples/estimation/multiview/core.py) it
 absorbs the whole camera step: the complement is exactly zero and the cameras appear
 unobservable.
 
@@ -588,7 +588,7 @@ from the solve; it does not make them observable.
 The curvature of a cost over twists is a form, `Scalar <- (Twist, Twist)`, and it is the
 information on the pose. Its inverse on readouts is the covariance. A covariance is a map from
 a readout to the twist correlated with it, and a linear readout of a twist is a line, so the
-covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example](../examples/geometry/kalman/core.py):
+covariance is `Twist <- Line`. It moves like any map, as in the [Kalman example](../examples/estimation/kalman/core.py):
 pull the readout through the step, push the twist back:
 
 ```python
@@ -606,7 +606,7 @@ position = readout & sigma(readout)                         # Scalar <- (Line, L
 ```
 
 Sampling diagonalizes the readout form: each eigen-readout's twist, scaled by its standard
-deviation, carries one unit normal draw. A Schur complement, as in the [multiview example](../examples/geometry/multiview/core.py), is marginalization: the reduced
+deviation, carries one unit normal draw. A Schur complement, as in the [multiview example](../examples/estimation/multiview/core.py), is marginalization: the reduced
 curvature over the cameras is the information on their poses with the points integrated out.
 
 ## 12. Batch axes and slots

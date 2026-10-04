@@ -11,21 +11,21 @@ import sys
 import examples.electromagnetism.constitutive.core
 import examples.electromagnetism.second_harmonic.core
 import examples.electromagnetism.second_harmonic.scenarios
-import examples.geometry.odometry.scenarios
-import examples.geometry.cyclides.core
-import examples.geometry.epipolar.core
+import examples.estimation.odometry.scenarios
+import examples.quadrics.cyclides.core
+import examples.estimation.epipolar.core
 import examples.geometry.fitting.core
 import examples.geometry.fitting.scenarios
-import examples.geometry.kalman.core
-import examples.geometry.kalman.scenarios
-import examples.geometry.pose_diffusion.core
-import examples.geometry.pose_diffusion.scenarios
+import examples.estimation.kalman.core
+import examples.estimation.kalman.scenarios
+import examples.estimation.pose_diffusion.core
+import examples.estimation.pose_diffusion.scenarios
 import examples.geometry.projection.core
-import examples.geometry.qem.core
+import examples.surfaces.qem.core
 import examples.geometry.registration.core
 import examples.geometry.registration.scenarios
 import examples.geometry.scenegraph.core
-import examples.geometry.surface_curvature.core
+import examples.surfaces.surface_curvature.core
 import examples.math.hopf.core
 import examples.math.hopf.scenarios
 import examples.math.klein_quadric.core
@@ -71,8 +71,8 @@ import examples.relativity.dirac.scenarios
 import examples.relativity.gravitational_lensing.core
 import examples.relativity.gravitational_lensing.scenarios
 import examples.relativity.impulse.core
-instantiate('examples.geometry.odometry.core', PGA2D)
-instantiate('examples.geometry.multiview.core', PGA2D)
+instantiate('examples.estimation.odometry.core', PGA2D)
+instantiate('examples.estimation.multiview.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))
 instantiate('examples.quadrics.elliptic_physics.core', Spherical3D)
 print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])
