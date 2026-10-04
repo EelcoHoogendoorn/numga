@@ -218,6 +218,10 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   readout = shift.adjugate()                         # Line <- Plane, from Point <- Twist in PGA3D
   ```
+* **`.adjoint()`**: The map the metric carries over, the adjoint of Hestenes and Sobczyk: from the output to the input, `T.adjoint()(b).scalar_product(a) == b.scalar_product(T(a))`. It is one solve of the scalar product on the input against the scalar product on the output, and exists where the metric on the input is invertible: in a projective algebra it fails wherever the ideal blades enter. A versor's sandwich has its inverse sandwich as its adjoint.
+  ```python
+  undo = (rotor >> Vector).adjoint()                 # Vector <- Vector, rotor << Vector
+  ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
 * **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; it does not use the metric. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
   ```python

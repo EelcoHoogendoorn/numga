@@ -148,7 +148,7 @@ on_planes = (Plane & Point).solve(Plane & T)        # Plane <- Plane, T.adjugate
 (Point | Point).solve(Point | T)                     # LinAlgError: Point | Point is singular
 ```
 
-| | adjugate, `T.adjugate()` | adjoint |
+| | adjugate, `T.adjugate()` | adjoint, `T.adjoint()` |
 |---|---|---|
 | pairing | `&`, a space with its complement | `\|`, a space with itself |
 | type, for `T: B <- A` | complement of `B` to complement of `A` | `B` to `A` |
@@ -156,9 +156,11 @@ on_planes = (Plane & Point).solve(Plane & T)        # Plane <- Plane, T.adjugate
 | in a projective algebra | always exists | fails wherever the ideal blades enter |
 | used for | planes from points, readouts of twists, covariances | the adjoint $\bar f$ of Hestenes and Sobczyk, raising an index |
 
-The adjoint is written as its solve where it is wanted, as in raising an index, section 4. Where
-the metric is invertible it is the adjugate read through the dual on both sides, up to a sign set
-by the signature and the grades: `b` goes to `T.adjugate()(b.dual()).dual_inverse()`.
+`T.adjoint()` is the metric solve, with the scalar product, the scalar part of the geometric
+product, as the pairing; on blades of one grade it is the scalar part of `|`. A versor's sandwich
+has its inverse sandwich as its adjoint. Where the metric is invertible it is the adjugate read
+through the dual on both sides, up to a sign set by the signature and the grades: `b` goes to
+`T.adjugate()(b.dual()).dual_inverse()`.
 
 In matrix notation either reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices
 of the pairings on the input and the output. For the regressive product each is a signed

@@ -80,6 +80,29 @@ def _adjugate_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
     return on_input, algebra.gatype(output.complement())
 
 
+@Extensor.adjoint.register(GATypePattern.map())
+def adjoint(value: Extensor) -> Extensor:
+    """The map the metric carries over, the adjoint of Hestenes and Sobczyk: from A's output to its
+    input, with A.adjoint()(b).scalar_product(a) == b.scalar_product(A(a)).
+
+    The input and the output are paired with themselves by the scalar product, the scalar part of
+    the geometric product. The adjoint exists where that pairing on the input is invertible: in a
+    degenerate algebra it fails, with LinAlgError, wherever the ideal blades enter. A versor's
+    sandwich has its inverse sandwich as its adjoint, and a map into its own input is symmetric when
+    it equals its adjoint.
+    """
+    on_input, on_output = _adjoint_pairing(value.gatype)
+    return on_input.solve(on_output(value.algebra.gatype(value.axes[0]), value))
+
+
+@lru_cache(maxsize=None)
+def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, Extensor]:
+    """The scalar-product pairings of a map's input with itself, and of its output with itself."""
+    output, input = gatype.subspaces
+    product = gatype.algebra.operator.scalar_product
+    return product(input, input), product(output, output)
+
+
 def _is_form_system(value: GAType, rhs: GAType) -> bool:
     """A form against a scalar-valued extensor whose last input matches the form's last input."""
     return (

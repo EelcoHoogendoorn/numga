@@ -180,6 +180,42 @@ def test_adjugate_of_an_outermorphism_is_its_determinant_times_its_inverse(signa
     np.testing.assert_allclose(operator.adjugate().kernel, adjugate.kernel, atol=1e-12)
 
 
+
+@pytest.mark.parametrize("signature,output,domain", [("x+y+z+", "bivector", "vector"), ("x+y+z+t-", "even", "vector")])
+def test_adjoint_carries_the_scalar_product(signature, output, domain):
+    """A.adjoint()(b).scalar_product(a) == b.scalar_product(A(a)), in Euclidean 3D and in spacetime,
+    where the scalar product is indefinite; and the adjoint of the adjoint is the map."""
+    ga = Algebra(signature)
+    context = NumpyContext(ga)
+    output, domain = getattr(ga.subspace, output)(), getattr(ga.subspace, domain)()
+    rng = np.random.default_rng(10)
+    operator = make_map(context, output, domain, rng.normal(size=(len(output), len(domain))))
+    covectors = context.extensor(output, rng.normal(size=len(output)))
+    values = context.extensor(domain, rng.normal(size=len(domain)))
+    np.testing.assert_allclose(operator.adjoint()(covectors).scalar_product(values).kernel,
+                               covectors.scalar_product(operator(values)).kernel, atol=1e-12)
+    np.testing.assert_allclose(operator.adjoint().adjoint().kernel, operator.kernel, atol=1e-12)
+
+
+@pytest.mark.parametrize("signature", ["x+y+z+", "x+y+z+t-"])
+def test_adjoint_of_a_versor_sandwich_is_its_inverse(signature):
+    """A rotor, and in spacetime a boost too, keeps the scalar product: its adjoint undoes it."""
+    ga = Algebra(signature)
+    mv = NumpyContext(ga).multivector
+    rotor = (mv.bivector(np.random.default_rng(11).normal(size=len(ga.subspace.bivector()))) * 0.3).exp()
+    vector = ga.gatype.vector()
+    np.testing.assert_allclose((rotor >> vector).adjoint().kernel, (rotor << vector).kernel, atol=1e-12)
+
+
+def test_adjoint_fails_where_the_metric_is_degenerate():
+    """In PGA3D the scalar product on points sees only their weight."""
+    ga = Algebra("x+y+z+w0")
+    point = ga.subspace.antivector()
+    operator = make_map(NumpyContext(ga), point, point, np.random.default_rng(12).normal(size=(4, 4)))
+    with pytest.raises(np.linalg.LinAlgError):
+        operator.adjoint()
+
+
 def test_rank_deficient_least_squares_has_minimum_norm(context):
     ga = context.algebra
     output, domain = ga.subspace.vector(), ga.subspace("xy xz")

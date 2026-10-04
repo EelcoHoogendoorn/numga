@@ -107,3 +107,16 @@ def test_square_maps_between_other_blades_solve_batched_fields():
     np.testing.assert_allclose(
         (pulled(probes) & twists[0]).sum(axis=-1).kernel, (probes & lines[0]).sum(axis=-1).kernel, atol=1e-10,
     )
+
+
+def test_the_adjoint_carries_the_scalar_product_summed_over_the_elements():
+    context = NumpyContext(Algebra("x+y+z+"))
+    mv, Vector = context.multivector, context.algebra.gatype.vector()
+    rng = np.random.default_rng(5)
+    count = 4
+    rotors = (mv.bivector(rng.normal(size=(count, 2, 3))) * 0.5).exp()
+    neighbours = np.stack([np.arange(count), (np.arange(count) + 1) % count], -1)
+    coupling = SparseExtensor.from_columns(neighbours, (rotors >> Vector) * np.array([1.0, 0.4]), count)
+    values, covectors = mv.vector(rng.normal(size=(count, 3))), mv.vector(rng.normal(size=(count, 3)))
+    np.testing.assert_allclose(coupling.adjoint()(covectors).scalar_product(values).sum(axis=0).kernel,
+                               covectors.scalar_product(coupling(values)).sum(axis=0).kernel, atol=1e-12)

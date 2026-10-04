@@ -6,8 +6,8 @@ extensor couples a few elements of one field to a few of another; each coupling 
 ordinary extensor, and the sparsity is in which elements couple, not in the blades of a cell.
 
 A sparse extensor acts as its cells do, and forwards to them what is defined on them. A cell with
-slots is a map, and is applied: `S(field)` and `S(T)`, with `S.adjugate()` taking every cell's
-adjugate. A nullary cell, a multivector, acts by its product: `S * field` and `S * T`, with `~S`
+slots is a map, and is applied: `S(field)` and `S(T)`, with `S.adjugate()` and `S.adjoint()` taking
+every cell's adjugate and adjoint. A nullary cell, a multivector, acts by its product: `S * field` and `S * T`, with `~S`
 reversing every cell. Either swaps inputs and outputs, as reversing a product swaps its factors and
 an adjugate pulls back. A product with an open type, `S * Even`, leaves a slot open, so that
 multivector cells become maps; solves and eigenproblems on the NumPy backend, through SciPy, act on
@@ -37,6 +37,7 @@ class SparseExtensor:
     apply = ExtensionMethod("apply")
     reverse = ExtensionMethod("reverse")
     adjugate = ExtensionMethod("adjugate")
+    adjoint = ExtensionMethod("adjoint")
     solve = ExtensionMethod("solve")
     lstsq = ExtensionMethod("lstsq")
     eigh = ExtensionMethod("eigh")
@@ -185,6 +186,13 @@ def adjugate(value: SparseExtensor) -> SparseExtensor:
     """Every map cell's adjugate, inputs and outputs swapped: `S.adjugate()(c) & x` summed over the
     elements equals `c & S(x)` summed."""
     return SparseExtensor(value.cells.adjugate(), value.columns, value.rows, value.shape[::-1])
+
+
+@SparseExtensor.adjoint.register(lambda t: t.arity == 1)
+def adjoint(value: SparseExtensor) -> SparseExtensor:
+    """Every map cell's adjoint, inputs and outputs swapped: `S.adjoint()(b).scalar_product(x)` summed
+    over the elements equals `b.scalar_product(S(x))` summed."""
+    return SparseExtensor(value.cells.adjoint(), value.columns, value.rows, value.shape[::-1])
 
 
 # --- linear algebra of map cells, on the NumPy backend --------------------------------------
