@@ -205,6 +205,11 @@ class Extensor:
         from numga.operator.format import formula
         return formula(self)
 
+    def coefficient_table(self) -> str:
+        """Lay out an unbatched linear map's coefficients, labelled by its output and input blades."""
+        from numga.operator.format import coefficient_table
+        return coefficient_table(self)
+
     def to_python(self, name: str = "apply") -> str:
         """Generate standalone Python for an exact extensor's coefficient map."""
         from numga.operator.format import python_code

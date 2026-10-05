@@ -103,9 +103,10 @@ def run_simplex_demo() -> None:
     I_random = simplex_inertia_random(corners, n_samples=100000)
 
     print("--- 3D Tetrahedron Inertia Tensor Comparison ---")
-    print("Exact Lumped Inertia Matrix (6x6):\n", np.around(I_lumped.kernel, 3))
-    print("Grid-Sampled Brute Inertia Matrix (6x6):\n", np.around(I_brute.kernel, 3))
-    print("Monte Carlo Random Inertia Matrix (6x6):\n", np.around(I_random.kernel, 3))
+    with np.printoptions(precision=3):
+        print(f"Exact Lumped Inertia:\n{I_lumped.coefficient_table()}")
+        print(f"Grid-Sampled Brute Inertia:\n{I_brute.coefficient_table()}")
+        print(f"Monte Carlo Random Inertia:\n{I_random.coefficient_table()}")
 
     # 2. Linear map action: `momentum = I_lumped(rate)`
     rate = mv.bivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])

@@ -1,4 +1,4 @@
-"""Expanded formulas and standalone Python for exact output-first kernels."""
+"""Expanded formulas, coefficient tables and standalone Python for output-first kernels."""
 
 from itertools import product
 
@@ -33,6 +33,23 @@ def formula(value) -> str:
     terms = expressions(value, lambda slot, index: f"a{slot}[{blade(value.input_subspaces[slot], index)}]")
     return "\n".join(f"out[{blade(value.output_subspace, index)}] = {term}"
                      for index, term in enumerate(terms))
+
+
+def coefficient_table(value) -> str:
+    """Lay out an unbatched linear map's coefficients, its output blades naming the rows and its
+    input blades the columns, numbers formatted to NumPy's print precision."""
+    (input_space,) = value.input_subspaces
+    kernel = value.kernel.values if hasattr(value.kernel, "values") else np.asarray(value.kernel)
+    precision = np.get_printoptions()["precision"]
+    cells = [["", *input_space.blade_names]] + [
+        [name, *(np.format_float_positional(round(float(coefficient), precision) + 0.0, precision=precision, trim="-") for coefficient in row)]
+        for name, row in zip(value.output_subspace.blade_names, kernel)
+    ]
+    widths = [max(len(row[column]) for row in cells) for column in range(len(cells[0]))]
+    return "\n".join(
+        "  ".join([row[0].ljust(widths[0])] + [cell.rjust(width) for cell, width in zip(row[1:], widths[1:])])
+        for row in cells
+    )
 
 
 def python_code(value, name: str = "apply") -> str:
