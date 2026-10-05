@@ -1,7 +1,8 @@
-"""Spectra of forms: eigenproblems, determinant and trace relative to a metric form.
+"""Spectra of forms: eigenproblems and determinant relative to a metric form.
 
-A form has two covector slots and no spectrum of its own: its eigenvalues,
-determinant and trace are relative to a metric form. Given explicitly, the metric
+A form has two covector slots and no spectrum of its own: its eigenvalues and
+determinant are relative to a metric form, as is pairing its two slots, which is
+`contract`; `trace` pairs slots without a metric and refuses a form. Given explicitly, the metric
 selects the generalized pencil. Left out, it is the slot's own metric, the inner
 product of S with its reverse, which is V | V on vectors. Its kind follows from
 the slot type, so dispatch picks the implementation once per type: an identity
@@ -129,11 +130,6 @@ def det_form_identity(value: Extensor) -> Extensor:
     return _plain(value).det()
 
 
-@Extensor.trace.register(_metric_is("identity"), position=0)
-def trace_form_identity(value: Extensor) -> Extensor:
-    return _plain(value).trace()
-
-
 # --- against the slot's metric: the pencil -----------------------------------------------
 @Extensor.eig.register(_metric_is("positive", "indefinite", "semidefinite", "singular"))
 def eig_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
@@ -166,13 +162,6 @@ def det_form_pencil(value: Extensor) -> Extensor:
     """Determinant relative to the slot's metric, which must be invertible."""
     left, right = _default_pencil(value)
     return left.det() / right.det()
-
-
-@Extensor.trace.register(_metric_is("positive", "indefinite"), position=0)
-def trace_form_pencil(value: Extensor) -> Extensor:
-    """Trace of the form raised by the slot's metric, which must be invertible."""
-    left, right = _default_pencil(value)
-    return right.solve(left).trace()
 
 
 # --- against the slot's metric: semidefinite ---------------------------------------------
@@ -217,7 +206,6 @@ def eigvalsh_form_semidefinite(value: Extensor) -> Extensor:
 Extensor.eigh.register(_metric_is("indefinite", "singular"))(_refusal("eigh", "a positive-semidefinite"))
 Extensor.eigvalsh.register(_metric_is("indefinite", "singular"))(_refusal("eigvalsh", "a positive-semidefinite"))
 Extensor.det.register(_metric_is("semidefinite", "singular"))(_refusal("det", "an invertible"))
-Extensor.trace.register(_metric_is("semidefinite", "singular"), position=0)(_refusal("trace", "an invertible"))
 
 
 # --- against an explicit metric ----------------------------------------------------------

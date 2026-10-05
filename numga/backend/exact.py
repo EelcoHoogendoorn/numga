@@ -73,6 +73,9 @@ class ExactContext(Context):
     def matrix_trace(self, kernel: SymbolicKernel, *, axis1: int = -2, axis2: int = -1, scalar_axis: int = -1) -> SymbolicKernel:
         return kernel.trace(axis1, axis2).expand_dims(scalar_axis)
 
+    def axes_trace(self, kernel: SymbolicKernel, axis1: int, axis2: int) -> SymbolicKernel:
+        return kernel.trace(axis1, axis2)
+
     def solve(self, matrix: SymbolicKernel, rhs: SymbolicKernel) -> SymbolicKernel:
         return matrix.inverse().tensordot(rhs, axes=(1, 0))
 

@@ -127,6 +127,10 @@ class Context(ABC):
         tr = self.xp.trace(kernel, axis1=axis1, axis2=axis2)
         return self.xp.expand_dims(tr, axis=scalar_axis)
 
+    def axes_trace(self, kernel: Any, axis1: int, axis2: int) -> Any:
+        """Sum the diagonal of two axes, dropping both."""
+        return self.xp.trace(kernel, axis1=axis1, axis2=axis2)
+
     def solve(self, matrix: Any, rhs: Any) -> Any:
         """Solve with a vector RHS, broadcasting its leading batch axes."""
 

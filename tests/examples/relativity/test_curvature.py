@@ -54,14 +54,14 @@ def test_riemann_pair_symmetry_bianchi_identity_and_vacuum_ricci():
     np.testing.assert_allclose(ricci.kernel, 0, atol=1e-13)
     # Frame-free: the Ricci form is the trace of the curvature against its wedge slot,
     # with the inner-product slot and the separation left open.
-    ricci_form = Vector.commutator(curvature(Vector.wedge(Vector))).trace(slot=1)
+    ricci_form = Vector.commutator(curvature(Vector.wedge(Vector))).trace(0, 2)
     np.testing.assert_allclose(ricci_form.kernel, 0, atol=1e-13)
     # The same trace on a non-vacuum curvature reproduces the frame contraction as a form.
     dyad = curvature + 0.7 * mv.tx * (mv.tx | Bivector)
     frame_map = dyad(basis.wedge(Vector)).commutator(reciprocal).sum(axis=0)
     a, b = mv.vector(np.random.default_rng(11).normal(size=(2, 4)))
     np.testing.assert_allclose(
-        Vector.commutator(dyad(Vector.wedge(Vector))).trace(slot=1)(a, b).kernel,
+        Vector.commutator(dyad(Vector.wedge(Vector))).trace(0, 2)(a, b).kernel,
         (a | frame_map(b)).kernel, atol=1e-13,
     )
 

@@ -53,7 +53,7 @@ Euclidean = ga.gatype(ga.subspace("x y z w"))
 def invariant_form(Bivector: GAType) -> Extensor:
     """The invariant form of the Lie algebra: the trace of the double commutator, with two bivectors
     open, exact in integers."""
-    return Bivector.commutator(Bivector.commutator(Bivector)).trace(slot=2)   # [] Scalar <- (Bivector, Bivector)
+    return Bivector.commutator(Bivector.commutator(Bivector)).trace(0, 3)   # [] Scalar <- (Bivector, Bivector)
 
 
 def involution(Bivector: GAType, positives: Extensor) -> Extensor:

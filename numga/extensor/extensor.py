@@ -61,7 +61,6 @@ class Extensor:
     inverse_shirokov = ExtensionMethod("inverse_shirokov")
     inverse_factor = ExtensionMethod("inverse_factor")
     inverse_hitzer = ExtensionMethod("inverse_hitzer")
-    trace = ExtensionMethod("trace")
     outermorphism = ExtensionMethod("outermorphism")
     det = ExtensionMethod("det", operand_counts=(1, 2))
     real = ExtensionMethod("real")
@@ -204,6 +203,16 @@ class Extensor:
         """Expand an exact extensor into equations for its blade coefficients."""
         from numga.operator.format import formula
         return formula(self)
+
+    def trace(self, first: int = 0, second: int = 1) -> Extensor:
+        """Pair two slots without a metric, the output being slot 0; see `numga.extensions.trace`."""
+        from numga.extensions.trace import trace
+        return trace(self, first, second)
+
+    def contract(self, first: int = 1, second: int = 2) -> Extensor:
+        """Pair two inputs of one space through its metric; see `numga.extensions.trace`."""
+        from numga.extensions.trace import contract
+        return contract(self, first, second)
 
     def coefficient_table(self) -> str:
         """Lay out an unbatched linear map's coefficients, labelled by its output and input blades."""

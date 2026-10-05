@@ -188,7 +188,7 @@ Calling a batched map on a batched argument broadcasts the batch axes against ea
 ```python
 acceleration = response[:, :, None](reference)      # [n_time, 3, n_beads] Vector
 ```
-A frame summed against its reciprocal is the coordinate spelling of a trace; write the trace instead (see `.trace(slot)` below).
+A frame summed against its reciprocal is the coordinate spelling of a trace or a contraction; write those instead (see `.trace()` and `.contract()` below).
 
 ---
 
@@ -223,9 +223,16 @@ Operate directly on linear transformations while preserving input/output GATypes
   undo = (rotor >> Vector).adjoint()                 # Vector <- Vector, rotor << Vector
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace(slot=0)`**: Contracts the output against one input slot by matching blades and drops that slot; it does not use the metric. The slot must be the output's own space: a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. Slots are numbered in order of appearance in the expression. On `Space <- Space` this is the matrix trace; on a multilinear map it lowers the arity by one:
+* **`.trace(first=0, second=1)`**: Pairs two slots without a metric and drops both. The output is slot 0 and the inputs are slots 1 to n, in order of appearance in the expression. The output pairs with an input of its own space, by matching blades; a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. On `Space <- Space` this is the matrix trace. Two inputs pair when their spaces are complementary, through their regressive product. Either way the arity drops:
   ```python
-  ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(slot=1)   # [] Scalar <- (Vector, Vector)
+  ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(0, 2)   # [] Scalar <- (Vector, Vector)
+  incidence_trace = (Plane & f(Point)).trace(1, 2)                 # [] Scalar: f.trace(), in PGA
+  ```
+* **`.contract(first=1, second=2)`**: Pairs two input slots of one space through the slot's metric and drops both, keeping the output and the other slots open: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either. The metric must be invertible. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
+  ```python
+  divergence = (Vector | f(Vector)).contract()                      # [] Scalar: the trace of f
+  curl = (Vector ^ f(Vector)).contract()                            # [] Bivector: f - f.adjoint() == Vector | curl
+  ricci = (Vector.wedge(Vector) | R(Vector.wedge(Vector))).contract(1, 3)   # [] Scalar <- (Vector, Vector)
   ```
 * **`.svd()`**: Singular value decomposition returning `[U, s, Vh]`.
   * `s`: singular values array.
@@ -270,7 +277,7 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
 * **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric; the slot's metric must be invertible.
 
   In matrix notation it reads as $\det(G^{-1} A)$, with $G$ the metric and $A$ the form.
-* **`.trace()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible.
+* **`.contract()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible. `.trace()` pairs slots without a metric and refuses a form.
 * A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
 * **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
   ```python
@@ -286,7 +293,7 @@ Arity is not limited to forms; any output type is allowed and slots are numbered
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace(slot)` lowers the arity by one, and batch axes broadcast as for unary maps.
+Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace()` and `.contract()` lower the arity by two, and batch axes broadcast as for unary maps.
 
 ---
 

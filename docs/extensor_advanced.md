@@ -285,9 +285,9 @@ polar = (Plane & Point).solve(form)         # Plane <- Point: the same form, pai
 
 The last line differs from the one before it only in the pairing. Solving against the metric
 keeps the type; solving against the regressive pairing identifies a space with its complement
-and changes the type. Contractions split the same way. `trace(slot)` pairs an output with an
-input by matching blades and does not use the metric. A contraction between two inputs
-requires one of the two pairings, and the pairing has to be written.
+and changes the type. Contractions split the same way. `trace` pairs without the metric: an output with an
+input by matching blades, or two inputs of complementary spaces through the regressive product.
+`contract` pairs two inputs of one space through the metric.
 
 A slot is typed by its subspace, and the dual of a subspace is either the subspace itself,
 under `|`, or its complement, under `&`. In a Euclidean orthonormal algebra the two coincide
@@ -522,9 +522,10 @@ the twist metric of PGA is singular: the translations carry no unit of their own
 
 ## 9. Traces
 
-`trace(slot)` contracts a map's output against one of its inputs by matching blades and drops
+`trace(0, slot)` contracts a map's output against one of its inputs by matching blades and drops
 that slot. It does not use the metric: an output blade and the same input blade are dual to
-each other by construction. Slots are numbered in order of appearance in the expression.
+each other by construction. The output is slot 0, and the inputs are numbered from 1 in order of
+appearance in the expression.
 
 A contraction between two inputs is different: either a metric pairs them or the complement
 does, and one of the two has to be written. The Ricci contraction shows both. The curvature of
@@ -533,7 +534,7 @@ a plane gravitational wave in the [curvature example](../examples/relativity/cur
 contract with another open vector, and trace the output against the wedge slot:
 
 ```python
-ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)     # Scalar <- (Vector, Vector)
+ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)     # Scalar <- (Vector, Vector)
 ```
 
 The inner product with the open vector is the one place the metric enters. The trace is a
@@ -644,7 +645,7 @@ sheets = Vector.wedge(Vector)                           # [] Bivector <- (Vector
 ricci_frame = plus(basis.wedge(Vector)).commutator(basis.inverse()).sum(axis=0)     # Vector <- Vector
 
 # the slot spelling: keep both slots open, contract them with a trace, raise with the metric
-ricci_form = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)            # Scalar <- (Vector, Vector)
+ricci_form = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)            # Scalar <- (Vector, Vector)
 ricci = (Vector | Vector).solve(ricci_form)                                         # Vector <- Vector, equal to ricci_frame
 ```
 

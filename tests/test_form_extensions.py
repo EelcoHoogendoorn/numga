@@ -42,7 +42,7 @@ def test_forms_without_a_metric_use_the_slot_metric(context):
     np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], reduced, atol=3e-5)
     np.testing.assert_allclose(value(modes).kernel, (values * metric(modes)).kernel, atol=3e-5)
     np.testing.assert_allclose(metric(modes[:, None], modes[None, :]).kernel[..., 0], np.eye(2), atol=3e-5)
-    for method in ("det", "trace"):
+    for method in ("det", "contract"):
         with pytest.raises(TypeError, match="metric"):
             getattr(value, method)()
     for method in ("svd", "svdvals"):
@@ -58,7 +58,7 @@ def test_forms_on_a_euclidean_slot_keep_the_plain_solver():
     value = form(context, slot, slot, matrix)
     np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], np.linalg.eigvalsh(matrix), atol=1e-12)
     np.testing.assert_allclose(value.det().kernel, np.linalg.det(matrix), atol=1e-12)
-    np.testing.assert_allclose(value.trace().kernel, np.trace(matrix), atol=1e-12)
+    np.testing.assert_allclose(value.contract().kernel, np.trace(matrix), atol=1e-12)
 
 
 @pytest.mark.parametrize("execution", ["dense", "sparse"])

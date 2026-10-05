@@ -133,7 +133,7 @@ wave.svdvals()                                           # near zero where light
 nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector: two planes along the wave
 plus = nx * (nx | Bivector) - ny * (ny | Bivector)                     # [] Bivector <- Bivector
 cross = eighth_turn >> plus(eighth_turn << Bivector)                   # [] Bivector <- Bivector
-ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(slot=1)    # [] Scalar <- (Vector, Vector): zero
+ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)    # [] Scalar <- (Vector, Vector): zero
 tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vector <- Vector
 ```
 
