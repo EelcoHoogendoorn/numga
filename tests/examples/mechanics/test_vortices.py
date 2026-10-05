@@ -60,3 +60,19 @@ def test_the_gas_keeps_its_impulses():
     # Runge–Kutta keeps the linear impulse to round-off; the angular one to the method's accuracy.
     np.testing.assert_allclose((linear_after - linear).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((angular_after - angular).kernel, 0.0, atol=1e-5)
+
+
+def test_the_walkabout_takes_one_lap_and_leapfrogs_on():
+    walker, _ = scenarios.walkabout()
+    farthest = []
+    for _ in range(scenarios.WALKABOUT_FRAMES):
+        walker = run(walker, scenarios.WALKABOUT_DT, scenarios.WALKABOUT_SUBSTEPS)
+        farthest.append(np.abs((walker.centres | core.mv.y).kernel).max())
+
+    # The vortices swing far out of the leapfrog's band over one unbroken stretch, then leapfrog on
+    # inside it.
+    farthest = np.array(farthest)
+    wide = np.flatnonzero(farthest > 2.0)
+    assert farthest.max() > 3.0
+    assert np.all(np.diff(wide) == 1)
+    assert farthest[-30:].max() < 1.5

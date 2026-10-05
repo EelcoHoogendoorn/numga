@@ -11,7 +11,7 @@ import numpy as np
 from examples.mechanics.vortices import core
 
 # Two pairs on one axis, each pair turning in opposite senses so that it travels along x; the inner
-# pair is narrower than 0.38 of the outer, so the two take turns passing.
+# pair is wider than 0.38 of the outer, so the two take turns passing, and keep doing so.
 LEAPFROG_SPANS = np.array([1.0, -1.0, 0.55, -0.55])
 LEAPFROG_CIRCULATIONS = np.array([1.0, -1.0, 1.0, -1.0])
 LEAPFROG_CORE = 0.15
@@ -33,6 +33,18 @@ GAS_COUNTER = 8
 GAS_RADIUS = 1.5
 GAS_CORE = 0.08
 GAS_SEED = 3
+
+# A walkabout: the inner pair at 0.35 of the outer, where leapfrogging is unstable, and one inner
+# vortex nudged along x to break the mirror symmetry. One lap, and back to leapfrogging, on a strip
+# around the whole trip.
+WALKABOUT_SPANS = np.array([1.0, -1.0, 0.35, -0.35])
+WALKABOUT_NUDGES = np.array([0.0, 0.0, 0.015, 0.0])
+WALKABOUT_DT = 0.04
+WALKABOUT_FRAMES, WALKABOUT_SUBSTEPS = 130, 25
+WALKABOUT_ALONG, WALKABOUT_ACROSS = 9.2, 1.4
+WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT = 9.8, 2.9
+WALKABOUT_SAMPLES_PER_UNIT = 8
+WALKABOUT_VORTICITY_LIMIT = 8.0
 
 DURATION_MS = 60
 
@@ -63,6 +75,24 @@ def evolve(scene: Scene) -> Iterator[tuple[core.Vortices, core.Vector, core.Even
         yield vortices, points, core.derivative(gradients), core.swirl(gradients)
         for _ in range(scene.substeps):
             vortices = core.step(vortices, scene.dt)
+
+
+def tracked(vortices: core.Vortices, points: core.Vector, frames: int, substeps: int, dt: float) -> Iterator[tuple[core.Vortices, core.Even]]:
+    """The vortices and the derivative of their flow on fixed points, frame by frame."""
+    for _ in range(frames):
+        yield vortices, core.derivative(core.gradient(vortices, points))
+        for _ in range(substeps):
+            vortices = core.step(vortices, dt)
+
+
+def walkabout() -> tuple[core.Vortices, core.Vector]:
+    """The nudged pairs, and the strip around their trip."""
+    centres = core.mv.y * WALKABOUT_SPANS + core.mv.x * WALKABOUT_NUDGES      # [vortices] Vector
+    vortices = core.Vortices(centres, LEAPFROG_CIRCULATIONS, LEAPFROG_CORE, core.mv.vector([[0.0, 0.0]]))
+    columns = round(2 * WALKABOUT_HALF_WIDTH * WALKABOUT_SAMPLES_PER_UNIT)
+    rows = round(2 * WALKABOUT_HALF_HEIGHT * WALKABOUT_SAMPLES_PER_UNIT)
+    centre = core.mv.x * WALKABOUT_ALONG + core.mv.y * WALKABOUT_ACROSS     # [] Vector
+    return vortices, centre + core.grid(WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT, columns, rows)
 
 
 def leapfrog() -> Scene:
@@ -111,6 +141,10 @@ def main() -> None:
         blob = (separations | separations) + vortices.core_radius**2
         vorticity = (vortices.circulations[:, None] * vortices.core_radius**2 / np.pi / (blob * blob)).sum(axis=-1).sum(axis=-1)
         np.testing.assert_allclose((derivative - vorticity * core.PLANE).kernel, 0.0, atol=1e-9)
+
+    walker, strip = walkabout()
+    frames = tracked(walker, strip, WALKABOUT_FRAMES, WALKABOUT_SUBSTEPS, WALKABOUT_DT)
+    save_animation(render.window(strip, frames, WALKABOUT_VORTICITY_LIMIT), "vortices_walkabout", DURATION_MS)
 
 
 if __name__ == "__main__":

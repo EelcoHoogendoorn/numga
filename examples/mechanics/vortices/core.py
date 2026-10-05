@@ -8,7 +8,7 @@ and so is the velocity gradient at a point: a map on displacements, `Vector <- V
 velocity over a small step, written in closed form.
 
 Contracting the gradient against an open vector gives the derivative of the flow,
-`(Vector * gradient(Vector)).contract()`: its scalar part is the divergence, zero for this flow, and
+`(Vector * gradient(Vector)).contract(1, 2)`: its scalar part is the divergence, zero for this flow, and
 its bivector part the vorticity, the rate at which the fluid turns. The trace of the gradient applied
 twice needs no metric and tells swirl from strain: `-0.5 * gradient(gradient).trace()` is positive
 where the fluid turns faster than it stretches. Each vortex moves with the flow at its centre, to
@@ -63,7 +63,7 @@ def gradient(vortices: Vortices, points: Vector) -> Gradient:
 
 def derivative(gradients: Gradient) -> Even:
     """The derivative of the flow: the divergence plus the vorticity bivector."""
-    return (Vector * gradients(Vector)).contract()                          # [...] Even
+    return (Vector * gradients(Vector)).contract(1, 2)                      # [...] Even
 
 
 def swirl(gradients: Gradient) -> Scalar:
