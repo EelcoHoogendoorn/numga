@@ -38,25 +38,25 @@ def dielectric(permittivity: np.ndarray, reluctivity: np.ndarray) -> Constitutiv
     # Weight the electric planes, leave the magnetic planes at their common weight,
     # and dualize the response to obtain the excitation.
     planes = axes ^ mv.t                                                     # [3] Bivector
-    electric = (permittivity * planes * (planes | Bivector)).sum(axis=-1)
+    electric = (permittivity * planes * (planes | Bivector)).sum(axis=-1)     # [...] Bivector <- Bivector
     # The sandwich by t keeps the magnetic planes, those without t, and turns the electric ones
     # around: half the sum with the identity keeps the magnetic planes alone.
-    magnetic = (Bivector + (mv.t >> Bivector)) / 2
-    return (electric + reluctivity * magnetic).dual()
+    magnetic = (Bivector + (mv.t >> Bivector)) / 2                            # [] Bivector <- Bivector
+    return (electric + reluctivity * magnetic).dual()                         # [...] Antibivector <- Bivector
 
 
 def potential_map(medium: Constitutive, wavevector: Vector) -> WaveMap:
     """Map a potential to its excitation residual; wavevector always lies in its kernel."""
     field = wavevector ^ Vector                                              # [...] Bivector <- Vector
-    return (wavevector ^ medium(field)).dual()                                # [...] WaveMap
+    return (wavevector ^ medium(field)).dual()                                # [...] Vector <- Vector
 
 
 def polynomial(medium: Constitutive, observer: Vector, wavevector: Vector) -> Scalar:
     """The Fresnel quartic, for a nonzero frequency measured by the unit timelike observer."""
-    wave = potential_map(medium, wavevector)
-    adjugate = wave.outermorphism(Antivector).adjugate()
-    frequency = observer | wavevector
-    return -(observer | adjugate(observer)) / frequency.squared()
+    wave = potential_map(medium, wavevector)                                  # [...] Vector <- Vector
+    adjugate = wave.outermorphism(Antivector).adjugate()                      # [...] Vector <- Vector
+    frequency = observer | wavevector                                         # [...] Scalar
+    return -(observer | adjugate(observer)) / frequency.squared()             # [...] Scalar
 
 
 def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) -> Vector:
@@ -66,15 +66,15 @@ def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) ->
     in radius squared, whose two positive roots are the two polarization sheets.
     """
     radius_squared = np.arange(3)
-    probes = mv.t * frequency + directions[..., None] * np.sqrt(radius_squared)
-    values = polynomial(medium[..., None], mv.t, probes)
-    constant, unit, twice = (values[..., i] for i in range(3))
-    quadratic = (twice - 2 * unit + constant) / 2
-    linear = unit - constant - quadratic
+    probes = mv.t * frequency + directions[..., None] * np.sqrt(radius_squared)  # [..., samples] Vector
+    values = polynomial(medium[..., None], mv.t, probes)                      # [..., samples] Scalar
+    constant, unit, twice = (values[..., i] for i in range(3))                # [...] Scalar each
+    quadratic = (twice - 2 * unit + constant) / 2                             # [...] Scalar
+    linear = unit - constant - quadratic                                      # [...] Scalar
     # Where the sheets coincide the discriminant vanishes, up to round-off of either sign.
-    discriminant = (linear.squared() - 4 * quadratic * constant).abs().square_root()
-    radii_squared = (-linear[..., None] + discriminant[..., None] * ROOT_SIGNS) / (2 * quadratic[..., None])
-    return directions[..., None] * radii_squared.square_root()
+    discriminant = (linear.squared() - 4 * quadratic * constant).abs().square_root()  # [...] Scalar
+    radii_squared = (-linear[..., None] + discriminant[..., None] * ROOT_SIGNS) / (2 * quadratic[..., None])  # [..., sheets] Scalar
+    return directions[..., None] * radii_squared.square_root()                # [..., sheets] Vector
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -82,10 +82,10 @@ def sphere(latitudes: int, longitudes: int) -> Vector:
     """A sphere of directions, made by two turns in spacetime's spatial planes."""
     polar = np.linspace(0, np.pi, latitudes)
     azimuth = np.linspace(0, 2 * np.pi, longitudes)
-    meridian = (mv.zx * (polar[:, None] / 2)).exp() >> mv.z
-    return (mv.xy * (azimuth[None, :] / 2)).exp() >> meridian
+    meridian = (mv.zx * (polar[:, None] / 2)).exp() >> mv.z                   # [latitudes, 1] Vector
+    return (mv.xy * (azimuth[None, :] / 2)).exp() >> meridian                 # [latitudes, longitudes] Vector
 
 
 def circle(samples: int) -> Vector:
     angles = np.linspace(0, 2 * np.pi, samples)
-    return (mv.zx * (angles / 2)).exp() >> mv.z
+    return (mv.zx * (angles / 2)).exp() >> mv.z                               # [samples] Vector
