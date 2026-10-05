@@ -119,7 +119,11 @@ def girder(cells: int, length: float, height: float, stiffness: float, density: 
     centre = (positions * masses).sum(axis=0) / masses.sum()                # [] Force
     rest = (positions - centre + mv.w).dual()                               # [vertices] Point
     inertia = ((rest & rest.commutator(Twist)) * masses).sum(axis=0)        # [] Forque <- Twist
-    return Shape(rest, fields.dual(), values.square_root(), 1 / values, masses, edges, inertia)
+    # The modes as displacements, their angular frequencies, and their compliances.
+    modes = fields.dual()                                                   # [modes, vertices] Direction
+    frequencies = values.square_root()                                      # [modes] Scalar
+    compliance = 1 / values                                                 # [modes] Scalar
+    return Shape(rest=rest, modes=modes, frequencies=frequencies, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
 
 
 def points(bodies: Bodies, shape: Shape) -> Point:
@@ -139,7 +143,8 @@ def modal_terms(bodies: Bodies, previous_amplitudes: Scalar, dt: float) -> tuple
     # The mode's amplitude, with its change over the step weighted in by the dashpot.
     residual = (bodies.amplitudes + damping * (bodies.amplitudes - previous_amplitudes)) / (1 + damping)  # [..., modes, bodies] Scalar
     # A mode has unit mass, so a load on it moves it by 1 / (1 + compliance) of the load.
-    return compliance, residual, 1 / (1 + compliance)
+    response = 1 / (1 + compliance)                                         # [..., modes, bodies] Scalar
+    return compliance, residual, response
 
 
 def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, Direction]:
@@ -200,7 +205,9 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
         motor=bodies.motor * (displacement * -0.5).exp(),
         amplitudes=bodies.amplitudes + mode_loads + reaction_change,
     )
-    return moved, mode_reactions + reaction_change
+    # The reactions the modes have received this step.
+    mode_reactions = mode_reactions + reaction_change                       # [..., modes, bodies] Scalar
+    return moved, mode_reactions
 
 
 def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Direction) -> Bodies:

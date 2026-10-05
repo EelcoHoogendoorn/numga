@@ -36,8 +36,10 @@ class Crystal:
         """Move the atoms and preserve the phases measured at those atoms."""
         positions = deformation[..., None](self.positions)                  # [..., atoms] Vector
         # Moving the atoms and their phase measurements preserves every pairing.
-        reciprocal = deformation.adjoint()[..., None].solve(self.reciprocal)  # [..., reflections] Vector
-        phase_planes = deformation.adjugate()[..., None].solve(self.phase_planes)  # [..., reflections] Bivector
+        adjoint = deformation.adjoint()                                      # [...] Vector <- Vector
+        adjugate = deformation.adjugate()                                    # [...] Bivector <- Bivector
+        reciprocal = adjoint[..., None].solve(self.reciprocal)               # [..., reflections] Vector
+        phase_planes = adjugate[..., None].solve(self.phase_planes)          # [..., reflections] Bivector
         return Crystal(positions, reciprocal, phase_planes)
 
     def intensity(self, transfers: Vector) -> Scalar:
