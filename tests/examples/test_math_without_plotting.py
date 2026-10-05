@@ -11,6 +11,8 @@ import sys
 import examples.electromagnetism.constitutive.core
 import examples.electromagnetism.fresnel.core
 import examples.electromagnetism.fresnel.scenarios
+import examples.electromagnetism.moving_charge.core
+import examples.electromagnetism.moving_charge.scenarios
 import examples.electromagnetism.second_harmonic.core
 import examples.electromagnetism.second_harmonic.scenarios
 import examples.estimation.odometry.scenarios
@@ -52,6 +54,10 @@ import examples.mechanics.robot_arm.core
 import examples.mechanics.spinning_top.core
 import examples.mechanics.spinning_top.scenarios
 import examples.mechanics.symmetry.core
+import examples.mechanics.vortices.core
+import examples.mechanics.vortices.scenarios
+import examples.mechanics.wing.core
+import examples.mechanics.wing.scenarios
 import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
 import examples.optics.crystal_diffraction.core
