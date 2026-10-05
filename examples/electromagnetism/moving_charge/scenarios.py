@@ -30,7 +30,7 @@ ORBIT_FRAMES = 60
 # --- math -----------------------------------------------------------------------------
 def charge(rapidity: float) -> core.Charge:
     """The charge moving along x at the given rapidity, through the origin at lab time zero."""
-    return core.Charge(CHARGE, CORE_RADIUS, (core.mv.xt * (rapidity / 2)).exp())
+    return core.Charge(np.array(CHARGE), CORE_RADIUS, (core.mv.xt * (rapidity / 2)).exp(), core.mv.vector([0.0, 0.0, 0.0, 0.0]))
 
 
 def speed_up() -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:

@@ -52,9 +52,10 @@ class Orbit:
 
 @dataclass(frozen=True)
 class Charge:
-    charge: float
+    charge: np.ndarray                                       # [...] the strength of each charge
     core_radius: float
     boost: Rotor                                             # [...] Rotor, the rest frame seen from the lab
+    position: Vector                                         # [...] Vector, where it is at lab time zero
 
 
 # --- math -----------------------------------------------------------------------------
@@ -77,17 +78,17 @@ def field_gradient(charge: Charge, events: Vector) -> FieldGradient:
 
 def potential_derivative(gradients: PotentialGradient) -> Even:
     """The field bivector plus the Lorenz-gauge scalar."""
-    return (Vector * gradients(Vector)).contract()
+    return (Vector * gradients(Vector)).contract(1, 2)
 
 
 def field(gradients: PotentialGradient) -> Bivector:
     """The field: the bivector part of the potential's derivative."""
-    return (Vector ^ gradients(Vector)).contract()
+    return (Vector ^ gradients(Vector)).contract(1, 2)
 
 
 def field_derivative(gradients: FieldGradient) -> Odd:
     """The current plus a trivector that vanishes: Maxwell's equations through the metric."""
-    return (Vector * gradients(Vector)).contract()
+    return (Vector * gradients(Vector)).contract(1, 2)
 
 
 def sources(gradients: FieldGradient) -> tuple[Vector, Vector]:
@@ -146,7 +147,7 @@ def retarded(orbit: Orbit, events: Vector) -> Scalar:
 def _profile(charge: Charge, events: Vector) -> tuple[Vector, Scalar, Scalar]:
     """The spatial separation from the charge in its rest frame, the field per unit separation, and
     that weight's change per unit of `separation | displacement`."""
-    at_rest = charge.boost << events                                         # [...] Vector
+    at_rest = charge.boost << (events - charge.position)                     # [...] Vector
     separations = at_rest - (at_rest | mv.t) * mv.t                          # [...] Vector
     softened = charge.core_radius**2 - (separations | separations)           # [...] Scalar
     weight = charge.charge / (4 * np.pi) / (softened * softened.square_root())   # [...] Scalar
