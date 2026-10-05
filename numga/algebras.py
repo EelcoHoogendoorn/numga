@@ -59,8 +59,20 @@ Spherical3D = Algebra(
 )
 
 
-STA = Algebra("t+x-y-z-")
+STA = Algebra(
+    "t+x-y-z-",
+    subspace_factory=partial(
+        SubSpaceFactory,
+        default="1 t x y z xt yt zt yz zx xy xyz tyz tzx txy txyz",
+    ),
+)
 
 
-VGA3D = Algebra("x+y+z+")
+VGA3D = Algebra(
+    "x+y+z+",
+    subspace_factory=partial(
+        SubSpaceFactory,
+        default="1 x y z yz zx xy xyz",
+    ),
+)
 

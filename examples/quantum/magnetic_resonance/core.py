@@ -44,7 +44,7 @@ Rates = ga.gatype((State, State))              # State <- State
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))              # State <- State
 # A relaxation process is a vector plus a bivector, `v + I * w` for vectors v and w.
-Process = ga.gatype(ga.subspace.vector() + ga.subspace.bivector())   # x y z xy xz yz
+Process = ga.gatype(ga.subspace.vector() + ga.subspace.bivector())   # x y z yz zx xy
 Rotor = ga.gatype.rotor()
 # The pseudoscalar squares to minus one and commutes with everything.
 I = mv.xyz                                         # [] Pseudoscalar

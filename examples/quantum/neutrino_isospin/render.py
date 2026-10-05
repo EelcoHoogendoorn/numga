@@ -23,7 +23,7 @@ def euclidean(v: Vector) -> np.ndarray:
 
 
 def plane_coordinates(plane: Bivector) -> np.ndarray:
-    """Extract coordinates from a batch of bivectors in standard basis (xy, xz, yz)."""
+    """Extract coordinates from a batch of bivectors in the basis (xy, xz, yz)."""
     return plane.cast(ga.subspace("xy xz yz")).kernel
 
 

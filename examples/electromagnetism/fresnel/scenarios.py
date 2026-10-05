@@ -9,10 +9,10 @@ import numpy as np
 from examples.electromagnetism.fresnel import core
 
 CASE_NAMES = ("Vacuum", "Uniaxial crystal", "Biaxial crystal")
-PERMITTIVITY_X = np.array([1.0, 2.25, 1.44])
-PERMITTIVITY_Y = np.array([1.0, 2.25, 2.25])
-PERMITTIVITY_Z = np.array([1.0, 3.24, 3.24])
-PERMITTIVITY = np.stack([PERMITTIVITY_X, PERMITTIVITY_Y, PERMITTIVITY_Z], axis=-1)
+# One row per case: its permittivity along the principal axes x, y and z, and its reluctivity.
+PERMITTIVITY = np.array([[1.0, 1.0, 1.0],
+                         [2.25, 2.25, 3.24],
+                         [1.44, 2.25, 3.24]])
 RELUCTIVITY = np.array([1.0, 1.0, 1.0])
 FREQUENCY = 1.0
 LATITUDES = 33
