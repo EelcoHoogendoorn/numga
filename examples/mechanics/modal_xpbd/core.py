@@ -2,12 +2,16 @@
 
 Each body is a girder of bars. Its rigid motion is a motor and its deformation a combination of its
 lowest vibration modes, the eigenfields of its sparse stiffness against its masses. Bodies are
-connected by point constraints between anchor points. Time stepping is extended
-position-based dynamics. For an anchor, `anchor.commutator(Twist)` maps a twist of its body to the
-anchor's displacement, `Direction <- Twist`; over all constraints and bodies these maps form a sparse
-extensor, and its adjugate maps forces at the constraints to forques on the bodies. Composed through the
-inverse inertia, with the modes' and constraints' compliance added, they give one sparse system for all
-constraints, solved once per step. Solving the constraints one at a time converges too slowly for stiff structures.
+connected by point constraints between anchor points. Time stepping is modal extended position-based
+dynamics: rigid bodies under compliant constraints, each mode one more constraint. For an anchor,
+`anchor.commutator(Twist)` maps a twist of its body to the anchor's displacement,
+`Direction <- Twist`; over all constraints and bodies these maps form a sparse extensor, and its
+adjugate maps forces at the constraints to forques on the bodies. Composed through the inverse
+inertia, with the modes' and constraints' compliance added, they give one sparse system for all
+constraints, solved once per step. Solving the constraints one at a time converges too slowly for
+stiff structures. Stiffness enters as compliance, so arbitrarily stiff modes and constraints stay
+well conditioned, down to the rigid limit of zero compliance, and modes too fast for the step are
+damped, not unstable.
 
 Inertia is evaluated in the rest configuration and the coupling of rotation and vibration is
 neglected, which assumes rotation slow compared with the retained vibrations.
