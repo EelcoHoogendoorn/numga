@@ -1,10 +1,16 @@
 """Pair two slots of an extensor and sum over them, keeping its other slots open.
 
-The output is slot 0 and the inputs are slots 1 to n, in the order of the kernel's axes. An output
-pairs with an input of its own space without a metric, as a vector with its dual, and two inputs
-pair without a metric when their spaces are complementary, through their regressive product: both
-are `trace`. Two inputs of one space pair through the space's metric: that is `contract`. In a space
-that is its own complement, as the bivectors of four dimensions, both apply, and the name chooses.
+Slots are numbered with the output as slot 0 and the inputs as slots 1 to n, in the order of the
+kernel's axes. A slot carries an index unless it is a scalar output: a form `Scalar <- (V, V)` has
+two, a map `V <- V` has two, and so the two slots may be left unnamed exactly when there are two.
+
+`trace` pairs through the regressive product: two inputs of complementary spaces through `&`, and
+the output, lifted to an input by meeting it with its complement, against an input of its own space.
+`contract` pairs through the inner product: two inputs of one space through the space's metric, and
+the output, lifted by `Space | value`, against an input of its own space. Either lift is a spelling
+of the same thing: `f.trace() == (Antivector & f).trace(1, 2)` and `f.contract() ==
+(Vector | f).contract(1, 2)`. On an output the pairing and its inverse cancel, so both give the
+matrix trace, and need neither metric nor orientation.
 """
 
 from __future__ import annotations
@@ -19,39 +25,78 @@ from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
 
 
-def trace(value: Extensor, first: int = 0, second: int = 1) -> Extensor:
-    """Pair two slots without a metric and sum over them.
+@Extensor.trace.register(lambda t: True)
+def trace_unnamed(value: Extensor) -> Extensor:
+    """The two slots that carry an index, paired through the regressive product."""
+    return trace(value, *_indexed_pair(value.gatype))
 
-    With the output as `first`, the output against an input of the same space: on `Space <- Space`
-    the matrix trace. A slot spanning only part of the output is refused, since tracing it would
-    choose a complement by blade label. With two inputs, inputs of complementary spaces through
-    their regressive product: the sum of `value(e_k, e^k)` over the blades `e_k` of the first and
-    the blades `e^k` of the second with `e_l & e^k` one for `l == k` and zero otherwise. In PGA,
+
+@Extensor.trace.overload(3).register(lambda t: True)
+def trace(value: Extensor, first: int, second: int) -> Extensor:
+    """Pair two slots through the regressive product and sum over them.
+
+    Two inputs of complementary spaces pair through `&`: the sum of `value(e_k, e^k)` over the
+    blades `e_k` of the first and the blades `e^k` of the second with `e_l & e^k` one for `l == k`
+    and zero otherwise. The output pairs with an input of its own space, as if met with its
+    complement first; on `Space <- Space` this is the matrix trace. In PGA,
     `(Plane & f(Point)).trace(1, 2) == f.trace()`.
     """
+    first, second = _checked(value.gatype, first, second)
     if first == 0:
         return _trace_output(value, second - 1)
     inputs = value.input_subspaces
     return _paired(value, first - 1, second - 1, _incidence_reciprocal(inputs[first - 1], inputs[second - 1]))
 
 
-def contract(value: Extensor, first: int = 1, second: int = 2) -> Extensor:
-    """Pair two inputs of one space through its metric and sum over them.
+@Extensor.contract.register(lambda t: True)
+def contract_unnamed(value: Extensor) -> Extensor:
+    """The two slots that carry an index, paired through the inner product."""
+    return contract(value, *_indexed_pair(value.gatype))
 
-    The metric is the slot's own, the inner product of a blade with the reverse of another, as for
-    the spectra of forms: `V | V` on vectors. The result is the sum of `value(e_k, e^k)` over the
-    space's blades `e_k` and their reciprocals `e^k` under that metric; it does not depend on the
-    basis. A form's contraction is its trace with one slot raised by the metric, and contracting
-    `Vector * f(Vector)` gives the vector derivative of a linear map `f`: its trace plus the bivector
-    of its skew part, `f - f.adjoint() == Vector | curl`. A space with a null blade has no
-    reciprocal blades, and is refused.
+
+@Extensor.contract.overload(3).register(lambda t: True)
+def contract(value: Extensor, first: int, second: int) -> Extensor:
+    """Pair two slots through the inner product and sum over them.
+
+    Two inputs of one space pair through the space's own metric, the inner product of a blade with
+    the reverse of another, as for the spectra of forms: `V | V` on vectors. The result is the sum
+    of `value(e_k, e^k)` over the space's blades `e_k` and their reciprocals `e^k` under that metric;
+    it does not depend on the basis, and a space with a null blade has no reciprocals, and is
+    refused. The output pairs with an input of its own space, as if lifted by `Space | value` first;
+    the metric and its inverse cancel, so this is the trace, for any metric. Contracting
+    `Vector * f(Vector)` in slots 1 and 2 gives the vector derivative of a linear map `f`: its trace
+    plus the bivector of its skew part, `f - f.adjoint() == Vector | curl`.
     """
+    first, second = _checked(value.gatype, first, second)
     if first == 0:
-        raise TypeError("an output pairs with an input of its own space without a metric: trace it")
+        return _trace_output(value, second - 1)
     inputs = value.input_subspaces
     if not inputs[second - 1].same_support(inputs[first - 1]):
         raise TypeError(f"contract pairs inputs of one space; got {inputs[first - 1]} and {inputs[second - 1]}")
     return _paired(value, first - 1, second - 1, _metric_reciprocal(inputs[first - 1]))
+
+
+@lru_cache(maxsize=None)
+def _indexed(gatype: GAType) -> tuple[int, ...]:
+    """The slots that carry an index: the output unless it is scalar, and every input."""
+    output = () if gatype.output_subspace.same_support(gatype.algebra.subspace.scalar()) else (0,)
+    return output + tuple(range(1, len(gatype.input_subspaces) + 1))
+
+
+def _indexed_pair(gatype: GAType) -> tuple[int, int]:
+    """The only two slots that carry an index."""
+    indexed = _indexed(gatype)
+    if len(indexed) != 2:
+        raise TypeError(f"name the two slots to pair; {gatype} has {len(indexed)} slots that carry an index")
+    return indexed
+
+
+def _checked(gatype: GAType, first: int, second: int) -> tuple[int, int]:
+    """The two slots in order, each one that carries an index."""
+    first, second = sorted((first, second))
+    if first not in _indexed(gatype):
+        raise TypeError(f"slot {first} carries no index in {gatype}: a scalar output pairs with nothing")
+    return first, second
 
 
 def _paired(value: Extensor, first: int, second: int, reciprocal: Extensor) -> Extensor:

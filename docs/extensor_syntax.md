@@ -223,15 +223,17 @@ Operate directly on linear transformations while preserving input/output GATypes
   undo = (rotor >> Vector).adjoint()                 # Vector <- Vector, rotor << Vector
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace(first=0, second=1)`**: Pairs two slots without a metric and drops both. The output is slot 0 and the inputs are slots 1 to n, in order of appearance in the expression. The output pairs with an input of its own space, by matching blades; a slot spanning only part of the output is refused, since tracing it would choose a complement by blade label. On `Space <- Space` this is the matrix trace. Two inputs pair when their spaces are complementary, through their regressive product. Either way the arity drops:
+* **`.trace()`** / **`.trace(first, second)`**: Pairs two slots through the regressive product and drops both. The output is slot 0 and the inputs are slots 1 to n, in order of appearance in the expression. A slot carries an index unless it is a scalar output, and the slots may be left unnamed exactly when two carry one: a map `Space <- Space`, or a form on two inputs. Two inputs pair when their spaces are complementary, through `&`. The output pairs with an input of its own space, as if met with its complement first; on `Space <- Space` this is the matrix trace. Lifting the map to a form and tracing the form is the same thing, spelled out:
   ```python
+  trace = f.trace()                                                # [] Scalar
+  lifted = (Antivector & f).trace()                                # [] Scalar: the same, f lifted to a form
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(0, 2)   # [] Scalar <- (Vector, Vector)
-  incidence_trace = (Plane & f(Point)).trace(1, 2)                 # [] Scalar: f.trace(), in PGA
+  incidence_trace = (Plane & f(Point)).trace()                     # [] Scalar: f.trace(), in PGA
   ```
-* **`.contract(first=1, second=2)`**: Pairs two input slots of one space through the slot's metric and drops both, keeping the output and the other slots open: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either. The metric must be invertible. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
+* **`.contract()`** / **`.contract(first, second)`**: Pairs two slots through the inner product and drops both, keeping the other slots open, with the slots numbered and left unnamed as for `.trace()`. Two inputs of one space pair through the slot's metric: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either; the metric must be invertible. The output pairs with an input of its own space, as if lifted by `Space | f` first; the metric and its inverse cancel, so on `Space <- Space` this is the trace again, for any metric. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
   ```python
-  divergence = (Vector | f(Vector)).contract()                      # [] Scalar: the trace of f
-  curl = (Vector ^ f(Vector)).contract()                            # [] Bivector: f - f.adjoint() == Vector | curl
+  divergence = (Vector | f(Vector)).contract()                      # [] Scalar: the trace of f, f.contract() lifted to a form
+  curl = (Vector ^ f(Vector)).contract(1, 2)                        # [] Bivector: f - f.adjoint() == Vector | curl
   ricci = (Vector.wedge(Vector) | R(Vector.wedge(Vector))).contract(1, 3)   # [] Scalar <- (Vector, Vector)
   ```
 * **`.svd()`**: Singular value decomposition returning `[U, s, Vh]`.
@@ -277,7 +279,7 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
 * **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric; the slot's metric must be invertible.
 
   In matrix notation it reads as $\det(G^{-1} A)$, with $G$ the metric and $A$ the form.
-* **`.contract()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible. `.trace()` pairs slots without a metric and refuses a form.
+* **`.contract()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible. `.trace()` pairs the two slots through the regressive product instead, which needs their spaces to be complementary.
 * A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
 * **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
   ```python
@@ -293,7 +295,7 @@ Arity is not limited to forms; any output type is allowed and slots are numbered
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace()` and `.contract()` lower the arity by two, and batch axes broadcast as for unary maps.
+Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace()` and `.contract()` drop the two slots they pair, and batch axes broadcast as for unary maps.
 
 ---
 

@@ -285,9 +285,12 @@ polar = (Plane & Point).solve(form)         # Plane <- Point: the same form, pai
 
 The last line differs from the one before it only in the pairing. Solving against the metric
 keeps the type; solving against the regressive pairing identifies a space with its complement
-and changes the type. Contractions split the same way. `trace` pairs without the metric: an output with an
-input by matching blades, or two inputs of complementary spaces through the regressive product.
-`contract` pairs two inputs of one space through the metric.
+and changes the type. Contractions split the same way. `trace` pairs through the regressive
+product: two inputs of complementary spaces, or the output with an input of its own space, as if
+met with its complement first. `contract` pairs through the inner product: two inputs of one space,
+or the output with an input of its own space, as if lifted by the inner product first. Lifting a
+map to a form and pairing the form's inputs is the same operation, spelled out:
+`f.trace() == (Antivector & f).trace()` and `f.contract() == (Vector | f).contract()`.
 
 A slot is typed by its subspace, and the dual of a subspace is either the subspace itself,
 under `|`, or its complement, under `&`. In a Euclidean orthonormal algebra the two coincide
@@ -522,10 +525,11 @@ the twist metric of PGA is singular: the translations carry no unit of their own
 
 ## 9. Traces
 
-`trace(0, slot)` contracts a map's output against one of its inputs by matching blades and drops
-that slot. It does not use the metric: an output blade and the same input blade are dual to
-each other by construction. The output is slot 0, and the inputs are numbered from 1 in order of
-appearance in the expression.
+`trace(0, slot)` pairs a map's output with one of its inputs and drops both. It does not use the
+metric: meeting the output with its complement lifts the map to a form, the regressive product
+pairs that form's inputs, and the complement and its inverse cancel. The output is slot 0, and the
+inputs are numbered from 1 in order of appearance in the expression. When only two slots carry an
+index, as on `Space <- Space`, the slots may be left unnamed; a scalar output carries none.
 
 A contraction between two inputs is different: either a metric pairs them or the complement
 does, and one of the two has to be written. The Ricci contraction shows both. The curvature of
@@ -537,8 +541,8 @@ contract with another open vector, and trace the output against the wedge slot:
 ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)     # Scalar <- (Vector, Vector)
 ```
 
-The inner product with the open vector is the one place the metric enters. The trace is a
-blade-matching contraction. No frame and no reciprocal basis appear, and the result is a form,
+The inner product with the open vector is the one place the metric enters. The trace pairs the
+output with the wedge slot through the regressive product. No frame and no reciprocal basis appear, and the result is a form,
 which is what Ricci is. The first Bianchi identity reads the same way, with the third vector
 left open so that the cyclic sum is a map that must vanish. A sum over a basis against its
 reciprocal is the coordinate spelling of this trace.

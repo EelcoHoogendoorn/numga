@@ -104,12 +104,12 @@ def joukowski(critical: Vector, plane: Vector) -> Vector:
 
 def velocity(gradient: PotentialGradient) -> Vector:
     """Half the derivative of the potential's reverse."""
-    return 0.5 * (Vector * gradient(Vector).reverse()).contract()           # [...] Vector
+    return 0.5 * (Vector * gradient(Vector).reverse()).contract(1, 2)       # [...] Vector
 
 
 def derivative(gradient: PotentialGradient) -> Even:
     """The derivative of the potential, zero where the flow is that of a potential."""
-    return (Vector * gradient(Vector)).contract()                           # [...] Even
+    return (Vector * gradient(Vector)).contract(1, 2)                       # [...] Even
 
 
 def lift(wing: Wing, stream: Vector, density: float) -> Vector:
