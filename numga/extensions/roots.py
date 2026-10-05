@@ -100,3 +100,15 @@ def scalar_inverse_square_root(value: Extensor) -> Extensor:
 @Extensor.inverse_square_root.register(GATypePattern(arity=0))
 def inverse_square_root(value: Extensor) -> Extensor:
     return value.square_root().inverse()
+
+
+@Extensor.square_root.register(GATypePattern(arity=0))
+def general_square_root(value: Extensor, *, n: int = 30) -> Extensor:
+    """The principal square root of any multivector without one on the negative scalars, by the
+    Denman–Beavers iteration. Tried after every closed form."""
+    product = root = value
+    for _ in range(n):
+        reciprocal = product.inverse()
+        root = root * (1 + reciprocal) / 2
+        product = (product + reciprocal + 2) / 4
+    return root
