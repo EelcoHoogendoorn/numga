@@ -125,6 +125,10 @@ class SparseExtensor:
             self.shape,
         )
 
+    def sum(self, axis: int) -> SparseExtensor:
+        """The sum of the separate maps along one of the leading axes: a map of the same pattern."""
+        return SparseExtensor(self.cells.sum(axis=axis - 1 if axis < 0 else axis), self.rows, self.columns, self.shape)
+
     def __neg__(self) -> SparseExtensor:
         return SparseExtensor(-self.cells, self.rows, self.columns, self.shape)
 

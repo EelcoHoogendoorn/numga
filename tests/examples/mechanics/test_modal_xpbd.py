@@ -40,7 +40,7 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
     for _ in range(steps):
         bodies = core.step(bodies, hinges, dt, gravity)
         peak_gap = max(peak_gap, np.abs(core.coupling(bodies, hinges)[3].kernel).max())
-        offsets = (shape.modes * bodies.amplitudes[..., None]).sum(axis=-2)
+        offsets = (shape.modes[:, None] * bodies.amplitudes[..., None]).sum(axis=-3)
         peak_flex = max(peak_flex, offsets.dual().norm().kernel.max())
     kinetic = (bodies.rate & shape.inertia(bodies.rate)).sum(axis=-1) / 2
     kinetic = kinetic + bodies.rates.squared().sum(axis=(-1, -2)) / 2

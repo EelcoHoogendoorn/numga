@@ -265,11 +265,11 @@ spin = (states * turned[:, None]).sum(axis=0) >> mv.z                           
 ![A beam of eight spliced girders, fixed at both ends and compressed, buckling past its Euler load](../plots/modal_xpbd_buckle.gif)
 
 ```python
-anchor_motion = (motor >> local.commutator(Twist)) * signs                 # [constraints, ends] Direction <- Twist
-rigid = SparseExtensor.from_indices(anchor_motion, constraint, constraints.bodies, shape)   # [constraints, bodies] Direction <- Twist
-system = rigid(inverse_inertias(rigid.adjugate())) + modal * (mobility * modal_load) + constraint_compliance
-forces = system.solve((-gap - modal * unconstrained_step).cast(Direction))   # [constraints] Force
-displacement = inverse_inertia(rigid.adjugate()(forces))            # [bodies] Twist
+anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs         # [constraints, sides] Direction <- Twist
+rigid = SparseExtensor.from_indices(anchor_motion, constraint_idx, constraints.body_idx, shape)   # [constraints, bodies] Direction <- Twist
+system = rigid(inverse_inertias(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance
+reactions = system.solve((-gap - (modal * unconstrained_step).sum(axis=-2)).cast(Direction))   # [constraints] Force
+displacement = inverse_inertia(rigid.adjugate()(reactions))            # [bodies] Twist
 ```
 
 * **Constraints as a sparse extensor.** `anchor.commutator(Twist)` maps a body's twist to an anchor's displacement. Over all constraints and bodies these maps are the cells of a sparse extensor, and its adjugate maps forces at the constraints to forques on the bodies.

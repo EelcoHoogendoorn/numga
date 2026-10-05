@@ -35,36 +35,35 @@ def girders(shape: Shape, fixed: np.ndarray, damping: np.ndarray, flexibility: n
     count, modes, cases = len(fixed), shape.modes.shape[0], len(damping)
     length = (shape.rest[-1] - shape.rest[1]).dual() | mv.x               # [] Scalar
     motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(Motor).broadcast_to((cases, count))  # [cases, bodies] Motor
-    amplitudes = mv.scalar(np.zeros((cases, count, modes, 1)))             # [cases, bodies, modes] Scalar
+    amplitudes = mv.scalar(np.zeros((cases, modes, count, 1)))             # [cases, modes, bodies] Scalar
     moving = ~fixed
     return Bodies(
         motor=motor,
         rate=mv.xy * np.zeros((cases, count)),
         amplitudes=amplitudes,
         rates=amplitudes,
-        compliance=shape.compliance * flexibility[:, None, None] * moving[None, :, None],
-        frequencies=shape.frequencies.broadcast_to((cases, count, modes)),
-        damping=np.broadcast_to(damping[:, None, None], (cases, count, modes)),
+        compliance=shape.compliance[:, None] * flexibility[:, None, None] * moving,
+        frequencies=shape.frequencies[:, None].broadcast_to((cases, modes, count)),
+        damping=np.broadcast_to(damping[:, None, None], (cases, modes, count)),
         masses=np.full((cases, count), shape.masses.sum()),
         inertia=shape.inertia.broadcast_to((cases, count)),
         inverse_inertia=(shape.inertia.inverse() * moving).broadcast_to((cases, count)),
     )
 
 
-def constrained(shape: Shape, bodies: np.ndarray, corners: np.ndarray) -> Constraints:
+def constrained(shape: Shape, body_idx: np.ndarray, corner_idx: np.ndarray) -> Constraints:
     """Constraints between the given bodies at the given vertices."""
-    modes = shape.modes.shape[0]
-    compliance = mv.scalar([SPLICE]).broadcast_to(bodies.shape[:1])       # [constraints] Scalar
-    return Constraints(bodies, shape.rest[corners], shape.modes[np.arange(modes), corners[..., None]], compliance)
+    compliance = mv.scalar([SPLICE]).broadcast_to(body_idx.shape[:1])       # [constraints] Scalar
+    return Constraints(body_idx, shape.rest[corner_idx], shape.modes[:, corner_idx], compliance)
 
 
 def splices(shape: Shape, count: int) -> Constraints:
     """Two constraints at each joint of a row of girders."""
     vertices = shape.rest.shape[0]
     joints = np.arange(count - 1)
-    bodies = np.repeat(np.stack([joints, joints + 1], axis=-1), 2, axis=0)  # [constraints, ends]
-    corners = np.tile([[vertices - 2, 0], [vertices - 1, 1]], (count - 1, 1))  # [constraints, ends]
-    return constrained(shape, bodies, corners)
+    body_idx = np.repeat(np.stack([joints, joints + 1], axis=-1), 2, axis=0)  # [constraints, sides]
+    corner_idx = np.tile([[vertices - 2, 0], [vertices - 1, 1]], (count - 1, 1))  # [constraints, sides]
+    return constrained(shape, body_idx, corner_idx)
 
 
 def hinges(shape: Shape, count: int) -> Constraints:
