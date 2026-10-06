@@ -30,6 +30,8 @@ import examples.geometry.registration.core
 import examples.geometry.registration.scenarios
 import examples.geometry.scenegraph.core
 import examples.surfaces.surface_curvature.core
+import examples.math.extensor_representations.core
+import examples.math.extensor_representations.scenarios
 import examples.math.hopf.core
 import examples.math.hopf.scenarios
 import examples.math.klein_quadric.core
@@ -65,6 +67,10 @@ import examples.optics.crystal_diffraction.scenarios
 import examples.optics.thin_lens.core
 import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
+import examples.quantum.hubbard_dimer.core
+import examples.quantum.hubbard_dimer.scenarios
+import examples.quantum.hubbard_ring.core
+import examples.quantum.hubbard_ring.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
 import examples.quantum.process_tomography.core

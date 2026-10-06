@@ -36,20 +36,34 @@ def formula(value) -> str:
 
 
 def coefficient_table(value) -> str:
-    """Lay out an unbatched linear map's coefficients, its output blades naming the rows and its
-    input blades the columns, numbers formatted to NumPy's print precision."""
-    (input_space,) = value.input_subspaces
+    """Lay out blade-labelled coefficients of an unbatched multivector or linear map.
+
+    A multivector has one row beneath its blade labels. A map labels its rows with
+    output blades and its columns with input blades.
+    Numbers follow NumPy's print precision.
+    """
+    if value.ndim:
+        raise ValueError("coefficient_table requires an unbatched extensor")
     kernel = value.kernel.values if hasattr(value.kernel, "values") else np.asarray(value.kernel)
+    if value.arity:
+        (input_space,) = value.input_subspaces
+        column_names = input_space.blade_names
+        row_names = value.output_subspace.blade_names
+        rows = kernel
+    else:
+        column_names = value.output_subspace.blade_names
+        row_names = ("",)
+        rows = kernel[None, :]
     precision = np.get_printoptions()["precision"]
-    cells = [["", *input_space.blade_names]] + [
+    cells = [["", *column_names]] + [
         [name, *(np.format_float_positional(round(float(coefficient), precision) + 0.0, precision=precision, trim="-") for coefficient in row)]
-        for name, row in zip(value.output_subspace.blade_names, kernel)
+        for name, row in zip(row_names, rows)
     ]
-    widths = [max(len(row[column]) for row in cells) for column in range(len(cells[0]))]
+    widths = [max(len(row[column]) for row in cells) for column in range(len(column_names) + 1)]
     return "\n".join(
         "  ".join([row[0].ljust(widths[0])] + [cell.rjust(width) for cell, width in zip(row[1:], widths[1:])])
         for row in cells
-    )
+    ).rstrip()
 
 
 def python_code(value, name: str = "apply") -> str:

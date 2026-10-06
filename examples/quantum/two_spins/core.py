@@ -19,6 +19,17 @@ of its own and shorter when the pair is entangled. What the two spins show toget
 correlations along a direction of each: a map from the second spin's directions to the first's,
 read off the part of the density `2 * (state >> ONE)` that spans a plane of each spin.
 
+In a field along z the singlet and the three triplets keep their shapes, and the field lowers the
+triplet with both spins along it until it crosses the singlet. A field that differs between the spins
+instead mixes the singlet with the triplet of zero spin along z: on those two the generator of time
+applied twice is a number, so the pair turns between them by a cosine and a sine.
+
+Measuring the first spin along a direction leaves the second in a new state: its Bloch vector after
+finding +1 along a unit direction n is `(second + correlations.adjoint()(n)) / (1 + (n | first))`, so
+the correlation map, read backwards, steers. Turning each spin by a rotor of its own space acts on the
+correlation map from either side, which leaves its singular values alone: for every state of the pair
+they are one and twice the concurrence C, and each Bloch vector has length `sqrt(1 - C**2)`.
+
 The Bell combination of four correlations, along two directions of each spin, stays within 2 in any
 account in which each spin carries its own answers. For a given state its largest value over all
 directions is `2 * sqrt(s1**2 + s2**2)`, from the two largest singular values of the correlation map.
@@ -73,6 +84,37 @@ def exchange(state: Spinor, angle: np.ndarray) -> Spinor:
     return SINGLET * state * (mv.xy * (3 * angle)).exp() + TRIPLET * state * (mv.xy * -angle).exp()   # [...] Spinor
 
 
+def energy(state: Spinor, exchange_rate: np.ndarray, field: np.ndarray) -> Scalar:
+    """The expected energy of a state under the exchange, shifted to minus the exchange rate on the
+    singlet and plus it on the triplet, and a field along z that lowers each spin along it."""
+    first, second = bloch(state)                                               # [...] First, Second
+    return exchange_rate * expectation(0.5 * (ONE - COUPLING), state) - 0.5 * field * ((first | mv.z) + (second | mv.Z))   # [...] Scalar
+
+
+def qubit_turn(state: Spinor, exchange_rate: np.ndarray, difference: np.ndarray, times: np.ndarray) -> Spinor:
+    """A state of zero spin along z after the given times under the exchange and a field along z that
+    differs between the spins. Such a state is a combination of the singlet and the triplet of zero spin
+    along z, on which the generator applied twice is minus the rate squared: its exponential is a cosine
+    and a sine, as for a rotor."""
+    # The exchange, minus one on the singlet and one on the triplet, times minus the imaginary unit; and
+    # the field difference, turning the first spin's xy plane against the second's.
+    generator = -exchange_rate * (0.5 * (ONE - COUPLING) * state) * IMAGINARY - difference * 0.5 * (mv.xy - mv.XY) * state   # [...] Spinor
+    rate = np.sqrt(exchange_rate**2 + difference**2)
+    return np.cos(rate * times) * state + np.sin(rate * times) / rate * generator   # [...] Spinor
+
+
+def qubit(state: Spinor) -> tuple[Scalar, Scalar, Scalar]:
+    """The pair's place on the sphere of the qubit made of the singlet and the triplet of zero spin along
+    z: how far it leans to up-down against down-up, half the difference of the two spins' parts along z;
+    the turn between them, the expectation of a product of the shifted exchange and the difference of the
+    two xy planes; and the balance of singlet against triplet."""
+    first, second = bloch(state)                                               # [...] First, Second
+    across = 0.5 * ((first | mv.z) - (second | mv.Z))                          # [...] Scalar
+    turned = expectation(-0.25 * (ONE - COUPLING) * (mv.xy - mv.XY), state)    # [...] Scalar
+    balance = expectation(0.5 * (COUPLING - ONE), state)                       # [...] Scalar
+    return across, turned, balance
+
+
 def bloch(state: Spinor) -> tuple[First, Second]:
     """Each spin's Bloch vector: the part of the spin in its own planes, read as a vector of its space."""
     spin = 2 * (state >> IMAGINARY)                                            # [...] Bivector
@@ -86,6 +128,17 @@ def correlation(state: Spinor) -> Correlation:
     `a | correlation(b)` is the expected product of the two spins' values along a and b."""
     density = 2 * (state >> ONE)                                               # [...] Spinor
     return (I_FIRST.inverse() * (density * (I_SECOND * Second)).cast(FirstPlanes)).cast(Correlation)
+
+
+def steer(state: Spinor, direction: First) -> tuple[Scalar, Second]:
+    """Measuring the first spin along a unit direction and finding +1: how likely that is, and the
+    second spin's Bloch vector after. The first spin's value along the direction acts on the pair
+    from the left as `-(I_FIRST * direction) * state * IMAGINARY`, and the measurement keeps the part
+    of the state on which it is +1."""
+    measured = 0.5 * (state - (I_FIRST * direction) * state * IMAGINARY)      # [...] Spinor
+    probability = expectation(ONE, measured)                                   # [...] Scalar
+    _, steered = bloch(measured / probability.square_root())                   # [...] Second
+    return probability, steered
 
 
 def bell(correlations: Correlation) -> Scalar:

@@ -207,7 +207,7 @@ class Extensor:
         return formula(self)
 
     def coefficient_table(self) -> str:
-        """Lay out an unbatched linear map's coefficients, labelled by its output and input blades."""
+        """Print-ready blade-labelled coefficients of an unbatched multivector or linear map."""
         from numga.operator.format import coefficient_table
         return coefficient_table(self)
 
