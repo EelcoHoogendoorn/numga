@@ -1,7 +1,7 @@
 """Smallest faithful real representations of nondegenerate Clifford algebras.
 
 Commuting blades select a left ideal. Multiplication acts on that ideal, and a
-blade chart expresses the action as an extensor on a smaller real space.
+blade chart expresses the representation as an extensor on a smaller real space.
 
 Run with python -m examples.math.extensor_representations.scenarios --dimensions 6.
 """
@@ -37,26 +37,26 @@ def main(positive: int, negative: int) -> Extensor:
     state_readout = (multiplicity * Full).cast(Spinor)
     # Keep Full open as well: embedding, multiplying on the left and reading out
     # converts any multivector into a Spinor map.
-    embedder = state_readout(Full * state_embedding)
+    representations = state_readout(Full * state_embedding)
 
     # --- checks
     context = NumpyContext(ga)
     basis = context.multivector.full(np.eye(ga.blade_count))
-    matrices = embedder(basis)
-    composition = matrices[:, None](matrices[None, :])
-    product = embedder(basis[:, None] * basis[None, :])
-    identity = embedder(context.multivector.scalar())
+    blade_representations = representations(basis)
+    composition = blade_representations[:, None](blade_representations[None, :])
+    product = representations(basis[:, None] * basis[None, :])
+    identity = representations(context.multivector.scalar())
     np.testing.assert_array_equal((composition - product).kernel, 0)
     np.testing.assert_array_equal((identity - Spinor).kernel, 0)
 
     # The blade images are orthogonal signed permutations, so none of the algebra
     # is lost, including either split block. Generator relations alone do not test this.
-    coefficients = matrices.kernel.reshape(ga.blade_count, -1)
+    coefficients = blade_representations.kernel.reshape(ga.blade_count, -1)
     np.testing.assert_array_equal(coefficients @ coefficients.T, state_dimension * np.eye(ga.blade_count))
 
     print(f"Cl({positive},{negative}): {ga.blade_count:3d} coefficients -> "
           f"{state_dimension:2d} x {state_dimension:<2d} real")
-    return embedder
+    return representations
 
 
 if __name__ == "__main__":

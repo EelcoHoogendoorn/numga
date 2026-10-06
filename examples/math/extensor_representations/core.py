@@ -4,18 +4,19 @@ from numga import Algebra, Extensor, GAType
 
 
 # --- math -----------------------------------------------------------------------------
-def readout(embedder: Extensor, action: Extensor, Space: GAType) -> Extensor:
-    """The element of Space whose action is the orthogonal projection of the given action onto
-    the actions of Space, under the trace pairing.
+def readout(representations: Extensor, state_map: Extensor, Space: GAType) -> Extensor:
+    """The element of Space whose representation is the orthogonal projection of a map on states
+    onto the representations of Space, under the trace pairing.
 
-    Each blade's coefficient is the action composed with that blade's inverse action, traced over
-    the state and divided by the number of state components; solving against the scalar product
-    supplies the inverse blades. The action of an element of Space returns that element, and a
-    smaller Space reads out only its own blades, since blades are orthogonal under the scalar product.
+    Each blade's coefficient is the map composed with the representation of that blade's inverse,
+    traced over the state and divided by the number of state components; solving against the
+    scalar product supplies the inverse blades. The representation of an element of Space returns
+    that element, and a smaller Space reads out only its own blades, since blades are orthogonal
+    under the scalar product.
     """
     pairing = (1 * Space).scalar_product(Space)                 # [] Scalar <- (Space, Space)
-    state_dimension = len(embedder.output_subspace)
-    return pairing.solve(embedder(1 * Space, action).trace(0, 2) / state_dimension)   # [] Space
+    state_dimension = len(representations.output_subspace)
+    return pairing.solve(representations(1 * Space, state_map).trace(0, 2) / state_dimension)   # [] Space
 
 
 # --- plumbing -------------------------------------------------------------------------
