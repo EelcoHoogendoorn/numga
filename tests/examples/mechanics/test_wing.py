@@ -5,16 +5,17 @@ import numpy as np
 from examples.mechanics.wing import core, scenarios
 
 
-def test_the_potential_has_no_derivative_and_the_wing_lifts_by_its_circulation():
+def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     pitched = core.pitched(scenarios.wing(), scenarios.HIGHEST_ATTACK)
     stream = scenarios.stream()
     plane = core.rings(pitched, 20, scenarios.ANGLES, scenarios.REACH)
     edge = scenarios.trailing_edge(pitched)
     flow = core.flow(pitched, stream, plane, edge)
 
-    # The potential's derivative vanishes, the Cauchy–Riemann condition.
-    np.testing.assert_allclose(core.derivative(flow.potential_gradient).kernel, 0.0, atol=1e-9)
-    # The stream function changes across a small step by the velocity's flux through it.
+    # Past the cylinder the velocity has neither divergence nor vorticity.
+    _, gradient, _ = core.cylinder(pitched, stream, plane)
+    np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
+    # A step changes the stream function by the velocity's flux through it, at the wing as at the cylinder.
     step = core.mv.vector([0.3, -0.2]) * 1e-6
     forward, backward = core.flow(pitched, stream, plane + step, edge), core.flow(pitched, stream, plane - step, edge)
     crossing = (forward.points - backward.points) / 2

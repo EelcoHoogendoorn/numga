@@ -6,9 +6,8 @@ transformations takes it to an odd multivector on each face. The operator `D` is
 field of vectors with one cell for each face and each of its corners, the edge that corner faces over
 minus twice the face's area. It acts by the geometric product, cell by cell and summed over each face's
 corners, so `D * vertices` takes a vertex field `[V] Even` to a face field `[F] Odd`, the vector times
-the quaternion. Its reverse `~D` reverses every cell and swaps faces for vertices, so it takes a face
-field back to the vertices. Weighted by the areas, the two pair the same: summed over the faces, `M2 * faces.reverse().scalar_product(D * vertices)` equals, summed over the vertices,
-`(~D * (M2 * faces)).reverse().scalar_product(vertices)`.
+the quaternion. Its reverse `~D` turns every product with it around, as any reverse does: every cell
+reversed, and every coupling running the other way, from a face to its corners.
 
 A wave alternates the two: the face field moved on by the Dirac operator of the vertex field, then the
 vertex field moved back by the reverse of the face field, weighted by the areas, a leapfrog that keeps

@@ -38,12 +38,11 @@ def test_products_and_reverse_match_dense_sums(context):
     for row, expected in enumerate(dense_product(second, field)):
         np.testing.assert_allclose(np.asarray(product[row].kernel), np.asarray(expected.kernel), atol=1e-5)
     np.testing.assert_allclose(np.asarray(((first * second) * field).kernel), np.asarray((first * (second * field)).kernel), atol=1e-4)
-    # Reversing a sparse extensor reverses its products with fields: the scalar part of the reverse of
-    # ~S * other times a field is that of the reverse of other times S * field.
-    other = mv.odd(rng.normal(size=(5, 4)))
-    left = ((~second * other).reverse() * field).sum(axis=0).select.scalar()
-    right = (other.reverse() * (second * field)).sum(axis=0).select.scalar()
-    np.testing.assert_allclose(np.asarray(left.kernel), np.asarray(right.kernel), atol=1e-4)
+    # The reverse turns every product around: the reverse of a product is the product of the reverses
+    # in turn, which runs every coupling the other way.
+    reversed_field = mv.even(rng.normal(size=(4, 4)))
+    np.testing.assert_allclose(np.asarray((~(first * second) * reversed_field).kernel),
+                               np.asarray((~second * (~first * reversed_field)).kernel), atol=1e-4)
 
 
 def test_open_type_cells_apply_solve_and_take_least_squares():

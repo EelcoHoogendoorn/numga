@@ -56,6 +56,8 @@ import examples.mechanics.robot_arm.core
 import examples.mechanics.spinning_top.core
 import examples.mechanics.spinning_top.scenarios
 import examples.mechanics.symmetry.core
+import examples.mechanics.tides.core
+import examples.mechanics.tides.scenarios
 import examples.mechanics.vortices.core
 import examples.mechanics.vortices.scenarios
 import examples.mechanics.wing.core

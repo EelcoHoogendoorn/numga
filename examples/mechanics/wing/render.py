@@ -36,7 +36,6 @@ def draw(ax, flow: core.Flow, lift: core.Vector, speed: float) -> None:
     ax.annotate("", xy=arrow, xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=LIFT, linewidth=2.5))
     ax.set(xlim=WINDOW[:2], ylim=WINDOW[2:], xticks=[], yticks=[])
     ax.set_aspect("equal")
-    ax.set_title("Pressure, streamlines and lift", fontsize=11)
 
 
 def figure(flow: core.Flow, lift: core.Vector, speed: float) -> plt.Figure:
@@ -79,16 +78,15 @@ def bipolar(grid: core.Vector, grid_images: core.Vector, circle: core.Vector, ci
     """The grid of circles through and around the critical points with the wing's circle, before and
     after the map, with the critical points and where they move."""
     result = plt.figure(figsize=(10, 4.2), layout="constrained")
-    for ax, curves, outline, marks, title in zip(
-            result.subplots(1, 2), (grid, grid_images), (circle, circle_image), (critical, 2 * critical),
-            ("Circles through and around the critical points", "The same grid around the moved points")):
+    for ax, curves, outline, marks in zip(
+            result.subplots(1, 2), (grid, grid_images), (circle, circle_image), (critical, 2 * critical)):
         for curve in curves.cast(core.ga.subspace("x y")).kernel:
             ax.plot(curve[:, 0], curve[:, 1], color="#94a3b8", linewidth=0.9)
         xy = outline.cast(core.ga.subspace("x y")).kernel
         ax.plot(xy[:, 0], xy[:, 1], color=WING, linewidth=2.2)
         ends = marks.cast(core.ga.subspace("x y")).kernel
         ax.scatter([ends[0], -ends[0]], [ends[1], -ends[1]], color=MARK, edgecolors=WING, zorder=4)
-        ax.set(xlim=WINDOW[:2], ylim=WINDOW[2:], xticks=[], yticks=[], title=title)
+        ax.set(xlim=WINDOW[:2], ylim=WINDOW[2:], xticks=[], yticks=[])
         ax.set_aspect("equal")
     return result
 

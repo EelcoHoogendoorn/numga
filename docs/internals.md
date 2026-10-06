@@ -4,9 +4,7 @@ Every numga operation, a product of two multivectors as much as `Rotor >> Vector
 an exact table before any value is supplied. This document shows that table, where its numbers
 live, and what runs when values arrive. It is for a reader of the [guide](extensors.md) who
 wants to see the arrays behind an expression, and for anyone about to extend the library with a
-method or a backend. The design record that preceded the implementation is
-[`extensor_design.md`](../../extensor_design.md) at the repository root; where the two differ, this
-document describes what runs.
+method or a backend.
 
 ## 1. Implementation
 

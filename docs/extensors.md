@@ -36,9 +36,9 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 7. [**Dupin Cyclides & Vortices on the 3-Sphere (Conformal Model)**](#7-dupin-cyclides--vortices-on-the-3-sphere-conformal-model): ray tracing with open forms, and shapes made by moving maps.
 8. [**Magnetic Resonance & Spin Echoes (VGA3D)**](#8-magnetic-resonance--spin-echoes-vga3d): relaxation written as its formula, and a whole pulse sequence composed into one map.
 9. [**The Hopf Fibration (VGA3D)**](#9-the-hopf-fibration-vga3d): a spinor's direction as a form with two spinor slots, and the spinors pointing one way as an eigenspace.
-10. [**Odometry (PGA2D)**](#10-odometry-the-most-likely-trajectory-pga2d): uncertainties as quadrics on twists, and the information applied reading by reading, never assembled, in any dimension.
+10. [**Odometry (PGA2D)**](#10-odometry-the-most-likely-trajectory-pga2d): uncertainties as quadrics on twists, carried along the lap, and the information applied reading by reading, never assembled.
 11. [**Edge States of a Graphene Flake (VGA3D)**](#11-edge-states-of-a-graphene-flake-vga3d): a Hamiltonian coupling atoms through multivectors, and spin conservation read off its type.
-12. [**Flexible Bodies, Rigidly Joined (PGA2D)**](#12-flexible-bodies-rigidly-joined-pga2d): point constraints between flexible bodies as one sparse system, and a beam buckling at its Euler load.
+12. [**Flexible Bodies, Rigidly Joined (PGA2D)**](#12-flexible-bodies-rigidly-joined-pga2d): point constraints between flexible bodies as one sparse map, its adjugate carrying the forces back, and a beam buckling at its Euler load.
 
 ---
 
@@ -49,16 +49,18 @@ Capitalized names are multivector spaces and lower case names are concrete multi
 ![Scenegraph 3D scene and 2D sensor photograph](../plots/scenegraph.gif)
 
 ```python
-body = pose >> scale                                     # [5] Point <- Point: each part, scaled and placed
-camera = to_sensor(rear_lens(front_lens(rays)))          # [] Point <- Point: two lenses and a sensor
-local_to_pixel = viewport(camera(camera_pose << body))   # [5] Point <- Point
-pixels = local_to_pixel[:, None](corners[None, :])       # [5, 8] Point
+lens = Line - (center & (Line ^ plane)) / focal_length        # [] Line <- Line: a thin lens
+rear_lens = rear_placement >> lens(rear_placement << Line)     # [] Line <- Line: the lens, moved down the axis
+camera = to_sensor(rear_lens(front_lens(Point & pupil)))       # [] Point <- Point: point to ray to sensor
+world_to_pixel = viewport(camera(camera_pose << Point))        # [] Point <- Point
+local_to_pixel = world_to_pixel(bodies_to_world)               # [bodies] Point <- Point
 ```
 
-* **One map from part to pixel.** Scaling, rigid motion, refraction and perspective compose into a single `Point <- Point` per part before any point is touched.
+* **A lens is its formula with the ray left open.** A thin lens bends each line toward its centre by how the line meets the lens plane; written with `Line` open, that expression is the lens.
+* **Motors move maps as they move points.** The rear lens is the front lens's formula carried down the axis by a motor, the same way a motor carries a point.
+* **One map from part to pixel.** Calling a map on a map composes them: stretching, placement, refraction and perspective become a single `Point <- Point` per part before any vertex is touched.
 
   In a graphics pipeline it reads as the product of the model, view and projection matrices.
-* **Motors move maps as they move points.** `camera_pose << body` brings a whole map into the camera's frame, the same way `camera_pose << p` brings in a point.
 
 ---
 
@@ -69,13 +71,15 @@ pixels = local_to_pixel[:, None](corners[None, :])       # [5, 8] Point
 ![The three vibration modes of the coupled suspension](../plots/modes.gif)
 
 ```python
-stiffness = (springs * (springs & Twist) * constants).sum()   # [] Forque <- Twist
-inertia = (points & points.commutator(Twist) * masses).sum()  # [] Forque <- Twist
-values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
+extension = Twist & lines                                        # [springs] Scalar <- Twist: each spring's stretch
+stiffness = (lines * extension * spring_constants).sum(axis=0)   # [] Forque <- Twist
+velocities = mass_points.commutator(Twist)                       # [mass_points] Point <- Twist
+inertia = ((mass_points & velocities) * masses).sum(axis=0)      # [] Forque <- Twist
+values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scalar, [modes] Twist
 ```
 
-* **Stiffness and inertia are sums.** Each spring and each mass point adds one term. No origin is chosen, and no parallel-axis shift is needed.
-* **The modes are motions.** The eigensolve runs on the two energy forms and returns twists, the motions the body vibrates in.
+* **Stiffness and inertia are sums.** A spring is the line it pulls along, and joined with an open twist it reads how far any small motion stretches it. A point's velocity under an open twist is one commutator. Each spring and each mass point adds one term, with no origin chosen and no parallel-axis shift.
+* **The modes are motions.** Paired with a second open twist, the two maps are the two energy forms, and solving one against the other returns twists: the motions the body vibrates in.
 
 ---
 
@@ -88,18 +92,17 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)     # modes: [3] Twist
 </p>
 
 ```python
-cones = projection.adjugate()(sensor_discs(projection))           # [n_points, n_cams] Plane <- Point
-splats = (poses >> cones(poses << Point)).sum(axis=-1)            # [n_points] Plane <- Point
-points = (splats + w * (w & Point)).solve(w)                      # [n_points] Point
-
-motion = -Twist.commutator(poses << points[:, None])              # [n_points, n_cams] Point <- Twist
-curvature = (cones(motion) & motion).sum(axis=0)                  # [n_cams] Scalar <- (Twist, Twist)
-step = curvature.solve(-gradient)                                 # [n_cams] Twist
+cones = projection.adjugate()(sensor_discs(projection))   # [points, cams] Plane <- Point: sight cones
+splats = (poses >> cones(poses << Point)).sum(axis=-1)    # [points] Plane <- Point
+points = (splats + w * (w & Point)).solve(w)              # [points] Point
+motion = -Twist.commutator(local_points)                  # [points, cams] Point <- Twist
+curvature = (cones(motion) & motion).sum(axis=0)          # [cams] Scalar <- (Twist, Twist)
+gradient = (cones(local_points) & motion).sum(axis=0)     # [cams] Scalar <- Twist
 ```
 
-* **Uncertainty travels as a shape.** Each measurement is a quadratic cost on the sensor. The camera feeds it, and the camera's adjugate, `projection.adjugate()`, carries its polar planes back into a cone of sight that widens with depth. The adjugate keeps incidence, `projection.adjugate()(l) & p == l & projection(p)`, and exists although the camera has no inverse.
-* **Combining views is addition.** The cones of all cameras sum into a splat, a confidence ellipsoid around each scene point, and one solve finds its centre.
-* **Camera alignment in pure geometry.** How a point moves under an open camera step is one commutator; joined with the cones it gives curvature and gradient, and one solve gives the Gauss-Newton step.
+* **The adjugate carries a pixel's uncertainty into the scene.** The camera has no inverse, but its adjugate keeps incidence, `projection.adjugate()(l) & p == l & projection(p)`, and turns a cost disc around a pixel into a cone of sight that widens with depth.
+* **Combining views is addition.** The cones, moved to the world like any map, sum into a splat around each scene point, and one solve finds its centre.
+* **Camera alignment in pure geometry.** How a point moves under an open camera step is one commutator. Used on both sides of the cones it gives the curvature, with the point on one side the gradient, and one solve gives the step.
 
 ---
 
@@ -110,16 +113,16 @@ step = curvature.solve(-gradient)                                 # [n_cams] Twi
 ![Plane waves in isotropic glass and in a birefringent crystal](../plots/constitutive.gif)
 
 ```python
-electric = Bivector.commutator(t).wedge(t)               # [] Bivector <- Bivector: what observer t calls electric
-glass = eps * electric + (Bivector - electric) / mu      # [] Bivector <- Bivector
-moving = boost >> glass(boost << Bivector)               # [n_betas] Bivector <- Bivector: the glass, moving
-wave = k.commutator(moving(k.wedge(Spatial)))            # [n_speeds, n_betas] Vector <- Spatial
-wave.svdvals()                                           # near zero where light can travel
+electric = (Bivector - (t >> Bivector)) / 2                    # [] Bivector <- Bivector: what observer t calls electric
+glass = (eps * electric + (Bivector - electric) / mu).dual()   # [] Antibivector <- Bivector
+moving = boost >> glass(boost << Bivector)                     # [betas] Antibivector <- Bivector: the glass, moving
+wave = (k ^ Bivector) + (k ^ moving).dual()                    # [speeds, betas] Odd <- Bivector
+wave.svdvals()                                                 # near zero where light can travel
 ```
 
-* **An observer is a map.** With the field left open, one line gives the part of any field that observer `t` calls electric, and glass is two such parts, weighted and added.
+* **An observer splits a field with a sandwich.** The observer's time direction flips the planes it calls electric and keeps the magnetic ones, so half the difference with the open field is the electric part. Glass weights the two parts: a map from field to excitation.
 * **Moving a material moves a map.** A boost moves the glass the same way it moves a vector. Fresnel drag follows, without transformation rules for the permittivity and permeability.
-* **Wave speeds from an SVD.** Leaving the polarization open turns Maxwell's equations for a trial wave into a map. Its singular values, over a batch of trial speeds, show which speeds light can travel at, and with which polarization.
+* **Wave speeds from an SVD.** With the field left open, both of Maxwell's equations for a trial wave become one map. Its smallest singular value vanishes at the speeds light can travel at, and its singular field is the polarization.
 
 ---
 
@@ -130,15 +133,17 @@ wave.svdvals()                                           # near zero where light
 ![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.gif)
 
 ```python
-nx, ny = k.wedge(x), k.wedge(y)                                        # [] Bivector: two planes along the wave
-plus = nx * (nx | Bivector) - ny * (ny | Bivector)                     # [] Bivector <- Bivector
-cross = eighth_turn >> plus(eighth_turn << Bivector)                   # [] Bivector <- Bivector
-ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)    # [] Scalar <- (Vector, Vector): zero
-tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vector <- Vector
+nx, ny = k.wedge(x), k.wedge(y)                                  # [] Bivector: two null planes along the wave
+plus = nx * (nx | Bivector) - ny * (ny | Bivector)               # [] Bivector <- Bivector
+cross = -I * plus                                                # [] Bivector <- Bivector
+riemann = Vector.wedge(Vector) | plus(Vector.wedge(Vector))      # [] Scalar <- (Vector, Vector, Vector, Vector)
+ricci = riemann.contract(1, 3)                                   # [] Scalar <- (Vector, Vector): zero
+tidal = plus(t.wedge(Vector)).commutator(t)                      # [] Vector <- Vector
 ```
 
-* **Curvature is a map on planes.** A gravitational wave's curvature is two dyads, and its second polarization is the same map turned by an eighth turn.
-* **The textbook quantities are one line each.** The Ricci form is a trace, zero because the wave travels through vacuum. What an observer feels is the curvature with their velocity bound in: a map that stretches a ring of beads one way and squeezes it the other.
+* **Curvature is a map on planes.** A gravitational wave's curvature is two dyads of null planes along the wave: nonzero, yet applied twice it gives zero. Multiplied by the pseudoscalar, its pattern turns an eighth turn about the wave, and that is the second polarization.
+* **Vacuum is a contraction.** With all four vectors open the curvature is a form, and contracting its first and third slots leaves the Ricci form, zero on every pair of vectors.
+* **What an observer feels is one binding.** The observer's velocity, wedged into the open plane and read back against itself, leaves a map from separation to acceleration: it stretches a ring of beads one way and squeezes it the other.
 
 ---
 
@@ -149,14 +154,14 @@ tidal = plus(t.wedge(Vector)).commutator(t)                            # [] Vect
 ![Seven ellipses spinning and colliding on the 2-sphere](../plots/spherical_quadric_physics.gif)
 
 ```python
-inside = (pixels & shape(pixels)) < 0                             # drawing: one test per pixel
-margin, deepest = overlap(shape, relative >> other(relative << Point))   # the other shape, in this one's frame
-forque = shape(deepest) | shape.inverse()(shape(deepest))         # push along the contact normal
-impulse = -2 * closing / (forque & inertia.inverse()(forque))     # one body's share; the pair adds both
+form = placement >> ellipse.solve(placement << Point)   # [] Plane <- Point: the shape, placed
+inside = (pixels & form(pixels)) < 0                    # [pixels]: negative inside
+blend = Point & (A + B * np.tan(phi))(Point)            # [pairs] Scalar <- (Point, Point): two shapes, blended
+contact_plane = form(deepest).normalized()              # [pairs] Plane: the polar of the deepest point
 ```
 
-* **Shapes as quadric forms.** Drawing, collision and contact all come from the form: a pixel is inside where it is negative, and two shapes are apart exactly when some blend of their forms is positive.
-* **One formula for the bounce.** The impulse follows from the contact forque and each body's inverse inertia, and energy and momentum are conserved.
+* **A shape is a form, moved like a point.** An ellipse is a sum of dyads on its axis points; solved with the point left open it is the form that is negative inside, and a rotor places the whole map. Drawing is one test per pixel.
+* **Contact from a blend of two forms.** Two shapes are apart exactly when some blend of their forms is positive everywhere. The best blend's deepest point, through its polar plane, gives the line the bounce acts along.
 
 ---
 
@@ -167,16 +172,15 @@ impulse = -2 * closing / (forque & inertia.inverse()(forque))     # one body's s
 ![A cone-tipped cyclide carried around a vortex circle, linked with a ring on that circle](../plots/cyclides_linked_vortex.gif)
 
 ```python
-form = Point & surfaces                      # [n] Scalar <- (Point, Point): zero on the surface
-ray_bend                                     # [] Point <- (Direction, Direction): how a ray bends
-quartic = form(ray_bend, ray_bend)           # [n] Scalar <- (Direction, Direction, Direction, Direction)
-
-tori = dilation >> tubes(dilation << Point)  # [3] Sphere <- Point: dilated tubes are tori
-rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried around a vortex
+form = Point & surfaces                                  # [surfaces] Scalar <- (Point, Point): zero on the surface
+quartic = form(ray_bend, ray_bend)                       # [surfaces] Scalar <- (Direction, Direction, Direction, Direction)
+cyclide = inversion >> hyperboloid(inversion << Point)   # [] Sphere <- Point: a hyperboloid, inverted
+flow = (circle * (angles / 2)).exp()                     # [frames] Motor: around a circle
+carried = flow >> cyclide(flow << Point)                 # [frames] Sphere <- Point
 ```
 
-* **A form with four open slots.** Feeding the ray's bend into both slots of the surface's form leaves four open directions: the leading coefficient of every pixel's quartic, from one binding.
-* **Shapes are made by moving maps.** A dilation bends tubes into tori and Dupin cyclides, and a circle's exponential carries a surface around it.
+* **A form with four open slots.** Feeding the ray's bend into both slots of the surface's form leaves four open directions: the leading coefficient of every pixel's quartic, built before any pixel is seen.
+* **Shapes are made by moving maps.** An inversion in a sphere sends both open ends of a hyperboloid to one point, closing them in a conical tip, and a circle's exponential carries the cyclide around that circle.
 
 ---
 
@@ -187,17 +191,15 @@ rolled = flow >> tori(flow << Point)         # [36] Sphere <- Point: carried aro
 ![Spins fanning out in an uneven field and refocusing into an echo](../plots/resonance_echo.gif)
 
 ```python
-relaxing = (L >> State) - 0.5 * (back * State + State * back)             # [] State <- State
-rates = (turning + relaxing).cast(State)                                    # [spins] State <- State
-waiting = stack(list(doublings(evolution(rates, dt), 11)))                  # [delays, spins] State <- State
-turn = pulse(np.pi) >> State                                                # [] State <- State
-echo = waiting(turn(waiting(tip)))                                          # [delays, spins] State <- State
-sample = echo.mean(axis=-1)                                                 # [delays] State <- State
+back = process.reverse().symmetric_reverse_product()          # [] State
+relaxing = (process >> State) - back.anticommutator(State)    # [] State <- State
+twice = span(span)                                            # [spins] State <- State: the same span, twice as long
+turn = pulse(np.pi) >> State                                  # [] State <- State
+echo = waiting(turn(waiting(tip))).mean(axis=-1)              # [delays] State <- State: tip, wait, turn, wait
 ```
 
-* **Relaxation is its formula.** The state is left open between the two sides of each term: no flattened density matrix, no Kronecker products.
-* **An experiment is a composition.** Steps doubled into delays, pulses as sandwiches, averaged over the spins: one map for the whole sample.
-
+* **Relaxation is its formula.** The state is left open on both sides of each term: the process's sandwich of the state, less its anticommutator with what the process takes back. No flattened density matrix, no Kronecker products.
+* **An experiment is a composition.** A span of evolution composed with itself spans twice the time, a pulse is a sandwich with the state left open, and composed in sequence and averaged over the spins they are one map for the whole sample.
 
 ---
 
@@ -208,13 +210,14 @@ sample = echo.mean(axis=-1)                                                 # [d
 ![Fibres of the Hopf fibration building up as their direction spirals over the sphere](../plots/hopf_sweep.gif)
 
 ```python
-hopf = Even >> mv.z                                        # [] Vector <- (Even, Even): a spinor's direction
-_, spinors = (direction | hopf).eigh()                     # [..., 4] Even: eigenvalues -1, -1, 1, 1
-fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even: every spinor pointing that way
+hopf = Even >> mv.z                                   # [] Vector <- (Even, Even): a spinor's direction
+_, spinors = (direction | hopf).eigh()                # [..., 4] Even: eigenvalues -1, -1, 1, 1
+start = spinors[..., -1]                              # [...] Even
+fibre = start[..., None] * (mv.xy * angles).exp()     # [..., angles] Even: every spinor pointing that way
 ```
 
 * **A sandwich with the spinor open twice.** `Even >> mv.z` leaves the spinor open in both places it appears, so the Hopf map is a form with two spinor slots that returns a vector.
-* **A fibre is an eigenspace.** Paired with a direction, the form's top eigenspace holds every spinor pointing that way: a circle in the three-sphere, linked once with every other.
+* **A fibre is an eigenspace.** Paired with a direction, the form's top eigenspace holds every spinor pointing that way: a circle in the three-sphere, traced by turning one of them on the right, and linked once with every other.
 
 ---
 
@@ -225,16 +228,15 @@ fibre = spinors[..., -1, None] * (mv.xy * angles).exp()    # [..., angles] Even:
 ![A dead-reckoned lap pulled shut a fifth of the way at a time, its ellipses shrinking](../plots/odometry.gif)
 
 ```python
-measured = twists[..., heads] - (relative << twists[..., tails])        # [..., readings] Twist: what a correction reads
-weighted = weights(measured)                                             # [..., readings] Line
-at_tails = -(relative >> weighted)                                       # [..., readings] Line
-pulled = anchor_weights(twists).at[..., heads].add(weighted)             # [..., poses] Line
-pulled = pulled.at[..., tails].add(at_tails)                             # [..., poses] Line
+weights = noises.inverse()                                   # [readings] Line <- Twist
+summed = (poses >> entering(poses << Line)).cumsum(axis=0)   # [poses] Twist <- Line: carried to the world, added
+reckoned = poses << summed(poses >> Line)                    # [poses] Twist <- Line: read back at each pose
+at_tails = relative >> weights(relative << Twist)            # [readings] Line <- Twist: a reading's weight, at its tail
 ```
 
-* **An uncertainty is a quadric on twists.** It maps lines to twists, `Twist <- Line`, and its inverse pairs a twist with itself.
-* **One pull, never assembled.** A reading pulls only on the two poses it links. The pull of the mismatches is the gradient, of what a correction measures the information, and of every unit error each pose's uncertainty.
-* **One module, any dimension or signature.**
+* **An uncertainty is a quadric on twists.** A covariance maps a line to a twist, `Twist <- Line`, and its inverse weighs a twist error by pairing it with itself.
+* **Uncertainties move like maps.** Carried to the world by each pose's motor, the readings' covariances add up along the lap, and read back at each pose they are dead reckoning's growing ellipses.
+* **A reading pulls back along the way it measured.** A reading compares its head's twist with its tail's carried to the head, so its weight at the tail is the same weight carried back. Applied reading by reading, the information is never assembled.
 
 ---
 
@@ -245,16 +247,15 @@ pulled = pulled.at[..., tails].add(at_tails)                             # [...,
 ![An electron launched at the edge of a graphene flake, its spin-up half running clockwise and its spin-down half counterclockwise](../plots/kane_mele_helical.gif)
 
 ```python
-hop = SparseExtensor(mv.scalar(-np.ones((pairs, 1))), *flake.first.T, (atoms, atoms))   # [atoms, atoms] Scalar
-turn = SparseExtensor(mv.xy * flake.senses, *flake.second.T, (atoms, atoms))            # [atoms, atoms] Bivector
-energy = hop + turn * spin_orbit + stagger * mass                                        # [atoms, atoms] Up
-energies, states = (energy * Up).eigh(unit * Up, count)                                  # [count] Scalar, [count, atoms] Up
-spin = (states * turned[:, None]).sum(axis=0) >> mv.z                                    # [atoms] Vector
+energy = hop + turn * spin_orbit + stagger * mass               # [atoms, atoms]: each coupling 1 or xy
+energies, states = (energy * Up).eigh(unit * Up, count)         # [count] Scalar, [count, atoms] Up
+turned = weights * (mv.xy * (-energies * time)).exp()           # [states] Even
+spin = (states * turned[:, None]).sum(axis=0) >> mv.z           # [atoms] Vector
 ```
 
-* **Couplings are multivectors.** The Hamiltonian is a sparse extensor over the flake's atoms, each coupling a scalar or a plane.
-* **Spin conservation is a type.** `energy * Up` maps the spin-up spinors into themselves, so each spin is solved on its own.
-* **States are spinor fields.** The edge states come out as fields over the flake, and their spin density is a sandwich.
+* **Couplings are multivectors.** The Hamiltonian is a sparse extensor between spinor fields over the flake's atoms: neighbours coupled by a scalar, second neighbours by the plane `xy`.
+* **Spin conservation is a type.** `energy * Up` leaves a spin-up spinor open, and since every coupling is `1` or `xy` it returns one, so each spin is solved on its own.
+* **Time is a turn on the right.** Each state turns on its right at the rate of its energy, and the spin density of their sum is a sandwich.
 
 ---
 
@@ -265,16 +266,14 @@ spin = (states * turned[:, None]).sum(axis=0) >> mv.z                           
 ![A beam of eight spliced girders, fixed at both ends and compressed, buckling past its Euler load](../plots/modal_xpbd_buckle.gif)
 
 ```python
-anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs         # [constraints, sides] Direction <- Twist
-rigid = SparseExtensor.from_indices(anchor_motion, constraint_idx, constraints.body_idx, shape)   # [constraints, bodies] Direction <- Twist
-system = rigid(inverse_inertias(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance
-reactions = system.solve((-gap - (modal * unconstrained_step).sum(axis=-2)).cast(Direction))   # [constraints] Force
-displacement = inverse_inertia(rigid.adjugate()(reactions))            # [bodies] Twist
+anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs   # [constraints, sides] Direction <- Twist
+system = rigid(inverse_inertias(rigid.adjugate())) + compliance      # [constraints, constraints] Direction <- Force
+displacement = inverse_inertia(rigid.adjugate()(reactions))          # [bodies] Twist
 ```
 
-* **Constraints as a sparse extensor.** `anchor.commutator(Twist)` maps a body's twist to an anchor's displacement. Over all constraints and bodies these maps are the cells of a sparse extensor, and its adjugate maps forces at the constraints to forques on the bodies.
-* **One solve for all constraints.** `rigid(inverse_inertias(rigid.adjugate()))`, with the modes' and constraints' compliance added, is the system for all constraint forces, built without assembling a Jacobian and solved once per step. A stiff beam needs this to carry load; solved one constraint at a time, it does not converge.
-* **Rigid motion in motors, deformation in modes.** Each girder's modes are the eigenfields of its sparse stiffness `~ends * bars(ends * Force)` against its masses.
+* **An anchor's motion is a commutator.** `anchor.commutator(Twist)` maps a body's twist to how far the anchor moves. Over all constraints and the bodies they join, these maps are the cells of one sparse extensor, `rigid`.
+* **The adjugate carries forces back.** `rigid.adjugate()` maps forces at the constraints to forques on the bodies, doing the same work: `rigid.adjugate()(forces) & twists == forces & rigid(twists)`.
+* **The system is a composition.** Forces to forques, forques to twists, twists to gaps: `rigid(inverse_inertias(rigid.adjugate()))`, with the compliance of the modes and joints added, is solved once for every reaction, without assembling a Jacobian.
 
 # References
 

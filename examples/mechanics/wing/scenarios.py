@@ -77,13 +77,20 @@ def main() -> None:
 
     # --- checks
     pitched = core.pitched(wing(), HIGHEST_ATTACK)
-    flow = core.flow(pitched, stream(), core.rings(pitched, RINGS, ANGLES, REACH), trailing_edge(pitched))
-    # The potential's derivative vanishes everywhere.
-    np.testing.assert_allclose(core.derivative(flow.potential_gradient).kernel, 0.0, atol=1e-9)
+    plane = core.rings(pitched, RINGS, ANGLES, REACH)                        # [rings, angles] Vector
+    flow = core.flow(pitched, stream(), plane, trailing_edge(pitched))
+    # The velocity's derivative vanishes everywhere past the cylinder.
+    _, gradient, _ = core.cylinder(pitched, stream(), plane)
+    np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
+    # Around every ring about the wing the velocity times each step adds up to the circulation, with
+    # no flux: the derivative between any two rings vanishes too.
+    next_idx = (np.arange(ANGLES) + 1) % ANGLES
+    loops = ((flow.velocity + flow.velocity[:, next_idx]) / 2 * (flow.points[:, next_idx] - flow.points)).sum(axis=-1)
+    np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
+    np.testing.assert_allclose((loops - core.circulation(pitched, stream()).dual()).kernel, 0.0, atol=1e-3)
     # The pressure on the surface, half the density times the squared speed along the inward
     # normal, adds up to the Kutta–Joukowski lift, across the stream, with no drag.
     surface = core.flow(pitched, stream(), core.rings(pitched, 1, ANGLES, 1.0)[0], trailing_edge(pitched))
-    next_idx = (np.arange(ANGLES) + 1) % ANGLES
     steps = surface.points[next_idx] - surface.points                        # [angles] Vector
     speed_squared = surface.velocity | surface.velocity                      # [angles] Scalar
     force = (0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * -steps.dual()).sum(axis=-1)
