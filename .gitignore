@@ -25,6 +25,11 @@ dist/
 !/plots/odometry.gif
 !/plots/kane_mele_helical.gif
 !/plots/modal_xpbd_buckle.gif
+!/plots/wing.gif
+!/plots/radiating_charge_fast.gif
+!/plots/area_transport.gif
+!/plots/twistor_hopfion.gif
+!/plots/arap_bending.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

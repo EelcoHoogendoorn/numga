@@ -4,3 +4,5 @@ repos:
     rev: 0.8.1
     hooks:
       - id: nbstripout
+        # Keep the cells' ids: some are names other cells and links refer to.
+        args: [--keep-id]

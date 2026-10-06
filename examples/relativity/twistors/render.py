@@ -14,6 +14,9 @@ from examples.relativity.twistors import core
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 # Fibres near the projection point extend beyond the displayed region.
 LIMIT = 3.8
+# The field lines' view: how far it zooms in on the box, and the frame's size in inches and dots per inch.
+FIELD_ZOOM = 1.9
+FIELD_SIZE, FIELD_DPI = 4.0, 72
 
 
 # --- plumbing -----------------------------------------------------------------------
@@ -38,11 +41,11 @@ def colours(count: int) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), np.full_like(hue, 0.8)], axis=-1))
 
 
-def spatial_axes(figure: plt.Figure, position: tuple[float, float, float, float]) -> plt.Axes:
+def spatial_axes(figure: plt.Figure, position: tuple[float, float, float, float], zoom: float = 1.2) -> plt.Axes:
     """One fixed spatial viewport shared by the fields and animation."""
     ax = figure.add_axes(position, projection="3d")
     ax.set(xlim=(-LIMIT, LIMIT), ylim=(-LIMIT, LIMIT), zlim=(-LIMIT, LIMIT))
-    ax.set_box_aspect((1, 1, 1), zoom=1.2)
+    ax.set_box_aspect((1, 1, 1), zoom=zoom)
     ax.set_axis_off()
     ax.view_init(elev=22, azim=-55)
     return ax
@@ -90,8 +93,8 @@ def draw_congruence(curves: core.Event) -> plt.Figure:
 
 def draw_fields(curves: core.Event) -> plt.Figure:
     """Field lines at one instant."""
-    figure = plt.figure(figsize=(6, 5.5), facecolor="white")
-    draw_curves(spatial_axes(figure, (0, 0, 1, 1)), curves)
+    figure = plt.figure(figsize=(FIELD_SIZE, FIELD_SIZE), dpi=FIELD_DPI, facecolor="white")
+    draw_curves(spatial_axes(figure, (0, 0, 1, 1), FIELD_ZOOM), curves)
     return figure
 
 
