@@ -71,3 +71,12 @@ def study_normalized(value: Extensor) -> Extensor:
     correction = product(value, value).square_root().inverse()
     # This correction comes from x * reverse(x), so its side matters.
     return (correction * value).with_traits(*value.gatype.normalized_traits)
+
+
+@Extensor.normalized.register(GATypePattern(arity=0))
+def general_normalized(value: Extensor) -> Extensor:
+    """Any multivector whose reverse product has a principal square root: the inverse square root
+    of x * reverse(x) on the left, the same correction as the scalar and Study forms, by the
+    general root where neither closed form applies. Tried after both."""
+    correction = value.symmetric_reverse_product().inverse_square_root()
+    return (correction * value).with_traits(*value.gatype.normalized_traits)

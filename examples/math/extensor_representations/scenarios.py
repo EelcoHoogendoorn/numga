@@ -34,8 +34,10 @@ def main(positive: int, negative: int) -> Extensor:
 
     # Every chart blade retains exactly 1 / multiplicity of its coefficient in
     # the embedding. Casting back and rescaling therefore recovers the state.
-    # Keep Full open as well: this converts any multivector into a Spinor map.
-    embedder = multiplicity * (Full * state_embedding).cast(Spinor)
+    state_readout = (multiplicity * Full).cast(Spinor)
+    # Keep Full open as well: embedding, multiplying on the left and reading out
+    # converts any multivector into a Spinor map.
+    embedder = state_readout(Full * state_embedding)
 
     # --- checks
     context = NumpyContext(ga)

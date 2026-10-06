@@ -14,7 +14,7 @@ register(), such as `invariant_decomposition` and `optimized`.
 from __future__ import annotations
 
 from numga.extensor import Extensor
-from numga.gatype import ReverseProductOne, Versor
+from numga.gatype import GATypePattern, ReverseProductOne, Versor
 
 
 @Extensor.exp_linear.register(lambda t: t <= t.algebra.gatype.bivector())
@@ -114,12 +114,15 @@ def nilpotent_bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
 @Extensor.exp_bisect.register(lambda t: t <= t.algebra.gatype.bivector())
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector())
 def bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
-    """The Taylor step of the generator scaled down by 2**n, followed by n squarings."""
+    """The Taylor step of the generator scaled down by 2**n, followed by n squarings, the step and
+    the result each normalized. Within the step's range the normalizations change nothing above
+    round-off; beyond it the result stays a rotor, at the wrong angle, where the bare series and
+    its squarings grow without bound."""
 
-    m = _exp_series(b / 2**n)
+    m = _taylor_exp(b / 2**n).normalized()
     for _ in range(n):
         m = m.squared()
-    return m.with_traits(ReverseProductOne, Versor)
+    return m.normalized().with_traits(ReverseProductOne, Versor)
 
 
 @Extensor.exp_derivative.register(lambda t: t <= t.algebra.subspace.bivector())
@@ -155,21 +158,31 @@ _ORDER = 8
 
 
 def _exp_series(x: Extensor) -> Extensor:
-    """exp of a small bivector by its Taylor series, by Horner: 1 + x (1 + x / 2 (1 + x / 3 (...)))."""
-    result = 1 + x / _ORDER
-    for k in range(_ORDER - 1, 0, -1):
-        result = 1 + x * result / k
-    return result.with_traits(ReverseProductOne, Versor)
+    """exp of a small bivector by its Taylor series, a rotor."""
+    return _taylor_exp(x).with_traits(ReverseProductOne, Versor)
 
 
 def _log_series(m: Extensor) -> Extensor:
-    """The bivector log of a rotor near the identity by the series of log(1 + y) in y = m - 1, by
-    Horner: y (1 - y (1 / 2 - y (1 / 3 - ...)))."""
+    """The bivector log of a rotor near the identity."""
+    return _taylor_log(m).restrict[2]
+
+
+def _taylor_exp(x: Extensor) -> Extensor:
+    """exp of a small multivector by its Taylor series, by Horner: 1 + x (1 + x / 2 (1 + x / 3 (...)))."""
+    result = 1 + x / _ORDER
+    for k in range(_ORDER - 1, 0, -1):
+        result = 1 + x * result / k
+    return result
+
+
+def _taylor_log(m: Extensor) -> Extensor:
+    """log of a multivector near one by the series of log(1 + y) in y = m - 1, by Horner:
+    y (1 - y (1 / 2 - y (1 / 3 - ...)))."""
     y = m - 1
     result = y / _ORDER
     for k in range(_ORDER - 1, 0, -1):
         result = y * (1 / k - result)
-    return result.restrict[2]
+    return result
 
 
 @Extensor.exp.register(lambda t: t.squared.is_empty)
@@ -229,3 +242,25 @@ def versor_log(m: Extensor, *, n: int = 8) -> Extensor:
     scale = m.norm()
     unit = (m / scale).with_traits(ReverseProductOne, Versor)
     return scale.log() + unit.log(n=n)
+
+
+@Extensor.exp.register(GATypePattern(arity=0))
+def general_exp(x: Extensor, *, n: int = 8) -> Extensor:
+    """Any multivector: the Taylor step of `x` scaled down by 2**n, followed by n squarings. Its
+    powers stay in the subalgebra it generates, so the result's type closes on its own. Tried
+    after every closed form and special case."""
+
+    m = _taylor_exp(x / 2**n)
+    for _ in range(n):
+        m = m.squared()
+    return m
+
+
+@Extensor.log.register(GATypePattern(arity=0))
+def general_log(m: Extensor, *, n: int = 8) -> Extensor:
+    """Any multivector with a principal square root: n square roots bring it near one, then the
+    series of the logarithm, scaled back up by 2**n, the inverse of `general_exp` step for step."""
+
+    for _ in range(n):
+        m = m.square_root()
+    return _taylor_log(m) * 2**n

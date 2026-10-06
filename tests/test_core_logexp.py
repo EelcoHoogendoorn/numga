@@ -173,24 +173,30 @@ def test_general_bivector_exp_supports_independent_rotation_planes(description, 
 
     assert result.gatype <= algebra.gatype.rotor()
     np.testing.assert_allclose((result - reference).kernel, 0, rtol=0, atol=1e-8)
-    if algebra.dimension == 6:
-        # Motor roots normalize m + 1 through scalar or Study roots.
-        # The full 6D even carrier has a more general reverse product.
-        with pytest.raises(LookupError, match="no 'normalized'"):
-            reference.with_traits(Versor, ReverseProductOne).log()
-    else:
-        np.testing.assert_allclose(
-            reference.with_traits(Versor, ReverseProductOne).log().kernel,
-            generator.kernel, rtol=1e-8, atol=1e-8,
-        )
+    np.testing.assert_allclose(
+        reference.with_traits(Versor, ReverseProductOne).log().kernel,
+        generator.kernel, rtol=1e-8, atol=1e-8,
+    )
 
 
-def test_log_requires_declared_unit_input_and_never_repairs_it(monkeypatch):
+@pytest.mark.parametrize("description", ["x+y+z+", "x+y+z+w+"])
+def test_exp_stays_a_rotor_far_beyond_the_series_range(description):
+    algebra = Algebra(description)
+    mv = NumpyContext(algebra).multivector
+    sizes = np.array([1e3, 1e4, 1e6])
+    plane = mv.xy + 0.7 * mv.blade(algebra.subspace.bivector().masks[-1])
+    rotors = (plane * sizes).exp()
+    product = algebra.operator.symmetric_reverse_product(rotors.subspace)(rotors, rotors)
+    np.testing.assert_allclose(product.kernel[:, 0], 1.0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(product.kernel[:, 1:], 0.0, rtol=0, atol=1e-12)
+
+
+def test_log_trusts_declared_unit_input_and_takes_the_full_log_otherwise(monkeypatch):
     algebra = Algebra("x+y+")
     mv = NumpyContext(algebra).multivector
     coefficients = [1.1, 0.2]
-    with pytest.raises(LookupError, match="no 'log'"):
-        mv.even(coefficients).log()
+    # Undeclared, the even element of the plane is a complex number, and its log the complex log.
+    np.testing.assert_allclose(mv.even(coefficients).log().kernel, [np.log(abs(1.1 + 0.2j)), np.angle(1.1 + 0.2j)], atol=1e-12)
 
     declared = mv.rotor(coefficients)
     forbid_input_normalization(monkeypatch, declared)
