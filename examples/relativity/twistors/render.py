@@ -1,0 +1,116 @@
+"""Light-ray incidence, the Robinson congruence, and linked electromagnetic field lines."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import hsv_to_rgb
+
+from examples.animation import capture
+from examples.relativity.twistors import core
+
+INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
+# Fibres near the projection point extend beyond the displayed region.
+LIMIT = 3.8
+
+
+# --- plumbing -----------------------------------------------------------------------
+def spatial(events: core.Event) -> np.ndarray:
+    """The x, y and z components of events."""
+    return events.cast(events.algebra.subspace("x y z")).kernel
+
+
+def spacetime(events: core.Event) -> np.ndarray:
+    """The x, z and t components of events."""
+    return events.cast(events.algebra.subspace("x z t")).kernel
+
+
+def clipped(points: np.ndarray) -> np.ndarray:
+    """Break each curve where it leaves the displayed region."""
+    return np.where(np.linalg.norm(points, axis=-1, keepdims=True) > LIMIT, np.nan, points)
+
+
+def colours(count: int) -> np.ndarray:
+    """One colour per curve, kept through every frame."""
+    hue = np.arange(count) / count
+    return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), np.full_like(hue, 0.8)], axis=-1))
+
+
+def spatial_axes(figure: plt.Figure, position: tuple[float, float, float, float]) -> plt.Axes:
+    """One fixed spatial viewport shared by the fields and animation."""
+    ax = figure.add_axes(position, projection="3d")
+    ax.set(xlim=(-LIMIT, LIMIT), ylim=(-LIMIT, LIMIT), zlim=(-LIMIT, LIMIT))
+    ax.set_box_aspect((1, 1, 1), zoom=1.2)
+    ax.set_axis_off()
+    ax.view_init(elev=22, azim=-55)
+    return ax
+
+
+def draw_curves(ax: plt.Axes, curves: core.Event) -> None:
+    """Each spatial curve in its own colour."""
+    points = clipped(spatial(curves))
+    for curve, rgb in zip(points, colours(len(points))):
+        ax.plot(*curve.T, color=rgb, linewidth=1.1)
+
+
+def draw_incidence(
+    events: core.Event, ray: core.Event, transformed_events: core.Event, transformed_ray: core.Event,
+) -> plt.Figure:
+    """Events on a light ray, and the same incidence after a conformal transformation."""
+    positions = spacetime(events), spacetime(transformed_events)
+    rays = spacetime(ray), spacetime(transformed_ray)
+    extent = np.max(np.abs(np.concatenate((*positions, *rays)))) * 1.12
+    figure = plt.figure(figsize=(10, 5), facecolor="white")
+    for column, (points, line) in enumerate(zip(positions, rays)):
+        ax = figure.add_subplot(1, 2, column + 1, projection="3d")
+        ax.plot(*line.T, color=BLUE, linewidth=1.6)
+        ax.scatter(*points.T, color=ORANGE, s=34, depthshade=False)
+        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), zlim=(-extent, extent),
+               xlabel="x", ylabel="z", zlabel="t", xticks=[], yticks=[], zticks=[])
+        ax.set_box_aspect((1, 1, 1))
+        ax.set_proj_type("ortho")
+        ax.view_init(elev=15, azim=-68)
+        ax.grid(False)
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            axis.pane.fill = False
+            axis.line.set_color("0.8")
+    figure.tight_layout()
+    return figure
+
+
+def draw_congruence(curves: core.Event) -> plt.Figure:
+    """Spatial curves tangent to the light-ray directions at one instant."""
+    figure = plt.figure(figsize=(7, 6), facecolor="white")
+    ax = spatial_axes(figure, (0, 0, 1, 1))
+    draw_curves(ax, curves)
+    return figure
+
+
+def draw_fields(curves: core.Event) -> plt.Figure:
+    """Field lines at one instant."""
+    figure = plt.figure(figsize=(6, 5.5), facecolor="white")
+    draw_curves(spatial_axes(figure, (0, 0, 1, 1)), curves)
+    return figure
+
+
+def animate_fields(stream: Iterable[core.Event]) -> list[np.ndarray]:
+    """Field lines carried through time in a fixed spatial viewport."""
+    frames = []
+    for curves in stream:
+        figure = draw_fields(curves)
+        frames.append(capture(figure))
+        plt.close(figure)
+    return frames
+
+
+def inline(frames: list[np.ndarray], duration_ms: int):
+    """Frames as a looping GIF to show in a notebook, kept in memory."""
+    from io import BytesIO
+    from IPython.display import Image as Shown
+    from PIL import Image
+    images = [Image.fromarray(pixels) for pixels in frames]
+    buffer = BytesIO()
+    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
+    return Shown(data=buffer.getvalue(), format="gif")

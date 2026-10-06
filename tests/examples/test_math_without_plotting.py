@@ -93,6 +93,8 @@ import examples.relativity.dirac.scenarios
 import examples.relativity.gravitational_lensing.core
 import examples.relativity.gravitational_lensing.scenarios
 import examples.relativity.impulse.core
+import examples.relativity.twistors.core
+import examples.relativity.twistors.scenarios
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))
