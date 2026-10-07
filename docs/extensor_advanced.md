@@ -44,6 +44,13 @@ and it falls only by binding a slot or by a product of the algebra. A dyad is wr
 product with an open slot, `a * (b & Point)`, and a contraction chosen by index, the other half
 of `einsum`, has no counterpart.
 
+As objects, extensors are tensors whose arguments are multivectors rather than vectors, and the
+tensors of vector algebra are the extensors whose inputs are all vectors. The tensor product's
+work, joining independent arguments into one multilinear map, is done by any product with more
+than one argument left open: the dyad above joins an output to a reading of a point, and
+`Plane & Point` reads two independent arguments at once. Where tensor algebra builds a map from
+tensor products and then contracts, an extensor is written as the product it is.
+
 In tensor notation that dyad reads as
 $a \otimes b$.
 

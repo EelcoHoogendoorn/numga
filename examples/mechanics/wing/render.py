@@ -13,23 +13,29 @@ from examples.mechanics.wing import core
 
 WINDOW = (-3.2, 3.2, -1.8, 1.8)
 PRESSURE_RANGE = (-3.0, 1.0)
-STREAM_LEVELS = np.linspace(-3.0, 3.0, 41)
+STREAM_LEVELS = np.linspace(-3.0, 3.0, 21)
 LIFT_SCALE = 0.35
 WING = "#0f172a"
 LIFT = "#16a34a"
 MARK = "#facc15"
 CENTRE = "#f8fafc"
+# The animations' dots per inch.
+FRAME_DPI = 36
 
 
 # --- plumbing -------------------------------------------------------------------------
 def draw(ax, flow: core.Flow, lift: core.Vector, speed: float) -> None:
-    xy = flow.points.cast(core.ga.subspace("x y")).kernel
-    speed_squared = (flow.velocity | flow.velocity).kernel[..., 0]
+    # Each ring closed, its first angle repeated at the end, so no seam is left unpainted.
+    def closed(values: np.ndarray) -> np.ndarray:
+        return np.concatenate([values, values[:, :1]], axis=1)
+
+    xy = closed(flow.points.cast(core.ga.subspace("x y")).kernel)
+    speed_squared = closed((flow.velocity | flow.velocity).kernel[..., 0])
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
     ax.pcolormesh(xy[..., 0], xy[..., 1], pressure, cmap="RdBu", shading="gouraud",
                   norm=TwoSlopeNorm(0.0, *PRESSURE_RANGE))
-    ax.contour(xy[..., 0], xy[..., 1], flow.stream.cast(core.ga.subspace("xy")).kernel[..., 0], levels=STREAM_LEVELS,
+    ax.contour(xy[..., 0], xy[..., 1], closed(flow.stream.cast(core.ga.subspace("xy")).kernel[..., 0]), levels=STREAM_LEVELS,
                colors="#334155", linewidths=0.6)
     ax.fill(xy[0, :, 0], xy[0, :, 1], color=WING)
     arrow = lift.cast(core.ga.subspace("x y")).kernel * LIFT_SCALE
@@ -45,7 +51,7 @@ def figure(flow: core.Flow, lift: core.Vector, speed: float) -> plt.Figure:
 
 
 def frame(flow: core.Flow, lift: core.Vector, speed: float) -> np.ndarray:
-    result = plt.figure(figsize=(8, 4.6), dpi=80, layout="constrained")
+    result = plt.figure(figsize=(8, 4.6), dpi=FRAME_DPI, layout="constrained")
     draw(result.subplots(), flow, lift, speed)
     pixels = capture(result)
     plt.close(result)
@@ -54,7 +60,7 @@ def frame(flow: core.Flow, lift: core.Vector, speed: float) -> np.ndarray:
 
 def marked_frame(flow: core.Flow, lift: core.Vector, speed: float, critical: core.Vector, centre: core.Vector) -> np.ndarray:
     """A frame with the images of the map's critical points and the cylinder's centre marked."""
-    result = plt.figure(figsize=(8, 4.6), dpi=80, layout="constrained")
+    result = plt.figure(figsize=(8, 4.6), dpi=FRAME_DPI, layout="constrained")
     ax = result.subplots()
     draw(ax, flow, lift, speed)
     for points, colour in ((critical, MARK), (centre, CENTRE)):

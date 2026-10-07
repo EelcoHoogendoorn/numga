@@ -60,11 +60,31 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 3. Lift without Vorticity (VGA2D)
+## 3. As Rigid As Possible (VGA3D)
+
+**Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
+
+<p align="center"><img src="../plots/arap_bending.gif" alt="A bar held at one end and bent a quarter turn up, keeping its shape as it bends" width="360" /></p>
+
+```python
+forms = ~A10 * H1 * (edges | (Even >> rest))                 # [V] Scalar <- (Even, Even): each vertex's form on a rotor
+rotors = forms.eigh()[1][..., -1]                            # [V] Even: every vertex's best rotor
+turned = (A10 * (rotors >> Vector))(rest)                    # [E] Vector: each rest edge, turned by its ends' rotors
+vertices = held.solve(~T10 * H1 * turned + P * targets)      # [V] Vector
+```
+
+* **The best rotor is an eigenvector.** `edges | (Even >> rest)` measures how well an open rotor turns each rest edge onto its edge; summed at each vertex it is a form on rotors, and its top eigenvector is the vertex's best rotor.
+* **A rotor becomes a map.** `rotors >> Vector` is each rotor as the turn it makes; averaged over each edge's ends, the turns carry the rest edges, and one sparse solve places the vertices.
+
+---
+
+## 4. Lift without Vorticity (VGA2D)
 
 **Notebook**: [`examples/mechanics/wing/wing.ipynb`](../examples/mechanics/wing/wing.ipynb)
 
-![A wing pitching up and back in a steady stream, its pressure, streamlines and lift](../plots/wing.gif)
+<p align="center">
+  <img src="../plots/wing.gif" alt="A wing pitching up and back in a steady stream, its pressure, streamlines and lift" width="560" />
+</p>
 
 ```python
 velocity = stream - radius_squared * (inverse * stream * inverse) - swirl * inverse / (2 * np.pi)   # [rings, angles] Vector
@@ -81,11 +101,13 @@ loops = (velocity * steps).sum(axis=-1)                                    # [ri
 
 ---
 
-## 4. Moving Charges & Maxwell's Equations (STA)
+## 5. Moving Charges & Maxwell's Equations (STA)
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
-![A charge circling fast, its field spiralling outward](../plots/radiating_charge_fast.gif)
+<p align="center">
+  <img src="../plots/radiating_charge_fast.gif" alt="A charge circling fast, its field spiralling outward" width="420" />
+</p>
 
 ```python
 at_rest = weight * mv.t * (separations | Vector)                    # [charges, ...] Vector <- Vector: each charge's potential gradient, at rest
@@ -100,7 +122,7 @@ current = (field_gradients(Vector) & Antivector).trace(1, 2)        # [...] Vect
 
 ---
 
-## 5. Multi-View Scene Reconstruction & Camera Alignment (PGA2D)
+## 6. Multi-View Scene Reconstruction & Camera Alignment (PGA2D)
 
 **Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
@@ -123,7 +145,7 @@ gradient = (cones(local_points) & motion).sum(axis=0)     # [cams] Scalar <- Twi
 
 ---
 
-## 6. Odometry: The Most Likely Trajectory (PGA2D)
+## 7. Odometry: The Most Likely Trajectory (PGA2D)
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -143,7 +165,7 @@ preconditioned = alone.solve(residual)                 # [poses] Twist: each pos
 
 ---
 
-## 7. Area Transport through a Collapse (VGA3D)
+## 8. Area Transport through a Collapse (VGA3D)
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -162,7 +184,7 @@ cofactor = adjugate.adjoint()                  # [cases] Vector <- Vector: area 
 
 ---
 
-## 8. Spacetime Constitutive Relations, Dispersion & Relativistic Fresnel Drag (STA)
+## 9. Spacetime Constitutive Relations, Dispersion & Relativistic Fresnel Drag (STA)
 
 **Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](../examples/electromagnetism/constitutive/constitutive.ipynb)
 
@@ -182,11 +204,11 @@ wave.svdvals()                                                 # near zero where
 
 ---
 
-## 9. Gravitational Wave Curvature & Tidal Forces (STA)
+## 10. Gravitational Wave Curvature & Tidal Forces (STA)
 
 **Notebook**: [`examples/relativity/curvature/curvature.ipynb`](../examples/relativity/curvature/curvature.ipynb)
 
-![Bead ring response to plus, cross and circular gravitational wave packets](../plots/curvature.gif)
+<p align="center"><img src="../plots/curvature.gif" alt="A ring of free masses in a circularly polarized gravitational wave" width="360" /></p>
 
 ```python
 nx, ny = k.wedge(x), k.wedge(y)                                  # [] Bivector: two null planes along the wave
@@ -203,7 +225,7 @@ tidal = plus(t.wedge(Vector)).commutator(t)                      # [] Vector <- 
 
 ---
 
-## 10. Twistors & Linked Light (Conformal Spacetime)
+## 11. Twistors & Linked Light (Conformal Spacetime)
 
 **Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
@@ -222,7 +244,7 @@ selected = representations(point(event), fixed_twistor)    # [...] Twistor: one 
 
 ---
 
-## 11. Magnetic Resonance & Spin Echoes (VGA3D)
+## 12. Magnetic Resonance & Spin Echoes (VGA3D)
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb)
 
@@ -238,24 +260,6 @@ echo = waiting(turn(waiting(tip))).mean(axis=-1)              # [delays] State <
 
 * **Relaxation is its formula,** the state left open on both sides of each term: no density matrix flattened into a vector, no Kronecker products.
 * **An experiment is a composition.** Spans of evolution, pulses and the average over spins compose into one map for the sample.
-
----
-
-## 12. As Rigid As Possible (VGA3D)
-
-**Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
-
-![A bar held at one end and bent a quarter turn up, keeping its shape as it bends](../plots/arap_bending.gif)
-
-```python
-forms = ~A10 * H1 * (edges | (Even >> rest))                 # [V] Scalar <- (Even, Even): each vertex's form on a rotor
-rotors = forms.eigh()[1][..., -1]                            # [V] Even: every vertex's best rotor
-turned = (A10 * (rotors >> Vector))(rest)                    # [E] Vector: each rest edge, turned by its ends' rotors
-vertices = held.solve(~T10 * H1 * turned + P * targets)      # [V] Vector
-```
-
-* **The best rotor is an eigenvector.** `edges | (Even >> rest)` measures how well an open rotor turns each rest edge onto its edge; summed at each vertex it is a form on rotors, and its top eigenvector is the vertex's best rotor.
-* **A rotor becomes a map.** `rotors >> Vector` is each rotor as the turn it makes; averaged over each edge's ends, the turns carry the rest edges, and one sparse solve places the vertices.
 
 ---
 

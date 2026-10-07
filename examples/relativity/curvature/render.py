@@ -22,6 +22,9 @@ INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 LIGHT = "#c3ccd4"
 TRACKING = ("#d15a67", "#b48616", "#168676", "#8759a6")
 POLARIZATIONS = ("Plus", "Cross", "Circular")
+# The animated ring: the circular packet, alone, at the dots per inch its detail needs.
+ANIMATED = POLARIZATIONS.index("Circular")
+ANIMATION_DPI = 64
 
 
 # --- coordinate readout ---------------------------------------------------------------
@@ -224,16 +227,18 @@ def draw_detector(
 def animate_detector(
     time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector, amplification: float,
 ) -> list[np.ndarray]:
-    """The three bead rings through the packet, as frames at 20 per unit time."""
+    """The bead ring through the circular packet, as frames at 20 per unit time."""
     data = _detector(time, reference, displacement, acceleration, amplification)
-    fig = plt.figure(figsize=(14, 5.2), dpi=80, facecolor="white")
-    axes = _ring_axes(fig, data)
-    updates = [_ring(ax, data, polarization, static=False) for polarization, ax in enumerate(axes)]
+    fig = plt.figure(figsize=(5.2, 5.2), dpi=ANIMATION_DPI, facecolor="white")
+    limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+    ax.set_axis_off()
+    update = _ring(ax, data, ANIMATED, static=False)
     count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * 20) + 1))
     frames = []
     for index in np.linspace(0, len(data.time) - 1, count, dtype=int):
-        for update in updates:
-            update(index)
+        update(index)
         frames.append(capture(fig))
     plt.close(fig)
     return frames

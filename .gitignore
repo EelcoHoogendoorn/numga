@@ -41,3 +41,4 @@ dist/
 .agent_brain
 .ipynb_checkpoints/
 /AGENTS.md
+/notes/

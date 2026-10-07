@@ -22,5 +22,5 @@ def test_turning_the_bar_and_its_handles_turns_the_answer():
 
 def test_the_bending_scene_passes_its_checks_and_draws():
     bar, rigid, laplacian = scenarios.bending()
-    images = render.animate(bar, rigid[-1:], laplacian[-1:], np.array([scenarios.LENGTH, 2.0, 2.0]) / scenarios.DIVISIONS)
+    images = render.animate(bar, rigid[-1:], np.array([scenarios.LENGTH, 2.0, 2.0]) / scenarios.DIVISIONS)
     assert len(images) == 1

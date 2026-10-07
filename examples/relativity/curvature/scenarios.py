@@ -86,4 +86,10 @@ if __name__ == "__main__":
     detector = detector_scenario()
     save_figure(render.draw_detector(*detector), "curvature")
     if args.animate:
-        save_animation(render.animate_detector(*detector), "curvature", 50)
+        time, reference, displacement, acceleration, amplification = detector
+        # The middle half of the window, three packet widths either side of the peak, where the ring moves.
+        shown = slice(SAMPLES // 4, 3 * SAMPLES // 4 + 1)
+        save_animation(
+            render.animate_detector(time[shown], reference, displacement[shown], acceleration[shown], amplification),
+            "curvature", 50,
+        )

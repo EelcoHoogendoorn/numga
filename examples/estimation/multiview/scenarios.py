@@ -105,9 +105,9 @@ def two_cameras(iterations: int):
 
 def three_cameras(iterations: int):
     """All three cameras perturbed and updating freely, without anchors."""
-    # Damping 0.32 yields a steady visual trajectory reaching ~95% progress at step 10.
-    initial_motors = rig(np.array([-BASELINE * 0.95, BASELINE, -0.1]), np.array([GAZE * 1.05, -GAZE * 1.25, 0.05]))
-    return convergence(three_camera_truth(), initial_motors, 0.32, np.array([1.0, 1.0, 1.0]), iterations)
+    # Damping 0.1 keeps every step a tenth shorter than the one before: a gradual trajectory.
+    initial_motors = rig(np.array([-BASELINE * 0.85, BASELINE, -0.25]), np.array([GAZE * 1.15, -GAZE * 1.65, 0.15]))
+    return convergence(three_camera_truth(), initial_motors, 0.1, np.array([1.0, 1.0, 1.0]), iterations)
 
 
 def schur(iterations: int):
@@ -133,5 +133,5 @@ if __name__ == "__main__":
     save_figure(render.draw_reconstruction(*bundle_adjustment()), "multiview_bundle_adjustment")
     save_animation(render.animate_convergence(one_camera(10)), "multiview_convergence_1cam", 333)
     save_animation(render.animate_convergence(two_cameras(10)), "multiview_convergence_2cams", 333)
-    save_animation(render.animate_convergence(three_cameras(10)), "multiview_convergence_3cams", 333)
+    save_animation(render.animate_convergence(three_cameras(30)), "multiview_convergence_3cams", 120)
     save_animation(render.animate_convergence_with_covariance(schur(10)), "multiview_convergence_schur", 333)

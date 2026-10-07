@@ -61,4 +61,5 @@ if __name__ == "__main__":
     from examples.animation import save_animation
     from examples.surfaces.arap import render
 
-    save_animation(render.animate(*bending(), np.array([LENGTH, 2.0, 2.0]) / DIVISIONS), "arap_bending", 80)
+    bar, rigid, _ = bending()
+    save_animation(render.animate(bar, rigid, np.array([LENGTH, 2.0, 2.0]) / DIVISIONS), "arap_bending", 80)

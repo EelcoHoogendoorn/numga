@@ -228,7 +228,7 @@ def draw_reconstruction_with_covariance(
 
 def animate_convergence(states: Iterable) -> list[np.ndarray]:
     """RGB frames of the reconstruction, one per state."""
-    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=120, layout="constrained")
+    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
     frames = []
     for motors, world_cones, fused, points in states:
         plot_reconstruction(ax, motors, world_cones, fused, points)
@@ -241,7 +241,7 @@ def animate_convergence_with_covariance(
     states: Iterable,
 ) -> list[np.ndarray]:
     """RGB frames of the reconstruction and pose covariances, one per state."""
-    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=120, layout="constrained")
+    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
     frames = []
     for motors, world_cones, fused, points, information in states:
         plot_reconstruction(ax, motors, world_cones, fused, points)

@@ -13,7 +13,7 @@ from examples.surfaces.arap import core
 # The checkerboard's two colours, the view, and the box it shows.
 LIGHT, DARK = np.array([0.98, 0.84, 0.62]), np.array([0.90, 0.45, 0.18])
 ELEVATION, AZIMUTH = 18.0, -64.0
-LIMITS = np.array([[-3.4, 2.2], [-1.4, 1.4], [-1.2, 5.0]])
+LIMITS = np.array([[-3.3, 3.5], [-1.5, 1.5], [-1.1, 4.0]])
 
 
 def coordinates(points: core.Vector) -> np.ndarray:
@@ -48,11 +48,24 @@ def side_by_side(bar, shapes: list[core.Vector], titles: list[str], cell: np.nda
     return figure
 
 
-def animate(bar, rigid: core.Vector, laplacian: core.Vector, cell: np.ndarray) -> list[np.ndarray]:
-    """Each frame: the bar as rigid as possible beside Laplacian editing."""
+def animate(bar, shapes: core.Vector, cell: np.ndarray) -> list[np.ndarray]:
+    """The bar in each of the given shapes, one frame each."""
     images = []
-    for shape, edited in zip(rigid, laplacian):
-        figure = side_by_side(bar, [shape, edited], ["as rigid as possible", "Laplacian editing"], cell)
+    colours = checker(bar.vertices, bar.faces, cell)
+    for shape in shapes:
+        figure = plt.figure(figsize=(4, 4), dpi=80)
+        draw(figure.add_axes((0, 0, 1, 1), projection="3d"), shape, bar.faces, colours, "")
         images.append(capture(figure))
         plt.close(figure)
     return images
+
+
+def inline(frames: list[np.ndarray], duration_ms: int):
+    """Frames as a looping GIF to show in a notebook, kept in memory."""
+    from io import BytesIO
+    from IPython.display import Image as Shown
+    from PIL import Image
+    images = [Image.fromarray(pixels) for pixels in frames]
+    buffer = BytesIO()
+    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
+    return Shown(data=buffer.getvalue(), format="gif")

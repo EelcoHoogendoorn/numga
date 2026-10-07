@@ -119,7 +119,6 @@ def plot_camera_image(ax: plt.Axes, projected_pixels: Point) -> None:
     for body, color in zip(pixels, BODY_COLORS):
         for face in faces:
             ax.add_patch(Polygon(body[face], closed=True, facecolor=color, edgecolor="#1E293B", linewidth=1.0, alpha=0.88))
-        ax.scatter(body[:, 0], body[:, 1], color="white", s=6, edgecolors=color, linewidths=0.6, zorder=4)
 
     # Sensor frame boundary:
     ax.add_patch(Rectangle((0, 0), width, height, fill=False, edgecolor="#4A5568", linewidth=1.2, linestyle="-"))

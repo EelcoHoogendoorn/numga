@@ -19,8 +19,11 @@ SPEED = 1.0
 DENSITY = 1.0
 LOWEST_ATTACK = np.deg2rad(-4.0)
 HIGHEST_ATTACK = np.deg2rad(12.0)
+# The rings and angles the checks sample; the animations draw from fewer, all a picture needs.
 RINGS = 140
 ANGLES = 360
+DRAWN_RINGS = 35
+DRAWN_ANGLES = 90
 REACH = 6.0
 FRAMES = 80
 MORPH_FRAMES = 60
@@ -49,7 +52,7 @@ def morph() -> Iterator[tuple[core.Flow, core.Vector, core.Vector, core.Vector]]
     critical points' images, where the map doubles angles; and the cylinder's centre before the map,
     whose offset from where the critical points start shapes the wing."""
     pitched = core.pitched(wing(), MORPH_ATTACK)
-    plane = core.rings(pitched, RINGS, ANGLES, REACH)                        # [rings, angles] Vector
+    plane = core.rings(pitched, DRAWN_RINGS, DRAWN_ANGLES, REACH)            # [rings, angles] Vector
     spread = (1 - np.cos(2 * np.pi * np.arange(MORPH_FRAMES) / MORPH_FRAMES)) / 2
     for fraction in spread:
         critical = fraction * trailing_edge(pitched)                         # [] Vector
@@ -62,7 +65,7 @@ def sweep() -> Iterator[tuple[core.Flow, core.Vector]]:
     phase = (1 - np.cos(2 * np.pi * np.arange(FRAMES) / FRAMES)) / 2
     for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
         pitched = core.pitched(wing(), attack)
-        plane = core.rings(pitched, RINGS, ANGLES, REACH)                    # [rings, angles] Vector
+        plane = core.rings(pitched, DRAWN_RINGS, DRAWN_ANGLES, REACH)        # [rings, angles] Vector
         yield core.flow(pitched, stream(), plane, trailing_edge(pitched)), core.lift(pitched, stream(), DENSITY)
 
 

@@ -23,6 +23,8 @@ WAVE_ZONE = 4.0
 WAVE_PERCENTILE = 99.0
 WAVE_POWER = 0.4
 CHARGE_COLOUR = "#facc15"
+# The radiating charge's frames' dots per inch.
+WAVE_DPI = 36
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -139,7 +141,7 @@ def compressed_waves(events: core.Vector, field: core.Bivector, limit: np.ndarra
 
 def waves(events: core.Vector, field: core.Bivector, charge: core.Vector, limit: np.ndarray) -> np.ndarray:
     position = charge.cast(core.ga.subspace("x y")).kernel
-    figure = plt.figure(figsize=(5.6, 5.6), dpi=80, layout="constrained")
+    figure = plt.figure(figsize=(5.6, 5.6), dpi=WAVE_DPI, layout="constrained")
     ax = figure.subplots()
     panel(ax, events, compressed_waves(events, field, limit), "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
     ax.scatter(position[..., 0], position[..., 1], s=18, color=CHARGE_COLOUR, edgecolors="#0f172a", linewidths=0.8, zorder=3)
