@@ -63,7 +63,7 @@ def test_clifford_conjugation_is_complex_linear_on_batched_and_open_extensors():
     np.testing.assert_array_equal(conjugated.kernel, coefficients * signs)
     np.testing.assert_array_equal(conjugated.clifford_conjugate().kernel, coefficients)
 
-    vector = algebra.subspace.vector()
+    vector = algebra.gatype.vector()
     product = vector * vector
     a = mv.vector([[1 + 2j, 2 - 1j, 0], [0, 1j, 2]])
     b = mv.vector([0, 2 + 3j, 1 - 1j])

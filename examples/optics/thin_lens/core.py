@@ -69,7 +69,7 @@ def trace(rays: Line, motors: tuple[Motor, ...], elements: tuple[LineMap, ...]):
     [element + 1, ray], and the train: the composition of the placed elements, one map on
     lines that acts on the whole bundle.
     """
-    train: LineMap = 1 * Line
+    train: LineMap = Line
     legs = [rays]
     for motor, element in zip(motors, elements):
         # The element conjugated into place, the bundle after it, and the train so far as one map.

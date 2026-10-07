@@ -24,7 +24,7 @@ from numga.extensions._linalg import _is_form, _linear_system, _matching_forms, 
 def inverse_linear(value: Extensor) -> Extensor:
     """Composition inverse, swapping input and output coefficient layouts."""
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.transposed.structural,
+        value.context, value.gatype.derive.transposed.derive.structural,
         value.context.matrix_inverse(value._kernel),
     )
 
@@ -177,7 +177,7 @@ def lstsq_form_metric(value: Extensor, rhs: Extensor, metric: Extensor, *, rcond
 def pinv(value: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """Moore-Penrose inverse; discard singular values <= rcond times the largest."""
     return _result(
-        value, value.gatype.transposed.structural,
+        value, value.gatype.derive.transposed.derive.structural,
         value.context.xp.linalg.pinv(value._kernel, rcond),
     )
 

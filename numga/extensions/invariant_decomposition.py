@@ -210,8 +210,8 @@ def log_decomposed(r: Extensor) -> Extensor:
 def _null_wedge(t) -> bool:
     """The 4-vector part of the square of type t squares to zero."""
     algebra = t.algebra
-    wedge = t.squared.output_subspace.intersection(algebra.subspace.k_vector(4))
-    return algebra.gatype(wedge).squared.is_empty
+    wedge = t.derive.squared.output_subspace.intersection(algebra.subspace.k_vector(4))
+    return algebra.gatype(wedge).derive.squared.is_empty
 
 
 def _decomposable(algebra) -> bool:
@@ -232,7 +232,7 @@ def register() -> None:
     for predicate, implementation in (
         (lambda t: t <= t.algebra.subspace.bivector() and _decomposable(t.algebra), exp_decomposed),
         (lambda t: t <= t.algebra.subspace.bivector() and _decomposable(t.algebra) and _null_wedge(t), exp_null_wedge),
-        (lambda t: t <= t.algebra.subspace.bivector() and t.squared.is_scalar, exp_simple),
+        (lambda t: t <= t.algebra.subspace.bivector() and t.derive.squared.is_scalar, exp_simple),
     ):
         Extensor.exp.register(predicate, position=before_exp)(implementation)
     before_log = Extensor.log.position_of(unit_versor_log)

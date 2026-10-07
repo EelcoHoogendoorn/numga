@@ -20,16 +20,12 @@ from numga.algebras import STA
 ctx = NumpyContext(STA)
 mv = ctx.multivector
 
-# Blade Subspaces:
-V = STA.subspace.vector()
-B = STA.subspace.bivector()
-
 from numga.extensor.extensor import Extensor
 
 # GATypes:
 Scalar = STA.gatype.scalar()
-Vector = STA.gatype(V)
-Bivector = STA.gatype(B)
+Vector = STA.gatype.vector()
+Bivector = STA.gatype.bivector()
 Antibivector = STA.gatype.antibivector()
 Antivector = STA.gatype.antivector()
 Constitutive = STA.gatype((Antibivector, Bivector))
@@ -49,7 +45,7 @@ I = mv.txyz
 def observer_projectors(observer=t) -> tuple[Extensor, Extensor]:
     """Split bivectors into electric and magnetic parts for a unit timelike observer (Bivector <- Bivector)."""
     electric = (Bivector - (observer >> Bivector)) / 2
-    magnetic = B - electric
+    magnetic = Bivector - electric
     return electric, magnetic
 
 
@@ -102,7 +98,7 @@ def boost_rotor(beta: float, direction=z):
 def boosted_medium(base_medium: Constitutive, beta: float, direction=z) -> Constitutive:
     """Conjugate a rest constitutive map by a Lorentz boost (Antibivector <- Bivector)."""
     rotor = boost_rotor(beta, direction)
-    return rotor >> base_medium(rotor << B)
+    return rotor >> base_medium(rotor << Bivector)
 
 
 def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:

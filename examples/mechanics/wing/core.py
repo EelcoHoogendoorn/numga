@@ -103,7 +103,7 @@ def flow(wing: Wing, stream: Vector, plane: Vector, critical: Vector) -> Flow:
     # How the map moves a small step: less the step turned and scaled by the even `critical * p.inverse()`.
     jacobian = Vector - ((critical * plane.inverse()) >> Vector)             # [...] Vector <- Vector
     # The potential keeps its value at a point's image: a step there is first undone by the Jacobian.
-    potential_gradient = (velocity | Vector)(jacobian.solve(1 * Vector))     # [...] Scalar <- Vector
+    potential_gradient = (velocity | Vector)(jacobian.inverse())             # [...] Scalar <- Vector
     at_wing = (Vector * potential_gradient(Vector)).contract(1, 2)           # [...] Vector
     return Flow(joukowski(critical, plane), at_wing, potential_gradient, flux)
 

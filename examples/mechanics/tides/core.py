@@ -118,7 +118,7 @@ def spread(shape: Shape, radius: float) -> Deformation:
 def rim(shape: Shape, radius: float) -> Form:
     """The rim of a round cluster of the given starting radius, carried by the deformation: the form
     that is one, on the same offset twice, at the rim's offsets from the centre."""
-    return Vector | spread(shape, radius).solve(1 * Vector)                  # [] Scalar <- (Vector, Vector)
+    return Vector | spread(shape, radius).inverse()                  # [] Scalar <- (Vector, Vector)
 
 
 def _profile(masses: Masses, towards: Vector) -> tuple[Scalar, Scalar]:

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from numbers import Number
-
 from functools import lru_cache
 from operator import index
 from types import NotImplementedType
@@ -11,7 +9,6 @@ from typing import TYPE_CHECKING, Iterable, Iterator, Tuple
 
 if TYPE_CHECKING:
     from numga.algebra import Algebra
-    from numga.extensor import Extensor
     from numga.gatype import GAType
 
 
@@ -253,91 +250,13 @@ class SubSpace:
     def __hash__(self) -> int:
         return self._hash
 
-    def __add__(self, other: object) -> SubSpace | Extensor | NotImplementedType:
-        from numga.extensor import Extensor
+    def __add__(self, other: object) -> SubSpace | NotImplementedType:
+        """The union of two supports. Operations on subspaces build subspaces; expressions are built
+        from types, as which a subspace passed into one is read."""
 
         if isinstance(other, SubSpace):
             return self.union(other)
-        if isinstance(other, Extensor):
-            return self.algebra.operator.identity(self) + other
         return NotImplemented
-
-    def __sub__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.extensor import Extensor
-
-        if isinstance(other, Extensor):
-            return self.algebra.operator.identity(self) - other
-        return NotImplemented
-
-    def __neg__(self) -> Extensor:
-        return -self.algebra.operator.identity(self)
-
-    def __mul__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.expression import geometric_product, is_expression_operand
-
-        if isinstance(other, Number):
-            return self.algebra.operator.identity(self) * other
-        if not is_expression_operand(other):
-            return NotImplemented
-        return geometric_product(self, other)
-
-    def __rmul__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.expression import geometric_product, is_expression_operand
-
-        if isinstance(other, Number):
-            return self.algebra.operator.identity(self) * other
-        if not is_expression_operand(other):
-            return NotImplemented
-        return geometric_product(other, self)
-
-    def dual(self) -> Extensor:
-        """The right-Hodge dual as a map with this space in its open slot."""
-        return self.algebra.operator.dual(self)
-
-    def dual_inverse(self) -> Extensor:
-        return self.algebra.operator.dual_inverse(self)
-
-    def wedge(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import wedge
-
-        return wedge(self, other)
-
-    def inner(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import inner
-
-        return inner(self, other)
-
-    def commutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import commutator
-
-        return commutator(self, other)
-
-    def anticommutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import anticommutator
-
-        return anticommutator(self, other)
-
-    def regressive(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import regressive
-
-        return regressive(self, other)
-
-    def sandwich(self, passenger: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import sandwich
-
-        return sandwich(self, passenger)
-
-    def __xor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.wedge(other)
-
-    def __and__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.regressive(other)
-
-    def __or__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.inner(other)
-
-    def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.sandwich(other)
 
     def __reduce__(self) -> tuple[type[SubSpace], tuple[Algebra, tuple[int, ...], tuple[int, ...]]]:
         return type(self), (self.algebra, self.masks, self.signs)

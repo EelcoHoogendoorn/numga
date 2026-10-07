@@ -38,7 +38,7 @@ def cholesky(value: Extensor) -> Extensor:
     Assumes Hermitian positive-definite input; validity is left to the backend.
     """
     value = value.cast(value.axes[1])
-    return _result(value, value.gatype.structural, value.context.xp.linalg.cholesky(value._kernel))
+    return _result(value, value.gatype.derive.structural, value.context.xp.linalg.cholesky(value._kernel))
 
 
 @Extensor.eigvals.register(_is_endomorphism)

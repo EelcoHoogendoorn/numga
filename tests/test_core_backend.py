@@ -33,7 +33,7 @@ def test_map_kernel_forwards_array_arguments_and_preserves_traits_only_on_reques
     np.testing.assert_allclose(selected.inverse().kernel, [[0, -1], [1, 0], [0, -1]])
 
     total = compile(lambda x: x.map_kernel(context.xp.sum, axis=0))(rotors)
-    assert total.gatype is rotors.gatype.structural
+    assert total.gatype is rotors.gatype.derive.structural
     np.testing.assert_allclose(total.kernel, [1, 1])
 
 

@@ -5,7 +5,7 @@ from numga.gatype import ReverseProductOne, Versor
 
 
 @Extensor.decompose_polar.register(
-    lambda t: t <= t.algebra.gatype.bivector() and t.symmetric_reverse.is_study
+    lambda t: t <= t.algebra.gatype.bivector() and t.derive.symmetric_reverse.is_study
 )
 def decompose_polar(b: Extensor) -> tuple[Extensor, Extensor]:
     """`b == direction * scale`, with `scale` the Study square root of `b * ~b`. A bivector with
@@ -18,14 +18,14 @@ def decompose_polar(b: Extensor) -> tuple[Extensor, Extensor]:
 
 
 @Extensor.decompose_invariant.register(
-    lambda t: t <= t.algebra.gatype.bivector() and t.squared.is_scalar
+    lambda t: t <= t.algebra.gatype.bivector() and t.derive.squared.is_scalar
 )
 def decompose_simple(b: Extensor) -> tuple[Extensor, Extensor]:
     return b, b.context.multivector.empty().broadcast_to(b.shape)
 
 
 @Extensor.decompose_invariant.register(
-    lambda t: t <= t.algebra.gatype.bivector() and t.squared.is_study
+    lambda t: t <= t.algebra.gatype.bivector() and t.derive.squared.is_study
 )
 def decompose_bisimple(b: Extensor) -> tuple[Extensor, Extensor]:
     """The commuting simple parts `b_plus, b_minus` of `b`, with

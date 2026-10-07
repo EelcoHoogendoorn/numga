@@ -49,7 +49,7 @@ def test_division_uses_the_right_inverse_and_broadcasts_scalar_values():
 def test_numeric_kernel_division_and_output_cast_work_before_binding():
     algebra = Algebra("x+y+")
     mv = NumpyContext(algebra).multivector
-    vector = algebra.subspace.vector()
+    vector = algebra.gatype.vector()
     product = vector * vector
     a = mv.vector([1, 0])
     b = mv.vector([0, 1])
@@ -93,7 +93,7 @@ def test_restriction_preserves_unbound_inputs_and_batch_shape():
     spaces = algebra.subspace
     xy = spaces.from_masks((algebra.parse_blade("xy").mask,))
     even_plane = spaces.scalar() + xy
-    product = even_plane * even_plane
+    product = even_plane.gatype * even_plane.gatype
     selected = product.select[2]
     restricted = product.restrict[2]
 
@@ -127,7 +127,7 @@ def test_self_products_combine_structural_cancellation_but_compute_values():
 
 def test_scalar_affine_and_geometric_inverse_operations_reject_open_extensors():
     algebra = Algebra("x+y+")
-    vector = algebra.subspace.vector()
+    vector = algebra.gatype.vector()
     product = vector * vector
     scalar = algebra.exact.multivector.scalar([2])
 

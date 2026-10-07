@@ -31,6 +31,9 @@ if TYPE_CHECKING:
     from numga.subspace import SupportKey
 
 
+# What a value has and its type does not: coefficients, their backend, and their layout.
+_VALUE_DATA = frozenset({"kernel", "context", "gatype", "shape", "ndim", "dtype", "subspace"})
+
 _SELF_PRODUCT_TRANSFORMS = (
     "identity", "reverse", "clifford_conjugate", "scalar_negation",
     "pseudoscalar_negation", "involute",
@@ -140,14 +143,11 @@ class GAType:
         return self <= self.algebra.subspace.empty()
 
     @cached_property
-    def structural(self) -> GAType:
-        """The same axes without explicit trait assertions."""
+    def derive(self) -> Derivations:
+        """The types derived from this one: the type of its square, of its transpose, without its
+        traits. Operations on the type itself build maps, since a type acts as its identity map."""
 
-        return self.algebra.gatype(self.subspaces)
-
-    @lru_cache(maxsize=None)
-    def with_traits(self, *traits: Trait) -> GAType:
-        return self.algebra.gatype(self.subspaces, (*self.traits, *traits))
+        return Derivations(self)
 
     @lru_cache(maxsize=None)
     def grade_transform_is_identity(self, transform: str) -> bool:
@@ -161,34 +161,10 @@ class GAType:
         )
 
     @cached_property
-    def transposed(self) -> GAType:
-        from numga.binding import TypeRules
-
-        return TypeRules.operation("transpose", (self,), tuple(reversed(self.subspaces)))
-
-    @cached_property
-    def nonscalar(self) -> GAType:
-        """Nonscalar output support, retaining every open input axis."""
-
-        space = self.output_subspace.restrict(
-            mask for mask in self.output_subspace.masks if mask
-        )
-        return self.algebra.gatype((space,) + self.input_subspaces)
-
-    @cached_property
-    def reverse_fixed_subspace(self) -> SubSpace:
-        """Output blades fixed by reversal, without widening their support."""
-
-        return self.output_subspace.restrict(
-            mask for mask in self.output_subspace.masks
-            if self.algebra.reverse_sign(mask) == 1
-        )
-
-    @cached_property
     def is_study(self) -> bool:
         """A generalized Study number: scalar plus a part with scalar square."""
 
-        return self.symmetric_scalar_negation.is_scalar
+        return self.derive.symmetric_scalar_negation.is_scalar
 
     @cached_property
     def is_scalar_bivector(self) -> bool:
@@ -202,44 +178,6 @@ class GAType:
         return self.arity == 1 and len(self.subspaces[0]) == len(self.subspaces[1])
 
     @lru_cache(maxsize=None)
-    def _self_product(self, transform: str) -> GAType:
-        """Symmetric self-product type, retaining both operands' open inputs."""
-
-        from numga.algebra.self_product import symmetric_product_support
-
-        fact = ProductFact(SelfProduct(transform), ProductResult.SCALAR)
-        if self.entails(fact):
-            space = self.algebra.subspace.scalar()
-        else:
-            support = symmetric_product_support(self.output_subspace, transform)
-            space = self.algebra.subspace.from_masks(support)
-        return self.algebra.gatype((space,) + self.input_subspaces * 2)
-
-    @property
-    def squared(self) -> GAType:
-        return self._self_product("identity")
-
-    @property
-    def symmetric_reverse(self) -> GAType:
-        return self._self_product("reverse")
-
-    @property
-    def symmetric_conjugate(self) -> GAType:
-        return self._self_product("clifford_conjugate")
-
-    @property
-    def symmetric_scalar_negation(self) -> GAType:
-        return self._self_product("scalar_negation")
-
-    @property
-    def symmetric_pseudoscalar_negation(self) -> GAType:
-        return self._self_product("pseudoscalar_negation")
-
-    @property
-    def symmetric_involute(self) -> GAType:
-        return self._self_product("involute")
-
-    @lru_cache(maxsize=None)
     def reduces_to_scalar(self, steps: int) -> bool:
         """Whether self-products reach a scalar extensor in these steps.
 
@@ -251,7 +189,7 @@ class GAType:
         if steps <= 0:
             return self.is_scalar
         return any(
-            self._self_product(transform).reduces_to_scalar(steps - 1)
+            self.derive.self_product(transform).reduces_to_scalar(steps - 1)
             for transform in _SELF_PRODUCT_TRANSFORMS
         )
 
@@ -292,15 +230,6 @@ class GAType:
             (ReverseProductOne, Versor) if establishes_versor
             else (ReverseProductOne,)
         )
-
-    @cached_property
-    def minimal_subalgebra(self) -> GAType:
-        """Unital blade-generated carrier used by the general inverse solve."""
-
-        masks = {0}
-        for generator in self.output_subspace.masks:
-            masks.update(mask ^ generator for mask in tuple(masks))
-        return self.algebra.gatype(self.algebra.subspace.from_masks(masks))
 
     @property
     def representation_key(self) -> tuple[tuple[SubSpace, ...], TraitSet]:
@@ -414,6 +343,20 @@ class GAType:
             raise TypeError("only a nullary GAType promotes to an identity map")
         return self.algebra.operator.identity(self.output_subspace)
 
+    def __call__(self, *operands: object) -> Extensor:
+        """A nullary type is its identity map, applied or composed like any other map."""
+        return self._identity()(*operands)
+
+    def __getattr__(self, name: str) -> object:
+        """A nullary type is its identity map: Extensor attributes it does not define itself act on
+        that map, so `Bivector.reverse()` is the reversion and `Vector.scalar_product(Vector)` the
+        metric. What only a value has, its coefficients and their backend, a type does not."""
+        from numga.extensor import Extensor
+
+        if name.startswith("_") or name in _VALUE_DATA or not hasattr(Extensor, name) or self.arity:
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+        return getattr(self._identity(), name)
+
     def __add__(self, other: object) -> Extensor | NotImplementedType:
         from numga.extensor import Extensor
 
@@ -521,3 +464,99 @@ def _comparison_gatype(value: object) -> GAType | None:
     if isinstance(value, SubSpace):
         return value.algebra.gatype(value)
     return None
+
+
+class Derivations:
+    """The types the type rules derive from one type, apart from the type itself."""
+
+    __slots__ = ("_gatype", "__dict__")
+
+    def __init__(self, gatype: GAType) -> None:
+        self._gatype = gatype
+
+    @cached_property
+    def structural(self) -> GAType:
+        """The same axes without explicit trait assertions."""
+
+        return self._gatype.algebra.gatype(self._gatype.subspaces)
+
+    @lru_cache(maxsize=None)
+    def with_traits(self, *traits: Trait) -> GAType:
+        gatype = self._gatype
+        return gatype.algebra.gatype(gatype.subspaces, (*gatype.traits, *traits))
+
+    @cached_property
+    def transposed(self) -> GAType:
+        from numga.binding import TypeRules
+
+        gatype = self._gatype
+        return TypeRules.operation("transpose", (gatype,), tuple(reversed(gatype.subspaces)))
+
+    @cached_property
+    def nonscalar(self) -> GAType:
+        """Nonscalar output support, retaining every open input axis."""
+
+        gatype = self._gatype
+        space = gatype.output_subspace.restrict(
+            mask for mask in gatype.output_subspace.masks if mask
+        )
+        return gatype.algebra.gatype((space,) + gatype.input_subspaces)
+
+    @cached_property
+    def reverse_fixed_subspace(self) -> SubSpace:
+        """Output blades fixed by reversal, without widening their support."""
+
+        gatype = self._gatype
+        return gatype.output_subspace.restrict(
+            mask for mask in gatype.output_subspace.masks
+            if gatype.algebra.reverse_sign(mask) == 1
+        )
+
+    @lru_cache(maxsize=None)
+    def self_product(self, transform: str) -> GAType:
+        """Symmetric self-product type, retaining both operands' open inputs."""
+
+        from numga.algebra.self_product import symmetric_product_support
+
+        gatype = self._gatype
+        fact = ProductFact(SelfProduct(transform), ProductResult.SCALAR)
+        if gatype.entails(fact):
+            space = gatype.algebra.subspace.scalar()
+        else:
+            support = symmetric_product_support(gatype.output_subspace, transform)
+            space = gatype.algebra.subspace.from_masks(support)
+        return gatype.algebra.gatype((space,) + gatype.input_subspaces * 2)
+
+    @property
+    def squared(self) -> GAType:
+        return self.self_product("identity")
+
+    @property
+    def symmetric_reverse(self) -> GAType:
+        return self.self_product("reverse")
+
+    @property
+    def symmetric_conjugate(self) -> GAType:
+        return self.self_product("clifford_conjugate")
+
+    @property
+    def symmetric_scalar_negation(self) -> GAType:
+        return self.self_product("scalar_negation")
+
+    @property
+    def symmetric_pseudoscalar_negation(self) -> GAType:
+        return self.self_product("pseudoscalar_negation")
+
+    @property
+    def symmetric_involute(self) -> GAType:
+        return self.self_product("involute")
+
+    @cached_property
+    def minimal_subalgebra(self) -> GAType:
+        """Unital blade-generated carrier used by the general inverse solve."""
+
+        gatype = self._gatype
+        masks = {0}
+        for generator in gatype.output_subspace.masks:
+            masks.update(mask ^ generator for mask in tuple(masks))
+        return gatype.algebra.gatype(gatype.algebra.subspace.from_masks(masks))

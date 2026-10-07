@@ -125,7 +125,7 @@ class GATypeDispatch:
 
         if precedence not in {None, "declaration"}:
             raise ValueError("precedence must be None or 'declaration'")
-        if len(patterns) == 1 and callable(patterns[0]):
+        if len(patterns) == 1 and is_predicate(patterns[0]):
             return self._register_predicate(patterns[0], position=position)
         if position is not None:
             raise TypeError("position is supported only for callable predicates")
@@ -253,8 +253,14 @@ class GATypeDispatch:
                     f"{self.name!r} dispatch expects at least "
                     f"{self._operand_count} positional operands, got {len(arguments)}"
                 ) from None
+            # A bare nullary type operand is its identity map.
+            operands = tuple(
+                operand._identity() if isinstance(operand, GAType) else operand
+                for operand in operands
+            )
+            arguments = operands + arguments[self._operand_count:]
             actual = tuple(_operand_gatype(operand) for operand in operands)
-            implementation = self._resolve_uncached(actual)
+            implementation = self._cache.get(actual) or self._resolve_uncached(actual)
         # An implementation's own exceptions must never trigger resolution.
         return implementation(*arguments, **kwargs)
 
@@ -312,6 +318,12 @@ class GATypeDispatch:
                 f"every {self.name!r} actual GAType must belong to one algebra"
             )
         return actual
+
+
+def is_predicate(pattern: object) -> bool:
+    """A callable registration pattern that is a condition, not a type: types are callable too, as
+    their identity maps."""
+    return callable(pattern) and not isinstance(pattern, (GAType, GATypePattern, Trait, TraitSet))
 
 
 def _normalize_pattern(pattern: object) -> DispatchPattern:

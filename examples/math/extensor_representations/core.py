@@ -14,9 +14,9 @@ def readout(representations: Extensor, state_map: Extensor, Space: GAType) -> Ex
     that element, and a smaller Space reads out only its own blades, since blades are orthogonal
     under the scalar product.
     """
-    pairing = (1 * Space).scalar_product(Space)                 # [] Scalar <- (Space, Space)
+    pairing = Space.scalar_product(Space)                 # [] Scalar <- (Space, Space)
     state_dimension = len(representations.output_subspace)
-    return pairing.solve(representations(1 * Space, state_map).trace(0, 2) / state_dimension)   # [] Space
+    return pairing.solve(representations(Space, state_map).trace(0, 2) / state_dimension)   # [] Space
 
 
 # --- plumbing -------------------------------------------------------------------------

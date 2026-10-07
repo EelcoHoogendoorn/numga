@@ -133,7 +133,7 @@ def explicit_rkmk4(
     def dh(h: Extensor, r: Extensor) -> Extensor:
         # The time derivative of `motor * h.exp()` must equal that motor times `r * -0.5`;
         # inverting the derivative of the exponential gives the rate of h, `dexpinv(r * -0.5)`.
-        bivector = h.algebra.subspace.bivector()
+        bivector = h.algebra.gatype.bivector()
         ad = h.commutator(bivector) * 2.0
         dexpinv = bivector + ad * 0.5 + ad(ad) * (1.0 / 12.0)
         return dexpinv(r * -0.5)

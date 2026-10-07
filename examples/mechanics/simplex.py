@@ -38,7 +38,7 @@ def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
         Antivector points of shape `[n_corners]`.
     """
     samples = barycentric_samples(weights, corners)
-    bivector = corners.context.algebra.subspace.bivector()
+    bivector = corners.context.algebra.gatype.bivector()
     return samples.regressive(samples.commutator(bivector)).sum(axis=0)
 
 

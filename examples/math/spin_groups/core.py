@@ -94,7 +94,7 @@ def signature(p: int, q: int) -> tuple[GAType, GAType, Extensor, Extensor]:
     """The first p positive and q negative directions: their bivectors and even multivectors as
     types, the product of the positive ones, and their pseudoscalar."""
     names = POSITIVE[:p] + NEGATIVE[:q]
-    closure = ga.gatype(ga.subspace(" ".join(names))).minimal_subalgebra.output_subspace
+    closure = ga.gatype(ga.subspace(" ".join(names))).derive.minimal_subalgebra.output_subspace
     Bivector = ga.gatype(closure.intersection(ga.subspace.bivector()))
     Even = ga.gatype(closure.intersection(ga.subspace.even()))
     one = mv.scalar([1.0])

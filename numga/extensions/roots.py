@@ -35,7 +35,7 @@ def reoriented_scalar_square_root(value: Extensor) -> Extensor:
 @Extensor.square_root.register(lambda g: g <= g.algebra.subspace.scalar())
 def scalar_square_root(value: Extensor) -> Extensor:
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.structural, value.context.xp.sqrt(value._kernel),
+        value.context, value.gatype.derive.structural, value.context.xp.sqrt(value._kernel),
     )
 
 
@@ -58,15 +58,15 @@ def scaled_rotor_square_root(value: Extensor) -> Extensor:
 
 
 @Extensor.square_root.register(
-    lambda g: g.is_study and g.nonscalar.squared.is_empty
+    lambda g: g.is_study and g.derive.nonscalar.derive.squared.is_empty
 )
 def nilpotent_study_square_root(value: Extensor) -> Extensor:
     scalar = value.select[0]
-    nonscalar = value.select_subspace(value.gatype.nonscalar.output_subspace)
+    nonscalar = value.select_subspace(value.gatype.derive.nonscalar.output_subspace)
     root = scalar.square_root()
     reciprocal = (2 * root).inverse()
     reciprocal = Extensor._from_prepared_kernel(
-        value.context, reciprocal.gatype.structural,
+        value.context, reciprocal.gatype.derive.structural,
         value.context.xp.nan_to_num(reciprocal._kernel, nan=0),
     )
     return root + nonscalar * reciprocal
@@ -75,11 +75,11 @@ def nilpotent_study_square_root(value: Extensor) -> Extensor:
 @Extensor.square_root.register(lambda g: g.is_study)
 def study_square_root(value: Extensor) -> Extensor:
     scalar = value.select[0]
-    nonscalar = value.select_subspace(value.gatype.nonscalar.output_subspace)
+    nonscalar = value.select_subspace(value.gatype.derive.nonscalar.output_subspace)
     root = ((scalar + value.study_norm()) / 2).square_root()
     reciprocal = (2 * root).inverse()
     reciprocal = Extensor._from_prepared_kernel(
-        value.context, reciprocal.gatype.structural,
+        value.context, reciprocal.gatype.derive.structural,
         value.context.xp.nan_to_num(reciprocal._kernel, nan=0),
     )
     return root + nonscalar * reciprocal
@@ -93,7 +93,7 @@ def reoriented_scalar_inverse_square_root(value: Extensor) -> Extensor:
 @Extensor.inverse_square_root.register(lambda g: g <= g.algebra.subspace.scalar())
 def scalar_inverse_square_root(value: Extensor) -> Extensor:
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.structural, value._kernel ** (-0.5),
+        value.context, value.gatype.derive.structural, value._kernel ** (-0.5),
     )
 
 

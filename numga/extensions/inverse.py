@@ -38,7 +38,7 @@ def inverse_orthogonal(value: Extensor) -> Extensor:
     """A coefficient-orthogonal map is inverted by transposing its coefficients."""
     permutation = tuple(range(value.ndim)) + (value.ndim + 1, value.ndim)
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.transposed, value.context.xp.transpose(value._kernel, permutation),
+        value.context, value.gatype.derive.transposed, value.context.xp.transpose(value._kernel, permutation),
     )
 
 
@@ -46,7 +46,7 @@ def inverse_orthogonal(value: Extensor) -> Extensor:
 def inverse_scalar(value: Extensor) -> Extensor:
     """Take the reciprocal directly, without squaring the coefficients."""
 
-    gatype = value.gatype.structural.with_traits(*value.gatype.inverse_traits)
+    gatype = value.gatype.derive.structural.derive.with_traits(*value.gatype.inverse_traits)
     return Extensor._from_prepared_kernel(
         value.context, gatype, value.context.reciprocal(value._kernel),
     )
@@ -56,13 +56,13 @@ def register_reductions(steps: int) -> None:
     """Prefer shorter reductions, then the order in which the transforms are listed."""
 
     @Extensor.inverse.register(
-        lambda t: t.squared.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.squared.reduces_to_scalar(steps - 1)
     )
     def inverse_squared(value: Extensor) -> Extensor:
         return (value / value.squared()).with_traits(*value.gatype.inverse_traits)
 
     @Extensor.inverse.register(
-        lambda t: t.symmetric_reverse.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.symmetric_reverse.reduces_to_scalar(steps - 1)
     )
     def inverse_reverse(value: Extensor) -> Extensor:
         return (value.reverse() / value.symmetric_reverse_product()).with_traits(
@@ -70,28 +70,28 @@ def register_reductions(steps: int) -> None:
         )
 
     @Extensor.inverse.register(
-        lambda t: t.symmetric_conjugate.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.symmetric_conjugate.reduces_to_scalar(steps - 1)
     )
     def inverse_conjugate(value: Extensor) -> Extensor:
         result = value.clifford_conjugate() / value.symmetric_conjugate_product()
         return result.with_traits(*value.gatype.inverse_traits)
 
     @Extensor.inverse.register(
-        lambda t: t.symmetric_scalar_negation.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.symmetric_scalar_negation.reduces_to_scalar(steps - 1)
     )
     def inverse_scalar_negation(value: Extensor) -> Extensor:
         result = value.scalar_negation() / value.symmetric_scalar_negation_product()
         return result.with_traits(*value.gatype.inverse_traits)
 
     @Extensor.inverse.register(
-        lambda t: t.symmetric_pseudoscalar_negation.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.symmetric_pseudoscalar_negation.reduces_to_scalar(steps - 1)
     )
     def inverse_pseudoscalar_negation(value: Extensor) -> Extensor:
         result = value.pseudoscalar_negation() / value.symmetric_pseudoscalar_negation_product()
         return result.with_traits(*value.gatype.inverse_traits)
 
     @Extensor.inverse.register(
-        lambda t: t.symmetric_involute.reduces_to_scalar(steps - 1)
+        lambda t: t.derive.symmetric_involute.reduces_to_scalar(steps - 1)
     )
     def inverse_involute(value: Extensor) -> Extensor:
         return (value.involute() / value.symmetric_involute_product()).with_traits(
@@ -128,11 +128,11 @@ register_reductions(3)
 def inverse_geometric(value: Extensor) -> Extensor:
     """Solve left multiplication in the blade-generated subalgebra."""
 
-    space = value.gatype.minimal_subalgebra.output_subspace
+    space = value.gatype.derive.minimal_subalgebra.output_subspace
     left_multiply = (value * space).select_subspace(space)
     unit = value.algebra.operator.unit(space)
     coefficients = value.context.solve(left_multiply._kernel, value.context.lower(unit)._kernel)
-    gatype = value.gatype.minimal_subalgebra.with_traits(*value.gatype.inverse_traits)
+    gatype = value.gatype.derive.minimal_subalgebra.derive.with_traits(*value.gatype.inverse_traits)
     return Extensor._from_prepared_kernel(
         value.context, gatype, coefficients,
     )
@@ -157,7 +157,7 @@ def inverse_factor(value: Extensor) -> Extensor:
 
 
 @Extensor.inverse_hitzer.register(
-    lambda t: t.arity == 0 and t.symmetric_reverse.symmetric_conjugate.is_scalar
+    lambda t: t.arity == 0 and t.derive.symmetric_reverse.derive.symmetric_conjugate.is_scalar
 )
 def inverse_hitzer(value: Extensor) -> Extensor:
     factor = value.inverse_factor()

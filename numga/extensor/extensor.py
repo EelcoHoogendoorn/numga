@@ -233,7 +233,7 @@ class Extensor:
         """
 
         kernel = function(self._kernel, *args, **kwargs)
-        gatype = self.gatype if preserve_traits else self.gatype.structural
+        gatype = self.gatype if preserve_traits else self.gatype.derive.structural
         return type(self)._from_prepared_kernel(self.context, gatype, kernel)
 
     def reshape(self, *shape: SupportsIndex | Sequence[SupportsIndex]) -> Extensor:
@@ -260,12 +260,12 @@ class Extensor:
     ) -> "Extensor":
         axes = _batch_axes(axis, self.ndim)
         kernel = self.context.xp.sum(self._kernel, axis=axes, keepdims=keepdims)
-        return type(self)._from_prepared_kernel(self.context, self.gatype.structural, kernel)
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
 
     def cumsum(self, axis: int) -> "Extensor":
         """Running sums along one batch axis."""
         kernel = self.context.xp.cumsum(self._kernel, axis=_existing_axis(axis, self.ndim))
-        return type(self)._from_prepared_kernel(self.context, self.gatype.structural, kernel)
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
 
     def cumprod(self, axis: int) -> "Extensor":
         """Running geometric products along one batch axis, each later element multiplying from the
@@ -288,7 +288,7 @@ class Extensor:
     ) -> "Extensor":
         axes = _batch_axes(axis, self.ndim)
         kernel = self.context.xp.mean(self._kernel, axis=axes, keepdims=keepdims)
-        return type(self)._from_prepared_kernel(self.context, self.gatype.structural, kernel)
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural, kernel)
 
     @classmethod
     def stack(
@@ -360,18 +360,24 @@ class Extensor:
         return type(self)._from_prepared_kernel(context, result_gatype, result)
 
     def __call__(self, *operands: Extensor | GAType) -> Extensor:
-        """Apply to operands in slot order. Fewer operands than slots bind the leading slots, and the
-        slot's own type as an operand leaves that slot open: form(Vector, v) binds only the second."""
+        """Apply to operands in slot order. Fewer operands than slots bind the leading slots. A bare
+        type is its identity map: the slot's own type leaves that slot open, form(Vector, v) binds
+        only the second, and a type inside the slot narrows it to that type."""
         if any(isinstance(operand, (GAType, SubSpace)) for operand in operands):
-            # A bare type leaves its slot open; it must be that slot's type.
             bound = {}
             for slot, operand in enumerate(operands):
                 if not isinstance(operand, (GAType, SubSpace)):
                     bound[slot] = operand
                     continue
                 space = operand.output_subspace if isinstance(operand, GAType) else operand
-                if not space.same_support(self.input_subspaces[slot]):
-                    raise TypeError(f"slot {slot} takes {self.input_subspaces[slot]}; a placeholder of type {space} does not open it")
+                if space.same_support(self.input_subspaces[slot]):
+                    continue
+                if space not in self.input_subspaces[slot]:
+                    raise TypeError(
+                        f"slot {slot} takes {self.input_subspaces[slot]}; {space} is not inside it, "
+                        "so a cast must say what is projected away"
+                    )
+                bound[slot] = self.algebra.operator.identity(space)
             return self.bind(bound)
         if len(operands) < self.arity:
             return self.bind(*operands)
@@ -454,7 +460,7 @@ class Extensor:
     def with_traits(self, *traits: Trait) -> Extensor:
         """Trust additional immutable facts without changing coefficients."""
 
-        gatype = self.gatype.with_traits(*traits)
+        gatype = self.gatype.derive.with_traits(*traits)
         if gatype is self.gatype:
             return self
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel)

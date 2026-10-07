@@ -240,7 +240,8 @@ need a QZ solver and so run only in NumPy with SciPy.
 ## 5. Binding plans and types
 
 `bind` is the one primitive. A call binds its operands to the leading slots, the slot's own type in
-place of an operand leaves it open, and a full call runs on the compiled path. The operators on types
+place of an operand leaves it open, a type inside the slot binds its identity map and so narrows the
+slot, and a full call runs on the compiled path. The operators on types
 and values are binds of operation tables:
 
 ```python
@@ -346,7 +347,7 @@ way, with a predicate that compares subspaces, which includes blade order and si
 ```python
 @Extensor.exp.register(lambda t: t.algebra.description == PGA3D.description
                        and t.subspaces == (t.algebra.subspace("yz zx xy xw yw zw"),), position=0)
-@Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector() and t.squared.is_empty)
+@Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector() and t.derive.squared.is_empty)
 ```
 
 The first is how the opt-in closed forms in `numga.extensions.optimized` bind to one layout;

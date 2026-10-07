@@ -52,7 +52,7 @@ def exp_rotation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m = np.empty(b.shape + (4,))
     m[..., 0] = np.cos(angle)
     m[..., 1:] = b._kernel * np.sinc(angle / np.pi)[..., None]
-    gatype = b.algebra.gatype(b.algebra.subspace("1 yz zx xy")).with_traits(ReverseProductOne, Versor)
+    gatype = b.algebra.gatype(b.algebra.subspace("1 yz zx xy")).derive.with_traits(ReverseProductOne, Versor)
     return Extensor._from_prepared_kernel(b.context, gatype, m)
 
 
@@ -61,7 +61,7 @@ def exp_translation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m = np.empty(b.shape + (4,))
     m[..., 0] = 1
     m[..., 1:] = b._kernel
-    gatype = b.algebra.gatype(b.algebra.subspace("1 xw yw zw")).with_traits(ReverseProductOne, Versor)
+    gatype = b.algebra.gatype(b.algebra.subspace("1 xw yw zw")).derive.with_traits(ReverseProductOne, Versor)
     return Extensor._from_prepared_kernel(b.context, gatype, m)
 
 

@@ -8,12 +8,12 @@ def test_squaring_an_open_vector_map_keeps_its_inputs() -> None:
     vector = algebra.operator.identity(algebra.subspace.vector())
     squared = vector.squared()
 
-    assert squared.gatype is vector.gatype.squared
+    assert squared.gatype is vector.gatype.derive.squared
     assert squared.output_subspace is algebra.subspace.scalar()
     assert squared.arity == 2
     assert not squared.gatype.reduces_to_scalar(3)
-    assert vector.symmetric_reverse_product().gatype is vector.gatype.symmetric_reverse
-    assert not vector.gatype.symmetric_reverse.reduces_to_scalar(3)
+    assert vector.symmetric_reverse_product().gatype is vector.gatype.derive.symmetric_reverse
+    assert not vector.gatype.derive.symmetric_reverse.reduces_to_scalar(3)
 
     x = NumpyContext(algebra).multivector.vector([3, 4])
     np.testing.assert_allclose(squared(x, x).kernel, [25])
@@ -29,10 +29,11 @@ def test_geometric_product_expression_stages_by_operand_kind() -> None:
     x = context.extensor(V, [1, 2])
     y = context.extensor(V, [3, 4])
 
-    binary = V * V
-    ternary = V * V * V
-    left_multiply = x * V
-    right_multiply = V * y
+    Vector = V.gatype
+    binary = Vector * Vector
+    ternary = Vector * Vector * Vector
+    left_multiply = x * Vector
+    right_multiply = Vector * y
     product = x * y
 
     values = (binary, ternary, left_multiply, right_multiply, product)

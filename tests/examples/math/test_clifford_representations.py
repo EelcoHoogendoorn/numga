@@ -40,7 +40,7 @@ def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negati
 
     # Pairing the representation with every algebra element recovers the
     # complete multivector, including both components of a split algebra.
-    pairing = (1 * Full).scalar_product(Full)
+    pairing = Full.scalar_product(Full)
     blade_representations = representations(basis)
     readouts = representations(Full, blade_representations).trace(0, 2) / state_dimension
     recovered = pairing.solve(readouts)

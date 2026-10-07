@@ -53,8 +53,8 @@ def test_exact_commutator_and_regressive_sign_conventions():
     yw = blade("yw")
     w = blade("w")
 
-    xy_commutator = x.commutator(y)
-    yx_commutator = y.commutator(x)
+    xy_commutator = algebra.gatype(x).commutator(y)
+    yx_commutator = algebra.gatype(y).commutator(x)
     assert xy_commutator.axes == (xy, x, y)
     assert yx_commutator.axes == (xy, y, x)
     assert xy_commutator.kernel.values.tolist() == [[[Fraction(1)]]]
@@ -62,7 +62,7 @@ def test_exact_commutator_and_regressive_sign_conventions():
 
     # This fixes the right-Hodge signs in a signature containing both a
     # negative generator and a null generator.
-    regressive = xw.regressive(yw)
+    regressive = algebra.gatype(xw).regressive(yw)
     assert regressive.axes == (w, xw, yw)
     assert regressive.kernel.values.tolist() == [[[Fraction(-1)]]]
 

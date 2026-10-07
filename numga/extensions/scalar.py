@@ -33,7 +33,7 @@ def _function(name):
     def apply(value: Extensor) -> Extensor:
         value = value.cast(value.algebra.subspace.scalar())
         return Extensor._from_prepared_kernel(
-            value.context, value.gatype.structural,
+            value.context, value.gatype.derive.structural,
             getattr(value.context.xp, name)(value._kernel),
         )
     apply.__name__ = name

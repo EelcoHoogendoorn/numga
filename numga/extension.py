@@ -7,6 +7,7 @@ from types import MethodType
 from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload as typing_overload
 
 from numga.gatype import GAType, GATypeDispatch, GATypePattern, Trait, TraitSet
+from numga.gatype.dispatch import is_predicate
 
 if TYPE_CHECKING:
     from numga.extensor import Extensor
@@ -73,12 +74,12 @@ class ExtensionMethod:
         if self._overloads:
             count = (
                 _predicate_operand_count(patterns[0], established=None)
-                if len(patterns) == 1 and callable(patterns[0]) else len(patterns)
+                if len(patterns) == 1 and is_predicate(patterns[0]) else len(patterns)
             )
             return self._overloads[count].register(
                 *patterns, precedence=precedence, position=position,
             )
-        predicate = len(patterns) == 1 and callable(patterns[0])
+        predicate = len(patterns) == 1 and is_predicate(patterns[0])
         if predicate:
             operand_count = _predicate_operand_count(
                 patterns[0],

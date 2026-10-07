@@ -19,7 +19,7 @@ def backend(request):
 def test_sparse_products_broadcast_and_convert_signed_input_layouts(backend):
     context_type, compile = backend
     spaces = PGA3D.subspace
-    product = spaces.bivector() * spaces.bivector()
+    product = spaces.bivector().gatype * spaces.bivector().gatype
     outputs = []
     for execution in ("dense", "sparse"):
         mv = context_type(PGA3D, execution=execution).multivector
@@ -56,7 +56,7 @@ def test_sparse_binding_splices_open_inputs_and_preserves_empty_batches(backend)
     context_type, compile = backend
     spaces = PGA3D.subspace
     vector = spaces.vector()
-    outer = vector * vector
+    outer = vector.gatype * vector.gatype
     outputs = []
     for execution in ("dense", "sparse"):
         context = context_type(PGA3D, execution=execution)

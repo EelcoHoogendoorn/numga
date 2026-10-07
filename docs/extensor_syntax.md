@@ -54,7 +54,7 @@ velocity_map = body.commutator(Twist)
 ```
 
 ### Identity Maps and Dyads
-A bare type is the identity map on its subspace, so projectors and their complements are plain arithmetic:
+A bare type is the identity map on its subspace, wherever it appears: projectors and their complements are plain arithmetic, `Bivector.reverse()` is the reversion map, and `train = Line` starts a composition. Types derived from a type, such as the type of its square, are under `Rotor.derive`.
 ```python
 electric = Bivector.commutator(t).wedge(t)           # [] Bivector <- Bivector (projector)
 magnetic = Bivector - electric                       # [] Bivector <- Bivector (complement)
@@ -111,6 +111,9 @@ ray = ray_from_origin(target)                        # Line
 
 # The slot's own type in place of an argument leaves that slot open:
 ray_to_target = join_map(Point, target)              # Line <- Point
+
+# A type inside the slot's space narrows the slot to it:
+electric_response = chi(Electric)                    # Antibivector <- Electric
 ```
 
 ### Argument Lifting (Binding Maps into Slots)
@@ -295,7 +298,7 @@ Arity is not limited to forms; any output type is allowed and slots are numbered
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill slots in order, the slot's own type in place of an argument leaves it open, `.trace()` and `.contract()` drop the two slots they pair, and batch axes broadcast as for unary maps.
+Partial calls fill slots in order, the slot's own type in place of an argument leaves it open and a type inside the slot narrows it, `.trace()` and `.contract()` drop the two slots they pair, and batch axes broadcast as for unary maps.
 
 ---
 

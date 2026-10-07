@@ -66,6 +66,8 @@ import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
 import examples.optics.crystal_diffraction.core
 import examples.optics.crystal_diffraction.scenarios
+import examples.optics.coating.core
+import examples.optics.coating.scenarios
 import examples.optics.thin_lens.core
 import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios

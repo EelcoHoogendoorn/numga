@@ -37,7 +37,7 @@ def reoriented_scalar_norm(value: Extensor) -> Extensor:
 @Extensor.norm.register(lambda g: g <= g.algebra.subspace.scalar())
 def scalar_norm(value: Extensor) -> Extensor:
     return Extensor._from_prepared_kernel(
-        value.context, value.gatype.structural, value.context.xp.abs(value._kernel),
+        value.context, value.gatype.derive.structural, value.context.xp.abs(value._kernel),
     )
 
 
@@ -53,7 +53,7 @@ def null_normalized(value: Extensor) -> NoReturn:
 
 
 @Extensor.normalized.register(
-    lambda g: g.structural.symmetric_reverse.is_scalar
+    lambda g: g.derive.structural.derive.symmetric_reverse.is_scalar
 )
 @Extensor.normalized.register(ReverseProductScalar)
 def scalar_normalized(value: Extensor) -> Extensor:
@@ -63,7 +63,7 @@ def scalar_normalized(value: Extensor) -> Extensor:
 
 
 @Extensor.normalized.register(
-    lambda g: g.structural.symmetric_reverse.is_study
+    lambda g: g.derive.structural.derive.symmetric_reverse.is_study
 )
 def study_normalized(value: Extensor) -> Extensor:
     """Repair the complete Study product, including declared rotors' drift."""

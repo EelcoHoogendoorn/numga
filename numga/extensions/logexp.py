@@ -43,7 +43,7 @@ def log_linear(m: Extensor) -> Extensor:
 
 @Extensor.log_linear_normalized.register(lambda t: t <= t.algebra.gatype.rotor())
 def log_linear_normalized(m: Extensor) -> Extensor:
-    denominator = m.restrict_subspace(m.gatype.reverse_fixed_subspace)
+    denominator = m.restrict_subspace(m.gatype.derive.reverse_fixed_subspace)
     return m.bivector_product(denominator.inverse())
 
 
@@ -93,17 +93,17 @@ def reoriented_scalar_log(s: Extensor) -> Extensor:
 
 @Extensor.exp.register(lambda t: t <= t.algebra.subspace.scalar())
 def scalar_exp(s: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(s.context, s.gatype.structural, s.context.xp.exp(s.kernel))
+    return Extensor._from_prepared_kernel(s.context, s.gatype.derive.structural, s.context.xp.exp(s.kernel))
 
 
 @Extensor.log.register(lambda t: t <= t.algebra.subspace.scalar())
 def scalar_log(s: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(s.context, s.gatype.structural, s.context.xp.log(s.kernel))
+    return Extensor._from_prepared_kernel(s.context, s.gatype.derive.structural, s.context.xp.log(s.kernel))
 
 
 @Extensor.exp.register(
     lambda t: t <= t.algebra.subspace.bivector()
-    and t.squared.is_empty
+    and t.derive.squared.is_empty
 )
 def nilpotent_bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
     """`b.exp() == 1 + b` when `b` squares to zero by its type, as for a translation."""
@@ -185,14 +185,14 @@ def _taylor_log(m: Extensor) -> Extensor:
     return result
 
 
-@Extensor.exp.register(lambda t: t.squared.is_empty)
+@Extensor.exp.register(lambda t: t.derive.squared.is_empty)
 def nilpotent_exp(x: Extensor) -> Extensor:
     """`x.exp() == 1 + x` when `x` squares to zero by its type, as the pseudoscalar of PGA does."""
 
     return x + 1
 
 
-@Extensor.exp.register(lambda t: t.squared.is_scalar)
+@Extensor.exp.register(lambda t: t.derive.squared.is_scalar)
 def scalar_square_exp(x: Extensor) -> Extensor:
     """`x.exp() == even + x * odd`, for scalars `even` and `odd`, when `x` squares to a scalar `s`,
     as a pseudoscalar or a single blade does. With `r = xp.sqrt(xp.abs(s))` they are `xp.cosh(r)`
@@ -213,7 +213,7 @@ def scalar_square_exp(x: Extensor) -> Extensor:
 @Extensor.log.register(
     lambda t: t <= t.algebra.gatype.rotor()
     and t.is_scalar_bivector
-    and t.nonscalar.squared.is_empty
+    and t.derive.nonscalar.derive.squared.is_empty
 )
 def translator_log(m: Extensor, *, n: int = 8) -> Extensor:
     return m.restrict[2]

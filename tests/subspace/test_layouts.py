@@ -67,7 +67,7 @@ def test_signed_relayout_and_products_agree(backend):
     assert a.restrict_subspace(spaces("xz yz")).subspace is spaces("yz zx")
 
     # An operator expecting lexical inputs must convert incoming cyclic arrays.
-    product = lexical * lexical
+    product = lexical.gatype * lexical.gatype
     direct = compile(lambda x, y: x * y)(a, b)
     implicit = compile(lambda x, y: product(x, y))(a, b)
     explicit = product(converted, b.select_subspace(lexical))

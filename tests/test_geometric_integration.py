@@ -96,7 +96,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
         ],
     )
 
-    point_inertia = point.regressive(point.commutator(bivector))
+    point_inertia = point.gatype.regressive(point.gatype.commutator(bivector))
     assert point_inertia.context is algebra.exact
     assert point_inertia.axes == (dual_bivector, point, point, bivector)
     assert point_inertia.arity == 3
@@ -134,7 +134,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
 
     # The opposite commutator order is equally composable, but antisymmetry
     # makes it the negative map rather than the inertia convention used here.
-    opposite_order = points.regressive(bivector.commutator(points))
+    opposite_order = points.regressive(bivector.gatype.commutator(points))
     np.testing.assert_allclose(
         opposite_order.kernel,
         -expected_point_inertias,
@@ -222,7 +222,6 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
     passenger = spaces.vector()
     sandwich = factory.sandwich(sandwicher, passenger)
 
-    assert sandwicher.sandwich(passenger) is sandwich
     assert algebra.gatype.even().sandwich(algebra.gatype.vector()) is sandwich
     assert sandwich.context is algebra.exact
     assert sandwich.arity == 3

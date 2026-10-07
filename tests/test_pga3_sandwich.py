@@ -57,23 +57,23 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
 
     # Stronger: compare the complete open operators, not just sampled geometry.
     # Two planes intersect in a line; a line and a plane intersect in a point.
-    move_intersection = line_map(planes.wedge(planes))
+    move_intersection = line_map(planes.gatype.wedge(planes))
     intersect_moved = plane_map.wedge(plane_map)
     assert move_intersection.axes == intersect_moved.axes == (lines, planes, planes)
     np.testing.assert_allclose(move_intersection.kernel, intersect_moved.kernel, atol=1e-9)
 
-    move_intersection = point_map(lines.wedge(planes))
+    move_intersection = point_map(lines.gatype.wedge(planes))
     intersect_moved = line_map.wedge(plane_map)
     assert move_intersection.axes == intersect_moved.axes == (points, lines, planes)
     np.testing.assert_allclose(move_intersection.kernel, intersect_moved.kernel, atol=1e-9)
 
     # Dually, two points join to a line; a line and a point join to a plane.
-    move_join = line_map(points.regressive(points))
+    move_join = line_map(points.gatype.regressive(points))
     join_moved = point_map.regressive(point_map)
     assert move_join.axes == join_moved.axes == (lines, points, points)
     np.testing.assert_allclose(move_join.kernel, join_moved.kernel, atol=1e-9)
 
-    move_join = plane_map(lines.regressive(points))
+    move_join = plane_map(lines.gatype.regressive(points))
     join_moved = line_map.regressive(point_map)
     assert move_join.axes == join_moved.axes == (planes, lines, points)
     np.testing.assert_allclose(move_join.kernel, join_moved.kernel, atol=1e-9)
@@ -113,7 +113,7 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
         direction_map(normal)
 
     # The entire wedge operator commutes with reflection, not just this sample.
-    reflect_wedge = normal_map(directions.wedge(directions))
+    reflect_wedge = normal_map(directions.gatype.wedge(directions))
     wedge_reflected = direction_map.wedge(direction_map)
     assert reflect_wedge.axes == wedge_reflected.axes == (normals, directions, directions)
     np.testing.assert_allclose(reflect_wedge.kernel, wedge_reflected.kernel)

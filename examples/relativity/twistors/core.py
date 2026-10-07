@@ -39,7 +39,7 @@ PAIRING = 8 * exact.yz.scalar_product(STATE_EMBEDDING.reverse() * exact.xyztuv *
 
 # Pair a twistor with the action of an open plane, and raise that plane's input slot.
 # On a null twistor twice the result is the null plane of its light ray.
-RAY = (Bivector * PAIRING(Twistor, VOLUME(REPRESENTATIONS((1 * Bivector).reverse(), Twistor)))).contract(1, 3)
+RAY = (Bivector * PAIRING(Twistor, VOLUME(REPRESENTATIONS(Bivector.reverse(), Twistor)))).contract(1, 3)
 ROBINSON = 1 + exact.y - exact.zu + exact.yzu                                 # [] Twistor
 SPATIAL_VOLUME = exact.xyz
 

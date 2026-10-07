@@ -91,7 +91,7 @@ class OperatorFactory:
         space = gatype.output_subspace
         output = (
             self.subspaces.scalar() if scalar_only
-            else gatype._self_product(transform).output_subspace
+            else gatype.derive.self_product(transform).output_subspace
         )
         indices = {mask: index for index, mask in enumerate(output.masks)}
         # A cross term splits evenly over its two symmetric entries: doubled here, halved exactly

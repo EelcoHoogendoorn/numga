@@ -91,7 +91,7 @@ velocity = stream - radius_squared * (inverse * stream * inverse) - swirl * inve
 change = -(inverse * Vector * inverse)                                     # [rings, angles] Vector <- Vector
 gradient = -radius_squared * (change * stream * inverse + inverse * stream * change) - swirl * change / (2 * np.pi)
 derivative = (Vector * gradient(Vector)).contract(1, 2)                    # [rings, angles] Even: zero
-carried = (velocity | Vector)(jacobian.solve(1 * Vector))                  # [rings, angles] Scalar <- Vector: at the wing
+carried = (velocity | Vector)(jacobian.inverse())                          # [rings, angles] Scalar <- Vector: at the wing
 loops = (velocity * steps).sum(axis=-1)                                    # [rings] Even: circulation, no flux
 ```
 
