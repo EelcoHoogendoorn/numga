@@ -623,6 +623,8 @@ class Extensor:
             return geometric_product(self, scalar)
         if _is_array(scalar):
             return geometric_product(self, _batch_scalar(self.context, scalar))
+        if not isinstance(scalar, Number):
+            return NotImplemented
         scalar = self.context.prepare_scalar(scalar)
         gatype = TypeRules.operation("scale", (self.gatype,), self.gatype.subspaces)
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel * scalar)
@@ -768,29 +770,36 @@ class Extensor:
     def __lshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return self.reverse_sandwich(other)
 
+    # Operands numga does not know, a sparse extensor among them, get their reflected operator.
     def __xor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.wedge(other)
+        from numga.expression import is_expression_operand
+
+        return self.wedge(other) if is_expression_operand(other) else NotImplemented
 
     def __rxor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import wedge
+        from numga.expression import is_expression_operand, wedge
 
-        return wedge(other, self)
+        return wedge(other, self) if is_expression_operand(other) else NotImplemented
 
     def __and__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.regressive(other)
+        from numga.expression import is_expression_operand
+
+        return self.regressive(other) if is_expression_operand(other) else NotImplemented
 
     def __rand__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import regressive
+        from numga.expression import is_expression_operand, regressive
 
-        return regressive(other, self)
+        return regressive(other, self) if is_expression_operand(other) else NotImplemented
 
     def __or__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.inner(other)
+        from numga.expression import is_expression_operand
+
+        return self.inner(other) if is_expression_operand(other) else NotImplemented
 
     def __ror__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import inner
+        from numga.expression import inner, is_expression_operand
 
-        return inner(other, self)
+        return inner(other, self) if is_expression_operand(other) else NotImplemented
 
     def _require_compatible(self, other: "Extensor") -> None:
         if not self.context.is_compatible_with(other.context):
@@ -823,10 +832,11 @@ def _batch_scalar(context, values) -> Extensor:
 
 
 def _is_array(value: object) -> bool:
-    """An array (or array-like with a shape) of any rank in linear arithmetic is a batch of scalars,
-    0-d arrays and traced scalars included; plain numbers, NumPy scalars among them, are not."""
+    """An array (or array-like with a shape and a dtype) of any rank in linear arithmetic is a batch
+    of scalars, 0-d arrays and traced scalars included; plain numbers, NumPy scalars among them, are
+    not."""
 
-    return hasattr(value, "shape") and not isinstance(value, (Extensor, Number))
+    return hasattr(value, "shape") and hasattr(value, "dtype") and not isinstance(value, (Extensor, Number))
 
 
 def _promote_identity(value: object) -> object:

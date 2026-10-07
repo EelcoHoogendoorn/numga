@@ -191,6 +191,14 @@ Calling a batched map on a batched argument broadcasts the batch axes against ea
 ```python
 acceleration = response[:, :, None](reference)      # [n_time, 3, n_beads] Vector
 ```
+A field uses its last batch axis for sites, with an extensor of the same type and arity at each
+site. A [sparse extensor](sparse_field_maps.md) holds cells coupling input sites to output sites
+and acts by its cells' operations: multivector cells by whichever product the expression names,
+`S * field` or `S ^ field`, map cells by application, `S(field)`. Field elements keep their open
+inputs, and the field axis remains an ordinary batch axis. An operation that reverses the order of
+products, such as the reverse of multivector cells, runs the couplings back:
+`~(S * field) == ~field * ~S`.
+
 A frame summed against its reciprocal is the coordinate spelling of a trace or a contraction; write those instead (see `.trace()` and `.contract()` below).
 
 ---

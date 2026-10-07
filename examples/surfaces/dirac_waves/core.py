@@ -4,9 +4,9 @@ algebra of three-dimensional space.
 The field is a quaternion on each vertex, an even multivector, and the Dirac operator of the spin
 transformations takes it to an odd multivector on each face. The operator `D` is a sparse extensor: a
 field of vectors with one cell for each face and each of its corners, the edge that corner faces over
-minus twice the face's area. It acts by the geometric product, cell by cell and summed over each face's
-corners, so `D * vertices` takes a vertex field `[V] Even` to a face field `[F] Odd`, the vector times
-the quaternion. Its reverse `~D` turns every product with it around, as any reverse does: every cell
+minus twice the face's area. Its geometric product with a vertex field, `D * vertices`, multiplies each
+cell into the quaternion at its corner and sums over each face's corners, taking `[V] Even` to a face
+field `[F] Odd`. Its reverse `~D` turns every product with it around, as any reverse does: every cell
 reversed, and every coupling running the other way, from a face to its corners.
 
 A wave alternates the two: the face field moved on by the Dirac operator of the vertex field, then the

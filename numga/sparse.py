@@ -1,23 +1,31 @@
-"""Sparse extensors: linear maps between fields whose elements couple sparsely.
+"""Sparse linear maps between fields of extensor elements.
 
-A field is an Extensor whose last batch axis indexes the elements of a collection: the vertices or
-the faces of a mesh, the poses of a graph; leading batch axes hold separate fields. A sparse
-extensor couples a few elements of one field to a few of another; each coupling is a cell, an
-ordinary extensor, and the sparsity is in which elements couple, not in the blades of a cell. Its
-cells carry the couplings on their last batch axis too, and leading batch axes hold separate maps
-that share one pattern of couplings, broadcasting against the leading axes of what they act on.
+A field is an Extensor whose last batch axis indexes sites: vertices, faces, poses, or another
+collection. The axis is an ordinary untyped batch axis. Each field element has the same GAType
+and arity; it may be a multivector, a unary map, or a map with more open slots. Leading batch
+axes hold separate fields.
 
-A sparse extensor acts as its cells do, and forwards to them what is defined on them. A cell with
-slots is a map, and is applied: `S(field)` and `S(T)`, with `S.adjugate()` and `S.adjoint()` taking
-every cell's adjugate and adjoint. A nullary cell, a multivector, acts by its product: `S * field` and `S * T`, with `~S`
-reversing every cell. Either swaps inputs and outputs, as reversing a product swaps its factors and
-an adjugate pulls back. A product with an open type, `S * Even`, leaves a slot open, so that
-multivector cells become maps; solves and eigenproblems on the NumPy backend, through SciPy, act on
-map cells.
+A SparseExtensor holds cells, each coupling an input site (a column) to an output site (a row).
+It has no action of its own: an operation on it is its cells' operation, lifted to the couplings.
+A product with a field takes each cell's product with the element at its input site, by whichever
+product the expression names, `S * f`, `S ^ f`, `S | f` or `S & f`, and sums the contributions at
+each output site; with an open type, `S * Even`, the slot stays open and the cells become maps. A
+field on the left pairs with the output sites instead, `f * S`. A product of two sparse extensors
+multiplies their cells along the paths through shared sites. A map cell is applied, `S(field)`, and
+composes, `S(T)`. Field elements keep their own open slots throughout.
+
+An operation that reverses the order of the cells' products runs the couplings the other way: the
+reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f * ~S`, and the
+adjoint and adjugate of map cells. The others act cell by cell: the involute, grade selection, and
+the reverse of a map cell, which reverses its output. The stored cells have shape
+`[..., couplings]`; leading axes hold separate maps sharing one pattern of couplings. Solves and
+eigenproblems use map cells and multivector-valued fields, through SciPy on the NumPy backend. See
+docs/sparse_field_maps.md for examples.
 """
 
 from __future__ import annotations
 
+import operator
 from functools import singledispatch
 from numbers import Number
 from typing import overload
@@ -30,15 +38,17 @@ from numga.gatype import GAType
 
 
 class SparseExtensor:
-    """A linear map from a field of `shape[1]` elements to one of `shape[0]`: extensor cells
-    `[..., n]`, each coupling the input element its column names to the output element its row
-    names, with leading axes for separate maps of the same pattern. Cells coupling the same pair are
-    summed at construction, and stored by row."""
+    """Cells coupling `shape[1]` input sites to `shape[0]` output sites.
+
+    `cells[..., coupling]` couples `columns[coupling]` to `rows[coupling]`; duplicate couplings add
+    at construction. `gatype` describes the cells, not the whole field map, and leading cell batch
+    axes hold separate maps of the same pattern.
+    """
 
     __slots__ = ("cells", "rows", "columns", "shape")
-    product = ExtensionMethod("product")
     apply = ExtensionMethod("apply")
     reverse = ExtensionMethod("reverse")
+    clifford_conjugate = ExtensionMethod("clifford_conjugate")
     adjugate = ExtensionMethod("adjugate")
     adjoint = ExtensionMethod("adjoint")
     solve = ExtensionMethod("solve")
@@ -69,7 +79,7 @@ class SparseExtensor:
 
     @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
-        """Each element of the field as the cell on its own row and column."""
+        """A field map with each supplied element as the coupling cell on its own site."""
         index = np.arange(field.shape[-1])
         return cls(field, index, index, (len(index), len(index)))
 
@@ -80,10 +90,10 @@ class SparseExtensor:
 
     @property
     def gatype(self) -> GAType:
-        """The cells' type: a sparse extensor acts as its cells do."""
+        """The coupling-cell type used for local dispatch; its arity is not field-map arity."""
         return self.cells.gatype
 
-    # --- multivector cells: the product -----------------------------------------------------
+    # --- products: the cells' own, summed over the shared sites ----------------------------------
     @overload
     def __mul__(self, other: SparseExtensor) -> SparseExtensor: ...
     @overload
@@ -94,16 +104,50 @@ class SparseExtensor:
     def __mul__(self, other: float) -> SparseExtensor: ...
 
     def __mul__(self, other):
-        """Times a number, every cell; otherwise the product of multivector cells."""
-        return _times(other, self)
+        """Times a number, every cell; otherwise the cells' geometric product."""
+        return _scaled(self, other) if isinstance(other, Number) else _right(other, self, operator.mul)
 
-    def __rmul__(self, scalar: Number) -> SparseExtensor:
-        return _scaled(scalar, self)
+    def __rmul__(self, other):
+        return _scaled(self, other) if isinstance(other, Number) else _left(other, self, operator.mul)
 
+    def __xor__(self, other):
+        return _right(other, self, operator.xor)
+
+    def __rxor__(self, other):
+        return _left(other, self, operator.xor)
+
+    def __or__(self, other):
+        return _right(other, self, operator.or_)
+
+    def __ror__(self, other):
+        return _left(other, self, operator.or_)
+
+    def __and__(self, other):
+        return _right(other, self, operator.and_)
+
+    def __rand__(self, other):
+        return _left(other, self, operator.and_)
+
+    # --- operations that keep the order of products, cell by cell ---------------------------
     def __invert__(self) -> SparseExtensor:
         return self.reverse()
 
-    # --- map cells: application ------------------------------------------------------------------
+    def involute(self) -> SparseExtensor:
+        return _cellwise(self, self.cells.involute())
+
+    def select_grade(self, grade: int) -> SparseExtensor:
+        return _cellwise(self, self.cells.select_grade(grade))
+
+    def restrict_grade(self, grade: int) -> SparseExtensor:
+        return _cellwise(self, self.cells.restrict_grade(grade))
+
+    def select_subspace(self, subspace) -> SparseExtensor:
+        return _cellwise(self, self.cells.select_subspace(subspace))
+
+    def restrict_subspace(self, subspace) -> SparseExtensor:
+        return _cellwise(self, self.cells.restrict_subspace(subspace))
+
+    # --- unary coupling cells: application --------------------------------------------------
     @overload
     def __call__(self, operand: SparseExtensor) -> SparseExtensor: ...
     @overload
@@ -140,45 +184,48 @@ class SparseExtensor:
 spdiag = SparseExtensor.from_diagonal
 
 # --- products and applications, by cells and by operand ----------------------------------------
-@singledispatch
-def _times(other: object, value: SparseExtensor):
-    return value.product(other)
-
-
-@_times.register
-def _scaled(other: Number, value: SparseExtensor) -> SparseExtensor:
-    return SparseExtensor(value.cells * other, value.rows, value.columns, value.shape)
-
-
-@SparseExtensor.product.register(lambda t: t.arity == 0)
-def product(value: SparseExtensor, other: object):
-    """Multivector cells by their product: times a sparse extensor, the composition; times a
-    field, each cell times the element its column names, summed by row; times an open type, the
-    cells as maps with that input."""
-    return _product(other, value)
-
-
-@SparseExtensor.apply.register(lambda t: t.arity == 1)
-def apply(value: SparseExtensor, operand: object):
-    """Map cells applied: to a field, each cell to the element its column names, summed by row;
-    to a sparse extensor, composed with it."""
-    return _application(operand, value)
+def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
+    return _cellwise(value, value.cells * number)
 
 
 @singledispatch
-def _product(other: GAType, value: SparseExtensor) -> SparseExtensor:
-    return SparseExtensor(value.cells * other, value.rows, value.columns, value.shape)
+def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
+    """An open type: each cell's product with it, a map cell with the type's slot."""
+    return _cellwise(value, product(value.cells, other))
 
 
-@_product.register
-def _product_field(other: Extensor, value: SparseExtensor) -> Extensor:
-    return _scatter(value.cells * other[..., value.columns], value.rows, value.shape[0])
+@_right.register
+def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
+    return _scatter(product(value.cells, other[..., value.columns]), value.rows, value.shape[0])
 
 
-@_product.register
-def _product_sparse(other: SparseExtensor, value: SparseExtensor) -> SparseExtensor:
+@_right.register
+def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> SparseExtensor:
     left, right = _chain(value, other)
-    return SparseExtensor(value.cells[..., left] * other.cells[..., right], value.rows[left], other.columns[right], (value.shape[0], other.shape[1]))
+    return SparseExtensor(
+        product(value.cells[..., left], other.cells[..., right]), value.rows[left], other.columns[right],
+        (value.shape[0], other.shape[1]),
+    )
+
+
+@singledispatch
+def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
+    """An open type on the left: each cell's product with it, the couplings read from the output
+    sites."""
+    return _transposed(value, product(other, value.cells))
+
+
+@_left.register
+def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
+    return _scatter(product(other[..., value.rows], value.cells), value.columns, value.shape[1])
+
+
+@SparseExtensor.apply.register(lambda cell_type: cell_type.arity == 1)
+def apply(value: SparseExtensor, operand: object):
+    """Unary coupling cells applied to field elements, summed by output site. A field element
+    with open inputs composes into its coupling cell and keeps those inputs; a sparse operand
+    composes the field maps through their shared sites."""
+    return _application(operand, value)
 
 
 @singledispatch
@@ -192,35 +239,62 @@ def _application_sparse(operand: SparseExtensor, value: SparseExtensor) -> Spars
     return SparseExtensor(value.cells[..., left](operand.cells[..., right]), value.rows[left], operand.columns[right], (value.shape[0], operand.shape[1]))
 
 
-# --- forwarded to the cells -------------------------------------------------------------------
-@SparseExtensor.reverse.register(lambda t: t.arity == 0)
+# --- operations that reverse the order of the cells' products run the couplings back ---------
+def _cellwise(value: SparseExtensor, cells: Extensor) -> SparseExtensor:
+    return SparseExtensor(cells, value.rows, value.columns, value.shape)
+
+
+def _transposed(value: SparseExtensor, cells: Extensor) -> SparseExtensor:
+    return SparseExtensor(cells, value.columns, value.rows, value.shape[::-1])
+
+
+@SparseExtensor.reverse.register(lambda cell_type: cell_type.arity == 0)
 def reverse(value: SparseExtensor) -> SparseExtensor:
-    """Every multivector cell reversed, inputs and outputs swapped: the reverse of a product of
-    sparse extensors is the product of their reverses in turn."""
-    return SparseExtensor(value.cells.reverse(), value.columns, value.rows, value.shape[::-1])
+    """Every multivector cell reversed, the couplings run back: the reverse of a product is the
+    product of the reverses in turn, `~(S * T) == ~T * ~S`, and composing couplings in turn is
+    running them back."""
+    return _transposed(value, value.cells.reverse())
 
 
-@SparseExtensor.adjugate.register(lambda t: t.arity == 1)
+@SparseExtensor.reverse.register(lambda cell_type: cell_type.arity > 0)
+def reverse_maps(value: SparseExtensor) -> SparseExtensor:
+    """Every map cell's output reversed, the couplings kept: `(~S)(f) == ~(S(f))`."""
+    return _cellwise(value, value.cells.reverse())
+
+
+@SparseExtensor.clifford_conjugate.register(lambda cell_type: cell_type.arity == 0)
+def clifford_conjugate(value: SparseExtensor) -> SparseExtensor:
+    """Every multivector cell conjugated, the couplings run back, as for the reverse."""
+    return _transposed(value, value.cells.clifford_conjugate())
+
+
+@SparseExtensor.clifford_conjugate.register(lambda cell_type: cell_type.arity > 0)
+def clifford_conjugate_maps(value: SparseExtensor) -> SparseExtensor:
+    """Every map cell's output conjugated, the couplings kept."""
+    return _cellwise(value, value.cells.clifford_conjugate())
+
+
+@SparseExtensor.adjugate.register(lambda cell_type: cell_type.arity == 1)
 def adjugate(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjugate, inputs and outputs swapped: `S.adjugate()(c) & x` summed over the
+    """Every map cell's adjugate, the couplings run back: `S.adjugate()(c) & x` summed over the
     elements equals `c & S(x)` summed."""
-    return SparseExtensor(value.cells.adjugate(), value.columns, value.rows, value.shape[::-1])
+    return _transposed(value, value.cells.adjugate())
 
 
-@SparseExtensor.adjoint.register(lambda t: t.arity == 1)
+@SparseExtensor.adjoint.register(lambda cell_type: cell_type.arity == 1)
 def adjoint(value: SparseExtensor) -> SparseExtensor:
-    """Every map cell's adjoint, inputs and outputs swapped: `S.adjoint()(b).scalar_product(x)` summed
+    """Every map cell's adjoint, the couplings run back: `S.adjoint()(b).scalar_product(x)` summed
     over the elements equals `b.scalar_product(S(x))` summed."""
-    return SparseExtensor(value.cells.adjoint(), value.columns, value.rows, value.shape[::-1])
+    return _transposed(value, value.cells.adjoint())
 
 
 # --- linear algebra of map cells, on the NumPy backend --------------------------------------
-def _maps(cells: GAType, other: GAType) -> bool:
-    return cells.arity == 1
+def _maps(cell_type: GAType, other: GAType) -> bool:
+    return cell_type.arity == 1
 
 
-def _square_maps(cells: GAType, other: GAType) -> bool:
-    return cells.arity == 1 and len(cells.subspaces[0]) == len(cells.subspaces[1])
+def _square_maps(cell_type: GAType, other: GAType) -> bool:
+    return cell_type.arity == 1 and len(cell_type.subspaces[0]) == len(cell_type.subspaces[1])
 
 
 @SparseExtensor.solve.register(_square_maps)

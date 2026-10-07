@@ -430,13 +430,19 @@ class GAType:
         return sandwich(self, passenger)
 
     def __xor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.wedge(other)
+        from numga.expression import is_expression_operand
+
+        return self.wedge(other) if is_expression_operand(other) else NotImplemented
 
     def __and__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.regressive(other)
+        from numga.expression import is_expression_operand
+
+        return self.regressive(other) if is_expression_operand(other) else NotImplemented
 
     def __or__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.inner(other)
+        from numga.expression import is_expression_operand
+
+        return self.inner(other) if is_expression_operand(other) else NotImplemented
 
     def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return self.sandwich(other)
