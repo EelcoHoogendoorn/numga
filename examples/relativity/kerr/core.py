@@ -6,8 +6,9 @@ position gives minus the momentum rate. Momentum is a covector represented by it
 The scalar profile's gradient is a vector, whose inner product with a step is the profile's change,
 and the null direction's derivative is a map with the step left open; together they give the
 Hamiltonian's gradient, minus the force on the ray, without component equations.
-Camera rays are followed until each is captured, escapes, or crosses the disk; where each ended is
-decided here, and the renderer only colours the pixels.
+Camera rays are followed until each is captured or escapes; the disk takes a share of each ray
+it crosses, by its optical depth along the ray. What each ray met is decided here, and the renderer
+only colours the pixels.
 
 Ingoing Kerr–Schild coordinates cover the future horizon. Units set G and c to one; the spatial
 spin bivector has magnitude J/M. The positive radial branch is used, away from the singular disk.
@@ -161,25 +162,82 @@ def frequency_ratio(position: Vector, momentum: Vector, camera: Vector, orbit: B
                     spin: Spin, mass: float) -> Scalar:
     """The frequency a camera at rest at `camera` sees, over the one emitted by gas on a circular
     orbit in the unit plane `orbit`, for rays whose momenta are given at the gas."""
-    geometry = field(position, spin, mass)                                                  # [...] Field
-    # Kepler's angular speed of a circular equatorial orbit, the spin counted along the orbit.
-    alignment = -spin.scalar_product(orbit)                                                 # [] Scalar
-    angular_speed = np.sqrt(mass) / (geometry.radius * geometry.radius.square_root() + alignment * np.sqrt(mass))  # [...] Scalar
-    flow = mv.t + angular_speed * orbit.commutator(mv.t | (mv.t ^ position))                # [...] Vector
-    gas = flow / (flow | metric(geometry)(flow)).square_root()                               # [...] Vector
+    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Vector
     at_rest = mv.t / (mv.t | metric(field(camera, spin, mass))(mv.t)).square_root()          # [] Vector
     # The momentum paired with time is conserved along the ray, so the camera's frequency reads here.
     return (momentum | at_rest) / (momentum | gas)                                          # [...] Scalar
 
 
-def disk_temperature(radius: Scalar, inner_radius: float, hottest: float) -> Scalar:
-    """A thin disk's temperature at each oblate radius: zero at its inner edge, `hottest` at 49/36 of
-    that radius, and falling as the radius to the power -3/4 beyond."""
-    ratio = inner_radius / radius                                                           # [...] Scalar
-    root = ratio.square_root()                                                              # [...] Scalar
-    # ratio^(3/4) (1 - ratio^(1/2))^(1/4), divided by its value at the hottest radius.
-    profile = (ratio * root).square_root() * (1 - root).square_root().square_root()         # [...] Scalar
-    return profile * (hottest / ((36 / 49) ** 0.75 * (1 / 7) ** 0.25))                      # [...] Scalar
+def orbiting_gas(position: Vector, orbit: Bivector, spin: Spin, mass: float) -> Vector:
+    """The unit velocity of gas on a circular equatorial orbit in the unit plane `orbit`, at each event."""
+    geometry = field(position, spin, mass)                                                  # [...] Field
+    angular_speed = orbital_speed(geometry.radius, orbit, spin, mass)                       # [...] Scalar
+    flow = mv.t + angular_speed * orbit.commutator(mv.t | (mv.t ^ position))                # [...] Vector
+    return flow / (flow | metric(geometry)(flow)).square_root()                              # [...] Vector
+
+
+def orbital_speed(radius: Scalar, orbit: Bivector, spin: Spin, mass: float) -> Scalar:
+    """Kepler's angular speed, per coordinate time, of a circular equatorial orbit in the unit plane
+    `orbit` at each oblate radius, the spin counted along the orbit."""
+    alignment = -spin.scalar_product(orbit)                                                 # [] Scalar
+    return np.sqrt(mass) / (radius * radius.square_root() + alignment * np.sqrt(mass))      # [...] Scalar
+
+
+def carried(position: Vector, radius: Scalar, orbit: Bivector, spin: Spin, mass: float,
+            elapsed: np.ndarray) -> Vector:
+    """The gas the camera sees at each disk event once a coordinate time `elapsed` has passed,
+    followed back along its orbit to time zero, `[elapsed..., events]`. Each event's own time counts
+    too, earlier for light that travelled further, and inner rings lap outer ones."""
+    emitted = elapsed[..., None] + (position | mv.t)                                        # [elapsed..., events] Scalar
+    angle = orbital_speed(radius, orbit, spin, mass) * emitted                              # [elapsed..., events] Scalar
+    return (orbit * (-angle / 2)).exp() >> position                                         # [elapsed..., events] Vector
+
+
+def innermost_stable_orbit(spin: float, mass: float) -> float:
+    """The radius of the innermost stable circular orbit turning with a hole of spin magnitude
+    `spin`, J/M, in its equatorial plane: 6M without spin, M at the extreme (Bardeen, Press and
+    Teukolsky, 1972)."""
+    ratio = spin / mass
+    first = 1 + (1 - ratio**2) ** (1 / 3) * ((1 + ratio) ** (1 / 3) + (1 - ratio) ** (1 / 3))
+    second = np.sqrt(3 * ratio**2 + first**2)
+    return mass * (3 + second - np.sqrt((3 - first) * (3 + first + 2 * second)))
+
+
+def disk_temperature(radius: Scalar, spin: float, mass: float, scale: float) -> Scalar:
+    """A relativistic thin disk's temperature at each oblate radius, from the flux of Page and Thorne
+    (1974) around a hole of spin magnitude `spin`: zero at the innermost stable orbit, falling as the
+    radius to the power -3/4 far out. `scale` is (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
+    ratio = spin / mass
+    x = (radius / mass).square_root()                                                       # [...] Scalar
+    edge = np.sqrt(innermost_stable_orbit(spin, mass) / mass)
+    # The roots of x^3 - 3x + 2 ratio, and the weight of each in the torque.
+    roots = 2 * np.cos((np.arccos(ratio) + np.array([-np.pi, np.pi, 3 * np.pi])) / 3)       # [3]
+    differences = roots[:, None] - roots[None, :]
+    np.fill_diagonal(differences, 1.0)
+    weights = 3 * (roots - ratio) ** 2 / (roots * differences.prod(axis=1))                 # [3]
+    # The torque the disk carries, zero at the innermost stable orbit; round-off kept non-negative.
+    torque = (x - edge - 1.5 * ratio * (x / edge).log()
+              - (weights * ((x[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar
+    flux = 3 / (8 * np.pi) * torque / (x ** 4 * (x * x * x - 3 * x + 2 * ratio))            # [...] Scalar
+    return scale * flux.square_root().square_root()                                         # [...] Scalar
+
+
+def disk_depth(radius: Scalar, inner_radius: float, outer_radius: float, depth: float) -> Scalar:
+    """The disk's optical depth straight through its thickness at each oblate radius: `depth` at the
+    inner edge, where the gas is densest, thinning outwards to none at the outer edge."""
+    fraction = (radius - inner_radius) / (outer_radius - inner_radius)                      # [...] Scalar
+    return depth * (1 - fraction) * (1 - fraction)                                          # [...] Scalar
+
+
+def disk_opacity(position: Vector, momentum: Vector, depth: Scalar, normal: Vector,
+                 orbit: Bivector, spin: Spin, mass: float) -> Scalar:
+    """The share of a ray's light the disk absorbs where the ray crosses it. Its optical depth along
+    the ray is the depth through its thickness over the cosine of the ray's slant as the orbiting gas
+    sees it: the ray's energy in the gas's frame over its momentum along the normal. Gas moving away
+    from the light's source sees the ray more obliquely, and absorbs more."""
+    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Vector
+    slant = ((momentum | gas) / (momentum | normal)).abs()                                   # [...] Scalar
+    return 1 - (-depth * slant).exp()                                                       # [...] Scalar
 
 
 def crossing_fraction(start: Vector, end: Vector, normal: Vector) -> Scalar:
@@ -195,12 +253,15 @@ def disk_crossing(start: Vector, end: Vector, normal: Vector,
 
 
 def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-                inner_radius: float, outer_radius: float, escape_radius: float,
-                capture_radius: float, spin: Spin, mass: float) -> Iterator[Image]:
-    """The camera rays resolved at each step: those crossing the disk between its radii, with their
-    state at the crossing, and those escaping, with their directions. Captured rays end unseen. The
-    rays still unresolved are sent back to the integrator."""
+                inner_radius: float, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
+                escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Iterator[Image]:
+    """The camera rays resolved at each step. Each crossing of the disk, between its radii, gives its
+    state there and its weight: the disk's opacity, for the crossing's event, momentum and oblate
+    radius, times the share of the ray not yet absorbed. Rays
+    escaping give their directions, weighted by what is left of them. A ray ends when absorbed,
+    escaped or captured; the rays still unresolved are sent back to the integrator."""
     pixels = np.arange(pixel_count)
+    remaining = mv.scalar(np.ones((pixel_count, 1)))                                        # [rays] Scalar
     try:
         step = next(steps)
         while pixels.size:
@@ -210,18 +271,19 @@ def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, norm
             at_plane = tuple(start[crossing] + fraction * (stop[crossing] - start[crossing])
                              for start, stop in zip(step.start, step.end))
             radii = field(at_plane[0], spin, mass).radius                                   # [crossings] Scalar
-            on_disk = (radii >= inner_radius) & (radii <= outer_radius)
-            resolved = np.zeros(pixels.size, dtype=bool)
-            resolved[crossing[on_disk]] = True
+            on_disk = np.flatnonzero((radii >= inner_radius) & (radii <= outer_radius))
+            crossing, at_plane, radii = crossing[on_disk], tuple(value[on_disk] for value in at_plane), radii[on_disk]
+            weights = remaining[crossing] * opacity(at_plane[0], at_plane[1], radii)        # [crossings] Scalar
+            remaining = replaced(remaining, crossing, remaining[crossing] - weights)        # [rays] Scalar
+            resolved = remaining <= 0
             escaped = np.flatnonzero((step.radius > escape_radius) & ~resolved)
             # An escaped ray's direction is its tangent, the inverse metric of its momentum.
             directions = inverse_metric(field(end[escaped], spin, mass))(step.end[1][escaped])  # [escaped] Vector
-            yield Image(pixels[crossing[on_disk]], tuple(value[on_disk] for value in at_plane),
-                        radii[on_disk], pixels[escaped], directions)
+            yield Image(pixels[crossing], at_plane, radii, weights, pixels[escaped], directions, remaining[escaped])
             resolved[escaped] = True
             resolved |= step.radius < capture_radius
             keep = np.flatnonzero(~resolved)
-            pixels = pixels[keep]
+            pixels, remaining = pixels[keep], remaining[keep]
             if pixels.size:
                 step = steps.send(keep)
     except StopIteration as error:
@@ -229,17 +291,19 @@ def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, norm
 
 
 def resolve(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-            inner_radius: float, outer_radius: float, escape_radius: float,
-            capture_radius: float, spin: Spin, mass: float) -> Image:
-    """Where every camera ray ended, gathered over all steps."""
-    parts = tuple(resolutions(steps, pixel_count, normal, inner_radius, outer_radius,
+            inner_radius: float, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
+            escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Image:
+    """What every camera ray met, gathered over all steps."""
+    parts = tuple(resolutions(steps, pixel_count, normal, inner_radius, outer_radius, opacity,
                               escape_radius, capture_radius, spin, mass))
     return Image(
         np.concatenate([part.disk_pixels for part in parts]),
         tuple(concatenate(list(values), axis=0) for values in zip(*(part.disk for part in parts))),
         concatenate([part.disk_radii for part in parts], axis=0),
+        concatenate([part.disk_weights for part in parts], axis=0),
         np.concatenate([part.sky_pixels for part in parts]),
         concatenate([part.sky_directions for part in parts], axis=0),
+        concatenate([part.sky_weights for part in parts], axis=0),
     )
 
 
@@ -265,14 +329,24 @@ class Step:
 
 @dataclass(frozen=True)
 class Image:
-    """Where camera rays ended: the pixels whose rays crossed the disk, with their state there (event,
-    momentum and, when transported, screen) and oblate radius; and the pixels whose rays escaped,
-    with their directions."""
+    """What camera rays met: their crossings of the disk, by pixel, with the ray's state there (event,
+    momentum and, when transported, screen), the oblate radius and the share of the pixel's light the
+    crossing gives; and the pixels whose rays escaped, with their directions and the share left for
+    the sky. A pixel seen through the disk's clear edge appears more than once."""
     disk_pixels: np.ndarray
     disk: tuple[Extensor, ...]
     disk_radii: Scalar
+    disk_weights: Scalar
     sky_pixels: np.ndarray
     sky_directions: Vector
+    sky_weights: Scalar
+
+
+def replaced(values: Extensor, indices: np.ndarray, entries: Extensor) -> Extensor:
+    """`values` along their first axis with those at `indices` replaced by `entries`, built anew."""
+    rest = np.setdiff1d(np.arange(values.shape[0]), indices)
+    order = np.argsort(np.concatenate([rest, indices]))
+    return concatenate([values[rest], entries], axis=0)[order]
 
 
 def runge_kutta(rates: Callable[..., tuple[Extensor, ...]], state: tuple[Extensor, ...],

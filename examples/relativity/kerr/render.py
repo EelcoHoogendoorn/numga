@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -24,6 +26,12 @@ MID_GREY = 0.5
 GAMMA = 1.6
 # Blackbody colours look pale on a display; their saturation is exaggerated to show the shift.
 SATURATION = 2.5
+# The white balance: a blackbody at this temperature shows neutral, hotter ones blue, cooler ones red.
+WHITE_TEMPERATURE = 6500.0                                                     # K
+# The disk's clumpy texture: how many random waves make it, their seed, and its contrast.
+CLUMP_MODES = 24
+CLUMP_SEED = 5
+CLUMP_CONTRAST = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -151,18 +159,25 @@ def sky_colour(direction: core.Vector, texture: np.ndarray) -> np.ndarray:
     return upper * (1 - fraction_y) + lower * fraction_y
 
 
-def disk_emissivity(points: core.Vector, radius: core.Scalar,
-                    inner_radius: float, outer_radius: float) -> np.ndarray:
-    """An illustrative orbital texture on the disk's emission, tapered at its outer edge, `[pixels]`."""
+def clump_waves(points: core.Vector, radius: core.Scalar) -> np.ndarray:
+    """Random waves around and across the disk at each point, summed to unit variance, `[...]`; whole
+    turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(points.cast(core.ga.subspace("x y")).kernel, -1, 0)
-    radius = radius.kernel[..., 0]
     angle = np.arctan2(horizontal_y, horizontal_x)
-    fraction = np.clip((radius - inner_radius) / (outer_radius - inner_radius), 0, 1)
-    rings = 0.90 + 0.045 * np.sin(11 * radius + 2 * np.sin(3 * angle)) + 0.025 * np.sin(19 * radius - 5 * angle)
-    filaments = 0.96 + 0.04 * np.sin(9 * angle - 7 * radius)
-    # A tapered outer edge keeps the source finite without painting a sharp bright rim.
-    taper = np.clip((1 - fraction) / 0.12, 0, 1)
-    return rings * filaments * taper
+    modes = np.random.default_rng(CLUMP_SEED)
+    turns = modes.integers(3, 18, CLUMP_MODES)
+    wavenumbers = modes.uniform(0.8, 4.0, CLUMP_MODES)
+    phases = modes.uniform(0, 2 * np.pi, CLUMP_MODES)
+    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
+    return waves.sum(axis=-1) / np.sqrt(CLUMP_MODES / 2)
+
+
+def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:
+    """An illustrative texture on the disk's emission, `[crossings]`: fine rings, which the orbital
+    flow leaves in place, and clumps from `waves`."""
+    radius = radius.kernel[..., 0]
+    rings = 0.90 + 0.045 * np.sin(11 * radius) + 0.025 * np.sin(19 * radius)
+    return rings * np.exp(CLUMP_CONTRAST * waves)
 
 
 def colour_matching(wavelengths: np.ndarray) -> np.ndarray:
@@ -200,41 +215,71 @@ def exposed(light: np.ndarray, reference: float) -> np.ndarray:
     return vivid / np.maximum(vivid.max(axis=-1, keepdims=True), 1)
 
 
+def disk_light(image: core.Image, temperature: core.Scalar, waves: np.ndarray) -> np.ndarray:
+    """Each disk crossing's linear light, `[crossings, 3]`: a blackbody at its observed temperature,
+    white-balanced, textured, and weighted by the share of its pixel the crossing gives."""
+    white = blackbody(np.array(WHITE_TEMPERATURE))
+    balanced = blackbody(temperature.kernel[..., 0]) * (white @ LUMINANCE) / white
+    weights = disk_emissivity(image.disk_radii, waves) * image.disk_weights.kernel[..., 0]
+    return balanced * weights[:, None]
+
+
+def scattered(light: np.ndarray, pixels: np.ndarray, pixel_count: int) -> np.ndarray:
+    """Light `[entries, 3]` summed into its pixels, `[pixel_count, 3]`; a pixel may take several."""
+    summed = np.zeros((pixel_count, 3))
+    np.add.at(summed, pixels, light)
+    return summed
+
+
 def camera_colours(image: core.Image, temperature: core.Scalar, image_shape: tuple[int, int],
-                   sky_texture: np.ndarray, inner_radius: float, outer_radius: float) -> tuple[np.ndarray, np.ndarray]:
-    """The disk's linear light, a blackbody at each pixel's observed temperature, and the sky's
-    colours, each scattered to its pixels, `[pixels, 3]` each."""
+                   sky_texture: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The disk's linear light and the sky's colours, each summed into its pixels, `[pixels, 3]` each."""
     height, width = image_shape
-    disk = np.zeros((height * width, 3))
-    sky = np.zeros((height * width, 3))
-    emissivity = disk_emissivity(image.disk[0], image.disk_radii, inner_radius, outer_radius)
-    disk[image.disk_pixels] = blackbody(temperature.kernel[..., 0]) * emissivity[:, None]
-    sky[image.sky_pixels] = sky_colour(image.sky_directions, sky_texture)
-    return disk, sky
+    light = disk_light(image, temperature, clump_waves(image.disk[0], image.disk_radii))
+    sky = sky_colour(image.sky_directions, sky_texture) * image.sky_weights.kernel
+    return (scattered(light, image.disk_pixels, height * width),
+            scattered(sky, image.sky_pixels, height * width))
 
 
 def draw_camera(image: core.Image, temperature: core.Scalar, hottest: float, image_shape: tuple[int, int],
-                sky_texture: np.ndarray, inner_radius: float, outer_radius: float) -> plt.Figure:
-    """The camera's view: the opaque glowing disk at its observed temperatures, exposed for its
-    hottest emitted one, the horizon's shadow and the lensed sky."""
+                sky_texture: np.ndarray) -> plt.Figure:
+    """The camera's view: the glowing disk at its observed temperatures, clearing at its edges,
+    exposed for its hottest emitted one, the horizon's shadow and the lensed sky."""
     height, width = image_shape
-    disk, sky = camera_colours(image, temperature, image_shape, sky_texture, inner_radius, outer_radius)
+    disk, sky = camera_colours(image, temperature, image_shape, sky_texture)
     figure = plt.figure(figsize=(9, 9 * height / width), facecolor="black")
     ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow((exposed(disk, hottest) + sky).reshape(height, width, 3), interpolation="lanczos")
+    ax.imshow(np.clip(exposed(disk, hottest) + sky, 0, 1).reshape(height, width, 3), interpolation="lanczos")
     ax.set_axis_off()
     return figure
 
 
 def animate_polarizer(image: core.Image, temperature: core.Scalar, hottest: float, transmission: core.Scalar,
-                      image_shape: tuple[int, int], sky_texture: np.ndarray, inner_radius: float,
-                      outer_radius: float) -> list[np.ndarray]:
-    """The camera's view through each analyzer: the disk by the power it transmits, `transmission
-    [analyzers, disk pixels]`. The exposure is doubled to make up for the half of unpolarized light a
-    polarizer stops, so the sky and unpolarized light look as in the still."""
+                      image_shape: tuple[int, int], sky_texture: np.ndarray) -> list[np.ndarray]:
+    """The camera's view through each analyzer: each disk crossing by the power it transmits,
+    `transmission [analyzers, crossings]`. The exposure is doubled to make up for the half of
+    unpolarized light a polarizer stops, so the sky and unpolarized light look as in the still."""
     height, width = image_shape
-    disk, sky = camera_colours(image, temperature, image_shape, sky_texture, inner_radius, outer_radius)
-    power = np.zeros((transmission.shape[0], height * width))
-    power[:, image.disk_pixels] = transmission.kernel[..., 0]
-    return [np.round(np.clip(exposed(2 * disk * passed[:, None], hottest) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
-            for passed in power]
+    light = disk_light(image, temperature, clump_waves(image.disk[0], image.disk_radii))
+    _, sky = camera_colours(image, temperature, image_shape, sky_texture)
+    return [np.round(np.clip(exposed(scattered(2 * light * passed[:, None], image.disk_pixels, height * width), hottest)
+                             + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
+            for passed in transmission.kernel[..., 0]]
+
+
+def animate_disk(image: core.Image, temperature: core.Scalar, hottest: float, flows: Iterable[core.Vector],
+                 loop_frames: int, image_shape: tuple[int, int], sky_texture: np.ndarray) -> list[np.ndarray]:
+    """The camera's view as the disk's gas orbits: its light steady, its texture read where each
+    crossing's gas was, `flows [2, crossings]` per frame, in this loop and the one before. Turning the
+    clump waves from the first to the second over the loop closes it without a jump, and without the
+    loss of contrast an average would bring."""
+    height, width = image_shape
+    _, sky = camera_colours(image, temperature, image_shape, sky_texture)
+    frames = []
+    for index, (now, before) in enumerate(flows):
+        fade = np.pi / 2 * index / loop_frames
+        waves = (np.cos(fade) * clump_waves(now, image.disk_radii)
+                 + np.sin(fade) * clump_waves(before, image.disk_radii))
+        disk = scattered(disk_light(image, temperature, waves), image.disk_pixels, height * width)
+        frames.append(np.round(np.clip(exposed(disk, hottest) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3))
+    return frames

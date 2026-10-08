@@ -54,9 +54,10 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
     return path
 
 
-def save_animation(frames: list[np.ndarray], name: str, duration_ms: int) -> Path:
-    """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif."""
+def save_animation(frames: list[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0) -> Path:
+    """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`,
+    box-filtered to `scale` of their size."""
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
-    save_gif(frames, str(path), duration_ms, 1.0, 256)
+    save_gif(frames, str(path), duration_ms, scale, colors)
     print(f"Saved {path}")
     return path

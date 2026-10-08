@@ -304,26 +304,58 @@ def test_disk_coherency_through_a_rotating_polarizer():
     np.testing.assert_allclose((repeated - transmitted).kernel, 0, atol=ROUND_OFF, rtol=0)
 
 
-def test_every_camera_ray_ends_once_on_the_disk_in_the_sky_or_in_the_hole():
+def test_every_camera_ray_shares_its_light_once_between_disk_sky_and_hole():
     mass = 1.0
     spin = 0.7 * core.mv.xy
     orientation = (0.6 * core.mv.zx).exp()
     eye = (orientation >> core.mv.z) * 25
     pixel_width, pixel_height = 9, 7
+    pixel_count = pixel_width * pixel_height
     inner_radius, outer_radius = 3.4, 12.0
+    depth = 40.0
     capture_radius = 1.002 * (mass + np.sqrt(mass**2 - 0.7**2))
+
+    def opacity(event: core.Vector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
+        layer = core.disk_depth(radius, inner_radius, outer_radius, depth)
+        return core.disk_opacity(event, momentum, layer, core.mv.z, core.mv.xy, spin, mass)
     position, momentum = core.camera_rays(eye, orientation, pixel_width, pixel_height, 0.35, spin, mass)
     steps = core.camera_trace((position, momentum), spin, mass, 0.1, 600, core.camera_rates)
-    image = core.resolve(steps, pixel_width * pixel_height, core.mv.z, inner_radius, outer_radius,
-                         100.0, capture_radius, spin, mass)
-    seen = np.concatenate([image.disk_pixels, image.sky_pixels])
+    image = core.resolve(steps, pixel_count, core.mv.z, inner_radius, outer_radius, opacity, 100.0, capture_radius, spin, mass)
+    disk_share = np.bincount(image.disk_pixels, image.disk_weights.kernel[..., 0], pixel_count)
+    sky_share = np.bincount(image.sky_pixels, image.sky_weights.kernel[..., 0], pixel_count)
 
-    # No ray ends twice; disk crossings lie in the disk plane between its radii.
-    assert len(np.unique(seen)) == len(seen) and len(image.disk_pixels) and len(image.sky_pixels)
+    # checks: crossings lie in the disk plane between its radii, each giving part of its pixel's light.
     np.testing.assert_allclose((core.mv.z | image.disk[0]).kernel, 0, atol=ROUND_OFF, rtol=0)
-    assert np.all((image.disk_radii >= inner_radius) & (image.disk_radii <= outer_radius))
+    assert np.all((image.disk_radii > inner_radius) & (image.disk_radii < outer_radius))
+    assert np.all(image.disk_weights > 0)
+    # A ray escapes at most once; escaped rays share all their light, captured ones lose the rest.
+    assert len(np.unique(image.sky_pixels)) == len(image.sky_pixels)
+    np.testing.assert_allclose((disk_share + sky_share)[image.sky_pixels], 1, atol=ROUND_OFF, rtol=0)
+    assert np.all(disk_share + sky_share <= 1 + ROUND_OFF)
+    # Some rays meet the disk where it clears, and its body absorbs others all but whole.
+    assert np.any((disk_share > 0) & (disk_share < 0.5))
+    assert np.any(disk_share > 0.999)
     # The central ray, aimed at the hole, passes inside the disk's inner edge and is captured.
-    assert (pixel_width * pixel_height) // 2 not in seen
+    assert disk_share[pixel_count // 2] == 0 and sky_share[pixel_count // 2] == 0
+
+
+def test_disk_opacity_face_on_and_where_its_gas_recedes():
+    mass, depth = 1.0, 0.7
+    spin = 0.8 * core.mv.xy
+    far, near = 1e6, 6.0
+    # Far out the gas barely moves and the field is flat: a ray along the normal meets the bare depth.
+    face_on = core.initial_momentum(core.mv.x * far, -core.mv.z, spin, mass)
+    # Two rays at one slant through opposite sides of the orbit: the gas at +x moves along +y, towards
+    # where the light goes, and the gas at -x moves away from it.
+    sides = stack([core.mv.x * near, -core.mv.x * near])                                   # [2] Vector
+    slanted = core.initial_momentum(sides, (core.mv.y - core.mv.z) / np.sqrt(2), spin, mass)
+
+    straight = core.disk_opacity(core.mv.x * far, face_on, core.mv.scalar([depth]), core.mv.z, core.mv.xy, spin, mass)
+    approaching, receding = core.disk_opacity(sides, slanted, core.mv.scalar([depth]), core.mv.z, core.mv.xy, spin, mass)
+
+    # checks: this tolerance tests the far field's residual orbital speed and curvature, about 1e-6.
+    np.testing.assert_allclose(straight.kernel[..., 0], 1 - np.exp(-depth), atol=1e-4, rtol=0)
+    assert receding.kernel[0] > approaching.kernel[0]
 
 
 def test_frequency_ratio_of_orbiting_gas_seen_by_a_camera_at_rest():
@@ -347,11 +379,27 @@ def test_frequency_ratio_of_orbiting_gas_seen_by_a_camera_at_rest():
     assert approaching.kernel[0] > 1 > receding.kernel[0]
 
 
-def test_thin_disk_temperature_profile():
-    inner_radius, hottest = 3.4, 5800.0
-    radii = core.mv.scalar(np.array([[1.0], [49 / 36], [2.0], [4.0]]) * inner_radius)
-    temperature = core.disk_temperature(radii, inner_radius, hottest).kernel[:, 0]
+def test_relativistic_thin_disk_temperature():
+    mass, scale = 1.0, 1.0
+    radii = np.array([6.5, 8.0, 12.0, 40.0])
+    nearly_still = core.disk_temperature(core.mv.scalar(radii[:, None]), 1e-9, mass, scale).kernel[:, 0]
+    root3, root6 = np.sqrt(3), np.sqrt(6)
+    logarithm = np.log((np.sqrt(radii) + root3) * (root6 - root3) / ((np.sqrt(radii) - root3) * (root6 + root3)))
+    schwarzschild = (3 / (8 * np.pi * radii**3) / (1 - 3 / radii)
+                     * (1 - np.sqrt(6 / radii) + np.sqrt(3 / (4 * radii)) * logarithm)) ** 0.25
 
-    # Zero at the inner edge, hottest at 49/36 of it, falling beyond.
-    np.testing.assert_allclose(temperature[:2], [0, hottest], atol=1e-9, rtol=0)
-    assert temperature[1] > temperature[2] > temperature[3] > 0
+    # Without spin, the Kerr flux is Page and Thorne's Schwarzschild one.
+    np.testing.assert_allclose(nearly_still, schwarzschild, rtol=1e-6, atol=0)
+    # Zero at the innermost stable orbit; a faster spin reaches deeper and runs hotter.
+    edge = core.mv.scalar([[core.innermost_stable_orbit(0.8, mass)]])
+    assert core.disk_temperature(edge, 0.8, mass, scale).kernel[0, 0] < 1e-3
+    peaks = [core.disk_temperature(core.mv.scalar(np.geomspace(core.innermost_stable_orbit(spin, mass), 30, 2000)[:, None]),
+                                   spin, mass, scale).kernel.max() for spin in (0.5, 0.8, 0.95)]
+    assert peaks[0] < peaks[1] < peaks[2]
+
+
+def test_innermost_stable_orbit():
+    # 6M without spin, about 2.91M at spin 0.8M, and the hole's own mass at the extreme.
+    np.testing.assert_allclose(core.innermost_stable_orbit(0.0, 1.0), 6.0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose(core.innermost_stable_orbit(0.8, 1.0), 2.9066, atol=1e-4, rtol=0)
+    np.testing.assert_allclose(core.innermost_stable_orbit(1.0, 1.0), 1.0, atol=ROUND_OFF, rtol=0)
