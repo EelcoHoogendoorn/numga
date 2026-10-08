@@ -35,12 +35,28 @@ def formula(value) -> str:
                      for index, term in enumerate(terms))
 
 
+def number(coefficient, precision: int) -> str:
+    """A coefficient rounded to `precision` digits; a complex one as its real part and its imaginary
+    part with an `i`, the unit written as `i` alone."""
+    def real(part: float) -> str:
+        return np.format_float_positional(round(part, precision) + 0.0, precision=precision, trim="-")
+
+    value = complex(coefficient)
+    imaginary = round(value.imag, precision) + 0.0
+    if imaginary == 0:
+        return real(value.real)
+    unit = "i" if abs(imaginary) == 1 else real(abs(imaginary)) + "i"
+    if round(value.real, precision) == 0:
+        return ("-" if imaginary < 0 else "") + unit
+    return real(value.real) + ("-" if imaginary < 0 else "+") + unit
+
+
 def coefficient_table(value) -> str:
     """Lay out blade-labelled coefficients of an unbatched multivector or linear map.
 
     A multivector has one row beneath its blade labels. A map labels its rows with
     output blades and its columns with input blades.
-    Numbers follow NumPy's print precision.
+    Numbers follow NumPy's print precision; complex ones print as `a+bi`.
     """
     if value.ndim:
         raise ValueError("coefficient_table requires an unbatched extensor")
@@ -56,7 +72,7 @@ def coefficient_table(value) -> str:
         rows = kernel[None, :]
     precision = np.get_printoptions()["precision"]
     cells = [["", *column_names]] + [
-        [name, *(np.format_float_positional(round(float(coefficient), precision) + 0.0, precision=precision, trim="-") for coefficient in row)]
+        [name, *(number(coefficient, precision) for coefficient in row)]
         for name, row in zip(row_names, rows)
     ]
     widths = [max(len(row[column]) for row in cells) for column in range(len(column_names) + 1)]

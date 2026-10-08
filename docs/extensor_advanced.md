@@ -39,25 +39,32 @@ metric = Vector | Vector                                 # Scalar <- (Vector, Ve
 misfit = residual.reverse().scalar_product(residual)     # a squared norm, in the metric it is measured by
 ```
 
-Neither is there a tensor product. Arity grows only by leaving a slot open in an expression,
-and it falls only by binding a slot or by a product of the algebra. A dyad is written as a
-product with an open slot, `a * (b & Point)`, and a contraction chosen by index, the other half
-of `einsum`, has no counterpart.
+There is no separate tensor product, and none is needed. A tensor is a multilinear function whose
+slots take vectors or covectors; an extensor is a multilinear function whose slots take any
+subspace of the algebra, and a covector slot is a slot of the dual space, which the algebra names in
+two ways, section 3. Every tensor is therefore an extensor. The tensor product of two functions
+takes both their arguments and multiplies their values, `(S ⊗ T)(u, v) = S(u) T(v)`, and
+multiplying two extensors with their slots left open does exactly that, each open slot a separate
+argument. Contraction pairs two arguments: `trace` through the
+incidence, `contract` through the metric. This holds for tensors written as functions returning a
+scalar or a single vector; two vector outputs multiplied give the geometric product, not `⊗`.
 
-As objects, extensors are tensors whose arguments are multivectors rather than vectors, and the
-tensors of vector algebra are the extensors whose inputs are all vectors. The tensor product's
-work, joining independent arguments into one multilinear map, is done by any product with more
-than one argument left open: the dyad above joins an output to a reading of a point, and
-`Plane & Point` reads two independent arguments at once. Where tensor algebra builds a map from
-tensor products and then contracts, an extensor is written as the product it is.
+The second moment of a set of points, `C = Σ x ⊗ x`, the covariance of statistics and the inertia
+of mechanics, as a form and as a map:
 
-In tensor notation that dyad reads as
-$a \otimes b$.
+```python
+form = ((points | Vector) * (points | Vector)).sum(axis=0)   # Scalar <- (Vector, Vector)
+spread = (points * (points | Vector)).sum(axis=0)            # Vector <- Vector
+```
 
-In the implementation all of these are contractions of coefficient arrays. The difference is
-in what can be written: every contraction has a meaning in the algebra and a type, and a
-contraction by index alone cannot be expressed. In particular, there is no transpose; the
-adjugate of section 2 is a solve of one pairing against another.
+In tensor index notation `points | Vector` is one factor, `x_i`; `form` is `C_ij = Σ x_i x_j` and
+`form(u, v)` is `C_ij u^i v^j`; `spread` is `C^i_j = Σ x^i x_j`, `spread(u)` is `C^i_j u^j` and
+`spread.trace()` is `C^i_i`.
+
+What has no counterpart is a contraction chosen by index alone, the other half of `einsum`.
+Every expression runs as a contraction of coefficient arrays, but each one that can be written has
+a meaning in the algebra and a type. In particular there is no transpose; the adjugate of section 2
+is a solve of one pairing against another.
 
 ## 2. Pullbacks, pairings and the adjugate
 
@@ -307,12 +314,47 @@ product, `(a * b + b * a) / 2 == a | b`, so a vector acts on another through `|`
 conversion, and numga keeps both pairings, `|` with the metric and `&` without it, by product
 rather than by index.
 
+A covector slot can be written with either pairing. The regressive product `&` pairs a subspace
+with its complement and needs no metric, so the complement can always stand in for the dual. The
+inner product `|` pairs a subspace with itself, so where the metric is not degenerate the
+subspace can stand in for its own dual. Any tensor can be written either way, and the product
+shows which pairing it uses. The second moment of section 1, with none, one and both of its slots
+paired through the metric:
+
+```python
+moment = (points * (Antivector & points)).sum(axis=0)       # Vector <- Antivector: no metric
+spread = (points * (points | Vector)).sum(axis=0)           # Vector <- Vector: one slot through the metric
+form = ((points | Vector) * (points | Vector)).sum(axis=0)  # Scalar <- (Vector, Vector): both
+```
+
+The first needs no metric and works in every algebra, a projective one included. The other two
+need the metric to pair with every vector, and a degenerate metric cannot: in a projective algebra
+`mv.w | Vector` is zero, so only the complement pairs with `w`. Where the metric is not
+degenerate, the three hold the same numbers and convert by a solve against it:
+`spread(v) == moment(v.dual())`.
+
+A degenerate metric therefore costs only what is spelled with `|`. Construction and incidence
+are spelled with `^`, `&` and the complement, and the regressive pairing is never degenerate, so
+a projective algebra builds and tests its geometry without the metric:
+
+```python
+plane = a & b & c                           # Plane: through three points
+touching = plane & d                        # Scalar: zero when d lies on the plane
+polarity = (Plane & Point).solve(form)      # Plane <- Point: a quadric's polarity, section 4
+```
+
+What is lost are the metric's own measurements of the null direction: the norm of `w`, and
+angles and orthogonality that involve it. A projective algebra measures a value in two parts: the
+part the metric sees with `|`, and the rest through its complement, where `|` sees it.
+
 In tensor notation the same distinctions are carried by
 index position: a slot is typed as vector or covector by whether its index is up or down, the
 metric is a separate symmetric form with two lower indices that raising and lowering apply
-explicitly, and a contraction pairs one upper index with one lower; in exterior algebra the
-metric is dropped altogether, and the wedge, the complement and the regressive product are
-defined without it.
+explicitly, and a contraction pairs one upper index with one lower; `moment`, `spread` and `form`
+are $C^{ij}$, $C^i{}_j$ and $C_{ij}$. A degenerate metric there only forbids raising an index, and
+the volume form builds covectors from vectors without one: the plane through three points is
+$p_i = \varepsilon_{ijkl}\, a^j b^k c^l$, and incidence is $p_i d^i = 0$. In exterior algebra the metric is dropped altogether, and the
+wedge, the complement and the regressive product are defined without it.
 
 ## 4. Maps and forms
 
@@ -327,12 +369,25 @@ stiffness:
 energy = Twist & stiffness                  # Scalar <- (Twist, Twist), from Forque <- Twist
 ```
 
-Form to map is a solve of that pairing. The pairing form is solved against the given form,
-with the unknown in the pairing's first slot:
+Form to map inverts that pairing, by two routes: the whole map at once, solving the pairing form
+against the given form with the unknown in its first slot, or one point at a time, through the
+adjugate of section 2:
 
 ```python
-polarity = (Plane & Point).solve(form)      # Plane <- Point, from Scalar <- (Point, Point)
+polarity = (Plane & Point).solve(form)              # Plane <- Point, from Scalar <- (Point, Point)
+plane = form(p).adjugate()(mv.pseudoscalar([1]))    # Plane: polarity(p)
 ```
+
+With a point bound, the form is a covector, `Scalar <- Point`, and its adjugate runs from the
+complement of a scalar to the complement of a point: `Plane <- Pseudoscalar`. The pseudoscalar
+space has one dimension, so that map holds a single plane, the one that pairs with every point as
+the covector does; the unit pseudoscalar reads it out, as a map from the scalars is read at one.
+
+Both rest on the same exact solve. The regressive product pairs each basis blade with its
+complement and a sign, so the pairing form is a signed permutation, and numga solves it by its
+exact inverse, the reverse permutation. Map to form applies the permutation, form to map its
+inverse, and the adjugate one of each; each is a signed permutation of the coefficients, with
+nothing factorized and nothing rounded.
 
 Two pairings are available, and they differ in whether the metric is involved. The regressive
 product pairs a space with its complement, so the output of the resulting map is in the dual
