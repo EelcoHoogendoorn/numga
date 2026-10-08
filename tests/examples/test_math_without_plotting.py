@@ -43,6 +43,8 @@ import examples.math.poncelet.scenarios
 import examples.math.spin_groups.core
 import examples.math.spin_groups.scenarios
 import examples.mechanics.crystal_waves.core
+import examples.mechanics.composite_strip.core
+import examples.mechanics.composite_strip.scenarios
 import examples.mechanics.area_transport.core
 import examples.mechanics.area_transport.scenarios
 import examples.mechanics.crystal_waves.scenarios
@@ -64,6 +66,8 @@ import examples.mechanics.wing.core
 import examples.mechanics.wing.scenarios
 import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
+import examples.optics.photoelasticity.core
+import examples.optics.photoelasticity.scenarios
 import examples.optics.crystal_diffraction.core
 import examples.optics.crystal_diffraction.scenarios
 import examples.optics.coating.core
