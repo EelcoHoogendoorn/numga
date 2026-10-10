@@ -29,11 +29,11 @@ def print_readings(readings: core.Scalar) -> None:
 
 
 def draw_noise(rates: np.ndarray, kept: core.Scalar, encoded_errors: core.Scalar, bare_errors: core.Scalar) -> plt.Figure:
-    """How often runs are kept, and how often a kept run, or two bare qubits, come back wrong."""
+    """Acceptance and infidelity, conditional on acceptance for the encoded qubits."""
     figure, ax = plt.subplots(figsize=(6.0, 3.4), layout="constrained")
     ax.plot(rates, scalars(kept), color=KEPT_COLOUR, linestyle="--", label="runs kept")
-    ax.plot(rates, scalars(bare_errors), color=BARE_COLOUR, label="two bare qubits wrong")
-    ax.plot(rates, scalars(encoded_errors), color=ENCODED_COLOUR, label="kept run wrong")
+    ax.plot(rates, scalars(bare_errors), color=BARE_COLOUR, label="bare infidelity")
+    ax.plot(rates, scalars(encoded_errors), color=ENCODED_COLOUR, label="conditional infidelity")
     ax.set(xlim=(rates[0], rates[-1]), ylim=(0, 1), xlabel="chance of an error on each qubit")
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3)

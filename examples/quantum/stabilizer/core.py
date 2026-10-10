@@ -1,10 +1,10 @@
 """Two qubits kept in four, so that any single qubit going wrong is noticed: the smallest stabilizer code
 that catches bit flips and phase flips alike, in the spinors of Cl(4, 4).
 
-The whole of Cl(4, 4) is at work: a state of four qubits is sixteen real spinor components, and the
-operators on it are the algebra itself, every pattern of bit and phase flips one of its two hundred and
-fifty-six blades. Two checks, flipping all four qubits and
-phase-flipping all four, commute with each other and with the flips and phase flips of two logical
+The whole of Cl(4, 4) is at work: the real-amplitude four-qubit states used here have sixteen real spinor
+components, and the real linear operators on them are the algebra itself. Every pattern of bit and
+phase flips is, up to sign, one of its two hundred and fifty-six blades. Two checks, flipping all four
+qubits and phase-flipping all four, commute with each other and with the flips and phase flips of two logical
 qubits; the states both checks leave alone are the code. Any single error changes the outcome of at least
 one check, so it is noticed and the run discarded.
 """
@@ -26,17 +26,20 @@ Scalar = ga.gatype.scalar()
 Full = ga.gatype.full()
 State = ga.gatype.from_blades("1 b c d h bc bd cd bh ch dh bcd bch bdh cdh bcdh")
 
-# A state of four qubits is sixteen real numbers: a spinor, held in the algebra as an element times an
-# idempotent of four commuting involutions. An operator multiplies it on the left, and the readout takes
-# its sixteen components back out.
+# The four commuting square-one elements give four projectors whose product is idempotent.
+# Left multiples of ideal form a sixteen-dimensional space closed under left multiplication.
+# The State blades times ideal form a basis of that space: a choice of spinor representatives.
 ideal = (1 + exact.a) * (1 + exact.be) * (1 + exact.cf) * (1 + exact.dg) / 16
 embedding = State * ideal                                                      # [] Full <- State
+# Read the representatives back out; the factor 16 undoes their coefficient in ideal.
 readout = (16 * Full).cast(State)                                              # [] State <- Full
 action = readout(Full * embedding)                                             # [] State <- (Full, State)
-# The positive definite pairing of states, preserved by the action.
+# For this ideal, efgh and the cdeh readout make the State basis orthonormal.
+# This positive pairing measures overlap; the flips and turns preserve it.
 pairing = 16 * exact.cdeh.scalar_product(embedding.reverse() * exact.efgh * embedding)  # [] Scalar <- (State, State)
 
-# Each qubit's bit flip and phase flip: blades that anticommute on their own qubit and commute across qubits.
+# These square-one blades anticommute within each qubit's pair and commute across qubits.
+# The phase flips leave ground fixed; products of the bit flips generate the sixteen states.
 flips = stack([mv.b, -mv.bce, -mv.bcdef, -mv.ah])                              # [qubits] Full
 phase_flips = stack([mv.be, mv.cf, mv.dg, -mv.abcdefg])                        # [qubits] Full
 # What can happen to each qubit: nothing, a bit flip, a phase flip, or both.
@@ -64,8 +67,11 @@ def expectation(operators: Full, states: State) -> Scalar:
 
 
 def turned(start: State, qubit_flips: Full, qubit_phase_flips: Full, angles: np.ndarray) -> State:
-    """The start state with each of two qubits turned by its angle from 0 towards 1, by a rotor in the
-    plane of its flip and phase flip."""
+    """Turn each qubit from 0 towards 1 by exponentiating its flip times its phase flip.
+
+    These products square to minus one and generate norm-preserving turns of the spinor state space;
+    they need not be bivectors of Cl(4, 4).
+    """
     turns = ((qubit_flips * qubit_phase_flips) * (angles / 2)).exp()           # [..., 2] Full
     return action(turns[..., 0] * turns[..., 1], start)                        # [...] State
 
@@ -93,19 +99,22 @@ def averaged(values: Scalar, weights: np.ndarray) -> Scalar:
 
 
 def detected(stored: State, rates: np.ndarray) -> tuple[Scalar, Scalar]:
-    """Under noise on all four qubits: how often both checks pass, and how often the stored state then
-    comes back unchanged."""
+    """The acceptance probability and unconditional fidelity with the normalized stored state.
+
+    Rejected states have zero overlap with the code, so dividing fidelity by acceptance gives the
+    fidelity conditional on both checks passing.
+    """
     patterns, weights = noise(errors.shape[0], rates)
     corrupted = action(patterns, stored)                                       # [kinds...] State
     # The chance that both checks pass is the part of the state left in the code.
     passed = pairing(corrupted, action(code, corrupted))                       # [kinds...] Scalar
-    unchanged = pairing(stored, corrupted).squared()                           # [kinds...] Scalar
-    return averaged(passed, weights), averaged(unchanged, weights)             # [rates] Scalar each
+    overlap_squared = pairing(stored, corrupted).squared()                     # [kinds...] Scalar
+    return averaged(passed, weights), averaged(overlap_squared, weights)       # [rates] Scalar each
 
 
 def unprotected(angles: np.ndarray, rates: np.ndarray) -> Scalar:
-    """How often two bare qubits at the given angles come back unchanged under the same noise."""
+    """The fidelity of two bare qubits with their intended state under the same noise."""
     stored = turned(ground, flips[:2], phase_flips[:2], angles)                # [] State
     patterns, weights = noise(2, rates)
-    unchanged = pairing(stored, action(patterns, stored)).squared()            # [kinds, kinds] Scalar
-    return averaged(unchanged, weights)                                        # [rates] Scalar
+    overlap_squared = pairing(stored, action(patterns, stored)).squared()      # [kinds, kinds] Scalar
+    return averaged(overlap_squared, weights)                                 # [rates] Scalar

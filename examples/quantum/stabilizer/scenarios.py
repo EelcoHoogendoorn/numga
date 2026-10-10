@@ -27,9 +27,9 @@ def single_errors(state: core.State) -> core.Scalar:
 
 
 def noisy(state: core.State) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
-    """At each rate: the runs kept, how often a kept run comes back wrong, and how often two bare qubits do."""
-    kept, unchanged = core.detected(state, RATES)                              # [rates] Scalar each
-    return kept, 1 - unchanged / kept, 1 - core.unprotected(ANGLES, RATES)     # [rates] Scalar each
+    """At each rate: acceptance, conditional infidelity of kept runs, and bare-qubit infidelity."""
+    kept, fidelity = core.detected(state, RATES)                               # [rates] Scalar each
+    return kept, 1 - fidelity / kept, 1 - core.unprotected(ANGLES, RATES)      # [rates] Scalar each
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -48,7 +48,7 @@ def main() -> None:
     np.testing.assert_allclose(logical.kernel[..., 0], np.stack([np.sin(ANGLES), np.cos(ANGLES)], axis=-1), atol=1e-12)
     # Every error but none changes the outcome of at least one check.
     assert (readings.kernel[:, 1:].min(axis=-2) < 0).all()
-    # Doubling a small rate quadruples how often kept runs go wrong, and doubles it for bare qubits.
+    # Doubling a small rate quadruples the conditional infidelity, and doubles the bare infidelity.
     np.testing.assert_allclose(encoded_errors.kernel[2] / encoded_errors.kernel[1], 4, rtol=0.05)
     np.testing.assert_allclose(bare_errors.kernel[2] / bare_errors.kernel[1], 2, rtol=0.05)
 
