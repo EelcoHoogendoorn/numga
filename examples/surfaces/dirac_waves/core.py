@@ -5,15 +5,15 @@ The field is a quaternion on each vertex, an even multivector, and the Dirac ope
 transformations takes it to an odd multivector on each face. The operator `D` is a sparse extensor: a
 field of vectors with one cell for each face and each of its corners, the edge that corner faces over
 minus twice the face's area. Its geometric product with a vertex field, `D * vertices`, multiplies each
-cell into the quaternion at its corner and sums over each face's corners, taking `[V] Even` to a face
-field `[F] Odd`. Its reverse `~D` turns every product with it around, as any reverse does: every cell
+cell into the quaternion at its corner and sums over each face's corners, taking `Even[V]` to a face
+field `Odd[F]`. Its reverse `~D` turns every product with it around, as any reverse does: every cell
 reversed, and every coupling running the other way, from a face to its corners.
 
 A wave alternates the two: the face field moved on by the Dirac operator of the vertex field, then the
 vertex field moved back by the reverse of the face field, weighted by the areas, a leapfrog that keeps
 the field's energy, the area-weighted squared size of both. Twice over the step is the operator
 `Q = ~D * M2 * D` of the spin transformations, taking vertex fields to vertex fields. The product with
-the open type, `Q * Even`, makes it a map `[V] Even <- [V] Even` that the eigensolver takes, so the
+the open type, `Q * Even`, makes it a map `Even[V] <- Even[V]` that the eigensolver takes, so the
 standing waves are its eigenfields against the vertex areas, `M0 * Even`; on the unit sphere their
 frequencies are the whole numbers, each held eight times its own.
 
@@ -27,7 +27,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from numga.sparse import SparseExtensor
-from examples.surfaces.spin_transformations.core import Mesh, as_diag, as_ga_sparse, as_scalar, context
+from examples.mesh import Mesh, as_diag, as_ga_sparse, as_scalar, context
 
 mv = context.multivector
 ga = context.algebra
@@ -46,7 +46,7 @@ def dirac(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, S
     O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
     O21 = mesh.face_edge_orientation                                        # [F, 3]
     T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
-    edges = T10 * mesh.vertices                                             # [E] Vector
+    edges = T10 * mesh.vertices                                             # Vector[E]
 
     # diagonal operators: the triangle areas, and the vertex areas and their inverses
     M2 = as_diag(mesh.triangle_areas)                                       # [F, F] Scalar
@@ -55,7 +55,7 @@ def dirac(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, S
     M0i = as_diag(1 / mesh.vertex_areas)                                    # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area
-    D = M2i * as_ga_sparse(I20, edges[I21] * O21) * -0.5                    # [F, V] Vector
+    D = M2i * as_ga_sparse(I20, edges.batch()[I21] * O21) * -0.5            # [F, V] Vector
     return D, M2, M0, M0i
 
 
@@ -63,26 +63,26 @@ def spread(mesh: Mesh, start: Even, interval: float, count: int) -> Iterator[tup
     """A wave from the given vertex field: the vertex field at each step and the face field half a
     step after it."""
     D, M2, M0, M0i = dirac(mesh)
-    vertices, faces = start, D * start * 0.0                                # [V] Even, [F] Odd
+    vertices, faces = start, D * start * 0.0                                # Even[V], Odd[F]
     for _ in range(count):
         # the face field moved on by the Dirac operator of the vertex field
-        faces = faces + D * vertices * interval                             # [F] Odd
+        faces = faces + D * vertices * interval                             # Odd[F]
         yield vertices, faces
         # the vertex field moved back by the reverse of the face field, weighted by the areas
-        vertices = vertices - M0i * (~D * (M2 * faces)) * interval          # [V] Even
+        vertices = vertices - M0i * (~D * (M2 * faces)) * interval          # Even[V]
 
 
 def standing(mesh: Mesh, count: int) -> tuple[Scalar, Even]:
     """The count standing waves of least frequency: their frequencies squared and their vertex fields,
     the eigenfields of `~D * M2 * D` against the vertex areas."""
     D, M2, M0, _ = dirac(mesh)
-    return ((~D * M2 * D) * Even).eigh(M0 * Even, count)                    # [count] Scalar, [count, V] Even
+    return ((~D * M2 * D) * Even).eigh(M0 * Even, count)                    # [count] Scalar, [count] Even[V]
 
 
 def oscillation(mesh: Mesh, waves: Even, frequencies: Scalar, phases: np.ndarray) -> tuple[Even, Odd]:
-    """Standing waves at the given phases of their periods `[waves, phases, ...]`: the vertex field a
+    """Standing waves at the given phases of their periods `[waves, phases]`: the vertex field a
     cosine, and the face field, the Dirac operator of it over the frequency, a sine."""
     D, _, _, _ = dirac(mesh)
-    vertices = waves[:, None] * np.cos(phases)[:, None]                     # [waves, phases, V] Even
-    faces = (D * waves / frequencies[:, None])[:, None] * np.sin(phases)[:, None]   # [waves, phases, F] Odd
+    vertices = waves[:, None] * np.cos(phases)                              # [waves, phases] Even[V]
+    faces = (D * waves / frequencies)[:, None] * np.sin(phases)             # [waves, phases] Odd[F]
     return vertices, faces

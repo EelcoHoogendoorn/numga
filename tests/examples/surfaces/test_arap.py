@@ -13,7 +13,7 @@ def test_turning_the_bar_and_its_handles_turns_the_answer():
     bar = core.bar(4, 4.0)
     along = bar.vertices | core.mv.x
     handles = (along < -1.999) | (along > 1.999)
-    pose = bar.vertices + (along > 1.999) * core.mv.z * 0.8
+    pose = bar.vertices + core.as_scalar(along > 1.999).field() * core.mv.z * 0.8
     turn = ((core.mv.x ^ core.mv.y) * -0.3).exp() * ((core.mv.y ^ core.mv.z) * 0.2).exp()
     (shape, _, _), = core.deform(bar, handles, [pose], 1e3, 4)
     (turned, _, _), = core.deform(bar.copy(vertices=turn >> bar.vertices), handles, [turn >> pose], 1e3, 4)

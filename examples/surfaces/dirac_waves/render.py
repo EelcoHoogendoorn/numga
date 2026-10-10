@@ -7,7 +7,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.surfaces.spin_transformations.core import Mesh
+from examples.mesh import Mesh
 from examples.surfaces.spin_transformations.render import _rasterise
 from examples.surfaces.dirac_waves import core
 
@@ -41,7 +41,7 @@ def image(mesh: Mesh, corners: np.ndarray, faces: np.ndarray) -> np.ndarray:
     """The surface as an RGB image: its vertices' colours spread over the faces between them, joined
     with each face's own, and lit."""
     points, triangles = coordinates(mesh.vertices), mesh.faces
-    normals = coordinates(mesh.vertex_normals())
+    normals = coordinates(mesh.vertex_normals)
     elevation, azimuth = np.radians(ELEVATION), np.radians(AZIMUTH)
     toward = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
     right = np.cross([0.0, 0.0, 1.0], toward)
@@ -62,7 +62,7 @@ def image(mesh: Mesh, corners: np.ndarray, faces: np.ndarray) -> np.ndarray:
 
 
 def animate(mesh: Mesh, vertices: core.Even, faces: core.Odd, columns: int) -> list[np.ndarray]:
-    """Frames of vertex and face fields `[tiles, frames, V]` and `[tiles, frames, F]`, the tiles in rows
+    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Odd[F]`, the tiles in rows
     of the given count, each exposed over all its frames."""
     corners, sides = planes(vertices), directions(faces)                      # [tiles, frames, V, 3], [tiles, frames, F, 3]
     exposure = np.percentile(np.concatenate([corners, sides], axis=2), EXPOSURE, axis=(1, 2, 3), keepdims=True)
@@ -77,7 +77,7 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Odd, columns: int) -> l
 
 
 def still(mesh: Mesh, vertices: core.Even, faces: core.Odd) -> plt.Figure:
-    """A vertex field `[V]` and a face field `[F]` on the surface, exposed together."""
+    """A vertex field `Even[V]` and a face field `Odd[F]` on the surface, exposed together."""
     picture, = animate(mesh, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))
     ax.imshow(picture)

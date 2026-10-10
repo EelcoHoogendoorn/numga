@@ -1,9 +1,8 @@
-"""Sparse linear maps between fields of extensor elements.
+"""Field maps stored sparsely: couplings between the sites of fields.
 
-A field is an Extensor whose last batch axis indexes sites: vertices, faces, poses, or another
-collection. The axis is an ordinary untyped batch axis. Each field element has the same GAType
-and arity; it may be a multivector, a unary map, or a map with more open slots. Leading batch
-axes hold separate fields.
+A field is an Extensor whose output ranges over sites, `Vector[vertices]`, read from a batch axis
+with `.field()`; its elements may be multivectors or maps with open slots of their own. Leading
+batch axes hold separate fields.
 
 A SparseExtensor holds cells, each coupling an input site (a column) to an output site (a row).
 It has no action of its own: an operation on it is its cells' operation, lifted to the couplings.
@@ -19,8 +18,8 @@ reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f
 adjoint and adjugate of map cells. The others act cell by cell: the involute, grade selection, and
 the reverse of a map cell, which reverses its output. The stored cells have shape
 `[..., couplings]`; leading axes hold separate maps sharing one pattern of couplings. Solves and
-eigenproblems use map cells and multivector-valued fields, through SciPy on the NumPy backend. See
-docs/sparse_field_maps.md for examples.
+eigenproblems use map cells and multivector-valued fields, through SciPy on the NumPy backend. Every
+field taken or returned is typed as one. See docs/fields.md for examples.
 """
 
 from __future__ import annotations
@@ -79,18 +78,19 @@ class SparseExtensor:
 
     @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
-        """A field map with each supplied element as the coupling cell on its own site."""
-        index = np.arange(field.shape[-1])
-        return cls(field, index, index, (len(index), len(index)))
+        """A field map with the element at each site as the coupling cell of that site to itself."""
+        cells = _sites(field)
+        index = np.arange(cells.shape[-1])
+        return cls(cells, index, index, (len(index), len(index)))
 
     def diagonal(self) -> Extensor:
         """The cells on the diagonal as a field, each at its row; zero where a row has none."""
         on = self.rows == self.columns
-        return _scatter(self.cells[..., on], self.rows[on], self.shape[0])
+        return _scatter(self.cells[..., on], self.rows[on], self.shape[0]).field()
 
     @property
     def gatype(self) -> GAType:
-        """The coupling-cell type used for local dispatch; its arity is not field-map arity."""
+        """The coupling cells' type, by which the operations dispatch; the sites are `shape`."""
         return self.cells.gatype
 
     # --- products: the cells' own, summed over the shared sites ----------------------------------
@@ -109,6 +109,9 @@ class SparseExtensor:
 
     def __rmul__(self, other):
         return _scaled(self, other) if isinstance(other, Number) else _left(other, self, operator.mul)
+
+    def __truediv__(self, number: Number) -> SparseExtensor:
+        return _scaled(self, 1 / number)
 
     def __xor__(self, other):
         return _right(other, self, operator.xor)
@@ -196,7 +199,7 @@ def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
 
 @_right.register
 def _right_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    return _scatter(product(value.cells, other[..., value.columns]), value.rows, value.shape[0])
+    return _scatter(product(value.cells, _sites(other)[..., value.columns]), value.rows, value.shape[0]).field()
 
 
 @_right.register
@@ -217,7 +220,7 @@ def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
 
 @_left.register
 def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
-    return _scatter(product(other[..., value.rows], value.cells), value.columns, value.shape[1])
+    return _scatter(product(_sites(other)[..., value.rows], value.cells), value.columns, value.shape[1]).field()
 
 
 @SparseExtensor.apply.register(lambda cell_type: cell_type.arity == 1)
@@ -230,7 +233,7 @@ def apply(value: SparseExtensor, operand: object):
 
 @singledispatch
 def _application(operand: Extensor, value: SparseExtensor) -> Extensor:
-    return _scatter(value.cells(operand[..., value.columns]), value.rows, value.shape[0])
+    return _scatter(value.cells(_sites(operand)[..., value.columns]), value.rows, value.shape[0]).field()
 
 
 @_application.register
@@ -297,7 +300,7 @@ def _square_maps(cell_type: GAType, other: GAType) -> bool:
     return cell_type.arity == 1 and len(cell_type.subspaces[0]) == len(cell_type.subspaces[1])
 
 
-@SparseExtensor.solve.register(_square_maps)
+@SparseExtensor.solve.register(_square_maps, fields=True)
 def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
     the leading axes of rhs that the map lacks as further right sides of it."""
@@ -306,7 +309,7 @@ def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     return _per_map(value, rhs, lambda matrix, right: spsolve(matrix, right.T).reshape(matrix.shape[1], len(right)).T)
 
 
-@SparseExtensor.lstsq.register(_maps)
+@SparseExtensor.lstsq.register(_maps, fields=True)
 def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The smallest fields x, in the sum of their squared coefficients, minimizing that of
     value(x) - rhs, for each of the map's leading indices and each right side: a singular system's
@@ -322,7 +325,7 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
 def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
     """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
     value and a positive-definite metric, for each of their leading indices: values `[..., count]
-    Scalar`, fields `[..., count, elements]` orthonormal in the metric. The spectrum is inverted
+    Scalar`, fields `[..., count]` over the elements, orthonormal in the metric. The spectrum is inverted
     about a point below zero by the square root of the precision, relative to the pencil's scale, so
     a semidefinite value with a null space still factorizes, to half the precision's digits."""
     from scipy.sparse.linalg import eigsh
@@ -343,6 +346,7 @@ def _per_map(value: SparseExtensor, rhs: Extensor, solver) -> Extensor:
     """The solver's fields for each of the map's leading indices, on its matrix and its right sides
     `[sides, elements * blades]`: those of rhs at that index, along every leading axis the map
     lacks or holds once."""
+    rhs = _sites(rhs)
     batch = np.broadcast_shapes(value.cells.shape[:-1], rhs.shape[:-1])
     maps = (1,) * (len(batch) - (value.cells.ndim - 1)) + value.cells.shape[:-1]
     right = np.broadcast_to(np.asarray(rhs.kernel), batch + rhs.kernel.shape[rhs.ndim - 1:])
@@ -380,7 +384,7 @@ def _field(value: SparseExtensor, coefficients: np.ndarray) -> Extensor:
     subspace = value.cells.axes[1]
     return value.cells.context.extensor(
         value.cells.algebra.gatype(subspace), coefficients.reshape(coefficients.shape[:-1] + (-1, len(subspace))),
-    )
+    ).field()
 
 
 def _chain(first: SparseExtensor, second: SparseExtensor) -> tuple[np.ndarray, np.ndarray]:
@@ -401,6 +405,13 @@ def _matching_pairs(left: np.ndarray, right: np.ndarray) -> tuple[np.ndarray, np
 
 
 def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
-    """Cells `[..., n]` summed by their index into a field `[..., size]`."""
+    """Cells `[..., n]` summed by their index into `[..., size]`."""
     zeros = cells.context.xp.zeros(cells.shape[:-1] + (size,) + cells.structural_shape, dtype=cells.dtype)
     return cells.context.extensor(cells.gatype, zeros).at[..., index].add(cells)
+
+
+def _sites(field: Extensor) -> Extensor:
+    """A field's elements along its last batch axis, where the couplings index them."""
+    if [slot for slot, _ in field.gatype.fields] != [0]:
+        raise TypeError(f"a sparse field map acts on fields over its output's sites; {field.gatype.signature} is not one")
+    return field.batch()

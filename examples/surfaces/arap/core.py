@@ -53,7 +53,7 @@ Even = ga.gatype.even()
 # --- math -----------------------------------------------------------------------------
 def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: float,
            iterations: int) -> Iterator[tuple[Vector, Vector, Scalar]]:
-    """For each pose of the handles, the targets of every vertex `[V] Vector` of which the handles' are
+    """For each pose of the handles, the targets of every vertex `Vector[V]` of which the handles' are
     held: the mesh as rigid as possible after the given iterations, each pose starting from the last
     one's; the mesh by Laplacian editing; and the energy at each iteration `[iterations] Scalar`."""
     # the boundary, taking each edge's tail from its head, and the mean over each edge
@@ -63,28 +63,29 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: 
 
     # diagonal operators: each edge's cotangent weight, and the handles' stiffness
     H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
-    P = as_diag(as_scalar(handles * stiffness))                             # [V, V] Scalar
+    P = as_diag(as_scalar(handles * stiffness).field())                     # [V, V] Scalar
 
-    rest = T10 * mesh.vertices                                              # [E] Vector
+    rest = T10 * mesh.vertices                                              # Vector[E]
     # the cotangent Laplacian, with the handles held
-    held = (~T10 * H1 * T10 + P) * Vector                                   # [V] Vector <- [V] Vector
+    held = (~T10 * H1 * T10 + P) * Vector                                   # Vector[V] <- Vector[V]
 
-    vertices = mesh.vertices                                                # [V] Vector
+    vertices = mesh.vertices                                                # Vector[V]
     for targets in poses:
         energies = []
         for _ in range(iterations):
-            edges = T10 * vertices                                          # [E] Vector
+            edges = T10 * vertices                                          # Vector[E]
             # each vertex's best rotor: the top eigenvector of its edges' summed form
-            forms = ~A10 * H1 * (edges | (Even >> rest))                    # [V] Scalar <- (Even, Even)
-            rotors = forms.eigh()[1][..., -1]                               # [V] Even
+            forms = ~A10 * H1 * (edges | (Even >> rest))                    # Scalar[V] <- (Even, Even)
+            rotors = forms.batch().eigh()[1][..., -1].field()                       # Even[V]
             # each rest edge turned by its two ends' rotors, the turns averaged
-            turned = (A10 * (rotors >> Vector))(rest)                       # [E] Vector
-            mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * (edges | turned))   # [E] Scalar
-            energies.append(2 * mismatch.sum(axis=0) + (P * (vertices - targets).norm_squared()).sum(axis=0))
+            turned = (A10 * (rotors >> Vector))(rest)                       # Vector[E]
+            mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * (edges | turned))   # Scalar[E]
+            penalty = P * (vertices - targets).norm_squared()               # Scalar[V]
+            energies.append(2 * mismatch.batch().sum(axis=-1) + penalty.batch().sum(axis=-1))
             # the vertices whose edges best match the turned ones
-            vertices = held.solve(~T10 * H1 * turned + P * targets)         # [V] Vector
+            vertices = held.solve(~T10 * H1 * turned + P * targets)         # Vector[V]
         # the vertices whose edges best match the rest edges as they are
-        laplacian = held.solve(~T10 * H1 * rest + P * targets)              # [V] Vector
+        laplacian = held.solve(~T10 * H1 * rest + P * targets)              # Vector[V]
         yield vertices, laplacian, stack(energies)
 
 

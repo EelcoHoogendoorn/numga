@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import numpy as np
 
+from examples.mesh import at_sites
 from .core import Bodies, Direction, Motor, Constraints, Point, Shape, girder, mv, points, step
 
 # The chain's girder: its cells, length and height, its bars' stiffness, its density, and the
@@ -33,44 +34,45 @@ NO_GRAVITY = (mv.y * 0).dual()                                             # [] 
 def girders(shape: Shape, fixed: np.ndarray, damping: np.ndarray, flexibility: np.ndarray) -> Bodies:
     """Girders end to end along x, some fixed."""
     count, modes, cases = len(fixed), shape.modes.shape[0], len(damping)
-    length = (shape.rest[-1] - shape.rest[1]).dual() | mv.x               # [] Scalar
-    motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(Motor).broadcast_to((cases, count))  # [cases, bodies] Motor
-    amplitudes = mv.scalar(np.zeros((cases, modes, count, 1)))             # [cases, modes, bodies] Scalar
+    rest = shape.rest.batch()                                              # [vertices] Point
+    length = (rest[-1] - rest[1]).dual() | mv.x                            # [] Scalar
+    motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(Motor).broadcast_to((cases, count)).field()  # [cases] Motor[bodies]
+    amplitudes = mv.scalar(np.zeros((cases, modes, count, 1))).field()     # [cases, modes] Scalar[bodies]
     moving = ~fixed
     return Bodies(
         motor=motor,
-        rate=mv.xy * np.zeros((cases, count)),
+        rate=(mv.xy * np.zeros((cases, count))).field(),
         amplitudes=amplitudes,
         rates=amplitudes,
-        compliance=shape.compliance[:, None] * flexibility[:, None, None] * moving,
-        frequencies=shape.frequencies[:, None].broadcast_to((cases, modes, count)),
-        damping=np.broadcast_to(damping[:, None, None], (cases, modes, count)),
-        masses=np.full((cases, count), shape.masses.sum()),
-        inertia=shape.inertia.broadcast_to((cases, count)),
-        inverse_inertia=(shape.inertia.inverse() * moving).broadcast_to((cases, count)),
+        compliance=(shape.compliance[:, None] * flexibility[:, None, None] * moving).field(),
+        frequencies=shape.frequencies[:, None].broadcast_to((cases, modes, count)).field(),
+        damping=mv.scalar(damping[:, None, None, None]).broadcast_to((cases, modes, count)).field(),
+        masses=shape.masses.batch().sum(axis=-1).broadcast_to((cases, count)).field(),
+        inertia=shape.inertia.broadcast_to((cases, count)).field(),
+        inverse_inertia=(shape.inertia.inverse() * moving).broadcast_to((cases, count)).field(),
     )
 
 
 def constrained(shape: Shape, body_idx: np.ndarray, corner_idx: np.ndarray) -> Constraints:
     """Constraints between the given bodies at the given vertices."""
-    compliance = mv.scalar([SPLICE]).broadcast_to(body_idx.shape[:1])       # [constraints] Scalar
-    return Constraints(body_idx, shape.rest[corner_idx], shape.modes[:, corner_idx], compliance)
+    compliance = mv.scalar([SPLICE]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar[constraints]
+    return Constraints(body_idx, at_sites(shape.rest, corner_idx), at_sites(shape.modes, corner_idx), compliance)
 
 
 def splices(shape: Shape, count: int) -> Constraints:
     """Two constraints at each joint of a row of girders."""
-    vertices = shape.rest.shape[0]
+    vertices = shape.rest.batch().shape[-1]
     joints = np.arange(count - 1)
-    body_idx = np.repeat(np.stack([joints, joints + 1], axis=-1), 2, axis=0)  # [constraints, sides]
-    corner_idx = np.tile([[vertices - 2, 0], [vertices - 1, 1]], (count - 1, 1))  # [constraints, sides]
+    body_idx = np.repeat(np.stack([joints, joints + 1]), 2, axis=-1)       # [sides, constraints]
+    corner_idx = np.tile([[vertices - 2, vertices - 1], [0, 1]], (1, count - 1))  # [sides, constraints]
     return constrained(shape, body_idx, corner_idx)
 
 
 def hinges(shape: Shape, count: int) -> Constraints:
     """One constraint at each joint of a row of girders."""
-    vertices = shape.rest.shape[0]
+    vertices = shape.rest.batch().shape[-1]
     joints = np.arange(count - 1)
-    return constrained(shape, np.stack([joints, joints + 1], axis=-1), np.tile([[vertices - 1, 1]], (count - 1, 1)))
+    return constrained(shape, np.stack([joints, joints + 1]), np.tile([[vertices - 1], [1]], (1, count - 1)))
 
 
 def cantilever(shape: Shape, count: int, damping: np.ndarray, flexibility: np.ndarray) -> tuple[Bodies, Constraints]:
@@ -95,26 +97,26 @@ def clamped_beam(shape: Shape, count: int, damping: np.ndarray) -> tuple[Bodies,
 def swing(shape: Shape, bodies: Bodies, constraints: Constraints, gravity: Direction, dt: float, frames: int, substeps: int) -> Iterator[Point]:
     """The bodies' points at every frame, under gravity."""
     for _ in range(frames):
-        yield points(bodies, shape)                                        # [cases, bodies, vertices] Point
+        yield points(bodies, shape)                                        # [cases, bodies] Point[vertices]
         for _ in range(substeps):
             bodies = step(bodies, constraints, dt, gravity)
 
 
 def displaced(bodies: Bodies, rest: Motor, displacement: float) -> Bodies:
     """The bodies with the last one displaced inward along x."""
-    driven = rest[..., -1] * (mv.xw * (-displacement / 2)).exp()          # [cases] Motor
-    return replace(bodies, motor=bodies.motor.at[..., -1].set(driven).normalized())
+    driven = rest.batch()[..., -1] * (mv.xw * (-displacement / 2)).exp()  # [cases] Motor
+    return replace(bodies, motor=bodies.motor.batch().at[..., -1].set(driven).field().normalized())
 
 
 def compress(shape: Shape, bodies: Bodies, constraints: Constraints, displacements: np.ndarray, dt: float, substeps: int) -> Iterator[tuple[Point, Point]]:
     """The beam's points and midspan point at every frame."""
-    rest, middle = bodies.motor, bodies.motor.shape[-1] // 2
+    rest, middle = bodies.motor, bodies.motor.batch().shape[-1] // 2
     for displacement in displacements:
         bodies = displaced(bodies, rest, displacement)
         for _ in range(substeps):
             bodies = step(bodies, constraints, dt, NO_GRAVITY)
-        centres = bodies.motor[..., middle - 1:middle + 1] >> mv.w.dual()  # [cases, 2] Point
-        yield points(bodies, shape), centres.sum(axis=-1) / 2               # [cases, bodies, vertices] Point, [cases] Point
+        centres = bodies.motor.batch()[..., middle - 1:middle + 1] >> mv.w.dual()  # [cases, 2] Point
+        yield points(bodies, shape), centres.sum(axis=-1) / 2               # [cases, bodies] Point[vertices], [cases] Point
 
 
 def critical(height: float, span: float) -> float:

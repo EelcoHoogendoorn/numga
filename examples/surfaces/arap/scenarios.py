@@ -23,11 +23,12 @@ ITERATIONS = 6
 # --- math -----------------------------------------------------------------------------
 def bending():
     """The bar bent over the frames, as rigid as possible and by Laplacian editing: the vertices at each
-    frame `[frames, V]`, both ways, and the bar at rest."""
+    frame `[frames] Vector[V]`, both ways, and the bar at rest."""
     bar = core.bar(DIVISIONS, LENGTH)
-    along = bar.vertices | mv.x                                                # [V] Scalar
+    along = bar.vertices | mv.x                                                # Scalar[V]
     near, far = along < -LENGTH / 2 + 1e-6, along > LENGTH / 2 - 1e-6
-    poses = [bar.vertices + far * (bent(bar.vertices, angle) - bar.vertices)   # [V] Vector
+    moved = core.as_scalar(far).field()                                        # Scalar[V]
+    poses = [bar.vertices + moved * (bent(bar.vertices, angle) - bar.vertices)   # Vector[V]
              for angle in np.linspace(0.0, BEND, FRAMES + 1)[1:]]
     frames = list(core.deform(bar, near | far, poses, STIFFNESS, ITERATIONS))
     rigid, laplacian = stack([shape for shape, _, _ in frames]), stack([edited for _, edited, _ in frames])
@@ -36,7 +37,7 @@ def bending():
     # At the last frame the energy falls with every iteration, and the handles are where they were moved to.
     energies = frames[-1][2].to_array()
     assert np.all(np.diff(energies) <= 1e-9 * energies[0])
-    assert ((rigid[-1] - poses[-1]).norm() * (near | far)).to_array().max() < 1e-3
+    assert (rigid[-1] - poses[-1]).norm().batch()[near | far].to_array().max() < 1e-3
     # The bar keeps its angles: its corners' cosines change a fraction as much as by Laplacian editing.
     change = [np.abs((bar.copy(vertices=shape).corner_cosines() - bar.corner_cosines()).to_array()).mean()
               for shape in (rigid[-1], laplacian[-1])]

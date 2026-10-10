@@ -309,15 +309,17 @@ class TypeRules:
             for gatype in operand_gatypes[1:]:
                 if gatype.input_subspaces != first.input_subspaces:
                     raise ValueError("collection inference requires equal input axes")
+                if gatype.fields != first.fields:
+                    raise ValueError("collection inference requires equal fields")
                 output = output.union(gatype.output_subspace)
                 common_traits.intersection_update(gatype.effective_traits.closure)
             # Whole-value facts survive zero embedding of multivectors. Map
             # properties such as orthogonality need their original codomain.
             if first.arity and any(g.output_subspace != output for g in operand_gatypes):
                 common_traits.clear()
-            return first.algebra.gatype((output,) + first.input_subspaces, common_traits)
+            return first.algebra.gatype((output,) + first.input_subspaces, common_traits, first.fields)
         if any(
-            gatype.subspaces != first.subspaces
+            gatype.subspaces != first.subspaces or gatype.fields != first.fields
             for gatype in operand_gatypes[1:]
         ):
             raise ValueError("collection inference requires equal structural axes")
@@ -334,7 +336,7 @@ class TypeRules:
             return first
 
         if operation in {"sum", "mean", "set", "add"}:
-            return first.algebra.gatype(first.subspaces)
+            return first.derive.structural
 
         raise NotImplementedError(
             f"no collection type rule is defined for {operation!r}"

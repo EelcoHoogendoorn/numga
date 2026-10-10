@@ -54,6 +54,7 @@ class GATypeDispatch:
         "_operand_count",
         "_registrations",
         "_predicates",
+        "_field_predicates",
         "_cache",
     )
 
@@ -76,6 +77,7 @@ class GATypeDispatch:
         object.__setattr__(self, "_operand_count", operand_count)
         object.__setattr__(self, "_registrations", [])
         object.__setattr__(self, "_predicates", [])
+        object.__setattr__(self, "_field_predicates", [])
         object.__setattr__(self, "_cache", {})
 
     @property
@@ -114,6 +116,7 @@ class GATypeDispatch:
         *patterns: DispatchPattern | Trait | TraitSet | Callable[..., object],
         precedence: str | None = None,
         position: int | None = None,
+        fields: bool = False,
     ) -> Callable[[_Implementation], _Implementation]:
         """Register a declarative signature or an opaque GAType predicate.
 
@@ -121,10 +124,22 @@ class GATypeDispatch:
         concrete GATypes, not Extensor values. Predicate registrations are
         always tried before declarative ones; ``position`` controls order only
         within that low-level tier.
+
+        Types with field slots dispatch only to predicates registered with
+        ``fields``. Without one, fields of values run the implementation over
+        blades at every site.
         """
 
         if precedence not in {None, "declaration"}:
             raise ValueError("precedence must be None or 'declaration'")
+        if fields:
+            if not (len(patterns) == 1 and is_predicate(patterns[0])):
+                raise TypeError("a field implementation registers a predicate")
+            def decorate_fields(implementation: _Implementation) -> _Implementation:
+                self._field_predicates.append(_PredicateRegistration(patterns[0], implementation))
+                self._cache.clear()
+                return implementation
+            return decorate_fields
         if len(patterns) == 1 and is_predicate(patterns[0]):
             return self._register_predicate(patterns[0], position=position)
         if position is not None:
@@ -209,6 +224,11 @@ class GATypeDispatch:
 
         actual = self._validate_actual_signature(actual_gatypes)
 
+        if any(gatype.has_fields for gatype in actual):
+            implementation = self._resolve_fields(actual)
+            self._cache[actual] = implementation
+            return implementation
+
         for entry in self._predicates:
             if entry.predicate(*actual):
                 self._cache[actual] = entry.implementation
@@ -239,6 +259,17 @@ class GATypeDispatch:
         implementation = maximal[0].implementation
         self._cache[actual] = implementation
         return implementation
+
+    def _resolve_fields(self, actual: tuple[GAType, ...]) -> Callable[..., Any]:
+        from numga.extensor.fields import site_by_site
+
+        for entry in self._field_predicates:
+            if entry.predicate(*actual):
+                return entry.implementation
+        # A map with sites is one map into or out of a field, not a map per site: maps per site are a batch.
+        if any(gatype.has_fields and gatype.arity for gatype in actual):
+            raise LookupError(f"no {self.name!r} implementation for the field maps {actual!r}")
+        return site_by_site(self, self._operand_count)
 
     def __call__(self, *arguments: Any, **kwargs: Any) -> Any:
         operands = arguments[: self._operand_count]

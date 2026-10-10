@@ -1,6 +1,10 @@
 """The scenes: a cantilever sags as the full truss does, a chain swings, a beam buckles."""
 
+from dataclasses import replace
+from functools import partial
+
 import numpy as np
+import pytest
 
 from examples.mechanics.modal_xpbd import core, scenarios
 
@@ -10,7 +14,8 @@ def test_cantilever_static_sag_matches_full_truss():
     shape = core.girder(cells, 1.0, 0.2, stiffness, 1.0, 2 * (2 * (cells + 1)) - 4)
     bodies, constraints = scenarios.cantilever(shape, 1, np.array([2.0]), np.ones(1))
     initial = core.points(bodies, shape)
-    dt, steps, acceleration = 0.01, 1200, -0.1
+    # Implicit compliance keeps large steps stable; the over-damped girder settles within them.
+    dt, steps, acceleration = 0.2, 60, -0.1
     gravity = (core.mv.y * acceleration).dual()
     for _ in range(steps):
         bodies = core.step(bodies, constraints, dt, gravity)
@@ -22,7 +27,8 @@ def test_cantilever_static_sag_matches_full_truss():
     incidence = np.eye(len(positions))[shape.edges[:, 1]] - np.eye(len(positions))[shape.edges[:, 0]]
     extension = (incidence[..., None] * directions[:, None, :]).reshape(len(shape.edges), -1)
     full_stiffness = extension.T @ ((stiffness / lengths)[:, None] * extension)
-    forces = np.stack([np.zeros_like(shape.masses), shape.masses * acceleration], axis=-1).reshape(-1)
+    masses = shape.masses.kernel[:, 0]
+    forces = np.stack([np.zeros_like(masses), masses * acceleration], axis=-1).reshape(-1)
     reference = np.linalg.solve(full_stiffness[4:, 4:], forces[4:]).reshape(-1, 2)
     displacement = (core.points(bodies, shape) - initial).dual().cast(core.Force).kernel[0, 1]
     np.testing.assert_allclose(displacement[-1, 1], reference[-1, 1], rtol=0.02)
@@ -35,18 +41,18 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
     bodies, hinges = scenarios.hinged_chain(shape, 4, np.array([0.02]))
     initial = core.points(bodies, shape)
     gravity = (core.mv.y * -4).dual()
-    dt, steps = 0.002, 800
+    dt, steps = 0.008, 200
     peak_gap = peak_flex = 0.0
     for _ in range(steps):
         bodies = core.step(bodies, hinges, dt, gravity)
         peak_gap = max(peak_gap, np.abs(core.coupling(bodies, hinges)[3].kernel).max())
-        offsets = (shape.modes[:, None] * bodies.amplitudes[..., None]).sum(axis=-3)
+        offsets = (shape.modes[:, None] * bodies.amplitudes.batch()).sum(axis=-2)
         peak_flex = max(peak_flex, offsets.dual().norm().kernel.max())
-    kinetic = (bodies.rate & shape.inertia(bodies.rate)).sum(axis=-1) / 2
-    kinetic = kinetic + bodies.rates.squared().sum(axis=(-1, -2)) / 2
-    elastic = (bodies.amplitudes * bodies.frequencies).squared().sum(axis=(-1, -2)) / 2
+    kinetic = (bodies.rate & shape.inertia(bodies.rate)).batch().sum(axis=-1) / 2
+    kinetic = kinetic + bodies.rates.squared().batch().sum(axis=(-1, -2)) / 2
+    elastic = (bodies.amplitudes * bodies.frequencies).squared().batch().sum(axis=(-1, -2)) / 2
     centres = bodies.motor >> core.mv.w.dual()
-    potential = -((centres.dual() | gravity.dual()) * bodies.masses).sum(axis=-1)
+    potential = -((centres.dual() | gravity.dual()) * bodies.masses).batch().sum(axis=-1)
     assert np.isfinite(core.points(bodies, shape).kernel).all()
     assert (kinetic + elastic + potential).kernel.max() < 1e-8
     assert peak_gap < 0.001
@@ -58,9 +64,35 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
 def test_a_clamped_beam_buckles_past_its_euler_load():
     beam = core.girder(scenarios.BEAM_CELLS, float(scenarios.BEAM_CELLS), scenarios.BEAM_HEIGHT, scenarios.BEAM_STIFFNESS, scenarios.DENSITY, scenarios.MODES)
     bodies, constraints = scenarios.clamped_beam(beam, scenarios.BEAM_GIRDERS, scenarios.BEAM_DAMPING)
-    displacements = scenarios.END_DISPLACEMENT * np.arange(scenarios.BEAM_FRAMES) / scenarios.BEAM_FRAMES
-    midspans = [midspan for _, midspan in scenarios.compress(beam, bodies, constraints, displacements, scenarios.BEAM_INTERVAL, scenarios.BEAM_SUBSTEPS)]
+    # The two middle girders lifted by a hair: an imperfection to buckle from, so that the buckle grows within
+    # a few steps rather than from round-off.
+    frames, substeps, dt, imperfection = 24, 4, 0.02, 1e-6
+    lift = np.zeros(scenarios.BEAM_GIRDERS + 2)
+    lift[scenarios.BEAM_GIRDERS // 2:scenarios.BEAM_GIRDERS // 2 + 2] = imperfection
+    bodies = replace(bodies, motor=(bodies.motor * (core.mv.yw * (lift / 2)).exp().field()).cast(core.Motor))
+    displacements = scenarios.END_DISPLACEMENT * np.arange(frames) / frames
+    midspans = [midspan for _, midspan in scenarios.compress(beam, bodies, constraints, displacements, dt, substeps)]
     deflection = np.array([abs(midspan.dual().cast(core.Force).kernel[0, 1]) for midspan in midspans])
     critical = scenarios.critical(scenarios.BEAM_HEIGHT, scenarios.BEAM_GIRDERS * scenarios.BEAM_CELLS)
     assert deflection[displacements < 0.8 * critical].max() < 1e-6
     assert deflection[displacements > 2 * critical].min() > 0.5
+
+
+def test_the_derived_step_follows_the_sparse_step():
+    """Couplings found by differentiating the gaps step the chain as the hand-built sparse couplings do."""
+    pytest.importorskip("jax")
+    import jax
+    import jax.numpy as jnp
+    from examples.mechanics.modal_xpbd import derived
+
+    shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
+    bodies, hinges = scenarios.hinged_chain(shape, 4, np.array([0.02]))
+    gravity = (core.mv.y * -4).dual()
+    dt, steps = 0.002, 100
+    jax_bodies, jax_hinges = derived.on_jax(bodies, hinges)
+    jax_step = jax.jit(partial(derived.step, constraints=jax_hinges, dt=dt,
+                               gravity=derived.ctx.extensor(gravity.gatype, jnp.asarray(gravity.kernel))))
+    for _ in range(steps):
+        bodies, jax_bodies = core.step(bodies, hinges, dt, gravity), jax_step(jax_bodies)
+    np.testing.assert_allclose(np.asarray(jax_bodies.motor.kernel), bodies.motor.kernel, atol=1e-10)
+    np.testing.assert_allclose(np.asarray(jax_bodies.amplitudes.kernel), bodies.amplitudes.kernel, atol=1e-10)

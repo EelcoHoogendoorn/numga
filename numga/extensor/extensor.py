@@ -108,7 +108,7 @@ class Extensor:
         kernel = context.prepare_kernel(kernel)
         if gatype.algebra is not context.algebra:
             raise ValueError("GAType and Context belong to different algebras")
-        if kernel.shape[-len(gatype.subspaces):] != gatype.structural_shape:
+        if kernel.shape[-len(gatype.structural_shape):] != gatype.structural_shape:
             raise ValueError(
                 f"kernel trailing shape does not match GAType structural shape {gatype.structural_shape}"
             )
@@ -175,7 +175,8 @@ class Extensor:
 
     @property
     def shape(self) -> tuple[int, ...]:
-        return self._kernel.shape[: -len(self.axes)]
+        """The batch axes, in front of the site axes of any field slots and the coefficient axes."""
+        return self._kernel.shape[: -len(self.gatype.structural_shape)]
 
     @property
     def ndim(self) -> int:
@@ -186,7 +187,7 @@ class Extensor:
         return self.context.dtype
 
     def __getitem__(self, index: object) -> "Extensor":
-        kernel_index = _batch_kernel_index(index, self.ndim, len(self.axes))
+        kernel_index = _batch_kernel_index(index, self.ndim, len(self.structural_shape))
         return type(self)._from_prepared_kernel(self.context, self.gatype, self._kernel[kernel_index])
 
     def __iter__(self):
@@ -322,10 +323,44 @@ class Extensor:
         )
         return cls._from_prepared_kernel(first.context, gatype, kernel)
 
+    def field(self, *slots: int) -> Extensor:
+        """The last batch axes read as the sites of slots, the output 0 and the inputs from 1, one axis
+        per slot in slot order: `values.field()` is a field over the last batch axis, and
+        `pair_maps.field(0, 1)` a field map from a batch of maps over pairs of an output and an input
+        site. A field is a collection whose elements are coupled, where a batch holds independent
+        copies. The coefficients are untouched, so slots that already range over sites must come after
+        these."""
+        slots = slots or (0,)
+        if self.context.is_exact or self.ndim < len(slots):
+            raise TypeError("a field takes its sites from the last batch axes of a backend value")
+        if list(slots) != sorted(set(slots)) or any(field <= slots[-1] for field, _ in self.gatype.fields):
+            raise TypeError(f"slots {slots} of {self.gatype.signature} are not in order before its field slots")
+        # Their site axes come first among the site axes, where the last batch axes already sit.
+        fields = tuple(zip(slots, self.shape[self.ndim - len(slots):])) + self.gatype.fields
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.with_fields(fields), self._kernel)
+
+    def on_diagonal(self) -> Extensor:
+        """A field of maps placed on the site diagonal: from `X[n] <- Y` the field map `X[n] <- Y[n]`
+        that acts on the element at each site by the map at that site, and on no other."""
+        if self.arity < 1 or [slot for slot, _ in self.gatype.fields] != [0]:
+            raise TypeError(f"on_diagonal places a field of maps, X[n] <- Y, on its sites; {self.gatype.signature} is not one")
+        xp, sites = self.context.xp, self.gatype.site_shape[0]
+        identity = xp.reshape(xp.eye(sites, dtype=self._kernel.dtype), (sites, sites) + (1,) * len(self.axes))
+        kernel = xp.expand_dims(self._kernel, self.ndim + 1) * identity
+        fields = ((0, sites), (1, sites))
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.structural.derive.with_fields(fields), kernel)
+
+    def batch(self) -> Extensor:
+        """Every site axis read as a batch axis again, the coefficients untouched."""
+        return type(self)._from_prepared_kernel(self.context, self.gatype.derive.plain, self._kernel)
+
     def bind(self, *args: Extensor | Mapping[int, Extensor]) -> Extensor:
         raw_operands = normalize_bind_arguments(self.arity, args)
         if not raw_operands:
             return self
+        if self._gatype.has_fields or any(operand.gatype.has_fields for operand in raw_operands.values()):
+            from .fields import bind_fields
+            return bind_fields(self, raw_operands)
 
         plan = BindingPlan.build(self.gatype, raw_operands)
         operands: dict[int, Extensor] = {}
@@ -471,7 +506,7 @@ class Extensor:
         """Measure coefficients on the carrier proved by this whole-value type."""
 
         operator = self.algebra.operator._symmetric_product(
-            self.gatype, transform, scalar_only=scalar_only,
+            self.gatype.derive.plain, transform, scalar_only=scalar_only,
         )
         return operator(self, self)
 
@@ -508,11 +543,11 @@ class Extensor:
         result = self.algebra.operator._grade_transform(
             self.output_subspace, transform,
         ).bind({0: self})
-        gatype = TypeRules.operation(
+        gatype = _with_fields(TypeRules.operation(
             transform,
             (self.gatype,),
             result.axes,
-        )
+        ), result.gatype)
         if result.gatype is gatype:
             return result
         return type(self)._from_prepared_kernel(result.context, gatype, result._kernel)
@@ -546,11 +581,11 @@ class Extensor:
         return self
 
     def __neg__(self) -> "Extensor":
-        gatype = TypeRules.operation(
+        gatype = _with_fields(TypeRules.operation(
             "negative",
             (self.gatype,),
             self.gatype.subspaces,
-        )
+        ), self.gatype)
         return type(self)._from_prepared_kernel(self.context, gatype, -self._kernel)
 
     def __lt__(self, other: object) -> Any:
@@ -583,6 +618,9 @@ class Extensor:
             raise ValueError("Extensor addition requires equal arity")
         if self.algebra is not other.algebra:
             raise ValueError("Extensor addition requires one algebra")
+        if self._gatype.has_fields or other._gatype.has_fields:
+            from .fields import add_fields
+            return add_fields(self, other)
 
         result_axes = tuple(
             left.union(right)
@@ -626,7 +664,7 @@ class Extensor:
         if not isinstance(scalar, Number):
             return NotImplemented
         scalar = self.context.prepare_scalar(scalar)
-        gatype = TypeRules.operation("scale", (self.gatype,), self.gatype.subspaces)
+        gatype = _with_fields(TypeRules.operation("scale", (self.gatype,), self.gatype.subspaces), self.gatype)
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel * scalar)
 
     def __rmul__(self, scalar: object) -> Extensor:
@@ -821,6 +859,11 @@ class _AtIndexer:
         return _AtUpdate(self._extensor, index)
 
 
+def _with_fields(gatype: GAType, source: GAType) -> GAType:
+    """A type inferred over blades, given the fields of the type it came from."""
+    return gatype.derive.with_fields(source.fields) if source.fields else gatype
+
+
 def _scalar_operand(context, value) -> Extensor:
     return value if isinstance(value, Extensor) else _batch_scalar(context, context.xp.asarray(value))
 
@@ -906,7 +949,7 @@ class _AtUpdate:
         kernel_index = _batch_kernel_index(
             self._index,
             target.ndim,
-            len(target.axes),
+            len(target.structural_shape),
         )
         if isinstance(value, Extensor):
             target._require_compatible(value)

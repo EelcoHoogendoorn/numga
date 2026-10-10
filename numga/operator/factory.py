@@ -644,7 +644,8 @@ class OperatorFactory:
             return self.algebra.gatype(operand)
         if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
             raise ValueError("operation operand type belongs to another algebra")
-        return operand
+        # An operator acts on blades; over the sites of a field it acts site by site when bound.
+        return operand.derive.plain
 
     def _require_space(self, space: SubSpace) -> None:
         if not isinstance(space, SubSpace) or space.algebra is not self.algebra:

@@ -16,6 +16,8 @@ from examples import PLOT_DIR, auto_increment_path
 
 # How many times the figure's resolution a frame is drawn at, per axis, before each block is averaged.
 SUPERSAMPLE = 4
+PALETTE_FRAMES = 128
+PALETTE_SIZE = 96
 
 
 def capture(fig: plt.Figure) -> np.ndarray:
@@ -36,7 +38,12 @@ def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float
     images = [Image.fromarray(frame) for frame in frames]
     size = (round(images[0].width * scale), round(images[0].height * scale))
     images = [image.resize(size, resample=Image.Resampling.BOX) for image in images]
-    palette = Image.fromarray(np.concatenate([np.asarray(image) for image in images], axis=0)).quantize(colors=colors)
+    # Bound the palette population: very large repeated colour counts overflow Pillow's
+    # quantizer accumulators. Sample the whole timeline while retaining source colours.
+    indices = np.linspace(0, len(images) - 1, min(len(images), PALETTE_FRAMES), dtype=int)
+    samples = [images[index].resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
+               for index in indices]
+    palette = Image.fromarray(np.concatenate([np.asarray(sample) for sample in samples], axis=0)).quantize(colors=colors)
     images = [image.quantize(palette=palette, dither=Image.Dither.NONE) for image in images]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     images[0].save(

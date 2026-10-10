@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 from numbers import Rational
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import jax
 import jax.numpy as jnp
@@ -81,7 +81,12 @@ class JaxContext(Context):
                 f"cannot represent coefficients of dtype {source_dtype} in "
                 f"Context dtype {self.dtype} without changing numeric kind"
             )
-        return jnp.asarray(value, dtype=self.dtype)
+        if isinstance(value, jax.core.Tracer):
+            return jnp.asarray(value, dtype=self.dtype)
+        # Host data is a constant even inside a transformation: built concretely, it may be cached, as
+        # the factory caches basis blades, without a traced value escaping the trace.
+        with jax.ensure_compile_time_eval():
+            return jnp.asarray(value, dtype=self.dtype)
 
     def prepare_scalar(self, scalar: object) -> jax.Array:
         if isinstance(scalar, Rational):
@@ -112,6 +117,84 @@ class JaxContext(Context):
 
     def __repr__(self) -> str:
         return f"JaxContext(algebra={self.algebra!r}, dtype={self.dtype}, execution={self.execution!r})"
+
+
+def derivative(function: Callable[[Extensor], Extensor]) -> Callable[[Extensor], Extensor]:
+    """The derivative of a function of a value: at each value, the linear map from a step to the change.
+
+    At a value of type `T`, the derivative of a function whose result has type `S <- (I...)` is an
+    extensor of type `S <- (I..., T)`: the result's own slots, then one more for the step. Binding a
+    step into it gives the first-order change of the result; for a scalar result it is the linear form
+    `Scalar <- T`, the gradient as the form it is, never as an element of `T`. Derivatives nest: the
+    derivative of a derivative takes one more slot again, so the second derivative of a scalar
+    function is the bilinear form `Scalar <- (T, T)`.
+
+    Batch axes follow broadcasting. An axis the result shares with the value, right-aligned and of the
+    same size, indexes independent copies: each element of the result is differentiated with respect to
+    the matching element of the value alone, and the axis appears once. Every other axis of the value is
+    coupled: each element of the result is differentiated with respect to every element along it, and it
+    appears after the result's batch axes. A function that sums over a batch axis thus has a derivative
+    per element of that axis; to keep the coupling of an axis the result shares, move the result off it,
+    as `derivative(lambda x: f(x)[:, None])(x)` gives the derivative of every element of `f(x)` with
+    respect to every element of `x`. The copies along shared axes are taken to be independent; a
+    function that couples them there has its cross terms summed into the diagonal.
+
+    A field's sites lie inside its slot, not in its batch: they are always coupled, and the step's
+    slot ranges over the same sites. The second derivative of a scalar function of a field `T[n]` is
+    the coupled bilinear form `Scalar <- (T[n], T[n])`, every site against every other, and solving it
+    against the gradient gives the coupled Newton step.
+    """
+    def at(value: Extensor) -> Extensor:
+        if value.arity:
+            raise TypeError(f"derivatives are taken with respect to values, not to maps of type {value.gatype}")
+
+        def result(kernel: jax.Array) -> jax.Array:
+            return function(Extensor._from_prepared_kernel(value.context, value.gatype, kernel)).kernel
+
+        image = function(value)
+        value_batch, result_batch = value.shape, image.shape
+        # The value's slot: its sites, if it is a field, and its blades.
+        slot = value.gatype.structural_shape
+        sites = len(slot) - 1
+        image_sites, image_blades = len(image.gatype.site_shape), len(image.gatype.subspaces)
+        # The axes the two share, right-aligned, as (value axis, result axis) pairs:
+        shared = [
+            (len(value_batch) - k, len(result_batch) - k)
+            for k in range(1, min(len(value_batch), len(result_batch)) + 1)
+            if value_batch[-k] == result_batch[-k]
+        ]
+        shared_value = {axis for axis, _ in shared}
+        coupled = [axis for axis in range(len(value_batch)) if axis not in shared_value]
+        coupled_shape = tuple(value_batch[axis] for axis in coupled)
+
+        # One tangent per coupled element and coefficient of the value, spread over every element of
+        # the shared axes at once, which is valid because those elements are independent:
+        count = int(np.prod(coupled_shape + slot, dtype=int))
+        basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + slot)
+        for axis in sorted(shared_value):
+            basis = jnp.expand_dims(basis, 1 + axis)
+        tangents = jnp.broadcast_to(basis, (count,) + value_batch + slot)
+        changes = jax.vmap(lambda tangent: jax.jvp(result, (value.kernel,), (tangent,))[1])(tangents)
+        # [coupled..., value sites, value blades, result batch..., result sites..., result blades...] to
+        # [result batch..., coupled..., result sites..., value sites, result blades..., value blades]
+        changes = changes.reshape(coupled_shape + slot + image.kernel.shape)
+        c, r = len(coupled_shape), len(result_batch)
+        start = c + sites + 1 + r
+        order = (
+            tuple(range(c + sites + 1, start))
+            + tuple(range(c))
+            + tuple(range(start, start + image_sites))
+            + tuple(range(c, c + sites))
+            + tuple(range(start + image_sites, start + image_sites + image_blades))
+            + (c + sites,)
+        )
+        step = tuple((len(image.gatype.subspaces), number) for _, number in value.gatype.fields)
+        gatype = value.algebra.gatype(
+            image.gatype.subspaces + (value.gatype.output_subspace,), fields=image.gatype.fields + step,
+        )
+        return Extensor._from_prepared_kernel(value.context, gatype, jnp.transpose(changes, order))
+
+    return at
 
 
 def _flatten_extensor(

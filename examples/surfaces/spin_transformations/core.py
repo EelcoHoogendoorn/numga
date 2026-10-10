@@ -14,39 +14,22 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor
+from numga.extensor import Extensor
+from examples.mesh import Mesh, as_diag, as_ga_sparse, as_scalar, at_sites, context, ga, Scalar, Vector, Bivector
 
-ga = Algebra("x+y+z+")
-context = NumpyContext(ga)
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
 Even = ga.gatype.even()
 
 
-def as_scalar(v):
-    return context.multivector.scalar(np.asarray(v)[..., None])
-
-
-def as_ga_sparse(C, V):
-    """The sparse linear map coupling each of the R output elements to the n input elements its row
-    of C names, `[R, n]`, through the extensors V of the same shape."""
-    return SparseExtensor.from_columns(C, V, int(C.max()) + 1)
-
-
-as_diag = SparseExtensor.from_diagonal
-
-
 def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
-    """The mesh after the spin transformation that changes each face's mean curvature by rho, `[F]
-    Scalar`, with every operator a sparse linear map coupling elements through multivectors, nullary
+    """The mesh after the spin transformation that changes each face's mean curvature by rho,
+    `Scalar[F]`, with every operator a sparse linear map coupling elements through multivectors, nullary
     extensors, as the paper's quaternionic matrices do; the energy and the Laplacian are formed with
     their reverses, and the couplings become maps only for the solvers."""
     # the face-vertex, face-edge and edge-vertex incidences, and the relative orientations
     I20, I21, I10 = mesh.faces, mesh.face_edges, mesh.edges                 # [F, 3], [F, 3], [E, 2]
     O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-    O21 = mesh.face_edge_orientation                                        # [F, 3]
+    O21 = as_scalar(mesh.face_edge_orientation.T).field()                   # [3] Scalar[F]
 
     # the boundary, taking each edge's tail from its head, and the means over each edge and each face
     T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
@@ -59,25 +42,25 @@ def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
     M0 = as_diag(mesh.vertex_areas)                                         # [V, V] Scalar
     H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
 
-    edges = T10 * mesh.vertices                                             # [E] Vector
+    edges = T10 * mesh.vertices                                             # Vector[E]
     L = ~T10 * H1 * T10                                                     # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area: the geometric
     # derivative divided by each face's plane
-    D = M2i * as_ga_sparse(I20, edges[I21] * O21) * -0.5                    # [F, V] Vector
+    D = M2i * at_corners(mesh, at_sites(edges, I21.T) * O21) * -0.5         # [F, V] Vector
     R = as_diag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
     # the field of least energy per unit of vertex area, divided by its area-weighted mean
-    _, modes = (Q * Even).eigh(M0 * Even, 1)                                # [1, V] Even
-    mean = (M0 * modes[0]).sum(axis=0) / mesh.vertex_areas.sum(axis=0)      # [] Even
-    q = modes[0] / mean                                                     # [V] Even
+    _, modes = (Q * Even).eigh(M0 * Even, 1)                                # [1] Even[V]
+    mean = (M0 * modes[0]).batch().sum(axis=-1) / mesh.vertex_areas.batch().sum(axis=-1)   # [] Even
+    q = modes[0] / mean                                                     # Even[V]
 
     # each edge turned and scaled by the field along it, integrated by Simpson's rule: the turns at its
     # two ends, averaged as maps, and twice the turn at its middle; and the vertices that match them best
-    transformed_edges = ((A10 * (q << Vector))(edges) + 2 * ((A10 * q) << edges)) / 3   # [E] Vector
-    b = ~T10 * H1 * transformed_edges                                       # [V] Vector
+    transformed_edges = ((A10 * (q << Vector))(edges) + 2 * ((A10 * q) << edges)) / 3   # Vector[E]
+    b = ~T10 * H1 * transformed_edges                                       # Vector[V]
     return mesh.copy(vertices=(L * Vector).lstsq(b))
 
 
@@ -93,7 +76,7 @@ def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
     # the face-vertex, face-edge and edge-vertex incidences, and the relative orientations
     I20, I21, I10 = mesh.faces, mesh.face_edges, mesh.edges                 # [F, 3], [F, 3], [E, 2]
     O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-    O21 = mesh.face_edge_orientation                                        # [F, 3]
+    O21 = as_scalar(mesh.face_edge_orientation.T).field()                   # [3] Scalar[F]
 
     # the boundary, taking each edge's tail from its head, and the means over each edge and each face
     T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
@@ -106,19 +89,19 @@ def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
     M0 = as_diag(mesh.vertex_areas)                                         # [V, V] Scalar
     H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
 
-    edges = T10 * mesh.vertices                                             # [E] Vector
+    edges = T10 * mesh.vertices                                             # Vector[E]
     L = ~T10 * H1 * T10                                                     # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area
-    rho = as_scalar(np.full(len(I20), float(eigenvalue)))                   # [F] Scalar
-    D = M2i * as_ga_sparse(I20, edges[I21] * O21) * -0.5                    # [F, V] Vector
+    rho = as_scalar(np.full(len(I20), float(eigenvalue))).field()           # Scalar[F]
+    D = M2i * at_corners(mesh, at_sites(edges, I21.T) * O21) * -0.5         # [F, V] Vector
     R = as_diag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
     # the fields of least energy per unit of vertex area, and the surfaces whose edges match theirs
-    energies, fields = (Q * Even).eigh(M0 * Even, count)                    # [count] Scalar, [count, V] Even
-    turned = ((A10 * (fields << Vector))(edges) + 2 * ((A10 * fields) << edges)) / 3   # [count, E] Vector
+    energies, fields = (Q * Even).eigh(M0 * Even, count)                    # [count] Scalar, [count] Even[V]
+    turned = ((A10 * (fields << Vector))(edges) + 2 * ((A10 * fields) << edges)) / 3   # [count] Vector[E]
     spheres = [mesh.copy(vertices=vertices) for vertices in (L * Vector).lstsq(~T10 * H1 * turned)]
     return energies, spheres
 
@@ -128,8 +111,8 @@ def geometric_derivative(mesh: Mesh) -> SparseExtensor:
     each face, each corner's coupling is the gradient of its hat function, the edge facing it turned
     a quarter turn in the face's plane, over twice the face's area. Divided by each face's plane, it
     is the Dirac operator."""
-    turned = mesh.triangle_edges | mesh.face_planes[:, None]                # [F, 3] Vector
-    return as_ga_sparse(mesh.faces, turned / (2 * mesh.triangle_areas)[:, None])
+    turned = mesh.triangle_edges | mesh.face_planes                         # [3] Vector[F]
+    return at_corners(mesh, turned / (2 * mesh.triangle_areas))
 
 
 def mean_curvature(mesh: Mesh):
@@ -148,16 +131,16 @@ def mean_curvature(mesh: Mesh):
     L = ~T10 * H1 * T10                                 # [V, V] Scalar
     # the integrated mean-curvature normal, its signed size at each vertex, the pointwise
     # curvature at each vertex, and its mean over each face
-    Hn = L * mesh.vertices                              # [V] Vector
-    h_integrated = Hn | mesh.vertex_normals             # [V] Scalar
-    h = h_integrated / (2 * mesh.vertex_areas)          # [V] Scalar
-    return A20 * h                                      # [F] Scalar
+    Hn = L * mesh.vertices                              # Vector[V]
+    h_integrated = Hn | mesh.vertex_normals             # Scalar[V]
+    h = h_integrated / (2 * mesh.vertex_areas)          # Scalar[V]
+    return A20 * h                                      # Scalar[F]
 
 
 def _recenter(mesh: Mesh):
     """Remove the translation/scale gauge freedom the flow leaves undetermined."""
-    v = mesh.vertices - mesh.vertices.mean(axis=0)
-    return mesh.copy(vertices=v / v.norm().mean(axis=0))
+    v = mesh.vertices - mesh.vertices.batch().mean(axis=-1)
+    return mesh.copy(vertices=v / v.norm().batch().mean(axis=-1))
 
 
 def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
@@ -177,73 +160,17 @@ def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
     yield mesh
     for _ in range(iterations):
         h = mean_curvature(mesh)
-        h_mean = (h * mesh.triangle_areas).sum(axis=0) / mesh.triangle_areas.sum(axis=0)
+        h_mean = (h * mesh.triangle_areas).batch().sum(axis=-1) / mesh.triangle_areas.batch().sum(axis=-1)
         mesh = _recenter(spin_transform_deform(mesh, -rate * (h - h_mean)))
         yield mesh
 
 
 # --- plumbing -------------------------------------------------------------------------
-class Mesh:
-    """A closed, oriented triangle mesh: vertices `[V] Vector` and faces `[F, 3]`, counter-clockwise
-    from outside, with its edges `[E, 2]` from lower to higher vertex, the edge facing each corner of
-    each face `[F, 3]`, and that edge's orientation relative to the face."""
-
-    def __init__(self, vertices: Vector, faces: np.ndarray) -> None:
-        corner = np.arange(3)
-        # the ends of the edge facing each corner, counter-clockwise
-        facing = np.stack([faces[:, (corner + 1) % 3], faces[:, (corner + 2) % 3]], axis=-1)   # [F, 3, 2]
-        self.vertices, self.faces = vertices, faces
-        self.edges, face_edges = np.unique(np.sort(facing, axis=-1).reshape(-1, 2), axis=0, return_inverse=True)
-        self.face_edges = face_edges.reshape(-1, 3)
-        self.face_edge_orientation = np.where(facing[..., 0] < facing[..., 1], 1.0, -1.0)
-
-    def copy(self, vertices: Vector) -> Mesh:
-        return Mesh(vertices, self.faces)
-
-    @property
-    def triangle_edges(self) -> Vector:
-        """[F, 3] the edge facing each corner, counter-clockwise."""
-        corner = np.arange(3)
-        return self.vertices[self.faces[:, (corner + 2) % 3]] - self.vertices[self.faces[:, (corner + 1) % 3]]
-
-    @property
-    def face_planes(self) -> Bivector:
-        """[F] each face's unit plane, counter-clockwise seen from outside."""
-        edges = self.triangle_edges
-        return (edges[:, 0] ^ edges[:, 1]).normalized()
-
-    @property
-    def triangle_areas(self):
-        edges = self.triangle_edges
-        return (edges[:, 0] ^ edges[:, 1]).norm() / 2
-
-    @property
-    def edge_ratio(self):
-        """[E] dual over primal edge length: half the cotangents of the angles facing each edge."""
-        edges = self.triangle_edges
-        after, before = edges[:, [1, 2, 0]], edges[:, [2, 0, 1]]
-        # the cotangent at each corner
-        cotangents = -(after | before) / (after ^ before).norm()               # [F, 3] Scalar
-        return ~as_ga_sparse(self.face_edges, cotangents / 2) * as_scalar(np.ones(len(self.faces)))
-
-    @property
-    def vertex_normals(self) -> Vector:
-        edges = self.triangle_edges
-        # each face's normal, twice its area long
-        face_normals = (edges[:, 0] ^ edges[:, 1]).dual()                     # [F] Vector
-        spread = as_ga_sparse(self.faces, as_scalar(np.ones_like(self.faces, dtype=float)))
-        return (~spread * face_normals).normalized()
-
-    @property
-    def vertex_areas(self):
-        """[V] a third of the area of each triangle at the vertex."""
-        return ~as_ga_sparse(self.faces, as_scalar(np.ones_like(self.faces) / 3)) * self.triangle_areas
-
-    def corner_cosines(self):
-        """[F, 3] the cosine of each corner's angle, kept exactly by a conformal map."""
-        edges = self.triangle_edges
-        after, before = edges[:, [1, 2, 0]], edges[:, [2, 0, 1]]
-        return -(after | before) / (after.norm() * before.norm())
+def at_corners(mesh: Mesh, cells: Extensor) -> SparseExtensor:
+    """[F, V]: couplings from each face to the vertex at each of its corners, through `[3]` face
+    fields of cells, one per corner."""
+    return SparseExtensor.from_indices(cells.batch(), np.arange(len(mesh.faces)), mesh.faces.T,
+                                       (len(mesh.faces), len(mesh.vertices.batch())))
 
 
 def icosphere(levels: int) -> Mesh:
@@ -265,7 +192,7 @@ def icosphere(levels: int) -> Mesh:
         (a, b, c), (ab, bc, ca) = faces.T, (len(coords) + inverse.reshape(3, -1))
         coords = np.concatenate([coords, (coords[unique[:, 0]] + coords[unique[:, 1]]) / 2])
         faces = np.concatenate([np.stack(f, axis=-1) for f in ((a, ab, ca), (ab, b, bc), (ca, bc, c), (ab, bc, ca))])
-    return Mesh(context.multivector.vector(coords / np.linalg.norm(coords, axis=-1, keepdims=True)), faces)
+    return Mesh(context.multivector.vector(coords / np.linalg.norm(coords, axis=-1, keepdims=True)).field(), faces)
 
 
 def cube(divisions: int) -> Mesh:
@@ -283,4 +210,4 @@ def cube(divisions: int) -> Mesh:
             faces.append(side + len(coords) * len(u))
             coords.append(point)
     unique, inverse = np.unique(np.round(np.concatenate(coords), 9), axis=0, return_inverse=True)
-    return Mesh(context.multivector.vector(unique), inverse.reshape(-1)[np.concatenate(faces)])
+    return Mesh(context.multivector.vector(unique).field(), inverse.reshape(-1)[np.concatenate(faces)])

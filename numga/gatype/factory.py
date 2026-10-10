@@ -57,6 +57,7 @@ class GATypeFactory(FlyweightFactory[GAType]):
         self,
         subspaces: SubSpace | GAType | Iterable[SubSpace | GAType],
         traits: TraitSet = EMPTY_TRAITS,
+        fields: tuple[tuple[int, int], ...] = (),
     ) -> GAType:
         if isinstance(subspaces, (SubSpace, GAType)):
             raw_axes = (subspaces,)
@@ -90,10 +91,11 @@ class GATypeFactory(FlyweightFactory[GAType]):
 
         normalized_traits = normalize_explicit_traits(axes, traits)
 
-        key = (axes, normalized_traits)
+        fields = tuple(sorted(fields))
+        key = (axes, normalized_traits, fields)
         return self.factory_construct(
             key,
-            lambda: GAType(axes, normalized_traits),
+            lambda: GAType(axes, normalized_traits, fields),
         )
 
     @lru_cache(maxsize=None)

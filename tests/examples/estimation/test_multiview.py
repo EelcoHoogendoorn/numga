@@ -96,6 +96,22 @@ def test_schur_bundle_adjust_converges_and_yields_information():
     assert np.linalg.eigvalsh(gram[1]).min() > 0
 
 
+def test_splat_alignment_converges_with_the_schur_step():
+    """Aligning sight lines to the other cameras' beliefs, weighted into pixel units by depths read off
+    those beliefs, recovers the perturbed camera as the Schur step does, without extracting a point."""
+    true_motors = scenarios.three_camera_truth()
+    true_points, cameras, local_cones = scenarios.observe(true_motors)
+    initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
+    free = np.array([0.0, 1.0, 0.0])
+    projs = cameras(true_motors << true_points[:, None])
+    pixels = projs / (mv.w & projs)
+
+    splat_motors, _ = core.align_rays_to_splats(initial_motors, local_cones, point(np.zeros(2)), pixels, 4, 1.0, free)
+    schur_motors, _, _, _ = core.bundle_adjust_schur(cameras, initial_motors, local_cones, 10, 1.0, free)
+    np.testing.assert_allclose((splat_motors - true_motors).kernel, 0.0, atol=1e-10)
+    np.testing.assert_allclose((splat_motors - schur_motors).kernel, 0.0, atol=1e-10)
+
+
 # --- the same module in 3D --------------------------------------------------------------
 core3 = instantiate("examples.estimation.multiview.core", PGA3D)
 
@@ -183,6 +199,56 @@ def test_3d_bundle_adjust_converges_from_a_small_perturbation():
     error = lambda p: float((p - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
     assert error(points) < error(initial_points)
     assert error(points) < 0.02
+
+
+def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
+    """The second derivative of the point-free misfit with respect to the twists of the free cameras,
+    taken as a field, is the coupled Hessian, every camera against every other; solving it against the
+    gradient gives the Newton step that the Hessian of all twist coefficients at once gives."""
+    jax = pytest.importorskip("jax")
+    jnp = pytest.importorskip("jax.numpy")
+    from numga.backend.jax import JaxContext, derivative
+
+    previous = jax.config.jax_enable_x64
+    jax.config.update("jax_enable_x64", True)
+    try:
+        context = JaxContext(PGA3D, np.float64)
+        on_jax = lambda value: context.extensor(value.gatype, jnp.asarray(value.kernel))
+        mv3, Point3, Plane3, Twist3 = core3.mv, core3.Point, core3.Plane, core3.Twist
+        true_motors, _, local_cones = rig_3d()
+        perturb = ((mv3.xw * 0.05 - mv3.yw * 0.03 + mv3.zw * 0.04) / 2).exp() * ((mv3.yz * 0.04 - mv3.zx * 0.03 + mv3.xy * 0.05) / 2).exp()
+        anchor = on_jax(true_motors[0])                                      # Motor
+        free = on_jax(stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]])).field()   # Motor[free]
+        anchored = anchor >> on_jax(local_cones[:, 0])(anchor << Point3)    # [points] Plane <- Point
+        moving = on_jax(local_cones[:, 1:]).field()                          # [points] Plane[free] <- Point
+        w = context.multivector.w
+
+        def misfit(twists):
+            """The fused cones' value at their own vertices, summed over the points: the pole of the plane
+            at infinity under each fused cone is its vertex."""
+            motors = free * (twists * 0.5).exp()                             # Motor[free]
+            fused = anchored + (motors >> moving(motors << Point3)).batch().sum(axis=-1)
+            pole = fused.dual().outermorphism(Plane3)(w).dual_inverse()      # [points] Point
+            return ((pole & fused(pole)) / (w & pole) ** 2).sum()
+
+        @jax.jit
+        def newton(twists):
+            gradient = derivative(misfit)(twists)                            # Scalar <- Twist[free]
+            hessian = derivative(derivative(misfit))(twists)                 # Scalar <- (Twist[free], Twist[free])
+            return hessian, -hessian.solve(gradient)                         # Twist[free]
+
+        @jax.jit
+        def flat_newton(coefficients):
+            flat = lambda coefficients: misfit(context.extensor(Twist3, coefficients.reshape(2, 6)).field()).kernel[0]
+            return -jnp.linalg.solve(jax.hessian(flat)(coefficients), jax.grad(flat)(coefficients))
+
+        hessian, step = newton(context.extensor(Twist3, jnp.zeros((2, 6))).field())
+        reference = flat_newton(jnp.zeros(12))
+        np.testing.assert_allclose(step.kernel, reference.reshape(2, 6), atol=1e-10)
+        # The cameras are coupled through the points they share:
+        assert np.abs(hessian.kernel[0, 1]).max() > 0.1 * np.abs(hessian.kernel[0, 0]).max()
+    finally:
+        jax.config.update("jax_enable_x64", previous)
 
 
 # --- scenarios through render -------------------------------------------------------------

@@ -59,6 +59,9 @@ def compile_application(
             f"full application of arity-{target_type.arity} Extensor requires "
             f"{target_type.arity} operands, got {len(signature)}"
         )
+    if target_type.has_fields or any(t.has_fields for _, t in signature):
+        from .fields import bind_fields
+        return lambda target, *operands: bind_fields(target, dict(enumerate(operands)))
     if context.is_exact or not signature:
         # Symbolic construction retains the exact binding implementation.
         return lambda target, *operands: target.bind(*operands)

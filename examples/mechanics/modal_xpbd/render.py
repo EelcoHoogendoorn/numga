@@ -54,7 +54,8 @@ def draw(points: Point, edges: np.ndarray, damping: np.ndarray, reference: Point
 
 
 def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
-    tips = (points[..., -1, -2] + points[..., -1, -1]) / 2
+    vertices = points.batch()
+    tips = (vertices[..., -1, -2] + vertices[..., -1, -1]) / 2
     positions = tips.dual().cast(ga.subspace("x y")).kernel
     time = np.arange(len(positions)) * frame_dt
     figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")

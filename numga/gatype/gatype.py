@@ -46,14 +46,19 @@ class GAType:
     At least one SubSpace is required because every extensor has an output
     carrier, including nullary extensors.  All axes must be owned by the exact
     same algebra object.
+
+    A slot is a field slot when it ranges over sites as well as blades: ``fields``
+    pairs each such slot with its number of sites. The kernel holds one site axis
+    per field slot, in slot order, between the batch axes and the coefficient axes.
     """
 
-    __slots__ = ("_subspaces", "_traits", "_algebra", "_hash", "__dict__")
+    __slots__ = ("_subspaces", "_traits", "_fields", "_algebra", "_hash", "__dict__")
 
     def __init__(
         self,
         subspaces: Iterable[SubSpace],
         traits: TraitSet = EMPTY_TRAITS,
+        fields: tuple[tuple[int, int], ...] = (),
     ) -> None:
         if isinstance(subspaces, SubSpace):
             raise TypeError("GAType subspaces must be an output-first iterable")
@@ -83,13 +88,15 @@ class GAType:
             normalized_subspaces,
             normalized_traits,
         )
+        normalized_fields = _normalize_fields(fields, len(normalized_subspaces))
         object.__setattr__(self, "_subspaces", normalized_subspaces)
         object.__setattr__(self, "_traits", normalized_traits)
+        object.__setattr__(self, "_fields", normalized_fields)
         object.__setattr__(self, "_algebra", algebra)
         object.__setattr__(
             self,
             "_hash",
-            hash((type(self), normalized_subspaces, normalized_traits)),
+            hash((type(self), normalized_subspaces, normalized_traits, normalized_fields)),
         )
 
     @property
@@ -102,7 +109,26 @@ class GAType:
 
     @cached_property
     def structural_shape(self) -> tuple[int, ...]:
-        return tuple(len(axis) for axis in self.subspaces)
+        """The trailing kernel axes: the site axes of the field slots, then one coefficient axis per slot."""
+        return self.site_shape + tuple(len(axis) for axis in self.subspaces)
+
+    @property
+    def fields(self) -> tuple[tuple[int, int], ...]:
+        """Each field slot, output 0 and inputs from 1, with its number of sites."""
+        return self._fields
+
+    @cached_property
+    def site_shape(self) -> tuple[int, ...]:
+        return tuple(sites for _, sites in self._fields)
+
+    @cached_property
+    def has_fields(self) -> bool:
+        return bool(self._fields)
+
+    @cached_property
+    def has_input_fields(self) -> bool:
+        """Whether an input slot ranges over sites, so that binding it sums over them."""
+        return any(slot for slot, _ in self._fields)
 
     @property
     def traits(self) -> TraitSet:
@@ -309,6 +335,7 @@ class GAType:
             type(self) is type(other)
             and self.subspaces == other.subspaces
             and self.traits == other.traits
+            and self.fields == other.fields
         )
 
     def __hash__(self) -> int:
@@ -447,14 +474,18 @@ class GAType:
     def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return self.sandwich(other)
 
-    def __reduce__(self) -> tuple[type[GAType], tuple[tuple[SubSpace, ...], TraitSet]]:
-        return type(self), (self.subspaces, self.traits)
+    def __reduce__(self) -> tuple[type[GAType], tuple[tuple[SubSpace, ...], TraitSet, tuple[tuple[int, int], ...]]]:
+        return type(self), (self.subspaces, self.traits, self.fields)
 
     @property
     def signature(self) -> str:
         """Output and inputs by subspace name: in bivector <- bivector, with any traits after a bar."""
 
-        output, *inputs = (space.type_name for space in self.subspaces)
+        sites = dict(self.fields)
+        output, *inputs = (
+            space.type_name + (f"[{sites[slot]}]" if slot in sites else "")
+            for slot, space in enumerate(self.subspaces)
+        )
         text = f"{output} <- {', '.join(inputs)}" if inputs else output
         return f"{text} | {', '.join(trait.name for trait in self.traits)}" if self.traits else text
 
@@ -472,6 +503,15 @@ def _comparison_gatype(value: object) -> GAType | None:
     return None
 
 
+def _normalize_fields(fields: Iterable[tuple[int, int]], slots: int) -> tuple[tuple[int, int], ...]:
+    normalized = tuple(sorted((int(slot), int(sites)) for slot, sites in fields))
+    if any(slot < 0 or slot >= slots or sites < 1 for slot, sites in normalized):
+        raise ValueError(f"field slots must lie in [0, {slots}) and hold at least one site; got {normalized}")
+    if len({slot for slot, _ in normalized}) != len(normalized):
+        raise ValueError(f"a slot holds one site axis; got {normalized}")
+    return normalized
+
+
 class Derivations:
     """The types the type rules derive from one type, apart from the type itself."""
 
@@ -482,14 +522,27 @@ class Derivations:
 
     @cached_property
     def structural(self) -> GAType:
-        """The same axes without explicit trait assertions."""
+        """The same axes and fields without explicit trait assertions."""
 
-        return self._gatype.algebra.gatype(self._gatype.subspaces)
+        gatype = self._gatype
+        return gatype.algebra.gatype(gatype.subspaces, fields=gatype.fields)
 
     @lru_cache(maxsize=None)
     def with_traits(self, *traits: Trait) -> GAType:
         gatype = self._gatype
-        return gatype.algebra.gatype(gatype.subspaces, (*gatype.traits, *traits))
+        return gatype.algebra.gatype(gatype.subspaces, (*gatype.traits, *traits), gatype.fields)
+
+    @cached_property
+    def plain(self) -> GAType:
+        """The same slots and traits over blades alone: a field's sites read as batch axes."""
+
+        gatype = self._gatype
+        return gatype.algebra.gatype(gatype.subspaces, gatype.traits) if gatype.fields else gatype
+
+    @lru_cache(maxsize=None)
+    def with_fields(self, fields: tuple[tuple[int, int], ...]) -> GAType:
+        gatype = self._gatype
+        return gatype.algebra.gatype(gatype.subspaces, gatype.traits, fields)
 
     @cached_property
     def transposed(self) -> GAType:

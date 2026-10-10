@@ -25,22 +25,23 @@ def random_sparse(context, shape, count, seed):
 
 def dense_product(sparse, field):
     """Element r of the product: the sum of each cell in row r times the element its column names."""
-    return [sum((sparse.cells[k] * field[sparse.columns[k]] for k in np.flatnonzero(sparse.rows == r)),
-                sparse.cells[0] * field[0] * 0.0) for r in range(sparse.shape[0])]
+    elements = field.batch()
+    return [sum((sparse.cells[k] * elements[sparse.columns[k]] for k in np.flatnonzero(sparse.rows == r)),
+                sparse.cells[0] * elements[0] * 0.0) for r in range(sparse.shape[0])]
 
 
 def test_products_and_reverse_match_dense_sums(context):
     mv = context.multivector
     rng = np.random.default_rng(0)
     first, second = random_sparse(context, (4, 5), 9, 1), random_sparse(context, (5, 6), 11, 2)
-    field = mv.even(rng.normal(size=(6, 4)))
-    product = second * field                                                  # [5] Odd
+    field = mv.even(rng.normal(size=(6, 4))).field()                          # Even[6]
+    product = second * field                                                  # Odd[5]
     for row, expected in enumerate(dense_product(second, field)):
-        np.testing.assert_allclose(np.asarray(product[row].kernel), np.asarray(expected.kernel), atol=1e-5)
+        np.testing.assert_allclose(np.asarray(product.batch()[row].kernel), np.asarray(expected.kernel), atol=1e-5)
     np.testing.assert_allclose(np.asarray(((first * second) * field).kernel), np.asarray((first * (second * field)).kernel), atol=1e-4)
     # The reverse turns every product around: the reverse of a product is the product of the reverses
     # in turn, which runs every coupling the other way.
-    reversed_field = mv.even(rng.normal(size=(4, 4)))
+    reversed_field = mv.even(rng.normal(size=(4, 4))).field()
     np.testing.assert_allclose(np.asarray((~(first * second) * reversed_field).kernel),
                                np.asarray((~second * (~first * reversed_field)).kernel), atol=1e-4)
 
@@ -57,15 +58,16 @@ def test_open_type_cells_apply_solve_and_take_least_squares():
         np.repeat(np.arange(count - 1), 2), np.stack([np.arange(count - 1), np.arange(1, count)], -1).ravel(), (count - 1, count),
     )
     laplacian = ~boundary * boundary
-    field = mv.vector(rng.normal(size=(count, 3)))
+    field = mv.vector(rng.normal(size=(count, 3))).field()                    # Vector[count]
     np.testing.assert_allclose((laplacian * Vector)(field).kernel, (laplacian * field).kernel, atol=1e-12)
     solved = (laplacian * Vector).lstsq(laplacian * field)
-    np.testing.assert_allclose(solved.kernel, (field - field.mean(axis=0)).kernel, atol=1e-10)
+    np.testing.assert_allclose(solved.kernel, (field - field.batch().mean(axis=0)).kernel, atol=1e-10)
     # Regular once a diagonal is added; the solve inverts the product.
-    stiff = laplacian + SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))))
+    unit = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field())
+    stiff = laplacian + unit
     np.testing.assert_allclose((stiff * Vector).solve(stiff * field).kernel, field.kernel, atol=1e-12)
     # The least eigenpair of the Laplacian against the identity: the constant field, at zero.
-    values, modes = (laplacian * Even).eigh(SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1)))) * Even, 1)
+    values, modes = (laplacian * Even).eigh(unit * Even, 1)
     np.testing.assert_allclose(values.to_array(), 0.0, atol=1e-10)
     np.testing.assert_allclose((laplacian * modes[0]).kernel, 0.0, atol=1e-10)
 
@@ -96,17 +98,17 @@ def test_square_maps_between_other_blades_solve_batched_fields():
     motors = (mv.bivector(rng.normal(size=(count, 2, 3))) * 0.5).exp()          # [count, 2] Motor
     neighbours = np.stack([np.arange(count), (np.arange(count) + 1) % count], -1)   # [count, 2]
     coupling = SparseExtensor.from_columns(neighbours, (motors >> Twist).dual() * np.array([1.0, 0.3]), count)   # [count, count] Line <- Twist
-    twists = mv.bivector(rng.normal(size=(fields, count, 3)))                  # [fields, count] Twist
-    lines = coupling(twists)                                                  # [fields, count] Line
+    twists = mv.bivector(rng.normal(size=(fields, count, 3))).field()         # [fields] Twist[count]
+    lines = coupling(twists)                                                  # [fields] Line[count]
     for field in range(fields):
         np.testing.assert_allclose(lines[field].kernel, coupling(twists[field]).kernel, atol=1e-12)
     np.testing.assert_allclose(coupling.solve(lines).kernel, twists.kernel, atol=1e-10)
     # The adjugate pulls a field on the outputs' complements back: summed, its pairing with any input
     # field is that of the field with the coupling's output.
-    probes = mv.bivector(rng.normal(size=(count, 3)))                          # [count] Twist
+    probes = mv.bivector(rng.normal(size=(count, 3))).field()                 # Twist[count]
     pulled = coupling.adjugate()                                              # [count, count] Line <- Twist
     np.testing.assert_allclose(
-        (pulled(probes) & twists[0]).sum(axis=-1).kernel, (probes & lines[0]).sum(axis=-1).kernel, atol=1e-10,
+        (pulled(probes) & twists[0]).batch().sum(axis=-1).kernel, (probes & lines[0]).batch().sum(axis=-1).kernel, atol=1e-10,
     )
 
 
@@ -118,9 +120,9 @@ def test_the_adjoint_carries_the_scalar_product_summed_over_the_elements():
     rotors = (mv.bivector(rng.normal(size=(count, 2, 3))) * 0.5).exp()
     neighbours = np.stack([np.arange(count), (np.arange(count) + 1) % count], -1)
     coupling = SparseExtensor.from_columns(neighbours, (rotors >> Vector) * np.array([1.0, 0.4]), count)
-    values, covectors = mv.vector(rng.normal(size=(count, 3))), mv.vector(rng.normal(size=(count, 3)))
-    np.testing.assert_allclose(coupling.adjoint()(covectors).scalar_product(values).sum(axis=0).kernel,
-                               covectors.scalar_product(coupling(values)).sum(axis=0).kernel, atol=1e-12)
+    values, covectors = mv.vector(rng.normal(size=(2, count, 3))).field()     # [2] Vector[count]
+    np.testing.assert_allclose(coupling.adjoint()(covectors).scalar_product(values).batch().sum(axis=-1).kernel,
+                               covectors.scalar_product(coupling(values)).batch().sum(axis=-1).kernel, atol=1e-12)
 
 
 def test_leading_axes_hold_separate_maps_of_one_pattern():
@@ -135,17 +137,17 @@ def test_leading_axes_hold_separate_maps_of_one_pattern():
     cells = mv.vector(rng.normal(size=(cases, count, 3)))                      # [cases, count] Vector
     batched = SparseExtensor(cells, rows, columns, (size, size))
     one = [SparseExtensor(cells[case], rows, columns, (size, size)) for case in range(cases)]
-    field = mv.vector(rng.normal(size=(size, 3)))                               # [size] Vector
+    field = mv.vector(rng.normal(size=(size, 3))).field()                       # Vector[size]
     for case in range(cases):
         np.testing.assert_allclose((batched * field)[case].kernel, (one[case] * field).kernel, atol=1e-12)
         np.testing.assert_allclose(((batched * batched) * field)[case].kernel, ((one[case] * one[case]) * field).kernel, atol=1e-12)
     # A diagonally dominant map on vectors per case, solved against two sides for each case.
-    diagonal = SparseExtensor.from_diagonal(mv.scalar(np.full((size, 1), 20.0))) * Vector
+    diagonal = SparseExtensor.from_diagonal(mv.scalar(np.full((size, 1), 20.0)).field()) * Vector
     system = (batched * Vector).adjoint()(batched * Vector) + diagonal           # [cases] [size, size] Vector <- Vector
-    sides = mv.vector(rng.normal(size=(2, cases, size, 3)))                      # [sides, cases, size] Vector
-    solved = system.solve(sides)                                                 # [sides, cases, size] Vector
+    sides = mv.vector(rng.normal(size=(2, cases, size, 3))).field()              # [sides, cases] Vector[size]
+    solved = system.solve(sides)                                                 # [sides, cases] Vector[size]
     np.testing.assert_allclose((system(solved) - sides).kernel, 0.0, atol=1e-10)
-    values, modes = system.eigh(diagonal, 2)                                     # [cases, 2] Scalar, [cases, 2, size] Vector
+    values, modes = system.eigh(diagonal, 2)                                     # [cases, 2] Scalar, [cases, 2] Vector[size]
     for case in range(cases):
         alone, _ = SparseExtensor(system.cells[case], system.rows, system.columns, system.shape).eigh(diagonal, 2)
         np.testing.assert_allclose(values[case].kernel, alone.kernel, rtol=1e-8)

@@ -60,6 +60,7 @@ class ExtensionMethod:
         *patterns: GAType | GATypePattern | Trait | TraitSet | Callable[..., object],
         precedence: str | None = None,
         position: int | None = None,
+        fields: bool = False,
     ) -> Callable[[_Implementation], _Implementation]:
         """Register a type signature without mutating until decoration.
 
@@ -77,7 +78,7 @@ class ExtensionMethod:
                 if len(patterns) == 1 and is_predicate(patterns[0]) else len(patterns)
             )
             return self._overloads[count].register(
-                *patterns, precedence=precedence, position=position,
+                *patterns, precedence=precedence, position=position, fields=fields,
             )
         predicate = len(patterns) == 1 and is_predicate(patterns[0])
         if predicate:
@@ -119,6 +120,7 @@ class ExtensionMethod:
                 *patterns,
                 precedence=precedence,
                 position=position,
+                fields=fields,
             )(implementation)
             if created:
                 self._dispatch = dispatch

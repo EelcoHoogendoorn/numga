@@ -29,19 +29,19 @@ PHASES = 20
 # --- math -----------------------------------------------------------------------------
 def pulse():
     """A bump of the xy plane at the north pole, spreading: the sphere, and the vertex and face fields at
-    each frame `[frames, V]` and `[frames, F]`."""
+    each frame `[frames] Even[V]` and `[frames] Odd[F]`."""
     sphere = icosphere(SUBDIVISIONS)
-    start = bump(sphere, mv.z) * mv.xy                                         # [V] Even
+    start = bump(sphere, mv.z) * mv.xy                                         # Even[V]
     states = list(core.spread(sphere, start, INTERVAL, STEPS))
     frames = list(islice(states, 0, None, EVERY))
-    vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames, V] Even, [frames, F] Odd
+    vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames] Even[V], [frames] Odd[F]
 
     # --- checks
     # The leapfrog keeps the energy: the vertex field's area-weighted norm, and the face field's paired
     # across each step.
     _, M2, M0, _ = core.dirac(sphere)
-    energies = stack([(M0 * vertices.scalar_norm_squared()).sum(axis=0)
-                      + (M2 * before.reverse().scalar_product(after)).sum(axis=0)
+    energies = stack([(M0 * vertices.scalar_norm_squared()).batch().sum(axis=-1)
+                      + (M2 * before.reverse().scalar_product(after)).batch().sum(axis=-1)
                       for (vertices, after), (_, before) in zip(states[1:], states)]).to_array()
     np.testing.assert_allclose(energies, energies[0], rtol=1e-12)
     # Half a turn round the sphere on, the pulse has gathered at the south pole.
@@ -54,17 +54,17 @@ def pulse():
 
 def modes():
     """The standing waves of the first few frequencies, one of each, over its period: the sphere, the
-    frequencies, and the vertex and face fields `[frequencies, phases, V]` and `[frequencies, phases, F]`."""
+    frequencies, and the vertex and face fields `[frequencies, phases] Even[V]` and `[frequencies, phases] Odd[F]`."""
     sphere = icosphere(SUBDIVISIONS)
     sizes = CONSTANT + 8 * np.cumsum(np.arange(LEVELS + 1))                 # [levels + 1]
-    squared, waves = core.standing(sphere, int(sizes[-1]))                   # [modes] Scalar, [modes, V] Even
+    squared, waves = core.standing(sphere, int(sizes[-1]))                   # [modes] Scalar, [modes] Even[V]
     # Of each frequency's waves, the part of a bump on the equator they hold, in all three planes: every
     # frequency drawn the same way round.
     _, _, M0, _ = core.dirac(sphere)
-    probe = bump(sphere, mv.x) * (mv.yz + mv.zx + mv.xy)                      # [V] Even
+    probe = bump(sphere, mv.x) * (mv.yz + mv.zx + mv.xy)                      # Even[V]
     shares = [waves[low:high] for low, high in zip(sizes[:-1], sizes[1:])]
-    chosen = stack([(share * (M0 * share.reverse().scalar_product(probe)).sum(axis=-1)[:, None]).sum(axis=0)
-                    for share in shares])                                     # [levels, V] Even
+    chosen = stack([(share * (M0 * share.reverse().scalar_product(probe)).batch().sum(axis=-1)).sum(axis=0)
+                    for share in shares])                                     # [levels] Even[V]
     frequencies = np.arange(1, LEVELS + 1).astype(float)
     phases = np.linspace(0.0, 2 * np.pi, PHASES, endpoint=False)
     vertices, faces = core.oscillation(sphere, chosen, mv.scalar(frequencies[:, None]), phases)

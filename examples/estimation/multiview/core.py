@@ -55,6 +55,9 @@ Camera = ga.gatype((Point, Point))
 Quadric = ga.gatype((Plane, Point))                # Plane <- Point
 Information = ga.gatype((Scalar, Twist, Twist))    # Scalar <- (Twist, Twist)
 w = mv.w
+# Uncertainty that does not grow with depth, in units of depth: calibration, the extent of a point and
+# whatever else the cones leave out. Pixel noise grows with depth, and the two variances add.
+FLOOR = 0.1
 euclidean = ga.subspace.from_masks(tuple(m for m in Plane.output_subspace.masks if not m & w.gatype.output_subspace.masks[0]))
 
 
@@ -153,15 +156,16 @@ def reweight_cones(
     """Reweight perspective cone quadrics into pixel units via Sampson depth scaling.
 
     Starts from algebraic cone quadrics and iteratively scales each cone by
-    1 / z ** 2 using point depths, converging to true inverse pixel variance units.
+    `1 / (z ** 2 + FLOOR ** 2)` using point depths: inverse pixel variance where the depth is well
+    above the floor, and finite everywhere, the sign of the depth dropping out of its square.
     """
     weighted_cones = cones
     for _ in range(iterations):
         points, _ = triangulate_cones(motors, weighted_cones)
         # A point's depth in a camera is the weight of its projected point, the pairing of the
-        # image with the plane at infinity; clamped away from the camera plane:
-        z = (w & cameras(motors << points[:, None])).abs().clip(0.1, None)   # [n_points, n_cams] Scalar
-        weighted_cones = cones / (z ** 2)
+        # image with the plane at infinity:
+        z = w & cameras(motors << points[:, None])                # [n_points, n_cams] Scalar
+        weighted_cones = cones / (z ** 2 + FLOOR ** 2)
     return weighted_cones
 
 
@@ -198,7 +202,8 @@ def bundle_adjust_schur(
     of its image times the square of its depth, because the polar planes were carried back
     through the camera and the image of a point at depth z has weight z. Dividing each cone by
     z squared puts the cost in pixel units, so a far point and a near point count by their
-    pixel error alone. The depth is the weight of the projected point,
+    pixel error alone; the floor added to z squared stands for the uncertainty that does not grow
+    with depth. The depth is the weight of the projected point,
     `w & cameras(local_points)`, and since the triangulated points depend on the weighted
     cones the scaling is iterated in `reweight_cones`. A weight is a scalar on a quadric, so
     the weighted solver is the unweighted one with `scaled_cones` in place of `local_cones`:
@@ -259,7 +264,10 @@ def align_rays_to_splats(
     sees. Adding the cones of a point over the cameras multiplies their likelihoods, so the fused
     quadric, the splat, is minus twice the log of the belief about the point: a Gaussian wherever
     the sight lines cross at an angle, sharp where they cross steeply, long where they are nearly
-    parallel. This holds in the units the cones carry; `reweight_cones` puts them in pixel units.
+    parallel. The cones are weighted into pixel units by the depths of the points their pixels see,
+    as in `reweight_cones`, but without extracting a point: the depth is read off the belief itself,
+    as where along each sight line its minimum lies, and the cones are weighted by
+    `1 / (depth ** 2 + FLOOR ** 2)` for the next fusion.
 
     A pixel's cost is the splat's minimum along its sight line: minus twice the log-likelihood of
     the most probable point on that line, which is the belief projected onto the sensor and
@@ -272,16 +280,17 @@ def align_rays_to_splats(
     instead places each point at its splat's centre and aligns the cones to those points,
     alternating as here, and `bundle_adjust_schur` lets those points move with the cameras through
     a Schur complement; here no point is shared, and each sight line finds its own best point.
-    Leaving a pixel's own cone out of the splat it is compared against changes neither the cost
-    nor its gradient at the current poses, since that cone vanishes along its own sight line; it
-    removes only that cone's share of the curvature, which holds the step back. Weighting each
-    splat by its value at its centre, the misfit its cones leave between them, is another variant;
-    the cost here keeps the units its cones carry.
+    Each pixel is compared against the splat of the other cameras' cones. Its own cone vanishes
+    along its own sight line, so leaving it out changes neither the cost nor its gradient at the
+    current poses; its share of the curvature would only hold the step back, and without it the
+    steps converge as fast as the Schur complement's. Weighting each
+    splat by its value at its centre, the misfit its cones leave between them, is another variant.
 
     Along the line through the pinhole with heading h, the minimum is the splat on the line over
     the splat on its heading. The splat on the line is the meet of the two points' polar planes,
     paired with the line itself; the splat on the heading, the belief's stiffness along the line,
-    is held for each step. A camera step moves each sight line as a whole, so sliding along itself,
+    is held for each step. The minimum lies at the pinhole's polar paired with the heading, over
+    that stiffness, headings away from the pinhole: the depth, in units of the sensor's distance. A camera step moves each sight line as a whole, so sliding along itself,
     which leaves the minimum unchanged, never enters. Alternates fusing the beliefs with damped
     Gauss-Newton steps on the poses. `pinhole` and `pixels` are in the cameras' frames and `free`
     is 1 for each camera that moves and 0 for the anchored cameras that fix the gauge.
@@ -295,12 +304,16 @@ def align_rays_to_splats(
     heading_motion = Twist.commutator(heading)                    # [n_points, n_cams] Point <- Twist
     ray_motion = Twist.commutator(ray)                            # [n_points, n_cams] antibivector <- Twist
     motors = initial_motors
+    # The first fusion takes the cones as they are; every later one weights them by the depths read
+    # off the beliefs before it:
+    weighted = local_cones                                        # [n_points, n_cams] Quadric
 
     for _ in range(iterations):
         # The belief about each point: its cones summed over the cameras, their likelihoods
-        # multiplied. Then each belief as seen from each camera:
-        splats = (motors >> local_cones(motors << Point)).sum(axis=-1)    # [n_points] Plane <- Point
-        local = motors << splats[:, None](motors >> Point)                # [n_points, n_cams] Plane <- Point
+        # multiplied. Then each belief as seen from each camera, less that camera's own cone: the
+        # belief of the other cameras, which each pixel is compared against:
+        splats = (motors >> weighted(motors << Point)).sum(axis=-1)      # [n_points] Plane <- Point
+        local = (motors << splats[:, None](motors >> Point)) - weighted   # [n_points, n_cams] Plane <- Point
 
         # The polar of each sight line, the meet of its points' polar planes, and how it moves; the
         # polar paired with the line over the stiffness is the belief's minimum along the line:
@@ -318,4 +331,9 @@ def align_rays_to_splats(
         step = curvature.lstsq(-gradient, rcond=1e-4) * free            # [n_cams] Twist
         motors = motors * (step * (0.5 * damping)).exp()                # [n_cams] Motor
 
-    return motors, (motors >> local_cones(motors << Point)).sum(axis=-1)
+        # Where along each sight line the belief is least, its depth, puts the next fusion in pixel
+        # units; its sign drops out of its square:
+        depth = -(polar_pinhole & heading) / stiffness                     # [n_points, n_cams] Scalar
+        weighted = local_cones / (depth ** 2 + FLOOR ** 2)
+
+    return motors, (motors >> weighted(motors << Point)).sum(axis=-1)

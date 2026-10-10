@@ -27,12 +27,12 @@ def dipole():
     the spin transformation that makes it."""
     mesh = core.icosphere(LEVELS)
     centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * mesh.vertices
-    rho = (centroids | core.context.multivector.y) * DIPOLE                    # [F] Scalar
+    rho = (centroids | core.context.multivector.y) * DIPOLE                    # Scalar[F]
     deformed = core.spin_transform_deform(mesh, rho)
 
     # --- checks
     # No change in curvature leaves the sphere as it is, centred.
-    unchanged = core.spin_transform_deform(mesh, rho * 0.0).vertices - (mesh.vertices - mesh.vertices.mean(axis=0))
+    unchanged = core.spin_transform_deform(mesh, rho * 0.0).vertices - (mesh.vertices - mesh.vertices.batch().mean(axis=-1))
     np.testing.assert_allclose(unchanged.kernel, 0.0, atol=1e-11)
     # The deformation keeps every corner's angle, up to the mesh's resolution.
     np.testing.assert_allclose((deformed.corner_cosines() - mesh.corner_cosines()).to_array(), 0.0, atol=0.05)

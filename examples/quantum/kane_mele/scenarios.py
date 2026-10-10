@@ -62,11 +62,11 @@ def sweep(flake: core.Flake, masses: np.ndarray):
 def nearest(flake: core.Flake, masses: np.ndarray):
     """The density of the spin-up state nearest zero for each mass."""
     states = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, 2)[1][0] for mass in masses]
-    densities = stack(states).scalar_norm_squared()                            # [masses, atoms] Scalar
+    densities = stack(states).scalar_norm_squared()                            # [masses] Scalar[atoms]
 
     # --- checks
     # Without a mass the state nearest zero lies on the rim; with a large one it spreads inside.
-    shares = ((densities * flake.rim).sum(axis=-1) / densities.sum(axis=-1)).to_array()
+    shares = ((densities * flake.rim).batch().sum(axis=-1) / densities.batch().sum(axis=-1)).to_array()
     assert shares[0] > 0.9 and shares[-1] < 0.6
     return densities
 
@@ -74,9 +74,9 @@ def nearest(flake: core.Flake, masses: np.ndarray):
 def helical(flake: core.Flake):
     """An electron started at the middle of the edge facing x, spin along x, keeping its part inside
     the gap without a mass: its spin density at each frame over one lap."""
-    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, IN_GAP)   # [states] Scalar, [states, atoms] Even
+    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, IN_GAP)   # [states] Scalar, [states] Even[atoms]
     times = np.linspace(0.0, LAP, FRAMES + 1)
-    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1, atoms] Vector
+    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Vector[atoms]
 
     # --- checks
     # Every state is inside the bulk gap and on the rim, and every energy is held four times: the two
@@ -86,16 +86,16 @@ def helical(flake: core.Flake):
     np.testing.assert_allclose(ordered[::4], ordered[3::4], atol=1e-8)
     assert core.rim_share(flake, states).to_array().min() > 0.9
     # The density keeps its total, and the electron stays on the rim.
-    density = spins.norm()                                                     # [frames + 1, atoms] Scalar
-    totals = density.sum(axis=-1).to_array()
+    density = spins.norm()                                                     # [frames + 1] Scalar[atoms]
+    totals = density.batch().sum(axis=-1).to_array()
     np.testing.assert_allclose(totals, totals[0], rtol=1e-9)
-    np.testing.assert_array_less(0.9 * totals, (density * flake.rim).sum(axis=-1).to_array())
+    np.testing.assert_array_less(0.9 * totals, (density * flake.rim).batch().sum(axis=-1).to_array())
     # A quarter lap on, the spin-up half has turned clockwise around the flake and the spin-down half
     # counterclockwise: the sine of each half's turn from the start, by its centre.
-    along = spins[FRAMES // 4] | mv.z                                          # [atoms] Scalar
+    along = spins[FRAMES // 4] | mv.z                                          # Scalar[atoms]
     up, down = (density[FRAMES // 4] + along) * 0.5, (density[FRAMES // 4] - along) * 0.5
-    start = flake.positions[flake.start].normalized()                         # [] Vector
-    centres = [((half * flake.positions).sum(axis=0) / half.sum(axis=0)).normalized() for half in (up, down)]
+    start = flake.positions.batch()[flake.start].normalized()                 # [] Vector
+    centres = [((half * flake.positions).batch().sum(axis=-1) / half.batch().sum(axis=-1)).normalized() for half in (up, down)]
     sines = [(mv.xy | (centre ^ start)).to_array().item() for centre in centres]
     assert sines[0] < -0.5 and sines[1] > 0.5
     return spins

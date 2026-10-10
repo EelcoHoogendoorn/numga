@@ -51,43 +51,43 @@ def hamiltonian(flake: Flake, spin_orbit: float, mass: float) -> SparseExtensor:
     # For each hop to a second neighbour, the xy plane, signed by the sense the path turns.
     turn = SparseExtensor(mv.xy * flake.senses, *flake.second.T, (atoms, atoms))   # [atoms, atoms] Bivector
     # Plus one on the atoms of one sublattice, minus one on the other.
-    stagger = SparseExtensor.from_diagonal(mv.scalar(flake.sublattice[:, None]))   # [atoms, atoms] Scalar
+    stagger = SparseExtensor.from_diagonal(mv.scalar(flake.sublattice[:, None]).field())   # [atoms, atoms] Scalar
     return hop + turn * spin_orbit + stagger * mass                            # [atoms, atoms] Up
 
 
 def levels(energy: SparseExtensor, sector: GAType, count: int) -> tuple[Scalar, Even]:
     """The count energies nearest zero within a sector of spinors, and their states, orthonormal."""
     atoms = energy.shape[0]
-    unit = SparseExtensor.from_diagonal(mv.scalar(np.ones((atoms, 1))))      # [atoms, atoms] Scalar
-    return (energy * sector).eigh(unit * sector, count)                       # [count] Scalar, [count, atoms] sector
+    unit = SparseExtensor.from_diagonal(mv.scalar(np.ones((atoms, 1))).field())   # [atoms, atoms] Scalar
+    return (energy * sector).eigh(unit * sector, count)                       # [count] Scalar, [count] sector[atoms]
 
 
 def rim_share(flake: Flake, states: Even) -> Scalar:
     """How much of each state lies on the flake's rim."""
-    density = states.scalar_norm_squared()                                     # [..., atoms] Scalar
-    return (density * flake.rim).sum(axis=-1) / density.sum(axis=-1)          # [...] Scalar
+    density = states.scalar_norm_squared()                                     # [...] Scalar[atoms]
+    return (density * flake.rim).batch().sum(axis=-1) / density.batch().sum(axis=-1)   # [...] Scalar
 
 
 def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.ndarray) -> Iterator[Vector]:
     """An electron started on one atom with the given spinor, keeping only its part in the given
     states, at each time: its spin density `psi >> mv.z`, as long as the electron's density and
     pointing along its spin."""
-    weights = states[:, start].reverse().scalar_product(spinor)                # [states] Scalar
+    weights = states.batch()[:, start].reverse().scalar_product(spinor)        # [states] Scalar
     for time in times:
         # Each state turns on its right at the rate of its energy.
         turned = weights * (mv.xy * (-energies * time)).exp()                  # [states] Even
-        yield (states * turned[:, None]).sum(axis=0) >> mv.z                   # [atoms] Vector
+        yield (states * turned).sum(axis=0) >> mv.z                            # Vector[atoms]
 
 
 # --- plumbing -------------------------------------------------------------------------
 class Flake:
-    """A hexagonal graphene flake with armchair edges: the atoms' positions `[atoms] Vector` and
+    """A hexagonal graphene flake with armchair edges: the atoms' positions `Vector[atoms]` and
     sublattices, plus and minus one; the pairs of neighbours `[pairs, 2]` and of second neighbours,
     each with the sense its path turns, both ways round; the atoms on the rim; and the atom in the
     middle of the edge facing x."""
 
     def __init__(self, positions: Vector, sublattice: np.ndarray, first: np.ndarray, second: np.ndarray,
-                 senses: np.ndarray, rim: np.ndarray, start: int) -> None:
+                 senses: np.ndarray, rim: Scalar, start: int) -> None:
         self.positions = positions
         self.sublattice = sublattice
         self.first = first
@@ -129,10 +129,12 @@ def flake(size: int, rim: float) -> Flake:
 
     a = mv.x
     b = ((mv.x ^ mv.y) * (-np.pi / 6)).exp() >> a                             # [] Vector, 60 degrees from a
-    positions = a * u + b * v                                                  # [atoms] Vector
+    positions = (a * u + b * v).field()                                        # Vector[atoms]
     facing = np.flatnonzero(2 * u + v == (2 * u + v).max())
     start = facing[np.argmin(np.abs(v[facing]))]
-    return Flake(positions, sign.astype(float), first, second, senses, reach > (1 - rim) * size, start)
+    # One on the atoms of the rim, zero elsewhere.
+    edge = mv.scalar((reach > (1 - rim) * size)[:, None]).field()               # Scalar[atoms]
+    return Flake(positions, sign.astype(float), first, second, senses, edge, start)
 
 
 def _lookup(i: np.ndarray, j: np.ndarray, s: np.ndarray, size: int):

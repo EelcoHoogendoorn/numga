@@ -8,7 +8,10 @@ from numga.algebra import Algebra
 from numga.algebras import PGA2D, Spherical3D
 from examples import instantiate
 import sys
+import examples.mesh
 import examples.electromagnetism.constitutive.core
+import examples.electromagnetism.eddy_brake.core
+import examples.electromagnetism.eddy_brake.scenarios
 import examples.electromagnetism.fresnel.core
 import examples.electromagnetism.fresnel.scenarios
 import examples.electromagnetism.moving_charge.core
@@ -20,6 +23,10 @@ import examples.quadrics.cyclides.core
 import examples.estimation.epipolar.core
 import examples.geometry.fitting.core
 import examples.geometry.fitting.scenarios
+import examples.geometry.origami.core
+import examples.geometry.origami.scenarios
+import examples.geometry.three_point_pose.core
+import examples.geometry.three_point_pose.scenarios
 import examples.estimation.kalman.core
 import examples.estimation.kalman.scenarios
 import examples.estimation.pose_diffusion.core
@@ -49,6 +56,9 @@ import examples.mechanics.area_transport.core
 import examples.mechanics.area_transport.scenarios
 import examples.mechanics.crystal_waves.scenarios
 import examples.mechanics.manipulability.core
+import examples.mechanics.kepler.core
+import examples.mechanics.kepler.scenarios
+import examples.mechanics.tricycle.scenarios
 import examples.mechanics.modes.core
 import examples.mechanics.modal_xpbd.core
 import examples.mechanics.modal_xpbd.scenarios
@@ -68,10 +78,10 @@ import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
 import examples.optics.photoelasticity.core
 import examples.optics.photoelasticity.scenarios
-import examples.optics.crystal_diffraction.core
-import examples.optics.crystal_diffraction.scenarios
 import examples.optics.coating.core
 import examples.optics.coating.scenarios
+import examples.optics.crystal_diffraction.core
+import examples.optics.crystal_diffraction.scenarios
 import examples.optics.thin_lens.core
 import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
@@ -79,10 +89,14 @@ import examples.quantum.hubbard_dimer.core
 import examples.quantum.hubbard_dimer.scenarios
 import examples.quantum.hubbard_ring.core
 import examples.quantum.hubbard_ring.scenarios
+import examples.quantum.kitaev_wire.core
+import examples.quantum.kitaev_wire.scenarios
 import examples.quantum.magnetic_resonance.core
 import examples.quantum.magnetic_resonance.scenarios
 import examples.quantum.process_tomography.core
 import examples.quantum.process_tomography.scenarios
+import examples.quantum.superconductivity.core
+import examples.quantum.superconductivity.scenarios
 import examples.quantum.two_spins.core
 import examples.quantum.two_spins.scenarios
 import examples.quadrics.cayley_klein.core
@@ -99,12 +113,15 @@ import examples.relativity.dirac.scenarios
 import examples.relativity.gravitational_lensing.core
 import examples.relativity.gravitational_lensing.scenarios
 import examples.relativity.impulse.core
-import examples.relativity.twistors.core
-import examples.relativity.twistors.scenarios
 import examples.relativity.kerr.core
 import examples.relativity.kerr.scenarios
+import examples.relativity.spinors.core
+import examples.relativity.spinors.scenarios
+import examples.relativity.twistors.core
+import examples.relativity.twistors.scenarios
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)
+instantiate('examples.mechanics.tricycle.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))
 instantiate('examples.quadrics.elliptic_physics.core', Spherical3D)
 print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])
