@@ -42,7 +42,7 @@ Extensor(scalar[4], shape=())
 
 A batch over the same count is still a batch: a `[4] Scalar` times `positions` is four copies of the string, each scaled as a whole, `[4] vector[4]`. A quantity that varies along the string is a field itself, over the same sites, and multiplies site by site.
 
-Indexing, `len`, `.sum()` and `.mean()` address batch axes; the sites are reached through `.batch()`, so the sum of a field over its sites is `field.batch().sum(axis=-1)`.
+Indexing, `len`, `.sum()` and `.mean()` address batch axes, the copies. A field's own reductions run over its sites: `positions.sites.mean()` is the centre of the string and `positions.norm().sites.sum()` the beads' total distance from the origin. `.batch()` reads the sites as a batch axis where a batch view is wanted.
 
 ## Field maps couple sites
 
@@ -94,7 +94,7 @@ pull = jax_mv.vector(downward).field()                                  # vector
 
 def energy(beads):
     """The springs' energy less the work of the loads, summed over the beads."""
-    return (beads.scalar_product(springs(beads)) / 2 - pull.scalar_product(beads)).batch().sum(axis=-1)
+    return (beads.scalar_product(springs(beads)) / 2 - pull.scalar_product(beads)).sites.sum()
 
 
 rest = jax_mv.vector(np.zeros((4, 3))).field()                           # vector[4]
@@ -132,7 +132,7 @@ print(np.abs((sparse_stiffness.solve(loads) - displacements).kernel).max() < 1e-
 True
 ```
 
-The stored cells have a batch axis of couplings, with leading axes for separate maps sharing one pattern; `shape` is `(output sites, input sites)`, and `gatype` is the type of the cells, by which the sparse operations dispatch. The fields it takes and returns are typed as fields.
+The stored cells have a batch axis of couplings, with leading axes for separate maps sharing one pattern, indexed as a batch is, `S[..., None]`; `shape` is `(output sites, input sites)`, and `gatype` is the type of the cells, by which the sparse operations dispatch. The fields it takes and returns are typed as fields. A map or value without sites adds on the diagonal, as it applies: `(Vector - S)(f) == f - S(f)`.
 
 A sparse extensor of multivector cells has no action of its own: it is a matrix over the algebra, waiting for a product. `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` take each cell's product with the element at its column and sum at the rows. A field on the left pairs with the rows instead: `stretches * ends` is a field over the beads. Two sparse extensors multiply their cells along the paths through shared sites. With an open type the product leaves its slot open and the cells become maps, `(~ends * ends) * Vector`; map cells are applied, `sparse_stiffness(positions)`, and compose.
 
@@ -145,6 +145,6 @@ An operation that reverses the order of the cells' products runs every coupling 
 
 The reverse turns products around, `~(a * b) == ~b * ~a`, so a sparse extensor that moves to the other side of a product pairs with the field by its other index: `~(ends * positions) == ~positions * ~ends`. The string's Laplacian, `~ends * ends`, arises this way, and the cotangent Laplacian of a mesh likewise as `~d0 * H1 * d0`, from the edge differences `d0` and the edge weights `H1`. A map cell is applied rather than multiplied; reversing it reverses its output and keeps the couplings, while its adjoint and adjugate turn composition around and run them back, their pairing identities holding once summed over the sites.
 
-`SparseExtensor.from_diagonal(field)` places each element of a field on its own site as a cell: weights such as areas or masses, applied where they belong. The sparse solves, least squares and eigenproblems take map cells and fields of multivectors and run through SciPy on the NumPy backend; `eigh` returns its modes as a batch of fields.
+`SparseExtensor.from_diagonal(field)` places each element of a field on its own site as a cell: weights such as areas or masses, applied where they belong. `SparseExtensor.selection(context, index, size)` reads, at each output site, the input site an index names: a gather, written once where the indices are known, as the ends of every bond or the corners of every face. The sparse solves, least squares and eigenproblems take map cells and fields of multivectors and run through SciPy on the NumPy backend; `eigh` returns its modes as a batch of fields.
 
 In block-matrix notation a sparse extensor of multivector cells is a sparse matrix over the geometric algebra, and its reverse the conjugate transpose with the reverse as the conjugation.

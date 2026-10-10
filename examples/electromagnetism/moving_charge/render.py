@@ -166,14 +166,3 @@ def radiation(events: core.Vector, field: core.Bivector, charge: core.Vector) ->
         panel(ax, events, value, "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
         ax.scatter(*position, s=18, color=CHARGE_COLOUR, edgecolors="#0f172a", linewidths=0.8, zorder=3)
     return result
-
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

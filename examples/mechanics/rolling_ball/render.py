@@ -43,7 +43,10 @@ def ball(screen, body, trail) -> np.ndarray:
     colours = colours + circles[..., None] * (CIRCLE - colours)
     marks = coordinates(trail)
     marks = marks[np.linspace(0, len(marks) - 1, min(len(marks), TRAIL_POINTS)).astype(int)]
-    nearest = np.linalg.norm(fixed[..., None, :] - marks, axis=-1).min(axis=-1)
+    # Squared distance to a mark is |p|^2 + |m|^2 - 2 p . m; the nearest mark minimizes the last two terms, the
+    # cross term one matrix product over all pixels and marks.
+    closest = ((marks ** 2).sum(axis=-1) + fixed @ (-2 * marks).T).min(axis=-1)
+    nearest = np.sqrt(np.clip((fixed ** 2).sum(axis=-1) + closest, 0.0, None))
     colours = colours + np.clip(1 - nearest / 0.05, 0.0, 1.0)[..., None] * (TRAIL - colours)
     lit = 0.4 + 0.6 * np.clip(view @ np.array([-0.4, 0.4, 0.82]), 0.0, 1.0)
     inside = (view[..., :2] ** 2).sum(axis=-1) < 1

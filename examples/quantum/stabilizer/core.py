@@ -1,0 +1,111 @@
+"""Two qubits kept in four, so that any single qubit going wrong is noticed: the smallest stabilizer code
+that catches bit flips and phase flips alike, in the spinors of Cl(4, 4).
+
+The whole of Cl(4, 4) is at work: a state of four qubits is sixteen real spinor components, and the
+operators on it are the algebra itself, every pattern of bit and phase flips one of its two hundred and
+fifty-six blades. Two checks, flipping all four qubits and
+phase-flipping all four, commute with each other and with the flips and phase flips of two logical
+qubits; the states both checks leave alone are the code. Any single error changes the outcome of at least
+one check, so it is noticed and the run discarded.
+"""
+
+from __future__ import annotations
+
+from functools import reduce
+from operator import mul
+
+import numpy as np
+
+from numga import Algebra, NumpyContext, stack
+
+ga = Algebra("a+b+c+d+e-f-g-h-")
+mv = NumpyContext(ga).multivector
+exact = ga.exact.multivector
+
+Scalar = ga.gatype.scalar()
+Full = ga.gatype.full()
+State = ga.gatype.from_blades("1 b c d h bc bd cd bh ch dh bcd bch bdh cdh bcdh")
+
+# A state of four qubits is sixteen real numbers: a spinor, held in the algebra as an element times an
+# idempotent of four commuting involutions. An operator multiplies it on the left, and the readout takes
+# its sixteen components back out.
+ideal = (1 + exact.a) * (1 + exact.be) * (1 + exact.cf) * (1 + exact.dg) / 16
+embedding = State * ideal                                                      # [] Full <- State
+readout = (16 * Full).cast(State)                                              # [] State <- Full
+action = readout(Full * embedding)                                             # [] State <- (Full, State)
+# The positive definite pairing of states, preserved by the action.
+pairing = 16 * exact.cdeh.scalar_product(embedding.reverse() * exact.efgh * embedding)  # [] Scalar <- (State, State)
+
+# Each qubit's bit flip and phase flip: blades that anticommute on their own qubit and commute across qubits.
+flips = stack([mv.b, -mv.bce, -mv.bcdef, -mv.ah])                              # [qubits] Full
+phase_flips = stack([mv.be, mv.cf, mv.dg, -mv.abcdefg])                        # [qubits] Full
+# What can happen to each qubit: nothing, a bit flip, a phase flip, or both.
+errors = stack([mv.scalar().broadcast_to(flips.shape), flips, phase_flips, flips * phase_flips], axis=-1)  # [qubits, kinds] Full
+# All four qubits 0.
+ground = mv.scalar().cast(State)                                               # [] State
+
+# The two checks: flipping all four qubits, and phase-flipping all four.
+checks = stack([reduce(mul, flips), reduce(mul, phase_flips)])                 # [checks] Full
+# Each outcome of the two checks, and the projector onto the states that give it; the first is the code.
+outcomes = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]])                      # [outcomes, checks]
+halves = (1 + checks * outcomes) / 2                                           # [outcomes, checks] Full
+projectors = halves[:, 0] * halves[:, 1]                                       # [outcomes] Full
+code = projectors[0]                                                           # [] Full
+
+# The flips and phase flips of the two logical qubits: pairs of qubits, commuting with both checks.
+logical_flips = stack([flips[0] * flips[1], flips[0] * flips[2]])              # [logical] Full
+logical_phase_flips = stack([phase_flips[0] * phase_flips[2], phase_flips[0] * phase_flips[1]])  # [logical] Full
+
+
+# --- math -----------------------------------------------------------------------------
+def expectation(operators: Full, states: State) -> Scalar:
+    """The expectation of each operator on each state."""
+    return pairing(states, action(operators, states)) / pairing(states, states)  # [...] Scalar
+
+
+def turned(start: State, qubit_flips: Full, qubit_phase_flips: Full, angles: np.ndarray) -> State:
+    """The start state with each of two qubits turned by its angle from 0 towards 1, by a rotor in the
+    plane of its flip and phase flip."""
+    turns = ((qubit_flips * qubit_phase_flips) * (angles / 2)).exp()           # [..., 2] Full
+    return action(turns[..., 0] * turns[..., 1], start)                        # [...] State
+
+
+def encoded(angles: np.ndarray) -> State:
+    """Two logical qubits at the given angles, stored in the code."""
+    start = action(code, ground)                                               # [] State
+    start = start / pairing(start, start).square_root()
+    return turned(start, logical_flips, logical_phase_flips, angles)           # [...] State
+
+
+def noise(qubits: int, rates: np.ndarray) -> tuple[Full, np.ndarray]:
+    """Every pattern of errors on the first so many qubits, and its probability at each rate: each qubit
+    is left alone, or hit by one of the three errors with equal chance."""
+    kinds = np.indices((errors.shape[-1],) * qubits)                           # [qubits, kinds...]
+    chances = np.stack([1 - rates, rates / 3, rates / 3, rates / 3], axis=-1)  # [rates, kinds]
+    patterns = reduce(mul, (errors[qubit, kind] for qubit, kind in enumerate(kinds)))  # [kinds...] Full
+    weights = reduce(mul, (chances[:, kind] for kind in kinds))                # [rates, kinds...]
+    return patterns, weights
+
+
+def averaged(values: Scalar, weights: np.ndarray) -> Scalar:
+    """The average over error patterns, the trailing axes of the values, at each rate."""
+    return (values * weights).sum(axis=tuple(range(1 - weights.ndim, 0)))      # [rates] Scalar
+
+
+def detected(stored: State, rates: np.ndarray) -> tuple[Scalar, Scalar]:
+    """Under noise on all four qubits: how often both checks pass, and how often the stored state then
+    comes back unchanged."""
+    patterns, weights = noise(errors.shape[0], rates)
+    corrupted = action(patterns, stored)                                       # [kinds...] State
+    # The chance that both checks pass is the part of the state left in the code.
+    passed = pairing(corrupted, action(code, corrupted))                       # [kinds...] Scalar
+    unchanged = pairing(stored, corrupted).squared()                           # [kinds...] Scalar
+    return averaged(passed, weights), averaged(unchanged, weights)             # [rates] Scalar each
+
+
+def unprotected(angles: np.ndarray, rates: np.ndarray) -> Scalar:
+    """How often two bare qubits at the given angles come back unchanged under the same noise."""
+    stored = turned(ground, flips[:2], phase_flips[:2], angles)                # [] State
+    patterns, weights = noise(2, rates)
+    unchanged = pairing(stored, action(patterns, stored)).squared()            # [kinds, kinds] Scalar
+    return averaged(unchanged, weights)                                        # [rates] Scalar

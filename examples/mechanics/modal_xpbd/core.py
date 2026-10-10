@@ -122,9 +122,9 @@ def girder(cells: int, length: float, height: float, stiffness: float, density: 
     # The stiffness against the masses; the three zero modes are rigid motions, carried by the motor.
     values, fields = (~ends * bars(ends * Force)).eigh(weights, 3 + modes)  # [3 + modes] Scalar, [3 + modes] Force[vertices]
     values, fields = values[3:], fields[3:]                                 # [modes] Scalar, [modes] Force[vertices]
-    centre = (positions * masses).batch().sum(axis=-1) / masses.batch().sum(axis=-1)  # [] Force
+    centre = (positions * masses).sites.sum() / masses.sites.sum()  # [] Force
     rest = (positions - centre + mv.w).dual()                               # Point[vertices]
-    inertia = ((rest & rest.commutator(Twist)) * masses).batch().sum(axis=-1)  # [] Forque <- Twist
+    inertia = ((rest & rest.commutator(Twist)) * masses).sites.sum()  # [] Forque <- Twist
     # The modes as displacements, their angular frequencies, and their compliances.
     modes = fields.dual()                                                   # [modes] Direction[vertices]
     frequencies = values.square_root()                                      # [modes] Scalar

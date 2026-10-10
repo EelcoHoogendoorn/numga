@@ -170,8 +170,19 @@ class SparseExtensor:
     def __call__(self, operand):
         return self.apply(operand)
 
+    def __getitem__(self, index) -> SparseExtensor:
+        """The maps at an index of the leading axes, which hold separate maps of one pattern:
+        `S[..., None]` gives the maps an axis to broadcast against the batch of a field."""
+        index = index if isinstance(index, tuple) else (index,)
+        within = (slice(None),) if any(item is Ellipsis for item in index) else (Ellipsis,)
+        return SparseExtensor(self.cells[index + within], self.rows, self.columns, self.shape)
+
     # --- sums ----------------------------------------------------------------------------------
-    def __add__(self, other: SparseExtensor) -> SparseExtensor:
+    def __add__(self, other: SparseExtensor | Extensor | GAType) -> SparseExtensor:
+        """The sum of two maps of the same sites; a map or value without sites is the same at every
+        site, on the diagonal, as it applies: `(Vector + S)(f) == f + S(f)`."""
+        if not isinstance(other, SparseExtensor):
+            other = _on_diagonal(self, other)
         if self.shape != other.shape:
             raise ValueError(f"sparse shapes {self.shape} and {other.shape} differ")
         batch = np.broadcast_shapes(self.cells.shape[:-1], other.cells.shape[:-1])
@@ -190,8 +201,24 @@ class SparseExtensor:
     def __neg__(self) -> SparseExtensor:
         return SparseExtensor(-self.cells, self.rows, self.columns, self.shape)
 
-    def __sub__(self, other: SparseExtensor) -> SparseExtensor:
+    def __radd__(self, other: Extensor | GAType) -> SparseExtensor:
+        return self + other
+
+    def __sub__(self, other: SparseExtensor | Extensor | GAType) -> SparseExtensor:
         return self + (-other)
+
+    def __rsub__(self, other: Extensor | GAType) -> SparseExtensor:
+        return -self + other
+
+
+def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
+    """A map or value without sites, the same at every site of a square sparse map, on its diagonal."""
+    from numga.extensor.extensor import _promote_identity
+
+    if value.shape[0] != value.shape[1]:
+        raise TypeError(f"a value without sites has no diagonal in a sparse map of shape {value.shape}")
+    other = value.cells.context.lower(_promote_identity(other))
+    return SparseExtensor.from_diagonal(other[..., None].broadcast_to(other.shape + (value.shape[0],)).field())
 
 
 # A sparse extensor with a field on its diagonal, each element its own cell.

@@ -54,20 +54,18 @@ def spatial_axes(figure: plt.Figure, position: tuple[float, float, float, float]
 def draw_curves(ax: plt.Axes, curves: core.Event) -> None:
     """Each spatial curve in its own colour."""
     points = clipped(spatial(curves))
+    points = points.reshape((-1,) + points.shape[-2:])
     for curve, rgb in zip(points, colours(len(points))):
         ax.plot(*curve.T, color=rgb, linewidth=1.1)
 
 
-def draw_incidence(
-    events: core.Event, ray: core.Event, transformed_events: core.Event, transformed_ray: core.Event,
-) -> plt.Figure:
-    """Events on a light ray, and the same incidence after a conformal transformation."""
-    positions = spacetime(events), spacetime(transformed_events)
-    rays = spacetime(ray), spacetime(transformed_ray)
-    extent = np.max(np.abs(np.concatenate((*positions, *rays)))) * 1.12
+def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
+    """Events on a light ray, one panel per case: [cases, events] and [cases, ray_samples] Event."""
+    positions, lines = spacetime(events), spacetime(rays)
+    extent = max(np.max(np.abs(positions)), np.max(np.abs(lines))) * 1.12
     figure = plt.figure(figsize=(10, 5), facecolor="white")
-    for column, (points, line) in enumerate(zip(positions, rays)):
-        ax = figure.add_subplot(1, 2, column + 1, projection="3d")
+    for column, (points, line) in enumerate(zip(positions, lines)):
+        ax = figure.add_subplot(1, len(positions), column + 1, projection="3d")
         ax.plot(*line.T, color=BLUE, linewidth=1.6)
         ax.scatter(*points.T, color=ORANGE, s=34, depthshade=False)
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), zlim=(-extent, extent),
@@ -107,13 +105,3 @@ def animate_fields(stream: Iterable[core.Event]) -> list[np.ndarray]:
         plt.close(figure)
     return frames
 
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

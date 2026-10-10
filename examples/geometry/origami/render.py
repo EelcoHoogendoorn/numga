@@ -43,15 +43,15 @@ def viewport(points: np.ndarray) -> tuple[np.ndarray, float]:
 
 
 def rasterize(screen: np.ndarray, faces: tuple[np.ndarray, ...], colours: np.ndarray,
-              bias: np.ndarray, size: int) -> np.ndarray:
-    """Depth-test every pixel; a layer bias resolves coincident paper faces.
+              size: int) -> np.ndarray:
+    """Depth-test every pixel.
 
-    Polygon-centre sorting cannot order overlapping coplanar polygons. Each triangle
-    instead interpolates the true depth at the pixel, then adds its face's tiny bias.
+    Polygon-centre sorting cannot order overlapping or intersecting polygons. Each
+    triangle instead interpolates the true depth at the pixel.
     """
     depth = np.full((size, size), -np.inf)
     image = np.ones((size, size, 3))
-    for face, colour, offset in zip(faces, colours, bias):
+    for face, colour in zip(faces, colours):
         # Convex paper faces triangulate as a fan; only their perimeter gets inked.
         for index in range(1, len(face) - 1):
             triangle = screen[face[[0, index, index + 1]]]
@@ -70,7 +70,7 @@ def rasterize(screen: np.ndarray, faces: tuple[np.ndarray, ...], colours: np.nda
             weight_third = 1 - weight_first - weight_second
             inside = (weight_first >= 0) & (weight_second >= 0) & (weight_third >= 0)
             distance = (weight_first * first[2] + weight_second * second[2]
-                        + weight_third * third[2] + offset)
+                        + weight_third * third[2])
             region = np.s_[low[1]:high[1], low[0]:high[0]]
             visible = inside & (distance >= depth[region])
             depth[region][visible] = distance[visible]
@@ -80,7 +80,7 @@ def rasterize(screen: np.ndarray, faces: tuple[np.ndarray, ...], colours: np.nda
     pen = np.array([(x, y) for x in range(-SUPERSAMPLE, SUPERSAMPLE + 1)
                     for y in range(-SUPERSAMPLE, SUPERSAMPLE + 1)
                     if x * x + y * y <= SUPERSAMPLE ** 2])
-    for face, offset in zip(faces, bias):
+    for face in faces:
         polygon = screen[face]
         normal = np.cross(polygon, np.roll(polygon, -1, axis=0)).sum(axis=0)
         for start, end in zip(screen[face], screen[np.roll(face, -1)]):
@@ -88,14 +88,14 @@ def rasterize(screen: np.ndarray, faces: tuple[np.ndarray, ...], colours: np.nda
             segment = start + np.linspace(0, 1, samples)[:, None] * (end - start)
             pixels = np.floor(segment[:, None, :2] + pen).astype(int)
             x, y = pixels[..., 0].reshape(-1), pixels[..., 1].reshape(-1)
-            distance = np.repeat(segment[:, 2] + offset, len(pen))
+            distance = np.repeat(segment[:, 2], len(pen))
             valid = (x >= 0) & (x < size) & (y >= 0) & (y < size)
             x, y, distance = x[valid], y[valid], distance[valid]
             # Test the face at the pixel centre, just as the fill does. Testing the
             # nearest point on a sloping edge would leak hidden outlines through it.
             if abs(normal[2]) > 1e-10:
                 distance = (normal @ polygon[0] - normal[0] * (x + 0.5)
-                            - normal[1] * (y + 0.5)) / normal[2] + offset
+                            - normal[1] * (y + 0.5)) / normal[2]
             visible = distance >= depth[y, x] - 1e-7
             image[y[visible], x[visible]] = EDGE
     return image
@@ -115,8 +115,8 @@ def picture(paper: core.Paper, centre: np.ndarray, scale: float) -> np.ndarray:
     normals = np.array([np.cross(points[face], points[np.roll(face, -1)]).sum(axis=0)
                         for face in faces])
     colours = shade(normals, basis[2])
-    pixels = rasterize(screen, faces, colours, np.zeros(len(faces)), size)[::-1]
-    pixels = pixels.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).mean(axis=(1, 3))
+    pixels = rasterize(screen, faces, colours, size)[::-1]
+    pixels = pixels.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).sum(axis=1).sum(axis=2) / SUPERSAMPLE**2
     return np.rint(pixels * 255).astype(np.uint8)
 
 

@@ -18,13 +18,13 @@ def coordinates(vectors) -> np.ndarray:
     return np.asarray(vectors.cast(vectors.algebra.subspace("x y")).kernel)
 
 
-def iterates(chains, residual, catenary, left, right) -> plt.Figure:
+def iterates(chains, residual, catenary, pins) -> plt.Figure:
     """Two panels. Left: each iterate of the chain as the polyline from pin to pin through its beads,
     earlier ones lighter, the last with its beads marked, over the catenary dashed. Right: the largest
     unbalanced force on a bead at each iterate, in bead weights, on a log scale."""
     beads = coordinates(chains.batch())
-    pins = np.broadcast_to(coordinates(left), beads[:, :1].shape), np.broadcast_to(coordinates(right), beads[:, :1].shape)
-    lines = np.concatenate([pins[0], beads, pins[1]], axis=1)
+    left, right = np.broadcast_to(coordinates(pins.batch())[:, None, None], (2, len(beads), 1, 2))
+    lines = np.concatenate([left, beads, right], axis=1)
     curve = coordinates(catenary)
     largest = np.asarray(residual.batch().to_array()).max(axis=-1)
 
@@ -32,12 +32,11 @@ def iterates(chains, residual, catenary, left, right) -> plt.Figure:
     shades = np.linspace(0, 1, len(lines))[:, None]
     for line, shade in zip(lines[:-1], shades[:-1]):
         shape.plot(*line.T, color=EARLY + shade * (LATE - EARLY), linewidth=1.0)
-    shape.plot(*curve.T, color=CATENARY, linewidth=2.5, linestyle="--", label="catenary")
-    shape.plot(*lines[-1].T, color=CHAIN, linewidth=1.2, marker="o", markersize=3.5, label="at rest")
+    shape.plot(*curve.T, color=CATENARY, linewidth=2.5, linestyle="--")
+    shape.plot(*lines[-1].T, color=CHAIN, linewidth=1.2, marker="o", markersize=3.5)
     shape.scatter(*np.stack([lines[-1, 0], lines[-1, -1]]).T, s=60, color=PIN, marker="s", zorder=3)
     shape.set(aspect="equal")
     shape.axis("off")
-    shape.legend(loc="lower right", frameon=False)
 
     convergence.semilogy(np.arange(len(largest)), largest, color=CHAIN, marker="o")
     convergence.set(xlabel="Newton step", ylabel="largest unbalanced force, in bead weights")

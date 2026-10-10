@@ -132,14 +132,3 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     curves.set(xlim=(times[0], times[-1]), ylim=(-0.05, 1.05), xlabel="time, in units of the field difference", ylabel="back in the singlet")
     curves.legend(frameon=False, fontsize=8, loc="lower left")
     return figure
-
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

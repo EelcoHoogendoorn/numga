@@ -53,7 +53,7 @@ def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
 
     # the field of least energy per unit of vertex area, divided by its area-weighted mean
     _, modes = (Q * Even).eigh(M0 * Even, 1)                                # [1] Even[V]
-    mean = (M0 * modes[0]).batch().sum(axis=-1) / mesh.vertex_areas.batch().sum(axis=-1)   # [] Even
+    mean = (M0 * modes[0]).sites.sum() / mesh.vertex_areas.sites.sum()   # [] Even
     q = modes[0] / mean                                                     # Even[V]
 
     # each edge turned and scaled by the field along it, integrated by Simpson's rule: the turns at its
@@ -137,8 +137,8 @@ def mean_curvature(mesh: Mesh):
 
 def _recenter(mesh: Mesh):
     """Remove the translation/scale gauge freedom the flow leaves undetermined."""
-    v = mesh.vertices - mesh.vertices.batch().mean(axis=-1)
-    return mesh.copy(vertices=v / v.norm().batch().mean(axis=-1))
+    v = mesh.vertices - mesh.vertices.sites.mean()
+    return mesh.copy(vertices=v / v.norm().sites.mean())
 
 
 def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
@@ -158,7 +158,7 @@ def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
     yield mesh
     for _ in range(iterations):
         h = mean_curvature(mesh)
-        h_mean = (h * mesh.triangle_areas).batch().sum(axis=-1) / mesh.triangle_areas.batch().sum(axis=-1)
+        h_mean = (h * mesh.triangle_areas).sites.sum() / mesh.triangle_areas.sites.sum()
         mesh = _recenter(spin_transform_deform(mesh, -rate * (h - h_mean)))
         yield mesh
 

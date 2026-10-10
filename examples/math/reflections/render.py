@@ -5,6 +5,7 @@ the three-sphere."""
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 import numpy as np
 
 from examples.animation import capture
@@ -54,15 +55,19 @@ def side_by_side(images: np.ndarray, gap: int = 6) -> np.ndarray:
 # --- kaleidoscope -----------------------------------------------------------------------
 def kaleidoscope(folded, time: float) -> np.ndarray:
     """The beads at the given time, painted at every folded point: [..., rows, columns, 3] pixels."""
-    xy = coordinates(folded, "x y")                                            # [..., rows, columns, 2]
-    radius, angle, speed, size = BEADS.T
+    xy = coordinates(folded, "x y").astype(np.float32)                         # [..., rows, columns, 2]
+    # The beads from the top down: each is painted over the ones listed before it.
+    radius, angle, speed, size = BEADS[::-1].T.astype(np.float32)
     centres = radius[:, None] * np.stack([np.cos(angle + speed * time), np.sin(angle + speed * time)], axis=-1)
-    distance = np.linalg.norm(xy[..., None, :] - centres, axis=-1)            # [..., rows, columns, beads]
+    # Squared distances to the bead centres through one matrix product over all pixels.
+    squared = (xy ** 2).sum(axis=-1, keepdims=True) - 2 * xy @ centres.T + (centres ** 2).sum(axis=-1)
+    distance = np.sqrt(np.maximum(squared, 0.0))                               # [..., rows, columns, beads]
     cover = np.clip((size - distance) / 0.02, 0.0, 1.0)
-    colours = np.broadcast_to(BACKGROUND, xy.shape[:-1] + (3,)).copy()
-    for index in range(len(BEADS)):
-        colours += cover[..., index, None] * (BEAD_COLOURS[index] - colours)
-    return to_image(colours)
+    # What shows of a bead is its cover times what the beads above it leave uncovered, and the background
+    # shows where all of them leave it uncovered.
+    uncovered = np.cumprod(1 - cover, axis=-1)                                 # [..., rows, columns, beads]
+    shown = cover * np.concatenate([np.ones_like(uncovered[..., :1]), uncovered[..., :-1]], axis=-1)
+    return to_image(uncovered[..., -1:] * BACKGROUND + shown @ BEAD_COLOURS[::-1])
 
 
 def animate_kaleidoscope(folded, frames: int) -> list[np.ndarray]:
@@ -111,7 +116,11 @@ def tiling(folded, flips, mirrors) -> np.ndarray:
 def distinct(points: np.ndarray) -> np.ndarray:
     """The distinct rows of an array of points, up to round-off: one of each set of rows equal to six
     decimals, in sorted order."""
-    _, first = np.unique(np.round(points * 1e6).astype(np.int64), axis=0, return_index=True)
+    rounded = np.round(points * 1e6).astype(np.int64)                          # [points, coordinates]
+    # Equal rows sort next to each other, the first of them first; a row starts a new set where it differs
+    # from the one before.
+    order = np.lexsort(rounded.T[::-1])
+    first = order[np.concatenate([[True], (np.diff(rounded[order], axis=0) != 0).any(axis=-1)])]
     return points[np.sort(first)]
 
 
@@ -128,11 +137,12 @@ def polytope(spinors, tilt: float = 0.45) -> plt.Figure:
     seen = space @ turn.T
     depth = (seen[first, 2] + seen[second, 2]) / 2
     shade = (depth - depth.min()) / np.ptp(depth)
+    order = np.argsort(depth)
+    shade = shade[order, None]                                                 # [edges, 1]
+    colours = np.concatenate([EVEN + (1 - shade) * (ODD - EVEN), 0.35 + 0.65 * shade], axis=-1)   # [edges, 4]
+    segments = np.stack([seen[first[order], :2], seen[second[order], :2]], axis=1)   # [edges, 2, 2]
     figure, ax = plt.subplots(figsize=(5, 5), facecolor=BACKGROUND)
-    for index in np.argsort(depth):
-        ax.plot(seen[[first[index], second[index]], 0], seen[[first[index], second[index]], 1],
-                color=EVEN + (1 - shade[index]) * (ODD - EVEN), linewidth=0.6 + 1.2 * shade[index],
-                alpha=0.35 + 0.65 * shade[index])
+    ax.add_collection(LineCollection(segments, colors=colours, linewidths=0.6 + 1.2 * shade[:, 0], capstyle="projecting"))
     ax.set(xlim=(-0.75, 0.75), ylim=(-0.75, 0.75), aspect="equal")
     ax.axis("off")
     figure.subplots_adjust(0, 0, 1, 1)

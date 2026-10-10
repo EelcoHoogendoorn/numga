@@ -131,7 +131,7 @@ def polarized_rates(position: Vector, momentum: Vector, screen: ScreenFrame,
     geometry = field(position, spin, mass)                                                  # [...] Field
     tangent, momentum_rate = motion(geometry, momentum)                                     # [...] Vector, [...] Vector
     # The frame, the identity plus half the dyad, takes covector momentum to its local null direction.
-    local_momentum = momentum + geometry.profile * geometry.null * (geometry.null | momentum)  # [...] Vector
+    local_momentum = frame(geometry)(momentum)                                              # [...] Vector
     screen_rate = -connection(geometry, local_momentum).commutator(screen)                  # [...] Vector <- Screen
     clock = -(mv.t | tangent)                                                               # [...] Scalar
     return tangent / clock, momentum_rate / clock, screen_rate / clock                      # [...] Vector, [...] Vector, [...] Vector <- Screen
@@ -193,28 +193,28 @@ def carried(position: Vector, radius: Scalar, orbit: Bivector, spin: Spin, mass:
     return (orbit * (-angle / 2)).exp() >> position                                         # [elapsed..., events] Vector
 
 
-def innermost_stable_orbit(spin: float, mass: float) -> float:
-    """The radius of the innermost stable circular orbit turning with a hole of spin magnitude
-    `spin`, J/M, in its equatorial plane: 6M without spin, M at the extreme (Bardeen, Press and
-    Teukolsky, 1972)."""
-    ratio = spin / mass
-    first = 1 + (1 - ratio**2) ** (1 / 3) * ((1 + ratio) ** (1 / 3) + (1 - ratio) ** (1 / 3))
-    second = np.sqrt(3 * ratio**2 + first**2)
-    return mass * (3 + second - np.sqrt((3 - first) * (3 + first + 2 * second)))
+def innermost_stable_orbit(orbit: Bivector, spin: Spin, mass: float) -> Scalar:
+    """The radius of the innermost stable circular equatorial orbit in the unit plane `orbit`, turning
+    with the hole, the spin counted along the orbit: 6M without spin, M at the extreme (Bardeen, Press
+    and Teukolsky, 1972)."""
+    ratio = -spin.scalar_product(orbit) / mass                                              # [] Scalar
+    first = 1 + cube_root(1 - ratio**2) * (cube_root(1 + ratio) + cube_root(1 - ratio))     # [] Scalar
+    second = (3 * ratio**2 + first**2).square_root()                                        # [] Scalar
+    return mass * (3 + second - ((3 - first) * (3 + first + 2 * second)).square_root())    # [] Scalar
 
 
-def disk_temperature(radius: Scalar, spin: float, mass: float, scale: float) -> Scalar:
+def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, scale: float) -> Scalar:
     """A relativistic thin disk's temperature at each oblate radius, from the flux of Page and Thorne
-    (1974) around a hole of spin magnitude `spin`: zero at the innermost stable orbit, falling as the
-    radius to the power -3/4 far out. `scale` is (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
-    ratio = spin / mass
+    (1974), for gas orbiting in the unit plane `orbit`, the spin counted along the orbit: zero at the
+    innermost stable orbit, falling as the radius to the power -3/4 far out. `scale` is
+    (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
+    ratio = -spin.scalar_product(orbit) / mass                                              # [] Scalar
     x = (radius / mass).square_root()                                                       # [...] Scalar
-    edge = np.sqrt(innermost_stable_orbit(spin, mass) / mass)
-    # The roots of x^3 - 3x + 2 ratio, and the weight of each in the torque.
-    roots = 2 * np.cos((np.arccos(ratio) + np.array([-np.pi, np.pi, 3 * np.pi])) / 3)       # [3]
-    differences = roots[:, None] - roots[None, :]
-    np.fill_diagonal(differences, 1.0)
-    weights = 3 * (roots - ratio) ** 2 / (roots * differences.prod(axis=1))                 # [3]
+    edge = (innermost_stable_orbit(orbit, spin, mass) / mass).square_root()                 # [] Scalar
+    # The roots of x^3 - 3x + 2 ratio, and the weight of each in the torque; the product of a root's
+    # differences from the other two is the cubic's derivative there, 3 root^2 - 3.
+    roots = 2 * ((ratio.arccos() + np.array([-np.pi, np.pi, 3 * np.pi])) / 3).cos()       # [3] Scalar
+    weights = (roots - ratio) ** 2 / (roots * (roots ** 2 - 1))                             # [3] Scalar
     # The torque the disk carries, zero at the innermost stable orbit; round-off kept non-negative.
     torque = (x - edge - 1.5 * ratio * (x / edge).log()
               - (weights * ((x[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar
@@ -222,7 +222,7 @@ def disk_temperature(radius: Scalar, spin: float, mass: float, scale: float) -> 
     return scale * flux.square_root().square_root()                                         # [...] Scalar
 
 
-def disk_depth(radius: Scalar, inner_radius: float, outer_radius: float, depth: float) -> Scalar:
+def disk_depth(radius: Scalar, inner_radius: Scalar, outer_radius: float, depth: float) -> Scalar:
     """The disk's optical depth straight through its thickness at each oblate radius: `depth` at the
     inner edge, where the gas is densest, thinning outwards to none at the outer edge."""
     fraction = (radius - inner_radius) / (outer_radius - inner_radius)                      # [...] Scalar
@@ -245,15 +245,17 @@ def crossing_fraction(start: Vector, end: Vector, normal: Vector) -> Scalar:
     return -(start | normal) / ((end - start) | normal)                                     # [...] Scalar
 
 
-def disk_crossing(start: Vector, end: Vector, normal: Vector,
-                  spin: Spin, mass: float) -> tuple[Vector, Scalar]:
-    """The crossing of a ray segment and the central disk plane, and its oblate radius."""
-    point = start + crossing_fraction(start, end, normal) * (end - start)                   # [...] Vector
-    return point, field(point, spin, mass).radius                                           # [...] Vector, [...] Scalar
+def disk_crossing(start: tuple[Extensor, ...], end: tuple[Extensor, ...], normal: Vector,
+                  spin: Spin, mass: float) -> tuple[tuple[Extensor, ...], Scalar]:
+    """A ray's state, its event first, where its segment from `start` to `end` crosses the central disk
+    plane, and its oblate radius there."""
+    fraction = crossing_fraction(start[0], end[0], normal)                                  # [...] Scalar
+    state = tuple(value + fraction * (stop - value) for value, stop in zip(start, end))     # [...] state
+    return state, field(state[0], spin, mass).radius                                        # [...] state, [...] Scalar
 
 
 def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-                inner_radius: float, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
+                inner_radius: Scalar, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
                 escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Iterator[Image]:
     """The camera rays resolved at each step. Each crossing of the disk, between its radii, gives its
     state there and its weight: the disk's opacity, for the crossing's event, momentum and oblate
@@ -262,36 +264,26 @@ def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, norm
     escaped or captured; the rays still unresolved are sent back to the integrator."""
     pixels = np.arange(pixel_count)
     remaining = mv.scalar(np.ones((pixel_count, 1)))                                        # [rays] Scalar
-    try:
-        step = next(steps)
-        while pixels.size:
-            position, end = step.start[0], step.end[0]
-            crossing = np.flatnonzero((normal | position) * (normal | end) <= 0)
-            fraction = crossing_fraction(position[crossing], end[crossing], normal)         # [crossings] Scalar
-            at_plane = tuple(start[crossing] + fraction * (stop[crossing] - start[crossing])
-                             for start, stop in zip(step.start, step.end))
-            radii = field(at_plane[0], spin, mass).radius                                   # [crossings] Scalar
-            on_disk = np.flatnonzero((radii >= inner_radius) & (radii <= outer_radius))
-            crossing, at_plane, radii = crossing[on_disk], tuple(value[on_disk] for value in at_plane), radii[on_disk]
-            weights = remaining[crossing] * opacity(at_plane[0], at_plane[1], radii)        # [crossings] Scalar
-            remaining = replaced(remaining, crossing, remaining[crossing] - weights)        # [rays] Scalar
-            resolved = remaining <= 0
-            escaped = np.flatnonzero((step.radius > escape_radius) & ~resolved)
-            # An escaped ray's direction is its tangent, the inverse metric of its momentum.
-            directions = inverse_metric(field(end[escaped], spin, mass))(step.end[1][escaped])  # [escaped] Vector
-            yield Image(pixels[crossing], at_plane, radii, weights, pixels[escaped], directions, remaining[escaped])
-            resolved[escaped] = True
-            resolved |= step.radius < capture_radius
-            keep = np.flatnonzero(~resolved)
-            pixels, remaining = pixels[keep], remaining[keep]
-            if pixels.size:
-                step = steps.send(keep)
-    except StopIteration as error:
-        raise RuntimeError(f"camera integration left {pixels.size} rays unresolved") from error
+    # Sending nothing starts the trace; every later send names the rays still traced.
+    keep = None
+    while pixels.size:
+        step = steps.send(keep)
+        crossing = step.crossing(normal)
+        at_plane, radii = disk_crossing(tuple(value[crossing] for value in step.start),
+                                        tuple(value[crossing] for value in step.end), normal, spin, mass)  # [crossings] state, [crossings] Scalar
+        on_disk = np.flatnonzero((radii >= inner_radius) & (radii <= outer_radius))
+        crossing, at_plane, radii = crossing[on_disk], tuple(value[on_disk] for value in at_plane), radii[on_disk]
+        weights = remaining[crossing] * opacity(at_plane[0], at_plane[1], radii)            # [crossings] Scalar
+        remaining = replaced(remaining, crossing, remaining[crossing] - weights)            # [rays] Scalar
+        escaped, keep = step.outcomes(remaining, escape_radius, capture_radius)
+        # An escaped ray's direction is its tangent, the inverse metric of its momentum.
+        directions = inverse_metric(field(step.end[0][escaped], spin, mass))(step.end[1][escaped])  # [escaped] Vector
+        yield Image(pixels[crossing], at_plane, radii, weights, pixels[escaped], directions, remaining[escaped])
+        pixels, remaining = pixels[keep], remaining[keep]
 
 
 def resolve(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-            inner_radius: float, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
+            inner_radius: Scalar, outer_radius: float, opacity: Callable[[Vector, Vector, Scalar], Scalar],
             escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Image:
     """What every camera ray met, gathered over all steps."""
     parts = tuple(resolutions(steps, pixel_count, normal, inner_radius, outer_radius, opacity,
@@ -326,6 +318,18 @@ class Step:
     end: tuple[Extensor, ...]
     radius: Scalar
 
+    def crossing(self, normal: Vector) -> np.ndarray:
+        """The rays whose segment crosses the plane normal to `normal`."""
+        return np.flatnonzero((normal | self.start[0]) * (normal | self.end[0]) <= 0)
+
+    def outcomes(self, remaining: Scalar, escape_radius: float, capture_radius: float) -> tuple[np.ndarray, np.ndarray]:
+        """The rays escaping at the end of the step with light left, and the rays still traced: those
+        with light left, neither escaped nor captured."""
+        lit = remaining > 0
+        escaped = np.flatnonzero(lit & (self.radius > escape_radius))
+        traced = np.flatnonzero(lit & (self.radius <= escape_radius) & (self.radius >= capture_radius))
+        return escaped, traced
+
 
 @dataclass(frozen=True)
 class Image:
@@ -347,6 +351,11 @@ def replaced(values: Extensor, indices: np.ndarray, entries: Extensor) -> Extens
     rest = np.setdiff1d(np.arange(values.shape[0]), indices)
     order = np.argsort(np.concatenate([rest, indices]))
     return concatenate([values[rest], entries], axis=0)[order]
+
+
+def cube_root(value: Scalar) -> Scalar:
+    """The real cube root of each non-negative scalar."""
+    return (value.log() / 3).exp()
 
 
 def runge_kutta(rates: Callable[..., tuple[Extensor, ...]], state: tuple[Extensor, ...],

@@ -102,33 +102,28 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
             ax = figure.add_axes(((1.4 + 1.9 * column) / width, 1 - (row + 1) * 1.9 / height, 1.8 / width, 1.8 / height))
             ax.plot(np.cos(turn), np.sin(turn), color="0.85", linewidth=0.8)
             ax.plot(*total[row, :, column].T, color=COLOURS[0], linewidth=0.6, alpha=0.3)
-            arrows.append((ax.plot([], [], color="0.55", linewidth=2.0)[0], ax.plot([], [], color=COLOURS[0], linewidth=2.0)[0],
-                           ax.plot([], [], "o", color="0.1", markersize=4)[0], row, column))
+            arrows.append((ax.plot([], [], color="0.55", linewidth=2.0, animated=True)[0],
+                           ax.plot([], [], color=COLOURS[0], linewidth=2.0, animated=True)[0],
+                           ax.plot([], [], "o", color="0.1", markersize=4, animated=True)[0], row, column))
             ax.set(xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), xticks=[], yticks=[])
             ax.set_xlabel(label if row == count - 1 else "", fontsize=9)
             ax.set_ylabel(row_label if column == 0 else "", fontsize=9)
             ax.set_aspect("equal")
             for side in ax.spines.values():
                 side.set_visible(False)
+    # The dials, labels and traced paths are drawn once; each frame draws only the arrows over them.
+    figure.canvas.draw()
+    background = figure.canvas.copy_from_bbox(figure.bbox)
     frames = []
     for index in range(total.shape[1]):
+        figure.canvas.restore_region(background)
         for triplet_line, rest_line, tip, row, column in arrows:
             start, end = triplet[row, index, column], total[row, index, column]
             triplet_line.set_data([0, start[0]], [0, start[1]])
             rest_line.set_data([start[0], end[0]], [start[1], end[1]])
             tip.set_data([end[0]], [end[1]])
-        figure.canvas.draw()
+            for artist in (triplet_line, rest_line, tip):
+                artist.axes.draw_artist(artist)
         frames.append(np.asarray(figure.canvas.buffer_rgba())[..., :3].copy())
     plt.close(figure)
     return frames
-
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

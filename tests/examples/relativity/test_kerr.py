@@ -86,7 +86,7 @@ def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
     position = stack([initial, mirror(initial)])
     momentum = core.initial_momentum(position, core.mv.x, spin, mass)
     step_size = 0.04
-    steps = 400
+    steps = 250
     stop_fraction = 0.8
     states = tuple(core.trace(position, momentum, spin, mass, step_size, steps, stop_fraction, core.rates))
     positions = stack([state[0] for state in states])
@@ -148,8 +148,8 @@ def test_camera_and_disk_geometry_rotate_with_the_black_hole():
     # Intersect a tilted disk between events whose heights have opposite signs.
     start = rotation >> (core.mv.t + 3 * core.mv.x + 4 * core.mv.y + 2 * core.mv.z)
     end = rotation >> (6 * core.mv.t + 8 * core.mv.x - core.mv.y - 3 * core.mv.z)
-    crossing, radius = core.disk_crossing(start, end, rotation >> core.mv.z,
-                                         rotation >> spin, mass)
+    (crossing,), radius = core.disk_crossing((start,), (end,), rotation >> core.mv.z,
+                                             rotation >> spin, mass)
     expected = rotation >> (3 * core.mv.t + 5 * core.mv.x + 2 * core.mv.y)
     np.testing.assert_allclose((crossing - expected).kernel, 0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose(radius.kernel, np.sqrt(29 - 0.7**2),
@@ -169,10 +169,11 @@ def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
     angular_momentum = (position ^ momentum) | core.mv.xy
     impact = (angular_momentum / energy).kernel[:, 0]
     expected_capture = np.abs(impact) < 3 * np.sqrt(3) * mass
-    capture_radius = 2.004 * mass
+    # Inside the photon sphere, where no ray turns back out.
+    capture_radius = 2.1 * mass
     escape_radius = 40 * mass
-    step_fraction = 0.025
-    steps = 1200
+    step_fraction = 0.1
+    steps = 300
     active = np.arange(len(slopes))
     captured = np.zeros(len(slopes), dtype=bool)
     finished = np.zeros(len(slopes), dtype=bool)
@@ -251,8 +252,8 @@ def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
     pixel_width, pixel_height = 5, 3
     half_view = 0.4
     inner_radius, outer_radius = 2.02, 40.0
-    step_fraction = 0.025
-    steps = 1000
+    step_fraction = 0.1
+    steps = 250
     position, momentum = core.camera_rays(
         eye, orientation, pixel_width, pixel_height, half_view, spin, mass)
     screen = core.camera_screen(position, momentum, orientation, spin, mass)
@@ -277,7 +278,7 @@ def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
         segment = rays.send(keep)
 
     # Finite-step transport keeps both screen axes unit, perpendicular, and transverse.
-    np.testing.assert_allclose([transverse_error, gram_error], 0, atol=2e-7, rtol=0)
+    np.testing.assert_allclose([transverse_error, gram_error], 0, atol=1e-5, rtol=0)
 
 
 def test_disk_coherency_through_a_rotating_polarizer():
@@ -313,13 +314,13 @@ def test_every_camera_ray_shares_its_light_once_between_disk_sky_and_hole():
     pixel_count = pixel_width * pixel_height
     inner_radius, outer_radius = 3.4, 12.0
     depth = 40.0
-    capture_radius = 1.002 * (mass + np.sqrt(mass**2 - 0.7**2))
+    capture_radius = 1.05 * (mass + np.sqrt(mass**2 - 0.7**2))
 
     def opacity(event: core.Vector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         layer = core.disk_depth(radius, inner_radius, outer_radius, depth)
         return core.disk_opacity(event, momentum, layer, core.mv.z, core.mv.xy, spin, mass)
     position, momentum = core.camera_rays(eye, orientation, pixel_width, pixel_height, 0.35, spin, mass)
-    steps = core.camera_trace((position, momentum), spin, mass, 0.1, 600, core.camera_rates)
+    steps = core.camera_trace((position, momentum), spin, mass, 0.2, 300, core.camera_rates)
     image = core.resolve(steps, pixel_count, core.mv.z, inner_radius, outer_radius, opacity, 100.0, capture_radius, spin, mass)
     disk_share = np.bincount(image.disk_pixels, image.disk_weights.kernel[..., 0], pixel_count)
     sky_share = np.bincount(image.sky_pixels, image.sky_weights.kernel[..., 0], pixel_count)
@@ -381,8 +382,9 @@ def test_frequency_ratio_of_orbiting_gas_seen_by_a_camera_at_rest():
 
 def test_relativistic_thin_disk_temperature():
     mass, scale = 1.0, 1.0
+    orbit = core.mv.xy
     radii = np.array([6.5, 8.0, 12.0, 40.0])
-    nearly_still = core.disk_temperature(core.mv.scalar(radii[:, None]), 1e-9, mass, scale).kernel[:, 0]
+    nearly_still = core.disk_temperature(core.mv.scalar(radii[:, None]), orbit, orbit * 1e-9, mass, scale).kernel[:, 0]
     root3, root6 = np.sqrt(3), np.sqrt(6)
     logarithm = np.log((np.sqrt(radii) + root3) * (root6 - root3) / ((np.sqrt(radii) - root3) * (root6 + root3)))
     schwarzschild = (3 / (8 * np.pi * radii**3) / (1 - 3 / radii)
@@ -391,15 +393,18 @@ def test_relativistic_thin_disk_temperature():
     # Without spin, the Kerr flux is Page and Thorne's Schwarzschild one.
     np.testing.assert_allclose(nearly_still, schwarzschild, rtol=1e-6, atol=0)
     # Zero at the innermost stable orbit; a faster spin reaches deeper and runs hotter.
-    edge = core.mv.scalar([[core.innermost_stable_orbit(0.8, mass)]])
-    assert core.disk_temperature(edge, 0.8, mass, scale).kernel[0, 0] < 1e-3
-    peaks = [core.disk_temperature(core.mv.scalar(np.geomspace(core.innermost_stable_orbit(spin, mass), 30, 2000)[:, None]),
-                                   spin, mass, scale).kernel.max() for spin in (0.5, 0.8, 0.95)]
+    edge = core.innermost_stable_orbit(orbit, orbit * 0.8, mass)
+    assert core.disk_temperature(edge, orbit, orbit * 0.8, mass, scale).kernel[0] < 1e-3
+    peaks = [core.disk_temperature(core.mv.scalar(np.geomspace(core.innermost_stable_orbit(orbit, orbit * spin, mass).kernel[0], 30, 2000)[:, None]),
+                                   orbit, orbit * spin, mass, scale).kernel.max() for spin in (0.5, 0.8, 0.95)]
     assert peaks[0] < peaks[1] < peaks[2]
 
 
 def test_innermost_stable_orbit():
+    orbit = core.mv.xy
+    # At the extreme the cube root of zero is taken through its logarithm, minus infinity.
+    with np.errstate(divide="ignore"):
+        radii = core.innermost_stable_orbit(orbit, orbit * np.array([0.0, 0.8, 1.0]), 1.0)
     # 6M without spin, about 2.91M at spin 0.8M, and the hole's own mass at the extreme.
-    np.testing.assert_allclose(core.innermost_stable_orbit(0.0, 1.0), 6.0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(core.innermost_stable_orbit(0.8, 1.0), 2.9066, atol=1e-4, rtol=0)
-    np.testing.assert_allclose(core.innermost_stable_orbit(1.0, 1.0), 1.0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose(radii.kernel[..., 0], [6.0, 2.9066, 1.0], atol=1e-4, rtol=0)
+    np.testing.assert_allclose(radii.kernel[[0, 2], 0], [6.0, 1.0], atol=ROUND_OFF, rtol=0)

@@ -52,11 +52,11 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
         peak_gap = max(peak_gap, np.abs(core.coupling(bodies, hinges)[3].kernel).max())
         offsets = (shape.modes[:, None] * bodies.amplitudes.batch()).sum(axis=-2)
         peak_flex = max(peak_flex, offsets.dual().norm().kernel.max())
-    kinetic = (bodies.rate & shape.inertia(bodies.rate)).batch().sum(axis=-1) / 2
-    kinetic = kinetic + bodies.rates.squared().batch().sum(axis=(-1, -2)) / 2
-    elastic = (bodies.amplitudes * bodies.frequencies).squared().batch().sum(axis=(-1, -2)) / 2
+    kinetic = (bodies.rate & shape.inertia(bodies.rate)).sites.sum() / 2
+    kinetic = kinetic + bodies.rates.squared().sites.sum().sum(axis=-1) / 2
+    elastic = (bodies.amplitudes * bodies.frequencies).squared().sites.sum().sum(axis=-1) / 2
     centres = bodies.motor >> core.mv.w.dual()
-    potential = -((centres.dual() | gravity.dual()) * bodies.masses).batch().sum(axis=-1)
+    potential = -((centres.dual() | gravity.dual()) * bodies.masses).sites.sum()
     assert np.isfinite(core.points(bodies, shape).kernel).all()
     assert (kinetic + elastic + potential).kernel.max() < 1e-8
     assert peak_gap < 0.001

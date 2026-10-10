@@ -23,25 +23,32 @@ Motor = ga.gatype.rotor()
 
 # --- math -----------------------------------------------------------------------------
 def reconstruct(source: Point, target: Point) -> Motor:
-    """Three incremental motors for congruent, ordered, noncollinear marker triples.
+    """Three incremental motors for congruent, ordered, noncollinear marker triples, along a leading stage axis.
 
     Each alignment uses the short motor branch; opposing oriented elements must
     not occur at an intermediate step.
     """
     # Two point reflections translate by twice the required displacement.
-    translation = (1 + target[..., 0] / source[..., 0]).normalized()
+    translation = (target[..., 0] / source[..., 0]).square_root()
 
     # Turn the joining line while keeping the matched first point fixed.
     target_line = (target[..., 0] & target[..., 1]).normalized()
     current_line = (target[..., 0] & (translation >> source[..., 1])).normalized()
-    turn = (1 + target_line / current_line).normalized()
+    turn = (target_line / current_line).square_root()
     placed = turn * translation
 
     # Only rotation about that line remains. Match the marker planes to remove it.
     target_plane = (target_line & target[..., 2]).normalized()
     current_plane = (target_line & (placed >> source[..., 2])).normalized()
-    roll = (1 + target_plane / current_plane).normalized()
-    return stack([translation, turn, roll], axis=-1)
+    roll = (target_plane / current_plane).square_root()
+    return stack([translation, turn, roll])
+
+
+def placements(source: Point, increments: Motor) -> Iterator[Point]:
+    """The markers after each alignment."""
+    for increment in increments:
+        source = increment >> source
+        yield source
 
 
 def alignments(source: Point, increments: Motor, fractions: np.ndarray) -> Iterator[Point]:
@@ -49,11 +56,11 @@ def alignments(source: Point, increments: Motor, fractions: np.ndarray) -> Itera
     placed = source
     yield placed
     for increment in increments:
+        start = placed
         for fraction in fractions:
-            # Normalized motor blending stays rigid, including during translation.
-            partial = (1 - fraction + fraction * increment).normalized()
-            yield partial >> placed
-        placed = increment >> placed
+            # A fraction of the motor's logarithm moves at a constant rate along its screw.
+            placed = (increment.log() * fraction).exp() >> start
+            yield placed
 
 
 # --- plumbing -------------------------------------------------------------------------

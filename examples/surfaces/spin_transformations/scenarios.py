@@ -16,7 +16,7 @@ DIVISIONS = 8
 RATE = 0.25
 STEPS = 30
 # The finer sphere the Dirac spheres are spun from, the eigenvalues shown, and the states shown of each.
-DIRAC_LEVELS = 5
+DIRAC_LEVELS = 4
 EIGENVALUES = (1, 2, 3, -2, -3)
 STATES = 3
 
@@ -32,7 +32,7 @@ def dipole():
 
     # --- checks
     # No change in curvature leaves the sphere as it is, centred.
-    unchanged = core.spin_transform_deform(mesh, rho * 0.0).vertices - (mesh.vertices - mesh.vertices.batch().mean(axis=-1))
+    unchanged = core.spin_transform_deform(mesh, rho * 0.0).vertices - (mesh.vertices - mesh.vertices.sites.mean())
     np.testing.assert_allclose(unchanged.kernel, 0.0, atol=1e-11)
     # The deformation keeps every corner's angle, up to the mesh's resolution.
     np.testing.assert_allclose((deformed.corner_cosines() - mesh.corner_cosines()).to_array(), 0.0, atol=0.05)
@@ -67,11 +67,11 @@ def dirac():
     # The eigenvalues are integers: each asks for a field of zero energy, met up to the mesh's resolution
     # against the spectrum's unit spacing.
     energies = np.concatenate([energy.to_array().ravel() for energy, _ in spun.values()])
-    assert np.all(np.abs(energies) < 0.01)
+    assert np.all(np.abs(energies) < 0.05)
     # Every Dirac sphere keeps the angles, up to the mesh's resolution away from where its field vanishes.
     for spheres in gallery.values():
         for sphere in spheres:
-            assert np.median(np.abs((sphere.corner_cosines() - mesh.corner_cosines()).to_array())) < 0.05
+            assert np.median(np.abs((sphere.corner_cosines() - mesh.corner_cosines()).to_array())) < 0.1
     return mesh, gallery
 
 

@@ -5,7 +5,9 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection, PolyCollection
+from contourpy import contour_generator
 from matplotlib.colors import to_rgb
+from scipy.ndimage import map_coordinates
 
 from examples.animation import capture
 from examples.mechanics.composite_strip import core
@@ -30,21 +32,33 @@ def projected(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             away * np.cos(ELEVATION) - z * np.sin(ELEVATION))
 
 
-def animate_strips(rest: core.Vector, frames: core.Vector, fibres: core.Vector) -> list[np.ndarray]:
+def level_lines(field: np.ndarray, spacing: float) -> list[np.ndarray]:
+    """The level lines of a sampled field `[rows, columns]` at every multiple of `spacing` in its range,
+    as `[vertices, 2]` arrays of fractional (row, column) sample positions."""
+    generator = contour_generator(z=field, line_type="Separate")
+    levels = spacing * np.arange(np.ceil(field.min() / spacing), np.floor(field.max() / spacing) + 1)
+    return [line[:, ::-1] for level in levels for line in generator.lines(level)]
+
+
+def animate_strips(rest: core.Vector, frames: core.Vector, across_fibres: core.Scalar, spacing: float) -> list[np.ndarray]:
     """The strips deformed at each frame, `[frames, cases, length samples, width samples]`, seen from
-    behind their clamped ends: shaded quadrilaterals of a coarse mesh, drawn far to near, with the top
-    ply's fibres, `[frames, cases, lines, samples]`, over them. `rest` sets the common framing."""
+    behind the ends that stay in place: shaded quadrilaterals of a coarse mesh, drawn far to near, with
+    the top ply's fibres over them, the level lines of `across_fibres`, `[cases, length samples, width
+    samples]`, `spacing` apart, carried on each deformed surface. `rest` sets the common framing."""
     rests = rest.cast(core.ga.subspace("x y z")).kernel
-    surfaces = frames.cast(core.ga.subspace("x y z")).kernel[(Ellipsis, *MESH, slice(None))]
+    deformed = frames.cast(core.ga.subspace("x y z")).kernel           # [frames, cases, length samples, width samples, 3]
+    surfaces = deformed[(Ellipsis, *MESH, slice(None))]
     screen, _ = projected(np.concatenate((rests[None][(Ellipsis, *MESH, slice(None))], surfaces)))
     low, high = screen.reshape(-1, 2).min(axis=0), screen.reshape(-1, 2).max(axis=0)
     margin = 0.04 * (high - low).max()
     low, high = low - margin, high + margin
     height = 7 * (high[1] - low[1]) / (high[0] - low[0])
 
-    lines = fibres.cast(core.ga.subspace("x y z")).kernel                    # [frames, cases, lines, samples, 3]
+    # Each fibre line as fractional sample positions on its own strip's grid.
+    lines = [(case, line) for case, field in enumerate(across_fibres.to_array())
+             for line in level_lines(field, spacing)]
     images = []
-    for surface, threads in zip(surfaces, lines):
+    for surface, grids in zip(surfaces, deformed):
         corners = np.stack([surface[:, :-1, :-1], surface[:, 1:, :-1], surface[:, 1:, 1:], surface[:, :-1, 1:]],
                            axis=-2).reshape(-1, 4, 3)                              # [quadrilaterals, 4, 3]
         normals = np.cross(corners[:, 2] - corners[:, 0], corners[:, 3] - corners[:, 1])
@@ -52,25 +66,17 @@ def animate_strips(rest: core.Vector, frames: core.Vector, fibres: core.Vector) 
         shade = 0.5 + 0.5 * np.abs(normals @ LIGHT)
         flat, depth = projected(corners)
         order = np.argsort(-depth.mean(axis=-1))
+        # The deformed surface, interpolated linearly between its samples at each fibre line's positions.
+        threads = [np.stack([map_coordinates(grids[case][..., axis], line.T, order=1, mode="nearest") for axis in range(3)], axis=-1)
+                   for case, line in lines]                                        # [lines] of [vertices, 3]
         figure = plt.figure(figsize=(7, height), dpi=DPI, facecolor="white")
         ax = figure.add_axes((0, 0, 1, 1))
         ax.add_collection(PolyCollection(flat[order], facecolors=FACE * shade[order, None],
                                          edgecolors=FACE * 0.8, linewidths=0.3))
-        ax.add_collection(LineCollection(projected(threads.reshape(-1, *threads.shape[-2:]))[0],
+        ax.add_collection(LineCollection([projected(thread)[0] for thread in threads],
                                          colors="#4a3a1f", linewidths=0.9))
         ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), aspect="equal")
         ax.set_axis_off()
         images.append(capture(figure))
         plt.close(figure)
     return images
-
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

@@ -25,12 +25,12 @@ Map = ga.gatype((Spin, Spin))
 # --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Condensate:
-    dispersion: Spin                         # [levels] Spin
+    dispersion: Spin                         # Spin[levels]
     pairing: Map                             # [] Spin <- Spin
 
     def gap(self, spins: Spin) -> Spin:
         """The pairing field shared by all energy levels."""
-        return self.pairing(spins.mean(axis=-1, keepdims=True))
+        return self.pairing(spins.sites.mean())
 
     def rate(self, spins: Spin) -> Spin:
         """The instantaneous precession, with the field supplied by the spins themselves."""
@@ -55,15 +55,15 @@ class Condensate:
 
     def energy(self, spins: Spin) -> Scalar:
         """Energy per pair orbital, counting the shared interaction only once."""
-        mean = spins.mean(axis=-1)
-        return 2 * (self.dispersion | spins).mean(axis=-1) - (mean | self.pairing(mean))
+        mean = spins.sites.mean()
+        return 2 * (self.dispersion | spins).sites.mean() - (mean | self.pairing(mean))
 
 
 # --- plumbing -------------------------------------------------------------------------
 def energy_levels(count: int, cutoff: float) -> Spin:
     """Midpoint quadrature for a constant density of states between two energy cutoffs."""
     energies = cutoff * (2 * (np.arange(count) + 0.5) / count - 1)
-    return mv.z * energies
+    return (mv.z * energies).field()
 
 
 def midpoint(state: Spin, rate: Callable[[Spin], Spin], dt: float, iterations: int) -> Spin:
@@ -84,7 +84,7 @@ def evolution(
 ) -> Iterator[Spin]:
     """The initial state and every stride-th implicit midpoint step."""
     yield state
-    for step in range(steps):
-        state = midpoint(state, rate, dt, iterations)
-        if (step + 1) % stride == 0:
-            yield state
+    for _ in range(steps // stride):
+        for _ in range(stride):
+            state = midpoint(state, rate, dt, iterations)
+        yield state

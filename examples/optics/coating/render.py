@@ -29,39 +29,39 @@ def spectra(wavelengths: np.ndarray, reflectance: core.Scalar, names: tuple[str,
     return figure
 
 
-def angular(
-    wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...],
-) -> plt.Figure:
+def angular(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scalar) -> plt.Figure:
     """The two polarizations over wavelength and incidence angle, on one reflectance scale."""
     figure, panels = plt.subplots(1, 2, figsize=(10, 4.2), sharex=True, sharey=True,
                                  layout="constrained")
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
-    for ax, spectrum, name in zip(panels, values, names):
+    for ax, spectrum in zip(panels, values):
         image = ax.pcolormesh(wavelengths, np.degrees(angles), spectrum,
                               shading="nearest", cmap="magma", vmin=0, vmax=1, rasterized=True)
-        ax.set(xlabel="wavelength (nm)", title=name)
+        ax.set(xlabel="wavelength (nm)")
     panels[0].set_ylabel("incidence angle (degrees)")
     figure.colorbar(image, ax=panels, label="reflectance")
     return figure
 
 
-def field(depths: np.ndarray, electric: core.Vector, names: tuple[str, ...]) -> plt.Figure:
-    """The signed electric x component through depth over two optical cycles."""
+def field(depths: np.ndarray, electric: core.Vector) -> plt.Figure:
+    """The signed electric x component, `[cases, layers, samples]` at the depths `[layers, samples]`,
+    over two optical cycles."""
     cycles = 2
     samples_per_cycle = 80
     times = np.linspace(0, cycles, cycles * samples_per_cycle + 1)
     phase = 2 * np.pi * times
-    in_phase = electric.real().cast(electric.algebra.subspace("x")).kernel[..., 0]
-    quadrature = (-1j * electric).real().cast(electric.algebra.subspace("x")).kernel[..., 0]
+    depths = depths.reshape(-1)
+    in_phase = electric.real().cast(electric.algebra.subspace("x")).kernel[..., 0].reshape(electric.shape[0], -1)
+    quadrature = (-1j * electric).real().cast(electric.algebra.subspace("x")).kernel[..., 0].reshape(electric.shape[0], -1)
     waves = (in_phase[:, None, :] * np.cos(phase)[None, :, None]
              - quadrature[:, None, :] * np.sin(phase)[None, :, None])
     limit = np.max(np.abs(waves))
     figure, panels = plt.subplots(1, 2, figsize=(10, 4.2), sharex=True, sharey=True,
                                  layout="constrained")
-    for ax, wave, name in zip(panels, waves, names):
-        image = ax.pcolormesh(depths, times, wave, shading="gouraud", cmap="RdBu_r",
+    for ax, wave in zip(panels, waves):
+        image = ax.pcolormesh(depths, times, wave, shading="nearest", cmap="RdBu_r",
                               vmin=-limit, vmax=limit, rasterized=True)
-        ax.set(xlabel="depth (nm)", title=name)
+        ax.set(xlabel="depth (nm)")
     panels[0].set_ylabel("optical cycles")
     figure.colorbar(image, ax=panels, label="electric x")
     return figure
@@ -91,20 +91,18 @@ def twist(centres: core.Vector, directors: core.Vector) -> plt.Figure:
     return figure
 
 
-def handedness(
-    wavelengths: np.ndarray, reflectance: core.Scalar,
-    names: tuple[str, ...], polarizations: tuple[str, ...],
-) -> plt.Figure:
-    """Opposite material twists, with the same colours for the incident polarizations."""
+def handedness(wavelengths: np.ndarray, reflectance: core.Scalar, polarizations: tuple[str, ...]) -> plt.Figure:
+    """Opposite material twists side by side, `[polarizations, twists, wavelengths]`, with the same
+    colours for the incident polarizations."""
     figure, axes = plt.subplots(1, 2, figsize=(10, 4.2), sharex=True, sharey=True,
                                layout="constrained")
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
-    for ax, spectra, name in zip(axes, values, names):
+    for helix, ax in enumerate(axes):
         ax.set_prop_cycle(color=COLOURS)
-        for spectrum, polarization in zip(spectra, polarizations):
+        for spectrum, polarization in zip(values[:, helix], polarizations):
             ax.plot(wavelengths, spectrum * 100, linewidth=1.8, label=polarization)
         ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, 100),
-               xlabel="wavelength (nm)", title=name)
+               xlabel="wavelength (nm)")
         ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylabel("reflectance (%)")
     axes[1].legend(fontsize=9, frameon=False)
@@ -170,13 +168,3 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector, electri
     plt.close(figure)
     return frames
 
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

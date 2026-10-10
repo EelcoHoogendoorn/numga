@@ -39,3 +39,8 @@ def clusters(positions, dipoles, isolated) -> plt.Figure:
         ax.axis("off")
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.02)
     return figure
+
+
+def scalars(values) -> np.ndarray:
+    """The values of a batch of scalars, to print."""
+    return values.to_array()

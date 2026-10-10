@@ -65,7 +65,7 @@ def levels(energy: SparseExtensor, sector: GAType, count: int) -> tuple[Scalar, 
 def rim_share(flake: Flake, states: Even) -> Scalar:
     """How much of each state lies on the flake's rim."""
     density = states.scalar_norm_squared()                                     # [...] Scalar[atoms]
-    return (density * flake.rim).batch().sum(axis=-1) / density.batch().sum(axis=-1)   # [...] Scalar
+    return (density * flake.rim).sites.sum() / density.sites.sum()   # [...] Scalar
 
 
 def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.ndarray) -> Iterator[Vector]:

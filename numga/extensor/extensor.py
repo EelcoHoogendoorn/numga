@@ -13,7 +13,7 @@ from numga.extension import ExtensionMethod
 from numga.gatype import GAType, Trait
 from numga.subspace import SubSpace
 
-from .namespaces import RestrictNamespace, SelectNamespace
+from .namespaces import RestrictNamespace, SelectNamespace, SitesNamespace
 from .application import application, unary_application
 
 if TYPE_CHECKING:
@@ -467,6 +467,12 @@ class Extensor:
         """Select exact output support by grade or SubSpace constructor name."""
 
         return SelectNamespace(self)
+
+    @property
+    def sites(self) -> SitesNamespace:
+        """Reductions over the sites of a field's output: `energy.sites.sum()`, `positions.sites.mean()`."""
+
+        return SitesNamespace(self)
 
     @property
     def restrict(self) -> RestrictNamespace:

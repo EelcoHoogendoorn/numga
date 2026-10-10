@@ -82,7 +82,7 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: 
             turned = (A10 * (rotors >> Vector))(rest)                       # Vector[E]
             mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * (edges | turned))   # Scalar[E]
             penalty = P * (vertices - targets).norm_squared()               # Scalar[V]
-            energies.append(2 * mismatch.batch().sum(axis=-1) + penalty.batch().sum(axis=-1))
+            energies.append(2 * mismatch.sites.sum() + penalty.sites.sum())
             # the vertices whose edges best match the turned ones
             vertices = held.solve(~T10 * H1 * turned + P * targets)         # Vector[V]
         # the vertices whose edges best match the rest edges as they are

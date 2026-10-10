@@ -14,8 +14,8 @@ Spinor = ga.gatype.even()
 PHASE = Spinor * mv.yx
 CHIRALITY = Spinor * mv.zt
 CHARGE_CONJUGATION = Spinor * mv.yt
-PLUS = (Spinor + CHIRALITY) / 2
-MINUS = (Spinor - CHIRALITY) / 2
+RIGHT = (Spinor + CHIRALITY) / 2
+LEFT = (Spinor - CHIRALITY) / 2
 MAJORANA = (Spinor + CHARGE_CONJUGATION) / 2
 
 

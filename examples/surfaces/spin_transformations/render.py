@@ -57,7 +57,7 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
     figure = plt.figure(figsize=(7, 3.5))
     draw_mesh(figure.add_subplot(1, 2, 1, projection="3d"), mesh, face_colours(curvature, limit), "change in mean curvature")
     axis = figure.add_subplot(1, 2, 2)
-    axis.imshow(render_surface(deformed, mesh))
+    axis.imshow(render_surface(deformed, mesh, PIXELS))
     axis.set_axis_off()
     axis.set_title("spin transformation")
     figure.tight_layout()
@@ -67,7 +67,7 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
 def draw_textured(mesh: Mesh, reference: Mesh, title: str) -> plt.Figure:
     """The surface rendered with the reference's checkerboard."""
     figure, axis = plt.subplots(figsize=(3, 3))
-    axis.imshow(render_surface(mesh, reference))
+    axis.imshow(render_surface(mesh, reference, PIXELS))
     axis.set_axis_off()
     axis.set_title(title)
     figure.tight_layout()
@@ -80,7 +80,7 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
     figure, axes = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows), squeeze=False)
     for row, (eigenvalue, spheres) in enumerate(gallery.items()):
         for column, sphere in enumerate(spheres):
-            axes[row, column].imshow(render_surface(sphere, reference))
+            axes[row, column].imshow(render_surface(sphere, reference, TILE))
             axes[row, column].set_title(f"n = {eigenvalue}")
         for axis in axes[row]:
             axis.set_axis_off()
@@ -98,10 +98,12 @@ def animate_rounding(frames: list[Mesh]) -> list[np.ndarray]:
     return images
 
 
-# The camera's elevation and azimuth in degrees, the rendered image's side in pixels, and how many
-# times finer each side is rasterised before averaging, against jagged edges.
+# The camera's elevation and azimuth in degrees, the rendered image's side in pixels, alone and as a
+# tile of a gallery, and how many times finer each side is rasterised before averaging, against jagged
+# edges.
 ELEVATION, AZIMUTH = 20.0, -55.0
 PIXELS = 300
+TILE = 200
 SUPERSAMPLE = 2
 # The checkerboard's cubes across the reference surface, the light and dark squares on the outer and inner
 # side of the surface, and the strength and sharpness of the highlight.
@@ -113,9 +115,10 @@ SPECULAR, SHININESS = 0.35, 40.0
 CHUNK = 4096
 
 
-def render_surface(mesh: Mesh, reference: Mesh) -> np.ndarray:
-    """The surface as an RGB image, its texture a solid checkerboard of cubes sampled on the
-    reference mesh with the same faces: straight squares on its flat faces, circles on a sphere."""
+def render_surface(mesh: Mesh, reference: Mesh, pixels: int) -> np.ndarray:
+    """The surface as an RGB image of the given side in pixels, its texture a solid checkerboard of
+    cubes sampled on the reference mesh with the same faces: straight squares on its flat faces,
+    circles on a sphere."""
     points, original, faces = euclidean(mesh.vertices), euclidean(reference.vertices), mesh.faces
     triangles = points[faces]
     face_normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
@@ -129,7 +132,7 @@ def render_surface(mesh: Mesh, reference: Mesh) -> np.ndarray:
     right = np.cross([0.0, 0.0, 1.0], toward)
     right /= np.linalg.norm(right)
     frame = np.stack([right, np.cross(toward, right), toward])
-    size = PIXELS * SUPERSAMPLE
+    size = pixels * SUPERSAMPLE
     viewed = (points - points.mean(axis=0)) @ frame.T
     scale = 0.46 * size / np.abs(viewed[:, :2]).max()
     screen = viewed * scale + [size / 2, size / 2, 0.0]
@@ -156,7 +159,7 @@ def render_surface(mesh: Mesh, reference: Mesh) -> np.ndarray:
     image = np.ones((size * size, 3))
     image[pixel] = shaded
     image = image.reshape(size, size, 3)[::-1]
-    return image.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).mean(axis=(1, 3))
+    return image.reshape(pixels, SUPERSAMPLE, pixels, SUPERSAMPLE, 3).mean(axis=(1, 3))
 
 
 def _rasterise(screen: np.ndarray, faces: np.ndarray, size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -169,8 +172,9 @@ def _rasterise(screen: np.ndarray, faces: np.ndarray, size: int) -> tuple[np.nda
     for start in range(0, len(faces), CHUNK):
         chunk = np.arange(start, min(start + CHUNK, len(faces)))
         corners = screen[faces[chunk]]                                       # [T, 3, 3]
-        low = np.clip(np.floor(corners[..., :2].min(axis=1)), 0, size - 1).astype(int)
-        high = np.clip(np.ceil(corners[..., :2].max(axis=1)), 0, size - 1).astype(int)
+        # the pixels whose centres fall within each triangle's bounds
+        low = np.clip(np.ceil(corners[..., :2].min(axis=1) - 0.5), 0, size - 1).astype(int)
+        high = np.clip(np.floor(corners[..., :2].max(axis=1) - 0.5), 0, size - 1).astype(int)
         span = high - low + 1
         counts = span[:, 0] * span[:, 1]
         owner = np.repeat(np.arange(len(chunk)), counts)

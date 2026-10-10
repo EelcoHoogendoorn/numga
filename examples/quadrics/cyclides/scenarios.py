@@ -10,13 +10,13 @@ import numpy as np
 
 from collections.abc import Iterator
 
-from numga import Extensor, stack
+from numga import Extensor, concatenate, stack
 from examples.quadrics.cyclides.core import (
     Direction, Motor, Point, Quadric, Scalar, Sphere, chart_infinity, chart_origin, cone, cylinder, dilation, mv, sensor,
     trace,
 )
 
-SHAPE = (240, 320)
+SHAPE = (180, 240)
 PIXELS = sensor(SHAPE, np.radians(90))
 
 
@@ -65,8 +65,9 @@ def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
 
 
 # --- the flat tracer's scenes -----------------------------------------------------------
-# The shapes of the flat conformal tracer, built in the chart about the eye, and its table of scenes: each a list
-# of (surface, vortex circle) parts, a camera position and target, and a field of view in degrees.
+# The shapes of the flat conformal tracer, built in the chart about the eye, and its table of scenes: each its turning
+# parts as (surface, vortex circle) pairs and its resting surfaces, a camera position and target, and a field of view
+# in degrees.
 def torus(radius: float, tube: float) -> Quadric:
     sphere = chart_origin - chart_infinity * ((radius * radius + tube * tube) / 2)
     return sphere * (sphere & Point) + radius * radius * (
@@ -81,7 +82,7 @@ def cyclide():
     inversion = (shift >> (chart_origin - chart_infinity * 4.5)).normalized()
     pose = (mv.xy * 0.12).exp() * (mv.yz * -0.22).exp()
     placement = pose * inversion
-    return ((placement >> surface(placement << Point), mv.bivector()),)
+    return (), (placement >> surface(placement << Point),)
 
 
 def peanut():
@@ -91,19 +92,19 @@ def peanut():
         mv.y * (mv.y & Point) + mv.z * (mv.z & Point)
     ) - (b**4 / 4) * chart_infinity * (chart_infinity & Point)
     pose = (mv.xy * 0.10).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def elliptic_ring():
     surface = torus(1.4, 0.5) + (0.10 * 1.4**2) * mv.y * (mv.y & Point)
     pose = (mv.yz * -0.18).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def split_ring():
     surface = torus(1.4, 0.5) + (0.32 * 1.4**2) * mv.y * (mv.y & Point)
     pose = (mv.yz * -0.18).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def pinched_surface() -> Quadric:
@@ -117,7 +118,7 @@ def pinched_surface() -> Quadric:
 def pinched():
     surface = pinched_surface()
     pose = (mv.yz * -0.18).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def sphere_family(weights: np.ndarray) -> Quadric:
@@ -129,7 +130,7 @@ def sphere_family(weights: np.ndarray) -> Quadric:
 def six_families():
     surface = sphere_family(np.array([-2, -1, 1, 2]))
     pose = (mv.xy * 0.25 + mv.yz * -0.15).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def inverted_hyperboloid():
@@ -144,13 +145,13 @@ def inverted_hyperboloid():
 
 def hyperboloid():
     surface, _ = inverted_hyperboloid()
-    return ((surface, mv.bivector()),)
+    return (), (surface,)
 
 
 def two_lobed():
     surface = sphere_family(np.array([-3, -0.25, 1, 1]))
     pose = (mv.xy * 0.12 + mv.yz * -0.12).exp()
-    return ((pose >> surface(pose << Point), mv.bivector()),)
+    return (), (pose >> surface(pose << Point),)
 
 
 def linked_vortex():
@@ -170,7 +171,7 @@ def linked_vortex():
     ring = sphere * (sphere & Point) + radius_squared * (
         mv.z * (mv.z & Point) - tube * tube * chart_infinity * (chart_infinity & Point)
     )
-    return ((surface, circle), (ring, mv.bivector()))
+    return ((surface, circle),), (ring,)
 
 
 def linked_tori():
@@ -182,8 +183,7 @@ def linked_tori():
         mv.yz * (np.arcsin(offset / radius) / 2)
     ).exp()
     circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
-    return ((placement >> surface(placement << Point), circle),
-            (torus(radius, 0.02), mv.bivector()))
+    return ((placement >> surface(placement << Point), circle),), (torus(radius, 0.02),)
 
 
 def pinched_vortex():
@@ -191,8 +191,7 @@ def pinched_vortex():
     placement = (-0.5 * ((mv.x * 1.8) ^ chart_infinity)).exp() * (mv.xz * (np.pi / 4)).exp()
     radius = 1.4
     circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
-    return ((placement >> surface(placement << Point), circle),
-            (torus(radius, 0.02), mv.bivector()))
+    return ((placement >> surface(placement << Point), circle),), (torus(radius, 0.02),)
 
 
 FLAT_SCENES = {
@@ -223,17 +222,19 @@ def flat_camera(position: Direction, target: Direction) -> Motor:
 
 
 def flat_scene(name: str, frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
-    """One of the flat tracer's scenes on S³: every part turned around its own vortex circle over the frames, all
-    traced from the eye. Yields each frame's trace of the parts; both sides are lit."""
+    """One of the flat tracer's scenes on S³: every turning part turned around its own vortex circle over the frames,
+    all traced from the eye; the resting parts are traced once. Yields each frame's trace of the parts, the turning
+    ones first; both sides are lit."""
     build, position, target, degrees = FLAT_SCENES[name]
-    parts = build()
-    surfaces = stack([surface for surface, _ in parts])
+    turning, resting = build()
     camera = flat_camera(mv(Direction, position), mv(Direction, target))
     pixels = sensor(SHAPE, np.radians(degrees))
+    rest = [trace((camera >> surface(camera << Point)).reshape(1), pixels) for surface in resting]
     for phase in np.linspace(0.0, 2 * np.pi, frames, endpoint=False):
-        motion = camera * stack([(circle * (phase / 2)).exp() for _, circle in parts])
-        facing, angle = trace(motion >> surfaces(motion << Point), pixels)
-        yield facing.abs(), angle
+        motions = [camera * (circle * (phase / 2)).exp() for _, circle in turning]
+        traced = [trace((motion >> surface(motion << Point)).reshape(1), pixels)
+                  for motion, (surface, _) in zip(motions, turning)] + rest
+        yield concatenate([facing for facing, _ in traced]).abs(), np.concatenate([angle for _, angle in traced])
 
 
 def dupin() -> tuple[Scalar, np.ndarray]:
@@ -281,10 +282,10 @@ if __name__ == "__main__":
     from examples.quadrics.cyclides import render
 
     save_figure(render.draw_facing(*tori(), SHAPE), "cyclides_tori")
-    save_animation(render.facing_frames(vortex(48), SHAPE), "cyclides_vortex", 60)
+    save_animation(render.facing_frames(vortex(36), SHAPE), "cyclides_vortex", 60)
     for name, (build, *_) in FLAT_SCENES.items():
-        animated = any(circle.kernel.any() for _, circle in build())
-        save_animation(render.scene_frames(flat_scene(name, 48 if animated else 1), render.PALETTE, SHAPE), f"cyclides_{name}", 60)
+        turning, _ = build()
+        save_animation(render.scene_frames(flat_scene(name, 36 if turning else 1), render.PALETTE, SHAPE), f"cyclides_{name}", 60)
     save_figure(render.draw_facing(*dupin(), SHAPE), "cyclides_dupin")
     save_figure(render.draw_facing(*spindles(), SHAPE),
                 "cyclides_spindles")

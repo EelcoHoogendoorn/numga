@@ -35,59 +35,76 @@ def screen_axes(axes: plt.Axes, limit: float) -> None:
     axes.spines[["top", "right"]].set_visible(False)
 
 
+class ResponseView:
+    """One response figure for a fixed set of pumps, its artists updated for each crystal."""
+
+    def __init__(self, pumps: core.Bivector) -> None:
+        pumps = transverse(pumps)                                            # [angles, 2]
+        pump = pumps[0]
+        self.angles = np.arctan2(pumps[:, 1], pumps[:, 0])                  # [angles]
+        self.selected_angle = np.arctan2(pump[1], pump[0])
+
+        self.figure = plt.figure(figsize=(12.5, 4.1), layout="constrained")
+        crystal_axes = self.figure.add_subplot(1, 3, 1, projection="3d")
+        response_axes = self.figure.add_subplot(1, 3, 2)
+        self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
+
+        # The four segments share a centre; their endpoints show the tetrahedral geometry.
+        self.bond_lines = Line3DCollection([], colors="0.45", linewidths=2)
+        crystal_axes.add_collection3d(self.bond_lines, autolim=False)
+        self.bond_ends = crystal_axes.scatter([], [], [], s=45, color=GENERATED_COLOUR, depthshade=False)
+        crystal_axes.scatter(0, 0, 0, s=30, color="0.3", depthshade=False)
+        crystal_axes.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1),
+                         xlabel="x", ylabel="y", zlabel="z", title="Crystal bonds")
+        crystal_axes.set_box_aspect((1, 1, 1))
+        crystal_axes.view_init(elev=23, azim=-56)
+        crystal_axes.set_xticks([-1, 0, 1])
+        crystal_axes.set_yticks([-1, 0, 1])
+        crystal_axes.set_zticks([-1, 0, 1])
+
+        response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
+                           linewidth=1, alpha=0.3)
+        self.harmonic_curve, = response_axes.plot([], [], color=GENERATED_COLOUR,
+                                                  linewidth=2, alpha=0.65)
+        response_axes.quiver(0, 0, pump[0], pump[1], color=PUMP_COLOUR,
+                             angles="xy", scale_units="xy", scale=1, width=0.012,
+                             label="Pump")
+        self.generated_arrow = response_axes.quiver(0, 0, 0, 0, color=GENERATED_COLOUR,
+                                                    angles="xy", scale_units="xy", scale=1, width=0.012,
+                                                    label="Second harmonic")
+        screen_axes(response_axes, 1.15)
+        response_axes.set_title("Transverse polarization")
+        response_axes.legend(loc="upper right", fontsize=8, frameon=False)
+
+        self.intensity_curve, = self.intensity_axes.plot([], [], color=GENERATED_COLOUR, linewidth=2)
+        self.intensity_fill, = self.intensity_axes.fill([], [], color=GENERATED_COLOUR, alpha=0.08)
+        self.selected_power, = self.intensity_axes.plot([], [], "o", color=PUMP_COLOUR, markersize=7)
+        self.intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
+        self.intensity_axes.set_title("Power by pump direction", pad=22)
+        self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
+        self.intensity_axes.set_rlabel_position(22.5)
+        self.intensity_axes.tick_params(labelsize=8)
+
+    def update(self, bonds: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
+        intensity = (harmonic | harmonic).to_array()                         # [angles]
+        bonds = (core.mv.t | bonds).cast(core.ga.subspace("x y z")).kernel   # [bonds, 3]
+        harmonic = transverse(harmonic)                                      # [angles, 2]
+        self.bond_lines.set_segments(np.stack((np.zeros_like(bonds), bonds), axis=1))   # [bonds, 2, 3]
+        self.bond_ends.set_offsets(bonds[:, :2])
+        self.bond_ends.set_3d_properties(bonds[:, 2], "z")
+        self.harmonic_curve.set_data(harmonic[:, 0], harmonic[:, 1])
+        self.generated_arrow.set_UVC(*harmonic[0])
+        self.intensity_curve.set_data(self.angles, intensity)
+        self.intensity_fill.set_xy(np.stack((self.angles, intensity), axis=-1))
+        self.selected_power.set_data([self.selected_angle], [intensity[0]])
+        self.intensity_axes.set_ylim(0, 1.12 * float(np.max(intensity)))
+        return self.figure
+
+
 def draw_response(pumps: core.Bivector, bonds: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
     """Crystal bonds, the doubled-frequency polarization over pump polarizations and its power; the
     first pump, horizontal, marked."""
-    intensity = (harmonic | harmonic).to_array()                             # [angles]
-    bonds = (core.mv.t | bonds).cast(core.ga.subspace("x y z")).kernel       # [bonds, 3]
-    pumps = transverse(pumps)                                                # [angles, 2]
-    harmonic = transverse(harmonic)                                          # [angles, 2]
-    pump, generated, power = pumps[0], harmonic[0], intensity[0]
-    angles = np.arctan2(pumps[:, 1], pumps[:, 0])
-    selected_angle = np.arctan2(pump[1], pump[0])
-
-    figure = plt.figure(figsize=(12.5, 4.1), layout="constrained")
-    crystal_axes = figure.add_subplot(1, 3, 1, projection="3d")
-    response_axes = figure.add_subplot(1, 3, 2)
-    intensity_axes = figure.add_subplot(1, 3, 3, projection="polar")
-
-    # The four segments share a centre; their endpoints show the tetrahedral geometry.
-    segments = np.stack((np.zeros_like(bonds), bonds), axis=1)                 # [4, 2, 3]
-    crystal_axes.add_collection3d(Line3DCollection(segments, colors="0.45", linewidths=2))
-    crystal_axes.scatter(*bonds.T, s=45, color=GENERATED_COLOUR, depthshade=False)
-    crystal_axes.scatter(0, 0, 0, s=30, color="0.3", depthshade=False)
-    crystal_axes.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1),
-                     xlabel="x", ylabel="y", zlabel="z", title="Crystal bonds")
-    crystal_axes.set_box_aspect((1, 1, 1))
-    crystal_axes.view_init(elev=23, azim=-56)
-    crystal_axes.set_xticks([-1, 0, 1])
-    crystal_axes.set_yticks([-1, 0, 1])
-    crystal_axes.set_zticks([-1, 0, 1])
-
-    response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
-                       linewidth=1, alpha=0.3)
-    response_axes.plot(harmonic[:, 0], harmonic[:, 1], color=GENERATED_COLOUR,
-                       linewidth=2, alpha=0.65)
-    response_axes.quiver(0, 0, pump[0], pump[1], color=PUMP_COLOUR,
-                         angles="xy", scale_units="xy", scale=1, width=0.012,
-                         label="Pump")
-    response_axes.quiver(0, 0, generated[0], generated[1], color=GENERATED_COLOUR,
-                         angles="xy", scale_units="xy", scale=1, width=0.012,
-                         label="Second harmonic")
-    screen_axes(response_axes, 1.15)
-    response_axes.set_title("Transverse polarization")
-    response_axes.legend(loc="upper right", fontsize=8, frameon=False)
-
-    intensity_axes.plot(angles, intensity, color=GENERATED_COLOUR, linewidth=2)
-    intensity_axes.fill(angles, intensity, color=GENERATED_COLOUR, alpha=0.08)
-    intensity_axes.plot([selected_angle], [power], "o", color=PUMP_COLOUR, markersize=7)
-    intensity_axes.set_ylim(0, 1.12 * float(np.max(intensity)))
-    intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
-    intensity_axes.set_title("Power by pump direction", pad=22)
-    intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
-    intensity_axes.set_rlabel_position(22.5)
-    intensity_axes.tick_params(labelsize=8)
-    return figure
+    return ResponseView(pumps).update(bonds, harmonic)
 
 
 def draw_waveform(phase: np.ndarray, pump: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
@@ -154,9 +171,11 @@ def draw_growth(depths: np.ndarray, amplitude: core.Bivector) -> plt.Figure:
 
 def animate(pumps: core.Bivector, frames: Iterable[tuple[core.Bivector, core.Bivector]]) -> list[np.ndarray]:
     """The response while the crystal turns about the beam, one frame per turn."""
+    view = ResponseView(pumps)
     images = []
     for bonds, harmonic in frames:
-        figure = draw_response(pumps, bonds, harmonic)
-        images.append(capture(figure))
-        plt.close(figure)
+        images.append(capture(view.update(bonds, harmonic)))
+        # The first frame places the panels; the frames after it keep those places.
+        view.figure.set_layout_engine("none")
+    plt.close(view.figure)
     return images

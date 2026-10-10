@@ -39,8 +39,8 @@ GAS_SEED = 3
 # around the whole trip.
 WALKABOUT_SPANS = np.array([1.0, -1.0, 0.35, -0.35])
 WALKABOUT_NUDGES = np.array([0.0, 0.0, 0.015, 0.0])
-WALKABOUT_DT = 0.04
-WALKABOUT_FRAMES, WALKABOUT_SUBSTEPS = 130, 25
+WALKABOUT_DT = 0.2
+WALKABOUT_FRAMES, WALKABOUT_SUBSTEPS = 130, 5
 WALKABOUT_ALONG, WALKABOUT_ACROSS = 9.2, 1.4
 WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT = 9.8, 2.9
 WALKABOUT_SAMPLES_PER_UNIT = 8
@@ -98,7 +98,7 @@ def walkabout() -> tuple[core.Vortices, core.Vector]:
 def leapfrog() -> Scene:
     centres = (core.mv.y * LEAPFROG_SPANS).cast(core.Vector)                 # [vortices] Vector
     vortices = core.Vortices(centres, LEAPFROG_CIRCULATIONS, LEAPFROG_CORE, core.mv.vector([[0.0, 0.0]]))
-    return Scene("vortices_leapfrog", vortices, 2.4, 1.6, 300, 200, 0.02, 10, 100, 8.0, 6.0)
+    return Scene("vortices_leapfrog", vortices, 2.4, 1.6, 300, 200, 0.1, 2, 100, 8.0, 6.0)
 
 
 def shear_layer() -> Scene:
@@ -110,7 +110,7 @@ def shear_layer() -> Scene:
     circulations = np.full(LAYER_VORTICES, -LAYER_JUMP * LAYER_PERIOD / LAYER_VORTICES)
     copies = core.mv.x * (np.arange(-LAYER_COPIES, LAYER_COPIES + 1) * LAYER_PERIOD)   # [copies] Vector
     vortices = core.Vortices(centres, circulations, LAYER_CORE, copies)
-    return Scene("vortices_shear_layer", vortices, LAYER_PERIOD, 0.4, 240, 96, 0.01, 5, 160, 10.0, 1.5)
+    return Scene("vortices_shear_layer", vortices, LAYER_PERIOD, 0.4, 120, 48, 0.025, 2, 160, 10.0, 1.5)
 
 
 def gas() -> Scene:

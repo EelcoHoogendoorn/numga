@@ -23,6 +23,8 @@ BRIGHTNESS = LinearSegmentedColormap.from_list(
 Step = tuple[core.Scalar, core.Scalar]
 # Both panels show the directions within this distance of the optical axis.
 HALF = 1.4
+# The animation's resolution, below the still's: the blurred source needs no more.
+ANIMATION_DPI = 72
 
 
 def xy(vectors: core.Vector) -> np.ndarray:
@@ -66,12 +68,17 @@ def draw(directions: core.Vector, area: core.Scalar, lens: Callable[[core.Vector
 
 def animate(directions: core.Vector, area: core.Scalar, lens: Callable[[core.Vector], core.Vector],
             positions: core.Vector, steps: Iterable[Step]) -> list[np.ndarray]:
-    """One frame per step."""
-    frames = []
+    """One frame per step: the figure is drawn once, and each step replaces its two images."""
+    steps = iter(steps)
+    figure = draw(directions, area, lens, positions, next(steps))
+    figure.set_dpi(ANIMATION_DPI)
+    images = [ax.images[0] for ax in figure.axes]
+    frames = [capture(figure)]
     for step in steps:
-        figure = draw(directions, area, lens, positions, step)
+        for image, light in zip(images, step):
+            image.set_data(light.to_array())
         frames.append(capture(figure))
-        plt.close(figure)
+    plt.close(figure)
     return frames
 
 

@@ -32,11 +32,34 @@ Deformation = ga.gatype((Vector, Vector))                   # Vector <- Vector
 Form = ga.gatype((Scalar, Vector, Vector))                  # Scalar <- (Vector, Vector)
 
 
+# --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Masses:
     centres: Vector                                          # [masses] Vector
     masses: np.ndarray                                       # [masses] mass of each
     core_radius: float
+
+    def acceleration(self, points: Vector) -> Vector:
+        """The pull of the masses at each point."""
+        towards = self.centres - points[..., None]                           # [..., masses] Vector
+        pull, _ = self._profile(towards)                                     # [..., masses] Scalar
+        return (pull * towards).sum(axis=-1)                                 # [...] Vector
+
+    def tidal(self, points: Vector) -> Tidal:
+        """The tidal map at each point: the change in acceleration for a small displacement."""
+        towards = self.centres - points[..., None]                           # [..., masses] Vector
+        pull, pull_change = self._profile(towards)                           # [..., masses] Scalar each
+        # A displacement moves away from each mass by itself, and changes the pull by its component
+        # towards the mass, which acts along the direction to the mass.
+        squeeze = -pull * Vector                                             # [..., masses] Vector <- Vector
+        stretch = -2 * pull_change * towards * (towards | Vector)            # [..., masses] Vector <- Vector
+        return (squeeze + stretch).sum(axis=-1)                              # [...] Vector <- Vector
+
+    def _profile(self, towards: Vector) -> tuple[Scalar, Scalar]:
+        """The pull per unit distance towards each mass, and its change with the squared distance."""
+        softened = (towards | towards) + self.core_radius**2                 # [..., masses] Scalar
+        pull = self.masses / (softened * softened.square_root())             # [..., masses] Scalar
+        return pull, -1.5 * pull / softened
 
 
 @dataclass(frozen=True)
@@ -46,13 +69,20 @@ class Stars:
 
     def centre(self) -> Vector:
         """The stars' centre of mass."""
-        return self.positions.sum(axis=-1) / self.positions.shape[-1]      # [...] Vector
+        return self.positions.mean(axis=-1)                                  # [...] Vector
 
     def moment(self) -> Deformation:
         """The stars' spread about their centre of mass: the mean of each offset times its component
         along the open vector."""
         offsets = self.positions - self.centre()[..., None]                # [..., stars] Vector
-        return (offsets * (offsets | Vector)).sum(axis=-1) / self.positions.shape[-1]   # [...] Vector <- Vector
+        return (offsets * (offsets | Vector)).mean(axis=-1)                # [...] Vector <- Vector
+
+    def fall(self, masses: Masses, dt: float) -> Stars:
+        """The stars moved for a time `dt` by the velocity Verlet rule."""
+        start = masses.acceleration(self.positions)                          # [..., stars] Vector
+        positions = self.positions + self.velocities * dt + start * (dt**2 / 2)
+        end = masses.acceleration(positions)                                 # [..., stars] Vector
+        return Stars(positions, self.velocities + (start + end) * (dt / 2))
 
 
 @dataclass(frozen=True)
@@ -63,69 +93,32 @@ class Shape:
     deformation: Deformation                                 # [] Vector <- Vector
     rate: Deformation                                        # [] Vector <- Vector
 
+    def deform(self, masses: Masses, dt: float) -> Shape:
+        """The centre moved and the deformation carried by the tidal map at it, by the velocity Verlet
+        rule: the deformation's rate of change changes by the tidal map applied to the deformation."""
+        start = masses.acceleration(self.centre)                             # [] Vector
+        start_tide = masses.tidal(self.centre)(self.deformation)             # [] Vector <- Vector
+        centre = self.centre + self.velocity * dt + start * (dt**2 / 2)
+        deformation = self.deformation + self.rate * dt + start_tide * (dt**2 / 2)
+        end = masses.acceleration(centre)                                    # [] Vector
+        end_tide = masses.tidal(centre)(deformation)                         # [] Vector <- Vector
+        return Shape(centre, self.velocity + (start + end) * (dt / 2),
+                     deformation, self.rate + (start_tide + end_tide) * (dt / 2))
 
-# --- math -----------------------------------------------------------------------------
-def acceleration(masses: Masses, points: Vector) -> Vector:
-    """The pull of the masses at each point."""
-    towards = masses.centres - points[..., None]                             # [..., masses] Vector
-    pull, _ = _profile(masses, towards)                                      # [..., masses] Scalar
-    return (pull * towards).sum(axis=-1)                                     # [...] Vector
+    def spread(self, radius: float) -> Deformation:
+        """Where a round cluster of the given starting radius has spread to, to first order in its size:
+        its rim's offsets `x` have `x | spread.solve(x) == 1`."""
+        return radius**2 * self.deformation(self.deformation.adjoint())     # [] Vector <- Vector
 
-
-def tidal(masses: Masses, points: Vector) -> Tidal:
-    """The tidal map at each point: the change in acceleration for a small displacement."""
-    towards = masses.centres - points[..., None]                             # [..., masses] Vector
-    pull, pull_change = _profile(masses, towards)                            # [..., masses] Scalar each
-    # A displacement moves away from each mass by itself, and changes the pull by its component
-    # towards the mass, which acts along the direction to the mass.
-    squeeze = -pull * Vector                                                 # [..., masses] Vector <- Vector
-    stretch = -2 * pull_change * towards * (towards | Vector)                # [..., masses] Vector <- Vector
-    return (squeeze + stretch).sum(axis=-1)                                  # [...] Vector <- Vector
+    def rim(self, radius: float) -> Form:
+        """The rim of a round cluster of the given starting radius, carried by the deformation: the form
+        that is one, on the same offset twice, at the rim's offsets from the centre."""
+        return Vector | self.spread(radius).solve(Vector)                    # [] Scalar <- (Vector, Vector)
 
 
 def derivative(tides: Tidal) -> Even:
     """The derivative of gravity: minus four pi times the density, plus the curl."""
     return (Vector * tides(Vector)).contract(1, 2)                          # [...] Even
-
-
-def fall(masses: Masses, stars: Stars, dt: float) -> Stars:
-    """The stars moved for a time `dt` by the velocity Verlet rule."""
-    start = acceleration(masses, stars.positions)                            # [..., stars] Vector
-    positions = stars.positions + stars.velocities * dt + start * (dt**2 / 2)
-    end = acceleration(masses, positions)                                    # [..., stars] Vector
-    return Stars(positions, stars.velocities + (start + end) * (dt / 2))
-
-
-def deform(masses: Masses, shape: Shape, dt: float) -> Shape:
-    """The centre moved and the deformation carried by the tidal map at it, by the velocity Verlet
-    rule: the deformation's rate of change changes by the tidal map applied to the deformation."""
-    start = acceleration(masses, shape.centre)                               # [] Vector
-    start_tide = tidal(masses, shape.centre)(shape.deformation)              # [] Vector <- Vector
-    centre = shape.centre + shape.velocity * dt + start * (dt**2 / 2)
-    deformation = shape.deformation + shape.rate * dt + start_tide * (dt**2 / 2)
-    end = acceleration(masses, centre)                                       # [] Vector
-    end_tide = tidal(masses, centre)(deformation)                            # [] Vector <- Vector
-    return Shape(centre, shape.velocity + (start + end) * (dt / 2),
-                 deformation, shape.rate + (start_tide + end_tide) * (dt / 2))
-
-
-def spread(shape: Shape, radius: float) -> Deformation:
-    """Where a round cluster of the given starting radius has spread to, to first order in its size:
-    its rim's offsets `x` have `x | spread.solve(x) == 1`."""
-    return radius**2 * shape.deformation(shape.deformation.adjoint())       # [] Vector <- Vector
-
-
-def rim(shape: Shape, radius: float) -> Form:
-    """The rim of a round cluster of the given starting radius, carried by the deformation: the form
-    that is one, on the same offset twice, at the rim's offsets from the centre."""
-    return Vector | spread(shape, radius).inverse()                  # [] Scalar <- (Vector, Vector)
-
-
-def _profile(masses: Masses, towards: Vector) -> tuple[Scalar, Scalar]:
-    """The pull per unit distance towards each mass, and its change with the squared distance."""
-    softened = (towards | towards) + masses.core_radius**2                   # [..., masses] Scalar
-    pull = masses.masses / (softened * softened.square_root())               # [..., masses] Scalar
-    return pull, -1.5 * pull / softened
 
 
 # --- plumbing -------------------------------------------------------------------------

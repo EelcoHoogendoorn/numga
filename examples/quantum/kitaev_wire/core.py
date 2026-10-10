@@ -12,22 +12,21 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike
 
-from numga import Algebra, NumpyContext, stack
+from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor
 
 ga = Algebra("x+y+")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Majorana = ga.gatype.vector()
-Map = ga.gatype((Majorana, Majorana))
 
 
 # --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Wire:
     bonds: SparseExtensor
-    identity: SparseExtensor
 
     @classmethod
     def chain(cls, sites: int, hopping: float, pairing: float) -> Wire:
@@ -38,9 +37,7 @@ class Wire:
         forward = SparseExtensor(cell.broadcast_to((sites - 1,)), index[:-1], index[1:], (sites, sites))
         # Reversing a coupling reverses its sign: the full generator is skew-adjoint.
         bonds = forward - forward.adjoint()
-        unit = SparseExtensor.from_diagonal(mv.scalar(np.ones((sites, 1))).field())
-        identity = unit * Majorana
-        return cls(bonds, identity)
+        return cls(bonds)
 
     def generator(self, potential: Scalar) -> SparseExtensor:
         """On-site turning plus the couplings between neighbouring sites."""
@@ -49,46 +46,44 @@ class Wire:
 
     def modes(self, generator: SparseExtensor, count: int) -> tuple[Scalar, Majorana]:
         """The lowest excitation energies and their real, orthonormal quadratures."""
-        _, modes = generator.adjoint()(generator).eigh(self.identity, count)
+        # The identity on the generator's sites: the metric of a plain eigenproblem.
+        identity = 0 * generator + Majorana
+        _, modes = generator.adjoint()(generator).eigh(identity, count)
         # The norm of the image gives the frequency without a square root of a
         # roundoff-sized negative eigenvalue at a zero mode.
-        action = SparseExtensor(generator.cells[..., None, :], generator.rows,
-                                generator.columns, generator.shape)
-        energies = action(modes).scalar_norm_squared().batch().sum(axis=-1).square_root()
+        energies = generator[..., None](modes).scalar_norm_squared().sites.sum().square_root()
         return energies, modes
 
     def localized(self, modes: Majorana) -> Majorana:
         """Resolve the lowest two-dimensional mode space by mean site index."""
-        coordinates = stack([mv.x, mv.y])
-        embedder = (modes * (coordinates | Majorana)).sum(axis=-1)
-        # Pull the site-index observable back to the two mode coordinates.
-        index = mv.scalar(np.arange(self.identity.shape[0])[:, None]).field()
-        position = embedder.adjoint()(index * embedder)
+        # The site-index observable between every pair of the two modes.
+        index = mv.scalar(np.arange(self.bonds.shape[0])[:, None]).field()
+        gram = modes[..., :, None].scalar_product(index * modes[..., None, :]).sites.sum()   # [..., modes, modes] Scalar
+        position = (gram * Scalar).field(0, 1)                                             # Scalar[modes] <- Scalar[modes]
         _, directions = position.eigh()
-        return embedder[..., None](directions)
+        return (directions.batch() * modes[..., None, :]).sum(axis=-1)
 
     def step(self, state: Majorana, potential: Scalar, dt: np.ndarray) -> Majorana:
         """Cayley step with the generator evaluated at the time midpoint."""
         generator = self.generator(potential)
         # The same dt for every cell of a case; each case has its own driving speed.
-        half_step = SparseExtensor(generator.cells * (dt[..., None] / 2),
-                                   generator.rows, generator.columns, generator.shape)
-        return (self.identity - half_step).solve(state + half_step(state))
+        half_step = generator * (dt[..., None] / 2)
+        return (Majorana - half_step).solve(state + half_step(state))
 
 
 def gate(
-    sites: np.ndarray, left: np.ndarray, right: np.ndarray,
-    inside: np.ndarray, outside: float, width: float,
+    sites: np.ndarray, left: ArrayLike, right: ArrayLike,
+    inside: ArrayLike, outside: float, width: float,
 ) -> Scalar:
     """A smooth chemical-potential well between two gate boundaries, in site units."""
-    window = (np.tanh((sites - left[..., None]) / width)
-              - np.tanh((sites - right[..., None]) / width)) / 2
-    return mv.scalar((outside + (inside[..., None] - outside) * window)[..., None]).field()
+    window = (np.tanh((sites - np.asarray(left)[..., None]) / width)
+              - np.tanh((sites - np.asarray(right)[..., None]) / width)) / 2
+    return mv.scalar((outside + (np.asarray(inside)[..., None] - outside) * window)[..., None]).field()
 
 
 def boundary_share(modes: Majorana, state: Majorana) -> Scalar:
     """The state's weight in the instantaneous pair of boundary modes."""
-    overlap = state[..., None].scalar_product(modes).batch().sum(axis=-1)
+    overlap = state[..., None].scalar_product(modes).sites.sum()
     return overlap.squared().sum(axis=-1)
 
 
@@ -107,7 +102,7 @@ def transport(
     dt = durations / steps
     state = state.broadcast_to((len(durations),))
     yield state
-    for index, potential in enumerate(potentials):
-        state = wire.step(state, potential, dt)
-        if (index + 1) % stride == 0:
-            yield state
+    for block in potentials.reshape(-1, stride):
+        for potential in block:
+            state = wire.step(state, potential, dt)
+        yield state

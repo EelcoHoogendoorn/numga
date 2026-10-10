@@ -16,8 +16,7 @@ TENSION = 30.0                                                # N/mm of width
 LENGTH_SAMPLES = 61
 WIDTH_SAMPLES = 13
 MAGNIFICATION = 5.0
-FIBRE_SPACING = 7.0                                           # mm between drawn fibre lines
-FIBRE_SAMPLES = 9
+FIBRE_SPACING = 5.0                                           # mm between drawn fibre lines, across the fibres
 SEPARATION = 1.6 * WIDTH                                      # mm between the strips' centres
 FRAMES = 60
 DURATION_MS = 60
@@ -26,9 +25,9 @@ LOADS = (1 - np.cos(np.linspace(0, 2 * np.pi, FRAMES, endpoint=False))) / 2
 
 
 # --- math -----------------------------------------------------------------------------
-def scene() -> tuple[core.Vector, core.Vector, core.Vector, core.State, core.Scalar]:
-    """Both layups solved together: the strips at rest, each frame of the growing pull, the top ply's
-    fibres in each frame, and their stretch–twist state and width strain at full load."""
+def scene() -> tuple[core.Vector, core.Vector, core.Scalar]:
+    """Both layups solved together: the strips at rest, each frame of the growing pull, and the
+    distance across the top ply's fibres over each strip, whose level lines are those fibres."""
     plies = ANGLES.shape[-1]
     ply_thickness = THICKNESS / plies
     # Two samples per ply integrate its quadratic strain energy exactly.
@@ -50,19 +49,13 @@ def scene() -> tuple[core.Vector, core.Vector, core.Vector, core.State, core.Sca
     # Each strip deforms about its own centreline, then sits beside the other.
     placement = core.mv.y * (SEPARATION * np.array([-0.5, 0.5]))[:, None, None]   # [cases, 1, 1] Vector
     # The response is linear, so each frame scales the full one; magnified for display only.
-    frames = core.deform(reference, state * (MAGNIFICATION * LOADS[:, None]),
-                         width_strain * (MAGNIFICATION * LOADS[:, None]),
+    shown = MAGNIFICATION * LOADS[:, None]                              # [frames, 1]
+    frames = core.deform(reference, state * shown, width_strain * shown,
                          THICKNESS) + placement                        # [frames, cases, length samples, width samples] Vector
-    # Lines along each layup's top ply's fibres, carried by the same deformation.
-    top = (core.mv.xy * (-ANGLES[:, -1] / 2)).exp() >> core.mv.x       # [cases] Vector
-    across = np.linspace(-WIDTH / 2, WIDTH / 2, FIBRE_SAMPLES)          # [samples] mm
-    starts = np.arange(WIDTH / 2, LENGTH - WIDTH / 2, FIBRE_SPACING)    # [lines] mm along the centre line
-    fibres = (core.mv.x * starts[:, None]
-              + top[:, None, None] * (across / (top | core.mv.y)[:, None, None]))   # [cases, lines, samples] Vector
-    fibre_frames = core.deform(fibres, state * (MAGNIFICATION * LOADS[:, None]),
-                               width_strain * (MAGNIFICATION * LOADS[:, None]),
-                               THICKNESS) + placement                   # [frames, cases, lines, samples] Vector
-    return reference + placement, frames, fibre_frames, state, width_strain
+    # The top ply's fibres run along the level lines of the distance across them.
+    top = fibres[:, -1, 0]                                              # [cases] Vector
+    across_fibres = reference | (core.mv.xy | top[:, None, None])       # [cases, length samples, width samples] Scalar
+    return reference + placement, frames, across_fibres
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -70,8 +63,8 @@ def main() -> None:
     from examples.animation import save_animation
     from examples.mechanics.composite_strip import render
 
-    placed, frames, fibres, _, _ = scene()
-    save_animation(render.animate_strips(placed, frames, fibres), "composite_strip", DURATION_MS)
+    placed, frames, across_fibres = scene()
+    save_animation(render.animate_strips(placed, frames, across_fibres, FIBRE_SPACING), "composite_strip", DURATION_MS)
 
 
 if __name__ == "__main__":

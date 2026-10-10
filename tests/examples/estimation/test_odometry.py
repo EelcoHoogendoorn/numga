@@ -41,7 +41,7 @@ def test_uncertainties_are_the_inverse_curvature():
 
     # Every reading: at the most likely poses, the marginals are the Gauss-Newton ones; the full curvature
     # differs by what the remaining mismatches bend.
-    *_, (poses, uncertainty) = scenarios.damped(steps, 1.0, 6, 0)[-1]
+    *_, poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, 1.0, 3)
     expected = inverse_curvature(core, poses, readings, weights, tails, heads, anchors, anchor_weights)
     marginals = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)
     np.testing.assert_allclose(marginals.kernel, expected, atol=1e-5)
@@ -49,7 +49,7 @@ def test_uncertainties_are_the_inverse_curvature():
 
 def test_the_lap_closes_in_the_plane_and_draws():
     steps = scenarios.lap_in_plane()
-    truth, dead, reckoned, poses, uncertainty = scenarios.closing(steps, 5, 0)
+    truth, dead, reckoned, poses, uncertainty = scenarios.closing(steps, 3, 0)
     for figure in (render.draw_lap(truth, dead, reckoned, dead[[0, -1]]),
                    render.draw(truth, dead, reckoned, poses, uncertainty)):
         assert isinstance(figure, plt.Figure)
@@ -67,5 +67,5 @@ def test_the_same_core_in_space():
     # A short lap in space that pitches and rolls reaches its most likely poses by the checks inside the
     # scenario. Its twists have six coefficients, where the plane's have three.
     steps = scenarios.lap_in_space()
-    scenarios.closing(steps, 5, 0)
+    scenarios.closing(steps, 3, 0)
     assert len(instantiate(scenarios.CORE, steps.algebra).Twist.output_subspace) == 6

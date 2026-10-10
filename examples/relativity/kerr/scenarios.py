@@ -15,8 +15,8 @@ DURATION_MS = 80
 EXTENT = 12.0 * MASS
 RAYS = 31
 OFFSETS = np.linspace(-8, 8, RAYS) * MASS
-STEP_SIZE = 0.04 * MASS
-STEPS = 1100
+STEP_SIZE = 0.1 * MASS
+STEPS = 400
 STOP_FRACTION = 0.8
 RING_SAMPLES = 128
 CAMERA_SPIN = 0.8 * MASS
@@ -25,16 +25,16 @@ CAMERA_INCLINATION = np.deg2rad(75.0)
 HALF_VIEW = np.tan(np.deg2rad(19.0))
 IMAGE_WIDTH = 480
 IMAGE_HEIGHT = IMAGE_WIDTH * 2 // 3
-CAMERA_STEP_FRACTION = 0.1
+CAMERA_STEP_FRACTION = 0.2
 CAMERA_STEPS = 720
-DISK_INNER_RADIUS = core.innermost_stable_orbit(CAMERA_SPIN, MASS)   # where the thin disk ends
 DISK_OUTER_RADIUS = 12.0 * MASS
 # The disk's optical depth straight through its thickness, at its inner edge.
 DISK_DEPTH = 4.0
 DISK_TEMPERATURE_SCALE = 58500.0                               # K, (accretion rate c^6 / (σ G^2 M^2))^(1/4)
 EXPOSURE_TEMPERATURE = 6500.0                                 # K, shown at mid-grey
 ESCAPE_RADIUS = 100.0 * MASS
-CAPTURE_RADIUS = 1.002 * (MASS + np.sqrt(MASS**2 - CAMERA_SPIN**2))
+# Captured inside every photon orbit, where no ray turns back out.
+CAPTURE_RADIUS = 1.05 * (MASS + np.sqrt(MASS**2 - CAMERA_SPIN**2))
 SKY_WIDTH = 2048
 SKY_HEIGHT = SKY_WIDTH // 2
 SKY_SEED = 8
@@ -71,21 +71,23 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     orientation = (core.mv.zx * (CAMERA_INCLINATION / 2)).exp()
     eye = (orientation >> core.mv.z) * CAMERA_DISTANCE
     spin = core.mv.xy * CAMERA_SPIN
+    # The thin disk ends at the innermost stable orbit of gas turning with the hole.
+    inner_radius = core.innermost_stable_orbit(core.mv.xy, spin, MASS)
     position, momentum = core.camera_rays(eye, orientation, IMAGE_WIDTH, IMAGE_HEIGHT,
                                          HALF_VIEW, spin, MASS)
     screen = core.camera_screen(position, momentum, orientation, spin, MASS)
     steps = core.camera_trace((position, momentum, screen), spin, MASS,
                               CAMERA_STEP_FRACTION, CAMERA_STEPS, core.polarized_rates)
     def opacity(event: core.Vector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
-        depth = core.disk_depth(radius, DISK_INNER_RADIUS, DISK_OUTER_RADIUS, DISK_DEPTH)
+        depth = core.disk_depth(radius, inner_radius, DISK_OUTER_RADIUS, DISK_DEPTH)
         return core.disk_opacity(event, momentum, depth, core.mv.z, core.mv.xy, spin, MASS)
-    image = core.resolve(steps, IMAGE_WIDTH * IMAGE_HEIGHT, core.mv.z, DISK_INNER_RADIUS, DISK_OUTER_RADIUS, opacity,
+    image = core.resolve(steps, IMAGE_WIDTH * IMAGE_HEIGHT, core.mv.z, inner_radius, DISK_OUTER_RADIUS, opacity,
                          ESCAPE_RADIUS, CAPTURE_RADIUS, spin, MASS)
     points, momenta, screens = image.disk
     # The gas orbits with the hole, in its equatorial plane.
     shift = core.frequency_ratio(points, momenta, eye, core.mv.xy, spin, MASS)
     # A blackbody shifted in frequency is a blackbody at the shifted temperature.
-    temperature = shift * core.disk_temperature(image.disk_radii, CAMERA_SPIN, MASS, DISK_TEMPERATURE_SCALE)
+    temperature = shift * core.disk_temperature(image.disk_radii, core.mv.xy, spin, MASS, DISK_TEMPERATURE_SCALE)
     coherency = core.disk_coherency(points, momenta, screens, core.mv.z, spin, MASS, POLARIZATION_DEGREE)
     analyzers = (core.mv.xy * (POLARIZER_ANGLES / 2)).exp() >> core.mv.x       # [analyzers] Screen
     return image, temperature, core.transmitted(coherency, analyzers[:, None])
@@ -116,6 +118,18 @@ def main() -> None:
                    "kerr_polarizer", DURATION_MS, scale=WEB_SCALE)
     save_animation(render.animate_disk(image, temperature, EXPOSURE_TEMPERATURE, disk_flow(image), FLOW_FRAMES, shape, sky),
                    "kerr_disk", DURATION_MS, scale=WEB_SCALE)
+
+    # --- checks
+    # Each pixel's light is shared at most once between the disk and the sky, all of it when its ray
+    # escapes; where the rays cross the disk they stay null, to the integrator's accuracy.
+    pixel_count = IMAGE_WIDTH * IMAGE_HEIGHT
+    disk_share = np.bincount(image.disk_pixels, image.disk_weights.kernel[..., 0], pixel_count)
+    sky_share = np.bincount(image.sky_pixels, image.sky_weights.kernel[..., 0], pixel_count)
+    assert np.all(disk_share + sky_share <= 1 + 1e-13)
+    np.testing.assert_allclose((disk_share + sky_share)[image.sky_pixels], 1, atol=1e-13, rtol=0)
+    points, momenta, _ = image.disk
+    tangent, _ = core.rates(points, momenta, core.mv.xy * CAMERA_SPIN, MASS)
+    np.testing.assert_allclose((momenta | tangent).kernel, 0, atol=7e-2, rtol=0)
 
 
 if __name__ == "__main__":

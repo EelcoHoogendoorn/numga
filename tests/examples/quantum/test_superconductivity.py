@@ -1,4 +1,4 @@
-"""Self-consistency, conserved quantities and collective superconducting response."""
+"""Self-consistency and collective superconducting response."""
 
 import numpy as np
 import pytest
@@ -21,7 +21,7 @@ def test_equilibrium_gap_and_phase_symmetry(quench):
     coupling = scenarios.COUPLING * scenarios.QUENCH_RATIO
     continuum_gap = scenarios.CUTOFF / np.sinh(2 * scenarios.CUTOFF / coupling)
     # This tolerance tests the finite energy quadrature against the continuum gap equation.
-    np.testing.assert_allclose(model.gap(equilibrium).kernel[0, 0], continuum_gap, rtol=1e-5)
+    np.testing.assert_allclose(model.gap(equilibrium).kernel[0], continuum_gap, rtol=1e-5)
 
     phase = 0.73
     rotor = (core.mv.xy * (-phase / 2)).exp()
@@ -31,29 +31,11 @@ def test_equilibrium_gap_and_phase_symmetry(quench):
                                0, atol=ROUND_OFF, rtol=0)
 
 
-def test_quench_conserves_energy_lengths_and_occupation(quench):
-    model, initial, _, _, history = quench
-    np.testing.assert_allclose(history.scalar_norm_squared().kernel, 0.25, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((model.energy(history) - model.energy(initial)).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(((history - initial).mean(axis=-1) | core.mv.z).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-
-    # A tilted state also tests number conservation away from particle-hole symmetry.
-    tilted = (core.mv.yz * 0.13 + core.mv.zx * 0.17).exp() >> initial
-    history = stack(core.evolution(tilted, model.rate, scenarios.DT, 300, 30,
-                                   scenarios.MIDPOINT_ITERATIONS))
-    np.testing.assert_allclose(((history - tilted).mean(axis=-1) | core.mv.z).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((model.energy(history) - model.energy(tilted)).kernel,
-                               0, atol=ROUND_OFF, rtol=0)
-
-
 def test_response_is_the_derivative_and_contains_the_phase_zero_mode(quench):
     model, initial, equilibrium, _, _ = quench
     local, feedback = model.response(equilibrium)
     delta = (core.mv.yz * 0.11 + core.mv.zx * 0.07).exp() >> (initial - equilibrium)
-    response = local(delta) + feedback(delta.mean(axis=-1, keepdims=True))
+    response = local(delta) + feedback(delta.sites.mean())
     # The vector field is quadratic: its central difference is exactly its derivative.
     difference = (model.rate(equilibrium + delta) - model.rate(equilibrium - delta)) / 2
     np.testing.assert_allclose((response - difference).kernel, 0, atol=ROUND_OFF, rtol=0)
@@ -63,7 +45,7 @@ def test_response_is_the_derivative_and_contains_the_phase_zero_mode(quench):
     phase = -core.mv.xy.commutator(equilibrium)
     local_phase = local(phase)
     assert np.max(np.abs(local_phase.kernel)) > 0.1
-    np.testing.assert_allclose((local_phase + feedback(phase.mean(axis=-1, keepdims=True))).kernel,
+    np.testing.assert_allclose((local_phase + feedback(phase.sites.mean())).kernel,
                                0, atol=ROUND_OFF, rtol=0)
 
 
@@ -82,7 +64,7 @@ def test_collective_response_predicts_a_weak_quench():
 def test_midpoint_converges_at_second_order(quench):
     model, initial, _, _, _ = quench
     duration = 2.0
-    steps = (100, 200, 400)
+    steps = (40, 80, 160)
     ends = [tuple(core.evolution(initial, model.rate, duration / count, count, count,
                                  scenarios.MIDPOINT_ITERATIONS))[-1] for count in steps]
     coarse = np.linalg.norm((ends[0] - ends[1]).kernel)

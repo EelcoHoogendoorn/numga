@@ -117,11 +117,11 @@ def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Direction
     )
 
 
-def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: float, frames: int, substeps: int) -> Iterator[Bodies]:
-    """The bodies at every frame, under gravity, each frame's substeps one compiled call."""
+def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: float, frames: int) -> Iterator[Bodies]:
+    """The bodies at every frame, under gravity, one compiled step per frame."""
     @jax.jit
     def advance(bodies: Bodies) -> Bodies:
-        return jax.lax.fori_loop(0, substeps, lambda _, bodies: step(bodies, constraints, dt, gravity), bodies)
+        return step(bodies, constraints, dt, gravity)
 
     for _ in range(frames):
         yield bodies
@@ -135,7 +135,8 @@ def main():
     shape = core.girder(scenarios.CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.MODES)
     bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.LINKS, scenarios.DAMPING)
     gravity = (mv.y * -scenarios.GRAVITY).dual()                            # [] Direction
-    frames = (core.points(moment, shape) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.FRAMES, scenarios.SUBSTEPS))
+    points = jax.jit(lambda moment: core.points(moment, shape))
+    frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.FRAMES))
     save_animation(render.swinging_chain(frames, shape.edges, core.points(bodies, shape)), "modal_xpbd_derived_swing", scenarios.DURATION_MS)
 
 

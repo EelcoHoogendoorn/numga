@@ -24,9 +24,9 @@ def main() -> None:
     from examples.geometry.three_point_pose import render
 
     source, target, increments = markers()
-    fractions = np.linspace(0, 1, STEPS)
+    fractions = np.linspace(0, 1, STEPS + 1)[1:]
     fractions = fractions * fractions * (3 - 2 * fractions)
-    save_figure(render.draw_stages(source, target, increments), "three_point_pose")
+    save_figure(render.draw_stages(source, target, core.placements(source, increments)), "three_point_pose")
     save_animation(render.animate(core.alignments(source, increments, fractions), source, target),
                    "three_point_pose", DURATION_MS)
 

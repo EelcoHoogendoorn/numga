@@ -10,10 +10,6 @@ the share of light its own state finds. Light travels normal to the plate; absor
 reflection and ray bending are neglected.
 """
 
-from collections.abc import Iterator
-
-import numpy as np
-
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
@@ -24,6 +20,7 @@ Planar = ga.gatype.from_blades("x y")
 Stress = ga.gatype((Planar, Planar))                       # Planar <- Planar
 # A unit Stokes vector on the Poincaré sphere, and a turn of that sphere.
 Polarization = ga.gatype.vector()
+Bivector = ga.gatype.bivector()
 Retarder = ga.gatype.rotor()
 
 
@@ -31,7 +28,7 @@ Retarder = ga.gatype.rotor()
 def kirsch(positions: Planar, radius: float, remote: Stress) -> Stress:
     """The exterior stress for a circular hole under any uniform symmetric remote stress."""
     distance_squared = positions.squared()                                        # [...] Scalar
-    radial = positions / distance_squared.square_root()                           # [...] Planar
+    radial = positions.normalized()                                               # [...] Planar
     tangent = mv.xy | radial                                                      # [...] Planar
     radius_ratio = radius**2 / distance_squared                                   # [...] Scalar
 
@@ -58,14 +55,19 @@ def polarization(direction: Planar) -> Polarization:
     return direction >> mv.x                                                      # [...] Polarization
 
 
-def retarder(stress: Stress, stress_phase: float) -> Retarder:
-    """The plate's turn of the Poincaré sphere, with the retardance per stress `stress_phase`, 2π
-    times the stress-optic coefficient times the thickness over the wavelength: about the state
+def half_turn(stress: Stress, stress_phase: float) -> Bivector:
+    """Half the plate's turn of the Poincaré sphere, with the retardance per stress `stress_phase`,
+    2π times the stress-optic coefficient times the thickness over the wavelength: about the state
     polarized along a principal direction, by the retardance of the principal stress difference.
     The mean stress delays both principal directions alike and turns nothing."""
     principal, directions = stress.eigh()                                         # [..., modes] Scalar, Planar
     retardance = stress_phase * (principal[..., 1] - principal[..., 0])           # [...] Scalar
-    return (polarization(directions[..., 1]).dual() * (retardance / 2)).exp()      # [...] Retarder
+    return polarization(directions[..., 1]).dual() * (retardance / 2)             # [...] Bivector
+
+
+def retarder(stress: Stress, stress_phase: float) -> Retarder:
+    """The plate's turn of the Poincaré sphere."""
+    return half_turn(stress, stress_phase).exp()                                  # [...] Retarder
 
 
 def transmitted(state: Polarization, analyser: Polarization) -> Scalar:
@@ -74,27 +76,8 @@ def transmitted(state: Polarization, analyser: Polarization) -> Scalar:
     return (1 + (analyser | state)) / 2                                           # [...] Scalar
 
 
-def loading(stress: Stress, stress_phase: float, incident: Polarization,
-            analyser: Polarization, loads: np.ndarray) -> Iterator[Scalar]:
-    """Fixed polariscopes during proportional loading of a [radii, angles] stress field.
-
-    Incident states and analysers have shape [views]. Each yielded intensity has shape
-    [views, radii, angles]; load multipliers scale the supplied reference stress.
-    """
-    for load in loads:
-        turn = retarder(stress * load, stress_phase)                              # [radii, angles] Retarder
-        yield transmitted(turn >> incident[:, None, None], analyser[:, None, None])   # [views, radii, angles] Scalar
-
-
-# --- plumbing -------------------------------------------------------------------------
-def square_grid(radius: float, extent: float, radial_samples: int, angular_samples: int) -> Planar:
-    """A square sampling window outside the hole, with a closed angular seam."""
-    angles = np.linspace(0, 2 * np.pi, angular_samples + 1)
-    fractions = np.linspace(0, 1, radial_samples)
-    directions = (mv.xy * (-angles / 2)).exp() >> mv.x                            # [angular_samples + 1] Planar
-    along_x = (directions | mv.x).abs()                                           # [angular_samples + 1] Scalar
-    along_y = (directions | mv.y).abs()                                           # [angular_samples + 1] Scalar
-    # Each radial line ends on the square; its inner end lies exactly on the hole.
-    reach = 2 * extent / (along_x + along_y + (along_x - along_y).abs())          # [angular_samples + 1] Scalar
-    distance = radius + (reach - radius) * fractions[:, None]                     # [radial_samples, angular_samples + 1] Scalar
-    return directions * distance                                                  # [radial_samples, angular_samples + 1] Planar
+def polariscope(turn: Bivector, incident: Polarization, analyser: Polarization) -> Scalar:
+    """The share of light entering in one state that leaves through the analyser, after a plate
+    whose half turn of the sphere is `turn`. Scaling the load scales the turn: the principal
+    directions, and so the axis, stay put."""
+    return transmitted(turn.exp() >> incident, analyser)                          # [...] Scalar

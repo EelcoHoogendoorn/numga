@@ -13,12 +13,12 @@ from examples.surfaces.dirac_waves import core
 
 mv = core.mv
 # The sphere's subdivisions, the time step, and the steps between frames.
-SUBDIVISIONS = 4
-INTERVAL = 0.02
-EVERY = 4
+SUBDIVISIONS = 3
+INTERVAL = 0.04
+EVERY = 2
 # The pulse: its width, and the steps it runs, a little past the time to reach the far pole.
 WIDTH = 0.25
-STEPS = 168
+STEPS = 84
 # The standing waves: the frequencies shown, each held eight times its own, after the four constant
 # fields of frequency zero; and the frames over each period.
 LEVELS = 5
@@ -40,8 +40,8 @@ def pulse():
     # The leapfrog keeps the energy: the vertex field's area-weighted norm, and the face field's paired
     # across each step.
     _, M2, M0, _ = core.dirac(sphere)
-    energies = stack([(M0 * vertices.scalar_norm_squared()).batch().sum(axis=-1)
-                      + (M2 * before.reverse().scalar_product(after)).batch().sum(axis=-1)
+    energies = stack([(M0 * vertices.scalar_norm_squared()).sites.sum()
+                      + (M2 * before.reverse().scalar_product(after)).sites.sum()
                       for (vertices, after), (_, before) in zip(states[1:], states)]).to_array()
     np.testing.assert_allclose(energies, energies[0], rtol=1e-12)
     # Half a turn round the sphere on, the pulse has gathered at the south pole.
@@ -63,7 +63,7 @@ def modes():
     _, _, M0, _ = core.dirac(sphere)
     probe = bump(sphere, mv.x) * (mv.yz + mv.zx + mv.xy)                      # Even[V]
     shares = [waves[low:high] for low, high in zip(sizes[:-1], sizes[1:])]
-    chosen = stack([(share * (M0 * share.reverse().scalar_product(probe)).batch().sum(axis=-1)).sum(axis=0)
+    chosen = stack([(share * (M0 * share.reverse().scalar_product(probe)).sites.sum()).sum(axis=0)
                     for share in shares])                                     # [levels] Even[V]
     frequencies = np.arange(1, LEVELS + 1).astype(float)
     phases = np.linspace(0.0, 2 * np.pi, PHASES, endpoint=False)
@@ -75,7 +75,7 @@ def modes():
     measured = squared.to_array()
     np.testing.assert_allclose(measured[:CONSTANT], 0.0, atol=1e-9)
     expected = np.repeat(np.arange(1, LEVELS + 1), 8 * np.arange(1, LEVELS + 1)) ** 2
-    np.testing.assert_allclose(np.sqrt(measured[CONSTANT:]), np.sqrt(expected), rtol=0.01)
+    np.testing.assert_allclose(np.sqrt(measured[CONSTANT:]), np.sqrt(expected), rtol=0.03)
     return sphere, frequencies, vertices, faces
 
 

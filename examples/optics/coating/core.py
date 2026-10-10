@@ -12,13 +12,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import reduce
+from itertools import accumulate
 
 import numpy as np
 
 from numga import NumpyContext, stack
 from numga.algebras import STA as ga
+from numga.sparse import SparseExtensor
 
 mv = NumpyContext(ga, dtype=np.complex128).multivector
+# Real fields along z at normal incidence, stepped in time: no phases, so no complex numbers.
+real = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
@@ -38,7 +42,7 @@ axes = stack([mv.x, mv.y, mv.z])
 field_boundary = mv.t ^ (mv.t | (mv.z ^ Bivector))
 excitation_boundary = mv.t | (mv.t ^ (mv.z ^ Antibivector).dual())
 # Undo the two wedges defining the electric part of the boundary state.
-electric = -mv.t | (mv.z | Boundary)                       # Polarization <- Boundary
+electric_trace = -mv.t | (mv.z | Boundary)                 # Polarization <- Boundary
 
 
 # --- math -----------------------------------------------------------------------------
@@ -68,27 +72,28 @@ class Medium:
         # The remaining two equations contain no normal derivative: impose them as zero.
         constraint = (-(mv.z | (mv.z ^ (parallel ^ Bivector)))
                       - mv.z * (mv.z | (parallel ^ chi).dual()))
-        reconstruct = (boundary + constraint).inverse()(Boundary)
+        reconstruct = (boundary + constraint).solve(Boundary)
         # Positive eigenvalues give phase propagation towards +z when temporal phase increases.
         generator = (field_boundary(mv.z | (parallel ^ reconstruct))
                      + excitation_boundary(mv.z | (parallel ^ chi(reconstruct))))
         return cls(boundary, reconstruct, generator)
 
     def interior(self, thicknesses: np.ndarray, wavelength: float,
-                 exit_state: Boundary, fractions: np.ndarray) -> Iterator[Bivector]:
-        """Physical fields inside a stack, yielded from its last layer back to its first.
+                 exit_state: Boundary, fractions: np.ndarray) -> Bivector:
+        """Physical fields inside a stack, `[cases, layers, samples]`.
 
         Material maps and thicknesses have shape [layers]. The exit state has shape
         [cases], and fractions [samples] measure distance from each layer's left face
-        to its right face. Each yielded field has shape [cases, samples].
+        to its right face.
         """
-        optical_distances = 2 * np.pi * thicknesses / wavelength
-        state = exit_state
-        for index in range(len(thicknesses) - 1, -1, -1):
-            remaining = optical_distances[index] * (1 - fractions)
-            local = propagate(self.generator[index], remaining)(state[:, None])
-            yield self.reconstruct[index](local)
-            state = propagate(self.generator[index], optical_distances[index])(state)
+        optical_distances = 2 * np.pi * thicknesses / wavelength                  # [layers]
+        crossings = propagate(self.generator, optical_distances)                   # [layers] Boundary <- Boundary
+        # Each layer's right face holds the exit state carried back through every layer after it.
+        faces = accumulate(crossings[:0:-1], lambda state, crossing: crossing(state), initial=exit_state)
+        right_faces = stack(tuple(faces)[::-1], axis=-1)                           # [cases, layers] Boundary
+        # From each right face back to the samples inside its layer, all layers at once.
+        inward = propagate(self.generator[:, None], optical_distances[:, None] * (1 - fractions))  # [layers, samples] Boundary <- Boundary
+        return self.reconstruct[:, None](inward(right_faces[..., None]))         # [cases, layers, samples] Bivector
 
 
 def propagate(generator: Propagation, optical_distance: np.ndarray) -> Propagation:
@@ -98,11 +103,11 @@ def propagate(generator: Propagation, optical_distance: np.ndarray) -> Propagati
     orthogonal: solving through their summed dyads supplies their reciprocal readout.
     """
     indices, modes = generator.eig()                              # [..., modes] Scalar, Boundary
-    dyads = modes * modes.scalar_product(Boundary)                 # [..., modes] Boundary <- Boundary
-    frame = dyads.sum(axis=-1)
+    frame = (modes * modes.scalar_product(Boundary)).sum(axis=-1)  # [...] Boundary <- Boundary
+    # Each reciprocal reads the amplitude of its own mode and of no other.
+    reciprocal = frame[..., None].solve(modes)                     # [..., modes] Boundary
     phases = (indices * (1j * optical_distance[..., None])).exp()  # [..., modes] Scalar
-    weighted = (phases * dyads).sum(axis=-1)
-    return weighted(frame.inverse())
+    return (phases * modes * reciprocal.scalar_product(Boundary)).sum(axis=-1)
 
 
 def compose(layers: Propagation) -> Propagation:
@@ -131,9 +136,15 @@ class Ports:
         wavevector = parallel + mv.z * normal_index
         outgoing = medium.boundary(wavevector ^ electric_field)
         # Exterior evolution has just two eigenvalues, the signed normal indices.
-        incoming = electric((Boundary + medium.generator / normal_index) / 2)
-        returning = electric((Boundary - medium.generator / normal_index) / 2)
+        incoming = electric_trace((Boundary + medium.generator / normal_index) / 2)
+        returning = electric_trace((Boundary - medium.generator / normal_index) / 2)
         return cls(outgoing, incoming, returning, electric_field, normal_index)
+
+    @classmethod
+    def isotropic(cls, index: float, parallel: Vector) -> Ports:
+        """Waves in a lossless, nonmagnetic isotropic exterior of the given refractive index."""
+        chi = dielectric(np.full(3, index ** 2), 1.0)
+        return cls.from_medium(Medium.from_chi(chi, parallel), index, parallel)
 
     def power(self, polarization: Polarization) -> Scalar:
         """Normal power flux, omitting the common factor of half the vacuum admittance."""
@@ -169,11 +180,6 @@ def scatter(entrance: Outgoing, incident: Ports) -> Scattering:
     return Scattering(reflection, transmission)
 
 
-# --- time domain ----------------------------------------------------------------------
-# Real fields along z at normal incidence, stepped in time: no phases, so no complex numbers.
-real = NumpyContext(ga).multivector
-
-
 @dataclass(frozen=True)
 class Line:
     """A periodic line of cells along z. Electric planes sit on the nodes, magnetic planes halfway
@@ -181,13 +187,19 @@ class Line:
     response: Constitutive                                         # [nodes] Antibivector <- Bivector
     inverse: Inverse                                               # [nodes] Bivector <- Antibivector
     between: Constitutive                                          # the medium between nodes
+    difference: SparseExtensor                                     # [nodes, nodes] Scalar cells
     spacing: float
 
     @classmethod
     def from_chi(cls, nodes: Constitutive, between: Constitutive, spacing: float) -> Line:
         """The material at each node, and the one material between nodes, which only meets magnetic
-        planes."""
-        return cls(nodes, nodes.inverse(), between, spacing)
+        planes. The difference reads, at each node, the next node's value less its own: from the
+        electric planes on either side of a magnetic plane."""
+        count = len(nodes)
+        sites = np.arange(count)
+        difference = SparseExtensor(real.scalar(np.tile([[1.0], [-1.0]], (count, 1))), np.repeat(sites, 2),
+                                    np.stack([(sites + 1) % count, sites], axis=-1).reshape(-1), (count, count))
+        return cls(nodes, nodes.inverse(), between, difference, spacing)
 
     def energy(self, electric: Bivector, magnetic: Bivector) -> Scalar:
         """The field energy in each cell; magnetic planes pair with their excitation to minus their
@@ -203,12 +215,12 @@ class Line:
         ones on either side; the excitation's spatial planes move with the excitation of the magnetic
         planes on either side, and the inverse response turns them back into electric planes.
         """
-        nodes = np.arange(electric.shape[-1])
-        ahead, behind = np.roll(nodes, -1), np.roll(nodes, 1)
         rate = interval / self.spacing
         for _ in range(count):
-            magnetic = magnetic - (real.t | (real.z ^ (electric[..., ahead] - electric))) * rate
+            magnetic = magnetic - (real.t | (real.z ^ (self.difference * electric.field()).batch())) * rate
             excitation = self.between(magnetic)
-            displacement = -(real.t | (real.z ^ (excitation - excitation[..., behind]))) * rate
+            # The reverse runs each difference back, from the magnetic planes to the electric planes
+            # between them: the adjoint pair under which the leapfrog keeps its energy.
+            displacement = (real.t | (real.z ^ (~self.difference * excitation.field()).batch())) * rate
             electric = electric + self.inverse(displacement)
             yield electric, magnetic

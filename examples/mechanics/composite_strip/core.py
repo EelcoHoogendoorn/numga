@@ -39,6 +39,13 @@ def strain(height: Scalar, thickness: float) -> Strain:
     return stretch + shear                                                              # [...] Vector <- (Vector, State)
 
 
+def read(strain: Extensor, fibres: Vector) -> Extensor:
+    """A strain map's readings along a ply's fibres, across them, and as their shear, stacked on a
+    leading axis, with any further slots of the strain left open."""
+    transverse: Vector = mv.xy | fibres
+    return stack([fibres | strain(fibres), transverse | strain(transverse), 2 * (fibres | strain(transverse))])
+
+
 def ply_stress(along: Extensor, across: Extensor, sliding: Extensor, longitudinal_modulus: float,
                transverse_modulus: float, poisson: float, shear_modulus: float) -> tuple[Extensor, Extensor, Extensor]:
     """A ply's stresses along and across its fibres and in shear, from its strain read the same
@@ -58,15 +65,12 @@ def response(fibres: Vector, heights: Vector, weights: np.ndarray, thickness: fl
     Two Gauss samples per ply integrate the quadratic energy exactly.
     """
     moduli = (longitudinal_modulus, transverse_modulus, poisson, shear_modulus)
-    transverse: Vector = mv.xy | fibres                                                 # [cases, plies, 1]
     # Each ply reads the strain along its fibres, across them, and as their shear.
     local: Strain = strain(heights | mv.z, thickness)                                  # [plies, samples]
-    readings = stack([fibres | local(fibres), transverse | local(transverse),
-                      2 * (fibres | local(transverse))])                               # [3, cases, plies, samples] Measurement
+    readings = read(local, fibres)                                                     # [3, cases, plies, samples] Measurement
     # A unit width strain, read the same ways.
     widening = mv.y * (mv.y | Vector)                                                  # [] Vector <- Vector
-    width_readings = stack([fibres | widening(fibres), transverse | widening(transverse),
-                            2 * (fibres | widening(transverse))])                      # [3, cases, plies, 1] Scalar
+    width_readings = read(widening, fibres)                                            # [3, cases, plies, 1] Scalar
     stresses = stack(ply_stress(*readings, *moduli))                                   # [3, cases, plies, samples] Measurement
     width_stresses = stack(ply_stress(*width_readings, *moduli))                       # [3, cases, plies, 1] Scalar
     # Strain read against stress, summed over the three readings and through the thickness. Each
@@ -85,11 +89,13 @@ def response(fibres: Vector, heights: Vector, weights: np.ndarray, thickness: fl
 
 
 def deform(points: Vector, state: State, width_strain: Scalar, thickness: float) -> Vector:
-    """The midsurface's uniform stretch, width contraction and small-displacement twist."""
+    """The midsurface's uniform stretch and width contraction, with each cross-section turned about
+    the strip's axis by the twist accumulated along the strip."""
     along: Scalar = points | mv.x                            # [length_samples, width_samples]
     across: Scalar = points | mv.y                           # [length_samples, width_samples]
     # Each state acts on the whole grid; the two trailing axes sample the midsurface.
     state, width_strain = state[..., None, None], width_strain[..., None, None]  # [..., 1, 1] State, Scalar
-    # Twist displaces opposite edges in opposite height directions, increasing along the strip.
-    return (points + mv.x * along * extension(state) + mv.y * across * width_strain
-            + mv.z * along * across * twist(state) / thickness)  # [..., length_samples, width_samples] Vector
+    # Twist turns each cross-section in the yz plane, by an angle growing along the strip.
+    turn = (mv.yz * (-along * twist(state) / thickness / 2)).exp()  # [..., length_samples, width_samples] Rotor
+    return (mv.x * along * (1 + extension(state))
+            + (turn >> (mv.y * across * (1 + width_strain))))  # [..., length_samples, width_samples] Vector

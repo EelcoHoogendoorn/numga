@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-from io import BytesIO
-
 import matplotlib.pyplot as plt
 import numpy as np
-from IPython.display import Image as Shown
 from matplotlib.figure import Figure
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
-from PIL import Image
 
 from examples.animation import capture
 from examples.quantum.superconductivity import core
@@ -49,7 +45,7 @@ def animate_quench(
     """Arrows in each energy level's pairing plane, beside their collective gap."""
     energies = (dispersion | core.mv.z).to_array()
     transverse = spins.cast(core.ga.subspace("x y")).kernel
-    amplitudes = gaps.scalar_norm_squared().square_root().to_array()[:, 0]
+    amplitudes = gaps.norm().to_array()
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
     indices = visible[np.linspace(0, len(visible) - 1, DISPLAY_LEVELS, dtype=int)]
     energies, transverse = energies[indices], transverse[:, indices]
@@ -65,7 +61,7 @@ def animate_quench(
         axis.plot(np.full_like(circles, energy), 0.5 * np.cos(circles), 0.5 * np.sin(circles),
                   color="0.88", linewidth=0.6)
     axis.set(xlim=(-DISPLAY_CUTOFF, DISPLAY_CUTOFF), ylim=(-0.53, 0.53), zlim=(-0.53, 0.53),
-             xlabel=r"$\xi/E_0$", ylabel=r"$s_x$", zlabel=r"$s_y$", title="Pair coherence at each energy",
+             xlabel=r"$\xi/E_0$", ylabel=r"$s_x$", zlabel=r"$s_y$",
              yticks=[-0.5, 0, 0.5], zticks=[-0.5, 0, 0.5])
     axis.set_box_aspect((2.4, 1, 1))
     axis.view_init(elev=24, azim=-58)
@@ -79,7 +75,7 @@ def animate_quench(
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
     gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)
     curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.12),
-              xlabel=r"$t E_0/\hbar$", ylabel=r"$|\Delta|/E_0$", title="Superconducting gap")
+              xlabel=r"$t E_0/\hbar$", ylabel=r"$|\Delta|/E_0$")
     plain_axes(curve)
 
     frames = []
@@ -105,8 +101,8 @@ def animate_quench(
 
 
 def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> Figure:
-    amplitudes = gaps.scalar_norm_squared().square_root().to_array()[:, 0]
-    equilibrium = equilibrium_gap.scalar_norm_squared().square_root().to_array()[0]
+    amplitudes = gaps.norm().to_array()
+    equilibrium = equilibrium_gap.norm().to_array()
     figure, axis = plt.subplots(figsize=(7.5, 2.8), layout="constrained")
     axis.plot(times, amplitudes, color=PAIR, linewidth=2, label="isolated condensate")
     axis.axhline(equilibrium, color=INK, linestyle="--", linewidth=1, label="final ground-state gap")
@@ -119,8 +115,8 @@ def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> 
 def draw_response(
     times: np.ndarray, exact: core.Spin, predicted: core.Spin, names: tuple[str, str],
 ) -> Figure:
-    exact_amplitude = (exact | core.mv.x).to_array()[:, 0]
-    predicted_amplitude = (predicted | core.mv.x).to_array()[..., 0]
+    exact_amplitude = (exact | core.mv.x).to_array()
+    predicted_amplitude = (predicted | core.mv.x).to_array()
     figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
@@ -130,12 +126,3 @@ def draw_response(
     axis.legend(frameon=False, ncol=3, loc="upper center", fontsize=9)
     plain_axes(axis)
     return figure
-
-
-def inline(frames: list[np.ndarray], duration_ms: int) -> Shown:
-    """Frames as an in-memory GIF for the notebook."""
-    images = [Image.fromarray(frame) for frame in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:],
-                   duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

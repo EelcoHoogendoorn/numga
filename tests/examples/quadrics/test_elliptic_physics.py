@@ -84,7 +84,7 @@ def test_filled_points_lie_inside_with_the_given_mass():
 def test_s2_scenarios_render():
     """Each S² scene conserves its invariants (its checks) and renders a figure and an animation."""
     for scene, steps, draw, impulses in (
-        (scenarios.crowded, 41, render.draw_collisions, 5),
+        (scenarios.crowded, 41, render.draw_collisions, 6),
         (scenarios.hyperbolic, 41, render.draw_collisions, 15),
         (scenarios.tumbling, 100, render.draw_tumbling, 0),
     ):

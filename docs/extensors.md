@@ -235,7 +235,7 @@ tidal = plus(t.wedge(Vector)).commutator(t)                      # [] Vector <- 
 representations = state_readout(Full * state_embedding)    # [] Twistor <- (Full, Twistor): every multivector's action
 family = representations(points[0] * points[1])            # [] Twistor <- Twistor: into both events' kernels
 states, _, _ = family.svd()                                # states[0]: a twistor both events send to zero
-plane = ray_readout(twistor, twistor)                      # [] Bivector: its light ray
+planes = ray_readout(twistors, twistors)                   # [cases] Bivector: their light rays, at rest and boosted
 selected = representations(point(event), fixed_twistor)    # [...] Twistor: one ray through every event
 ```
 

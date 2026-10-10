@@ -10,11 +10,6 @@ from examples.optics.coating import core
 ROUND_OFF = 1e-10
 
 
-def isotropic_ports(index: float, parallel: core.Vector) -> core.Ports:
-    chi = core.dielectric(np.full(3, index**2), np.array(1.0))
-    return core.Ports.from_medium(core.Medium.from_chi(chi, parallel), index, parallel)
-
-
 def test_bare_interface_matches_both_fresnel_polarizations_and_brewster_angle():
     incident_index = 1.0
     substrate_index = 1.5
@@ -27,8 +22,8 @@ def test_bare_interface_matches_both_fresnel_polarizations_and_brewster_angle():
     incident_admittance = np.stack([incident_normal, incident_index**2 / incident_normal])
     substrate_admittance = np.stack([substrate_normal, substrate_index**2 / substrate_normal])
 
-    incident = isotropic_ports(incident_index, parallel)
-    substrate = isotropic_ports(substrate_index, parallel)
+    incident = core.Ports.isotropic(incident_index, parallel)
+    substrate = core.Ports.isotropic(substrate_index, parallel)
     result = core.scatter(substrate.outgoing, incident)
     reflected = (incident_admittance - substrate_admittance) / (incident_admittance + substrate_admittance)
     transmitted = 2 * incident_admittance / (incident_admittance + substrate_admittance)
@@ -55,8 +50,8 @@ def test_quarter_wave_matching_layer_cancels_reflection_with_the_correct_phase()
     chi = core.dielectric(np.full(3, coating_index**2), np.array(1.0))
 
     medium = core.Medium.from_chi(chi, parallel)
-    incident = isotropic_ports(incident_index, parallel)
-    substrate = isotropic_ports(substrate_index, parallel)
+    incident = core.Ports.isotropic(incident_index, parallel)
+    substrate = core.Ports.isotropic(substrate_index, parallel)
     result = core.scatter(core.propagate(medium.generator, optical_distance)(substrate.outgoing), incident)
     transmitted = polarization * (-1j * np.sqrt(incident_index / substrate_index))
     reflectance, transmittance = result.powers(polarization, incident, substrate)
@@ -84,8 +79,8 @@ def test_quarter_wave_mirror_respects_layer_order_and_impedance_inversion(pairs)
 
     medium = core.Medium.from_chi(chi, parallel)
     propagation = core.compose(core.propagate(medium.generator, optical_distance))
-    incident = isotropic_ports(incident_index, parallel)
-    substrate = isotropic_ports(substrate_index, parallel)
+    incident = core.Ports.isotropic(incident_index, parallel)
+    substrate = core.Ports.isotropic(substrate_index, parallel)
     result = core.scatter(propagation(substrate.outgoing), incident)
     reflected = (incident_index - effective) / (incident_index + effective)
     transmitted = (-1) ** pairs * 2 * incident_index / (incident_index / ratio**pairs + substrate_index * ratio**pairs)
@@ -120,8 +115,8 @@ def test_oblique_multilayer_matches_recursive_multiple_reflections():
 
     medium = core.Medium.from_chi(chi, parallel)
     layers = core.propagate(medium.generator[:, None], optical_distance)  # [layers, wavelengths, angles]
-    incident = isotropic_ports(incident_index, parallel)
-    substrate = isotropic_ports(substrate_index, parallel)
+    incident = core.Ports.isotropic(incident_index, parallel)
+    substrate = core.Ports.isotropic(substrate_index, parallel)
     result = core.scatter(core.compose(layers)(substrate.outgoing), incident)
 
     # Independently sum repeated reflections within each film, starting at the substrate.
@@ -228,7 +223,7 @@ def test_twisted_chi_selects_circular_polarization_and_remains_reciprocal():
 
     medium = core.Medium.from_chi(chi, parallel)
     layers = core.propagate(medium.generator[..., None], 2 * np.pi * thickness / wavelengths)
-    ports = isotropic_ports(ambient_index, parallel)
+    ports = core.Ports.isotropic(ambient_index, parallel)
     result = core.scatter(core.compose(layers)(ports.outgoing), ports)
     reverse = core.scatter(core.compose(layers[::-1])(ports.outgoing), ports)
     reflectance, transmittance = result.powers(circular, ports, ports)
@@ -280,8 +275,9 @@ def test_interior_fields_match_every_interface_and_conserve_normal_power():
     right_excitation = substrate_chi(right_field)
     transmitted_power = substrate.power(transmitted)
 
-    for index, field in zip(range(len(thicknesses) - 1, -1, -1),
-                            medium.interior(thicknesses, wavelength, exit_state, fractions)):
+    fields = medium.interior(thicknesses, wavelength, exit_state, fractions)
+    for index in range(len(thicknesses) - 1, -1, -1):
+        field = fields[:, index]
         excitation = chi[index](field)
         # Maxwell's jump conditions compare physical fields across different materials.
         np.testing.assert_allclose((core.mv.z ^ (field[:, -1] - right_field)).kernel,
@@ -331,12 +327,11 @@ def test_selected_circular_wave_decays_through_the_twisted_reflector():
     chi = rotations >> base(rotations << core.Bivector)
 
     medium = core.Medium.from_chi(chi, parallel)
-    ports = isotropic_ports(ambient_index, parallel)
+    ports = core.Ports.isotropic(ambient_index, parallel)
     propagation = core.compose(core.propagate(medium.generator, 2 * np.pi * thicknesses / wavelength))
     result = core.scatter(propagation(ports.outgoing), ports)
     exit_state = ports.outgoing(result.transmission(circular))
-    fields = tuple(medium.interior(thicknesses, wavelength, exit_state, fractions))
-    electric = core.mv.t | stack(fields[::-1], axis=1)
+    electric = core.mv.t | medium.interior(thicknesses, wavelength, exit_state, fractions)
     intensity = -(electric.real().scalar_norm_squared()
                   + (-1j * electric).real().scalar_norm_squared())
     first_pitch = intensity[:, :slices_per_turn].mean(axis=1).mean(axis=1)

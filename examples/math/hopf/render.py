@@ -92,14 +92,18 @@ def animate_sweep(stream: Iterable[tuple[core.Vector, core.Vector]]) -> list[np.
     """Fibres added one by one as their direction spirals over the sphere, the newest drawn heavier;
     one frame per direction, in a box that holds every fibre of the stream."""
     seen = list(stream)
-    box = extent(*(clipped(components(projected)) for _, projected in seen))
+    points = np.stack([components(direction) for direction, _ in seen])         # [frames, 3]
+    colours = np.stack([colour(direction) for direction, _ in seen])            # [frames, 3]
+    curves = [clipped(components(projected)) for _, projected in seen]          # [frames] of [samples + 1, 3]
+    figure = plt.figure(figsize=(9, 5.5))
+    base, space = panels(figure, extent(*curves))
+    # Every direction's dot at once, each grown to its size from its own frame on.
+    dots = base.scatter(*points.T, c=colours, s=0, depthshade=False)
     frames = []
-    for count in range(1, len(seen) + 1):
-        figure = plt.figure(figsize=(9, 5.5))
-        base, space = panels(figure, box)
-        for direction, projected in seen[:count - 1]:
-            draw_fibres(base, space, direction, projected, 0.6)
-        draw_fibres(base, space, *seen[count - 1], 2.2)
+    for count, (curve, rgb) in enumerate(zip(curves, colours), start=1):
+        dots.set_sizes(12 * (np.arange(len(seen)) < count))
+        newest, = space.plot(*curve.T, color=rgb, linewidth=2.2)
         frames.append(capture(figure))
-        plt.close(figure)
+        newest.set_linewidth(0.6)
+    plt.close(figure)
     return frames

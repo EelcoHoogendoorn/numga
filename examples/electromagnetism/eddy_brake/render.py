@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,12 +12,11 @@ from matplotlib.patches import Circle, FancyArrowPatch
 from matplotlib.path import Path
 from matplotlib.tri import LinearTriInterpolator, Triangulation, TriContourSet
 
+from numga import concatenate, stack
+from numga.extensor import Extensor
 from examples.animation import capture
 from examples.electromagnetism.eddy_brake import core
-from examples.mesh import Mesh
-
-if TYPE_CHECKING:
-    from IPython.display import Image as Shown
+from examples.mesh import Mesh, as_ga_sparse, as_scalar
 
 IMAGE_SAMPLES = 256
 ANIMATION_DPI = 120
@@ -34,6 +32,8 @@ ARROW_LENGTH = 0.035
 HEAT_GAMMA = 0.3
 CURRENT_COLOURS = LinearSegmentedColormap.from_list("current", ("#f8f5ed", "#edb15f", "#c95832"))
 HEAT_COLOURS = LinearSegmentedColormap.from_list("heat", ("#fbf9f4", "#e58b3a", "#8f2d1b"))
+MODE_COLOURS = LinearSegmentedColormap.from_list("mode", ("#2b6c8f", "#f8f5ed", "#c95832"))
+MODE_LEVELS = 9
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def circular_fibres(inner_radius: float, outer_radius: float, curves: int, sampl
 
 def rotation_marks(orientations: core.Rotor, radius: float) -> np.ndarray:
     """Material rim positions, `[frames, cases, 2]`."""
-    return (orientations >> (core.mv.x * (0.94 * radius))).cast(core.ga.subspace("x y")).kernel
+    return (orientations >> (core.mv.x * (FIBRE_REACH * radius))).cast(core.ga.subspace("x y")).kernel
 
 
 def rotation_marker(ax: plt.Axes) -> PathCollection:
@@ -74,32 +74,34 @@ def rotation_marker(ax: plt.Axes) -> PathCollection:
                       zorder=6, clip_on=False)
 
 
-def vertex_currents(mesh: Mesh, currents: core.Vector) -> np.ndarray:
-    """Area-weighted current at vertices for drawing a batch of face fields `[cases] Vector[F]`."""
-    current = currents.cast(core.ga.subspace("x y")).kernel
-    areas = mesh.triangle_areas.cast(core.ga.subspace.scalar()).kernel[:, 0]
-    vertex_count = len(mesh.vertices.batch())
-    cases = np.arange(len(current))
-    vertex_current = np.zeros((len(current), vertex_count, 2))
-    np.add.at(vertex_current, (cases[:, None, None], mesh.faces[None, :, :]),
-              (areas[None, :, None] * current)[:, :, None, :])
-    vertex_areas = np.zeros(vertex_count)
-    np.add.at(vertex_areas, mesh.faces, areas[:, None])
-    return vertex_current / vertex_areas[None, :, None]
+def at_vertices(mesh: Mesh, field: Extensor) -> Extensor:
+    """Face fields averaged at each vertex, weighted by area, for drawing `[...] X[F]` as `[...] X[V]`."""
+    third = as_ga_sparse(mesh.faces, as_scalar(np.full(mesh.faces.shape, 1 / 3)))
+    return (~third * (mesh.triangle_areas * field)) / mesh.vertex_areas
 
 
-def vertex_scalars(mesh: Mesh, values: np.ndarray) -> np.ndarray:
-    """Area-weighted vertex colours from scalar face fields `[frames, cases, F]`."""
-    areas = mesh.triangle_areas.cast(core.ga.subspace.scalar()).kernel[:, 0]
-    vertex_count = len(mesh.vertices.batch())
-    face_values = values.reshape(-1, len(mesh.faces))
-    batches = np.arange(len(face_values))
-    vertex_values = np.zeros((len(face_values), vertex_count))
-    np.add.at(vertex_values, (batches[:, None, None], mesh.faces[None, :, :]),
-              (face_values * areas)[:, :, None])
-    vertex_areas = np.zeros(vertex_count)
-    np.add.at(vertex_areas, mesh.faces, areas[:, None])
-    return (vertex_values / vertex_areas).reshape(*values.shape[:-1], vertex_count)
+def fibre_colours(fibres: tuple[core.Vector, ...], shown: np.ndarray) -> np.ndarray:
+    """A colour for every guide curve of every family on every panel, `[cases, curves, 4]`: each family
+    is drawn on the panels that show it, `shown` `[cases, families]`."""
+    family = np.concatenate([np.full(len(guides), index) for index, guides in enumerate(fibres)])
+    return np.concatenate((np.broadcast_to(FIBRE_COLOUR[:3], shown.shape[:1] + family.shape + (3,)),
+                           (FIBRE_COLOUR[3] * shown[:, family])[..., None]), axis=-1)
+
+
+def disc_panel(figure: plt.Figure, index: int, count: int, extent: float, field_centre: np.ndarray,
+               width: float, colours: np.ndarray) -> tuple[plt.Axes, LineCollection, PathCollection, LineCollection]:
+    """One panel of a row of rotating discs: fibre guides, rim knob, rim outline and the magnet's width."""
+    ax = figure.add_axes(((index + 0.035) / count, 0.03, 0.93 / count, 0.86))
+    threads = LineCollection([], colors=colours, linewidths=FIBRE_WIDTH, zorder=2)
+    ax.add_collection(threads)
+    marker = rotation_marker(ax)
+    outline = LineCollection([], colors="#746b60", linewidths=0.8, zorder=3)
+    ax.add_collection(outline)
+    ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor="#334155",
+                        linewidth=1, linestyle=(0, (4, 4)), zorder=4))
+    ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+    ax.set_axis_off()
+    return ax, threads, marker, outline
 
 
 def smooth_contour(curve: np.ndarray, passes: int) -> np.ndarray:
@@ -159,8 +161,7 @@ def current_contours(ax: plt.Axes, triangles: Triangulation, streamfunction: np.
     return contours
 
 
-def draw(mesh: Mesh, response: core.Response, centre: core.Vector,
-         width: float, labels: tuple[str, ...]) -> plt.Figure:
+def draw(mesh: Mesh, response: core.Response, centre: core.Vector, width: float) -> plt.Figure:
     """The materials' solved currents, with magnitude on one colour scale and field width dashed."""
     positions = mesh.vertices.cast(core.ga.subspace("x y")).kernel
     field_centre = centre.cast(core.ga.subspace("x y")).kernel
@@ -168,7 +169,7 @@ def draw(mesh: Mesh, response: core.Response, centre: core.Vector,
 
     # Average the face currents at shared vertices solely to draw a continuous field.
     # The streamlines follow this interpolated solution; they are not prescribed paths.
-    vertex_current = vertex_currents(mesh, response.current)
+    vertex_current = at_vertices(mesh, response.current).cast(core.ga.subspace("x y")).kernel  # [cases, V, 2]
     extent = np.abs(positions).max()
     sample_axis = np.linspace(-extent, extent, IMAGE_SAMPLES)
     horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
@@ -176,9 +177,9 @@ def draw(mesh: Mesh, response: core.Response, centre: core.Vector,
     current_scale = PowerNorm(CURRENT_GAMMA, vmin=0, vmax=magnitude.max())
     boundary = mesh.edges[mesh.boundary_edges]
 
-    figure, panels = plt.subplots(1, len(labels), figsize=(4 * len(labels), 4.2),
+    figure, panels = plt.subplots(1, len(vertex_current), figsize=(4 * len(vertex_current), 4.2),
                                   squeeze=False, layout="constrained")
-    for ax, label, vectors, speed in zip(panels[0], labels, vertex_current, magnitude):
+    for ax, vectors, speed in zip(panels[0], vertex_current, magnitude):
         along = LinearTriInterpolator(triangles, vectors[:, 0])(horizontal, vertical)
         across = LinearTriInterpolator(triangles, vectors[:, 1])(horizontal, vertical)
         ax.tripcolor(triangles, speed, shading="gouraud", cmap=CURRENT_COLOURS,
@@ -189,66 +190,83 @@ def draw(mesh: Mesh, response: core.Response, centre: core.Vector,
         ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor="#334155",
                             linewidth=1, linestyle=(0, (4, 4))))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
-        ax.set_title(label, fontsize=11)
         ax.set_axis_off()
     return figure
 
 
-def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector,
-            width: float, labels: tuple[str, ...], fibres: tuple[core.Vector, ...]) -> list[np.ndarray]:
-    """Batched rotating materials and currents, with `[curves, samples]` body-fixed guides per panel."""
-    from numga import stack
-
-    states = list(frames)
+def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
+    """Streamfunctions of current patterns `[cases, patterns] Scalar[V]`, a row of patterns per
+    material: current circulates along their contours, opposite ways around warm and cool peaks."""
+    values = streamfunctions.cast(core.ga.subspace.scalar()).kernel[..., 0]   # [cases, patterns, V]
     positions = mesh.vertices.cast(core.ga.subspace("x y")).kernel
-    field_centre = centre.cast(core.ga.subspace("x y")).kernel
     triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
-    face_current = stack([state.response.current for state in states], axis=0)  # [frames, cases] Vector[F]
-    current = vertex_currents(mesh, face_current.reshape(-1))
-    current = current.reshape(len(states), len(labels), len(positions), 2)
+    extent = np.linalg.norm(positions, axis=-1).max()
+    boundary = mesh.edges[mesh.boundary_edges]
+    rows, columns = values.shape[:2]
+    figure, panels = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows),
+                                  squeeze=False, layout="constrained")
+    for row, streams in zip(panels, values):
+        for ax, stream in zip(row, streams):
+            reach = np.abs(stream).max()
+            ax.tripcolor(triangles, stream, shading="gouraud", cmap=MODE_COLOURS,
+                         vmin=-reach, vmax=reach, rasterized=True)
+            ax.tricontour(triangles, stream, levels=np.linspace(-reach, reach, MODE_LEVELS + 2)[1:-1],
+                          colors="#493c32", linewidths=0.6, linestyles="solid")
+            ax.add_collection(LineCollection(positions[boundary], colors="#746b60", linewidths=0.8))
+            ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+            ax.set_axis_off()
+    return figure
+
+
+def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, width: float,
+            fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
+    """Batched rotating materials and currents, with `[curves, samples]` body-fixed guide families
+    drawn on the panels that show them, `[cases, families]`."""
+    states = list(frames)
+    # The current belongs to material faces; turn its direction into the laboratory frame.
+    field = stack([state.orientation >> state.current for state in states])     # [frames, cases] Vector[F]
+    current = at_vertices(mesh, field).cast(core.ga.subspace("x y")).kernel     # [frames, cases, V, 2]
     magnitude = np.linalg.norm(current, axis=-1)
     peak = magnitude.max()
     current_scale = PowerNorm(CURRENT_GAMMA, vmin=0, vmax=peak)
-    extent = np.abs(positions).max()
+    reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
+    extent = np.linalg.norm(reference, axis=-1).max()
     sample_axis = np.linspace(-extent, extent, IMAGE_SAMPLES)
     horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
+    field_centre = centre.cast(core.ga.subspace("x y")).kernel
+    boundary = mesh.edges[mesh.boundary_edges]
+    guides = concatenate(fibres)                                              # [curves, samples] Vector
 
     # Fibre curves and one rim mark are fixed to each body. The magnetic patches stay still.
     marks = rotation_marks(stack([state.orientation for state in states]), extent)
 
-    figure = plt.figure(figsize=(3.3 * len(labels), 3.6), dpi=ANIMATION_DPI)
-    boundary = mesh.edges[mesh.boundary_edges]
-    panels = []
-    for i, label in enumerate(labels):
-        ax = figure.add_axes(((i + 0.035) / len(labels), 0.03, 0.93 / len(labels), 0.86))
-        colours = ax.tripcolor(triangles, magnitude[0, i], shading="gouraud", cmap=CURRENT_COLOURS,
-                               norm=current_scale, rasterized=True)
-        threads = LineCollection([], colors=FIBRE_COLOUR, linewidths=FIBRE_WIDTH, zorder=2)
-        ax.add_collection(threads)
-        marker = rotation_marker(ax)
-        ax.add_collection(LineCollection(positions[boundary], colors="#746b60", linewidths=0.8))
-        ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor="#334155",
-                            linewidth=1, linestyle=(0, (4, 4)), zorder=4))
-        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
-        ax.set_title(label, fontsize=10)
-        ax.set_axis_off()
-        panels.append((ax, colours, threads, marker, len(ax.patches)))
-
+    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=ANIMATION_DPI)
+    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
+              for i, colours in enumerate(fibre_colours(fibres, shown))]
+    fixed_patches = len(panels[0][0].patches)
     images = []
     for state, vectors, speed, frame_marks in zip(states, current, magnitude, marks):
-        paths = []
-        for i, (ax, colours, threads, marker, fixed_patches) in enumerate(panels):
-            colours.set_array(speed[i])
-            threads.set_segments((state.orientation[i] >> fibres[i]).cast(core.ga.subspace("x y")).kernel)
+        positions = state.vertices.cast(core.ga.subspace("x y")).kernel
+        threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
+        paths, surfaces = [], []
+        for i, (ax, threads, marker, outline) in enumerate(panels):
+            # The display mesh moves with the material; vertex colours interpolate face currents.
+            triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
+            surfaces.append(ax.tripcolor(triangles, speed[i], shading="gouraud", cmap=CURRENT_COLOURS,
+                                         norm=current_scale, rasterized=True, zorder=1))
+            outline.set_segments(positions[i, boundary])
+            threads.set_segments(threads_at[i])
             marker.set_offsets(frame_marks[i:i + 1])
             along = LinearTriInterpolator(triangles, vectors[i, :, 0])(horizontal, vertical)
             across = LinearTriInterpolator(triangles, vectors[i, :, 1])(horizontal, vertical)
             # A shared power scale keeps weak currents visible while still fading to zero.
             paths.append(ax.streamplot(sample_axis, sample_axis, along, across,
-                                         color=(0.29, 0.24, 0.20, (speed[i].max() / peak) ** STREAMLINE_GAMMA),
-                                         density=1.2, linewidth=0.8, arrowsize=0.8, zorder=3))
+                                       color=(0.29, 0.24, 0.20, (speed[i].max() / peak) ** STREAMLINE_GAMMA),
+                                       density=1.2, linewidth=0.8, arrowsize=0.8, zorder=3))
         images.append(capture(figure))
-        for path, (ax, colours, threads, marker, fixed_patches) in zip(paths, panels):
+        for surface in surfaces:
+            surface.remove()
+        for path, (ax, threads, marker, outline) in zip(paths, panels):
             path.lines.remove()
             for arrow in tuple(ax.patches)[fixed_patches:]:
                 arrow.remove()
@@ -256,42 +274,28 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector,
     return images
 
 
-def animate_heat(mesh: Mesh, frames: Iterable[core.ThermalMotion], centre: core.Vector,
-                 width: float, labels: tuple[str, ...], fibres: tuple[core.Vector, ...]) -> list[np.ndarray]:
+def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, width: float,
+                 fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one common scale."""
-    from numga import stack
-
     states = list(frames)
     # Face heat is energy. Dividing by each material face's area gives the density to colour.
-    density = stack([state.heat for state in states], axis=0) / mesh.triangle_areas  # [frames, cases] Scalar[F]
-    values = density.cast(core.ga.subspace.scalar()).kernel[..., 0]
-    heat_scale = PowerNorm(HEAT_GAMMA, vmin=0, vmax=values.max())
-    values = vertex_scalars(mesh, values)
+    density = stack([state.heat for state in states]) / mesh.triangle_areas  # [frames, cases] Scalar[F]
+    heat_scale = PowerNorm(HEAT_GAMMA, vmin=0, vmax=density.cast(core.ga.subspace.scalar()).kernel.max())
+    values = at_vertices(mesh, density).cast(core.ga.subspace.scalar()).kernel[..., 0]  # [frames, cases, V]
     reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
     extent = np.linalg.norm(reference, axis=-1).max()
     field_centre = centre.cast(core.ga.subspace("x y")).kernel
     boundary = mesh.edges[mesh.boundary_edges]
+    guides = concatenate(fibres)                                              # [curves, samples] Vector
     marks = rotation_marks(stack([state.orientation for state in states]), extent)
 
-    figure = plt.figure(figsize=(3.3 * len(labels), 3.6), dpi=ANIMATION_DPI)
-    panels = []
-    for i, label in enumerate(labels):
-        ax = figure.add_axes(((i + 0.035) / len(labels), 0.03, 0.93 / len(labels), 0.86))
-        threads = LineCollection([], colors=FIBRE_COLOUR, linewidths=FIBRE_WIDTH, zorder=2)
-        ax.add_collection(threads)
-        marker = rotation_marker(ax)
-        outline = LineCollection([], colors="#746b60", linewidths=0.8, zorder=3)
-        ax.add_collection(outline)
-        ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor="#334155",
-                            linewidth=1, linestyle=(0, (4, 4)), zorder=4))
-        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
-        ax.set_title(label, fontsize=10)
-        ax.set_axis_off()
-        panels.append((ax, threads, marker, outline))
-
+    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=ANIMATION_DPI)
+    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
+              for i, colours in enumerate(fibre_colours(fibres, shown))]
     images = []
     for state, densities, frame_marks in zip(states, values, marks):
         positions = state.vertices.cast(core.ga.subspace("x y")).kernel
+        threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
         surfaces = []
         for i, (ax, threads, marker, outline) in enumerate(panels):
             # The display mesh moves with the material; vertex colours interpolate face heat.
@@ -299,7 +303,7 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.ThermalMotion], centre: core.
             surfaces.append(ax.tripcolor(triangles, densities[i], shading="gouraud",
                                           cmap=HEAT_COLOURS, norm=heat_scale, rasterized=True, zorder=1))
             outline.set_segments(positions[i, boundary])
-            threads.set_segments((state.orientation[i] >> fibres[i]).cast(core.ga.subspace("x y")).kernel)
+            threads.set_segments(threads_at[i])
             marker.set_offsets(frame_marks[i:i + 1])
         images.append(capture(figure))
         for surface in surfaces:
@@ -308,18 +312,16 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.ThermalMotion], centre: core.
     return images
 
 
-def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre: core.Vector,
-                      width: float, labels: tuple[str, ...], fibres: tuple[core.Vector, ...]) -> list[np.ndarray]:
+def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre: core.Vector, width: float,
+                      fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
     """Current build-up and decay on a moving material mesh, on one scale across cases and time."""
-    from numga import stack
-
     states = list(frames)
     reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
     # The current belongs to material faces; turn its direction into the laboratory frame.
-    field = stack([state.orientation >> state.current for state in states], axis=0)  # [frames, cases] Vector[F]
+    field = stack([state.orientation >> state.current for state in states])  # [frames, cases] Vector[F]
     magnitude = field.norm().cast(core.ga.subspace.scalar()).kernel[..., 0]
     current = field.cast(core.ga.subspace("x y")).kernel
-    streamfunction = stack([state.streamfunction for state in states], axis=0).cast(core.ga.subspace.scalar()).kernel[..., 0]
+    streamfunction = stack([state.streamfunction for state in states]).cast(core.ga.subspace.scalar()).kernel[..., 0]
     # Each panel keeps its contour values throughout the animation, including current decay.
     # Separate ranges keep the weak material cases legible; colours share one magnitude scale.
     fractions = (np.arange(-CURRENT_LEVELS, CURRENT_LEVELS) + 0.5) / CURRENT_LEVELS
@@ -328,37 +330,26 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
     opacity = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(magnitude.shape[:2]),
                          where=peak > 0) ** STREAMLINE_GAMMA
     current_scale = PowerNorm(CURRENT_GAMMA, vmin=0, vmax=peak)
-    vertex_magnitude = vertex_scalars(mesh, magnitude)
+    vertex_magnitude = at_vertices(mesh, field.norm()).cast(core.ga.subspace.scalar()).kernel[..., 0]
     extent = np.linalg.norm(reference, axis=-1).max()
     field_centre = centre.cast(core.ga.subspace("x y")).kernel
     boundary = mesh.edges[mesh.boundary_edges]
+    guides = concatenate(fibres)                                              # [curves, samples] Vector
     marks = rotation_marks(stack([state.orientation for state in states]), extent)
 
-    figure = plt.figure(figsize=(3.3 * len(labels), 3.6), dpi=ANIMATION_DPI)
-    panels = []
-    for i, label in enumerate(labels):
-        ax = figure.add_axes(((i + 0.035) / len(labels), 0.03, 0.93 / len(labels), 0.86))
-        threads = LineCollection([], colors=FIBRE_COLOUR, linewidths=FIBRE_WIDTH, zorder=2)
-        ax.add_collection(threads)
-        marker = rotation_marker(ax)
-        outline = LineCollection([], colors="#746b60", linewidths=0.8, zorder=3)
-        ax.add_collection(outline)
-        ax.add_patch(Circle(field_centre, width, facecolor="none", edgecolor="#334155",
-                            linewidth=1, linestyle=(0, (4, 4)), zorder=4))
-        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
-        ax.set_title(label, fontsize=10)
-        ax.set_axis_off()
-        panels.append((ax, threads, marker, outline, len(ax.patches)))
-
+    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=ANIMATION_DPI)
+    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
+              for i, colours in enumerate(fibre_colours(fibres, shown))]
+    fixed_patches = len(panels[0][0].patches)
     images = []
     for state, vectors, speed, stream, alpha, frame_marks in zip(
             states, current, vertex_magnitude, streamfunction, opacity, marks):
         positions = state.vertices.cast(core.ga.subspace("x y")).kernel
-        paths = []
-        surfaces = []
-        for i, (ax, threads, marker, outline, fixed_patches) in enumerate(panels):
+        threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
+        paths, surfaces = [], []
+        for i, (ax, threads, marker, outline) in enumerate(panels):
             outline.set_segments(positions[i, boundary])
-            threads.set_segments((state.orientation[i] >> fibres[i]).cast(core.ga.subspace("x y")).kernel)
+            threads.set_segments(threads_at[i])
             marker.set_offsets(frame_marks[i:i + 1])
             triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
             surfaces.append(ax.tripcolor(triangles, speed[i], shading="gouraud",
@@ -369,7 +360,7 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
         images.append(capture(figure))
         for surface in surfaces:
             surface.remove()
-        for path, (ax, threads, marker, outline, fixed_patches) in zip(paths, panels):
+        for path, (ax, threads, marker, outline) in zip(paths, panels):
             path.remove()
             for arrow in tuple(ax.patches)[fixed_patches:]:
                 arrow.remove()
@@ -377,22 +368,10 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
     return images
 
 
-def inline(frames: list[np.ndarray], duration_ms: int) -> Shown:
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")
-
-
 def readout(response: core.Response, labels: tuple[str, ...]) -> str:
     """Material, signed torque about the disc axis, and total dissipated power."""
     torque = response.torque.cast(core.ga.subspace("xy")).kernel[..., 0] * 1e3
-    heating = response.heating.batch().sum(axis=-1).cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
+    heating = response.heating.sites.sum().cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
     label_width = max(len("material"), *(len(label) for label in labels))
     header = f"{'material':<{label_width}}  {'torque (mN m)':>14}  {'heating (mW)':>14}"
     rows = (f"{label:<{label_width}}  {moment:14.2f}  {power:14.2f}"

@@ -38,7 +38,7 @@ Even = ga.gatype.even()
 Odd = ga.gatype.odd()
 PotentialGradient = ga.gatype((Vector, Vector))              # Vector <- Vector
 # The retarded time: steps that always close in, by at least the orbit's speed each, then Newton's.
-SETTLE_STEPS = 25
+SETTLE_STEPS = 6
 NEWTON_STEPS = 6
 FieldGradient = ga.gatype((Bivector, Vector))                # Bivector <- Vector
 

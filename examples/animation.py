@@ -26,11 +26,9 @@ def capture(fig: plt.Figure) -> np.ndarray:
     dpi = fig.dpi
     fig.set_dpi(dpi * SUPERSAMPLE)
     fig.canvas.draw()
-    pixels = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(float)
+    image = Image.fromarray(np.asarray(fig.canvas.buffer_rgba())).convert("RGB")
     fig.set_dpi(dpi)
-    rows, columns = pixels.shape[0] // SUPERSAMPLE, pixels.shape[1] // SUPERSAMPLE
-    blocks = pixels[:rows * SUPERSAMPLE, :columns * SUPERSAMPLE].reshape(rows, SUPERSAMPLE, columns, SUPERSAMPLE, 3)
-    return blocks.mean(axis=(1, 3)).round().astype(np.uint8)
+    return np.asarray(image.reduce(SUPERSAMPLE))
 
 
 def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:
@@ -68,3 +66,10 @@ def save_animation(frames: list[np.ndarray], name: str, duration_ms: int, colors
     save_gif(frames, str(path), duration_ms, scale, colors)
     print(f"Saved {path}")
     return path
+
+
+def show_animation(frames: list[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0):
+    """Save frames as an animation through `save_animation`, and return it for a notebook to show."""
+    from IPython.display import Image as Shown
+
+    return Shown(filename=str(save_animation(frames, name, duration_ms, colors, scale)))

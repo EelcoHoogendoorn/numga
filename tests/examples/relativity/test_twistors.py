@@ -9,6 +9,19 @@ TOLERANCE = 1e-11
 SAMPLES = 24
 
 
+def conformal_rotors(rng: np.random.Generator) -> core.Full:
+    """Random rotations, boosts, translations and special conformal transformations, composed."""
+    mv = core.mv
+    translations = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
+    special = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
+    return (
+        (mv.xy * rng.normal(size=SAMPLES) * 0.2).exp()
+        * (mv.xt * rng.normal(size=SAMPLES) * 0.2).exp()
+        * ((translations ^ core.INFINITY) * -0.5).exp()
+        * ((special ^ core.ORIGIN) * -0.5).exp()
+    )
+
+
 def test_clifford_action_and_hermitian_pairing_follow_conformal_rotors():
     rng = np.random.default_rng(821)
     mv = core.mv
@@ -16,14 +29,7 @@ def test_clifford_action_and_hermitian_pairing_follow_conformal_rotors():
     second = mv(core.Full, rng.normal(size=(SAMPLES, 64)) * 0.2)
     states = mv(core.Twistor, rng.normal(size=(SAMPLES, 8)))
     partners = mv(core.Twistor, rng.normal(size=(SAMPLES, 8)))
-    translations = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
-    special = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
-    rotors = (
-        (mv.xy * rng.normal(size=SAMPLES) * 0.2).exp()
-        * (mv.xt * rng.normal(size=SAMPLES) * 0.2).exp()
-        * ((translations ^ core.INFINITY) * -0.5).exp()
-        * ((special ^ core.ORIGIN) * -0.5).exp()
-    )
+    rotors = conformal_rotors(rng)
     moved = core.REPRESENTATIONS(rotors, states)
     moved_partners = core.REPRESENTATIONS(rotors, partners)
 
@@ -60,14 +66,7 @@ def test_shared_twistor_recovers_a_null_ray_and_transforms_with_its_events():
     twistors = core.through(first, second)
     planes = core.RAY(twistors, twistors)
     phases = (mv.xyztuv * rng.normal(size=SAMPLES)).exp()
-    translations = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
-    special = mv(core.Event, rng.normal(size=(SAMPLES, 4)) * 0.2)
-    rotors = (
-        (mv.xy * rng.normal(size=SAMPLES) * 0.2).exp()
-        * (mv.xt * rng.normal(size=SAMPLES) * 0.2).exp()
-        * ((translations ^ core.INFINITY) * -0.5).exp()
-        * ((special ^ core.ORIGIN) * -0.5).exp()
-    )
+    rotors = conformal_rotors(rng)
     moved = core.REPRESENTATIONS(rotors, twistors)
 
     # The two events have a shared null twistor. Its bilinear ray is the null
@@ -119,44 +118,50 @@ def test_robinson_twistors_stay_orthogonal_along_straight_future_null_rays():
                                0, atol=TOLERANCE)
 
 
-def test_linked_scene_curves_follow_the_fields_and_render():
-    import matplotlib.pyplot as plt
+POLARS = np.pi * np.array([0.4, 0.65])
+PER_CIRCLE = 3
+FIBRE_SAMPLES = 192
+TIMES = np.array([-0.8, 0.0, 0.8])
+# Centred differences of sampled curves resolve their tangents to about this accuracy.
+TANGENT_TOLERANCE = 0.003
 
-    from examples.relativity.twistors import render, scenarios
 
-    polars = np.pi * np.array([0.4, 0.65])
-    per_circle = 3
-    samples = 192
-    times = np.array([-0.8, 0.0, 0.8])
-    tangent_tolerance = 0.003
-    linking_tolerance = 0.0001
-    curves = core.fibres(polars, per_circle, samples)
-    electric = scenarios.ELECTRIC_TURN >> curves
-    magnetic = (core.mv.yz * (np.pi / 4)).exp() >> curves
-    electric_events = electric[None] + core.robinson(electric)[None] * times[:, None, None]
-    magnetic_events = magnetic[None] + core.robinson(magnetic)[None] * times[:, None, None]
-    electric_field = core.hopfion(electric_events) | core.mv.t
-    magnetic_field = (core.mv.xyzt * core.hopfion(magnetic_events)) | core.mv.t
-
-    # Centred differences test the sampled curves against the independently
-    # evaluated direction field, including the electric and magnetic lines after
-    # their material points have followed the straight energy-flow rays.
+def test_flow_lines_follow_the_robinson_directions():
+    curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
     tangent = (curves[..., 2:] - curves[..., :-2]).normalized()
     flow = core.robinson(curves[..., 1:-1]).cast(core.Spatial)
-    np.testing.assert_allclose((tangent ^ flow).kernel, 0, atol=tangent_tolerance)
+
+    # checks: the sampled circles run along the spatial directions of the congruence.
+    np.testing.assert_allclose((tangent ^ flow).kernel, 0, atol=TANGENT_TOLERANCE)
+
+
+def test_field_lines_follow_their_fields_along_the_energy_flow_rays():
+    from examples.relativity.twistors import scenarios
+
+    curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
+    electric = scenarios.ELECTRIC_TURN >> curves
+    magnetic = (core.mv.yz * (np.pi / 4)).exp() >> curves
+    times = TIMES[:, None, None, None]
+    electric_events = electric + core.robinson(electric) * times
+    magnetic_events = magnetic + core.robinson(magnetic) * times
+    electric_field = core.hopfion(electric_events) | core.mv.t
+    magnetic_field = (core.mv.xyzt * core.hopfion(magnetic_events)) | core.mv.t
     electric_tangent = (electric_events[..., 2:] - electric_events[..., :-2]).normalized()
     magnetic_tangent = (magnetic_events[..., 2:] - magnetic_events[..., :-2]).normalized()
+
+    # checks: after their material points have followed the straight energy-flow rays, the electric
+    # and the magnetic lines still run along their fields.
     np.testing.assert_allclose(
-        (electric_tangent ^ electric_field[..., 1:-1].normalized()).kernel,
-        0, atol=tangent_tolerance,
+        (electric_tangent ^ electric_field[..., 1:-1].normalized()).kernel, 0, atol=TANGENT_TOLERANCE,
     )
     np.testing.assert_allclose(
-        (magnetic_tangent ^ magnetic_field[..., 1:-1].normalized()).kernel,
-        0, atol=tangent_tolerance,
+        (magnetic_tangent ^ magnetic_field[..., 1:-1].normalized()).kernel, 0, atol=TANGENT_TOLERANCE,
     )
 
-    # The Gauss integral counts one linking of two distinct closed fibres.
-    first, second = curves[0], curves[1]
+
+def test_two_fibres_link_once():
+    curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
+    first, second = curves[0, 0], curves[0, 1]
     first_steps, second_steps = first[1:] - first[:-1], second[1:] - second[:-1]
     first_midpoints, second_midpoints = (first[1:] + first[:-1]) / 2, (second[1:] + second[:-1]) / 2
     offsets = first_midpoints[:, None] - second_midpoints[None, :]
@@ -164,32 +169,33 @@ def test_linked_scene_curves_follow_the_fields_and_render():
     volume = offsets ^ first_steps[:, None] ^ second_steps[None, :]
     linking = (core.SPATIAL_VOLUME.scalar_product(volume)
                / (distance_squared * distance_squared.square_root())).sum() / (4 * np.pi)
-    np.testing.assert_allclose(np.abs(linking.kernel), 1, rtol=0, atol=linking_tolerance)
 
-    # A ray's intersection with a time slice reconstructs the incident events,
-    # including when a boost changes their time coordinates.
-    events, ray, moved_events, moved_ray = scenarios.incidence()
-    points = core.point(events)
-    twistor = core.through(points[0], points[1])
-    plane = core.RAY(twistor, twistor)
-    recovered = core.at_time(plane, -(events | core.mv.t))
+    # checks: the Gauss integral counts one linking of two distinct closed fibres.
+    np.testing.assert_allclose(np.abs(linking.kernel), 1, rtol=0, atol=0.0001)
+
+
+def test_incidence_rays_meet_their_events_at_rest_and_boosted():
+    from examples.relativity.twistors import scenarios
+
+    twistors, events, rays = scenarios.incidence()
+    planes = core.RAY(twistors, twistors)
+    recovered = core.at_time(planes[:, None], -(events | core.mv.t))
+
+    # checks: a ray's intersection with a time slice reconstructs the incident events, including
+    # when a boost changes their time coordinates, and every sampled ray event sends its twistor to zero.
     np.testing.assert_allclose((recovered - events).kernel, 0, atol=TOLERANCE)
-    rotor = (core.mv.xt * (scenarios.RAPIDITY / 2)).exp()
-    moved_twistor = core.REPRESENTATIONS(rotor, twistor)
-    moved_plane = core.RAY(moved_twistor, moved_twistor)
-    recovered_moved = core.at_time(moved_plane, -(moved_events | core.mv.t))
-    np.testing.assert_allclose((recovered_moved - moved_events).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.REPRESENTATIONS(core.point(ray), twistor).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.REPRESENTATIONS(core.point(moved_ray), moved_twistor).kernel,
+    np.testing.assert_allclose(core.REPRESENTATIONS(core.point(rays), twistors[:, None]).kernel,
                                0, atol=TOLERANCE)
 
-    for figure in (
-        render.draw_incidence(events, ray, moved_events, moved_ray),
-        render.draw_congruence(curves),
-        render.draw_fields(electric),
-    ):
-        assert isinstance(figure, plt.Figure)
+
+def test_scenes_draw():
+    import matplotlib.pyplot as plt
+
+    from examples.relativity.twistors import render, scenarios
+
+    curves = core.fibres(POLARS, PER_CIRCLE, FIBRE_SAMPLES)
+    _, events, rays = scenarios.incidence()
+    for figure in (render.draw_incidence(events, rays), render.draw_congruence(curves),
+                   render.draw_fields(curves)):
         plt.close(figure)
-    frames = render.animate_fields(electric_events)
-    assert len(frames) == len(times)
-    assert all(np.ptp(frame) > 0 for frame in frames)
+    render.animate_fields(scenarios.propagation(TIMES))

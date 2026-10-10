@@ -43,29 +43,30 @@ def triangle(ax: plt.Axes, points: np.ndarray) -> Poly3DCollection:
     return artist
 
 
-def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt.Figure:
+def posed(source: core.Point, target: core.Point, placed: core.Point) -> tuple[plt.Figure, Poly3DCollection]:
     figure = plt.figure(figsize=(6, 4.5), layout="constrained")
     ax = figure.add_subplot(projection="3d")
     frame(ax, coordinates(source), coordinates(target))
-    triangle(ax, coordinates(placed))
+    return figure, triangle(ax, coordinates(placed))
+
+
+def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt.Figure:
+    figure, _ = posed(source, target, placed)
     return figure
 
 
-def draw_stages(source: core.Point, target: core.Point, increments: core.Motor) -> plt.Figure:
+def draw_stages(source: core.Point, target: core.Point, stages: Iterator[core.Point]) -> plt.Figure:
+    stages = tuple(stages)
     figure = plt.figure(figsize=(11, 3.4), layout="constrained")
-    placed = source
-    for index, (increment, title) in enumerate(zip(increments, ("Point", "Line", "Plane"))):
-        placed = increment >> placed
-        ax = figure.add_subplot(1, 3, index + 1, projection="3d")
-        frame(ax, coordinates(placed), coordinates(target))
+    for index, placed in enumerate(stages):
+        ax = figure.add_subplot(1, len(stages), index + 1, projection="3d")
+        frame(ax, coordinates(source), coordinates(target))
         triangle(ax, coordinates(placed))
-        ax.set_title(title)
     return figure
 
 
 def animate(states: Iterator[core.Point], source: core.Point, target: core.Point) -> list[np.ndarray]:
-    figure = draw_pose(source, target, source)
-    artist = figure.axes[0].collections[-1]
+    figure, artist = posed(source, target, source)
     frames = []
     for state in states:
         artist.set_verts([coordinates(state)])

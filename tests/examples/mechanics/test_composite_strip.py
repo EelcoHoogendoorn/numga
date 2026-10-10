@@ -64,8 +64,8 @@ def test_tension_response_matches_full_laminate_and_reverses_with_stack():
         longitudinal, transverse, poisson, shear, tension,
     )
     reference = laminate_response(angles, thickness, longitudinal, transverse, poisson, shear, tension)
-    extension = state.scalar_product(core.mv.scalar([1])).kernel[..., 0]
-    twist = -state.scalar_product(core.mv.yz).kernel[..., 0] / thickness
+    extension = core.extension(state).to_array()
+    twist = core.twist(state).to_array() / thickness
 
     np.testing.assert_allclose(extension, reference[:, 0], atol=1e-12)
     np.testing.assert_allclose(transverse_strain.kernel[..., 0], reference[:, 1], atol=1e-12)

@@ -22,14 +22,14 @@ DAMPING = np.array([0.02])
 GRAVITY = 4.0
 # A constraint's compliance, rigid to round-off; it keeps the two constraints of a rigid splice solvable.
 SPLICE = 1e-14
-# The swing's time step, its frames and the steps between them, and the frame duration.
-INTERVAL, FRAMES, SUBSTEPS = 0.002, 200, 15
+# The swing's time step, one per frame, its frames, and the frame duration.
+INTERVAL, FRAMES = 0.03, 200
 DURATION_MS = 30
 # The beam: its moving girders, their cells of unit length, their height, the bars' stiffness, the
 # modes' damping ratio, the final end displacement, its frames and the steps between them.
 BEAM_GIRDERS, BEAM_CELLS, BEAM_HEIGHT = 8, 32, 1.0
 BEAM_STIFFNESS, BEAM_DAMPING = 1e11, np.array([3.0])
-END_DISPLACEMENT, BEAM_FRAMES, BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 120, 20, 0.002
+END_DISPLACEMENT, BEAM_FRAMES, BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 120, 2, 0.02
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -50,7 +50,7 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
         compliance=(shape.compliance[:, None] * flexibility[:, None, None] * moving).field(),
         frequencies=shape.frequencies[:, None].broadcast_to((cases, modes, count)).field(),
         damping=mv.scalar(damping[:, None, None, None]).broadcast_to((cases, modes, count)).field(),
-        masses=shape.masses.batch().sum(axis=-1).broadcast_to((cases, count)).field(),
+        masses=shape.masses.sites.sum().broadcast_to((cases, count)).field(),
         inertia=shape.inertia.broadcast_to((cases, count)).field(),
         inverse_inertia=(shape.inertia.inverse() * moving).broadcast_to((cases, count)).field(),
     )
@@ -99,12 +99,11 @@ def clamped_beam(core: ModuleType, shape, count: int, damping: np.ndarray) -> tu
 
 
 # --- math -----------------------------------------------------------------------------
-def swing(core: ModuleType, shape, bodies, constraints, gravity, dt: float, frames: int, substeps: int) -> Iterator:
-    """The bodies' points at every frame, under gravity."""
+def swing(core: ModuleType, shape, bodies, constraints, gravity, dt: float, frames: int) -> Iterator:
+    """The bodies' points at every frame, under gravity, one step per frame."""
     for _ in range(frames):
         yield core.points(bodies, shape)                                   # [cases, bodies] Point[vertices]
-        for _ in range(substeps):
-            bodies = core.step(bodies, constraints, dt, gravity)
+        bodies = core.step(bodies, constraints, dt, gravity)
 
 
 def displaced(core: ModuleType, bodies, rest, displacement: float):
@@ -138,7 +137,7 @@ def main():
     shape = core.girder(CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, MODES)
     bodies, constraints = hinged_chain(core, shape, LINKS, DAMPING)
     gravity = (core.mv.y * -GRAVITY).dual()                                # [] Direction
-    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, FRAMES, SUBSTEPS)
+    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, FRAMES)
     save_animation(render.swinging_chain(geometry, shape.edges, core.points(bodies, shape)), "modal_xpbd_swing", DURATION_MS)
 
     beam = core.girder(BEAM_CELLS, float(BEAM_CELLS), BEAM_HEIGHT, BEAM_STIFFNESS, DENSITY, MODES)

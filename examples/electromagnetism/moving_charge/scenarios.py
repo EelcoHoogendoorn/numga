@@ -34,10 +34,11 @@ def charge(rapidity: float) -> core.Charge:
 
 
 def speed_up() -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
-    """The lab's view at time zero as the charge speeds up and slows down: the events, the field,
-    and the current from the metric-free trace of the field's gradient."""
+    """The lab's view at time zero as the charge speeds up: the events, the field, and the current
+    from the metric-free trace of the field's gradient."""
     events = core.grid(HALF_WIDTH, HALF_HEIGHT, COLUMNS, ROWS)               # [rows, columns] Vector
-    rapidities = TOP_RAPIDITY * (1 - np.cos(2 * np.pi * np.arange(FRAMES) / FRAMES)) / 2
+    # Slowing down retraces speeding up: the rise alone is half the frames.
+    rapidities = TOP_RAPIDITY * (1 - np.cos(2 * np.pi * np.arange(FRAMES // 2 + 1) / FRAMES)) / 2
     for rapidity in rapidities:
         moving = charge(rapidity)
         field = core.field(core.potential_gradient(moving, events))           # [rows, columns] Bivector
@@ -62,8 +63,9 @@ def main() -> None:
     from examples.animation import save_animation
     from examples.electromagnetism.moving_charge import render
 
-    states = list(speed_up())
-    save_animation(render.animate(states), "moving_charge", DURATION_MS)
+    speeding_up = render.animate(speed_up())
+    # Slowing down plays the rise back.
+    save_animation(speeding_up + speeding_up[-2:0:-1], "moving_charge", DURATION_MS)
     for name, speed in ORBIT_SPEEDS.items():
         orbit = core.Orbit(ORBIT_CHARGE, ORBIT_RADIUS, speed)
         save_animation(render.animate_waves(list(circling(orbit))), f"radiating_charge_{name}", DURATION_MS)

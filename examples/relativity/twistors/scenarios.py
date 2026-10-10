@@ -10,35 +10,32 @@ from numga import stack
 from examples.relativity.twistors import core
 
 mv = core.mv
-# The boost that carries the incidence along, and the turn from the flow lines to the electric lines.
-RAPIDITY = 0.8
+# The boosts that carry the incidence along, the first at rest, and the turn from the flow lines to the electric lines.
+RAPIDITIES = np.array([0.0, 0.8])
+BOOST = (mv.xt * (RAPIDITIES / 2)).exp()                                     # [cases] Rotor
 ELECTRIC_TURN = (mv.xy * (np.pi / 4)).exp()
 
 
 # --- math -----------------------------------------------------------------------------
-def incidence() -> tuple[core.Event, core.Event, core.Event, core.Event]:
-    """Two null-separated events, their reconstructed light ray, and their Lorentz-boosted images."""
+def incidence() -> tuple[core.Twistor, core.Event, core.Event]:
+    """The twistor of the light ray through two null-separated events, the events and the reconstructed
+    ray, once per boost."""
     emission, light_direction, separation = mv.x * -0.6 + mv.z * 0.3, mv.t + (mv.x + mv.z) / np.sqrt(2), 1.4
     margin, ray_samples = 0.6, 120
     events = stack([emission, emission + light_direction * separation])       # [events] Event
     points = core.point(events)                                              # [events] Vector
     twistor = core.through(points[0], points[1])                              # [] Twistor
-    plane = core.RAY(twistor, twistor)                                        # [] Bivector
-    fractions = np.linspace(-margin, 1 + margin, ray_samples)
-    event_times = -(mv.t | events)
-    ray_times = event_times[0] + (event_times[1] - event_times[0]) * fractions
-    ray = core.at_time(plane, ray_times)                                      # [ray_samples] Event
 
     # Transform the twistor with the spinor action and the events with the sandwich.
-    rotor = (mv.xt * (RAPIDITY / 2)).exp()
-    moved_twistor = core.REPRESENTATIONS(rotor, twistor)
-    moved_plane = core.RAY(moved_twistor, moved_twistor)
-    moved_points = rotor >> points
-    moved_events = moved_points.cast(core.Event) / -(core.INFINITY | moved_points)
-    moved_event_times = -(mv.t | moved_events)
-    moved_ray_times = moved_event_times[0] + (moved_event_times[1] - moved_event_times[0]) * fractions
-    moved_ray = core.at_time(moved_plane, moved_ray_times)
-    return events, ray, moved_events, moved_ray
+    twistors = core.REPRESENTATIONS(BOOST, twistor)                           # [cases] Twistor
+    planes = core.RAY(twistors, twistors)                                     # [cases] Bivector
+    moved_points = BOOST[:, None] >> points                                   # [cases, events] Vector
+    moved_events = moved_points.cast(core.Event) / -(core.INFINITY | moved_points)   # [cases, events] Event
+    fractions = np.linspace(-margin, 1 + margin, ray_samples)
+    event_times = -(mv.t | moved_events)                                     # [cases, events] Scalar
+    ray_times = event_times[:, :1] + (event_times[:, 1:] - event_times[:, :1]) * fractions
+    rays = core.at_time(planes[:, None], ray_times)                           # [cases, ray_samples] Event
+    return twistors, moved_events, rays
 
 
 def congruence() -> core.Spatial:
@@ -48,15 +45,15 @@ def congruence() -> core.Spatial:
 
 
 def electric_lines() -> core.Spatial:
-    """The Hopfion's electric field lines at time zero: the flow lines, turned. Its magnetic lines
-    are the same family turned the other way, and look alike."""
+    """The Hopfion's electric field lines at time zero: the flow lines, a quarter turn in the xy plane.
+    Its magnetic lines are the flow lines a quarter turn in the yz plane, and look alike."""
     return ELECTRIC_TURN >> congruence()
 
 
 def propagation(times: np.ndarray) -> Iterator[core.Event]:
     """Electric field lines transported along straight null rays, one set per instant."""
-    electric = electric_lines()                                               # [curves, fibre_samples + 1] Spatial
-    rays = core.robinson(electric)                                            # [curves, fibre_samples + 1] Event
+    electric = electric_lines()                                               # [polars, per_circle, fibre_samples + 1] Spatial
+    rays = core.robinson(electric)                                            # [polars, per_circle, fibre_samples + 1] Event
     # The null field's lines are carried by its energy flow: each material point follows one
     # straight light ray, even as the lines deform.
     for time in times:
@@ -69,19 +66,17 @@ def main() -> None:
     from examples.relativity.twistors import render
 
     frames, frame_ms = 48, 80
-    events, ray, moved_events, moved_ray = incidence()
-    save_figure(render.draw_incidence(events, ray, moved_events, moved_ray), "twistor_incidence")
+    twistors, events, rays = incidence()
+    save_figure(render.draw_incidence(events, rays), "twistor_incidence")
     save_figure(render.draw_congruence(congruence()), "twistor_robinson")
     save_figure(render.draw_fields(electric_lines()), "twistor_hopfion")
     save_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, frames))), "twistor_hopfion", frame_ms)
 
     # --- checks
-    # The recovered ray meets the events it came from, before and after the boost.
-    points = core.point(events)
-    twistor = core.through(points[0], points[1])                              # [] Twistor
-    moved_twistor = core.REPRESENTATIONS((mv.xt * (RAPIDITY / 2)).exp(), twistor)   # [] Twistor
-    np.testing.assert_allclose((core.at_time(core.RAY(twistor, twistor), -(events | mv.t)) - events).kernel, 0.0, atol=1e-11)
-    np.testing.assert_allclose(core.REPRESENTATIONS(core.point(moved_ray), moved_twistor).kernel, 0.0, atol=1e-11)
+    # The recovered ray meets the events it came from, at rest and boosted.
+    planes = core.RAY(twistors, twistors)                                     # [cases] Bivector
+    np.testing.assert_allclose((core.at_time(planes[:, None], -(events | mv.t)) - events).kernel, 0.0, atol=1e-11)
+    np.testing.assert_allclose(core.REPRESENTATIONS(core.point(rays), twistors[:, None]).kernel, 0.0, atol=1e-11)
     # The field is null, and its energy flows along the Robinson ray through each point of its lines.
     lines = electric_lines()
     field = core.hopfion(lines)

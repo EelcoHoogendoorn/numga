@@ -31,8 +31,9 @@ def test_scenes_and_figures():
     figure = render.draw_dirac(gallery, mesh)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    frames = render.animate_rounding(scenarios.rounding())
-    assert len(frames) == scenarios.STEPS + 1
+    meshes = scenarios.rounding()
+    assert len(meshes) == scenarios.STEPS + 1
+    assert len(render.animate_rounding(meshes[:2])) == 2
 
 
 def test_the_dirac_operator_is_the_geometric_derivative_divided_by_the_face_planes():

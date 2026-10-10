@@ -6,9 +6,10 @@ from numga import stack
 
 from examples.geometry.origami import core
 
-STEPS = 16
+HALF_STEPS = 8
 DURATION_MS = 65
 SIDE = 2.0
+SHEET = core.mv.z
 CREASE_TOLERANCE = SIDE * 1e-10
 # Each corner flap carries both layers joined along the folded edge. The horns
 # turn those paired layers together; the two brim folds use the front sheet.
@@ -32,7 +33,6 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
     upper_centre = (centre + top) / 2
     left_centre = (centre + left) / 2
     eighth = (centre + quarter) / 2
-    normal = core.mv.z.dual()
 
     # Point coincidences set the main flaps; line coincidences open the two horns.
     # The last two folds turn opposite layers around the same brim crease.
@@ -43,15 +43,15 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
         core.point_bisector(centre, upper_left),
         core.point_bisector(top, centre),
         core.point_bisector(left, centre),
-        core.line_bisector(quarter & left_centre, centre & quarter, normal),
-        core.line_bisector(upper_centre & quarter, quarter & centre, normal),
+        core.line_bisector(quarter & left_centre, centre & quarter, SHEET),
+        core.line_bisector(upper_centre & quarter, quarter & centre, SHEET),
         core.point_bisector(eighth, upper_left),
-        (top & left & normal).normalized(),
-        (top & left & normal).normalized(),
+        (SHEET | (top & left)).normalized(),
+        (SHEET | (top & left)).normalized(),
     ])
-    # Reserve the full point layout: folding lifts the initially planar corners.
     offsets = core.mv("yzw zxw xyw", [[0.0, 0.0, 0.0]])
-    return core.Paper(corners.cast(core.Point), np.array([len(corners)]), offsets, normal), planes
+    # Reserve the full point layout: a crease plane at any angle to the sheet cuts it in full points.
+    return core.Paper(corners.cast(core.Point), np.array([len(corners)]), offsets, SHEET), planes
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -60,8 +60,7 @@ def main() -> None:
     from examples.geometry.origami import render
 
     paper, planes = kabuto()
-    states = tuple(core.folding(paper, planes, SELECTIONS, PEAKS, ENDS,
-                               core.mv.z, STEPS, CREASE_TOLERANCE))
+    states = tuple(core.folding(paper, planes, SELECTIONS, PEAKS, ENDS, HALF_STEPS, CREASE_TOLERANCE))
     save_figure(render.draw(states[-1]), "origami_kabuto")
     save_animation(render.animate(iter(states)), "origami_kabuto", DURATION_MS)
 

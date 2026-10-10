@@ -252,7 +252,7 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
             """The fused cones' value at their own vertices, summed over the points: the pole of the plane
             at infinity under each fused cone is its vertex."""
             motors = free * (twists * 0.5).exp()                             # Motor[free]
-            fused = anchored + (motors >> moving(motors << Point3)).batch().sum(axis=-1)
+            fused = anchored + (motors >> moving(motors << Point3)).sites.sum()
             pole = fused.dual().outermorphism(Plane3)(w).dual_inverse()      # [points] Point
             return ((pole & fused(pole)) / (w & pole) ** 2).sum()
 

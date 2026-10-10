@@ -54,14 +54,3 @@ def animate_ring(labels: list[str], occupation: core.Scalar) -> list[np.ndarray]
         frames.append(np.asarray(figure.canvas.buffer_rgba())[..., :3].copy())
     plt.close(figure)
     return frames
-
-
-def inline(frames: list[np.ndarray], duration_ms: int):
-    """Frames as a looping GIF to show in a notebook, kept in memory."""
-    from io import BytesIO
-    from IPython.display import Image as Shown
-    from PIL import Image
-    images = [Image.fromarray(pixels) for pixels in frames]
-    buffer = BytesIO()
-    images[0].save(buffer, format="GIF", save_all=True, append_images=images[1:], duration=duration_ms, loop=0)
-    return Shown(data=buffer.getvalue(), format="gif")

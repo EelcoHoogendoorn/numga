@@ -67,13 +67,13 @@ def frame(ax, box: np.ndarray) -> None:
     ax.set_axis_off()
 
 
-def contours(ax, poses: core.Motor, uncertainty: core.Covariance, box: np.ndarray, color: str, alpha: float) -> None:
-    """Each pose's ellipse over the box: the zero level of its quadric on a grid of points."""
+def contours(ax, poses: core.Motor, uncertainty: core.Covariance, box: np.ndarray, color: str, alpha: float) -> list:
+    """Each pose's ellipse over the box: the zero level of its quadric on a grid of points. Returns the
+    contours drawn."""
     x, y = np.meshgrid(*np.linspace(box[0], box[1], 240).T)
     grid = point(np.stack([x, y], axis=-1))                                   # [rows, columns] Point
     levels = (ellipses(poses, uncertainty)[:, None, None](grid) & grid).to_array()   # [poses, rows, columns]
-    for level in levels:
-        ax.contour(x, y, level, levels=[0.0], colors=color, linewidths=0.8, alpha=alpha)
+    return [ax.contour(x, y, level, levels=[0.0], colors=color, linewidths=0.8, alpha=alpha) for level in levels]
 
 
 def draw_paths(ax, truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, box: np.ndarray) -> None:
@@ -98,27 +98,39 @@ def draw_lap(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, lin
     return figure
 
 
+def draw_likely(ax, poses: core.Motor, uncertainty: core.Covariance, box: np.ndarray) -> list:
+    """The poses with their uncertainties, and the legend. Returns the artists drawn for the poses."""
+    drawn = contours(ax, poses, uncertainty, box, LIKELY, 0.7)
+    drawn += ax.plot(*xy(poses >> ORIGIN).T, "o-", color=LIKELY, markersize=2.5, linewidth=1.0, label="most likely")
+    ax.legend(loc="lower left", fontsize=8, frameon=False)
+    return drawn
+
+
 def draw(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, poses: core.Motor,
          uncertainty: core.Covariance) -> plt.Figure:
     """The true path, dead reckoning with its uncertainties, and the poses with theirs."""
     figure, ax = plt.subplots(figsize=(5, 5))
     box = extent(truth, dead)
     draw_paths(ax, truth, dead, reckoned, box)
-    contours(ax, poses, uncertainty, box, LIKELY, 0.7)
-    ax.plot(*xy(poses >> ORIGIN).T, "o-", color=LIKELY, markersize=2.5, linewidth=1.0, label="most likely")
+    draw_likely(ax, poses, uncertainty, box)
     frame(ax, box)
-    ax.legend(loc="lower left", fontsize=8, frameon=False)
     figure.tight_layout()
     return figure
 
 
-def still(figure: plt.Figure) -> np.ndarray:
-    """The figure's pixels, the figure closed."""
-    image = capture(figure)
-    plt.close(figure)
-    return image
-
-
 def animate(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, closing) -> list[np.ndarray]:
-    """A frame for each iteration of the closing, from the poses and uncertainties it yields."""
-    return [still(draw(truth, dead, reckoned, poses, uncertainty)) for poses, uncertainty in closing]
+    """A frame for each iteration of the closing, from the poses and uncertainties it yields, over the
+    true path and dead reckoning drawn once."""
+    figure, ax = plt.subplots(figsize=(5, 5))
+    box = extent(truth, dead)
+    draw_paths(ax, truth, dead, reckoned, box)
+    frame(ax, box)
+    frames = []
+    for poses, uncertainty in closing:
+        drawn = draw_likely(ax, poses, uncertainty, box)
+        figure.tight_layout()
+        frames.append(capture(figure))
+        for artist in drawn:
+            artist.remove()
+    plt.close(figure)
+    return frames

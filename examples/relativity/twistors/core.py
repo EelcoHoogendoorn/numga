@@ -20,7 +20,7 @@ Bivector = ga.gatype.bivector()
 Full = ga.gatype.full()
 Event = ga.gatype.from_blades("x y z t")
 Spatial = ga.gatype.from_blades("x y z")
-Field = ga.gatype.from_blades("xy xz yz xt yt zt")
+Faraday = ga.gatype.from_blades("xy xz yz xt yt zt")
 Twistor = ga.gatype.from_blades("1 y z u yz yu zu yzu")
 
 # The three commuting factors each halve the state space, leaving eight real components.
@@ -76,7 +76,7 @@ def robinson(event: Event) -> Event:
     return direction(ray_twistor)
 
 
-def hopfion(event: Event) -> Field:
+def hopfion(event: Event) -> Faraday:
     """A source-free null electromagnetic field carried by the Robinson congruence."""
     position = -(event ^ mv.t) * mv.t
     time = -(event | mv.t)
@@ -95,6 +95,6 @@ def fibres(polars: np.ndarray, per_circle: int, fibre_samples: int) -> Spatial:
     azimuths = np.linspace(0, 2 * np.pi, per_circle, endpoint=False)
     phases = np.linspace(-np.pi, np.pi, fibre_samples + 1)
     starts = ((mv.zx * (-azimuths[None, :] / 2)).exp()
-              * (mv.xy * (polars[:, None] / 2)).exp()).reshape((-1,))          # [curves] Even
-    orbit = starts[:, None] * (SPATIAL_VOLUME * mv.y * phases).exp()          # [curves, fibre_samples + 1] Even
-    return -SPATIAL_VOLUME * orbit.select[2] / (1 + orbit.select[0])
+              * (mv.xy * (polars[:, None] / 2)).exp())                         # [polars, per_circle] Even
+    orbit = starts[..., None] * (SPATIAL_VOLUME * mv.y * phases).exp()        # [polars, per_circle, fibre_samples + 1] Even
+    return -SPATIAL_VOLUME * orbit.restrict[2] / (1 + orbit.select[0])

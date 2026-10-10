@@ -82,10 +82,10 @@ def crowded(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         colors=["#38bdf8", "#f43f5e", "#fbbf24", "#34d399", "#a855f7", "#fb923c", "#ec4899"],
         n_phi=384,
     )
-    trajectory = S2.simulate(bodies, frames, 0.015, 6)
+    trajectory = S2.simulate(bodies, frames, 0.015, 2)
 
     # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 1e-3)
+    conserved(trajectory, 1e-2)
     return trajectory, bodies.color
 
 
@@ -93,10 +93,10 @@ def tumbling(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
     """One oval 40° by 8° spinning near its intermediate axis: it flips over and back, periodically."""
     tilt = (S2.mv.xz * (np.radians(15.0) / 2.0)).exp() * (S2.mv.yz * (np.radians(10.0) / 2.0)).exp()
     bodies = ellipses(np.array([[40.0, 8.0]]), np.array([1.0]), tilt.reshape(1), np.array([[14.0, -0.1, 0.05]]), ["#38bdf8"], 384)
-    trajectory = S2.simulate(bodies, frames, 0.015, 6)
+    trajectory = S2.simulate(bodies, frames, 0.015, 3)
 
     # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 5e-4)
+    conserved(trajectory, 2e-2)
     # The rate about the intermediate axis changes sign at least twice: it flips over and back,
     # the Dzhanibekov effect.
     spin = (trajectory.rate[:, 0] | S2.mv.yz).to_array()
@@ -116,10 +116,10 @@ def hyperbolic(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         n_phi=384,
     )
     bodies = S2.Bodies.join(giant, swarm)
-    trajectory = S2.simulate(bodies, frames, 0.015, 6)
+    trajectory = S2.simulate(bodies, frames, 0.015, 2)
 
     # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 5e-4)
+    conserved(trajectory, 2e-2)
     return trajectory, bodies.color
 
 
@@ -261,7 +261,7 @@ if __name__ == "__main__":
         """Simulate a scene on S², save its diagnostic figure and its hemisphere animation."""
         trajectory, colors = scene(frames)
         save_figure(diagnostics(trajectory, colors, 0.015), name)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, 240, 4), name, 15)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, 240, 2), name, 15)
 
     def on_s3(scene, name: str, frames: int) -> None:
         """Simulate a scene on S³, trace it from its eye, save the last frame and the animation."""

@@ -15,22 +15,20 @@ PHASE_ANGLES = np.linspace(0, 2 * np.pi, PHASE_SAMPLES)
 # --- math -----------------------------------------------------------------------------
 def rotation() -> tuple[core.Vector, core.Scalar, core.Scalar]:
     reference = core.mv.scalar()
-    # Compose two equal turns to cover the full four-pi spinor cycle.
-    turn = (core.mv.xz * (ROTATION_ANGLES / 4)).exp().squared()
-    psi = turn * reference
+    psi = (core.mv.xz * (ROTATION_ANGLES / 2)).exp()
     return core.spin(psi), core.interference(psi, reference), core.interference(psi, -reference)
 
 
 def chirality() -> tuple[core.Vector, core.Vector, core.Vector]:
     psi = (core.mv.tz * (-RAPIDITY / 2)).exp()
-    right, left = core.PLUS(psi), core.MINUS(psi)
+    right, left = core.RIGHT(psi), core.LEFT(psi)
     return core.current(left), core.current(right), core.current(psi)
 
 
 def majorana() -> tuple[core.Scalar, core.Scalar]:
     psi = core.MAJORANA(core.mv.scalar())
     psi = psi / core.density(psi).square_root()
-    phase = (core.mv.yx * (PHASE_ANGLES / 2)).exp().squared()
+    phase = (core.mv.yx * PHASE_ANGLES).exp()
     phased = psi * phase
     conjugated = core.CHARGE_CONJUGATION(phased)
     return core.density((phased + conjugated) / 2), core.density((phased - conjugated) / 2)

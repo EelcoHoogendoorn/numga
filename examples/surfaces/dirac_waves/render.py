@@ -37,9 +37,9 @@ def directions(fields: core.Odd) -> np.ndarray:
     return np.abs(fields.cast(core.ga.subspace("x y z")).kernel)
 
 
-def image(mesh: Mesh, corners: np.ndarray, faces: np.ndarray) -> np.ndarray:
-    """The surface as an RGB image: its vertices' colours spread over the faces between them, joined
-    with each face's own, and lit."""
+def view(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """The surface as the camera sees it, the same for every field on it: the covered pixels of the
+    supersampled image, the face at each and its corners' weights there, and the light falling there."""
     points, triangles = coordinates(mesh.vertices), mesh.faces
     normals = coordinates(mesh.vertex_normals)
     elevation, azimuth = np.radians(ELEVATION), np.radians(AZIMUTH)
@@ -54,6 +54,15 @@ def image(mesh: Mesh, corners: np.ndarray, faces: np.ndarray) -> np.ndarray:
     normal = np.einsum("pk,pkd->pd", weights, normals[triangles[face]]) @ frame.T
     normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
     light = AMBIENT + (1 - AMBIENT) * np.clip(normal @ (frame @ LIGHT), 0, 1)
+    return pixel, face, weights, light
+
+
+def image(mesh: Mesh, seen: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], corners: np.ndarray,
+          faces: np.ndarray) -> np.ndarray:
+    """The surface as an RGB image: its vertices' colours spread over the faces between them, joined
+    with each face's own, and lit."""
+    pixel, face, weights, light = seen
+    size = PIXELS * SUPERSAMPLE
     colour = np.hypot(np.einsum("pk,pkc->pc", weights, corners[mesh.faces[face]]), faces[face])
     picture = np.zeros((size * size, 3))
     picture[pixel] = np.clip((BASE + colour) * light[:, None], 0, 1)
@@ -68,7 +77,8 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Odd, columns: int) -> l
     exposure = np.percentile(np.concatenate([corners, sides], axis=2), EXPOSURE, axis=(1, 2, 3), keepdims=True)
     corners, sides = corners / exposure, sides / exposure
     tiles, frames = corners.shape[:2]
-    pictures = np.stack([[image(mesh, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)]
+    seen = view(mesh)
+    pictures = np.stack([[image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)]
                          for frame in range(frames)])
     pictures = np.concatenate([pictures, np.zeros((frames, -tiles % columns) + pictures.shape[2:])], axis=1)
     rows = pictures.reshape((frames, -1, columns) + pictures.shape[2:])       # [frames, rows, columns, P, P, 3]

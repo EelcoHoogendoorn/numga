@@ -10,17 +10,17 @@ def test_lift_reconstructs_velocity_and_exact_motion_in_tilted_planes():
     rotation = (core.mv.yz * angles).exp() * (core.mv.xy * (angles / 2)).exp()
     spinor = rotation * np.sqrt(1.8)
     velocity = rotation >> (core.mv.x * 0.13 + core.mv.y * 0.3)
-    orbit = core.BoundOrbit.lift(spinor, velocity, 1.0)
-    initial = core.physical_state(orbit.spinor, orbit.rate, orbit.energy * 0)
-    frequency = (-orbit.energy / 2).square_root()
-    phase = core.mv.scalar(np.linspace(0, np.pi, 81)[:, None, None])
-    trajectory = orbit.sample(phase / frequency)
+    start = core.State(core.mv.scalar() * np.zeros_like(angles), spinor >> core.mv.x, velocity)
+    orbit = core.BoundOrbit.lift(start, spinor, 1.0)
+    initial = core.State.from_spinor(orbit.spinor, orbit.rate, start.time)
+    trajectory = orbit.sample(np.linspace(0, np.pi, 81)[:, None] / orbit.frequency)
     semimajor = -1 / (2 * orbit.energy)
     period = 2 * np.pi * (semimajor ** 3).square_root()
 
     # checks
     np.testing.assert_allclose((initial.velocity - velocity).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((orbit.rate * core.mv.x * orbit.spinor.reverse()).select[3].kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((core.placement(orbit.rate, orbit.spinor)
+                                - core.placement(orbit.spinor, orbit.rate)).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((trajectory.position[-1] - initial.position).kernel, 0, atol=1e-11)
     np.testing.assert_allclose((trajectory.velocity[-1] - initial.velocity).kernel, 0, atol=1e-11)
     np.testing.assert_allclose((trajectory.time[-1] - period).kernel, 0, atol=1e-10)
@@ -29,8 +29,8 @@ def test_lift_reconstructs_velocity_and_exact_motion_in_tilted_planes():
 
 
 def test_spinor_gauge_changes_neither_orbit_nor_clock():
-    orbit = scenarios.initial_orbit()
-    phase = core.mv.scalar(np.linspace(0, 2 * np.pi, 91)[:, None, None])
+    _, orbit = scenarios.initial_orbit()
+    phase = np.linspace(0, 2 * np.pi, 91)[:, None]
     gauge = (core.mv.yz * np.array([0.3, -0.5, 0.7])).exp()
     shifted = core.BoundOrbit(orbit.spinor * gauge, orbit.rate * gauge, orbit.energy)
     first, second = orbit.sample(phase), shifted.sample(phase)
@@ -42,8 +42,8 @@ def test_spinor_gauge_changes_neither_orbit_nor_clock():
 
 
 def test_physical_clock_inversion_and_inverse_square_acceleration():
-    orbit = scenarios.initial_orbit()
-    times = core.mv.scalar(np.linspace(0.2, 1.0, 7)[:, None, None])
+    _, orbit = scenarios.initial_orbit()
+    times = np.linspace(0.2, 1.0, 7)[:, None]
     delta = 1e-4
     state = orbit.at_time(times, scenarios.CLOCK_ITERATIONS)
     before = orbit.at_time(times - delta, scenarios.CLOCK_ITERATIONS)
@@ -57,23 +57,16 @@ def test_physical_clock_inversion_and_inverse_square_acceleration():
 
 
 def test_both_verlet_schemes_converge_and_regularization_resolves_periapsis():
-    orbit = scenarios.initial_orbit()
-    initial = core.physical_state(orbit.spinor, orbit.rate, orbit.energy * 0)
-    frequency = (-orbit.energy / 2).square_root()
-    period = 2 * np.pi
-    physical_errors, regularized_errors = [], []
-    for count in (128, 256):
-        physical = core.State.collect(core.physical_verlet(initial, 1.0, period / count, count))
-        regularized = core.State.collect(core.regularized_verlet(orbit, np.pi / frequency / count, count))
-        physical_errors.append(orbit.position_error(physical, scenarios.CLOCK_ITERATIONS).kernel[:, 0])
-        regularized_errors.append(orbit.position_error(regularized, scenarios.CLOCK_ITERATIONS).kernel[:, 0])
-        # Both central-force updates preserve angular momentum despite their energy errors.
-        np.testing.assert_allclose((physical.momentum() - initial.momentum()).kernel, 0, atol=1e-10)
-        np.testing.assert_allclose((regularized.momentum() - initial.momentum()).kernel, 0, atol=1e-10)
+    start, _ = scenarios.initial_orbit()
+    _, physical, regularized = scenarios.passage()
+    physical_errors, regularized_errors = scenarios.convergence()
+    physical_ratios = physical_errors[1:] / physical_errors[:-1]               # [counts - 1, cases] Scalar
+    regularized_ratios = regularized_errors[1:] / regularized_errors[:-1]      # [counts - 1, cases] Scalar
 
-    # checks: the resolved orbit has second-order convergence in either clock.
-    physical_ratio = physical_errors[1][0] / physical_errors[0][0]
-    regularized_ratio = regularized_errors[1] / regularized_errors[0]
-    assert 0.2 < physical_ratio < 0.3
-    assert np.all((regularized_ratio > 0.2) & (regularized_ratio < 0.3))
-    assert regularized_errors[0][-1] < physical_errors[0][-1] / 100
+    # checks: both central-force updates keep the angular momentum; the resolved orbits converge at
+    # second order in either clock, and the spinor clock resolves the closest passage far better.
+    np.testing.assert_allclose((physical.momentum() - start.momentum()).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((regularized.momentum() - start.momentum()).kernel, 0, atol=1e-10)
+    np.testing.assert_allclose(physical_ratios[:, 0].kernel, 0.25, atol=0.05)
+    np.testing.assert_allclose(regularized_ratios.kernel, 0.25, atol=0.05)
+    assert np.all(regularized_errors.kernel[:, -1] < physical_errors.kernel[:, -1] / 100)

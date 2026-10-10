@@ -66,7 +66,7 @@ def test_cayley_evolution_converges_to_the_rotor():
     for steps in (40, 80):
         profiles = potential.broadcast_to((steps,))
         final = tuple(core.transport(wire, initial, profiles, np.array([duration]), steps))[-1]
-        np.testing.assert_allclose(final.scalar_norm_squared().batch().sum(axis=-1).kernel, 1,
+        np.testing.assert_allclose(final.scalar_norm_squared().sites.sum().kernel, 1,
                                    atol=ROUND_OFF, rtol=0)
         errors.append(np.linalg.norm(final.kernel.reshape(4) - exact.kernel))
     assert errors[1] < 1e-4
@@ -75,30 +75,28 @@ def test_cayley_evolution_converges_to_the_rotor():
 
 def test_localization_does_not_depend_on_the_eigensolver_basis():
     wire = core.Wire.chain(scenarios.SITES, scenarios.HOPPING, scenarios.PAIRING)
-    potential = core.gate(np.arange(scenarios.SITES), np.array(scenarios.LEFT),
-                          np.array(scenarios.RIGHT), np.array(scenarios.INSIDE),
-                          scenarios.OUTSIDE, scenarios.WIDTH)
+    potential = core.gate(np.arange(scenarios.SITES), scenarios.LEFT, scenarios.RIGHT,
+                          scenarios.INSIDE, scenarios.OUTSIDE, scenarios.WIDTH)
     _, modes = wire.modes(wire.generator(potential), 2)
     localized = wire.localized(modes)
-    coordinates = stack([core.mv.x, core.mv.y])
-    embedder = (modes * (coordinates | core.Majorana)).sum(axis=0)
-    turned = (core.mv.xy * 0.37).exp() >> coordinates
-    mixed = embedder(turned)
+    # An orthogonal mixing of the two modes spans the same space.
+    mixing = core.mv.scalar([[[0.6], [-0.8]], [[0.8], [0.6]]])        # [modes, modes] Scalar
+    mixed = (mixing * modes[None, :]).sum(axis=-1)
     recovered = wire.localized(mixed)
     np.testing.assert_allclose((localized.scalar_norm_squared() - recovered.scalar_norm_squared()).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     index = core.mv.scalar(np.arange(scenarios.SITES)[:, None]).field()
-    centres = (localized.scalar_norm_squared() * index).batch().sum(axis=-1)
+    centres = (localized.scalar_norm_squared() * index).sites.sum()
     assert centres.kernel[1, 0] - centres.kernel[0, 0] > 50
 
 
 def test_slow_transport_follows_the_boundary_and_fast_transport_leaks(moving):
     _, _, history, target, share = moving
-    np.testing.assert_allclose(history.scalar_norm_squared().batch().sum(axis=-1).kernel,
+    np.testing.assert_allclose(history.scalar_norm_squared().sites.sum().kernel,
                                1, atol=ROUND_OFF, rtol=0)
     assert share.kernel[-1, 0, 0] > 0.999
     assert share.kernel[-1, 1, 0] < 0.01
-    overlap = history[-1, 0].scalar_product(target[-1]).batch().sum(axis=-1).squared()
+    overlap = history[-1, 0].scalar_product(target[-1]).sites.sum().squared()
     assert overlap.kernel[0] > 0.999
 
 
@@ -115,14 +113,13 @@ def test_scenes_draw(moving):
 
     progress, potentials, history, target, share = moving
     figures = [render.draw_formation(*scenarios.formation(), scenarios.HOPPING),
-               render.draw_transport(progress, history, potentials, scenarios.DURATIONS,
-                                      scenarios.NAMES, scenarios.HOPPING),
+               render.draw_transport(progress, history, potentials, scenarios.HOPPING),
                render.draw_overlap(scenarios.SEPARATIONS, scenarios.PROFILE_SEPARATIONS,
                                     *scenarios.overlap(), scenarios.HOPPING)]
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
     frames = render.animate_transport(progress[:2], potentials[:2], history[:2], target[:2], share[:2],
-                                       scenarios.DURATIONS, scenarios.NAMES, scenarios.HOPPING)
+                                       scenarios.HOPPING)
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])

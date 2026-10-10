@@ -29,14 +29,13 @@ THICKNESS = PITCH / SLICES_PER_TURN
 DEPTHS = (np.arange(LAYERS) + 0.5) * THICKNESS                 # nm, slice centres
 CRYSTAL_PERMITTIVITY = np.array([EXTRAORDINARY_INDEX ** 2, ORDINARY_INDEX ** 2, ORDINARY_INDEX ** 2])
 TWIST_SIGNS = np.array([1.0, -1.0])
-TWIST_NAMES = ("Positive twist", "Negative twist")
 POLARIZATION_SIGNS = np.array([1.0, -1.0])
 POLARIZATION_NAMES = ("x + i y", "x − i y")
 BAND_WAVELENGTH = PITCH * SURROUNDING_INDEX                   # nm, the reflection band's centre
 # The time domain: the band's pulse sent along a line of nodes through the same helix, light speed one.
-SPACING = 20.0                                                # nm between nodes
-CELLS = 2000
-COURANT = 0.5                                                 # time step per node spacing
+SPACING = 40.0                                                # nm between nodes
+CELLS = 1000
+COURANT = 1.0                                                 # time step per node spacing
 SLAB_START = 18000.0                                          # nm
 PULSE_START = 10000.0                                         # nm, the pulse's centre
 PULSE_WIDTH = 2000.0                                          # nm, its envelope's standard deviation
@@ -46,9 +45,9 @@ HANDS = np.array([1.0, -1.0])                                 # turning with and
 AXION_SAMPLES = 241
 AXION_JUMPS = np.linspace(-3, 3, AXION_SAMPLES)
 AXION_NAMES = ("Parallel to incident", "Perpendicular to incident", "Total reflection")
-ANGLE_SAMPLES = 81
+ANGLE_SAMPLES = 41
 ANGLES = np.linspace(0, np.deg2rad(70), ANGLE_SAMPLES)
-MAP_WAVELENGTH_SAMPLES = 241
+MAP_WAVELENGTH_SAMPLES = 121
 MAP_WAVELENGTHS = np.linspace(450, 850, MAP_WAVELENGTH_SAMPLES)
 
 
@@ -62,22 +61,14 @@ def helix(depths: np.ndarray) -> tuple[core.Vector, core.Constitutive]:
     return rotors >> core.mv.x, rotors >> crystal(rotors << core.Bivector)
 
 
-def surrounding(parallel: core.Vector) -> core.Ports:
-    """The isotropic medium on both sides of the twisted stack."""
-    chi = core.dielectric(np.full(3, SURROUNDING_INDEX ** 2), 1.0)
-    return core.Ports.from_medium(core.Medium.from_chi(chi, parallel), SURROUNDING_INDEX, parallel)
-
-
 def circular() -> core.Polarization:
     """The two circular inputs, x + i y and x - i y."""
     return (core.mv.x + core.mv.y * (1j * POLARIZATION_SIGNS)) / np.sqrt(2)
 
 
 def antireflection() -> tuple[core.Scalar, core.Scalar]:
-    incident_chi = core.dielectric(np.full(3, INCIDENT_INDEX ** 2), 1.0)
-    substrate_chi = core.dielectric(np.full(3, SUBSTRATE_INDEX ** 2), 1.0)
-    incident = core.Ports.from_medium(core.Medium.from_chi(incident_chi, core.mv.t), INCIDENT_INDEX, core.mv.t)
-    substrate = core.Ports.from_medium(core.Medium.from_chi(substrate_chi, core.mv.t), SUBSTRATE_INDEX, core.mv.t)
+    incident = core.Ports.isotropic(INCIDENT_INDEX, core.mv.t)
+    substrate = core.Ports.isotropic(SUBSTRATE_INDEX, core.mv.t)
     chi = core.dielectric(COATING_INDICES[:, None] ** 2 * np.ones(3), 1.0)
     medium = core.Medium.from_chi(chi, core.mv.t)
     distance = 2 * np.pi * COATING_THICKNESSES[:, None] / WAVELENGTHS
@@ -92,20 +83,17 @@ def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
     distance = 2 * np.pi * THICKNESS / WAVELENGTHS
     layers = core.propagate(medium.generator[..., None], distance)
     propagation = core.compose(layers)                        # [helices, wavelengths] Boundary <- Boundary
-    ports = surrounding(core.mv.t)
+    ports = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
     result = core.scatter(propagation(ports.outgoing), ports)
-    polarizations = circular()[None, :, None]
-    incident_power = ports.power(polarizations)
-    reflected = result.reflection[:, None, :](polarizations)
-    transmitted = result.transmission[:, None, :](polarizations)
+    reflected, transmitted = result.powers(circular()[:, None, None], ports, ports)   # [polarizations, helices, wavelengths] Scalar
     centres = core.mv.z * DEPTHS                              # [layers] Vector
-    return centres, directors, ports.power(reflected) / incident_power, ports.power(transmitted) / incident_power
+    return centres, directors, reflected, transmitted
 
 
 def axion() -> core.Scalar:
     # Identical ordinary dielectric responses: all reflection comes from the axion jump.
     chi = core.dielectric(np.full(3, SURROUNDING_INDEX ** 2), 1.0)
-    incident = surrounding(core.mv.t)
+    incident = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
     axion_chi = chi + core.mv.scalar(AXION_JUMPS[:, None]) * core.Bivector
     substrate_medium = core.Medium.from_chi(axion_chi, core.mv.t)
     substrate = core.Ports.from_medium(substrate_medium, SURROUNDING_INDEX, core.mv.t)
@@ -124,7 +112,7 @@ def angular() -> core.Scalar:
     # One layer at a time, each batched over angles and wavelengths.
     layers = (core.propagate(generator[:, None], distance) for generator in medium.generator)
     propagation = core.compose(layers)                        # [angles, wavelengths] Boundary <- Boundary
-    ports = surrounding(parallel[:, None])
+    ports = core.Ports.isotropic(SURROUNDING_INDEX, parallel[:, None])
     scattering = core.scatter(propagation(ports.outgoing), ports)
     tilt = (core.mv.zx * (ANGLES / 2)).exp()
     field = tilt[None, :] >> circular()[:, None]
@@ -133,19 +121,20 @@ def angular() -> core.Scalar:
 
 
 def penetration() -> tuple[np.ndarray, core.Vector]:
+    """The electric field at the band's centre through the positive helix, `[cases, layers, samples]`,
+    at the depths `[layers, samples]`."""
     wavelength = BAND_WAVELENGTH
     samples_per_layer = 5
     fractions = np.linspace(0, 1, samples_per_layer)
     depths = (np.arange(LAYERS)[:, None] + fractions) * THICKNESS
     _, chi = helix(DEPTHS)
     medium = core.Medium.from_chi(chi[:, 0], core.mv.t)
-    ports = surrounding(core.mv.t)
+    ports = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
     layers = core.propagate(medium.generator, np.full(LAYERS, 2 * np.pi * THICKNESS / wavelength))
     scattering = core.scatter(core.compose(layers)(ports.outgoing), ports)
     exit_state = ports.outgoing(scattering.transmission(circular()))
-    fields = tuple(medium.interior(np.full(LAYERS, THICKNESS), wavelength, exit_state, fractions))
-    electric = core.mv.t | stack(fields[::-1], axis=1)
-    return depths.reshape(-1), electric.reshape(len(POLARIZATION_SIGNS), -1)
+    fields = medium.interior(np.full(LAYERS, THICKNESS), wavelength, exit_state, fractions)   # [cases, layers, samples] Bivector
+    return depths, core.mv.t | fields
 
 
 def pulse(at: np.ndarray) -> core.Bivector:
@@ -203,11 +192,10 @@ def main() -> None:
     depths, electric = penetration()
     save_figure(render.spectra(WAVELENGTHS, reflection, COATING_NAMES), "coating_chi_matching")
     save_figure(render.twist(centres, directors[:, 0]), "coating_twist")
-    save_figure(render.handedness(WAVELENGTHS, twisted_reflection, TWIST_NAMES, POLARIZATION_NAMES),
-                "coating_handedness")
+    save_figure(render.handedness(WAVELENGTHS, twisted_reflection, POLARIZATION_NAMES), "coating_handedness")
     save_figure(render.axion(AXION_JUMPS, axion_reflection, AXION_NAMES), "coating_axion")
-    save_figure(render.angular(MAP_WAVELENGTHS, ANGLES, angle_reflection, POLARIZATION_NAMES), "coating_polarization_map")
-    save_figure(render.field(depths, electric, POLARIZATION_NAMES), "coating_internal_field")
+    save_figure(render.angular(MAP_WAVELENGTHS, ANGLES, angle_reflection), "coating_polarization_map")
+    save_figure(render.field(depths, electric), "coating_internal_field")
     nodes, slab, directors, pulses, before, pulse_reflected, pulse_transmitted = time_domain()
     # The pulse that does not turn: one handedness comes back, the other passes.
     save_animation(render.pulse(nodes, slab, directors, pulses[:, 2]), "coating_pulse", 50)

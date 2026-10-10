@@ -122,3 +122,13 @@ def test_spectra_and_factors_of_a_field_map_are_those_of_its_blocks_as_one_matri
     np.testing.assert_allclose(lower(lower.adjoint()).kernel, positive.kernel, atol=1e-10)
     left, singular, right = general.svd()
     np.testing.assert_allclose((general(right) - left * singular).kernel, 0.0, atol=1e-10)
+
+
+def test_sums_over_sites_reduce_the_output_and_leave_the_batch():
+    values = mv.vector(rng.normal(size=(copies, sites, 3))).field()         # [copies] Vector[sites]
+    np.testing.assert_allclose(values.sites.sum().kernel, values.batch().sum(axis=-1).kernel, atol=1e-12)
+    np.testing.assert_allclose(values.sites.mean().kernel, values.batch().mean(axis=-1).kernel, atol=1e-12)
+    # A map into a field, summed over its output's sites, is one map over blades.
+    into = ctx.extensor(VGA3D.gatype((Vector, Vector)), rng.normal(size=(sites, 3, 3))).field()   # Vector[sites] <- Vector
+    point = mv.vector(rng.normal(size=3))
+    np.testing.assert_allclose(into.sites.sum()(point).kernel, into(point).sites.sum().kernel, atol=1e-12)

@@ -45,14 +45,15 @@ def damped(steps, damping: float, iterations: int, seed: int):
 def closing(steps, iterations: int, seed: int):
     """The most likely poses given every reading, by the given full Gauss-Newton iterations. Returns the
     true and dead-reckoned poses, dead reckoning's uncertainty, and the most likely poses with theirs."""
-    truth, dead, reckoned, iterates = damped(steps, 1.0, iterations, seed)
-    *_, (poses, uncertainty) = iterates                                        # [poses] Motor, [poses] Covariance
+    core = instantiate(CORE, steps.algebra)
+    truth, dead, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
+    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Information, [poses] Information
+    reckoned = core.reckon(dead, noises, priors)                               # [poses] Covariance
+    *_, poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, 1.0, iterations)   # [poses] Motor
+    uncertainty = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)   # [poses] Covariance
 
     # --- checks
     # The gradient falls a millionfold from dead reckoning to the most likely poses.
-    core = instantiate(CORE, steps.algebra)
-    _, _, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
-    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Information, [poses] Information
     at_dead = core.gradient(dead, readings, weights, tails, heads, anchors, anchor_weights)
     at_optimum = core.gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)
     np.testing.assert_allclose(at_optimum.kernel, 0.0, atol=1e-6 * np.abs(at_dead.kernel).max())
@@ -107,7 +108,7 @@ if __name__ == "__main__":
     from examples.estimation.odometry import render
 
     # Dead reckoning drifts half a metre over the lap.
-    truth, dead, reckoned, poses, uncertainty = closing(lap_in_plane(), 5, 9)
+    truth, dead, reckoned, poses, uncertainty = closing(lap_in_plane(), 3, 9)
     save_figure(render.draw(truth, dead, reckoned, poses, uncertainty), "odometry")
     # Closing the lap a fifth of the way at a time.
     *_, iterates = damped(lap_in_plane(), 0.2, 20, 9)

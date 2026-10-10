@@ -13,10 +13,10 @@ COUPLING = 4.4
 QUENCH_RATIO = 0.88
 SMALL_QUENCH_RATIO = 0.99
 EQUILIBRIUM_ITERATIONS = 160
-DT = 0.01
-STEPS = 2400
-STRIDE = 10
-MIDPOINT_ITERATIONS = 10
+DT = 0.05
+STEPS = 480
+STRIDE = 2
+MIDPOINT_ITERATIONS = 3
 DURATION_MS = 50
 FEEDBACK_STRENGTHS = np.array([1.0, 0.0])
 RESPONSE_NAMES = ("collective response", "fixed pairing field")
@@ -41,11 +41,11 @@ def response(
 ) -> core.Spin:
     local, feedback = model.response(equilibrium)
     # Batch the full response and the approximation that holds the pairing field fixed.
-    feedback = feedback * FEEDBACK_STRENGTHS[:, None]
-    disturbance = disturbance.broadcast_to((len(FEEDBACK_STRENGTHS), len(model.dispersion)))
+    feedbacks = feedback * FEEDBACK_STRENGTHS
+    disturbance = disturbance.broadcast_to(FEEDBACK_STRENGTHS.shape)
 
     def rate(delta: core.Spin) -> core.Spin:
-        return local(delta) + feedback(delta.mean(axis=-1, keepdims=True))
+        return local(delta) + feedbacks(delta.sites.mean())
 
     return stack(core.evolution(disturbance, rate, DT, STEPS, STRIDE, MIDPOINT_ITERATIONS))
 
