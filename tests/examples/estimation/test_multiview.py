@@ -240,35 +240,36 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
     try:
         jax_core = instantiate("examples.estimation.multiview.core", PGA3D, JaxContext)
         mv3, Point3, Plane3, Twist3 = jax_core.mv, jax_core.Point, jax_core.Plane, jax_core.Twist
-        true_motors, _, local_cones = rig_3d(jax_core)
-        perturb = ((mv3.xw * 0.05 - mv3.yw * 0.03 + mv3.zw * 0.04) / 2).exp() * ((mv3.yz * 0.04 - mv3.zx * 0.03 + mv3.xy * 0.05) / 2).exp()
-        anchor = true_motors[0]                                              # Motor
-        free = stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]]).field()   # Motor[free]
-        anchored = anchor >> local_cones[:, 0](anchor << Point3)             # [points] Plane <- Point
-        moving = local_cones[:, 1:].field()                                  # [points] Plane[free] <- Point
-        w = mv3.w
 
-        def misfit(twists):
-            """The fused cones' value at their own vertices, summed over the points: the pole of the plane
-            at infinity under each fused cone is its vertex."""
-            motors = free * (twists * 0.5).exp()                             # Motor[free]
-            fused = anchored + (motors >> moving(motors << Point3)).sites.sum()
-            pole = fused.dual().outermorphism(Plane3)(w).dual_inverse()      # [points] Point
-            return ((pole & fused(pole)) / (w & pole) ** 2).sum()
-
+        # The rig, both derivatives and the reference are one compiled call: run eagerly, every small
+        # operation would compile on its own.
         @jax.jit
-        def newton(twists):
+        def newton_steps():
+            true_motors, _, local_cones = rig_3d(jax_core)
+            perturb = ((mv3.xw * 0.05 - mv3.yw * 0.03 + mv3.zw * 0.04) / 2).exp() * ((mv3.yz * 0.04 - mv3.zx * 0.03 + mv3.xy * 0.05) / 2).exp()
+            anchor = true_motors[0]                                          # Motor
+            free = stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]]).field()   # Motor[free]
+            anchored = anchor >> local_cones[:, 0](anchor << Point3)         # [points] Plane <- Point
+            moving = local_cones[:, 1:].field()                              # [points] Plane[free] <- Point
+            w = mv3.w
+
+            def misfit(twists):
+                """The fused cones' value at their own vertices, summed over the points: the pole of the
+                plane at infinity under each fused cone is its vertex."""
+                motors = free * (twists * 0.5).exp()                         # Motor[free]
+                fused = anchored + (motors >> moving(motors << Point3)).sites.sum()
+                pole = fused.dual().outermorphism(Plane3)(w).dual_inverse()  # [points] Point
+                return ((pole & fused(pole)) / (w & pole) ** 2).sum()
+
+            twists = mv3.bivector(jnp.zeros((2, 6))).field()                 # Twist[free]
             gradient = derivative(misfit)(twists)                            # Scalar <- Twist[free]
             hessian = derivative(derivative(misfit))(twists)                 # Scalar <- (Twist[free], Twist[free])
-            return hessian, -hessian.solve(gradient)                         # Twist[free]
-
-        @jax.jit
-        def flat_newton(coefficients):
             flat = lambda coefficients: misfit(jax_core.ctx.extensor(Twist3, coefficients.reshape(2, 6)).field()).kernel[0]
-            return -jnp.linalg.solve(jax.hessian(flat)(coefficients), jax.grad(flat)(coefficients))
+            coefficients = jnp.zeros(12)
+            reference = -jnp.linalg.solve(jax.hessian(flat)(coefficients), jax.grad(flat)(coefficients))
+            return hessian, -hessian.solve(gradient), reference              # Twist[free]
 
-        hessian, step = newton(mv3.bivector(np.zeros((2, 6))).field())
-        reference = flat_newton(jnp.zeros(12))
+        hessian, step, reference = newton_steps()
         np.testing.assert_allclose(step.kernel, reference.reshape(2, 6), atol=1e-10)
         # The cameras are coupled through the points they share:
         assert np.abs(hessian.kernel[0, 1]).max() > 0.1 * np.abs(hessian.kernel[0, 0]).max()
