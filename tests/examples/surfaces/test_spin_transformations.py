@@ -6,6 +6,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga.sparse import SparseExtensor, spdiag
+
 from examples.surfaces.spin_transformations import core, render, scenarios
 
 
@@ -41,8 +43,9 @@ def test_the_dirac_operator_is_the_geometric_derivative_divided_by_the_face_plan
     boundary = core.as_ga_sparse(mesh.edges, core.as_scalar(np.ones_like(mesh.edges) * [-1, 1]))
     edges = boundary * mesh.vertices                                          # Vector[E]
     orientation = core.as_scalar(mesh.face_edge_orientation.T).field()        # [3] Scalar[F]
-    corners = core.at_corners(mesh, core.at_sites(edges, mesh.face_edges.T) * orientation)
-    dirac = core.as_diag(1 / mesh.triangle_areas) * corners * -0.5
+    facing = SparseExtensor.selection(core.context, mesh.face_edges.T, len(mesh.edges))   # [3] [F, E] Scalar
+    corners = mesh.at_corners(facing * edges * orientation)
+    dirac = spdiag(1 / mesh.triangle_areas) * corners * -0.5
     derivative = core.geometric_derivative(mesh)
-    np.testing.assert_allclose((core.as_diag(mesh.face_planes.inverse()) * derivative - dirac).cells.kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((spdiag(mesh.face_planes.inverse()) * derivative - dirac).cells.kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((derivative * mesh.vertices - 2).kernel, 0.0, atol=1e-12)

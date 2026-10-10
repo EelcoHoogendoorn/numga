@@ -87,13 +87,38 @@ def test_schur_bundle_adjust_converges_and_yields_information():
     assert rmse(points, true_points) < rmse(initial_points, true_points)
     assert rmse(points, true_points) < 0.02
 
-    # The marginal information is a symmetric form on twists, zero on the anchored cameras:
-    assert information.shape == (3,)
+    # The information on all poses together is a symmetric form over the field of camera twists, zero
+    # on the anchored cameras and positive on the free one:
+    assert information.gatype.site_shape == (3, 3)
     basis = mv("yw wx xy", np.eye(3))
-    gram = information[:, None, None](basis[:, None], basis[None, :]).to_array()
-    np.testing.assert_allclose(gram, np.swapaxes(gram, -1, -2), atol=1e-9)
+    units = (basis[None, :, None] * np.eye(3)[:, None, :]).field()          # [cams, 3] Twist[cams]
+    gram = information(units[:, :, None, None], units[None, None]).to_array()   # [cams, 3, cams, 3]
+    np.testing.assert_allclose(gram, gram.transpose(2, 3, 0, 1), atol=1e-9)
     np.testing.assert_allclose(gram[[0, 2]], 0.0)
-    assert np.linalg.eigvalsh(gram[1]).min() > 0
+    np.testing.assert_allclose(gram[:, :, [0, 2]], 0.0)
+    assert np.linalg.eigvalsh(gram[1, :, 1]).min() > 0
+
+
+def test_the_schur_step_moves_two_free_cameras_together():
+    """With two cameras free, a point's response to a step of one changes the cost seen by the other: the
+    step that accounts for it settles within a few iterations. With one camera anchored the scale of the
+    scene is free, so the cone cost, not the distance to the true poses, measures convergence."""
+    true_motors = scenarios.three_camera_truth()
+    _, cameras, local_cones = scenarios.observe(true_motors)
+    motors = scenarios.rig(np.array([-scenarios.BASELINE, scenarios.BASELINE * 1.1, 0.15]),
+                           np.array([scenarios.GAZE, -scenarios.GAZE * 1.25, 0.12]))
+    free = np.array([0.0, 1.0, 1.0])
+
+    def cost(motors):
+        points, _ = core.triangulate_cones(motors, local_cones)
+        world_cones = motors >> local_cones(motors << Point)
+        return float((world_cones(points[:, None]) & points[:, None]).sum().to_array())
+
+    initial = cost(motors)
+    for _ in range(5):
+        previous, motors = motors, core.bundle_adjust_schur(cameras, motors, local_cones, 1, 1.0, free)[0]
+    assert cost(motors) < 1e-5 * initial
+    assert np.abs((motors - previous).kernel).max() < 1e-5
 
 
 def test_splat_alignment_converges_with_the_schur_step():
@@ -121,20 +146,21 @@ def coordinates_3d(points) -> np.ndarray:
     return k[..., :3] / k[..., 3:]
 
 
-def rig_3d() -> tuple:
-    """Three convergent cameras and eight landmarks in PGA3D, with their sight cones.
+def rig_3d(instance) -> tuple:
+    """Three convergent cameras and eight landmarks in PGA3D, with their sight cones, in the context
+    of the given instance of the core.
 
     Cam 0 left, panned right; Cam 1 right, panned left; Cam 2 central, raised and looking
     slightly down. The landmarks span depths z in [1.2, 2.65].
     """
-    mv3 = core3.mv
+    mv3 = instance.mv
     theta = np.radians(18.0)
     true_motors = stack([
         (-mv3.xw * 0.75 / 2).exp() * (-mv3.zx * theta / 2).exp(),
         (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta / 2).exp(),
         (mv3.yw * 0.35 / 2).exp() * (-mv3.yz * np.radians(12.0) / 2).exp(),
     ])
-    camera = (core3.point(np.zeros(3)) & core3.Point) ^ (mv3.z - mv3.w)
+    camera = (instance.point(np.zeros(3)) & instance.Point) ^ (mv3.z - mv3.w)
     cameras = camera.broadcast_to((3,))
     xyz = np.array([
         [ 0.15, -0.20, 1.20],
@@ -146,12 +172,12 @@ def rig_3d() -> tuple:
         [ 0.20,  0.30, 2.10],
         [-0.25, -0.25, 1.60],
     ])
-    projs = cameras(true_motors << core3.point(xyz)[:, None])
+    projs = cameras(true_motors << instance.point(xyz)[:, None])
     pixels = projs / (mv3.w & projs)
     # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
-    q_sensor = mv3.x * (mv3.x & core3.Point) + mv3.y * (mv3.y & core3.Point)
-    sensor_discs = core3.sensor_disk_at(pixels, core3.point(np.array([0.0, 0.0, 1.0])), q_sensor)
-    return true_motors, xyz, core3.make_cones(cameras, sensor_discs)
+    q_sensor = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
+    sensor_discs = instance.sensor_disk_at(pixels, instance.point(np.array([0.0, 0.0, 1.0])), q_sensor)
+    return true_motors, xyz, instance.make_cones(cameras, sensor_discs)
 
 
 @pytest.mark.parametrize("rotation_deg, translation, iterations", [
@@ -161,7 +187,7 @@ def rig_3d() -> tuple:
 def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, translation, iterations):
     """In PGA3D, the moving camera returns from pose errors of tens of degrees and most of a metre."""
     mv3 = core3.mv
-    true_motors, xyz, local_cones = rig_3d()
+    true_motors, xyz, local_cones = rig_3d(core3)
     rx, ry, rz = np.radians(rotation_deg)
     tx, ty, tz = translation
     perturbation = ((mv3.xw * tx + mv3.yw * ty + mv3.zw * tz) / 2).exp() * ((mv3.yz * rx + mv3.zx * ry + mv3.xy * rz) / 2).exp()
@@ -187,7 +213,7 @@ def test_3d_bundle_adjust_converges_from_a_small_perturbation():
     """In PGA3D, the second camera panned 5% too far aligns with the other two anchored."""
     mv3 = core3.mv
     theta = np.radians(18.0)
-    true_motors, xyz, local_cones = rig_3d()
+    true_motors, xyz, local_cones = rig_3d(core3)
     motors = stack([
         true_motors[0],
         (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta * 1.05 / 2).exp(),
@@ -212,16 +238,15 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
     previous = jax.config.jax_enable_x64
     jax.config.update("jax_enable_x64", True)
     try:
-        context = JaxContext(PGA3D, np.float64)
-        on_jax = lambda value: context.extensor(value.gatype, jnp.asarray(value.kernel))
-        mv3, Point3, Plane3, Twist3 = core3.mv, core3.Point, core3.Plane, core3.Twist
-        true_motors, _, local_cones = rig_3d()
+        jax_core = instantiate("examples.estimation.multiview.core", PGA3D, JaxContext)
+        mv3, Point3, Plane3, Twist3 = jax_core.mv, jax_core.Point, jax_core.Plane, jax_core.Twist
+        true_motors, _, local_cones = rig_3d(jax_core)
         perturb = ((mv3.xw * 0.05 - mv3.yw * 0.03 + mv3.zw * 0.04) / 2).exp() * ((mv3.yz * 0.04 - mv3.zx * 0.03 + mv3.xy * 0.05) / 2).exp()
-        anchor = on_jax(true_motors[0])                                      # Motor
-        free = on_jax(stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]])).field()   # Motor[free]
-        anchored = anchor >> on_jax(local_cones[:, 0])(anchor << Point3)    # [points] Plane <- Point
-        moving = on_jax(local_cones[:, 1:]).field()                          # [points] Plane[free] <- Point
-        w = context.multivector.w
+        anchor = true_motors[0]                                              # Motor
+        free = stack([perturb * true_motors[1], perturb.reverse() * true_motors[2]]).field()   # Motor[free]
+        anchored = anchor >> local_cones[:, 0](anchor << Point3)             # [points] Plane <- Point
+        moving = local_cones[:, 1:].field()                                  # [points] Plane[free] <- Point
+        w = mv3.w
 
         def misfit(twists):
             """The fused cones' value at their own vertices, summed over the points: the pole of the plane
@@ -239,10 +264,10 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
 
         @jax.jit
         def flat_newton(coefficients):
-            flat = lambda coefficients: misfit(context.extensor(Twist3, coefficients.reshape(2, 6)).field()).kernel[0]
+            flat = lambda coefficients: misfit(jax_core.ctx.extensor(Twist3, coefficients.reshape(2, 6)).field()).kernel[0]
             return -jnp.linalg.solve(jax.hessian(flat)(coefficients), jax.grad(flat)(coefficients))
 
-        hessian, step = newton(context.extensor(Twist3, jnp.zeros((2, 6))).field())
+        hessian, step = newton(mv3.bivector(np.zeros((2, 6))).field())
         reference = flat_newton(jnp.zeros(12))
         np.testing.assert_allclose(step.kernel, reference.reshape(2, 6), atol=1e-10)
         # The cameras are coupled through the points they share:

@@ -41,7 +41,8 @@ from collections.abc import Iterable, Iterator
 import numpy as np
 
 from numga import stack
-from examples.surfaces.spin_transformations.core import Mesh, as_diag, as_ga_sparse, as_scalar, context, cube
+from numga.sparse import spdiag
+from examples.surfaces.spin_transformations.core import Mesh, as_ga_sparse, as_scalar, context, cube
 
 mv = context.multivector
 ga = context.algebra
@@ -62,8 +63,8 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: 
     A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))              # [E, V] Scalar
 
     # diagonal operators: each edge's cotangent weight, and the handles' stiffness
-    H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
-    P = as_diag(as_scalar(handles * stiffness).field())                     # [V, V] Scalar
+    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
+    P = spdiag(as_scalar(handles * stiffness).field())                     # [V, V] Scalar
 
     rest = T10 * mesh.vertices                                              # Vector[E]
     # the cotangent Laplacian, with the handles held

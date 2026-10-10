@@ -77,6 +77,17 @@ class SparseExtensor:
         return cls(cells.reshape(cells.shape[:cells.ndim - rows.ndim] + (rows.size,)), rows.reshape(-1), columns.reshape(-1), shape)
 
     @classmethod
+    def selection(cls, context, index: np.ndarray, size: int) -> SparseExtensor:
+        """The map that reads, at each of its output sites, the input site of `size` an index names,
+        `index[..., output]`: applied to a field, the elements at those sites. Leading axes of the index
+        give one map each, all of one pattern, each map's cells one where it reads and zero elsewhere."""
+        leading, count = index.shape[:-1], index.shape[-1]
+        cases = int(np.prod(leading, dtype=int))
+        reads = np.broadcast_to(np.eye(cases)[:, None, :], (cases, count, cases)).reshape(leading + (count, cases))
+        return cls.from_indices(context.multivector.scalar(reads[..., None]), np.arange(count)[:, None],
+                                index.reshape(cases, count).T, (count, size))
+
+    @classmethod
     def from_diagonal(cls, field: Extensor) -> SparseExtensor:
         """A field map with the element at each site as the coupling cell of that site to itself."""
         cells = _sites(field)

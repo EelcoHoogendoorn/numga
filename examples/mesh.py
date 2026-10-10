@@ -5,6 +5,8 @@ a quantity per corner of each face is a `[3]` batch of face fields, one per corn
 
 from __future__ import annotations
 
+from functools import cached_property
+
 import numpy as np
 
 from numga import Algebra, NumpyContext, concatenate, stack
@@ -25,25 +27,18 @@ def as_scalar(values: np.ndarray) -> Scalar:
     return context.multivector.scalar(np.asarray(values)[..., None])
 
 
-def at_sites(field: Extensor, index: np.ndarray) -> Extensor:
-    """The elements of a field at the sites an index array names; its last axis indexes the sites of
-    the result and its leading axes are batch."""
-    return field.batch()[..., index].field()
-
-
 def as_ga_sparse(C: np.ndarray, V: Extensor) -> SparseExtensor:
     """The sparse linear map coupling each of the R output elements to the n input elements its row
     of C names, `[R, n]`, through the extensors V of the same shape."""
     return SparseExtensor.from_columns(C, V, int(C.max()) + 1)
 
 
-as_diag = SparseExtensor.from_diagonal
-
 
 class Mesh:
     """An oriented triangle mesh: vertices `Vector[V]` and faces `[F, 3]`, counter-clockwise
     from outside, with its edges `[E, 2]` from lower to higher vertex, the edge facing each corner of
-    each face `[F, 3]`, and that edge's orientation relative to the face."""
+    each face `[F, 3]`, and that edge's orientation relative to the face. A mesh does not change, so
+    each quantity derived from it is computed once."""
 
     def __init__(self, vertices: Vector, faces: np.ndarray) -> None:
         corner = np.arange(3)
@@ -137,55 +132,61 @@ class Mesh:
         coordinates = vertices.cast(PlanarVector).kernel
         return cls(vertices, Delaunay(coordinates).simplices)
 
-    @property
+    @cached_property
     def d0(self) -> SparseExtensor:
         """[E, V] Scalar: oriented differences from edge tails to heads."""
         return as_ga_sparse(self.edges, as_scalar(np.ones_like(self.edges) * [-1, 1]))
 
-    @property
+    @cached_property
     def d1(self) -> SparseExtensor:
         """[F, E] Scalar: oriented circulation around each face."""
         return as_ga_sparse(self.face_edges, as_scalar(self.face_edge_orientation))
 
-    @property
+    @cached_property
     def boundary_edges(self) -> np.ndarray:
         """Indices of edges incident to only one face."""
         return np.flatnonzero(np.bincount(self.face_edges.ravel()) == 1)
 
-    @property
+    @cached_property
     def edge_vectors(self) -> Vector:
         """Vector[E]: the displacement from each edge's tail to its head."""
         return self.d0 * self.vertices
 
-    @property
+    @cached_property
     def edge_midpoints(self) -> Vector:
         """Vector[E]: the midpoint of each edge."""
         return as_ga_sparse(self.edges, as_scalar(np.full(self.edges.shape, 1 / 2))) * self.vertices
 
-    @property
+    @cached_property
     def face_centers(self) -> Vector:
         """Vector[F]: the centroid of each face."""
         return as_ga_sparse(self.faces, as_scalar(np.full(self.faces.shape, 1 / 3))) * self.vertices
 
-    @property
-    def triangle_edges(self) -> Vector:
-        """[3] Vector[F]: the edge facing each corner, counter-clockwise."""
-        corner = np.arange(3)
-        return at_sites(self.vertices, self.faces.T[(corner + 2) % 3]) - at_sites(self.vertices, self.faces.T[(corner + 1) % 3])
+    @cached_property
+    def corners(self) -> Vector:
+        """[3] Vector[F]: each face's vertex at each of its corners."""
+        return SparseExtensor.selection(context, self.faces.T, len(self.vertices.batch())) * self.vertices
 
-    @property
+    @cached_property
+    def triangle_edges(self) -> Vector:
+        """[3] Vector[F]: the edge facing each corner, counter-clockwise, from the corner after it to the
+        corner after that."""
+        corners = self.corners
+        return corners[[2, 0, 1]] - corners[[1, 2, 0]]
+
+    @cached_property
     def face_planes(self) -> Bivector:
         """Bivector[F]: each face's unit plane, counter-clockwise seen from outside."""
         edges = self.triangle_edges
         return (edges[0] ^ edges[1]).normalized()
 
-    @property
+    @cached_property
     def triangle_areas(self) -> Scalar:
         """Scalar[F]."""
         edges = self.triangle_edges
         return (edges[0] ^ edges[1]).norm() / 2
 
-    @property
+    @cached_property
     def edge_ratio(self) -> Scalar:
         """Scalar[E]: dual over primal edge length, half the cotangents of the angles facing each edge."""
         edges = self.triangle_edges
@@ -194,7 +195,7 @@ class Mesh:
         cotangents = -(after | before) / (after ^ before).norm()               # [3] Scalar[F]
         return ~self.by_corner(cotangents / 2) * as_scalar(np.ones(len(self.faces))).field()
 
-    @property
+    @cached_property
     def vertex_normals(self) -> Vector:
         """Vector[V]."""
         edges = self.triangle_edges
@@ -203,7 +204,7 @@ class Mesh:
         spread = as_ga_sparse(self.faces, as_scalar(np.ones_like(self.faces, dtype=float)))
         return (~spread * face_normals).normalized()
 
-    @property
+    @cached_property
     def vertex_areas(self) -> Scalar:
         """Scalar[V]: a third of the area of each triangle at the vertex."""
         return ~as_ga_sparse(self.faces, as_scalar(np.ones_like(self.faces) / 3)) * self.triangle_areas
@@ -214,7 +215,7 @@ class Mesh:
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
         return -(after | before) / (after.norm() * before.norm())
 
-    @property
+    @cached_property
     def reconstruction(self) -> SparseExtensor:
         """[F, E] Vector <- Scalar: Whitney edge integrals evaluated at face centroids."""
         # The gradient of each corner's hat function points across its opposite edge.
@@ -230,3 +231,9 @@ class Mesh:
         fields of cells, one per corner."""
         return SparseExtensor.from_indices(cells.batch(), np.arange(len(self.faces)), self.face_edges.T,
                                            (len(self.faces), len(self.edges)))
+
+    def at_corners(self, cells: Extensor) -> SparseExtensor:
+        """[F, V]: couplings from each face to the vertex at each of its corners, through `[3]` face
+        fields of cells, one per corner."""
+        return SparseExtensor.from_indices(cells.batch(), np.arange(len(self.faces)), self.faces.T,
+                                           (len(self.faces), len(self.vertices.batch())))

@@ -456,7 +456,8 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     normal_flux = currents[..., None] | outward
     differences = mesh.d0 * streams
     orientation_by_corner = core.as_scalar(mesh.face_edge_orientation.T).field()
-    expected_flux = core.at_sites(differences, mesh.face_edges.T) * orientation_by_corner
+    facing = SparseExtensor.selection(core.context, mesh.face_edges.T, len(mesh.edges))   # [3] [F, E] Scalar
+    expected_flux = facing * differences[..., None] * orientation_by_corner
     np.testing.assert_allclose((normal_flux - expected_flux).kernel, 0, atol=1e-9)
     np.testing.assert_allclose(differences.batch()[..., mesh.boundary_edges].kernel, 0, atol=1e-12)
 

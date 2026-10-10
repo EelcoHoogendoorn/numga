@@ -17,11 +17,12 @@ from dataclasses import dataclass, fields, replace
 
 import numpy as np
 
-from numga import Algebra, Extensor, NumpyContext
+from numga import Algebra, Extensor
+from numga.backend.context import Context
 
-# The algebra, supplied by examples.instantiate.
+# The algebra and the context, supplied by examples.instantiate.
 ga: Algebra
-ctx = NumpyContext(ga)
+ctx: Context
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()

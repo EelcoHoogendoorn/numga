@@ -6,13 +6,17 @@ from functools import partial
 import numpy as np
 import pytest
 
-from examples.mechanics.modal_xpbd import core, scenarios
+from numga.algebras import PGA2D
+from examples import instantiate
+from examples.mechanics.modal_xpbd import scenarios
+
+core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
 
 
 def test_cantilever_static_sag_matches_full_truss():
     cells, stiffness = 3, 100.0
     shape = core.girder(cells, 1.0, 0.2, stiffness, 1.0, 2 * (2 * (cells + 1)) - 4)
-    bodies, constraints = scenarios.cantilever(shape, 1, np.array([2.0]), np.ones(1))
+    bodies, constraints = scenarios.cantilever(core, shape, 1, np.array([2.0]), np.ones(1))
     initial = core.points(bodies, shape)
     # Implicit compliance keeps large steps stable; the over-damped girder settles within them.
     dt, steps, acceleration = 0.2, 60, -0.1
@@ -38,7 +42,7 @@ def test_cantilever_static_sag_matches_full_truss():
 
 def test_hinged_chain_sustains_large_rotations_with_small_flex():
     shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
-    bodies, hinges = scenarios.hinged_chain(shape, 4, np.array([0.02]))
+    bodies, hinges = scenarios.hinged_chain(core, shape, 4, np.array([0.02]))
     initial = core.points(bodies, shape)
     gravity = (core.mv.y * -4).dual()
     dt, steps = 0.008, 200
@@ -63,7 +67,7 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
 
 def test_a_clamped_beam_buckles_past_its_euler_load():
     beam = core.girder(scenarios.BEAM_CELLS, float(scenarios.BEAM_CELLS), scenarios.BEAM_HEIGHT, scenarios.BEAM_STIFFNESS, scenarios.DENSITY, scenarios.MODES)
-    bodies, constraints = scenarios.clamped_beam(beam, scenarios.BEAM_GIRDERS, scenarios.BEAM_DAMPING)
+    bodies, constraints = scenarios.clamped_beam(core, beam, scenarios.BEAM_GIRDERS, scenarios.BEAM_DAMPING)
     # The two middle girders lifted by a hair: an imperfection to buckle from, so that the buckle grows within
     # a few steps rather than from round-off.
     frames, substeps, dt, imperfection = 24, 4, 0.02, 1e-6
@@ -71,7 +75,7 @@ def test_a_clamped_beam_buckles_past_its_euler_load():
     lift[scenarios.BEAM_GIRDERS // 2:scenarios.BEAM_GIRDERS // 2 + 2] = imperfection
     bodies = replace(bodies, motor=(bodies.motor * (core.mv.yw * (lift / 2)).exp().field()).cast(core.Motor))
     displacements = scenarios.END_DISPLACEMENT * np.arange(frames) / frames
-    midspans = [midspan for _, midspan in scenarios.compress(beam, bodies, constraints, displacements, dt, substeps)]
+    midspans = [midspan for _, midspan in scenarios.compress(core, beam, bodies, constraints, displacements, dt, substeps)]
     deflection = np.array([abs(midspan.dual().cast(core.Force).kernel[0, 1]) for midspan in midspans])
     critical = scenarios.critical(scenarios.BEAM_HEIGHT, scenarios.BEAM_GIRDERS * scenarios.BEAM_CELLS)
     assert deflection[displacements < 0.8 * critical].max() < 1e-6
@@ -82,17 +86,15 @@ def test_the_derived_step_follows_the_sparse_step():
     """Couplings found by differentiating the gaps step the chain as the hand-built sparse couplings do."""
     pytest.importorskip("jax")
     import jax
-    import jax.numpy as jnp
     from examples.mechanics.modal_xpbd import derived
 
-    shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
-    bodies, hinges = scenarios.hinged_chain(shape, 4, np.array([0.02]))
-    gravity = (core.mv.y * -4).dual()
     dt, steps = 0.002, 100
-    jax_bodies, jax_hinges = derived.on_jax(bodies, hinges)
-    jax_step = jax.jit(partial(derived.step, constraints=jax_hinges, dt=dt,
-                               gravity=derived.ctx.extensor(gravity.gatype, jnp.asarray(gravity.kernel))))
+    shape, jax_shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8), derived.core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
+    bodies, hinges = scenarios.hinged_chain(core, shape, 4, np.array([0.02]))
+    jax_bodies, jax_hinges = scenarios.hinged_chain(derived.core, jax_shape, 4, np.array([0.02]))
+    gravity, jax_gravity = (core.mv.y * -4).dual(), (derived.mv.y * -4).dual()
+    jax_step = jax.jit(partial(derived.step, constraints=jax_hinges, dt=dt, gravity=jax_gravity))
     for _ in range(steps):
         bodies, jax_bodies = core.step(bodies, hinges, dt, gravity), jax_step(jax_bodies)
-    np.testing.assert_allclose(np.asarray(jax_bodies.motor.kernel), bodies.motor.kernel, atol=1e-10)
-    np.testing.assert_allclose(np.asarray(jax_bodies.amplitudes.kernel), bodies.amplitudes.kernel, atol=1e-10)
+    # Each girder's modes are found again on JAX, and a mode's sign is arbitrary: its points are not.
+    np.testing.assert_allclose(np.asarray(derived.core.points(jax_bodies, jax_shape).kernel), core.points(bodies, shape).kernel, atol=1e-10)

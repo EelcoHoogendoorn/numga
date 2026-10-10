@@ -9,7 +9,7 @@ import numpy as np
 
 from numga import stack
 from numga.sparse import SparseExtensor, spdiag
-from examples.mesh import Bivector, Mesh, Scalar, Vector, as_scalar, at_sites, context, ga
+from examples.mesh import Bivector, Mesh, Scalar, Vector, as_scalar, context, ga
 
 mv = context.multivector
 Conductivity = ga.gatype((Vector, Vector))
@@ -372,7 +372,7 @@ def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
     Summing their pullbacks and then taking the symmetric part gives the same inductance
     as the full face coupling, without keeping all face-pair vector maps in memory.
     """
-    corners = at_sites(mesh.vertices, mesh.faces.T)                        # [corners] Vector[F]
+    corners = mesh.corners                                                  # [corners] Vector[F]
     edges = corners[[1, 2, 0]] - corners                                   # [edges] Vector[F]
     lengths = edges.norm()                                                # [edges] Scalar[F]
     outward = mesh.face_planes | (edges / lengths)                         # [edges] Vector[F]

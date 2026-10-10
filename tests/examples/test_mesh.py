@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from examples.mesh import Mesh, as_scalar, at_sites, mv
+from numga.sparse import SparseExtensor
+from examples.mesh import Mesh, as_scalar, context, mv
 
 
 @pytest.mark.parametrize("mesh", (Mesh.disk(1.7, 8, 48), Mesh.triangular_disk(1.7, 10),
@@ -38,7 +39,8 @@ def test_boundary_integral_matches_oriented_face_area(mesh: Mesh):
     # Interior edges cancel in the sum of face boundaries. The surviving edge pairs
     # enclose exactly the same oriented area as the sum of triangular faces.
     boundary = ~mesh.d1 * as_scalar(np.ones(len(mesh.faces))).field()
-    edge_area = at_sites(mesh.vertices, mesh.edges[:, 0]) ^ at_sites(mesh.vertices, mesh.edges[:, 1])
+    tail, head = SparseExtensor.selection(context, mesh.edges.T, len(mesh.vertices.batch())) * mesh.vertices   # [ends] Vector[E]
+    edge_area = tail ^ head
     boundary_area = (boundary * edge_area).batch().sum() / 2
     face_area = (mesh.triangle_areas * mesh.face_planes).batch().sum()
     np.testing.assert_allclose((boundary_area - face_area).kernel, 0.0, atol=1e-11)

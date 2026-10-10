@@ -119,7 +119,7 @@ class JaxContext(Context):
         return f"JaxContext(algebra={self.algebra!r}, dtype={self.dtype}, execution={self.execution!r})"
 
 
-def derivative(function: Callable[[Extensor], Extensor]) -> Callable[[Extensor], Extensor]:
+def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
     """The derivative of a function of a value: at each value, the linear map from a step to the change.
 
     At a value of type `T`, the derivative of a function whose result has type `S <- (I...)` is an
@@ -129,22 +129,36 @@ def derivative(function: Callable[[Extensor], Extensor]) -> Callable[[Extensor],
     derivative of a derivative takes one more slot again, so the second derivative of a scalar
     function is the bilinear form `Scalar <- (T, T)`.
 
-    Batch axes follow broadcasting. An axis the result shares with the value, right-aligned and of the
-    same size, indexes independent copies: each element of the result is differentiated with respect to
-    the matching element of the value alone, and the axis appears once. Every other axis of the value is
-    coupled: each element of the result is differentiated with respect to every element along it, and it
-    appears after the result's batch axes. A function that sums over a batch axis thus has a derivative
-    per element of that axis; to keep the coupling of an axis the result shares, move the result off it,
-    as `derivative(lambda x: f(x)[:, None])(x)` gives the derivative of every element of `f(x)` with
-    respect to every element of `x`. The copies along shared axes are taken to be independent; a
-    function that couples them there has its cross terms summed into the diagonal.
+    Leading batch axes hold independent cases. The result's leading batch axes, as far as they match the
+    value's in size, are copies: each element of the result is differentiated with respect to the
+    matching element of the value alone, and the axis appears once. The value's remaining batch axes are
+    coupled: each element of the result is differentiated with respect to every element along them, and
+    they appear after the result's batch axes, so a function summing over a trailing axis of its value
+    has a derivative for every element along it. Copies are taken to be independent; a function that
+    couples them has its cross terms summed into the diagonal.
 
     A field's sites lie inside its slot, not in its batch: they are always coupled, and the step's
     slot ranges over the same sites. The second derivative of a scalar function of a field `T[n]` is
     the coupled bilinear form `Scalar <- (T[n], T[n])`, every site against every other, and solving it
     against the gradient gives the coupled Newton step.
+
+    The value may be a record of extensors, any JAX pytree of them, such as a registered dataclass: the
+    derivative is the same record, of the derivatives with respect to each of its extensors, the others
+    held, as `jax.grad` takes the gradient of a pytree.
     """
-    def at(value: Extensor) -> Extensor:
+    def at(value: Any) -> Any:
+        if isinstance(value, Extensor):
+            return along(function, value)
+        leaves, structure = jax.tree_util.tree_flatten(value, is_leaf=lambda leaf: isinstance(leaf, Extensor))
+
+        def holding(index: int) -> Callable[[Extensor], Extensor]:
+            def varied(leaf: Extensor) -> Extensor:
+                return function(jax.tree_util.tree_unflatten(structure, leaves[:index] + [leaf] + leaves[index + 1:]))
+            return varied
+
+        return jax.tree_util.tree_unflatten(structure, [along(holding(index), leaf) for index, leaf in enumerate(leaves)])
+
+    def along(function: Callable[[Extensor], Extensor], value: Extensor) -> Extensor:
         if value.arity:
             raise TypeError(f"derivatives are taken with respect to values, not to maps of type {value.gatype}")
 
@@ -157,13 +171,12 @@ def derivative(function: Callable[[Extensor], Extensor]) -> Callable[[Extensor],
         slot = value.gatype.structural_shape
         sites = len(slot) - 1
         image_sites, image_blades = len(image.gatype.site_shape), len(image.gatype.subspaces)
-        # The axes the two share, right-aligned, as (value axis, result axis) pairs:
-        shared = [
-            (len(value_batch) - k, len(result_batch) - k)
-            for k in range(1, min(len(value_batch), len(result_batch)) + 1)
-            if value_batch[-k] == result_batch[-k]
-        ]
-        shared_value = {axis for axis, _ in shared}
+        # The leading axes the two share, as far as they match:
+        shared_value = set()
+        for axis, (value_size, result_size) in enumerate(zip(value_batch, result_batch)):
+            if value_size != result_size:
+                break
+            shared_value.add(axis)
         coupled = [axis for axis in range(len(value_batch)) if axis not in shared_value]
         coupled_shape = tuple(value_batch[axis] for axis in coupled)
 

@@ -410,6 +410,11 @@ class GAType:
             return NotImplemented
         return geometric_product(self, other)
 
+    def __truediv__(self, other: object) -> Extensor | NotImplementedType:
+        if isinstance(other, Number):
+            return self._identity() / other
+        return NotImplemented
+
     def __rmul__(self, other: object) -> Extensor | NotImplementedType:
         from numga.expression import geometric_product, is_expression_operand
 

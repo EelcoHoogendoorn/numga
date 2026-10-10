@@ -151,3 +151,12 @@ def test_leading_axes_hold_separate_maps_of_one_pattern():
     for case in range(cases):
         alone, _ = SparseExtensor(system.cells[case], system.rows, system.columns, system.shape).eigh(diagonal, 2)
         np.testing.assert_allclose(values[case].kernel, alone.kernel, rtol=1e-8)
+
+
+def test_a_selection_reads_the_sites_an_index_names():
+    context = NumpyContext(Algebra("x+y+z+"))
+    rng = np.random.default_rng(6)
+    values = context.multivector.vector(rng.normal(size=(2, 5, 3))).field()   # [2] Vector[5]
+    index = rng.integers(0, 5, size=(3, 4))                                     # [corners, sites]
+    selected = SparseExtensor.selection(context, index, 5)                      # [3] [4, 5] Scalar
+    np.testing.assert_allclose((selected * values[:, None]).batch().kernel, values.batch()[:, index].kernel, atol=0.0)

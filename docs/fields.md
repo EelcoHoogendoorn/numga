@@ -52,7 +52,8 @@ A slot of a map can range over sites too. A map from a field over four sites to 
 # Each bead tied to its neighbours and, more weakly, to its rest position:
 weights = np.array([[2, -1, 0, 0], [-1, 3, -1, 0], [0, -1, 3, -1], [0, 0, -1, 2.0]])
 stiffness = (mv.scalar(weights[..., None]) * Vector).field(0, 1)       # vector[4] <- vector[4]
-loads = mv.vector([[0, 0, 0], [0, 0, -1], [0, 0, -1], [0, 0, 0]]).field()
+downward = [[0, 0, 0], [0, 0, -1], [0, 0, -1], [0, 0, 0]]
+loads = mv.vector(downward).field()
 
 forces = stiffness(loads)                                   # vector[4]: summed over the input sites
 displacements = stiffness.solve(loads)                      # vector[4]: stiffness(displacements) == loads
@@ -67,9 +68,11 @@ Extensor(vector[4] <- vector[4], shape=())
 
 Binding a field into a field slot sums over the paired sites: each output site receives every input site's contribution. Composition sums along every path through the shared sites, and `solve` solves the coupled system over every pair of a site and a blade at once, which no batch of independent solves can. A solve keeps the open slots of its right-hand side, as on any map, so `stiffness.solve(stiffness)` is the identity on `vector[4]`.
 
-`stiffness.adjoint()` takes each block's adjoint and exchanges the sites of output and input, so that the scalar product summed over the sites carries over, and `.adjugate()` does the same with the pairing `&`. A map with sites in a slot is one map into or out of a field, not a map per site: the adjoint of a `vector[4] <- vector`, which spreads one vector over four sites, is a `vector <- vector[4]`, which gathers them back, summed. Maps acting independently at each site, each with its own inverse or eigenvectors, are a batch of maps, `.batch()`; placed on the site diagonal, `maps.on_diagonal()` turns a field of maps `vector[4] <- vector` into the field map `vector[4] <- vector[4]` that acts on each site's element by that site's map and on no other. A value without sites is the same at every site in a solve as anywhere: `stiffness.solve(-mv.z)` is the sag under the same load on every bead.
+`stiffness.adjoint()` takes each block's adjoint and exchanges the sites of output and input, so that the scalar product summed over the sites carries over, and `.adjugate()` does the same with the pairing `&`. A map with sites in a slot is one map into or out of a field, not a map per site: the adjoint of a `vector[4] <- vector`, which spreads one vector over four sites, is a `vector <- vector[4]`, which gathers them back, summed. Maps acting independently at each site, each with its own inverse or eigenvectors, are a batch of maps, `.batch()`; placed on the site diagonal, `maps.on_diagonal()` turns a field of maps `vector[4] <- vector` into the field map `vector[4] <- vector[4]` that acts on each site's element by that site's map and on no other. A value without sites is the same at every site in a solve as anywhere: `stiffness.solve(-mv.z)` is the sag under the same load on every bead. A map without sites is likewise the same map at every site, added as it applies: `stiffness + Vector` is the stiffness with the identity on its site diagonal, so that `(stiffness + Vector)(loads) == stiffness(loads) + loads`.
 
 A map without sites in a slot acts at every site of a field bound into it, whatever it is bound into: `(turn >> Vector)(stiffness)` turns every block of the stiffness, and `turn >> stiffness(turn << Vector)` moves the whole stiffness into the turned frame, as for a map on one element.
+
+The linear algebra of a field map is that of all its blocks at once: `lstsq` and `pinv` over every pair of a site and a blade, leaving a singular system's gauge at zero; `inverse`, `det` and `trace`; `cholesky`; `eigh` and `eig`, also against a metric over the same field, with their modes a batch of fields; and `svd`. A Hermitian form over a field has `eigh` and `cholesky` too.
 
 In block-matrix notation a field map is a matrix of blocks, one block per pair of sites, its kernel `[4, 4, 3, 3]`. Binding is the block matrix-vector product, composition the block matrix product, and `solve` the solve of the matrix of $4 \cdot 3$ rows and columns. A field map of scalar cells, `scalar[n] <- scalar[n]`, is an ordinary $n \times n$ matrix.
 
@@ -79,14 +82,14 @@ The derivative with respect to a field keeps its sites inside the step's slot, s
 
 ```python
 import jax
-import jax.numpy as jnp
 
 from numga.backend.jax import JaxContext, derivative
 
 jax.config.update("jax_enable_x64", True)
-context = JaxContext(VGA3D, np.float64)
-on_jax = lambda value: context.extensor(value.gatype, jnp.asarray(value.kernel))
-springs, pull = on_jax(stiffness), on_jax(loads)
+# The same string, on JAX:
+jax_mv = JaxContext(VGA3D, np.float64).multivector
+springs = (jax_mv.scalar(weights[..., None]) * Vector).field(0, 1)      # vector[4] <- vector[4]
+pull = jax_mv.vector(downward).field()                                  # vector[4]
 
 
 def energy(beads):
@@ -94,12 +97,12 @@ def energy(beads):
     return (beads.scalar_product(springs(beads)) / 2 - pull.scalar_product(beads)).batch().sum(axis=-1)
 
 
-rest = on_jax(positions) * 0.0
+rest = jax_mv.vector(np.zeros((4, 3))).field()                           # vector[4]
 gradient = derivative(energy)(rest)                         # scalar <- vector[4]
 curvature = derivative(derivative(energy))(rest)            # scalar <- vector[4], vector[4]
 step = -curvature.solve(gradient)                           # vector[4]
 print(curvature.gatype.signature)
-print(np.abs(np.asarray((step - on_jax(displacements)).kernel)).max() < 1e-12)
+print(np.abs(np.asarray((step - springs.solve(pull)).kernel)).max() < 1e-12)
 ```
 
 ```text
@@ -145,7 +148,3 @@ The reverse turns products around, `~(a * b) == ~b * ~a`, so a sparse extensor t
 `SparseExtensor.from_diagonal(field)` places each element of a field on its own site as a cell: weights such as areas or masses, applied where they belong. The sparse solves, least squares and eigenproblems take map cells and fields of multivectors and run through SciPy on the NumPy backend; `eigh` returns its modes as a batch of fields.
 
 In block-matrix notation a sparse extensor of multivector cells is a sparse matrix over the geometric algebra, and its reverse the conjugate transpose with the reverse as the conjugation.
-
-## Not implemented for dense field maps
-
-Dense field maps bind, compose, solve, and take adjoints and adjugates. Their inverse, least squares and eigenproblems are not implemented, and raise `NotImplementedError`; the sparse storage has least squares and eigenproblems.

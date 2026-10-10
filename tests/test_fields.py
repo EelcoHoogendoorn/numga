@@ -80,3 +80,45 @@ def test_a_field_of_maps_on_the_diagonal_acts_on_each_site_alone():
     values = mv.vector(rng.normal(size=(copies, sites, 3))).field()         # [copies] Vector[sites]
     np.testing.assert_allclose(maps.on_diagonal()(values).kernel, maps(values).kernel, atol=1e-12)
     np.testing.assert_allclose(maps.on_diagonal().solve(maps(values)).kernel, values.kernel, atol=1e-12)
+
+
+def test_a_map_without_sites_adds_to_a_field_map_as_it_applies():
+    couplings = field_map(sites, sites)                                     # Vector[sites] <- Vector[sites]
+    values = mv.vector(rng.normal(size=(copies, sites, 3))).field()         # [copies] Vector[sites]
+    turn = (mv.xy * 0.3).exp() >> Vector                                    # Vector <- Vector
+    np.testing.assert_allclose((couplings + Vector)(values).kernel, (couplings(values) + values).kernel, atol=1e-12)
+    np.testing.assert_allclose((couplings - turn)(values).kernel, (couplings(values) - turn(values)).kernel, atol=1e-12)
+
+
+def test_least_squares_over_a_field_leaves_the_null_space_at_zero():
+    # A chain of sites whose differences alone are seen: the field's mean is unseen, and least squares
+    # leaves it at zero; the pseudoinverse inverts the rest.
+    differences = np.eye(sites, k=1)[:-1] - np.eye(sites)[:-1]                # [sites - 1, sites]
+    seen = (mv.scalar(differences[..., None]) * Vector).field(0, 1)          # Vector[sites - 1] <- Vector[sites]
+    values = mv.vector(rng.normal(size=(sites, 3))).field()                  # Vector[sites]
+    centred = values - values.batch().mean(axis=0)
+    np.testing.assert_allclose(seen.lstsq(seen(values), rcond=1e-10).kernel, centred.kernel, atol=1e-12)
+    np.testing.assert_allclose(seen.pinv(rcond=1e-10)(seen(values)).kernel, centred.kernel, atol=1e-12)
+
+
+def test_spectra_and_factors_of_a_field_map_are_those_of_its_blocks_as_one_matrix():
+    # Scalar cells times the identity on vectors: the matrix of every site and blade is the cells'
+    # matrix repeated over the three blades.
+    cells = rng.normal(size=(sites, sites))
+    symmetric = cells @ cells.T + sites * np.eye(sites)
+    general = (mv.scalar(cells[..., None]) * Vector).field(0, 1)            # Vector[sites] <- Vector[sites]
+    positive = (mv.scalar(symmetric[..., None]) * Vector).field(0, 1)
+    values = mv.vector(rng.normal(size=(copies, sites, 3))).field()         # [copies] Vector[sites]
+    np.testing.assert_allclose(general.inverse()(general(values)).kernel, values.kernel, atol=1e-10)
+    np.testing.assert_allclose(general.det().kernel[0], np.linalg.det(cells) ** 3, rtol=1e-10)
+    np.testing.assert_allclose(general.trace().kernel[0], 3 * np.trace(cells), rtol=1e-12)
+    np.testing.assert_allclose(positive.eigvalsh().kernel[..., 0], np.repeat(np.linalg.eigvalsh(symmetric), 3), rtol=1e-10)
+    eigenvalues, modes = positive.eigh()                                    # [modes] Scalar, [modes] Vector[sites]
+    np.testing.assert_allclose((positive(modes) - modes * eigenvalues).kernel, 0.0, atol=1e-10)
+    # Against a metric: positive(mode) == eigenvalue * metric(mode).
+    eigenvalues, modes = general.adjoint()(general).eigh(positive)
+    np.testing.assert_allclose((general.adjoint()(general(modes)) - positive(modes) * eigenvalues).kernel, 0.0, atol=1e-9)
+    lower = positive.cholesky()
+    np.testing.assert_allclose(lower(lower.adjoint()).kernel, positive.kernel, atol=1e-10)
+    left, singular, right = general.svd()
+    np.testing.assert_allclose((general(right) - left * singular).kernel, 0.0, atol=1e-10)

@@ -10,6 +10,8 @@ from examples import instantiate
 import sys
 import examples.mesh
 import examples.electromagnetism.constitutive.core
+import examples.electromagnetism.electrostriction.core
+import examples.electromagnetism.electrostriction.scenarios
 import examples.electromagnetism.eddy_brake.core
 import examples.electromagnetism.eddy_brake.scenarios
 import examples.electromagnetism.fresnel.core
@@ -60,7 +62,6 @@ import examples.mechanics.kepler.core
 import examples.mechanics.kepler.scenarios
 import examples.mechanics.tricycle.scenarios
 import examples.mechanics.modes.core
-import examples.mechanics.modal_xpbd.core
 import examples.mechanics.modal_xpbd.scenarios
 import examples.mechanics.riccati.core
 import examples.mechanics.riccati.scenarios
@@ -122,6 +123,7 @@ import examples.relativity.twistors.scenarios
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)
 instantiate('examples.mechanics.tricycle.core', PGA2D)
+instantiate('examples.mechanics.modal_xpbd.core', PGA2D)
 instantiate('examples.mechanics.tennis_racket.core', Algebra.from_pqr(3, 0, 0))
 instantiate('examples.quadrics.elliptic_physics.core', Spherical3D)
 print([m for m in sys.modules if m.split('.')[0] in ('matplotlib', 'PIL')])

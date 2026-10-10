@@ -26,11 +26,13 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, concatenate
+from numga import Algebra, concatenate
+from numga.backend.context import Context
 
 # Supplied by examples.instantiate.
 ga: Algebra
-mv = NumpyContext(ga).multivector
+ctx: Context
+mv = ctx.multivector
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
 # A line reads out a twist: `line & twist`.

@@ -34,12 +34,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import Algebra
+from numga.backend.context import Context
 
 
 # Supplied by examples.instantiate.
 ga: Algebra
-ctx = NumpyContext(ga)
+ctx: Context
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
@@ -190,13 +191,16 @@ def bundle_adjust_schur(
     `h_pt(direction, Direction) + h_cross(step, Direction) == 0`, and per camera,
     `h_cam(step, Twist) + h_cross(Twist, direction).sum(axis=0) == -gradient`. The point condition
     solves as `response = h_pt.solve(h_cross)`, the map from a camera step to minus the
-    point's direction. Substituting it into the camera condition folds the points out:
-    `information = h_cam - compliance.sum(axis=0)`, with
-    `compliance = cones(motion) & (motors << response)` the cross form evaluated on the
-    point's response, and the step solves `information(step, Twist) == -gradient`. Unlike the
-    alternating solver this accounts for the points moving with the cameras, and the reduced
-    curvature is the marginal information on each camera's pose. Anchored cameras have their
-    steps and information zeroed, which removes the rig's global gauge from the solve.
+    point's direction. A point seen by two cameras moves with a step of either, and its move
+    changes the cost seen by both: substituting the response into the camera condition folds the
+    points out and couples every pair of cameras through the points they share, the compliance
+    `h_cross(Twist, response)` of camera i against camera j. The information on all poses
+    together is `h_cam` on the diagonal less the compliance summed over the points, a form over
+    the field of camera twists, `Scalar <- (Twist[cams], Twist[cams])`, and one solve against the
+    gradient gives every camera's step at once. Unlike the alternating solver this accounts for
+    the points moving with the cameras. Anchored cameras are left out of both slots of the form
+    and of the gradient, and the least-squares step leaves them still, which removes the rig's
+    global gauge from the solve.
 
     Weighting: the value of an algebraic cone at a scene point is the squared pixel distance
     of its image times the square of its depth, because the polar planes were carried back
@@ -232,19 +236,24 @@ def bundle_adjust_schur(
 
         # Schur complement: fold the points' compliance into the cameras' curvature. Solving the
         # point curvature against the cross term, with the twist slot carried, gives each point's
-        # displacement in response to a camera step; the moved point's polar joined with that
-        # response, pulled into the camera, is the compliance:
+        # displacement in response to a step of each camera that sees it. That displacement changes
+        # the cost seen by every camera that sees the point, so the compliance couples every pair of
+        # cameras through the points they share:
         response = h_pt[:, None].solve(h_cross)                   # [n_points, n_cams] Direction <- Twist
-        compliance = scaled_cones(motion) & (motors << response)  # [n_points, n_cams] Scalar <- (Twist, Twist)
-        information = h_cam - compliance.sum(axis=0)              # [n_cams] Scalar <- (Twist, Twist)
+        compliance = h_cross[:, :, None](Twist, response[:, None]).sum(axis=0)   # [n_cams, n_cams] Scalar <- (Twist, Twist)
+        # Each camera's own curvature on the diagonal, less the compliance, over the free cameras:
+        # the information on all poses together, a form over the field of camera twists.
+        own = h_cam[:, None] * np.eye(len(free))                 # [n_cams, n_cams] Scalar <- (Twist, Twist)
+        information = ((own - compliance) * (free[:, None] * free)).field(1, 2)   # Scalar <- (Twist[cams], Twist[cams])
 
-        # Gauss-Newton step on the reduced curvature; hold the anchored cameras to fix gauge freedom:
-        gradient = (scaled_cones(local_points) & motion).sum(axis=0)   # [n_cams] Scalar <- Twist
-        step = information.lstsq(-gradient, rcond=1e-4) * free    # [n_cams] Twist
+        # Gauss-Newton step on the reduced curvature, all cameras at once; the anchored cameras, outside
+        # the form, are left still, which fixes the gauge freedom:
+        gradient = ((scaled_cones(local_points) & motion).sum(axis=0) * free).field(1)   # Scalar <- Twist[cams]
+        step = information.lstsq(-gradient, rcond=1e-4).batch()   # [n_cams] Twist
         motors = motors * (step * (0.5 * damping)).exp()          # [n_cams] Motor
 
     points, fused = triangulate_cones(motors, reweight_cones(cameras, motors, local_cones))
-    return motors, points, fused, information * free
+    return motors, points, fused, information
 
 
 

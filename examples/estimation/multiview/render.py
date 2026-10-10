@@ -46,14 +46,20 @@ def optical_axes(motors: Motor) -> np.ndarray:
 
 
 def pose_covariance(information: Information) -> np.ndarray:
-    """Pose covariance over twist coefficients (yw, wx, xy): the pseudoinverse of the curvature."""
-    basis = mv("yw wx xy", np.eye(3))
-    gram = information[..., None, None](basis[:, None], basis[None, :]).to_array()
-    return np.linalg.pinv(gram, rcond=1e-4)
+    """Each camera's pose covariance [cams, 3, 3] over twist coefficients (yw, wx, xy), from the
+    information on all poses together, `Scalar <- (Twist[cams], Twist[cams])`: the diagonal blocks of
+    its pseudoinverse, each camera's covariance with the others free to move with it."""
+    cams = information.gatype.site_shape[0]
+    basis = mv("yw wx xy", np.eye(3))                                        # [3] Twist
+    # Each coefficient at each camera alone, zero at the others:
+    units = (basis[None, :, None] * np.eye(cams)[:, None, :]).field()       # [cams, 3] Twist[cams]
+    gram = information(units[:, :, None, None], units[None, None]).to_array()   # [cams, 3, cams, 3]
+    covariance = np.linalg.pinv(gram.reshape(3 * cams, 3 * cams), rcond=1e-4).reshape(cams, 3, cams, 3)
+    return covariance[np.arange(cams), :, np.arange(cams), :]
 
 
 def pose_sigmas(information: Information) -> np.ndarray:
-    """One-sigma pose uncertainties [..., 3] over twist coefficients, from the curvature form."""
+    """One-sigma pose uncertainties [cams, 3] over twist coefficients, from the information form."""
     covariance = pose_covariance(information)
     return np.sqrt(np.maximum(np.diagonal(covariance, axis1=-2, axis2=-1), 0.0))
 

@@ -25,15 +25,15 @@ from dataclasses import dataclass, replace
 
 import numpy as np
 
-from numga import NumpyContext
-from numga.algebras import PGA2D
+from numga import Algebra
+from numga.backend.context import Context
 from numga.sparse import SparseExtensor, spdiag
 from examples.mechanics import lie_integrators as lie
-from examples.mesh import at_sites
 
 
-ga = PGA2D
-ctx = NumpyContext(ga)
+# Supplied by examples.instantiate: the plane's algebra, PGA2D, and the context to compute in.
+ga: Algebra
+ctx: Context
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
@@ -81,6 +81,7 @@ class Bodies:
 class Constraints:
     """Point constraints between anchor points of two bodies."""
     body_idx: np.ndarray                                                    # [sides, constraints]
+    ends: SparseExtensor                                                    # [sides] [constraints, bodies] Scalar, the body at each side
     anchors: Point                                                          # [sides] Point[constraints]
     modes: Direction                                                        # [modes, sides] Direction[constraints]
     compliance: Scalar                                                      # Scalar[constraints]
@@ -156,9 +157,9 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     """The sparse maps from the bodies' rigid motion and modes to the constraint gaps, and the gaps."""
     body_count, constraint_count = bodies.motor.batch().shape[-1], constraints.body_idx.shape[-1]
     # The motors of the two bodies each constraint joins.
-    motor = at_sites(bodies.motor, constraints.body_idx)                   # [..., sides] Motor[constraints]
+    motor = constraints.ends * bodies.motor[..., None]                     # [..., sides] Motor[constraints]
     # The constraint's anchor on each of the two bodies, in that body's frame, moved by its modes.
-    local_anchors = constraints.anchors + (constraints.modes * at_sites(bodies.amplitudes, constraints.body_idx)).sum(axis=-2)  # [..., sides] Point[constraints]
+    local_anchors = constraints.anchors + (constraints.modes * (constraints.ends * bodies.amplitudes[..., None])).sum(axis=-2)  # [..., sides] Point[constraints]
     # A gap is the second anchor's position minus the first's.
     signs = np.array([-1, 1])
     # How each anchor moves for a twist of its body: the commutator with the open twist, in the world frame.

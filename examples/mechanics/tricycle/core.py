@@ -32,11 +32,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, concatenate
+from numga import Algebra, concatenate
+from numga.backend.context import Context
 
 # Supplied by examples.instantiate.
 ga: Algebra
-mv = NumpyContext(ga).multivector
+ctx: Context
+mv = ctx.multivector
 Plane = ga.gatype.vector()
 Point = ga.gatype.antivector()
 # Where two hyperplanes meet: a point in the plane, a line in space.

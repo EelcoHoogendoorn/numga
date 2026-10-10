@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga.sparse import SparseExtensor
+from numga.sparse import SparseExtensor, spdiag
 from numga.extensor import Extensor
-from examples.mesh import Mesh, as_diag, as_ga_sparse, as_scalar, at_sites, context, ga, Scalar, Vector, Bivector
+from examples.mesh import Mesh, as_ga_sparse, as_scalar, context, ga, Scalar, Vector, Bivector
 
 Even = ga.gatype.even()
 
@@ -26,10 +26,9 @@ def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
     `Scalar[F]`, with every operator a sparse linear map coupling elements through multivectors, nullary
     extensors, as the paper's quaternionic matrices do; the energy and the Laplacian are formed with
     their reverses, and the couplings become maps only for the solvers."""
-    # the face-vertex, face-edge and edge-vertex incidences, and the relative orientations
-    I20, I21, I10 = mesh.faces, mesh.face_edges, mesh.edges                 # [F, 3], [F, 3], [E, 2]
+    # the face-vertex and edge-vertex incidences, and the edges' orientations
+    I20, I10 = mesh.faces, mesh.edges                                       # [F, 3], [E, 2]
     O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-    O21 = as_scalar(mesh.face_edge_orientation.T).field()                   # [3] Scalar[F]
 
     # the boundary, taking each edge's tail from its head, and the means over each edge and each face
     T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
@@ -37,18 +36,18 @@ def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
     A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))               # [F, V] Scalar
 
     # diagonal operators: the triangle areas, the vertex areas, and each edge's cotangent weight
-    M2 = as_diag(mesh.triangle_areas)                                       # [F, F] Scalar
-    M2i = as_diag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
-    M0 = as_diag(mesh.vertex_areas)                                         # [V, V] Scalar
-    H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
+    M2 = spdiag(mesh.triangle_areas)                                       # [F, F] Scalar
+    M2i = spdiag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
+    M0 = spdiag(mesh.vertex_areas)                                         # [V, V] Scalar
+    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
 
     edges = T10 * mesh.vertices                                             # Vector[E]
     L = ~T10 * H1 * T10                                                     # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area: the geometric
     # derivative divided by each face's plane
-    D = M2i * at_corners(mesh, at_sites(edges, I21.T) * O21) * -0.5         # [F, V] Vector
-    R = as_diag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
+    D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
+    R = spdiag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
@@ -73,10 +72,9 @@ def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
     but -1, each with multiplicity its value plus one. The fields are taken as they come, at unit
     size per unit of vertex area: their mean vanishes.
     """
-    # the face-vertex, face-edge and edge-vertex incidences, and the relative orientations
-    I20, I21, I10 = mesh.faces, mesh.face_edges, mesh.edges                 # [F, 3], [F, 3], [E, 2]
+    # the face-vertex and edge-vertex incidences, and the edges' orientations
+    I20, I10 = mesh.faces, mesh.edges                                       # [F, 3], [E, 2]
     O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-    O21 = as_scalar(mesh.face_edge_orientation.T).field()                   # [3] Scalar[F]
 
     # the boundary, taking each edge's tail from its head, and the means over each edge and each face
     T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
@@ -84,18 +82,18 @@ def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
     A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))               # [F, V] Scalar
 
     # diagonal operators: the triangle areas, the vertex areas, and each edge's cotangent weight
-    M2 = as_diag(mesh.triangle_areas)                                       # [F, F] Scalar
-    M2i = as_diag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
-    M0 = as_diag(mesh.vertex_areas)                                         # [V, V] Scalar
-    H1 = as_diag(mesh.edge_ratio)                                           # [E, E] Scalar
+    M2 = spdiag(mesh.triangle_areas)                                       # [F, F] Scalar
+    M2i = spdiag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
+    M0 = spdiag(mesh.vertex_areas)                                         # [V, V] Scalar
+    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
 
     edges = T10 * mesh.vertices                                             # Vector[E]
     L = ~T10 * H1 * T10                                                     # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area
     rho = as_scalar(np.full(len(I20), float(eigenvalue))).field()           # Scalar[F]
-    D = M2i * at_corners(mesh, at_sites(edges, I21.T) * O21) * -0.5         # [F, V] Vector
-    R = as_diag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
+    D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
+    R = spdiag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
@@ -112,7 +110,7 @@ def geometric_derivative(mesh: Mesh) -> SparseExtensor:
     a quarter turn in the face's plane, over twice the face's area. Divided by each face's plane, it
     is the Dirac operator."""
     turned = mesh.triangle_edges | mesh.face_planes                         # [3] Vector[F]
-    return at_corners(mesh, turned / (2 * mesh.triangle_areas))
+    return mesh.at_corners(turned / (2 * mesh.triangle_areas))
 
 
 def mean_curvature(mesh: Mesh):
@@ -126,7 +124,7 @@ def mean_curvature(mesh: Mesh):
     I20, I10 = mesh.faces, mesh.edges
     T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))
     A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))
-    H1 = as_diag(mesh.edge_ratio)
+    H1 = spdiag(mesh.edge_ratio)
 
     L = ~T10 * H1 * T10                                 # [V, V] Scalar
     # the integrated mean-curvature normal, its signed size at each vertex, the pointwise
@@ -166,13 +164,6 @@ def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
 
 
 # --- plumbing -------------------------------------------------------------------------
-def at_corners(mesh: Mesh, cells: Extensor) -> SparseExtensor:
-    """[F, V]: couplings from each face to the vertex at each of its corners, through `[3]` face
-    fields of cells, one per corner."""
-    return SparseExtensor.from_indices(cells.batch(), np.arange(len(mesh.faces)), mesh.faces.T,
-                                       (len(mesh.faces), len(mesh.vertices.batch())))
-
-
 def icosphere(levels: int) -> Mesh:
     """A unit sphere: an icosahedron with each face split in four, the given number of times."""
     golden = (1 + 5 ** 0.5) / 2

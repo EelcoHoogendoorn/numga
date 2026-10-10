@@ -79,24 +79,30 @@ def test_the_derivative_of_the_exponential():
         np.testing.assert_allclose(carried.select_grade(0).kernel, 0.0, atol=1e-12)
 
 
-def test_shared_batch_axes_are_copies_and_moved_ones_couple():
-    """An axis the result shares with the value is differentiated element by element; moving the
-    result off it gives every element against every other, as broadcasting would."""
+def test_leading_batch_axes_are_copies_and_the_rest_couple():
+    """An axis the result shares with the value, leading, is differentiated element by element; an axis
+    of the value the result lacks couples every element of the result to every element along it."""
     with enable_x64():
         mv = JaxContext(VGA3D, np.float64).multivector
-        twists = mv.bivector(np.random.default_rng(0).normal(size=(3, 3)))   # [3] Bivector
-        copies = derivative(lambda b: b * b)(twists)                         # [3] Even <- Bivector
-        assert copies.shape == (3,)
-        pairs = derivative(lambda b: (b * b)[:, None])(twists)               # [3, 1, 3] Even <- Bivector
-        diagonal = jnp.stack([pairs.kernel[index, 0, index] for index in range(3)])
-        np.testing.assert_allclose(diagonal, copies.kernel, atol=1e-12)
-        np.testing.assert_allclose(pairs.kernel[:, 0][~np.eye(3, dtype=bool)], 0.0, atol=1e-12)
+        twists = mv.bivector(np.random.default_rng(0).normal(size=(2, 3, 3)))   # [2, 3] Bivector
+        copies = derivative(lambda b: b * b)(twists)                         # [2, 3] Even <- Bivector
+        assert copies.shape == (2, 3)
+        # Summed over its trailing axis, each case has a form for every element along it.
+        totals = derivative(lambda b: (b * b).select_grade(0).sum(axis=-1))(twists)   # [2, 3] Scalar <- Bivector
+        reference = jax.jacobian(lambda kernel: (twists.context.extensor(twists.gatype, kernel) * twists.context.extensor(twists.gatype, kernel)).select_grade(0).sum(axis=-1).kernel)(twists.kernel)
+        np.testing.assert_allclose(totals.kernel[..., 0, :], jnp.stack([reference[case, 0, case] for case in range(2)]), atol=1e-12)
 
-        # A function summing over the batch has a form per element; its coupled second derivative is
-        # every pair of elements, as jax.hessian has it.
-        def energy(b):
-            return (b.sum(axis=0) * b.sum(axis=0)).select_grade(0)
 
-        coupled = derivative(lambda b: derivative(energy)(b)[:, None])(twists)   # [3, 1, 3] Scalar <- (Bivector, Bivector)
-        reference = jax.hessian(lambda kernel: energy(twists.context.extensor(twists.gatype, kernel)).kernel)(twists.kernel)[0]
-        np.testing.assert_allclose(coupled.kernel[:, 0, :, 0], jnp.transpose(reference, (0, 2, 1, 3)), atol=1e-12)
+def test_the_derivative_of_a_record_is_the_record_of_derivatives():
+    with enable_x64():
+        mv = JaxContext(VGA3D, np.float64).multivector
+        record = (mv.bivector([0.3, -0.2, 0.5]), mv.vector([1.0, 2.0, 0.5]))
+
+        def turned(pair):
+            generator, vector = pair
+            return generator.exp() >> vector
+
+        by_generator, by_vector = derivative(turned)(record)
+        assert by_generator.gatype.input_subspaces[-1].same_support(VGA3D.subspace.bivector())
+        np.testing.assert_allclose((by_vector - (record[0].exp() >> VGA3D.gatype.vector())).kernel, 0.0, atol=1e-12)
+        np.testing.assert_allclose(by_generator.kernel, derivative(lambda generator: generator.exp() >> record[1])(record[0]).kernel, atol=1e-12)

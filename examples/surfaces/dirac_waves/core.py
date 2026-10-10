@@ -26,8 +26,8 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga.sparse import SparseExtensor
-from examples.mesh import Mesh, as_diag, as_ga_sparse, as_scalar, context
+from numga.sparse import SparseExtensor, spdiag
+from examples.mesh import Mesh, context
 
 mv = context.multivector
 ga = context.algebra
@@ -41,21 +41,14 @@ Odd = ga.gatype.odd()
 def dirac(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
     """The Dirac operator from vertices to faces, the face areas, and the vertex areas and their
     inverses."""
-    # the face-vertex, face-edge and edge-vertex incidences, and the relative orientations
-    I20, I21, I10 = mesh.faces, mesh.face_edges, mesh.edges                 # [F, 3], [F, 3], [E, 2]
-    O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-    O21 = mesh.face_edge_orientation                                        # [F, 3]
-    T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
-    edges = T10 * mesh.vertices                                             # Vector[E]
-
     # diagonal operators: the triangle areas, and the vertex areas and their inverses
-    M2 = as_diag(mesh.triangle_areas)                                       # [F, F] Scalar
-    M2i = as_diag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
-    M0 = as_diag(mesh.vertex_areas)                                         # [V, V] Scalar
-    M0i = as_diag(1 / mesh.vertex_areas)                                    # [V, V] Scalar
+    M2 = spdiag(mesh.triangle_areas)                                       # [F, F] Scalar
+    M2i = spdiag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
+    M0 = spdiag(mesh.vertex_areas)                                         # [V, V] Scalar
+    M0i = spdiag(1 / mesh.vertex_areas)                                    # [V, V] Scalar
 
     # each face takes each corner by the edge it faces, over minus twice the face's area
-    D = M2i * as_ga_sparse(I20, edges.batch()[I21] * O21) * -0.5            # [F, V] Vector
+    D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
     return D, M2, M0, M0i
 
 

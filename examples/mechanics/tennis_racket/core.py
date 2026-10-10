@@ -15,12 +15,13 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 
-from numga import Algebra, Extensor, NumpyContext
+from numga import Algebra, Extensor
+from numga.backend.context import Context
 from examples.mechanics import lie_integrators as lie
 
 # Supplied by examples.instantiate.
 ga: Algebra
-ctx = NumpyContext(ga, dtype=np.float64)
+ctx: Context
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()

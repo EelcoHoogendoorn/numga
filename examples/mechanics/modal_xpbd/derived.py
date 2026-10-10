@@ -3,64 +3,72 @@ differentiation.
 
 `core.py` builds by hand how each constraint's gap changes as its two bodies move and deform: each
 anchor's commutator with an open twist, each mode's shape at each anchor, signed for the two sides and
-gathered by index into sparse maps. Here the gaps are written once, as a function of how far each body
-moves, and of how far each mode deforms; the maps are their derivatives, dense field maps from the
-bodies to the constraints. The rest of the step is the core's: the same system for all constraints,
-solved once per step, here a dense field map over the constraints.
+gathered by index into sparse maps. Here the gaps are written once, as a function of the coordinates of
+the step, how far each body moves and how far each mode deforms, and the couplings are its derivative:
+dense field maps from the bodies to the constraints, one for the twists and one for each mode's
+amplitudes. The rest of the step is the core's, run on JAX: the same system for all constraints, solved
+once per step, here a dense field map over the constraints.
 """
 
-from dataclasses import fields, replace
+from dataclasses import dataclass, fields, replace
+from collections.abc import Iterator
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
+from numga.algebras import PGA2D
 from numga.backend.jax import JaxContext, derivative
+from examples import instantiate
 from examples.mechanics import lie_integrators as lie
-from examples.mesh import at_sites
-from . import core
-from .core import Bodies, Constraints, Direction, Force, Forque, Motor, Point, Scalar, Twist
 
 jax.config.update("jax_enable_x64", True)
-ctx = JaxContext(core.ga, np.float64)
-mv = ctx.multivector
+core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D, JaxContext)
+mv = core.mv
+Bodies, Constraints, Direction, Force, Forque, Motor, Scalar, Twist = (
+    core.Bodies, core.Constraints, core.Direction, core.Force, core.Forque, core.Motor, core.Scalar, core.Twist,
+)
 # A load on a mode is the complement of its amplitude, as a forque is the complement of a twist; a mode
 # of unit mass takes it back to an amplitude.
 Load = core.ga.gatype.pseudoscalar()
 # A gap is the second anchor's position less the first's.
 SIDES = np.array([-1, 1])
-# Bodies are stepped inside jit, as the pytree of their fields.
-jax.tree_util.register_dataclass(Bodies, data_fields=[field.name for field in fields(Bodies)], meta_fields=[])
+
+
+@dataclass(frozen=True)
+class Coordinates:
+    """How far each body moves over the step, and how far each mode deforms."""
+    twists: Twist                                                           # [...] Twist[bodies]
+    amplitudes: Scalar                                                      # [..., modes] Scalar[bodies]
+
+
+# Bodies are stepped inside jit, and coordinates differentiated, as the pytrees of their fields.
+for record in (Bodies, Coordinates):
+    jax.tree_util.register_dataclass(record, data_fields=[field.name for field in fields(record)], meta_fields=[])
 
 
 # --- math -----------------------------------------------------------------------------
-def anchors(motor: Motor, amplitudes: Scalar, constraints: Constraints) -> Point:
-    """Each constraint's two anchors in the world: on each side, its body's anchor deformed by the modes
-    and moved by the motor."""
-    local = constraints.anchors + (constraints.modes * at_sites(amplitudes, constraints.body_idx)).sum(axis=-2)   # [..., sides] Point[constraints]
-    return at_sites(motor, constraints.body_idx) >> local                  # [..., sides] Point[constraints]
+def gaps(motor: Motor, constraints: Constraints, coordinates: Coordinates) -> Direction:
+    """Each constraint's gap, the second anchor less the first: each anchor on its body, deformed by the
+    body's modes and moved by its motor and its twist."""
+    moved = motor * (coordinates.twists * -0.5).exp()                       # [...] Motor[bodies]
+    local = constraints.anchors + (constraints.modes * (constraints.ends * coordinates.amplitudes[..., None])).sum(axis=-2)   # [..., sides] Point[constraints]
+    anchors = (constraints.ends * moved[..., None]) >> local                # [..., sides] Point[constraints]
+    return (anchors * SIDES).sum(axis=-1).cast(Direction)                   # [...] Direction[constraints]
 
 
 def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scalar, mode_reactions: Scalar, dt: float) -> tuple[Bodies, Scalar]:
     """The bodies displaced to satisfy all constraints, and the modes' reactions."""
     compliance, residual, response = core.modal_terms(bodies, previous_amplitudes, dt)   # [..., modes] Scalar[bodies] each
 
-    def gaps(twists: Twist) -> Direction:
-        """Each constraint's gap, with each body moved by a twist."""
-        moved = bodies.motor * (twists * -0.5).exp()                        # [...] Motor[bodies]
-        return (anchors(moved, bodies.amplitudes, constraints) * SIDES).sum(axis=-1).cast(Direction)   # [...] Direction[constraints]
+    def gap(coordinates: Coordinates) -> Direction:
+        """The gaps for the bodies as they are, moved and deformed by the coordinates."""
+        return gaps(bodies.motor, constraints, coordinates)
 
-    def deformations(amplitudes: Scalar) -> Direction:
-        """Each constraint's gap from each mode alone."""
-        motor = at_sites(bodies.motor, constraints.body_idx)[..., None, :]  # [..., 1, sides] Motor[constraints]
-        moved = motor >> (constraints.modes * at_sites(amplitudes, constraints.body_idx))   # [..., modes, sides] Direction[constraints]
-        return (moved * SIDES).sum(axis=-1).cast(Direction)                 # [..., modes] Direction[constraints]
-
-    still = bodies.rate * 0.0                                               # [...] Twist[bodies]
-    gap = gaps(still)                                                       # [...] Direction[constraints]
-    # How the gaps change as the bodies move, and as each mode deforms them:
-    rigid = derivative(gaps)(still)                                         # [...] Direction[constraints] <- Twist[bodies]
-    modal = derivative(deformations)(bodies.amplitudes)                     # [..., modes] Direction[constraints] <- Scalar[bodies]
+    here = Coordinates(twists=bodies.rate * 0.0, amplitudes=bodies.amplitudes)
+    # How the gaps change with the coordinates: as the bodies move, and as each mode deforms them.
+    change = derivative(gap)(here)
+    rigid = change.twists                                                   # [...] Direction[constraints] <- Twist[bodies]
+    modal = change.amplitudes                                               # [..., modes] Direction[constraints] <- Scalar[bodies]
     # The load of each mode's spring, less the reactions it has already received this step, and how far
     # each mode moves under it alone.
     spring_load = -(residual + compliance * mode_reactions)                # [..., modes] Scalar[bodies]
@@ -76,7 +84,7 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
               + modal(mobility(modal.adjugate())).sum(axis=-1)
               + constraint_compliance)                                      # [...] Direction[constraints] <- Force[constraints]
     # The reactions at the constraints that close every gap, given how far the modes move on their own.
-    reactions = system.solve(-(gap + modal(unconstrained_step).sum(axis=-1)))   # [...] Force[constraints]
+    reactions = system.solve(-(gap(here) + modal(unconstrained_step).sum(axis=-1)))   # [...] Force[constraints]
     # Each body's twist, from the forques the reactions exert on it, and each mode's load.
     displacement = bodies.inverse_inertia(rigid.adjugate()(reactions))     # [...] Twist[bodies]
     mode_loads = Load.dual()(modal.adjugate()(reactions))                  # [..., modes] Scalar[bodies]
@@ -109,7 +117,7 @@ def step(bodies: Bodies, constraints: Constraints, dt: float, gravity: Direction
     )
 
 
-def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: float, frames: int, substeps: int):
+def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: float, frames: int, substeps: int) -> Iterator[Bodies]:
     """The bodies at every frame, under gravity, each frame's substeps one compiled call."""
     @jax.jit
     def advance(bodies: Bodies) -> Bodies:
@@ -120,33 +128,15 @@ def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: floa
         bodies = advance(bodies)
 
 
-# --- plumbing -------------------------------------------------------------------------
-def on_jax(bodies: Bodies, constraints: Constraints) -> tuple[Bodies, Constraints]:
-    """Bodies and constraints with their extensors on JAX, the rates over every blade of a twist."""
-    lift = lambda value: ctx.extensor(value.gatype, jnp.asarray(value.kernel))
-    bodies = replace(bodies, rate=bodies.rate.cast(Twist))
-    return (
-        Bodies(**{field.name: lift(getattr(bodies, field.name)) for field in fields(Bodies)}),
-        replace(constraints, anchors=lift(constraints.anchors), modes=lift(constraints.modes), compliance=lift(constraints.compliance)),
-    )
-
-
-def on_numpy(bodies: Bodies) -> Bodies:
-    """Bodies with their extensors back on NumPy, for drawing."""
-    return Bodies(**{field.name: core.ctx.extensor(getattr(bodies, field.name).gatype, np.asarray(getattr(bodies, field.name).kernel))
-                     for field in fields(Bodies)})
-
-
 def main():
     from examples.animation import save_animation
     from . import render, scenarios
 
     shape = core.girder(scenarios.CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.MODES)
-    bodies, constraints = on_jax(*scenarios.hinged_chain(shape, scenarios.LINKS, scenarios.DAMPING))
-    gravity = ctx.extensor(scenarios.GRAVITY.gatype, jnp.asarray(scenarios.GRAVITY.kernel))
-    frames = (core.points(on_numpy(moment), shape) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.FRAMES, scenarios.SUBSTEPS))
-    reference = core.points(on_numpy(bodies), shape)
-    save_animation(render.swinging_chain(frames, shape.edges, reference), "modal_xpbd_derived_swing", scenarios.DURATION_MS)
+    bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.LINKS, scenarios.DAMPING)
+    gravity = (mv.y * -scenarios.GRAVITY).dual()                            # [] Direction
+    frames = (core.points(moment, shape) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.FRAMES, scenarios.SUBSTEPS))
+    save_animation(render.swinging_chain(frames, shape.edges, core.points(bodies, shape)), "modal_xpbd_derived_swing", scenarios.DURATION_MS)
 
 
 if __name__ == "__main__":

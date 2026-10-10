@@ -161,8 +161,10 @@ class _Labels:
 
 
 def add_fields(left: Extensor, right: Extensor) -> Extensor:
-    """The sum where either side has field slots: a slot over blades alone is the same at every site
-    of the other's slot."""
+    """The sum where either side has field slots. A value or map without sites is the same at every
+    site, as it is under application: added to a map from a field to a field over the same sites, a map
+    acting at every site is that map on the site diagonal, so that `(A + B)(f) == A(f) + B(f)`."""
+    left, right = _on_diagonal_of(left, right), _on_diagonal_of(right, left)
     sites = dict(left.gatype.fields)
     for slot, count in right.gatype.fields:
         if sites.setdefault(slot, count) != count:
@@ -175,6 +177,22 @@ def add_fields(left: Extensor, right: Extensor) -> Extensor:
         + _aligned(right, tuple(position[slot] for slot, _ in right.gatype.fields), sizes)
     )
     return type(result)._from_prepared_kernel(result.context, result.gatype.derive.with_fields(fields), result.kernel)
+
+
+def _on_diagonal_of(value: Extensor, other: Extensor) -> Extensor:
+    """A map acting at every site, read on the site diagonal where the other's input ranges over the
+    sites of its output and the map's input does not."""
+    sites, own = dict(other.gatype.fields), dict(value.gatype.fields)
+    missing = [slot for slot in sites if slot and slot not in own]
+    if not missing:
+        return value
+    if missing != [1] or sites.get(0) != sites[1] or [slot for slot in own if slot] or value.arity < 1:
+        raise TypeError(f"{value.gatype.signature} has no reading on the sites of {other.gatype.signature}")
+    if 0 not in own:
+        # The same map at every site.
+        value = other.context.lower(value)
+        value = value[..., None].broadcast_to(value.shape + (sites[0],)).field()
+    return value.on_diagonal()
 
 
 def site_by_site(implementation, operand_count: int):

@@ -8,8 +8,10 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 from numga import stack
+from numga.algebras import PGA2D as ga
 from examples.animation import capture, save_animation
-from .core import Point, ga
+
+Point = ga.gatype.antivector()
 
 
 COLOURS = ("#2563eb", "#0d9488", "#d97706", "#9333ea")
