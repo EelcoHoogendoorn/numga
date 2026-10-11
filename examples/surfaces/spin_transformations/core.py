@@ -16,7 +16,12 @@ import numpy as np
 
 from numga.sparse import SparseExtensor, spdiag
 from numga.extensor import Extensor
-from examples.mesh import Mesh, as_ga_sparse, as_scalar, context, ga, Scalar, Vector, Bivector
+from numga.algebras import VGA3D as ga
+from examples import instantiate
+
+mesh_module = instantiate("examples.mesh", ga)
+Mesh, Scalar, Vector, Bivector = mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector, mesh_module.Bivector
+as_ga_sparse, as_scalar, context = mesh_module.as_ga_sparse, mesh_module.as_scalar, mesh_module.ctx
 
 Even = ga.gatype.even()
 

@@ -7,9 +7,10 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mesh import Mesh
 from examples.surfaces.spin_transformations.render import _rasterise
 from examples.surfaces.dirac_waves import core
+
+Mesh = core.Mesh
 
 # Each tile's exposure, the percentile of its amplitudes over all its frames that shows at full
 # brightness; the surface's own grey under the field; the view; the light; and the image size.

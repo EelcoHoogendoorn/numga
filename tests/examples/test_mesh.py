@@ -3,8 +3,12 @@
 import numpy as np
 import pytest
 
+from numga.algebras import VGA3D
 from numga.sparse import SparseExtensor
-from examples.mesh import Mesh, as_scalar, context, mv
+from examples import instantiate
+
+mesh_module = instantiate("examples.mesh", VGA3D)
+Mesh, as_scalar, context, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.ctx, mesh_module.mv
 
 
 @pytest.mark.parametrize("mesh", (Mesh.disk(1.7, 8, 48), Mesh.triangular_disk(1.7, 10),

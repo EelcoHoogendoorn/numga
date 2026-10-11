@@ -1,7 +1,11 @@
 """Oriented triangle meshes, their geometric fields, and sparse incidence operators.
 
 Quantities on the mesh are fields over its vertices, edges or faces, `Vector[V]` or `Scalar[F]`;
-a quantity per corner of each face is a `[3]` batch of face fields, one per corner."""
+a quantity per corner of each face is a `[3]` batch of face fields, one per corner.
+
+The algebra is not fixed here. `ga` is supplied per instance, by `examples.instantiate("examples.mesh", VGA3D)`
+or any other algebra. The incidence operators and the Loop step hold scalar cells and act on fields of
+any type; the geometric quantities read the vertices as vectors."""
 
 from __future__ import annotations
 
@@ -9,13 +13,15 @@ from functools import cached_property
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, concatenate, stack
+from numga import Algebra, concatenate, stack
+from numga.backend.context import Context
 from numga.extensor import Extensor
 from numga.sparse import SparseExtensor
 
-ga = Algebra("x+y+z+")
-context = NumpyContext(ga)
-mv = context.multivector
+# Supplied by examples.instantiate.
+ga: Algebra
+ctx: Context
+mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
@@ -24,7 +30,7 @@ PlanarVector = ga.gatype.from_blades("x y")
 
 # --- plumbing -------------------------------------------------------------------------
 def as_scalar(values: np.ndarray) -> Scalar:
-    return context.multivector.scalar(np.asarray(values)[..., None])
+    return mv.scalar(np.asarray(values)[..., None])
 
 
 def as_ga_sparse(C: np.ndarray, V: Extensor) -> SparseExtensor:
@@ -142,6 +148,54 @@ class Mesh:
         """[F, E] Scalar: oriented circulation around each face."""
         return as_ga_sparse(self.face_edges, as_scalar(self.face_edge_orientation))
 
+    def loop(self, pinned: np.ndarray) -> SparseExtensor:
+        """[V + E, V] Scalar: one Loop step, from the vertices to those of the finer mesh, its vertices
+        followed by one per edge, with the vertices pinned `[V]` staying where they are.
+
+        An interior vertex of valence n keeps `1 - n * beta` of itself and takes `beta` of each neighbour,
+        with `beta = (5/8 - (3/8 + cos(2 pi / n) / 4)**2) / n`. An interior edge's vertex takes 3/8 of each
+        end and 1/8 of each vertex across the edge: each face beside the edge gives 1/8 of the corner the
+        edge faces and 3/16 of each of the other two. The boundary follows itself alone: a boundary vertex
+        keeps 3/4 of itself and takes 1/8 of each neighbour along the boundary, and a boundary edge's vertex
+        is the midpoint of its ends."""
+        vertex_count = len(pinned)
+        shape = (vertex_count + len(self.edges), vertex_count)
+        everyone = np.arange(vertex_count)
+        rim = np.isin(np.arange(len(self.edges)), self.boundary_edges)          # [E]
+        on_rim = np.isin(everyone, self.edges[rim])                              # [V]
+        valence = np.bincount(self.edges.reshape(-1), minlength=vertex_count)    # [V]
+        beta = (5 / 8 - (3 / 8 + np.cos(2 * np.pi / valence) / 4) ** 2) / valence
+        own = np.where(pinned, 1.0, np.where(on_rim, 3 / 4, 1 - valence * beta))   # [V]
+        keep = SparseExtensor.from_indices(as_scalar(own), everyone, everyone, shape)
+        # each end's share in the other end, by the end's own rule
+        along = np.where(pinned[self.edges], 0.0,
+                         np.where(on_rim[self.edges], np.where(rim[:, None], 1 / 8, 0.0), beta[self.edges]))   # [E, 2]
+        neighbours = SparseExtensor.from_indices(as_scalar(along), self.edges, self.edges[:, ::-1], shape)
+        # each face's share in the vertex of the edge facing each corner, from each of its corners
+        facing_rim = rim[self.face_edges][:, :, None]                            # [F, 3, 1]
+        shares = np.where(np.eye(3, dtype=bool), np.where(facing_rim, 0.0, 1 / 8), np.where(facing_rim, 1 / 2, 3 / 16))
+        split = SparseExtensor.from_indices(as_scalar(shares), vertex_count + self.face_edges[:, :, None],
+                                            self.faces[:, None, :], shape)
+        return keep + neighbours + split
+
+    @cached_property
+    def split_faces(self) -> np.ndarray:
+        """[4 F, 3]: every face split in four at the vertices of its edges, the vertices of the finer mesh: a
+        middle face through them, and a face at each of its corners."""
+        middle = self.vertices.batch().shape[-1] + self.face_edges              # [F, 3]
+        corners = np.stack([self.faces, np.roll(middle, 1, axis=1), np.roll(middle, -1, axis=1)], axis=-1)   # [F, 3, 3]
+        return np.concatenate([middle, corners.reshape(-1, 3)])
+
+    def split_pins(self, pinned: np.ndarray) -> np.ndarray:
+        """[V + E]: the pinned vertices of the finer mesh, the same vertices; the vertices of the edges are
+        free."""
+        return np.concatenate([pinned, np.zeros(len(self.edges), dtype=bool)])
+
+    def subdivide_loop(self, pinned: np.ndarray) -> Mesh:
+        """The finer mesh of one Loop step with the vertices pinned `[V]` staying where they are: the step
+        applied to the vertices, on the split faces."""
+        return Mesh(self.loop(pinned) * self.vertices, self.split_faces)
+
     @cached_property
     def boundary_edges(self) -> np.ndarray:
         """Indices of edges incident to only one face."""
@@ -165,7 +219,7 @@ class Mesh:
     @cached_property
     def corners(self) -> Vector:
         """[3] Vector[F]: each face's vertex at each of its corners."""
-        return SparseExtensor.selection(context, self.faces.T, len(self.vertices.batch())) * self.vertices
+        return SparseExtensor.selection(ctx, self.faces.T, len(self.vertices.batch())) * self.vertices
 
     @cached_property
     def triangle_edges(self) -> Vector:

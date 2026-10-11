@@ -6,7 +6,8 @@ import numpy as np
 
 from numga import stack
 from examples.electromagnetism.eddy_brake import core
-from examples.mesh import Mesh
+
+Mesh = core.Mesh
 
 RADIUS = 0.1                                       # m
 THICKNESS = 0.001                                  # m

@@ -16,7 +16,8 @@ from numga import concatenate, stack
 from numga.extensor import Extensor
 from examples.animation import capture
 from examples.electromagnetism.eddy_brake import core
-from examples.mesh import Mesh, as_ga_sparse, as_scalar
+
+Mesh, as_ga_sparse, as_scalar = core.Mesh, core.mesh_module.as_ga_sparse, core.as_scalar
 
 IMAGE_SAMPLES = 256
 ANIMATION_DPI = 120

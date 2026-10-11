@@ -8,8 +8,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from numga import stack
+from numga.algebras import VGA3D as ga
 from numga.sparse import SparseExtensor, spdiag
-from examples.mesh import Bivector, Mesh, Scalar, Vector, as_scalar, context, ga
+from examples import instantiate
+
+mesh_module = instantiate("examples.mesh", ga)
+Mesh, Scalar, Vector, Bivector = mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector, mesh_module.Bivector
+as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
 
 mv = context.multivector
 Conductivity = ga.gatype((Vector, Vector))

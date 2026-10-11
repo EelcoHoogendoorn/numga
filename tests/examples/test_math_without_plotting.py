@@ -5,10 +5,9 @@ import sys
 
 PROBE = """
 from numga.algebra import Algebra
-from numga.algebras import PGA2D, Spherical3D
+from numga.algebras import PGA2D, Spherical3D, VGA3D
 from examples import instantiate
 import sys
-import examples.mesh
 import examples.electromagnetism.constitutive.core
 import examples.electromagnetism.electrostriction.core
 import examples.electromagnetism.electrostriction.scenarios
@@ -120,6 +119,7 @@ import examples.relativity.spinors.core
 import examples.relativity.spinors.scenarios
 import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
+instantiate('examples.mesh', VGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)
 instantiate('examples.mechanics.tricycle.core', PGA2D)
