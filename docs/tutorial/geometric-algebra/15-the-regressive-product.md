@@ -39,3 +39,5 @@ d = 7 * x + 8 * y + 10 * z
 ```
 
 The result is $-3 b$, a multiple of $b$, the vector the two bivectors share.
+
+Example: [a pose from a point, a line and a plane](../../../examples/geometry/three_point_pose/three_point_pose.ipynb), where joins and meets of points, lines and planes recover a rigid motion.

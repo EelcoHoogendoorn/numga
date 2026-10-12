@@ -174,9 +174,22 @@ def test_general_bivector_exp_supports_independent_rotation_planes(description, 
     assert result.gatype <= algebra.gatype.rotor()
     np.testing.assert_allclose((result - reference).kernel, 0, rtol=0, atol=1e-8)
     np.testing.assert_allclose(
-        reference.with_traits(Versor, ReverseProductOne).log().kernel,
-        generator.kernel, rtol=1e-8, atol=1e-8,
+        (reference.with_traits(Versor, ReverseProductOne).log() - generator).kernel,
+        0, rtol=0, atol=1e-8,
     )
+
+
+def test_six_dimensional_clifford_log_retains_its_grade_six_part():
+    mv = NumpyContext(Algebra("a+b+c+d+e+f+")).multivector
+    angles = np.array([0.2, 0.6, 1.0, 1.2])
+    rotor = (mv.ab * angles).exp() * (mv.cd * angles).exp() * (mv.ef * angles).exp()
+
+    logarithm = rotor.log()
+
+    np.testing.assert_allclose((logarithm.exp() - rotor).kernel, 0, atol=2e-12)
+    np.testing.assert_allclose((logarithm + logarithm.reverse()).kernel, 0, atol=2e-12)
+    # The principal Clifford branch leaves the bivectors when the sum of the angles crosses pi.
+    np.testing.assert_allclose(logarithm.select_grade(6).kernel[-1], np.pi / 2, atol=2e-12)
 
 
 @pytest.mark.parametrize("description", ["x+y+z+", "x+y+z+w+"])

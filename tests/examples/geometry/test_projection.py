@@ -12,7 +12,7 @@ from examples.geometry.projection.scenarios import mv, origin
 
 
 def dehomogenize(p: Point) -> np.ndarray:
-    k = p.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    k = p.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     return k[..., :3] / k[..., 3:]
 
 
@@ -85,7 +85,7 @@ def test_bivector_exponentials_translate_and_rotate():
     np.testing.assert_allclose(dehomogenize(moved), [2.0, 0.0, 3.5], atol=1e-14)
 
     y_axis = origin.regressive(direction(np.array([0.0, 1.0, 0.0]))).normalized()
-    turned = (y_axis * (np.pi / 4.0)).exp() >> point(np.array([1.0, 0.0, 0.0]))
+    turned = (y_axis * (-np.pi / 4.0)).exp() >> point(np.array([1.0, 0.0, 0.0]))
     np.testing.assert_allclose(dehomogenize(turned), [0.0, 0.0, -1.0], atol=1e-8)
 
 

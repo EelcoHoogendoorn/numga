@@ -66,3 +66,5 @@ xy  0  0  0
 The rotor supplies the rotation of each grade directly. Composing those rotations with the input and output of a map gives its action in the rotated frame.
 
 In matrix notation, for a map from vectors to vectors, rotating both sides reads as $R A R^{-1}$. Rotating only the output reads as $R A$, and rotating only the input back as $A R^{-1}$.
+
+Example: [rigid bodies on a sphere](../../../examples/quadrics/elliptic_physics/s2_physics.ipynb), where every body's shape, a map between points and planes, is placed by its motor.

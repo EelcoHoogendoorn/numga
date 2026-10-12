@@ -28,7 +28,7 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
-SensorPoint = ga.gatype.from_blades("zxw xyw zyx")
+SensorPoint = ga.gatype.from_blades("wxz wyx xyz")
 SensorPlane = ga.gatype.from_blades("y z w")
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
@@ -50,7 +50,7 @@ def unit(points: Point) -> Point:
 
 
 # Every element is built in its home frame: centred on the origin, in the plane x == 0.
-origin: Point = unit(mv.zyx)
+origin: Point = unit(mv.xyz)
 home: Plane = mv.x
 
 

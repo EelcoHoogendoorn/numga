@@ -52,6 +52,23 @@ _S_SERIES = (1, 1 / 6, 1 / 120, 1 / 5040, 1 / 362880)
 _H_SERIES = (1, -1 / 3, 2 / 15, -2 / 35, 8 / 315)          # in powers of p - 1
 
 
+def scalar_square_exp(x: Extensor) -> Extensor:
+    """`x.exp() == even + x * odd`, for scalars `even` and `odd`, when `x` squares to a scalar `s`,
+    as a pseudoscalar or a single blade does. With `r = xp.sqrt(xp.abs(s))` they are `xp.cosh(r)`
+    and `xp.sinh(r) / r` for `s > 0`, `xp.cos(r)` and `xp.sin(r) / r` for `s < 0`, and 1 and 1 for
+    `s == 0`. No versor trait is asserted: the exponential of a multiple of the pseudoscalar in four
+    dimensions is not a versor."""
+
+    xp = x.context.xp
+    square = x.squared().kernel[..., 0]                                # [...] the scalar s
+    root = xp.sqrt(xp.abs(square))
+    safe = xp.where(root > 0, root, 1)
+    even = xp.where(square > 0, xp.cosh(root), xp.cos(root))
+    odd = xp.where(root > 0, xp.where(square > 0, xp.sinh(root), xp.sin(root)) / safe, 1)
+    scalar = x.context.multivector.scalar
+    return scalar(even[..., None]) + x * scalar(odd[..., None])
+
+
 def cosine(xp, z):
     """`xp.cosh(xp.sqrt(z))`, which is `xp.cos(xp.sqrt(-z))` for `z < 0`."""
     root = xp.sqrt(xp.abs(z))
@@ -224,6 +241,8 @@ def _decomposable(algebra) -> bool:
 def register() -> None:
     """Put exp and log below six dimensions ahead of the generic methods they replace."""
     from numga.extensions.logexp import bivector_exp, unit_versor_log
+
+    Extensor.exp.register(lambda t: t.derive.squared.is_scalar)(scalar_square_exp)
 
     # exp tries its predicates in order: special cases (empty, scalar, nilpotent), then the
     # generic bivector_exp. Inserting at bivector_exp's position puts these between, most specific

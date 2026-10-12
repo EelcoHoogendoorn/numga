@@ -60,3 +60,5 @@ turn_yz(turn_xy)(z)
 The first sequence sends $z$ to $y$ and then to $x$. The second sends $z$ to zero at its first step.
 
 In matrix notation, feeding $B$ into $A$ reads as $A B$, with the output index of $B$ summed against the input index of $A$.
+
+Example: [a scenegraph, a robot arm and a compound lens](../../../examples/geometry/scenegraph/scenegraph.ipynb), where each link's map feeds the next and a whole chain is one composed map.

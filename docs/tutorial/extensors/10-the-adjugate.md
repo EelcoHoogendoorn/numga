@@ -54,3 +54,5 @@ For other input and output grades, the regressive pairing uses their complementa
 The regressive pairing pairs every basis blade with its complement, independently of the metric. It remains invertible in a degenerate algebra, and the construction works even when $A$ loses information. The [multiview example](../../../examples/estimation/multiview/core.py) uses a camera's adjugate to find the plane of scene points that project onto an image line.
 
 In matrix notation, with the complementary bivectors named $yz$, $zx$, $xy$, the coefficients of this adjugate read as $A^T$.
+
+Example: [multi-view reconstruction](../../../examples/estimation/multiview/multiview_reconstruction.ipynb), where a camera's adjugate carries a pixel's disc of uncertainty back into a cone of sight.

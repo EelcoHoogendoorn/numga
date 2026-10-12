@@ -79,6 +79,45 @@ def test_the_derivative_of_the_exponential():
         np.testing.assert_allclose(carried.select_grade(0).kernel, 0.0, atol=1e-12)
 
 
+@pytest.mark.parametrize("algebra", [VGA3D, PGA3D])
+def test_default_vector_exp_derivatives_at_zero(algebra):
+    with enable_x64():
+        mv = JaxContext(algebra, np.float64).multivector
+        zero = mv.vector(np.zeros(algebra.dimension))
+        steps = mv.vector(np.eye(algebra.dimension))
+
+        tangent = derivative(lambda value: value.exp())(zero)
+        curvature = derivative(derivative(lambda value: value.exp()))(zero)
+
+        np.testing.assert_allclose((tangent(steps) - steps).kernel, 0, atol=1e-12)
+        np.testing.assert_allclose(
+            (curvature(steps[:, None], steps[None, :])
+             - steps[:, None].anticommutator(steps[None, :])).kernel,
+            0, atol=1e-12,
+        )
+        gradient = jax.grad(lambda value: value.exp().scalar_product(mv.x + mv.y).kernel.sum())(zero)
+        np.testing.assert_allclose((gradient - mv.x - mv.y).kernel, 0, atol=1e-12)
+
+
+@pytest.mark.parametrize("distance", [0.0, 0.7])
+def test_default_motor_log_exp_derivatives_at_identity_and_translation(distance):
+    with enable_x64():
+        mv = JaxContext(PGA3D, np.float64).multivector
+        generator = (mv.xw * distance).cast(PGA3D.gatype.bivector())
+        steps = mv.bivector(np.eye(len(PGA3D.subspace.bivector())))
+
+        def round_trip(value):
+            return value.exp().log()
+
+        tangent = derivative(round_trip)(generator)
+        curvature = derivative(derivative(round_trip))(generator)
+
+        np.testing.assert_allclose((tangent(steps) - steps).kernel, 0, atol=1e-11)
+        np.testing.assert_allclose(curvature(steps[:, None], steps[None, :]).kernel, 0, atol=1e-11)
+        gradient = jax.grad(lambda value: round_trip(value).kernel.sum())(generator)
+        np.testing.assert_allclose(gradient.kernel, 1, atol=1e-11)
+
+
 def test_leading_batch_axes_are_copies_and_the_rest_couple():
     """An axis the result shares with the value, leading, is differentiated element by element; an axis
     of the value the result lacks couples every element of the result to every element along it."""

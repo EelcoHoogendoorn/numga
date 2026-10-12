@@ -54,3 +54,5 @@ Only the inner-product pairing is inverted. The dyad $A$ has rank one and loses 
 The construction requires a nondegenerate inner-product pairing. Negative squares contribute signs; a degenerate pairing cannot determine a unique corresponding vector. For inputs or outputs of mixed grade, the scalar product supplies the pairing. The [metric and complement discussion](../../extensor_advanced.md#3-the-metric-and-the-complement) treats these distinctions in detail.
 
 In matrix notation, in orthonormal Euclidean coordinates, the adjoint has coefficients $A^T$, and the identity reads as $(A^T c)\cdot v = c\cdot(A v)$.
+
+Example: [a crystal's diffraction peaks under a deformation](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where the positions move by the deformation and the wavevectors by its adjoint, so that every phase `k | x` is kept.

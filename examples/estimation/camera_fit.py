@@ -37,7 +37,7 @@ def point(coords: np.ndarray) -> Point:
 def main() -> None:
     rng = np.random.default_rng(0)
     world = point(jnp.asarray(rng.normal(size=(30, 3))))
-    origin = mv.zyx
+    origin = mv.xyz
     screen = mv.z - mv.w
     camera = (origin & Point) ^ screen
 

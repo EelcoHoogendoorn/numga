@@ -41,3 +41,5 @@ b = 4 * x + 5 * y + 6 * z
 ```
 
 The product of a product of vectors with its reverse is a scalar, the product of the squares of the vectors.
+
+Example: [close Kepler passages](../../../examples/mechanics/kepler/kepler.ipynb), where a position is a spinor times its own reverse.

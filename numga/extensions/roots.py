@@ -17,7 +17,7 @@ def square_root_denman_beavers(value: Extensor, *, n: int = 30) -> Extensor:
         reciprocal = product.inverse()
         root = root * (1 + reciprocal) / 2
         product = (product + reciprocal + 2) / 4
-    return root.with_traits(ReverseProductOne, Versor)
+    return root.with_traits(*root.gatype.normalized_traits)
 
 
 @Extensor.geometric_mean.register(
@@ -39,11 +39,17 @@ def scalar_square_root(value: Extensor) -> Extensor:
     )
 
 
-@Extensor.square_root.register(lambda g: g <= g.algebra.gatype.rotor())
+@Extensor.square_root.register(
+    lambda g: g <= g.algebra.subspace.even() and g.entails(ReverseProductOne)
+)
 def rotor_square_root(value: Extensor) -> Extensor:
-    """The unit even-versor root is the normalized bisector ``value + 1``."""
+    """The normalized bisector of an even element with unit reverse product.
 
-    return (value + 1).normalized().with_traits(ReverseProductOne, Versor)
+    Its square is the input where the normalization exists. In six or more dimensions
+    this root need not be a versor, even when the input is one.
+    """
+
+    return (value + 1).normalized()
 
 
 @Extensor.square_root.register(
@@ -54,7 +60,7 @@ def scaled_rotor_square_root(value: Extensor) -> Extensor:
 
     scale = value.norm()
     unit = (value / scale).with_traits(ReverseProductOne, Versor)
-    return (scale.square_root() * unit.square_root()).with_traits(Versor, ReverseProductNonzero)
+    return (scale.square_root() * unit.square_root()).with_traits(ReverseProductNonzero)
 
 
 @Extensor.square_root.register(

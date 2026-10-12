@@ -22,7 +22,7 @@ def arm():
     yaw = origin & direction(np.array([0.0, 0.0, 1.0]))
     pitch_1 = elbow & direction(np.array([0.0, 1.0, 0.0]))
     pitch_2 = wrist & direction(np.array([0.0, 1.0, 0.0]))
-    axis = Extensor.stack([yaw, pitch_1, pitch_2])           # [3] Line
+    axis = -Extensor.stack([yaw, pitch_1, pitch_2])           # [3] Line
     tip_home = point(np.array([0.0, 0.0, 3.0]))
     # Joint state: axis times angle.
     rest = axis * np.array([0.3, 0.5, 0.8])                       # [3] Line

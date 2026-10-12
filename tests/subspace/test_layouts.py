@@ -81,9 +81,9 @@ def test_pga_defaults_make_the_dual_maps_coefficient_identities(backend):
     context_type, compile = backend
     spaces = PGA3D.subspace
     mv = context_type(PGA3D).multivector
-    assert spaces.bivector() is spaces("yz zx xy xw yw zw")
-    assert spaces.trivector() is spaces("yzw zxw xyw zyx")
-    assert spaces.even() is spaces("1 yz zx xy xw yw zw xyzw")
+    assert spaces.bivector() is spaces("yz zx xy wx wy wz")
+    assert spaces.trivector() is spaces("wzy wxz wyx xyz")
+    assert spaces.even() is spaces("1 yz zx xy wx wy wz wxyz")
 
     planes = mv.vector([[1, 2, 3, 4], [5, -1, 0, 2]])
     points = compile(lambda p: p.dual())(planes)
@@ -94,12 +94,12 @@ def test_pga_defaults_make_the_dual_maps_coefficient_identities(backend):
 
     rotation = mv(spaces("yz zx xy"), [1, 2, 3])
     translation = rotation.dual()
-    assert translation.subspace is spaces("xw yw zw")
+    assert translation.subspace is spaces("wx wy wz")
     np.testing.assert_allclose(translation.kernel, rotation.kernel)
 
     # Changing the storage convention doesn't change the geometric dual.
     lexical = spaces("xyz xyw xzw yzw")
-    np.testing.assert_allclose(points.select_subspace(lexical).kernel, [[-4, 3, -2, 1], [-2, 0, 1, 5]])
+    np.testing.assert_allclose(points.select_subspace(lexical).kernel, [[4, -3, 2, -1], [2, 0, -1, -5]])
     np.testing.assert_allclose(points.select_subspace(lexical).dual_inverse().kernel, planes.kernel)
     # The PGA regressive definition still uses dual-inverse(dual(a) ^ dual(b)).
     np.testing.assert_allclose(
@@ -126,6 +126,19 @@ def test_pga2_defaults_make_line_point_duality_a_coefficient_identity(backend):
         points.select_subspace(spaces("xy xw yw")).kernel,
         [[1, -3, 2], [1, -4, -1]],
     )
+
+
+def test_pga3_orientation_gives_positive_volume_and_right_handed_axes():
+    mv = NumpyContext(PGA3D).multivector
+    origin = mv.xyz
+    along_x, along_y, along_z = origin + mv.wzy, origin + mv.wxz, origin + mv.wyx
+
+    np.testing.assert_allclose((mv.scalar([1]).dual() - mv.wxyz).kernel, 0)
+    np.testing.assert_allclose((origin & along_x & along_y & along_z).kernel, 1)
+    np.testing.assert_allclose(((origin & along_x) - (mv.y ^ mv.z)).kernel, 0)
+    axis = origin & along_z
+    turned = (axis * (-np.pi / 4)).exp() >> along_x
+    np.testing.assert_allclose((turned - along_y).kernel, 0, atol=1e-12)
 
 
 def test_unit_rotor_facts_survive_relayout_and_sandwich(backend):

@@ -37,7 +37,7 @@ RAY_COLORS = [
 
 def euclidean(points: Point) -> np.ndarray:
     """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    k = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     return k[..., :3] / k[..., 3:]
 
 

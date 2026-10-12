@@ -1,7 +1,7 @@
 """Sensor images and side views of the lens camera: drawing only.
 
 The sensor is rasterised from the image cones as implicit functions. Coordinates leave the
-algebra here: a point is read in the blade layout yzw, zxw, xyw, zyx and divided by its weight.
+algebra here: a point is read in the blade layout wzy, wxz, wyx, xyz and divided by its weight.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import numpy as np
 from examples.animation import capture
 from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, mv, point
 
-POINT_LAYOUT = ga.subspace("yzw zxw xyw zyx")
+POINT_LAYOUT = ga.subspace("wzy wxz wyx xyz")
 # Sensor pixels, rows by columns.
 RESOLUTION = (280, 360)
 SUPERSAMPLE = 2

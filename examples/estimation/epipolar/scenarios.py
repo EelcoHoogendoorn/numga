@@ -18,7 +18,7 @@ def epipolar():
     n_points = landmarks.shape[0]
 
     # Camera 1 is at the world origin, looking along +z at the screen z == 1:
-    origin = mv.zyx
+    origin = mv.xyz
     screen = mv.z - mv.w
     camera: Camera = (origin & Point) ^ screen
 

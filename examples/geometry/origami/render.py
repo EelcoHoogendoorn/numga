@@ -23,7 +23,7 @@ AMBIENT = 0.28
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    values = points.cast(core.ga.subspace("yzw zxw xyw zyx")).kernel
+    values = points.cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
     return values[..., :3] / values[..., 3:]
 
 
@@ -103,7 +103,7 @@ def rasterize(screen: np.ndarray, faces: tuple[np.ndarray, ...], colours: np.nda
 
 def picture(paper: core.Paper, centre: np.ndarray, scale: float) -> np.ndarray:
     points = coordinates(paper.points)
-    offsets = paper.offsets.cast(core.ga.subspace("yzw zxw xyw")).kernel
+    offsets = paper.offsets.cast(core.ga.subspace("wzy wxz wyx")).kernel
     # Each small separation follows its facet's motor, including its sideways motion.
     # This preserves which material side is visible when a coincident stack starts moving.
     points = points + np.repeat(offsets, paper.counts, axis=0) * LAYER_SPACING

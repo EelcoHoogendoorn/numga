@@ -16,10 +16,10 @@ PGA2D = Algebra(
 
 
 PGA3D = Algebra(
-    "x+y+z+w0",
+    "w0x+y+z+",
     subspace_factory=partial(
         SubSpaceFactory,
-        default="1 x y z w yz zx xy xw yw zw yzw zxw xyw zyx xyzw",
+        default="1 x y z w yz zx xy wx wy wz wzy wxz wyx xyz wxyz",
     ),
 )
 

@@ -50,3 +50,5 @@ b = 4 * x + 5 * y + 6 * z
 ```
 
 In vector algebra notation, $(a \wedge b)\, I^{-1}$ reads as the cross product $a \times b$.
+
+Example: [three mirrors on the sphere](../../../examples/math/reflections/icosahedron.ipynb), where each mirror's plane, a bivector, gives its normal vector by duality.

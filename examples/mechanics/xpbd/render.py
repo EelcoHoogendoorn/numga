@@ -10,7 +10,7 @@ from examples.mechanics.xpbd.core import Point, Scalar
 
 def euclidean(points: Point) -> np.ndarray:
     """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = np.asarray(points.cast(points.algebra.subspace("yzw zxw xyw zyx")).kernel)
+    k = np.asarray(points.cast(points.algebra.subspace("wzy wxz wyx xyz")).kernel)
     return k[..., :3] / k[..., 3:]
 
 

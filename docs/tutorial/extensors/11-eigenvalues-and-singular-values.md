@@ -74,3 +74,5 @@ form.eigh(weight)[0]
 The second form weights the $z$ direction by two, so the relative scale there is three divided by two. These are generalized eigenvalues: the scales of one form relative to another. Without an explicit second form, `eigh` uses the Euclidean inner product of the slot.
 
 In matrix notation, eigenvalues of a map satisfy $M v = \lambda v$, singular values compare orthonormal input and output directions, and eigenvalues relative to a second form satisfy $M v = \lambda W v$.
+
+Example: [the modes of a body on springs](../../../examples/mechanics/modes/modes.ipynb), where the stiffness has eigenvalues relative to the body's inertia, a second form.

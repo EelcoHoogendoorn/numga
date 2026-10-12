@@ -13,7 +13,7 @@ from examples.geometry.projection.core import CUBE_EDGES, circle, cube, directio
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-origin = mv.zyx
+origin = mv.xyz
 
 
 def projection():

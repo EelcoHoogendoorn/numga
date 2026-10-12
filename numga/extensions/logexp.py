@@ -163,8 +163,11 @@ def _exp_series(x: Extensor) -> Extensor:
 
 
 def _log_series(m: Extensor) -> Extensor:
-    """The bivector log of a rotor near the identity."""
-    return _taylor_log(m).restrict[2]
+    """The reversal-antisymmetric log of a unit even element near the identity."""
+    logarithm = _taylor_log(m)
+    return logarithm.restrict_subspace(
+        logarithm.subspace.difference(logarithm.gatype.derive.reverse_fixed_subspace),
+    )
 
 
 def _taylor_exp(x: Extensor) -> Extensor:
@@ -192,24 +195,6 @@ def nilpotent_exp(x: Extensor) -> Extensor:
     return x + 1
 
 
-@Extensor.exp.register(lambda t: t.derive.squared.is_scalar)
-def scalar_square_exp(x: Extensor) -> Extensor:
-    """`x.exp() == even + x * odd`, for scalars `even` and `odd`, when `x` squares to a scalar `s`,
-    as a pseudoscalar or a single blade does. With `r = xp.sqrt(xp.abs(s))` they are `xp.cosh(r)`
-    and `xp.sinh(r) / r` for `s > 0`, `xp.cos(r)` and `xp.sin(r) / r` for `s < 0`, and 1 and 1 for
-    `s == 0`. No versor trait is asserted: the exponential of a multiple of the pseudoscalar in four
-    dimensions is not a versor."""
-
-    xp = x.context.xp
-    square = x.squared().kernel[..., 0]                                # [...] the scalar s
-    root = xp.sqrt(xp.abs(square))
-    safe = xp.where(root > 0, root, 1)
-    even = xp.where(square > 0, xp.cosh(root), xp.cos(root))
-    odd = xp.where(root > 0, xp.where(square > 0, xp.sinh(root), xp.sin(root)) / safe, 1)
-    scalar = x.context.multivector.scalar
-    return scalar(even[..., None]) + x * scalar(odd[..., None])
-
-
 @Extensor.log.register(
     lambda t: t <= t.algebra.gatype.rotor()
     and t.is_scalar_bivector
@@ -219,13 +204,16 @@ def translator_log(m: Extensor, *, n: int = 8) -> Extensor:
     return m.restrict[2]
 
 
-@Extensor.log.register(lambda t: t <= t.algebra.gatype.rotor())
+@Extensor.log.register(
+    lambda t: t <= t.algebra.subspace.even() and t.entails(ReverseProductOne)
+)
 def unit_versor_log(m: Extensor, *, n: int = 8) -> Extensor:
-    """Unit motor log: halve by n square roots first, then the series of the logarithm, scaled back.
+    """Unit even-element log: n square roots, then the logarithm series scaled back.
 
-    Each square-root step normalizes m + 1 as part of that root's formula; the supplied motor
-    is not normalized. The domain is that of the scalar and Study roots: exactly -1 would need
-    a separate branch.
+    Each root normalizes m + 1; the input is not normalized. The logarithm is antisymmetric
+    under reversal: below six dimensions it is a bivector, but higher grades such as six
+    can occur on this Clifford-log branch. Choosing a bivector logarithm there requires a
+    different branch. The roots must exist; exactly -1 needs a separate branch.
     """
 
     for _ in range(n):

@@ -9,7 +9,7 @@ from examples.surfaces.skinning.core import Point, ga
 
 
 def xyz(points: Point) -> np.ndarray:
-    k = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    k = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     return k[..., :3] / k[..., 3:]
 
 

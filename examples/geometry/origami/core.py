@@ -17,7 +17,7 @@ from numga.algebras import PGA3D
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
-Direction = ga.gatype.from_blades("yzw zxw xyw")
+Direction = ga.gatype.from_blades("wzy wxz wyx")
 Plane = ga.gatype.vector()
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
@@ -116,7 +116,7 @@ class Paper:
         # their order only as the paper turns over. Negative folds land underneath.
         height = (moving_heights[moving_heights.argmax()] + fixed_heights[fixed_heights.argmax()] + 1) / 2
         # The sheet times the pseudoscalar is its normal direction.
-        pivot = self.sheet * mv.xyzw * (height * np.sign(angle))
+        pivot = self.sheet * mv.wxyz * (height * np.sign(angle))
         motors = (hinge * (angle / 2 * turning)).exp()  # [faces] Motor
         return (motors >> (self.offsets - pivot)) + pivot
 

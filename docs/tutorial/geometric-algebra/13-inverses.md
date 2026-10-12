@@ -57,3 +57,5 @@ blade.inverse() * (blade * value)
 ```
 
 The diagonal of the multiplication table gives the inverse of every basis blade. A basis blade that squares to $1$ is its own inverse; one that squares to $-1$ has its negative as its inverse.
+
+Example: [one star, several images](../../../examples/relativity/gravitational_lensing/gravitational_lensing.ipynb), where the pull of each mass on a ray of light is the inverse of a vector.

@@ -10,7 +10,7 @@ from examples.quadrics.quadrics.core import DualQuadric, Plane, ellipsoid, mv, s
 
 def body() -> DualQuadric:
     """The ellipsoid with semi-axes 3, 2 and 1 along x, y and z, centered at the origin."""
-    return ellipsoid(Extensor.stack([mv.yzw * 3, mv.zxw * 2, mv.xyw]), mv.zyx)
+    return ellipsoid(Extensor.stack([mv.wzy * 3, mv.wxz * 2, mv.wyx]), mv.xyz)
 
 
 def polar_reciprocity():

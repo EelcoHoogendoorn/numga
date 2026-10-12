@@ -19,7 +19,7 @@ ELEVATION, AZIMUTH = 18.0, -60.0
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point at the sites of a field, on the last axis."""
-    xyzw = points.batch().cast(core.ga.subspace("yzw zxw xyw zyx")).kernel
+    xyzw = points.batch().cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
     return xyzw[..., :3] / xyzw[..., 3:]
 
 

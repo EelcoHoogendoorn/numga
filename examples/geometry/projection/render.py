@@ -15,7 +15,7 @@ from examples.geometry.projection.core import Line, Motor, Point
 
 def euclidean(points: Point) -> np.ndarray:
     """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(points.algebra.subspace("yzw zxw xyw zyx")).kernel
+    k = points.cast(points.algebra.subspace("wzy wxz wyx xyz")).kernel
     return k[..., :3] / k[..., 3:]
 
 
@@ -46,7 +46,7 @@ def render_shadow_scene(
     trail = euclidean(shadow_trail)
     ax.plot(trail[:, 0], trail[:, 1], trail[:, 2], color="#fbbf24", linewidth=1.0, linestyle=":", label="corner shadow as light moves")
     ax.scatter(*euclidean(point_light), color="#fbbf24", s=60, label="point light")
-    sun_dir = sun.cast(sun.algebra.subspace("yzw zxw xyw")).kernel
+    sun_dir = sun.cast(sun.algebra.subspace("wzy wxz wyx")).kernel
     sun_dir = sun_dir / np.linalg.norm(sun_dir)
     ax.quiver(-2.0, 2.0, 4.0, *sun_dir, length=1.0, color="#a855f7", label="sun direction")
     ax.set_xlim(-3, 3); ax.set_ylim(-3, 3); ax.set_zlim(0, 4.5)

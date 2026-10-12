@@ -111,3 +111,5 @@ It is zero. The outer product of vectors is zero exactly when the vectors are li
 In matrix notation, the coefficient of $xyz$ in $a \wedge b \wedge d$ reads as the determinant of the matrix with rows $a$, $b$ and $d$:
 
 $$\det \begin{pmatrix} 1 & 2 & 3 \\ 4 & 5 & 6 \\ 7 & 8 & 10 \end{pmatrix} = -3$$
+
+Example: [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the outer product of two control points is the plane through the origin that holds them both.

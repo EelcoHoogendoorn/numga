@@ -62,13 +62,13 @@ def cloud(n: int, spread: float, rng: np.random.Generator) -> Point:
 
 def segment(n: int, half_length: float) -> Point:
     """Points along the y axis."""
-    return mv.zyx + mv.zxw * np.linspace(-half_length, half_length, n)
+    return mv.xyz + mv.wxz * np.linspace(-half_length, half_length, n)
 
 
 def patch(n: int, half_width: float, rng: np.random.Generator) -> Point:
     """Points on a square of the plane z == 0."""
     uv = rng.uniform(-half_width, half_width, size=(n, 2))
-    return mv.zyx + mv.yzw * uv[:, 0] + mv.zxw * uv[:, 1]
+    return mv.xyz + mv.wzy * uv[:, 0] + mv.wxz * uv[:, 1]
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:

@@ -68,3 +68,5 @@ z   0   0   0
 ```
 
 In matrix notation, solving reads as the linear system $A v = w$, solved for $v$. With $w$ left open, the solve is the inverse matrix $A^{-1}$; against a matrix $B$, it is $A^{-1} B$, with the input slot of $B$ left open as the input slot of the result.
+
+Example: [induced dipoles in a cluster of atoms](../../../examples/electromagnetism/induced_dipoles/induced_dipoles.ipynb), where the dipoles of all the atoms, each driven by the fields of the others, follow from one solve.

@@ -25,7 +25,7 @@ FACE_COLORS = np.array(["#0ea5e9", "#0284c7", "#f43f5e", "#e11d48", "#8b5cf6", "
 
 def euclidean(points: Point) -> np.ndarray:
     """Read Cartesian coordinates from homogeneous points."""
-    values = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    values = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     return values[..., :3] / values[..., 3:]
 
 

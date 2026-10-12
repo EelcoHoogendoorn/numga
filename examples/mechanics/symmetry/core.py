@@ -58,13 +58,13 @@ def arm_samples() -> Point:
     """Equal-mass samples of a thin rectangular flywheel arm attached to a massless hub."""
     translations = (pga_mv.xw * np.linspace(0.25, 2.2, 24)[:, None]
                     + pga_mv.yw * np.linspace(-0.14, 0.14, 5)[None, :]) / 2
-    return translations.exp() >> pga_mv.zyx
+    return translations.exp() >> pga_mv.xyz
 
 
 def lattice_samples():
     """PGA sites of a simple-cubic lattice, with the central site's two neighbour shells."""
     i, j, k = np.indices((3, 3, 3)) - 1
-    sites = pga_mv.zyx + pga_mv.yzw * i + pga_mv.zxw * j + pga_mv.xyw * k
+    sites = pga_mv.xyz + pga_mv.wzy * i + pga_mv.wxz * j + pga_mv.wyx * k
     shell = i * i + j * j + k * k
     return sites.reshape(-1), sites[shell == 1], sites[shell == 2]
 

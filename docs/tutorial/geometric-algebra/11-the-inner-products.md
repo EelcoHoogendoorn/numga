@@ -98,3 +98,5 @@ $$a B = a \cdot B + a \wedge B$$
 Here the halves trade places: the outer product of a vector and a bivector is half the sum $\tfrac{1}{2} (a B + B a)$, and the inner product half the difference. The grades, not the order of the factors, define the two products.
 
 The literature defines several inner products: the left contraction, the right contraction, Hestenes' inner product and the scalar product among them. They differ in which grade they select, mostly when the left factor has the higher grade. All of them are grade selections of the geometric product.
+
+Example: [lift without vorticity](../../../examples/mechanics/wing/wing.ipynb), where the divergence and the vorticity of a flow are the scalar and the bivector part of its geometric derivative, and both vanish around the wing.

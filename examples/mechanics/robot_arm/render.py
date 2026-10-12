@@ -15,7 +15,7 @@ BOX_EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0,
 
 def euclidean(points: Point) -> np.ndarray:
     """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(points.algebra.subspace("yzw zxw xyw zyx")).kernel
+    k = points.cast(points.algebra.subspace("wzy wxz wyx xyz")).kernel
     return k[..., :3] / k[..., 3:]
 
 

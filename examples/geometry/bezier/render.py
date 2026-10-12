@@ -52,7 +52,7 @@ def draw_rays(controls: core.Vector, curve: core.Vector, complement: core.Vector
     weighted control points, and with the rays from the origin to the curves filled in: the part of the
     conic's cone each sweeps. Where the rays pierce
     the unit sphere, the curves normalised, and where the cone does, its two antipodal loops. The equator
-    is the plane at infinity."""
+    is the line at infinity."""
     figure = plt.figure(figsize=(4.8, 4.4), layout="constrained")
     ax = figure.add_subplot(projection="3d")
     longitude, latitude = np.meshgrid(np.linspace(0, 2 * np.pi, SPHERE_MESH), np.linspace(-np.pi / 2, np.pi / 2, SPHERE_MESH))

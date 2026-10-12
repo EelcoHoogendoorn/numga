@@ -47,3 +47,5 @@ yz   0   6  -5
 zx  -6   0   4
 xy   5  -4   0
 ```
+
+Example: [stress in an elastic cube](../../../examples/mechanics/stress/stress.ipynb), where binding a face's normal into the stress map gives the traction on that face.

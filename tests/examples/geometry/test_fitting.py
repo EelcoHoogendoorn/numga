@@ -71,7 +71,7 @@ def test_plane_fit_matches_svd_normal_through_centroid():
 def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     rng = np.random.default_rng(5)
     exact = POSE >> bundle(20, 0.0, rng)
-    assert same_element(fit(Point, exact), POSE >> mv.zyx, atol=1e-10)
+    assert same_element(fit(Point, exact), POSE >> mv.xyz, atol=1e-10)
 
     rays = POSE >> bundle(40, 0.05, rng)
     meet = fit(Point, rays)

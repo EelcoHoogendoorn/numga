@@ -60,3 +60,5 @@ z  0  0  0
 Maps of this shape carry the stiffness of a crystal, bound by a heading into the map whose eigenvalues give the speeds of its waves, in the [crystal waves example](../../../examples/mechanics/crystal_waves/core.py); the curvature of spacetime, bound into the tidal stretching it causes, in the [curvature example](../../../examples/relativity/curvature/core.py); and the strain of a laminate with a state slot left open, in the [composite strip example](../../../examples/mechanics/composite_strip/core.py).
 
 In index notation, a map with three vector slots reads as a tensor with four indices, $T^i{}_{jkl}$, and binding a vector into a slot as contracting it with that index.
+
+Example: [elastic waves in crystals](../../../examples/mechanics/crystal_waves/crystal_waves.ipynb), where the stiffness, a map with three slots, is bound by a heading into the map whose eigenvalues give the speeds of the waves.

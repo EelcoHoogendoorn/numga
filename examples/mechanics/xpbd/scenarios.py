@@ -26,11 +26,11 @@ def chain(
     partition are independent and relax in parallel.
     """
     mv = context.multivector
-    origin = mv.zyx
+    origin = mv.xyz
 
     # Mass properties of one link, from its point cloud, replicated over all links.
     reach = np.diag([1.0, 2.0, 3.0]) * size / 3
-    cloud = mv("yzw zxw xyw", np.concatenate([reach, -reach])) + origin
+    cloud = mv("wzy wxz wyx", np.concatenate([reach, -reach])) + origin
     inertia, inertia_inv = inertia_from_points(cloud)
 
     # The fixed link has infinite mass: zero inverse inertia.
@@ -43,13 +43,13 @@ def chain(
         inertia=inertia[None].broadcast_to(bodies),
         inertia_inv=inertia_inv[None].broadcast_to(bodies) * mobility,
         damping=(mv.scalar() * damping).broadcast_to(bodies),
-        gravity=(mv.xyw * -gravity).broadcast_to(bodies),
+        gravity=(mv.wyx * -gravity).broadcast_to(bodies),
     )
 
     # Joint j connects the +x anchor of link j to the -x anchor of link j + 1.
     link = np.arange(bodies - 1)
     pairs = np.array([link, link + 1])
-    anchors = origin + mv.yzw * (np.array([[+0.5], [-0.5]]) * distance * np.ones(bodies - 1))
+    anchors = origin + mv.wzy * (np.array([[+0.5], [-0.5]]) * distance * np.ones(bodies - 1))
     compliances = mv.scalar(np.full((bodies - 1, 1), compliance))
     partitions = [Joints(pairs[:, half], anchors[:, half], compliances[half])
                   for half in (slice(0, None, 2), slice(1, None, 2))]
@@ -83,7 +83,7 @@ def swinging_chain_jax(links: int, steps: int, substeps: int, dt: float) -> tupl
 def trajectory(states: list[Chain], partitions: list[Joints]) -> tuple[Point, Scalar]:
     """The origin of every link frame, and every joint gap, stacked over time."""
     motors = Extensor.stack([state.motor for state in states])
-    origin = motors.context.multivector.zyx
+    origin = motors.context.multivector.xyz
     centres = motors >> origin
     gaps = Extensor.stack([core.joint_gaps(state.motor, partitions) for state in states])
 

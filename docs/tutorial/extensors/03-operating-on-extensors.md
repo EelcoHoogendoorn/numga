@@ -66,3 +66,5 @@ The product of the map `a ^ Vector` with itself has two slots, one for each occu
 ```
 
 In matrix notation, a linear operation on the output of a map follows the same rule. For an operation $D$ and a map $A$, it reads as the product $D A$: the output slot of $A$ feeds the input slot of $D$, and the input slot of $A$ stays open as the input slot of the result.
+
+Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where an outer product and a dual act on the output of a material map, `(wavevector ^ medium(field)).dual()`, and leave its field slot open.

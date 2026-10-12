@@ -43,13 +43,13 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
         core.point_bisector(centre, upper_left),
         core.point_bisector(top, centre),
         core.point_bisector(left, centre),
-        core.line_bisector(quarter & left_centre, centre & quarter, SHEET),
-        core.line_bisector(upper_centre & quarter, quarter & centre, SHEET),
+        core.line_bisector(left_centre & quarter, quarter & centre, SHEET),
+        core.line_bisector(quarter & upper_centre, centre & quarter, SHEET),
         core.point_bisector(eighth, upper_left),
-        (SHEET | (top & left)).normalized(),
-        (SHEET | (top & left)).normalized(),
+        (SHEET | (left & top)).normalized(),
+        (SHEET | (left & top)).normalized(),
     ])
-    offsets = core.mv("yzw zxw xyw", [[0.0, 0.0, 0.0]])
+    offsets = core.mv("wzy wxz wyx", [[0.0, 0.0, 0.0]])
     # Reserve the full point layout: a crease plane at any angle to the sheet cuts it in full points.
     return core.Paper(corners.cast(core.Point), np.array([len(corners)]), offsets, SHEET), planes
 

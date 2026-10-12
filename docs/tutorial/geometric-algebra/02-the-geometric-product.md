@@ -43,3 +43,5 @@ a * b
 ```text
 32 - 3 xy - 6 xz - 3 yz
 ```
+
+Example: [two mirrors](../../../examples/math/reflections/kaleidoscope.ipynb), where the product of two mirror vectors is a rotor that turns by twice the angle between the mirrors.

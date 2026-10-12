@@ -59,3 +59,5 @@ A bivector can square to $1$ or to $0$, depending on the squares of its basis ve
 ```
 
 A vector that is not zero can square to zero. The grades, the $2^n$ basis elements and their multiplication table carry over unchanged; only the signs and zeros in the table change with the signature. Three signatures recur. All squares $1$ is the Euclidean case of this tutorial. One square opposite in sign to the others gives the algebra of spacetime, used in the [relativity examples](../../../examples/relativity/). One square $0$ gives projective geometry, used in the [geometry examples](../../../examples/geometry/).
+
+Example: [Koebe polyhedra](../../../examples/surfaces/koebe/koebe.ipynb), in an algebra where $w$ squares to $-1$: a circle on the unit sphere is a single vector, and two circles touch where their inner product is $-1$.

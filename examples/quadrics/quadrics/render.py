@@ -19,7 +19,7 @@ def surface(quadric: DualQuadric) -> Point:
 
 
 def euclidean(points: Point) -> np.ndarray:
-    values = points.cast(ga.subspace("yzw zxw xyw zyx")).kernel
+    values = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     return values[..., :3] / values[..., 3:]
 
 

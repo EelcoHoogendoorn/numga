@@ -50,3 +50,5 @@ The construction extends to any finite-dimensional multivector input space: each
 Sums of dyads also describe the second moment of a collection of vectors, as in the [tides example](../../../examples/mechanics/tides/core.py).
 
 In matrix notation, the first dyad is $a e_x^T$, where $e_x^T$ extracts the first input coordinate. The sum $A$ has the columns $a$, $b$ and $c$.
+
+Example: [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the form of a conic is a sum of dyads of plane normals.

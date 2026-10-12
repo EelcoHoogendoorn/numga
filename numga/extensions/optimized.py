@@ -4,7 +4,7 @@ Each formula is written against one exact coefficient layout, the default one, a
 dispatched only on that layout: the predicates compare subspaces, blade order and signs
 included. Other layouts fall through to the generic implementations; converting them here
 would cost what the formulas save. In the cyclic order yz zx xy, each rotation blade pairs
-with the translation blade xw yw zw at the same position, and no signs appear.
+with the translation blade wx wy wz at the same position, and no signs appear.
 
 The bodies are NumPy-specific: they fill one preallocated output in place. A JAX version
 would be written separately, against what XLA fuses well.
@@ -23,13 +23,13 @@ def layout(names: str):
 
 
 def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
-    """Motor exp of a bivector in the layout yz zx xy xw yw zw."""
-    yz, zx, xy, xw, yw, zw = np.moveaxis(b._kernel, -1, 0)
+    """Motor exp of a bivector in the layout yz zx xy wx wy wz."""
+    yz, zx, xy, wx, wy, wz = np.moveaxis(b._kernel, -1, 0)
     length_squared = yz*yz + zx*zx + xy*xy
     angle = np.sqrt(length_squared)
     cosine = np.cos(angle)
     sinc = np.sinc(angle / np.pi)
-    pitch = yz*xw + zx*yw + xy*zw
+    pitch = yz*wx + zx*wy + xy*wz
     # (cosine - sinc) / length_squared loses precision near zero; its analytic series does not.
     small = length_squared < 1e-4
     screw = pitch * np.where(small, -1/3 + length_squared/30 - length_squared**2/840 + length_squared**3/45360,
@@ -39,9 +39,9 @@ def exp_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m[..., 1] = sinc*yz
     m[..., 2] = sinc*zx
     m[..., 3] = sinc*xy
-    m[..., 4] = sinc*xw + screw*yz
-    m[..., 5] = sinc*yw + screw*zx
-    m[..., 6] = sinc*zw + screw*xy
+    m[..., 4] = sinc*wx + screw*yz
+    m[..., 5] = sinc*wy + screw*zx
+    m[..., 6] = sinc*wz + screw*xy
     m[..., 7] = pitch*sinc
     return Extensor._from_prepared_kernel(b.context, b.algebra.gatype.rotor(), m)
 
@@ -57,30 +57,30 @@ def exp_rotation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
 
 
 def exp_translation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
-    """Translator exp of a bivector in the layout xw yw zw: one plus the bivector."""
+    """Translator exp of a bivector in the layout wx wy wz: one plus the bivector."""
     m = np.empty(b.shape + (4,))
     m[..., 0] = 1
     m[..., 1:] = b._kernel
-    gatype = b.algebra.gatype(b.algebra.subspace("1 xw yw zw")).derive.with_traits(ReverseProductOne, Versor)
+    gatype = b.algebra.gatype(b.algebra.subspace("1 wx wy wz")).derive.with_traits(ReverseProductOne, Versor)
     return Extensor._from_prepared_kernel(b.context, gatype, m)
 
 
 def normalize_pga3(motor: Extensor) -> Extensor:
-    """Unit motor from an even element in the layout 1 yz zx xy xw yw zw xyzw."""
+    """Unit motor from an even element in the layout 1 yz zx xy wx wy wz wxyz."""
     m = motor._kernel.copy()
     # views onto the components of the copy; the in-place updates below write through them
-    e, yz, zx, xy, xw, yw, zw, volume = (m[..., i] for i in range(8))
+    e, yz, zx, xy, wx, wy, wz, volume = (m[..., i] for i in range(8))
     scale = (e*e + yz*yz + zx*zx + xy*xy)**(-0.5)
-    correction = (e*volume - yz*xw - zx*yw - xy*zw) * scale**2
+    correction = (e*volume - yz*wx - zx*wy - xy*wz) * scale**2
     m *= scale[..., None]
-    xw += yz*correction; yw += zx*correction; zw += xy*correction; volume -= e*correction
+    wx += yz*correction; wy += zx*correction; wz += xy*correction; volume -= e*correction
     return Extensor._from_prepared_kernel(motor.context, motor.algebra.gatype.rotor(), m)
 
 
 class PrincipalInertiaPGA3(Extensor):
     """Inertia of a rigid body in its principal frame, Bivector <- Bivector, stored as four numbers.
 
-    Rate and momentum share the bivectors yz zx xy xw yw zw. The map sends the translation block
+    Rate and momentum share the bivectors yz zx xy wx wy wz. The map sends the translation block
     to the momentum's first block and the rotation block to its second, each scaled blade-wise:
     for the inertia, `upper` [..., 1] is the mass and `lower` [..., 3] the moments on yz zx xy.
     The inverse has the same form with `1 / lower` as its `upper` and `1 / upper` as its `lower`,
@@ -136,7 +136,7 @@ def principal_inertia_pga3(mass: Extensor, moments: Extensor) -> PrincipalInerti
 
 
 def register() -> None:
-    Extensor.exp.register(layout("yz zx xy xw yw zw"), position=0)(exp_pga3)
+    Extensor.exp.register(layout("yz zx xy wx wy wz"), position=0)(exp_pga3)
     Extensor.exp.register(layout("yz zx xy"), position=0)(exp_rotation_pga3)
-    Extensor.exp.register(layout("xw yw zw"), position=0)(exp_translation_pga3)
-    Extensor.normalized.register(layout("1 yz zx xy xw yw zw xyzw"), position=0)(normalize_pga3)
+    Extensor.exp.register(layout("wx wy wz"), position=0)(exp_translation_pga3)
+    Extensor.normalized.register(layout("1 yz zx xy wx wy wz wxyz"), position=0)(normalize_pga3)

@@ -42,3 +42,5 @@ which gives their multiplication table:
 | $k$   | $k$   | $j$   | $-i$  | $-1$  |
 
 With $i = xy$, $j = yz$ and $k = xz$, it matches the table of the scalars and bivectors above cell for cell. The geometric product of two vectors, a scalar plus three bivectors, therefore has the algebraic structure of a quaternion: two such products multiply as two quaternions do.
+
+Example: [a ball rolled around a loop](../../../examples/mechanics/rolling_ball/rolling_ball.ipynb), whose orientation is the product of the rotors of its steps, each a scalar plus a bivector.

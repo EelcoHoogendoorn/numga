@@ -31,3 +31,18 @@ def test_any_multivector_without_a_closed_form_squares_back(signature):
     root = value.square_root()
 
     np.testing.assert_allclose((root.squared() - value).kernel, 0, atol=1e-12)
+
+
+@pytest.mark.parametrize("method", ["square_root", "square_root_denman_beavers"])
+def test_six_dimensional_rotor_root_can_send_vectors_to_grade_five(method):
+    mv = NumpyContext(Algebra("a+b+c+d+e+f+")).multivector
+    angle = 1.2
+    rotor = (mv.ab * angle).exp() * (mv.cd * angle).exp() * (mv.ef * angle).exp()
+
+    root = getattr(rotor, method)()
+    transformed = root >> mv.a
+    product = root * mv.a * root.reverse()
+
+    np.testing.assert_allclose((root.squared() - rotor).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((transformed - product).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose(np.linalg.norm(transformed.select_grade(5).kernel), 1, atol=1e-12)

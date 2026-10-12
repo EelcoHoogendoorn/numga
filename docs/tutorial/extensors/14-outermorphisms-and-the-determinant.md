@@ -64,3 +64,5 @@ xy   0   0   0
 ```
 
 In matrix notation, with each bivector named by the basis vector it lacks, the outermorphism on bivectors reads as the cofactor matrix $C$ of $A$, the outermorphism on the pseudoscalar as $\det A$, and the relation with the adjugate as Cramer's rule, $\det(A)\, C^{-1} = A^T$.
+
+Example: [areas and volume through a deformation](../../../examples/mechanics/area_transport/area_transport.ipynb), where the outermorphism carries oriented areas, and the determinant the volume, through a deformation that may collapse space flat.

@@ -41,9 +41,9 @@ def test_canonical_motor_split_and_simple_bivector_batches():
     assert right.shape == (3,)
     np.testing.assert_allclose((left + right - b).kernel, 0)
     motor = (b + mv.xw * .2).exp()
-    translation, rotation = motor.motor_split(mv.zyx)
+    translation, rotation = motor.motor_split(mv.xyz)
     np.testing.assert_allclose((translation * rotation - motor).kernel, 0, atol=1e-9)
-    np.testing.assert_allclose((rotation >> mv.zyx).kernel, [[1], [1], [1]], atol=1e-10)
+    np.testing.assert_allclose((rotation >> mv.xyz).kernel, [[1], [1], [1]], atol=1e-10)
 
 
 @pytest.mark.parametrize("signature", ("x+y+z+", "x+y+z+w0", "x+y+z+p+n-"))
@@ -71,7 +71,7 @@ def test_hitzer_factor_is_an_adjugate_where_its_product_reduces_to_scalar():
 
 
 @pytest.mark.parametrize("body, names", [
-    (exp_pga3, "yz zx xy xw yw zw"), (exp_rotation_pga3, "yz zx xy"), (exp_translation_pga3, "xw yw zw"),
+    (exp_pga3, "yz zx xy wx wy wz"), (exp_rotation_pga3, "yz zx xy"), (exp_translation_pga3, "wx wy wz"),
 ])
 def test_optimized_pga3_exp_matches_the_generic_method_in_the_default_layout(body, names):
     mv = NumpyContext(PGA3D).multivector

@@ -18,7 +18,7 @@ ORDER = [0, 1, 2, 0]
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    values = points.cast(core.ga.subspace("yzw zxw xyw zyx")).kernel
+    values = points.cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
     return values[..., :3] / values[..., 3:]
 
 

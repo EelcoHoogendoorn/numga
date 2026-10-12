@@ -13,7 +13,7 @@ def test_reconstruct_from_noise_free_images():
     """Without noise, relative pose and world points are recovered exactly, up to the baseline scale."""
     mv = core.mv
     landmarks = core.house_landmarks()
-    origin = mv.zyx
+    origin = mv.xyz
     camera = (origin & core.Point) ^ (mv.z - mv.w)
 
     theta = np.radians(14.0)

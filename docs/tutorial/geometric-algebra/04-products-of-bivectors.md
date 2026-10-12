@@ -27,3 +27,5 @@ The same in numga:
 ```text
 xz
 ```
+
+Example: [fractals of the even subalgebra](../../../examples/math/fractals/fractals.ipynb), where a scalar plus a multiple of $xy$ multiplies as a complex number, since $xy$ squares to $-1$, and squaring it over and over draws the Mandelbrot set.
