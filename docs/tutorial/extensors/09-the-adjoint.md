@@ -45,13 +45,13 @@ y  0  0  0
 z  0  0  0
 ```
 
-The construction gives, for every input vector $v$ and every vector $c$ in the output space:
-
-$$\bar{A}(c) \cdot v = c \cdot A(v)$$
+The construction gives `adjoint(c) | v == c | A(v)` for every input vector `v` and every vector `c` in the output space.
 
 Only the inner-product pairing is inverted. The dyad $A$ has rank one and loses information, yet its adjoint exists. For a rotation, preservation of the inner product makes the corresponding input vector the output vector rotated back, so the adjoint of a rotation is its inverse.
 
 The construction requires a nondegenerate inner-product pairing. Negative squares contribute signs; a degenerate pairing cannot determine a unique corresponding vector. For inputs or outputs of mixed grade, the scalar product supplies the pairing. The [metric and complement discussion](../../extensor_advanced.md#3-the-metric-and-the-complement) treats these distinctions in detail.
+
+In the notation of Hestenes and Sobczyk, which writes the adjoint with an overbar, the identity reads as $\bar{A}(c) \cdot v = c \cdot A(v)$.
 
 In matrix notation, in orthonormal Euclidean coordinates, the adjoint has coefficients $A^T$, and the identity reads as $(A^T c)\cdot v = c\cdot(A v)$.
 
