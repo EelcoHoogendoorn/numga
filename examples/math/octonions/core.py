@@ -2,10 +2,13 @@
 
 The scalar and seven vectors of Cl(0, 7) carry the eight octonion components.
 A fixed trivector supplies their multiplication; the bivectors that commute with
-that trivector generate its automorphisms, the exceptional group G₂.
+that trivector generate its automorphisms, the exceptional group G₂. The same octonions are every multivector
+of space, Cl(3, 0): the even part a quaternion and the odd part the pseudoscalar times a second, multiplied by
+doubling the quaternions; with one direction squaring to minus one they are the split octonions.
 """
 
 from numga import Algebra, NumpyContext, stack
+from numga.algebras import VGA3D as space
 
 ga = Algebra("a-b-c-d-e-f-g-")
 mv = NumpyContext(ga).multivector
@@ -14,6 +17,8 @@ Octonion = ga.gatype.from_blades("1 a b c d e f g")
 Bivector = ga.gatype.bivector()
 Trivector = ga.gatype.trivector()
 Rotor = ga.gatype.rotor()
+# An octonion as a whole multivector of space, Cl(3, 0).
+SpaceOctonion = space.gatype.from_blades("1 x y z yz zx xy xyz")
 
 # Each oriented triple supplies a quaternion multiplication cycle.
 cycles = stack([mv.abc, mv.ade, mv.agf, mv.bdf, mv.beg, mv.cdg, mv.cfe])
@@ -47,6 +52,15 @@ def derivation_defect(generator: Bivector, first: Octonion, second: Octonion) ->
     return (generator.commutator(multiply(first, second))
             - multiply(generator.commutator(first), second)
             - multiply(first, generator.commutator(second)))
+
+
+def doubled(first: SpaceOctonion, second: SpaceOctonion) -> SpaceOctonion:
+    """The octonion product of two multivectors of space, by doubling the quaternions: the even parts multiply
+    as quaternions, and the odd parts, a second quaternion apiece, enter reversed and in swapped order."""
+    # The even parts are quaternions; the odd parts, the pseudoscalar times a second quaternion apiece.
+    a, b = first.restrict.even(), first.restrict.odd()
+    c, d = second.restrict.even(), second.restrict.odd()
+    return a * c - d.reverse() * b + d * a + b * c.reverse()
 
 
 def multiplication_defect(rotor: Rotor, first: Octonion, second: Octonion) -> Octonion:

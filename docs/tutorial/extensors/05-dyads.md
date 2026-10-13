@@ -49,6 +49,8 @@ The construction extends to any finite-dimensional multivector input space: each
 
 Sums of dyads also describe the second moment of a collection of vectors, as in the [tides example](../../../examples/mechanics/tides/core.py).
 
+In the [bending example](../../../examples/mechanics/bending/bending.ipynb), each fibre measures its stretch through the regressive pairing `Strain & fibre`, then pulls along itself. Its contribution `fibre * (Strain & fibre)`, weighted by area and material stiffness, is a dyad. Adding the fibres gives the section stiffness. Here the scalar measurement comes from incidence between lines in PGA, and the fixed output is a force along the fibre; the same rank-one construction applies without an inner-product measurement.
+
 In matrix notation, the first dyad is $a e_x^T$, where $e_x^T$ extracts the first input coordinate. The sum $A$ has the columns $a$, $b$ and $c$.
 
 Example: [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the form of a conic is a sum of dyads of plane normals.

@@ -1,4 +1,8 @@
-"""Inertia maps of simplices in arbitrary dimensions using geometric algebra.
+"""Second moments and inertia maps of simplices in arbitrary dimensions using geometric algebra.
+
+The same square-root-mass-weighted points integrate both quadratic constructions.
+The exact rule has total mass one; multiply either map by the simplex's mass,
+or by its volume for a geometric moment.
 
 Calculates inertia tensors of simplices via:
 1. Exact vertex-lumped barycentric masses (analytic)
@@ -39,20 +43,37 @@ def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
     """
     samples = barycentric_samples(weights, corners)
     bivector = corners.context.algebra.gatype.bivector()
-    return samples.regressive(samples.commutator(bivector)).sum(axis=0)
+    return samples.regressive(samples.commutator(bivector)).sum(axis=-1)
+
+
+def simplex_second_moment(weights: np.ndarray, corners: Extensor) -> Extensor:
+    """Point <- Plane second moment from weighted barycentric samples.
+
+    Corners have shape `[..., corners]`, and weights `[samples, corners]`.
+    Each row's sum is its sample mass. The two appearances of the sampled point
+    supply that mass once, so the map contains total mass and first moments too.
+    """
+    samples = barycentric_samples(weights, corners)
+    Plane = corners.algebra.gatype.vector()
+    return (samples * (Plane & samples)).sum(axis=-1)
 
 
 def barycentric_samples(weights: np.ndarray, corners: Extensor) -> Extensor:
-    """Construct mass-weighted points from barycentric samples of a simplex."""
-    coefficients = np.einsum("Ni,ik->Nk", weights, corners.kernel)
-    coefficients /= np.sqrt(weights.sum(axis=-1, keepdims=True))
-    return corners.context.multivector(corners.output_subspace, coefficients)
+    """Construct square-root-mass-weighted points `[..., samples]` from corners `[..., corners]`."""
+    points = (corners[..., None, :] * weights).sum(axis=-1)
+    return points / np.sqrt(weights.sum(axis=-1))
 
 
 def simplex_inertia_lumped(corners: Extensor) -> Extensor:
     """Inertia map of uniform density simplex via equivalent lumped masses."""
-    weights = simplex_inertia_weights(corners.shape[0])
+    weights = simplex_inertia_weights(corners.shape[-1])
     return simplex_inertia(weights, corners)
+
+
+def simplex_second_moment_lumped(corners: Extensor) -> Extensor:
+    """Exact second moment of a uniform simplex of total mass one."""
+    weights = simplex_inertia_weights(corners.shape[-1])
+    return simplex_second_moment(weights, corners)
 
 
 def simplex_inertia_brute(corners: Extensor, n: int = 100) -> Extensor:
@@ -102,6 +123,11 @@ def run_simplex_demo() -> None:
     I_brute = simplex_inertia_brute(corners, n=100)
     I_random = simplex_inertia_random(corners, n_samples=100000)
 
+    # Both factors contain the square root of each sample's mass.
+    Plane = PGA3D.gatype.vector()
+    moment = (samples * (Plane & samples)).sum(axis=0)
+    print(f"Second moment (Point <- Plane):\n{moment.coefficient_table()}")
+
     print("--- 3D Tetrahedron Inertia Tensor Comparison ---")
     with np.printoptions(precision=3):
         print(f"Exact Lumped Inertia:\n{I_lumped.coefficient_table()}")
@@ -125,4 +151,3 @@ def run_simplex_demo() -> None:
 
 if __name__ == "__main__":
     run_simplex_demo()
-
