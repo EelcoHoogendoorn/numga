@@ -1,6 +1,6 @@
 # Definition
 
-An extensor is a multilinear map from multivectors to a multivector: an expression with arguments left open, to be bound later. On the blackboard one moves freely between a specific vector and the space of all vectors; extensors bring that to code. The definition is Hestenes and Sobczyk's [[ca-to-gc](#ref-ca-to-gc)], for whom extensors are what tensors become when their arguments are multivectors. Numga builds them from the algebra's products, so they transform as the geometry they are built from.
+An extensor is a multilinear map from multivectors to a multivector: an expression with arguments left open, to be bound later. On the blackboard one moves freely between a specific vector and the space of all vectors; extensors bring that to code. The definition is Hestenes and Sobczyk's [[ca-to-gc](#ref-ca-to-gc)], for whom extensors are what tensors become when their arguments are multivectors. Built from the algebra's products, they transform as the geometry they are built from.
 
 # Motivation
 

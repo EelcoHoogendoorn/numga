@@ -1,12 +1,14 @@
-# Extensors, linear algebra and tensors
+# Extensors, linear algebra, tensors and forms
 
-Extensors, linear algebra and tensor algebra describe overlapping territory, and the same questions come up whenever they meet: is an extensor just a tensor, is a map just a matrix, and where did the transpose go. This document answers them at the level of what each framework is, without derivations.
+Extensors, linear algebra, tensor algebra and the exterior algebra of differential forms describe overlapping territory, and the same questions come up whenever they meet: is an extensor just a tensor, is a map just a matrix, and where did the transpose go. This document answers them at the level of what each framework is, without derivations.
 
 ## What each one is
 
 **Linear algebra** studies vectors and the linear maps between them. In a basis, a map is a matrix, and most of its operations, the transpose, the trace, the determinant, are defined on that matrix.
 
 **Tensor algebra** extends linear algebra to multilinear maps: functions of several vectors and covectors, linear in each. The metric is one such tensor, a symmetric form, and it is applied by hand to turn vectors into covectors and back, by raising and lowering indices.
+
+**Exterior algebra**, the algebra of differential forms, is graded: its elements have parts of every grade from zero to the dimension, multiplied by the wedge product, which needs no metric. Forms are written on the dual space, as functions of vectors that change sign when two arguments swap, and differential forms are fields of them. The algebra allows sums of different grades, though practice rarely uses them. It has no geometric product: the wedge only raises grade, so a vector has no inverse and there are no rotors.
 
 **Extensors** are the multilinear maps of geometric algebra: functions whose slots take multivectors of any type, and whose outputs are multivectors. They are written with the products of the algebra, with an open slot where a factor is left out:
 
@@ -18,10 +20,12 @@ Vector | Vector                    # Scalar <- (Vector, Vector), the metric
 
 ## How they fit together
 
-- A matrix is an extensor with one vector slot and a vector output, `Vector <- Vector`. Linear algebra is the part of the extensors whose slots and outputs are vectors.
+- A matrix is an extensor with one vector slot and a vector output, `Vector <- Vector`. Linear algebra is the part of the extensors restricted to vectors and the inner product: slots and outputs of grade one, and the scalar product as the only product that pairs them.
 - A tensor on vectors and covectors is an extensor whose slots take vectors, with a covector slot written through one of the two pairings below. Conversely, every extensor is a tensor on the larger space of multivectors. In finite dimensions, the two frameworks have the same reach.
+- The tensor product is the product of extensors with independent slots, built from the algebra's own products. A dyad `a * (b | Vector)` is the tensor product of `a` with the covector of `b`, its slot paired through the inner product, or through the regressive product where no metric is wanted. Sums of such products give every tensor, as sums of dyads give every matrix.
+- Exterior algebra is the outer half of the geometric product, contained in geometric algebra as plainly as the algebra of the scalar product is. A form of grade k is an extensor from k-vectors to scalars, written with the regressive product `&` where no metric is wanted. Tensor practice mostly emulates grades above one through constructions such as the Levi-Civita symbol, which writes a plane as its normal vector; the forms community keeps every grade and stops before the geometric product. What geometric algebra adds is that product of the two halves, and with it mixed grades that mean something: rotors, spinors, the inverse of a vector.
 
-Extensors are therefore the tensor algebra of geometric algebra rather than of plain vectors: linear algebra over every grade, with the products of the algebra as its vocabulary.
+Extensors are therefore the tensor algebra of geometric algebra rather than of plain vectors. Linear algebra is the subset of extensors restricted to vectors and the inner product; extensors are linear algebra over every grade, with every product of the algebra as their vocabulary.
 
 ## What differs
 
@@ -65,11 +69,21 @@ The reach is the same, and anything done this way can be done with matrices. Wha
 - The standard rotation fit, Kabsch's SVD, needs a determinant correction because it can return a reflection; posed as an eigenproblem on rotors, the answer is a rotor by type.
 - The constitutive relations of a moving medium, and an inertia between body and space frames, are maps moved between frames; each is a composition with the rotation or boost on either side, with the type saying which side is which.
 
-The first-hand account is numga's own multiview example. It was first written with a coefficient transpose and the normal equations $J^T J$, as Gauss-Newton is taught. Removing the transpose from the library left no way to write that, and what remained was better: the cone value as the cost, its curvature a cone joined with the motion, no residual metric to choose, and a Schur complement solved as a form against a form. [Common practice and the typed form](common_practice.md) works through each case with its references and code, including the encodings of tensor practice, such as Voigt notation and the inertia tensor, and separately lists the cases, such as composing boosts or blending rigid motions, that are benefits of geometric algebra itself rather than of extensors.
+The first-hand account is numga's own multiview example. It was first written with a coefficient transpose and the normal equations $J^T J$, as Gauss-Newton is taught. Removing the transpose from the library left no way to write that, and what remained was better: the cone value as the cost, its curvature a cone joined with the motion, no residual metric to choose, and a Schur complement solved as a form against a form. [Extensors and common practice](common_practice.md) works through each case with its references and code, including the encodings of tensor practice, such as Voigt notation and the inertia tensor, and separately lists the cases, such as composing boosts or blending rigid motions, that are benefits of geometric algebra itself rather than of extensors.
 
 ## Object or map
 
 Whether a tensor is an object, defined by a universal property, or a multilinear map, is a question about which construction to call the definition. In finite dimensions the two are the same up to canonical isomorphism. An extensor is both at once: a value that is stored, added, batched and transformed, and a function that is called by filling its slots. A multivector is the case with no slots to fill.
+
+## Closure
+
+The deepest difference between the frameworks is not in any single operation but in closure: whether everything a calculation needs can be written inside the framework, or whether some of it has to be brought in from outside. Geometric algebra is closed in this sense for the objects of geometry and physics. Points, lines, planes, rotations, rigid motions, fields and spinors are all elements of one algebra, and every operation on them is one of its products. Extensors carry that closure over to the maps between those objects: an inertia, a stiffness, a material, a covariance or a camera is built from the same products and solved with the same operations as the geometry it acts on.
+
+Each of the other frameworks keeps part of this and gives up the rest, and what it gives up comes back in as a construction supplied by hand. Linear algebra keeps vectors and the inner product, and brings in the antisymmetric side through the Levi-Civita symbol, cross-product matrices and determinant formulas. Exterior algebra keeps the outer product and every grade, and brings in the metric through the Hodge star; without the geometric product, it has no rotations among its elements. Tensor algebra keeps maps with many slots, each taking vectors, and brings in rotations as matrices and spinors through the Pauli and Dirac matrices. Each of these imports is a fixed table, specific to a dimension, that someone has to know and keep consistent, as the table in [what linear algebra does not see](#what-linear-algebra-does-not-see) lists.
+
+The matrix is where all of these imports meet. Once one part of a calculation has been recast in matrices, it is easiest to recast all of it, and that is what practice does: to compute an inertia, a stiffness or a covariance numerically, the problem is first rewritten in matrix form and then assembled. Numerical software written in tensor notation exists, in finite element mechanics and in the tensor networks of many-body physics, but it works within the restriction to vectors, and its geometric constructions are still supplied by hand.
+
+Closure is what lets one language carry all of numga's examples, from rigid bodies, cameras and estimation to materials, light, spacetime and spin, without leaving the algebra. Neither half achieves it alone. Geometric algebra without extensors closes the objects but not the maps, and a geometric algebra program falls back on a matrix at its first inertia or covariance. Maps built on the inner product alone, or on the outer product alone, lose part of the objects they act on. Together, the full geometric product and maps with open slots make a language in which nothing has to be brought in from outside. This is a claim about coherence, not about reach: every calculation here can also be done with matrices, but done that way it is a collection of separate constructions rather than one language.
 
 ## In numga
 

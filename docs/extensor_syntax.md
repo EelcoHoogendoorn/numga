@@ -151,6 +151,8 @@ moving_ray = join_map(trajectory)                       # Line <- (Time, Point)
 ```
 
 ### Frame Transport & Motor Transformations
+An extensor built from the algebra's products transforms as the geometry it is built from: built from transformed elements, it equals the extensor built from the original elements and then transformed, by a motor `motor >> T(motor << In)`. A map can be built in whatever frame is convenient and transformed, or built in place, with the same result.
+
 Because all GA operations act on an extensor's **output type**, applying a motor sandwich directly transforms the output space:
 
 ```python

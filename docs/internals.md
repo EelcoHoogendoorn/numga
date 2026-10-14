@@ -14,6 +14,11 @@ contraction. When bound with multivector arguments, the tables are executed as d
 contractions in the array backend; unrolling over only the nonzero terms of the expression is
 available as an alternative execution policy, and section 6 says when it pays.
 
+Every table is a product of the algebra, or a composition of such products, so every extensor
+transforms as the geometry it is built from. No basis convention enters an expression beyond
+what the algebra itself carries, and transforming an extensor gives the same result as
+building it from transformed elements.
+
 numga is built to be traced inside jit-compiled JAX functions, so constructing the operations
 is a cached preprocessing step and executing them is left to the JAX compiler. That gives good
 JAX performance from a relatively simple library.

@@ -1,6 +1,10 @@
-# Common practice and the typed form
+# Extensors and common practice, case by case
 
-Everything below can be done with matrices, vectors and indices, and the arithmetic can be the same. What differs is which form is convenient. Each case pairs a documented common practice with the construction that is convenient here, and, where there is one, with the example that uses it.
+This document compares, case by case, how problems in applied fields are commonly set up with matrices, indices and coordinates, and how the same problems are set up with extensors, and reflects on the practical differences between the two. The cases come from graphics, robotics, estimation, continuum mechanics and electrodynamics. Each one pairs a documented habit of the field, with references, with its extensor formulation and, where there is one, with the numga example that uses it.
+
+The two formulations have the same reach: anything written with extensors can also be written with matrices, and the arithmetic can be the same. The differences are practical. Typed slots and the absence of a transpose decide which formulations are easy to write, and in the cases below the habitual formulation, with its known pitfalls, is the one that is awkward or impossible to write with extensors, while the formulation that avoids the pitfalls is the natural one. The [frameworks document](frameworks.md) sets out the formal relation between extensors, linear algebra, tensors and forms; this document is the practical evidence alongside it.
+
+The cases fall into three groups. The first concerns maps, forms and the pairings between them; the second, tensors with many slots or antisymmetric parts, and the encodings that fit them into vectors and matrices. The third collects cases whose benefit comes from geometric algebra itself rather than from extensors, kept apart so that the two are not credited for each other.
 
 ## Maps, forms and pairings
 
