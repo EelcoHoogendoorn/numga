@@ -23,7 +23,7 @@ x, y, z = core.axes                                        # flow, gradient, vor
 # degrees: raised from the vorticity axis towards the gradient, then turned towards the flow. The lamp
 # over the viewer's left shoulder, by its parts towards the viewer, to the right and up, and the share
 # of a body's colour lit even where it faces away. The half width of the tumbling view, its pixels
-# across, the rays per pixel along each side, and the frames a tip's trail lasts.
+# across, and the rays per pixel along each side.
 STARTS = cm.viridis(np.linspace(0.1, 0.9, 5))
 BODY, BODY_DARK, TIP, FLOW = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8"
 VIEW = (18, 28)
@@ -32,7 +32,6 @@ AMBIENT = 0.4
 LIMIT = 4.2
 PIXELS = 200
 SUPERSAMPLE = 2
-TRAIL = 25
 
 
 def coordinates(vectors: core.Vector) -> np.ndarray:
@@ -139,14 +138,14 @@ def draw_split(ax, vectors: core.Vector, view: tuple, **style) -> None:
 
 def draw_body(ax, tumbling: core.Tumbling, picture: np.ndarray, frame: int, body: int, title: str,
               view: tuple) -> None:
-    """One body at one frame, its picture, the ends of its long axis, the recent trail of the axis's
-    tips, and the shear flow's velocity behind it."""
+    """One body at one frame, its picture, the ends of its long axis, the paths of the axis's tips
+    from the start, and the shear flow's velocity behind it."""
     right, up, back = view
     tip = tumbling.tips[frame, body]                                         # [] Vector
-    tips = tumbling.tips[max(0, frame - TRAIL):frame + 1, body]              # [trail] Vector
+    tips = tumbling.tips[:frame + 1, body]                                   # [frame + 1] Vector
     for end in (1, -1):
         draw_split(ax, tip * (end * np.array([1.0, 1.15])), view, color=TIP, linewidth=1.4)
-        draw_split(ax, tips * end, view, color=TIP, linewidth=1.6, alpha=0.9)
+        draw_split(ax, tips * end, view, color=TIP, linewidth=1.0, alpha=0.9)
     bases = screen(tumbling.heights - tumbling.velocities / 2, right, up)    # [heights, 2]
     arrows = screen(tumbling.velocities, right, up)                          # [heights, 2]
     ax.quiver(*bases.T, *arrows.T, angles="xy", scale_units="xy", scale=1, color=FLOW, width=0.005, zorder=0)

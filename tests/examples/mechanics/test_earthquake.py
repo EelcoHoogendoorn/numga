@@ -40,6 +40,6 @@ def test_scenes_pass_their_checks_and_draw():
     plt.close(figure)
     frames = core.fault_frame(np.deg2rad(30.0), np.deg2rad(50.0), np.deg2rad([45.0]))
     balls = core.mechanism(frames, 1.0, scenarios.hemisphere())
-    lobes = core.mechanism(frames, 1.0, scenarios.sphere())
+    lobes = core.mechanism(frames, 1.0, frames[:, None, None] >> scenarios.sphere())
     assert len(render.animate_sweep(balls, lobes)) == 1
     scenarios.sweep()

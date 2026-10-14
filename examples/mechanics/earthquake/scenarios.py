@@ -30,8 +30,8 @@ def hemisphere():
 
 
 def sphere():
-    """The whole sphere of directions."""
-    return core.directions(np.linspace(0.0, np.pi, RINGS), np.linspace(0.0, 2 * np.pi, SPOKES + 1))       # [RINGS, SPOKES + 1] Vector
+    """The whole sphere of directions, with the hemisphere's spacing and a ring on its equator."""
+    return core.directions(np.linspace(0.0, np.pi, 2 * RINGS - 1), np.linspace(0.0, 2 * np.pi, SPOKES + 1))   # [2 * RINGS - 1, SPOKES + 1] Vector
 
 
 def mechanisms() -> core.Mechanism:
@@ -71,7 +71,9 @@ def sweep() -> tuple[core.Mechanism, core.Mechanism]:
     the whole sphere."""
     rakes = np.linspace(-np.pi, np.pi, FRAMES, endpoint=False)
     frames = core.fault_frame(np.deg2rad(SWEEP_STRIKE), np.deg2rad(SWEEP_DIP), rakes)   # [FRAMES] Rotor
-    balls, lobes = core.mechanism(frames, MOMENT, hemisphere()), core.mechanism(frames, MOMENT, sphere())
+    # The sphere turned with each fault, so that its nodal planes lie along the grid lines and its lobes turn
+    # with it.
+    balls, lobes = core.mechanism(frames, MOMENT, hemisphere()), core.mechanism(frames, MOMENT, frames[:, None, None] >> sphere())
 
     # --- checks
     # Turning the rake turns the slip within the fault: the normal stays, the slip stays in the plane.

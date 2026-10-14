@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import to_rgba
+from matplotlib.colors import LightSource, to_rgba
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from examples.animation import capture
@@ -14,6 +14,9 @@ from examples.mechanics.earthquake import core
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
 NODAL, PRESSURE, TENSION, SLIP = "#0f172a", "#0ea5e9", "#e11d48", "#f59e0b"
+# The lobes in space, pushing and pulling, and the light that shades them.
+PUSH_LOBE, PULL_LOBE = "#475569", "#e2e8f0"
+LIGHT = LightSource(azdeg=315, altdeg=45)
 # The half width of the fault patch, and of the view in space.
 PATCH = 0.55
 LIMIT = 0.75
@@ -71,11 +74,15 @@ def draw_mechanisms(faults: core.Mechanism, names: list[str]) -> plt.Figure:
 def draw_fault(ax, lobes: core.Mechanism, index: int) -> None:
     """One fault in space: the patch of the fault, the slip of each side across it, and the lobes of
     the P waves, each direction drawn as far as its first motion, pushes dark and pulls pale."""
-    push = lobes.push[index].to_array()
-    surface = upright(lobes.directions) * np.abs(push)[..., None]
-    shade = np.where(push[..., None] > 0, to_rgba(PUSH, 0.9), to_rgba("#cbd5e1", 0.6))
+    # The rings in reverse, so that the cells of the surface face outwards, towards the light.
+    push = lobes.push[index].to_array()[::-1]
+    surface = upright(lobes.directions[index])[::-1] * np.abs(push)[..., None]
+    # The colour of each cell by the sign at its middle: the nodal planes run along the grid lines.
+    middle = (push[1:, 1:] + push[:-1, :-1] + push[1:, :-1] + push[:-1, 1:])[..., None]
+    colours = np.where(middle > 0, to_rgba(PUSH_LOBE), to_rgba(PULL_LOBE))
     ax.computed_zorder = False
-    ax.plot_surface(*np.moveaxis(surface, -1, 0), facecolors=shade, linewidth=0, antialiased=True, shade=False, zorder=1)
+    ax.plot_surface(*np.moveaxis(surface, -1, 0), facecolors=colours, linewidth=0, antialiased=False, shade=True,
+                    lightsource=LIGHT, rstride=1, cstride=1, zorder=1)
     normal, slip, null = upright(lobes.normals[index]), upright(lobes.slips[index]), upright(lobes.axes[index, 1])
     angle = np.linspace(0, 2 * np.pi, 64, endpoint=False)[:, None]
     rim = PATCH * (slip * np.cos(angle) + null * np.sin(angle))

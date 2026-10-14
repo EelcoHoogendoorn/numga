@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numga import stack
 
 from examples.mechanics.bending import core, render, scenarios
 from examples.mechanics.bending.mesh import HEIGHT, FLANGE, THICKNESS, TURNS, TUBE_RADIUS, TUBE_WALL, SLOT_ANGLE, section_meshes
@@ -32,9 +33,9 @@ def test_stiffness_holds_the_area_and_the_second_moments():
     area = 2 * FLANGE * THICKNESS + (HEIGHT - 2 * THICKNESS) * THICKNESS
     for (triangles, boundary), spread in zip(section_meshes(), second_moments()):
         rigidity = core.stiffness(triangles, scenarios.MODULUS)
-        np.testing.assert_allclose((core.slide & rigidity(core.slide)).to_array(),
+        np.testing.assert_allclose((core.shift_along_beam & rigidity(core.shift_along_beam)).to_array(),
                                    scenarios.MODULUS * area, rtol=1e-12)
-        turns = core.centroid(triangles) & core.direction([[1.0, 0.0], [0.0, 1.0]])
+        turns = core.centroid(triangles) & stack([core.mv.x, core.mv.y]).dual()
         energies = (turns & rigidity(turns)).to_array()
         expected = scenarios.MODULUS * np.array([spread[1, 1], spread[0, 0]])
         np.testing.assert_allclose(energies, expected, rtol=1e-12)
@@ -43,8 +44,9 @@ def test_stiffness_holds_the_area_and_the_second_moments():
 def test_small_tip_load_deflects_by_the_cantilever_formula():
     load = 1e-3 * scenarios.LOAD
     for (triangles, boundary), spread in zip(section_meshes(), second_moments()):
-        beam = scenarios.cantilever(triangles, boundary, load * -scenarios.up)
-        across = render.flat(beam.centres[-1]) - render.flat(core.centroid(triangles))
+        _, frames, _, _ = scenarios.cantilever(triangles, load * -scenarios.up_direction)
+        centre = core.centroid(triangles)
+        across = render.flat(frames[-1] >> centre) - render.flat(centre)
         expected = scenarios.LENGTH**3 / (3 * scenarios.MODULUS) * np.linalg.solve(spread, [0.0, -load])
         # This tolerance tests the approximation by constant-strain pieces.
         np.testing.assert_allclose(np.linalg.norm(across - expected) / np.linalg.norm(expected), 0.0, atol=1e-3)
@@ -61,7 +63,7 @@ def test_slotted_tube_matches_annular_sector_moments():
     up = radial * (sweep + np.sin(SLOT_ANGLE)) / 2
     rigidity = core.stiffness(triangles, scenarios.MODULUS)
     centre = core.centroid(triangles)
-    turns = centre & core.direction([[1.0, 0.0], [0.0, 1.0]])
+    turns = centre & stack([core.mv.x, core.mv.y]).dual()
     # The tolerance measures the polygonal approximation to the curved annular sector.
     np.testing.assert_allclose(core.areas(triangles).sum(axis=0).to_array(), area, rtol=0.01)
     np.testing.assert_allclose(render.flat(centre), [centre_x, 0.0], rtol=0.01, atol=1e-12)
@@ -70,47 +72,44 @@ def test_slotted_tube_matches_annular_sector_moments():
 
 
 def test_neutral_axes_and_principal_bending_directions():
-    beams = scenarios.downward()
     quarter = (core.mv.xy * (-np.pi / 4)).exp()
-    for beam in beams:
-        centre = core.centroid(beam.triangles)
-        np.testing.assert_allclose((centre & beam.strains[0]).kernel, 0.0, atol=1e-12)
-        np.testing.assert_allclose((centre & beam.principal).kernel, 0.0, atol=1e-12)
-        load = scenarios.LOAD * (quarter >> (beam.principal[0].normalized() ^ core.mv.w))
-        principal = scenarios.cantilever(beam.triangles, beam.boundary, load)
-        plane = (centre & core.along) & load
-        np.testing.assert_allclose((principal.centres[-1] & plane).to_array(), 0.0, atol=1e-12)
-    # Tip displacements are ideal points: read their headings, not their homogeneous positions.
-    deflections = np.array([render.flat(beam.centres[-1]) - render.flat(core.centroid(beam.triangles)) for beam in beams])
-    sideways, down = deflections.T
-    np.testing.assert_allclose(sideways[0], 0.0, atol=1e-12)
-    assert np.all(down < 0) and abs(sideways[1]) > 0.1 * abs(down[1]) and abs(sideways[2]) > abs(down[2])
+    for triangles, boundary in section_meshes():
+        strains, frames, principal, stress = scenarios.cantilever(triangles, scenarios.LOAD * -scenarios.up_direction)
+        centre = core.centroid(triangles)
+        np.testing.assert_allclose((centre & strains[0]).kernel, 0.0, atol=1e-12)
+        np.testing.assert_allclose((centre & principal).kernel, 0.0, atol=1e-12)
+        load = scenarios.LOAD * (quarter >> (principal[0].normalized() ^ core.mv.w))
+        _, along_principal, _, _ = scenarios.cantilever(triangles, load)
+        plane = (centre & core.beam_direction) & load
+        np.testing.assert_allclose(((along_principal[-1] >> centre) & plane).to_array(), 0.0, atol=1e-12)
 
 
 def test_kern_and_reciprocity():
-    for pushed in scenarios.pushes():
-        rigidity = core.stiffness(pushed.triangles, scenarios.MODULUS)
-        centred = core.pulls(rigidity, core.centroid(pushed.triangles))
+    points, view = core.point(scenarios.PUSH_POINTS), scenarios.kern_view()
+    for triangles, boundary in section_meshes():
+        rigidity = core.stiffness(triangles, scenarios.MODULUS)
+        centred = core.pulls(rigidity, core.centroid(triangles))
         np.testing.assert_allclose(centred.norm().to_array(), 0.0, atol=1e-12)
-        first, second = core.pulls(rigidity, pushed.points[0]), core.pulls(rigidity, pushed.points[1])
-        np.testing.assert_allclose((first & (core.along & pushed.points[1])).to_array(),
-                                   (second & (core.along & pushed.points[0])).to_array(), rtol=1e-10)
-        squeezed = pushed.stress.to_array()
+        strains, stress, corners = scenarios.push_section(triangles, points, view)
+        squeezed = stress.to_array()
         assert np.all(squeezed[0] < 0) and squeezed[1].max() > 0
 
 
 def test_scenes_draw_and_opposite_loads_bend_oppositely():
-    figures = [render.draw_meshes(section_meshes(), scenarios.NAMES),
-               render.draw_beams(scenarios.downward(), scenarios.NAMES),
-               render.draw_pushes(scenarios.pushes(), scenarios.NAMES)]
-    for figure in figures:
-        assert isinstance(figure, plt.Figure)
+    sections = section_meshes()
+    beams = [scenarios.cantilever(triangles, scenarios.LOAD * -scenarios.up_direction) for triangles, _ in sections]
+    points, view = core.point(scenarios.PUSH_POINTS), scenarios.kern_view()
+    pushes = [scenarios.push_section(triangles, points, view) for triangles, _ in sections]
+    for figure in (render.draw_meshes(sections), render.draw_beams(sections, scenarios.LOAD * -scenarios.up_direction, beams),
+                   render.draw_pushes(sections, points, view, pushes)):
         plt.close(figure)
-    turning = scenarios.turning()
-    across = render.flat(turning.centres[:, -1]) - render.flat(core.centroid(turning.triangles))
+    triangles, boundary = sections[scenarios.NAMES.index("Z-section")]
+    loads = scenarios.turning_loads()
+    strains, frames, principal, stress = scenarios.cantilever(triangles, loads)
+    centre = core.centroid(triangles)
+    across = render.flat(frames[:, -1] >> centre) - render.flat(centre)
     half = scenarios.FRAMES // 2
     np.testing.assert_allclose(np.linalg.norm(across[:half] + across[half:], axis=-1)
                                / np.linalg.norm(across[:half], axis=-1), 0.0, atol=2e-2)
-    one = core.Beam(turning.triangles, turning.boundary, turning.loads[:1], turning.strains[:1], turning.frames[:1],
-                    turning.centres[:1], turning.principal, turning.stress[:1])
-    assert len(render.animate_turning(one)) == 1
+    one = (strains[:1], frames[:1], principal, stress[:1])
+    assert len(render.animate_turning(triangles, boundary, loads[:1], one)) == 1

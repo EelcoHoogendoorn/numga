@@ -1,6 +1,15 @@
 # 17. Further reading
 
-The operations of this tutorial are the primitives that geometric constructions are built from. Left out are those constructions: the exponential of a bivector and the sandwich product that turn and move elements, the projective and conformal models, in which points, lines, planes, circles and spheres are elements of the algebra, and calculus. The examples use all of them, and the books below treat them in full.
+This tutorial has explored the consequences of relaxing one of the rules that define the scalar product: two different basis vectors no longer multiply to zero, and only their products in the two orders cancel. That single change gives rise to a much richer algebra, in which turns, reflections, areas, volumes and intersections all follow from one product. The choice may look arbitrary at first, but its utility proves itself in its applications, from the geometry of a scene to the physics of spinning particles.
+
+The tutorial is an entry point, not an exhaustive treatment. It covers the operations that geometric constructions are built from, and leaves the constructions themselves to the literature. Natural topics to continue with are:
+
+1. The exponential of a bivector, which turns by any angle in the bivector's plane, much as the exponential of an imaginary number turns in the complex plane.
+2. The sandwich product, which multiplies an element by a versor on one side and by its inverse on the other, and so turns, reflects or moves points, lines, planes and every other element in the same way.
+3. Projective geometric algebra, which adds a basis vector that squares to zero, so that points, lines and planes anywhere in space, and the rigid motions between them, are elements of the algebra.
+4. Conformal geometric algebra, which adds two basis vectors, so that circles and spheres are elements as well.
+5. Geometric calculus, in which the derivative is a vector, and its geometric product with a field gives the divergence and the curl together.
+6. Extensors, linear maps written in the algebra, which the [extensor tutorial](../extensors/00-introduction.md) takes up from here.
 
 Applications run from geometry and mechanics to relativity and quantum physics. A few runnable examples that stay close to the algebra itself:
 
@@ -11,7 +20,7 @@ Applications run from geometry and mechanics to relativity and quantum physics. 
 - [Tilings in three signatures](../../../examples/math/reflections/tilings.ipynb), where one construction tiles the sphere, the Euclidean plane and the hyperbolic plane.
 - [Koebe polyhedra](../../../examples/surfaces/koebe/koebe.ipynb), where a circle on the sphere is a single vector.
 
-The [index of examples](../../../examples/README.md) lists the rest, and the [extensor tutorial](../extensors/00-introduction.md) continues with maps written in the algebra.
+The [index of examples](../../../examples/README.md) lists the rest. The books below treat the topics above in full:
 
 - D. Hestenes, *New Foundations for Classical Mechanics*, 2nd edition, Kluwer, 1999. Geometric algebra developed through mechanics, from the plane to rigid bodies and orbits.
 - C. Doran and A. Lasenby, *Geometric Algebra for Physicists*, Cambridge University Press, 2003. The algebra, calculus and their use across physics, from mechanics to quantum theory and gravitation.
