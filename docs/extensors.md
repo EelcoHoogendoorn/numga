@@ -10,6 +10,7 @@ Extensors include matrices and tensors. A matrix is an extensor that takes a vec
 
 # Companion documents
 
+* [`multiple_lenses.md`](multiple_lenses.md): the definition read three ways, as partial application, as objects and transformations in one algebra, and as multilinear maps.
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
 * [`extensor_advanced.md`](extensor_advanced.md): maps against forms, pullbacks and pairings, traces, norms and gauges.
 * [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
