@@ -16,7 +16,7 @@ from itertools import accumulate
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext, Orientation, stack
 from numga.algebras import STA as ga
 from numga.sparse import SparseExtensor
 
@@ -27,8 +27,8 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antibivector = ga.gatype.antibivector()
-Polarization = ga.gatype(ga.subspace("x y"))
-Boundary = ga.gatype(ga.subspace("x y txz tyz"))
+Polarization = Vector.derive.within("x y")
+Boundary = ga.gatype(ga.subspace("x y txz tyz"), orientation=Orientation.extrinsic)
 Constitutive = ga.gatype((Antibivector, Bivector))
 Inverse = ga.gatype((Bivector, Antibivector))
 BoundaryMap = ga.gatype((Boundary, Bivector))
@@ -38,6 +38,8 @@ PolarizationMap = ga.gatype((Polarization, Polarization))
 ElectricMap = ga.gatype((Vector, Polarization))
 Outgoing = ga.gatype((Boundary, Polarization))
 Readout = ga.gatype((Polarization, Boundary))
+# An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
+AxionCoupling = Scalar.derive.flipped_orientation
 axes = stack([mv.x, mv.y, mv.z])
 field_boundary = mv.t ^ (mv.t | (mv.z ^ Bivector))
 excitation_boundary = mv.t | (mv.t ^ (mv.z ^ Antibivector).dual())

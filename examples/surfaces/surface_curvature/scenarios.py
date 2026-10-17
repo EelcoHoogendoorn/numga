@@ -28,15 +28,15 @@ def curvature_lines(pixels: int):
 
     # --- checks
     # At the tip of the long axis the principal curvatures are a / b**2 and a / c**2.
-    tip = core.principal(ellipsoid, core.point(np.array([a, 0.0, 0.0])))
+    tip = core.principal(ellipsoid, core.mv.point(np.array([a, 0.0, 0.0])))
     np.testing.assert_allclose(tip.to_array(), [a / b**2, a / c**2], rtol=1e-8)
     # The four umbilics, where the ellipsoid curves equally in every direction, lie in the plane
     # of its longest and shortest axes; there the two curvatures agree.
     x, z = a * np.sqrt((a**2 - b**2) / (a**2 - c**2)), c * np.sqrt((b**2 - c**2) / (a**2 - c**2))
-    umbilics = core.principal(ellipsoid, core.point(np.array([[x, 0, z], [-x, 0, z], [x, 0, -z], [-x, 0, -z]])))
+    umbilics = core.principal(ellipsoid, core.mv.point(np.array([[x, 0, z], [-x, 0, z], [x, 0, -z], [-x, 0, -z]])))
     np.testing.assert_allclose(umbilics[:, 0].to_array(), umbilics[:, 1].to_array(), rtol=1e-8)
     # At the umbilics the two confocal parameters meet as well: the net of lines closes up there.
-    meeting = core.confocal(ellipsoid, core.point(np.array([[x, 0, z], [-x, 0, z], [x, 0, -z], [-x, 0, -z]])))
+    meeting = core.confocal(ellipsoid, core.mv.point(np.array([[x, 0, z], [-x, 0, z], [x, 0, -z], [-x, 0, -z]])))
     np.testing.assert_allclose(meeting[:, 0].to_array(), meeting[:, 1].to_array(), rtol=1e-6)
 
     return scenes, curvatures, parameters

@@ -31,10 +31,10 @@ def test_the_adjugate_identifies_the_lost_direction_at_collapse():
     thickness = np.array([1.0, 0.2, 0.0])
     shear = np.array([0.0, 0.4, 0.7])
     transport = core.transport(core.deformation(thickness, shear))
-    probes = core.mv.vector([[1, 2, -1], [0, 1, 3]])
-    images = transport.adjugate[:, None](probes)
-    expected = transport.volume[:, None] * probes
-    np.testing.assert_allclose((transport.deformation[:, None](images) - expected).kernel, 0, atol=1e-12)
-    lost = transport.adjugate[-1](core.mv.z)
-    np.testing.assert_allclose((lost - (core.mv.z - shear[-1] * core.mv.x)).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose(transport.deformation[-1](lost).kernel, 0, atol=1e-12)
+    lost = transport.adjugate[-1](core.mv.xy.dual())
+    np.testing.assert_allclose((lost - (core.mv.xy - shear[-1] * core.mv.yz).dual()).kernel, 0, atol=1e-12)
+    # A patch through the lost direction: the adjugate's image pairs to nothing with it, and the area map
+    # crushes it.
+    crushed = (core.mv.z - shear[-1] * core.mv.x) ^ core.mv.y
+    np.testing.assert_allclose((lost & crushed).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose(transport.areas[-1](crushed).kernel, 0, atol=1e-12)

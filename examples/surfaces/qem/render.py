@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
-from examples.surfaces.qem.core import Point, Quadric, direction, ga
+from examples.surfaces.qem.core import Point, Quadric, ga, mv
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -67,7 +67,7 @@ def draw_error_ellipsoid(
 
     # The error grows quadratically along each direction; where it stays flat the radius
     # is capped at max_radius.
-    dir_pts = direction(dirs)
+    dir_pts = mv.direction(dirs)
     quad_vals = (quadric(dir_pts) & dir_pts).to_array()
     r = epsilon / np.sqrt(np.maximum(quad_vals, (epsilon / max_radius) ** 2))
 

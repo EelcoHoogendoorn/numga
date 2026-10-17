@@ -5,8 +5,9 @@ The deformation is a map on vectors, built by leaving the vector open: `Vector +
 outermorphism moves oriented patches by moving their edges, `areas(a ^ b) == deformation(a) ^
 deformation(b)`, and scales volumes by the determinant. The adjugate of the area map carries a
 direction back so that it measures the same volume against a patch, `adjugate(c) & patch == c &
-areas(patch)`: defined without an inverse, it exists at zero volume too, where the deformation after
-it gives nothing. Its adjoint, the same through the metric, carries the faces' area normals forward.
+areas(patch)`: defined without an inverse, it exists at zero volume too, where the normal it returns
+pairs to nothing with every patch through the lost direction, the patches the area map crushes. Its
+adjoint, the same through the metric, carries the faces' area normals forward.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from itertools import product
 
 import numpy as np
 
-from numga import NumpyContext, concatenate
+from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
@@ -35,12 +36,14 @@ def deformation(thickness: np.ndarray, shear: np.ndarray) -> Linear:
 
 def cube(side: float) -> Surface:
     """A cube centred at the origin, its faces oriented outwards: its corners, its faces' centres, and
-    each face's area normal, its outward direction as long as the face's area, with its oriented patch,
-    the plane dual to it."""
+    each face's oriented patch, the wedge of its two edge directions wound counter-clockwise seen from
+    outside, as large as the face, with its area normal, the dual of the patch."""
     corners = mv.vector(list(product((-side / 2, side / 2), repeat=3)))       # [vertices] Vector
     outward = concatenate([mv.basis(), -mv.basis()])                           # [faces] Vector
-    area_normals = outward * side**2                                           # [faces] Vector
-    return Surface(corners, outward * (side / 2), area_normals.dual_inverse(), area_normals)
+    # The faces at +x, +y and +z; the opposite faces are wound the other way.
+    facing = stack([mv.y, mv.z, mv.x]) ^ stack([mv.z, mv.x, mv.y])            # [3] Bivector
+    patches = concatenate([facing, -facing]) * side**2                         # [faces] Bivector
+    return Surface(corners, outward * (side / 2), patches, patches.dual())
 
 
 def transport(deformation: Linear) -> Transport:

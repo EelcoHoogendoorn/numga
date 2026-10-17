@@ -60,7 +60,7 @@ def test_signed_and_empty_scalar_layouts(context):
     signed = context.multivector.scalar([0.25]).cast(context.algebra.subspace("-1"))
     np.testing.assert_allclose(signed.sin().to_array(), np.sin(0.25), atol=1e-6)
     assert signed > 0
-    empty = context.multivector(context.algebra.subspace.empty(), np.empty((2, 1, 0)))
+    empty = context.multivector(context.algebra.gatype.empty(), np.empty((2, 1, 0)))
     np.testing.assert_array_equal(empty.cos().to_array(), np.ones((2, 1)))
     np.testing.assert_array_equal(empty.isfinite(), np.ones((2, 1), dtype=bool))
 

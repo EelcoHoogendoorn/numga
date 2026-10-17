@@ -29,7 +29,8 @@ from numga.extensions._linalg import _eigenpairs, _is_square_form, _matching_for
 def _form_map(value: Extensor) -> Extensor:
     value = value.cast(value.algebra.subspace.scalar())
     return Extensor._from_prepared_kernel(
-        value.context, value.algebra.gatype(value.input_subspaces), value._kernel[..., 0, :, :],
+        value.context, value.algebra.gatype.oriented(value.input_subspaces, value.gatype.input_orientations),
+        value._kernel[..., 0, :, :],
     )
 
 
@@ -37,13 +38,13 @@ def _pencil(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     context = binding_context(value.context, (metric.context,))
     left = _form_map(context.lower(value)).cast(value.axes[2])
     right = _form_map(context.lower(metric))
-    right = right(value.algebra.operator.identity(value.axes[2])).cast(value.axes[2])
+    right = right(value.algebra.operator.identity(value.gatype.derive.axis(2))).cast(value.axes[2])
     return left, right
 
 
 # --- the slot's own metric ---------------------------------------------------------------
 @lru_cache(maxsize=None)
-def _default_metric(slot: SubSpace) -> Extensor:
+def _default_metric(slot: GAType) -> Extensor:
     """The slot's metric as a symbolic form: the inner product of S with its reverse.
 
     On vectors this is V | V. On other grades the reverse removes the sign of the blade's
@@ -54,7 +55,7 @@ def _default_metric(slot: SubSpace) -> Extensor:
 
 
 @lru_cache(maxsize=None)
-def _default_metric_kind(slot: SubSpace) -> str:
+def _default_metric_kind(slot: GAType) -> str:
     """Classify the default metric from its exact coefficients: a property of the slot type.
 
     'identity' solves as a plain eigenproblem; 'positive' needs the generalized pencil;
@@ -63,7 +64,7 @@ def _default_metric_kind(slot: SubSpace) -> str:
     eigenproblem.
     """
     matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
-    if np.array_equal(matrix, np.eye(len(slot))):
+    if np.array_equal(matrix, np.eye(len(slot.output_subspace))):
         return "identity"
     spectrum = np.linalg.eigvalsh(matrix)
     if np.any(np.abs(spectrum) < 1e-12):
@@ -72,7 +73,7 @@ def _default_metric_kind(slot: SubSpace) -> str:
 
 
 @lru_cache(maxsize=None)
-def _measured_blades(slot: SubSpace) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _measured_blades(slot: GAType) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Positions of the blades the slot's metric measures and of those it is blind to, and the
     order that puts the two back into the slot's layout."""
     matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
@@ -83,7 +84,7 @@ def _measured_blades(slot: SubSpace) -> tuple[np.ndarray, np.ndarray, np.ndarray
 
 def _metric_is(*kinds: str) -> Callable[[GAType], bool]:
     """Dispatch predicate: a square form whose slot metric is of one of these kinds."""
-    return lambda gatype: _is_square_form(gatype) and _default_metric_kind(gatype.subspaces[2]) in kinds
+    return lambda gatype: _is_square_form(gatype) and _default_metric_kind(gatype.derive.axis(2)) in kinds
 
 
 def _plain(value: Extensor) -> Extensor:
@@ -92,14 +93,14 @@ def _plain(value: Extensor) -> Extensor:
 
 
 def _default_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
-    return _pencil(value, _default_metric(value.axes[2]))
+    return _pencil(value, _default_metric(value.gatype.derive.axis(2)))
 
 
 def _refusal(method: str, needs: str) -> Callable[[Extensor], Extensor]:
     def refuse(value: Extensor) -> Extensor:
         raise TypeError(
             f"{method} of a form needs {needs} metric; the metric of {value.axes[2]} is "
-            f"{_default_metric_kind(value.axes[2])}: pass an explicit metric form"
+            f"{_default_metric_kind(value.gatype.derive.axis(2))}: pass an explicit metric form"
         )
     return refuse
 
@@ -173,7 +174,7 @@ def _reduced_pencil(value: Extensor):
     reduced form and metric, the map from measured to blind components, and the blade order.
     """
     left, right = _default_pencil(value)
-    measured, unmeasured, order = _measured_blades(value.axes[2])
+    measured, unmeasured, order = _measured_blades(value.gatype.derive.axis(2))
     xp = left.context.xp
 
     def block(matrix, rows, columns):

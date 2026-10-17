@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.quadrics.spherical_quadrics.core import (
-    Plane, Point, cone, geodesic, great_circles, mv, oval, polarity, sphere,
+    Plane, Point, Turn, cone, geodesic, great_circles, mv, oval, polarity, sphere,
 )
 
 
@@ -43,7 +43,8 @@ def spherical_conic():
     sample = P[25]
     arcs = geodesic(foci[:, None], sample, np.linspace(0, 1, 30))
     touching = np.linspace(0, P.shape[0] - 1, 16, dtype=int)
-    circles = great_circles(tangents[touching][:, None], P[touching][:, None], np.linspace(0, 2 * np.pi, 120))
+    turns = mv(Turn, np.linspace(0, 2 * np.pi, 120)[:, None])                     # [120] Turn
+    circles = great_circles(tangents[touching][:, None], P[touching][:, None], turns)
     radius, t = np.meshgrid(np.linspace(0.1, 1.25, 20), np.linspace(0, 2 * np.pi, 60))
     surface = rotor >> cone(eigenvalues, radius, t)
     grid = sphere(60, 30)

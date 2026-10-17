@@ -10,6 +10,7 @@ from numga.flyweight import FlyweightFactory
 from numga.subspace import SubSpace
 
 from .gatype import GAType
+from .orientation import Orientation
 from .traits import (
     EMPTY_TRAITS,
     ROTOR_TRAITS,
@@ -58,7 +59,11 @@ class GATypeFactory(FlyweightFactory[GAType]):
         subspaces: SubSpace | GAType | Iterable[SubSpace | GAType],
         traits: TraitSet = EMPTY_TRAITS,
         fields: tuple[tuple[int, int], ...] = (),
+        *,
+        orientation: Orientation | None = None,
     ) -> GAType:
+        """The type over these axes, output first. A nullary GAType axis carries its orientation; bare
+        subspace axes take `orientation`, which they require: a subspace is a layout and has none."""
         if isinstance(subspaces, (SubSpace, GAType)):
             raw_axes = (subspaces,)
         else:
@@ -69,16 +74,30 @@ class GATypeFactory(FlyweightFactory[GAType]):
                     "GAType subspaces must be a SubSpace, GAType, or output-first iterable"
                 ) from error
 
-        def _to_subspace(axis: SubSpace | GAType) -> SubSpace:
-            if isinstance(axis, SubSpace):
-                return axis
-            if isinstance(axis, GAType) and axis.arity == 0:
-                return axis.output_subspace
+        if any(isinstance(axis, SubSpace) for axis in raw_axes) and orientation is None:
             raise TypeError(
-                f"each axis must be a SubSpace or nullary GAType; got {type(axis).__name__}"
+                "a subspace has no orientation: pass orientation=Orientation.extrinsic or "
+                "Orientation.intrinsic, or build the type from a named constructor"
             )
+        if orientation is not None and not any(isinstance(axis, SubSpace) for axis in raw_axes):
+            raise TypeError("orientation applies to subspace axes; these GATypes carry their own")
+        if not all(isinstance(axis, SubSpace) or (isinstance(axis, GAType) and axis.arity == 0) for axis in raw_axes):
+            raise TypeError("each axis must be a SubSpace or a nullary GAType")
+        axes = tuple(axis if isinstance(axis, SubSpace) else axis.output_subspace for axis in raw_axes)
+        orientations = tuple(orientation if isinstance(axis, SubSpace) else axis.orientation for axis in raw_axes)
+        return self.oriented(axes, orientations, traits, fields)
 
-        axes = tuple(_to_subspace(axis) for axis in raw_axes)
+    def oriented(
+        self,
+        subspaces: Iterable[SubSpace],
+        orientations: Iterable[Orientation],
+        traits: TraitSet = EMPTY_TRAITS,
+        fields: tuple[tuple[int, int], ...] = (),
+    ) -> GAType:
+        """The GAType over these subspaces with these orientations, one per axis, output first."""
+
+        axes = tuple(subspaces)
+        orientations = tuple(orientations)
 
         # Let the value object own detailed diagnostics and structural
         # validation. Checking ownership here keeps a foreign type out of this
@@ -92,28 +111,17 @@ class GATypeFactory(FlyweightFactory[GAType]):
         normalized_traits = normalize_explicit_traits(axes, traits)
 
         fields = tuple(sorted(fields))
-        key = (axes, normalized_traits, fields)
+        key = (axes, orientations, normalized_traits, fields)
         return self.factory_construct(
             key,
-            lambda: GAType(axes, normalized_traits, fields),
+            lambda: GAType(axes, orientations, normalized_traits, fields),
         )
-
-    @lru_cache(maxsize=None)
-    def lift(self, subspace: SubSpace) -> GAType:
-        if not isinstance(subspace, SubSpace):
-            raise TypeError(
-                "GATypeFactory.lift requires one SubSpace; "
-                f"got {type(subspace).__name__}"
-            )
-        if subspace.algebra is not self.algebra:
-            raise ValueError("cannot lift a SubSpace from another algebra")
-        return self(subspace)
 
     @lru_cache(maxsize=None)
     def rotor(self) -> GAType:
         """Return the certified unit-versor refinement of even support."""
 
-        return self(self.algebra.subspace.even(), ROTOR_TRAITS)
+        return self.oriented((self.algebra.subspace.even(),), (Orientation.extrinsic,), ROTOR_TRAITS)
 
     motor = rotor
 
@@ -130,10 +138,12 @@ class GATypeFactory(FlyweightFactory[GAType]):
                 f"{type(self).__name__} has no attribute {name!r}"
             )
         constructor = getattr(subspace_factory, name)
+        intrinsic = name in subspace_factory.intrinsic_constructor_names
+        orientation = Orientation.intrinsic if intrinsic else Orientation.extrinsic
 
         @wraps(constructor)
         def lifted_constructor(*args: object, **kwargs: object) -> GAType:
-            return self.lift(constructor(*args, **kwargs))
+            return self.oriented((constructor(*args, **kwargs),), (orientation,))
 
         self.__dict__[name] = lifted_constructor
         return lifted_constructor

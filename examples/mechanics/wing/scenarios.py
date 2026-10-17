@@ -90,13 +90,17 @@ def main() -> None:
     next_idx = (np.arange(ANGLES) + 1) % ANGLES
     loops = ((flow.velocity + flow.velocity[:, next_idx]) / 2 * (flow.points[:, next_idx] - flow.points)).sum(axis=-1)
     np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
-    np.testing.assert_allclose((loops - core.circulation(pitched, stream()).dual()).kernel, 0.0, atol=1e-3)
+    # Each ring's own oriented area sets the sense its sum is read in.
+    areas = (flow.points ^ flow.points[:, next_idx]).sum(axis=-1)               # [rings] Bivector
+    np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, stream())).kernel, 0.0, atol=1e-3)
     # The pressure on the surface, half the density times the squared speed along the inward
     # normal, adds up to the Kutta–Joukowski lift, across the stream, with no drag.
     surface = core.flow(pitched, stream(), core.rings(pitched, 1, ANGLES, 1.0)[0], trailing_edge(pitched))
     steps = surface.points[next_idx] - surface.points                        # [angles] Vector
+    # The inward normal: each step turned a quarter turn back.
+    inward = (core.mv.xy * (np.pi / 4)).exp() >> steps                       # [angles] Vector
     speed_squared = surface.velocity | surface.velocity                      # [angles] Scalar
-    force = (0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * -steps.dual()).sum(axis=-1)
+    force = (0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * inward).sum(axis=-1)
     np.testing.assert_allclose((force - core.lift(pitched, stream(), DENSITY)).kernel, 0.0, atol=1e-3)
 
 

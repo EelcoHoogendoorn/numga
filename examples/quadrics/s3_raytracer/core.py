@@ -31,7 +31,7 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
-ScreenPoint = ga.gatype.from_blades("yzw zxw xyw")
+ScreenPoint = Point.derive.containing("w")
 ScreenConic = ga.gatype((ga.gatype.scalar(), ScreenPoint, ScreenPoint))
 ScreenPolar = ga.gatype((ga.gatype.scalar(), ScreenPoint))
 Plane = ga.gatype.vector()
@@ -46,18 +46,19 @@ def unit(points: Point) -> Point:
     return (points / (mv.w & points)).normalized().with_traits(Versor)
 
 
-origin = unit(mv.zyx)
+origin = unit(mv.w.dual())
 
 
 def direction(coords: np.ndarray) -> Point:
     """A point a quarter turn from the origin: the direction (x, y, z) seen from it."""
-    return (mv.yzw * coords[..., 0] + mv.zxw * coords[..., 1] + mv.xyw * coords[..., 2]).normalized()
+    return mv(ScreenPoint, coords).normalized()
 
 
 def pixel_chart(fov: float, shape: tuple[int, int]) -> ScreenPoint:
     """Homogeneous screen points (1, u, v) of a pinhole grid looking along +x from the origin."""
     v, u = np.meshgrid(np.linspace(1.0, -1.0, shape[0]) * shape[0] / shape[1], np.linspace(-1.0, 1.0, shape[1]), indexing="ij")
-    return mv.yzw + mv.zxw * (np.tan(fov / 2) * u.ravel()) + mv.xyw * (np.tan(fov / 2) * v.ravel())
+    axes = mv(ScreenPoint, np.eye(3))                                          # [3] ScreenPoint
+    return axes[0] + axes[1] * (np.tan(fov / 2) * u.ravel()) + axes[2] * (np.tan(fov / 2) * v.ravel())
 
 
 # --- math -----------------------------------------------------------------------------

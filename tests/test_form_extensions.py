@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, NumpyContext
 
 
@@ -17,7 +18,7 @@ def context(request):
 
 
 def form(context, first, second, matrix):
-    gatype = context.algebra.gatype((context.algebra.subspace.scalar(), first, second))
+    gatype = context.algebra.gatype((context.algebra.gatype.scalar(), first, second))
     return context.extensor(gatype, np.asarray(matrix)[..., None, :, :])
 
 
@@ -27,7 +28,7 @@ def test_forms_without_a_metric_use_the_slot_metric(context):
     their values are those of the Schur complement; det and trace need an invertible metric and
     say so; SVD pairs two covector slots, never."""
     ga = context.algebra
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     value = form(context, slot, slot, [[3.0, 1.0, 1.0], [1.0, 2.0, 0.0], [1.0, 0.0, 4.0]])
     metric = form(context, slot, slot, np.diag([1.0, 1.0, 0.0]))
     reduced = np.linalg.eigvalsh([[3.0 - 1.0 / 4.0, 1.0], [1.0, 2.0]])
@@ -53,7 +54,7 @@ def test_forms_without_a_metric_use_the_slot_metric(context):
 def test_forms_on_a_euclidean_slot_keep_the_plain_solver():
     ga = Algebra("x+y+z+")
     context = NumpyContext(ga)
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     matrix = np.array([[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
     value = form(context, slot, slot, matrix)
     np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], np.linalg.eigvalsh(matrix), atol=1e-12)
@@ -67,15 +68,15 @@ def test_form_eigenpairs_against_a_metric_align_slots_and_keep_singleton_batches
     pytest.importorskip("scipy")
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga, execution=execution)
-    vector = ga.subspace.vector()
+    vector = ga.gatype.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
     gram = np.diag([1.0, 2.0, 0.5])
     value = form(context, vector, vector, np.broadcast_to(matrix, (2, 1, 3, 3)))
     metric = form(context, vector, vector, gram)
-    first, second = ga.subspace("z -x y"), ga.subspace("-y z x")
+    first, second = ga.gatype(ga.subspace("z -x y"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("-y z x"), orientation=Orientation.extrinsic)
     changed = value.bind({0: ga.operator.identity(first), 1: ga.operator.identity(second)})
     values, vectors = getattr(changed, method)(metric)
-    assert vectors.axes == (second,)
+    assert vectors.axes == (second.output_subspace,)
     assert values.shape == vectors.shape == (2, 1, 3)
     coefficients = vectors.cast(vector).kernel
     np.testing.assert_allclose(np.einsum("ij,...kj->...ki", matrix, coefficients),
@@ -90,8 +91,8 @@ def test_signed_scalar_output_is_not_treated_as_positive():
     pytest.importorskip("scipy")
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga)
-    slot = ga.subspace("x")
-    value = context.extensor(ga.gatype((ga.subspace("-1"), slot, slot)), [[[[-3.0]]]])
+    slot = ga.gatype(ga.subspace("x"), orientation=Orientation.extrinsic)
+    value = context.extensor(ga.gatype((ga.gatype(ga.subspace("-1"), orientation=Orientation.extrinsic), slot, slot)), [[[[-3.0]]]])
     metric = form(context, slot, slot, [[1.0]])
     values, vectors = value.eigh(metric)
     assert values.shape == vectors.shape == (1, 1)
@@ -100,14 +101,14 @@ def test_signed_scalar_output_is_not_treated_as_positive():
 
 def test_form_cholesky_aligns_slots_and_preserves_batches(context):
     ga = context.algebra
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
     value = form(context, slot, slot, np.broadcast_to(matrix, (2, 1, 3, 3)))
-    first, second = ga.subspace("z -x y"), ga.subspace("-y z x")
+    first, second = ga.gatype(ga.subspace("z -x y"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("-y z x"), orientation=Orientation.extrinsic)
     changed = value.bind({0: ga.operator.identity(first), 1: ga.operator.identity(second)})
     factor = changed.cholesky()
     assert factor.shape == (2, 1)
-    assert factor.axes == (second, second)
+    assert factor.axes == (second.output_subspace, second.output_subspace)
     product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
     rebuilt = context.extensor(ga.gatype((second, second)), product)
     rebuilt = rebuilt(ga.operator.identity(slot)).cast(slot)
@@ -118,31 +119,31 @@ def test_form_cholesky_aligns_slots_and_preserves_batches(context):
 def test_form_solve_fills_the_first_slot(context):
     """value(x, y) == rhs(y) for every y; x lives in the form's first slot."""
     ga = context.algebra
-    first, second = ga.subspace.vector(), ga.subspace("xy yz")
+    first, second = ga.gatype.vector(), ga.gatype(ga.subspace("xy yz"), orientation=Orientation.extrinsic)
     matrix = np.array([[2.0, 1.0], [0.5, 3.0], [1.0, -1.0]])
     value = form(context, first, second, np.broadcast_to(matrix, (2, 1, 3, 2)))
-    target = context.extensor(ga.gatype((ga.subspace.scalar(), second)), np.array([[1.0, 2.0]]))
+    target = context.extensor(ga.gatype((ga.gatype.scalar(), second)), np.array([[1.0, 2.0]]))
     solution = value.lstsq(target)
-    assert solution.axes == (first,)
+    assert solution.axes == (first.output_subspace,)
     assert solution.shape == (2, 1)
     probe = context.extensor(second, [0.3, -0.7])
     np.testing.assert_allclose(value(solution, probe).kernel, np.broadcast_to(target(probe).kernel, (2, 1, 1)), atol=0.0002)
 
     square = form(context, second, second, np.broadcast_to([[2.0, 1.0], [1.0, 3.0]], (2, 1, 2, 2)))
     exact = square.solve(target)
-    assert exact.axes == (second,)
+    assert exact.axes == (second.output_subspace,)
     np.testing.assert_allclose(square(exact, probe).kernel, np.broadcast_to(target(probe).kernel, (2, 1, 1)), atol=2e-5)
 
 
 def test_form_solve_keeps_leading_rhs_slots_as_a_map(context):
     """Solving against a bilinear right-hand side yields a map on its leading slot."""
     ga = context.algebra
-    slot, extra = ga.subspace.vector(), ga.subspace("xy yz")
+    slot, extra = ga.gatype.vector(), ga.gatype(ga.subspace("xy yz"), orientation=Orientation.extrinsic)
     value = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
     rhs_matrix = np.random.default_rng(5).normal(size=(2, 3))
-    rhs = context.extensor(ga.gatype((ga.subspace.scalar(), extra, slot)), rhs_matrix[None])
+    rhs = context.extensor(ga.gatype((ga.gatype.scalar(), extra, slot)), rhs_matrix[None])
     solution = value.solve(rhs)
-    assert solution.axes == (slot, extra)
+    assert solution.axes == (slot.output_subspace, extra.output_subspace)
     e = context.extensor(extra, [1.0, -2.0])
     y = context.extensor(slot, [0.2, 0.4, -0.6])
     np.testing.assert_allclose(value(solution(e), y).kernel, rhs(e, y).kernel, atol=2e-5)
@@ -154,19 +155,19 @@ def test_form_lstsq_in_a_metric_leaves_no_gauge_component(context):
     right-hand side stay open."""
     pytest.importorskip("scipy")
     ga = context.algebra
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     curvature = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 0.0]])
     metric = form(context, slot, slot, [[2.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 2.0]])
     gauge = context.multivector.vector([0.0, 0.0, 1.0])
     rhs = curvature(context.multivector.vector([[1.0, 2.0, 3.0], [0.0, 1.0, -1.0]]))
     step = curvature.lstsq(rhs, metric, rcond=1e-5)
-    assert step.axes == (slot,) and step.shape == (2,)
+    assert step.axes == (slot.output_subspace,) and step.shape == (2,)
     np.testing.assert_allclose(curvature(step).kernel, rhs.kernel, atol=3e-4)
     np.testing.assert_allclose(metric(step, gauge).kernel, 0.0, atol=3e-4)
-    bivector = ga.subspace.bivector()
+    bivector = ga.gatype.bivector()
     response = context.extensor(ga.gatype((slot, bivector)), [[1.0, 0.0, 2.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
     solved = curvature.lstsq(curvature(response), metric, rcond=1e-5)
-    assert solved.axes == (slot, bivector)
+    assert solved.axes == (slot.output_subspace, bivector.output_subspace)
     np.testing.assert_allclose(curvature(solved).kernel, curvature(response).kernel, atol=3e-4)
     np.testing.assert_allclose(metric(solved, gauge).kernel, 0.0, atol=3e-4)
 
@@ -193,18 +194,18 @@ def test_generalized_hermitian_forms_broadcast_and_mass_normalize(dtype):
     pytest.importorskip("scipy")
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga, dtype=dtype)
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     a = np.array([[4, 1], [1, 2]], dtype=dtype)
     if np.dtype(dtype).kind == "c":
         a[0, 1], a[1, 0] = 1j, -1j
     b = np.diag([2, 3])
     elastic = form(ctx, slot, slot, a[None, None] * np.array([1, 2])[:, None, None, None])
     metric = form(ctx, slot, slot, b[None, None] * np.array([1, 2, 3])[None, :, None, None])
-    elastic = elastic.bind({0: ga.operator.identity(ga.subspace("y -x"))})
-    metric = metric.bind({1: ga.operator.identity(ga.subspace("-x y"))})
+    elastic = elastic.bind({0: ga.operator.identity(ga.gatype(ga.subspace("y -x"), orientation=Orientation.extrinsic))})
+    metric = metric.bind({1: ga.operator.identity(ga.gatype(ga.subspace("-x y"), orientation=Orientation.extrinsic))})
     values, vectors = elastic.eigh(metric)
     assert values.shape == vectors.shape == (2, 3, 2)
-    assert vectors.axes == (slot,)
+    assert vectors.axes == (slot.output_subspace,)
     v = vectors.kernel
     norm = np.einsum("...ki,ij,...lj->...kl", v.conj(), b, v) * np.array([1, 2, 3])[None, :, None, None]
     np.testing.assert_allclose(norm, np.broadcast_to(np.eye(2), (2, 3, 2, 2)), atol=1e-12)
@@ -218,12 +219,12 @@ def test_generalized_form_eig_leaves_infinite_modes_to_caller():
     pytest.importorskip("scipy")
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga)
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     value = form(ctx, slot, slot, np.diag([2, 3])[None, None])
     metric = form(ctx, slot, slot, np.diag([1, 0]))
     values, vectors = value.eig(metric)
     assert values.shape == vectors.shape == (1, 1, 2)
-    assert vectors.axes == (slot,)
+    assert vectors.axes == (slot.output_subspace,)
     assert np.isinf(values.kernel).sum() == 1
     finite = np.isfinite(values.kernel[..., 0])
     np.testing.assert_allclose(values.kernel[..., 0][finite], [2])

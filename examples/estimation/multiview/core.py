@@ -45,9 +45,8 @@ mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
-ideal = ga.subspace.from_masks(tuple(m for m in Point.output_subspace.masks if m & ga.subspace("w").masks[0]))
 # Ideal points: the weightless displacements of points.
-Direction = ga.gatype(ideal)
+Direction = Point.derive.degenerate
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
@@ -59,12 +58,6 @@ w = mv.w
 # Uncertainty that does not grow with depth, in units of depth: calibration, the extent of a point and
 # whatever else the cones leave out. Pixel noise grows with depth, and the two variances add.
 FLOOR = 0.1
-euclidean = ga.subspace.from_masks(tuple(m for m in Plane.output_subspace.masks if not m & w.gatype.output_subspace.masks[0]))
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at Euclidean coordinates: the dual of the homogeneous vector."""
-    return (mv(euclidean, coords) + w).dual()
 
 
 def sensor_disk(pixels: Point) -> Quadric:

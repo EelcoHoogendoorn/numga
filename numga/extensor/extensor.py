@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence, Su
 from numga.backend.context import binding_context
 from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, nullary_identity_groups
 from numga.extension import ExtensionMethod
-from numga.gatype import GAType, Trait
+from numga.gatype import GAType, Orientation, Trait
 from numga.subspace import SubSpace
 
 from .namespaces import RestrictNamespace, SelectNamespace, SitesNamespace
@@ -32,26 +32,26 @@ class Extensor:
     # object arrays of Extensors by NumPy's reflected arithmetic.
     __array_ufunc__ = None
     inverse = ExtensionMethod("inverse")
-    norm_squared = ExtensionMethod("norm_squared")
-    norm = ExtensionMethod("norm")
+    norm_squared = ExtensionMethod("norm_squared", output_orientation=Orientation.extrinsic)
+    norm = ExtensionMethod("norm", output_orientation=Orientation.extrinsic)
     normalized = ExtensionMethod("normalized")
-    square_root = ExtensionMethod("square_root")
-    inverse_square_root = ExtensionMethod("inverse_square_root")
-    study_norm_squared = ExtensionMethod("study_norm_squared")
-    study_norm = ExtensionMethod("study_norm")
-    exp = ExtensionMethod("exp")
-    log = ExtensionMethod("log")
-    exp_linear = ExtensionMethod("exp_linear")
-    exp_linear_normalized = ExtensionMethod("exp_linear_normalized")
-    exp_quadratic = ExtensionMethod("exp_quadratic")
-    exp_cayley = ExtensionMethod("exp_cayley")
-    exp_bisect = ExtensionMethod("exp_bisect")
+    square_root = ExtensionMethod("square_root", input_orientation=Orientation.extrinsic)
+    inverse_square_root = ExtensionMethod("inverse_square_root", input_orientation=Orientation.extrinsic)
+    study_norm_squared = ExtensionMethod("study_norm_squared", output_orientation=Orientation.extrinsic)
+    study_norm = ExtensionMethod("study_norm", output_orientation=Orientation.extrinsic)
+    exp = ExtensionMethod("exp", input_orientation=Orientation.extrinsic)
+    log = ExtensionMethod("log", input_orientation=Orientation.extrinsic)
+    exp_linear = ExtensionMethod("exp_linear", input_orientation=Orientation.extrinsic)
+    exp_linear_normalized = ExtensionMethod("exp_linear_normalized", input_orientation=Orientation.extrinsic)
+    exp_quadratic = ExtensionMethod("exp_quadratic", input_orientation=Orientation.extrinsic)
+    exp_cayley = ExtensionMethod("exp_cayley", input_orientation=Orientation.extrinsic)
+    exp_bisect = ExtensionMethod("exp_bisect", input_orientation=Orientation.extrinsic)
     exp_derivative = ExtensionMethod("exp_derivative")
-    log_linear = ExtensionMethod("log_linear")
-    log_linear_normalized = ExtensionMethod("log_linear_normalized")
-    log_quadratic = ExtensionMethod("log_quadratic")
-    log_pade = ExtensionMethod("log_pade")
-    square_root_denman_beavers = ExtensionMethod("square_root_denman_beavers")
+    log_linear = ExtensionMethod("log_linear", input_orientation=Orientation.extrinsic)
+    log_linear_normalized = ExtensionMethod("log_linear_normalized", input_orientation=Orientation.extrinsic)
+    log_quadratic = ExtensionMethod("log_quadratic", input_orientation=Orientation.extrinsic)
+    log_pade = ExtensionMethod("log_pade", input_orientation=Orientation.extrinsic)
+    square_root_denman_beavers = ExtensionMethod("square_root_denman_beavers", input_orientation=Orientation.extrinsic)
     geometric_mean = ExtensionMethod("geometric_mean")
     decompose_polar = ExtensionMethod("decompose_polar")
     decompose_invariant = ExtensionMethod("decompose_invariant")
@@ -79,16 +79,16 @@ class Extensor:
     svd = ExtensionMethod("svd")
     svdvals = ExtensionMethod("svdvals")
     sin = ExtensionMethod("sin")
-    cos = ExtensionMethod("cos")
+    cos = ExtensionMethod("cos", output_orientation=Orientation.extrinsic)
     tan = ExtensionMethod("tan")
     arcsin = ExtensionMethod("arcsin")
-    arccos = ExtensionMethod("arccos")
+    arccos = ExtensionMethod("arccos", input_orientation=Orientation.extrinsic)
     arctan = ExtensionMethod("arctan")
     sinh = ExtensionMethod("sinh")
-    cosh = ExtensionMethod("cosh")
+    cosh = ExtensionMethod("cosh", output_orientation=Orientation.extrinsic)
     tanh = ExtensionMethod("tanh")
     arcsinh = ExtensionMethod("arcsinh")
-    arccosh = ExtensionMethod("arccosh")
+    arccosh = ExtensionMethod("arccosh", input_orientation=Orientation.extrinsic)
     arctanh = ExtensionMethod("arctanh")
     clip = ExtensionMethod("clip")
     isnan = ExtensionMethod("isnan")
@@ -160,6 +160,12 @@ class Extensor:
     @property
     def subspace(self) -> SubSpace:
         return self.output_subspace
+
+    @property
+    def output_gatype(self) -> GAType:
+        """The nullary type of what this extensor produces, with its orientation: for an expression in
+        open types, the type its construction gives the result."""
+        return self.gatype.derive.output
 
     @property
     def input_subspaces(self) -> tuple[SubSpace, ...]:
@@ -405,14 +411,19 @@ class Extensor:
                     bound[slot] = operand
                     continue
                 space = operand.output_subspace if isinstance(operand, GAType) else operand
-                if space.same_support(self.input_subspaces[slot]):
+                if space.same_support(self.input_subspaces[slot]) and (
+                    isinstance(operand, SubSpace) or operand.orientation is self.gatype.input_orientations[slot]
+                ):
                     continue
                 if space not in self.input_subspaces[slot]:
                     raise TypeError(
                         f"slot {slot} takes {self.input_subspaces[slot]}; {space} is not inside it, "
                         "so a cast must say what is projected away"
                     )
-                bound[slot] = self.algebra.operator.identity(space)
+                bound[slot] = self.algebra.operator.identity(
+                    operand if isinstance(operand, GAType)
+                    else self.algebra.gatype.oriented((space,), (self.gatype.input_orientations[slot],))
+                )
             return self.bind(bound)
         if len(operands) < self.arity:
             return self.bind(*operands)
@@ -456,10 +467,14 @@ class Extensor:
         """
 
         target_subspace = target.output_subspace if isinstance(target, GAType) else target
+        if isinstance(target, GAType) and target.orientation is not self.gatype.orientation:
+            raise ValueError(
+                f"a cast changes layout, not orientation: {self.gatype.signature} cannot become {target.signature}"
+            )
         if self.output_subspace is target_subspace:
             return self
         return self.algebra.operator.cast(
-            self.output_subspace, target_subspace,
+            self.gatype.derive.output, target_subspace,
         ).bind({0: self})
 
     @property
@@ -489,7 +504,7 @@ class Extensor:
         """Keep only output blades present in both static SubSpaces."""
 
         return self.algebra.operator.restrict(
-            self.output_subspace, subspace,
+            self.gatype.derive.output, subspace,
         ).bind({0: self})
 
     def select_grade(self, grade: int) -> "Extensor":
@@ -547,7 +562,7 @@ class Extensor:
         if self.gatype.grade_transform_is_identity(transform):
             return self
         result = self.algebra.operator._grade_transform(
-            self.output_subspace, transform,
+            self.gatype.derive.plain.derive.output, transform,
         ).bind({0: self})
         gatype = _with_fields(TypeRules.operation(
             transform,
@@ -564,10 +579,10 @@ class Extensor:
         return self._grade_transform("reverse")
 
     def dual(self) -> Extensor:
-        return self.algebra.operator.dual(self.subspace)(self)
+        return self.algebra.operator.dual(self.gatype.derive.plain.derive.output)(self)
 
     def dual_inverse(self) -> Extensor:
-        return self.algebra.operator.dual_inverse(self.subspace)(self)
+        return self.algebra.operator.dual_inverse(self.gatype.derive.plain.derive.output)(self)
 
     def clifford_conjugate(self) -> "Extensor":
         """Clifford-conjugate outputs, leaving complex coefficients unchanged."""
@@ -612,8 +627,9 @@ class Extensor:
             if self.arity:
                 raise TypeError("scalar addition requires a nullary Extensor")
             scalar = self.context.prepare_scalar(other)
+            # A plain number is an ordinary number, unchanged by any mirror: extrinsic.
             other = type(self)._from_prepared_kernel(
-                self.context, self.algebra.subspace.scalar().canonical.gatype,
+                self.context, self.algebra.gatype.scalar(),
                 self.context.scalar_kernel(scalar),
             )
         if _is_array(other):
@@ -889,7 +905,7 @@ def _is_array(value: object) -> bool:
 
 
 def _promote_identity(value: object) -> object:
-    """A bare SubSpace or nullary GAType in linear arithmetic is the identity map on it.
+    """A nullary GAType in linear arithmetic is the identity map on it.
 
     This is the same reading an open slot has in an expression: the slot left alone maps
     every element to itself.
@@ -898,11 +914,12 @@ def _promote_identity(value: object) -> object:
     from numga.subspace import SubSpace
 
     if isinstance(value, SubSpace):
-        return value.algebra.operator.identity(value)
+        raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)")
     if isinstance(value, GAType):
         if value.arity:
             raise TypeError("only a nullary GAType promotes to an identity map")
-        return value.algebra.operator.identity(value.output_subspace)
+        return value.algebra.operator.identity(value)
     return value
 
 

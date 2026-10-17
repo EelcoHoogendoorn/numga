@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.animation import capture
-from examples.optics.thin_lens.core import Line, LineMap, Point, ga, mv
+from examples.optics.thin_lens.core import Line, LineMap, Plane, Point, ga, mv
 
 POINT_LAYOUT = ga.subspace("yw wx xy")
 LINE_LAYOUT = ga.subspace("x y w")
@@ -39,13 +39,13 @@ def draw_rays(ax, rays: Line, start: Line, stop: Line, color: str) -> None:
     segments(ax, xy(rays ^ start), xy(rays ^ stop), color)
 
 
-def draw_plane(ax, plane: Line, half_height: float) -> None:
+def draw_plane(ax, plane: Plane, half_height: float) -> None:
     """Draw an element's plane between the lines y == -half_height and y == half_height."""
     a, b = xy(plane ^ (mv.y + mv.w * half_height)), xy(plane ^ (mv.y - mv.w * half_height))
     ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")
 
 
-def draw_lenses(one_lens: list, one_planes: list[Line], two_lenses: list, two_planes: list[Line]) -> plt.Figure:
+def draw_lenses(one_lens: list, one_planes: list[Plane], two_lenses: list, two_planes: list[Plane]) -> plt.Figure:
     """One lens imaging a point, and two lenses focusing parallel rays."""
     fig, axes = plt.subplots(2, 1, figsize=(8, 6), dpi=120, sharex=True)
     systems = ((one_lens, one_planes, ("tab:orange", "tab:blue"), "one thin lens"),
@@ -60,7 +60,7 @@ def draw_lenses(one_lens: list, one_planes: list[Line], two_lenses: list, two_pl
     return fig
 
 
-def draw_scene(ax, subject: Point, planes: Line, legs: Line, train: LineMap, picture: Point) -> None:
+def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap, picture: Point) -> None:
     """Draw the bundle leg by leg between the element planes, then onward along its direction of travel.
 
     A line has no direction of travel, so the last leg follows a handedness that flips once per

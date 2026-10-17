@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from numga import Orientation
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA3D
 from numga.extensions.optimized import PrincipalInertiaPGA3, principal_inertia_pga3
@@ -11,15 +12,17 @@ def test_principal_inertia_behaves_as_its_dense_map():
     context, rng = NumpyContext(PGA3D), np.random.default_rng(0)
     mv = context.multivector
     mass = mv.scalar(rng.uniform(1, 2, size=(50, 1)))
-    moments = mv(PGA3D.subspace("yz zx xy"), rng.uniform(1, 2, size=(50, 3)))
+    moments = mv(PGA3D.gatype(PGA3D.subspace("yz zx xy"), orientation=Orientation.extrinsic), rng.uniform(1, 2, size=(50, 3)))
     inertia = principal_inertia_pga3(mass, moments)
     dense = Extensor(context, inertia.gatype, inertia.kernel.copy())
     rate = mv.bivector(rng.normal(size=(50, 6)))
+    momentum = dense(rate)
     motor = mv.bivector(rng.normal(size=(50, 6))).exp()
 
     assert isinstance(inertia, Extensor) and isinstance(inertia.inverse(), PrincipalInertiaPGA3)
-    np.testing.assert_allclose(inertia(rate).kernel, dense(rate).kernel)
-    np.testing.assert_allclose(inertia.inverse()(rate).kernel, dense.inverse()(rate).kernel, atol=1e-12)
+    np.testing.assert_allclose(inertia(rate).kernel, momentum.kernel)
+    assert inertia(rate).gatype == momentum.gatype
+    np.testing.assert_allclose(inertia.inverse()(momentum).kernel, dense.inverse()(momentum).kernel, atol=1e-12)
     np.testing.assert_allclose(inertia.inverse()(inertia(rate)).kernel, rate.kernel, atol=1e-12)
     np.testing.assert_allclose((motor >> inertia).kernel, (motor >> dense).kernel, atol=1e-12)
     np.testing.assert_allclose(inertia.solve(inertia(rate)).kernel, rate.kernel, atol=1e-12)
@@ -32,5 +35,5 @@ def test_principal_inertia_matches_six_unit_masses():
     mv = NumpyContext(PGA3D).multivector
     points = mv.antivector([[1, 0, 0, 1], [-1, 0, 0, 1], [0, 1, 0, 1], [0, -1, 0, 1], [0, 0, 1, 1], [0, 0, -1, 1]])
     cloud = (points & points.commutator(PGA3D.gatype.bivector())).sum(axis=0)
-    inertia = principal_inertia_pga3(mv.scalar([6.0]), mv(PGA3D.subspace("yz zx xy"), [4.0, 4.0, 4.0]))
+    inertia = principal_inertia_pga3(mv.scalar([6.0]), mv(PGA3D.gatype(PGA3D.subspace("yz zx xy"), orientation=Orientation.extrinsic), [4.0, 4.0, 4.0]))
     np.testing.assert_allclose(inertia.kernel, cloud.kernel)

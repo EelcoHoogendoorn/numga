@@ -23,7 +23,7 @@ def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float,
     offsets = np.linspace(-extent, extent, pixels)
     screen = centre + offsets[None, :, None] * right + offsets[::-1, None, None] * up + 20 * extent * back
     lamp = back - 0.3 * right + 0.8 * up
-    return core.point(screen), mv(Direction, -back), lamp / np.linalg.norm(lamp)
+    return core.mv.point(screen), mv(Direction, -back), lamp / np.linalg.norm(lamp)
 
 
 def hits(surface: Quadric, origins: Point, heading: Direction) -> tuple[np.ndarray, Point]:

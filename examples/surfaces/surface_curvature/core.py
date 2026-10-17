@@ -26,14 +26,13 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 # The directions: tangent vectors.
-Direction = ga.gatype(ga.subspace.antivector().degenerate())
+Direction = Point.derive.degenerate
 # A polarity: each point to its polar plane.
 Quadric = ga.gatype((Plane, Point))                # Plane <- Point
 Form = ga.gatype((Scalar, Direction, Direction))
 
 # The coordinate planes, and the plane at infinity.
-euclidean = ga.subspace("x y z")
-axes = mv(euclidean, np.eye(3))                    # [3] Plane
+axes = mv(Plane.derive.nondegenerate, np.eye(3))  # [3] Plane
 w = mv.w                                           # [] Plane
 
 # A direction's dual is the plane through the origin it is normal to; the inner product of those
@@ -42,16 +41,6 @@ metric = Direction.dual() | Direction.dual()       # [] Scalar <- (Direction, Di
 
 
 # --- plumbing ------------------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Finite points at Euclidean coordinates, shape (..., 3)."""
-    return (mv(euclidean, coords) + w).dual()
-
-
-def direction(coords: np.ndarray) -> Direction:
-    """Directions with Euclidean components, shape (..., 3)."""
-    return mv(euclidean, coords).dual()
-
-
 def view_rays(elevation: float, azimuth: float, extent: float, pixels: int) -> tuple[Point, Direction]:
     """An orthographic camera: one ray origin per pixel, far out along the view, and their heading.
     The camera looks along -x with y to its right and z up, turned up toward z by the elevation and
@@ -60,7 +49,7 @@ def view_rays(elevation: float, azimuth: float, extent: float, pixels: int) -> t
     s = np.linspace(-extent, extent, pixels)
     # Behind the scene along x, across it along y, and up along z.
     screen = np.stack(np.broadcast_arrays(10 * extent, s[None, :], s[::-1, None]), axis=-1)
-    return turn >> point(screen), turn >> -mv.x.dual()
+    return turn >> mv.point(screen), turn >> -mv.x.dual()
 
 
 def pair(values: Scalar) -> Scalar:

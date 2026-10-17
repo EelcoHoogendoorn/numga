@@ -40,7 +40,7 @@ def test_general_inverse_of_a_mixed_multivector_is_two_sided(signature):
 def test_non_square_and_singular_maps_fail_without_pseudoinverse():
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
-    scalar, vector = algebra.subspace.scalar(), algebra.subspace.vector()
+    scalar, vector = algebra.gatype.scalar(), algebra.gatype.vector()
     nonsquare = context.extensor(algebra.gatype((scalar, vector)), [[1, 2]])
     with pytest.raises(LookupError, match="no .* implementation"):
         nonsquare.inverse()
@@ -52,10 +52,10 @@ def test_non_square_and_singular_maps_fail_without_pseudoinverse():
 @pytest.mark.parametrize("grade", [2, 3])
 def test_5d_grade_inverses_keep_their_narrow_carriers(grade):
     algebra = Algebra((5, 0, 0))
-    space = algebra.subspace.k_vector(grade)
+    space = algebra.gatype.k_vector(grade)
     value = algebra.exact.extensor(space, [3, 1, -2, 4, 0, 1, -1, 2, -3, 1])
     inverse = value.inverse()
-    assert inverse.subspace is space
+    assert inverse.subspace is space.output_subspace
     for product in (value * inverse, inverse * value):
         expected = [1] + [0] * (len(product.subspace) - 1)
         np.testing.assert_allclose(product.kernel.values, expected, atol=1e-14)

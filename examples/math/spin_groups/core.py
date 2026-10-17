@@ -46,7 +46,7 @@ POSITIVE, NEGATIVE = "xyzwvu", "tsr"
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 # The four Euclidean directions of the isoclinic rotations.
-Euclidean = ga.gatype(ga.subspace("x y z w"))
+Euclidean = Vector.derive.within("x y z w")
 
 
 # --- math -----------------------------------------------------------------------------
@@ -76,17 +76,18 @@ def stereographic(points: Extensor) -> Extensor:
 
 
 def linking(first: Extensor, second: Extensor) -> Extensor:
-    """Gauss's linking number of two closed polygons in the space of x y z: the volume each pair of
-    segments spans with the line between them, over the cube of its length, summed and divided by
-    four pi."""
+    """Gauss's linking number of two closed polygons in the space of x y z, as a volume: the volume
+    each pair of segments spans with the line between them, over the cube of its length, summed and
+    divided by four pi. It is a whole number of unit volumes, oriented by the sense in which the
+    polygons link; their mirror images link the other way."""
     step_first = first[1:] - first[:-1]                                          # [n] Euclidean
     step_second = second[1:] - second[:-1]                                       # [m] Euclidean
     middle_first = 0.5 * (first[1:] + first[:-1])                                # [n] Euclidean
     middle_second = 0.5 * (second[1:] + second[:-1])                             # [m] Euclidean
     separation = middle_first[:, None] - middle_second[None, :]                  # [n, m] Euclidean
-    # The trivector the separation spans with the two segments, measured against the unit volume xyz.
-    volume = (separation ^ step_first[:, None] ^ step_second[None, :]) | mv.xyz.inverse()   # [n, m] Scalar
-    return (volume / (separation | separation).square_root() ** 3).sum() / (4 * np.pi)   # [] Scalar
+    # The trivector the separation spans with the two segments.
+    volume = separation ^ step_first[:, None] ^ step_second[None, :]             # [n, m] Trivector
+    return (volume / (separation | separation).square_root() ** 3).sum() / (4 * np.pi)   # [] Trivector
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -94,9 +95,8 @@ def signature(p: int, q: int) -> tuple[GAType, GAType, Extensor, Extensor]:
     """The first p positive and q negative directions: their bivectors and even multivectors as
     types, the product of the positive ones, and their pseudoscalar."""
     names = POSITIVE[:p] + NEGATIVE[:q]
-    closure = ga.gatype(ga.subspace(" ".join(names))).derive.minimal_subalgebra.output_subspace
-    Bivector = ga.gatype(closure.intersection(ga.subspace.bivector()))
-    Even = ga.gatype(closure.intersection(ga.subspace.even()))
+    Bivector = ga.gatype.bivector().derive.within(" ".join(names))
+    Even = ga.gatype.even().derive.within(" ".join(names))
     one = mv.scalar([1.0])
     positives = reduce(lambda product, name: product * getattr(mv, name), POSITIVE[:p], one)
     pseudoscalar = reduce(lambda product, name: product * getattr(mv, name), names, one)

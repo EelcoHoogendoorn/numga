@@ -16,7 +16,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
 from examples.animation import capture
-from examples.geometry.scenegraph.core import Motor, Point, ga, point, unit_box_topology
+from examples.geometry.scenegraph.core import Motor, Point, ga, mv, unit_box_topology
 
 
 # Colors for the robot arm bodies:
@@ -77,13 +77,13 @@ def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: t
     theta = np.linspace(0, 2 * np.pi, 36)
     ring = np.stack([np.cos(theta), np.sin(theta), np.zeros_like(theta)], axis=-1)
     # The front lens rim, radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3:
-    front_ring = euclidean(camera_pose >> point(ring * 0.3))                       # [theta, 3]
-    rear_ring = euclidean(camera_pose >> point(ring * 0.25 + [0.0, 0.0, -0.3]))   # [theta, 3]
+    front_ring = euclidean(camera_pose >> mv.point(ring * 0.3))                    # [theta, 3]
+    rear_ring = euclidean(camera_pose >> mv.point(ring * 0.25 + [0.0, 0.0, -0.3]))  # [theta, 3]
     ax.plot3D(front_ring[:, 0], front_ring[:, 1], front_ring[:, 2], color="#319795", linewidth=2.0, zorder=3)
     ax.plot3D(rear_ring[:, 0], rear_ring[:, 1], rear_ring[:, 2], color="#805AD5", linewidth=2.0, zorder=3)
 
     # Sensor plane rectangle matching the physical 1.6 x 1.2 sensor chip at z == -1.25:
-    sensor = euclidean(camera_pose >> point(np.array([
+    sensor = euclidean(camera_pose >> mv.point(np.array([
         [-0.8, -0.6, -1.25],
         [ 0.8, -0.6, -1.25],
         [ 0.8,  0.6, -1.25],

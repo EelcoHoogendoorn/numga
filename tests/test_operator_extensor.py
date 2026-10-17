@@ -8,7 +8,7 @@ import pytest
 from numga.algebra import Algebra
 from numga.backend import NumpyContext
 from numga.extensor import Extensor
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
 from numga.operator import SymbolicKernel
 
 
@@ -18,10 +18,11 @@ def test_operator_and_extensor_shapes_are_output_first():
     output = spaces.vector()
     first = spaces.scalar()
     second = spaces.even()
-    gatype = GAType((output, first, second))
+    extrinsic = (Orientation.extrinsic,) * 3
+    gatype = GAType((output, first, second), extrinsic)
     coefficients = np.arange(12).reshape(3, 1, 4)
 
-    operator = algebra.operator.build((output, first, second), coefficients)
+    operator = algebra.operator.build((output, first, second), extrinsic, coefficients)
     extensor = NumpyContext(algebra).extensor(
         gatype, np.broadcast_to(coefficients, (5, 3, 1, 4))
     )
@@ -35,7 +36,7 @@ def test_operator_and_extensor_shapes_are_output_first():
 
     with pytest.raises(ValueError, match="structural shape"):
         algebra.operator.build(
-            (output, first, second), np.zeros((1, 4, 3), dtype=int)
+            (output, first, second), extrinsic, np.zeros((1, 4, 3), dtype=int)
         )
 
 
@@ -53,8 +54,8 @@ def test_exact_commutator_and_regressive_sign_conventions():
     yw = blade("yw")
     w = blade("w")
 
-    xy_commutator = algebra.gatype(x).commutator(y)
-    yx_commutator = algebra.gatype(y).commutator(x)
+    xy_commutator = algebra.gatype(x, orientation=Orientation.extrinsic).commutator(algebra.gatype(y, orientation=Orientation.extrinsic))
+    yx_commutator = algebra.gatype(y, orientation=Orientation.extrinsic).commutator(algebra.gatype(x, orientation=Orientation.extrinsic))
     assert xy_commutator.axes == (xy, x, y)
     assert yx_commutator.axes == (xy, y, x)
     assert xy_commutator.kernel.values.tolist() == [[[Fraction(1)]]]
@@ -62,13 +63,16 @@ def test_exact_commutator_and_regressive_sign_conventions():
 
     # This fixes the right-Hodge signs in a signature containing both a
     # negative generator and a null generator.
-    regressive = algebra.gatype(xw).regressive(yw)
+    # xw and yw are points of the plane, joined into the line w.
+    regressive = algebra.gatype(xw, orientation=Orientation.intrinsic).regressive(algebra.gatype(yw, orientation=Orientation.intrinsic))
     assert regressive.axes == (w, xw, yw)
     assert regressive.kernel.values.tolist() == [[[Fraction(-1)]]]
 
-    # GAType and SubSpace holes select the same cached exact implementation.
-    assert algebra.gatype(x).commutator(algebra.gatype(y)) is xy_commutator
-    assert algebra.gatype(xw).regressive(yw) is regressive
+    # A SubSpace has no orientation and is refused as an operand.
+    with pytest.raises(TypeError):
+        algebra.gatype(x, orientation=Orientation.extrinsic).commutator(y)
+    with pytest.raises(TypeError):
+        algebra.gatype(xw, orientation=Orientation.intrinsic).regressive(yw)
 
 
 def test_positive_arity_operand_inputs_are_spliced_at_the_bound_slot():
@@ -83,9 +87,9 @@ def test_positive_arity_operand_inputs_are_spliced_at_the_bound_slot():
 
     target_values = np.arange(3 * 3 * 8).reshape(3, 3, 8)
     operand_values = np.arange(3 * 1 * 4).reshape(3, 1, 4)
-    target = factory.build((output, replaced, untouched), target_values)
+    target = factory.build((output, replaced, untouched), (Orientation.extrinsic,) * 3, target_values)
     operand = factory.build(
-        (replaced, inserted_first, inserted_second), operand_values
+        (replaced, inserted_first, inserted_second), (Orientation.extrinsic,) * 3, operand_values
     )
 
     exact = target.bind({0: operand})
@@ -127,19 +131,19 @@ def test_implicit_embedding_and_explicit_casts_have_clear_zero_fill_semantics():
     spaces = algebra.subspace
     factory = algebra.operator
     context = NumpyContext(algebra)
-    vector = spaces.vector()
-    x_axis = spaces.from_masks((algebra.parse_blade("x").blade,))
+    vector = algebra.gatype.vector()
+    x_axis = algebra.gatype(spaces.from_masks((algebra.parse_blade("x").blade,)), orientation=Orientation.extrinsic)
     x = context.extensor(x_axis, [5])
     general_vector = context.extensor(vector, [5, 7, 11])
 
     implicit = factory.identity(vector).bind(x)
-    embedded = factory.cast(x_axis, vector).bind(x)
-    projected = factory.cast(vector, x_axis).bind(general_vector)
+    embedded = factory.cast(x_axis, vector.output_subspace).bind(x)
+    projected = factory.cast(vector, x_axis.output_subspace).bind(general_vector)
 
-    assert implicit.subspace is vector
+    assert implicit.gatype is vector
     np.testing.assert_array_equal(implicit.kernel, [5, 0, 0])
     np.testing.assert_array_equal(embedded.kernel, [5, 0, 0])
-    assert projected.subspace is x_axis
+    assert projected.gatype is x_axis
     np.testing.assert_array_equal(projected.kernel, [5])
 
     with pytest.raises(ValueError, match="project"):
@@ -148,10 +152,9 @@ def test_implicit_embedding_and_explicit_casts_have_clear_zero_fill_semantics():
 
 def test_numpy_operations_broadcast_all_batch_shape_axes():
     algebra = Algebra("x+y+")
-    spaces = algebra.subspace
     factory = algebra.operator
     context = NumpyContext(algebra)
-    even = spaces.even()
+    even = algebra.gatype.even()
     product = factory.geometric_product(even, even)
     left_values = np.asarray([[[1, 2]], [[3, 4]]], dtype=float)
     right_values = np.asarray([[[5, 6], [7, 8], [9, 10]]], dtype=float)
@@ -213,7 +216,7 @@ def test_numpy_operations_broadcast_all_batch_shape_axes():
 def test_exact_kernel_has_empty_shape_and_broadcasts_as_a_batch_constant():
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
-    even = algebra.subspace.even()
+    even = algebra.gatype.even()
     identity = algebra.operator.identity(even)
     coefficients = np.arange(24, dtype=float).reshape(2, 3, 2, 2)
     matrices = context.extensor(identity.gatype, coefficients)
@@ -235,9 +238,9 @@ def test_exact_kernel_has_empty_shape_and_broadcasts_as_a_batch_constant():
 def test_extensor_addition_unions_structural_axes_and_broadcasts_shape():
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
-    scalar = algebra.subspace.scalar()
-    vector = algebra.subspace.vector()
-    scalar_vector = scalar.union(vector)
+    scalar = algebra.gatype.scalar()
+    vector = algebra.gatype.vector()
+    scalar_vector = scalar.output_subspace.union(vector.output_subspace)
 
     exact = algebra.operator.identity(scalar) + algebra.operator.identity(vector)
     assert exact.context is algebra.exact
@@ -298,8 +301,7 @@ def test_at_add_accumulates_where_the_index_repeats():
 
 def test_numpy_context_rejects_lossy_numeric_kind_changes():
     algebra = Algebra("x+y+")
-    spaces = algebra.subspace
-    value = NumpyContext(algebra).extensor(spaces.even(), [1, 2])
+    value = NumpyContext(algebra).extensor(algebra.gatype.even(), [1, 2])
 
     np.testing.assert_allclose(
         (2 * value).kernel,

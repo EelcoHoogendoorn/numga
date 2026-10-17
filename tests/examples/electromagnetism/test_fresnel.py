@@ -10,10 +10,10 @@ def test_vacuum_quartic_and_observer_independence():
     reluctivity = np.array(1.0)
     medium = core.dielectric(permittivity, reluctivity)
     wavevectors = core.mv.vector([[2, 0.3, 0.4, -0.2], [1, 0, 0, 1], [0.8, 1.1, -0.2, 0.3]])
-    observer = (core.mv.tx * 0.23).exp() >> core.mv.t
+    moving = (core.mv.tx * 0.23).exp() >> core.mv.xyz
     expected = wavevectors.squared().squared()
-    for frame in (core.mv.t, observer):
-        actual = core.polynomial(medium, frame, wavevectors)
+    for rest_space in (core.mv.xyz, moving):
+        actual = core.polynomial(medium, rest_space, wavevectors)
         np.testing.assert_allclose((actual - expected).kernel, 0, atol=1e-10)
     wave = core.potential_map(medium, wavevectors)
     np.testing.assert_allclose(wave(wavevectors).kernel, 0, atol=1e-12)
@@ -42,13 +42,13 @@ def test_both_sheets_support_maxwell_fields_and_transform_with_the_medium():
     _, _, potentials = wave.svd()
     fields = wavevectors[..., None] ^ potentials[..., -2:]
     source = wavevectors[..., None] ^ media[..., None](fields)
-    residual = core.polynomial(media, core.mv.t, wavevectors)
-    adjugate = wave.outermorphism(core.Antivector).adjugate()
+    residual = core.polynomial(media, core.mv.xyz, wavevectors)
+    adjugate = wave.outermorphism(core.Trivector).adjugate()
 
     rotor = (core.mv.tx * 0.19 + core.mv.yz * 0.13).exp()
     moved_media = rotor >> media(rotor << core.Bivector)
     moved_wavevectors = rotor >> wavevectors
-    moved_residual = core.polynomial(moved_media, rotor >> core.mv.t, moved_wavevectors)
+    moved_residual = core.polynomial(moved_media, rotor >> core.mv.xyz, moved_wavevectors)
 
     np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
     np.testing.assert_allclose(adjugate.kernel, 0, atol=1e-9)

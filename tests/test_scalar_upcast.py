@@ -30,7 +30,7 @@ def test_arrays_scale_offset_and_divide_as_batch_scalars():
 
 
 def test_arrays_scale_maps_and_broadcast_against_batches():
-    P = PGA2D.subspace.antivector()
+    P = PGA2D.gatype.antivector()
     motion = (mv.xy * 0.3).exp()
     scaled_map = (motion >> P) * weights
     assert scaled_map.arity == 1 and scaled_map.shape == (5,)

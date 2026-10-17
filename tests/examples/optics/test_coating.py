@@ -152,7 +152,7 @@ def test_anisotropic_chi_reconstruction_satisfies_full_maxwell_and_rotates_covar
     frame_turn = (0.31 * core.mv.xy).exp()
     parallel = core.mv.t + 0.4 * core.mv.x + 0.1 * core.mv.y
     base = core.dielectric(permittivity, reluctivity)
-    chi = (material_turn >> base(material_turn << core.Bivector)) + axion * core.Bivector
+    chi = (material_turn >> base(material_turn << core.Bivector)) + core.mv(core.AxionCoupling, [axion]) * core.Bivector
 
     medium = core.Medium.from_chi(chi, parallel)
     indices, modes = medium.generator.eig()
@@ -177,7 +177,7 @@ def test_axion_jump_changes_interfaces_without_changing_bulk_wave_indices():
     common_axion = 0.43
     parallel = core.mv.t
     base = core.dielectric(np.full(3, index**2), np.array(1.0))
-    axion_map = core.mv.scalar(axion_jump[:, None]) * core.Bivector
+    axion_map = core.mv(core.AxionCoupling, axion_jump[:, None]) * core.Bivector
     incident_medium = core.Medium.from_chi(base, parallel)
     substrate_medium = core.Medium.from_chi(base + axion_map, parallel)
     incident = core.Ports.from_medium(incident_medium, index, parallel)
@@ -187,7 +187,7 @@ def test_axion_jump_changes_interfaces_without_changing_bulk_wave_indices():
     denominator = 4 * index**2 + axion_jump**2
     reflected = core.mv.x * (-axion_jump**2 / denominator) + core.mv.y * (2 * index * axion_jump / denominator)
     reflectance, transmittance = result.powers(core.mv.x, incident, substrate)
-    shifted_base = base + common_axion * core.Bivector
+    shifted_base = base + core.mv(core.AxionCoupling, [common_axion]) * core.Bivector
     shifted_incident = core.Ports.from_medium(core.Medium.from_chi(shifted_base, parallel), index, parallel)
     shifted_substrate = core.Ports.from_medium(core.Medium.from_chi(shifted_base + axion_map, parallel), index, parallel)
     shifted = core.scatter(shifted_substrate.outgoing, shifted_incident)
@@ -256,9 +256,10 @@ def test_interior_fields_match_every_interface_and_conserve_normal_power():
     polarizations = stack([(core.mv.x + 1j * core.mv.y) / np.sqrt(2),
                            (core.mv.x - 1j * core.mv.y) / np.sqrt(2)])
     normal = core.mv.z.real()
-    spatial_volume = core.mv.xyz.real()
+    # The observer's rest space as the dual of its time direction, oriented as the excitation is.
+    spatial_volume = core.mv.t.dual().real()
     base = core.dielectric(permittivities, reluctivities)
-    chi = (rotations >> base(rotations << core.Bivector)) + core.mv.scalar(axions[:, None]) * core.Bivector
+    chi = (rotations >> base(rotations << core.Bivector)) + core.mv(core.AxionCoupling, axions[:, None]) * core.Bivector
     incident_chi = core.dielectric(np.full(3, incident_index**2), np.array(1.0))
     substrate_chi = core.dielectric(np.full(3, substrate_index**2), np.array(1.0))
 

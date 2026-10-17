@@ -7,7 +7,7 @@ import numpy as np
 
 from examples.geometry.fitting import render, scenarios
 from examples.geometry.fitting.core import (
-    Line, Plane, Point, bundle, cloud, ctx, fit, ga, jitter, end_planes, mv, patch, point, segment,
+    Line, Plane, Point, bundle, cloud, ctx, fit, jitter, end_planes, mv, patch, segment,
 )
 from examples.geometry.fitting.render import euclidean
 
@@ -23,7 +23,7 @@ def same_element(a, b, atol: float) -> bool:
 def test_unit_forms_are_degenerate_on_the_free_coefficients():
     ranks = {}
     for name, Unknown in (("point", Point), ("line", Line), ("plane", Plane)):
-        unit = ga.operator.reverse(Unknown.output_subspace) | Unknown
+        unit = Unknown.scalar_norm_squared()
         ranks[name] = np.linalg.matrix_rank(np.asarray(ctx.lower(unit).kernel).squeeze())
     assert ranks == {"point": 1, "line": 3, "plane": 3}
 
@@ -65,13 +65,13 @@ def test_plane_fit_matches_svd_normal_through_centroid():
     n = plane.kernel[:3]
     n = n / np.linalg.norm(n)
     assert np.isclose(abs(n @ vt[-1]), 1.0, atol=1e-6)
-    np.testing.assert_allclose(point(xyz.mean(axis=0)).regressive(plane).kernel, 0.0, atol=1e-10)
+    np.testing.assert_allclose(mv.point(xyz.mean(axis=0)).regressive(plane).kernel, 0.0, atol=1e-10)
 
 
 def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     rng = np.random.default_rng(5)
     exact = POSE >> bundle(20, 0.0, rng)
-    assert same_element(fit(Point, exact), POSE >> mv.xyz, atol=1e-10)
+    assert same_element(fit(Point, exact), POSE >> mv.w.dual(), atol=1e-10)
 
     rays = POSE >> bundle(40, 0.05, rng)
     meet = fit(Point, rays)

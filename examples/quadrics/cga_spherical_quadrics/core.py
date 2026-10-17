@@ -24,12 +24,8 @@ Quadric = ga.gatype((Plane, Vector))
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 
-# Dual basis planes: the basis vectors times the pseudoscalar I
-I = mv.xyzw
-px = (mv.x * I).cast(Plane.output_subspace)
-py = (mv.y * I).cast(Plane.output_subspace)
-pz = (mv.z * I).cast(Plane.output_subspace)
-pw = (-mv.w * I).cast(Plane.output_subspace)
+# Dual basis planes: the duals of the basis vectors
+px, py, pz, pw = mv.x.dual(), mv.y.dual(), mv.z.dual(), -mv.w.dual()
 p_wz = pw - pz
 
 

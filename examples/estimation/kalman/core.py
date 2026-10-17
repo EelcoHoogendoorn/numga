@@ -26,7 +26,7 @@ Point = ga.gatype.antivector()
 Motor = ga.gatype.rotor()
 Bivector = ga.gatype.bivector()
 Scalar = ga.gatype.scalar()
-Line = ga.gatype.vector()
+Line = ga.gatype.antibivector()
 # A linear readout of a twist is a line; the covariance takes it to the correlated twist.
 Covariance = ga.gatype((Bivector, Line))      # Bivector <- Line
 

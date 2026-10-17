@@ -32,7 +32,7 @@ def triangulation() -> tuple[core.Vector, np.ndarray, np.ndarray]:
     azimuth = np.pi * (1 + 5**0.5) * turns
     spiral = np.stack([np.cos(azimuth) * np.sin(polar), np.sin(azimuth) * np.sin(polar), np.cos(polar)], axis=-1)   # [points, 3]
     nudged = spiral + JITTER * np.random.default_rng(DIRECTION_SEED).normal(size=(POINTS, 3))
-    directions = core.mv("x y z", nudged / np.linalg.norm(nudged, axis=-1, keepdims=True))   # [points] Vector
+    directions = core.mv(core.Vector.derive.within("x y z"), nudged / np.linalg.norm(nudged, axis=-1, keepdims=True))   # [points] Vector
     faces = hull(directions * np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=POINTS)))
     edges = np.unique(np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=-1), axis=0)
     return directions, faces, edges
@@ -53,7 +53,7 @@ def boosted() -> tuple[core.Vector, np.ndarray, np.ndarray]:
     with a rapidity rising and falling twice per turn."""
     circles, faces, edges = centred()
     turn = np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)                   # [frames]
-    directions = core.mv("x y z", np.stack([np.cos(turn), np.sin(turn), np.full_like(turn, TILT)], axis=-1)).normalized()   # [frames] Vector
+    directions = core.mv(core.Vector.derive.within("x y z"), np.stack([np.cos(turn), np.sin(turn), np.full_like(turn, TILT)], axis=-1)).normalized()   # [frames] Vector
     rotors = core.boost(directions, RAPIDITY * np.sin(turn) ** 2)              # [frames] Rotor
     return rotors[:, None] >> circles, faces, edges                            # [frames, points] Vector
 
@@ -79,7 +79,7 @@ def koebe(start: core.Vector, edges: np.ndarray) -> core.Vector:
         return rows.reshape(len(rows), -1)
 
     solved = least_squares(residual, components(start).reshape(-1), jac=jacobian, method="trf", xtol=1e-15, ftol=1e-15, gtol=1e-15).x
-    return core.mv("x y z w", solved.reshape(count, 4))                        # [vertices] Vector
+    return core.mv.vector(solved.reshape(count, 4))                            # [vertices] Vector
 
 
 def centre(points: core.Vector) -> core.Vector:
@@ -92,7 +92,7 @@ def centre(points: core.Vector) -> core.Vector:
         return np.concatenate([spatial, [np.sqrt(1 + spatial @ spatial)]])
 
     spatial = minimize(lambda spatial: np.log(-(null @ gram @ timelike(spatial))).sum(), np.zeros(3), method="BFGS").x
-    return core.mv("x y z w", timelike(spatial))                               # [] Vector
+    return core.mv.vector(timelike(spatial))                                   # [] Vector
 
 
 def hull(points: core.Vector) -> np.ndarray:
@@ -100,7 +100,7 @@ def hull(points: core.Vector) -> np.ndarray:
     vertices turns as x, y, z do: counter-clockwise from outside."""
     faces = ConvexHull(components(points)[..., :3]).simplices                 # [faces, 3]
     a, b, c = (points[faces[:, corner]] for corner in range(3))               # [faces] Vector each
-    turning = scalars((a ^ b ^ c) * core.mv.xyz.reverse()) > 0                 # [faces]
+    turning = scalars((a ^ b ^ c) / core.unit_volume) > 0                      # [faces]
     return np.where(turning[:, None], faces, faces[:, [0, 2, 1]])
 
 

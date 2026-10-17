@@ -30,27 +30,27 @@ DURATION_MS = 60
 # --- math -----------------------------------------------------------------------------
 def weighted() -> tuple[core.Point, core.Point, np.ndarray]:
     """The weighted octahedra of each case, the surfaces they refine to, and the surfaces' faces."""
-    subdivide, refined = core.subdivision(core.Mesh(core.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
-    controls = (core.point(OCTAHEDRON) * WEIGHTS).field()                     # [cases] Point[vertices]
+    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
+    controls = (core.mv.point(OCTAHEDRON) * WEIGHTS).field()                  # [cases] Point[vertices]
     return controls, subdivide * controls, refined.faces                       # [cases] Point[refined]
 
 
 def sweep() -> tuple[core.Point, core.Point, np.ndarray]:
     """The octahedron as its top vertex's weight sweeps out and back along a cosine of its logarithm, and
     the surfaces it refines to, all frames through the one composed map."""
-    subdivide, refined = core.subdivision(core.Mesh(core.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
+    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
     phase = np.linspace(0, 2 * np.pi, SWEEP_FRAMES, endpoint=False)
     top = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
     weights = np.where(np.arange(len(OCTAHEDRON)) == TOP, top[:, None], 1.0)  # [frames, vertices]
-    controls = (core.point(OCTAHEDRON) * weights).field()                     # [frames] Point[vertices]
+    controls = (core.mv.point(OCTAHEDRON) * weights).field()                  # [frames] Point[vertices]
     return controls, subdivide * controls, refined.faces                       # [frames] Point[refined]
 
 
 def perspective() -> tuple[core.Point, core.Point, core.Point, np.ndarray]:
     """The octahedron after the perspective, and the surface refined after and before it: as points with
     their weights, and as positions, each point divided by its weight before the refinement."""
-    subdivide, refined = core.subdivision(core.Mesh(core.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
-    shape = core.point(OCTAHEDRON * STRETCH + OFFSET).field()                  # Point[vertices]
+    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), DEPTH)   # [refined, vertices] Scalar
+    shape = core.mv.point(OCTAHEDRON * STRETCH + OFFSET).field()               # Point[vertices]
     seen = core.collineation(core.mv.w.dual(), core.mv.z, STRENGTH)           # [] Point <- Point
     weighted_orders = stack([subdivide * seen(shape), seen(subdivide * shape)])   # [orders] Point[refined]
     positional_orders = stack([subdivide * core.unit(seen(shape)), seen(subdivide * core.unit(shape))])   # [orders] Point[refined]

@@ -29,6 +29,8 @@ Bivector = STA.gatype.bivector()
 Antibivector = STA.gatype.antibivector()
 Antivector = STA.gatype.antivector()
 Constitutive = STA.gatype((Antibivector, Bivector))
+# An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
+AxionCoupling = Scalar.derive.flipped_orientation
 StressEnergy = STA.gatype((Antivector, Vector))
 WaveMap = STA.gatype((STA.gatype.odd(), Bivector))
 Modes = tuple[np.ndarray, Bivector]
@@ -83,9 +85,9 @@ def ferrite_medium(
     return (eps * electric - (permeability_inv * planes * (planes | Bivector)).sum(axis=0)).dual()
 
 
-def axion_medium(base_medium: Constitutive, alpha: float) -> Constitutive:
+def axion_medium(base_medium: Constitutive, coupling: AxionCoupling) -> Constitutive:
     """Add the axion response, proportional to the identity on field planes."""
-    return base_medium + alpha * Bivector
+    return base_medium + coupling * Bivector
 
 
 def boost_rotor(beta: float, direction=z):

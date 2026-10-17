@@ -22,7 +22,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antibivector = ga.gatype.antibivector()
-Antivector = ga.gatype.antivector()
+Trivector = ga.gatype.trivector()
 Constitutive = ga.gatype((Antibivector, Bivector))             # Antibivector <- Bivector
 WaveMap = ga.gatype((Vector, Vector))                         # Vector <- Vector
 axes = stack([mv.x, mv.y, mv.z])
@@ -51,10 +51,13 @@ def potential_map(medium: Constitutive, wavevector: Vector) -> WaveMap:
     return (wavevector ^ medium(field)).dual()                                # [...] Vector <- Vector
 
 
-def polynomial(medium: Constitutive, observer: Vector, wavevector: Vector) -> Scalar:
-    """The Fresnel quartic, for a nonzero frequency measured by the unit timelike observer."""
+def polynomial(medium: Constitutive, rest_space: Trivector, wavevector: Vector) -> Scalar:
+    """The Fresnel quartic, for a nonzero frequency measured by the observer whose unit rest space is
+    `rest_space`; the volume enters twice, so its sense drops out."""
     wave = potential_map(medium, wavevector)                                  # [...] Vector <- Vector
-    adjugate = wave.outermorphism(Antivector).adjugate()                      # [...] Vector <- Vector
+    adjugate = wave.outermorphism(Trivector).adjugate()                       # [...] Vector <- Vector
+    # The adjugate acts on complements of volumes: the observer enters as the dual of its rest space.
+    observer = rest_space.dual()                                              # [...] Vector
     frequency = observer | wavevector                                         # [...] Scalar
     return -(observer | adjugate(observer)) / frequency.squared()             # [...] Scalar
 
@@ -67,7 +70,7 @@ def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) ->
     """
     radius_squared = np.arange(3)
     probes = mv.t * frequency + directions[..., None] * np.sqrt(radius_squared)  # [..., samples] Vector
-    values = polynomial(medium[..., None], mv.t, probes)                      # [..., samples] Scalar
+    values = polynomial(medium[..., None], mv.xyz, probes)                    # [..., samples] Scalar
     constant, unit, twice = (values[..., i] for i in range(3))                # [...] Scalar each
     quadratic = (twice - 2 * unit + constant) / 2                             # [...] Scalar
     linear = unit - constant - quadratic                                      # [...] Scalar

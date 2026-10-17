@@ -6,7 +6,7 @@ from inspect import Parameter, signature
 from types import MethodType
 from typing import TYPE_CHECKING, Any, Callable, TypeVar, overload as typing_overload
 
-from numga.gatype import GAType, GATypeDispatch, GATypePattern, Trait, TraitSet
+from numga.gatype import GAType, GATypeDispatch, GATypePattern, Orientation, Trait, TraitSet
 from numga.gatype.dispatch import is_predicate
 
 if TYPE_CHECKING:
@@ -28,15 +28,28 @@ class ExtensionMethod:
     class creation does not invoke the descriptor ``__set_name__`` hook.
     """
 
-    __slots__ = ("_name", "_operand_count", "_dispatch", "_overloads")
+    __slots__ = ("_name", "_operand_count", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
 
-    def __init__(self, name: str, *, operand_counts: tuple[int, ...] = ()) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        operand_counts: tuple[int, ...] = (),
+        input_orientation: Orientation | None = None,
+        output_orientation: Orientation | None = None,
+    ) -> None:
+        """A method may declare the one orientation its operand must have, and the orientation of its
+        result whatever the operand's: facts about the mathematical function, which hold for every
+        implementation registered for it. Without a declaration the operand may have either
+        orientation, and the result has the orientation its computation gives it."""
         if not isinstance(name, str) or not name or name.startswith("_"):
             raise TypeError("an extension method name must be a public name")
         self._name = name
         self._operand_count: int | None = None
         self._dispatch: GATypeDispatch | None = None
         self._overloads = {count: ExtensionMethod(name) for count in operand_counts}
+        self._input_orientation = input_orientation
+        self._output_orientation = output_orientation
 
     def position_of(self, implementation: Callable[..., Any]) -> int:
         """Where a predicate-registered implementation sits; register(..., position=...) before it
@@ -138,7 +151,18 @@ class ExtensionMethod:
             raise LookupError(
                 f"extension method {self.name!r} has no registered implementations"
             )
-        return dispatch(*arguments, **kwargs)
+        if self._input_orientation is None and self._output_orientation is None:
+            return dispatch(*arguments, **kwargs)
+        operand = arguments[0].gatype
+        if self._input_orientation is not None and operand.orientation is not self._input_orientation:
+            raise LookupError(
+                f"{self.name!r} takes {self._input_orientation.value} elements; got {operand.signature}"
+            )
+        result = dispatch(*arguments, **kwargs)
+        if self._output_orientation is None or result.gatype.orientation is self._output_orientation:
+            return result
+        gatype = result.gatype.derive.with_orientations((self._output_orientation,) + result.gatype.input_orientations)
+        return type(result)._from_prepared_kernel(result.context, gatype, result._kernel)
 
     @typing_overload
     def __get__(
@@ -162,7 +186,9 @@ class ExtensionMethod:
         if instance is None:
             return self
         dispatch = self._dispatch
-        return MethodType(self if dispatch is None else dispatch, instance)
+        if dispatch is None or self._input_orientation is not None or self._output_orientation is not None:
+            return MethodType(self, instance)
+        return MethodType(dispatch, instance)
 
 
 def _predicate_operand_count(

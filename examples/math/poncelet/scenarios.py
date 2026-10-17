@@ -26,18 +26,18 @@ def run(angles: np.ndarray, steps: int) -> tuple[core.Conic, core.Conic, core.Po
     """The ellipse, the two inner conics, and from the point of the ellipse at each angle the path of
     the given number of sides about each inner conic. Returns the ellipse, the inner conics as maps
     from points, and the vertices of the paths."""
-    outer = core.ellipse(CENTRE, SEMI, TILT)                                   # [] Plane <- Point
+    outer = core.ellipse(CENTRE, SEMI, TILT)                                   # [] Line <- Point
     corners = stack([on_ellipse(CORNERS, 1.0), on_ellipse(CORNERS, 0.97)])     # [inners, corners] Point
-    inner = core.envelope(corners & corners[..., NEXT])                        # [inners] Point <- Plane
+    inner = core.envelope(corners & corners[..., NEXT])                        # [inners] Point <- Line
     starts = on_ellipse(angles, 1.0)                                           # [starts] Point
-    first = core.tangents(inner[:, None], starts[None, :])[..., 0]             # [inners, starts] Plane
+    first = core.tangents(inner[:, None], starts[None, :])[..., 0]             # [inners, starts] Line
     vertices = core.path(outer, inner[:, None], starts[None, :], first, steps)   # [steps + 1, inners, starts] Point
 
     # --- checks
     # Every vertex lies on the ellipse, and every side touches its inner conic; the path about the
     # first inner conic closes after five sides from every start, the path about the second does not.
     np.testing.assert_allclose((outer(vertices) & vertices).to_array(), 0.0, atol=1e-12)
-    sides = (vertices[:-1] & vertices[1:]).normalized()                        # [steps, inners, starts] Plane
+    sides = (vertices[:-1] & vertices[1:]).normalized()                        # [steps, inners, starts] Line
     touch = (inner[:, None](sides) & sides).to_array() / np.abs(inner.kernel).max(axis=(-1, -2))[:, None]
     np.testing.assert_allclose(touch, 0.0, atol=1e-10)
     gap = np.abs((vertices[5] - vertices[0]).kernel).max(axis=-1)              # [inners, starts]
@@ -59,7 +59,7 @@ def on_ellipse(angles: np.ndarray, scale: float) -> core.Point:
     # The ellipse about the origin, turned by the tilt and carried to the centre.
     mv = core.mv
     motor = ((mv.xw * CENTRE[0] + mv.yw * CENTRE[1]) * 0.5).exp() * (mv.xy * (-TILT / 2)).exp()
-    return motor >> core.point(scale * SEMI * np.stack([np.cos(angles), np.sin(angles)], axis=-1))
+    return motor >> core.crossing(scale * SEMI * np.stack([np.cos(angles), np.sin(angles)], axis=-1))
 
 
 if __name__ == "__main__":

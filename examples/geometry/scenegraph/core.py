@@ -22,7 +22,7 @@ mv = ctx.multivector
 # Planes, lines and points are the vectors, bivectors and antivectors; motors rotate and translate.
 Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector()
-Line = ga.gatype.bivector()
+Line = ga.gatype.antibivector()
 Point = ga.gatype.antivector()
 Motor = ga.gatype.rotor()
 
@@ -30,18 +30,13 @@ Motor = ga.gatype.rotor()
 PointMap = ga.gatype((Point, Point))        # Point <- Point
 LineMap = ga.gatype((Line, Line))           # Line <- Line
 
-origin = mv.xyz
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
+origin = mv.w.dual()
 
 
 # --- geometry primitives --------------------------------------------------------------
 def canonical_unit_box() -> Point:
     """The 8 vertices of the canonical unit box: a unit cube centred on the origin."""
-    return point(np.array([
+    return mv.point(np.array([
         [-0.5, -0.5, -0.5],
         [ 0.5, -0.5, -0.5],
         [ 0.5,  0.5, -0.5],
@@ -80,8 +75,8 @@ def anisotropic_scale(scale_x: float, scale_y: float, scale_z: float) -> PointMa
     The coordinate planes read a point's coordinates, `mv.x & point` being its x; each
     coordinate is sent to its scaled axis direction, and the weight to the origin.
     """
-    coordinate_planes = mv("x y z w", np.eye(4))                              # [coordinates] Plane
-    scaled_axes = mv("wzy wxz wyx xyz", np.diag([scale_x, scale_y, scale_z, 1.0]))   # [coordinates] Point
+    coordinate_planes = mv.vector(np.eye(4))                                  # [coordinates] Plane
+    scaled_axes = mv.antivector(np.diag([scale_x, scale_y, scale_z, 1.0]))   # [coordinates] Point
     return (scaled_axes * (coordinate_planes & Point)).sum(axis=0)
 
 
@@ -168,7 +163,7 @@ def lens_camera(camera_pose: Motor, front_lens: LineMap, rear_lens: LineMap, pup
 
 def look_at(position: np.ndarray, target: np.ndarray) -> Motor:
     """Camera motor in world space whose optical axis -z points towards the target."""
-    translation = (mv("xw yw zw", position) / 2).exp()
+    translation = ((mv(Plane.derive.nondegenerate, position) ^ mv.w) / 2).exp()
     # Pitch the optical axis from horizontal towards the target: np.pi / 2 about x turns -z
     # forward (+y), minus the pitch tilts it downward.
     delta = target - position

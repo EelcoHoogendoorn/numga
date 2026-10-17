@@ -9,19 +9,19 @@ from __future__ import annotations
 import numpy as np
 
 from numga import NumpyContext
-from examples.geometry.projection.core import CUBE_EDGES, circle, cube, direction, ga, point, shadows, stereo
+from examples.geometry.projection.core import CUBE_EDGES, circle, cube, ga, shadows, stereo
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-origin = mv.xyz
+origin = mv.w.dual()
 
 
 def projection():
     """A lit body over the ground, and the same rig posed twice over one subject."""
     body = (mv.zw * 0.75).exp() >> cube(1.0)
     ground = mv.z
-    point_light = point(np.array([1.0, -1.0, 4.0]))
-    sun = direction(np.array([-1.0, 0.6, -2.5]))
+    point_light = mv.point(np.array([1.0, -1.0, 4.0]))
+    sun = mv.direction(np.array([-1.0, 0.6, -2.5]))
     light_path = (mv.yw * -0.5 + mv.zw * 2.0).exp() >> circle(24)
 
     # Two copies of the rig, each translated 0.6 along x and turned 0.12 rad about the y

@@ -10,8 +10,6 @@ joint is the pairing of the carried axis with that forque. No transpose is ever 
 
 from __future__ import annotations
 
-import numpy as np
-
 from numga import Extensor, NumpyContext
 from numga.algebras import PGA3D
 
@@ -22,16 +20,6 @@ Point = ga.gatype.antivector()
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 Scalar = ga.gatype.scalar()
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
 
 
 def forward_kinematics(joints: Line) -> tuple[Motor, Motor]:

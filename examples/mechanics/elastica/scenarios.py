@@ -66,7 +66,7 @@ def turned(degrees: np.ndarray) -> core.Motor:
 def curling() -> core.Motor:
     """The strip's frames under a couple about the axis across it, by each number of turns of its end
     `[curls, pieces + 1]`: the couple whose rigidity over it is the strip's length over the turns."""
-    couples = mv.wx * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Line
+    couples = (mv.y ^ mv.z).dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Line
     return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, PIECES)
 
 
@@ -80,7 +80,7 @@ def euler(degrees: np.ndarray) -> core.Motor:
 def kirchhoff() -> core.Motor:
     """The frames of rods started at each tilt from an upward couple `[tilts, pieces + 1]`, the couple coiling
     them through whole turns."""
-    couple = mv.wz * (2 * np.pi * COILS / (TURNING[0] * LENGTH))           # [] Line
+    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * COILS / (TURNING[0] * LENGTH))           # [] Line
     return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, PIECES)
 
 
@@ -89,7 +89,7 @@ def uncoiling() -> core.Motor:
     from square to along it and back `[frames, pieces + 1]`: the couple bending it into a ring, coiling it,
     and twisting it straight."""
     tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, UNCOIL_FRAMES, endpoint=False)))   # [frames] degrees
-    couple = mv.wz * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Line
+    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Line
     return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, PIECES)
 
 
@@ -138,7 +138,7 @@ def reach(time: float) -> float:
 
 def ribbon(frames: core.Motor, width: float) -> core.Point:
     """The edges of a ribbon of the given width across each cross-section `[..., 2]`."""
-    return frames[..., None] >> core.points([[-width / 2, 0, 0], [width / 2, 0, 0]])
+    return frames[..., None] >> mv.point([[-width / 2, 0, 0], [width / 2, 0, 0]])
 
 
 def thrusts(angles: np.ndarray) -> np.ndarray:

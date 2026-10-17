@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.quadrics.cayley_klein.core import (
-    Point, Polarity, circles, invariant, mv, perpendicular, point, triangle,
+    Point, Polarity, circles, crossing, invariant, mv, perpendicular, triangle,
 )
 
 
@@ -16,14 +16,14 @@ def hyperbolic_plane():
     # x**2 + y**2 - w**2 == 0, the unit circle. The pole map is the inverse polarity.
     C: Polarity = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 
-    vertices = point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
+    vertices = crossing(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
     sides, angles, lengths, area = triangle(C, vertices)
 
-    P = point(np.array([-0.15, 0.15]))
+    P = crossing(np.array([-0.15, 0.15]))
     side = sides[1]
     pole, normal, foot, reflected = perpendicular(C, side, P)
 
-    centres = point(np.array([[0.0, 0.0], [0.45, 0.25]]))
+    centres = crossing(np.array([[0.0, 0.0], [0.45, 0.25]]))
     radii = np.array([0.25, 0.55, 0.9, 1.3])
     rings = circles(C, centres, radii)
 

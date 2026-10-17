@@ -19,8 +19,6 @@ flattens and the force ellipsoid runs off along the arm.
 
 from __future__ import annotations
 
-import numpy as np
-
 from numga import Extensor
 from examples.geometry.scenegraph import core as arm
 
@@ -28,14 +26,14 @@ ga = arm.ga
 mv = arm.mv
 Point, Plane, Line = arm.Point, arm.Plane, arm.Line
 # Points at infinity: velocities.
-Direction = ga.gatype(ga.subspace.antivector().degenerate())
+Direction = Point.derive.degenerate
 # A point quadric takes each point to its polar plane; a dual quadric takes each plane to its pole.
 Quadric = ga.gatype((Plane, Point))                # Plane <- Point
 DualQuadric = ga.gatype((Point, Plane))            # Point <- Plane
 # The plane at infinity.
 w = mv.w                                           # [] Plane
 # The coordinate planes through the origin, normal to x, y and z.
-coordinate_planes = mv("x y z", np.eye(3))         # [3] Plane
+coordinate_planes = Extensor.stack([mv.x, mv.y, mv.z])   # [3] Plane
 
 
 # --- math ----------------------------------------------------------------------------------------
@@ -47,7 +45,7 @@ def arm_axes(joint_angles: tuple) -> tuple[arm.PointMap, Point, Line]:
     """
     bodies, pivots = arm.robot_arm(joint_angles)
     # The top face of the gripper, on the wrist.
-    tip = pivots[-1] >> arm.point(np.array([0.0, 0.0, 0.3]))     # [] Point
+    tip = pivots[-1] >> mv.point([0.0, 0.0, 0.3])               # [] Point
     axes = Extensor.stack([pivots[0] >> mv.xy] + [pivot >> mv.zx for pivot in pivots[1:]])    # [n_joints] Line
     return bodies, tip, axes
 

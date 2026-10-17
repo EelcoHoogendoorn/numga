@@ -47,7 +47,7 @@ def _relations(value):
 
 
 def _value(algebra, traits, coefficients):
-    gatype = algebra.gatype(algebra.subspace.full(), traits)
+    gatype = algebra.gatype(algebra.gatype.full(), traits)
     return algebra.exact.multivector(gatype, coefficients)
 
 

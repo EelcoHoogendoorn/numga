@@ -334,11 +334,15 @@ def _maps(cell_type: GAType, other: GAType) -> bool:
     return cell_type.arity == 1
 
 
-def _square_maps(cell_type: GAType, other: GAType) -> bool:
-    return cell_type.arity == 1 and len(cell_type.subspaces[0]) == len(cell_type.subspaces[1])
+def _maps_equal_dimensions(cell_type: GAType, other: GAType) -> bool:
+    return cell_type.maps_equal_dimensions
 
 
-@SparseExtensor.solve.register(_square_maps, fields=True)
+def _endomorphisms(cell_type: GAType, other: GAType) -> bool:
+    return cell_type.is_endomorphism
+
+
+@SparseExtensor.solve.register(_maps_equal_dimensions, fields=True)
 def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
     the leading axes of rhs that the map lacks as further right sides of it."""
@@ -359,7 +363,7 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     ]))
 
 
-@SparseExtensor.eigh.register(_square_maps)
+@SparseExtensor.eigh.register(_endomorphisms)
 def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
     """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
     value and a positive-definite metric, for each of their leading indices: values `[..., count]
@@ -421,7 +425,7 @@ def _field(value: SparseExtensor, coefficients: np.ndarray) -> Extensor:
     """Coefficients `[..., elements * blades]` as a field of the map cells' input type."""
     subspace = value.cells.axes[1]
     return value.cells.context.extensor(
-        value.cells.algebra.gatype(subspace), coefficients.reshape(coefficients.shape[:-1] + (-1, len(subspace))),
+        value.cells.gatype.derive.axis(1), coefficients.reshape(coefficients.shape[:-1] + (-1, len(subspace))),
     ).field()
 
 

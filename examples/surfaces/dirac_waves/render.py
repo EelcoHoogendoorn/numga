@@ -7,7 +7,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.surfaces.spin_transformations.render import _rasterise
+from examples.raster import rasterise
 from examples.surfaces.dirac_waves import core
 
 Mesh = core.Mesh
@@ -51,7 +51,7 @@ def view(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     size = PIXELS * SUPERSAMPLE
     viewed = points @ frame.T
     screen = viewed * (0.46 * size / np.abs(viewed[:, :2]).max()) + [size / 2, size / 2, 0.0]
-    pixel, face, weights = _rasterise(screen, triangles, size)
+    pixel, face, weights, _ = rasterise(screen, triangles, size)
     normal = np.einsum("pk,pkd->pd", weights, normals[triangles[face]]) @ frame.T
     normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
     light = AMBIENT + (1 - AMBIENT) * np.clip(normal @ (frame @ LIGHT), 0, 1)

@@ -23,16 +23,6 @@ Line = ga.gatype.bivector()
 Plane = ga.gatype.vector()
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
-
-
 # --- math -----------------------------------------------------------------------------
 def fit(Unknown: GAType, samples: Extensor) -> Extensor:
     """Fit a PGA primitive to a batch of points or lines by squared join distance.
@@ -57,18 +47,18 @@ def fit(Unknown: GAType, samples: Extensor) -> Extensor:
 
 # --- samples ---------------------------------------------------------------------------
 def cloud(n: int, spread: float, rng: np.random.Generator) -> Point:
-    return point(rng.normal(scale=spread, size=(n, 3)))
+    return mv.point(rng.normal(scale=spread, size=(n, 3)))
 
 
 def segment(n: int, half_length: float) -> Point:
     """Points along the y axis."""
-    return mv.xyz + mv.wxz * np.linspace(-half_length, half_length, n)
+    return mv.w.dual() + mv.direction([0, 1, 0]) * np.linspace(-half_length, half_length, n)
 
 
 def patch(n: int, half_width: float, rng: np.random.Generator) -> Point:
     """Points on a square of the plane z == 0."""
     uv = rng.uniform(-half_width, half_width, size=(n, 2))
-    return mv.xyz + mv.wzy * uv[:, 0] + mv.wxz * uv[:, 1]
+    return mv.w.dual() + mv.direction([1, 0, 0]) * uv[:, 0] + mv.direction([0, 1, 0]) * uv[:, 1]
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:
@@ -82,8 +72,8 @@ def bundle(n: int, spread: float, rng: np.random.Generator) -> Line:
     """Lines with unit directions, passing near the origin."""
     directions = rng.normal(size=(n, 3))
     directions /= np.linalg.norm(directions, axis=1, keepdims=True)
-    feet = point(rng.normal(scale=spread, size=(n, 3)))
-    return feet & direction(directions)
+    feet = mv.point(rng.normal(scale=spread, size=(n, 3)))
+    return feet & mv.direction(directions)
 
 
 # --- clipping geometry -----------------------------------------------------------------

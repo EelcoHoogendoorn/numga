@@ -10,7 +10,7 @@ DURATION_MS = 65
 
 # --- math -----------------------------------------------------------------------------
 def markers() -> tuple[core.Point, core.Point, core.Motor]:
-    source = core.point([[-0.8, -0.4, 0.0], [0.9, -0.3, 0.0], [-0.3, 0.8, 0.2]])
+    source = core.mv.point([[-0.8, -0.4, 0.0], [0.9, -0.3, 0.0], [-0.3, 0.8, 0.2]])
     displacement = core.mv.xw * 0.7 + core.mv.yw * 0.2 + core.mv.zw * 0.4
     rotation = core.mv.xy * 0.6 + core.mv.yz * 0.2
     pose = displacement.exp() * rotation.exp()

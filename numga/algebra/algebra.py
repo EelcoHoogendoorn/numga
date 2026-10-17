@@ -19,7 +19,9 @@ from .bitops import (
 from .description import AlgebraDescription
 
 if TYPE_CHECKING:
+    from numga.backend.context import Context
     from numga.backend.exact import ExactContext
+    from numga.multivector.factory import MultivectorFactory
     from numga.gatype.factory import GATypeFactory
     from numga.operator.factory import OperatorFactory
     from numga.subspace.factory import SubSpaceFactory
@@ -91,6 +93,7 @@ class Algebra:
     _gatype_factory: GATypeFactory = field(compare=False, repr=False)
     _exact_context: ExactContext = field(compare=False, repr=False)
     _operator_factory: OperatorFactory = field(compare=False, repr=False)
+    _multivector_factory: Callable[[Context], MultivectorFactory] = field(compare=False, repr=False)
 
     def __init__(
         self,
@@ -98,6 +101,7 @@ class Algebra:
         *,
         subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
         gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
+        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
     ) -> None:
         if isinstance(spec, AlgebraDescription):
             description = spec
@@ -123,6 +127,10 @@ class Algebra:
 
         object.__setattr__(self, "_subspace_factory", (subspace_factory or SubSpaceFactory)(self))
         object.__setattr__(self, "_gatype_factory", (gatype_factory or GATypeFactory)(self))
+        # Each context builds its value constructors from this, so an algebra's specialization (points
+        # in projective algebras) reaches every backend.
+        from numga.multivector.factory import MultivectorFactory
+        object.__setattr__(self, "_multivector_factory", multivector_factory or MultivectorFactory)
         object.__setattr__(self, "_exact_context", ExactContext(self))
         object.__setattr__(self, "_operator_factory", OperatorFactory(self))
 
@@ -133,11 +141,13 @@ class Algebra:
         *,
         subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
         gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
+        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
     ) -> "Algebra":
         return cls(
             description,
             subspace_factory=subspace_factory,
             gatype_factory=gatype_factory,
+            multivector_factory=multivector_factory,
         )
 
     @classmethod
@@ -148,11 +158,13 @@ class Algebra:
         *,
         subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
         gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
+        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
     ) -> "Algebra":
         return cls(
             AlgebraDescription.from_signature(signature, basis_names),
             subspace_factory=subspace_factory,
             gatype_factory=gatype_factory,
+            multivector_factory=multivector_factory,
         )
 
     @classmethod
@@ -165,11 +177,13 @@ class Algebra:
         *,
         subspace_factory: Callable[[Algebra], SubSpaceFactory] | None = None,
         gatype_factory: Callable[[Algebra], GATypeFactory] | None = None,
+        multivector_factory: Callable[[Context], MultivectorFactory] | None = None,
     ) -> "Algebra":
         return cls(
             AlgebraDescription.from_pqr(p, q, r, basis_names),
             subspace_factory=subspace_factory,
             gatype_factory=gatype_factory,
+            multivector_factory=multivector_factory,
         )
 
     @property

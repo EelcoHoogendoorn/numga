@@ -79,11 +79,6 @@ def pascal(five: Point) -> Form:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Points at unit weight from their x and y coordinates."""
-    return (mv("x y", coords) + mv.w).dual()
-
-
 def headings(angles: np.ndarray) -> Point:
     """Points at infinity in the directions at the given angles."""
     return (mv.xy * (-angles / 2)).exp() >> mv.x.dual()

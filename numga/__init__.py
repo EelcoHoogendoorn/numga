@@ -20,6 +20,7 @@ from .gatype import (
     CliffordConjugateProductScalar,
     CliffordConjugateProductZero,
     GradeInvolutionProduct,
+    Orientation,
     ProductFact,
     ProductRelation,
     ProductResult,

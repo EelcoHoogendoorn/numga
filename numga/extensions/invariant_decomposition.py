@@ -30,7 +30,7 @@ methods.
 from __future__ import annotations
 
 from numga.extensor import Extensor
-from numga.gatype import ReverseProductOne, Versor
+from numga.gatype import Orientation, ReverseProductOne, Versor
 
 
 # --- scalar functions --------------------------------------------------------------------------
@@ -228,7 +228,8 @@ def _null_wedge(t) -> bool:
     """The 4-vector part of the square of type t squares to zero."""
     algebra = t.algebra
     wedge = t.derive.squared.output_subspace.intersection(algebra.subspace.k_vector(4))
-    return algebra.gatype(wedge).derive.squared.is_empty
+    # a part of a square, so extrinsic
+    return algebra.gatype(wedge, orientation=Orientation.extrinsic).derive.squared.is_empty
 
 
 def _decomposable(algebra) -> bool:

@@ -67,7 +67,7 @@ def power_law(factors: core.Scalar) -> core.Scalar:
     the resolved shear stress."""
     values = factors.cast(core.ga.subspace.scalar()).kernel[..., 0]
     leading = np.abs(values).max(axis=(-2, -1), keepdims=True)
-    return core.mv.scalar((AMOUNT * np.sign(values) * (np.abs(values) / leading) ** STEEPNESS)[..., None])
+    return factors * (AMOUNT * np.abs(values) ** (STEEPNESS - 1) / leading ** STEEPNESS)
 
 
 # --- plumbing -------------------------------------------------------------------------

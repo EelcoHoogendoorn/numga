@@ -8,8 +8,6 @@ principal-axis frame is supplied. This example draws the construction in PGA2D.
 
 from __future__ import annotations
 
-import numpy as np
-
 from numga import NumpyContext
 from numga.algebras import PGA2D
 
@@ -19,11 +17,6 @@ mv = ctx.multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Scalar = ga.gatype.scalar()
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 2) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y", coords) + mv.w).dual()
 
 
 # --- math ------------------------------------------------------------------

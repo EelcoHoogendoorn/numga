@@ -3,6 +3,7 @@
 from .dispatch import AmbiguousGATypeDispatchWarning, GATypeDispatch
 from .factory import GATypeFactory
 from .gatype import GAType
+from .orientation import Orientation
 from .pattern import GATypePattern
 from .traits import (
     CoefficientOrthogonal,

@@ -48,7 +48,7 @@ class Context(ABC):
         object.__setattr__(
             self,
             "_multivector_factory",
-            MultivectorFactory(self),
+            self.algebra._multivector_factory(self),
         )
 
     @property
@@ -178,13 +178,12 @@ class Context(ABC):
     ) -> Extensor:
         from numga.extensor import Extensor
 
-        if isinstance(gatype_or_subspace, GAType):
-            gatype = gatype_or_subspace
-        elif isinstance(gatype_or_subspace, SubSpace):
-            gatype = self.algebra.gatype((gatype_or_subspace,))
-        else:
-            raise TypeError("extensor construction requires a GAType or SubSpace")
-        return Extensor(self, gatype, coefficients)
+        if isinstance(gatype_or_subspace, SubSpace):
+            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)")
+        if not isinstance(gatype_or_subspace, GAType):
+            raise TypeError("extensor construction requires a GAType")
+        return Extensor(self, gatype_or_subspace, coefficients)
 
     def lower(self, value: Extensor) -> Extensor:
         """Represent an Extensor in this coefficient/execution context."""

@@ -10,16 +10,21 @@ from numga.extensions.inverse import inverse_orthogonal
 
 def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     mv = NumpyContext(PGA3D).multivector
-    planes = PGA3D.subspace.vector()
-    lines = PGA3D.subspace.bivector()
-    points = PGA3D.subspace.antivector()
+    Plane, Line, Point = PGA3D.gatype.vector(), PGA3D.gatype.bivector(), PGA3D.gatype.antivector()
+    # Lines as joins of points: the same blades as lines as meets of planes, intrinsically oriented.
+    Spear = PGA3D.gatype.antibivector()
+    # Points as meets of planes: the same blades as points, extrinsically oriented.
+    Bundle = PGA3D.gatype.trivector()
+    planes, lines, points = Plane.output_subspace, Line.output_subspace, Point.output_subspace
 
     # A bivector exponential supplies a unit motor, with rotation and translation.
     # Unit matters: a scaled sandwich would not preserve wedge products exactly.
     motor = mv.bivector([0.2, -0.1, 0.3, 0.5, -0.25, 0.1]).exp()
-    plane_map = motor.sandwich(planes)
-    line_map = motor.sandwich(lines)
-    point_map = motor.sandwich(points)
+    plane_map = motor.sandwich(Plane)
+    line_map = motor.sandwich(Line)
+    point_map = motor.sandwich(Point)
+    spear_map = motor.sandwich(Spear)
+    bundle_map = motor.sandwich(Bundle)
 
     assert plane_map.axes == (planes, planes)
     assert line_map.axes == (lines, lines)
@@ -40,10 +45,10 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     # order as multiplying the motors. The resulting maps remain unary.
     following = mv.bivector([-0.1, 0.3, 0, 0.1, 0, 0.2]).exp()
     combined = following * motor
-    for space, first in ((planes, plane_map), (lines, line_map), (points, point_map)):
-        composed = following.sandwich(space)(first)
-        direct = combined.sandwich(space)
-        assert composed.axes == (space, space)
+    for gatype, first in ((Plane, plane_map), (Line, line_map), (Point, point_map)):
+        composed = following.sandwich(gatype)(first)
+        direct = combined.sandwich(gatype)
+        assert composed.axes == (gatype.output_subspace, gatype.output_subspace)
         np.testing.assert_allclose(composed.kernel, direct.kernel, atol=1e-9)
 
     # Concrete geometry: intersect the planes x=1, y=2, z=3, then move the
@@ -52,28 +57,28 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     intersection = a.wedge(b).wedge(c)
     moved_intersection = plane_map(a).wedge(plane_map(b)).wedge(plane_map(c))
     np.testing.assert_allclose(
-        point_map(intersection).kernel, moved_intersection.kernel, atol=1e-9,
+        bundle_map(intersection).kernel, moved_intersection.kernel, atol=1e-9,
     )
 
     # Stronger: compare the complete open operators, not just sampled geometry.
     # Two planes intersect in a line; a line and a plane intersect in a point.
-    move_intersection = line_map(planes.gatype.wedge(planes))
+    move_intersection = line_map(Plane.wedge(Plane))
     intersect_moved = plane_map.wedge(plane_map)
     assert move_intersection.axes == intersect_moved.axes == (lines, planes, planes)
     np.testing.assert_allclose(move_intersection.kernel, intersect_moved.kernel, atol=1e-9)
 
-    move_intersection = point_map(lines.gatype.wedge(planes))
+    move_intersection = bundle_map(Line.wedge(Plane))
     intersect_moved = line_map.wedge(plane_map)
     assert move_intersection.axes == intersect_moved.axes == (points, lines, planes)
     np.testing.assert_allclose(move_intersection.kernel, intersect_moved.kernel, atol=1e-9)
 
     # Dually, two points join to a line; a line and a point join to a plane.
-    move_join = line_map(points.gatype.regressive(points))
+    move_join = spear_map(Point.regressive(Point))
     join_moved = point_map.regressive(point_map)
     assert move_join.axes == join_moved.axes == (lines, points, points)
     np.testing.assert_allclose(move_join.kernel, join_moved.kernel, atol=1e-9)
 
-    move_join = plane_map(lines.gatype.regressive(points))
+    move_join = plane_map(Line.regressive(Point))
     join_moved = line_map.regressive(point_map)
     assert move_join.axes == join_moved.axes == (planes, lines, points)
     np.testing.assert_allclose(move_join.kernel, join_moved.kernel, atol=1e-9)
@@ -84,14 +89,13 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
     # tangent bivector, not converted into another grade-1 vector.
     algebra = Algebra("x+y+z+")
     mv = NumpyContext(algebra).multivector
-    directions = algebra.subspace.vector()
-    normals = algebra.subspace.bivector()
+    Direction, Normal = algebra.gatype.vector(), algebra.gatype.bivector()
+    directions, normals = Direction.output_subspace, Normal.output_subspace
     mirror = mv.vector([1, 0, 0]).normalized()  # Mirror in the yz plane.
 
-    # Hyperplane reflection is m involute(X) reverse(m). Sandwich alone is
-    # untwisted conjugation. Use the same grade-involution rule for every grade.
-    direction_map = mirror.sandwich(directions).involute()
-    normal_map = mirror.sandwich(normals).involute()
+    # The sandwich by a mirror is its reflection, for every grade: directions and normals alike.
+    direction_map = mirror.sandwich(Direction)
+    normal_map = mirror.sandwich(Normal)
 
     u = mv.vector([1, 2, 0])
     v = mv.vector([0, 1, 3])
@@ -113,7 +117,7 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
         direction_map(normal)
 
     # The entire wedge operator commutes with reflection, not just this sample.
-    reflect_wedge = normal_map(directions.gatype.wedge(directions))
+    reflect_wedge = normal_map(Direction.wedge(Direction))
     wedge_reflected = direction_map.wedge(direction_map)
     assert reflect_wedge.axes == wedge_reflected.axes == (normals, directions, directions)
     np.testing.assert_allclose(reflect_wedge.kernel, wedge_reflected.kernel)
@@ -133,7 +137,7 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
 def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     mv = NumpyContext(PGA3D).multivector
     points = mv.antivector([1, 2, 3, 1])
-    lines = PGA3D.subspace.bivector()
+    Line = PGA3D.gatype.bivector()
 
     motor = mv.bivector([0.2, -0.1, 0.3, 0.5, -0.25, 0.1]).exp()
 
@@ -146,7 +150,7 @@ def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     assert recovered.gatype == (motor.reverse().sandwich(moved)).gatype
     np.testing.assert_allclose(recovered.kernel, points.kernel, atol=1e-12)
 
-    # SubSpace hole operand works with >> and <<
-    pullback = motor << lines
-    assert pullback.axes == (lines, lines)
-    np.testing.assert_allclose(pullback.kernel, motor.reverse().sandwich(lines).kernel)
+    # An open type works with >> and <<
+    pullback = motor << Line
+    assert pullback.axes == (Line.output_subspace, Line.output_subspace)
+    np.testing.assert_allclose(pullback.kernel, motor.reverse().sandwich(Line).kernel)

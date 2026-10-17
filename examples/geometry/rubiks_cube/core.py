@@ -6,7 +6,8 @@ on the cube's surface: a face is a side and an axis, and a cubie shows the faces
 on. Each sticker is a point, its cubie's centre plus half its face, in units of half a cubie,
 `2 * cubie + face`, so every coordinate is an integer, and so are its corners. A face's layer is the
 stickers whose point reaches past 1 along the face, and a quarter turn is the rotor
-`1 + face * mv.xyz`, the plane of the face, as a map on vectors halved: its sandwich doubles lengths,
+`1 + plane`, the plane of the face, the wedge of its two edge directions, as a map on vectors halved:
+its sandwich doubles lengths,
 so `((1 + plane) >> Vector) * 0.5` turns by exactly a quarter, clockwise seen from outside, with
 coefficients 0 and 1, and `1 - plane` turns it back. A point turned any number of times keeps integer
 coordinates, and the cube is solved when every sticker is back at its own point.
@@ -31,10 +32,11 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Vector = ga.gatype.vector()
 
-# The six faces, by side and axis, and each face's plane, clockwise seen from outside.
+# The six faces, by side and axis, and each face's plane: the wedge of its two edge directions, in the
+# order that turns it clockwise seen from outside.
 sides = np.array([1.0, -1.0])
 faces = sides[:, None] * mv.basis()                                        # [2, 3] Vector
-planes = faces * mv.xyz                                                    # [2, 3] Bivector
+planes = sides[:, None] * (stack([mv.y, mv.z, mv.x]) ^ stack([mv.z, mv.x, mv.y]))   # [2, 3] Bivector
 # The quarter turns, each face clockwise and back.
 directions = np.array([1.0, -1.0])
 turns = ((1 + directions[:, None, None] * planes) >> Vector) * 0.5         # [2, 2, 3] Vector <- Vector

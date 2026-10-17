@@ -13,7 +13,7 @@ def test_reconstruct_from_noise_free_images():
     """Without noise, relative pose and world points are recovered exactly, up to the baseline scale."""
     mv = core.mv
     landmarks = core.house_landmarks()
-    origin = mv.xyz
+    origin = mv.w.dual()
     camera = (origin & core.Point) ^ (mv.z - mv.w)
 
     theta = np.radians(14.0)
@@ -26,7 +26,7 @@ def test_reconstruct_from_noise_free_images():
     est_motor, reconstructed = core.reconstruct(rays_1, rays_2, true_trans.exp().normalized(), 10)
 
     # Rotated axis planes agree:
-    axes = mv("x y z", np.eye(3))
+    axes = mv(core.Plane.derive.nondegenerate, np.eye(3))
     turned = (est_motor >> axes).normalized() | (true_motor >> axes).normalized()
     np.testing.assert_allclose(turned.to_array(), 1.0, atol=1e-6)
 

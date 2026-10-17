@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.estimation.epipolar.core import Camera, Line, Point, direction, house_landmarks, mv, reconstruct
+from examples.estimation.epipolar.core import Camera, Line, Plane, Point, house_landmarks, mv, reconstruct
 
 
 def epipolar():
@@ -18,7 +18,7 @@ def epipolar():
     n_points = landmarks.shape[0]
 
     # Camera 1 is at the world origin, looking along +z at the screen z == 1:
-    origin = mv.xyz
+    origin = mv.w.dual()
     screen = mv.z - mv.w
     camera: Camera = (origin & Point) ^ screen
 
@@ -40,8 +40,8 @@ def epipolar():
     rng = np.random.default_rng(42)
     noise_sigma = 0.0015
     in_screen = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    noisy_1 = image_1 + direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
-    noisy_2 = image_2 + direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
+    noisy_1 = image_1 + mv.direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
+    noisy_2 = image_2 + mv.direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
 
     # Measured sight rays, each in its own camera's frame:
     rays_1 = (origin & noisy_1).normalized()
@@ -59,7 +59,7 @@ def epipolar():
     # --- checks
     # The noise limits the recovery: the rotation comes back within half a degree, each
     # rotated axis plane agreeing with the truth.
-    axes = mv("x y z", np.eye(3))
+    axes = mv(Plane.derive.nondegenerate, np.eye(3))
     turned = (est_motor >> axes).normalized() | (true_motor >> axes).normalized()
     assert np.all(turned.to_array() > np.cos(np.radians(0.5)))
     # The baseline direction comes back within two degrees; its length is not observable.

@@ -7,13 +7,13 @@ from numga.backend import NumpyContext
 
 def test_cl2_even_geometric_product_is_complex_multiplication():
     algebra = Algebra("x+y+")
-    spaces = algebra.subspace
+    gatypes = algebra.gatype
     factory = algebra.operator
     context = NumpyContext(algebra)
-    even = spaces.even()
+    even = gatypes.even()
     product = factory.geometric_product(even, even)
 
-    assert product.axes == (even, even, even)
+    assert product.axes == (even.output_subspace, even.output_subspace, even.output_subspace)
     assert product.kernel.values.tolist() == [
         [[1, 0], [0, -1]],
         [[0, 1], [1, 0]],
@@ -34,15 +34,15 @@ def test_cl2_even_geometric_product_is_complex_multiplication():
 
 def test_euclidean_3d_cross_product_orientation():
     algebra = Algebra("x+y+z+")
-    spaces = algebra.subspace
+    gatypes = algebra.gatype
     factory = algebra.operator
     context = NumpyContext(algebra)
-    vector = spaces.vector()
-    cross = factory.cross(vector)
+    vector = gatypes.vector()
+    cross = factory.cross(vector.output_subspace)
     x = context.extensor(vector, [1, 0, 0])
     y = context.extensor(vector, [0, 1, 0])
 
-    assert cross.axes == (vector, vector, vector)
+    assert cross.axes == (vector.output_subspace, vector.output_subspace, vector.output_subspace)
     np.testing.assert_allclose(
         cross(x, y).kernel,
         [0, 0, 1],
@@ -68,18 +68,18 @@ def test_euclidean_3d_cross_product_orientation():
 
 def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
     algebra = Algebra("x+y+w0")
-    spaces = algebra.subspace
+    gatypes = algebra.gatype
     context = NumpyContext(algebra)
-    point = spaces.antivector()
-    bivector = spaces.bivector()
-    dual_bivector = spaces.antibivector()
+    point = gatypes.antivector()
+    bivector = gatypes.bivector()
+    dual_bivector = gatypes.antibivector()
 
-    assert tuple(algebra.blade_name(mask) for mask in bivector.masks) == (
+    assert tuple(algebra.blade_name(mask) for mask in bivector.output_subspace.masks) == (
         "xy",
         "xw",
         "yw",
     )
-    assert tuple(algebra.blade_name(mask) for mask in dual_bivector.masks) == (
+    assert tuple(algebra.blade_name(mask) for mask in dual_bivector.output_subspace.masks) == (
         "x",
         "y",
         "w",
@@ -96,9 +96,11 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
         ],
     )
 
-    point_inertia = point.gatype.regressive(point.gatype.commutator(bivector))
+    point_inertia = point.regressive(point.commutator(bivector))
     assert point_inertia.context is algebra.exact
-    assert point_inertia.axes == (dual_bivector, point, point, bivector)
+    assert point_inertia.axes == (
+        dual_bivector.output_subspace, point.output_subspace, point.output_subspace, bivector.output_subspace,
+    )
     assert point_inertia.arity == 3
 
     # Binding both point positions atomically retains the repeated-argument
@@ -115,7 +117,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
         dtype=float,
     )
     assert point_inertias.shape == (3,)
-    assert point_inertias.axes == (dual_bivector, bivector)
+    assert point_inertias.axes == (dual_bivector.output_subspace, bivector.output_subspace)
     assert point_inertias.arity == 1
     np.testing.assert_allclose(
         point_inertias.kernel,
@@ -134,7 +136,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
 
     # The opposite commutator order is equally composable, but antisymmetry
     # makes it the negative map rather than the inertia convention used here.
-    opposite_order = points.regressive(bivector.gatype.commutator(points))
+    opposite_order = points.regressive(bivector.commutator(points))
     np.testing.assert_allclose(
         opposite_order.kernel,
         -expected_point_inertias,
@@ -149,7 +151,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
         dtype=float,
     )
     assert inertia.shape == ()
-    assert inertia.axes == (dual_bivector, bivector)
+    assert inertia.axes == (dual_bivector.output_subspace, bivector.output_subspace)
     assert inertia.arity == 1
     np.testing.assert_allclose(
         inertia.kernel,
@@ -162,7 +164,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
     rates = context.extensor(bivector, [[2, 3, 5], [-1, 4, 2]])
     momenta = inertia(rates)
     assert momenta.shape == (2,)
-    assert momenta.subspace is dual_bivector
+    assert momenta.subspace is dual_bivector.output_subspace
     np.testing.assert_allclose(
         momenta.kernel,
         [[13, -11, 2], [7, -11, 0]],
@@ -172,7 +174,7 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
     )
 
     energy_twice = rates.regressive(momenta)
-    assert energy_twice.subspace is spaces.scalar()
+    assert energy_twice.subspace is algebra.subspace.scalar()
     np.testing.assert_allclose(
         energy_twice.kernel,
         [[102], [58]],
@@ -215,17 +217,19 @@ def test_direct_pga2_inertia_expression_batches_reduces_and_applies():
 
 def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
     algebra = Algebra("x+y+")
-    spaces = algebra.subspace
+    gatypes = algebra.gatype
     factory = algebra.operator
     context = NumpyContext(algebra)
-    sandwicher = spaces.even()
-    passenger = spaces.vector()
+    sandwicher = gatypes.even()
+    passenger = gatypes.vector()
     sandwich = factory.sandwich(sandwicher, passenger)
 
     assert algebra.gatype.even().sandwich(algebra.gatype.vector()) is sandwich
     assert sandwich.context is algebra.exact
     assert sandwich.arity == 3
-    assert sandwich.axes == (passenger, sandwicher, passenger, sandwicher)
+    assert sandwich.axes == (
+        passenger.output_subspace, sandwicher.output_subspace, passenger.output_subspace, sandwicher.output_subspace,
+    )
     assert sandwich.kernel.shape == (2, 2, 2, 2)
 
     sandwichers = context.extensor(
@@ -246,7 +250,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         dtype=float,
     )
     assert maps.shape == (2, 1)
-    assert maps.axes == (passenger, passenger)
+    assert maps.axes == (passenger.output_subspace, passenger.output_subspace)
     assert maps.arity == 1
     np.testing.assert_allclose(
         maps.kernel,
@@ -288,7 +292,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         dtype=float,
     )
     assert transformed.shape == (2, 3)
-    assert transformed.axes == (passenger,)
+    assert transformed.axes == (passenger.output_subspace,)
     assert transformed.arity == 0
     np.testing.assert_allclose(
         transformed.kernel,

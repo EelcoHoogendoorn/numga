@@ -12,6 +12,8 @@ the vertices, edges and faces, coupling their elements through extensors, here m
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 from numga.sparse import SparseExtensor, spdiag
@@ -24,6 +26,10 @@ Mesh, Scalar, Vector, Bivector = mesh_module.Mesh, mesh_module.Scalar, mesh_modu
 as_ga_sparse, as_scalar, context = mesh_module.as_ga_sparse, mesh_module.as_scalar, mesh_module.ctx
 
 Even = ga.gatype.even()
+# Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
+# axis, up in the file, turned onto z, and then x onto y.
+SPOT = Path(__file__).parents[2] / "models" / "spot.obj"
+UPRIGHT = ((context.multivector.x ^ context.multivector.y) * (-np.pi / 4)).exp() * ((context.multivector.y ^ context.multivector.z) * (-np.pi / 4)).exp()
 
 
 def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
@@ -52,7 +58,7 @@ def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
     # each face takes each corner by the edge it faces, over minus twice the face's area: the geometric
     # derivative divided by each face's plane
     D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
-    R = spdiag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
+    R = spdiag(rho * mesh.unit_volume) * A20                               # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
@@ -98,7 +104,7 @@ def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
     # each face takes each corner by the edge it faces, over minus twice the face's area
     rho = as_scalar(np.full(len(I20), float(eigenvalue))).field()           # Scalar[F]
     D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
-    R = spdiag(rho.dual()) * A20                                           # [F, V] Pseudoscalar
+    R = spdiag(rho * mesh.unit_volume) * A20                               # [F, V] Pseudoscalar
     A = D - R                                                               # [F, V] Odd
     Q = ~A * M2 * A                                                         # [V, V] Even
 
@@ -135,7 +141,8 @@ def mean_curvature(mesh: Mesh):
     # the integrated mean-curvature normal, its signed size at each vertex, the pointwise
     # curvature at each vertex, and its mean over each face
     Hn = L * mesh.vertices                              # Vector[V]
-    h_integrated = Hn | mesh.vertex_normals             # Scalar[V]
+    # its volume with each vertex's plane, read against the solid's own oriented volume
+    h_integrated = (Hn ^ mesh.vertex_normals.dual()) / mesh.unit_volume   # Scalar[V]
     h = h_integrated / (2 * mesh.vertex_areas)          # Scalar[V]
     return A20 * h                                      # Scalar[F]
 
@@ -152,8 +159,9 @@ def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
     Each step prescribes `rho = -rate * (H - Hbar)`: a conformal *change* in mean
     curvature that shaves off each face's deviation from the (area-weighted) mean.
     This relaxes the surface toward constant mean curvature while every individual
-    step stays conformal (angle-preserving). Run on a cube it rounds the edges and
-    corners, which stay cone points: a conformal map keeps the angle deficit there.
+    step stays conformal (angle-preserving). Run on Spot the cow it draws in the legs,
+    horns and ears and rounds the body into a sphere, every square of a checkerboard on
+    the cow staying square.
 
     Note `rho` is a *change* in curvature, so `rho = 0` (rate 0) is the identity;
     feeding absolute curvature instead diverges. Yields the mesh before each step
@@ -169,26 +177,7 @@ def conformal_smooth(mesh: Mesh, iterations: int, rate: float):
 
 
 # --- plumbing -------------------------------------------------------------------------
-def icosphere(levels: int) -> Mesh:
-    """A unit sphere: an icosahedron with each face split in four, the given number of times."""
-    golden = (1 + 5 ** 0.5) / 2
-    coords = np.array([
-        [-1, golden, 0], [1, golden, 0], [-1, -golden, 0], [1, -golden, 0],
-        [0, -1, golden], [0, 1, golden], [0, -1, -golden], [0, 1, -golden],
-        [golden, 0, -1], [golden, 0, 1], [-golden, 0, -1], [-golden, 0, 1],
-    ])
-    faces = np.array([
-        [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2],
-        [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5],
-        [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
-    ])
-    for _ in range(levels):
-        edges = np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=1)
-        unique, inverse = np.unique(edges, axis=0, return_inverse=True)
-        (a, b, c), (ab, bc, ca) = faces.T, (len(coords) + inverse.reshape(3, -1))
-        coords = np.concatenate([coords, (coords[unique[:, 0]] + coords[unique[:, 1]]) / 2])
-        faces = np.concatenate([np.stack(f, axis=-1) for f in ((a, ab, ca), (ab, b, bc), (ca, bc, c), (ab, bc, ca))])
-    return Mesh(context.multivector.vector(coords / np.linalg.norm(coords, axis=-1, keepdims=True)).field(), faces)
+icosphere = Mesh.icosphere
 
 
 def cube(divisions: int) -> Mesh:
@@ -207,3 +196,11 @@ def cube(divisions: int) -> Mesh:
             coords.append(point)
     unique, inverse = np.unique(np.round(np.concatenate(coords), 9), axis=0, return_inverse=True)
     return Mesh(context.multivector.vector(unique).field(), inverse.reshape(-1)[np.concatenate(faces)])
+
+
+def spot() -> Mesh:
+    """Spot the cow, by Keenan Crane, from his model repository (CC0),
+    https://www.cs.cmu.edu/~kmcrane/Projects/ModelRepository/: upright with z up, centred, and scaled to
+    reach one at her furthest."""
+    mesh = Mesh.read(SPOT, 2.0)
+    return mesh.copy(UPRIGHT >> mesh.vertices)

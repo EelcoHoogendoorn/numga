@@ -1,5 +1,5 @@
-"""Scenes for spin transformations: a sphere given a dipole change in mean curvature, and a cube
-rounded by conformal curvature flow."""
+"""Scenes for spin transformations: a sphere given a dipole change in mean curvature, Spot the cow
+rounded by conformal curvature flow, and the Dirac spheres."""
 
 from __future__ import annotations
 
@@ -10,10 +10,8 @@ from examples.surfaces.spin_transformations import core
 # How often the sphere's icosahedron is split, and how strongly its mean curvature changes along y.
 LEVELS = 3
 DIPOLE = 0.5
-# The cube's squares per side edge, the share of each face's curvature departure each flow step
-# removes, and the number of steps.
-DIVISIONS = 8
-RATE = 0.25
+# The share of each face's curvature departure each step of Spot's flow removes, and the number of steps.
+RATE = 0.1
 STEPS = 30
 # The finer sphere the Dirac spheres are spun from, the eigenvalues shown, and the states shown of each.
 DIRAC_LEVELS = 4
@@ -43,15 +41,14 @@ def dipole():
 
 
 def rounding():
-    """A cube under conformal curvature flow: the mesh at every step."""
-    frames = list(core.conformal_smooth(core.cube(DIVISIONS), STEPS, RATE))    # [STEPS + 1] Mesh
+    """Spot the cow under conformal curvature flow: the mesh at every step."""
+    frames = list(core.conformal_smooth(core.spot(), STEPS, RATE))            # [STEPS + 1] Mesh
 
     # --- checks
-    # The surface rounds: the spread of the vertices' distances from the centre falls fivefold.
-    first, last = (frame.vertices.norm().to_array() for frame in (frames[0], frames[-1]))
-    assert last.std() < 0.2 * first.std()
-    # The angles hold up to the mesh's resolution: in the median, against a cosine change of up to
-    # 0.12 at the creases in the first step.
+    # The surface rounds: the spread of the vertices' distances from the centre of the surface falls
+    # tenfold.
+    assert roundness(frames[-1]) < 0.1 * roundness(frames[0])
+    # The angles hold up to the mesh's resolution, in the median.
     assert np.median(np.abs((frames[-1].corner_cosines() - frames[0].corner_cosines()).to_array())) < 0.05
     return frames
 
@@ -73,6 +70,16 @@ def dirac():
         for sphere in spheres:
             assert np.median(np.abs((sphere.corner_cosines() - mesh.corner_cosines()).to_array())) < 0.1
     return mesh, gallery
+
+
+# --- plumbing -------------------------------------------------------------------------
+def roundness(mesh: core.Mesh) -> float:
+    """The spread of the vertices' distances from the surface's centre, its area-weighted centroid, over
+    their mean: nothing on a sphere, however its vertices crowd."""
+    centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * mesh.vertices   # Vector[F]
+    middle = (centroids * mesh.triangle_areas).sites.sum() / mesh.triangle_areas.sites.sum()
+    distances = (mesh.vertices - middle).norm().to_array()
+    return distances.std() / distances.mean()
 
 
 if __name__ == "__main__":

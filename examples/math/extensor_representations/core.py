@@ -1,6 +1,6 @@
 """Blade charts for faithful Clifford actions on their smallest real state spaces."""
 
-from numga import Algebra, Extensor, GAType
+from numga import Algebra, Extensor, GAType, Orientation
 
 
 # --- math -----------------------------------------------------------------------------
@@ -44,4 +44,4 @@ def spinor_layout(algebra: Algebra) -> tuple[GAType, tuple[int, ...]]:
     # Multiplying a chart blade by the projector fills its coset. Distinct cosets
     # have disjoint support, so keeping one blade from each gives independent states.
     representatives = {min(blade ^ other for other in span) for blade in algebra.blade_masks}
-    return algebra.gatype(algebra.subspace.from_masks(representatives)), involutions
+    return algebra.gatype(algebra.subspace.from_masks(representatives), orientation=Orientation.extrinsic), involutions

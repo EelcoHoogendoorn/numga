@@ -21,7 +21,7 @@ from examples.animation import capture
 # The figures are top-down views of the plane: they draw PGA2D geometry.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
 Motor, Point, Quadric, Information = core.Motor, core.Point, core.Quadric, core.Information
-mv, point = core.mv, core.point
+mv = core.mv
 
 CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
@@ -50,7 +50,7 @@ def pose_covariance(information: Information) -> np.ndarray:
     information on all poses together, `Scalar <- (Twist[cams], Twist[cams])`: the diagonal blocks of
     its pseudoinverse, each camera's covariance with the others free to move with it."""
     cams = information.gatype.site_shape[0]
-    basis = mv("yw wx xy", np.eye(3))                                        # [3] Twist
+    basis = mv.bivector(np.eye(3))                                        # [3] Twist
     # Each coefficient at each camera alone, zero at the others:
     units = (basis[None, :, None] * np.eye(cams)[:, None, :]).field()       # [cams, 3] Twist[cams]
     gram = information(units[:, :, None, None], units[None, None]).to_array()   # [cams, 3, cams, 3]
@@ -70,7 +70,7 @@ def plane_grid() -> tuple[Point, float]:
     xs = np.linspace(*X_RANGE, RESOLUTION[1])
     ys = np.linspace(*Y_RANGE, RESOLUTION[0])
     xx, yy = np.meshgrid(xs, ys)
-    return point(np.stack([xx, yy], axis=-1)), (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
+    return mv.point(np.stack([xx, yy], axis=-1)), (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
 
 
 def depths(motors: Motor, grid: Point) -> np.ndarray:
@@ -118,7 +118,7 @@ def show_image(ax: plt.Axes, image: np.ndarray) -> None:
 # --- overlays -----------------------------------------------------------------------------
 def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
     """Each camera's field-of-view wedge, sensor line and optical axis."""
-    centers = coordinates(motors >> point(np.zeros(2)))
+    centers = coordinates(motors >> mv.point(np.zeros(2)))
     axes = optical_axes(motors)
     scale, half_fov = 0.28, np.radians(38.0)
     for center, axis, color in zip(centers, axes, CAMERA_COLORS):
@@ -143,7 +143,7 @@ def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) 
     """
     covariance = pose_covariance(information)
     observed = np.abs(covariance).max(axis=(-2, -1)) > 0
-    centers = coordinates(motors >> point(np.zeros(2)))[observed]
+    centers = coordinates(motors >> mv.point(np.zeros(2)))[observed]
     axes = optical_axes(motors)[observed]
     colors = np.array(CAMERA_COLORS[:len(observed)])[observed]
     for center, axis, cov_twist, color in zip(centers, axes, covariance[observed], colors):

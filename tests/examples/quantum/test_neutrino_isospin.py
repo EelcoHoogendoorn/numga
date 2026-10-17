@@ -72,10 +72,10 @@ def test_trace_conservation():
     theta = np.radians(30.0)
     b_vac = core.vacuum_hamiltonian(1.0, theta)
     rotor_mix = core.mixing_rotor(theta)
-    mass_axis = rotor_mix >> core.flavor_mu
+    mass_plane = rotor_mix >> core.phase_plane
 
     turning = core.coherent_generator(b_vac)
-    dephasing = core.dephasing_generator(mass_axis, 0.1)
+    dephasing = core.dephasing_generator(mass_plane, 0.1)
     gen = turning + dephasing
 
     step = core.evolution(gen, 0.05)

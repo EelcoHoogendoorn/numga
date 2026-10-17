@@ -20,9 +20,8 @@ from functools import lru_cache
 import numpy as np
 
 from numga.extensor import Extensor
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
 from numga.operator.kernel import SymbolicKernel
-from numga.subspace import SubSpace
 
 
 @Extensor.trace.register(lambda t: True)
@@ -44,8 +43,11 @@ def trace(value: Extensor, first: int, second: int) -> Extensor:
     first, second = _checked(value.gatype, first, second)
     if first == 0:
         return _trace_output(value, second - 1)
-    inputs = value.input_subspaces
-    return _paired(value, first - 1, second - 1, _incidence_reciprocal(inputs[first - 1], inputs[second - 1]))
+    slots = value.gatype.derive
+    reciprocal = _incidence_reciprocal(slots.axis(first), slots.axis(second))
+    # summed through `&`, the pairing has the orientation of a regressive product of the two slots
+    pairing = (value.gatype.orientations[first] * value.gatype.orientations[second]).flipped
+    return _paired(value, first - 1, second - 1, reciprocal, pairing)
 
 
 @Extensor.contract.register(lambda t: True)
@@ -73,7 +75,11 @@ def contract(value: Extensor, first: int, second: int) -> Extensor:
     inputs = value.input_subspaces
     if not inputs[second - 1].same_support(inputs[first - 1]):
         raise TypeError(f"contract pairs inputs of one space; got {inputs[first - 1]} and {inputs[second - 1]}")
-    return _paired(value, first - 1, second - 1, _metric_reciprocal(inputs[first - 1]))
+    slots = value.gatype.derive
+    reciprocal = _metric_reciprocal(slots.axis(first), slots.axis(second))
+    # summed through `|`, the pairing has the orientation of a product of the two slots
+    pairing = value.gatype.orientations[first] * value.gatype.orientations[second]
+    return _paired(value, first - 1, second - 1, reciprocal, pairing)
 
 
 @lru_cache(maxsize=None)
@@ -99,18 +105,21 @@ def _checked(gatype: GAType, first: int, second: int) -> tuple[int, int]:
     return first, second
 
 
-def _paired(value: Extensor, first: int, second: int, reciprocal: Extensor) -> Extensor:
-    """Feed the second input the reciprocal of each blade of the first, then sum the diagonal."""
-    inputs = value.input_subspaces
-    slots = [value.algebra.gatype(space) for space in inputs]
+def _paired(value: Extensor, first: int, second: int, reciprocal: Extensor, pairing: Orientation) -> Extensor:
+    """Feed the second input the reciprocal of each blade of the first, then sum the diagonal. The
+    output's orientation multiplies with that of the pairing the sum runs through."""
+    gatype = value.gatype
+    slots = [gatype.derive.axis(slot + 1) for slot in range(gatype.arity)]
     slots[second] = reciprocal
     raised = value(*slots)
     offset = raised.ndim + 1
     kernel = raised.context.axes_trace(raised._kernel, offset + first, offset + second)
-    remaining = tuple(space for slot, space in enumerate(inputs) if slot not in (first, second))
-    return Extensor._from_prepared_kernel(
-        raised.context, value.algebra.gatype((value.output_subspace,) + remaining), kernel,
+    remaining = [axis for axis in range(1, gatype.arity + 1) if axis - 1 not in (first, second)]
+    result_type = gatype.algebra.gatype.oriented(
+        (gatype.output_subspace,) + tuple(gatype.subspaces[axis] for axis in remaining),
+        (gatype.orientation * pairing,) + tuple(gatype.orientations[axis] for axis in remaining),
     )
+    return Extensor._from_prepared_kernel(raised.context, result_type, kernel)
 
 
 def _trace_output(value: Extensor, slot: int) -> Extensor:
@@ -129,28 +138,38 @@ def _trace_type(gatype: GAType, slot: int) -> GAType:
     inputs = gatype.input_subspaces
     if not inputs[slot].same_support(gatype.output_subspace):
         raise TypeError("trace pairs an output with an input of the same space")
-    return gatype.algebra.gatype(
+    # equal orientations pair to an ordinary number, as on an endomorphism; opposite ones to a chirality
+    orientations = gatype.input_orientations
+    return gatype.algebra.gatype.oriented(
         (gatype.algebra.subspace.scalar(),) + inputs[:slot] + inputs[slot + 1:],
+        (gatype.orientation * orientations[slot],) + orientations[:slot] + orientations[slot + 1:],
     )
 
 
 @lru_cache(maxsize=None)
-def _metric_reciprocal(space: SubSpace) -> Extensor:
-    """The exact map sending each blade of the space to its reciprocal under the slot's metric."""
+def _metric_reciprocal(first: GAType, second: GAType) -> Extensor:
+    """The exact map sending each blade of the first slot's space to its reciprocal under the
+    space's metric, as an element of the second slot."""
     from numga.extensions.forms import _default_metric
-    metric = _default_metric(space)._kernel.values[0]                         # [blades, blades]
+    space = first.output_subspace
+    metric = _default_metric(first)._kernel.values[0]                         # [blades, blades]
     if not metric.any(axis=0).all():
         raise TypeError(f"contract needs an invertible metric; {space} has a null blade")
-    return space.algebra.operator.build((space, space), SymbolicKernel(metric).inverse())
+    return space.algebra.operator.build(
+        (second.output_subspace, space), (second.orientation, first.orientation), SymbolicKernel(metric).inverse(),
+    )
 
 
 @lru_cache(maxsize=None)
-def _incidence_reciprocal(first: SubSpace, second: SubSpace) -> Extensor:
+def _incidence_reciprocal(first_slot: GAType, second_slot: GAType) -> Extensor:
     """The exact map sending each blade of the first space to the blade of the second that it
     meets in one, and every other blade of the first in zero."""
+    first, second = first_slot.output_subspace, second_slot.output_subspace
     algebra = first.algebra
-    incidence = algebra.operator.regressive(first, second)                     # Scalar <- (first, second)
+    incidence = algebra.operator.regressive(first_slot, second_slot)           # Scalar <- (first, second)
     pairing = incidence.cast(algebra.subspace.scalar())._kernel.values[0]       # [first blades, second blades]
     if pairing.shape[0] != pairing.shape[1] or np.linalg.matrix_rank(pairing) < len(first):
         raise TypeError(f"trace pairs inputs of complementary spaces; {first} and {second} pair through the metric: contract them")
-    return algebra.operator.build((second, first), SymbolicKernel(pairing).inverse())
+    return algebra.operator.build(
+        (second, first), (second_slot.orientation, first_slot.orientation), SymbolicKernel(pairing).inverse(),
+    )

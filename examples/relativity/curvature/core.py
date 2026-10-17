@@ -72,7 +72,7 @@ Bivector = STA.gatype.bivector()
 # Even subalgebra: rotations and boosts.
 Rotor = STA.gatype.rotor()
 # A scalar plus a pseudoscalar: an amplitude and a phase.
-Phasor = STA.gatype(STA.subspace.scalar() + STA.subspace.pseudoscalar())
+Phasor = STA.gatype.scalar_pseudoscalar()
 
 # Extensors (linear maps between blade subspaces), read output <- input. The curvature takes an
 # area bivector to a curvature bivector, the tidal map a separation to a relative acceleration,

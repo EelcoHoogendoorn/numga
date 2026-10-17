@@ -36,7 +36,7 @@ def ellipsoids(joint_angles: tuple, velocity_scale: float, force_scale: float):
     # Both against the joint torques a unit tip force produces: each joint's axis paired with the
     # force's line through the tip, as in the robot arm example.
     unit = np.array([[0.3, -0.2, 0.5], [1.0, 0.4, -0.7]])
-    along = core.mv("x y z", unit / np.linalg.norm(unit, axis=-1, keepdims=True)).dual()   # [n_forces] Direction
+    along = core.mv.direction(unit / np.linalg.norm(unit, axis=-1, keepdims=True))         # [n_forces] Direction
     torques = (axes[:, None] & (tip & along)).to_array()                                # [n_joints, n_forces]
     # A force lies on the force ellipsoid exactly when its joint torques have unit squared sum.
     held = tip + along

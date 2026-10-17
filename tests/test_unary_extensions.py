@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, Extensor, NumpyContext, SymbolicKernel
 
 
@@ -22,12 +23,12 @@ def make_map(context, output, domain, coefficients):
 
 def test_cholesky_aligns_layout_and_preserves_batches(context):
     ga = context.algebra
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
     operator = make_map(context, slot, slot, np.broadcast_to(matrix, (2, 1, 3, 3)))
     factor = operator.cast(ga.subspace("z -x y")).cholesky()
     assert factor.shape == (2, 1)
-    assert factor.axes == (slot, slot)
+    assert factor.axes == (slot.output_subspace, slot.output_subspace)
     product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
     np.testing.assert_allclose(product, operator.kernel, atol=0.0002)
     np.testing.assert_allclose(np.triu(factor.kernel, 1), 0)
@@ -36,19 +37,19 @@ def test_cholesky_aligns_layout_and_preserves_batches(context):
 def test_complex_cholesky_reconstructs_hermitian_map():
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga, dtype=np.complex128)
-    slot = ga.subspace.vector()
+    slot = ga.gatype.vector()
     operator = make_map(ctx, slot, slot, [[3, 1j], [-1j, 2]])
     factor = operator.cholesky()
     np.testing.assert_allclose(factor.kernel @ factor.kernel.conj().T, operator.kernel, atol=1e-12)
 
 
 def test_hermitian_eigenpairs_reconstruct_batched_operator(context):
-    vector = context.algebra.subspace.vector()
+    vector = context.algebra.gatype.vector()
     matrix = np.array([[[3, 1, 0], [1, 2, 0], [0, 0, 4]],
                        [[2, 0, 0], [0, 2, 0], [0, 0, 2]]])
     operator = make_map(context, vector, vector, matrix)
     values, vectors = operator.eigh()
-    assert vectors.axes == (vector,)
+    assert vectors.axes == (vector.output_subspace,)
     assert vectors.shape == values.shape == (2, 3)
     assert values.gatype.is_scalar
     np.testing.assert_allclose(operator[:, None](vectors).kernel,
@@ -63,7 +64,7 @@ def test_hermitian_eigenpairs_reconstruct_batched_operator(context):
 @pytest.mark.parametrize("method", ["eig", "eigh"])
 def test_eigenmethods_align_signed_reordered_layouts(context, method):
     ga = context.algebra
-    vector = ga.subspace.vector()
+    vector = ga.gatype.vector()
     reordered = ga.subspace("z -x y")
     operator = make_map(context, vector, vector, [[3, 1, 0], [1, 2, 0], [0, 0, 4]])
     relayout = operator.cast(reordered)
@@ -74,7 +75,7 @@ def test_eigenmethods_align_signed_reordered_layouts(context, method):
 
 
 def test_real_rotation_produces_complex_eigenpairs(context):
-    plane = context.algebra.subspace("x y")
+    plane = context.algebra.gatype(context.algebra.subspace("x y"), orientation=Orientation.extrinsic)
     operator = make_map(context, plane, plane, [[0, -1], [1, 0]])
     values, vectors = operator.eig()
     assert values.dtype.kind == vectors.dtype.kind == "c"
@@ -88,13 +89,13 @@ def test_real_rotation_produces_complex_eigenpairs(context):
 @pytest.mark.parametrize("rows,cols", [(3, 2), (2, 3)])
 def test_rectangular_svd_reconstruction_and_pseudoinverse(context, rows, cols):
     ga = context.algebra
-    output = ga.subspace("x y z" if rows == 3 else "x y")
-    domain = ga.subspace("xy xz yz" if cols == 3 else "xy xz")
+    output = ga.gatype(ga.subspace("x y z" if rows == 3 else "x y"), orientation=Orientation.extrinsic)
+    domain = ga.gatype(ga.subspace("xy xz yz" if cols == 3 else "xy xz"), orientation=Orientation.extrinsic)
     matrix = np.random.default_rng(3).normal(size=(2, rows, cols))
     operator = make_map(context, output, domain, matrix)
     left, singular, right = operator.svd()
-    assert left.axes == (output,)
-    assert right.axes == (domain,)
+    assert left.axes == (output.output_subspace,)
+    assert right.axes == (domain.output_subspace,)
     assert left.shape == right.shape == singular.shape == (2, 2)
     np.testing.assert_allclose(operator[:, None](right).kernel,
                                (left * singular).kernel, atol=0.0002)
@@ -103,23 +104,23 @@ def test_rectangular_svd_reconstruction_and_pseudoinverse(context, rows, cols):
     np.testing.assert_allclose(reconstructed, matrix, atol=0.0002)
     np.testing.assert_allclose(operator.svdvals().kernel, singular.kernel, atol=0.0002)
     inverse = operator.pinv()
-    assert inverse.axes == (domain, output)
+    assert inverse.axes == (domain.output_subspace, output.output_subspace)
     np.testing.assert_allclose(operator(inverse(operator)).kernel, matrix, atol=0.0003)
 
 
 def test_solve_broadcasts_rhs_and_preserves_map_slots(context):
     ga = context.algebra
-    output, domain = ga.subspace.vector(), ga.subspace.bivector()
+    output, domain = ga.gatype.vector(), ga.gatype.bivector()
     matrix = np.array([[3, 1, 0], [0, 2, 1], [0, 0, 4]])
     operator = make_map(context, output, domain, matrix)
     rhs = context.multivector.vector([[1, 2, 3], [4, 5, 6]])
     solution = operator.solve(rhs)
-    assert solution.axes == (domain,)
+    assert solution.axes == (domain.output_subspace,)
     np.testing.assert_allclose(operator(solution).kernel, rhs.kernel, atol=2e-6)
-    rhs_map = make_map(context, output, ga.subspace("x y"),
+    rhs_map = make_map(context, output, ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic),
                        np.arange(12).reshape(2, 3, 2))
     map_solution = operator.solve(rhs_map)
-    assert map_solution.axes == (domain, ga.subspace("x y"))
+    assert map_solution.axes == (domain.output_subspace, ga.subspace("x y"))
     np.testing.assert_allclose(operator(map_solution).kernel, rhs_map.kernel, atol=2e-6)
     batched = make_map(context, output, domain, matrix[None, None] * np.ones((2, 1, 1, 1)))
     broadcast = batched.solve(rhs)
@@ -132,11 +133,11 @@ def test_solve_broadcasts_rhs_and_preserves_map_slots(context):
 
 def test_adjugate_carries_incidence_for_singular_batched_maps(context):
     ga = context.algebra
-    point, twist = ga.subspace.antivector(), ga.subspace.bivector()
+    point, twist = ga.gatype.antivector(), ga.gatype.bivector()
     rank_one = np.random.default_rng(4).normal(size=(2, 3, 1)) * np.random.default_rng(5).normal(size=(2, 1, 3))
     shift = make_map(context, point, twist, rank_one)
     readout = shift.adjugate()
-    assert readout.axes == (point.complement(), twist.complement())
+    assert readout.axes == (point.output_subspace.complement(), twist.output_subspace.complement())
     lines = context.multivector.vector([[1, 2, 3], [4, -5, 6]])
     twists = context.multivector.bivector([[1, -1, 2], [0, 3, 1]])
     np.testing.assert_allclose((readout(lines) & twists).kernel, (lines & shift(twists)).kernel, atol=2e-4)
@@ -146,10 +147,11 @@ def test_adjugate_carries_incidence_for_singular_batched_maps(context):
 def test_adjugate_twice_carries_the_pairing_signs(output, domain):
     ga = Algebra("x+y+z+w0")
     context = NumpyContext(ga)
-    output, domain = getattr(ga.subspace, output)(), getattr(ga.subspace, domain)()
-    operator = make_map(context, output, domain, np.random.default_rng(6).normal(size=(len(output), len(domain))))
-    covectors = context.extensor(output.complement(), np.random.default_rng(7).normal(size=len(output)))
-    values = context.extensor(domain, np.random.default_rng(8).normal(size=len(domain)))
+    output, domain = getattr(ga.gatype, output)(), getattr(ga.gatype, domain)()
+    sizes = len(output.output_subspace), len(domain.output_subspace)
+    operator = make_map(context, output, domain, np.random.default_rng(6).normal(size=sizes))
+    covectors = context.extensor(output, np.random.default_rng(7).normal(size=sizes[0])).dual()
+    values = context.extensor(domain, np.random.default_rng(8).normal(size=sizes[1]))
     scalar = ga.subspace.scalar()
     np.testing.assert_allclose((operator.adjugate()(covectors) & values).cast(scalar).kernel,
                                (covectors & operator(values)).cast(scalar).kernel, atol=1e-12)
@@ -174,9 +176,11 @@ def test_adjugate_of_an_outermorphism_is_its_determinant_times_its_inverse(signa
     land on bivectors, and points in PGA3D on planes."""
     ga = Algebra(signature)
     context = NumpyContext(ga)
-    space = ga.subspace.vector() if signature == "x+y+z+" else ga.subspace.antivector()
-    operator = make_map(context, space, space, np.random.default_rng(9).normal(size=(len(space), len(space))))
-    adjugate = operator.det().to_array().item() * operator.outermorphism(ga.gatype(space.complement())).inverse()
+    space, complement = (ga.gatype.vector(), ga.gatype.bivector()) if signature == "x+y+z+" else \
+        (ga.gatype.antivector(), ga.gatype.antitrivector())
+    size = len(space.output_subspace)
+    operator = make_map(context, space, space, np.random.default_rng(9).normal(size=(size, size)))
+    adjugate = operator.det().to_array().item() * operator.outermorphism(complement).inverse()
     np.testing.assert_allclose(operator.adjugate().kernel, adjugate.kernel, atol=1e-12)
 
 
@@ -187,11 +191,12 @@ def test_adjoint_carries_the_scalar_product(signature, output, domain):
     where the scalar product is indefinite; and the adjoint of the adjoint is the map."""
     ga = Algebra(signature)
     context = NumpyContext(ga)
-    output, domain = getattr(ga.subspace, output)(), getattr(ga.subspace, domain)()
+    output, domain = getattr(ga.gatype, output)(), getattr(ga.gatype, domain)()
+    sizes = len(output.output_subspace), len(domain.output_subspace)
     rng = np.random.default_rng(10)
-    operator = make_map(context, output, domain, rng.normal(size=(len(output), len(domain))))
-    covectors = context.extensor(output, rng.normal(size=len(output)))
-    values = context.extensor(domain, rng.normal(size=len(domain)))
+    operator = make_map(context, output, domain, rng.normal(size=sizes))
+    covectors = context.extensor(output, rng.normal(size=sizes[0]))
+    values = context.extensor(domain, rng.normal(size=sizes[1]))
     np.testing.assert_allclose(operator.adjoint()(covectors).scalar_product(values).kernel,
                                covectors.scalar_product(operator(values)).kernel, atol=1e-12)
     np.testing.assert_allclose(operator.adjoint().adjoint().kernel, operator.kernel, atol=1e-12)
@@ -210,7 +215,7 @@ def test_adjoint_of_a_versor_sandwich_is_its_inverse(signature):
 def test_adjoint_fails_where_the_metric_is_degenerate():
     """In PGA3D the scalar product on points sees only their weight."""
     ga = Algebra("x+y+z+w0")
-    point = ga.subspace.antivector()
+    point = ga.gatype.antivector()
     operator = make_map(NumpyContext(ga), point, point, np.random.default_rng(12).normal(size=(4, 4)))
     with pytest.raises(np.linalg.LinAlgError):
         operator.adjoint()
@@ -218,7 +223,7 @@ def test_adjoint_fails_where_the_metric_is_degenerate():
 
 def test_rank_deficient_least_squares_has_minimum_norm(context):
     ga = context.algebra
-    output, domain = ga.subspace.vector(), ga.subspace("xy xz")
+    output, domain = ga.gatype.vector(), ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic)
     operator = make_map(context, output, domain, [[1, 2], [2, 4], [0, 0]])
     rhs = context.multivector.vector([[1, 2, 3], [2, 1, 0]])
     solution = operator.lstsq(rhs, rcond=1e-5)
@@ -231,8 +236,8 @@ def test_rank_deficient_least_squares_has_minimum_norm(context):
 def test_nullary_lstsq_exact_and_minimum_norm(context):
     ga = context.algebra
     # Underdetermined: 2 equations (subspace 'x y'), 3 columns
-    basis = context.extensor(ga.gatype(ga.subspace("x y")), [[1, 0], [0, 1], [1, 1]])
-    target = context.extensor(ga.gatype(ga.subspace("x y")), [2, 3])
+    basis = context.extensor(ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), [[1, 0], [0, 1], [1, 1]])
+    target = context.extensor(ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), [2, 3])
     solution = basis.lstsq(target)
     assert solution.shape == (3,)
     assert solution.arity == 0
@@ -269,7 +274,7 @@ def test_nullary_lstsq_batched_and_broadcasting(context):
 def test_nullary_lstsq_subspace_projection(context):
     ga = context.algebra
     # Basis in 2D subspace 'x y'
-    basis = context.extensor(ga.gatype(ga.subspace("x y")), [[1, 0], [0, 1]])
+    basis = context.extensor(ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), [[1, 0], [0, 1]])
     # Target in full 3D vector space 'x y z'
     target = context.multivector.vector([3, 4, 5])
     solution = basis.lstsq(target)
@@ -281,7 +286,8 @@ def test_nullary_lstsq_subspace_projection(context):
 def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(context):
     ga = context.algebra
     output, first, retained, last = (
-        ga.subspace.vector(), ga.subspace("x y"), ga.subspace.bivector(), ga.subspace("-z x"),
+        ga.gatype.vector(), ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), ga.gatype.bivector(),
+        ga.gatype(ga.subspace("-z x"), orientation=Orientation.extrinsic),
     )
     rng = np.random.default_rng(7)
     matrix = rng.normal(size=(2, 1, 9, 4))
@@ -291,10 +297,10 @@ def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(con
     operator = context.extensor(ga.gatype((output, first, retained, last)), coefficients)
     rhs_coefficients = rng.normal(size=(1, 4, 3, 3))
     rhs = context.extensor(ga.gatype((output, retained)), rhs_coefficients)
-    rhs = rhs.cast(ga.subspace("z -x y"))(ga.operator.identity(ga.subspace("yz -xy xz")))
+    rhs = rhs.cast(ga.subspace("z -x y"))(ga.operator.identity(ga.gatype(ga.subspace("yz -xy xz"), orientation=Orientation.extrinsic)))
     solution = operator.lstsq(rhs, rcond=1e-5)
     expected = np.linalg.pinv(matrix, rcond=1e-5) @ rhs_coefficients.reshape(1, 4, 9, 1)
-    assert solution.axes == (first, last)
+    assert solution.axes == (first.output_subspace, last.output_subspace)
     assert solution.shape == (2, 4)
     np.testing.assert_allclose(solution.kernel, expected.reshape(2, 4, 2, 2), atol=0.0002)
 
@@ -302,7 +308,7 @@ def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(con
 @pytest.mark.parametrize("selected", [(2,), (1, 2, 3)])
 def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     ga = context.algebra
-    axes = (ga.subspace.vector(), ga.subspace("x y"), ga.subspace("-z y"), ga.subspace("xy xz"))
+    axes = (ga.gatype.vector(),) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in ("x y", "-z y", "xy xz"))
     rng = np.random.default_rng(9)
     coefficients = rng.normal(size=(3, 2, 2, 2))
     operator = context.extensor(ga.gatype(axes), coefficients)
@@ -312,7 +318,7 @@ def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     solution = operator.lstsq(rhs, rcond=1e-5)
     matrix = coefficients.transpose(retained + selected).reshape(-1, 2 ** len(selected))
     expected = np.linalg.lstsq(matrix, np.asarray(rhs.kernel).reshape(-1), rcond=1e-5)[0]
-    assert solution.axes == tuple(axes[axis] for axis in selected)
+    assert solution.axes == tuple(axes[axis].output_subspace for axis in selected)
     assert solution.arity == len(selected) - 1
     np.testing.assert_allclose(solution.kernel, expected.reshape((2,) * len(selected)), atol=2e-5)
 
@@ -328,10 +334,10 @@ def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
 def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_slots, rhs_slots):
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga)
-    scalar = ga.subspace.scalar()
-    operator_type = ga.gatype((scalar,) + tuple(ga.subspace(slot) for slot in input_slots))
+    scalar = ga.gatype.scalar()
+    operator_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in input_slots))
     operator = context.extensor(operator_type, np.ones(operator_type.structural_shape))
-    rhs_type = ga.gatype((scalar,) + tuple(ga.subspace(slot) for slot in rhs_slots))
+    rhs_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in rhs_slots))
     rhs = context.extensor(rhs_type, np.ones(rhs_type.structural_shape))
     with pytest.raises(TypeError):
         operator.lstsq(rhs)
@@ -339,17 +345,17 @@ def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_slots,
 
 def test_grouped_lstsq_infers_lossless_rhs_embedding(context):
     ga = context.algebra
-    scalar, plane, bivector = ga.subspace.scalar(), ga.subspace("x y"), ga.subspace("xy xz")
+    scalar, plane, bivector = ga.gatype.scalar(), ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic)
     operator = context.extensor(ga.gatype((scalar, bivector, plane)), np.eye(2)[None])
-    rhs = context.extensor(ga.gatype((scalar, ga.subspace("-y"))), [[3]])
+    rhs = context.extensor(ga.gatype((scalar, ga.gatype(ga.subspace("-y"), orientation=Orientation.extrinsic))), [[3]])
     solution = operator.lstsq(rhs)
-    assert solution.axes == (bivector,)
+    assert solution.axes == (bivector.output_subspace,)
     np.testing.assert_allclose(solution.kernel, [0, -3], atol=2e-6)
 
 
 @pytest.mark.parametrize("method", ["solve", "lstsq"])
 def test_symbolic_linear_operator_uses_rhs_context(context, method):
-    identity = context.algebra.operator.identity(context.algebra.subspace.vector())
+    identity = context.algebra.operator.identity(context.algebra.gatype.vector())
     rhs = context.multivector.vector([[1, 2, 3], [4, 5, 6]])
     solution = getattr(identity, method)(rhs)
     assert solution.context is context
@@ -384,28 +390,28 @@ def test_symbolic_generalized_eigenproblem_uses_metric_context(method):
 @pytest.mark.parametrize("method", ["solve", "lstsq"])
 def test_solutions_preserve_all_rhs_slots_and_broadcast_batches(context, arity, method):
     ga = context.algebra
-    output, domain = ga.subspace.vector(), ga.subspace.bivector()
+    output, domain = ga.gatype.vector(), ga.gatype.bivector()
     matrix = np.array([[3, 1, 0], [0, 2, 1], [0, 0, 4]])
     operator = make_map(context, output, domain, matrix[None, None] * np.array([1, 2])[:, None, None, None])
-    slots = (ga.subspace("xy xz"), ga.subspace("z"), ga.subspace.vector())[:arity]
-    rhs_type = ga.gatype((ga.subspace("y -x"),) + slots)
+    slots = (ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("z"), orientation=Orientation.extrinsic), ga.gatype.vector())[:arity]
+    rhs_type = ga.gatype((ga.gatype(ga.subspace("y -x"), orientation=Orientation.extrinsic),) + slots)
     rhs = context.extensor(rhs_type, np.random.default_rng(0).normal(size=(1, 4) + rhs_type.structural_shape))
     solution = getattr(operator, method)(rhs)
-    assert solution.axes == (domain,) + slots
+    assert solution.axes == (domain.output_subspace,) + tuple(slot.output_subspace for slot in slots)
     assert solution.shape == (2, 4)
     assert solution.arity == arity
-    expected = np.broadcast_to(rhs.cast(output).kernel, (2, 4) + (len(output),) + rhs.structural_shape[1:])
+    expected = np.broadcast_to(rhs.cast(output.output_subspace).kernel, (2, 4) + (len(output.output_subspace),) + rhs.structural_shape[1:])
     np.testing.assert_allclose(operator(solution).kernel, expected, atol=0.0002)
 
 
 def test_rectangular_lstsq_with_binary_rhs(context):
     ga = context.algebra
-    output, domain = ga.subspace.vector(), ga.subspace("xy xz")
+    output, domain = ga.gatype.vector(), ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic)
     operator = make_map(context, output, domain, [[1, 0], [0, 2], [0, 0]])
-    rhs_type = ga.gatype((output, ga.subspace("x y"), ga.subspace("yz")))
+    rhs_type = ga.gatype((output, ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("yz"), orientation=Orientation.extrinsic)))
     rhs = context.extensor(rhs_type, np.random.default_rng(1).normal(size=(4,) + rhs_type.structural_shape))
     solution = operator.lstsq(rhs)
-    assert solution.axes == (domain,) + rhs.input_subspaces
+    assert solution.axes == (domain.output_subspace,) + rhs.input_subspaces
     assert solution.shape == rhs.shape
     residual = operator(solution) - rhs
     normal_equations = np.einsum("oi,bo...->bi...", operator.kernel, residual.kernel)
@@ -415,7 +421,7 @@ def test_rectangular_lstsq_with_binary_rhs(context):
 def test_complex_svd_and_hermitian_eigenvectors():
     ga = Algebra("x+y-")
     context = NumpyContext(ga, dtype=np.complex128)
-    vector = ga.subspace.vector()
+    vector = ga.gatype.vector()
     operator = make_map(context, vector, vector, [[2, 1j], [-1j, 3]])
     values, vectors = operator.eigh()
     np.testing.assert_allclose(operator(vectors).kernel, (vectors * values).kernel, atol=1e-14)

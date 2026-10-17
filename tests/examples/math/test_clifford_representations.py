@@ -33,7 +33,7 @@ def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negati
     representations = main(positive, negative)
     ga = representations.algebra
     algebra_slot, state_slot = representations.input_subspaces
-    Full, Spinor = ga.gatype(algebra_slot), ga.gatype(state_slot)
+    Full, Spinor = representations.gatype.derive.axis(1), representations.gatype.derive.axis(2)
     state_dimension = len(state_slot)
     context = NumpyContext(ga)
     basis = context.multivector.full(np.eye(ga.blade_count))

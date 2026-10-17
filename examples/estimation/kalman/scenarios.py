@@ -20,7 +20,7 @@ def tracking():
     motion_noise = covariance(0.05 * np.sqrt(dt), 0.12 * np.sqrt(dt))
     measurement_noise = covariance(0.3, 0.1)
 
-    origin = mv.xy
+    origin = mv.w.dual()
     initial = mv.rotor()
     sigma = covariance(0.0, 0.0)
     truth, dead, measurements = simulate_motion(initial, increments, motion_noise, measurement_noise, rng)

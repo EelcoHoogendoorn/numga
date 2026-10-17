@@ -64,7 +64,7 @@ def test_doubling_in_the_algebra_of_space_gives_the_same_octonions_and_the_split
     rng = np.random.default_rng(0)
     for algebra in (core.space, Algebra("x+y+z-")):
         mv = NumpyContext(algebra).multivector
-        first, second = mv(algebra.subspace("1 x y z yz zx xy xyz"), rng.normal(size=(2, 12, 8)))
+        first, second = mv.full(rng.normal(size=(2, 12, 8)))
         error = core.doubled(first, second).scalar_norm_squared() - first.scalar_norm_squared() * second.scalar_norm_squared()
         assert render.largest(error) < 1e-10
     null = 1 + NumpyContext(Algebra("x+y+z-")).multivector.z

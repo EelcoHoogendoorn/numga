@@ -38,8 +38,8 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Even = ga.gatype.even()
 # The spinors with spin up along z, and those with spin down.
-Up = ga.gatype(ga.subspace("1 xy"))
-Down = ga.gatype(ga.subspace("yz zx"))
+Up = Even.derive.within("x y")
+Down = Even.derive.containing("z")
 
 
 # --- math -----------------------------------------------------------------------------

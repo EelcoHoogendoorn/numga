@@ -153,13 +153,6 @@ class SubSpace:
 
         return self._support_key
 
-    @property
-    @lru_cache(maxsize=None)
-    def gatype(self) -> "GAType":
-        """The canonical empty-trait nullary GAType represented by this axis."""
-
-        return self.algebra.gatype(self)
-
     def same_support(self, other: object) -> bool:
         """Whether both axes belong to one algebra and span the same masks."""
 

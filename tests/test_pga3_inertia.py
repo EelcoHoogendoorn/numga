@@ -17,7 +17,7 @@ def test_inertia_from_points_is_independent_of_their_storage_layout():
         [0, 0, 1, 1], [0, 0, -1, 1],
     ])
 
-    per_point = points.regressive(points.commutator(spaces.bivector()))
+    per_point = points.regressive(points.commutator(PGA3D.gatype.bivector()))
     inertia = per_point.sum(axis=0)
 
     # Angular components first, translation components second.
@@ -44,7 +44,7 @@ def test_inertia_from_points_is_independent_of_their_storage_layout():
     # Store the same points using different blade order AND orientation.
     other_points = points.select_subspace(spaces("xyz xyw xzw yzw"))
     other_inertia = other_points.regressive(
-        other_points.commutator(spaces.bivector())
+        other_points.commutator(PGA3D.gatype.bivector())
     ).sum(axis=0)
 
     assert other_points.gatype != points.gatype

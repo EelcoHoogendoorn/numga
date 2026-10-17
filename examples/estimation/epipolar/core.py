@@ -32,22 +32,12 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Point = ga.gatype.antivector()
-Line = ga.gatype.bivector()
+Line = ga.gatype.antibivector()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
 RayQuadric = ga.gatype((ga.gatype.scalar(), Point, Point))
 Camera = ga.gatype((Point, Point))
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
 
 
 # --- plumbing --------------------------------------------------------------
@@ -74,7 +64,7 @@ def house_landmarks() -> Point:
     # Additional distributed surface / ground markers (12 points):
     grid_x, grid_y = np.meshgrid(np.linspace(-0.8, 0.8, 4), np.linspace(-0.6, 0.6, 3))
     ground = np.stack([grid_x.ravel(), grid_y.ravel(), np.full(12, 2.5)], axis=-1)
-    return point(np.concatenate([cube, roof, ground], axis=0))
+    return mv.point(np.concatenate([cube, roof, ground], axis=0))
 
 
 # --- math ------------------------------------------------------------------
@@ -92,7 +82,7 @@ def reconstruct(
     """
     # Camera 2 as a rigid body, unit masses a unit from its centre, and its kinetic energy on
     # twists in its own frame, to measure the steps by:
-    body = point(np.concatenate([np.eye(3), -np.eye(3)]))                  # [6] Point
+    body = mv.point(np.concatenate([np.eye(3), -np.eye(3)]))               # [6] Point
     kinetic = Twist & (body & body.commutator(Twist)).sum(axis=0)          # [] Scalar <- (Bivector, Bivector)
     for _ in range(iterations):
         # Two lines meet (are coplanar) iff their regressive product vanishes. For two lines

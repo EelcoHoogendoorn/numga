@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from numga import Orientation
 from numga import (
     Algebra,
     CliffordConjugateProductOne,
@@ -16,7 +17,7 @@ def test_paravector_composition_keeps_its_conjugate_inverse():
     mv = NumpyContext(algebra).multivector
     spaces = algebra.subspace
     unit_paravector = algebra.gatype(
-        spaces.scalar() + spaces.vector(),
+        algebra.gatype(spaces.scalar() + spaces.vector(), orientation=Orientation.extrinsic),
         (CliffordConjugateProductOne,),
     )
 

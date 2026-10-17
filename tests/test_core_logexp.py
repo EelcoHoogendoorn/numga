@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, Extensor, NumpyContext, ReverseProductOne, Versor
 
 
@@ -57,7 +58,7 @@ def test_unit_and_nonunit_versor_logs_dispatch_separately_without_widening(monke
     algebra = Algebra("x+y+z+")
     xy = algebra.subspace.from_masks((algebra.parse_blade("xy").mask,))
     angles = np.asarray([0, 0.2, -0.4])
-    generator = NumpyContext(algebra).multivector(xy, angles[:, None])
+    generator = NumpyContext(algebra).multivector(algebra.gatype(xy, orientation=Orientation.extrinsic), angles[:, None])
     unit = generator.exp()
     scaled = (2 * unit).with_traits(Versor)
 
@@ -199,7 +200,7 @@ def test_exp_stays_a_rotor_far_beyond_the_series_range(description):
     sizes = np.array([1e3, 1e4, 1e6])
     plane = mv.xy + 0.7 * mv.blade(algebra.subspace.bivector().masks[-1])
     rotors = (plane * sizes).exp()
-    product = algebra.operator.symmetric_reverse_product(rotors.subspace)(rotors, rotors)
+    product = algebra.operator.symmetric_reverse_product(algebra.gatype(rotors.subspace, orientation=Orientation.extrinsic))(rotors, rotors)
     np.testing.assert_allclose(product.kernel[:, 0], 1.0, rtol=0, atol=1e-12)
     np.testing.assert_allclose(product.kernel[:, 1:], 0.0, rtol=0, atol=1e-12)
 
@@ -231,7 +232,7 @@ def test_log_trusts_declared_unit_input_and_takes_the_full_log_otherwise(monkeyp
 def test_exp_of_an_element_squaring_to_a_scalar_matches_its_power_series(signature, blades, coefficients):
     ga = Algebra(signature)
     mv = NumpyContext(ga).multivector
-    x = mv(ga.subspace(blades), np.array(coefficients))
+    x = mv(ga.gatype(ga.subspace(blades), orientation=Orientation.extrinsic), np.array(coefficients))
     total, power = x * 0 + 1, x * 0 + 1
     for k in range(1, 40):
         power = power * x / k

@@ -202,8 +202,10 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
             + (c + sites,)
         )
         step = tuple((len(image.gatype.subspaces), number) for _, number in value.gatype.fields)
-        gatype = value.algebra.gatype(
-            image.gatype.subspaces + (value.gatype.output_subspace,), fields=image.gatype.fields + step,
+        gatype = value.algebra.gatype.oriented(
+            image.gatype.subspaces + (value.gatype.output_subspace,),
+            image.gatype.orientations + (value.gatype.orientation,),
+            fields=image.gatype.fields + step,
         )
         return Extensor._from_prepared_kernel(value.context, gatype, jnp.transpose(changes, order))
 

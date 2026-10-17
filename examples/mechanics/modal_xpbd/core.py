@@ -43,8 +43,8 @@ Motor = ga.gatype.rotor()
 # The lines x and y through the origin, the polars of the directions: a displacement or a force in
 # the plane is one of them, and joined with a direction, `force & direction`, it gives the work done
 # moving that way.
-Force = ga.gatype(ga.subspace("x y"))
-Direction = ga.gatype(Force.output_subspace.complement())
+Force = ga.gatype.vector().derive.nondegenerate
+Direction = Force.dual().output_gatype
 Inertia = ga.gatype((Forque, Twist))                                       # Forque <- Twist
 InverseInertia = ga.gatype((Twist, Forque))                                # Twist <- Forque
 

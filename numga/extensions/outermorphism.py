@@ -18,7 +18,7 @@ from operator import and_, xor
 import numpy as np
 
 from numga.extensor import Extensor, stack
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
 
 
 def _grades(space) -> set[int]:
@@ -53,16 +53,20 @@ def outermorphism(value: Extensor, grade: GAType) -> Extensor:
     (requested,) = _grades(target)
     inputs = _grades(space)
     # (product, its unit, number of factors in the requested grade) for each exterior product of the space
+    # the unit of the join is the pseudoscalar oriented within itself, the unit of the wedge the scalar
+    volume = algebra.gatype.oriented((algebra.subspace.pseudoscalar(),), (Orientation.intrinsic,))
     exteriors = [(xor, mv.scalar([1.0]), requested)] * (inputs == {1}) + \
-                [(and_, mv(algebra.subspace.pseudoscalar(), [1.0]), n - requested)] * (inputs == {n - 1})
+                [(and_, mv(volume, [1.0]), n - requested)] * (inputs == {n - 1})
     product, unit, count = max(exteriors, key=lambda exterior: exterior[2])
 
-    basis = mv(space, np.eye(len(space.masks)))                         # [m] the input basis
+    basis = mv(value.gatype.derive.axis(1), np.eye(len(space.masks)))  # [m] the input basis
     images = value[..., None](basis)                                    # [..., m] its images
     tuples = list(combinations(range(len(space.masks)), count))
     sources = stack([reduce(product, [basis[i] for i in I], unit) for I in tuples])
     if not sources.output_subspace.same_support(target):
         raise TypeError(f"products of {count} elements of {space} span {sources.output_subspace}, not {target}")
+    if sources.gatype.orientation is not grade.orientation:
+        raise TypeError(f"products of {count} elements of {space} are {sources.gatype.orientation.value}, not {grade.orientation.value}")
     targets = stack([reduce(product, [images[..., i] for i in I], unit.broadcast_to(value.shape)) for I in tuples], axis=-1)
     # each source blade's coefficient in an element of the requested grade, read with its complement
     readings = (grade & sources.dual()) / (sources & sources.dual())    # [k] Scalar <- grade

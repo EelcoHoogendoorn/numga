@@ -9,6 +9,7 @@ import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 from examples.animation import capture
+from examples.raster import rasterise
 from examples.surfaces.spin_transformations.core import Mesh, Scalar, ga
 
 # The direction the light comes from, and the share of a face's colour it cannot darken.
@@ -111,8 +112,6 @@ SQUARES = 8
 OUTSIDE = np.array([[0.98, 0.84, 0.62], [0.90, 0.45, 0.18]])
 INSIDE = np.array([[0.70, 0.82, 0.96], [0.22, 0.42, 0.72]])
 SPECULAR, SHININESS = 0.35, 40.0
-# Triangles rasterised together, bounding the memory one pass takes.
-CHUNK = 4096
 
 
 def render_surface(mesh: Mesh, reference: Mesh, pixels: int) -> np.ndarray:
@@ -137,7 +136,7 @@ def render_surface(mesh: Mesh, reference: Mesh, pixels: int) -> np.ndarray:
     scale = 0.46 * size / np.abs(viewed[:, :2]).max()
     screen = viewed * scale + [size / 2, size / 2, 0.0]
 
-    pixel, face, weights = _rasterise(screen, faces, size)
+    pixel, face, weights, _ = rasterise(screen, faces, size)
     normal = np.einsum("pk,pkd->pd", weights, normals[faces[face]]) @ frame.T
     normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
     position = np.einsum("pk,pkd->pd", weights, original[faces[face]])
@@ -160,39 +159,3 @@ def render_surface(mesh: Mesh, reference: Mesh, pixels: int) -> np.ndarray:
     image[pixel] = shaded
     image = image.reshape(size, size, 3)[::-1]
     return image.reshape(pixels, SUPERSAMPLE, pixels, SUPERSAMPLE, 3).mean(axis=(1, 3))
-
-
-def _rasterise(screen: np.ndarray, faces: np.ndarray, size: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """The nearest triangle at each covered pixel, with the pixel centre's barycentric weights in it.
-
-    `screen` holds each vertex's pixel coordinates and its depth toward the viewer. Returns the
-    flat pixel indices, the triangle covering each, and the weights of its three corners.
-    """
-    pixels, owners, depths, weights = [], [], [], []
-    for start in range(0, len(faces), CHUNK):
-        chunk = np.arange(start, min(start + CHUNK, len(faces)))
-        corners = screen[faces[chunk]]                                       # [T, 3, 3]
-        # the pixels whose centres fall within each triangle's bounds
-        low = np.clip(np.ceil(corners[..., :2].min(axis=1) - 0.5), 0, size - 1).astype(int)
-        high = np.clip(np.floor(corners[..., :2].max(axis=1) - 0.5), 0, size - 1).astype(int)
-        span = high - low + 1
-        counts = span[:, 0] * span[:, 1]
-        owner = np.repeat(np.arange(len(chunk)), counts)
-        local = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
-        x = low[owner, 0] + local % span[owner, 0]
-        y = low[owner, 1] + local // span[owner, 0]
-        a, b, c = (corners[owner, k] for k in range(3))
-        area = (b[:, 0] - a[:, 0]) * (c[:, 1] - a[:, 1]) - (b[:, 1] - a[:, 1]) * (c[:, 0] - a[:, 0])
-        centre_x, centre_y = x + 0.5, y + 0.5
-        first = ((b[:, 0] - centre_x) * (c[:, 1] - centre_y) - (b[:, 1] - centre_y) * (c[:, 0] - centre_x)) / area
-        second = ((c[:, 0] - centre_x) * (a[:, 1] - centre_y) - (c[:, 1] - centre_y) * (a[:, 0] - centre_x)) / area
-        weight = np.stack([first, second, 1 - first - second], axis=-1)
-        inside = (weight >= 0).all(axis=-1) & (area != 0)
-        pixels.append((y * size + x)[inside])
-        owners.append(chunk[owner[inside]])
-        depths.append(np.einsum("pk,pk->p", weight[inside], np.stack([a[inside, 2], b[inside, 2], c[inside, 2]], -1)))
-        weights.append(weight[inside])
-    pixel, owner, depth, weight = (np.concatenate(parts) for parts in (pixels, owners, depths, weights))
-    order = np.lexsort((-depth, pixel))
-    nearest = order[np.r_[True, pixel[order][1:] != pixel[order][:-1]]]
-    return pixel[nearest], owner[nearest], weight[nearest]

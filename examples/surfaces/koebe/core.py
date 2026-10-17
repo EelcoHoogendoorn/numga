@@ -23,6 +23,8 @@ ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
+# The unit volume that no motion changes: an oriented volume over it reads as its signed size.
+unit_volume = mv.antiscalar([1.0])
 Rotor = ga.gatype.rotor()
 
 
@@ -63,4 +65,4 @@ def boost(direction: Vector, rapidity: np.ndarray) -> Rotor:
 # --- plumbing -------------------------------------------------------------------------
 def basis() -> Vector:
     """x, y, z and w, as a batch."""
-    return mv("x y z w", np.eye(4))                                            # [4] Vector
+    return mv.vector(np.eye(4))                                                # [4] Vector

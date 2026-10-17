@@ -28,5 +28,6 @@ def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     next_idx = (np.arange(scenarios.ANGLES) + 1) % scenarios.ANGLES
     steps = surface.points[next_idx] - surface.points
     speed_squared = surface.velocity | surface.velocity
-    force = (0.5 * scenarios.DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * -steps.dual()).sum(axis=-1)
+    inward = (core.mv.xy * (np.pi / 4)).exp() >> steps
+    force = (0.5 * scenarios.DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * inward).sum(axis=-1)
     np.testing.assert_allclose((force - core.lift(pitched, stream, scenarios.DENSITY)).kernel, 0.0, atol=1e-3)

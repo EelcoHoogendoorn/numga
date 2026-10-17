@@ -18,10 +18,10 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Full = ga.gatype.full()
-Event = ga.gatype.from_blades("x y z t")
-Spatial = ga.gatype.from_blades("x y z")
-Faraday = ga.gatype.from_blades("xy xz yz xt yt zt")
-Twistor = ga.gatype.from_blades("1 y z u yz yu zu yzu")
+Event = Vector.derive.within("x y z t")
+Spatial = Vector.derive.within("x y z")
+Faraday = Bivector.derive.within("x y z t")
+Twistor = Full.derive.within("y z u")
 
 # The three commuting factors each halve the state space, leaving eight real components.
 PROJECTOR = (1 + exact.x) * (1 + exact.yt) * (1 + exact.zv) / 8

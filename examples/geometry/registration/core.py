@@ -22,13 +22,8 @@ mv = ctx.multivector
 Point = ga.gatype.antivector()
 Motor = ga.gatype.rotor()
 # The Euclidean rotation subgroup, fixing the chosen PGA origin.
-Rotor = ga.gatype.from_blades("1 yz zx xy")
-Vector = ga.gatype.from_blades("x y z")
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
+Rotor = ga.gatype.even().derive.nondegenerate
+Vector = ga.gatype.vector().derive.nondegenerate
 
 
 # --- math -----------------------------------------------------------------------------
@@ -79,7 +74,7 @@ def fit_motor_alignment(source: Point, target: Point) -> Motor:
 
 # --- samples ---------------------------------------------------------------------------
 def cloud(n: int, rng: np.random.Generator) -> Point:
-    return point(rng.normal(size=(n, 3)) * [2.0, 1.0, 0.5])
+    return mv.point(rng.normal(size=(n, 3)) * [2.0, 1.0, 0.5])
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:

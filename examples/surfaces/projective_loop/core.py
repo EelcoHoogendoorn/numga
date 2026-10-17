@@ -55,9 +55,3 @@ def collineation(centre: Point, axis: Plane, strength: float) -> PointMap:
     """The central collineation of a centre and an axis plane: each point moves along its line through the
     centre, by the centre times its pairing with the axis; points on the axis stay where they are."""
     return Point + centre * (axis & Point) * strength                         # [] Point <- Point
-
-
-# --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Points at unit weight from their x, y and z coordinates."""
-    return (mv("x y z", coords) + mv.w).dual()

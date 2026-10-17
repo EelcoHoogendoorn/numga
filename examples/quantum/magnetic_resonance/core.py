@@ -11,7 +11,9 @@ by -I times its commutator with the Hamiltonian. Relaxation enters through multi
 each adding `(process >> rho) - back.anticommutator(rho)` to the change of
 the state `rho`, with `back = process.reverse() * process`. One is the vector x times the state of
 a spin against the field, which turns that part of the state over onto the field at the rate
-`1 / t1`; one along z scrambles the phase. Both are built as maps by leaving the state open. Where
+`1 / t1`; the half turn in the plane xy scrambles the phase, an even element, so its sandwich is a turn;
+the vector z would do the same up to the central pseudoscalar, a phase that cancels from the sandwich.
+Both are built as maps by leaving the state open. Where
 the generator vanishes the state is steady; since the generator keeps the scalar part, finding
 that state is a linear equation with the scalar part pinned.
 
@@ -44,7 +46,7 @@ Rates = ga.gatype((State, State))              # State <- State
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))              # State <- State
 # A relaxation process is a vector plus a bivector, `v + I * w` for vectors v and w.
-Process = ga.gatype(ga.subspace.vector() + ga.subspace.bivector())   # x y z yz zx xy
+Process = ga.gatype.from_grades([1, 2])           # x y z yz zx xy
 Rotor = ga.gatype.rotor()
 # The pseudoscalar squares to minus one and commutes with everything.
 I = mv.xyz                                         # [] Pseudoscalar
@@ -75,7 +77,7 @@ def generator(detuning: np.ndarray, drive: np.ndarray, t1: float, t2: float) -> 
     """
     hamiltonian = 0.5 * (mv.z * detuning + mv.x * drive)
     turning = -2 * I * hamiltonian.commutator(State)
-    relaxing = (1 / t1) * relaxation(RAISE) + 0.5 * (1 / t2 - 1 / (2 * t1)) * relaxation(mv.z)
+    relaxing = (1 / t1) * relaxation(RAISE) + 0.5 * (1 / t2 - 1 / (2 * t1)) * relaxation(mv.xy)
     return turning + relaxing
 
 

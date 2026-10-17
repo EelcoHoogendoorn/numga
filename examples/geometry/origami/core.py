@@ -17,11 +17,13 @@ from numga.algebras import PGA3D
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
-Direction = ga.gatype.from_blades("wzy wxz wyx")
 Plane = ga.gatype.vector()
+# Directions, points at infinity: the layer offsets and the sheet's normal.
+Direction = Point.derive.degenerate
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 Scalar = ga.gatype.scalar()
+ORIGIN = mv.point([0.0, 0.0, 0.0])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -30,10 +32,9 @@ def point_bisector(first: Point, second: Point) -> Plane:
     return ((first & second) | (first + second)).normalized()
 
 
-def line_bisector(first: Line, second: Line, sheet: Plane) -> Plane:
-    """The external angle bisector of two intersecting oriented lines in a sheet."""
+def line_bisector(first: Line, second: Line, intersection: Point) -> Plane:
+    """The external angle bisector of two oriented lines crossing at a point."""
     first, second = first.normalized(), second.normalized()
-    intersection = (sheet | first) ^ second
     return ((first + second) | intersection).normalized()
 
 
@@ -109,14 +110,18 @@ class Paper:
         Offsets are measured in paper layers. The renderer sets their visible thickness;
         the crease geometry itself stays exactly on the mathematical sheet.
         """
-        heights = (self.sheet & self.offsets) * np.sign(angle)
+        # The sheet's normal: the direction of the line square to it, signed towards its positive side
+        # by its pairing with the sheet. An offset's height is its pairing with the sheet, in units of the
+        # normal's.
+        square = (self.sheet | ORIGIN) ^ mv.w                                   # [] Direction
+        normal = square * (self.sheet & square)                                 # [] Direction
+        heights = (self.sheet & self.offsets) / (self.sheet & normal) * np.sign(angle)
         moving_heights, fixed_heights = heights[turning], heights[~turning]
         # Offset the display hinge so a closed stack lands one layer beyond the fixed
         # stack. The same rotation transports every separation continuously, reversing
         # their order only as the paper turns over. Negative folds land underneath.
         height = (moving_heights[moving_heights.argmax()] + fixed_heights[fixed_heights.argmax()] + 1) / 2
-        # The sheet times the pseudoscalar is its normal direction.
-        pivot = self.sheet * mv.wxyz * (height * np.sign(angle))
+        pivot = normal * (height * np.sign(angle))
         motors = (hinge * (angle / 2 * turning)).exp()  # [faces] Motor
         return (motors >> (self.offsets - pivot)) + pivot
 

@@ -39,26 +39,16 @@ CUBE_EDGES = [
 ]
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
-
-
 def circle(n: int) -> Point:
     """Construct n points around the unit circle in the xy plane, centred on the origin."""
     t = np.linspace(0.0, 2.0 * np.pi, n, endpoint=False)
-    return (mv.xy * (-t / 2)).exp() >> (mv.x + mv.w).dual()
+    return (mv.xy * (-t / 2)).exp() >> mv.point([1, 0, 0])
 
 
 def cube(size: float) -> Point:
     """Construct the eight corner points of an axis-aligned cube centred on the origin."""
     corners = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], dtype=float)
-    return point(corners * (size / 2.0))
+    return mv.point(corners * (size / 2.0))
 
 
 # ---------------------------------------------------------------------------

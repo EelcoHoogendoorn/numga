@@ -26,7 +26,7 @@ def test_a_heavy_vertex_pulls_the_surface_and_a_light_one_releases_it():
 
 
 def test_a_loop_step_keeps_unit_weights_and_splits_every_face_in_four():
-    finer = core.Mesh(core.point(scenarios.OCTAHEDRON).field(), scenarios.FACES).subdivide_loop(np.zeros(len(scenarios.OCTAHEDRON), dtype=bool))
+    finer = core.Mesh(core.mv.point(scenarios.OCTAHEDRON).field(), scenarios.FACES).subdivide_loop(np.zeros(len(scenarios.OCTAHEDRON), dtype=bool))
     np.testing.assert_allclose((core.mv.w & finer.vertices).batch().kernel[..., 0], 1, atol=1e-12)
     assert len(finer.faces) == 4 * len(scenarios.FACES)
     # Every edge of the finer mesh lies between two of its faces, once each way round.

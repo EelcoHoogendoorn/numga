@@ -27,11 +27,6 @@ Motor = ga.gatype.rotor()
 Scalar = ga.gatype.scalar()
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
 # --- math -----------------------------------------------------------------------------
 def blend_skin(vertices: Point, weight: Scalar, root: Motor, tip: Motor):
     """Deform vertices by normalised motor blending, motor slerp, and map blending."""
@@ -56,5 +51,5 @@ def cylinder(rings: int, around: int) -> tuple[Point, Scalar]:
     """Unit-radius skin around the x axis for x from 0 to 1, and the weight x of the second bone."""
     x, t = np.meshgrid(np.linspace(0.0, 1.0, rings), np.linspace(0.0, 2 * np.pi, around, endpoint=False), indexing="ij")
     # The skin at y = 1 along x, turned about the x axis by each angle.
-    skin = (mv.yz * (-t / 2)).exp() >> point(np.stack([x, np.ones_like(x), np.zeros_like(x)], axis=-1))
+    skin = (mv.yz * (-t / 2)).exp() >> mv.point(np.stack([x, np.ones_like(x), np.zeros_like(x)], axis=-1))
     return skin.reshape(-1), mv.scalar(x.reshape(-1, 1))

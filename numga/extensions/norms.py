@@ -67,7 +67,7 @@ def scalar_normalized(value: Extensor) -> Extensor:
 )
 def study_normalized(value: Extensor) -> Extensor:
     """Repair the complete Study product, including declared rotors' drift."""
-    product = value.algebra.operator.symmetric_reverse_product(value.subspace)
+    product = value.algebra.operator.symmetric_reverse_product(value.gatype.derive.structural)
     correction = product(value, value).square_root().inverse()
     # This correction comes from x * reverse(x), so its side matters.
     return (correction * value).with_traits(*value.gatype.normalized_traits)

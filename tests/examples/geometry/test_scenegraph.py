@@ -6,7 +6,6 @@ from itertools import islice
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.geometry.scenegraph.core import point
 from examples.geometry.scenegraph import core, render, scenarios
 from examples.geometry.scenegraph.render import euclidean
 
@@ -15,7 +14,7 @@ mv = core.mv
 
 def test_anisotropic_scale_extensor():
     """The anisotropic scaling extensor scales each coordinate and keeps the weight."""
-    scaled = core.anisotropic_scale(2.0, 0.5, 3.0)(point(np.array([3.0, 4.0, 5.0])))
+    scaled = core.anisotropic_scale(2.0, 0.5, 3.0)(mv.point(np.array([3.0, 4.0, 5.0])))
     np.testing.assert_allclose(euclidean(scaled), [6.0, 2.0, 15.0], atol=1e-12)
     np.testing.assert_allclose((mv.w & scaled).to_array(), 1.0, atol=1e-12)
 
@@ -36,7 +35,7 @@ def test_compound_optics_lands_on_the_sensor():
     front_lens, rear_lens, _ = core.lens_train(1.0, 0.8, -0.3)
     pupil = (mv.xw * 0.02).exp() >> core.origin
     camera = core.lens_camera(pose, front_lens, rear_lens, pupil, mv.z + 1.25 * mv.w)
-    sensor_hit = camera(point(np.array([0.1, 0.2, 1.0])))
+    sensor_hit = camera(mv.point(np.array([0.1, 0.2, 1.0])))
     np.testing.assert_allclose(euclidean(sensor_hit)[2], -1.25, atol=1e-10)
 
 

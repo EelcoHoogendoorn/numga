@@ -58,7 +58,7 @@ def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int,
     belongs to a body where the body's primal form is negative. The spherical quadric is a cone
     through the origin, so the front hemisphere already shows both halves."""
     coordinates, inside, rim = hemisphere(resolution * supersample)
-    pixels = S2.mv.yz * coordinates[:, 0] + S2.mv.zx * coordinates[:, 1] + S2.mv.xy * coordinates[:, 2]
+    pixels = S2.mv.antivector(coordinates)
     return [paint((pixels & bodies[:, None](pixels)) < 0.0, colors, inside, rim, supersample) for bodies in surfaces]
 
 

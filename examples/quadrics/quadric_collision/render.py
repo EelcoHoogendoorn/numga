@@ -71,7 +71,7 @@ def draw_collision(
     resolution = 250
     xs, ys = np.linspace(*XLIM, resolution), np.linspace(*YLIM, resolution)
     X, Y = np.meshgrid(xs, ys)
-    grid = mv.yw * X + mv.wx * Y + mv.xy
+    grid = mv.point(np.stack([X, Y], axis=-1))
     field = (grid & separating(grid)).to_array()
     ax_sep.contour(X, Y, field, levels=[0.0], colors=["#059669"], linestyles=["-."], linewidths=1.6)
     ax_sep.contourf(X, Y, field, levels=[0.0, field.max()], colors=["#10b981"], alpha=0.10)

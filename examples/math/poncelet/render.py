@@ -24,7 +24,7 @@ def draw(outer: core.Conic, inner: core.Conic, vertices: core.Point) -> plt.Figu
     """For each inner conic, the ellipse, the inner conic and the path of sides about it from the same
     start, the start orange and the last vertex ringed."""
     x, y = np.meshgrid(*np.linspace(BOX[0], BOX[1], 300).T)
-    grid = core.point(np.stack([x, y], axis=-1))                              # [rows, columns] Point
+    grid = core.crossing(np.stack([x, y], axis=-1))                             # [rows, columns] Point
     figure, axes = plt.subplots(1, 2, figsize=(10, 4.2))
     corners = xy(vertices)                                                     # [steps + 1, inners, 2]
     for index, ax in enumerate(axes):

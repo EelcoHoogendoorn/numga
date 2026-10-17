@@ -10,18 +10,22 @@ the share of light its own state finds. Light travels normal to the plate; absor
 reflection and ray bending are neglected.
 """
 
+import numpy as np
+
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 # Vectors lying in the plate: positions, surface normals and tractions.
-Planar = ga.gatype.from_blades("x y")
+Planar = ga.gatype.vector().derive.within("x y")
 Stress = ga.gatype((Planar, Planar))                       # Planar <- Planar
 # A unit Stokes vector on the Poincaré sphere, and a turn of that sphere.
 Polarization = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Retarder = ga.gatype.rotor()
+# An eighth of a turn in the plate: the linear state it gives is a quarter of the sphere from the first.
+EIGHTH_TURN = (mv.xy * (-np.pi / 8)).exp()
 
 
 # --- math -----------------------------------------------------------------------------
@@ -51,8 +55,8 @@ def kirsch(positions: Planar, radius: float, remote: Stress) -> Stress:
 
 def polarization(direction: Planar) -> Polarization:
     """Light polarized linearly along a unit direction in the plate, on the Poincaré sphere: at
-    twice the direction's angle from x, which is x reflected in the direction."""
-    return direction >> mv.x                                                      # [...] Polarization
+    twice the direction's angle from x, which is x turned by the rotor `direction * x`."""
+    return (direction * mv.x) >> mv.x                                             # [...] Polarization
 
 
 def half_turn(stress: Stress, stress_phase: float) -> Bivector:
@@ -62,7 +66,9 @@ def half_turn(stress: Stress, stress_phase: float) -> Bivector:
     The mean stress delays both principal directions alike and turns nothing."""
     principal, directions = stress.eigh()                                         # [..., modes] Scalar, Planar
     retardance = stress_phase * (principal[..., 1] - principal[..., 0])           # [...] Scalar
-    return polarization(directions[..., 1]).dual() * (retardance / 2)             # [...] Bivector
+    # The plane of the turn, square to its axis: the linear state an eighth of a turn from the principal
+    # direction, and the circular state.
+    return (polarization(EIGHTH_TURN >> directions[..., 1]) ^ mv.z) * (retardance / 2)   # [...] Bivector
 
 
 def retarder(stress: Stress, stress_phase: float) -> Retarder:

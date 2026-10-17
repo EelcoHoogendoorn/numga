@@ -12,7 +12,6 @@ from numga import (
 
 def test_one_inverse_extension_dispatches_nullary_and_unary_extensors():
     algebra = Algebra("x+y+")
-    spaces = algebra.subspace
     gatypes = algebra.gatype
     context = NumpyContext(algebra)
 
@@ -21,7 +20,7 @@ def test_one_inverse_extension_dispatches_nullary_and_unary_extensors():
     assert rotor_inverse.gatype is rotor.gatype
     np.testing.assert_array_equal(rotor_inverse.kernel, [0, -1])
 
-    vector = spaces.vector()
+    vector = gatypes.vector()
     rotation_type = gatypes(
         (vector, vector),
         (CoefficientOrthogonal,),
@@ -88,8 +87,8 @@ def test_explicit_pattern_supports_an_unconstrained_extensor_arity():
 
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
-    value = context.extensor(algebra.subspace.vector(), [1, 2])
-    vector = algebra.subspace.vector()
+    value = context.extensor(algebra.gatype.vector(), [1, 2])
+    vector = algebra.gatype.vector()
     map_value = context.extensor(
         algebra.gatype((vector, vector)),
         [[1, 0], [0, 1]],
@@ -128,7 +127,7 @@ def test_opaque_gatype_predicates_are_a_prioritized_low_level_tier():
     assert calls == [rotor.gatype]
 
     other = Algebra("x+y+z+w0")
-    other_value = NumpyContext(other).extensor(other.subspace.even(), [1] * 8)
+    other_value = NumpyContext(other).extensor(other.gatype.even(), [1] * 8)
     assert other_value.strategy() == "generic"
 
 
@@ -144,7 +143,7 @@ def test_opaque_predicate_position_controls_only_predicate_order():
         return "inserted"
 
     algebra = Algebra("x+")
-    value = NumpyContext(algebra).extensor(algebra.subspace.scalar(), [1])
+    value = NumpyContext(algebra).extensor(algebra.gatype.scalar(), [1])
     assert value.route() == "inserted"
 
 

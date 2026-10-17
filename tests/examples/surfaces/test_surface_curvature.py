@@ -13,8 +13,8 @@ TOWARD = np.array([[10.0, 6.0, 4.0], [-7.0, 9.0, 3.0], [2.0, -8.0, -9.0]])
 
 def surface_points(surface: core.Quadric) -> core.Point:
     """Where rays toward the centre from a few directions meet the surface."""
-    heading = core.direction(-TOWARD / np.linalg.norm(TOWARD, axis=-1, keepdims=True))
-    points, _ = core.hit(surface, core.point(TOWARD), heading)
+    heading = core.mv.direction(-TOWARD / np.linalg.norm(TOWARD, axis=-1, keepdims=True))
+    points, _ = core.hit(surface, core.mv.point(TOWARD), heading)
     return points
 
 

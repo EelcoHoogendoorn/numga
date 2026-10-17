@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.estimation.epipolar.core import Line, Motor, Point, ga, mv, point
+from examples.estimation.epipolar.core import Line, Motor, Point, ga, mv
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -48,7 +48,7 @@ def draw_camera_frustum(
         [0.0, 0.0, scale * 1.3],
         [0.0, 0.0, 0.0],
     ])
-    placed = euclidean(pose >> point(local))
+    placed = euclidean(pose >> mv.point(local))
     corners, axis_end, center = placed[:4], placed[4], placed[5]
 
     # Sensor rectangle:
@@ -137,8 +137,8 @@ def draw_3d_reconstruction(
     draw_camera_frustum(ax, est_motor, 0.4, "#10b981", "-", 1.6, "Camera 2 Reconstructed")
 
     # Sight rays for a subset of landmarks to show intersection:
-    c1 = euclidean(mv.xyz)
-    c2 = euclidean(est_motor >> mv.xyz)
+    c1 = euclidean(mv.w.dual())
+    c2 = euclidean(est_motor >> mv.w.dual())
     for target in points_reconstructed[::5]:
         ray1_seg = np.stack([c1, target], axis=0)
         ray2_seg = np.stack([c2, target], axis=0)

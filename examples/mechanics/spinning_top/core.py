@@ -28,14 +28,13 @@ Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
-Direction = ga.gatype(ga.subspace.antivector().degenerate())
+Direction = Point.derive.degenerate
 Quadric = ga.gatype((Plane, Point))
 w = mv.w
-axes = mv("x y z", np.eye(3))
-
-
-def point(coords: np.ndarray) -> Point:
-    return (mv("x y z", coords) + w).dual()
+axes = mv(Plane.derive.nondegenerate, np.eye(3))
+# The plane at infinity as the join of the three directions, where the plane at infinity `w` is their meet.
+x, y, z = mv.direction(np.eye(3))
+horizon = x & y & z
 
 
 def clamp(value: Scalar, limit: Scalar) -> Scalar:
@@ -63,7 +62,7 @@ def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray):
     """Six mass points per solid ellipsoid with its mass, centroid and second moments."""
     offsets = np.eye(3)[None] * semi[:, None, :] * np.sqrt(3 / 5)             # [parts, 3, 3]
     coords = np.concatenate([centre[:, None] + offsets, centre[:, None] - offsets], axis=1)   # [parts, sigma_points, 3]
-    return point(coords.reshape(-1, 3)), np.repeat(mass / 6, 6)
+    return mv.point(coords.reshape(-1, 3)), np.repeat(mass / 6, 6)
 
 
 def inertia(points: Point, masses: np.ndarray):
@@ -144,8 +143,9 @@ def project_contacts(before: Motor, motor: Motor, I_inv, parts: Quadric, ground:
 
     # Hold against turning about the normal: undo the step's turn, with at most static friction times the
     # pressing forque times the contact patch's radius, the square root of the radius of curvature
-    # times the indentation. The couple is the torque about the normal.
-    couple = normal.dual() ^ w
+    # times the indentation. The couple is the torque about the normal: the line at infinity of the plane
+    # square to it, as a load the meet with the joined plane at infinity; its sense cancels below.
+    couple = normal.dual() ^ horizon
     turned = couple & ((motor / before).log() * -2.0)
     curvatures = principal(placed, contact)
     patch = ((2 / (curvatures[..., 0] + curvatures[..., 1])).abs() * indentation).square_root()

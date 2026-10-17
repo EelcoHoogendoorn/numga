@@ -23,7 +23,7 @@ def test_free_rim_and_uniaxial_stress_concentration():
     angles = np.linspace(0, 2 * np.pi, samples, endpoint=False)
     normal = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x
     remote = uniform_stress(1.7, -0.4, 0.6)
-    axial = tension * (core.Planar + (core.mv.x >> core.Planar)) / 2
+    axial = tension * (core.Planar + (core.mv.y >> core.Planar)) / 2
     ends = stack([core.mv.x, core.mv.y])
     tangent = core.mv.xy | ends
 
@@ -92,7 +92,7 @@ def test_linear_and_circular_dark_ports_match_the_retardance_law():
     angles = np.linspace(0, np.pi, orientations, endpoint=False)
     retardances = np.array([0., 0.01, 0.83, np.pi, 2 * np.pi, 7.1, 80 * np.pi + 0.4])
     turn = (core.mv.xy * (-angles[:, None] / 2)).exp()
-    base = (core.Planar + (core.mv.x >> core.Planar)) / 2
+    base = (core.Planar + (core.mv.y >> core.Planar)) / 2
     stress = (turn >> base(turn << core.Planar)) * retardances[None, :]
 
     turns = core.retarder(stress, 1.0)

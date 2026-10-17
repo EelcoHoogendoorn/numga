@@ -12,8 +12,8 @@ along the flow, and the stream function, a bivector, by `velocity ^ step`, how m
 the two parts of `velocity * step`. The circulation is the one that lets the flow leave the wing's
 sharp trailing edge smoothly, the Kutta condition, `4 * pi * (stream ^ edge)`.
 
-The Joukowski map, `p + (critical >> p.inverse())`, adds to each point its inverse reflected in the
-critical direction. Its Jacobian turns and scales every step, keeping angles, except at the two
+The Joukowski map, `p + (critical.dual() >> p.inverse())`, adds to each point its inverse reflected in
+the critical direction: in the line along it, whose normal is its dual. Its Jacobian turns and scales every step, keeping angles, except at the two
 critical points, `critical` and its negative, where it vanishes and doubles angles instead. Circles
 through both critical points and circles around each land on circles of the same kinds around their
 images. The cylinder through `critical`, the trailing edge, becomes the wing, its smooth edge folded
@@ -92,7 +92,7 @@ def cylinder(wing: Wing, stream: Vector, plane: Vector) -> tuple[Vector, Velocit
 
 def joukowski(critical: Vector, plane: Vector) -> Vector:
     """Where the map with the given critical point sends each point."""
-    return plane + (critical >> plane.inverse())                             # [...] Vector
+    return plane + (critical.dual() >> plane.inverse())                      # [...] Vector
 
 
 def flow(wing: Wing, stream: Vector, plane: Vector, critical: Vector) -> Flow:

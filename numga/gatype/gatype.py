@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Iterable, Tuple
 
 from numga.subspace import SubSpace
 
+from .orientation import Orientation
 from .traits import (
     EMPTY_TRAITS,
     ProductFact,
@@ -50,13 +51,17 @@ class GAType:
     A slot is a field slot when it ranges over sites as well as blades: ``fields``
     pairs each such slot with its number of sites. The kernel holds one site axis
     per field slot, in slot order, between the batch axes and the coefficient axes.
+
+    Every axis has an orientation, intrinsic or extrinsic (see ``numga.gatype.orientation``): two
+    types over the same blades with different orientations are different types.
     """
 
-    __slots__ = ("_subspaces", "_traits", "_fields", "_algebra", "_hash", "__dict__")
+    __slots__ = ("_subspaces", "_orientations", "_traits", "_fields", "_algebra", "_hash", "__dict__")
 
     def __init__(
         self,
         subspaces: Iterable[SubSpace],
+        orientations: Iterable[Orientation],
         traits: TraitSet = EMPTY_TRAITS,
         fields: tuple[tuple[int, int], ...] = (),
     ) -> None:
@@ -89,14 +94,20 @@ class GAType:
             normalized_traits,
         )
         normalized_fields = _normalize_fields(fields, len(normalized_subspaces))
+        normalized_orientations = tuple(orientations)
+        if len(normalized_orientations) != len(normalized_subspaces) or not all(
+            isinstance(orientation, Orientation) for orientation in normalized_orientations
+        ):
+            raise ValueError("a GAType needs one Orientation per axis")
         object.__setattr__(self, "_subspaces", normalized_subspaces)
+        object.__setattr__(self, "_orientations", normalized_orientations)
         object.__setattr__(self, "_traits", normalized_traits)
         object.__setattr__(self, "_fields", normalized_fields)
         object.__setattr__(self, "_algebra", algebra)
         object.__setattr__(
             self,
             "_hash",
-            hash((type(self), normalized_subspaces, normalized_traits, normalized_fields)),
+            hash((type(self), normalized_subspaces, normalized_orientations, normalized_traits, normalized_fields)),
         )
 
     @property
@@ -106,6 +117,20 @@ class GAType:
     @property
     def axes(self) -> Tuple[SubSpace, ...]:
         return self.subspaces
+
+    @property
+    def orientations(self) -> Tuple[Orientation, ...]:
+        """The orientation of every axis, output first."""
+        return self._orientations
+
+    @property
+    def orientation(self) -> Orientation:
+        """The orientation of the output."""
+        return self._orientations[0]
+
+    @property
+    def input_orientations(self) -> Tuple[Orientation, ...]:
+        return self._orientations[1:]
 
     @cached_property
     def structural_shape(self) -> tuple[int, ...]:
@@ -200,8 +225,29 @@ class GAType:
         return self <= spaces.scalar() + spaces.bivector()
 
     @property
-    def is_square_map(self) -> bool:
+    def maps_equal_dimensions(self) -> bool:
+        """A map between two spaces of equal dimension: what an inverse or a solve needs."""
         return self.arity == 1 and len(self.subspaces[0]) == len(self.subspaces[1])
+
+    @property
+    def is_endomorphism(self) -> bool:
+        """A map from a space to itself: the same blades and the same orientation in and out. Only such
+        a map can be fed back into itself, as eigenvectors, traces and powers do."""
+        return (
+            self.arity == 1
+            and self.subspaces[0].same_support(self.subspaces[1])
+            and self.orientations[0] is self.orientations[1]
+        )
+
+    @property
+    def is_correlation(self) -> bool:
+        """A map from a space to its dual: the complementary blades, oppositely oriented, as from points
+        to planes, or from rates to forques. Paired with its input by the regressive product it gives an
+        ordinary number; its eigenvectors exist only against a second correlation."""
+        if self.arity != 1:
+            return False
+        complements = {self.algebra.complement(mask) for mask in self.subspaces[1].masks}
+        return set(self.subspaces[0].masks) == complements and self.orientations[0] is not self.orientations[1]
 
     @lru_cache(maxsize=None)
     def reduces_to_scalar(self, steps: int) -> bool:
@@ -288,7 +334,7 @@ class GAType:
         imply equality. Exact equality and hashing still include every axis.
         """
 
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         return (
             other is not None
             and self.algebra is other.algebra
@@ -303,7 +349,7 @@ class GAType:
     def strictly_refines(self, other: object) -> bool:
         """Whether this type refines ``other`` but not conversely."""
 
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         return (
             other is not None
             and self.refines(other)
@@ -313,7 +359,7 @@ class GAType:
     def overlaps(self, other: object) -> bool:
         """Whether both patterns can describe at least one common type."""
 
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         return (
             other is not None
             and self.algebra is other.algebra
@@ -334,6 +380,7 @@ class GAType:
         return (
             type(self) is type(other)
             and self.subspaces == other.subspaces
+            and self.orientations == other.orientations
             and self.traits == other.traits
             and self.fields == other.fields
         )
@@ -342,25 +389,25 @@ class GAType:
         return self._hash
 
     def __le__(self, other: object) -> bool | NotImplementedType:
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         if other is None:
             return NotImplemented
         return self.refines(other)
 
     def __lt__(self, other: object) -> bool | NotImplementedType:
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         if other is None:
             return NotImplemented
         return self.strictly_refines(other)
 
     def __ge__(self, other: object) -> bool | NotImplementedType:
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         if other is None:
             return NotImplemented
         return other.refines(self)
 
     def __gt__(self, other: object) -> bool | NotImplementedType:
-        other = _comparison_gatype(other)
+        other = _comparison_gatype(other, self)
         if other is None:
             return NotImplemented
         return other.strictly_refines(self)
@@ -368,7 +415,7 @@ class GAType:
     def _identity(self) -> Extensor:
         if self.arity:
             raise TypeError("only a nullary GAType promotes to an identity map")
-        return self.algebra.operator.identity(self.output_subspace)
+        return self.algebra.operator.identity(self)
 
     def __call__(self, *operands: object) -> Extensor:
         """A nullary type is its identity map, applied or composed like any other map."""
@@ -426,10 +473,10 @@ class GAType:
 
     def dual(self) -> Extensor:
         """The right-Hodge dual as a map with this space in its open slot."""
-        return self.algebra.operator.dual(self.output_subspace)
+        return self.algebra.operator.dual(self)
 
     def dual_inverse(self) -> Extensor:
-        return self.algebra.operator.dual_inverse(self.output_subspace)
+        return self.algebra.operator.dual_inverse(self)
 
     def wedge(self, other: SubSpace | GAType | Extensor) -> Extensor:
         from numga.expression import wedge
@@ -479,8 +526,8 @@ class GAType:
     def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return self.sandwich(other)
 
-    def __reduce__(self) -> tuple[type[GAType], tuple[tuple[SubSpace, ...], TraitSet, tuple[tuple[int, int], ...]]]:
-        return type(self), (self.subspaces, self.traits, self.fields)
+    def __reduce__(self) -> tuple[type[GAType], tuple[object, ...]]:
+        return type(self), (self.subspaces, self.orientations, self.traits, self.fields)
 
     @property
     def signature(self) -> str:
@@ -488,8 +535,9 @@ class GAType:
 
         sites = dict(self.fields)
         output, *inputs = (
-            space.type_name + (f"[{sites[slot]}]" if slot in sites else "")
-            for slot, space in enumerate(self.subspaces)
+            ("intrinsic " if orientation is Orientation.intrinsic else "") + space.type_name
+            + (f"[{sites[slot]}]" if slot in sites else "")
+            for slot, (space, orientation) in enumerate(zip(self.subspaces, self.orientations))
         )
         text = f"{output} <- {', '.join(inputs)}" if inputs else output
         return f"{text} | {', '.join(trait.name for trait in self.traits)}" if self.traits else text
@@ -498,13 +546,25 @@ class GAType:
         return f"GAType({self.signature})"
 
 
-def _comparison_gatype(value: object) -> GAType | None:
-    """Lift a structural nullary shorthand only for semantic comparisons."""
+def _generator_mask(algebra, generators: str) -> int:
+    """The basis vectors named in a whitespace-separated string, as one mask."""
+    masks = algebra.subspace(generators).masks
+    if any(mask.bit_count() != 1 for mask in masks):
+        raise ValueError(f"name basis vectors, not blades: {generators!r}")
+    span = 0
+    for mask in masks:
+        span |= mask
+    return span
+
+
+def _comparison_gatype(value: object, like: GAType) -> GAType | None:
+    """The other side of a comparison with `like`. Comparisons are by support and traits, so a bare
+    subspace compares as the nullary type over it with `like`'s own orientation: nothing is assumed."""
 
     if isinstance(value, GAType):
         return value
     if isinstance(value, SubSpace):
-        return value.algebra.gatype(value)
+        return value.algebra.gatype.oriented((value,), (like.orientation,))
     return None
 
 
@@ -530,24 +590,41 @@ class Derivations:
         """The same axes and fields without explicit trait assertions."""
 
         gatype = self._gatype
-        return gatype.algebra.gatype(gatype.subspaces, fields=gatype.fields)
+        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, fields=gatype.fields)
 
     @lru_cache(maxsize=None)
     def with_traits(self, *traits: Trait) -> GAType:
         gatype = self._gatype
-        return gatype.algebra.gatype(gatype.subspaces, (*gatype.traits, *traits), gatype.fields)
+        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, (*gatype.traits, *traits), gatype.fields)
 
     @cached_property
     def plain(self) -> GAType:
         """The same slots and traits over blades alone: a field's sites read as batch axes."""
 
         gatype = self._gatype
-        return gatype.algebra.gatype(gatype.subspaces, gatype.traits) if gatype.fields else gatype
+        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits) if gatype.fields else gatype
 
     @lru_cache(maxsize=None)
     def with_fields(self, fields: tuple[tuple[int, int], ...]) -> GAType:
         gatype = self._gatype
-        return gatype.algebra.gatype(gatype.subspaces, gatype.traits, fields)
+        return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits, fields)
+
+    @lru_cache(maxsize=None)
+    def axis(self, index: int) -> GAType:
+        """The nullary type of one axis, output 0 and inputs from 1, with its orientation."""
+        gatype = self._gatype
+        return gatype.algebra.gatype.oriented((gatype.subspaces[index],), (gatype.orientations[index],))
+
+    @property
+    def output(self) -> GAType:
+        """The nullary type of the output, with its orientation."""
+        return self.axis(0)
+
+    @lru_cache(maxsize=None)
+    def with_orientations(self, orientations: tuple[Orientation, ...]) -> GAType:
+        """The same axes, traits and fields with the given orientations, one per axis."""
+        gatype = self._gatype
+        return gatype.algebra.gatype.oriented(gatype.subspaces, orientations, gatype.traits, gatype.fields)
 
     @cached_property
     def transposed(self) -> GAType:
@@ -564,7 +641,54 @@ class Derivations:
         space = gatype.output_subspace.restrict(
             mask for mask in gatype.output_subspace.masks if mask
         )
-        return gatype.algebra.gatype((space,) + gatype.input_subspaces)
+        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @cached_property
+    def degenerate(self) -> GAType:
+        """The output's blades that contain a degenerate direction, with its orientation, retaining every
+        open input axis: in PGA the ideal elements, such as directions and translations."""
+
+        gatype = self._gatype
+        space = gatype.output_subspace.degenerate()
+        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @cached_property
+    def nondegenerate(self) -> GAType:
+        """The output's blades free of degenerate directions, with its orientation, retaining every open
+        input axis: in PGA the elements through the origin, such as planes and rotation axes."""
+
+        gatype = self._gatype
+        space = gatype.output_subspace.nondegenerate()
+        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @lru_cache(maxsize=None)
+    def within(self, generators: str) -> GAType:
+        """The output's blades built from these basis vectors alone, such as `"x y z"`, with its
+        orientation, retaining every open input axis."""
+
+        gatype = self._gatype
+        span = _generator_mask(gatype.algebra, generators)
+        space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if not mask & ~span)
+        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @lru_cache(maxsize=None)
+    def containing(self, generators: str) -> GAType:
+        """The output's blades that contain every one of these basis vectors, such as `"z"`, with its
+        orientation, retaining every open input axis."""
+
+        gatype = self._gatype
+        span = _generator_mask(gatype.algebra, generators)
+        space = gatype.output_subspace.restrict(mask for mask in gatype.output_subspace.masks if mask & span == span)
+        return gatype.algebra.gatype.oriented((space,) + gatype.input_subspaces, gatype.orientations)
+
+    @cached_property
+    def flipped_orientation(self) -> GAType:
+        """The same blades, traits and fields with the output oriented the other way: a rate and a
+        forque in 3D PGA, a rotation centre and a mass point in 2D PGA."""
+
+        gatype = self._gatype
+        orientations = (gatype.orientation.flipped,) + gatype.input_orientations
+        return gatype.algebra.gatype.oriented(gatype.subspaces, orientations, gatype.traits, gatype.fields)
 
     @cached_property
     def reverse_fixed_subspace(self) -> SubSpace:
@@ -589,7 +713,10 @@ class Derivations:
         else:
             support = symmetric_product_support(gatype.output_subspace, transform)
             space = gatype.algebra.subspace.from_masks(support)
-        return gatype.algebra.gatype((space,) + gatype.input_subspaces * 2)
+        # A product of a value with itself has equal orientations on both sides, so it is extrinsic.
+        return gatype.algebra.gatype.oriented(
+            (space,) + gatype.input_subspaces * 2, (Orientation.extrinsic,) + gatype.input_orientations * 2,
+        )
 
     @property
     def squared(self) -> GAType:
@@ -623,4 +750,5 @@ class Derivations:
         masks = {0}
         for generator in gatype.output_subspace.masks:
             masks.update(mask ^ generator for mask in tuple(masks))
-        return gatype.algebra.gatype(gatype.algebra.subspace.from_masks(masks))
+        # The subalgebra holds products of the value's blades with themselves: extrinsic.
+        return gatype.algebra.gatype(gatype.algebra.subspace.from_masks(masks), orientation=Orientation.extrinsic)

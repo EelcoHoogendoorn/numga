@@ -119,11 +119,12 @@ def test_axion_term_is_invisible_to_bulk_waves():
     base_form = core.Bivector & glass
     base_current = core.stress_energy(field, glass(field))
     for alpha in (0.4, -1.3):
-        axion = core.axion_medium(glass, alpha)
+        coupling = mv(core.AxionCoupling, [alpha])
+        axion = core.axion_medium(glass, coupling)
         axion_form = core.Bivector & axion
         action_change = (axion_form(field, field) - base_form(field, field)) / 2
         np.testing.assert_allclose(phase_speeds(axion, z, SPEEDS), phase_speeds(glass, z, SPEEDS), atol=SCAN_TOLERANCE)
-        np.testing.assert_allclose((action_change - alpha * (field & field) / 2).kernel, 0.0, atol=1e-12)
+        np.testing.assert_allclose((action_change - coupling * (field & field) / 2).kernel, 0.0, atol=1e-12)
         np.testing.assert_allclose((core.stress_energy(field, axion(field)) - base_current).kernel, 0.0, atol=1e-12)
 
 

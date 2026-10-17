@@ -4,23 +4,24 @@ import numpy as np
 import pytest
 
 from numga import Algebra, NumpyContext
+from numga.algebras import ProjectiveMultivectorFactory
 from examples.mechanics import simplex
 from examples.mechanics.inertia import second_moment
 
 
-@pytest.mark.parametrize("signature, coordinates, count", [
-    ("w0x+", "x", 2),
-    ("w0x+y+", "x y", 3),
-    ("w0x+y+z+", "x y z", 3),
-    ("w0x+y+z+", "x y z", 4),
-    ("w0x+y+z+v+", "x y z v", 5),
+@pytest.mark.parametrize("signature, count", [
+    ("w0x+", 2),
+    ("w0x+y+", 3),
+    ("w0x+y+z+", 3),
+    ("w0x+y+z+", 4),
+    ("w0x+y+z+v+", 5),
 ])
-def test_second_moment_matches_exact_barycentric_integral(signature, coordinates, count):
-    ga = Algebra(signature)
+def test_second_moment_matches_exact_barycentric_integral(signature, count):
+    ga = Algebra(signature, multivector_factory=ProjectiveMultivectorFactory)
     mv = NumpyContext(ga).multivector
     Plane = ga.gatype.vector()
     rng = np.random.default_rng(4)
-    corners = (mv(coordinates, rng.normal(size=(2, count, len(coordinates.split())))) + mv.w).dual()
+    corners = mv.point(rng.normal(size=(2, count, ga.dimension - 1)))
 
     # Uniform barycentric coordinates have diagonal second moments twice the off-diagonal ones.
     total = corners.sum(axis=-1)
@@ -37,15 +38,12 @@ def test_second_moment_matches_exact_barycentric_integral(signature, coordinates
     np.testing.assert_allclose(weighted.kernel, (mass * moment).kernel, rtol=1e-11, atol=1e-11)
 
 
-@pytest.mark.parametrize("signature, coordinates", [
-    ("w0x+y+z+", "x y z"),
-    ("w0x+y+z+v+", "x y z v"),
-])
-def test_second_moment_agrees_with_inertia_recovery(signature, coordinates):
-    ga = Algebra(signature)
+@pytest.mark.parametrize("signature", ["w0x+y+z+", "w0x+y+z+v+"])
+def test_second_moment_agrees_with_inertia_recovery(signature):
+    ga = Algebra(signature, multivector_factory=ProjectiveMultivectorFactory)
     mv = NumpyContext(ga).multivector
     rng = np.random.default_rng(7)
-    corners = (mv(coordinates, rng.normal(size=(2, ga.dimension, ga.dimension - 1))) + mv.w).dual()
+    corners = mv.point(rng.normal(size=(2, ga.dimension, ga.dimension - 1)))
     moment = simplex.simplex_second_moment_lumped(corners)
     inertia = simplex.simplex_inertia_lumped(corners)
     recovered = second_moment(inertia)

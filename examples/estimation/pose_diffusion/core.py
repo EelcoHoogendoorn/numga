@@ -21,6 +21,8 @@ equation.
 
 from __future__ import annotations
 
+import numpy as np
+
 from numga import NumpyContext
 from numga.algebras import PGA2D as ga
 
@@ -40,7 +42,7 @@ Spread = ga.gatype((Scalar, Line, Line))          # Scalar <- (Line, Line)
 # White noise to a gust's push on the vessel.
 Kicks = ga.gatype((Twist, Line))                  # Twist <- Line
 # The set point; in PGA2D a point is a bivector.
-ORIGIN = mv.xy                                    # [] Point
+ORIGIN = mv.w.dual()                              # [] Point
 
 
 # --- math -----------------------------------------------------------------------------
@@ -75,7 +77,7 @@ def covariance(kicks: Kicks) -> Covariance:
     basis line and no correlation between them, so the covariance is the sum over the basis lines
     of the dyad formed by each line's image under the kick map.
     """
-    basis = mv.basis()                                                        # [3] Line
+    basis = mv.antibivector(np.eye(3))                                        # [3] Line
     return (kicks(basis) * (kicks(basis) & Line)).sum(axis=0)
 
 

@@ -7,7 +7,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Mapping, Protocol
 
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
 from numga.gatype.propagation import bind_subspaces, bind_traits, operation_traits
 from numga.subspace import SubSpace
 
@@ -122,6 +122,7 @@ class BindingPlan:
     target_gatype: GAType
     bindings: tuple[BoundSlot, ...]
     result_subspaces: tuple[SubSpace, ...]
+    result_orientations: tuple[Orientation, ...]
     equality_groups: tuple[tuple[int, ...], ...]
 
     @classmethod
@@ -150,8 +151,9 @@ class BindingPlan:
     def execution_gatype(self) -> GAType:
         """Target axes after any certified output restriction."""
 
-        return self.target_gatype.algebra.gatype(
+        return self.target_gatype.algebra.gatype.oriented(
             (self.result_subspaces[0],) + self.target_gatype.input_subspaces,
+            self.target_gatype.orientations,
         )
 
     @property
@@ -232,21 +234,32 @@ def _binding_plan_from_types(
                 f"{actual!r} into input slot {slot} requiring {required!r}: "
                 f"conversion is {transform.kind.value!r}"
             )
+        if operand.orientation is not target_gatype.input_orientations[slot]:
+            raise ValueError(
+                f"cannot bind an {operand.orientation.value} {actual.type_name} into input slot {slot}, "
+                f"which takes an {target_gatype.input_orientations[slot].value} orientation"
+            )
         entries.append(BoundSlot(slot, operand, transform))
 
     by_slot = dict(operands_by_slot)
     result_axes: list[SubSpace] = [target_gatype.output_subspace]
-    for slot, target_axis in enumerate(target_gatype.input_subspaces):
+    result_orientations: list[Orientation] = [target_gatype.orientation]
+    for slot, (target_axis, target_orientation) in enumerate(
+        zip(target_gatype.input_subspaces, target_gatype.input_orientations)
+    ):
         operand = by_slot.get(slot)
         if operand is None:
             result_axes.append(target_axis)
+            result_orientations.append(target_orientation)
         else:
             result_axes.extend(operand.input_subspaces)
+            result_orientations.extend(operand.input_orientations)
 
     plan = BindingPlan(
         target_gatype=target_gatype,
         bindings=tuple(entries),
         result_subspaces=tuple(result_axes),
+        result_orientations=tuple(result_orientations),
         equality_groups=equality_groups,
     )
     subspaces = bind_subspaces(plan)
@@ -266,8 +279,9 @@ class TypeRules:
     @staticmethod
     @lru_cache(maxsize=None)
     def bind(plan: BindingPlan) -> GAType:
-        return plan.target_gatype.algebra.gatype(
+        return plan.target_gatype.algebra.gatype.oriented(
             plan.result_subspaces,
+            plan.result_orientations,
             bind_traits(plan),
         )
 
@@ -290,7 +304,9 @@ class TypeRules:
             operand_gatypes,
             result_subspaces,
         )
-        return algebra.gatype(result_subspaces, traits)
+        return algebra.gatype.oriented(
+            result_subspaces, operation_orientations(operation, operand_gatypes), traits,
+        )
 
     @staticmethod
     def collection(
@@ -301,6 +317,8 @@ class TypeRules:
         if not operand_gatypes:
             raise ValueError("collection inference requires at least one operand")
         first = operand_gatypes[0]
+        if any(gatype.orientations != first.orientations for gatype in operand_gatypes[1:]):
+            raise ValueError(f"{operation} requires equal orientations")
         if operation in {"stack", "concatenate"}:
             if all(gatype == first for gatype in operand_gatypes[1:]):
                 return first
@@ -317,7 +335,9 @@ class TypeRules:
             # properties such as orthogonality need their original codomain.
             if first.arity and any(g.output_subspace != output for g in operand_gatypes):
                 common_traits.clear()
-            return first.algebra.gatype((output,) + first.input_subspaces, common_traits, first.fields)
+            return first.algebra.gatype.oriented(
+                (output,) + first.input_subspaces, first.orientations, common_traits, first.fields,
+            )
         if any(
             gatype.subspaces != first.subspaces or gatype.fields != first.fields
             for gatype in operand_gatypes[1:]
@@ -358,7 +378,47 @@ class TypeRules:
             if transform.target.algebra is not gatype.algebra:
                 raise ValueError("axis transform target belongs to another algebra")
             axes[axis] = transform.target
-        return gatype.algebra.gatype(tuple(axes))
+        return gatype.algebra.gatype.oriented(tuple(axes), gatype.orientations)
+
+
+# Products whose result orientation is the product of their operands' orientations, as signs multiply.
+_PRODUCTS = frozenset({
+    "geometric_product", "inner", "left_contraction", "right_contraction", "grade_product", "wedge",
+    "commutator", "anticommutator", "left_interior", "right_interior",
+})
+# Operations that keep every axis's orientation.
+_KEEPING = frozenset({
+    "squeeze_output", "negative", "scale", "reverse", "clifford_conjugate", "involute",
+    "scalar_negation", "pseudoscalar_negation",
+})
+
+
+def operation_orientations(operation: str, operand_gatypes: tuple[GAType, ...]) -> tuple[Orientation, ...]:
+    """The orientation of every axis of an operation's result, output first, from its operands'. An
+    operation without a rule is an error: orientation is never assumed."""
+
+    if operation in _PRODUCTS:
+        left, right = operand_gatypes
+        return (left.orientation * right.orientation, left.orientation, right.orientation)
+    if operation == "regressive":
+        # The regressive product passes through the volume form once.
+        left, right = operand_gatypes
+        return ((left.orientation * right.orientation).flipped, left.orientation, right.orientation)
+    if operation == "sandwich":
+        sandwicher, passenger, _ = operand_gatypes
+        return (passenger.orientation, sandwicher.orientation, passenger.orientation, sandwicher.orientation)
+    if operation == "transpose":
+        return tuple(reversed(operand_gatypes[0].orientations))
+    if operation in _KEEPING:
+        return operand_gatypes[0].orientations
+    if operation == "add":
+        left, right = operand_gatypes
+        if left.orientations != right.orientations:
+            raise ValueError(
+                f"cannot add {left.signature} and {right.signature}: their orientations differ"
+            )
+        return left.orientations
+    raise NotImplementedError(f"no orientation rule is defined for {operation!r}")
 
 
 def normalize_bind_arguments(

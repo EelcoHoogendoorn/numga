@@ -35,7 +35,7 @@ def comparison() -> tuple[core.Vector, core.Vector]:
     # --- checks
     # Every wavevector on the sheets solves the quartic, and lies in its potential map's kernel.
     wavevectors = core.mv.t * FREQUENCY + sheets
-    residual = core.polynomial(media[:, None, None, None], core.mv.t, wavevectors)
+    residual = core.polynomial(media[:, None, None, None], core.mv.xyz, wavevectors)
     wave = core.potential_map(media[:, None, None, None], wavevectors)
     np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
     np.testing.assert_allclose(wave(wavevectors).kernel, 0, atol=1e-11)

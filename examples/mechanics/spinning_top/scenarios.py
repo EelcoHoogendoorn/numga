@@ -51,7 +51,7 @@ def top(tip_radius: float, tip_height: float, disc_height: float, disc_mass: flo
     mass = np.array([disc_mass, 0.05, 0.15])
     com = (centres * mass[:, None]).sum(0) / mass.sum()
     centres = centres - com
-    parts = core.ellipsoid(core.point(centres), semi)
+    parts = core.ellipsoid(core.mv.point(centres), semi)
     points, masses = core.sigma_points(centres, semi, mass)
     inertia = core.inertia(points, masses)
     return parts, inertia, inertia.inverse(), mass.sum(), com[2]
@@ -61,7 +61,7 @@ def spin(setup: Setup, seconds: float, dt: float, every: int):
     """Simulate from a slight tilt; yield the pose, the parts and the ground every few steps."""
     parts, inertia, inertia_inv, mass, height = top(setup.tip_radius, 0.14, setup.disc_height, setup.disc_mass)
     ground = core.bowl(setup.bowl_curvature)
-    origin = core.point(np.zeros(3))
+    origin = core.mv.point(np.zeros(3))
     tilt = 0.15
     # `(mv.zw * a).exp()` translates up by `2 * a`, `(mv.zx * a).exp()` turns by `2 * a`: lift the
     # centre of mass so the tip clears, then tilt.

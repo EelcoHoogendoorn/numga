@@ -21,6 +21,8 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
+# The unit volume that no motion changes: an oriented volume over it reads as its signed size.
+unit_volume = mv.antiscalar([1.0])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -109,5 +111,5 @@ def hull(points: Vector) -> np.ndarray:
     so that the volume of its vertices turns as x, y, z do, with the centre behind it."""
     faces = ConvexHull(points.cast(ga.subspace("x y z")).kernel).simplices    # [faces, 3]
     a, b, c = (points[faces[:, corner]] for corner in range(3))               # [faces] Vector each
-    turning = ((a ^ b ^ c) * mv.xyz.reverse()) > 0                             # [faces]
+    turning = ((a ^ b ^ c) / unit_volume) > 0                                  # [faces]
     return np.where(turning[:, None], faces, faces[:, [0, 2, 1]])

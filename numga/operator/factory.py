@@ -10,7 +10,7 @@ import numpy as np
 from numga.algebra.self_product import grade_transform_sign, symmetric_product_terms
 from numga.binding import AxisTransform, TypeRules
 from numga.extensor import Extensor
-from numga.gatype import GAType
+from numga.gatype import GAType, Orientation
 from numga.gatype.traits import Identity
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
@@ -34,7 +34,7 @@ class OperatorFactory:
         self.subspaces = algebra.subspace
 
     def build(
-        self, axes: Iterable[SubSpace], coefficients: Any,
+        self, axes: Iterable[SubSpace], orientations: Iterable[Orientation], coefficients: Any,
     ) -> Extensor:
         axes = tuple(axes)
         if not axes:
@@ -43,44 +43,49 @@ class OperatorFactory:
             raise ValueError("every Extensor axis must belong to this factory's algebra")
         return Extensor(
             self.algebra.exact,
-            self.algebra.gatype(axes),
+            self.algebra.gatype.oriented(axes, orientations),
             SymbolicKernel(coefficients),
         )
 
     @lru_cache(maxsize=None)
-    def unit(self, space: SubSpace) -> Extensor:
-        """The exact scalar identity projected onto a coefficient layout."""
+    def unit(self, gatype: GAType) -> Extensor:
+        """The exact scalar identity in a nullary type's layout."""
 
-        return self.algebra.exact.multivector(space)
-
-    @lru_cache(maxsize=None)
-    def identity(self, space: SubSpace) -> Extensor:
-        self._require_space(space)
-        return self.build((space, space), SymbolicKernel.identity(len(space))).with_traits(Identity)
+        return self.algebra.exact.multivector(gatype)
 
     @lru_cache(maxsize=None)
-    def _grade_transform(self, space: SubSpace, transform: str) -> Extensor:
+    def identity(self, gatype: GAType) -> Extensor:
+        """The identity map of a nullary type, keeping its orientation."""
+        gatype = self._nullary(gatype)
+        space = gatype.output_subspace
+        orientations = (gatype.orientation, gatype.orientation)
+        return self.build((space, space), orientations, SymbolicKernel.identity(len(space))).with_traits(Identity)
+
+    @lru_cache(maxsize=None)
+    def _grade_transform(self, gatype: GAType, transform: str) -> Extensor:
+        gatype = self._nullary(gatype)
+        space = gatype.output_subspace
         coefficients = np.zeros((len(space), len(space)), dtype=np.int8)
         for index, mask in enumerate(space.masks):
             coefficients[index, index] = grade_transform_sign(self.algebra, transform, mask)
-        return self.build((space, space), coefficients)
+        return self.build((space, space), (gatype.orientation, gatype.orientation), coefficients)
 
-    def reverse(self, space: SubSpace) -> Extensor:
-        return self._grade_transform(space, "reverse")
+    def reverse(self, gatype: GAType) -> Extensor:
+        return self._grade_transform(gatype, "reverse")
 
-    def clifford_conjugate(self, space: SubSpace) -> Extensor:
+    def clifford_conjugate(self, gatype: GAType) -> Extensor:
         """Reverse blades and negate odd grades, without conjugating scalars."""
 
-        return self._grade_transform(space, "clifford_conjugate")
+        return self._grade_transform(gatype, "clifford_conjugate")
 
-    def involute(self, space: SubSpace) -> Extensor:
-        return self._grade_transform(space, "involute")
+    def involute(self, gatype: GAType) -> Extensor:
+        return self._grade_transform(gatype, "involute")
 
-    def scalar_negation(self, space: SubSpace) -> Extensor:
-        return self._grade_transform(space, "scalar_negation")
+    def scalar_negation(self, gatype: GAType) -> Extensor:
+        return self._grade_transform(gatype, "scalar_negation")
 
-    def pseudoscalar_negation(self, space: SubSpace) -> Extensor:
-        return self._grade_transform(space, "pseudoscalar_negation")
+    def pseudoscalar_negation(self, gatype: GAType) -> Extensor:
+        return self._grade_transform(gatype, "pseudoscalar_negation")
 
     @lru_cache(maxsize=None)
     def _symmetric_product(
@@ -106,7 +111,9 @@ class OperatorFactory:
             else:
                 coefficients[indices[mask], left, right] = coefficient
                 coefficients[indices[mask], right, left] = coefficient
-        return self.build((output, space, space), SymbolicKernel(coefficients).halved())
+        # A value against itself: equal orientations on both sides, so the product is extrinsic.
+        orientations = (Orientation.extrinsic, gatype.orientation, gatype.orientation)
+        return self.build((output, space, space), orientations, SymbolicKernel(coefficients).halved())
 
     def squared(self, operand: OperandType) -> Extensor:
         return self._symmetric_product(self._operand_gatype(operand), "identity")
@@ -139,27 +146,30 @@ class OperatorFactory:
         return self._symmetric_product(self._operand_gatype(operand), "involute")
 
     @lru_cache(maxsize=None)
-    def cast(self, source: SubSpace, target: SubSpace) -> Extensor:
-        """Explicit signed coordinate conversion, including projection and zero fill."""
+    def cast(self, source: GAType, target: SubSpace) -> Extensor:
+        """Explicit signed coordinate conversion, including projection and zero fill: a change of
+        layout, which keeps the orientation."""
 
-        self._require_space(source)
+        source = self._nullary(source)
+        source_space = source.output_subspace
         self._require_space(target)
-        transform = AxisTransform.plan(source, target)
+        transform = AxisTransform.plan(source_space, target)
         if not transform.is_compatible:
             raise ValueError("cannot cast between SubSpaces from different algebras")
         coefficients = SymbolicKernel(
-            transform.coordinate_matrix, shape=(len(target), len(source)),
+            transform.coordinate_matrix, shape=(len(target), len(source_space)),
         )
-        result = self.build((target, source), coefficients)
+        result = self.build((target, source_space), (source.orientation, source.orientation), coefficients)
         return result.with_traits(Identity) if transform.is_lossless else result
 
     select = cast
 
     @lru_cache(maxsize=None)
-    def restrict(self, source: SubSpace, target: SubSpace) -> Extensor:
+    def restrict(self, source: GAType, target: SubSpace) -> Extensor:
         """Project onto the intersection of the two static blade supports."""
 
-        return self.select(source, source.intersection(target))
+        source = self._nullary(source)
+        return self.select(source, source.output_subspace.intersection(target))
 
     def geometric_product(self, left: OperandType, right: OperandType) -> Extensor:
         """Build a product selected from the operands' complete GATypes."""
@@ -395,7 +405,8 @@ class OperatorFactory:
                         (-1 if inversions % 2 else 1)
                         * vector.signs[output] * vector.signs[left] * vector.signs[right]
                     )
-        return self.build((vector, vector, vector), coefficients)
+        # The dual of a wedge of two vectors: a product of equal orientations, flipped by the dual.
+        return self.build((vector, vector, vector), (Orientation.intrinsic, Orientation.extrinsic, Orientation.extrinsic), coefficients)
 
     def sandwich(
         self,
@@ -426,16 +437,24 @@ class OperatorFactory:
         passenger: GAType,
         output: SubSpace | None,
     ) -> Extensor:
-        result = self.full_sandwich(
-            sandwicher.output_subspace,
-            passenger.output_subspace,
-            output,
-        )
+        result = self.full_sandwich(sandwicher.derive.structural, passenger.derive.structural, output)
         kernel = result.kernel
         # The two sandwicher slots hold the same versor: symmetrize them. For basis blades the two
         # orders are equal or opposite, so the average is exact.
         kernel = (kernel + kernel.transpose((0, 3, 2, 1))).halved()
-        result = self.build(result.axes, kernel).squeeze_output()
+        result = self.build(result.axes, result.gatype.orientations, kernel).squeeze_output()
+        if sandwicher.output_subspace.masks and all(mask.bit_count() % 2 for mask in sandwicher.output_subspace.masks):
+            # An odd versor reflects: the standard action takes the grade involution of the passenger,
+            # and an intrinsic passenger turns with the opposite sign, since a reflection reverses the
+            # orientation of space.
+            signs = SymbolicKernel(np.diag([
+                grade_transform_sign(self.algebra, "involute", mask)
+                * (-1 if passenger.orientation is Orientation.intrinsic else 1)
+                for mask in passenger.output_subspace.masks
+            ]).astype(np.int8))
+            passenger_space = passenger.output_subspace
+            reflected = self.build((passenger_space, passenger_space), (passenger.orientation,) * 2, signs)
+            result = result.bind({1: reflected})
         if output is not None:
             # A requested projection is not an unrestricted sandwich action.
             return result
@@ -473,7 +492,7 @@ class OperatorFactory:
         output: SubSpace | None,
     ) -> Extensor:
         forward = self._sandwich(sandwicher, passenger, output)
-        reverse = self.reverse(sandwicher.output_subspace)
+        reverse = self.reverse(sandwicher.derive.structural)
         # The reverse is diagonal on the carrier: folding it into both slots keeps every axis, the
         # grade cancellations and the sandwich's type. A versor's reverse is a versor, so the
         # sandwich's laws hold for it too.
@@ -483,30 +502,21 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def full_sandwich(
         self,
-        sandwicher: SubSpace,
-        passenger: SubSpace,
+        sandwicher: GAType,
+        passenger: GAType,
         output: SubSpace | None = None,
     ) -> Extensor:
         """Unrestricted sandwich tensor, optionally cast to ``output``."""
 
-        self._require_space(sandwicher)
-        self._require_space(passenger)
         if output is not None:
             self._require_space(output)
 
         left_product = self.geometric_product(sandwicher, passenger)
-        right_product = self.geometric_product(
-            left_product.output_subspace, sandwicher
-        )
-        unrestricted = right_product.bind(
-            {
-                0: left_product,
-                1: self.reverse(sandwicher),
-            }
-        )
+        right_product = self.geometric_product(left_product.gatype.derive.output, sandwicher)
+        unrestricted = right_product.bind({0: left_product, 1: self.reverse(sandwicher)})
         if output is None or unrestricted.output_subspace == output:
             return unrestricted
-        return self.cast(unrestricted.output_subspace, output).bind({0: unrestricted})
+        return self.cast(unrestricted.gatype.derive.output, output).bind({0: unrestricted})
 
     def _product(
         self,
@@ -600,16 +610,18 @@ class OperatorFactory:
         return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
 
     @lru_cache(maxsize=None)
-    def dual(self, space: SubSpace) -> Extensor:
-        """Right-Hodge dual, expressed on the algebra's default output layout."""
+    def dual(self, gatype: GAType) -> Extensor:
+        """Right-Hodge dual, expressed on the algebra's default output layout: it flips the orientation."""
 
-        return self._dual(space, inverse=False)
+        return self._dual(gatype, inverse=False)
 
     @lru_cache(maxsize=None)
-    def dual_inverse(self, space: SubSpace) -> Extensor:
-        return self._dual(space, inverse=True)
+    def dual_inverse(self, gatype: GAType) -> Extensor:
+        return self._dual(gatype, inverse=True)
 
-    def _dual(self, space: SubSpace, *, inverse: bool) -> Extensor:
+    def _dual(self, gatype: GAType, *, inverse: bool) -> Extensor:
+        gatype = self._nullary(gatype)
+        space = gatype.output_subspace
         rule = self._right_hodge_inverse if inverse else self._right_hodge
         terms = tuple(rule(mask) for mask in space.masks)
         output = self.subspaces.from_masks(mask for mask, _ in terms)
@@ -618,7 +630,7 @@ class OperatorFactory:
         for column, (mask, sign) in enumerate(terms):
             row = indices[mask]
             coefficients[row, column] = sign * space.signs[column] * output.signs[row]
-        return self.build((output, space), coefficients)
+        return self.build((output, space), (gatype.orientation.flipped, gatype.orientation), coefficients)
 
     def _right_hodge(self, mask: int) -> tuple[int, int]:
         """Return the complement mask and right-Hodge orientation sign."""
@@ -641,11 +653,21 @@ class OperatorFactory:
 
     def _operand_gatype(self, operand: OperandType) -> GAType:
         if isinstance(operand, SubSpace):
-            return self.algebra.gatype(operand)
+            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)")
         if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
             raise ValueError("operation operand type belongs to another algebra")
         # An operator acts on blades; over the sites of a field it acts site by site when bound.
         return operand.derive.plain
+
+    def _nullary(self, gatype: GAType) -> GAType:
+        """A nullary GAType of this algebra."""
+        if isinstance(gatype, SubSpace):
+            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)")
+        if not isinstance(gatype, GAType) or gatype.algebra is not self.algebra or gatype.arity:
+            raise TypeError("an operator is built from a nullary GAType of this algebra")
+        return gatype
 
     def _require_space(self, space: SubSpace) -> None:
         if not isinstance(space, SubSpace) or space.algebra is not self.algebra:

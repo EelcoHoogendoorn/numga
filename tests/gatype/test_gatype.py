@@ -37,9 +37,9 @@ def test_gatype_refinement_combines_support_and_known_facts() -> None:
     from numga.algebra import Algebra
 
     algebra = Algebra("x+y+z+")
-    even = algebra.subspace.even()
-    full = algebra.subspace.full()
-    vector = algebra.subspace.vector()
+    even = algebra.gatype.even()
+    full = algebra.gatype.full()
+    vector = algebra.gatype.vector()
 
     rotor = algebra.gatype.rotor()
     generic_versor = algebra.gatype(full, (Versor,))
@@ -56,7 +56,7 @@ def test_gatype_refinement_combines_support_and_known_facts() -> None:
     assert not generic_even.refines(unit_value)
     assert not unit_value.refines(generic_even)
     assert generic_even.overlaps(unit_value)
-    assert not algebra.gatype(vector).overlaps(generic_even)
+    assert not vector.overlaps(generic_even)
 
     redundant = algebra.gatype(
         even,
@@ -72,7 +72,7 @@ def test_refinement_comparisons_lift_subspaces_to_plain_nullary_gatypes() -> Non
     bivector = algebra.subspace.bivector()
     plain = algebra.gatype.bivector()
     blade = algebra.gatype.from_masks((3,))
-    refined = algebra.gatype(bivector, (ReverseProductOne,))
+    refined = algebra.gatype(plain, (ReverseProductOne,))
 
     # The lift adds neither support restrictions nor certified traits.
     assert plain <= bivector
@@ -98,9 +98,7 @@ def test_subspace_comparison_lift_preserves_algebra_and_arity_boundaries() -> No
     foreign = Algebra("x+y+")
     vector = algebra.gatype.vector()
     foreign_vector = foreign.subspace.vector()
-    vector_map = algebra.gatype(
-        (algebra.subspace.vector(), algebra.subspace.vector())
-    )
+    vector_map = algebra.gatype((vector, vector))
 
     assert not vector.refines(foreign_vector)
     assert not vector.overlaps(foreign_vector)

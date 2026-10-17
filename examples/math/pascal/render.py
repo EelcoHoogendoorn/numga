@@ -23,7 +23,7 @@ def xy(points: core.Point) -> np.ndarray:
 
 def draw_on(ax: plt.Axes, shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> None:
     x, y = np.meshgrid(*np.linspace(BOX[0], BOX[1], 400).T)
-    grid = core.point(np.stack([x, y], axis=-1))                              # [rows, columns] Point
+    grid = core.mv.point(np.stack([x, y], axis=-1))                              # [rows, columns] Point
     sides = hexagon & hexagon[core.NEXT]                                       # [6] Plane
     pascal_line = crossing[0] & crossing[2]                                    # [] Plane
     ax.contour(x, y, (shape(grid) & grid).to_array(), levels=[0.0], colors="0.25", linewidths=1.6)

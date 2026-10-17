@@ -42,7 +42,7 @@ def turning() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
     as motors."""
     along, across = grid()
     rng = np.random.default_rng(TURNING_SEED)
-    axes = core.mv("yz zx xy", rng.normal(size=(len(along), 3))).normalized()   # [vertices] Line
+    axes = core.mv(core.Line.derive.nondegenerate, rng.normal(size=(len(along), 3))).normalized()   # [vertices] Line
     phases = rng.uniform(0, 2 * np.pi, len(along))
     angles = TURNING * np.sin(np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)[:, None] + phases)   # [frames, vertices]
     return refined((core.ribbon(along, across, 0.0) * core.turn(axes, angles)).field())   # [frames] Motor[vertices]
@@ -55,8 +55,8 @@ def refined(motors: core.Motor) -> tuple[core.Point, core.Point, np.ndarray, np.
     mesh and of the surfaces."""
     faces = core.grid_faces(ALONG_COUNT, ACROSS_COUNT)
     pinned = np.isin(np.arange(ALONG_COUNT * ACROSS_COUNT), CORNERS)
-    markers = stack([core.mv.w.dual(), core.point([AXIS, 0.0, 0.0]), core.point([0.0, AXIS, 0.0]),
-                     core.point([0.0, 0.0, AXIS])])                            # [axes + 1] Point
+    markers = stack([core.mv.w.dual(), core.mv.point([AXIS, 0.0, 0.0]), core.mv.point([0.0, AXIS, 0.0]),
+                     core.mv.point([0.0, 0.0, AXIS])])                         # [axes + 1] Point
     origin = markers[0]                                                        # [] Point
     steps, meshes = zip(*core.refinements(core.Mesh(motors, faces), pinned, DEPTH))
     points = core.composed(steps) * (motors >> origin)                         # [frames] Point[refined]

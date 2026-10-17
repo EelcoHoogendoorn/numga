@@ -48,11 +48,6 @@ Stiffness = PGA2D.gatype((Forque, Twist))
 Inertia = PGA2D.gatype((Forque, Twist))
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 2) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y", coords) + mv.w).dual()
-
-
 @dataclass(frozen=True)
 class Suspension:
     """Geometry and masses prepared for one planar suspension."""
@@ -87,9 +82,9 @@ def suspension(springs: int) -> Suspension:
     body_xy = np.array([[0.0, 0.5], [2.0, 0.5], [2.0, 1.5], [0.0, 1.5]])          # [corners, 2] m
     attachments_xy = np.array([[0.2, 1.5], [1.8, 1.5], [2.0, 1.0]])              # [springs, 2] m
     anchors_xy = np.array([[0.2, 2.55], [1.8, 2.55], [2.9, 1.85]])               # [springs, 2] m
-    body = point(body_xy)                                                         # [corners] Point
-    attachments = point(attachments_xy[:springs])                                 # [n_springs] Point
-    anchors = point(anchors_xy[:springs])                                         # [n_springs] Point
+    body = mv.point(body_xy)                                                      # [corners] Point
+    attachments = mv.point(attachments_xy[:springs])                              # [n_springs] Point
+    anchors = mv.point(anchors_xy[:springs])                                      # [n_springs] Point
     spring_constants = np.full(springs, 6.0)                                      # [n_springs] N/m
 
     # Tensor-product 2-point Gauss quadrature on the uniform plate:

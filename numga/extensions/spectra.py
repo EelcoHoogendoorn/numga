@@ -14,24 +14,24 @@ from __future__ import annotations
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern
 
-from numga.extensions._linalg import _eigenpairs, _is_endomorphism, _result, _scalars
+from numga.extensions._linalg import _eigenpairs, _result, _scalars
 
 
-@Extensor.det.register(_is_endomorphism)
+@Extensor.det.register(lambda t: t.is_endomorphism)
 def det(value: Extensor) -> Extensor:
     """Determinant of an endomorphism, as a scalar extensor per batch item."""
     value = value.cast(value.axes[1])
     return _scalars(value, value.context.xp.linalg.det(value._kernel))
 
 
-@Extensor.eig.register(_is_endomorphism)
+@Extensor.eig.register(lambda t: t.is_endomorphism)
 def eig(value: Extensor) -> tuple[Extensor, Extensor]:
     """Eigenvalues and right eigenvectors, with modes on the last batch axis."""
     value = value.cast(value.axes[1])
     return _eigenpairs(value, *value.context.xp.linalg.eig(value._kernel))
 
 
-@Extensor.cholesky.register(_is_endomorphism)
+@Extensor.cholesky.register(lambda t: t.is_endomorphism)
 def cholesky(value: Extensor) -> Extensor:
     """Lower coefficient factor L with A = L L^H, in the input layout.
 
@@ -41,21 +41,21 @@ def cholesky(value: Extensor) -> Extensor:
     return _result(value, value.gatype.derive.structural, value.context.xp.linalg.cholesky(value._kernel))
 
 
-@Extensor.eigvals.register(_is_endomorphism)
+@Extensor.eigvals.register(lambda t: t.is_endomorphism)
 def eigvals(value: Extensor) -> Extensor:
     """Eigenvalues without computing eigenvectors."""
     value = value.cast(value.axes[1])
     return _scalars(value, value.context.xp.linalg.eigvals(value._kernel))
 
 
-@Extensor.eigh.register(_is_endomorphism)
+@Extensor.eigh.register(lambda t: t.is_endomorphism)
 def eigh(value: Extensor) -> tuple[Extensor, Extensor]:
     """Ascending eigenvalues and coefficient-orthonormal Hermitian eigenvectors."""
     value = value.cast(value.axes[1])
     return _eigenpairs(value, *value.context.xp.linalg.eigh(value._kernel, UPLO="L"))
 
 
-@Extensor.eigvalsh.register(_is_endomorphism)
+@Extensor.eigvalsh.register(lambda t: t.is_endomorphism)
 def eigvalsh(value: Extensor) -> Extensor:
     """Ascending eigenvalues of a Hermitian endomorphism."""
     value = value.cast(value.axes[1])
@@ -72,9 +72,9 @@ def svd(value: Extensor) -> tuple[Extensor, Extensor, Extensor]:
     xp = value.context.xp
     left, singular, right_h = xp.linalg.svd(value._kernel, full_matrices=False)
     return (
-        _result(value, value.algebra.gatype(value.axes[0]), xp.swapaxes(left, -1, -2)),
+        _result(value, value.gatype.derive.output, xp.swapaxes(left, -1, -2)),
         _scalars(value, singular),
-        _result(value, value.algebra.gatype(value.axes[1]), xp.conj(right_h)),
+        _result(value, value.gatype.derive.axis(1), xp.conj(right_h)),
     )
 
 

@@ -29,27 +29,17 @@ Plane = ga.gatype.vector()
 Quadric = ga.gatype((Plane, Point))
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
-
-
 # --- plumbing ----------------------------------------------------------------
 def ridge_patch() -> tuple[Point, np.ndarray]:
     """A surface patch with a sharp ridge ending in an apex: six vertices and six triangles."""
-    vertices = point(np.array([
+    vertices = mv.point([
         [ 0.35,  0.0,   0.25],  # 0: vertex a (sharp corner apex)
         [-0.35,  0.0,   0.25],  # 1: vertex b (crease continuation)
         [ 0.0,   0.55, -0.15],  # 2: left base vertex
         [ 0.0,  -0.55, -0.15],  # 3: right base vertex
         [ 0.75,  0.0,  -0.15],  # 4: front tip (steep corner at a)
         [-0.85,  0.0,  -0.15],  # 5: back tip (gentle ramp at b)
-    ]))
+    ])
     faces = np.array([
         [0, 1, 2],  # 0: left flank (shared by edge a-b)
         [1, 0, 3],  # 1: right flank (shared by edge a-b)

@@ -10,6 +10,7 @@ any type; the geometric quantities read the vertices as vectors."""
 from __future__ import annotations
 
 from functools import cached_property
+from pathlib import Path
 
 import numpy as np
 
@@ -25,6 +26,7 @@ mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
+Trivector = ga.gatype.trivector()
 PlanarVector = ga.gatype.from_blades("x y")
 
 
@@ -131,6 +133,58 @@ class Mesh:
         return mesh
 
     @classmethod
+    def icosphere(cls, levels: int) -> Mesh:
+        """A unit sphere: an icosahedron with each face split in four, the given number of times."""
+        golden = (1 + 5 ** 0.5) / 2
+        vertices = mv.vector([
+            [-1, golden, 0], [1, golden, 0], [-1, -golden, 0], [1, -golden, 0],
+            [0, -1, golden], [0, 1, golden], [0, -1, -golden], [0, 1, -golden],
+            [golden, 0, -1], [golden, 0, 1], [-golden, 0, -1], [-golden, 0, 1],
+        ]).normalized().field()
+        faces = np.array([
+            [0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2],
+            [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5],
+            [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1],
+        ])
+        mesh = cls(vertices, faces)
+        for _ in range(levels):
+            finer = concatenate([mesh.vertices.batch(), mesh.edge_midpoints.batch()]).normalized().field()
+            mesh = cls(finer, mesh.split_faces)
+        return mesh
+
+    @classmethod
+    def read(cls, path: Path, size: float) -> Mesh:
+        """A mesh from a Wavefront OBJ file, its vertices and triangles only, centred on its bounding box
+        and scaled so that the box's longest side is `size`."""
+        rows = [line.split() for line in path.read_text().splitlines()]
+        places = np.array([[float(word) for word in row[1:4]] for row in rows if row[:1] == ["v"]])
+        faces = np.array([[int(word.split("/")[0]) - 1 for word in row[1:4]] for row in rows if row[:1] == ["f"]])
+        middle, extent = (places.max(axis=0) + places.min(axis=0)) / 2, np.ptp(places, axis=0).max()
+        return cls(mv.vector(((places - middle) * size / extent).tolist()).field(), faces)
+
+    @classmethod
+    def torus(cls, major_radius: float, minor_radius: float, major_count: int, minor_count: int) -> Mesh:
+        """A closed triangulated torus around the z axis, built by turning a circle in the xz plane around
+        the xy plane."""
+        major_angles = np.linspace(0.0, 2 * np.pi, major_count, endpoint=False)
+        minor_angles = np.linspace(0.0, 2 * np.pi, minor_count, endpoint=False)
+        around_tube = (mv.xz * (-minor_angles / 2)).exp()                       # [minor_count] Rotor
+        around_axis = (mv.xy * (-major_angles / 2)).exp()                       # [major_count] Rotor
+        tube = mv.x * major_radius + (around_tube >> (mv.x * minor_radius))     # [minor_count] Vector
+        vertices = (around_axis[:, None] >> tube[None, :]).reshape(-1).field()  # Vector[V]
+
+        u, v = np.meshgrid(np.arange(major_count), np.arange(minor_count), indexing="ij")
+        v00 = u * minor_count + v
+        v10 = ((u + 1) % major_count) * minor_count + v
+        v01 = u * minor_count + (v + 1) % minor_count
+        v11 = ((u + 1) % major_count) * minor_count + (v + 1) % minor_count
+        faces = np.concatenate([
+            np.stack([v00, v10, v11], axis=-1).reshape(-1, 3),
+            np.stack([v00, v11, v01], axis=-1).reshape(-1, 3),
+        ])
+        return cls(vertices, faces)
+
+    @classmethod
     def _triangulate(cls, vertices: Vector) -> Mesh:
         """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
         from scipy.spatial import Delaunay
@@ -233,6 +287,14 @@ class Mesh:
         """Bivector[F]: each face's unit plane, counter-clockwise seen from outside."""
         edges = self.triangle_edges
         return (edges[0] ^ edges[1]).normalized()
+
+    @cached_property
+    def unit_volume(self) -> Trivector:
+        """Trivector: the solid's oriented volume over its size, the sense its counter-clockwise faces give
+        space."""
+        corners = self.corners
+        volume = (corners[0] ^ corners[1] ^ corners[2]).sites.sum()
+        return volume / volume.norm()
 
     @cached_property
     def triangle_areas(self) -> Scalar:

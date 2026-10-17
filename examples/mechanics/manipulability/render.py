@@ -14,7 +14,7 @@ from examples.mechanics.manipulability import core
 
 mv, w = core.mv, core.w
 # The unit cube lies within half a unit of each of these planes.
-SLABS = mv("x y z", np.eye(3))                   # [3] Plane
+SLABS = core.coordinate_planes                    # [3] Plane
 BOX_COLOURS = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
 VELOCITY_COLOUR, FORCE_COLOUR = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.55, 0.20])
 QUADRIC_ALPHA = 0.55
@@ -36,7 +36,7 @@ def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float, 
     offsets = np.linspace(-extent, extent, pixels)
     screen = centre + offsets[None, :, None] * right + offsets[::-1, None, None] * up + 20 * extent * back
     lamp = back - 0.4 * right + 0.7 * up
-    return core.arm.point(screen), mv("x y z", -back).dual(), lamp / np.linalg.norm(lamp)
+    return mv.point(screen), mv.direction(-back), lamp / np.linalg.norm(lamp)
 
 
 def box_hits(body: core.arm.PointMap, origins: core.Point, heading: core.Point):

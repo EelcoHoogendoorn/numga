@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.quadrics.gaussian.core import fit_gaussian, mv, point
+from examples.quadrics.gaussian.core import fit_gaussian, mv
 
 
 def gaussian():
     """Fit a Gaussian to a stretched cloud, moved as a batch, on points covering the plot."""
     rng = np.random.default_rng(4)
-    points = point(rng.normal(size=(400, 2)) * [1.5, 0.5])
+    points = mv.point(rng.normal(size=(400, 2)) * [1.5, 0.5])
     placement = (mv.xw * 0.6 - mv.yw * 0.3).exp() * (mv.xy * 0.3).exp()
     points = placement >> points
     across = 320
-    pixels = point(np.stack(np.meshgrid(np.linspace(-5, 6, across),
+    pixels = mv.point(np.stack(np.meshgrid(np.linspace(-5, 6, across),
                                         np.linspace(-5, 4, across)), axis=-1))
 
     density, level = fit_gaussian(points, pixels)

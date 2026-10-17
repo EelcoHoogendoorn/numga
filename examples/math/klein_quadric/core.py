@@ -31,25 +31,30 @@ from numga.algebras import PGA3D as ga
 mv = NumpyContext(ga, np.complex128).multivector
 Scalar = ga.gatype.scalar()
 Plane = ga.gatype.vector()
+# Every line here is a meet of two planes, as the lines through a point that meet two lines are: an axis.
 Bivector = ga.gatype.bivector()
 Point = ga.gatype.antivector()
-Quadric = ga.gatype((Plane, Point))
+# A point joined with a line and met with others gives a plane through points: oriented within itself.
+Quadric = ga.gatype((ga.gatype.antitrivector(), Point))
 # Zero on one bivector twice exactly when it is a line; zero on two lines exactly when they meet.
 KLEIN = Bivector ^ Bivector                                                    # [] Pseudoscalar <- (Bivector, Bivector)
-# The origin, the point dual to the plane at infinity.
+# The origin, the point dual to the plane at infinity; the plane at infinity as the join of the three
+# directions, whose meet with an axis is the axis's point at infinity.
 ORIGIN = mv.w.dual()                                                           # [] Point
+HORIZON = mv.direction([1.0, 0.0, 0.0]) & mv.direction([0.0, 1.0, 0.0]) & mv.direction([0.0, 0.0, 1.0])
 # Both roots of a quadratic, one per sign.
 SIGNS = np.array([1.0, -1.0])
 
 
 # --- math -----------------------------------------------------------------------------
-def roots(a: Scalar, b: Scalar, c: Scalar) -> Scalar:
-    """The two roots of the quadratic `a + 2 * b * t + c * t * t` along the combinations of two ends,
-    as the weights of the ends on the last axis, one root per sign on the axis before it:
-    `first * (sign * root - b) + second * a`, with `root * root == b * b - a * c`."""
-    root = (b * b - a * c).square_root()                                       # [...] Scalar
-    first = root[..., None] * SIGNS - b[..., None]                             # [..., 2] Scalar
-    return stack([first, a[..., None].broadcast_to(first.shape)], axis=-1)     # [..., 2, 2] Scalar
+def roots(b: Scalar, c: Scalar) -> Scalar:
+    """The two roots of the quadratic `1 + 2 * b * t + c * t * t` along the combinations of two ends,
+    as the weight of the first end against unit weight on the second, one root per sign on the last
+    axis: `first * (sign * root - b) + second`, with `root * root == b * b - c`. A quadratic whose
+    coefficients share a factor, such as the handedness of a signed volume, is divided by its first
+    coefficient to read as this one."""
+    root = (b * b - c).square_root()                                           # [...] Scalar
+    return root[..., None] * SIGNS - b[..., None]                              # [..., 2] Scalar
 
 
 def transversals(lines: Bivector) -> Bivector:
@@ -62,8 +67,10 @@ def transversals(lines: Bivector) -> Bivector:
     pencil = right[..., -2:]                                                   # [..., 2] Bivector
     # Along the pencil the Klein form is a quadratic; its two zeros are the lines of the pencil.
     first, second = pencil[..., 0], pencil[..., 1]                             # [...] Bivector
-    weights = roots(KLEIN(first, first).dual(), KLEIN(first, second).dual(), KLEIN(second, second).dual())   # [..., 2, 2] Scalar
-    return (weights * pencil[..., None, :]).sum(axis=-1).normalized()          # [..., 2] Bivector
+    # The Klein form of two axes is a signed volume; its ratios are ordinary numbers.
+    leading = KLEIN(first, first).dual()                                       # [...] Scalar
+    weights = roots(KLEIN(first, second).dual() / leading, KLEIN(second, second).dual() / leading)   # [..., 2] Scalar
+    return (first[..., None] * weights + second[..., None]).normalized()       # [..., 2] Bivector
 
 
 def ruled_quadric(first: Bivector, second: Bivector, third: Bivector) -> Quadric:
@@ -77,12 +84,13 @@ def ruled_quadric(first: Bivector, second: Bivector, third: Bivector) -> Quadric
 def crossings(surface: Quadric, line: Bivector) -> Point:
     """The two points where a line crosses a quadric, at unit weight, on the last axis."""
     # The line's point nearest the origin and its point at infinity span it.
-    span = stack([(ORIGIN | line) ^ line, line ^ mv.w], axis=-1)               # [..., 2] Point
+    span = stack([(ORIGIN | line) ^ line, line ^ HORIZON], axis=-1)            # [..., 2] Point
     first, second = span[..., 0], span[..., 1]                                 # [...] Point
     # The quadric's map need not be symmetric: the cross term is the mean of both orders.
     cross = ((surface(first) & second) + (surface(second) & first)) / 2        # [...] Scalar
-    weights = roots(surface(first) & first, cross, surface(second) & second)   # [..., 2, 2] Scalar
-    crossing = (weights * span[..., None, :]).sum(axis=-1)                     # [..., 2] Point
+    leading = surface(first) & first                                           # [...] Scalar
+    weights = roots(cross / leading, (surface(second) & second) / leading)     # [..., 2] Scalar
+    crossing = first[..., None] * weights + second[..., None]                  # [..., 2] Point
     return crossing / (mv.w & crossing)                                        # [..., 2] Point
 
 
@@ -93,15 +101,10 @@ def through(points: Point, second: Bivector, third: Bivector) -> Bivector:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Points at unit weight from their x, y and z coordinates."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
 def spread(line: Bivector, count: int) -> Point:
     """Points spread over a whole line, its point at infinity included: the unit-weight point nearest
     the origin turned towards the unit direction by angles spaced evenly over half a turn."""
     unit = line.normalized()                                                   # [...] Bivector
     nearest = (ORIGIN | unit) ^ unit                                           # [...] Point
     angles = np.linspace(0.0, np.pi, count, endpoint=False)
-    return (nearest / (mv.w & nearest))[..., None] * np.cos(angles) + (unit ^ mv.w)[..., None] * np.sin(angles)   # [..., count] Point
+    return (nearest / (mv.w & nearest))[..., None] * np.cos(angles) + (unit ^ HORIZON)[..., None] * np.sin(angles)   # [..., count] Point

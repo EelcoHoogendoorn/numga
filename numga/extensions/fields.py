@@ -51,7 +51,7 @@ def lstsq_field_map(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> 
 def pinv_field_map(value: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """The Moore-Penrose inverse over every pair of a site and a blade, from the output's sites to the
     input's."""
-    identity = value.context.lower(value.algebra.operator.identity(value.output_subspace))   # X <- X
+    identity = value.context.lower(value.algebra.operator.identity(value.gatype.derive.output))   # X <- X
     sites = dict(value.gatype.fields).get(0)
     if sites:
         identity = identity[..., None].broadcast_to((sites,)).field().on_diagonal()           # X[n] <- X[n]
@@ -135,7 +135,8 @@ def _solve(value: Extensor, equations: int, unknowns: int, rhs: Extensor, given:
         (index + 1, rhs_sites[slot]) for index, slot in enumerate(input_slots) if slot in rhs_sites
     )
     subspaces = (value.axes[unknowns],) + tuple(rhs.axes[slot] for slot in input_slots)
-    gatype = value.algebra.gatype(subspaces, fields=fields)
+    orientations = (value.gatype.orientations[unknowns],) + tuple(rhs.gatype.orientations[slot] for slot in input_slots)
+    gatype = value.algebra.gatype.oriented(subspaces, orientations, fields=fields)
     # A form's right-hand side leaves its scalar output over, one blade long.
     return _result(value, gatype, xp.reshape(solution, batch + gatype.structural_shape))
 
@@ -191,7 +192,8 @@ def _is_field_square(value: GAType) -> bool:
         rows, columns = 1, 2
     else:
         return False
-    return value.subspaces[rows] == value.subspaces[columns] and sites.get(rows) == sites.get(columns)
+    return (value.subspaces[rows] == value.subspaces[columns] and sites.get(rows) == sites.get(columns)
+            and value.orientations[rows] is value.orientations[columns])
 
 
 def _is_field_endomorphism(value: GAType) -> bool:
@@ -199,8 +201,8 @@ def _is_field_endomorphism(value: GAType) -> bool:
 
 
 def _same_slots(value: GAType, other: GAType) -> bool:
-    """The same spaces over the same sites, whatever facts either type carries."""
-    return value.subspaces == other.subspaces and value.fields == other.fields
+    """The same spaces, orientations and sites, whatever facts either type carries."""
+    return value.subspaces == other.subspaces and value.orientations == other.orientations and value.fields == other.fields
 
 
 def _square_slots(value: Extensor) -> tuple[int, int]:
@@ -223,7 +225,7 @@ def trace_field_map(value: Extensor) -> Extensor:
 def inverse_field_map(value: Extensor) -> Extensor:
     """The inverse under composition, coupled over the sites."""
     matrix, rows, columns = _flattened(value, 0, 1)
-    gatype = value.algebra.gatype((value.axes[1], value.axes[0]), fields=_exchanged_fields(value.gatype))
+    gatype = value.gatype.derive.transposed.derive.structural.derive.with_fields(_exchanged_fields(value.gatype))
     return _from_matrix(value, value.context.xp.linalg.inv(matrix), columns, rows, gatype)
 
 
@@ -341,7 +343,7 @@ def _modes(value: Extensor, slot: int, shape: tuple[int, ...], vectors) -> Exten
     batch = vectors.shape[:-2]
     modes = xp.reshape(xp.swapaxes(vectors, -1, -2), batch + (vectors.shape[-1],) + shape)
     sites = dict(value.gatype.fields).get(slot)
-    gatype = value.algebra.gatype(value.axes[slot], fields=((0, sites),) * (sites is not None))
+    gatype = value.gatype.derive.axis(slot).derive.with_fields(((0, sites),) * (sites is not None))
     return _result(value, gatype, modes)
 
 

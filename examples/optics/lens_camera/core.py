@@ -28,9 +28,10 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
-SensorPoint = ga.gatype.from_blades("wxz wyx xyz")
-SensorPlane = ga.gatype.from_blades("y z w")
-Line = ga.gatype.bivector()
+SensorPoint = Point.derive.containing("x")
+SensorPlane = Plane.derive.within("y z w")
+# Lines are joins of points.
+Line = ga.gatype.antibivector()
 Motor = ga.gatype.rotor()
 # A collineation maps points to points.
 PointMap = ga.gatype((Point, Point))          # Point <- Point
@@ -50,18 +51,13 @@ def unit(points: Point) -> Point:
 
 
 # Every element is built in its home frame: centred on the origin, in the plane x == 0.
-origin: Point = unit(mv.xyz)
+origin: Point = unit(mv.w.dual())
 home: Plane = mv.x
 
 
 def point(coords: np.ndarray) -> Point:
     """The origin carried by the translator with the given displacement."""
     return ((mv.xw * coords[..., 0] + mv.yw * coords[..., 1] + mv.zw * coords[..., 2]) * 0.5).exp() >> origin
-
-
-def direction(coords: np.ndarray) -> Point:
-    """Ideal points: the directions (..., 3), the dual of a weightless vector."""
-    return mv("x y z", coords).dual()
 
 
 # --- math -----------------------------------------------------------------------------

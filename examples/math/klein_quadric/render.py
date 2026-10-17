@@ -14,7 +14,7 @@ from examples.math.klein_quadric import core
 mv = core.mv
 # Lines are drawn inside this ball.
 RADIUS = 3.0
-AXES = mv("x y z", np.eye(3))                                                   # [3] Plane
+AXES = mv(core.Plane.derive.nondegenerate, np.eye(3))                          # [3] Plane
 
 
 def real(kernel: np.ndarray) -> np.ndarray:
@@ -32,7 +32,7 @@ def chords(lines: core.Bivector) -> np.ndarray:
     """The two ends of each line's chord of the ball, NaN for a line that misses it."""
     unit = lines.normalized()
     nearest = coordinates((core.ORIGIN | unit) ^ unit)                        # [..., 3]
-    heading = (AXES & (unit ^ mv.w)[..., None]).to_array().real               # [..., 3]
+    heading = (AXES & (unit ^ core.HORIZON)[..., None]).to_array().real       # [..., 3]
     heading = heading / np.linalg.norm(heading, axis=-1, keepdims=True)
     with np.errstate(invalid="ignore"):
         half = np.sqrt(RADIUS**2 - (nearest**2).sum(axis=-1, keepdims=True))

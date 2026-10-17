@@ -12,7 +12,7 @@ of the self-reverse subspace `State: 1 x y z`, with isospin vector `P = 2 * rho.
 2. Coherent and Dissipative Generators:
    - Coherent rotation in Hamiltonian bivector plane b:
      `turning = - b.commutator(State).cast(Rates)`.
-   - Dissipative wavepacket separation / dephasing along mass eigenstate axis l:
+   - Dissipative wavepacket separation / dephasing by the half turn l in the mass basis's phase plane:
      `dephasing = gamma * ((l >> State) - (l * l).anticommutator(State))`.
 
 3. Finite Transfer Maps:
@@ -95,15 +95,15 @@ def coherent_generator(plane: Bivector) -> Rates:
     return - plane.commutator(State).cast(Rates)
 
 
-def relaxation(process: Vector) -> Rates:
+def relaxation(process: Bivector) -> Rates:
     """Lindblad dissipator: (l >> State) - (l * l).anticommutator(State)."""
     back = process.reverse().symmetric_reverse_product()                  # [] State
     return (process >> State) - back.anticommutator(State)                 # State <- State
 
 
-def dephasing_generator(axis: Vector, gamma: float) -> Rates:
-    """Wavepacket decoherence / dephasing along direction axis at rate gamma."""
-    return gamma * relaxation(axis)
+def dephasing_generator(plane: Bivector, gamma: float) -> Rates:
+    """Wavepacket decoherence at rate gamma: dephasing by the half turn in the given phase plane."""
+    return gamma * relaxation(plane)
 
 
 def evolution(rates: Rates, dx: float) -> Evolution:

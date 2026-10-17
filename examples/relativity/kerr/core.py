@@ -32,9 +32,9 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
-Spin = ga.gatype.from_blades("xy xz yz")
+Spin = Bivector.derive.within("x y z")
 Rotor = ga.gatype.rotor()
-Screen = ga.gatype.from_blades("x y")
+Screen = Vector.derive.within("x y")
 ScreenFrame = ga.gatype((Vector, Screen))
 Coherency = ga.gatype((Screen, Screen))
 VectorGradient = ga.gatype((Vector, Vector))
@@ -45,26 +45,29 @@ spatial_identity = mv.t | (mv.t ^ Vector)
 def field(position: Vector, spin: Spin, mass: float) -> Field:
     """The Kerr profile, null direction and their derivatives at a batch of events."""
     spatial = mv.t | (mv.t ^ position)                                                      # [...] Vector
-    normal = spin * mv.xyz                                                                  # [...] Vector
-    projection = normal | spatial                                                           # [...] Scalar
+    # The volume the position spans with the spin plane: the spin times the position's height off its
+    # plane. Its product with the spin is that height along the spin's axis, times the spin squared; the
+    # spin enters twice, so its sense of turning drops out.
+    volume = spatial ^ spin                                                                 # [...] Trivector
+    height = volume * spin                                                                  # [...] Vector
     spin_squared = -spin.squared()                                                          # [...] Scalar
     offset = -spatial.squared() - spin_squared                                              # [...] Scalar
-    discriminant = (offset.squared() + 4 * projection.squared()).square_root()              # [...] Scalar
+    discriminant = (offset.squared() + 4 * volume.squared()).square_root()                  # [...] Scalar
     radius_squared = (offset + discriminant) / 2                                            # [...] Scalar
     radius = radius_squared.square_root()                                                   # [...] Scalar
     # Its inner product with a small step is how far the step changes the oblate radius.
-    radius_gradient = -(radius_squared * spatial - normal * projection) / (radius * discriminant)  # [...] Vector
-    direction = (radius * spatial + (spatial | spin) - normal * projection / radius) / (radius_squared + spin_squared)  # [...] Vector
-    lever = spatial - 2 * radius * direction + normal * projection / radius_squared          # [...] Vector
+    radius_gradient = -(radius_squared * spatial - height) / (radius * discriminant)        # [...] Vector
+    direction = (radius * spatial + (spatial | spin) - height / radius) / (radius_squared + spin_squared)  # [...] Vector
+    lever = spatial - 2 * radius * direction + height / radius_squared                      # [...] Vector
     direction_gradient = (
         lever * (radius_gradient | Vector)
         + radius * spatial_identity + (spatial_identity | spin)
-        - normal * (normal | Vector) / radius
+        - (spatial_identity ^ spin) * spin / radius
     ) / (radius_squared + spin_squared)                                                     # [...] Vector <- Vector
-    denominator = radius_squared.squared() + projection.squared()                           # [...] Scalar
+    denominator = radius_squared.squared() + volume.squared()                               # [...] Scalar
     profile = mass * radius**3 / denominator                                                # [...] Scalar
     profile_gradient = profile * (3 * radius_gradient / radius
-        - (4 * radius**3 * radius_gradient + 2 * projection * normal) / denominator)       # [...] Vector
+        - (4 * radius**3 * radius_gradient + 2 * height) / denominator)                     # [...] Vector
     # The gradient's curl, `(Vector ^ null_gradient(Vector)).contract(1, 2)`, piece by piece: the
     # rank-one piece gives its two vectors wedged, the turn by the spin twice the spin, the rest none.
     null_curl = -((radius_gradient ^ lever) + 2 * spin) / (radius_squared + spin_squared)    # [...] Bivector
@@ -142,10 +145,10 @@ def disk_coherency(position: Vector, momentum: Vector, screen: ScreenFrame,
     """Unit-intensity disk emission resolved along the parallel-transported camera axes."""
     local_momentum = frame(field(position, spin, mass))(momentum)                            # [...] Vector
     direction = (mv.t | (mv.t ^ local_momentum)) / (mv.t | local_momentum)                  # [...] Vector
-    magnetic = position | (normal * mv.xyz)                                                 # [...] Vector
-    magnetic = magnetic / (-magnetic.squared()).square_root()                               # [...] Vector
-    # Emission is polarized perpendicular to the magnetic direction projected across the ray.
-    electric = (direction ^ magnetic) * mv.xyz                                              # [...] Vector
+    # The magnetic direction circles the normal, square to the plane through the normal and the
+    # emitter. Emission is polarized perpendicular to it across the ray: in that plane, square to the ray.
+    meridian = normal ^ (mv.t | (mv.t ^ position))                                          # [...] Bivector
+    electric = (meridian | direction) / meridian.norm()                                     # [...] Vector
     polarization = screen.adjoint()(electric)                                               # [...] Screen
     # Polarization vanishes smoothly when looking along the magnetic direction.
     polarized_fraction = -polarization_degree * polarization.squared()                      # [...] Scalar
@@ -416,7 +419,10 @@ def camera_screen(position: Vector, momentum: Vector, orientation: Rotor,
     right = orientation >> mv.y
     right = right + direction * (direction | right)
     right = right / (-right.squared()).square_root()
-    up = (direction ^ right) * mv.xyz
+    # Up is the camera's own, local -x, less its parts in the plane of the ray and right.
+    beside = direction ^ right
+    up = ((orientation >> -mv.x) ^ beside) / beside
+    up = up / (-up.squared()).square_root()
     return -right * (mv.x | Screen) - up * (mv.y | Screen)
 
 

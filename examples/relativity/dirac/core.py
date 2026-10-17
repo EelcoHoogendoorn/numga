@@ -38,7 +38,7 @@ Spinor = Even
 # The spinor's map on spacetime.
 Frame = ga.gatype((Vector, Vector))                 # Vector <- Vector
 # Vectors in the observer's space, perpendicular to the time axis.
-Spatial = ga.gatype.from_blades("x y z")
+Spatial = Vector.derive.within("x y z")
 # The plane-wave Dirac equation.
 Hamiltonian = ga.gatype((Even, Even))               # Even <- Even
 # The observer's time axis.

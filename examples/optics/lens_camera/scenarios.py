@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.optics.lens_camera.core import (
-    Motor, Plane, Point, SensorPlane, SensorPoint, direction, expose, home, mv,
+    Motor, Plane, Point, SensorPlane, SensorPoint, expose, home, mv,
     origin, point, section, unit,
 )
 
@@ -46,7 +46,7 @@ def stills():
     collineation, cam, frame, cones, planes, _ = tilted
     place_front: Motor = (mv.xw * (FRONT_AT / 2)).exp()
     sensor, centre = frame >> home, place_front >> origin
-    dy, dz = direction(np.eye(3)[1:])
+    dy, dz = mv.y.dual(), mv.z.dual()
     unit_disc = dy * (dy & Plane) + dz * (dz & Plane) - origin * (origin & Plane)
     pupil = place_front >> (unit_disc * 0.45**2 - origin * (origin & Plane) * (1.0 - 0.45**2))(place_front << Plane)
     # The train on lines is the join of the collineation's images: the lens is a collineation.

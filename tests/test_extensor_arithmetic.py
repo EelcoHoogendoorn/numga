@@ -4,6 +4,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, NumpyContext
 
 
@@ -68,7 +69,7 @@ def test_select_zero_fills_but_restrict_keeps_only_existing_blade_support():
     algebra = Algebra("x+y+z+")
     spaces = algebra.subspace
     xy = spaces.from_masks((algebra.parse_blade("xy").mask,))
-    value = NumpyContext(algebra).multivector(xy, [[0], [2]]) + 1
+    value = NumpyContext(algebra).multivector(algebra.gatype(xy, orientation=Orientation.extrinsic), [[0], [2]]) + 1
 
     restricted = value.restrict[2]
     selected = value.select[2]
@@ -92,8 +93,8 @@ def test_restriction_preserves_unbound_inputs_and_batch_shape():
     algebra = Algebra("x+y+z+")
     spaces = algebra.subspace
     xy = spaces.from_masks((algebra.parse_blade("xy").mask,))
-    even_plane = spaces.scalar() + xy
-    product = even_plane.gatype * even_plane.gatype
+    even_plane = algebra.gatype(spaces.scalar() + xy, orientation=Orientation.extrinsic)
+    product = even_plane * even_plane
     selected = product.select[2]
     restricted = product.restrict[2]
 

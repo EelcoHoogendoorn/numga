@@ -21,7 +21,7 @@ def dispersion_scenario():
     speeds = np.linspace(0.05, 1.5, 3001)
 
     glass = core.isotropic_medium(EPS_GLASS, MU_GLASS)
-    axion = core.axion_medium(glass, AXION_ALPHA)
+    axion = core.axion_medium(glass, core.mv(core.AxionCoupling, [AXION_ALPHA]))
     crystal = core.crystal_medium(eps_x=2.25, eps_y=1.5, eps_z=1.5, mu=1.0)
     ferrite = core.ferrite_medium(eps=2.25, mu_inv_x=1.0, mu_inv_y=0.5, mu_inv_z=1.0)
     moving_down = core.boosted_medium(glass, beta=BETA_BOOST, direction=core.z)

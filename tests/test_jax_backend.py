@@ -50,7 +50,7 @@ def test_jitted_library_surface_agrees_with_numpy(ga, execution):
 
 def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
     algebra = Algebra("x+y+")
-    even = algebra.subspace.even()
+    even = algebra.gatype.even()
     context = JaxContext(algebra)
     left = context.extensor(even, [[1, 2], [3, 4]])
     right = context.extensor(even, [[3, 4], [5, 6]])
@@ -92,7 +92,7 @@ def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
 
 def test_jit_vector_sandwich_agrees_in_staged_and_direct_forms():
     algebra = Algebra("x+y+")
-    vector = algebra.subspace.vector()
+    vector = algebra.gatype.vector()
     context = JaxContext(algebra)
     e1 = context.extensor(vector, [1, 0])
     point = context.extensor(vector, [2, 3])
@@ -104,13 +104,14 @@ def test_jit_vector_sandwich_agrees_in_staged_and_direct_forms():
     )
 
     assert reflection.arity == 1
-    assert reflection.axes == (vector, vector)
+    assert reflection.axes == (vector.output_subspace, vector.output_subspace)
     assert staged.arity == 0
     assert direct.gatype is staged.gatype
+    # the mirror e1 reflects the plane (2, 3) to (-2, 3)
     for result in (staged, direct):
         np.testing.assert_allclose(
             np.asarray(result.kernel),
-            [2, -3],
+            [-2, 3],
             rtol=1e-6,
             atol=1e-6,
             equal_nan=False,

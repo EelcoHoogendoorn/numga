@@ -57,16 +57,16 @@ mv = context.multivector
 ONE = mv.scalar([1.0])
 Scalar = ga.gatype.scalar()
 # The directions and the planes of each spin, and each spin's pseudoscalar.
-First = ga.gatype(ga.subspace("x y z"))
-Second = ga.gatype(ga.subspace("X Y Z"))
-FirstPlanes = ga.gatype(ga.subspace("yz zx xy"))
-SecondPlanes = ga.gatype(ga.subspace("YZ ZX XY"))
+First = ga.gatype.vector().derive.within("x y z")
+Second = ga.gatype.vector().derive.within("X Y Z")
+FirstPlanes = ga.gatype.bivector().derive.within("x y z")
+SecondPlanes = ga.gatype.bivector().derive.within("X Y Z")
 I_FIRST = mv.xyz                                                               # [] Trivector
 I_SECOND = mv.XYZ                                                              # [] Trivector
 # The state of one spin, and of the pair: a product of the two spins' states.
-FirstSpinor = ga.gatype(ga.subspace("1 yz zx xy"))
-SecondSpinor = ga.gatype(ga.subspace("1 YZ ZX XY"))
-Spinor = ga.gatype((FirstSpinor * SecondSpinor).output_subspace)
+FirstSpinor = ga.gatype.even().derive.within("x y z")
+SecondSpinor = ga.gatype.even().derive.within("X Y Z")
+Spinor = (FirstSpinor * SecondSpinor).output_gatype
 Correlation = ga.gatype((First, Second))                                       # First <- Second
 # The correlator, and the pair's imaginary unit.
 CORRELATOR = 0.5 * (ONE - mv.xy * mv.XY)                                       # [] Spinor

@@ -61,9 +61,3 @@ def alignments(source: Point, increments: Motor, fractions: np.ndarray) -> Itera
             # A fraction of the motor's logarithm moves at a constant rate along its screw.
             placed = (increment.log() * fraction).exp() >> start
             yield placed
-
-
-# --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Finite points from construction coordinates with shape (..., 3)."""
-    return (mv("x y z", coords) + mv.w).dual()

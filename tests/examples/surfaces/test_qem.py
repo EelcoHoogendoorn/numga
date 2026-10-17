@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.qem import core, render, scenarios
-from examples.surfaces.qem.core import Point, mv, point
+from examples.surfaces.qem.core import Point, mv
 from examples.surfaces.qem.render import euclidean
 
 
@@ -20,9 +20,9 @@ def test_plane_dyad_evaluates_to_squared_perpendicular_distance():
     q = p * (p & Point)
 
     # Test points at distance +2, -2, and 0
-    q1 = point(np.array([1.0, 2.5, -0.5]))
-    q2 = point(np.array([0.0, -1.5, 3.0]))
-    q_on = point(p_on_plane)
+    q1 = mv.point(np.array([1.0, 2.5, -0.5]))
+    q2 = mv.point(np.array([0.0, -1.5, 3.0]))
+    q_on = mv.point(p_on_plane)
 
     np.testing.assert_allclose((q(q1) & q1).to_array(), 4.0, atol=1e-12)
     np.testing.assert_allclose((q(q2) & q2).to_array(), 4.0, atol=1e-12)
@@ -52,7 +52,7 @@ def test_edge_collapse_minimizes_joint_error():
     qa, qb, q_edge, v_edge = core.edge_collapse(planes_a, planes_b)
 
     # Edge quadric is the extensor sum qa + qb
-    test_pt = point(np.array([3.0, 4.0, 5.0]))
+    test_pt = mv.point(np.array([3.0, 4.0, 5.0]))
     ea = (qa(test_pt) & test_pt).to_array()
     eb = (qb(test_pt) & test_pt).to_array()
     e_edge = (q_edge(test_pt) & test_pt).to_array()

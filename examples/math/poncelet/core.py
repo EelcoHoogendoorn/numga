@@ -6,9 +6,9 @@ one, follow it to where it meets the outer conic again, draw the other tangent f
 The porism: if the path closes after some number of sides for one starting point, it closes after
 the same number for every starting point.
 
-The outer conic is a map from points to lines, `Conic = Plane <- Point`, zero on its points where
+The outer conic is a map from points to lines, `Conic = Line <- Point`, zero on its points where
 `conic(point) & point` vanishes. The inner conic is held by its tangent lines, a map the other way,
-`Envelope = Point <- Plane`, zero on the lines that touch it. Everything about one has a twin about
+`Envelope = Point <- Line`, zero on the lines that touch it. Everything about one has a twin about
 the other with points and lines exchanged, and a step of the path is one such pair of twins. A
 line meets the outer conic twice; knowing one crossing, the other is rational in the conic. Through
 a point pass two tangents of the inner conic; knowing one, the other is rational in the envelope.
@@ -35,30 +35,34 @@ from numga.algebras import PGA2D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Plane = ga.gatype.vector()
-Point = ga.gatype.antivector()
-Conic = ga.gatype((Plane, Point))                                              # Plane <- Point
-Envelope = ga.gatype((Point, Plane))                                           # Point <- Plane
+# Every line here is the join of two points and every point the meet of two lines. A join is oriented
+# along itself and a meet by what turns around it, so the lines are intrinsic and the points extrinsic.
+Line = ga.gatype.antibivector()
+Point = ga.gatype.bivector()
+Conic = ga.gatype((Line, Point))                                               # Line <- Point
+Envelope = ga.gatype((Point, Line))                                            # Point <- Line
 # Both roots of a quadratic, one per sign.
 SIGNS = np.array([1.0, -1.0])
-# The points at infinity along x and along y.
-HEADINGS = mv("x y", np.eye(2)).dual()                                         # [2] Point
+# The points at infinity along x and along y, where the lines y = 0 and x = 0 meet the line at infinity,
+# and the line at infinity as the join of the two.
+HEADINGS = stack([mv.y ^ mv.w, mv.w ^ mv.x])                                  # [2] Point
+HORIZON = HEADINGS[0] & HEADINGS[1]                                            # [] Line
 
 
 # --- math -----------------------------------------------------------------------------
 def pair(first: Point, second: Point) -> Envelope:
     """Two points as one envelope: zero on the lines through either, its pairing the product of the
     line's pairings with the two points."""
-    return (first * (second & Plane) + second * (first & Plane)) / 2          # [...] Point <- Plane
+    return (first * (second & Line) + second * (first & Line)) / 2            # [...] Point <- Line
 
 
-def envelope(sides: Plane) -> Envelope:
+def envelope(sides: Line) -> Envelope:
     """The envelope touching five lines on the last axis: the combination of the two pairs of
     opposite corners of the first four that vanishes on the fifth."""
     first, second, third, fourth, fifth = (sides[..., index] for index in range(5))
-    corners = pair(first ^ second, third ^ fourth)                             # [...] Point <- Plane
-    diagonals = pair(first ^ third, second ^ fourth)                           # [...] Point <- Plane
-    return corners * (diagonals(fifth) & fifth) - diagonals * (corners(fifth) & fifth)   # [...] Point <- Plane
+    corners = pair(first ^ second, third ^ fourth)                             # [...] Point <- Line
+    diagonals = pair(first ^ third, second ^ fourth)                           # [...] Point <- Line
+    return corners * (diagonals(fifth) & fifth) - diagonals * (corners(fifth) & fifth)   # [...] Point <- Line
 
 
 def roots(a: Scalar, b: Scalar, c: Scalar) -> Scalar:
@@ -70,13 +74,13 @@ def roots(a: Scalar, b: Scalar, c: Scalar) -> Scalar:
     return stack([first, a[..., None].broadcast_to(first.shape)], axis=-1)     # [..., 2, 2] Scalar
 
 
-def tangents(inner: Envelope, points: Point) -> Plane:
+def tangents(inner: Envelope, points: Point) -> Line:
     """The two tangents of an envelope through each point, on the last axis: its zeros along the lines
     through the point."""
-    ends = points[..., None] & HEADINGS                                        # [..., 2] Plane
-    first, second = ends[..., 0], ends[..., 1]                                 # [...] Plane
+    ends = points[..., None] & HEADINGS                                        # [..., 2] Line
+    first, second = ends[..., 0], ends[..., 1]                                 # [...] Line
     weights = roots(inner(first) & first, inner(first) & second, inner(second) & second)   # [..., 2, 2] Scalar
-    return (weights * ends[..., None, :]).sum(axis=-1).normalized()            # [..., 2] Plane
+    return (weights * ends[..., None, :]).sum(axis=-1).normalized()            # [..., 2] Line
 
 
 def other_crossing(outer: Conic, vertex: Point, heading: Point) -> Point:
@@ -86,36 +90,37 @@ def other_crossing(outer: Conic, vertex: Point, heading: Point) -> Point:
     return vertex * (outer(heading) & heading) - heading * (2 * (outer(vertex) & heading))   # [...] Point
 
 
-def other_tangent(inner: Envelope, side: Plane, turned: Plane) -> Plane:
+def other_tangent(inner: Envelope, side: Line, turned: Line) -> Line:
     """The other tangent through the point where a tangent meets another line: the twin of
     `other_crossing`, with lines for points. Along `side + turned * t` the pairing is
     `2 * t * (inner(side) & turned) + t * t * (inner(turned) & turned)`, zero at the side and at the
     other root."""
-    return side * (inner(turned) & turned) - turned * (2 * (inner(side) & turned))   # [...] Plane
+    return side * (inner(turned) & turned) - turned * (2 * (inner(side) & turned))   # [...] Line
 
 
-def path(outer: Conic, inner: Envelope, start: Point, side: Plane, steps: int) -> Point:
+def path(outer: Conic, inner: Envelope, start: Point, side: Line, steps: int) -> Point:
     """The vertices of the path on the outer conic, from a start on it along a tangent of the inner
     conic through it, on the first axis: at each vertex the other tangent through it, and where that
     meets the outer conic again."""
     vertices = [start.broadcast_to(side.shape)]
     for _ in range(steps):
-        side = other_tangent(inner, side, side | vertices[-1]).normalized()    # [...] Plane
-        vertex = other_crossing(outer, vertices[-1], side ^ mv.w)              # [...] Point
-        vertices.append(vertex / (mv.w & vertex))
+        side = other_tangent(inner, side, side | vertices[-1]).normalized()    # [...] Line
+        vertex = other_crossing(outer, vertices[-1], side ^ HORIZON)           # [...] Point
+        vertices.append(vertex / (HORIZON & vertex))
     return stack(vertices)                                                     # [steps + 1, ...] Point
 
 
 # --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Points at unit weight from their x and y coordinates."""
-    return (mv("x y", coords) + mv.w).dual()
-
-
 def ellipse(centre: np.ndarray, semi: np.ndarray, tilt: float) -> Conic:
     """The ellipse about a centre with the given semi-axes, its first axis turned from x by the tilt:
-    the lines through the centre along each axis, weighted by the inverse square of the semi-axis, less
-    the line at infinity."""
-    axes = (mv.xy * (-tilt / 2)).exp() >> mv("x y", np.eye(2))          # [2] Plane
-    through = axes - mv.w * (axes & point(centre))                             # [2] Plane
-    return (through * (through & Point) / semi**2).sum(axis=-1) - mv.w * (mv.w & Point)
+    the lines through the centre across each axis, weighted by the inverse square of the semi-axis,
+    less the line at infinity."""
+    headings = (mv.xy * (-tilt / 2)).exp() >> HEADINGS                         # [2] Point: along each axis
+    through = crossing(centre) & headings[::-1]                                # [2] Line: across each axis
+    return (through * (through & Point) / semi**2).sum(axis=-1) - HORIZON * (HORIZON & Point)
+
+
+def crossing(coordinates: np.ndarray) -> Point:
+    """Points at the given coordinates `[..., 2]`, made as the construction makes its points: the meet
+    of the lines x = a and y = b."""
+    return (mv.x - mv.w * coordinates[..., 0]) ^ (mv.y - mv.w * coordinates[..., 1])

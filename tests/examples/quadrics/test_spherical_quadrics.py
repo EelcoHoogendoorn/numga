@@ -9,7 +9,7 @@ import numpy as np
 from numga import Extensor
 
 from examples.quadrics.spherical_quadrics import render, scenarios
-from examples.quadrics.spherical_quadrics.core import geodesic, great_circles, mv, points, polarity
+from examples.quadrics.spherical_quadrics.core import Turn, geodesic, great_circles, mv, points, polarity
 
 
 def test_polarity_is_diagonal_on_the_basis():
@@ -26,7 +26,7 @@ def test_geodesics_and_great_circles_stay_on_the_sphere():
     np.testing.assert_allclose((-(arc | arc)).to_array(), 1.0, atol=1e-12)
     np.testing.assert_allclose((-(arc[-1] | b)).to_array(), 1.0, atol=1e-12)
     plane = mv.z
-    circle = great_circles(plane, points(np.array([1.0, 0.0, 0.0])), np.linspace(0.0, 2 * np.pi, 9))
+    circle = great_circles(plane, points(np.array([1.0, 0.0, 0.0])), mv(Turn, np.linspace(0.0, 2 * np.pi, 9)[:, None]))
     np.testing.assert_allclose((circle & plane).to_array(), 0.0, atol=1e-12)
 
 

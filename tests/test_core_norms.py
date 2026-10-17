@@ -4,6 +4,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, NumpyContext, ReverseProductNonzero, ReverseProductOne, Versor
 
 
@@ -14,7 +15,7 @@ def test_scaled_rotor_square_root_keeps_scale_batch_and_narrow_support():
     plane = algebra.subspace.scalar() + xy
     angles = np.asarray([0, 0.2, -0.4])
     scales = np.asarray([0.25, 4, 9])
-    unit = mv(plane, np.column_stack((np.cos(angles), np.sin(angles)))).with_traits(
+    unit = mv(algebra.gatype(plane, orientation=Orientation.extrinsic), np.column_stack((np.cos(angles), np.sin(angles)))).with_traits(
         Versor, ReverseProductOne,
     )
     scaled = (mv.scalar(scales[:, None]) * unit).with_traits(Versor)

@@ -19,22 +19,21 @@ from numga.algebras import PGA2D
 ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Line = ga.gatype.vector()
+# A ray is the join of two points; the plane of an element is a vector, as a mirror is.
+Line = ga.gatype.antibivector()
+Plane = ga.gatype.vector()
 Point = ga.gatype.antivector()
+# Where two lines cross: a meet, oriented by what crosses it.
+Crossing = Point.derive.flipped_orientation
 LineMap = ga.gatype((Line, Line))
 Motor = ga.gatype.rotor()
 
-origin: Point = mv.xy
+origin: Point = mv.point([0, 0])
 # Every train element is defined in the plane x == 0.
-home: Line = mv.x
+home: Plane = mv.x
 
 
-def point(x: float, y: float) -> Point:
-    """The point at (x, y): the meet of the vertical and horizontal lines through it."""
-    return (mv.x - mv.w * x) ^ (mv.y - mv.w * y)
-
-
-def thin_lens(plane: Line, focal: float) -> LineMap:
+def thin_lens(plane: Plane, focal: float) -> LineMap:
     """A thin lens in a vertical plane, as a map on lines.
 
     At the origin it shears a line's x coefficient by the line's incidence with the origin over
@@ -54,7 +53,7 @@ ELEMENTS: tuple[LineMap, ...] = (
     # A thin lens of focal length 1.
     Line - (Line & origin) * (home / 1.0),
     # A thin prism, slope change 0.15.
-    Line - (Line & mv.wx) * home * 0.15,
+    Line - (Line & mv.direction([0, 1])) * home * 0.15,
     # A thin lens of focal length -2.
     Line - (Line & origin) * (home / -2.0),
     # A flat mirror in the home plane.

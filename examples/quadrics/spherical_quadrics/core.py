@@ -22,9 +22,11 @@ mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
 # Points on yz, zx, xy: the poles of the planes x, y, z.
-Point = ga.gatype.point()
+Point = ga.gatype.antivector()
 Plane = ga.gatype.plane()
 Rotor = ga.gatype.rotor()
+# The angle of a turn about a point: a sense of turning, so a pseudoscalar, as every sense of turning is.
+Turn = Scalar.derive.flipped_orientation
 # The polarity maps a point to its polar plane, the dual polarity a plane to its pole.
 Polarity = ga.gatype((Plane, Point))             # Plane <- Point
 DualPolarity = ga.gatype((Point, Plane))         # Point <- Plane
@@ -38,14 +40,14 @@ def polarity(eigenvalues: np.ndarray) -> Polarity:
 
 def points(xyz: np.ndarray) -> Point:
     """Points at (..., 3) coordinates, on the basis points yz, zx and xy."""
-    return mv.yz * xyz[..., 0] + mv.zx * xyz[..., 1] + mv.xy * xyz[..., 2]
+    return mv(Point, xyz)
 
 
 def sphere(longitudes: int, latitudes: int) -> Point:
     """A longitude-latitude grid of points on the unit sphere."""
     phi, theta = np.meshgrid(np.linspace(0, 2 * np.pi, longitudes), np.linspace(0, np.pi, latitudes))
     # The pole xy turned toward x by the polar angle, then about z by the longitude.
-    return (mv.xy * (-phi / 2)).exp() * (mv.zx * (-theta / 2)).exp() >> mv.xy
+    return (mv.xy * (-phi / 2)).exp() * (mv.zx * (-theta / 2)).exp() >> points(np.array([0, 0, 1]))
 
 
 # --- math -----------------------------------------------------------------------------
@@ -79,6 +81,6 @@ def geodesic(start: Point, end: Point, t: np.ndarray) -> Point:
     return (start * ((1.0 - t) * angle).sin() + end * (t * angle).sin()) / angle.sin()
 
 
-def great_circles(planes: Plane, through: Point, angles: np.ndarray) -> Point:
-    """The great circle of each plane, swept from a point on it by rotations about the plane's normal."""
-    return (planes.dual() * (angles / 2.0)).exp() >> through
+def great_circles(planes: Plane, through: Point, turns: Turn) -> Point:
+    """The great circle of each plane, swept from a point on it by turns about the plane's pole."""
+    return (planes.dual() * (turns / 2.0)).exp() >> through

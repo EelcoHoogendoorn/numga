@@ -50,15 +50,15 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-ScalarQuadvector = ga.gatype(ga.subspace.scalar() + ga.subspace.k_vector(4))
+ScalarQuadvector = ga.gatype.from_grades([0, 4])
 # The projective algebra of six-dimensional space: the same six directions, and t squaring to zero.
 projective = Algebra("x+y+z+w+v+u+t0")
 pmv = NumpyContext(projective).multivector
 ProjectiveBivector = projective.gatype.bivector()
-EuclideanVector = projective.gatype(projective.subspace.vector().nondegenerate())
-EuclideanBivector = projective.gatype(projective.subspace.bivector().nondegenerate())
-NullBivector = projective.gatype(projective.subspace.bivector().degenerate())
-Conditions = projective.gatype(projective.subspace.bivector() + projective.subspace.k_vector(4))
+EuclideanVector = projective.gatype.vector().derive.nondegenerate
+EuclideanBivector = ProjectiveBivector.derive.nondegenerate
+NullBivector = ProjectiveBivector.derive.degenerate
+Conditions = projective.gatype.from_grades([2, 4])
 
 
 # --- math -----------------------------------------------------------------------------

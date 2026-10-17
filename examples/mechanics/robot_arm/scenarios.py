@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import Extensor
 from examples.mechanics.robot_arm import core
-from examples.mechanics.robot_arm.core import Point, Scalar, direction, point
+from examples.mechanics.robot_arm.core import Point, Scalar, mv
 
 # Parameter along the loop the tip follows, one target per frame.
 LOOP = np.linspace(0.0, 2 * np.pi, 72, endpoint=False)
@@ -14,16 +14,13 @@ LOOP = np.linspace(0.0, 2 * np.pi, 72, endpoint=False)
 
 def arm():
     """The joint axes in the home pose, the tip in the home pose, and a rest configuration."""
-    # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y.
-    origin = point(np.zeros(3))
-    elbow = point(np.array([0.0, 0.0, 1.0]))
-    wrist = point(np.array([0.0, 0.0, 2.0]))
-    # Each axis is a line: the join of a point with a direction.
-    yaw = origin & direction(np.array([0.0, 0.0, 1.0]))
-    pitch_1 = elbow & direction(np.array([0.0, 1.0, 0.0]))
-    pitch_2 = wrist & direction(np.array([0.0, 1.0, 0.0]))
-    axis = -Extensor.stack([yaw, pitch_1, pitch_2])           # [3] Line
-    tip_home = point(np.array([0.0, 0.0, 3.0]))
+    # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y, at the elbow
+    # and the wrist. Each axis is a line to turn about: the meet of two planes.
+    yaw = mv.y ^ mv.x
+    pitch_1 = mv.x ^ (mv.z - 1.0 * mv.w)
+    pitch_2 = mv.x ^ (mv.z - 2.0 * mv.w)
+    axis = Extensor.stack([yaw, pitch_1, pitch_2])            # [3] Line
+    tip_home = mv.point(np.array([0.0, 0.0, 3.0]))
     # Joint state: axis times angle.
     rest = axis * np.array([0.3, 0.5, 0.8])                       # [3] Line
     return axis, tip_home, rest
@@ -31,13 +28,13 @@ def arm():
 
 def loop_targets() -> Point:
     """Targets along a tilted loop in front of the arm."""
-    return point(np.stack([1.0 + 0.5 * np.sin(LOOP), 1.0 + 0.5 * np.cos(LOOP), 1.2 + 0.3 * np.sin(2 * LOOP)], axis=-1))
+    return mv.point(np.stack([1.0 + 0.5 * np.sin(LOOP), 1.0 + 0.5 * np.cos(LOOP), 1.2 + 0.3 * np.sin(2 * LOOP)], axis=-1))
 
 
 def link_boxes(count: int, width: float, depth: float) -> Point:
     """Corner points of slender boxes along z, one per unit link, in the home pose: shape (count, 8)."""
     corners = np.array([[x, y, z] for x in (-width, width) for y in (-depth, depth) for z in (0.0, 1.0)])
-    return point(corners[None] + np.array([[0.0, 0.0, 1.0]]) * np.arange(count)[:, None, None])
+    return mv.point(corners[None] + np.array([[0.0, 0.0, 1.0]]) * np.arange(count)[:, None, None])
 
 
 def statics() -> tuple[Point, Scalar]:
@@ -46,7 +43,7 @@ def statics() -> tuple[Point, Scalar]:
     # Joint rates: axis times angular rate.
     rates = axis * np.array([0.5, -1.0, 0.25])                    # [3] Line
     # A force at a point is a forque: join that point with the weighted direction.
-    forque = point(np.array([1.0, 0.0, 3.0])) & direction(np.array([0.0, 2.0, -1.0]))
+    forque = mv.point(np.array([1.0, 0.0, 3.0])) & mv.direction(np.array([0.0, 2.0, -1.0]))
     velocity, joint_torques = core.mechanics(rest, axis, rates, tip_home, forque)
 
     # --- checks

@@ -45,7 +45,7 @@ def ellipse_mesh(half_angles: np.ndarray, mass: np.ndarray, n_phi: int, n_r: int
     w_r = np.ones(n_r); w_r[-1] = 0.5
     w_phi = np.ones(n_phi + 1); w_phi[[0, -1]] = 0.5
     point_mass = (area * w_phi[:, None] * w_r[None, :]).reshape(area.shape[:-2] + (-1,))
-    points = (S2.mv.yz * x + S2.mv.zx * y + S2.mv.xy).normalized().reshape(point_mass.shape)
+    points = (S2.basis[0] * x + S2.basis[1] * y + S2.origin).normalized().reshape(point_mass.shape)
     return points, S2.mv.scalar((point_mass * (mass[..., None] / point_mass.sum(axis=-1, keepdims=True)))[..., None])
 
 
@@ -131,7 +131,7 @@ def placed(place: S3.Point, spin: S3.Bivector) -> S3.Motor:
 
 def resting(color: np.ndarray, Q: S3.DualQuadric, rate: S3.Bivector, mass: float, rng: np.random.Generator) -> S3.Bodies:
     """One large body at the origin, unturned."""
-    motor = placed(S3.mv.zyx.reshape(1), S3.mv.bivector(np.zeros((1, 6))))
+    motor = placed(raytracer.origin.reshape(1), S3.mv.bivector(np.zeros((1, 6))))
     return S3.body(color[None], Q, motor, rate, *S3.filled(Q, np.array([mass]), 400, rng))
 
 
@@ -235,7 +235,7 @@ def tunnel(frames: int):
     # The eye in the wide section at +z, looking toward the narrow waist at -w; the light halfway to the wall, up and right.
     eye = (S3.mv.zw * (np.pi / 2) * 0.5).exp() * (S3.mv.zx * (np.pi / 2) * 0.5).exp()
     camera = eye >> raytracer.origin
-    side_up = (S3.mv.zxw + S3.mv.xyw).normalized()
+    side_up = raytracer.direction(np.array([0.0, 1.0, 1.0]))
     wall_surface = torus.world()
     conic, polar = raytracer.project(eye, wall_surface)
     wall_hit = (camera * raytracer.reproject(conic, polar, side_up) + (eye >> side_up)).normalized()

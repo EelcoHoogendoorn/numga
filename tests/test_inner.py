@@ -1,6 +1,7 @@
 """The inner product: grade |r - s| selection, wired to the | operator on every operand kind."""
 
 import numpy as np
+import pytest
 
 from numga import NumpyContext
 from numga.algebras import PGA3D
@@ -27,18 +28,19 @@ def test_inner_of_bivector_and_vector_is_the_commutator_in_three_dimensions():
     np.testing.assert_allclose(inner.kernel, B.commutator(v).kernel)
 
 
-def test_inner_operator_works_on_subspaces_gatypes_and_open_extensors():
+def test_inner_operator_works_on_gatypes_and_open_extensors():
     ga = PGA3D
     ctx = NumpyContext(ga)
     mv = ctx.multivector
-    V = ga.subspace.vector()
     Vector = ga.gatype.vector()
     x = mv.vector(np.array([1.0, 2.0, 3.0, 4.0]))
 
-    open_map = x | V                              # vector with an open vector slot
+    open_map = x | Vector                         # vector with an open vector slot
     assert open_map.arity == 1
-    np.testing.assert_allclose(open_map.kernel, x.scalar_product(V).kernel)
-    np.testing.assert_allclose((V | x).kernel, (x | V).kernel)
+    np.testing.assert_allclose(open_map.kernel, x.scalar_product(Vector).kernel)
+    np.testing.assert_allclose((Vector | x).kernel, (x | Vector).kernel)
+    with pytest.raises(TypeError):
+        x | ga.subspace.vector()
 
     form = ctx.lower(Vector | Vector)             # the metric as an arity-2 form
     assert form.arity == 2

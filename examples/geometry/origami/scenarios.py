@@ -22,7 +22,7 @@ ENDS = np.pi * np.array([1, 1, 1, 1, 0, 0, 1, 1, 1, 1, -1])
 
 # --- math -----------------------------------------------------------------------------
 def kabuto() -> tuple[core.Paper, core.Plane]:
-    corner = (-core.mv.x * SIDE + core.mv.y * SIDE + core.mv.w).dual()
+    corner = core.mv.point([-SIDE, SIDE, 0])
     quarter_turns = np.arange(4) * np.pi / 2
     corners = (core.mv.xy * (-quarter_turns / 2)).exp() >> corner
     upper_left, lower_left, lower_right, upper_right = corners
@@ -43,15 +43,14 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
         core.point_bisector(centre, upper_left),
         core.point_bisector(top, centre),
         core.point_bisector(left, centre),
-        core.line_bisector(left_centre & quarter, quarter & centre, SHEET),
-        core.line_bisector(quarter & upper_centre, centre & quarter, SHEET),
+        core.line_bisector(left_centre & quarter, quarter & centre, quarter),
+        core.line_bisector(upper_centre & quarter, quarter & centre, quarter),
         core.point_bisector(eighth, upper_left),
-        (SHEET | (left & top)).normalized(),
-        (SHEET | (left & top)).normalized(),
+        core.point_bisector(centre, upper_left),
+        core.point_bisector(centre, upper_left),
     ])
-    offsets = core.mv("wzy wxz wyx", [[0.0, 0.0, 0.0]])
-    # Reserve the full point layout: a crease plane at any angle to the sheet cuts it in full points.
-    return core.Paper(corners.cast(core.Point), np.array([len(corners)]), offsets, SHEET), planes
+    offsets = core.mv(core.Direction, [[0, 0, 0]])
+    return core.Paper(corners, np.array([len(corners)]), offsets, SHEET), planes
 
 
 # --- plumbing -------------------------------------------------------------------------

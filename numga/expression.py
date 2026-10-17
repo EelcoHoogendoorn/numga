@@ -157,7 +157,7 @@ def _sandwich_expression(
     if isinstance(sandwicher, Extensor) and sandwicher.arity:
         # The carrier is what the sandwicher produces; the traits of a map say
         # nothing about the values it produces.
-        sandwicher_type = sandwicher_type.algebra.gatype(sandwicher.output_subspace)
+        sandwicher_type = sandwicher_type.derive.output
 
     operation = getattr(sandwicher_type.algebra.operator, operation_name)(
         sandwicher_type, passenger_type
@@ -200,8 +200,8 @@ def _operand_gatype(value: object) -> GAType:
     from numga.extensor import Extensor
 
     if isinstance(value, SubSpace):
-        return value.algebra.gatype(value)
-
+        raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)")
     if isinstance(value, GAType):
         if value.arity:
             raise ValueError(

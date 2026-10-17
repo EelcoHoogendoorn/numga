@@ -26,7 +26,7 @@ def test_any_multivector_without_a_closed_form_squares_back(signature):
     full = algebra.subspace.full()
     coefficients = 0.3 * np.random.default_rng(1).normal(size=(5, len(full)))
     coefficients[:, 0] += 2
-    value = NumpyContext(algebra).multivector(full, coefficients)
+    value = NumpyContext(algebra).multivector.full(coefficients)
 
     root = value.square_root()
 

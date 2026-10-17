@@ -41,11 +41,6 @@ def ellipses(poses: core.Motor, uncertainty: core.Covariance) -> Quadric:
     return moment.inverse() - (1 + SIGMAS**2) * mv.w * (mv.w & Point)         # [...] Plane <- Point
 
 
-def point(coords: np.ndarray) -> Point:
-    """Points of unit weight at (..., 2) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y", coords) + mv.w).dual()
-
-
 def xy(points: Point) -> np.ndarray:
     """Euclidean coordinates of points: their pairings with the coordinate lines, at unit weight."""
     return np.stack([((line & points) / (mv.w & points)).to_array() for line in (mv.x, mv.y)], axis=-1)
@@ -71,7 +66,7 @@ def contours(ax, poses: core.Motor, uncertainty: core.Covariance, box: np.ndarra
     """Each pose's ellipse over the box: the zero level of its quadric on a grid of points. Returns the
     contours drawn."""
     x, y = np.meshgrid(*np.linspace(box[0], box[1], 240).T)
-    grid = point(np.stack([x, y], axis=-1))                                   # [rows, columns] Point
+    grid = mv.point(np.stack([x, y], axis=-1))                                # [rows, columns] Point
     levels = (ellipses(poses, uncertainty)[:, None, None](grid) & grid).to_array()   # [poses, rows, columns]
     return [ax.contour(x, y, level, levels=[0.0], colors=color, linewidths=0.8, alpha=alpha) for level in levels]
 

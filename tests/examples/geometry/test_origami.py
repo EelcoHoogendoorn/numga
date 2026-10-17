@@ -36,7 +36,7 @@ def test_kabuto_preserves_area_and_facet_lengths_through_every_fold():
     assert max(length_error) < 1e-10
     assert max(hinge_error) < 1e-11
     # The two horn tips are the line-bisector construction's characteristic landmarks.
-    tips = (core.mv("x y z", [[-1, 1 - np.sqrt(2), 0], [np.sqrt(2) - 1, 1, 0]]) + core.mv.w).dual()
+    tips = core.mv.point([[-1, 1 - np.sqrt(2), 0], [np.sqrt(2) - 1, 1, 0]])
     squared_distance = (paper.points[:, None] - tips).dual().scalar_norm_squared()
     np.testing.assert_allclose(squared_distance.kernel.min(axis=0), 0, atol=1e-20)
     np.testing.assert_allclose((paper.sheet & paper.points).kernel, 0, atol=1e-11)
@@ -83,7 +83,7 @@ def test_point_and_line_coincidence_crease_constructions():
     plane = core.point_bisector(first, third)
     motion = ((plane ^ paper.sheet).normalized() * (np.pi / 2)).exp()
     first_line, second_line = first & second, first & third
-    bisector = core.line_bisector(first_line, second_line, paper.sheet)
+    bisector = core.line_bisector(first_line, second_line, first)
     turn = ((bisector ^ paper.sheet).normalized() * (np.pi / 2)).exp()
     matched = turn >> first_line.normalized()
     target = second_line.normalized()

@@ -21,7 +21,7 @@ def zoo(signatures: tuple[tuple[int, int], ...], seed: int) -> Iterator[tuple]:
     for p, q in signatures:
         Bivector, Even, positives, pseudoscalar = core.signature(p, q)
         form = core.invariant_form(Bivector)                                   # [] Scalar <- (Bivector, Bivector), exact
-        sample = mv(Bivector.output_subspace, rng.normal(size=len(Bivector.output_subspace.masks)))   # [] Bivector
+        sample = mv(Bivector, rng.normal(size=len(Bivector.output_subspace.masks)))   # [] Bivector
         factor = form.materialize(core.context)(sample, sample) / (sample | sample)   # [] Scalar
         signs = core.involution(Bivector, positives).eigvals()                  # [generators] Scalar
         square = (pseudoscalar * pseudoscalar).select[0]                        # [] Scalar
@@ -55,7 +55,7 @@ def centres(signatures: tuple[tuple[int, int], ...]) -> Iterator[tuple]:
 def split(seed: int) -> tuple[core.Extensor, core.Extensor, core.Extensor]:
     """A random rotor of the four Euclidean directions and its two isoclinic factors."""
     Bivector, _, _, pseudoscalar = core.signature(4, 0)
-    generator = mv(Bivector.output_subspace, np.random.default_rng(seed).normal(size=6))   # [] Bivector
+    generator = mv(Bivector, np.random.default_rng(seed).normal(size=6))   # [] Bivector
     along, against = core.isoclinic(generator, pseudoscalar)                   # [] Bivector each
     rotor = generator.exp()                                                    # [] Rotor
     left, right = along.exp(), against.exp()                                   # [] Rotor each
@@ -96,10 +96,10 @@ def flows(azimuths: int, heights: np.ndarray, count: int) -> tuple[core.Extensor
     np.testing.assert_allclose((2 * mv.xy + 3 * mv.zw - (5 * against - along)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((left[..., 0] - left[..., -1]).kernel, 0.0, atol=1e-5)
     np.testing.assert_allclose((knotted[..., 0] - knotted[..., -1]).kernel, 0.0, atol=1e-5)
-    forward = core.linking(left[0, 0], left[-1, azimuths // 3]).to_array()
-    backward = core.linking(right[0, 0], right[-1, azimuths // 3]).to_array()
-    np.testing.assert_allclose(np.abs([forward, backward]), 1.0, atol=1e-2)
-    assert np.sign(forward) == -np.sign(backward)
+    forward = core.linking(left[0, 0], left[-1, azimuths // 3])
+    backward = core.linking(right[0, 0], right[-1, azimuths // 3])
+    np.testing.assert_allclose(forward.norm().to_array(), 1.0, atol=1e-2)
+    np.testing.assert_allclose((forward + backward).kernel, 0.0, atol=1e-2)
     return left, right, knotted
 
 

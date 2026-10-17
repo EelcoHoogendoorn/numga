@@ -15,14 +15,13 @@ def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_slot_at
     rng = np.random.default_rng(814)
     first, second = rng.normal(size=(19, 3)), rng.normal(size=(19, 3))
     # The six permutations of three distinct axes share one unit coefficient.
-    electric_planes = core.ga.subspace("tx ty tz")
-    first_field, second_field = mv(electric_planes, first), mv(electric_planes, second)
-    expected = mv(electric_planes, np.stack((
+    first_field, second_field = mv.t ^ mv(core.Spatial, first), mv.t ^ mv(core.Spatial, second)
+    expected = mv.t ^ mv(core.Spatial, np.stack((
         first[:, 1] * second[:, 2] + first[:, 2] * second[:, 1],
         first[:, 2] * second[:, 0] + first[:, 0] * second[:, 2],
         first[:, 0] * second[:, 1] + first[:, 1] * second[:, 0],
     ), axis=-1))
-    magnetic_fields = mv(core.ga.subspace("xy xz yz"), rng.normal(size=(2, 19, 3)))
+    magnetic_fields = mv(core.Bivector.derive.within("x y z"), rng.normal(size=(2, 19, 3)))
     np.testing.assert_allclose((crystal(first_field, second_field) - expected).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((crystal(first_field)(second_field) - expected).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((crystal(first_field + magnetic_fields[0], second_field + magnetic_fields[1]) - expected).kernel, 0, atol=1e-12)

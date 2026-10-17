@@ -24,10 +24,11 @@ def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Transport, 
     surface = core.carried(core.cube(SIDE), transport)
 
     # --- checks
-    # The carried area normals are the carried patches' duals, and the adjugate undoes the deformation
-    # up to its volume, at the flat sheet too.
+    # The carried area normals are the carried patches' duals, and the deformation and its area map scale
+    # every volume by the determinant, at the flat sheet too.
     np.testing.assert_allclose((surface.area_normals - surface.patches.dual()).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((transport.adjugate(transport.deformation) - transport.volume * core.Vector).kernel, 0, atol=1e-12)
+    volumes = transport.deformation(core.Vector) ^ transport.areas(core.Bivector)   # [...] Pseudoscalar <- (Vector, Bivector)
+    np.testing.assert_allclose((volumes - transport.volume * (core.Vector ^ core.Bivector)).kernel, 0, atol=1e-12)
     return transport, surface
 
 

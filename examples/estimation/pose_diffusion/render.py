@@ -33,7 +33,7 @@ def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Co
     """The bodies as short arrows through their positions along their headings, over the predicted
     ellipse (solid) and the settled one (dashed), in a square of half-width extent."""
     # A point a short way ahead of the set point.
-    heading = core.ORIGIN + core.mv.yw * (0.08 * extent)          # [] Point
+    heading = core.ORIGIN + core.mv.direction([0.08 * extent, 0.0])   # [] Point
     here = xy(poses >> core.ORIGIN)                                # [bodies, 2]
     ahead = xy(poses >> heading) - here                            # [bodies, 2]
     ax.quiver(here[:, 0], here[:, 1], ahead[:, 0], ahead[:, 1], angles="xy", scale_units="xy", scale=1,

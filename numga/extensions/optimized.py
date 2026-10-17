@@ -14,7 +14,7 @@ import numpy as np
 
 from numga.algebras import PGA3D
 from numga.extensor import Extensor
-from numga.gatype import ReverseProductOne, Versor
+from numga.gatype import GAType, Orientation, ReverseProductOne, Versor
 
 def layout(names: str):
     """A predicate matching exactly this blade layout of PGA3D, or of an algebra built with its
@@ -52,7 +52,7 @@ def exp_rotation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m = np.empty(b.shape + (4,))
     m[..., 0] = np.cos(angle)
     m[..., 1:] = b._kernel * np.sinc(angle / np.pi)[..., None]
-    gatype = b.algebra.gatype(b.algebra.subspace("1 yz zx xy")).derive.with_traits(ReverseProductOne, Versor)
+    gatype = b.algebra.gatype.even().derive.nondegenerate.derive.with_traits(ReverseProductOne, Versor)
     return Extensor._from_prepared_kernel(b.context, gatype, m)
 
 
@@ -61,7 +61,7 @@ def exp_translation_pga3(b: Extensor, *, n: int = 15) -> Extensor:
     m = np.empty(b.shape + (4,))
     m[..., 0] = 1
     m[..., 1:] = b._kernel
-    gatype = b.algebra.gatype(b.algebra.subspace("1 wx wy wz")).derive.with_traits(ReverseProductOne, Versor)
+    gatype = b.algebra.gatype(b.algebra.subspace("1 wx wy wz"), orientation=Orientation.extrinsic).derive.with_traits(ReverseProductOne, Versor)
     return Extensor._from_prepared_kernel(b.context, gatype, m)
 
 
@@ -78,9 +78,10 @@ def normalize_pga3(motor: Extensor) -> Extensor:
 
 
 class PrincipalInertiaPGA3(Extensor):
-    """Inertia of a rigid body in its principal frame, Bivector <- Bivector, stored as four numbers.
+    """Inertia of a rigid body in its principal frame, a forque from a rate, stored as four numbers.
 
-    Rate and momentum share the bivectors yz zx xy wx wy wz. The map sends the translation block
+    Rate and momentum share the bivectors yz zx xy wx wy wz: the rate oriented by what turns around
+    it (extrinsic), the momentum along itself (intrinsic). The map sends the translation block
     to the momentum's first block and the rotation block to its second, each scaled blade-wise:
     for the inertia, `upper` [..., 1] is the mass and `lower` [..., 3] the moments on yz zx xy.
     The inverse has the same form with `1 / lower` as its `upper` and `1 / upper` as its `lower`,
@@ -92,10 +93,9 @@ class PrincipalInertiaPGA3(Extensor):
     """
     __slots__ = ("upper", "lower")
 
-    def __init__(self, context, upper: np.ndarray, lower: np.ndarray) -> None:
-        Bivector = context.algebra.gatype.bivector()
+    def __init__(self, context, upper: np.ndarray, lower: np.ndarray, gatype: GAType) -> None:
         self._context = context
-        self._gatype = context.algebra.gatype((Bivector, Bivector))
+        self._gatype = gatype
         self.upper = upper
         self.lower = lower
 
@@ -118,21 +118,25 @@ class PrincipalInertiaPGA3(Extensor):
 
     def __call__(self, *operands):
         rate = operands[0]
-        if len(operands) != 1 or not isinstance(rate, Extensor) or rate.gatype.output_subspace is not self.axes[1]:
+        if (len(operands) != 1 or not isinstance(rate, Extensor) or rate.gatype.output_subspace is not self.axes[1]
+                or rate.gatype.orientation is not self.gatype.input_orientations[0]):
             return Extensor.__call__(self, *operands)
         r = rate._kernel
         momentum = np.empty(np.broadcast_shapes(r.shape[:-1], self.shape) + (6,))
         momentum[..., 0:3] = r[..., 3:6] * self.upper
         momentum[..., 3:6] = r[..., 0:3] * self.lower
-        return Extensor._from_prepared_kernel(rate.context, rate.gatype, momentum)
+        return Extensor._from_prepared_kernel(rate.context, self.gatype.derive.output, momentum)
 
     def inverse(self) -> "PrincipalInertiaPGA3":
-        return PrincipalInertiaPGA3(self._context, 1 / self.lower, 1 / self.upper)
+        return PrincipalInertiaPGA3(self._context, 1 / self.lower, 1 / self.upper, self.gatype.derive.transposed)
 
 
 def principal_inertia_pga3(mass: Extensor, moments: Extensor) -> PrincipalInertiaPGA3:
     """From a Scalar mass [...] and moments on the rotation blades yz zx xy [...]."""
-    return PrincipalInertiaPGA3(mass.context, mass._kernel, moments.select_subspace(mass.algebra.subspace("yz zx xy"))._kernel)
+    bivector = mass.algebra.subspace.bivector()
+    gatype = mass.algebra.gatype.oriented((bivector, bivector), (Orientation.intrinsic, Orientation.extrinsic))
+    lower = moments.select_subspace(mass.algebra.subspace("yz zx xy"))._kernel
+    return PrincipalInertiaPGA3(mass.context, mass._kernel, lower, gatype)
 
 
 def register() -> None:

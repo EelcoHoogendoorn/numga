@@ -15,6 +15,7 @@ from numga.algebras import STA
 ga = STA
 mv = NumpyContext(ga).multivector
 Bivector = ga.gatype.bivector()
+Spatial = ga.gatype.vector().derive.within("x y z")
 Rotor = ga.gatype.rotor()
 Response = ga.gatype((Bivector, Bivector, Bivector))
 
@@ -24,8 +25,8 @@ VERTICAL = mv.tz
 LONGITUDINAL = (mv.tx + mv.ty) / np.sqrt(2)
 ELECTRIC = (Bivector - (mv.t >> Bivector)) / 2
 TRANSVERSE = ELECTRIC - LONGITUDINAL * (LONGITUDINAL | Bivector)
-# Four directed bond planes, with unit response coefficients.
-BONDS = mv(ga.subspace("tx ty tz"), [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
+# Four directed bond planes, each spanned by the time direction and a bond, with unit response coefficients.
+BONDS = mv.t ^ mv(Spatial, [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
 STRENGTH = 3 * np.sqrt(3) / 4
 
 

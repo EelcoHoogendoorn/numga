@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import NumpyContext
 from numga.algebras import PGA3D
 
@@ -19,12 +20,13 @@ def backend(request):
 def test_sparse_products_broadcast_and_convert_signed_input_layouts(backend):
     context_type, compile = backend
     spaces = PGA3D.subspace
-    product = spaces.bivector().gatype * spaces.bivector().gatype
+    Bivector = PGA3D.gatype.bivector()
+    product = Bivector * Bivector
     outputs = []
     for execution in ("dense", "sparse"):
         mv = context_type(PGA3D, execution=execution).multivector
-        left = mv(spaces("xy xz yz"), [[[1, 2, 3]], [[4, 5, 6]]])
-        right = mv(spaces("xy xz yz"), [[[3, 2, 1], [6, 5, 4]]])
+        left = mv(PGA3D.gatype(spaces("xy xz yz"), orientation=Orientation.extrinsic), [[[1, 2, 3]], [[4, 5, 6]]])
+        right = mv(PGA3D.gatype(spaces("xy xz yz"), orientation=Orientation.extrinsic), [[[3, 2, 1], [6, 5, 4]]])
         result = compile(lambda a, b: product(a, b))(left, right)
         assert result.shape == (2, 2)
         assert result.context.execution == execution
@@ -35,7 +37,6 @@ def test_sparse_products_broadcast_and_convert_signed_input_layouts(backend):
 
 def test_sparse_inertia_construction_and_dense_numeric_map_application(backend):
     context_type, compile = backend
-    spaces = PGA3D.subspace
     outputs = []
     for execution in ("dense", "sparse"):
         mv = context_type(PGA3D, execution=execution).multivector
@@ -43,7 +44,7 @@ def test_sparse_inertia_construction_and_dense_numeric_map_application(backend):
         rate = mv.bivector([1, 2, 3, 4, 5, 6])
 
         def evaluate(points, rate):
-            inertia = points.regressive(points.commutator(spaces.bivector())).sum(axis=0)
+            inertia = points.regressive(points.commutator(PGA3D.gatype.bivector())).sum(axis=0)
             return inertia, inertia(rate)
 
         outputs.append(compile(evaluate)(points, rate))
@@ -54,9 +55,8 @@ def test_sparse_inertia_construction_and_dense_numeric_map_application(backend):
 
 def test_sparse_binding_splices_open_inputs_and_preserves_empty_batches(backend):
     context_type, compile = backend
-    spaces = PGA3D.subspace
-    vector = spaces.vector()
-    outer = vector.gatype * vector.gatype
+    vector = PGA3D.gatype.vector()
+    outer = vector * vector
     outputs = []
     for execution in ("dense", "sparse"):
         context = context_type(PGA3D, execution=execution)

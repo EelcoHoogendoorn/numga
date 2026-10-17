@@ -128,11 +128,13 @@ register_reductions(3)
 def inverse_geometric(value: Extensor) -> Extensor:
     """Solve left multiplication in the blade-generated subalgebra."""
 
-    space = value.gatype.derive.minimal_subalgebra.output_subspace
-    left_multiply = (value * space).select_subspace(space)
-    unit = value.algebra.operator.unit(space)
+    subalgebra = value.gatype.derive.minimal_subalgebra
+    space = subalgebra.output_subspace
+    left_multiply = (value * subalgebra).select_subspace(space)
+    unit = value.algebra.operator.unit(subalgebra)
     coefficients = value.context.solve(left_multiply._kernel, value.context.lower(unit)._kernel)
-    gatype = value.gatype.derive.minimal_subalgebra.derive.with_traits(*value.gatype.inverse_traits)
+    # The value times its inverse is the number one, so the inverse has the value's orientation.
+    gatype = subalgebra.derive.with_orientations((value.gatype.orientation,)).derive.with_traits(*value.gatype.inverse_traits)
     return Extensor._from_prepared_kernel(
         value.context, gatype, coefficients,
     )

@@ -30,6 +30,10 @@ dist/
 !/plots/area_transport.gif
 !/plots/twistor_hopfion.gif
 !/plots/arap_bending.gif
+!/plots/line_in_mirror_01.png
+!/plots/pairs_in_mirror.png
+!/plots/normal_orientation.png
+!/plots/mirror_energy.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

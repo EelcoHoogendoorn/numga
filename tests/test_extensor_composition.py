@@ -5,7 +5,7 @@ from numga import Algebra, Extensor, NumpyContext
 
 def test_squaring_an_open_vector_map_keeps_its_inputs() -> None:
     algebra = Algebra("x+y+")
-    vector = algebra.operator.identity(algebra.subspace.vector())
+    vector = algebra.operator.identity(algebra.gatype.vector())
     squared = vector.squared()
 
     assert squared.gatype is vector.gatype.derive.squared
@@ -22,14 +22,12 @@ def test_squaring_an_open_vector_map_keeps_its_inputs() -> None:
 def test_geometric_product_expression_stages_by_operand_kind() -> None:
     algebra = Algebra("x+y+")
     context = NumpyContext(algebra)
-    V = algebra.subspace.vector()
-    assert V.gatype is algebra.gatype(V)
-    assert not V.gatype.traits
+    Vector = algebra.gatype.vector()
+    assert not Vector.traits
 
-    x = context.extensor(V, [1, 2])
-    y = context.extensor(V, [3, 4])
+    x = context.extensor(Vector, [1, 2])
+    y = context.extensor(Vector, [3, 4])
 
-    Vector = V.gatype
     binary = Vector * Vector
     ternary = Vector * Vector * Vector
     left_multiply = x * Vector

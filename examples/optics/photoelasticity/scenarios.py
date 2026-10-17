@@ -30,8 +30,8 @@ def stress_field() -> tuple[core.Planar, core.Stress, core.Scalar]:
     the pixels inside the hole carry the formula's values and are covered when drawn."""
     centres = (np.arange(PIXELS) + 0.5) * (2 * EXTENT / PIXELS) - EXTENT
     positions = core.mv.x * centres[None, :] + core.mv.y * centres[:, None]      # [rows, columns] Planar
-    # Averaging identity and reflection in x keeps axial traction and cancels transverse traction.
-    remote = TENSION * (core.Planar + (core.mv.x >> core.Planar)) / 2             # [] Planar <- Planar
+    # Averaging identity and reflection in y keeps axial traction and cancels transverse traction.
+    remote = TENSION * (core.Planar + (core.mv.y >> core.Planar)) / 2             # [] Planar <- Planar
     stress = core.kirsch(positions, RADIUS, remote)                               # [rows, columns] Planar <- Planar
     principal, _ = stress.eigh()                                                  # [rows, columns, modes] Scalar, Planar
     difference = principal[..., 1] - principal[..., 0]                            # [rows, columns] Scalar

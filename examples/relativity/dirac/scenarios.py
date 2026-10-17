@@ -59,7 +59,7 @@ def trembling(momentum: core.Vector, seconds: float, count: int):
     for psi in spinors:
         density = (core.current(psi) | core.TIME).to_array()
         np.testing.assert_allclose(density, density[0], rtol=1e-10)
-    probe = mv(core.Even.output_subspace, np.random.default_rng(0).normal(size=8))
+    probe = mv(core.Even, np.random.default_rng(0).normal(size=8))
     unit = core.Even * core.SPIN_PLANE
     np.testing.assert_allclose(H(unit(probe)).kernel, unit(H(probe)).kernel, atol=1e-12)
     return times, spinors, paths

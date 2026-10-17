@@ -94,7 +94,7 @@ def axion() -> core.Scalar:
     # Identical ordinary dielectric responses: all reflection comes from the axion jump.
     chi = core.dielectric(np.full(3, SURROUNDING_INDEX ** 2), 1.0)
     incident = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
-    axion_chi = chi + core.mv.scalar(AXION_JUMPS[:, None]) * core.Bivector
+    axion_chi = chi + core.mv(core.AxionCoupling, AXION_JUMPS[:, None]) * core.Bivector
     substrate_medium = core.Medium.from_chi(axion_chi, core.mv.t)
     substrate = core.Ports.from_medium(substrate_medium, SURROUNDING_INDEX, core.mv.t)
     result = core.scatter(substrate.outgoing, incident)

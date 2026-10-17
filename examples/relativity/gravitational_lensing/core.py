@@ -5,8 +5,9 @@ deflects a sightline towards itself by the inverse of the separation, weighted b
 direction a sightline reaches at the source is `observed - (masses * separation.inverse()).sum(axis=-1)`.
 
 The local map carries a small displacement of the sightline to the displacement it makes at the
-source. The change of a vector's inverse is a sandwich: to first order
-`(separation + small).inverse() - separation.inverse()` is `-(separation.inverse() >> small)`. Each
+source. The change of a vector's inverse is a reflection: to first order
+`(separation + small).inverse() - separation.inverse()` is `-(separation.dual().inverse() >> small)`, the
+reflection of `small` in the line of the separation, whose normal is the separation's dual. Each
 mass adds to the identity its own reflection in the line of the separation, scaled by the inverse
 square distance. A reflection has no trace, so the local map's trace is two everywhere, and a map of
 the plane with trace two is undone by `(2 * Vector - local) / area`, with `area` the ratio its
@@ -50,7 +51,7 @@ def local_map(observed: Vector, positions: Vector, masses: np.ndarray) -> LocalM
     """The map from a small displacement of each observed direction to the displacement it makes at
     the source: the identity plus each mass's reflection in the line of its separation."""
     separation = observed[..., None] - positions                               # [..., masses] Vector
-    return Vector + (masses * (separation.inverse() >> Vector)).sum(axis=-1)   # [...] Vector <- Vector
+    return Vector + (masses * (separation.dual().inverse() >> Vector)).sum(axis=-1)   # [...] Vector <- Vector
 
 
 def brightness(directions: Vector, centre: Vector, width: float) -> Scalar:

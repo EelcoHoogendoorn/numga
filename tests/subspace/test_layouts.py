@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+from numga import Orientation
 from numga import Algebra, GATypeDispatch, NumpyContext, ReverseProductOne
 from numga.algebras import PGA2D, PGA3D
 
@@ -21,6 +22,8 @@ def test_layout_identity_is_not_mathematical_inclusion():
     spaces = algebra.subspace
     lexical = spaces("xy xz yz")
     cyclic = spaces("yz zx xy")
+    lexical_type = algebra.gatype(lexical, orientation=Orientation.extrinsic)
+    cyclic_type = algebra.gatype(cyclic, orientation=Orientation.extrinsic)
 
     assert cyclic is spaces.from_blades(("yz", ("z", "x"), "xy"))
     assert cyclic is spaces("yz -xz xy")
@@ -29,9 +32,9 @@ def test_layout_identity_is_not_mathematical_inclusion():
     assert cyclic != lexical
     assert cyclic.same_support(lexical)
     assert cyclic.support_key == lexical.support_key
-    assert cyclic.gatype != lexical.gatype
-    assert cyclic.gatype <= lexical.gatype <= cyclic.gatype
-    assert not cyclic.gatype < lexical.gatype
+    assert cyclic_type != lexical_type
+    assert cyclic_type <= lexical_type <= cyclic_type
+    assert not cyclic_type < lexical_type
 
     dispatch = GATypeDispatch("layout", None, 1)
 
@@ -39,16 +42,16 @@ def test_layout_identity_is_not_mathematical_inclusion():
     def specialized(value):
         return "coefficient-specific"
 
-    @dispatch.register(lexical.gatype)
+    @dispatch.register(lexical_type)
     def generic(value):
         return "mathematical support"
 
-    assert dispatch.resolve(cyclic.gatype) is specialized
-    assert dispatch.resolve(lexical.gatype) is generic
-    assert dispatch.resolve(spaces("yx yz zx").gatype) is generic
-    assert spaces("xy").gatype < cyclic.gatype
-    assert algebra.operator.geometric_product(cyclic, cyclic) is algebra.operator.geometric_product(cyclic, cyclic)
-    assert algebra.operator.geometric_product(cyclic, cyclic) is not algebra.operator.geometric_product(lexical, lexical)
+    assert dispatch.resolve(cyclic_type) is specialized
+    assert dispatch.resolve(lexical_type) is generic
+    assert dispatch.resolve(algebra.gatype(spaces("yx yz zx"), orientation=Orientation.extrinsic)) is generic
+    assert algebra.gatype(spaces("xy"), orientation=Orientation.extrinsic) < cyclic_type
+    assert algebra.operator.geometric_product(cyclic_type, cyclic_type) is algebra.operator.geometric_product(cyclic_type, cyclic_type)
+    assert algebra.operator.geometric_product(cyclic_type, cyclic_type) is not algebra.operator.geometric_product(lexical_type, lexical_type)
 
 
 def test_signed_relayout_and_products_agree(backend):
@@ -57,8 +60,9 @@ def test_signed_relayout_and_products_agree(backend):
     spaces = algebra.subspace
     mv = context_type(algebra).multivector
     cyclic, lexical = spaces("yz zx xy"), spaces("xy xz yz")
-    a = mv(cyclic, [[1, 2, 3], [2, -1, 4]])
-    b = mv(cyclic, [2, 1, -1])
+    cyclic_type = algebra.gatype(cyclic, orientation=Orientation.extrinsic)
+    a = mv(cyclic_type, [[1, 2, 3], [2, -1, 4]])
+    b = mv(cyclic_type, [2, 1, -1])
 
     converted = compile(lambda x: x.select_subspace(lexical))(a)
     np.testing.assert_allclose(converted.kernel, [[3, -2, 1], [4, 1, 2]])
@@ -67,7 +71,8 @@ def test_signed_relayout_and_products_agree(backend):
     assert a.restrict_subspace(spaces("xz yz")).subspace is spaces("yz zx")
 
     # An operator expecting lexical inputs must convert incoming cyclic arrays.
-    product = lexical.gatype * lexical.gatype
+    lexical_type = algebra.gatype(lexical, orientation=Orientation.extrinsic)
+    product = lexical_type * lexical_type
     direct = compile(lambda x, y: x * y)(a, b)
     implicit = compile(lambda x, y: product(x, y))(a, b)
     explicit = product(converted, b.select_subspace(lexical))
@@ -92,7 +97,7 @@ def test_pga_defaults_make_the_dual_maps_coefficient_identities(backend):
     np.testing.assert_allclose(points.dual_inverse().kernel, planes.kernel)
     np.testing.assert_allclose(points.dual().kernel, -planes.kernel)
 
-    rotation = mv(spaces("yz zx xy"), [1, 2, 3])
+    rotation = mv(PGA3D.gatype(spaces("yz zx xy"), orientation=Orientation.extrinsic), [1, 2, 3])
     translation = rotation.dual()
     assert translation.subspace is spaces("wx wy wz")
     np.testing.assert_allclose(translation.kernel, rotation.kernel)
@@ -133,11 +138,13 @@ def test_pga3_orientation_gives_positive_volume_and_right_handed_axes():
     origin = mv.xyz
     along_x, along_y, along_z = origin + mv.wzy, origin + mv.wxz, origin + mv.wyx
 
-    np.testing.assert_allclose((mv.scalar([1]).dual() - mv.wxyz).kernel, 0)
+    # joins and meets differ in orientation, so they are compared by their coefficients
+    np.testing.assert_allclose(mv.scalar([1]).dual().kernel, mv.wxyz.kernel)
     np.testing.assert_allclose((origin & along_x & along_y & along_z).kernel, 1)
-    np.testing.assert_allclose(((origin & along_x) - (mv.y ^ mv.z)).kernel, 0)
-    axis = origin & along_z
-    turned = (axis * (-np.pi / 4)).exp() >> along_x
+    x_axis = origin & along_x
+    np.testing.assert_allclose(x_axis.kernel, (mv.y ^ mv.z).cast(x_axis.subspace).kernel)
+    z_axis = mv.x ^ mv.y
+    turned = (z_axis * (-np.pi / 4)).exp() >> along_x
     np.testing.assert_allclose((turned - along_y).kernel, 0, atol=1e-12)
 
 
@@ -162,7 +169,7 @@ def test_reorienting_the_scalar_changes_coordinates_not_scalar_functions(backend
     context_type, compile = backend
     algebra = Algebra("x+y+")
     mv = context_type(algebra).multivector
-    reversed_scalar = algebra.subspace("-1")
+    reversed_scalar = algebra.gatype(algebra.subspace("-1"), orientation=Orientation.extrinsic)
     four = mv(reversed_scalar, [-4])
 
     unit = mv(reversed_scalar)

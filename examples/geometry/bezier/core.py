@@ -65,4 +65,4 @@ def conic(controls: Vector, weights: np.ndarray) -> Conic:
 # --- plumbing -------------------------------------------------------------------------
 def point(coords: np.ndarray) -> Vector:
     """Points (x, y) at unit weight: the vectors `x * e1 + y * e2 + e3`."""
-    return mv("x y", coords) + mv.z
+    return mv(Vector.derive.within("x y"), coords) + mv.z

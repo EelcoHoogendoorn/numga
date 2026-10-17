@@ -30,13 +30,13 @@ def _relation(gatype):
 
 
 def _typed_full(algebra, trait, coefficients):
-    gatype = algebra.gatype(algebra.subspace.full(), (trait,))
+    gatype = algebra.gatype(algebra.gatype.full(), (trait,))
     return algebra.exact.multivector(gatype, coefficients)
 
 
 def test_relation_factor_lattice_participates_in_refinement_and_dispatch():
     algebra = Algebra("x+y+")
-    full = algebra.subspace.full()
+    full = algebra.gatype.full()
     axes = (full, full, full)
     one_relation = ProductRelation(ReverseProduct, ProductResult.ONE, slots=(0, 1))
     nonzero_relation = ProductRelation(

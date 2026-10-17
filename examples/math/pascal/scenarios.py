@@ -33,7 +33,7 @@ def run(five: core.Point, angles: np.ndarray) -> tuple[core.Conic, core.Point, c
     join = (crossing[..., 0] & crossing[..., 1] & crossing[..., 2]).to_array()   # [angles]
     size = np.prod(np.linalg.norm(crossing.kernel, axis=-1), axis=-1)            # [angles]
     np.testing.assert_allclose(join / size, 0.0, atol=1e-12)
-    probes = core.point(np.random.default_rng(0).normal(size=(8, 2)))          # [probes] Point
+    probes = core.mv.point(np.random.default_rng(0).normal(size=(8, 2)))          # [probes] Point
     ratio = (core.pascal(five)(probes, probes) / (shape(probes) & probes)).to_array()
     np.testing.assert_allclose(ratio, ratio[0], rtol=1e-11)
     return shape, hexagon, crossing
@@ -50,7 +50,7 @@ def turn(frames: int) -> Iterator[tuple[core.Conic, core.Point, core.Point]]:
 # --- plumbing -------------------------------------------------------------------------
 def ellipse_points(angles: np.ndarray) -> core.Point:
     """Points at the given angles on an ellipse, off the origin."""
-    return core.point(np.stack([1.6 * np.cos(angles) + 0.3, np.sin(angles) - 0.1], axis=-1))
+    return core.mv.point(np.stack([1.6 * np.cos(angles) + 0.3, np.sin(angles) - 0.1], axis=-1))
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ def point_to_points():
     rng = np.random.default_rng(0)
     points = jitter(pose >> cloud(200, 0.5, rng), 0.05, rng)
     centroid = fit(Point, points)
-    return points, pose >> mv.xyz, centroid
+    return points, pose >> mv.w.dual(), centroid
 
 
 def line_to_points():
@@ -55,7 +55,7 @@ def point_to_lines():
     directions = rays ^ mv.w
     unit_directions = directions / directions.dual().norm()
     ends = intersection + unit_directions * np.array([[-2.0], [2.0]])
-    return ends, pose >> mv.xyz, intersection
+    return ends, pose >> mv.w.dual(), intersection
 
 
 if __name__ == "__main__":

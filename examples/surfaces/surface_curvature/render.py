@@ -23,7 +23,7 @@ def euclidean(points: core.Point) -> np.ndarray:
 
 def components(directions: core.Direction) -> np.ndarray:
     """Euclidean components: the inner products with the axis directions."""
-    return core.metric(directions[..., None], core.direction(np.eye(3))).to_array()
+    return core.metric(directions[..., None], core.mv.direction(np.eye(3))).to_array()
 
 
 def level_lines(parameter: np.ndarray, width: float) -> np.ndarray:

@@ -53,7 +53,7 @@ def diffuse(rate: core.Twist, kicks: core.Kicks, seconds: float, dt: float, bodi
             # The exponential of a twist is a motor.
             yield (errors * 0.5).exp(), predicted, limit
         # White noise integrated over the step.
-        white = mv.vector(rng.normal(size=(bodies, 3))) * np.sqrt(dt)         # [bodies] Line
+        white = mv.antibivector(rng.normal(size=(bodies, 3))) * np.sqrt(dt)   # [bodies] Line
         errors, predicted = core.step(dynamics, covariance, errors, predicted, kicks(white), dt)
 
     # --- checks

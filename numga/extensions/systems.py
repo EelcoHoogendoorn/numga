@@ -20,7 +20,7 @@ from numga.gatype import GAType, GATypePattern
 from numga.extensions._linalg import _is_form, _linear_system, _matching_forms, _result, _scalars
 
 
-@Extensor.inverse.register(lambda t: t.is_square_map)
+@Extensor.inverse.register(lambda t: t.maps_equal_dimensions)
 def inverse_linear(value: Extensor) -> Extensor:
     """Composition inverse, swapping input and output coefficient layouts."""
     return Extensor._from_prepared_kernel(
@@ -30,7 +30,7 @@ def inverse_linear(value: Extensor) -> Extensor:
 
 
 @Extensor.solve.register(
-    lambda t, r: t.is_square_map
+    lambda t, r: t.maps_equal_dimensions
     and r.output_subspace.support_is_subset_of(t.output_subspace)
 )
 def solve(value: Extensor, rhs: Extensor) -> Extensor:
@@ -48,7 +48,9 @@ def solve(value: Extensor, rhs: Extensor) -> Extensor:
     rhs = rhs.broadcast_to(batch_shape)
     columns = rhs._kernel.reshape(batch_shape + (len(rhs.output_subspace), prod(rhs.structural_shape[1:])))
     solution = value.context.xp.linalg.solve(value._kernel, columns)
-    gatype = value.algebra.gatype((value.axes[1],) + rhs.input_subspaces)
+    gatype = value.algebra.gatype.oriented(
+        (value.axes[1],) + rhs.input_subspaces, (value.gatype.input_orientations[0],) + rhs.gatype.input_orientations,
+    )
     return _result(value, gatype, solution.reshape(batch_shape + gatype.structural_shape))
 
 
@@ -73,11 +75,14 @@ def adjugate(value: Extensor) -> Extensor:
 
 @lru_cache(maxsize=None)
 def _adjugate_pairing(gatype: GAType) -> tuple[Extensor, GAType]:
-    """The exact pairing form on a map's input, and the complement of its output."""
+    """The exact pairing form on a map's input, and the complement of its output. A complement is
+    oppositely oriented, as a dual is, so that it pairs with its space to an ordinary number."""
     algebra = gatype.algebra
     output, input = gatype.subspaces
-    on_input = (algebra.gatype(input.complement()) & algebra.gatype(input)).cast(algebra.subspace.scalar())
-    return on_input, algebra.gatype(output.complement())
+    output_orientation, input_orientation = gatype.orientations
+    input_complement = algebra.gatype.oriented((input.complement(),), (input_orientation.flipped,))
+    on_input = (input_complement & gatype.derive.axis(1)).cast(algebra.subspace.scalar())
+    return on_input, algebra.gatype.oriented((output.complement(),), (output_orientation.flipped,))
 
 
 @Extensor.adjoint.register(GATypePattern.map())
@@ -92,13 +97,13 @@ def adjoint(value: Extensor) -> Extensor:
     it equals its adjoint.
     """
     on_input, on_output = _adjoint_pairing(value.gatype)
-    return on_input.solve(on_output(value.algebra.gatype(value.axes[0]), value))
+    return on_input.solve(on_output(value.gatype.derive.output, value))
 
 
 @lru_cache(maxsize=None)
 def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, Extensor]:
     """The scalar-product pairings of a map's input with itself, and of its output with itself."""
-    output, input = gatype.subspaces
+    output, input = gatype.derive.output, gatype.derive.axis(1)
     product = gatype.algebra.operator.scalar_product
     return product(input, input), product(output, output)
 
@@ -123,12 +128,14 @@ def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
     """
     scalar = value.algebra.subspace.scalar()
     value, rhs = value.cast(scalar), rhs.cast(scalar)
+    oriented = value.algebra.gatype.oriented
     matrix = Extensor._from_prepared_kernel(
-        value.context, value.algebra.gatype((value.axes[2], value.axes[1])),
+        value.context, oriented((value.axes[2], value.axes[1]), (value.gatype.orientations[2], value.gatype.orientations[1])),
         value.context.first_last_input(value._kernel, value.ndim),
     )
     covector = Extensor._from_prepared_kernel(
-        rhs.context, value.algebra.gatype((rhs.axes[-1],) + tuple(rhs.axes[1:-1])),
+        rhs.context,
+        oriented((rhs.axes[-1],) + tuple(rhs.axes[1:-1]), (rhs.gatype.orientations[-1],) + rhs.gatype.orientations[1:-1]),
         rhs.context.first_last_input(rhs._kernel, rhs.ndim),
     )
     return matrix, covector
@@ -226,7 +233,9 @@ def _grouped_lstsq_plan(value: GAType, rhs: GAType):
     selected = tuple(axis for axis in range(1, value.arity + 1) if axis not in retained)
     transforms = tuple((axis, transform) for axis, transform in enumerate(alignment)
                        if transform.kind is not AxisTransformKind.EXACT)
-    result = value.algebra.gatype(tuple(axes[i] for i in selected))
+    result = value.algebra.gatype.oriented(
+        tuple(axes[i] for i in selected), tuple(value.orientations[i] for i in selected),
+    )
     shape = prod(len(axes[i]) for i in retained), prod(len(axes[i]) for i in selected)
     return retained + selected, shape, result, transforms
 

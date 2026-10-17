@@ -25,19 +25,14 @@ Bivector = ga.gatype.bivector()
 Scalar = ga.gatype.scalar()
 
 
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 3) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
 # --- plumbing -------------------------------------------------------------------------
 
 
 # --- math -----------------------------------------------------------------------------
 def main() -> None:
     rng = np.random.default_rng(0)
-    world = point(jnp.asarray(rng.normal(size=(30, 3))))
-    origin = mv.xyz
+    world = mv.point(jnp.asarray(rng.normal(size=(30, 3))))
+    origin = mv.w.dual()
     screen = mv.z - mv.w
     camera = (origin & Point) ^ screen
 

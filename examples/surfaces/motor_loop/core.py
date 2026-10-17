@@ -62,11 +62,6 @@ def ribbon(along: np.ndarray, across: np.ndarray, angle: np.ndarray) -> Motor:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def point(coords: np.ndarray) -> Point:
-    """Points at unit weight from their x, y and z coordinates."""
-    return (mv("x y z", coords) + mv.w).dual()
-
-
 def grid_faces(rows: int, columns: int) -> np.ndarray:
     """The faces of a grid of `rows` by `columns` vertices, row by row, two triangles per cell, all turning
     the same way."""

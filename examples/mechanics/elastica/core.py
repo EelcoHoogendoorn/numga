@@ -36,20 +36,22 @@ mv = context.multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Line = ga.gatype.bivector()
+Forque = ga.gatype.antibivector()
 Motor = ga.gatype.rotor()
 # How a cross-section turns per unit length under the load it carries.
-Compliance = ga.gatype((Line, Line))                       # Line <- Line
+Compliance = ga.gatype((Line, Forque))                     # Line <- Forque
 # The load a joint carries per unit of its deviation from rest, and a segment's momentum per unit of rate.
-Stiffness = ga.gatype((Line, Line))                        # Line <- Line
-Inertia = ga.gatype((Line, Line))                          # Line <- Line
+Stiffness = ga.gatype((Forque, Line))                      # Forque <- Line
+Inertia = ga.gatype((Forque, Line))                        # Forque <- Line
 
 # The centre of the cross-section at the rod's start, the shift carrying a cross-section along the unbent rod
 # per unit length, and the axes of a cross-section through its centre: across, up and along the rod. A turn
-# about an axis is the axis itself and the couple about it the axis's dual; a shift along an axis is the dual and
-# the force along it the axis.
+# about an axis is the axis as the meet of two planes, and the couple about it the turn's dual; a force along an
+# axis is the axis as the join of the centre with a direction, and the shift along it the force's dual.
 centre = mv.w.dual()                                       # [] Point
 shift_along_rod = mv.z ^ mv.w                              # [] Line
-section_axes = stack([centre & mv.x.dual(), centre & mv.y.dual(), centre & mv.z.dual()])   # [3] Line
+turn_axes = stack([mv.y ^ mv.z, mv.z ^ mv.x, mv.x ^ mv.y])                                # [3] Line
+force_axes = stack([centre & mv.x.dual(), centre & mv.y.dual(), centre & mv.z.dual()])    # [3] Line
 
 
 # --- math -----------------------------------------------------------------------------
@@ -57,10 +59,10 @@ def compliance(turning: np.ndarray, shifting: np.ndarray) -> Compliance:
     """How a cross-section moves per unit length under a load: about each of its axes `[3]`, a turn by the
     load's couple about the axis times the compliance to turning, and a shift by the load's force along the
     axis times the compliance to shifting; zero to shifting for a rod that only bends and twists."""
-    couples = section_axes.dual()                                       # [3] Line
-    turns = section_axes * (section_axes & Line) * turning             # [3] Line <- Line
-    shifts = couples * (couples & Line) * shifting                     # [3] Line <- Line
-    return (turns + shifts).sum(axis=0)                                 # [] Line <- Line
+    shifts_along = force_axes.dual()                                    # [3] Line
+    turns = turn_axes * (turn_axes & Forque) * turning                 # [3] Line <- Forque
+    shifts = shifts_along * (shifts_along & Forque) * shifting         # [3] Line <- Forque
+    return (turns + shifts).sum(axis=0)                                 # [] Line <- Forque
 
 
 def rod(loads: Line, flex: Compliance, starts: Motor, length: float, pieces: int) -> Motor:
@@ -84,18 +86,18 @@ def stiffness(turning: np.ndarray, shifting: np.ndarray) -> Stiffness:
     """The load a joint carries per unit length of its deviation from rest: about each of the cross-section's
     axes `[3]`, a couple for the turn about it times the rigidity against turning, and a force along it for the
     shift along it times the rigidity against shifting."""
-    couples = section_axes.dual()                                       # [3] Line
-    turns = couples * (couples & Line) * turning                       # [3] Line <- Line
-    shifts = section_axes * (section_axes & Line) * shifting           # [3] Line <- Line
-    return (turns + shifts).sum(axis=0)                                 # [] Line <- Line
+    couples = turn_axes.dual()                                          # [3] Forque
+    turns = couples * (couples & Line) * turning                       # [3] Forque <- Line
+    shifts = force_axes * (force_axes & Line) * shifting               # [3] Forque <- Line
+    return (turns + shifts).sum(axis=0)                                 # [] Forque <- Line
 
 
 def segment_inertia(mass: float, length: float, radius: float) -> Inertia:
     """A segment's inertia, from its rate to its momentum: its mass spread over its two ends and a ring of the
     given radius around its middle, each point's momentum its join with its own motion under the rate."""
-    spread = points([[radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0],
-                     [0, 0, length / 2], [0, 0, -length / 2]])            # [6] Point
-    return (spread & spread.commutator(Line)).sum(axis=0) * (mass / spread.shape[0])   # [] Line <- Line
+    spread = mv.point([[radius, 0, 0], [-radius, 0, 0], [0, radius, 0], [0, -radius, 0],
+                       [0, 0, length / 2], [0, 0, -length / 2]])          # [6] Point
+    return (spread & spread.commutator(Line)).sum(axis=0) * (mass / spread.shape[0])   # [] Forque <- Line
 
 
 def joint_loads(frames: Motor, rest: Motor, stiff: Stiffness, step: float) -> Line:
@@ -130,9 +132,3 @@ def between(frames: Motor, count: int) -> Motor:
     shares = np.arange(count) / count
     parts = frames[..., :-1, None] * (relative[..., None] * shares).exp()   # [..., joints, count] Motor
     return concatenate([parts.reshape(parts.shape[:-2] + (-1,)), frames[..., -1:]], axis=-1)
-
-
-# --- plumbing -------------------------------------------------------------------------
-def points(coordinates: np.ndarray) -> Point:
-    """Points at coordinates `[..., 3]`."""
-    return (mv("x y z", coordinates) + mv.w).dual()

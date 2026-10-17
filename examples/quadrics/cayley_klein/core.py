@@ -19,18 +19,15 @@ ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-# Whole-extensor types (GATypes); map types read output <- inputs. The polarity maps a point
-# to its polar line, and the pole map a line to its pole:
+# Whole-extensor types (GATypes); map types read output <- inputs. Every line here is the join of two
+# points and every point the meet of two lines: a join is oriented along itself and a meet by what turns
+# around it, so lines are intrinsic and points extrinsic. The polarity maps a point to its polar line,
+# and the pole map a line to its pole:
 Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Line = ga.gatype.vector()
+Point = ga.gatype.bivector()
+Line = ga.gatype.antibivector()
 Polarity = ga.gatype((Line, Point))       # Line <- Point
 Pole = ga.gatype((Point, Line))           # Point <- Line
-
-
-def point(coords: np.ndarray) -> Point:
-    """Finite points at (..., 2) coordinates: the dual of the homogeneous vector."""
-    return (mv("x y", coords) + mv.w).dual()
 
 
 def invariant(pairing: Extensor, a: Extensor, b: Extensor) -> Scalar:
@@ -82,3 +79,10 @@ def circles(C: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
     centre = centres[:, None]
     polar = C(centre)
     return polar * polar.regressive(Point) - centre.regressive(polar) * np.cosh(radii) ** 2 * C
+
+
+# --- plumbing -------------------------------------------------------------------------
+def crossing(coordinates: np.ndarray) -> Point:
+    """Points at the given coordinates `[..., 2]`, made as the constructions make their points: the meet
+    of the lines x = a and y = b."""
+    return (mv.x - mv.w * coordinates[..., 0]) ^ (mv.y - mv.w * coordinates[..., 1])

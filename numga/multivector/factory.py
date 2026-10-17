@@ -8,7 +8,7 @@ from functools import lru_cache
 from inspect import Signature, signature
 from typing import TYPE_CHECKING, Any, Callable
 
-from numga.gatype import GAType, ROTOR_TRAITS, ReverseProductZero, TraitSet
+from numga.gatype import GAType, Orientation, ROTOR_TRAITS, ReverseProductZero, TraitSet
 from numga.subspace import SubSpace
 
 if TYPE_CHECKING:
@@ -56,7 +56,8 @@ class MultivectorFactory:
 
     def blade(self, mask: int) -> Extensor:
         """The unit basis blade with this generator mask."""
-        return self(self.algebra.subspace.blade(mask), [1.0])
+        # A basis blade is a product of basis planes: extrinsic.
+        return self(self.algebra.gatype(self.algebra.subspace.blade(mask), orientation=Orientation.extrinsic), [1.0])
 
     def basis(self) -> Extensor:
         """The unit basis vectors, as a batch along the first axis: x, y, z = mv.basis()."""
@@ -67,16 +68,12 @@ class MultivectorFactory:
         gatype_or_subspace: GAType | SubSpace | str,
         coefficients: Any = _MISSING,
     ) -> Extensor:
-        if isinstance(gatype_or_subspace, str):
-            gatype_or_subspace = self.algebra.subspace(gatype_or_subspace)
-        if isinstance(gatype_or_subspace, GAType):
-            gatype = gatype_or_subspace
-        elif isinstance(gatype_or_subspace, SubSpace):
-            gatype = self.algebra.gatype(gatype_or_subspace)
-        else:
-            raise TypeError(
-                "multivector construction requires a GAType, SubSpace, or blade string"
-            )
+        if isinstance(gatype_or_subspace, (str, SubSpace)):
+            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
+                "ga.gatype(subspace, orientation=...)")
+        if not isinstance(gatype_or_subspace, GAType):
+            raise TypeError("multivector construction requires a GAType")
+        gatype = gatype_or_subspace
         if gatype.arity != 0:
             raise ValueError(
                 "multivector construction requires an arity-0 GAType; "
@@ -91,7 +88,7 @@ class MultivectorFactory:
                     "omitted coefficients produce a projected unit whose known "
                     f"facts contradict {gatype.traits!r}"
                 ) from error
-            gatype = self.algebra.gatype(gatype.subspaces, complete_traits)
+            gatype = self.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, complete_traits)
         return self.context.extensor(gatype, coefficients)
 
     def __getattr__(self, name: str) -> Callable[..., Extensor] | Extensor:
@@ -148,9 +145,9 @@ class MultivectorFactory:
                 f"{type(self).__name__} has no attribute {name!r}"
             )
 
+        # A basis blade is a product of basis planes: extrinsic.
         subspace = self.algebra.subspace.from_layout((oriented.mask,), (oriented.sign,))
-        gatype = self.algebra.gatype(subspace)
-        return self(gatype, [1.0])
+        return self(self.algebra.gatype(subspace, orientation=Orientation.extrinsic), [1.0])
 
 
     def __dir__(self) -> list[str]:

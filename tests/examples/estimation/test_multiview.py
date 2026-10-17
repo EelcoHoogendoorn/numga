@@ -14,7 +14,7 @@ from examples.estimation.multiview import render, scenarios
 from examples.estimation.multiview.render import coordinates
 
 core = instantiate("examples.estimation.multiview.core", PGA2D)
-Point, mv, point = core.Point, core.mv, core.point
+Point, mv = core.Point, core.mv
 
 
 @pytest.fixture(autouse=True)
@@ -40,24 +40,24 @@ def test_triangulate_cones():
     """Perspective cone pullback and fusion reconstruct landmarks given true poses."""
     rng = np.random.default_rng(123)
     xy = rng.uniform([-0.6, 1.0], [0.6, 2.5], size=(6, 2))
-    true_points = point(xy)
+    true_points = mv.point(xy)
     motors = scenarios.rig(np.array([-0.75, 0.75]), np.radians([18.0, -18.0]))
 
-    camera = (point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
+    camera = (mv.point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
     cameras = camera.broadcast_to((2,))
     projs = cameras(motors << true_points[:, None])
     pixels = projs / (mv.w & projs)
 
     # A sensor quadric at the principal point, moved to each pixel, pulled back into cones:
     q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = core.sensor_disk_at(pixels, point(np.array([0.0, 1.0])), q_sensor)
+    sensor_discs = core.sensor_disk_at(pixels, mv.point(np.array([0.0, 1.0])), q_sensor)
     local_cones = core.make_cones(cameras, sensor_discs)
     points, fused = core.triangulate_cones(motors, local_cones)
     np.testing.assert_allclose(coordinates(points), xy, atol=1e-5)
 
     # The fused precision is positive on every displacement, so the splat is a bounded ellipse:
     angles = np.linspace(0.0, np.pi, 12, endpoint=False)
-    displacements = mv("yw wx", np.stack([np.cos(angles), np.sin(angles)], axis=-1))
+    displacements = mv.direction(np.stack([np.cos(angles), np.sin(angles)], axis=-1))
     precision = (fused[:, None](displacements[None, :]) & displacements[None, :]).to_array()
     assert np.all(precision > 0)
 
@@ -90,7 +90,7 @@ def test_schur_bundle_adjust_converges_and_yields_information():
     # The information on all poses together is a symmetric form over the field of camera twists, zero
     # on the anchored cameras and positive on the free one:
     assert information.gatype.site_shape == (3, 3)
-    basis = mv("yw wx xy", np.eye(3))
+    basis = mv.bivector(np.eye(3))
     units = (basis[None, :, None] * np.eye(3)[:, None, :]).field()          # [cams, 3] Twist[cams]
     gram = information(units[:, :, None, None], units[None, None]).to_array()   # [cams, 3, cams, 3]
     np.testing.assert_allclose(gram, gram.transpose(2, 3, 0, 1), atol=1e-9)
@@ -131,7 +131,7 @@ def test_splat_alignment_converges_with_the_schur_step():
     projs = cameras(true_motors << true_points[:, None])
     pixels = projs / (mv.w & projs)
 
-    splat_motors, _ = core.align_rays_to_splats(initial_motors, local_cones, point(np.zeros(2)), pixels, 4, 1.0, free)
+    splat_motors, _ = core.align_rays_to_splats(initial_motors, local_cones, mv.point(np.zeros(2)), pixels, 4, 1.0, free)
     schur_motors, _, _, _ = core.bundle_adjust_schur(cameras, initial_motors, local_cones, 10, 1.0, free)
     np.testing.assert_allclose((splat_motors - true_motors).kernel, 0.0, atol=1e-10)
     np.testing.assert_allclose((splat_motors - schur_motors).kernel, 0.0, atol=1e-10)
@@ -160,7 +160,7 @@ def rig_3d(instance) -> tuple:
         (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta / 2).exp(),
         (mv3.yw * 0.35 / 2).exp() * (-mv3.yz * np.radians(12.0) / 2).exp(),
     ])
-    camera = (instance.point(np.zeros(3)) & instance.Point) ^ (mv3.z - mv3.w)
+    camera = (instance.mv.point(np.zeros(3)) & instance.Point) ^ (mv3.z - mv3.w)
     cameras = camera.broadcast_to((3,))
     xyz = np.array([
         [ 0.15, -0.20, 1.20],
@@ -172,11 +172,11 @@ def rig_3d(instance) -> tuple:
         [ 0.20,  0.30, 2.10],
         [-0.25, -0.25, 1.60],
     ])
-    projs = cameras(true_motors << instance.point(xyz)[:, None])
+    projs = cameras(true_motors << instance.mv.point(xyz)[:, None])
     pixels = projs / (mv3.w & projs)
     # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
     q_sensor = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
-    sensor_discs = instance.sensor_disk_at(pixels, instance.point(np.array([0.0, 0.0, 1.0])), q_sensor)
+    sensor_discs = instance.sensor_disk_at(pixels, instance.mv.point(np.array([0.0, 0.0, 1.0])), q_sensor)
     return true_motors, xyz, instance.make_cones(cameras, sensor_discs)
 
 
@@ -200,7 +200,7 @@ def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, transl
     initial_points, _ = core3.triangulate_cones(motors, local_cones)
     est_motors, est_points, _ = core3.bundle_adjust(motors, local_cones, iterations, 0.7, np.array([0.0, 1.0, 0.0]))
 
-    origin = core3.point(np.zeros(3))
+    origin = core3.mv.point(np.zeros(3))
     np.testing.assert_allclose(coordinates_3d(est_motors[1] >> origin), [0.75, 0.0, 0.0], atol=0.02)
     np.testing.assert_allclose(coordinates_3d(est_points), xyz, atol=0.02)
     # The residual rotation's scalar part is the cosine of half its angle:
@@ -219,7 +219,7 @@ def test_3d_bundle_adjust_converges_from_a_small_perturbation():
         (mv3.xw * 0.75 / 2).exp() * (mv3.zx * theta * 1.05 / 2).exp(),
         true_motors[2],
     ])
-    truth = core3.point(xyz)
+    truth = core3.mv.point(xyz)
     initial_points, _ = core3.triangulate_cones(motors, local_cones)
     _, points, _ = core3.bundle_adjust(motors, local_cones, 10, 0.9, np.array([0.0, 1.0, 0.0]))
     error = lambda p: float((p - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
@@ -254,11 +254,11 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
             w = mv3.w
 
             def misfit(twists):
-                """The fused cones' value at their own vertices, summed over the points: the pole of the
-                plane at infinity under each fused cone is its vertex."""
+                """The fused cones' value at the pole of the plane at infinity under each, summed over
+                the points."""
                 motors = free * (twists * 0.5).exp()                         # Motor[free]
                 fused = anchored + (motors >> moving(motors << Point3)).sites.sum()
-                pole = fused.dual().outermorphism(Plane3)(w).dual_inverse()  # [points] Point
+                pole = fused.solve(w)                                        # [points] Point
                 return ((pole & fused(pole)) / (w & pole) ** 2).sum()
 
             twists = mv3.bivector(jnp.zeros((2, 6))).field()                 # Twist[free]

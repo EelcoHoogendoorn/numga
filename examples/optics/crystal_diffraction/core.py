@@ -21,7 +21,7 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
-Phasor = ga.gatype(ga.subspace.scalar() + ga.subspace.pseudoscalar())
+Phasor = ga.gatype.scalar_pseudoscalar()
 Linear = ga.gatype((Vector, Vector))                          # Vector <- Vector
 
 

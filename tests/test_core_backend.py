@@ -41,7 +41,7 @@ def test_map_kernel_also_operates_on_batches_of_maps(backend):
     context_type, compile = backend
     algebra = Algebra("x+y+")
     context = context_type(algebra)
-    rotations = context.multivector.rotor([[1, 0], [0, 1]]).sandwich(algebra.subspace.vector())
+    rotations = context.multivector.rotor([[1, 0], [0, 1]]).sandwich(algebra.gatype.vector())
 
     repeated = compile(lambda x: x.map_kernel(
         context.xp.repeat, 2, axis=0, preserve_traits=True,
@@ -83,7 +83,7 @@ def test_unary_inverse_swaps_distinct_carriers_and_keeps_batch_axes(backend):
     context_type, compile = backend
     algebra = Algebra("x+y+")
     context = context_type(algebra, dtype=np.float32)
-    vector, even = algebra.subspace.vector(), algebra.subspace.even()
+    vector, even = algebra.gatype.vector(), algebra.gatype.even()
     maps = context.extensor(
         algebra.gatype((even, vector)),
         [[[2, 1], [0, 3]], [[1, 0], [-2, 4]]],
@@ -93,7 +93,7 @@ def test_unary_inverse_swaps_distinct_carriers_and_keeps_batch_axes(backend):
     inverse = compile(lambda map_: map_.inverse())(maps)
     recovered = compile(lambda map_, undo, x: undo(map_(x)))(maps, inverse, value)
 
-    assert inverse.axes == (vector, even)
+    assert inverse.axes == (vector.output_subspace, even.output_subspace)
     assert inverse.shape == recovered.shape == (2,)
     np.testing.assert_allclose(
         inverse.kernel,

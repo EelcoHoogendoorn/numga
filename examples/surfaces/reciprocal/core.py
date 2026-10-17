@@ -45,13 +45,19 @@ def reciprocal(mesh: Mesh, heights: np.ndarray) -> Vector:
 
 
 def stresses(mesh: Mesh, heights: np.ndarray) -> Scalar:
-    """The stress of each interior edge: the jump in slope from the face on its left to the face on its
-    right, over the edge's length, positive in tension, where the terrain bends convex."""
+    """The stress of each interior edge: the jump in slope between the faces on either side, measured
+    towards the corner across the edge, over the edge's length, positive in tension, where the terrain
+    bends convex. Which face is called left does not matter: swapping them turns both the jump and the
+    side the corner lies on."""
     inner, left, right = beside(mesh)                                          # [inner] each
     planes = slopes(mesh, heights)                                             # [..., faces] Vector
     jump = planes[..., left] - planes[..., right]                              # [..., inner] Vector
     bars = mesh.edge_vectors.batch()[inner]                                    # [inner] Vector
-    return ((bars ^ jump ^ mv.z) * mv.xyz.reverse()) / (bars | bars)           # [..., inner] Scalar
+    # The corner across each edge in the face on its right, as its offset square to the bar.
+    far = mesh.faces[right].sum(axis=-1) - mesh.edges[inner].sum(axis=-1)    # [inner]
+    corner = mesh.vertices.batch()[far] - mesh.vertices.batch()[mesh.edges[inner, 0]]   # [inner] Vector
+    across = (corner ^ bars) / bars                                            # [inner] Vector
+    return -(jump | across) / (across.norm() * bars.norm())                    # [..., inner] Scalar
 
 
 def folds(mesh: Mesh, heights: np.ndarray) -> Scalar:
@@ -78,4 +84,4 @@ def beside(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 def planar(coords: np.ndarray) -> Vector:
     """Points of the plane from their x and y coordinates."""
-    return mv("x y", coords)
+    return mv(Vector.derive.within("x y"), coords)

@@ -30,12 +30,12 @@ def test_adjoint_is_the_open_commutator_in_five_dimensions():
     bivectors of five dimensions."""
     context = NumpyContext(Algebra.from_pqr(5, 0, 0), dtype=np.float64)
     mv = context.multivector
-    bivector = context.algebra.subspace.bivector()
+    Bivector = context.algebra.gatype.bivector()
     rng = np.random.default_rng(0)
-    H = mv.bivector(rng.normal(scale=0.3, size=len(bivector)))
-    ad = H.commutator(bivector) * 2.0          # the library commutator is half the bracket
+    H = mv.bivector(rng.normal(scale=0.3, size=len(Bivector.output_subspace)))
+    ad = H.commutator(Bivector) * 2.0          # the library commutator is half the bracket
     assert ad.kernel.shape == (10, 10)
-    np.testing.assert_allclose(expm(ad.kernel), (H.exp() >> bivector).kernel, atol=1e-10)
+    np.testing.assert_allclose(expm(ad.kernel), (H.exp() >> Bivector).kernel, atol=1e-10)
 
 
 def test_energy_is_blind_to_the_motor_step():
