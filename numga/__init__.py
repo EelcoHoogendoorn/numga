@@ -13,6 +13,7 @@ from .gatype import (
     CoefficientOrthogonal,
     GAType,
     GATypeDispatch,
+    GATypeError,
     GATypeFactory,
     GATypePattern,
     CliffordConjugateProduct,

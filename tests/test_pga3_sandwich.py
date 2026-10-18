@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numga import Algebra, CoefficientOrthogonal, Extensor, NumpyContext, ReverseProductOne, Versor
+from numga import Algebra, CoefficientOrthogonal, Extensor, GATypeError, NumpyContext, ReverseProductOne, Versor
 from numga.algebras import PGA3D
 from numga.extensions.inverse import inverse_orthogonal
 
@@ -36,9 +36,9 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     # Translation acts differently on plane equations and point coordinates:
     # these are genuinely different matrices, not just differently typed copies.
     assert not np.allclose(plane_map.kernel, point_map.kernel)
-    with pytest.raises(ValueError, match="cannot bind output axis"):
+    with pytest.raises(GATypeError, match="cannot bind output axis"):
         plane_map(point_map)
-    with pytest.raises(ValueError, match="cannot bind output axis"):
+    with pytest.raises(GATypeError, match="cannot bind output axis"):
         line_map(plane_map)
 
     # Applying the motion twice composes within each space, in exactly the same
@@ -113,7 +113,7 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
     assert direction_map.axes == (directions, directions)
     assert normal_map.axes == (normals, normals)
     assert not np.allclose(direction_map.kernel, normal_map.kernel)
-    with pytest.raises(ValueError, match="cannot bind output axis"):
+    with pytest.raises(GATypeError, match="cannot bind output axis"):
         direction_map(normal)
 
     # The entire wedge operator commutes with reflection, not just this sample.

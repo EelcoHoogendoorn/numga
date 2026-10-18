@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Callable
 
+from .errors import GATypeError
 from .orientation import Orientation
 from .propagation import (
     coefficient_orthogonality_laws,
@@ -90,7 +91,7 @@ def equal(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
     first = operands[0]
     if any(gatype.orientations != first.orientations for gatype in operands[1:]):
         signatures = " and ".join(gatype.signature for gatype in operands)
-        raise ValueError(f"cannot combine {signatures}: their orientations differ")
+        raise GATypeError(f"cannot combine {signatures}: their orientations differ")
     return first.orientations
 
 

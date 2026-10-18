@@ -5,6 +5,8 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
+from numga import GATypeError
+
 from numga.algebra import Algebra
 from numga.backend import NumpyContext
 from numga.extensor import Extensor
@@ -146,7 +148,7 @@ def test_implicit_embedding_and_explicit_casts_have_clear_zero_fill_semantics():
     assert projected.gatype is x_axis
     np.testing.assert_array_equal(projected.kernel, [5])
 
-    with pytest.raises(ValueError, match="project"):
+    with pytest.raises(GATypeError, match="project"):
         factory.identity(x_axis).bind(general_vector)
 
 

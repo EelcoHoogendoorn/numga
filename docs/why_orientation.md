@@ -135,8 +135,8 @@ The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipy
 Two elements of the same grade and different orientation are different kinds of thing, and orientation keeps them apart. A rate of turning and a momentum are both lines, and adding them is meaningless. Only an extrinsic element generates a motion: exponentiating a rate of turning gives a rigid motion, while a momentum, or a force, has no exponential. numga refuses both:
 
 ```python
-spin + momentum          # ValueError: cannot add extrinsic in bivector and intrinsic bivector: their orientations differ
-momentum.exp()           # LookupError: 'exp' takes extrinsic elements; got intrinsic bivector
+spin + momentum          # GATypeError: cannot combine extrinsic in bivector and intrinsic bivector: their orientations differ
+momentum.exp()           # GATypeError: 'exp' takes extrinsic elements; got intrinsic bivector
 ```
 
 ## Further reading

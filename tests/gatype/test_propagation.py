@@ -61,7 +61,7 @@ def test_relation_factor_lattice_participates_in_refinement_and_dispatch():
         (one_relation, nonzero_relation, scalar_relation),
     ) is one
 
-    dispatch = GATypeDispatch("relation", None, 1)
+    dispatch = GATypeDispatch("relation", None, 1, takes="a value")
 
     @dispatch.register(GATypePattern.nary(2, one_relation))
     def specific(_value):

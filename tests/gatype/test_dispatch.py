@@ -4,7 +4,7 @@ import warnings
 
 import pytest
 
-from numga import Algebra
+from numga import Algebra, GATypeError
 from numga.gatype import (
     AmbiguousGATypeDispatchWarning,
     GATypeDispatch,
@@ -16,7 +16,7 @@ from numga.gatype import (
 
 
 def test_generic_trait_patterns_dispatch_across_algebras():
-    dispatch = GATypeDispatch("portable", None, operand_count=1)
+    dispatch = GATypeDispatch("portable", None, 1, takes="a value")
 
     @dispatch.register(ReverseProductOne)
     def unit(value):
@@ -26,14 +26,14 @@ def test_generic_trait_patterns_dispatch_across_algebras():
         assert dispatch.resolve(algebra.gatype.rotor()) is unit
 
     unrelated = Algebra("u+v+")
-    with pytest.raises(LookupError, match="no 'portable' implementation"):
+    with pytest.raises(GATypeError):
         dispatch.resolve(unrelated.gatype.even())
 
 
 def test_concrete_pattern_specializes_generic_pattern_for_its_algebra():
     local = Algebra("x+y+")
     foreign = Algebra("x+y+")
-    dispatch = GATypeDispatch("mixed", None, operand_count=1)
+    dispatch = GATypeDispatch("mixed", None, 1, takes="a value")
 
     @dispatch.register(local.gatype.even())
     def local_even(value):
@@ -50,7 +50,7 @@ def test_concrete_pattern_specializes_generic_pattern_for_its_algebra():
 def test_dispatch_matches_complete_positive_arity_gatypes():
     algebra = Algebra("x+y+z+")
     gatypes = algebra.gatype
-    dispatch = GATypeDispatch("factor", algebra, operand_count=1)
+    dispatch = GATypeDispatch("factor", algebra, 1, takes="a value")
     pattern = gatypes((gatypes.full(), gatypes.vector(), gatypes.full()))
 
     @dispatch.register(pattern)
@@ -62,9 +62,9 @@ def test_dispatch_matches_complete_positive_arity_gatypes():
     wrong_arity = gatypes((gatypes.vector(), gatypes.vector()))
 
     assert dispatch.resolve(actual) is implementation
-    with pytest.raises(LookupError, match="no 'factor' implementation"):
+    with pytest.raises(GATypeError):
         dispatch.resolve(wrong_axis)
-    with pytest.raises(LookupError, match="no 'factor' implementation"):
+    with pytest.raises(GATypeError):
         dispatch.resolve(wrong_arity)
 
 
@@ -72,7 +72,7 @@ def test_dispatch_uses_entailed_and_structurally_implied_facts():
     algebra = Algebra("x+y+")
     gatypes = algebra.gatype
 
-    nonzero_dispatch = GATypeDispatch("nonzero", algebra, operand_count=1)
+    nonzero_dispatch = GATypeDispatch("nonzero", algebra, 1, takes="a value")
 
     @nonzero_dispatch.register(
         gatypes(gatypes.full(), (ReverseProductNonzero,))
@@ -84,7 +84,7 @@ def test_dispatch_uses_entailed_and_structurally_implied_facts():
         gatypes(gatypes.even(), (ReverseProductOne,))
     ) is nonzero
 
-    scalar_dispatch = GATypeDispatch("scalar_product", algebra, operand_count=1)
+    scalar_dispatch = GATypeDispatch("scalar_product", algebra, 1, takes="a value")
 
     @scalar_dispatch.register(
         gatypes(gatypes.full(), (ReverseProductScalar,))
@@ -105,7 +105,7 @@ def test_registration_requires_specific_to_general_order():
     specific = gatypes.even()
     general = gatypes.full()
 
-    valid = GATypeDispatch("valid", algebra, operand_count=1)
+    valid = GATypeDispatch("valid", algebra, 1, takes="a value")
 
     @valid.register(specific)
     def specialized(value):
@@ -128,7 +128,7 @@ def test_registration_requires_specific_to_general_order():
     assert valid.resolve(specific) is specialized
     assert valid.resolve(general) is fallback
 
-    invalid = GATypeDispatch("invalid", algebra, operand_count=1)
+    invalid = GATypeDispatch("invalid", algebra, 1, takes="a value")
     invalid.register(general)(fallback)
     with pytest.raises(ValueError, match="specialization.*appears after"):
         invalid.register(specific)
@@ -142,7 +142,7 @@ def test_incomparable_overlap_warns_and_uses_declaration_order():
     even = gatypes.even()
     unit = gatypes(gatypes.full(), (ReverseProductOne,))
     actual = gatypes(gatypes.even(), (ReverseProductOne,))
-    dispatch = GATypeDispatch("ambiguous", algebra, operand_count=1)
+    dispatch = GATypeDispatch("ambiguous", algebra, 1, takes="a value")
 
     @dispatch.register(even)
     def structural(value):
@@ -159,7 +159,7 @@ def test_incomparable_overlap_warns_and_uses_declaration_order():
 
     assert dispatch.resolve(actual) is structural
 
-    acknowledged = GATypeDispatch("acknowledged", algebra, operand_count=1)
+    acknowledged = GATypeDispatch("acknowledged", algebra, 1, takes="a value")
     acknowledged.register(even)(structural)
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -170,7 +170,7 @@ def test_incomparable_overlap_warns_and_uses_declaration_order():
 def test_multiple_dispatch_uses_product_order_specificity():
     algebra = Algebra("x+y+")
     gatypes = algebra.gatype
-    dispatch = GATypeDispatch("binary", algebra, operand_count=2)
+    dispatch = GATypeDispatch("binary", algebra, 2, takes="a value")
     generic_map = gatypes((gatypes.full(), gatypes.full()))
     vector_map = gatypes((gatypes.vector(), gatypes.vector()))
     generic_value = gatypes.full()

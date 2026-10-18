@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from numga import Algebra, NumpyContext, ReverseProductNonzero
+from numga import Algebra, GATypeError, NumpyContext, ReverseProductNonzero
 
 
 def test_statically_empty_inverse_raises():
@@ -42,7 +42,7 @@ def test_non_square_and_singular_maps_fail_without_pseudoinverse():
     context = NumpyContext(algebra)
     scalar, vector = algebra.gatype.scalar(), algebra.gatype.vector()
     nonsquare = context.extensor(algebra.gatype((scalar, vector)), [[1, 2]])
-    with pytest.raises(LookupError, match="no .* implementation"):
+    with pytest.raises(GATypeError):
         nonsquare.inverse()
     singular = context.extensor(algebra.gatype((vector, vector)), [[1, 2], [2, 4]])
     with pytest.raises(np.linalg.LinAlgError):

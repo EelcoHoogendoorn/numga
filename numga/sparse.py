@@ -45,14 +45,14 @@ class SparseExtensor:
     """
 
     __slots__ = ("cells", "rows", "columns", "shape")
-    apply = ExtensionMethod("apply")
-    reverse = ExtensionMethod("reverse")
-    clifford_conjugate = ExtensionMethod("clifford_conjugate")
-    adjugate = ExtensionMethod("adjugate")
-    adjoint = ExtensionMethod("adjoint")
-    solve = ExtensionMethod("solve")
-    lstsq = ExtensionMethod("lstsq")
-    eigh = ExtensionMethod("eigh")
+    apply = ExtensionMethod("apply", takes="a sparse map")
+    reverse = ExtensionMethod("reverse", takes="a sparse extensor")
+    clifford_conjugate = ExtensionMethod("clifford_conjugate", takes="a sparse extensor")
+    adjugate = ExtensionMethod("adjugate", takes="a sparse map")
+    adjoint = ExtensionMethod("adjoint", takes="a sparse map")
+    solve = ExtensionMethod("solve", takes="a sparse map whose cells map between spaces of equal dimension")
+    lstsq = ExtensionMethod("lstsq", takes="a sparse map")
+    eigh = ExtensionMethod("eigh", takes="a sparse map whose cells map a space to itself")
 
     def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
         if cells.ndim == 0 or not cells.shape[-1] == len(rows) == len(columns):

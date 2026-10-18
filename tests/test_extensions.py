@@ -75,7 +75,7 @@ def test_one_inverse_extension_dispatches_nullary_and_unary_extensors():
 
 
 def test_explicit_pattern_supports_an_unconstrained_extensor_arity():
-    Extensor.kind = ExtensionMethod("kind")
+    Extensor.kind = ExtensionMethod("kind", takes="a value")
 
     @Extensor.kind.register(GATypePattern(arity=0))
     def any_value(_value):
@@ -99,7 +99,7 @@ def test_explicit_pattern_supports_an_unconstrained_extensor_arity():
 
 
 def test_opaque_gatype_predicates_are_a_prioritized_low_level_tier():
-    Extensor.strategy = ExtensionMethod("strategy")
+    Extensor.strategy = ExtensionMethod("strategy", takes="a value")
 
     @Extensor.strategy.register(GATypePattern(arity=0))
     def generic(_value):
@@ -132,7 +132,7 @@ def test_opaque_gatype_predicates_are_a_prioritized_low_level_tier():
 
 
 def test_opaque_predicate_position_controls_only_predicate_order():
-    Extensor.route = ExtensionMethod("route")
+    Extensor.route = ExtensionMethod("route", takes="a value")
 
     @Extensor.route.register(lambda _gatype: True)
     def first(_value):

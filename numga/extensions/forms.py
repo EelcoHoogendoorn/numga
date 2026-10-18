@@ -20,7 +20,7 @@ import numpy as np
 
 from numga.backend.context import binding_context
 from numga.extensor import Extensor
-from numga.gatype import GAType, MetricKind
+from numga.gatype import GAType, GATypeError, MetricKind
 from numga.subspace import SubSpace
 
 from numga.extensions._linalg import _eigenpairs, _scalars
@@ -69,7 +69,7 @@ def _default_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
 
 def _refusal(method: str, needs: str) -> Callable[[Extensor], Extensor]:
     def refuse(value: Extensor) -> Extensor:
-        raise TypeError(
+        raise GATypeError(
             f"{method} of a form needs {needs} metric; the metric of {value.axes[2]} is "
             f"{value.gatype.derive.axis(2).metric.kind.value}: pass an explicit metric form"
         )

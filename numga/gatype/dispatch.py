@@ -8,6 +8,7 @@ import warnings
 
 import numga
 
+from .errors import GATypeError
 from .gatype import GAType
 from .orientation import Orientation
 from .pattern import (
@@ -59,6 +60,7 @@ class GATypeDispatch:
 
     __slots__ = (
         "_name",
+        "_takes",
         "_algebra",
         "_operand_count",
         "_registrations",
@@ -74,9 +76,13 @@ class GATypeDispatch:
         name: str,
         algebra: Algebra | None,
         operand_count: int,
+        *,
+        takes: str,
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
     ) -> None:
+        """`takes` says what the operands of the operation must be, in words: what a call whose types
+        match no case is told."""
         if not isinstance(name, str) or not name:
             raise TypeError("a dispatcher name must be a non-empty string")
         if (
@@ -86,6 +92,7 @@ class GATypeDispatch:
         ):
             raise TypeError("dispatcher operand_count must be a positive integer")
         object.__setattr__(self, "_name", name)
+        object.__setattr__(self, "_takes", takes)
         object.__setattr__(self, "_algebra", algebra)
         object.__setattr__(self, "_operand_count", operand_count)
         object.__setattr__(self, "_registrations", [])
@@ -241,7 +248,7 @@ class GATypeDispatch:
 
         actual = self._validate_actual_signature(actual_gatypes)
         if self._input_orientation is not None and actual[0].orientation is not self._input_orientation:
-            raise LookupError(
+            raise GATypeError(
                 f"{self.name!r} takes {self._input_orientation.value} elements; got {actual[0].signature}"
             )
         implementation = self._oriented(self._staged(self._select(actual), actual))
@@ -262,9 +269,7 @@ class GATypeDispatch:
             if _signature_matches(actual, entry.patterns)
         )
         if not matches:
-            raise LookupError(
-                f"no {self.name!r} implementation matches GATypes {actual!r}"
-            )
+            raise GATypeError(self._refusal(actual))
 
         maximal = tuple(
             candidate
@@ -301,13 +306,16 @@ class GATypeDispatch:
 
         return oriented
 
+    def _refusal(self, actual: tuple[GAType, ...]) -> str:
+        return f"{self.name!r} takes {self._takes}; got {' and '.join(gatype.signature for gatype in actual)}"
+
     def _select_fields(self, actual: tuple[GAType, ...]) -> _PredicateRegistration:
         for entry in self._field_predicates:
             if entry.predicate(*actual):
                 return entry
         # A map with sites is one map into or out of a field, not a map per site: maps per site are a batch.
         if any(gatype.has_fields and gatype.arity for gatype in actual):
-            raise LookupError(f"no {self.name!r} implementation for the field maps {actual!r}")
+            raise GATypeError(f"{self._refusal(actual)}: a map with sites is one map into or out of a field")
         return _PredicateRegistration(_always, numga.extensor.fields.site_by_site(self, self._operand_count))
 
     def __call__(self, *arguments: Any, **kwargs: Any) -> Any:

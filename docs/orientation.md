@@ -57,11 +57,11 @@ A product with a constant pseudoscalar, `a * I`, has the coefficients of a dual 
 Combining kinds where they must match raises before any kernel runs:
 
 ```python
-spin + momentum                  # ValueError: cannot add extrinsic in bivector and intrinsic bivector: their orientations differ
-inertia(momentum)                # ValueError: cannot bind an intrinsic bivector into input slot 0, which takes an extrinsic orientation
-inertia.solve(spin)              # ValueError: cannot solve for an extrinsic right-hand side against a map whose output takes an intrinsic orientation
-momentum.exp()                   # LookupError: 'exp' takes extrinsic elements; got intrinsic bivector
-inertia.eigh()                   # LookupError: no 'eigh' implementation matches GATypes (GAType(intrinsic bivector <- extrinsic bivector),)
+spin + momentum                  # GATypeError: cannot combine extrinsic in bivector and intrinsic bivector: their orientations differ
+inertia(momentum)                # GATypeError: cannot bind an intrinsic bivector into input slot 0, which takes an extrinsic orientation
+inertia.solve(spin)              # GATypeError: cannot solve for an extrinsic right-hand side against a map whose output takes an intrinsic orientation
+momentum.exp()                   # GATypeError: 'exp' takes extrinsic elements; got intrinsic bivector
+inertia.eigh()                   # GATypeError: 'eigh' takes a map from a space to itself, or a square form, with an optional metric form on the same space; got intrinsic bivector <- extrinsic bivector
 ga.gatype(ga.subspace.vector())  # TypeError: a subspace has no orientation
 ```
 
@@ -138,11 +138,11 @@ An inertia map takes extrinsic rates of turning to intrinsic momenta. It is a co
 An extension method declares the orientations it accepts and produces:
 
 ```python
-ExtensionMethod("exp", input_orientation=Orientation.extrinsic)
-ExtensionMethod("norm", output_orientation=Orientation.extrinsic)
+ExtensionMethod("exp", takes="a value", input_orientation=Orientation.extrinsic)
+ExtensionMethod("norm", takes="a value", output_orientation=Orientation.extrinsic)
 ```
 
-An input declaration is checked before dispatch, and a mismatch raises `LookupError`. An output declaration sets the result's orientation. A method with neither keeps the orientation its implementation produces.
+An input declaration is checked before dispatch, and a mismatch raises `GATypeError`. An output declaration sets the result's orientation. A method with neither keeps the orientation its implementation produces.
 
 ## Examples
 

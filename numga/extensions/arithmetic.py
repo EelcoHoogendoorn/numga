@@ -18,25 +18,15 @@ from numga.subspace import SubSpace
 
 
 # --- sums and differences ---------------------------------------------------------------
-@Extensor.add.register(lambda left, right: left.arity != right.arity)
-def add_unequal_arity(left: Extensor, right: Extensor) -> Extensor:
-    raise TypeError("a sum needs operands of equal arity; a number or array adds only to a nullary Extensor")
-
-
 @Extensor.add.register(lambda left, right: True, fields=True)
 def add_with_fields(left: Extensor, right: Extensor) -> Extensor:
     return add_fields(left, right)
 
 
-@Extensor.add.register(lambda left, right: True, staged=True)
+@Extensor.add.register(lambda left, right: left.arity == right.arity, staged=True)
 def add_blades(left: GAType, right: GAType) -> Callable[[Extensor, Extensor], Extensor]:
     """The sum of the operands, each zero-embedded into the union of their axes."""
     return _elementwise(left, right, lambda left_kernel, right_kernel: left_kernel + right_kernel)
-
-
-@Extensor.subtract.register(lambda left, right: left.arity != right.arity)
-def subtract_unequal_arity(left: Extensor, right: Extensor) -> Extensor:
-    raise TypeError("a difference needs operands of equal arity; a number or array subtracts only from a nullary Extensor")
 
 
 @Extensor.subtract.register(lambda left, right: True, fields=True)
@@ -44,7 +34,7 @@ def subtract_with_fields(left: Extensor, right: Extensor) -> Extensor:
     return add_fields(left, -right)
 
 
-@Extensor.subtract.register(lambda left, right: True, staged=True)
+@Extensor.subtract.register(lambda left, right: left.arity == right.arity, staged=True)
 def subtract_blades(left: GAType, right: GAType) -> Callable[[Extensor, Extensor], Extensor]:
     """The difference of the operands, each zero-embedded into the union of their axes."""
     return _elementwise(left, right, lambda left_kernel, right_kernel: left_kernel - right_kernel)
@@ -106,23 +96,13 @@ def divide_values(left: Extensor, right: Extensor) -> Extensor:
     return left * right.inverse()
 
 
-@Extensor.divide.register(lambda left, right: True)
-def divide_maps(left: Extensor, right: Extensor) -> Extensor:
-    raise TypeError("geometric-product division requires nullary Extensors, or a scalar divisor")
-
-
 @Extensor.divide.register(lambda left, right: True, fields=True)
 def divide_with_fields(left: Extensor, right: Extensor) -> Extensor:
     return left * right.inverse()
 
 
 # --- integer powers --------------------------------------------------------------------
-@Extensor.power.register(lambda value: value.arity > 0)
-def power_of_map(value: Extensor, exponent: int) -> Extensor:
-    raise TypeError("integer powers are defined for values, not for maps")
-
-
-@Extensor.power.register(lambda value: True)
+@Extensor.power.register(lambda value: value.arity == 0)
 def power_of_value(value: Extensor, exponent: int) -> Extensor:
     """Repeated geometric products, by squaring; a negative power is a power of the inverse, and the
     zeroth power is the scalar one."""

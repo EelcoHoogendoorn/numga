@@ -11,7 +11,7 @@ import numga
 from numga.backend.context import binding_context
 from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, nullary_identity_groups
 from numga.extension import ExtensionMethod
-from numga.gatype import GAType, Orientation, Trait, rules
+from numga.gatype import GAType, GATypeError, Orientation, Trait, rules
 from numga.subspace import SubSpace
 
 from . import operands
@@ -35,87 +35,87 @@ class Extensor:
     # Arrays are coefficient storage, not operands implicitly converted into
     # object arrays of Extensors by NumPy's reflected arithmetic.
     __array_ufunc__ = None
-    inverse = ExtensionMethod("inverse")
-    norm_squared = ExtensionMethod("norm_squared", output_orientation=Orientation.extrinsic)
-    norm = ExtensionMethod("norm", output_orientation=Orientation.extrinsic)
-    normalized = ExtensionMethod("normalized")
-    square_root = ExtensionMethod("square_root", input_orientation=Orientation.extrinsic)
-    inverse_square_root = ExtensionMethod("inverse_square_root", input_orientation=Orientation.extrinsic)
-    study_norm_squared = ExtensionMethod("study_norm_squared", output_orientation=Orientation.extrinsic)
-    study_norm = ExtensionMethod("study_norm", output_orientation=Orientation.extrinsic)
-    exp = ExtensionMethod("exp", input_orientation=Orientation.extrinsic)
-    log = ExtensionMethod("log", input_orientation=Orientation.extrinsic)
-    exp_linear = ExtensionMethod("exp_linear", input_orientation=Orientation.extrinsic)
-    exp_linear_normalized = ExtensionMethod("exp_linear_normalized", input_orientation=Orientation.extrinsic)
-    exp_quadratic = ExtensionMethod("exp_quadratic", input_orientation=Orientation.extrinsic)
-    exp_cayley = ExtensionMethod("exp_cayley", input_orientation=Orientation.extrinsic)
-    exp_bisect = ExtensionMethod("exp_bisect", input_orientation=Orientation.extrinsic)
-    exp_derivative = ExtensionMethod("exp_derivative")
-    log_linear = ExtensionMethod("log_linear", input_orientation=Orientation.extrinsic)
-    log_linear_normalized = ExtensionMethod("log_linear_normalized", input_orientation=Orientation.extrinsic)
-    log_quadratic = ExtensionMethod("log_quadratic", input_orientation=Orientation.extrinsic)
-    log_pade = ExtensionMethod("log_pade", input_orientation=Orientation.extrinsic)
-    square_root_denman_beavers = ExtensionMethod("square_root_denman_beavers", input_orientation=Orientation.extrinsic)
-    geometric_mean = ExtensionMethod("geometric_mean")
-    decompose_polar = ExtensionMethod("decompose_polar")
-    decompose_invariant = ExtensionMethod("decompose_invariant")
-    motor_translator = ExtensionMethod("motor_translator")
-    motor_rotor = ExtensionMethod("motor_rotor")
-    motor_split = ExtensionMethod("motor_split")
-    inverse_shirokov = ExtensionMethod("inverse_shirokov")
-    inverse_factor = ExtensionMethod("inverse_factor")
-    inverse_hitzer = ExtensionMethod("inverse_hitzer")
-    trace = ExtensionMethod("trace", operand_counts=(1, 3))
-    contract = ExtensionMethod("contract", operand_counts=(1, 3))
-    outermorphism = ExtensionMethod("outermorphism")
-    det = ExtensionMethod("det", operand_counts=(1, 2))
-    real = ExtensionMethod("real")
-    solve = ExtensionMethod("solve")
-    lstsq = ExtensionMethod("lstsq", operand_counts=(2, 3))
-    pinv = ExtensionMethod("pinv")
-    adjugate = ExtensionMethod("adjugate")
-    adjoint = ExtensionMethod("adjoint")
-    cholesky = ExtensionMethod("cholesky")
-    eig = ExtensionMethod("eig", operand_counts=(1, 2))
-    eigvals = ExtensionMethod("eigvals", operand_counts=(1, 2))
-    eigh = ExtensionMethod("eigh", operand_counts=(1, 2))
-    eigvalsh = ExtensionMethod("eigvalsh", operand_counts=(1, 2))
-    svd = ExtensionMethod("svd")
-    svdvals = ExtensionMethod("svdvals")
-    sin = ExtensionMethod("sin")
-    cos = ExtensionMethod("cos", output_orientation=Orientation.extrinsic)
-    tan = ExtensionMethod("tan")
-    arcsin = ExtensionMethod("arcsin")
-    arccos = ExtensionMethod("arccos", input_orientation=Orientation.extrinsic)
-    arctan = ExtensionMethod("arctan")
-    sinh = ExtensionMethod("sinh")
-    cosh = ExtensionMethod("cosh", output_orientation=Orientation.extrinsic)
-    tanh = ExtensionMethod("tanh")
-    arcsinh = ExtensionMethod("arcsinh")
-    arccosh = ExtensionMethod("arccosh", input_orientation=Orientation.extrinsic)
-    arctanh = ExtensionMethod("arctanh")
-    clip = ExtensionMethod("clip")
-    isnan = ExtensionMethod("isnan")
-    isfinite = ExtensionMethod("isfinite")
-    isinf = ExtensionMethod("isinf")
-    argsort = ExtensionMethod("argsort")
-    argmax = ExtensionMethod("argmax")
-    argmin = ExtensionMethod("argmin")
-    abs = ExtensionMethod("abs")
-    less = ExtensionMethod("less")
-    less_equal = ExtensionMethod("less_equal")
-    greater = ExtensionMethod("greater")
-    greater_equal = ExtensionMethod("greater_equal")
-    to_array = ExtensionMethod("to_array")
-    add = ExtensionMethod("add")
-    subtract = ExtensionMethod("subtract")
-    divide = ExtensionMethod("divide")
-    power = ExtensionMethod("power")
-    reverse = ExtensionMethod("reverse")
-    clifford_conjugate = ExtensionMethod("clifford_conjugate")
-    involute = ExtensionMethod("involute")
-    scalar_negation = ExtensionMethod("scalar_negation")
-    pseudoscalar_negation = ExtensionMethod("pseudoscalar_negation")
+    inverse = ExtensionMethod("inverse", takes="a value, or a map between spaces of equal dimension")
+    norm_squared = ExtensionMethod("norm_squared", takes="a value", output_orientation=Orientation.extrinsic)
+    norm = ExtensionMethod("norm", takes="a value", output_orientation=Orientation.extrinsic)
+    normalized = ExtensionMethod("normalized", takes="a value")
+    square_root = ExtensionMethod("square_root", takes="a value", input_orientation=Orientation.extrinsic)
+    inverse_square_root = ExtensionMethod("inverse_square_root", takes="a value", input_orientation=Orientation.extrinsic)
+    study_norm_squared = ExtensionMethod("study_norm_squared", takes="a Study number: a scalar plus a part whose square is scalar", output_orientation=Orientation.extrinsic)
+    study_norm = ExtensionMethod("study_norm", takes="a Study number: a scalar plus a part whose square is scalar", output_orientation=Orientation.extrinsic)
+    exp = ExtensionMethod("exp", takes="a value", input_orientation=Orientation.extrinsic)
+    log = ExtensionMethod("log", takes="a value", input_orientation=Orientation.extrinsic)
+    exp_linear = ExtensionMethod("exp_linear", takes="a bivector", input_orientation=Orientation.extrinsic)
+    exp_linear_normalized = ExtensionMethod("exp_linear_normalized", takes="a bivector", input_orientation=Orientation.extrinsic)
+    exp_quadratic = ExtensionMethod("exp_quadratic", takes="a bivector", input_orientation=Orientation.extrinsic)
+    exp_cayley = ExtensionMethod("exp_cayley", takes="a bivector", input_orientation=Orientation.extrinsic)
+    exp_bisect = ExtensionMethod("exp_bisect", takes="a bivector", input_orientation=Orientation.extrinsic)
+    exp_derivative = ExtensionMethod("exp_derivative", takes="a bivector")
+    log_linear = ExtensionMethod("log_linear", takes="an even value", input_orientation=Orientation.extrinsic)
+    log_linear_normalized = ExtensionMethod("log_linear_normalized", takes="a rotor", input_orientation=Orientation.extrinsic)
+    log_quadratic = ExtensionMethod("log_quadratic", takes="a rotor", input_orientation=Orientation.extrinsic)
+    log_pade = ExtensionMethod("log_pade", takes="a rotor", input_orientation=Orientation.extrinsic)
+    square_root_denman_beavers = ExtensionMethod("square_root_denman_beavers", takes="a rotor", input_orientation=Orientation.extrinsic)
+    geometric_mean = ExtensionMethod("geometric_mean", takes="two rotors")
+    decompose_polar = ExtensionMethod("decompose_polar", takes="a bivector whose product with its reverse is a Study number")
+    decompose_invariant = ExtensionMethod("decompose_invariant", takes="a bivector whose square is a scalar or a Study number")
+    motor_translator = ExtensionMethod("motor_translator", takes="a rotor")
+    motor_rotor = ExtensionMethod("motor_rotor", takes="a rotor")
+    motor_split = ExtensionMethod("motor_split", takes="a rotor, and the antivector to split it about")
+    inverse_shirokov = ExtensionMethod("inverse_shirokov", takes="a value")
+    inverse_factor = ExtensionMethod("inverse_factor", takes="a value")
+    inverse_hitzer = ExtensionMethod("inverse_hitzer", takes="a value whose product with its reverse, times its Clifford conjugate, is a scalar")
+    trace = ExtensionMethod("trace", takes="an extensor with two slots that carry an index, or the two slots to pair", operand_counts=(1, 3))
+    contract = ExtensionMethod("contract", takes="an extensor with two inputs of one space, or the two slots to pair", operand_counts=(1, 3))
+    outermorphism = ExtensionMethod("outermorphism", takes="a map from vectors to vectors, or from antivectors to antivectors")
+    det = ExtensionMethod("det", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    real = ExtensionMethod("real", takes="an extensor")
+    solve = ExtensionMethod("solve", takes="a map between spaces of equal dimension, or a form, with a right-hand side its output takes")
+    lstsq = ExtensionMethod("lstsq", takes="a map or a form, with a right-hand side its output takes and an optional metric form", operand_counts=(2, 3))
+    pinv = ExtensionMethod("pinv", takes="a map")
+    adjugate = ExtensionMethod("adjugate", takes="a map")
+    adjoint = ExtensionMethod("adjoint", takes="a map")
+    cholesky = ExtensionMethod("cholesky", takes="a map from a space to itself, or a square form")
+    eig = ExtensionMethod("eig", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    eigvals = ExtensionMethod("eigvals", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    eigh = ExtensionMethod("eigh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    eigvalsh = ExtensionMethod("eigvalsh", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
+    svd = ExtensionMethod("svd", takes="a map")
+    svdvals = ExtensionMethod("svdvals", takes="a map")
+    sin = ExtensionMethod("sin", takes="a scalar")
+    cos = ExtensionMethod("cos", takes="a scalar", output_orientation=Orientation.extrinsic)
+    tan = ExtensionMethod("tan", takes="a scalar")
+    arcsin = ExtensionMethod("arcsin", takes="a scalar")
+    arccos = ExtensionMethod("arccos", takes="a scalar", input_orientation=Orientation.extrinsic)
+    arctan = ExtensionMethod("arctan", takes="a scalar")
+    sinh = ExtensionMethod("sinh", takes="a scalar")
+    cosh = ExtensionMethod("cosh", takes="a scalar", output_orientation=Orientation.extrinsic)
+    tanh = ExtensionMethod("tanh", takes="a scalar")
+    arcsinh = ExtensionMethod("arcsinh", takes="a scalar")
+    arccosh = ExtensionMethod("arccosh", takes="a scalar", input_orientation=Orientation.extrinsic)
+    arctanh = ExtensionMethod("arctanh", takes="a scalar")
+    clip = ExtensionMethod("clip", takes="a scalar")
+    isnan = ExtensionMethod("isnan", takes="a scalar")
+    isfinite = ExtensionMethod("isfinite", takes="a scalar")
+    isinf = ExtensionMethod("isinf", takes="a scalar")
+    argsort = ExtensionMethod("argsort", takes="a scalar")
+    argmax = ExtensionMethod("argmax", takes="a scalar")
+    argmin = ExtensionMethod("argmin", takes="a scalar")
+    abs = ExtensionMethod("abs", takes="a scalar")
+    less = ExtensionMethod("less", takes="two scalars")
+    less_equal = ExtensionMethod("less_equal", takes="two scalars")
+    greater = ExtensionMethod("greater", takes="two scalars")
+    greater_equal = ExtensionMethod("greater_equal", takes="two scalars")
+    to_array = ExtensionMethod("to_array", takes="a scalar")
+    add = ExtensionMethod("add", takes="two extensors of equal arity, or a value and a number or array")
+    subtract = ExtensionMethod("subtract", takes="two extensors of equal arity, or a value and a number or array")
+    divide = ExtensionMethod("divide", takes="two values, or any extensor and a scalar divisor")
+    power = ExtensionMethod("power", takes="a value")
+    reverse = ExtensionMethod("reverse", takes="an extensor")
+    clifford_conjugate = ExtensionMethod("clifford_conjugate", takes="an extensor")
+    involute = ExtensionMethod("involute", takes="an extensor")
+    scalar_negation = ExtensionMethod("scalar_negation", takes="an extensor")
+    pseudoscalar_negation = ExtensionMethod("pseudoscalar_negation", takes="an extensor")
 
     def __init__(self, context: Context, gatype: GAType, kernel: Any) -> None:
         kernel = context.prepare_kernel(kernel)
@@ -293,7 +293,7 @@ class Extensor:
         The type must be closed under the product, so that every running product has it."""
         square = self.algebra.operator.geometric_product(self.gatype, self.gatype)
         if self.arity or not square.output_subspace.support_is_subset_of(self.output_subspace):
-            raise TypeError(f"cumprod needs a type closed under the geometric product; {self.gatype} is not")
+            raise GATypeError(f"cumprod needs a type closed under the geometric product; {self.gatype} is not")
         leading = (slice(None),) * _existing_axis(axis, self.ndim)
         running = [self[leading + (0,)]]
         for position in range(1, self.shape[len(leading)]):
@@ -353,7 +353,7 @@ class Extensor:
         if self.context.is_exact or self.ndim < len(slots):
             raise TypeError("a field takes its sites from the last batch axes of a backend value")
         if list(slots) != sorted(set(slots)) or any(field <= slots[-1] for field, _ in self.gatype.fields):
-            raise TypeError(f"slots {slots} of {self.gatype.signature} are not in order before its field slots")
+            raise GATypeError(f"slots {slots} of {self.gatype.signature} are not in order before its field slots")
         # Their site axes come first among the site axes, where the last batch axes already sit.
         fields = tuple(zip(slots, self.shape[self.ndim - len(slots):])) + self.gatype.fields
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.with_fields(fields), self._kernel)
@@ -362,7 +362,7 @@ class Extensor:
         """A field of maps placed on the site diagonal: from `X[n] <- Y` the field map `X[n] <- Y[n]`
         that acts on the element at each site by the map at that site, and on no other."""
         if self.arity < 1 or [slot for slot, _ in self.gatype.fields] != [0]:
-            raise TypeError(f"on_diagonal places a field of maps, X[n] <- Y, on its sites; {self.gatype.signature} is not one")
+            raise GATypeError(f"on_diagonal places a field of maps, X[n] <- Y, on its sites; {self.gatype.signature} is not one")
         xp, sites = self.context.xp, self.gatype.site_shape[0]
         identity = xp.reshape(xp.eye(sites, dtype=self._kernel.dtype), (sites, sites) + (1,) * len(self.axes))
         kernel = xp.expand_dims(self._kernel, self.ndim + 1) * identity
@@ -463,7 +463,7 @@ class Extensor:
 
         target_subspace = target.output_subspace if isinstance(target, GAType) else target
         if isinstance(target, GAType) and target.orientation is not self.gatype.orientation:
-            raise ValueError(
+            raise GATypeError(
                 f"a cast changes layout, not orientation: {self.gatype.signature} cannot become {target.signature}"
             )
         if self.output_subspace is target_subspace:
@@ -703,7 +703,7 @@ class Extensor:
         if not self.context.is_compatible_with(other.context):
             raise ValueError("Extensor contexts are incompatible")
         if self.gatype != other.gatype:
-            raise ValueError("Extensor GATypes differ")
+            raise GATypeError("Extensor GATypes differ")
 
     def __repr__(self) -> str:
         return f"Extensor({self.gatype.signature}, shape={self.shape})"
@@ -778,9 +778,9 @@ def _stacked_type(values: tuple[Extensor, ...]) -> GAType:
     if all(gatype == first for gatype in gatypes[1:]):
         return first
     if any(gatype.input_subspaces != first.input_subspaces for gatype in gatypes):
-        raise ValueError("a collection requires equal input axes")
+        raise GATypeError("a collection requires equal input axes")
     if any(gatype.fields != first.fields for gatype in gatypes):
-        raise ValueError("a collection requires equal fields")
+        raise GATypeError("a collection requires equal fields")
     output = reduce(SubSpace.union, (gatype.output_subspace for gatype in gatypes))
     return rules.STACK.result(gatypes, (output,) + first.input_subspaces).derive.with_fields(first.fields)
 

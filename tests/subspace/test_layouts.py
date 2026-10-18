@@ -36,7 +36,7 @@ def test_layout_identity_is_not_mathematical_inclusion():
     assert cyclic_type <= lexical_type <= cyclic_type
     assert not cyclic_type < lexical_type
 
-    dispatch = GATypeDispatch("layout", None, 1)
+    dispatch = GATypeDispatch("layout", None, 1, takes="a value")
 
     @dispatch.register(lambda g: g.subspaces == (cyclic,))
     def specialized(value):

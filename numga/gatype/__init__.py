@@ -1,10 +1,11 @@
 """Whole-extensor GAType and trait metadata."""
 
 from .dispatch import AmbiguousGATypeDispatchWarning, GATypeDispatch
+from .errors import GATypeError, UnorientedSubspace
 from .factory import GATypeFactory
 from .gatype import GAType
 from .metric import MetricKind
-from .orientation import Orientation, UnorientedSubspace
+from .orientation import Orientation
 from .pattern import GATypePattern
 from . import rules
 from .traits import (

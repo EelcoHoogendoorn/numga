@@ -28,26 +28,31 @@ class ExtensionMethod:
     class creation does not invoke the descriptor ``__set_name__`` hook.
     """
 
-    __slots__ = ("_name", "_operand_count", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
+    __slots__ = ("_name", "_takes", "_operand_count", "_dispatch", "_overloads", "_input_orientation", "_output_orientation")
 
     def __init__(
         self,
         name: str,
         *,
+        takes: str,
         operand_counts: tuple[int, ...] = (),
         input_orientation: Orientation | None = None,
         output_orientation: Orientation | None = None,
     ) -> None:
-        """A method may declare the one orientation its operand must have, and the orientation of its
+        """`takes` says in words what the method's operands must be. It is what a call is told when
+        no case matches its types, and so documents the method's domain where a call falls outside it.
+
+        A method may declare the one orientation its operand must have, and the orientation of its
         result whatever the operand's: facts about the mathematical function, which hold for every
         implementation registered for it. Without a declaration the operand may have either
         orientation, and the result has the orientation its computation gives it."""
         if not isinstance(name, str) or not name or name.startswith("_"):
             raise TypeError("an extension method name must be a public name")
         self._name = name
+        self._takes = takes
         self._operand_count: int | None = None
         self._dispatch: GATypeDispatch | None = None
-        self._overloads = {count: ExtensionMethod(name) for count in operand_counts}
+        self._overloads = {count: ExtensionMethod(name, takes=takes) for count in operand_counts}
         self._input_orientation = input_orientation
         self._output_orientation = output_orientation
 
@@ -129,7 +134,7 @@ class ExtensionMethod:
             created = self._dispatch is None
             dispatch = (
                 GATypeDispatch(
-                    self.name, None, operand_count,
+                    self.name, None, operand_count, takes=self._takes,
                     input_orientation=self._input_orientation, output_orientation=self._output_orientation,
                 )
                 if created

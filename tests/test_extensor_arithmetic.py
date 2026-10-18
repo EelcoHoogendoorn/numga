@@ -4,7 +4,7 @@
 import numpy as np
 import pytest
 
-from numga import Orientation
+from numga import GATypeError, Orientation
 from numga import Algebra, NumpyContext
 
 
@@ -140,7 +140,7 @@ def test_scalar_affine_and_geometric_inverse_operations_reject_open_extensors():
         lambda: scalar / product,
         lambda: 1 / product,
     ):
-        with pytest.raises(TypeError, match="nullary"):
+        with pytest.raises(GATypeError):
             operation()
 
     # Scalar extensor division on open extensors behaves consistently with numeric division:

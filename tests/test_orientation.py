@@ -9,7 +9,7 @@ tests state the type rules."""
 import numpy as np
 import pytest
 
-from numga import Orientation
+from numga import GATypeError, Orientation
 from numga import NumpyContext
 from numga.algebras import PGA3D
 
@@ -159,25 +159,25 @@ def test_an_inertia_map_takes_rates_to_forques():
 def test_a_rate_and_a_forque_do_not_add():
     _, _, inertia = body(9)
     rate = mv.bivector(np.ones(6))
-    with pytest.raises(ValueError, match="orientation"):
+    with pytest.raises(GATypeError, match="orientation"):
         rate + inertia(rate)
 
 
 def test_a_forque_does_not_bind_where_a_rate_is_expected():
     _, _, inertia = body(10)
     rate = mv.bivector(np.ones(6))
-    with pytest.raises(ValueError, match="orientation"):
+    with pytest.raises(GATypeError, match="orientation"):
         inertia(inertia(rate))
 
 
 def test_only_rates_exponentiate():
     _, _, inertia = body(11)
     forque = inertia(mv.bivector(np.ones(6) * 0.1))
-    with pytest.raises(LookupError):
+    with pytest.raises(GATypeError):
         forque.exp()
 
 
 def test_an_inertia_map_has_no_eigenvectors_of_its_own():
     _, _, inertia = body(12)
-    with pytest.raises(LookupError):
+    with pytest.raises(GATypeError):
         inertia.eigh()

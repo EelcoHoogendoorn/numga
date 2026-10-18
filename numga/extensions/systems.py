@@ -15,7 +15,7 @@ import numpy as np
 from numga.backend.context import binding_context
 from numga.binding import AxisTransform, AxisTransformKind
 from numga.extensor import Extensor
-from numga.gatype import GAType, GATypePattern
+from numga.gatype import GAType, GATypeError, GATypePattern
 
 from numga.extensions._linalg import _linear_system, _result, _scalars
 
@@ -30,7 +30,7 @@ def inverse_linear(value: Extensor) -> Extensor:
 
 
 def _orientation_mismatch(value: Extensor, rhs: Extensor, *_: object, **__: object) -> Extensor:
-    raise ValueError(
+    raise GATypeError(
         f"cannot solve for an {rhs.gatype.orientation.value} right-hand side against a map whose "
         f"output takes an {value.gatype.orientation.value} orientation"
     )

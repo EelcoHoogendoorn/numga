@@ -7,7 +7,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Mapping, Protocol
 
-from numga.gatype import GAType, Orientation
+from numga.gatype import GAType, GATypeError, Orientation
 from numga.gatype.propagation import bind_subspaces, bind_traits
 from numga.subspace import SubSpace
 
@@ -229,13 +229,13 @@ def _binding_plan_from_types(
         actual = operand.output_subspace
         transform = AxisTransform.plan(actual, required)
         if not transform.is_implicit_bind_compatible:
-            raise ValueError(
+            raise GATypeError(
                 "cannot bind output axis "
                 f"{actual!r} into input slot {slot} requiring {required!r}: "
                 f"conversion is {transform.kind.value!r}"
             )
         if operand.orientation is not target_gatype.input_orientations[slot]:
-            raise ValueError(
+            raise GATypeError(
                 f"cannot bind an {operand.orientation.value} {actual.type_name} into input slot {slot}, "
                 f"which takes an {target_gatype.input_orientations[slot].value} orientation"
             )

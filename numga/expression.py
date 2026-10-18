@@ -36,7 +36,7 @@ class Product:
     def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
         self.name = name
         self.build = build
-        self.values = ExtensionMethod(name)
+        self.values = ExtensionMethod(name, takes="two values")
         self.values.register(lambda left, right: True, staged=True)(self._operator)
         self.values.register(lambda left, right: True, fields=True, staged=True)(self._operator)
         self.__doc__ = doc
@@ -71,7 +71,7 @@ class VersorAction:
     def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
         self.name = name
         self.build = build
-        self.values = ExtensionMethod(name)
+        self.values = ExtensionMethod(name, takes="two values")
         self.values.register(lambda versor, passenger: True, staged=True)(self._action)
         self.values.register(lambda versor, passenger: True, fields=True, staged=True)(self._action)
         self.__doc__ = doc

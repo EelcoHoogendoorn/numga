@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, GATypeError, NumpyContext
 from numga.gatype import Versor
 
 
@@ -101,17 +101,17 @@ def test_nonlinear_scalar_methods_do_not_match_vectors_or_open_forms(context):
     vector = context.algebra.gatype.vector()
     form = vector | (mv.scalar([1]) >> vector)
     for value in (mv.x, context.lower(form)):
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.cos()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.abs()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.isnan()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.argsort()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.argmax()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value.argmin()
-        with pytest.raises(LookupError):
+        with pytest.raises(GATypeError):
             value < 0
