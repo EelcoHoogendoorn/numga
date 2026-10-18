@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext, stack
+from numga import NumpyContext, Orientation, stack
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
@@ -25,6 +25,8 @@ Antibivector = ga.gatype.antibivector()
 Trivector = ga.gatype.trivector()
 Constitutive = ga.gatype((Antibivector, Bivector))             # Antibivector <- Bivector
 WaveMap = ga.gatype((Vector, Vector))                         # Vector <- Vector
+# A coupling of the excitation to the field itself, with a sense of its own: measured against a handedness.
+Axion = ga.gatype(ga.subspace.scalar(), orientation=Orientation.intrinsic)
 axes = stack([mv.x, mv.y, mv.z])
 ROOT_SIGNS = np.array([-1.0, 1.0])
 
@@ -43,6 +45,15 @@ def dielectric(permittivity: np.ndarray, reluctivity: np.ndarray) -> Constitutiv
     # around: half the sum with the identity keeps the magnetic planes alone.
     magnetic = (Bivector + (mv.t >> Bivector)) / 2                            # [] Bivector <- Bivector
     return (electric + reluctivity * magnetic).dual()                         # [...] Antibivector <- Bivector
+
+
+def axion(coupling: Axion) -> Constitutive:
+    """The axion part of a material: an excitation proportional to the field itself. Field and
+    excitation share their blades in spacetime and differ in orientation, so the coupling is an
+    intrinsic scalar, and the mirror image of the material has the opposite coupling. In Maxwell's other
+    equation it meets the field's own wavevector, `k ^ (coupling * (k ^ A))`, which vanishes: light
+    does not see it."""
+    return coupling * Bivector                                                    # [...] Antibivector <- Bivector
 
 
 def potential_map(medium: Constitutive, wavevector: Vector) -> WaveMap:

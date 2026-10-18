@@ -14,6 +14,7 @@ PERMITTIVITY = np.array([[1.0, 1.0, 1.0],
                          [2.25, 2.25, 3.24],
                          [1.44, 2.25, 3.24]])
 RELUCTIVITY = np.array([1.0, 1.0, 1.0])
+AXION_COUPLING = 0.3                                                              # illustrative
 FREQUENCY = 1.0
 LATITUDES = 33
 LONGITUDES = 2 * (LATITUDES - 1) + 1
@@ -39,6 +40,12 @@ def comparison() -> tuple[core.Vector, core.Vector]:
     wave = core.potential_map(media[:, None, None, None], wavevectors)
     np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
     np.testing.assert_allclose(wave(wavevectors).kernel, 0, atol=1e-11)
+    # The axion part adds nothing to any potential map, and leaves every sheet where it is; where two
+    # sheets coincide, the square root of the vanishing discriminant loses half the digits.
+    axion = core.axion(core.mv(core.Axion, [AXION_COUPLING]))                      # [] Antibivector <- Bivector
+    np.testing.assert_allclose(core.potential_map(axion, wavevectors).kernel, 0, atol=1e-12)
+    coupled_sheets = core.radial_sheets((media + axion)[:, None, None], directions, FREQUENCY)
+    np.testing.assert_allclose((coupled_sheets - sheets).kernel, 0, atol=1e-6)
     return sheets, sections
 
 

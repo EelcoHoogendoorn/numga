@@ -3,10 +3,10 @@ three-dimensional space.
 
 An electron on a graphene flake hops between neighbouring carbon atoms. Its state on each atom is a
 spinor, an even multivector, and the Hamiltonian is a sparse extensor coupling the atoms through
-multivectors: minus one for each hop to a neighbour; the spin-orbit strength times `mv.xy`, signed by
-the sense the path turns through the atom between, for each hop to a second neighbour; and the mass,
-signed by sublattice, on each atom. Every coupling multiplies from the left by a scalar or by `mv.xy`,
-so the spin along z is kept: the spin-up spinors, `Up`, the even multivectors of the xy plane, and the
+multivectors: minus one for each hop to a neighbour; the spin-orbit strength times the plane the hop's
+path turns in, the unit bivector its two bonds span through the atom between, for each hop to a second
+neighbour; and the mass, signed by sublattice, on each atom. Every coupling multiplies from the left by
+a scalar or by a bivector of the xy plane, so the spin along z is kept: the spin-up spinors, `Up`, the even multivectors of the xy plane, and the
 spin-down ones, `Down`, the planes through z, each make up a sector of their own.
 
 The mass alone opens a plain gap. Where the spin-orbit coupling outweighs the mass, `mass < 3 * 3**0.5
@@ -40,6 +40,7 @@ Even = ga.gatype.even()
 # The spinors with spin up along z, and those with spin down.
 Up = Even.derive.within("x y")
 Down = Even.derive.containing("z")
+Bivector = ga.gatype.bivector()
 
 
 # --- math -----------------------------------------------------------------------------
@@ -48,8 +49,8 @@ def hamiltonian(flake: Flake, spin_orbit: float, mass: float) -> SparseExtensor:
     atoms = flake.sublattice.shape[0]
     # Minus one for each hop between neighbours.
     hop = SparseExtensor(mv.scalar(-np.ones((len(flake.first), 1))), *flake.first.T, (atoms, atoms))   # [atoms, atoms] Scalar
-    # For each hop to a second neighbour, the xy plane, signed by the sense the path turns.
-    turn = SparseExtensor(mv.xy * flake.senses, *flake.second.T, (atoms, atoms))   # [atoms, atoms] Bivector
+    # For each hop to a second neighbour, the plane its path turns in.
+    turn = SparseExtensor(flake.turns, *flake.second.T, (atoms, atoms))       # [atoms, atoms] Bivector
     # Plus one on the atoms of one sublattice, minus one on the other.
     stagger = SparseExtensor.from_diagonal(mv.scalar(flake.sublattice[:, None]).field())   # [atoms, atoms] Scalar
     return hop + turn * spin_orbit + stagger * mass                            # [atoms, atoms] Up
@@ -83,16 +84,16 @@ def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.n
 class Flake:
     """A hexagonal graphene flake with armchair edges: the atoms' positions `Vector[atoms]` and
     sublattices, plus and minus one; the pairs of neighbours `[pairs, 2]` and of second neighbours,
-    each with the sense its path turns, both ways round; the atoms on the rim; and the atom in the
-    middle of the edge facing x."""
+    both ways round, each with the plane its path from the second atom to the first turns in,
+    `Bivector[pairs]`; the atoms on the rim; and the atom in the middle of the edge facing x."""
 
     def __init__(self, positions: Vector, sublattice: np.ndarray, first: np.ndarray, second: np.ndarray,
-                 senses: np.ndarray, rim: Scalar, start: int) -> None:
+                 turns: Bivector, rim: Scalar, start: int) -> None:
         self.positions = positions
         self.sublattice = sublattice
         self.first = first
         self.second = second
-        self.senses = senses
+        self.turns = turns
         self.rim = rim
         self.start = start
 
@@ -118,23 +119,35 @@ def flake(size: int, rim: float) -> Flake:
     offsets = np.array([[0, 0], [-1, 0], [0, -1]])
     neighbours = lookup(i[:, None] + sign[:, None] * offsets[:, 0], j[:, None] + sign[:, None] * offsets[:, 1], 1 - s[:, None])
     first = _pairs(neighbours)
-    # A second neighbour is one cell away on the same sublattice; the path through the atom between
-    # turns one way for three of the six and the other way for the rest, opposite on the two
-    # sublattices.
+    # A second neighbour is one cell away on the same sublattice, through the one site of the other
+    # sublattice that neighbours both; at the flake's edge that site may hold no atom.
     steps = np.array([[1, 0], [-1, 1], [0, -1], [-1, 0], [1, -1], [0, 1]])
-    turns = np.array([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0])
     seconds = lookup(i[:, None] + steps[:, 0], j[:, None] + steps[:, 1], s[:, None])
     second = _pairs(seconds)
-    senses = (sign[:, None] * turns)[seconds >= 0]
+    cells = np.stack([i, j], axis=-1)                                          # [atoms, 2]
+    ends = cells[:, None, :] + steps                                           # [atoms, steps, 2]
+    own = cells[:, None, :] + sign[:, None, None] * offsets                    # [atoms, 3, 2]
+    theirs = ends[:, :, None, :] + sign[:, None, None, None] * offsets         # [atoms, steps, 3, 2]
+    shared = (own[:, None, :, None, :] == theirs[:, :, None, :, :]).all(axis=-1).any(axis=-1)   # [atoms, steps, 3]
+    middles = own[np.arange(len(i))[:, None], shared.argmax(axis=-1)]         # [atoms, steps, 2]
 
     a = mv.x
     b = ((mv.x ^ mv.y) * (-np.pi / 6)).exp() >> a                             # [] Vector, 60 degrees from a
     positions = (a * u + b * v).field()                                        # Vector[atoms]
+    # Lattice coordinates of each pair's two atoms and the site between, a third of the way along the
+    # cell's long diagonal on the second sublattice, `[pairs, 2]`.
+    present = seconds >= 0
+    near = np.broadcast_to(np.stack([u, v], axis=-1)[:, None, :], ends.shape)[present]
+    far = (ends + s[:, None, None] / 3)[present]
+    middle = (middles + (1 - s[:, None, None]) / 3)[present]
+    near, far, middle = (a * coordinates[..., 0] + b * coordinates[..., 1] for coordinates in (near, far, middle))   # [pairs] Vector each
+    # The path runs from the second atom, through the site between, to the first.
+    turns = ((middle - far) ^ (near - middle)).normalized()                   # [pairs] Bivector
     facing = np.flatnonzero(2 * u + v == (2 * u + v).max())
     start = facing[np.argmin(np.abs(v[facing]))]
     # One on the atoms of the rim, zero elsewhere.
     edge = mv.scalar((reach > (1 - rim) * size)[:, None]).field()               # Scalar[atoms]
-    return Flake(positions, sign.astype(float), first, second, senses, edge, start)
+    return Flake(positions, sign.astype(float), first, second, turns, edge, start)
 
 
 def _lookup(i: np.ndarray, j: np.ndarray, s: np.ndarray, size: int):

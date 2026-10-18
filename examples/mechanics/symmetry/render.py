@@ -117,3 +117,23 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point,
              ha="center", fontsize=11)
     fig.subplots_adjust(left=0.02, right=0.98, top=0.82, bottom=0.22, wspace=0.05)
     return fig
+
+
+def draw_optical_activity(labels: list[str], surfaces: Scalar, sphere: Vector) -> plt.Figure:
+    """Colour the unit sphere of light directions by the rotary power along each, one sphere per group."""
+    powers = surfaces.cast(Scalar.output_subspace).kernel[..., 0]
+    coordinates = sphere.cast(Vector.output_subspace).kernel
+    limit = np.abs(powers).max()
+    colors = plt.get_cmap("RdBu_r")((powers / limit + 1) / 2)
+
+    fig = plt.figure(figsize=(16, 3.2), dpi=140)
+    for i, (label, color) in enumerate(zip(labels, colors)):
+        ax = fig.add_subplot(1, len(labels), i + 1, projection="3d")
+        ax.plot_surface(*np.moveaxis(coordinates, -1, 0), facecolors=color, rstride=1, cstride=1,
+                        linewidth=0, antialiased=False, shade=False)
+        ax.set(xticks=[], yticks=[], zticks=[], xlabel="x", ylabel="y", zlabel="z")
+        ax.set_box_aspect((1, 1, 1))
+        ax.view_init(elev=23, azim=-55)
+        ax.set_title(label, fontsize=11)
+    fig.subplots_adjust(left=0.01, right=0.99, top=0.88, bottom=0.05, wspace=0.02)
+    return fig

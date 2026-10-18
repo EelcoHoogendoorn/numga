@@ -10,13 +10,15 @@ from examples.quantum.kane_mele import core, render, scenarios
 
 
 def test_spin_up_levels_are_those_of_the_complex_hamiltonian():
-    """With the spin-orbit hop i times the turn's sense on each pair of second neighbours, the
-    complex Hamiltonian of the spin-up amplitudes has the levels of the spin-up spinors."""
+    """With the spin-orbit hop i times the sense of the turn, read against the xy plane, on each pair
+    of second neighbours, the complex Hamiltonian of the spin-up amplitudes has the levels of the
+    spin-up spinors."""
     flake = core.flake(8, scenarios.RIM)
     spin_orbit, mass, count = 0.1, 0.3, 12
     complex_form = np.diag(mass * flake.sublattice).astype(complex)
     complex_form[tuple(flake.first.T)] = -1.0
-    complex_form[tuple(flake.second.T)] += 1j * spin_orbit * flake.senses
+    senses = -(flake.turns | core.mv.xy).to_array()
+    complex_form[tuple(flake.second.T)] += 1j * spin_orbit * senses
     expected = np.linalg.eigvalsh(complex_form)
     energies, _ = core.levels(core.hamiltonian(flake, spin_orbit, mass), core.Up, 2 * count)
     nearest = np.sort(expected[np.argsort(np.abs(expected))[:count]])

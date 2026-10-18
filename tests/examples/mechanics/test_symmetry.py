@@ -20,6 +20,7 @@ def test_cube_rotations_are_24_distinct_rotations():
     (scenarios.heat_conduction, render.draw_conduction),
     (scenarios.flywheel, render.draw_flywheel),
     (scenarios.crystal_lattice, render.draw_crystal),
+    (scenarios.optical_activity, render.draw_optical_activity),
 ])
 def test_scenario_checks_and_figure(scenario, draw):
     assert isinstance(draw(*scenario()), plt.Figure)

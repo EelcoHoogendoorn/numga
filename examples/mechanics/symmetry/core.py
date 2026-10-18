@@ -3,6 +3,7 @@
 Heat conduction: a positive conductivity, averaged over rotation groups, and its heat-flow ellipsoids.
 Flywheel: a flywheel with three arms, assembled by adding their rotated inertia maps.
 Crystal lattice: the same cubic bond orbits give isotropic conduction and anisotropic elasticity.
+Optical activity: a rotary power has a sense, so mirrors and the inversion restrict it where they leave conduction alone.
 
 Crystal-symmetry motivation: https://dictionary.iucr.org/Neumann%27s_principle
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, Extensor, NumpyContext
+from numga import Algebra, Extensor, NumpyContext, concatenate
 from numga.algebras import PGA3D
 
 # Conductivity acts on Euclidean driving-field and heat-flow vectors.
@@ -21,6 +22,7 @@ mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
+ImproperRotation = ga.gatype.odd()
 Plane = ga.gatype.bivector()
 
 # Mechanics uses projective points and a momentum response to rigid-body motion.
@@ -91,6 +93,33 @@ def conductivities(axes: Vector, gains: np.ndarray, groups: list[Rotor]) -> Exte
         # permute the terms. This projects a measured response onto the allowed ones.
         invariant = (group >> Vector)(conductivity(group << Vector)).mean(axis=0)
         responses.append(invariant)
+    return Extensor.stack(responses)
+
+
+def rotary_powers(axes: Vector, powers: np.ndarray, groups: list[tuple[Rotor, ImproperRotation]]) -> Extensor:
+    """Which crystals can rotate polarized light?
+
+    Light crossing an optically active crystal along a unit direction `d` has its plane of polarization
+    turned, in proportion to the distance, by the rotary power `gyration(d, d)`. The turn has a sense,
+    so the rotary power is an intrinsic scalar: the mirror image of a crystal turns light the other way.
+    Its principal values are measured against the lab's handedness, the volume `x ^ y ^ z` read as a
+    number.
+
+    A crystal's point group holds its rotations and, where the crystal has mirrors or a centre of
+    inversion, its improper rotations, the odd versors. An improper rotation reverses the sense of an
+    intrinsic output, so a group allows less optical activity than its rotations alone, and none where
+    it contains the inversion.
+
+    Returns the candidate followed by its average over each group.
+    """
+    handedness = mv.xyz.dual()                                                   # [] Scalar, intrinsic
+    gyration = ((axes | Vector) * (axes | Vector) * powers).sum(axis=0) * handedness
+    responses = [gyration]
+    for rotations, improper in groups:
+        # Turn both directions into each element's frame, and carry the rotary power back out:
+        # an improper rotation reverses its sense.
+        transformed = [element >> gyration(element << Vector, element << Vector) for element in (rotations, improper)]
+        responses.append(concatenate(transformed).mean(axis=0))
     return Extensor.stack(responses)
 
 

@@ -90,14 +90,14 @@ def helical(flake: core.Flake):
     totals = density.sites.sum().to_array()
     np.testing.assert_allclose(totals, totals[0], rtol=1e-9)
     np.testing.assert_array_less(0.9 * totals, (density * flake.rim).sites.sum().to_array())
-    # A quarter lap on, the spin-up half has turned clockwise around the flake and the spin-down half
-    # counterclockwise: the sine of each half's turn from the start, by its centre.
+    # A quarter lap on, the spin-up half has turned counterclockwise around the flake and the spin-down
+    # half clockwise: the sine of each half's turn from the start, by its centre.
     along = spins[FRAMES // 4] | mv.z                                          # Scalar[atoms]
     up, down = (density[FRAMES // 4] + along) * 0.5, (density[FRAMES // 4] - along) * 0.5
     start = flake.positions.batch()[flake.start].normalized()                 # [] Vector
     centres = [((half * flake.positions).sites.sum() / half.sites.sum()).normalized() for half in (up, down)]
     sines = [(mv.xy | (centre ^ start)).to_array().item() for centre in centres]
-    assert sines[0] < -0.5 and sines[1] > 0.5
+    assert sines[0] > 0.5 and sines[1] < -0.5
     return spins
 
 
