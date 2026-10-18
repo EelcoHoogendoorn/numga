@@ -103,7 +103,7 @@ Which orientation an element has is fixed by what it is built from. Planes are e
 
 The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the duals and dualized back, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](orientation.md) lists the rule for every product.
 
-In 3D vector notation the same distinction appears as polar and axial vectors: a velocity or a force is a polar vector, an angular velocity or a torque an axial one, and the cross product, by the right-hand rule, turns polar vectors into axial ones. In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds are called outer and inner orientation (Tonti, Bossavit, Schouten), corresponding to untwisted and twisted differential forms.
+In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds are called outer and inner orientation (Tonti, Bossavit, Schouten), corresponding to untwisted and twisted differential forms.
 
 ## Observables
 
@@ -135,7 +135,7 @@ The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipy
 Two elements of the same grade and different orientation are different kinds of thing, and orientation keeps them apart. A rate of turning and a momentum are both lines, and adding them is meaningless. Only an extrinsic element generates a motion: exponentiating a rate of turning gives a rigid motion, while a momentum, or a force, has no exponential. numga refuses both:
 
 ```python
-spin + momentum          # ValueError: cannot add in bivector and intrinsic bivector: their orientations differ
+spin + momentum          # ValueError: cannot add extrinsic in bivector and intrinsic bivector: their orientations differ
 momentum.exp()           # LookupError: 'exp' takes extrinsic elements; got intrinsic bivector
 ```
 

@@ -250,8 +250,8 @@ slot, and a full call runs on the compiled path. The operators on types
 and values are binds of operation tables:
 
 ```python
-sandwich.bind({0: r, 2: r})                 # partial: Vector <- Vector, what r >> Vector does
-sandwich(r, v, r)                           # full: Vector, what r >> v does
+transform.bind({0: r, 2: r})                # partial: Vector <- Vector, what r >> Vector does
+transform(r, v, r)                          # full: Vector, what r >> v does
 Rotor * v                                   # ga.operator.geometric_product(Rotor, v.gatype).bind({1: v})
 ```
 

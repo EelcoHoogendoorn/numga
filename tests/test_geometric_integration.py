@@ -222,9 +222,9 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
     context = NumpyContext(algebra)
     sandwicher = gatypes.even()
     passenger = gatypes.vector()
-    sandwich = factory.sandwich(sandwicher, passenger)
+    sandwich = factory.transform(sandwicher, passenger)
 
-    assert algebra.gatype.even().sandwich(algebra.gatype.vector()) is sandwich
+    assert algebra.gatype.even().transform(algebra.gatype.vector()) is sandwich
     assert sandwich.context is algebra.exact
     assert sandwich.arity == 3
     assert sandwich.axes == (
@@ -239,7 +239,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
             [[1, 1]],
         ],
     )
-    maps = sandwichers.sandwich(passenger)
+    maps = sandwichers.transform(passenger)
     explicit = sandwich.bind({0: sandwichers, 2: sandwichers})
 
     expected_maps = np.asarray(
@@ -266,7 +266,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         atol=1e-14,
         equal_nan=False,
     )
-    composed_maps = sandwichers.sandwich(factory.identity(passenger))
+    composed_maps = sandwichers.transform(factory.identity(passenger))
     assert composed_maps.shape == maps.shape
     assert composed_maps.axes == maps.axes
     assert composed_maps.arity == maps.arity
@@ -282,7 +282,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         [[[2, 3], [-1, 4], [0.5, -2]]],
     )
     transformed = maps(points)
-    direct = sandwichers.sandwich(points)
+    direct = sandwichers.transform(points)
 
     expected_points = np.asarray(
         [
@@ -311,7 +311,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
 
     # The identity map on the carrier, as a sandwicher, leaves both copies of the carrier open:
     # it is the typed sandwich itself.
-    identity_sandwich = factory.identity(sandwicher).sandwich(passenger)
+    identity_sandwich = factory.identity(sandwicher).transform(passenger)
     assert identity_sandwich.axes == sandwich.axes
     np.testing.assert_allclose(
         np.asarray(identity_sandwich.kernel.materialize(), dtype=float),

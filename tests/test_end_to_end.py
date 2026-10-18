@@ -116,7 +116,7 @@ def test_identity_keeps_an_open_rotation_map():
     algebra = Algebra("x+y+z+")
     mv = NumpyContext(algebra).multivector
     rotor = mv.rotor([3 / 5, 4 / 5, 0, 0])
-    rotation = rotor.sandwich(algebra.gatype.vector())
+    rotation = rotor.transform(algebra.gatype.vector())
 
     unchanged = algebra.operator.identity(algebra.gatype.vector())(rotation)
 
@@ -172,9 +172,9 @@ def test_batched_sandwich_maps_broadcast_like_the_direct_expression():
         [[[2, 3], [-1, 4], [0.5, -2]]],
     )
 
-    rotations = rotors.sandwich(vector)
+    rotations = rotors.transform(vector)
     via_maps = rotations(points)
-    direct = rotors.sandwich(points)
+    direct = rotors.transform(points)
 
     assert rotations.shape == (2, 1)
     assert via_maps.shape == (2, 3)
@@ -430,7 +430,7 @@ def test_rotor_sandwich_builds_an_orthogonal_map_with_a_fast_inverse():
         [[1.0, 0.0], [0.0, 1.0], [2.0, -3.0]],
     )
 
-    rotation = rotor.sandwich(vector)
+    rotation = rotor.transform(vector)
     inverse = rotation.inverse()
     round_trip = inverse(rotation(vectors))
 
@@ -461,10 +461,10 @@ def test_composed_rotation_maps_retain_their_fast_inverse():
     second_rotor = context.multivector.rotor([np.cos(-0.4), np.sin(-0.4)])
     vectors = context.multivector.vector([[1.0, 2.0], [-3.0, 4.0]])
 
-    first = first_rotor.sandwich(vector)
-    second = second_rotor.sandwich(vector)
+    first = first_rotor.transform(vector)
+    second = second_rotor.transform(vector)
     combined = first(second)
-    direct = (first_rotor * second_rotor).sandwich(vector)
+    direct = (first_rotor * second_rotor).transform(vector)
     round_trip = combined.inverse()(combined(vectors))
 
     assert combined.gatype.entails(CoefficientOrthogonal)
@@ -491,7 +491,7 @@ def test_rotor_sandwich_is_grade_preserving_before_numeric_execution(grade):
     passenger = algebra.gatype.k_vector(grade)
     rotor = context.multivector.rotor([np.cos(0.2), np.sin(0.2), 0, 0])
 
-    action = rotor.sandwich(passenger)
+    action = rotor.transform(passenger)
 
     assert action.axes == (passenger.output_subspace, passenger.output_subspace)
 
@@ -504,7 +504,7 @@ def test_general_even_sandwich_can_produce_extra_grades_in_five_dimensions():
     # 1 + xyzw is even but is not a versor. Repeated-argument cancellation
     # alone cannot remove its grade-5 output when it sandwiches a vector.
     general = mv.scalar([1]) + x * y * z * w
-    actual = general.sandwich(v)
+    actual = general.transform(v)
     expected = 2 * (v + x.wedge(y).wedge(z).wedge(w).wedge(v))
 
     assert general.subspace is algebra.subspace.even()
@@ -526,7 +526,7 @@ def test_sandwich_isometry_needs_the_same_sandwicher_not_just_its_type():
     half = np.sqrt(0.5)
     r = mv.rotor([half, half, 0, 0])
     s = mv.rotor([0, 0, 0, 1])
-    sandwich = algebra.gatype.rotor().sandwich(x_type)
+    sandwich = algebra.gatype.rotor().transform(x_type)
 
     rotation = sandwich.bind({0: r, 2: r})
     independent = sandwich.bind({0: r, 2: s})
@@ -599,7 +599,7 @@ def test_known_nonunit_versor_constructs_a_grade_preserving_5d_map(
     # Only Versor is promised; neither normalization nor even parity is needed.
     known = mv(algebra.gatype(algebra.gatype(carrier, orientation=Orientation.extrinsic), (Versor,)), coefficients)
 
-    action = known.sandwich(algebra.gatype.vector())
+    action = known.transform(algebra.gatype.vector())
 
     # The structural codomain must already be grade 1 before any application.
     assert action.axes == (spaces.vector(), spaces.vector())
@@ -619,7 +619,7 @@ def test_sandwiching_a_rotor_preserves_its_type_and_fast_inverse():
     frame = context.multivector.rotor([0, 1, 0, 0])
     attitude = context.multivector.rotor([0, 0, 1, 0])
 
-    action = frame.sandwich(even)
+    action = frame.transform(even)
     moved = action(attitude)
     inverse = moved.inverse()
 
@@ -644,7 +644,7 @@ def test_sandwiching_a_rotor_preserves_its_type_and_fast_inverse():
 def test_map_collections_preserve_orthogonality_but_reductions_do_not():
     algebra = Algebra("x+y+")
     mv = NumpyContext(algebra).multivector
-    rotations = mv.rotor([[1, 0], [0, 1]]).sandwich(algebra.gatype.vector())
+    rotations = mv.rotor([[1, 0], [0, 1]]).transform(algebra.gatype.vector())
 
     selected = rotations.reshape(2, 1).broadcast_to((2, 3))[:, 1]
 
@@ -698,7 +698,7 @@ def test_cumprod_composes_later_elements_on_the_left_within_a_closed_type():
 def test_lorentz_sandwich_inverse_is_not_a_coefficient_transpose():
     algebra = Algebra("x+y-")
     mv = NumpyContext(algebra).multivector
-    boost = mv.rotor([5 / 4, 3 / 4]).sandwich(algebra.gatype.vector())
+    boost = mv.rotor([5 / 4, 3 / 4]).transform(algebra.gatype.vector())
     vectors = mv.vector([[1, 0], [1, 1]])
 
     assert not boost.gatype.entails(CoefficientOrthogonal)
@@ -722,7 +722,7 @@ def test_exp_product_sandwich_inverse_and_norm_work_as_one_expression_chain():
     r = mv.bivector([0.2]).exp()
     s = mv.bivector([0.3]).exp()
     combined = r * s
-    rotation = combined.sandwich(algebra.gatype.vector())
+    rotation = combined.transform(algebra.gatype.vector())
     moved = rotation(points)
     recovered = rotation.inverse()(moved)
 

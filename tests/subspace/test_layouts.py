@@ -162,7 +162,7 @@ def test_unit_rotor_facts_survive_relayout_and_sandwich(backend):
     np.testing.assert_allclose(stored.kernel, [0, 0.6, 0, 0.8], atol=1e-5)
     np.testing.assert_allclose(stored.inverse().select_subspace(r.subspace).kernel, r.inverse().kernel)
     normal = mv.vector([1, 2, 3]).normalized()
-    np.testing.assert_allclose(stored.sandwich(normal).kernel, r.sandwich(normal).kernel, atol=1e-6)
+    np.testing.assert_allclose(stored.transform(normal).kernel, r.transform(normal).kernel, atol=1e-6)
 
 
 def test_reorienting_the_scalar_changes_coordinates_not_scalar_functions(backend):

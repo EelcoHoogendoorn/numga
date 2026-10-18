@@ -41,7 +41,7 @@ def test_map_kernel_also_operates_on_batches_of_maps(backend):
     context_type, compile = backend
     algebra = Algebra("x+y+")
     context = context_type(algebra)
-    rotations = context.multivector.rotor([[1, 0], [0, 1]]).sandwich(algebra.gatype.vector())
+    rotations = context.multivector.rotor([[1, 0], [0, 1]]).transform(algebra.gatype.vector())
 
     repeated = compile(lambda x: x.map_kernel(
         context.xp.repeat, 2, axis=0, preserve_traits=True,

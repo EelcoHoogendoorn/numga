@@ -404,9 +404,9 @@ def operation_orientations(operation: str, operand_gatypes: tuple[GAType, ...]) 
         # The regressive product passes through the volume form once.
         left, right = operand_gatypes
         return ((left.orientation * right.orientation).flipped, left.orientation, right.orientation)
-    if operation == "sandwich":
-        sandwicher, passenger, _ = operand_gatypes
-        return (passenger.orientation, sandwicher.orientation, passenger.orientation, sandwicher.orientation)
+    if operation == "transform":
+        versor, passenger, _ = operand_gatypes
+        return (passenger.orientation, versor.orientation, passenger.orientation, versor.orientation)
     if operation == "transpose":
         return tuple(reversed(operand_gatypes[0].orientations))
     if operation in _KEEPING:

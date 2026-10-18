@@ -20,11 +20,11 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     # A bivector exponential supplies a unit motor, with rotation and translation.
     # Unit matters: a scaled sandwich would not preserve wedge products exactly.
     motor = mv.bivector([0.2, -0.1, 0.3, 0.5, -0.25, 0.1]).exp()
-    plane_map = motor.sandwich(Plane)
-    line_map = motor.sandwich(Line)
-    point_map = motor.sandwich(Point)
-    spear_map = motor.sandwich(Spear)
-    bundle_map = motor.sandwich(Bundle)
+    plane_map = motor.transform(Plane)
+    line_map = motor.transform(Line)
+    point_map = motor.transform(Point)
+    spear_map = motor.transform(Spear)
+    bundle_map = motor.transform(Bundle)
 
     assert plane_map.axes == (planes, planes)
     assert line_map.axes == (lines, lines)
@@ -46,8 +46,8 @@ def test_plane_line_and_point_maps_are_distinct_but_describe_the_same_motion():
     following = mv.bivector([-0.1, 0.3, 0, 0.1, 0, 0.2]).exp()
     combined = following * motor
     for gatype, first in ((Plane, plane_map), (Line, line_map), (Point, point_map)):
-        composed = following.sandwich(gatype)(first)
-        direct = combined.sandwich(gatype)
+        composed = following.transform(gatype)(first)
+        direct = combined.transform(gatype)
         assert composed.axes == (gatype.output_subspace, gatype.output_subspace)
         np.testing.assert_allclose(composed.kernel, direct.kernel, atol=1e-9)
 
@@ -94,8 +94,8 @@ def test_wedged_normals_follow_a_mirror_without_normal_specific_rules():
     mirror = mv.vector([1, 0, 0]).normalized()  # Mirror in the yz plane.
 
     # The sandwich by a mirror is its reflection, for every grade: directions and normals alike.
-    direction_map = mirror.sandwich(Direction)
-    normal_map = mirror.sandwich(Normal)
+    direction_map = mirror.transform(Direction)
+    normal_map = mirror.transform(Normal)
 
     u = mv.vector([1, 2, 0])
     v = mv.vector([0, 1, 3])
@@ -143,14 +143,14 @@ def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
 
     # >> is the sandwich, << the sandwich from the other side; for a unit motor it undoes >>
     moved = motor >> points
-    assert moved.gatype == (motor.sandwich(points)).gatype
-    np.testing.assert_allclose(moved.kernel, motor.sandwich(points).kernel)
+    assert moved.gatype == (motor.transform(points)).gatype
+    np.testing.assert_allclose(moved.kernel, motor.transform(points).kernel)
 
     recovered = motor << moved
-    assert recovered.gatype == (motor.reverse().sandwich(moved)).gatype
+    assert recovered.gatype == (motor.reverse().transform(moved)).gatype
     np.testing.assert_allclose(recovered.kernel, points.kernel, atol=1e-12)
 
     # An open type works with >> and <<
     pullback = motor << Line
     assert pullback.axes == (Line.output_subspace, Line.output_subspace)
-    np.testing.assert_allclose(pullback.kernel, motor.reverse().sandwich(Line).kernel)
+    np.testing.assert_allclose(pullback.kernel, motor.reverse().transform(Line).kernel)

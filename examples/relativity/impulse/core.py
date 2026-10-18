@@ -81,7 +81,7 @@ def boost(rapidity: np.ndarray) -> VectorMap:
     Normalizing removes exp's tiny scale error before the map is reused.
     """
     rotor: Rotor = (-mv.tx * rapidity / 2).exp().normalized()
-    return rotor.sandwich(Vector)
+    return rotor.transform(Vector)
 
 
 def strain_preserving_kinks(before: Vector, after: Vector) -> Vector:

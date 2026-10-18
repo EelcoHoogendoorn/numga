@@ -97,9 +97,9 @@ def test_jit_vector_sandwich_agrees_in_staged_and_direct_forms():
     e1 = context.extensor(vector, [1, 0])
     point = context.extensor(vector, [2, 3])
 
-    reflection = jax.jit(lambda sandwicher: sandwicher.sandwich(vector))(e1)
+    reflection = jax.jit(lambda sandwicher: sandwicher.transform(vector))(e1)
     staged = jax.jit(lambda map_, value: map_(value))(reflection, point)
-    direct = jax.jit(lambda sandwicher, value: sandwicher.sandwich(value))(
+    direct = jax.jit(lambda sandwicher, value: sandwicher.transform(value))(
         e1, point
     )
 

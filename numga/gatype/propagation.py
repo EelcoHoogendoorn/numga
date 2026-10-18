@@ -95,7 +95,7 @@ def operation_traits(
             VersorProduct(slots=(0, 1)),
         ))
 
-    if operation == "sandwich":
+    if operation == "transform":
         return TraitSet((Sandwich,))
 
     if operation in (
@@ -159,7 +159,7 @@ def operation_traits(
     return EMPTY_TRAITS
 
 
-def _sandwicher(plan: "BindingPlan") -> GAType | None:
+def _transform_versor(plan: "BindingPlan") -> GAType | None:
     """The same certified versor occurs on both sides of this binding."""
 
     if not plan.target_gatype.entails(Sandwich):
@@ -171,7 +171,7 @@ def _sandwicher(plan: "BindingPlan") -> GAType | None:
     return operand if operand.entails(Versor) and operand.entails(ReverseProductNonzero) else None
 
 
-def _sandwich_passenger(plan: "BindingPlan") -> SubSpace:
+def _transform_passenger(plan: "BindingPlan") -> SubSpace:
     return next(
         (binding.operand_gatype.output_subspace for binding in plan.bindings if binding.slot == 1),
         plan.target_gatype.input_subspaces[1],
@@ -187,11 +187,11 @@ def bind_subspaces(plan: "BindingPlan") -> tuple[SubSpace, ...]:
     if not any(0 in group and 2 in group for group in plan.equality_groups):
         return plan.result_subspaces
 
-    sandwicher = next(binding.operand_gatype for binding in plan.bindings if binding.slot == 0)
-    passenger = _sandwich_passenger(plan)
+    versor = next(binding.operand_gatype for binding in plan.bindings if binding.slot == 0)
+    passenger = _transform_passenger(plan)
     algebra = plan.target_gatype.algebra
 
-    if not sandwicher.entails(Versor):
+    if not versor.entails(Versor):
         return plan.result_subspaces
     allowed_grades = {algebra.grade(mask) for mask in passenger.masks}
 
@@ -230,10 +230,10 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
         if result is not None:
             inferred.append(result)
 
-    sandwicher = _sandwicher(plan)
-    if sandwicher is not None:
+    versor = _transform_versor(plan)
+    if versor is not None:
         factor = (
-            ProductResult.ONE if sandwicher.entails(ReverseProductOne)
+            ProductResult.ONE if versor.entails(ReverseProductOne)
             else ProductResult.NONZERO
         )
         # For y = m*x*reverse(m), y*reverse(y) =
@@ -246,13 +246,13 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             inferred.append(result)
 
         axes = bind_subspaces(plan)
-        passenger = _sandwich_passenger(plan)
+        passenger = _transform_passenger(plan)
         if (
             factor is ProductResult.ONE
             and len(axes) == 2
             and axes[0].same_support(passenger)
             and axes[1].same_support(passenger)
-            and all(square == 1 for square in sandwicher.algebra.signature)
+            and all(square == 1 for square in versor.algebra.signature)
             and not any(binding.slot == 1 for binding in plan.bindings)
         ):
             # In a Euclidean algebra the reverse scalar product is exactly

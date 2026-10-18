@@ -119,57 +119,57 @@ def regressive(
     return _binary_expression("regressive", left, right)
 
 
-def sandwich(
-    sandwicher: SubSpace | GAType | Extensor, passenger: SubSpace | GAType | Extensor,
+def transform(
+    versor: SubSpace | GAType | Extensor, passenger: SubSpace | GAType | Extensor,
 ) -> Extensor:
-    """Build or evaluate a sandwich expression.
+    """Build or evaluate the action of a versor on a passenger, `versor >> passenger`: the composition
+    of the reflections in the versor's vector factors.
 
-    A typed sandwicher declares distinct left and right input slots over one
-    carrier. A nullary Extensor binds the same value into both slots atomically.
-    An Extensor with open inputs is bound into both slots too: its inputs appear
-    twice, those of the left copy first, then the passenger's, then those of the
-    right copy, and the result keeps the carrier's symmetrized sandwich type.
+    A typed versor declares distinct left and right input slots over one carrier. A nullary Extensor
+    binds the same value into both slots atomically. An Extensor with open inputs is bound into both
+    slots too: its inputs appear twice, those of the left copy first, then the passenger's, then those
+    of the right copy, and the result keeps the carrier's symmetrized type.
     """
 
-    return _sandwich_expression("sandwich", sandwicher, passenger)
+    return _transform_expression("transform", versor, passenger)
 
 
-def reverse_sandwich(
-    sandwicher: SubSpace | GAType | Extensor, passenger: SubSpace | GAType | Extensor,
+def reverse_transform(
+    versor: SubSpace | GAType | Extensor, passenger: SubSpace | GAType | Extensor,
 ) -> Extensor:
-    """Build or evaluate ``reverse(sandwicher) * passenger * sandwicher``, one fused operator bound
-    as a sandwich is: for a unit versor, the inverse of its sandwich."""
+    """Build or evaluate the action of the versor's reverse, `versor << passenger`, bound as a
+    transform is: for a unit versor, the inverse of its transform."""
 
-    return _sandwich_expression("reverse_sandwich", sandwicher, passenger)
+    return _transform_expression("reverse_transform", versor, passenger)
 
 
-def _sandwich_expression(
+def _transform_expression(
     operation_name: str,
-    sandwicher: SubSpace | GAType | Extensor,
+    versor: SubSpace | GAType | Extensor,
     passenger: SubSpace | GAType | Extensor,
 ) -> Extensor:
     from numga.extensor import Extensor
 
-    sandwicher_type = _operand_gatype(sandwicher)
+    versor_type = _operand_gatype(versor)
     passenger_type = _operand_gatype(passenger)
-    if sandwicher_type.algebra is not passenger_type.algebra:
-        raise ValueError("sandwich operands belong to different algebras")
-    if isinstance(sandwicher, Extensor) and sandwicher.arity:
-        # The carrier is what the sandwicher produces; the traits of a map say
+    if versor_type.algebra is not passenger_type.algebra:
+        raise ValueError("transform operands belong to different algebras")
+    if isinstance(versor, Extensor) and versor.arity:
+        # The carrier is what the versor produces; the traits of a map say
         # nothing about the values it produces.
-        sandwicher_type = sandwicher_type.derive.output
+        versor_type = versor_type.derive.output
 
-    operation = getattr(sandwicher_type.algebra.operator, operation_name)(
-        sandwicher_type, passenger_type
+    operation = getattr(versor_type.algebra.operator, operation_name)(
+        versor_type, passenger_type
     )
     bindings: dict[int, Extensor] = {}
-    if isinstance(sandwicher, Extensor):
-        bindings[0] = sandwicher
-        bindings[2] = sandwicher
+    if isinstance(versor, Extensor):
+        bindings[0] = versor
+        bindings[2] = versor
     if isinstance(passenger, Extensor):
         bindings[1] = passenger
     if len(bindings) == 3:
-        return operation(sandwicher, passenger, sandwicher)
+        return operation(versor, passenger, versor)
     return operation.bind(bindings) if bindings else operation
 
 

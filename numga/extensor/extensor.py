@@ -812,23 +812,26 @@ class Extensor:
 
         return regressive(self, other)
 
-    def sandwich(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import sandwich
+    def transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
+        """The versor's action on the passenger, `self >> passenger`: the composition of the reflections
+        in its vector factors. A reflection in a unit vector `m` takes an extrinsic `x` to
+        `m * x.involute() * m.inverse()`, and an intrinsic `x` to its negative."""
+        from numga.expression import transform
 
-        return sandwich(self, passenger)
+        return transform(self, passenger)
 
-    def reverse_sandwich(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
-        """The sandwich from the other side, `reverse(self) * passenger * self`, as one operator:
-        defined for every value, and for a unit versor the inverse of `self >> passenger`."""
-        from numga.expression import reverse_sandwich
+    def reverse_transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
+        """The action of the versor's reverse, `self << passenger`: defined for every value, and for a
+        unit versor the inverse of `self >> passenger`."""
+        from numga.expression import reverse_transform
 
-        return reverse_sandwich(self, passenger)
+        return reverse_transform(self, passenger)
 
     def __rshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.sandwich(other)
+        return self.transform(other)
 
     def __lshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        return self.reverse_sandwich(other)
+        return self.reverse_transform(other)
 
     # Operands numga does not know, a sparse extensor among them, get their reflected operator.
     def __xor__(self, other: Extensor | GAType | SubSpace) -> Extensor:

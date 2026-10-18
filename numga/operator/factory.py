@@ -408,94 +408,100 @@ class OperatorFactory:
         # The dual of a wedge of two vectors: a product of equal orientations, flipped by the dual.
         return self.build((vector, vector, vector), (Orientation.intrinsic, Orientation.extrinsic, Orientation.extrinsic), coefficients)
 
-    def sandwich(
+    def transform(
         self,
-        sandwicher: OperandType,
+        versor: OperandType,
         passenger: OperandType,
         output: SubSpace | None = None,
     ) -> Extensor:
-        """Polarize ``sandwicher * passenger * reverse(sandwicher)``.
+        """The action of a versor on a passenger, as one operator: the composition of the
+        reflections in the versor's vector factors.
 
-        The two sandwicher slots remain distinct. Passing the same nullary
-        Extensor into slots 0 and 2 is an atomic diagonal bind at runtime.
-        Exact symmetrization removes terms that cancel for repeated sandwichers.
-        ``output`` requests an explicit cast.
+        A reflection in a unit vector ``m`` takes an extrinsic passenger ``x`` to
+        ``m * x.involute() * m.inverse()``, and an intrinsic one to its negative. A product of k
+        vectors applies k reflections, so the grade involution and the intrinsic sign each enter k
+        times, and cancel for an even versor. The operator uses the versor's reverse in place of its
+        inverse, which is the same for a unit versor.
+
+        The two versor slots remain distinct. Passing the same nullary Extensor into slots 0 and 2 is
+        an atomic diagonal bind at runtime. Exact symmetrization removes terms that cancel for
+        repeated versors. ``output`` requests an explicit cast.
         """
 
         if output is not None:
             self._require_space(output)
-        return self._sandwich(
-            self._operand_gatype(sandwicher),
+        return self._transform(
+            self._operand_gatype(versor),
             self._operand_gatype(passenger),
             output,
         )
 
     @lru_cache(maxsize=None)
-    def _sandwich(
+    def _transform(
         self,
-        sandwicher: GAType,
+        versor: GAType,
         passenger: GAType,
         output: SubSpace | None,
     ) -> Extensor:
-        result = self.full_sandwich(sandwicher.derive.structural, passenger.derive.structural, output)
+        result = self.full_sandwich(versor.derive.structural, passenger.derive.structural, output)
         kernel = result.kernel
-        # The two sandwicher slots hold the same versor: symmetrize them. For basis blades the two
+        # The two versor slots hold the same versor: symmetrize them. For basis blades the two
         # orders are equal or opposite, so the average is exact.
         kernel = (kernel + kernel.transpose((0, 3, 2, 1))).halved()
         result = self.build(result.axes, result.gatype.orientations, kernel).squeeze_output()
-        if sandwicher.output_subspace.masks and all(mask.bit_count() % 2 for mask in sandwicher.output_subspace.masks):
-            # An odd versor reflects: the standard action takes the grade involution of the passenger,
-            # and an intrinsic passenger turns with the opposite sign, since a reflection reverses the
-            # orientation of space.
-            signs = SymbolicKernel(np.diag([
-                grade_transform_sign(self.algebra, "involute", mask)
-                * (-1 if passenger.orientation is Orientation.intrinsic else 1)
-                for mask in passenger.output_subspace.masks
-            ]).astype(np.int8))
-            passenger_space = passenger.output_subspace
-            reflected = self.build((passenger_space, passenger_space), (passenger.orientation,) * 2, signs)
-            result = result.bind({1: reflected})
+        # Each reflection takes the passenger's grade involution, negated for an intrinsic passenger;
+        # a versor of odd parity applies an odd number of them.
+        parity = int(bool(versor.output_subspace.masks)
+                     and all(mask.bit_count() % 2 for mask in versor.output_subspace.masks))
+        intrinsic = -1 if passenger.orientation is Orientation.intrinsic else 1
+        signs = SymbolicKernel(np.diag([
+            (grade_transform_sign(self.algebra, "involute", mask) * intrinsic) ** parity
+            for mask in passenger.output_subspace.masks
+        ]).astype(np.int8))
+        passenger_space = passenger.output_subspace
+        reflected = self.build((passenger_space, passenger_space), (passenger.orientation,) * 2, signs)
+        result = result.bind({1: reflected})
         if output is not None:
-            # A requested projection is not an unrestricted sandwich action.
+            # A requested projection is not an unrestricted action.
             return result
         gatype = TypeRules.operation(
-            "sandwich",
-            (sandwicher, passenger, sandwicher),
+            "transform",
+            (versor, passenger, versor),
             result.axes,
         )
         if gatype is result.gatype:
             return result
         return Extensor(result.context, gatype, result.kernel)
 
-    def reverse_sandwich(
+    def reverse_transform(
         self,
-        sandwicher: OperandType,
+        versor: OperandType,
         passenger: OperandType,
         output: SubSpace | None = None,
     ) -> Extensor:
-        """Polarize ``reverse(sandwicher) * passenger * sandwicher`` as one operator: the sandwich
-        with the carrier's reverse folded into both sandwicher slots."""
+        """The action of the versor's reverse as one operator: the transform with the carrier's
+        reverse folded into both versor slots; for a unit versor, the inverse transform."""
 
         if output is not None:
             self._require_space(output)
-        return self._reverse_sandwich(
-            self._operand_gatype(sandwicher),
+        return self._reverse_transform(
+            self._operand_gatype(versor),
             self._operand_gatype(passenger),
             output,
         )
 
     @lru_cache(maxsize=None)
-    def _reverse_sandwich(
+    def _reverse_transform(
         self,
-        sandwicher: GAType,
+        versor: GAType,
         passenger: GAType,
         output: SubSpace | None,
     ) -> Extensor:
-        forward = self._sandwich(sandwicher, passenger, output)
-        reverse = self.reverse(sandwicher.derive.structural)
+        forward = self._transform(versor, passenger, output)
+        reverse = self.reverse(versor.derive.structural)
         # The reverse is diagonal on the carrier: folding it into both slots keeps every axis, the
-        # grade cancellations and the sandwich's type. A versor's reverse is a versor, so the
-        # sandwich's laws hold for it too.
+        # grade cancellations and the transform's type. A versor's reverse is a versor, so the
+        # transform's laws hold for it too.
         folded = forward.bind({0: reverse, 2: reverse})
         return Extensor(folded.context, forward.gatype, folded.kernel)
 

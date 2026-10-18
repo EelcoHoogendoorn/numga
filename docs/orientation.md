@@ -1,6 +1,6 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input slot. Constructors set it, operations propagate it, sums and bindings check it, and the reflection `>>` uses it to pick its sign. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed. A printed type marks only the intrinsic kind: `bivector` is an extrinsic bivector, `intrinsic bivector` its counterpart, and `intrinsic bivector <- bivector` a map from the first to the second.
+Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input slot. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed. A printed type names the orientation of every axis: `intrinsic bivector <- extrinsic bivector` is a map from extrinsic bivectors to intrinsic ones.
 
 ```python
 from numga import Orientation
@@ -8,14 +8,16 @@ from numga import Orientation
 
 ## Reflection
 
-`versor >> x` applies a versor to `x`. For an even versor it is the sandwich `m * x * m.inverse()`, whatever the orientation. For an odd versor `m`, the sign depends on the orientation:
+`versor >> x`, or `versor.transform(x)`, applies a versor to `x` as the composition of the reflections in its vector factors. A reflection in a unit vector `m` takes `x` to
 
-| | `versor >> x` for odd `m` |
+| | `m >> x` |
 | --- | --- |
 | extrinsic `x` | `m * x.involute() * m.inverse()` |
 | intrinsic `x` | `-m * x.involute() * m.inverse()` |
 
-With this rule every versor, odd ones included, commutes with every product, the geometric, outer, inner and regressive products and the commutator and anticommutator alike: `m >> (a | b) == (m >> a) | (m >> b)`, and `m >> (a & b) == (m >> a) & (m >> b)`. In a non-degenerate algebra it commutes with the dual as well, `m >> a.dual() == (m >> a).dual()`. Extrinsic scalars are invariant under reflections, and intrinsic scalars change sign.
+A product of k vectors applies k reflections, so the grade involution and the intrinsic sign each enter k times: for an even versor they cancel, and its action is the sandwich `v * x * v.inverse()` whatever the orientation. `versor << x`, or `versor.reverse_transform(x)`, applies the versor's reverse: for a unit versor, the inverse action.
+
+With this rule every versor, reflections included, commutes with every product, the geometric, outer, inner and regressive products and the commutator and anticommutator alike: `m >> (a | b) == (m >> a) | (m >> b)`, and `m >> (a & b) == (m >> a) & (m >> b)`. In a non-degenerate algebra it commutes with the dual as well, `m >> a.dual() == (m >> a).dual()`. Extrinsic scalars are invariant under reflections, and intrinsic scalars change sign.
 
 ## Propagation
 
@@ -55,11 +57,11 @@ A product with a constant pseudoscalar, `a * I`, has the coefficients of a dual 
 Combining kinds where they must match raises before any kernel runs:
 
 ```python
-spin + momentum                  # ValueError: cannot add in bivector and intrinsic bivector: their orientations differ
+spin + momentum                  # ValueError: cannot add extrinsic in bivector and intrinsic bivector: their orientations differ
 inertia(momentum)                # ValueError: cannot bind an intrinsic bivector into input slot 0, which takes an extrinsic orientation
 inertia.solve(spin)              # ValueError: cannot solve for an extrinsic right-hand side against a map whose output takes an intrinsic orientation
 momentum.exp()                   # LookupError: 'exp' takes extrinsic elements; got intrinsic bivector
-inertia.eigh()                   # LookupError: no 'eigh' implementation matches GATypes (GAType(intrinsic bivector <- bivector),)
+inertia.eigh()                   # LookupError: no 'eigh' implementation matches GATypes (GAType(intrinsic bivector <- extrinsic bivector),)
 ga.gatype(ga.subspace.vector())  # TypeError: a subspace has no orientation
 ```
 
@@ -110,7 +112,7 @@ ga.gatype(subspace, orientation=Orientation.intrinsic)  # from a subspace, orien
 Each slot of a map carries its own orientation:
 
 ```python
-inertia = (points & points.commutator(Line) * masses).sum()     # intrinsic bivector <- bivector
+inertia = (points & points.commutator(Line) * masses).sum()     # intrinsic bivector <- extrinsic bivector
 ```
 
 | Property | Meaning |
@@ -129,7 +131,7 @@ inertia = (points & points.commutator(Line) * masses).sum()     # intrinsic bive
 | `f.outermorphism(Type)` | `Type` must have the orientation that products of the map's outputs have |
 | `a.eigh(b)` | `a` and `b` of the same type |
 
-An inertia map takes extrinsic rates of turning to intrinsic momenta. It is a correlation, so it has no eigenvalues of its own, while `stiffness.eigh(inertia)` against a second map of its type is well defined. Its adjugate flips both slots back to `intrinsic bivector <- bivector`.
+An inertia map takes extrinsic rates of turning to intrinsic momenta. It is a correlation, so it has no eigenvalues of its own, while `stiffness.eigh(inertia)` against a second map of its type is well defined. Its adjugate flips both slots back to `intrinsic bivector <- extrinsic bivector`.
 
 ## Extension methods
 

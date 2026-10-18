@@ -503,10 +503,11 @@ class GAType:
 
         return regressive(self, other)
 
-    def sandwich(self, passenger: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import sandwich
+    def transform(self, passenger: SubSpace | GAType | Extensor) -> Extensor:
+        """The action of a versor of this type on the passenger, `self >> passenger`."""
+        from numga.expression import transform
 
-        return sandwich(self, passenger)
+        return transform(self, passenger)
 
     def __xor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
         from numga.expression import is_expression_operand
@@ -524,18 +525,19 @@ class GAType:
         return self.inner(other) if is_expression_operand(other) else NotImplemented
 
     def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        return self.sandwich(other)
+        return self.transform(other)
 
     def __reduce__(self) -> tuple[type[GAType], tuple[object, ...]]:
         return type(self), (self.subspaces, self.orientations, self.traits, self.fields)
 
     @property
     def signature(self) -> str:
-        """Output and inputs by subspace name: in bivector <- bivector, with any traits after a bar."""
+        """Output and inputs by orientation and subspace name: intrinsic in bivector <- extrinsic bivector,
+        with any traits after a bar."""
 
         sites = dict(self.fields)
         output, *inputs = (
-            ("intrinsic " if orientation is Orientation.intrinsic else "") + space.type_name
+            f"{orientation.value} {space.type_name}"
             + (f"[{sites[slot]}]" if slot in sites else "")
             for slot, (space, orientation) in enumerate(zip(self.subspaces, self.orientations))
         )
