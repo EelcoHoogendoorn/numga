@@ -20,10 +20,10 @@ import numpy as np
 
 from numga.backend.context import binding_context
 from numga.extensor import Extensor
-from numga.gatype import GAType
+from numga.gatype import GAType, MetricKind
 from numga.subspace import SubSpace
 
-from numga.extensions._linalg import _eigenpairs, _is_square_form, _matching_forms, _scalars
+from numga.extensions._linalg import _eigenpairs, _scalars
 
 
 def _form_map(value: Extensor) -> Extensor:
@@ -44,47 +44,18 @@ def _pencil(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
 
 # --- the slot's own metric ---------------------------------------------------------------
 @lru_cache(maxsize=None)
-def _default_metric(slot: GAType) -> Extensor:
-    """The slot's metric as a symbolic form: the inner product of S with its reverse.
-
-    On vectors this is V | V. On other grades the reverse removes the sign of the blade's
-    square, so bivectors and Euclidean points get a positive metric where S | S is negative.
-    """
-    algebra = slot.algebra
-    return algebra.operator.symmetric_reverse_product(slot).cast(algebra.subspace.scalar())
-
-
-@lru_cache(maxsize=None)
-def _default_metric_kind(slot: GAType) -> str:
-    """Classify the default metric from its exact coefficients: a property of the slot type.
-
-    'identity' solves as a plain eigenproblem; 'positive' needs the generalized pencil;
-    'semidefinite', positive but blind to some blades as PGA's ideal ones, admits a Hermitian
-    eigenproblem on the blades it measures; 'singular' and 'indefinite' admit only the general
-    eigenproblem.
-    """
-    matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
-    if np.array_equal(matrix, np.eye(len(slot.output_subspace))):
-        return "identity"
-    spectrum = np.linalg.eigvalsh(matrix)
-    if np.any(np.abs(spectrum) < 1e-12):
-        return "semidefinite" if np.all(spectrum > -1e-12) else "singular"
-    return "positive" if np.all(spectrum > 0) else "indefinite"
-
-
-@lru_cache(maxsize=None)
 def _measured_blades(slot: GAType) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Positions of the blades the slot's metric measures and of those it is blind to, and the
     order that puts the two back into the slot's layout."""
-    matrix = _default_metric(slot)._kernel.materialize(np.float64)[0]
+    matrix = slot.metric.default._kernel.materialize(np.float64)[0]
     blind = ~matrix.any(axis=0)
     measured, unmeasured = np.flatnonzero(~blind), np.flatnonzero(blind)
     return measured, unmeasured, np.argsort(np.concatenate([measured, unmeasured]))
 
 
-def _metric_is(*kinds: str) -> Callable[[GAType], bool]:
+def _metric_is(*kinds: MetricKind) -> Callable[[GAType], bool]:
     """Dispatch predicate: a square form whose slot metric is of one of these kinds."""
-    return lambda gatype: _is_square_form(gatype) and _default_metric_kind(gatype.derive.axis(2)) in kinds
+    return lambda gatype: gatype.form.is_square and gatype.derive.axis(2).metric.kind in kinds
 
 
 def _plain(value: Extensor) -> Extensor:
@@ -93,72 +64,72 @@ def _plain(value: Extensor) -> Extensor:
 
 
 def _default_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
-    return _pencil(value, _default_metric(value.gatype.derive.axis(2)))
+    return _pencil(value, value.gatype.derive.axis(2).metric.default)
 
 
 def _refusal(method: str, needs: str) -> Callable[[Extensor], Extensor]:
     def refuse(value: Extensor) -> Extensor:
         raise TypeError(
             f"{method} of a form needs {needs} metric; the metric of {value.axes[2]} is "
-            f"{_default_metric_kind(value.gatype.derive.axis(2))}: pass an explicit metric form"
+            f"{value.gatype.derive.axis(2).metric.kind.value}: pass an explicit metric form"
         )
     return refuse
 
 
 # --- against the slot's metric: identity -------------------------------------------------
-@Extensor.eig.register(_metric_is("identity"))
+@Extensor.eig.register(_metric_is(MetricKind.IDENTITY))
 def eig_form_identity(value: Extensor) -> tuple[Extensor, Extensor]:
     return _plain(value).eig()
 
 
-@Extensor.eigvals.register(_metric_is("identity"))
+@Extensor.eigvals.register(_metric_is(MetricKind.IDENTITY))
 def eigvals_form_identity(value: Extensor) -> Extensor:
     return _plain(value).eigvals()
 
 
-@Extensor.eigh.register(_metric_is("identity"))
+@Extensor.eigh.register(_metric_is(MetricKind.IDENTITY))
 def eigh_form_identity(value: Extensor) -> tuple[Extensor, Extensor]:
     return _plain(value).eigh()
 
 
-@Extensor.eigvalsh.register(_metric_is("identity"))
+@Extensor.eigvalsh.register(_metric_is(MetricKind.IDENTITY))
 def eigvalsh_form_identity(value: Extensor) -> Extensor:
     return _plain(value).eigvalsh()
 
 
-@Extensor.det.register(_metric_is("identity"))
+@Extensor.det.register(_metric_is(MetricKind.IDENTITY))
 def det_form_identity(value: Extensor) -> Extensor:
     return _plain(value).det()
 
 
 # --- against the slot's metric: the pencil -----------------------------------------------
-@Extensor.eig.register(_metric_is("positive", "indefinite", "semidefinite", "singular"))
+@Extensor.eig.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE, MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))
 def eig_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
     """Eigenpairs against the slot's metric; a singular metric gives infinite modes."""
     left, right = _default_pencil(value)
     return _eigenpairs(left, *left.context.generalized_eig(left._kernel, right._kernel))
 
 
-@Extensor.eigvals.register(_metric_is("positive", "indefinite", "semidefinite", "singular"))
+@Extensor.eigvals.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE, MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))
 def eigvals_form_pencil(value: Extensor) -> Extensor:
     left, right = _default_pencil(value)
     return _scalars(left, left.context.generalized_eigvals(left._kernel, right._kernel))
 
 
-@Extensor.eigh.register(_metric_is("positive"))
+@Extensor.eigh.register(_metric_is(MetricKind.POSITIVE))
 def eigh_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
     """Hermitian eigenpairs, orthonormal in the slot's metric, which must be positive definite."""
     left, right = _default_pencil(value)
     return _eigenpairs(left, *left.context.generalized_eigh(left._kernel, right._kernel))
 
 
-@Extensor.eigvalsh.register(_metric_is("positive"))
+@Extensor.eigvalsh.register(_metric_is(MetricKind.POSITIVE))
 def eigvalsh_form_pencil(value: Extensor) -> Extensor:
     left, right = _default_pencil(value)
     return _scalars(left, left.context.generalized_eigvalsh(left._kernel, right._kernel))
 
 
-@Extensor.det.register(_metric_is("positive", "indefinite"))
+@Extensor.det.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE))
 def det_form_pencil(value: Extensor) -> Extensor:
     """Determinant relative to the slot's metric, which must be invertible."""
     left, right = _default_pencil(value)
@@ -186,7 +157,7 @@ def _reduced_pencil(value: Extensor):
     return left, reduced, block(metric, measured, measured), coupling, order
 
 
-@Extensor.eigh.register(_metric_is("semidefinite"))
+@Extensor.eigh.register(_metric_is(MetricKind.SEMIDEFINITE))
 def eigh_form_semidefinite(value: Extensor) -> tuple[Extensor, Extensor]:
     """Hermitian eigenpairs against a semidefinite slot metric: one finite mode per blade the
     metric measures, orthonormal in it, with the blind components chosen to make the form
@@ -197,20 +168,20 @@ def eigh_form_semidefinite(value: Extensor) -> tuple[Extensor, Extensor]:
     return _eigenpairs(left, values, vectors)
 
 
-@Extensor.eigvalsh.register(_metric_is("semidefinite"))
+@Extensor.eigvalsh.register(_metric_is(MetricKind.SEMIDEFINITE))
 def eigvalsh_form_semidefinite(value: Extensor) -> Extensor:
     left, reduced, metric, _, _ = _reduced_pencil(value)
     return _scalars(left, left.context.generalized_eigvalsh(reduced, metric))
 
 
 # --- against the slot's metric: refused --------------------------------------------------
-Extensor.eigh.register(_metric_is("indefinite", "singular"))(_refusal("eigh", "a positive-semidefinite"))
-Extensor.eigvalsh.register(_metric_is("indefinite", "singular"))(_refusal("eigvalsh", "a positive-semidefinite"))
-Extensor.det.register(_metric_is("semidefinite", "singular"))(_refusal("det", "an invertible"))
+Extensor.eigh.register(_metric_is(MetricKind.INDEFINITE, MetricKind.SINGULAR))(_refusal("eigh", "a positive-semidefinite"))
+Extensor.eigvalsh.register(_metric_is(MetricKind.INDEFINITE, MetricKind.SINGULAR))(_refusal("eigvalsh", "a positive-semidefinite"))
+Extensor.det.register(_metric_is(MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))(_refusal("det", "an invertible"))
 
 
 # --- against an explicit metric ----------------------------------------------------------
-@Extensor.eig.register(_matching_forms)
+@Extensor.eig.register(lambda value, metric: value.form.matches(metric))
 def eig_form_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """Generalized form eigenpairs, including infinite eigenvalues for singular metrics.
 
@@ -220,26 +191,26 @@ def eig_form_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extens
     return _eigenpairs(left, *left.context.generalized_eig(left._kernel, right._kernel))
 
 
-@Extensor.eigh.register(_matching_forms)
+@Extensor.eigh.register(lambda value, metric: value.form.matches(metric))
 def eigh_form_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """Generalized Hermitian form eigenpairs, normalized in a positive-definite metric."""
     left, right = _pencil(value, metric)
     return _eigenpairs(left, *left.context.generalized_eigh(left._kernel, right._kernel))
 
 
-@Extensor.eigvals.register(_matching_forms)
+@Extensor.eigvals.register(lambda value, metric: value.form.matches(metric))
 def eigvals_form_metric(value: Extensor, metric: Extensor) -> Extensor:
     left, right = _pencil(value, metric)
     return _scalars(left, left.context.generalized_eigvals(left._kernel, right._kernel))
 
 
-@Extensor.eigvalsh.register(_matching_forms)
+@Extensor.eigvalsh.register(lambda value, metric: value.form.matches(metric))
 def eigvalsh_form_metric(value: Extensor, metric: Extensor) -> Extensor:
     left, right = _pencil(value, metric)
     return _scalars(left, left.context.generalized_eigvalsh(left._kernel, right._kernel))
 
 
-@Extensor.det.register(_matching_forms)
+@Extensor.det.register(lambda value, metric: value.form.matches(metric))
 def det_form_metric(value: Extensor, metric: Extensor) -> Extensor:
     """Determinant of the form relative to a metric form: det(metric^-1 value), frame independent."""
     left, right = _pencil(value, metric)
@@ -247,7 +218,7 @@ def det_form_metric(value: Extensor, metric: Extensor) -> Extensor:
 
 
 # --- coefficient factor ------------------------------------------------------------------
-@Extensor.cholesky.register(_is_square_form)
+@Extensor.cholesky.register(lambda value: value.form.is_square)
 def cholesky_form(value: Extensor) -> Extensor:
     """Lower unary coefficient factor, with both axes in the second slot layout."""
     return _form_map(value).cholesky()

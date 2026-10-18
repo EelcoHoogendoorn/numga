@@ -74,8 +74,12 @@ class ExtensionMethod:
         precedence: str | None = None,
         position: int | None = None,
         fields: bool = False,
+        staged: bool = False,
     ) -> Callable[[_Implementation], _Implementation]:
         """Register a type signature without mutating until decoration.
+
+        A staged implementation is called once per signature with the actual GATypes, and returns
+        the function that runs on values of those types.
 
         The number of dispatched Extensor operands is the number of
         declarative patterns. For a sole predicate it is inferred from that
@@ -91,7 +95,7 @@ class ExtensionMethod:
                 if len(patterns) == 1 and is_predicate(patterns[0]) else len(patterns)
             )
             return self._overloads[count].register(
-                *patterns, precedence=precedence, position=position, fields=fields,
+                *patterns, precedence=precedence, position=position, fields=fields, staged=staged,
             )
         predicate = len(patterns) == 1 and is_predicate(patterns[0])
         if predicate:
@@ -124,7 +128,10 @@ class ExtensionMethod:
                 )
             created = self._dispatch is None
             dispatch = (
-                GATypeDispatch(self.name, None, operand_count)
+                GATypeDispatch(
+                    self.name, None, operand_count,
+                    input_orientation=self._input_orientation, output_orientation=self._output_orientation,
+                )
                 if created
                 else self._dispatch
             )
@@ -134,6 +141,7 @@ class ExtensionMethod:
                 precedence=precedence,
                 position=position,
                 fields=fields,
+                staged=staged,
             )(implementation)
             if created:
                 self._dispatch = dispatch
@@ -151,18 +159,7 @@ class ExtensionMethod:
             raise LookupError(
                 f"extension method {self.name!r} has no registered implementations"
             )
-        if self._input_orientation is None and self._output_orientation is None:
-            return dispatch(*arguments, **kwargs)
-        operand = arguments[0].gatype
-        if self._input_orientation is not None and operand.orientation is not self._input_orientation:
-            raise LookupError(
-                f"{self.name!r} takes {self._input_orientation.value} elements; got {operand.signature}"
-            )
-        result = dispatch(*arguments, **kwargs)
-        if self._output_orientation is None or result.gatype.orientation is self._output_orientation:
-            return result
-        gatype = result.gatype.derive.with_orientations((self._output_orientation,) + result.gatype.input_orientations)
-        return type(result)._from_prepared_kernel(result.context, gatype, result._kernel)
+        return dispatch(*arguments, **kwargs)
 
     @typing_overload
     def __get__(
@@ -186,7 +183,7 @@ class ExtensionMethod:
         if instance is None:
             return self
         dispatch = self._dispatch
-        if dispatch is None or self._input_orientation is not None or self._output_orientation is not None:
+        if dispatch is None:
             return MethodType(self, instance)
         return MethodType(dispatch, instance)
 

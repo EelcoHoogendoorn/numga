@@ -3,8 +3,10 @@
 from .dispatch import AmbiguousGATypeDispatchWarning, GATypeDispatch
 from .factory import GATypeFactory
 from .gatype import GAType
-from .orientation import Orientation
+from .metric import MetricKind
+from .orientation import Orientation, UnorientedSubspace
 from .pattern import GATypePattern
+from . import rules
 from .traits import (
     CoefficientOrthogonal,
     EMPTY_TRAITS,

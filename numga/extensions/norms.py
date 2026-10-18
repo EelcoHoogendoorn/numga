@@ -11,6 +11,8 @@ from typing import NoReturn
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductScalar, ReverseProductZero
 
+from ._scalar_functions import register_scalar_function
+
 
 @Extensor.study_norm_squared.register(lambda g: g.is_study)
 def study_norm_squared(value: Extensor) -> Extensor:
@@ -29,16 +31,7 @@ def norm_squared(value: Extensor) -> Extensor:
     return value.symmetric_reverse_product()
 
 
-@Extensor.norm.register(lambda g: g.is_reoriented_scalar)
-def reoriented_scalar_norm(value: Extensor) -> Extensor:
-    return value.select_subspace(value.subspace.canonical).norm()
-
-
-@Extensor.norm.register(lambda g: g <= g.algebra.subspace.scalar())
-def scalar_norm(value: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(
-        value.context, value.gatype.derive.structural, value.context.xp.abs(value._kernel),
-    )
+register_scalar_function(Extensor.norm, lambda context, kernel: context.xp.abs(kernel))
 
 
 @Extensor.norm.register(GATypePattern(arity=0))
@@ -55,7 +48,6 @@ def null_normalized(value: Extensor) -> NoReturn:
 @Extensor.normalized.register(
     lambda g: g.derive.structural.derive.symmetric_reverse.is_scalar
 )
-@Extensor.normalized.register(ReverseProductScalar)
 def scalar_normalized(value: Extensor) -> Extensor:
     """Use a scalar correction, including certified scalar products in 6D+."""
     correction = value.symmetric_reverse_product().inverse_square_root()
@@ -71,6 +63,11 @@ def study_normalized(value: Extensor) -> Extensor:
     correction = product(value, value).square_root().inverse()
     # This correction comes from x * reverse(x), so its side matters.
     return (correction * value).with_traits(*value.gatype.normalized_traits)
+
+
+# A reverse product certified scalar by its traits, where its grades alone do not show it, as in six
+# dimensions and more: after the Study case, which repairs the drift a declared rotor accumulates.
+Extensor.normalized.register(lambda g: g.entails(ReverseProductScalar))(scalar_normalized)
 
 
 @Extensor.normalized.register(GATypePattern(arity=0))

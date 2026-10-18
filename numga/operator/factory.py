@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable
 import numpy as np
 
 from numga.algebra.self_product import grade_transform_sign, symmetric_product_terms
-from numga.binding import AxisTransform, TypeRules
+from numga.binding import AxisTransform
+from numga.gatype import rules
+from numga.gatype.rules import OperationRule
 from numga.extensor import Extensor
-from numga.gatype import GAType, Orientation
+from numga.gatype import GAType, Orientation, UnorientedSubspace
 from numga.gatype.traits import Identity
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
@@ -182,7 +184,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _geometric_product(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            "geometric_product",
+            rules.GEOMETRIC,
             left,
             right,
             lambda _left, _right, _output: True,
@@ -206,7 +208,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _inner(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            "inner", left, right,
+            rules.MULTIPLIED, left, right,
             lambda l, r, output: output == abs(np.subtract(l, r, dtype=np.int16)),
         )
 
@@ -217,7 +219,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _left_contraction(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            "left_contraction", left, right,
+            rules.MULTIPLIED, left, right,
             lambda l, r, output: output == np.subtract(r, l, dtype=np.int16),
         )
 
@@ -228,7 +230,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _right_contraction(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            "right_contraction", left, right,
+            rules.MULTIPLIED, left, right,
             lambda l, r, output: output == np.subtract(l, r, dtype=np.int16),
         )
 
@@ -243,7 +245,7 @@ class OperatorFactory:
             output, coefficient = self._anti_wedge_rule(complement, right_mask)
             return output, sign * coefficient
 
-        return self._bilinear("left_interior", left, right, basis_rule)
+        return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def right_interior(self, left: OperandType, right: OperandType) -> Extensor:
         """The right interior product: the anti-wedge of left with the right complement of right."""
@@ -256,7 +258,7 @@ class OperatorFactory:
             output, coefficient = self._anti_wedge_rule(left_mask, complement)
             return output, sign * coefficient
 
-        return self._bilinear("right_interior", left, right, basis_rule)
+        return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def _swap_sign(self, left_mask: int, right_mask: int) -> int:
         """The sign of reordering the generators of left_mask * right_mask, ignoring the metric."""
@@ -291,7 +293,7 @@ class OperatorFactory:
         """Construct only the requested output grade, retaining sparse support."""
 
         return self._product(
-            "grade_product", left, right,
+            rules.MULTIPLIED, left, right,
             lambda _left, _right, output: output == grade,
         )
 
@@ -304,7 +306,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _wedge(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            "wedge",
+            rules.MULTIPLIED,
             left,
             right,
             lambda left_grade, right_grade, output_grade: (
@@ -332,7 +334,7 @@ class OperatorFactory:
             # Basis blades commute or anticommute: the half difference is 0 or the product itself.
             return forward.blade, (forward.coefficient - reverse.coefficient) // 2
 
-        return self._bilinear("commutator", left, right, basis_rule)
+        return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def anticommutator(self, left: OperandType, right: OperandType) -> Extensor:
         """Build ``(left * right + right * left) / 2`` exactly."""
@@ -352,7 +354,7 @@ class OperatorFactory:
             # Basis blades commute or anticommute: the half sum is the product itself or 0.
             return forward.blade, (forward.coefficient + reverse.coefficient) // 2
 
-        return self._bilinear("anticommutator", left, right, basis_rule)
+        return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def regressive(self, left: OperandType, right: OperandType) -> Extensor:
         """Build ``dual_inverse(dual(left) ^ dual(right))`` exactly."""
@@ -377,7 +379,7 @@ class OperatorFactory:
                 left_sign * right_sign * wedge.coefficient * inverse_sign,
             )
 
-        return self._bilinear("regressive", left, right, basis_rule)
+        return self._bilinear(rules.REGRESSIVE, left, right, basis_rule)
 
     @lru_cache(maxsize=None)
     def cross(self, vector: SubSpace) -> Extensor:
@@ -464,11 +466,7 @@ class OperatorFactory:
         if output is not None:
             # A requested projection is not an unrestricted action.
             return result
-        gatype = TypeRules.operation(
-            "transform",
-            (versor, passenger, versor),
-            result.axes,
-        )
+        gatype = rules.TRANSFORM.result((versor, passenger, versor), result.axes)
         if gatype is result.gatype:
             return result
         return Extensor(result.context, gatype, result.kernel)
@@ -526,7 +524,7 @@ class OperatorFactory:
 
     def _product(
         self,
-        operation: str,
+        rule: OperationRule,
         left_type: GAType,
         right_type: GAType,
         grade_rule: GradeRule,
@@ -565,16 +563,12 @@ class OperatorFactory:
             match = valid & (table.blades == mask)
             coefficients[k, match] = signed_coeffs[match] * output_signs[k]
 
-        gatype = TypeRules.operation(
-            operation,
-            (left_type, right_type),
-            (output, left, right),
-        )
+        gatype = rule.result((left_type, right_type), (output, left, right))
         return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
 
     def _bilinear(
         self,
-        operation: str,
+        rule: OperationRule,
         left_type: GAType,
         right_type: GAType,
         basis_rule: BasisRule,
@@ -608,11 +602,7 @@ class OperatorFactory:
                 * output.signs[output_index[output_mask]]
             )
 
-        gatype = TypeRules.operation(
-            operation,
-            (left_type, right_type),
-            (output, left, right),
-        )
+        gatype = rule.result((left_type, right_type), (output, left, right))
         return Extensor(self.algebra.exact, gatype, SymbolicKernel(coefficients))
 
     @lru_cache(maxsize=None)
@@ -659,8 +649,7 @@ class OperatorFactory:
 
     def _operand_gatype(self, operand: OperandType) -> GAType:
         if isinstance(operand, SubSpace):
-            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
-            "ga.gatype(subspace, orientation=...)")
+            raise UnorientedSubspace()
         if not isinstance(operand, GAType) or operand.algebra is not self.algebra:
             raise ValueError("operation operand type belongs to another algebra")
         # An operator acts on blades; over the sites of a field it acts site by site when bound.
@@ -669,8 +658,7 @@ class OperatorFactory:
     def _nullary(self, gatype: GAType) -> GAType:
         """A nullary GAType of this algebra."""
         if isinstance(gatype, SubSpace):
-            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
-            "ga.gatype(subspace, orientation=...)")
+            raise UnorientedSubspace()
         if not isinstance(gatype, GAType) or gatype.algebra is not self.algebra or gatype.arity:
             raise TypeError("an operator is built from a nullary GAType of this algebra")
         return gatype

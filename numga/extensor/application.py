@@ -6,7 +6,10 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable
 
 from numga.backend.dense import binding_steps, ordered_binding
+from numga.backend.context import binding_context
 from numga.binding import BindingPlan, TypeRules
+
+from .fields import bind_fields
 
 if TYPE_CHECKING:
     from numga.backend.context import Context
@@ -35,8 +38,6 @@ def application(
     signature: tuple[tuple[Context, GAType], ...],
     equality_groups: tuple[tuple[int, ...], ...] = (),
 ) -> Callable[..., Extensor]:
-    from numga.backend.context import binding_context
-
     context = next((c for c in (target_context,) + tuple(c for c, _ in signature)
                     if not c.is_exact), target_context)
     key = (cls, target_type, target_context.key,
@@ -60,7 +61,6 @@ def compile_application(
             f"{target_type.arity} operands, got {len(signature)}"
         )
     if target_type.has_fields or any(t.has_fields for _, t in signature):
-        from .fields import bind_fields
         return lambda target, *operands: bind_fields(target, dict(enumerate(operands)))
     if context.is_exact or not signature:
         # Symbolic construction retains the exact binding implementation.

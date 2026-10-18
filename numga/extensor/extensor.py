@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-from numbers import Number
+from functools import reduce
 from operator import index as integer_index
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Mapping, Sequence, SupportsIndex
 
+import numga
 from numga.backend.context import binding_context
 from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, nullary_identity_groups
 from numga.extension import ExtensionMethod
-from numga.gatype import GAType, Orientation, Trait
+from numga.gatype import GAType, Orientation, Trait, rules
 from numga.subspace import SubSpace
+
+from . import operands
 
 from .namespaces import RestrictNamespace, SelectNamespace, SitesNamespace
 from .application import application, unary_application
+from .fields import bind_fields
 
 if TYPE_CHECKING:
     import numpy as np
@@ -103,6 +107,15 @@ class Extensor:
     greater = ExtensionMethod("greater")
     greater_equal = ExtensionMethod("greater_equal")
     to_array = ExtensionMethod("to_array")
+    add = ExtensionMethod("add")
+    subtract = ExtensionMethod("subtract")
+    divide = ExtensionMethod("divide")
+    power = ExtensionMethod("power")
+    reverse = ExtensionMethod("reverse")
+    clifford_conjugate = ExtensionMethod("clifford_conjugate")
+    involute = ExtensionMethod("involute")
+    scalar_negation = ExtensionMethod("scalar_negation")
+    pseudoscalar_negation = ExtensionMethod("pseudoscalar_negation")
 
     def __init__(self, context: Context, gatype: GAType, kernel: Any) -> None:
         kernel = context.prepare_kernel(kernel)
@@ -305,7 +318,7 @@ class Extensor:
     ) -> "Extensor":
         values = _collection_values(extensors)
         first = values[0]
-        gatype = TypeRules.collection("stack", axis, tuple(value.gatype for value in values))
+        gatype = _stacked_type(values)
         logical_axis = _insertion_axis(axis, first.ndim)
         kernel = first.context.xp.stack(
             tuple(_embed_kernel(first.context, value, gatype.subspaces) for value in values),
@@ -321,7 +334,7 @@ class Extensor:
     ) -> "Extensor":
         values = _collection_values(extensors)
         first = values[0]
-        gatype = TypeRules.collection("concatenate", axis, tuple(value.gatype for value in values))
+        gatype = _stacked_type(values)
         logical_axis = _existing_axis(axis, first.ndim)
         kernel = first.context.xp.concatenate(
             tuple(_embed_kernel(first.context, value, gatype.subspaces) for value in values),
@@ -365,7 +378,6 @@ class Extensor:
         if not raw_operands:
             return self
         if self._gatype.has_fields or any(operand.gatype.has_fields for operand in raw_operands.values()):
-            from .fields import bind_fields
             return bind_fields(self, raw_operands)
 
         plan = BindingPlan.build(self.gatype, raw_operands)
@@ -409,21 +421,8 @@ class Extensor:
             for slot, operand in enumerate(operands):
                 if not isinstance(operand, (GAType, SubSpace)):
                     bound[slot] = operand
-                    continue
-                space = operand.output_subspace if isinstance(operand, GAType) else operand
-                if space.same_support(self.input_subspaces[slot]) and (
-                    isinstance(operand, SubSpace) or operand.orientation is self.gatype.input_orientations[slot]
-                ):
-                    continue
-                if space not in self.input_subspaces[slot]:
-                    raise TypeError(
-                        f"slot {slot} takes {self.input_subspaces[slot]}; {space} is not inside it, "
-                        "so a cast must say what is projected away"
-                    )
-                bound[slot] = self.algebra.operator.identity(
-                    operand if isinstance(operand, GAType)
-                    else self.algebra.gatype.oriented((space,), (self.gatype.input_orientations[slot],))
-                )
+                elif (narrowed := self._gatype.slots.narrowing(slot, operand)) is not None:
+                    bound[slot] = narrowed
             return self.bind(bound)
         if len(operands) < self.arity:
             return self.bind(*operands)
@@ -450,11 +449,7 @@ class Extensor:
         output = self.output_subspace.restrict(
             tuple(self.output_subspace.masks[index] for index in indices),
         )
-        gatype = TypeRules.operation(
-            "squeeze_output",
-            (self.gatype,),
-            (output,) + self.input_subspaces,
-        )
+        gatype = rules.SQUEEZE.result((self.gatype,), (output,) + self.input_subspaces)
         return type(self)._from_prepared_kernel(self.context, gatype, self.kernel.take(indices, axis=0))
 
     def materialize(self, context: "Context") -> "Extensor":
@@ -558,274 +553,126 @@ class Extensor:
     def symmetric_involute_product(self) -> "Extensor":
         return self._symmetric_product("involute")
 
-    def _grade_transform(self, transform: str) -> "Extensor":
-        if self.gatype.grade_transform_is_identity(transform):
-            return self
-        result = self.algebra.operator._grade_transform(
-            self.gatype.derive.plain.derive.output, transform,
-        ).bind({0: self})
-        gatype = _with_fields(TypeRules.operation(
-            transform,
-            (self.gatype,),
-            result.axes,
-        ), result.gatype)
-        if result.gatype is gatype:
-            return result
-        return type(self)._from_prepared_kernel(result.context, gatype, result._kernel)
-
-    def reverse(self) -> "Extensor":
-        """Reverse every output multivector of this Extensor."""
-
-        return self._grade_transform("reverse")
-
     def dual(self) -> Extensor:
         return self.algebra.operator.dual(self.gatype.derive.plain.derive.output)(self)
 
     def dual_inverse(self) -> Extensor:
         return self.algebra.operator.dual_inverse(self.gatype.derive.plain.derive.output)(self)
 
-    def clifford_conjugate(self) -> "Extensor":
-        """Clifford-conjugate outputs, leaving complex coefficients unchanged."""
-
-        return self._grade_transform("clifford_conjugate")
-
-    def involute(self) -> "Extensor":
-        return self._grade_transform("involute")
-
-    def scalar_negation(self) -> "Extensor":
-        return self._grade_transform("scalar_negation")
-
-    def pseudoscalar_negation(self) -> "Extensor":
-        return self._grade_transform("pseudoscalar_negation")
-
     def __pos__(self) -> "Extensor":
         return self
 
     def __neg__(self) -> "Extensor":
-        gatype = _with_fields(TypeRules.operation(
-            "negative",
-            (self.gatype,),
-            self.gatype.subspaces,
-        ), self.gatype)
+        gatype = rules.NEGATE.result((self.gatype,), self.gatype.subspaces).derive.with_fields(self.gatype.fields)
         return type(self)._from_prepared_kernel(self.context, gatype, -self._kernel)
 
     def __lt__(self, other: object) -> Any:
-        return self.less(_scalar_operand(self.context, other))
+        return self.less(operands.compared(self._context, other))
 
     def __le__(self, other: object) -> Any:
-        return self.less_equal(_scalar_operand(self.context, other))
+        return self.less_equal(operands.compared(self._context, other))
 
     def __gt__(self, other: object) -> Any:
-        return self.greater(_scalar_operand(self.context, other))
+        return self.greater(operands.compared(self._context, other))
 
     def __ge__(self, other: object) -> Any:
-        return self.greater_equal(_scalar_operand(self.context, other))
+        return self.greater_equal(operands.compared(self._context, other))
 
     def __add__(self, other: object) -> Extensor | NotImplementedType:
-        other = _promote_identity(other)
-        if isinstance(other, Number):
-            if self.arity:
-                raise TypeError("scalar addition requires a nullary Extensor")
-            scalar = self.context.prepare_scalar(other)
-            # A plain number is an ordinary number, unchanged by any mirror: extrinsic.
-            other = type(self)._from_prepared_kernel(
-                self.context, self.algebra.gatype.scalar(),
-                self.context.scalar_kernel(scalar),
-            )
-        if _is_array(other):
-            other = _batch_scalar(self.context, other)
-        if not isinstance(other, Extensor):
-            return NotImplemented
-        if self.arity != other.arity:
-            raise ValueError("Extensor addition requires equal arity")
-        if self.algebra is not other.algebra:
-            raise ValueError("Extensor addition requires one algebra")
-        if self._gatype.has_fields or other._gatype.has_fields:
-            from .fields import add_fields
-            return add_fields(self, other)
-
-        result_axes = tuple(
-            left.union(right)
-            for left, right in zip(self.axes, other.axes)
-        )
-        context = _common_context(self, other)
-        left = context.lower(self)
-        right = context.lower(other)
-        left_kernel = _embed_kernel(context, left, result_axes)
-        right_kernel = _embed_kernel(context, right, result_axes)
-        gatype = TypeRules.operation(
-            "add", (self.gatype, other.gatype), result_axes
-        )
-        return type(self)._from_prepared_kernel(context, gatype, left_kernel + right_kernel)
+        other = operands.linear(self._context, other)
+        return NotImplemented if other is None else self.add(other)
 
     def __radd__(self, other: object) -> Extensor | NotImplementedType:
-        other = _promote_identity(other)
-        if not isinstance(other, (Extensor, Number)) and not _is_array(other):
-            return NotImplemented
-        return self + other
+        other = operands.linear(self._context, other)
+        return NotImplemented if other is None else self.add(other)
 
     def __sub__(self, other: object) -> Extensor | NotImplementedType:
-        other = _promote_identity(other)
-        if not isinstance(other, (Extensor, Number)) and not _is_array(other):
-            return NotImplemented
-        return self + (-other)
+        other = operands.linear(self._context, other)
+        return NotImplemented if other is None else self.subtract(other)
 
     def __rsub__(self, other: object) -> Extensor | NotImplementedType:
-        other = _promote_identity(other)
-        if not isinstance(other, (Extensor, Number)) and not _is_array(other):
-            return NotImplemented
-        return -self + other
+        other = operands.linear(self._context, other)
+        return NotImplemented if other is None else Extensor.subtract(other, self)
 
     def __mul__(self, scalar: object) -> Extensor:
-        from numga.expression import geometric_product, is_expression_operand
-
-        if is_expression_operand(scalar):
-            return geometric_product(self, scalar)
-        if _is_array(scalar):
-            return geometric_product(self, _batch_scalar(self.context, scalar))
-        if not isinstance(scalar, Number):
+        if numga.expression.is_expression_operand(scalar):
+            return numga.expression.geometric_product(self, scalar)
+        found = operands.kind(scalar)
+        if found is operands.Kind.ARRAY:
+            return numga.expression.geometric_product(self, operands.batch(self._context, scalar))
+        if found is not operands.Kind.NUMBER:
             return NotImplemented
         scalar = self.context.prepare_scalar(scalar)
-        gatype = _with_fields(TypeRules.operation("scale", (self.gatype,), self.gatype.subspaces), self.gatype)
+        gatype = rules.SCALE.result((self.gatype,), self.gatype.subspaces).derive.with_fields(self.gatype.fields)
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel * scalar)
 
     def __rmul__(self, scalar: object) -> Extensor:
-        from numga.expression import geometric_product, is_expression_operand
-
-        if is_expression_operand(scalar):
-            return geometric_product(scalar, self)
+        if numga.expression.is_expression_operand(scalar):
+            return numga.expression.geometric_product(scalar, self)
         return self * scalar
 
     def __truediv__(self, other: object) -> Extensor | NotImplementedType:
-        if isinstance(other, Number):
+        if operands.kind(other) is operands.Kind.NUMBER:
             # The context validates the scalar before it is inverted.
-            scalar = self.context.prepare_scalar(other)
-            return self * (1 / scalar)
-        if isinstance(other, Extensor):
-            if other.gatype.is_scalar:
-                return self * other.inverse()
-            if self.arity or other.arity:
-                raise TypeError("geometric-product division requires nullary Extensors")
-            if self.algebra is not other.algebra:
-                raise ValueError("Extensor division requires one algebra")
-            return self * other.inverse()
-        if _is_array(other):
-            return self * _batch_scalar(self.context, 1 / other)
-        return NotImplemented
+            return self * (1 / self._context.prepare_scalar(other))
+        other = operands.divisor(self._context, other)
+        return NotImplemented if other is None else self.divide(other)
 
     def __rtruediv__(self, other: object) -> Extensor | NotImplementedType:
-        if _is_array(other):
-            other = _batch_scalar(self.context, other)
-        if not isinstance(other, (Number, Extensor)):
-            return NotImplemented
-        if self.gatype.is_scalar:
-            return self.inverse() * other
-        if self.arity:
-            raise TypeError("geometric-product division requires a nullary Extensor")
-        return self.inverse() * other
+        other = operands.divisor(self._context, other)
+        return NotImplemented if other is None else Extensor.divide(other, self)
 
-    def __pow__(self, power: int) -> Extensor | NotImplementedType:
-        if not isinstance(power, int):
+    def __pow__(self, exponent: int) -> Extensor | NotImplementedType:
+        if not isinstance(exponent, int):
             return NotImplemented
-        if power == 2:
-            return self.squared()
-        if power == -1:
-            return self.inverse()
-        if power == -2:
-            return self.squared().inverse()
-        if power == 1:
-            return self
-        if power == 0:
-            if self.gatype.is_scalar:
-                return self.context.prepare_scalar(1)
-        if self.gatype.is_scalar:
-            if power > 0:
-                res = self
-                for _ in range(power - 1):
-                    res = res * self
-                return res
-            elif power < 0:
-                inv = self.inverse()
-                res = inv
-                for _ in range(-power - 1):
-                    res = res * inv
-                return res
-        return NotImplemented
+        return self.power(exponent)
 
     def wedge(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import wedge
-
-        return wedge(self, other)
+        return numga.expression.wedge(self, other)
 
     def scalar_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import scalar_product
-
-        return scalar_product(self, other)
+        return numga.expression.scalar_product(self, other)
 
     def inner(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import inner
-
-        return inner(self, other)
+        return numga.expression.inner(self, other)
 
     def bivector_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import bivector_product
-
-        return bivector_product(self, other)
+        return numga.expression.bivector_product(self, other)
 
     def trivector_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import trivector_product
-
-        return trivector_product(self, other)
+        return numga.expression.trivector_product(self, other)
 
     def commutator(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import commutator
-
-        return commutator(self, other)
+        return numga.expression.commutator(self, other)
 
     def anticommutator(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import anticommutator
-
-        return anticommutator(self, other)
+        return numga.expression.anticommutator(self, other)
 
     def left_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import left_contraction
-
-        return left_contraction(self, other)
+        return numga.expression.left_contraction(self, other)
 
     def right_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import right_contraction
-
-        return right_contraction(self, other)
+        return numga.expression.right_contraction(self, other)
 
     def left_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import left_interior
-
-        return left_interior(self, other)
+        return numga.expression.left_interior(self, other)
 
     def right_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import right_interior
-
-        return right_interior(self, other)
+        return numga.expression.right_interior(self, other)
 
     def regressive(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import regressive
-
-        return regressive(self, other)
+        return numga.expression.regressive(self, other)
 
     def transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
         """The versor's action on the passenger, `self >> passenger`: the composition of the reflections
         in its vector factors. A reflection in a unit vector `m` takes an extrinsic `x` to
         `m * x.involute() * m.inverse()`, and an intrinsic `x` to its negative."""
-        from numga.expression import transform
-
-        return transform(self, passenger)
+        return numga.expression.transform(self, passenger)
 
     def reverse_transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
         """The action of the versor's reverse, `self << passenger`: defined for every value, and for a
         unit versor the inverse of `self >> passenger`."""
-        from numga.expression import reverse_transform
-
-        return reverse_transform(self, passenger)
+        return numga.expression.reverse_transform(self, passenger)
 
     def __rshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return self.transform(other)
@@ -835,34 +682,22 @@ class Extensor:
 
     # Operands numga does not know, a sparse extensor among them, get their reflected operator.
     def __xor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import is_expression_operand
-
-        return self.wedge(other) if is_expression_operand(other) else NotImplemented
+        return self.wedge(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __rxor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import is_expression_operand, wedge
-
-        return wedge(other, self) if is_expression_operand(other) else NotImplemented
+        return numga.expression.wedge(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __and__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import is_expression_operand
-
-        return self.regressive(other) if is_expression_operand(other) else NotImplemented
+        return self.regressive(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __rand__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import is_expression_operand, regressive
-
-        return regressive(other, self) if is_expression_operand(other) else NotImplemented
+        return numga.expression.regressive(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __or__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import is_expression_operand
-
-        return self.inner(other) if is_expression_operand(other) else NotImplemented
+        return self.inner(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __ror__(self, other: Extensor | GAType | SubSpace) -> Extensor:
-        from numga.expression import inner, is_expression_operand
-
-        return inner(other, self) if is_expression_operand(other) else NotImplemented
+        return numga.expression.inner(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def _require_compatible(self, other: "Extensor") -> None:
         if not self.context.is_compatible_with(other.context):
@@ -882,58 +717,6 @@ class _AtIndexer:
 
     def __getitem__(self, index: object) -> "_AtUpdate":
         return _AtUpdate(self._extensor, index)
-
-
-def _with_fields(gatype: GAType, source: GAType) -> GAType:
-    """A type inferred over blades, given the fields of the type it came from."""
-    return gatype.derive.with_fields(source.fields) if source.fields else gatype
-
-
-def _scalar_operand(context, value) -> Extensor:
-    return value if isinstance(value, Extensor) else _batch_scalar(context, context.xp.asarray(value))
-
-
-def _batch_scalar(context, values) -> Extensor:
-    """A raw array in arithmetic is a batch of scalars of exactly the array's shape: the structural
-    axis is always appended, so a trailing axis of length one is batch, never structural."""
-    return context.multivector.scalar(values[..., None])
-
-
-def _is_array(value: object) -> bool:
-    """An array (or array-like with a shape and a dtype) of any rank in linear arithmetic is a batch
-    of scalars, 0-d arrays and traced scalars included; plain numbers, NumPy scalars among them, are
-    not."""
-
-    return hasattr(value, "shape") and hasattr(value, "dtype") and not isinstance(value, (Extensor, Number))
-
-
-def _promote_identity(value: object) -> object:
-    """A nullary GAType in linear arithmetic is the identity map on it.
-
-    This is the same reading an open slot has in an expression: the slot left alone maps
-    every element to itself.
-    """
-    from numga.gatype import GAType
-    from numga.subspace import SubSpace
-
-    if isinstance(value, SubSpace):
-        raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
-            "ga.gatype(subspace, orientation=...)")
-    if isinstance(value, GAType):
-        if value.arity:
-            raise TypeError("only a nullary GAType promotes to an identity map")
-        return value.algebra.operator.identity(value)
-    return value
-
-
-def _common_context(left: Extensor, right: Extensor) -> "Context":
-    if left.context.is_compatible_with(right.context):
-        return left.context
-    if left.context.is_exact:
-        return right.context
-    if right.context.is_exact:
-        return left.context
-    raise ValueError("Extensor contexts are incompatible")
 
 
 def _embed_kernel(
@@ -964,13 +747,13 @@ class _AtUpdate:
         self._index = index
 
     def set(self, value: object) -> Extensor:
-        return self._update("set", value)
+        return self._update(self._extensor.context.functional_set, value)
 
     def add(self, value: object) -> Extensor:
         """Add the value at the index; where the index repeats, the additions accumulate."""
-        return self._update("add", value)
+        return self._update(self._extensor.context.functional_add, value)
 
-    def _update(self, operation: str, value: object) -> Extensor:
+    def _update(self, update: Callable[[Any, object, object], Any], value: object) -> Extensor:
         target = self._extensor
         kernel_index = _batch_kernel_index(
             self._index,
@@ -980,14 +763,26 @@ class _AtUpdate:
         if isinstance(value, Extensor):
             target._require_compatible(value)
             replacement = value._kernel
-            operand_gatypes = (target.gatype, value.gatype)
         else:
             replacement = value
-            operand_gatypes = (target.gatype,)
-        gatype = TypeRules.collection(operation, self._index, operand_gatypes)
-        update = target.context.functional_set if operation == "set" else target.context.functional_add
+        # The new elements need not share the target's traits.
         kernel = update(target._kernel, kernel_index, replacement)
-        return type(target)._from_prepared_kernel(target.context, gatype, kernel)
+        return type(target)._from_prepared_kernel(target.context, target.gatype.derive.structural, kernel)
+
+
+def _stacked_type(values: tuple[Extensor, ...]) -> GAType:
+    """The type of values set side by side along a batch axis: each structural output axis the union
+    of theirs, zero-embedded."""
+    gatypes = tuple(value.gatype for value in values)
+    first = gatypes[0]
+    if all(gatype == first for gatype in gatypes[1:]):
+        return first
+    if any(gatype.input_subspaces != first.input_subspaces for gatype in gatypes):
+        raise ValueError("a collection requires equal input axes")
+    if any(gatype.fields != first.fields for gatype in gatypes):
+        raise ValueError("a collection requires equal fields")
+    output = reduce(SubSpace.union, (gatype.output_subspace for gatype in gatypes))
+    return rules.STACK.result(gatypes, (output,) + first.input_subspaces).derive.with_fields(first.fields)
 
 
 def _collection_values(extensors: Iterable[Extensor]) -> tuple[Extensor, ...]:

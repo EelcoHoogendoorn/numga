@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 import warnings
 
+import numga
+
 from .gatype import GAType
+from .orientation import Orientation
 from .pattern import (
     DispatchPattern,
     GATypePattern,
@@ -30,12 +33,14 @@ class AmbiguousGATypeDispatchWarning(UserWarning):
 class _Registration:
     patterns: tuple[DispatchPattern, ...]
     implementation: Callable[..., Any]
+    staged: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class _PredicateRegistration:
     predicate: Callable[..., object]
     implementation: Callable[..., Any]
+    staged: bool = False
 
 
 class GATypeDispatch:
@@ -46,6 +51,10 @@ class GATypeDispatch:
     use true specificity. Opaque predicate registrations are presumed to be
     low-level specializations: matching predicates take priority over every
     declarative registration and use their own list order as the tie-breaker.
+
+    A staged registration is called once per signature with the actual GATypes, and returns the
+    implementation for values of those types, which the cache keeps. A declared input orientation
+    is checked, and a declared output orientation applied, once per signature as well.
     """
 
     __slots__ = (
@@ -56,6 +65,8 @@ class GATypeDispatch:
         "_predicates",
         "_field_predicates",
         "_cache",
+        "_input_orientation",
+        "_output_orientation",
     )
 
     def __init__(
@@ -63,6 +74,8 @@ class GATypeDispatch:
         name: str,
         algebra: Algebra | None,
         operand_count: int,
+        input_orientation: Orientation | None = None,
+        output_orientation: Orientation | None = None,
     ) -> None:
         if not isinstance(name, str) or not name:
             raise TypeError("a dispatcher name must be a non-empty string")
@@ -79,6 +92,8 @@ class GATypeDispatch:
         object.__setattr__(self, "_predicates", [])
         object.__setattr__(self, "_field_predicates", [])
         object.__setattr__(self, "_cache", {})
+        object.__setattr__(self, "_input_orientation", input_orientation)
+        object.__setattr__(self, "_output_orientation", output_orientation)
 
     @property
     def name(self) -> str:
@@ -117,6 +132,7 @@ class GATypeDispatch:
         precedence: str | None = None,
         position: int | None = None,
         fields: bool = False,
+        staged: bool = False,
     ) -> Callable[[_Implementation], _Implementation]:
         """Register a declarative signature or an opaque GAType predicate.
 
@@ -136,12 +152,12 @@ class GATypeDispatch:
             if not (len(patterns) == 1 and is_predicate(patterns[0])):
                 raise TypeError("a field implementation registers a predicate")
             def decorate_fields(implementation: _Implementation) -> _Implementation:
-                self._field_predicates.append(_PredicateRegistration(patterns[0], implementation))
+                self._field_predicates.append(_PredicateRegistration(patterns[0], implementation, staged))
                 self._cache.clear()
                 return implementation
             return decorate_fields
         if len(patterns) == 1 and is_predicate(patterns[0]):
-            return self._register_predicate(patterns[0], position=position)
+            return self._register_predicate(patterns[0], position=position, staged=staged)
         if position is not None:
             raise TypeError("position is supported only for callable predicates")
 
@@ -172,7 +188,7 @@ class GATypeDispatch:
         def decorate(implementation: _Implementation) -> _Implementation:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
-            self._registrations.append(_Registration(normalized, implementation))
+            self._registrations.append(_Registration(normalized, implementation, staged))
             self._cache.clear()
             return implementation
 
@@ -183,6 +199,7 @@ class GATypeDispatch:
         predicate: Callable[..., object],
         *,
         position: int | None,
+        staged: bool = False,
     ) -> Callable[[_Implementation], _Implementation]:
         if position is not None and (
             isinstance(position, bool)
@@ -198,7 +215,7 @@ class GATypeDispatch:
         def decorate(implementation: _Implementation) -> _Implementation:
             if not callable(implementation):
                 raise TypeError("a dispatch implementation must be callable")
-            entry = _PredicateRegistration(predicate, implementation)
+            entry = _PredicateRegistration(predicate, implementation, staged)
             if position is None:
                 self._predicates.append(entry)
             else:
@@ -220,19 +237,24 @@ class GATypeDispatch:
         self,
         actual_gatypes: tuple[GAType, ...],
     ) -> Callable[..., Any]:
-        """Validate and select once for a previously unseen signature."""
+        """Validate, select, stage and orient once for a previously unseen signature."""
 
         actual = self._validate_actual_signature(actual_gatypes)
+        if self._input_orientation is not None and actual[0].orientation is not self._input_orientation:
+            raise LookupError(
+                f"{self.name!r} takes {self._input_orientation.value} elements; got {actual[0].signature}"
+            )
+        implementation = self._oriented(self._staged(self._select(actual), actual))
+        self._cache[actual] = implementation
+        return implementation
 
+    def _select(self, actual: tuple[GAType, ...]) -> _Registration | _PredicateRegistration:
         if any(gatype.has_fields for gatype in actual):
-            implementation = self._resolve_fields(actual)
-            self._cache[actual] = implementation
-            return implementation
+            return self._select_fields(actual)
 
         for entry in self._predicates:
             if entry.predicate(*actual):
-                self._cache[actual] = entry.implementation
-                return entry.implementation
+                return entry
 
         matches = tuple(
             entry
@@ -256,27 +278,50 @@ class GATypeDispatch:
                 for other in matches
             )
         )
-        implementation = maximal[0].implementation
-        self._cache[actual] = implementation
-        return implementation
+        return maximal[0]
 
-    def _resolve_fields(self, actual: tuple[GAType, ...]) -> Callable[..., Any]:
-        from numga.extensor.fields import site_by_site
+    @staticmethod
+    def _staged(entry: _Registration | _PredicateRegistration, actual: tuple[GAType, ...]) -> Callable[..., Any]:
+        return entry.implementation(*actual) if entry.staged else entry.implementation
 
+    def _oriented(self, implementation: Callable[..., Any]) -> Callable[..., Any]:
+        """The implementation with its result in the declared output orientation."""
+
+        orientation = self._output_orientation
+        if orientation is None:
+            return implementation
+
+        def oriented(*arguments: Any, **kwargs: Any) -> Any:
+            result = implementation(*arguments, **kwargs)
+            gatype = result.gatype
+            if gatype.orientation is orientation:
+                return result
+            gatype = gatype.derive.with_orientations((orientation,) + gatype.input_orientations)
+            return type(result)._from_prepared_kernel(result.context, gatype, result._kernel)
+
+        return oriented
+
+    def _select_fields(self, actual: tuple[GAType, ...]) -> _PredicateRegistration:
         for entry in self._field_predicates:
             if entry.predicate(*actual):
-                return entry.implementation
+                return entry
         # A map with sites is one map into or out of a field, not a map per site: maps per site are a batch.
         if any(gatype.has_fields and gatype.arity for gatype in actual):
             raise LookupError(f"no {self.name!r} implementation for the field maps {actual!r}")
-        return site_by_site(self, self._operand_count)
+        return _PredicateRegistration(_always, numga.extensor.fields.site_by_site(self, self._operand_count))
 
     def __call__(self, *arguments: Any, **kwargs: Any) -> Any:
-        operands = arguments[: self._operand_count]
+        count = self._operand_count
         try:
-            actual = tuple(operand.gatype for operand in operands)
+            if count == 1:
+                actual = (arguments[0].gatype,)
+            elif count == 2:
+                actual = (arguments[0].gatype, arguments[1].gatype)
+            else:
+                actual = tuple(operand.gatype for operand in arguments[:count])
             implementation = self._cache[actual]
-        except (AttributeError, KeyError, TypeError):
+        except (AttributeError, IndexError, KeyError, TypeError):
+            operands = arguments[:count]
             # Only valid, fixed-arity signatures enter the cache. A hit already
             # establishes these invariants without repeating type analysis.
             if len(arguments) < self._operand_count:
@@ -349,6 +394,10 @@ class GATypeDispatch:
                 f"every {self.name!r} actual GAType must belong to one algebra"
             )
         return actual
+
+
+def _always(*gatypes: GAType) -> bool:
+    return True
 
 
 def is_predicate(pattern: object) -> bool:

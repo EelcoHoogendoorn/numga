@@ -31,15 +31,6 @@ if TYPE_CHECKING:
     from numga.subspace import SubSpace
 
 
-# These transforms satisfy T(ab)=T(b)T(a). Merely being an involution is
-# insufficient. A new SelfProduct descriptor does not register a theorem.
-# Coefficient conjugation/adjoints require a conjugate-linear execution
-# contract and are deliberately not installed by this first pass.
-_MULTIPLICATIVE_SELF_PRODUCTS = {
-    "geometric_product": (ReverseProduct, CliffordConjugateProduct),
-}
-
-
 def multiply_product_results(left: ProductResult, right: ProductResult) -> ProductResult:
     """Multiply scalar categories without assuming reality or positivity."""
 
@@ -54,81 +45,74 @@ def multiply_product_results(left: ProductResult, right: ProductResult) -> Produ
     return ProductResult.SCALAR
 
 
-def self_product_result(gatype: GAType, self_product: SelfProduct) -> ProductResult | None:
-    """Return the strongest result in exactly this self-product family."""
-
-    for result in (
-        ProductResult.ONE, ProductResult.NONZERO,
-        ProductResult.ZERO, ProductResult.SCALAR,
-    ):
-        if gatype.entails(ProductFact(self_product, result)):
-            return result
-    return None
+def no_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """An operation with no known law attaches no traits."""
+    return EMPTY_TRAITS
 
 
-def self_product_relation(
-    gatype: GAType, self_product: SelfProduct,
-) -> ProductRelation | None:
-    """Look up a relation by family; different families never substitute."""
-
-    return next((
-        trait for trait in gatype.traits
-        if isinstance(trait, ProductRelation) and trait.self_product == self_product
-    ), None)
-
-
-def versor_product_relation(gatype: GAType) -> VersorProduct | None:
-    return next((t for t in gatype.traits if isinstance(t, VersorProduct)), None)
+def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """The reverse and the Clifford conjugate satisfy T(ab) = T(b)T(a), so the geometric product
+    relates its result's self-products to its operands'; a product of versors is a versor. Being an
+    involution alone is not enough, and no other self-product registers this theorem."""
+    return TraitSet((
+        ProductRelation(ReverseProduct, ProductResult.ONE, (0, 1)),
+        ProductRelation(CliffordConjugateProduct, ProductResult.ONE, (0, 1)),
+        VersorProduct(slots=(0, 1)),
+    ))
 
 
-def operation_traits(
-    operation: object,
-    operand_gatypes: tuple[GAType, ...],
-    result_subspaces: tuple["SubSpace", ...],
-) -> TraitSet:
-    """Attach only the laws explicitly known for this operation."""
+def transform_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """A versor's action carries the sandwich laws, applied when the same versor binds both sides."""
+    return TraitSet((Sandwich,))
 
-    families = _MULTIPLICATIVE_SELF_PRODUCTS.get(operation, ())
-    if families:
-        return TraitSet((
-            *(ProductRelation(family, ProductResult.ONE, (0, 1)) for family in families),
-            VersorProduct(slots=(0, 1)),
-        ))
 
-    if operation == "transform":
-        return TraitSet((Sandwich,))
-
-    if operation in (
-        "reverse", "clifford_conjugate", "involute",
-        "scalar_negation", "pseudoscalar_negation",
-    ) and operand_gatypes[0].grade_transform_is_identity(operation):
-        return operand_gatypes[0].traits
-
-    if operation in ("negative", "involute"):
-        # Negation leaves quadratic products unchanged. Grade involution is an
-        # automorphism commuting with these transforms and fixing scalars.
-        # Neither preserves arbitrary user traits or the identity map.
-        return TraitSet(
-            trait for trait in operand_gatypes[0].effective_traits
-            if (
-                isinstance(trait, (ProductFact, ProductRelation))
-                and trait.self_product in (
-                    ReverseProduct, CliffordConjugateProduct, GradeInvolutionProduct,
-                )
-            )
-            or isinstance(trait, VersorProduct)
-            or trait in (Versor, CoefficientOrthogonal)
+def negation_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """Negation and grade involution leave quadratic products unchanged; grade involution is an
+    automorphism commuting with these transforms and fixing scalars. Neither preserves arbitrary user
+    traits or the identity map."""
+    return TraitSet(
+        trait for trait in operands[0].effective_traits
+        if (
+            isinstance(trait, (ProductFact, ProductRelation))
+            and trait.self_product in (ReverseProduct, CliffordConjugateProduct, GradeInvolutionProduct)
         )
+        or isinstance(trait, VersorProduct)
+        or trait in (Versor, CoefficientOrthogonal)
+    )
 
-    if operation == "transpose" and len(operand_gatypes) == 1:
-        if operand_gatypes[0].entails(CoefficientOrthogonal):
-            return TraitSet((CoefficientOrthogonal,))
 
-    if operation in ("reverse", "clifford_conjugate") and len(operand_gatypes) == 1:
-        operand = operand_gatypes[0]
-        # A one-sided scalar/zero self-product cannot in general be swapped.
-        # A nonzero scalar gives a genuine inverse in finite dimensions.
-        family = SelfProduct(operation)
+def transpose_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """A transpose keeps coefficient orthogonality."""
+    return TraitSet((CoefficientOrthogonal,)) if operands[0].entails(CoefficientOrthogonal) else EMPTY_TRAITS
+
+
+def coefficient_orthogonality_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """A sign change of output coordinates keeps coefficient orthogonality."""
+    return TraitSet((CoefficientOrthogonal,)) if operands[0].entails(CoefficientOrthogonal) else EMPTY_TRAITS
+
+
+def shared_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """Values set side by side each keep their facts, so the collection has the facts they share. Facts
+    about whole values survive a zero embedding; facts about maps, such as orthogonality, need their
+    original codomain."""
+    if operands[0].arity and any(gatype.output_subspace != axes[0] for gatype in operands):
+        return EMPTY_TRAITS
+    shared = set(operands[0].effective_traits.closure)
+    for gatype in operands[1:]:
+        shared.intersection_update(gatype.effective_traits.closure)
+    return TraitSet(shared)
+
+
+def conjugation_laws(family: SelfProduct):
+    """The laws of the reverse or the Clifford conjugate, the transform of the self-product `family`.
+
+    A one-sided scalar or zero self-product cannot in general be swapped; a nonzero scalar gives a
+    genuine inverse in finite dimensions. These transforms take products of vectors to products of
+    vectors, independently of self-product inference.
+    """
+
+    def laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+        operand = operands[0]
         inferred: list[Trait] = []
         # Any output-coordinate sign change preserves coefficient orthogonality.
         if operand.entails(CoefficientOrthogonal):
@@ -138,25 +122,30 @@ def operation_traits(
             if operand.entails(fact):
                 inferred.append(fact)
                 break
-        # These transforms take products of vectors to products of vectors,
-        # independently of self-product inference.
         if operand.entails(Versor):
             inferred.append(Versor)
-        relation = self_product_relation(operand, family)
+        relation = operand.self_products.relation(family)
         if relation is not None and relation.factor in (ProductResult.ONE, ProductResult.NONZERO):
-            inferred.append(ProductRelation(
-                family, relation.factor, relation.slots, nonzero_inputs=True,
-            ))
-        versor_relation = versor_product_relation(operand)
+            inferred.append(ProductRelation(family, relation.factor, relation.slots, nonzero_inputs=True))
+        versor_relation = operand.self_products.versor_relation
         if versor_relation is not None:
             inferred.append(versor_relation)
         return TraitSet(inferred)
 
-    if operation in ("scalar_negation", "pseudoscalar_negation"):
-        if operand_gatypes[0].entails(CoefficientOrthogonal):
-            return TraitSet((CoefficientOrthogonal,))
+    return laws
 
-    return EMPTY_TRAITS
+
+def unless_identity(transform: str, laws):
+    """A grade transform's laws, except where the transform is the identity on its operand's grades:
+    there the result is the operand, with all its traits."""
+
+    def guarded(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+        if operands[0].grade_transform_is_identity(transform):
+            return operands[0].traits
+        return laws(operands, axes)
+
+    return guarded
+
 
 
 def _transform_versor(plan: "BindingPlan") -> GAType | None:
@@ -224,7 +213,7 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             if result is not None:
                 inferred.append(result)
 
-    relation = versor_product_relation(plan.target_gatype)
+    relation = plan.target_gatype.self_products.versor_relation
     if relation is not None:
         result = _bind_versor_product(plan, relation)
         if result is not None:
@@ -289,7 +278,7 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
 
         operand = binding.operand_gatype
         if operand.arity == 0:
-            result = self_product_result(operand, relation.self_product)
+            result = operand.self_products.result(relation.self_product)
             if result is None:
                 return None
             if relation.nonzero_inputs and result not in (ProductResult.ONE, ProductResult.NONZERO):
@@ -297,7 +286,7 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
             factor = multiply_product_results(factor, result)
             continue
 
-        inner = self_product_relation(operand, relation.self_product)
+        inner = operand.self_products.relation(relation.self_product)
         if inner is None:
             return None
         if relation.nonzero_inputs and inner.factor not in (ProductResult.ONE, ProductResult.NONZERO):
@@ -330,7 +319,7 @@ def _bind_versor_product(plan: "BindingPlan", relation: VersorProduct) -> Trait 
             if not operand.entails(Versor):
                 return None
             continue
-        inner = versor_product_relation(operand)
+        inner = operand.self_products.versor_relation
         if inner is None:
             return None
         result_slots.extend(splices[slot][inner_slot] for inner_slot in inner.slots)

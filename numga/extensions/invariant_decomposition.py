@@ -224,14 +224,6 @@ def log_decomposed(r: Extensor) -> Extensor:
     return _where(n == 0, bivector * angle(xp, 2 * scalar - 1), logarithm)
 
 
-def _null_wedge(t) -> bool:
-    """The 4-vector part of the square of type t squares to zero."""
-    algebra = t.algebra
-    wedge = t.derive.squared.output_subspace.intersection(algebra.subspace.k_vector(4))
-    # a part of a square, so extrinsic
-    return algebra.gatype(wedge, orientation=Orientation.extrinsic).derive.squared.is_empty
-
-
 def _decomposable(algebra) -> bool:
     """Four or five dimensions, without the two positive and two negative directions that let the
     parts of a bivector be complex."""
@@ -251,7 +243,7 @@ def register() -> None:
     before_exp = Extensor.exp.position_of(bivector_exp)
     for predicate, implementation in (
         (lambda t: t <= t.algebra.subspace.bivector() and _decomposable(t.algebra), exp_decomposed),
-        (lambda t: t <= t.algebra.subspace.bivector() and _decomposable(t.algebra) and _null_wedge(t), exp_null_wedge),
+        (lambda t: t <= t.algebra.subspace.bivector() and _decomposable(t.algebra) and t.has_null_wedge, exp_null_wedge),
         (lambda t: t <= t.algebra.subspace.bivector() and t.derive.squared.is_scalar, exp_simple),
     ):
         Extensor.exp.register(predicate, position=before_exp)(implementation)
@@ -259,7 +251,7 @@ def register() -> None:
     for predicate, implementation in (
         (lambda t: t <= t.algebra.gatype.rotor() and _decomposable(t.algebra), log_decomposed),
         (lambda t: t <= t.algebra.gatype.rotor() and _decomposable(t.algebra)
-         and _null_wedge(t.algebra.gatype.bivector()), log_null_wedge),
+         and t.algebra.gatype.bivector().has_null_wedge, log_null_wedge),
         (lambda t: t <= t.algebra.gatype.rotor() and t.algebra.dimension < 4, log_simple),
     ):
         Extensor.log.register(predicate, position=before_log)(implementation)

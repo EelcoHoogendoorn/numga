@@ -38,3 +38,14 @@ class Orientation(Enum):
 
     def __repr__(self) -> str:
         return f"Orientation.{self.value}"
+
+
+class UnorientedSubspace(TypeError):
+    """A subspace given where a type is needed: a subspace names blades, and a type also says how they
+    are oriented."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "a subspace has no orientation: build the type from a named constructor, or as "
+            "ga.gatype(subspace, orientation=...)"
+        )

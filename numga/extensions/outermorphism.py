@@ -11,30 +11,41 @@ grade. This is the extension operator of A. M. Moya, V. V. Fernández and W. A. 
 
 from __future__ import annotations
 
-from functools import reduce
+from functools import lru_cache, reduce
 from itertools import combinations
 from operator import and_, xor
+from typing import Any, Callable
 
 import numpy as np
 
 from numga.extensor import Extensor, stack
 from numga.gatype import GAType, Orientation
+from numga.subspace import SubSpace
+
+
+@lru_cache(maxsize=None)
+def _exterior(space: SubSpace, target: SubSpace) -> tuple[Callable[[Any, Any], Any], GAType, int]:
+    """The exterior product of the space that reaches the target grade, its unit, and the number of
+    factors in the target grade. Vectors multiply by the wedge, whose unit is the scalar; antivectors
+    by the join, whose unit is the pseudoscalar oriented within itself. When a space is both, in two
+    dimensions, the product with more factors in the target grade is taken."""
+    if len(_grades(target)) != 1:
+        raise TypeError(f"an outermorphism acts on one grade, not on {target}")
+    algebra = space.algebra
+    n = algebra.dimension
+    (requested,) = _grades(target)
+    inputs = _grades(space)
+    volume = algebra.gatype.oriented((algebra.subspace.pseudoscalar(),), (Orientation.intrinsic,))
+    exteriors = [(xor, algebra.gatype.scalar(), requested)] * (inputs == {1}) + \
+                [(and_, volume, n - requested)] * (inputs == {n - 1})
+    return max(exteriors, key=lambda exterior: exterior[2])
 
 
 def _grades(space) -> set[int]:
     return {space.algebra.grade(mask) for mask in space.masks}
 
 
-def _exterior_map(t: GAType) -> bool:
-    """A map from vectors to vectors, or from antivectors to antivectors."""
-    if t.arity != 1:
-        return False
-    n = t.algebra.dimension
-    inputs, outputs = _grades(t.input_subspaces[0]), _grades(t.output_subspace)
-    return inputs == outputs and inputs in ({1}, {n - 1})
-
-
-@Extensor.outermorphism.register(_exterior_map)
+@Extensor.outermorphism.register(lambda t: t.is_exterior_map)
 def outermorphism(value: Extensor, grade: GAType) -> Extensor:
     """The map on `grade` whose value on a product of input elements is the product of their images.
 
@@ -44,20 +55,10 @@ def outermorphism(value: Extensor, grade: GAType) -> Extensor:
     scalar of an antivector map, it multiplies by det(t). When a space is both vectors and
     antivectors, in two dimensions, the product with more factors in `grade` is taken.
     """
-    algebra, space = value.algebra, value.axes[1]
+    space, target = value.axes[1], grade.output_subspace
+    product, unit_type, count = _exterior(space, target)
     mv = value.context.multivector
-    n = algebra.dimension
-    target = grade.output_subspace
-    if len(_grades(target)) != 1:
-        raise TypeError(f"an outermorphism acts on one grade, not on {target}")
-    (requested,) = _grades(target)
-    inputs = _grades(space)
-    # (product, its unit, number of factors in the requested grade) for each exterior product of the space
-    # the unit of the join is the pseudoscalar oriented within itself, the unit of the wedge the scalar
-    volume = algebra.gatype.oriented((algebra.subspace.pseudoscalar(),), (Orientation.intrinsic,))
-    exteriors = [(xor, mv.scalar([1.0]), requested)] * (inputs == {1}) + \
-                [(and_, mv(volume, [1.0]), n - requested)] * (inputs == {n - 1})
-    product, unit, count = max(exteriors, key=lambda exterior: exterior[2])
+    unit = mv(unit_type, [1.0])
 
     basis = mv(value.gatype.derive.axis(1), np.eye(len(space.masks)))  # [m] the input basis
     images = value[..., None](basis)                                    # [..., m] its images

@@ -12,6 +12,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING, NamedTuple
 
+import numga
+
 if TYPE_CHECKING:
     from numga.gatype import GAType
 
@@ -199,8 +201,6 @@ def site_by_site(implementation, operand_count: int):
     """An implementation over blades, run at every site of fields of values: each field's sites read
     as one trailing batch axis, shared by all of them, and a result whose last batch axis holds them
     read as a field again."""
-    from .extensor import Extensor
-
     def run(*arguments, **kwargs):
         operands = arguments[:operand_count]
         counts = {sites for operand in operands for _, sites in operand.gatype.fields}
@@ -212,7 +212,7 @@ def site_by_site(implementation, operand_count: int):
         def refield(result):
             if isinstance(result, tuple):
                 return tuple(refield(item) for item in result)
-            if isinstance(result, Extensor) and result.ndim and result.shape[-1] == count:
+            if isinstance(result, numga.extensor.Extensor) and result.ndim and result.shape[-1] == count:
                 return result.field()
             return result
 

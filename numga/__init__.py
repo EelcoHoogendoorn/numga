@@ -5,6 +5,7 @@ from .backend import Context, ExactContext, NumpyContext
 from .binding import AxisTransform, AxisTransformKind, BindingPlan
 from .extensor import Extensor, concatenate, stack
 from .extension import ExtensionMethod
+from . import expression
 from .gatype import (
     EMPTY_TRAITS,
     ROTOR_TRAITS,

@@ -8,7 +8,7 @@ from functools import lru_cache
 from inspect import Signature, signature
 from typing import TYPE_CHECKING, Any, Callable
 
-from numga.gatype import GAType, Orientation, ROTOR_TRAITS, ReverseProductZero, TraitSet
+from numga.gatype import GAType, Orientation, ROTOR_TRAITS, ReverseProductZero, TraitSet, UnorientedSubspace
 from numga.subspace import SubSpace
 
 if TYPE_CHECKING:
@@ -69,8 +69,7 @@ class MultivectorFactory:
         coefficients: Any = _MISSING,
     ) -> Extensor:
         if isinstance(gatype_or_subspace, (str, SubSpace)):
-            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
-                "ga.gatype(subspace, orientation=...)")
+            raise UnorientedSubspace()
         if not isinstance(gatype_or_subspace, GAType):
             raise TypeError("multivector construction requires a GAType")
         gatype = gatype_or_subspace

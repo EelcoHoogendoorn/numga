@@ -17,7 +17,7 @@ from numga.binding import AxisTransform, AxisTransformKind
 from numga.extensor import Extensor
 from numga.gatype import GAType, GATypePattern
 
-from numga.extensions._linalg import _is_form, _linear_system, _matching_forms, _result, _scalars
+from numga.extensions._linalg import _linear_system, _result, _scalars
 
 
 @Extensor.inverse.register(lambda t: t.maps_equal_dimensions)
@@ -27,6 +27,18 @@ def inverse_linear(value: Extensor) -> Extensor:
         value.context, value.gatype.derive.transposed.derive.structural,
         value.context.matrix_inverse(value._kernel),
     )
+
+
+def _orientation_mismatch(value: Extensor, rhs: Extensor, *_: object, **__: object) -> Extensor:
+    raise ValueError(
+        f"cannot solve for an {rhs.gatype.orientation.value} right-hand side against a map whose "
+        f"output takes an {value.gatype.orientation.value} orientation"
+    )
+
+
+# A right-hand side of the other orientation than the map's output has no solution, by its type.
+Extensor.solve.register(lambda t, r: t.arity == 1 and r.orientation is not t.orientation, position=0)(_orientation_mismatch)
+Extensor.lstsq.register(lambda t, r: t.arity <= 1 and r.orientation is not t.orientation, position=0)(_orientation_mismatch)
 
 
 @Extensor.solve.register(
@@ -108,16 +120,6 @@ def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, Extensor]:
     return product(input, input), product(output, output)
 
 
-def _is_form_system(value: GAType, rhs: GAType) -> bool:
-    """A form against a scalar-valued extensor whose last input matches the form's last input."""
-    return (
-        _is_form(value)
-        and rhs.arity >= 1
-        and rhs.output_subspace.same_support(value.algebra.subspace.scalar())
-        and rhs.subspaces[-1].same_support(value.subspaces[2])
-    )
-
-
 def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
     """Rewrite value(x, y) = rhs(..., y) as a coefficient system over y.
 
@@ -141,7 +143,7 @@ def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
     return matrix, covector
 
 
-@Extensor.solve.register(_is_form_system, position=0)
+@Extensor.solve.register(lambda value, rhs: value.form.is_system(rhs), position=0)
 def solve_form(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve value(x, y) == rhs(..., y) for all y, with x in the form's first slot: the inverse
     of binding that slot, so F.solve(F(x)) == x.
@@ -154,14 +156,14 @@ def solve_form(value: Extensor, rhs: Extensor) -> Extensor:
     return matrix.solve(covector)
 
 
-@Extensor.lstsq.register(_is_form_system, position=0)
+@Extensor.lstsq.register(lambda value, rhs: value.form.is_system(rhs), position=0)
 def lstsq_form(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """Least-squares version of solve_form, using pinv's cutoff on the form's coefficients."""
     matrix, covector = _form_system(value, rhs)
     return matrix.lstsq(covector, rcond=rcond)
 
 
-@Extensor.lstsq.register(lambda t, r, m: _is_form_system(t, r) and _matching_forms(t, m))
+@Extensor.lstsq.register(lambda value, rhs, metric: value.form.is_system(rhs) and value.form.matches(metric))
 def lstsq_form_metric(value: Extensor, rhs: Extensor, metric: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """Least squares of a symmetric form in a metric: of the x with value(x, .) == rhs(..., .),
     the one smallest in metric(x, x).

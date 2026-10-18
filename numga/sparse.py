@@ -24,15 +24,15 @@ field taken or returned is typed as one. See docs/fields.md for examples.
 
 from __future__ import annotations
 
-import operator
 from functools import singledispatch
 from numbers import Number
 from typing import overload
 
 import numpy as np
 
+from numga import expression
 from numga.extension import ExtensionMethod
-from numga.extensor import Extensor, concatenate
+from numga.extensor import Extensor, concatenate, operands
 from numga.gatype import GAType
 
 
@@ -116,31 +116,31 @@ class SparseExtensor:
 
     def __mul__(self, other):
         """Times a number, every cell; otherwise the cells' geometric product."""
-        return _scaled(self, other) if isinstance(other, Number) else _right(other, self, operator.mul)
+        return _right(other, self, expression.geometric_product)
 
     def __rmul__(self, other):
-        return _scaled(self, other) if isinstance(other, Number) else _left(other, self, operator.mul)
+        return _left(other, self, expression.geometric_product)
 
     def __truediv__(self, number: Number) -> SparseExtensor:
         return _scaled(self, 1 / number)
 
     def __xor__(self, other):
-        return _right(other, self, operator.xor)
+        return _right(other, self, expression.wedge)
 
     def __rxor__(self, other):
-        return _left(other, self, operator.xor)
+        return _left(other, self, expression.wedge)
 
     def __or__(self, other):
-        return _right(other, self, operator.or_)
+        return _right(other, self, expression.inner)
 
     def __ror__(self, other):
-        return _left(other, self, operator.or_)
+        return _left(other, self, expression.inner)
 
     def __and__(self, other):
-        return _right(other, self, operator.and_)
+        return _right(other, self, expression.regressive)
 
     def __rand__(self, other):
-        return _left(other, self, operator.and_)
+        return _left(other, self, expression.regressive)
 
     # --- operations that keep the order of products, cell by cell ---------------------------
     def __invert__(self) -> SparseExtensor:
@@ -213,11 +213,12 @@ class SparseExtensor:
 
 def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExtensor:
     """A map or value without sites, the same at every site of a square sparse map, on its diagonal."""
-    from numga.extensor.extensor import _promote_identity
-
     if value.shape[0] != value.shape[1]:
         raise TypeError(f"a value without sites has no diagonal in a sparse map of shape {value.shape}")
-    other = value.cells.context.lower(_promote_identity(other))
+    promoted = operands.linear(value.cells.context, other)
+    if promoted is None:
+        raise TypeError(f"cannot add {type(other).__name__} to a sparse extensor")
+    other = value.cells.context.lower(promoted)
     return SparseExtensor.from_diagonal(other[..., None].broadcast_to(other.shape + (value.shape[0],)).field())
 
 
@@ -225,14 +226,26 @@ def _on_diagonal(value: SparseExtensor, other: Extensor | GAType) -> SparseExten
 spdiag = SparseExtensor.from_diagonal
 
 # --- products and applications, by cells and by operand ----------------------------------------
+def _operand(value: SparseExtensor, other: object) -> object:
+    """A type stays an open slot; an array is a batch of scalars, as in any product with a value."""
+    return operands.batch(value.cells.context, other) if operands.kind(other) is operands.Kind.ARRAY else other
+
+
 def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
     return _cellwise(value, value.cells * number)
 
 
 @singledispatch
 def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
-    """An open type: each cell's product with it, a map cell with the type's slot."""
-    return _cellwise(value, product(value.cells, other))
+    """An open type, or an array read as a batch of scalars: each cell's product with it, a map cell
+    with the type's slot."""
+    return _cellwise(value, product(value.cells, _operand(value, other)))
+
+
+@_right.register
+def _right_number(other: Number, value: SparseExtensor, product) -> SparseExtensor:
+    """A number scales every cell."""
+    return _scaled(value, other)
 
 
 @_right.register
@@ -253,7 +266,12 @@ def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> Spar
 def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
     """An open type on the left: each cell's product with it, the couplings read from the output
     sites."""
-    return _transposed(value, product(other, value.cells))
+    return _transposed(value, product(_operand(value, other), value.cells))
+
+
+@_left.register
+def _left_number(other: Number, value: SparseExtensor, product) -> SparseExtensor:
+    return _scaled(value, other)
 
 
 @_left.register
@@ -330,19 +348,7 @@ def adjoint(value: SparseExtensor) -> SparseExtensor:
 
 
 # --- linear algebra of map cells, on the NumPy backend --------------------------------------
-def _maps(cell_type: GAType, other: GAType) -> bool:
-    return cell_type.arity == 1
-
-
-def _maps_equal_dimensions(cell_type: GAType, other: GAType) -> bool:
-    return cell_type.maps_equal_dimensions
-
-
-def _endomorphisms(cell_type: GAType, other: GAType) -> bool:
-    return cell_type.is_endomorphism
-
-
-@SparseExtensor.solve.register(_maps_equal_dimensions, fields=True)
+@SparseExtensor.solve.register(lambda cell_type, other: cell_type.maps_equal_dimensions, fields=True)
 def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The fields x with value(x) == rhs: one factorization for each of the map's leading indices,
     the leading axes of rhs that the map lacks as further right sides of it."""
@@ -351,7 +357,7 @@ def solve(value: SparseExtensor, rhs: Extensor) -> Extensor:
     return _per_map(value, rhs, lambda matrix, right: spsolve(matrix, right.T).reshape(matrix.shape[1], len(right)).T)
 
 
-@SparseExtensor.lstsq.register(_maps, fields=True)
+@SparseExtensor.lstsq.register(lambda cell_type, other: cell_type.arity == 1, fields=True)
 def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     """The smallest fields x, in the sum of their squared coefficients, minimizing that of
     value(x) - rhs, for each of the map's leading indices and each right side: a singular system's
@@ -363,7 +369,7 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     ]))
 
 
-@SparseExtensor.eigh.register(_endomorphisms)
+@SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism)
 def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
     """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
     value and a positive-definite metric, for each of their leading indices: values `[..., count]

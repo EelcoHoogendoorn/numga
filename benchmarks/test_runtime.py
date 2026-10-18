@@ -55,7 +55,7 @@ def test_matrix_application(backend, execution, batch_size, record_property):
     context_type, compile, finish = backend
     algebra = Algebra("x+y+z+")
     context = context_type(algebra, execution=execution)
-    vector = algebra.subspace.vector()
+    vector = algebra.gatype.vector()
     rng = np.random.default_rng(0)
     matrix = context.extensor(algebra.gatype((vector, vector)), rng.normal(size=(3, 3)))
     shape = (3,) if batch_size == 1 else (batch_size, 3)
@@ -102,14 +102,39 @@ def test_inertia_construction(backend, execution, batch_size, record_property):
     coordinates = np.random.default_rng(2).normal(size=(batch_size, 4))
     coordinates[:, -1] = 1
     points = context.multivector.antivector(coordinates)
-    rate = PGA3D.subspace.bivector()
+    rate = PGA3D.gatype.bivector()
 
     def build(points):
         return points.regressive(points.commutator(rate)).sum(axis=0)
 
     build = compile(build)
     result = build(points)
-    assert result.axes == (rate, rate)
+    assert result.axes == (rate.output_subspace, rate.output_subspace)
     assert result.shape == ()
     elapsed = microseconds(lambda: finish(build(points)))
     report("PGA3 inertia", context, batch_size, elapsed, record_property)
+
+
+OPERATIONS = {
+    "a + b": lambda a, b, s: a + b,
+    "a - b": lambda a, b, s: a - b,
+    "-a": lambda a, b, s: -a,
+    "a * 2.0": lambda a, b, s: a * 2.0,
+    "a * b": lambda a, b, s: a * b,
+    "~a": lambda a, b, s: ~a,
+    "a >> s": lambda a, b, s: a >> s,
+    "a.norm()": lambda a, b, s: a.norm(),
+    "s.exp()": lambda a, b, s: s.exp(),
+}
+
+
+@pytest.mark.parametrize("name", tuple(OPERATIONS))
+def test_operator_overhead(name, record_property):
+    """Per-call cost of operator syntax on single motors and lines, where the kernel is negligible."""
+    context = NumpyContext(PGA3D)
+    rng = np.random.default_rng(3)
+    a, b = (context.multivector.motor(rng.normal(size=8)).normalized() for _ in range(2))
+    line = context.multivector.bivector(rng.normal(size=6))
+    operation = OPERATIONS[name]
+    elapsed = microseconds(lambda: operation(a, b, line))
+    report(name, context, 1, elapsed, record_property)

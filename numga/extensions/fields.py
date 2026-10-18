@@ -13,33 +13,14 @@ from numga.gatype import GAType
 from numga.extensions._linalg import _result, _scalars
 
 
-def _is_field_map_system(value: GAType, rhs: GAType) -> bool:
-    """A map whose output takes the right-hand side's output, either side ranging over sites."""
-    return value.arity == 1 and rhs.output_subspace.support_is_subset_of(value.output_subspace)
-
-
-def _is_field_form_system(value: GAType, rhs: GAType) -> bool:
-    """A scalar form of two slots against a scalar-valued extensor ending in the form's last slot."""
-    scalar = value.algebra.subspace.scalar()
-    return (
-        value.arity == 2
-        and value.output_subspace.same_support(scalar)
-        and rhs.arity >= 1
-        and rhs.output_subspace.same_support(scalar)
-        and 0 not in dict(rhs.fields)
-        and rhs.subspaces[-1].same_support(value.subspaces[2])
-        and dict(rhs.fields).get(rhs.arity) == dict(value.fields).get(2)
-    )
-
-
-@Extensor.solve.register(_is_field_map_system, fields=True)
+@Extensor.solve.register(lambda value, rhs: value.over_sites.is_map_system(rhs), fields=True)
 def solve_field_map(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve A(x) == rhs for x, coupled over the sites of A's slots: A.solve(A(y)) == y. The open
     slots of rhs are kept as open slots of the solution."""
     return _solve(value, 0, 1, _on_output_sites(value, rhs), 0, _exactly(value))
 
 
-@Extensor.lstsq.register(_is_field_map_system, fields=True)
+@Extensor.lstsq.register(lambda value, rhs: value.over_sites.is_map_system(rhs), fields=True)
 def lstsq_field_map(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """The x of least coefficient norm minimizing the sum of squared coefficients of A(x) - rhs over
     every site, discarding singular values at most rcond times the largest; a singular system's gauge,
@@ -58,14 +39,14 @@ def pinv_field_map(value: Extensor, *, rcond: float = 1e-15) -> Extensor:
     return lstsq_field_map(value, identity, rcond=rcond)
 
 
-@Extensor.solve.register(_is_field_form_system, fields=True)
+@Extensor.solve.register(lambda value, rhs: value.over_sites.is_form_system(rhs), fields=True)
 def solve_field_form(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve F(x, y) == rhs(..., y) for all y, x in the form's first slot, coupled over the sites of
     both slots: F.solve(F(x)) == x. For a Hessian and a gradient, the Newton step up to sign."""
     return _solve(value, 2, 1, rhs, rhs.arity, _exactly(value))
 
 
-@Extensor.lstsq.register(_is_field_form_system, fields=True)
+@Extensor.lstsq.register(lambda value, rhs: value.over_sites.is_form_system(rhs), fields=True)
 def lstsq_field_form(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
     """Least-squares version of the field form solve, with lstsq's cutoff on singular values."""
     return _solve(value, 2, 1, rhs, rhs.arity, _least_squares(value, rcond))
@@ -182,46 +163,23 @@ def _exchanged(value: Extensor, blocks: Extensor) -> Extensor:
 
 
 # --- spectra and factors of the blocks read as one matrix -----------------------------------
-def _is_field_square(value: GAType) -> bool:
-    """A map, or a scalar form of two slots, between one space over the same sites, either side
-    ranging over them."""
-    sites = dict(value.fields)
-    if value.arity == 1:
-        rows, columns = 0, 1
-    elif value.arity == 2 and value.output_subspace.same_support(value.algebra.subspace.scalar()) and 0 not in sites:
-        rows, columns = 1, 2
-    else:
-        return False
-    return (value.subspaces[rows] == value.subspaces[columns] and sites.get(rows) == sites.get(columns)
-            and value.orientations[rows] is value.orientations[columns])
-
-
-def _is_field_endomorphism(value: GAType) -> bool:
-    return value.arity == 1 and _is_field_square(value)
-
-
-def _same_slots(value: GAType, other: GAType) -> bool:
-    """The same spaces, orientations and sites, whatever facts either type carries."""
-    return value.subspaces == other.subspaces and value.orientations == other.orientations and value.fields == other.fields
-
-
 def _square_slots(value: Extensor) -> tuple[int, int]:
     return (0, 1) if value.arity == 1 else (1, 2)
 
 
-@Extensor.det.register(_is_field_endomorphism, fields=True)
+@Extensor.det.register(lambda value: value.over_sites.is_endomorphism, fields=True)
 def det_field_map(value: Extensor) -> Extensor:
     """The determinant over every pair of a site and a blade."""
     return _scalars(value, value.context.xp.linalg.det(_flattened(value, 0, 1)[0]))
 
 
-@Extensor.trace.register(_is_field_endomorphism, fields=True)
+@Extensor.trace.register(lambda value: value.over_sites.is_endomorphism, fields=True)
 def trace_field_map(value: Extensor) -> Extensor:
     """The trace: each site's block traced, summed over the sites."""
     return _scalars(value, value.context.xp.trace(_flattened(value, 0, 1)[0], axis1=-2, axis2=-1))
 
 
-@Extensor.inverse.register(_is_field_endomorphism, fields=True)
+@Extensor.inverse.register(lambda value: value.over_sites.is_endomorphism, fields=True)
 def inverse_field_map(value: Extensor) -> Extensor:
     """The inverse under composition, coupled over the sites."""
     matrix, rows, columns = _flattened(value, 0, 1)
@@ -229,7 +187,7 @@ def inverse_field_map(value: Extensor) -> Extensor:
     return _from_matrix(value, value.context.xp.linalg.inv(matrix), columns, rows, gatype)
 
 
-@Extensor.cholesky.register(_is_field_square, fields=True)
+@Extensor.cholesky.register(lambda value: value.over_sites.is_square, fields=True)
 def cholesky_field(value: Extensor) -> Extensor:
     """The lower factor L of the blocks read as one Hermitian positive-definite matrix, `A = L L^H`, in
     the same layout."""
@@ -238,7 +196,7 @@ def cholesky_field(value: Extensor) -> Extensor:
     return _from_matrix(value, value.context.xp.linalg.cholesky(matrix), rows, columns, value.gatype.derive.structural)
 
 
-@Extensor.eigh.register(_is_field_square, fields=True)
+@Extensor.eigh.register(lambda value: value.over_sites.is_square, fields=True)
 def eigh_field(value: Extensor) -> tuple[Extensor, Extensor]:
     """Ascending eigenvalues `[..., modes] Scalar` and coefficient-orthonormal modes, a batch of fields
     `[..., modes] X[n]`, of a Hermitian map or form over a field."""
@@ -248,13 +206,13 @@ def eigh_field(value: Extensor) -> tuple[Extensor, Extensor]:
     return _scalars(value, values), _modes(value, second, columns, vectors)
 
 
-@Extensor.eigvalsh.register(_is_field_square, fields=True)
+@Extensor.eigvalsh.register(lambda value: value.over_sites.is_square, fields=True)
 def eigvalsh_field(value: Extensor) -> Extensor:
     first, second = _square_slots(value)
     return _scalars(value, value.context.xp.linalg.eigvalsh(_flattened(value, first, second)[0], UPLO="L"))
 
 
-@Extensor.eigh.register(lambda value, metric: _is_field_square(value) and _same_slots(value, metric), fields=True)
+@Extensor.eigh.register(lambda value, metric: value.over_sites.is_square and value.slots.same_as(metric), fields=True)
 def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """The modes of `value(x) == eigenvalue * metric(x)`, for a Hermitian value and a positive-definite
     metric over the same field: ascending eigenvalues, and modes orthonormal in the metric."""
@@ -267,12 +225,12 @@ def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Exte
     return _scalars(value, values), _modes(value, second, columns, xp.linalg.solve(_conjugate_transpose(xp, lower), vectors))
 
 
-@Extensor.eigvalsh.register(lambda value, metric: _is_field_square(value) and _same_slots(value, metric), fields=True)
+@Extensor.eigvalsh.register(lambda value, metric: value.over_sites.is_square and value.slots.same_as(metric), fields=True)
 def eigvalsh_field_metric(value: Extensor, metric: Extensor) -> Extensor:
     return eigh_field_metric(value, metric)[0]
 
 
-@Extensor.eig.register(_is_field_endomorphism, fields=True)
+@Extensor.eig.register(lambda value: value.over_sites.is_endomorphism, fields=True)
 def eig_field_map(value: Extensor) -> tuple[Extensor, Extensor]:
     """Eigenvalues `[..., modes] Scalar` and right modes, a batch of fields, of a field map."""
     matrix, _, columns = _flattened(value, 0, 1)
@@ -280,18 +238,18 @@ def eig_field_map(value: Extensor) -> tuple[Extensor, Extensor]:
     return _scalars(value, values), _modes(value, 1, columns, vectors)
 
 
-@Extensor.eigvals.register(_is_field_endomorphism, fields=True)
+@Extensor.eigvals.register(lambda value: value.over_sites.is_endomorphism, fields=True)
 def eigvals_field_map(value: Extensor) -> Extensor:
     return _scalars(value, value.context.xp.linalg.eigvals(_flattened(value, 0, 1)[0]))
 
 
-@Extensor.eig.register(lambda value, metric: _is_field_endomorphism(value) and _same_slots(value, metric), fields=True)
+@Extensor.eig.register(lambda value, metric: value.over_sites.is_endomorphism and value.slots.same_as(metric), fields=True)
 def eig_field_map_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """The modes of `value(x) == eigenvalue * metric(x)`: those of `metric.solve(value)`."""
     return eig_field_map(metric.solve(value))
 
 
-@Extensor.eigvals.register(lambda value, metric: _is_field_endomorphism(value) and _same_slots(value, metric), fields=True)
+@Extensor.eigvals.register(lambda value, metric: value.over_sites.is_endomorphism and value.slots.same_as(metric), fields=True)
 def eigvals_field_map_metric(value: Extensor, metric: Extensor) -> Extensor:
     return eigvals_field_map(metric.solve(value))
 

@@ -16,45 +16,47 @@ from __future__ import annotations
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductOne, Versor
 
+from ._scalar_functions import register_scalar_function
 
-@Extensor.exp_linear.register(lambda t: t <= t.algebra.gatype.bivector())
+
+@Extensor.exp_linear.register(lambda t: t.is_bivector)
 def exp_linear(b: Extensor) -> Extensor:
     """First-order exponential; the result is not normalized."""
     return 1 + b
 
 
-@Extensor.exp_linear_normalized.register(lambda t: t <= t.algebra.gatype.bivector())
+@Extensor.exp_linear_normalized.register(lambda t: t.is_bivector)
 def exp_linear_normalized(b: Extensor) -> Extensor:
     return (1 + b).normalized()
 
 
-@Extensor.exp_cayley.register(lambda t: t <= t.algebra.gatype.bivector())
-@Extensor.exp_quadratic.register(lambda t: t <= t.algebra.gatype.bivector())
+@Extensor.exp_cayley.register(lambda t: t.is_bivector)
+@Extensor.exp_quadratic.register(lambda t: t.is_bivector)
 def exp_quadratic(b: Extensor) -> Extensor:
     """Cayley exponential approximation, inverse of log_quadratic."""
     r = 1 + b / 2
     return (r.squared() / r.symmetric_reverse_product()).with_traits(*r.gatype.normalized_traits)
 
 
-@Extensor.log_linear.register(lambda t: t <= t.algebra.gatype.even())
+@Extensor.log_linear.register(lambda t: t.is_even)
 def log_linear(m: Extensor) -> Extensor:
     return m.restrict[2]
 
 
-@Extensor.log_linear_normalized.register(lambda t: t <= t.algebra.gatype.rotor())
+@Extensor.log_linear_normalized.register(lambda t: t.is_rotor)
 def log_linear_normalized(m: Extensor) -> Extensor:
     denominator = m.restrict_subspace(m.gatype.derive.reverse_fixed_subspace)
     return m.bivector_product(denominator.inverse())
 
 
-@Extensor.log_quadratic.register(lambda t: t <= t.algebra.gatype.rotor())
+@Extensor.log_quadratic.register(lambda t: t.is_rotor)
 def log_quadratic(m: Extensor) -> Extensor:
     return m.square_root().log_linear_normalized() * 2
 
 
 # TODO: review this port. It sums the series 2 artanh((m-1)/(m+1)), not a Pade approximant, and
 #  dispatches on rotors where the legacy motor_log_pade took any even multivector.
-@Extensor.log_pade.register(lambda t: t <= t.algebra.gatype.rotor())
+@Extensor.log_pade.register(lambda t: t.is_rotor)
 def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
     """Odd series in `(m - 1) / (m + 1)`; converges near identity."""
     f = (m - 1) / (m + 1)
@@ -66,53 +68,36 @@ def log_pade(m: Extensor, *, n: int = 25) -> Extensor:
     return result.restrict[2]
 
 
-@Extensor.exp.register(lambda t: t <= t.algebra.subspace.empty())
+@Extensor.exp.register(lambda t: t.is_empty)
 def empty_exp(z: Extensor) -> Extensor:
     return (z + 1).with_traits(ReverseProductOne, Versor)
 
 
-@Extensor.log.register(lambda t: t <= t.algebra.subspace.empty())
+@Extensor.log.register(lambda t: t.is_empty)
 def empty_log(z: Extensor) -> Extensor:
     return (z + 0).log()
 
 
-@Extensor.exp.register(lambda t: t.is_reoriented_scalar)
-def reoriented_scalar_exp(s: Extensor) -> Extensor:
-    """exp of a scalar stored against the basis element -1, as a signed layout can store it: the
-    value is read back against +1 first, so exp acts on the scalar and not on its negation."""
-
-    return s.select_subspace(s.subspace.canonical).exp()
+register_scalar_function(Extensor.exp, lambda context, kernel: context.xp.exp(kernel))
+register_scalar_function(Extensor.log, lambda context, kernel: context.xp.log(kernel))
 
 
-@Extensor.log.register(lambda t: t.is_reoriented_scalar)
-def reoriented_scalar_log(s: Extensor) -> Extensor:
-    """log of a scalar stored against the basis element -1, read back against +1 first."""
-
-    return s.select_subspace(s.subspace.canonical).log()
-
-
-@Extensor.exp.register(lambda t: t <= t.algebra.subspace.scalar())
-def scalar_exp(s: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(s.context, s.gatype.derive.structural, s.context.xp.exp(s.kernel))
-
-
-@Extensor.log.register(lambda t: t <= t.algebra.subspace.scalar())
-def scalar_log(s: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(s.context, s.gatype.derive.structural, s.context.xp.log(s.kernel))
-
-
-@Extensor.exp.register(
-    lambda t: t <= t.algebra.subspace.bivector()
-    and t.derive.squared.is_empty
-)
+@Extensor.exp.register(lambda t: t.is_bivector and t.is_nilpotent)
 def nilpotent_bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
     """`b.exp() == 1 + b` when `b` squares to zero by its type, as for a translation."""
 
     return (b + 1).with_traits(ReverseProductOne, Versor)
 
 
-@Extensor.exp_bisect.register(lambda t: t <= t.algebra.gatype.bivector())
-@Extensor.exp.register(lambda t: t <= t.algebra.subspace.bivector())
+@Extensor.exp.register(lambda t: t.is_nilpotent)
+def nilpotent_exp(x: Extensor) -> Extensor:
+    """`x.exp() == 1 + x` when `x` squares to zero by its type, as the pseudoscalar of PGA does."""
+
+    return x + 1
+
+
+@Extensor.exp_bisect.register(lambda t: t.is_bivector)
+@Extensor.exp.register(lambda t: t.is_bivector)
 def bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
     """The Taylor step of the generator scaled down by 2**n, followed by n squarings, the step and
     the result each normalized. Within the step's range the normalizations change nothing above
@@ -125,7 +110,7 @@ def bivector_exp(b: Extensor, *, n: int = 8) -> Extensor:
     return m.normalized().with_traits(ReverseProductOne, Versor)
 
 
-@Extensor.exp_derivative.register(lambda t: t <= t.algebra.subspace.bivector())
+@Extensor.exp_derivative.register(lambda t: t.is_bivector)
 def exp_derivative(b: Extensor, *, n: int = 8) -> Extensor:
     """The derivative of exp at `b`, carried back to the identity: the map `Bivector <- Bivector`
     with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`.
@@ -188,17 +173,8 @@ def _taylor_log(m: Extensor) -> Extensor:
     return result
 
 
-@Extensor.exp.register(lambda t: t.derive.squared.is_empty)
-def nilpotent_exp(x: Extensor) -> Extensor:
-    """`x.exp() == 1 + x` when `x` squares to zero by its type, as the pseudoscalar of PGA does."""
-
-    return x + 1
-
-
 @Extensor.log.register(
-    lambda t: t <= t.algebra.gatype.rotor()
-    and t.is_scalar_bivector
-    and t.derive.nonscalar.derive.squared.is_empty
+    lambda t: t.is_rotor and t.is_scalar_bivector and t.derive.nonscalar.is_nilpotent
 )
 def translator_log(m: Extensor, *, n: int = 8) -> Extensor:
     return m.restrict[2]

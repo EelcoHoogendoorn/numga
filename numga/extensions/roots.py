@@ -9,38 +9,43 @@ from __future__ import annotations
 from numga.extensor import Extensor
 from numga.gatype import GATypePattern, ReverseProductNonzero, ReverseProductOne, Versor
 
+from ._scalar_functions import register_scalar_function
 
-@Extensor.square_root_denman_beavers.register(lambda t: t <= t.algebra.gatype.rotor())
-def square_root_denman_beavers(value: Extensor, *, n: int = 30) -> Extensor:
+
+def _denman_beavers(value: Extensor, n: int) -> Extensor:
+    """The Denman-Beavers iteration for the principal square root."""
     product = root = value
     for _ in range(n):
         reciprocal = product.inverse()
         root = root * (1 + reciprocal) / 2
         product = (product + reciprocal + 2) / 4
+    return root
+
+
+def _half_reciprocal(root: Extensor) -> Extensor:
+    """The reciprocal of twice the root, zero where the root is zero."""
+    reciprocal = (2 * root).inverse()
+    return Extensor._from_prepared_kernel(
+        root.context, reciprocal.gatype.derive.structural, root.context.xp.nan_to_num(reciprocal._kernel, nan=0),
+    )
+
+
+@Extensor.square_root_denman_beavers.register(lambda t: t.is_rotor)
+def square_root_denman_beavers(value: Extensor, *, n: int = 30) -> Extensor:
+    root = _denman_beavers(value, n)
     return root.with_traits(*root.gatype.normalized_traits)
 
 
-@Extensor.geometric_mean.register(
-    lambda a, b: a <= a.algebra.gatype.rotor() and b <= b.algebra.gatype.rotor()
-)
+@Extensor.geometric_mean.register(lambda a, b: a.is_rotor and b.is_rotor)
 def geometric_mean(left: Extensor, right: Extensor) -> Extensor:
     return (left + right).normalized()
 
 
-@Extensor.square_root.register(lambda g: g.is_reoriented_scalar)
-def reoriented_scalar_square_root(value: Extensor) -> Extensor:
-    return value.select_subspace(value.subspace.canonical).square_root()
-
-
-@Extensor.square_root.register(lambda g: g <= g.algebra.subspace.scalar())
-def scalar_square_root(value: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(
-        value.context, value.gatype.derive.structural, value.context.xp.sqrt(value._kernel),
-    )
+register_scalar_function(Extensor.square_root, lambda context, kernel: context.xp.sqrt(kernel))
 
 
 @Extensor.square_root.register(
-    lambda g: g <= g.algebra.subspace.even() and g.entails(ReverseProductOne)
+    lambda g: g.is_even and g.entails(ReverseProductOne)
 )
 def rotor_square_root(value: Extensor) -> Extensor:
     """The normalized bisector of an even element with unit reverse product.
@@ -53,7 +58,7 @@ def rotor_square_root(value: Extensor) -> Extensor:
 
 
 @Extensor.square_root.register(
-    lambda g: g <= g.algebra.subspace.even() and g.entails(Versor)
+    lambda g: g.is_even and g.entails(Versor)
 )
 def scaled_rotor_square_root(value: Extensor) -> Extensor:
     """Root of a scaled rotor; requires a positive scalar reverse product."""
@@ -70,12 +75,7 @@ def nilpotent_study_square_root(value: Extensor) -> Extensor:
     scalar = value.select[0]
     nonscalar = value.select_subspace(value.gatype.derive.nonscalar.output_subspace)
     root = scalar.square_root()
-    reciprocal = (2 * root).inverse()
-    reciprocal = Extensor._from_prepared_kernel(
-        value.context, reciprocal.gatype.derive.structural,
-        value.context.xp.nan_to_num(reciprocal._kernel, nan=0),
-    )
-    return root + nonscalar * reciprocal
+    return root + nonscalar * _half_reciprocal(root)
 
 
 @Extensor.square_root.register(lambda g: g.is_study)
@@ -83,24 +83,10 @@ def study_square_root(value: Extensor) -> Extensor:
     scalar = value.select[0]
     nonscalar = value.select_subspace(value.gatype.derive.nonscalar.output_subspace)
     root = ((scalar + value.study_norm()) / 2).square_root()
-    reciprocal = (2 * root).inverse()
-    reciprocal = Extensor._from_prepared_kernel(
-        value.context, reciprocal.gatype.derive.structural,
-        value.context.xp.nan_to_num(reciprocal._kernel, nan=0),
-    )
-    return root + nonscalar * reciprocal
+    return root + nonscalar * _half_reciprocal(root)
 
 
-@Extensor.inverse_square_root.register(lambda g: g.is_reoriented_scalar)
-def reoriented_scalar_inverse_square_root(value: Extensor) -> Extensor:
-    return value.select_subspace(value.subspace.canonical).inverse_square_root()
-
-
-@Extensor.inverse_square_root.register(lambda g: g <= g.algebra.subspace.scalar())
-def scalar_inverse_square_root(value: Extensor) -> Extensor:
-    return Extensor._from_prepared_kernel(
-        value.context, value.gatype.derive.structural, value._kernel ** (-0.5),
-    )
+register_scalar_function(Extensor.inverse_square_root, lambda context, kernel: kernel ** (-0.5))
 
 
 @Extensor.inverse_square_root.register(GATypePattern(arity=0))
@@ -112,9 +98,4 @@ def inverse_square_root(value: Extensor) -> Extensor:
 def general_square_root(value: Extensor, *, n: int = 30) -> Extensor:
     """The principal square root of any multivector without one on the negative scalars, by the
     Denman–Beavers iteration. Tried after every closed form."""
-    product = root = value
-    for _ in range(n):
-        reciprocal = product.inverse()
-        root = root * (1 + reciprocal) / 2
-        product = (product + reciprocal + 2) / 4
-    return root
+    return _denman_beavers(value, n)

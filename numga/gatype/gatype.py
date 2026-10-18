@@ -8,18 +8,24 @@ from functools import cached_property, lru_cache
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Iterable, Tuple
 
+import numga
+from numga.algebra.self_product import grade_transform_sign, symmetric_product_support
 from numga.subspace import SubSpace
 
+from .metric import Metric
 from .orientation import Orientation
+from .queries import Form, OverSites, SelfProducts, Slots
 from .traits import (
     EMPTY_TRAITS,
     ProductFact,
+    ProductRelation,
     ProductResult,
     ReverseProductOne,
     SelfProduct,
     Trait,
     TraitSet,
     Versor,
+    VersorProduct,
     _trait_closure,
     normalize_explicit_traits,
     structurally_implied_traits,
@@ -200,11 +206,34 @@ class GAType:
 
         return Derivations(self)
 
+    @cached_property
+    def slots(self) -> Slots:
+        """Its slots: which carry an index, which pair, and what an operand given for one binds."""
+        return Slots(self)
+
+    @cached_property
+    def form(self) -> Form:
+        """The type read as a form: whether it pairs one space with itself, and what it solves against."""
+        return Form(self)
+
+    @cached_property
+    def over_sites(self) -> OverSites:
+        """The type read as one map or form over the sites of its fields."""
+        return OverSites(self)
+
+    @cached_property
+    def metric(self) -> Metric:
+        """The type read as a slot: its default metric, and what that metric is like."""
+        return Metric(self)
+
+    @cached_property
+    def self_products(self) -> SelfProducts:
+        """What its facts say about the products of its values with their own transforms."""
+        return SelfProducts(self)
+
     @lru_cache(maxsize=None)
     def grade_transform_is_identity(self, transform: str) -> bool:
         """Whether the transform fixes every blade on the output axis."""
-
-        from numga.algebra.self_product import grade_transform_sign
 
         return all(
             grade_transform_sign(self.algebra, transform, mask) == 1
@@ -223,6 +252,49 @@ class GAType:
 
         spaces = self.algebra.subspace
         return self <= spaces.scalar() + spaces.bivector()
+
+    @cached_property
+    def is_bivector(self) -> bool:
+        """A nullary type within the bivectors, in either orientation."""
+        return self <= self.algebra.subspace.bivector()
+
+    @cached_property
+    def is_even(self) -> bool:
+        """A nullary type within the even grades, in either orientation."""
+        return self <= self.algebra.subspace.even()
+
+    @cached_property
+    def is_rotor(self) -> bool:
+        """A type that refines the rotor: even, with unit reverse product, a versor."""
+        return self <= self.algebra.gatype.rotor()
+
+    @cached_property
+    def is_nilpotent(self) -> bool:
+        """A type that squares to zero by its grades alone."""
+        return self.derive.squared.is_empty
+
+    @cached_property
+    def has_null_wedge(self) -> bool:
+        """The 4-vector part of this type's square squares to zero."""
+        algebra = self.algebra
+        wedge = self.derive.squared.output_subspace.intersection(algebra.subspace.k_vector(4))
+        # a part of a square, so extrinsic
+        return algebra.gatype(wedge, orientation=Orientation.extrinsic).derive.squared.is_empty
+
+    @cached_property
+    def is_form(self) -> bool:
+        """A scalar-valued map of two slots."""
+        return self.arity == 2 and self.output_subspace.same_support(self.algebra.subspace.scalar())
+
+    @cached_property
+    def is_exterior_map(self) -> bool:
+        """A map from vectors to vectors, or from antivectors to antivectors."""
+        if self.arity != 1:
+            return False
+        algebra = self.algebra
+        inputs = {algebra.grade(mask) for mask in self.input_subspaces[0].masks}
+        outputs = {algebra.grade(mask) for mask in self.output_subspace.masks}
+        return inputs == outputs and inputs in ({1}, {algebra.dimension - 1})
 
     @property
     def maps_equal_dimensions(self) -> bool:
@@ -425,51 +497,46 @@ class GAType:
         """A nullary type is its identity map: Extensor attributes it does not define itself act on
         that map, so `Bivector.reverse()` is the reversion and `Vector.scalar_product(Vector)` the
         metric. What only a value has, its coefficients and their backend, a type does not."""
-        from numga.extensor import Extensor
-
-        if name.startswith("_") or name in _VALUE_DATA or not hasattr(Extensor, name) or self.arity:
+        if name.startswith("_") or name in _VALUE_DATA or not hasattr(numga.extensor.Extensor, name) or self.arity:
             raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
         return getattr(self._identity(), name)
 
-    def __add__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.extensor import Extensor
+    # A nullary type in linear arithmetic is its identity map, promoted as any other operand is.
+    def __add__(self, other: object) -> Extensor:
+        return self._identity() + other
 
-        if isinstance(other, Extensor):
-            return self._identity() + other
-        return NotImplemented
+    def __radd__(self, other: object) -> Extensor:
+        return other + self._identity()
 
-    def __sub__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.extensor import Extensor
+    def __sub__(self, other: object) -> Extensor:
+        return self._identity() - other
 
-        if isinstance(other, Extensor):
-            return self._identity() - other
-        return NotImplemented
+    def __rsub__(self, other: object) -> Extensor:
+        return other - self._identity()
 
     def __neg__(self) -> Extensor:
         return -self._identity()
 
-    def __mul__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.expression import geometric_product, is_expression_operand
+    def __invert__(self) -> Extensor:
+        return ~self._identity()
 
+    def __truediv__(self, other: object) -> Extensor:
+        return self._identity() / other
+
+    # In a product, a type is an open slot; a number scales its identity map.
+    def __mul__(self, other: object) -> Extensor | NotImplementedType:
         if isinstance(other, Number):
             return self._identity() * other
-        if not is_expression_operand(other):
+        if not numga.expression.is_expression_operand(other):
             return NotImplemented
-        return geometric_product(self, other)
-
-    def __truediv__(self, other: object) -> Extensor | NotImplementedType:
-        if isinstance(other, Number):
-            return self._identity() / other
-        return NotImplemented
+        return numga.expression.geometric_product(self, other)
 
     def __rmul__(self, other: object) -> Extensor | NotImplementedType:
-        from numga.expression import geometric_product, is_expression_operand
-
         if isinstance(other, Number):
             return self._identity() * other
-        if not is_expression_operand(other):
+        if not numga.expression.is_expression_operand(other):
             return NotImplemented
-        return geometric_product(other, self)
+        return numga.expression.geometric_product(other, self)
 
     def dual(self) -> Extensor:
         """The right-Hodge dual as a map with this space in its open slot."""
@@ -479,53 +546,47 @@ class GAType:
         return self.algebra.operator.dual_inverse(self)
 
     def wedge(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import wedge
-
-        return wedge(self, other)
+        return numga.expression.wedge(self, other)
 
     def inner(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import inner
-
-        return inner(self, other)
+        return numga.expression.inner(self, other)
 
     def commutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import commutator
-
-        return commutator(self, other)
+        return numga.expression.commutator(self, other)
 
     def anticommutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import anticommutator
-
-        return anticommutator(self, other)
+        return numga.expression.anticommutator(self, other)
 
     def regressive(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import regressive
-
-        return regressive(self, other)
+        return numga.expression.regressive(self, other)
 
     def transform(self, passenger: SubSpace | GAType | Extensor) -> Extensor:
         """The action of a versor of this type on the passenger, `self >> passenger`."""
-        from numga.expression import transform
-
-        return transform(self, passenger)
+        return numga.expression.transform(self, passenger)
 
     def __xor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import is_expression_operand
-
-        return self.wedge(other) if is_expression_operand(other) else NotImplemented
+        return self.wedge(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __and__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import is_expression_operand
-
-        return self.regressive(other) if is_expression_operand(other) else NotImplemented
+        return self.regressive(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __or__(self, other: SubSpace | GAType | Extensor) -> Extensor:
-        from numga.expression import is_expression_operand
+        return self.inner(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-        return self.inner(other) if is_expression_operand(other) else NotImplemented
+    def __rxor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        return numga.expression.wedge(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
+
+    def __rand__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        return numga.expression.regressive(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
+
+    def __ror__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        return numga.expression.inner(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return self.transform(other)
+
+    def __lshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        return numga.expression.reverse_transform(self, other)
 
     def __reduce__(self) -> tuple[type[GAType], tuple[object, ...]]:
         return type(self), (self.subspaces, self.orientations, self.traits, self.fields)
@@ -612,6 +673,32 @@ class Derivations:
         return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits, fields)
 
     @lru_cache(maxsize=None)
+    def traced(self, slot: int) -> GAType:
+        """The type of the trace of the output against one input of the same space: a scalar, with
+        the remaining inputs. Equal orientations pair to an ordinary number, as on an endomorphism;
+        opposite ones to a chirality."""
+        gatype = self._gatype
+        inputs = gatype.input_subspaces
+        if not inputs[slot].same_support(gatype.output_subspace):
+            raise TypeError("trace pairs an output with an input of the same space")
+        orientations = gatype.input_orientations
+        return gatype.algebra.gatype.oriented(
+            (gatype.algebra.subspace.scalar(),) + inputs[:slot] + inputs[slot + 1:],
+            (gatype.orientation * orientations[slot],) + orientations[:slot] + orientations[slot + 1:],
+        )
+
+    @lru_cache(maxsize=None)
+    def paired(self, first: int, second: int, pairing: Orientation) -> GAType:
+        """The type left when two inputs are paired and summed over: the remaining inputs, and an
+        output whose orientation multiplies with that of the pairing the sum runs through."""
+        gatype = self._gatype
+        remaining = [axis for axis in range(1, gatype.arity + 1) if axis - 1 not in (first, second)]
+        return gatype.algebra.gatype.oriented(
+            (gatype.output_subspace,) + tuple(gatype.subspaces[axis] for axis in remaining),
+            (gatype.orientation * pairing,) + tuple(gatype.orientations[axis] for axis in remaining),
+        )
+
+    @lru_cache(maxsize=None)
     def axis(self, index: int) -> GAType:
         """The nullary type of one axis, output 0 and inputs from 1, with its orientation."""
         gatype = self._gatype
@@ -630,10 +717,8 @@ class Derivations:
 
     @cached_property
     def transposed(self) -> GAType:
-        from numga.binding import TypeRules
-
         gatype = self._gatype
-        return TypeRules.operation("transpose", (gatype,), tuple(reversed(gatype.subspaces)))
+        return numga.gatype.rules.TRANSPOSE.result((gatype,), tuple(reversed(gatype.subspaces)))
 
     @cached_property
     def nonscalar(self) -> GAType:
@@ -705,8 +790,6 @@ class Derivations:
     @lru_cache(maxsize=None)
     def self_product(self, transform: str) -> GAType:
         """Symmetric self-product type, retaining both operands' open inputs."""
-
-        from numga.algebra.self_product import symmetric_product_support
 
         gatype = self._gatype
         fact = ProductFact(SelfProduct(transform), ProductResult.SCALAR)

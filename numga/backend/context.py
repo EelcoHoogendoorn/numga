@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from numga.gatype import GAType
+from numga.gatype import GAType, UnorientedSubspace
 from numga.subspace import SubSpace
 
 if TYPE_CHECKING:
@@ -179,8 +179,7 @@ class Context(ABC):
         from numga.extensor import Extensor
 
         if isinstance(gatype_or_subspace, SubSpace):
-            raise TypeError("a subspace has no orientation: build the type from a named constructor, or as "
-            "ga.gatype(subspace, orientation=...)")
+            raise UnorientedSubspace()
         if not isinstance(gatype_or_subspace, GAType):
             raise TypeError("extensor construction requires a GAType")
         return Extensor(self, gatype_or_subspace, coefficients)
