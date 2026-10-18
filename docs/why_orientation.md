@@ -13,13 +13,13 @@ Meeting that requirement requires an operation that has a notion of 'orientation
 
 ## What a physical mirror does
 
-Two pictures show what a physical mirror does to a line, and everything after them builds on these two.
+Two pictures show what a physical mirror does to a line, and everything after them builds on these two. For these pictures, we choose points oriented by their weights and planes oriented by their positive sides.
 
 ![Two points on a line lying in a mirror, and two planes crossing in that line, before and after the mirror](../plots/pairs_in_mirror.png)
 
 *Figure: a vertical mirror, the pale sheet, and a line lying in it. Top: a red point and a blue point on the line. Bottom: a red plane and a blue plane crossing in the line, each at half a right angle to the mirror. Left: the scene. Right: its mirror image.*
 
-In the top row, the mirror does not move the two points: a point lying in a mirror is its own mirror image. In the bottom row, the mirror does move the planes: each plane's mirror image lies where the other plane was, so the mirror swaps them. In both rows the line stays where it is.
+In the top row, the two points lie in the mirror and keep their positions and weights. In the bottom row, each plane's mirror image lies where the other plane was, so the mirror swaps them. In both rows the line stays where it is.
 
 The same line can be built from either pair: as the join of the two points, or as the meet of the two planes. If reflecting is to commute with building, the join of the unmoved points is the join itself, so a reflection must leave the join unchanged. The meet of the swapped planes is the meet built in the opposite order, and the meet is antisymmetric, changing sign when its two planes are exchanged, so a reflection must negate the meet. The same line, built from two points or from two planes, must come out of a reflection unchanged in one case and negated in the other.
 
@@ -53,7 +53,7 @@ Geometric algebra reflects an element `x` in a mirror plane `m` with the sandwic
 
 ![Two points in a mirror and the line through them: the line, its mirror image, and the sandwich product's result](../plots/line_in_mirror_01.png)
 
-*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its direction. Anything lying in a mirror is its own mirror image. Left: the line. Middle: its mirror image, which is the line itself. Right: the result of reflecting with the sandwich product directly; the points are unchanged, but the line is turned around.*
+*Figure: two points lying in a mirror, the pale sheet, and the line through them, with an arrow for its intrinsic orientation. Left: the line. Middle: its mirror image, with its direction unchanged. Right: the result of reflecting with the sandwich product directly; the points are unchanged, but the line is turned around.*
 
 ```python
 def sandwich(x):
@@ -99,7 +99,7 @@ A point, likewise, can be oriented by its weight, as a mass is, or by a turn aro
 
 ## How orientation spreads
 
-Which orientation an element has is fixed by what it is built from. Planes are extrinsic, oriented by a positive side. Meeting planes with the outer product combines what lies outside them, so the lines and points where planes meet are extrinsic too, and so are the motions built from products of planes. Points are intrinsic, oriented by a weight. Joining points with the regressive product combines what lies within them, so the lines and planes through points are intrinsic. A product of an element of one kind with one of the other is intrinsic, and a product of two of the same kind extrinsic, as signs multiply.
+Every element can carry either intrinsic or extrinsic orientation. Once the orientations of the inputs are chosen, the operation determines the orientation of the result.
 
 The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the duals and dualized back, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](orientation.md) lists the rule for every product.
 
@@ -107,13 +107,13 @@ In matrix notation a plane's side transforms with the inverse transpose of a lin
 
 ## Observables
 
-What can be measured must not change in a mirror, and a reflection that ignores orientation breaks that too. A spinning body and its mirror image turn opposite ways and have the same kinetic energy:
+Mirroring a system together with its measuring apparatus should preserve every reading. Kinetic energy gives one test: a spinning body and its mirror image turn opposite ways but have the same energy:
 
 ![A body of three masses turning, and its mirror image turning the other way with the same kinetic energy](../plots/mirror_energy.gif)
 
 *Figure: a body of three masses turns, and its mirror image turns the other way. Colours identify matching masses, marker sizes show the masses, and arrows show their velocities.*
 
-The body's rate of turning is a line oriented around itself, extrinsic. Its momentum joins the masses' points with their velocities, a line oriented along itself, intrinsic. The kinetic energy is half the regressive product of the two. Reflected with orientation, the mirrored body has the same energy; with the plain sandwich, its energy comes out negative:
+Here the body's rate of turning is represented by an extrinsic line, oriented around itself, and the mass points are intrinsic. Joining those points with their velocities gives an intrinsic momentum, oriented along its line. The kinetic energy is half the regressive product of the momentum and the rate of turning. Reflected with orientation, the mirrored body has the same energy; with the plain sandwich, its energy comes out negative:
 
 ```python
 Line = ga.gatype.bivector()                                      # the type of lines, written where the rate of turning goes
@@ -132,12 +132,19 @@ The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipy
 
 ## What orientation rules out
 
-Two elements of the same grade and different orientation are different kinds of thing, and orientation keeps them apart. A rate of turning and a momentum are both lines, and adding them is meaningless. Only an extrinsic element generates a motion: exponentiating a rate of turning gives a rigid motion, while a momentum, or a force, has no exponential. numga refuses both:
+Two examples illustrate what orientation rules out. The rate of turning and momentum above have different orientations, so they cannot be added:
 
 ```python
 spin + momentum          # GATypeError: cannot combine extrinsic in bivector and intrinsic bivector: their orientations differ
+```
+
+The exponential of an intrinsic element would require such a sum: its even powers are extrinsic and its odd powers intrinsic. It is therefore ruled out by the same addition rule:
+
+```python
 momentum.exp()           # GATypeError: 'exp' takes extrinsic elements; got intrinsic bivector
 ```
+
+For the complete rules governing what can be written in code, see the companion [Orientation in numga](orientation.md).
 
 ## Further reading
 
