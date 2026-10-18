@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import numpy as np
 
-from numga.algebra.self_product import grade_transform_sign, symmetric_product_terms
+from numga.algebra.self_product import grade_transform_signs, symmetric_product_table
 from numga.binding import AxisTransform
 from numga.gatype import rules
 from numga.gatype.rules import OperationRule
@@ -68,9 +68,7 @@ class OperatorFactory:
     def _grade_transform(self, gatype: GAType, transform: str) -> Extensor:
         gatype = self._nullary(gatype)
         space = gatype.output_subspace
-        coefficients = np.zeros((len(space), len(space)), dtype=np.int8)
-        for index, mask in enumerate(space.masks):
-            coefficients[index, index] = grade_transform_sign(self.algebra, transform, mask)
+        coefficients = np.diag(grade_transform_signs(self.algebra, transform, space.masks))
         return self.build((space, space), (gatype.orientation, gatype.orientation), coefficients)
 
     def reverse(self, gatype: GAType) -> Extensor:
@@ -101,22 +99,19 @@ class OperatorFactory:
             self.subspaces.scalar() if scalar_only
             else gatype.derive.self_product(transform).output_subspace
         )
-        indices = {mask: index for index, mask in enumerate(output.masks)}
-        # A cross term splits evenly over its two symmetric entries: doubled here, halved exactly
-        # below, since the two orders of a basis product are equal or opposite.
+        blades, table = symmetric_product_table(space, transform)
+        # Every pair's coefficient goes to the row of its output blade, in both layouts' blade orientations;
+        # a blade the output does not hold, as the non-scalar ones of a scalar part, is left out.
+        rows = np.full(1 << self.algebra.dimension, -1)
+        rows[list(output.masks)] = np.arange(len(output))
+        left, right = np.nonzero((rows[blades] >= 0) & (table != 0))
+        signs, output_signs = np.asarray(space.signs), np.asarray(output.signs)
+        row = rows[blades[left, right]]
         coefficients = np.zeros((len(output), len(space), len(space)), dtype=np.int8)
-        for mask, left, right, coefficient in symmetric_product_terms(space, transform):
-            if mask not in indices:
-                continue
-            coefficient *= space.signs[left] * space.signs[right] * output.signs[indices[mask]]
-            if left == right:
-                coefficients[indices[mask], left, right] = 2 * coefficient
-            else:
-                coefficients[indices[mask], left, right] = coefficient
-                coefficients[indices[mask], right, left] = coefficient
+        coefficients[row, left, right] = table[left, right] * signs[left] * signs[right] * output_signs[row]
         # A value against itself: equal orientations on both sides, so the product is extrinsic.
         orientations = (Orientation.extrinsic, gatype.orientation, gatype.orientation)
-        return self.build((output, space, space), orientations, SymbolicKernel(coefficients).halved())
+        return self.build((output, space, space), orientations, coefficients)
 
     def squared(self, operand: OperandType) -> Extensor:
         return self._symmetric_product(self._operand_gatype(operand), "identity")
@@ -455,12 +450,10 @@ class OperatorFactory:
         # Each reflection takes the passenger's grade involution, negated for an intrinsic passenger;
         # a versor of odd parity applies an odd number of them.
         parity = int(bool(versor.output_subspace.masks)
-                     and all(mask.bit_count() % 2 for mask in versor.output_subspace.masks))
+                     and bool(np.all(self.algebra.grade(np.asarray(versor.output_subspace.masks)) % 2)))
         intrinsic = -1 if passenger.orientation is Orientation.intrinsic else 1
-        signs = SymbolicKernel(np.diag([
-            (grade_transform_sign(self.algebra, "involute", mask) * intrinsic) ** parity
-            for mask in passenger.output_subspace.masks
-        ]).astype(np.int8))
+        involutes = grade_transform_signs(self.algebra, "involute", passenger.output_subspace.masks)
+        signs = SymbolicKernel(np.diag((involutes * intrinsic) ** parity).astype(np.int8))
         passenger_space = passenger.output_subspace
         reflected = self.build((passenger_space, passenger_space), (passenger.orientation,) * 2, signs)
         result = result.bind({1: reflected})

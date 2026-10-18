@@ -52,7 +52,7 @@ def statics() -> tuple[Point, Scalar]:
     ahead, _ = core.forward_kinematics(rest + rates * step)
     here, _ = core.forward_kinematics(rest)
     predicted = (here >> tip_home) + velocity * step
-    assert ((ahead >> tip_home) & predicted).norm().select[0].to_array().max() < 1e-9
+    assert ((ahead >> tip_home) & predicted).norm().to_array().max() < 1e-9
     return velocity, joint_torques
 
 
@@ -62,7 +62,7 @@ def homing() -> tuple[Scalar, Scalar]:
     target = loop_targets()[0]
     joints, _, tip = core.inverse_kinematics(rest, axis, tip_home, target, 8)
     # The distance, the norm of the join, and each angle, the joint projected on its axis.
-    error = (target & tip).norm().select[0]
+    error = (target & tip).norm()
     angles = (joints | axis) / (axis | axis)
 
     # --- checks

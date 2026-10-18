@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 import numpy as np
 
@@ -12,59 +12,38 @@ if TYPE_CHECKING:
     from numga.subspace import SubSpace
 
 
-def grade_transform_sign(algebra: Algebra, transform: str, mask: int) -> int:
-    """The grade signs used by the recursive inverse reductions."""
-
-    return {
-        "identity": lambda blade: 1,
-        "reverse": algebra.reverse_sign,
-        "clifford_conjugate": algebra.conjugate_sign,
-        "scalar_negation": lambda blade: 1 if blade == 0 else -1,
-        "pseudoscalar_negation": lambda blade: (
-            1 if blade in (0, algebra.pseudoscalar_mask) else -1
-        ),
-        "involute": algebra.involute_sign,
-    }[transform](mask)
+def grade_transform_signs(algebra: Algebra, transform: str, masks: Iterable[int]) -> np.ndarray:
+    """The sign a grade transform gives each of the given blades `[n]`: the reverse, the Clifford conjugate
+    and the grade involution by grade, the negations by whether a blade is the scalar or the pseudoscalar."""
+    blades = np.asarray(tuple(masks), dtype=np.int64)
+    signs = {
+        "identity": lambda: np.ones_like(blades),
+        "reverse": lambda: algebra.reverse_sign(blades),
+        "clifford_conjugate": lambda: algebra.conjugate_sign(blades),
+        "involute": lambda: algebra.involute_sign(blades),
+        "scalar_negation": lambda: np.where(blades == 0, 1, -1),
+        "pseudoscalar_negation": lambda: np.where((blades == 0) | (blades == algebra.pseudoscalar_mask), 1, -1),
+    }[transform]()
+    return np.asarray(signs, dtype=np.int8)
 
 
 @lru_cache(maxsize=None)
-def symmetric_product_terms(
-    space: SubSpace, transform: str = "reverse",
-) -> tuple[tuple[int, int, int, int], ...]:
-    """Return nonzero quadratic terms, with each unordered input pair once.
+def symmetric_product_table(space: SubSpace, transform: str = "reverse") -> tuple[np.ndarray, np.ndarray]:
+    """A value times a grade transform of itself, `x * T(x)`, over every pair of the value's blades: the
+    output blade of each pair `[n, n]`, and its coefficient `[n, n]`, symmetric in the pair.
 
-    Coefficients commute. Combining the two orders here proves cancellations
-    without inspecting values or constructing an intermediate dense tensor.
+    The coefficients of one value commute, so the two orders of a pair combine, and each stands for half
+    their sum. Both orders of a basis product land on one blade, with equal or opposite signs, and a null
+    basis vector makes both vanish: every half is a whole number.
     """
-    if len(space) == 0:
-        return ()
-
     algebra = space.algebra
     table = algebra.geometric_product_table(space.masks, space.masks)
-    signs = np.array(
-        [grade_transform_sign(algebra, transform, mask) for mask in space.masks],
-        dtype=np.int8,
-    )
-
-    c = table.coefficients * signs[None, :]
-    sym = c + c.T
-    np.fill_diagonal(sym, np.diag(c))
-
-    i_idx, j_idx = np.triu_indices(len(space))
-    valid = sym[i_idx, j_idx] != 0
-    valid_i = i_idx[valid]
-    valid_j = j_idx[valid]
-    valid_blades = table.blades[valid_i, valid_j]
-    valid_coeffs = sym[valid_i, valid_j]
-
-    return tuple(
-        (int(blade), int(i), int(j), int(coeff))
-        for blade, i, j, coeff in zip(valid_blades, valid_i, valid_j, valid_coeffs)
-    )
+    coefficients = table.coefficients * grade_transform_signs(algebra, transform, space.masks)
+    return table.blades, (coefficients + coefficients.T) // 2
 
 
 @lru_cache(maxsize=None)
-def symmetric_product_support(
-    space: SubSpace, transform: str = "reverse",
-) -> frozenset[int]:
-    return frozenset(term[0] for term in symmetric_product_terms(space, transform))
+def symmetric_product_support(space: SubSpace, transform: str = "reverse") -> frozenset[int]:
+    """The blades a value of the space times a grade transform of itself can reach."""
+    blades, coefficients = symmetric_product_table(space, transform)
+    return frozenset(blades[coefficients != 0].tolist())

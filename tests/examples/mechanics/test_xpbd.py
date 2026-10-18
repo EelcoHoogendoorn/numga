@@ -31,7 +31,7 @@ def test_distance_projection_closes_a_joint():
             pair, joints.anchors, chain.inertia_inv[joints.bodies], joints.compliance, 0.01
         )
     world_anchors = pair >> joints.anchors
-    assert (world_anchors[0] & world_anchors[1]).norm().select[0].to_array().max() < 0.0001
+    assert (world_anchors[0] & world_anchors[1]).norm().to_array().max() < 0.0001
     # The fixed link has infinite mass: only link 1 moved.
     np.testing.assert_allclose(pair[0, 0].kernel, motor[0].kernel)
 

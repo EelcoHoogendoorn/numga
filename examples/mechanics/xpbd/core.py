@@ -86,7 +86,7 @@ def project_distance_constraint(
     # Its norm is the Euclidean distance between the anchors. A closed joint has a
     # vanishing line; the small offsets keep its direction and multiplier at zero.
     line = world_anchors[0] & world_anchors[1]
-    magnitude = line.norm().select[0]
+    magnitude = line.norm()
     direction = line / (magnitude + 1e-24)
 
     # 3. Pull the forque back into each body's local coordinate frame:
@@ -187,6 +187,6 @@ def joint_gaps(motor: Motor, partitions: list[Joints]) -> Scalar:
     def gap(joints: Joints) -> Scalar:
         world_anchors = motor[joints.bodies] >> joints.anchors
         # The join of two points is a simple line: its norm has no pseudoscalar part.
-        return (world_anchors[0] & world_anchors[1]).norm().select[0]
+        return (world_anchors[0] & world_anchors[1]).norm()
 
     return Extensor.concatenate([gap(joints) for joints in partitions])

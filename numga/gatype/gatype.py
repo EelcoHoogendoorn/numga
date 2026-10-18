@@ -8,8 +8,10 @@ from functools import cached_property, lru_cache
 from types import NotImplementedType
 from typing import TYPE_CHECKING, Iterable, Tuple
 
+import numpy as np
+
 import numga
-from numga.algebra.self_product import grade_transform_sign, symmetric_product_support
+from numga.algebra.self_product import grade_transform_signs, symmetric_product_support
 from numga.subspace import SubSpace
 
 from .metric import Metric
@@ -235,10 +237,7 @@ class GAType:
     def grade_transform_is_identity(self, transform: str) -> bool:
         """Whether the transform fixes every blade on the output axis."""
 
-        return all(
-            grade_transform_sign(self.algebra, transform, mask) == 1
-            for mask in self.output_subspace.masks
-        )
+        return bool(np.all(grade_transform_signs(self.algebra, transform, self.output_subspace.masks) == 1))
 
     @cached_property
     def is_study(self) -> bool:

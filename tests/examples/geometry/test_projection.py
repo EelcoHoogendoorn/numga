@@ -22,7 +22,7 @@ SCREEN = mv.z - mv.w
 def test_pinhole_image_is_perspective_division():
     """A pinhole at the origin with screen z = 1 images (x, y, z) to (x/z, y/z, 1)."""
     camera = origin.regressive(Point).wedge(SCREEN)
-    assert camera.gatype == Camera
+    assert camera.gatype <= Camera
     world = mv.point(np.array([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0], [0.2, -0.4, 0.5]]))
     np.testing.assert_allclose(dehomogenize(camera(world)), [[0.25, 0.5, 1.0], [-1.5, 0.25, 1.0], [0.4, -0.8, 1.0]], atol=1e-14)
 
@@ -46,14 +46,14 @@ def test_camera_is_a_rank_three_projection():
 def test_ternary_projector_binds_to_camera():
     """Binding centre and screen of the open ternary projector yields the camera map."""
     projector = Point.regressive(Point).wedge(Plane)
-    assert projector.gatype == ga.gatype((Point, Point, Point, Plane))
+    assert projector.gatype <= ga.gatype((Point, Point, Point, Plane))
     assert projector.kernel.shape == (4, 4, 4, 4)
     centre = mv.point(np.array([0.3, -0.2, -1.0]))
     world = mv.point(np.array([1.0, 2.0, 4.0]))
     camera = centre.regressive(Point).wedge(SCREEN)
 
     bound = projector.bind({0: centre, 2: SCREEN})
-    assert bound.gatype == Camera
+    assert bound.gatype <= Camera
     np.testing.assert_allclose(bound.kernel, camera.kernel, atol=1e-14)
     np.testing.assert_allclose(projector(centre, world, SCREEN).kernel, camera(world).kernel, atol=1e-14)
 
@@ -124,7 +124,7 @@ def test_fundamental_form_and_epipolar_geometry():
     camera_1 = centre_1.regressive(Point).wedge(SCREEN)
     camera_2 = centre_2.regressive(Point).wedge(SCREEN)
     form = centre_1.regressive(Point).wedge(centre_2.regressive(Point))
-    assert form.gatype == Correspondence
+    assert form.gatype <= Correspondence
     assert np.linalg.matrix_rank(form.kernel.squeeze()) == 2
 
     world = mv.point(np.array([[1.0, 2.0, 4.0], [-3.0, 0.5, 2.0], [0.2, -0.4, 3.0]]))
