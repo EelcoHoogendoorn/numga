@@ -15,6 +15,8 @@ zx  0  0  0
 xy  0  0  0
 ```
 
+Maps from separate parts—such as several springs or masses—add directly into one combined map.
+
 The type `Vector` on its own is the identity map, and adds to other maps from vectors to vectors:
 
 ```python

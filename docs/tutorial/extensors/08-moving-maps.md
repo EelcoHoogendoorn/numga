@@ -22,7 +22,7 @@ moved(rotor >> c) - (rotor >> A(c))
   0  0  0
 ```
 
-This relation also determines how to move a map whose construction is unknown. Rotating an input back puts it in the frame of $A$. Applying $A$ there and rotating its output forward gives the moved map. For the map of the example:
+Rotating an input back into the frame of $A$, applying $A$ there, and rotating its output forward gives the same moved map:
 
 ```python
 (rotor >> A(rotor << Vector)) - moved
@@ -35,7 +35,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-The forward and backward rotations themselves have open slots, so moving the map is a composition of three maps:
+The rotation itself is a map when written with an open slot, `rotor >> Vector`. Moving $A$ is therefore a composition of three maps:
 
 ```python
 rotation = rotor >> Vector
@@ -63,7 +63,7 @@ zx  0  0  0
 xy  0  0  0
 ```
 
-The rotor supplies the rotation of each grade directly. Composing those rotations with the input and output of a map gives its action in the rotated frame.
+Rotations and the maps they move are built in the same way: a map both acts on inputs and moves by composing rotations with its input and output.
 
 In matrix notation, for a map from vectors to vectors, rotating both sides reads as $R A R^{-1}$. Rotating only the output reads as $R A$, and rotating only the input back as $A R^{-1}$.
 

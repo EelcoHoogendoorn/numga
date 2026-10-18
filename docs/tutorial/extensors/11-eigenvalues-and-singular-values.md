@@ -60,7 +60,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-The eigenvalues of the form relative to that pairing are therefore those of the recovered map. The same construction can use a second positive-definite symmetric form in place of the metric:
+The eigenvalues of the form relative to that pairing are therefore those of the recovered map. The same construction can use a second form in place of the inner product:
 
 ```python
 weight = Vector | (Vector + z * (z | Vector))

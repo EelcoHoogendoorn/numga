@@ -47,9 +47,7 @@ xy   0   0   0
 
 The construction gives `adjugate(p) & v == p & A(v)` for every input vector `v` and every bivector `p` paired with the output.
 
-For other input and output grades, the regressive pairing uses their complementary grades. The adjugate therefore runs from complements of outputs to complements of inputs. For a rotation, preservation of the regressive product makes the corresponding input bivector the output bivector rotated back.
-
-The regressive pairing pairs every basis blade with its complement, independently of the metric. It remains invertible in a degenerate algebra, and the construction works even when $A$ loses information. The [multiview example](../../../examples/estimation/multiview/core.py) uses a camera's adjugate to find the plane of scene points that project onto an image line.
+For other input and output grades, the regressive product pairs each grade with its complementary grade, so the adjugate runs from complements of outputs to complements of inputs. Because `&` pairs every basis blade with its complement without using the inner product, the adjugate exists even when basis vectors square to zero and even when $A$ itself cannot be inverted.
 
 In the notation of projective geometric algebra, which writes the regressive product as $\vee$, the identity reads as $\operatorname{adj} A(p) \vee v = p \vee A(v)$.
 

@@ -43,14 +43,8 @@ A(2 * x - y + z) - (2 * a - b + c)
 
 The outputs $a$, $b$ and $c$ can be chosen freely, so this construction can give any linear map on vectors. They can also have any grade: opening slots, multiplying scalar outputs by multivectors and adding maps are enough to build every linear map from vectors to multivectors.
 
-Each contribution has one fixed output, multiplied by a scalar-valued linear function of the input. A nonzero map of this form has rank one and is called a dyad. Every output of a dyad lies along its fixed output element. The inner product is one way to supply the scalar function; the regressive product with a complementary grade is another.
-
-The construction extends to any finite-dimensional multivector input space: each basis coefficient is a scalar-valued linear function of the input. Assigning an output to each basis element and adding those dyads constructs the whole map.
-
-Sums of dyads also describe the second moment of a collection of vectors, as in the [tides example](../../../examples/mechanics/tides/core.py).
-
-In the [bending example](../../../examples/mechanics/bending/bending.ipynb), each fibre measures its stretch through the regressive pairing `Strain & fibre`, then pulls along itself. Its contribution `fibre * (Strain & fibre)`, weighted by area and material stiffness, is a dyad. Adding the fibres gives the section stiffness. Here the scalar measurement comes from incidence between lines in PGA, and the fixed output is a force along the fibre; the same rank-one construction applies without an inner-product measurement.
+Each term in the sum has one fixed output, scaled by a scalar product with the input. Such a one-direction map is a dyad: every output lies along its fixed output element, and sums of dyads build any linear map. The scalar factor can come from the inner product or from the regressive product `&` with a complementary grade.
 
 In matrix notation, the first dyad is $a e_x^T$, where $e_x^T$ extracts the first input coordinate. The sum $A$ has the columns $a$, $b$ and $c$.
 
-Example: [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the form of a conic is a sum of dyads of plane normals.
+Examples: [tidal forces on a satellite](../../../examples/mechanics/tides/tides.ipynb), where a body's mass distribution is a sum of dyads of its point positions; [bending of a beam](../../../examples/mechanics/bending/bending.ipynb), where each fibre contributes a dyad `fibre * (Strain & fibre)` and their sum is the beam's stiffness; and [the cone of a rational Bézier curve](../../../examples/geometry/bezier/bezier.ipynb), where the form of a conic is a sum of dyads of plane normals.

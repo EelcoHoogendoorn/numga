@@ -1,6 +1,6 @@
 # 7. Solving
 
-Solving a map for an output finds the value in its slot that gives that output. Binding goes from the slot to the output, and solving goes from the output back to the slot.
+Binding goes from the slot to the output, and solving goes the other way, finding the value in the slot that gives a known output.
 
 For example, binding a vector $b$ into the slot of a map `A` gives an output $w$:
 

@@ -1,6 +1,6 @@
 # 3. Operating on extensors
 
-An extensor acts as its output type. Every linear operation of the algebra applies to it, acting on the output for every value in the slot at once, and the slot is carried along. A product of two extensors has the slots of both, one for each occurrence of an open slot.
+A map has the type of its output, so the operations of the algebra apply to the map itself, carrying its open slot along. A product of two maps has the slots of both.
 
 For example, taking the dual of the map `a ^ Vector` takes the dual of its output, the bivector $a \wedge v$, and gives a map from vectors to vectors:
 
