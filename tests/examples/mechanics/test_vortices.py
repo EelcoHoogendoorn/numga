@@ -1,8 +1,10 @@
-"""Vortices leapfrogging, a shear layer rolling up, and a gas of vortices."""
+"""Vortices leapfrogging, a shear layer rolling up, a gas of vortices, and the worldlines of a ring and
+of the leapfrogging pairs."""
 
+import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.mechanics.vortices import core, scenarios
+from examples.mechanics.vortices import core, render, scenarios
 
 
 def run(vortices: core.Vortices, dt: float, steps: int) -> core.Vortices:
@@ -76,3 +78,7 @@ def test_the_walkabout_takes_one_lap_and_leapfrogs_on():
     assert farthest.max() > 3.0
     assert np.all(np.diff(wide) == 1)
     assert farthest[-30:].max() < 1.5
+
+
+def test_the_worldlines_pass_their_checks_and_draw():
+    plt.close(render.braids(scenarios.braids(), scenarios.BRAID_HEIGHT))

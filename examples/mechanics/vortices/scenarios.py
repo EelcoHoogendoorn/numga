@@ -1,5 +1,6 @@
 """Vortices in three settings: two pairs leapfrogging, a shear layer rolling up, and a gas of vortices
-of both senses."""
+of both senses; and the worldlines of a ring of equal vortices and of the leapfrogging pairs, traced
+through time."""
 
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from numga import stack
 from examples.mechanics.vortices import core
 
 # Two pairs on one axis, each pair turning in opposite senses so that it travels along x; the inner
@@ -46,6 +48,16 @@ WALKABOUT_HALF_WIDTH, WALKABOUT_HALF_HEIGHT = 9.8, 2.9
 WALKABOUT_SAMPLES_PER_UNIT = 8
 WALKABOUT_VORTICITY_LIMIT = 8.0
 
+# Worldlines: five equal vortices evenly spaced on a ring around the origin, turning rigidly, and the
+# leapfrogging pairs, traced for one and a half turns of the ring and three periods of the leapfrog;
+# the step, the steps of each, and the height of each braid's drawn time against its width.
+RING_COUNT = 5
+RING_RADIUS = 1.0
+RING_CORE = 0.05
+WORLDLINE_DT = 0.2
+WORLDLINE_RING_STEPS, WORLDLINE_LEAPFROG_STEPS = 150, 75
+BRAID_HEIGHT = 2.5
+
 DURATION_MS = 60
 
 
@@ -83,6 +95,41 @@ def tracked(vortices: core.Vortices, points: core.Vector, frames: int, substeps:
         yield vortices, core.derivative(core.gradient(vortices, points))
         for _ in range(substeps):
             vortices = core.step(vortices, dt)
+
+
+def worldlines(vortices: core.Vortices, dt: float, steps: int) -> core.Vector:
+    """The centres of the vortices at every step: one curve through the plane and time per vortex."""
+    def stepped() -> Iterator[core.Vector]:
+        current = vortices
+        yield current.centres
+        for _ in range(steps):
+            current = core.step(current, dt)
+            yield current.centres
+
+    return stack(list(stepped()))                                            # [steps + 1, vortices] Vector
+
+
+def braids() -> list[core.Vector]:
+    """The worldlines `[steps + 1, vortices] Vector` of a ring of equal vortices, turning rigidly about its
+    centre, and of the leapfrogging pairs."""
+    turns = (core.PLANE * (-np.pi * np.arange(RING_COUNT) / RING_COUNT)).exp()   # [vortices] Rotor
+    ring = core.Vortices(turns >> (core.mv.x * RING_RADIUS), np.ones(RING_COUNT), RING_CORE, core.mv.vector([[0.0, 0.0]]))
+    pairs = leapfrog().vortices
+    turning = worldlines(ring, WORLDLINE_DT, WORLDLINE_RING_STEPS)          # [steps + 1, vortices] Vector
+    passing = worldlines(pairs, WORLDLINE_DT, WORLDLINE_LEAPFROG_STEPS)     # [steps + 1, vortices] Vector
+
+    # --- checks
+    for vortices, centres in ((ring, turning), (pairs, passing)):
+        # Runge–Kutta keeps the linear impulse, the circulation-weighted sum of the centres, to
+        # round-off; the angular impulse to the method's accuracy.
+        linear = (vortices.circulations * centres).sum(axis=-1)              # [steps + 1] Vector
+        angular = (vortices.circulations * (centres | centres)).sum(axis=-1)    # [steps + 1] Scalar
+        np.testing.assert_allclose((linear - linear[0]).kernel, 0.0, atol=1e-12)
+        np.testing.assert_allclose((angular - angular[0]).kernel, 0.0, atol=1e-5)
+    # The ring turns rigidly: each vortex's place times its first place is the same for every vortex.
+    turned = turning * turning[0]                                            # [steps + 1, vortices] Even
+    np.testing.assert_allclose((turned - turned[:, :1]).kernel, 0.0, atol=1e-12)
+    return [turning, passing]
 
 
 def walkabout() -> tuple[core.Vortices, core.Vector]:
@@ -127,7 +174,7 @@ def gas() -> Scene:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.animation import save_animation, save_figure
     from examples.mechanics.vortices import render
 
     for scene in (leapfrog(), shear_layer(), gas()):
@@ -145,6 +192,8 @@ def main() -> None:
     walker, strip = walkabout()
     frames = tracked(walker, strip, WALKABOUT_FRAMES, WALKABOUT_SUBSTEPS, WALKABOUT_DT)
     save_animation(render.window(strip, frames, WALKABOUT_VORTICITY_LIMIT), "vortices_walkabout", DURATION_MS)
+
+    save_figure(render.braids(braids(), BRAID_HEIGHT), "vortices_worldlines")
 
 
 if __name__ == "__main__":

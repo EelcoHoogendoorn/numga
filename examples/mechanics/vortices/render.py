@@ -10,9 +10,17 @@ from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
 from matplotlib.colors import TwoSlopeNorm
 from matplotlib.image import AxesImage
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from examples.animation import capture
 from examples.mechanics.vortices import core
+
+# Worldlines: one colour per vortex, the strands' width, the view as (elevation, azimuth) in degrees,
+# and the size in inches of each braid's square panel.
+STRANDS = np.array(["#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe"])
+STRAND_WIDTH = 2.0
+ELEVATION, AZIMUTH = 18.0, -60.0
+PANEL_SIZE = 6.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -84,3 +92,31 @@ def window(points: core.Vector, frames: Iterable[tuple[core.Vortices, core.Even]
         pixels.append(np.asarray(result.canvas.buffer_rgba())[..., :3].copy())
     plt.close(result)
     return pixels
+
+
+def braids(worldlines: list[core.Vector], height: float) -> plt.Figure:
+    """Worldlines `[times, vortices]` side by side, each a braid of curves through the plane and time, one
+    colour per vortex, drawn following the vortices' mean position. Time runs upward and is stretched to
+    `height` times the braid's width: it has no scale of its own against distance."""
+    result = plt.figure(figsize=(PANEL_SIZE * len(worldlines), PANEL_SIZE))
+    toward = np.array([np.cos(np.radians(ELEVATION)) * np.cos(np.radians(AZIMUTH)),
+                       np.cos(np.radians(ELEVATION)) * np.sin(np.radians(AZIMUTH)), np.sin(np.radians(ELEVATION))])
+    for ax, centres in zip(result.subplots(1, len(worldlines), subplot_kw={"projection": "3d"}), worldlines):
+        following = centres - centres.mean(axis=-1)[..., None]                  # [times, vortices] Vector
+        places = following.cast(core.ga.subspace("x y")).kernel                 # [times, vortices, 2]
+        width = np.ptp(places.reshape(-1, 2), axis=0).max()
+        times = np.broadcast_to(np.linspace(0, height * width, len(places))[:, None, None], places.shape[:2] + (1,))
+        drawn = np.concatenate([places, times], axis=-1)                         # [times, vortices, 3]
+        segments = np.stack([drawn[:-1], drawn[1:]], axis=-2).reshape(-1, 2, 3)  # [(times - 1) * vortices, 2, 3]
+        colours = np.broadcast_to(STRANDS[: places.shape[1]], drawn[1:].shape[:2]).reshape(-1)
+        # The far segments first, so that a strand passing in front covers the one behind it.
+        order = np.argsort(segments.mean(axis=1) @ toward)
+        ax.computed_zorder = False
+        ax.add_collection3d(Line3DCollection(segments[order], colors=colours[order], linewidths=STRAND_WIDTH, capstyle="round"))
+        low, high = drawn.reshape(-1, 3).min(axis=0), drawn.reshape(-1, 3).max(axis=0)
+        ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
+        ax.set_box_aspect(tuple(high - low))
+        ax.set_proj_type("ortho")
+        ax.view_init(elev=ELEVATION, azim=AZIMUTH)
+        ax.set_axis_off()
+    return result

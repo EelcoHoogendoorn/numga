@@ -117,8 +117,14 @@ import examples.relativity.kerr.core
 import examples.relativity.kerr.scenarios
 import examples.relativity.spinors.core
 import examples.relativity.spinors.scenarios
+import examples.relativity.thomas_precession.core
+import examples.relativity.thomas_precession.scenarios
 import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
+import examples.mechanics.stokes_swimmer.core
+import examples.mechanics.stokes_swimmer.scenarios
+import examples.surfaces.connections.core
+import examples.surfaces.connections.scenarios
 instantiate('examples.mesh', VGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)

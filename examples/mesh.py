@@ -305,11 +305,16 @@ class Mesh:
     @cached_property
     def edge_ratio(self) -> Scalar:
         """Scalar[E]: dual over primal edge length, half the cotangents of the angles facing each edge."""
+        return self.weighted_edge_ratio(as_scalar(np.ones(len(self.faces))).field())
+
+    def weighted_edge_ratio(self, face_weights: Scalar) -> Scalar:
+        """Scalar[E]: half the cotangents of the angles facing each edge, each face's share weighted by
+        `face_weights` `Scalar[F]`."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
         # the cotangent at each corner
         cotangents = -(after | before) / (after ^ before).norm()               # [3] Scalar[F]
-        return ~self.by_corner(cotangents / 2) * as_scalar(np.ones(len(self.faces))).field()
+        return ~self.by_corner(cotangents / 2) * face_weights
 
     @cached_property
     def vertex_normals(self) -> Vector:
