@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 from .gatype import GAType
 from .traits import (
     EMPTY_TRAITS,
+    Blade,
+    BladeProduct,
+    ClosureRelation,
     CliffordConjugateProduct,
     CoefficientOrthogonal,
     GradeInvolutionProduct,
@@ -61,6 +64,12 @@ def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace",
     ))
 
 
+def blade_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
+    """An outer product of blades is a blade, and so is a regressive product of blades, the outer
+    product of their complements read back."""
+    return TraitSet((BladeProduct((0, 1)),))
+
+
 def transform_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) -> TraitSet:
     """A versor's action carries the sandwich laws, applied when the same versor binds both sides."""
     return TraitSet((Sandwich,))
@@ -76,8 +85,8 @@ def negation_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace", ...]) ->
             isinstance(trait, (ProductFact, ProductRelation))
             and trait.self_product in (ReverseProduct, CliffordConjugateProduct, GradeInvolutionProduct)
         )
-        or isinstance(trait, VersorProduct)
-        or trait in (Versor, CoefficientOrthogonal)
+        or isinstance(trait, ClosureRelation)
+        or trait in (Versor, Blade, CoefficientOrthogonal)
     )
 
 
@@ -122,14 +131,15 @@ def conjugation_laws(family: SelfProduct):
             if operand.entails(fact):
                 inferred.append(fact)
                 break
-        if operand.entails(Versor):
-            inferred.append(Versor)
+        # These transforms take a product of vectors to one, and an outer product of vectors to one.
+        inferred.extend(fact for fact in (Versor, Blade) if operand.entails(fact))
         relation = operand.self_products.relation(family)
         if relation is not None and relation.factor in (ProductResult.ONE, ProductResult.NONZERO):
             inferred.append(ProductRelation(family, relation.factor, relation.slots, nonzero_inputs=True))
-        versor_relation = operand.self_products.versor_relation
-        if versor_relation is not None:
-            inferred.append(versor_relation)
+        inferred.extend(
+            relation for relation in (operand.self_products.closure(kind) for kind in _CLOSURES)
+            if relation is not None
+        )
         return TraitSet(inferred)
 
     return laws
@@ -202,8 +212,8 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
         # Do not copy layout-specific claims such as matrix orthogonality.
         return TraitSet(
             trait for trait in operand.effective_traits
-            if isinstance(trait, (ProductFact, ProductRelation, VersorProduct))
-            or trait == Versor
+            if isinstance(trait, (ProductFact, ProductRelation, ClosureRelation))
+            or trait in (Versor, Blade)
         )
 
     inferred: list[Trait] = []
@@ -213,11 +223,12 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             if result is not None:
                 inferred.append(result)
 
-    relation = plan.target_gatype.self_products.versor_relation
-    if relation is not None:
-        result = _bind_versor_product(plan, relation)
-        if result is not None:
-            inferred.append(result)
+    for kind, fact in _CLOSURES.items():
+        relation = plan.target_gatype.self_products.closure(kind)
+        if relation is not None:
+            result = _bind_closure(plan, relation, fact)
+            if result is not None:
+                inferred.append(result)
 
     versor = _transform_versor(plan)
     if versor is not None:
@@ -230,9 +241,11 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
         result = _bind_self_product(plan, ProductRelation(ReverseProduct, factor, (1,)))
         if result is not None:
             inferred.append(result)
-        result = _bind_versor_product(plan, VersorProduct((1,)))
-        if result is not None:
-            inferred.append(result)
+        # A versor's action takes a versor to a versor and a blade to a blade.
+        for kind, fact in _CLOSURES.items():
+            result = _bind_closure(plan, kind((1,)), fact)
+            if result is not None:
+                inferred.append(result)
 
         axes = bind_subspaces(plan)
         passenger = _transform_passenger(plan)
@@ -303,8 +316,9 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
     return ProductFact(relation.self_product, factor)
 
 
-def _bind_versor_product(plan: "BindingPlan", relation: VersorProduct) -> Trait | None:
-    """Substitute the closure of versors, products of vectors, under geometric product."""
+def _bind_closure(plan: "BindingPlan", relation: ClosureRelation, fact: Trait) -> Trait | None:
+    """Substitute a family closed under the operation, versors or blades: the result has the family's
+    fact when every referenced input does, a value of the family or a map that carries it on."""
 
     result_slots: list[int] = []
     bindings = {binding.slot: binding for binding in plan.bindings}
@@ -316,16 +330,20 @@ def _bind_versor_product(plan: "BindingPlan", relation: VersorProduct) -> Trait 
             continue
         operand = binding.operand_gatype
         if operand.arity == 0:
-            if not operand.entails(Versor):
+            if not operand.entails(fact):
                 return None
             continue
-        inner = operand.self_products.versor_relation
+        inner = operand.self_products.closure(type(relation))
         if inner is None:
             return None
         result_slots.extend(splices[slot][inner_slot] for inner_slot in inner.slots)
 
     if result_slots:
-        return VersorProduct(result_slots)
+        return type(relation)(result_slots)
     if len(plan.result_subspaces) == 1:
-        return Versor
+        return fact
     return None
+
+
+# The families closed under an operation, each relation with the fact it carries.
+_CLOSURES = {VersorProduct: Versor, BladeProduct: Blade}

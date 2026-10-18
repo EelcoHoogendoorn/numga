@@ -10,6 +10,8 @@ from .gatype import (
     EMPTY_TRAITS,
     ROTOR_TRAITS,
     AmbiguousGATypeDispatchWarning,
+    Blade,
+    BladeProduct,
     CoefficientOrthogonal,
     GAType,
     GATypeDispatch,

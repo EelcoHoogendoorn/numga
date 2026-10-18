@@ -28,8 +28,8 @@ GRID_Y = np.linspace(-1.9, 1.9, 17)
 def strokes():
     """Purcell's non-reciprocal stroke and a reciprocal in-phase stroke over `CYCLES` periods: hinge
     angles `[steps, swimmers, 2]`, pose motors `[steps + 1, swimmers] Motor`, centre trajectories
-    `[steps + 1, swimmers] Point`, world-frame beads `[steps, swimmers, beads] Point`, world-frame
-    forces `[steps, swimmers, beads] Force`, sample grid `[grid_y, grid_x] Point`, and fluid velocity
+    `[steps + 1, swimmers] Point`, world-frame beads `[steps, swimmers] Point[beads]`, world-frame
+    forces `[steps, swimmers] Force[beads]`, sample grid `[grid_y, grid_x] Point`, and fluid velocity
     field `[frames, grid_y, grid_x] Direction` around Purcell's swimmer."""
     steps = CYCLES * STEPS_PER_CYCLE
     dt = 2 * np.pi / STEPS_PER_CYCLE
@@ -51,8 +51,8 @@ def strokes():
     start_motor = (mv.xy * np.array([0.0, 0.0])).exp()                          # [swimmers] Motor
     motors = core.integrate_pose(body_rate, dt, start_motor)                    # [steps + 1, swimmers] Motor
     positions = motors >> core.ORIGIN                                           # [steps + 1, swimmers] Point
-    world_sites = motors[:-1, :, None] >> sites                                 # [steps, swimmers, beads] Point
-    world_forces = (motors[:-1, :, None] >> forces.batch().dual()).dual()       # [steps, swimmers, beads] Force
+    world_sites = motors[:-1] >> sites                                          # [steps, swimmers] Point[beads]
+    world_forces = (motors[:-1] >> forces.dual()).dual()                        # [steps, swimmers] Force[beads]
 
     gx, gy = np.meshgrid(GRID_X, GRID_Y, indexing="xy")
     grid = mv.point(np.stack([gx, gy], axis=-1))                               # [grid_y, grid_x] Point
@@ -69,7 +69,7 @@ def strokes():
     self_mobility = core.stokeslet(0.0 * mv.x + 0.0 * mv.y, BEAD_RADIUS)
     np.testing.assert_allclose((self_mobility - (2.0 / BEAD_RADIUS) * core.Force.dual()).kernel, 0.0, atol=1e-12)
     # Every step is force-free and torque-free: `rigid.adjugate()(forces) == 0`.
-    rigid = sites.commutator(core.Twist).field(0)                               # [steps, swimmers] Direction[beads] <- Twist
+    rigid = sites.commutator(core.Twist)                                        # [steps, swimmers] Direction[beads] <- Twist
     net_forque = rigid.adjugate()(forces)                                       # [steps, swimmers] Forque
     np.testing.assert_allclose(net_forque.kernel, 0.0, atol=1e-12)
     # Scallop theorem: after each full cycle the reciprocal swimmer returns to its starting motor,

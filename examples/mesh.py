@@ -193,6 +193,22 @@ class Mesh:
         return cls(vertices, Delaunay(coordinates).simplices)
 
     @cached_property
+    def edge_ends(self) -> tuple[SparseExtensor, SparseExtensor]:
+        """The maps `[E, V]` reading every edge's tail and head."""
+        return self.reading(self.edges[:, 0]), self.reading(self.edges[:, 1])
+
+    @cached_property
+    def face_corners(self) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor]:
+        """The maps `[F, V]` reading every face's three corners, in its winding."""
+        return tuple(self.reading(self.faces[:, corner]) for corner in range(3))
+
+    def reading(self, vertices: np.ndarray) -> SparseExtensor:
+        """[n, V] Scalar: the map reading the field at each of the given vertices `[n]`; its reverse adds
+        values at them back onto the vertices."""
+        return SparseExtensor.from_columns(vertices[:, None], as_scalar(np.ones((len(vertices), 1))),
+                                           len(self.vertices.batch()))
+
+    @cached_property
     def d0(self) -> SparseExtensor:
         """[E, V] Scalar: oriented differences from edge tails to heads."""
         return as_ga_sparse(self.edges, as_scalar(np.ones_like(self.edges) * [-1, 1]))

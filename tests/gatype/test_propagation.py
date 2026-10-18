@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 
+import numpy as np
 import pytest
 
 from numga import (
     Algebra,
+    Blade,
     GATypeDispatch,
     GATypePattern,
+    NumpyContext,
     ProductResult,
     ProductRelation,
     ReverseProduct,
@@ -220,3 +223,23 @@ def test_reverse_preserves_only_sound_one_sided_reverse_product_facts():
     partial = reverse_product.bind({1: one})
     assert partial(one).gatype.entails(ReverseProductOne)
     assert not partial(zero).gatype.entails(ReverseProductScalar)
+
+
+def test_joins_meets_and_wedges_of_blades_are_blades():
+    """A join of points is a line, a simple blade, so its norm is an ordinary number: the distance
+    between the points. Wedges, chains, complements, reverses and a motor's action keep blades
+    blades; a sum of two lines is a screw in general, with a norm of its own kind."""
+    from numga.algebras import PGA3D
+
+    mv = NumpyContext(PGA3D).multivector
+    rng = np.random.default_rng(0)
+    places = rng.normal(size=(3, 3))
+    p, q, r = (mv.point(place) for place in places)
+    u, v = (mv.vector(rng.normal(size=4)) for _ in range(2))
+    line = p & q
+    motor = (mv.xy * 0.3 + mv.xw * 0.2).exp()
+    for blade in (line, p & q & r, u ^ v, line.dual(), -line, ~line, motor >> line):
+        assert blade.gatype.entails(Blade)
+        assert blade.norm().gatype.is_scalar
+    np.testing.assert_allclose(line.norm().to_array(), np.linalg.norm(places[0] - places[1]), atol=1e-12)
+    assert not (line + (p & r)).gatype.entails(Blade)

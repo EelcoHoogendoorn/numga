@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Callable
 from .errors import GATypeError
 from .orientation import Orientation
 from .propagation import (
+    blade_laws,
     coefficient_orthogonality_laws,
     conjugation_laws,
     geometric_product_laws,
@@ -98,7 +99,8 @@ def equal(operands: tuple["GAType", ...]) -> tuple[Orientation, ...]:
 # --- rules -----------------------------------------------------------------------------
 GEOMETRIC = OperationRule("geometric product", multiplied, geometric_product_laws)
 MULTIPLIED = OperationRule("product", multiplied)
-REGRESSIVE = OperationRule("regressive product", through_volume)
+WEDGE = OperationRule("wedge", multiplied, blade_laws)
+REGRESSIVE = OperationRule("regressive product", through_volume, blade_laws)
 TRANSFORM = OperationRule("transform", carries_passenger, transform_laws)
 TRANSPOSE = OperationRule("transpose", reversed_axes, transpose_laws)
 ADD = OperationRule("add", equal)

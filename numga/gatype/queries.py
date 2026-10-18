@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from numga.subspace import SubSpace
 
-from .traits import ProductFact, ProductRelation, ProductResult, SelfProduct, VersorProduct
+from .traits import ClosureRelation, ProductFact, ProductRelation, ProductResult, SelfProduct
 
 if TYPE_CHECKING:
     from numga.extensor import Extensor
@@ -169,6 +169,7 @@ class SelfProducts(_Queries):
             if isinstance(trait, ProductRelation) and trait.self_product == family
         ), None)
 
-    @cached_property
-    def versor_relation(self) -> VersorProduct | None:
-        return next((trait for trait in self._gatype.traits if isinstance(trait, VersorProduct)), None)
+    @lru_cache(maxsize=None)
+    def closure(self, kind: type[ClosureRelation]) -> ClosureRelation | None:
+        """This type's relation carrying a family closed under its operation, versors or blades."""
+        return next((trait for trait in self._gatype.traits if isinstance(trait, kind)), None)

@@ -324,30 +324,29 @@ class ProductRelation(Trait):
         )
 
 
-class VersorProduct(Trait):
-    """The output is a versor, a product of vectors, when every referenced input is one."""
+class ClosureRelation(Trait):
+    """The output has a fact whenever every referenced input slot has it: a family of values closed
+    under the operation. Subclasses name the family."""
 
     __slots__ = ()
 
     def __init__(self, slots: Iterable[int]) -> None:
+        name = type(self).__name__
         try:
             normalized_slots = tuple(slots)
         except TypeError as error:
-            raise TypeError("VersorProduct slots must be iterable") from error
+            raise TypeError(f"{name} slots must be iterable") from error
         if not normalized_slots:
-            raise ValueError("VersorProduct requires at least one input slot")
+            raise ValueError(f"{name} requires at least one input slot")
         if any(
             isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
             for slot in normalized_slots
         ):
-            raise TypeError("VersorProduct slots must be non-negative integers")
+            raise TypeError(f"{name} slots must be non-negative integers")
 
         # Unlike product powers, requiring the same input fact twice adds no
         # information. Distinct residual variables retain distinct slot ids.
-        super().__init__(
-            "VersorProduct", valid_arities=None,
-            parameters=(tuple(sorted(set(normalized_slots))),),
-        )
+        super().__init__(name, valid_arities=None, parameters=(tuple(sorted(set(normalized_slots))),))
 
     @property
     def slots(self) -> tuple[int, ...]:
@@ -355,29 +354,41 @@ class VersorProduct(Trait):
 
     def validate_arity(self, arity: int) -> None:
         if isinstance(arity, bool) or not isinstance(arity, int) or arity < 1:
-            raise ValueError("VersorProduct is valid only for positive-arity GATypes")
+            raise ValueError(f"{self.name} is valid only for positive-arity GATypes")
         invalid = tuple(slot for slot in self.slots if slot >= arity)
         if invalid:
-            raise ValueError(
-                "VersorProduct references input slots outside arity "
-                f"{arity}: {invalid!r}"
-            )
+            raise ValueError(f"{self.name} references input slots outside arity {arity}: {invalid!r}")
 
     def validate_peers(self, traits: frozenset[Trait]) -> None:
-        if any(isinstance(t, VersorProduct) and t != self for t in traits):
-            raise ValueError("a TraitSet may carry at most one VersorProduct relation")
+        if any(isinstance(t, type(self)) and t != self for t in traits):
+            raise ValueError(f"a TraitSet may carry at most one {self.name} relation")
 
-    def __reduce__(self) -> tuple[type[VersorProduct], tuple[tuple[int, ...]]]:
+    def __reduce__(self) -> tuple[type[ClosureRelation], tuple[tuple[int, ...]]]:
         return type(self), (self.slots,)
 
     def __repr__(self) -> str:
-        return f"VersorProduct(slots={self.slots!r})"
+        return f"{self.name}(slots={self.slots!r})"
+
+
+class VersorProduct(ClosureRelation):
+    """The output is a versor, a product of vectors, when every referenced input is one."""
+
+    __slots__ = ()
+
+
+class BladeProduct(ClosureRelation):
+    """The output is a blade, an outer product of vectors, when every referenced input is one."""
+
+    __slots__ = ()
 
 
 # A product of vectors, possibly null and so possibly without inverse. Its sandwich preserves the
 # passenger's grades, and its reverse product is a scalar; invertibility is a separate fact,
 # ReverseProductNonzero.
 Versor = Trait("Versor", valid_arities=(0,))
+# An outer product of vectors: a subspace with a weight and an orientation, as a plane, a line or a
+# point. Its reverse product is a scalar.
+Blade = Trait("Blade", valid_arities=(0,))
 ReverseProductScalar = ProductFact(ReverseProduct, ProductResult.SCALAR)
 ReverseProductZero = ProductFact(ReverseProduct, ProductResult.ZERO)
 ReverseProductNonzero = ProductFact(ReverseProduct, ProductResult.NONZERO)
@@ -396,6 +407,7 @@ _BUILTIN_TRAITS = {
     (trait.name, trait.valid_arities, trait._parameters): trait
     for trait in (
         Versor,
+        Blade,
         CoefficientOrthogonal,
         Sandwich,
     )
@@ -403,6 +415,7 @@ _BUILTIN_TRAITS = {
 
 _DIRECT_IMPLICATIONS = {
     Versor: (ReverseProductScalar,),
+    Blade: (ReverseProductScalar,),
 }
 
 
@@ -559,8 +572,13 @@ def structurally_implied_traits(subspaces: Iterable[SubSpace]) -> TraitSet:
         # Pairwise cancellation also captures vectors and small even carriers.
         facts: list[Trait] = []
         # A scalar or a vector is a product of (at most one) vector.
-        if {axes[0].algebra.grade(mask) for mask in axes[0].masks} in ({0}, {1}):
+        algebra = axes[0].algebra
+        grades = {algebra.grade(mask) for mask in axes[0].masks}
+        if grades in ({0}, {1}):
             facts.append(Versor)
+        # Every element of a single grade 0, 1, n - 1 or n is a blade, and so is a single basis blade.
+        if grades in ({0}, {1}, {algebra.dimension - 1}, {algebra.dimension}) or len(axes[0].masks) == 1:
+            facts.append(Blade)
         for family in (ReverseProduct, CliffordConjugateProduct):
             support = symmetric_product_support(axes[0], family.transform)
             if support <= {0}:

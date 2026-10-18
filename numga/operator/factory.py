@@ -13,7 +13,7 @@ from numga.gatype import rules
 from numga.gatype.rules import OperationRule
 from numga.extensor import Extensor
 from numga.gatype import GAType, Orientation, UnorientedSubspace
-from numga.gatype.traits import Identity
+from numga.gatype.traits import EMPTY_TRAITS, BladeProduct, Identity, TraitSet
 from numga.operator.kernel import SymbolicKernel
 from numga.subspace import SubSpace
 
@@ -37,6 +37,7 @@ class OperatorFactory:
 
     def build(
         self, axes: Iterable[SubSpace], orientations: Iterable[Orientation], coefficients: Any,
+        traits: TraitSet = EMPTY_TRAITS,
     ) -> Extensor:
         axes = tuple(axes)
         if not axes:
@@ -45,7 +46,7 @@ class OperatorFactory:
             raise ValueError("every Extensor axis must belong to this factory's algebra")
         return Extensor(
             self.algebra.exact,
-            self.algebra.gatype.oriented(axes, orientations),
+            self.algebra.gatype.oriented(axes, orientations, traits),
             SymbolicKernel(coefficients),
         )
 
@@ -306,7 +307,7 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _wedge(self, left: GAType, right: GAType) -> Extensor:
         return self._product(
-            rules.MULTIPLIED,
+            rules.WEDGE,
             left,
             right,
             lambda left_grade, right_grade, output_grade: (
@@ -626,7 +627,9 @@ class OperatorFactory:
         for column, (mask, sign) in enumerate(terms):
             row = indices[mask]
             coefficients[row, column] = sign * space.signs[column] * output.signs[row]
-        return self.build((output, space), (gatype.orientation.flipped, gatype.orientation), coefficients)
+        # The complement of a blade is a blade.
+        return self.build((output, space), (gatype.orientation.flipped, gatype.orientation), coefficients,
+                          TraitSet((BladeProduct((0,)),)))
 
     def _right_hodge(self, mask: int) -> tuple[int, int]:
         """Return the complement mask and right-Hodge orientation sign."""

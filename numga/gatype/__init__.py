@@ -9,6 +9,8 @@ from .orientation import Orientation
 from .pattern import GATypePattern
 from . import rules
 from .traits import (
+    Blade,
+    BladeProduct,
     CoefficientOrthogonal,
     EMPTY_TRAITS,
     CliffordConjugateProduct,

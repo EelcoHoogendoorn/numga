@@ -1,41 +1,29 @@
-"""Low-Reynolds-number swimming and regularized Stokeslets in the projective geometric algebra of the plane.
+"""Swimming without inertia, in the projective geometric algebra of the plane.
 
-In a slow, viscous flow where inertia is negligible, a swimmer experiences no coasting: at every instant
-the forces its body exerts on the fluid and their moments about any point sum to zero, a vanishing
-wrench (`Forque`). Modeling the swimmer as a collection of small spheres of radius `radius` at points
-`sites` (`Point`), a force `f` (`Force`) on one bead drives a fluid velocity (`Direction`) at separation
-`r = (target & source) | ORIGIN` given by the Cortez regularized Stokeslet:
+In slow, thick flow nothing coasts: the moment a swimmer stops moving its body, it stops. At every
+instant the pushes its body gives the fluid balance, with no net force and no net turning, and the
+body moves at exactly the rate that keeps them balanced.
 
-    stokeslet(r) = ((r2 + radius**2) * Force.dual() + r.dual() * (r | Force)) / (r2 * r2.square_root())
+The swimmer is a chain of beads. A push on the fluid at one bead sets all of the fluid moving, less and
+less with distance; a point force would move the fluid infinitely fast at the point itself, so each
+bead's force is spread over a blob of the bead's size, a regularized Stokeslet. Over every pair of
+beads these flows make one map from the forces the beads push with to the velocities they move at.
 
-with `r2 = r.norm_squared() + radius**2`. At zero separation `r == 0`, this reduces to the bead's
-self-mobility `(2 / radius) * Force.dual()`. Evaluated between all pairs of beads on the swimmer,
-`.field(0, 1)` packages the pairwise blocks into the mobility operator `M: Direction[beads] <- Force[beads]`.
+The body's own motion is a rate, a bivector, and the commutator of each bead with the rate is that
+bead's velocity: with the rate open, `sites.commutator(Twist)` is the map from the body's rate to every
+bead's velocity. The same map, carried across the regressive product, sums the beads' forces into the
+forque on the body: its adjugate, because a forque paired with a rate is the power the forces deliver
+to beads moving at that rate, `rigid.adjugate()(forces) & rate` the summed power of the forces. As the
+swimmer changes its shape, one solve finds the body's rate that keeps that forque zero.
 
-A rigid motion rate in the swimmer's body frame is a bivector `Twist`. Leaving `Twist` open in the
-commutator with the bead points,
+With nothing coasting, the body's rate is linear in the rate at which the shape changes. How far a
+stroke carries the swimmer therefore depends only on the path its shape takes, not on how fast it goes,
+and a stroke that goes back along the path it came undoes itself: Purcell's scallop theorem. Purcell's
+three-link swimmer takes its two hinges around a loop instead, and steps ahead with every cycle.
 
-    rigid = sites.commutator(Twist).field(0)
-
-gives the kinematic map `Direction[beads] <- Twist` from the body's twist to the velocity of every bead.
-Its incidence adjugate `rigid.adjugate()` (`Forque <- Force[beads]`) sums the bead forces and their
-lever-arm moments into the total body wrench (`Forque`), because `rigid.adjugate()(forces) & twist`
-equals the virtual power `(forces & rigid(twist)).sites.sum()`. When the swimmer deforms its hinges with
-prescribed body-frame velocities `shape_velocity`, zero net wrench `rigid.adjugate()(forces) == 0` gives
-the Schur-complement grand resistance map `resistance = rigid.adjugate()(M.solve(rigid))` (`Forque <- Twist`)
-and the instantaneous swimming twist
-
-    body_rate = -resistance.solve(rigid.adjugate()(M.solve(shape_velocity)))
-
-Each time step then multiplies `(body_rate * (-dt / 2)).exp()` on the right of the swimmer's pose `Motor`.
-A reciprocal two-hinge stroke retraces a curve in hinge-angle space and returns to its starting pose
-after every cycle (Purcell's scallop theorem); Purcell's non-reciprocal three-link stroke encloses area
-in hinge-angle space and produces net locomotion.
-
-In the matrix notation of microhydrodynamics, the mobility operator reads as a $2N \\times 2N$ block
-Oseen matrix $M_{ij} = \\frac{(r_{ij}^2 + 2\\epsilon^2)I + \\mathbf{r}_{ij}\\mathbf{r}_{ij}^\\top}{(r_{ij}^2 + \\epsilon^2)^{3/2}}$,
-the rigid kinematics as a $2N \\times 3$ matrix $R$ of identity and lever-arm blocks, and the grand
-resistance map as the $3 \\times 3$ Schur complement $R^\\top M^{-1} R$.
+In the matrix notation of microhydrodynamics, the map from forces to velocities is the beads' Oseen
+matrix, the map from the body's rate to the beads' velocities a matrix of identity and lever-arm
+blocks, and the body's rate comes from their three by three resistance matrix.
 """
 
 from __future__ import annotations
@@ -69,34 +57,56 @@ def separation(target: Point, source: Point) -> Force:
 def stokeslet(separations: Force, radius: float) -> Mobility:
     """Fluid velocity (`Direction`) per unit blob force (`Force`) at `separations`, for regularized
     Stokeslets of blob `radius`."""
+    # The blob spreads each force over the bead's size: softening the distance by the radius keeps the
+    # flow finite where the force acts.
     r2 = separations.norm_squared() + radius**2                                 # [...] Scalar
+    # The fluid moves along the force, and further along the separation by as much of the force as
+    # points along it; both parts fall off with distance.
     return ((r2 + radius**2) * Force.dual() + separations.dual() * (separations | Force)) / (r2 * r2.square_root())
+
+
+def mobility(sites: Point, radius: float) -> Mobility:
+    """The flow each bead's force drives at every other bead: one map from all the beads' forces to all
+    their velocities, `[...] Direction[beads] <- Force[beads]`, for beads at `[...] Point[beads]`. Its
+    blocks depend on every pair of beads, so they are formed over the beads as a batch and assembled
+    into the map between the two fields."""
+    beads = sites.batch()                                                        # [..., beads] Point
+    pairs = separation(beads[..., :, None], beads[..., None, :])                # [..., beads, beads] Force
+    return stokeslet(pairs, radius).field(0, 1)                                 # [...] Direction[beads] <- Force[beads]
 
 
 def swim(sites: Point, shape_velocity: Direction, radius: float) -> tuple[Twist, Force]:
     """Solve for the body-frame rigid rate `[...] Twist` and bead forces `[...] Force[beads]` of a
-    force- and torque-free swimmer with bead positions `sites` `[..., beads] Point` and prescribed
-    body-frame deformation velocities `shape_velocity` `[..., beads] Direction`."""
-    pairs = separation(sites[..., :, None], sites[..., None, :])                # [..., beads, beads] Force
-    M = stokeslet(pairs, radius).field(0, 1)                                    # [...] Direction[beads] <- Force[beads]
-    rigid = sites.commutator(Twist).field(0)                                    # [...] Direction[beads] <- Twist
+    force- and torque-free swimmer with bead positions `sites` `[...] Point[beads]` and prescribed
+    body-frame deformation velocities `shape_velocity` `[...] Direction[beads]`."""
+    M = mobility(sites, radius)                                                  # [...] Direction[beads] <- Force[beads]
+    # With the body's rate open, each bead's commutator with it is that bead's velocity.
+    rigid = sites.commutator(Twist)                                              # [...] Direction[beads] <- Twist
+    # The forces that carry the beads along with the body at a given rate, summed into the forque on the
+    # body: the adjugate carries forces back across the map that carried the rate out to velocities.
     resistance = rigid.adjugate()(M.solve(rigid))                               # [...] Forque <- Twist
-    body_rate = -resistance.solve(rigid.adjugate()(M.solve(shape_velocity.field())))
-    forces = M.solve(rigid(body_rate) + shape_velocity.field())                 # [...] Force[beads]
+    # Changing shape alone would push on the fluid too; the body moves at the rate whose forque cancels it.
+    body_rate = -resistance.solve(rigid.adjugate()(M.solve(shape_velocity)))
+    # The forces the beads push with under both motions together, balanced by construction.
+    forces = M.solve(rigid(body_rate) + shape_velocity)                         # [...] Force[beads]
     return body_rate, forces
 
 
 def flow_field(sample_points: Point, bead_points: Point, bead_forces: Force, radius: float) -> Direction:
-    """Fluid velocity `[...] Direction` at `sample_points` induced by `bead_forces` at `bead_points`."""
-    pairs = separation(sample_points[..., None], bead_points)                   # [..., beads] Force
-    kernels = stokeslet(pairs, radius)                                          # [..., beads] Direction <- Force
-    return kernels(bead_forces).sum(axis=-1)                                    # [...] Direction
+    """Fluid velocity `[...] Direction` at `sample_points` induced by `bead_forces` `[...] Force[beads]` at
+    `bead_points` `[...] Point[beads]`: the map from the beads' forces to the flow at each sample point,
+    applied to the forces, sums the flows of all the beads."""
+    pairs = separation(sample_points[..., None], bead_points.batch())           # [..., beads] Force
+    return stokeslet(pairs, radius).field(1)(bead_forces)                       # [...] Direction
 
 
 def integrate_pose(body_rate: Twist, dt: float, start_motor: Motor) -> Motor:
     """Step `start_motor` `[...] Motor` by `(body_rate * (-dt / 2)).exp()` in the body frame at each
     step `[steps, ...] Twist`, returning `[steps + 1, ...] Motor`."""
     steps = (body_rate * (-dt / 2.0)).exp()                                     # [steps, ...] Motor
+    # Each step moves the body in its own frame, so it multiplies the pose on the right. A running product
+    # puts later factors on the left; taking it over the steps' reverses and reversing the result puts
+    # them on the right.
     moved = start_motor * steps.reverse().cumprod(axis=0).reverse()             # [steps, ...] Motor
     return concatenate([start_motor[None], moved], axis=0)                      # [steps + 1, ...] Motor
 
@@ -109,7 +119,7 @@ def three_link_shape(
     angles: np.ndarray,
     rates: np.ndarray,
 ) -> tuple[Point, Direction]:
-    """Bead points `[..., beads] Point` and body-frame deformation velocities `[..., beads] Direction`
+    """Bead points `[...] Point[beads]` and body-frame deformation velocities `[...] Direction[beads]`
     for a three-link Purcell swimmer with hinge angles `angles` `[..., 2]` and angular rates `rates` `[..., 2]`."""
     # The beads lie along the swimmer's axis, the line y = 0, at their offsets from the origin.
     along = mv.direction([1.0, 0.0])                                            # [] Point
@@ -126,6 +136,9 @@ def three_link_shape(
     left_beads = left_turn >> left_rest                                         # [..., arm] Point
     right_beads = right_turn >> right_rest                                      # [..., arm] Point
 
+    # Each arm turns about its hinge at the hinge's rate, so a bead's velocity is its commutator with that
+    # rate; the left hinge's angle counts the other way round. The centre link does not move in the body's
+    # frame.
     left_vel = left_beads.commutator(-left_hinge * rates[..., 0, None])         # [..., arm] Direction
     right_vel = right_beads.commutator(right_hinge * rates[..., 1, None])       # [..., arm] Direction
     centre_vel = (angles[..., :1] * 0.0) * centre_beads.commutator(right_hinge)   # [..., centre] Direction
@@ -133,4 +146,4 @@ def three_link_shape(
     shape = angles.shape[:-1]
     sites = concatenate([left_beads, centre_beads.broadcast_to(shape + centre_beads.shape), right_beads], axis=-1)
     velocities = concatenate([left_vel, centre_vel, right_vel], axis=-1)
-    return sites, velocities
+    return sites.field(), velocities.field()

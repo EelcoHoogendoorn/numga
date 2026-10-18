@@ -61,8 +61,8 @@ def draw_summary(
 
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
     flow_xy = point_coords(flow)                                                # [gy, gx, 2]
-    beads_xy = point_coords(world_sites)                                        # [steps, swimmers, beads, 2]
-    forces_xy = force_coords(world_forces)                                      # [steps, swimmers, beads, 2]
+    beads_xy = point_coords(world_sites.batch())                                # [steps, swimmers, beads, 2]
+    forces_xy = force_coords(world_forces.batch())                              # [steps, swimmers, beads, 2]
     pos_xy = point_coords(positions)                                            # [steps + 1, swimmers, 2]
 
     ax_flow.quiver(
@@ -104,7 +104,7 @@ def animate_swimmers(
     every: int,
 ) -> list[np.ndarray]:
     """Frames of Purcell's non-reciprocal swimmer (top) and the reciprocal flapper (bottom)."""
-    beads_xy = point_coords(world_sites)[::every]                               # [frames, swimmers, beads, 2]
+    beads_xy = point_coords(world_sites.batch())[::every]                       # [frames, swimmers, beads, 2]
     all_pos_xy = point_coords(positions)                                        # [steps + 1, swimmers, 2]
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
     flow_xy = point_coords(flow)                                                # [frames, gy, gx, 2]
