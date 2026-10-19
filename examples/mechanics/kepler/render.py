@@ -16,9 +16,9 @@ BODY_COLOUR = "#ff00b7"
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw_lift(positions: core.Vector, spinors: core.Spinor) -> plt.Figure:
+def draw_lift(positions: core.Point, spinors: core.Spinor) -> plt.Figure:
     """A planar orbital passage and the half-turn of its position spinor."""
-    points = positions.cast(core.ga.subspace("x y")).kernel
+    points = positions.cast(core.ga.subspace("yz zx")).kernel
     lifted = spinors.cast(core.ga.subspace("1 xy")).kernel
     figure, panels = plt.subplots(1, 2, figsize=(9, 3.8), layout="constrained")
     for ax, path in zip(panels, (points, lifted)):
@@ -34,9 +34,9 @@ def draw_lift(positions: core.Vector, spinors: core.Spinor) -> plt.Figure:
 
 def draw_comparison(reference: core.State, physical: core.State, regularized: core.State) -> plt.Figure:
     """One orbit at equal step counts, with a periapsis detail below each full path."""
-    exact = reference.position.cast(core.ga.subspace("x y")).kernel
-    direct = physical.position.cast(core.ga.subspace("x y")).kernel
-    lifted = regularized.position.cast(core.ga.subspace("x y")).kernel
+    exact = reference.position.cast(core.ga.subspace("yz zx")).kernel
+    direct = physical.position.cast(core.ga.subspace("yz zx")).kernel
+    lifted = regularized.position.cast(core.ga.subspace("yz zx")).kernel
     cases = exact.shape[1]
     figure, panels = plt.subplots(2, cases, figsize=(10.5, 6), squeeze=False, layout="constrained")
     for case in range(cases):
@@ -82,9 +82,9 @@ def draw_errors(counts: np.ndarray, physical: core.Scalar, regularized: core.Sca
     return figure
 
 
-def animate_lift(positions: core.Vector, spinors: core.Spinor) -> list[np.ndarray]:
+def animate_lift(positions: core.Point, spinors: core.Spinor) -> list[np.ndarray]:
     """Two orbital revolutions and one closed spinor loop, sampled in the regularized clock."""
-    points = positions.cast(core.ga.subspace("x y")).kernel
+    points = positions.cast(core.ga.subspace("yz zx")).kernel
     lifted = spinors.cast(core.ga.subspace("1 xy")).kernel
     figure, panels = plt.subplots(1, 2, figsize=(8, 3.4), layout="constrained")
     markers = []

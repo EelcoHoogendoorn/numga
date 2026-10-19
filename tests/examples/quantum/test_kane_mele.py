@@ -37,7 +37,7 @@ def test_edge_states_lie_on_the_rim_and_the_spins_circle_oppositely():
     sines = []
     for half in ((density + along) * 0.5, (density - along) * 0.5):
         centre = ((half * flake.positions).sites.sum() / half.sites.sum()).normalized()
-        sines.append((core.mv.xy | (centre ^ start)).to_array().item())
+        sines.append((core.mv.xy | start.commutator(centre)).to_array().item())
     assert sines[0] > 0.5 and sines[1] < -0.5
 
 

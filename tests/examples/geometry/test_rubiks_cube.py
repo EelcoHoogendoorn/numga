@@ -22,8 +22,8 @@ def test_quarter_turns_are_exact_cycle_in_fours_and_undo():
 
 def test_the_frontier_is_every_turn_of_every_state():
     solved, _, _ = core.solved_cube()
-    states = core.frontier(solved[None]).reshape(-1, 54)                       # [12, 54] Vector
-    children = core.frontier(states)                                           # [2, 2, 3, 12, 54] Vector
+    states = core.frontier(solved[None]).reshape(-1, 54)                       # [12, 54] Point
+    children = core.frontier(states)                                           # [2, 2, 3, 12, 54] Point
     for direction, side, axis, parent in np.ndindex(2, 2, 3, 12):
         expected = core.turned(states[parent], core.turns[direction, side, axis], core.faces[side, axis])
         np.testing.assert_array_equal(children[direction, side, axis, parent].kernel, expected.kernel)

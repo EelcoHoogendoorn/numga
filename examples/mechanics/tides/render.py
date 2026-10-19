@@ -21,9 +21,9 @@ DENSITY_FLOOR = 1e-4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def density(ax: Axes, points: core.Vector, mass_density: core.Scalar) -> None:
+def density(ax: Axes, points: core.Point, mass_density: core.Scalar) -> None:
     """The density on a log scale, as an image over the grid's cells."""
-    coordinates = points.cast(core.ga.subspace("x y")).kernel
+    coordinates = points.cast(core.ga.subspace("yz zx")).kernel
     # The grid samples cell centres; the image extends half a cell beyond them.
     half_cell = (coordinates[1, 1] - coordinates[0, 0]) / 2
     box = (coordinates[0, 0, 0] - half_cell[0], coordinates[0, -1, 0] + half_cell[0],
@@ -37,27 +37,27 @@ def density(ax: Axes, points: core.Vector, mass_density: core.Scalar) -> None:
 
 def stars_at(ax: Axes, stars: core.Stars, size: float) -> None:
     """The stars as dots of the given size."""
-    positions = stars.positions.cast(core.ga.subspace("x y")).kernel
+    positions = stars.positions.cast(core.ga.subspace("yz zx")).kernel
     ax.scatter(positions[:, 0], positions[:, 1], s=size, color=STARS, linewidths=0)
 
 
-def rim_at(ax: Axes, centre: core.Vector, rim: core.Form, half_size: float) -> None:
+def rim_at(ax: Axes, centre: core.Point, rim: core.Form, half_size: float) -> None:
     """The rim as the level set of its form, evaluated on a grid of offsets around the centre."""
     offsets = core.grid(half_size, half_size, RIM_PIXELS, RIM_PIXELS)
     level = rim(offsets, offsets).kernel[..., 0]
-    xy = (centre + offsets).cast(core.ga.subspace("x y")).kernel
+    xy = (centre + offsets).cast(core.ga.subspace("yz zx")).kernel
     ax.contour(xy[..., 0], xy[..., 1], level, levels=[1.0], colors=[PREDICTION], linewidths=1.4)
 
 
-def frame(points: core.Vector, mass_density: core.Scalar, stars: core.Stars, centre: core.Vector, rim: core.Form) -> np.ndarray:
+def frame(points: core.Point, mass_density: core.Scalar, stars: core.Stars, centre: core.Point, rim: core.Form) -> np.ndarray:
     """The stars over the density, beside a close view of the cluster with its predicted rim."""
     figure = plt.figure(figsize=(11, 4.4), dpi=80, layout="constrained")
     whole, near = figure.subplots(1, 2, gridspec_kw={"width_ratios": (1.5, 1)})
     density(whole, points, mass_density)
     stars_at(whole, stars, 2)
     # Around the cluster, scaled to its extent.
-    middle = centre.cast(core.ga.subspace("x y")).kernel
-    half_size = np.abs(stars.positions.cast(core.ga.subspace("x y")).kernel - middle).max() * ZOOM
+    middle = centre.cast(core.ga.subspace("yz zx")).kernel
+    half_size = np.abs(stars.positions.cast(core.ga.subspace("yz zx")).kernel - middle).max() * ZOOM
     stars_at(near, stars, 5)
     rim_at(near, centre, rim, half_size)
     near.set(xlim=(middle[0] - half_size, middle[0] + half_size), ylim=(middle[1] - half_size, middle[1] + half_size),
@@ -68,7 +68,7 @@ def frame(points: core.Vector, mass_density: core.Scalar, stars: core.Stars, cen
     return pixels
 
 
-def animate(points: core.Vector, mass_density: core.Scalar,
-            states: Iterable[tuple[core.Stars, core.Vector, core.Form]]) -> list[np.ndarray]:
+def animate(points: core.Point, mass_density: core.Scalar,
+            states: Iterable[tuple[core.Stars, core.Point, core.Form]]) -> list[np.ndarray]:
     """One frame per state of the stars, their centre and their predicted rim."""
     return [frame(points, mass_density, *state) for state in states]

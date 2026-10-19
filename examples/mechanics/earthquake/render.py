@@ -24,26 +24,26 @@ PATCH = 0.55
 LIMIT = 0.75
 
 
-def coordinates(vectors: core.Vector) -> np.ndarray:
-    """The north, east and down coordinates of vectors."""
-    return vectors.cast(core.ga.subspace("x y z")).kernel
+def coordinates(directions: core.Point) -> np.ndarray:
+    """The north, east and down coordinates of directions."""
+    return directions.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def lambert(vectors: core.Vector) -> np.ndarray:
+def lambert(directions: core.Point) -> np.ndarray:
     """Directions in the equal-area projection of the lower hemisphere, east to the right and north
     up: a direction on the upper hemisphere is drawn as its opposite."""
-    ned = coordinates(vectors)
+    ned = coordinates(directions)
     ned = np.where(ned[..., 2:] < 0, -ned, ned)
     return ned[..., [1, 0]] / np.sqrt(1 + ned[..., 2:])
 
 
-def upright(vectors: core.Vector) -> np.ndarray:
-    """Vectors in space for drawing: east, north and up."""
-    ned = coordinates(vectors)
+def upright(directions: core.Point) -> np.ndarray:
+    """Directions in space for drawing: east, north and up."""
+    ned = coordinates(directions)
     return np.stack([ned[..., 1], ned[..., 0], -ned[..., 2]], axis=-1)
 
 
-def draw_ball(ax, directions: core.Vector, push: core.Scalar, axes: core.Vector) -> None:
+def draw_ball(ax, directions: core.Point, push: core.Scalar, axes: core.Point) -> None:
     """The beachball of one fault: the lower hemisphere `[rings, spokes]` with the pushes shaded, its
     nodal lines, and its pressure and tension axes, north up."""
     grid, push = lambert(directions), push.to_array()
@@ -61,7 +61,7 @@ def draw_ball(ax, directions: core.Vector, push: core.Scalar, axes: core.Vector)
     ax.set_axis_off()
 
 
-def draw_mechanisms(directions: core.Vector, push: core.Scalar, axes: core.Vector) -> plt.Figure:
+def draw_mechanisms(directions: core.Point, push: core.Scalar, axes: core.Point) -> plt.Figure:
     """The beachball of each fault `[faults]`, side by side."""
     count = push.shape[0]
     figure, panels = plt.subplots(1, count, figsize=(3.2 * count, 3.2), dpi=120)
@@ -71,8 +71,8 @@ def draw_mechanisms(directions: core.Vector, push: core.Scalar, axes: core.Vecto
     return figure
 
 
-def draw_fault(ax, directions: core.Vector, push: core.Scalar, normal: core.Vector, slip: core.Vector,
-               null: core.Vector) -> None:
+def draw_fault(ax, directions: core.Point, push: core.Scalar, normal: core.Point, slip: core.Point,
+               null: core.Point) -> None:
     """One fault in space: the patch of the fault, the slip of each side across it, and the lobes of
     the P waves, each direction drawn as far as its first motion, pushes dark and pulls pale."""
     # The rings in reverse, so that the cells of the surface face outwards, towards the light.
@@ -99,8 +99,8 @@ def draw_fault(ax, directions: core.Vector, push: core.Scalar, normal: core.Vect
     ax.set_axis_off()
 
 
-def animate_sweep(hemisphere: core.Vector, frames: Iterable[tuple[core.Vector, core.Vector, core.Vector, core.Scalar,
-                                                                     core.Vector, core.Scalar]]) -> list[np.ndarray]:
+def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar,
+                                                                     core.Point, core.Scalar]]) -> list[np.ndarray]:
     """Each frame of the rake's turn: the fault in space with its P lobes, and its beachball over the
     lower hemisphere."""
     images = []

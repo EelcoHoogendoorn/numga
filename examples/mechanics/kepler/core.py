@@ -12,13 +12,16 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
+# Positions and velocities are antivectors with intrinsic orientation.
+Point = ga.gatype.antivector()
+# The plane an orbit sweeps, the join of two points: a vector with intrinsic orientation.
+Patch = ga.gatype.vector().derive.flipped_orientation
 Spinor = ga.gatype.even()
 
 
 # --- math -----------------------------------------------------------------------------
-placement = Spinor >> mv.x                                               # Vector <- Spinor, Spinor
+# The point at unit distance along x, carried by a spinor in both its places.
+placement = Spinor >> mv.x.dual()                                        # Point <- Spinor, Spinor
 
 
 @dataclass
@@ -26,23 +29,24 @@ class State:
     """Physical time, position and velocity, with matching batch axes."""
 
     time: Scalar
-    position: Vector
-    velocity: Vector
+    position: Point
+    velocity: Point
 
     def energy(self, gravity: float) -> Scalar:
         return self.velocity.scalar_norm_squared() / 2 - gravity / self.position.norm()
 
-    def momentum(self) -> Bivector:
-        return self.position ^ self.velocity
+    def momentum(self) -> Patch:
+        """The angular momentum per mass: the plane of the orbit, weighted by twice the areal speed."""
+        return self.position & self.velocity
 
     @classmethod
     def from_spinor(cls, spinor: Spinor, rate: Spinor, time: Scalar) -> State:
         """Read a position spinor and its regularized derivative in physical time."""
         # The spinor times its reverse is the radius, the distance from the attracting centre at the origin.
         radius = spinor.scalar_norm_squared()                            # [...] Scalar
-        # The sandwich differentiated in each of its two arguments; their trivector parts, the unused gauge rate, cancel.
-        velocity = (placement(rate, spinor) + placement(spinor, rate)) / radius  # [...] Vector
-        return cls(time, spinor >> mv.x, velocity)
+        # The sandwich differentiated in each of its two arguments; their scalar parts, the unused gauge rate, cancel.
+        velocity = (placement(rate, spinor) + placement(spinor, rate)) / radius  # [...] Point
+        return cls(time, spinor >> mv.x.dual(), velocity)
 
     @classmethod
     def collect(cls, states: Iterable[State]) -> State:
@@ -62,9 +66,10 @@ class BoundOrbit:
 
     @classmethod
     def lift(cls, start: State, spinor: Spinor, gravity: float) -> BoundOrbit:
-        """Lift a physical state through a spinor that places mv.x at its position."""
-        # This derivative gives the prescribed velocity without spinning about the radial axis.
-        rate = start.velocity * spinor * mv.x / 2                        # [...] Spinor
+        """Lift a physical state through a spinor that places the point along x, `mv.x.dual()`, at its
+        position."""
+        # This derivative gives the prescribed velocity without spinning in the plane across the radius.
+        rate = start.velocity * spinor * ~mv.x.dual() / 2                # [...] Spinor
         return cls(spinor, rate, start.energy(gravity))
 
     @property
@@ -119,14 +124,14 @@ class BoundOrbit:
 
 def physical_verlet(initial: State, gravity: float, step: float, n_steps: int) -> Iterator[State]:
     """Kick-drift-kick integration with equal steps in physical time."""
-    position, velocity, time = initial.position, initial.velocity, initial.time  # [...] Vector, Vector, Scalar
-    acceleration = -gravity * position / position.norm() ** 3            # [...] Vector
+    position, velocity, time = initial.position, initial.velocity, initial.time  # [...] Point, Point, Scalar
+    acceleration = -gravity * position / position.norm() ** 3            # [...] Point
     yield initial
     for _ in range(n_steps):
-        half_velocity = velocity + acceleration * (step / 2)             # [...] Vector
-        position = position + half_velocity * step                       # [...] Vector
-        acceleration = -gravity * position / position.norm() ** 3        # [...] Vector
-        velocity = half_velocity + acceleration * (step / 2)             # [...] Vector
+        half_velocity = velocity + acceleration * (step / 2)             # [...] Point
+        position = position + half_velocity * step                       # [...] Point
+        acceleration = -gravity * position / position.norm() ** 3        # [...] Point
+        velocity = half_velocity + acceleration * (step / 2)             # [...] Point
         time = time + step                                               # [...] Scalar
         yield State(time, position, velocity)
 

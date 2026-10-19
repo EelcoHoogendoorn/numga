@@ -11,19 +11,19 @@ from numga import stack
 from examples.relativity.gravitational_lensing import core, render, scenarios
 
 mv = core.mv
-CENTRE = mv.vector(np.array([[0.0, 0.0]]))                                     # [masses] Vector
+CENTRE = mv.vector(np.array([[0.0, 0.0]])).dual()                              # [masses] Point
 ONE = mv.scalar(np.array([[1.0]]))                                             # [masses] Scalar
 
 
 def test_single_lens_images_have_the_analytic_stretches_orientation_and_magnification():
-    source = 0.3 * mv.x + 0.2 * mv.y
+    source = (0.3 * mv.x + 0.2 * mv.y).dual()
     radius = (source | source).square_root()
     direction = source / radius
     image_radii = stack(((radius + (radius**2 + 4).square_root()) / 2,
                          (radius - (radius**2 + 4).square_root()) / 2))
     images = direction * image_radii
     local = core.local_map(images, CENTRE, ONE)
-    area = local.outermorphism(core.Area)(mv.xy) / mv.xy
+    area = local.det()
 
     # Both images reach the source; the radial stretch is 1 + 1/r², the tangential one 1 - 1/r².
     np.testing.assert_allclose((core.deflected(images, CENTRE, ONE) - source).kernel, 0, atol=1e-13)
@@ -37,10 +37,10 @@ def test_single_lens_images_have_the_analytic_stretches_orientation_and_magnific
 
 
 def test_local_map_is_the_derivative_and_turns_with_the_lens():
-    positions = mv.vector(np.array([[-0.4, 0.1], [0.6, -0.2], [-0.1, 0.7]]))
+    positions = mv.vector(np.array([[-0.4, 0.1], [0.6, -0.2], [-0.1, 0.7]])).dual()
     masses = mv.scalar(np.array([[0.2], [0.5], [0.3]]))
-    observed = mv.vector(np.array([[-1.2, 0.8], [0.3, -0.9], [1.5, 1.2], [-0.8, -1.4]]))
-    small = mv.vector(np.array([[0.3, 0.8], [-0.6, 0.1], [0.4, -0.7], [0.9, 0.2]]))
+    observed = mv.vector(np.array([[-1.2, 0.8], [0.3, -0.9], [1.5, 1.2], [-0.8, -1.4]])).dual()
+    small = mv.vector(np.array([[0.3, 0.8], [-0.6, 0.1], [0.4, -0.7], [0.9, 0.2]])).dual()
     step = 1e-4
     lens = lambda directions: core.deflected(directions, positions, masses)
     numerical = (-lens(observed + 2 * step * small) + 8 * lens(observed + step * small)
@@ -55,7 +55,7 @@ def test_local_map_is_the_derivative_and_turns_with_the_lens():
 def test_finite_source_light_integrates_to_the_radial_magnification():
     width = 0.15
     directions = core.sky(2.0, 128)
-    flux = core.brightness(core.deflected(directions, CENTRE, ONE), 0 * mv.x, width).sum() * (4 / 128)**2
+    flux = core.brightness(core.deflected(directions, CENTRE, ONE), 0 * mv.x.dual(), width).sum() * (4 / 128)**2
     # The analytic point-source magnification, integrated over rings of the source.
     expected = 2 * np.pi * quad(
         lambda distance: (distance**2 + 2) / np.sqrt(distance**2 + 4) * np.exp(-distance**2 / (2 * width**2)),
@@ -66,7 +66,7 @@ def test_finite_source_light_integrates_to_the_radial_magnification():
 
 def test_scenes_pass_their_checks_and_draw():
     directions, reached, area = scenarios.lens(97)
-    steps = [scenarios.light(directions, reached, centre, 0.035) for centre in mv.x * np.array([-0.3, 0.0, 0.3])]
+    steps = [scenarios.light(directions, reached, centre, 0.035) for centre in mv.x.dual() * np.array([-0.3, 0.0, 0.3])]
     figure = render.draw(directions, area, scenarios.deflected, scenarios.POSITIONS, steps[0])
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
@@ -74,11 +74,11 @@ def test_scenes_pass_their_checks_and_draw():
 
 
 def test_the_local_map_is_undone_by_its_trace_two_inverse():
-    """A map of the plane with trace two is undone by `(2 * Vector - local) / area`."""
+    """A map of the plane with trace two is undone by `(2 * Point - local) / area`."""
     spread = np.linspace(-1.25, 1.25, 5)
-    centres = core.mv.x * spread[None, :] + core.mv.y * spread[:, None]       # [rows, columns] Vector
-    local = core.local_map(centres, scenarios.POSITIONS, scenarios.MASSES)     # [rows, columns] Vector <- Vector
-    area = local.outermorphism(core.Area)(core.mv.xy) / core.mv.xy            # [rows, columns] Scalar
-    offsets = core.mv.vector([[0.3, -0.2], [-0.1, 0.4]])                      # [offsets] Vector
-    np.testing.assert_allclose((local[..., None].solve(offsets) - ((2 * core.Vector - local) / area)[..., None](offsets)).kernel,
+    centres = (core.mv.x * spread[None, :] + core.mv.y * spread[:, None]).dual()   # [rows, columns] Point
+    local = core.local_map(centres, scenarios.POSITIONS, scenarios.MASSES)     # [rows, columns] Point <- Point
+    area = local.det()                                                         # [rows, columns] Scalar
+    offsets = core.mv.vector([[0.3, -0.2], [-0.1, 0.4]]).dual()               # [offsets] Point
+    np.testing.assert_allclose((local[..., None].solve(offsets) - ((2 * core.Point - local) / area)[..., None](offsets)).kernel,
                                0.0, atol=1e-11)

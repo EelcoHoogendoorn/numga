@@ -10,16 +10,16 @@ from examples.geometry.sundial import core, render, scenarios
 def test_the_noon_sun_stands_a_quarter_turn_less_the_latitude_plus_the_declination_above_the_horizon():
     pole, equator = core.sky(scenarios.LATITUDE)
     declinations = np.linspace(-scenarios.TILT, scenarios.TILT, 5)
-    noon = core.sun(pole, equator, declinations, np.zeros_like(declinations))   # [declinations] Vector
-    elevations = np.arcsin(render.scalars(noon | core.up))
+    noon = core.sun(pole, equator, declinations, np.zeros_like(declinations))   # [declinations] Point
+    elevations = np.arcsin(render.scalars(core.dial & noon))
     np.testing.assert_allclose(elevations, np.pi / 2 - scenarios.LATITUDE + declinations, atol=1e-12)
 
 
 def test_shadows_lie_on_their_cones_and_hour_lines_on_the_gnomonic_angle():
     nodus, seasons, days, suns, hours = scenarios.dial()
     pole, _ = core.sky(scenarios.LATITUDE)
-    rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Vector
-    assert np.abs(render.scalars(rays | core.cone(pole, days[:, 0])[:, None](rays))).max() < 1e-10
+    rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Point
+    assert np.abs(render.scalars(~rays | core.cone(pole, days[:, 0])[:, None](rays))).max() < 1e-10
     foot = core.shadow(nodus, pole)
     angles = render.bearings(core.shadow(nodus, suns) - foot)                   # [hours, samples]
     hour_angles = scenarios.hour_angle(hours)

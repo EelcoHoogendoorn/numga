@@ -10,8 +10,8 @@ import numpy as np
 from numga import stack
 from examples.mechanics.jeffery import core
 
-Vector = core.Vector
-x, y, z = core.axes                                        # flow, gradient, vorticity
+Point = core.Point
+x, y, z = core.axes                                        # the planes across the flow, gradient and vorticity
 # The bodies, a sphere, a rod and an ellipsoid with three different axes: their semi-axes, and the rod's long
 # semi-axis over its short ones.
 SEMI_AXES = np.array([[1.0, 1.0, 1.0], [4.0, 1.0, 1.0], [4.0, 2.0, 1.0]])
@@ -34,7 +34,7 @@ DURATION_MS = 60
 # --- math -----------------------------------------------------------------------------
 def flow() -> core.Gradient:
     """Simple shear: the velocity along the flow grows with the offset along the gradient."""
-    return SHEAR_RATE * x * (y | Vector)                                     # [] Gradient
+    return SHEAR_RATE * x.dual() * (y & Point)                               # [] Gradient
 
 
 def period() -> float:
@@ -51,11 +51,11 @@ def tumbling() -> core.Rotor:
                                   N_PERIODS * N_STEPS_PER_PERIOD)))          # [steps + 1, bodies, starts] Rotor
 
 
-def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Vector]]:
+def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Point]]:
     """Per frame, every body's orientation from the start shown `[bodies]`, and the tip of its long axis."""
     for index in range(0, rotors.shape[0], N_STEPS_PER_FRAME):
         shown = rotors[index, :, SHOWN]                                      # [bodies] Rotor
-        yield shown, shown >> (x * SEMI_AXES[:, 0])
+        yield shown, shown >> (x.dual() * SEMI_AXES[:, 0])
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -64,8 +64,8 @@ def main() -> None:
     from examples.mechanics.jeffery import render
 
     rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor
-    trails = rotors >> x                                                     # [steps + 1, bodies, starts] Vector
-    heights = y * HEIGHTS                                                    # [heights] Vector
+    trails = rotors >> x.dual()                                              # [steps + 1, bodies, starts] Point
+    heights = y.dual() * HEIGHTS                                             # [heights] Point
     save_figure(render.draw_orbits(trails), "jeffery_orbits")
     save_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow()(heights), frames(rotors)),
                    "jeffery_tumbling", DURATION_MS)
@@ -78,9 +78,9 @@ def main() -> None:
     np.testing.assert_allclose((core.spin(sphere, flow()) - core.curl(flow()) / 2).norm().to_array(), 0.0, atol=1e-14)
     # The rod's axis is back where it started after one period, on a closed orbit along which
     # Jeffery's orbit constant holds; the tolerances test the step.
-    rod = trails[:, 1]                                                       # [steps + 1, starts] Vector
+    rod = trails[:, 1]                                                       # [steps + 1, starts] Point
     np.testing.assert_allclose((rod[N_STEPS_PER_PERIOD] - rod[0]).norm().to_array(), 0.0, atol=2e-2)
-    flowing, across, spinning = rod | x, rod | y, rod | z                     # [steps + 1, starts] Scalar each
+    flowing, across, spinning = x & rod, y & rod, z & rod                     # [steps + 1, starts] Scalar each
     constant = ((flowing.squared() + ASPECT**2 * across.squared()) / (ASPECT**2 * spinning.squared())).to_array()
     np.testing.assert_allclose(constant / constant[0], 1.0, rtol=2e-2)
     # The rod spends most of its time near the flow's direction: there its spin nearly vanishes.

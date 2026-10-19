@@ -5,7 +5,8 @@ three-dimensional space.
 An electron in graphene hops between neighbouring carbon atoms. Its state has two parts, one on
 each of the honeycomb's two sublattices, and the hopping mixes them through a vector that depends
 on the momentum, the pseudospin field `pseudospin(momentum, gap)`. Each of the three bonds
-contributes the vector x turned in the plane by the phase `momentum | BONDS` across that bond; a
+contributes the vector x turned in the plane by the phase `momentum & BONDS` across that bond, the
+pairing of the momentum, a wavevector and so a plane, with the bond, a displacement and so an antivector; a
 difference between the sublattices, as in boron nitride, adds a gap along z. The Hamiltonian is a
 map on even multivectors, taking psi to `field * psi * mv.z`. Its eigenvalues are plus and minus
 the length of the field, and the pseudospin of a state, its sandwich `psi >> mv.z`, points along
@@ -38,8 +39,9 @@ Rotor = ga.gatype.rotor()
 Hamiltonian = ga.gatype((Even, Even))              # Even <- Even
 # The energy of a hop between neighbouring atoms.
 HOPPING = 2.8                                      # eV
-# The bonds from an atom to its three neighbours, in carbon-carbon distances of 0.142 nm.
-BONDS = mv.vector([[0.5, np.sqrt(3) / 2, 0.0], [0.5, -np.sqrt(3) / 2, 0.0], [-1.0, 0.0, 0.0]])   # [3] Vector
+# The bonds from an atom to its three neighbours, in carbon-carbon distances of 0.142 nm: displacements,
+# antivectors with intrinsic orientation.
+BONDS = mv.vector([[0.5, np.sqrt(3) / 2, 0.0], [0.5, -np.sqrt(3) / 2, 0.0], [-1.0, 0.0, 0.0]]).dual()   # [3] Point
 # The two inequivalent corners of the Brillouin zone, where the cones sit.
 VALLEYS = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0.0],
                      [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0.0]])                     # [2] Vector
@@ -48,8 +50,8 @@ VALLEYS = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0.0],
 # --- math -----------------------------------------------------------------------------
 def pseudospin(momentum: Vector, gap: np.ndarray) -> Vector:
     """The pseudospin field: minus the hopping times the sum over the bonds of x turned by the phase
-    `momentum | BONDS` across each bond, plus the gap along z."""
-    phases = momentum[..., None] | BONDS                                        # [..., 3] Scalar
+    `momentum & BONDS` across each bond, plus the gap along z."""
+    phases = momentum[..., None] & BONDS                                        # [..., 3] Scalar
     return -HOPPING * ((mv.xy * phases).exp() * mv.x).sum(axis=-1) + gap * mv.z   # [...] Vector
 
 

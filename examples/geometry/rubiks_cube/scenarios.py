@@ -26,7 +26,7 @@ def scrambled_and_solved():
         scramble += [move] if (1 - move[0], *move[1:]) != tuple(scramble[-1]) else []
     scrambled = solved
     for direction, side, axis in scramble:
-        scrambled = core.turned(scrambled, core.turns[direction, side, axis], core.faces[side, axis])   # [54] Vector
+        scrambled = core.turned(scrambled, core.turns[direction, side, axis], core.faces[side, axis])   # [54] Point
     solution = core.solve(scrambled, solved, DEPTH)
 
     # --- checks

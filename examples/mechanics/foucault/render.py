@@ -29,17 +29,17 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def on_floor(points: core.Vector, north: core.Vector, east: core.Vector) -> np.ndarray:
+def on_floor(points: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
     """East and north of points on a floor, on the last axis."""
-    return np.stack([scalars(points | east), scalars(points | north)], axis=-1)
+    return np.stack([scalars(~points | east), scalars(~points | north)], axis=-1)
 
 
-def turned(directions: core.Vector, north: core.Vector, east: core.Vector) -> np.ndarray:
+def turned(directions: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
     """How far each direction on its floor has turned from north, clockwise seen from above."""
     floor = on_floor(directions, north, east)
     return np.arctan2(floor[..., 0], floor[..., 1])
@@ -55,7 +55,7 @@ def draw_track(ax: plt.Axes, track: np.ndarray) -> None:
     ax.set_axis_off()
 
 
-def draw_rosettes(tracks: core.Vector, north: core.Vector, east: core.Vector) -> plt.Figure:
+def draw_rosettes(tracks: core.Point, north: core.Point, east: core.Point) -> plt.Figure:
     """For each latitude, the bob's track over a day on its floor."""
     floors = on_floor(tracks, north[:, None], east[:, None])                   # [latitudes, samples, 2]
     figure, axes = plt.subplots(1, len(floors), figsize=(3.0 * len(floors), 3.2), layout="constrained")
@@ -64,8 +64,8 @@ def draw_rosettes(tracks: core.Vector, north: core.Vector, east: core.Vector) ->
     return figure
 
 
-def draw_globe(ax: plt.Axes, earth: core.Rotor, vertical: core.Vector, swing: core.Vector, north: core.Vector,
-               east: core.Vector) -> None:
+def draw_globe(ax: plt.Axes, earth: core.Rotor, vertical: core.Point, swing: core.Point, north: core.Point,
+               east: core.Point) -> None:
     """The earth turned by a rotor: its equator and the site's latitude circle, the polar cap that circle
     bounds, and the site's floor with the line the pendulum swings along."""
     longitude, latitude = np.meshgrid(np.linspace(0, 2 * np.pi, GLOBE_MESH), np.linspace(-np.pi / 2, np.pi / 2, GLOBE_MESH))
@@ -92,8 +92,8 @@ def draw_globe(ax: plt.Axes, earth: core.Rotor, vertical: core.Vector, swing: co
     ax.set_axis_off()
 
 
-def animate_day(turns: np.ndarray, earth: core.Rotor, swings: core.Vector, vertical: core.Vector, north: core.Vector,
-                east: core.Vector, track: core.Vector) -> list[np.ndarray]:
+def animate_day(turns: np.ndarray, earth: core.Rotor, swings: core.Point, vertical: core.Point, north: core.Point,
+                east: core.Point, track: core.Point) -> list[np.ndarray]:
     """Per frame of the day: the earth turned so far with the pendulum's floor and swing line, and the bob's
     track on the floor up to then."""
     floor = on_floor(track, north, east)                                       # [samples, 2]

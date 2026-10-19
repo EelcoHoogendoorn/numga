@@ -1,7 +1,8 @@
 """Foucault's pendulum: the plane a pendulum swings in turns against its floor, by the part of the earth's turn
 that lies in the floor, in the geometric algebra of three-dimensional space.
 
-Space is the earth's: x and y span the equator, x through the prime meridian, and the axis is z. The earth
+Space is the earth's: the planes x and y meet along its axis, x through the prime meridian, and the
+plane z is the equator's. Directions, a site's vertical and its north and east, are antivectors. The earth
 turns in the plane `x ^ y`. A pendulum hung at a site swings along a line of its floor, the plane through the
 site across the local vertical, and nothing on the pendulum can turn that line within the floor: the floor
 turns underneath it. The floor turns with the earth, and the part of the earth's turn that lies in the floor's
@@ -30,12 +31,13 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
+# Directions are antivectors with intrinsic orientation.
+Point = ga.gatype.antivector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 
-# The equator's x and y, and the axis z.
-x, y, z = mv.basis()                                       # [] Vector
+# The planes x and y, through the axis, and z, the equator's.
+x, y, z = mv.basis()                                       # [] Plane
 # The plane the earth turns in.
 equator = x ^ y                                            # [] Bivector
 
@@ -46,12 +48,12 @@ def turn(plane: Bivector, angle: np.ndarray) -> Rotor:
     return (plane * (-angle / 2)).exp()
 
 
-def compass(latitudes: np.ndarray) -> tuple[Vector, Vector, Vector]:
+def compass(latitudes: np.ndarray) -> tuple[Point, Point, Point]:
     """At a site on the prime meridian at each latitude: its vertical, the direction north along its floor,
     and the direction east."""
-    vertical = turn(x ^ z, latitudes) >> x                                    # [...] Vector
-    north = turn(x ^ z, latitudes + np.pi / 2) >> x                           # [...] Vector
-    return vertical, north, y * np.ones_like(latitudes)                       # [...] Vector each
+    vertical = turn(x ^ z, latitudes) >> x.dual()                             # [...] Point
+    north = turn(x ^ z, latitudes + np.pi / 2) >> x.dual()                    # [...] Point
+    return vertical, north, y.dual() * np.ones_like(latitudes)                # [...] Point each
 
 
 def felt(floors: Bivector) -> Scalar:
@@ -60,21 +62,21 @@ def felt(floors: Bivector) -> Scalar:
     return (equator | floors) / floors.squared()                       # [...] Scalar
 
 
-def swing(latitudes: np.ndarray, earth_turns: np.ndarray) -> Vector:
+def swing(latitudes: np.ndarray, earth_turns: np.ndarray) -> Point:
     """The direction a pendulum at each latitude swings along, on its floor, after the earth has turned by
     each angle: started north, and turned back against the floor by the part of the earth's turn the floor
     feels."""
     _, north, east = compass(latitudes)
-    # The floor's plane, north towards east.
-    floor = north ^ east                                                      # [...] Bivector
+    # The floor's plane, north towards east: the commutator of two directions is the plane they span.
+    floor = east.commutator(north)                                            # [...] Bivector
     # The turn back by the felt part of the earth's turn: `turn(floor, -felt * earth_turns)`.
-    return (floor * felt(floor) * (earth_turns / 2)).exp() >> north           # [...] Vector
+    return (floor * felt(floor) * (earth_turns / 2)).exp() >> north           # [...] Point
 
 
 def carried(latitudes: np.ndarray, steps: int) -> Rotor:
     """The turn a direction on the floor makes when carried once around each latitude circle, in so many
     steps, each the least turn taking one site's vertical to the next."""
     vertical, _, _ = compass(latitudes)
-    sites = turn(equator, 2 * np.pi * np.arange(steps + 1)[:, None] / steps) >> vertical   # [steps + 1, ...] Vector
-    moves = (1 + sites[1:] * sites[:-1]).normalized()                          # [steps, ...] Rotor
+    sites = turn(equator, 2 * np.pi * np.arange(steps + 1)[:, None] / steps) >> vertical   # [steps + 1, ...] Point
+    moves = (1 + sites[1:] * ~sites[:-1]).normalized()                         # [steps, ...] Rotor
     return reduce(lambda total, move: move * total, moves)                    # [...] Rotor

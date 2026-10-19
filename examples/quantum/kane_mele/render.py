@@ -15,9 +15,9 @@ BONDS = "#d5d8dc"
 DOT = 160.0
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """The x and y coordinates of points in the plane."""
-    return points.cast(core.ga.subspace("x y")).kernel
+    return points.cast(core.ga.subspace("yz zx")).kernel
 
 
 def draw_bonds(ax, flake: core.Flake) -> None:

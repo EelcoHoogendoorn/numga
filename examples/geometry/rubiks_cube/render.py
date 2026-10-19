@@ -17,12 +17,12 @@ COLOURS = np.array(["#c41e3a", "#0051ba", "#ffffff", "#ff5800", "#009e60", "#ffd
 ELEVATION, AZIMUTH = 28.0, -58.0
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """The x, y and z coordinates of points."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def draw(ax, corners: core.Vector, colours: np.ndarray, cut: core.Vector) -> None:
+def draw(ax, corners: core.Point, colours: np.ndarray, cut: core.Point) -> None:
     """The cube's stickers as squares coloured by their faces, with dark edges, and the dark cut under
     the turning layer on both sides; in cubies about the cube's centre."""
     squares = np.concatenate([coordinates(corners), coordinates(cut).reshape(-1, 4, 3)]) / 2
@@ -35,7 +35,7 @@ def draw(ax, corners: core.Vector, colours: np.ndarray, cut: core.Vector) -> Non
     ax.set_axis_off()
 
 
-def animate(states: Iterable[tuple[core.Vector, core.Vector]], colours: np.ndarray) -> list[np.ndarray]:
+def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray) -> list[np.ndarray]:
     """A frame of the cube for each state of its stickers' corners and its turning cut."""
     images = []
     for corners, cut in states:

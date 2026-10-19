@@ -10,7 +10,7 @@ import numpy as np
 from numga import stack
 from examples.mechanics.stress import core
 
-mv, Vector = core.mv, core.Vector
+mv, Point = core.mv, core.Point
 x, y, z = core.axes
 # The material: the first Lamé parameter and the shear modulus.
 LAME = 2.0
@@ -26,12 +26,12 @@ DURATION_MS = 50
 # --- math -----------------------------------------------------------------------------
 def material():
     """The strain, the stress it causes, and the principal stresses, directions and frame."""
-    strain = (core.axes * STRETCHES * (core.axes | Vector)).sum(axis=0) + SHEAR * (x * (y | Vector) + y * (x | Vector))   # [] Strain
+    strain = (core.axes.dual() * STRETCHES * (core.axes & Point)).sum(axis=0) + SHEAR * (x.dual() * (y & Point) + y.dual() * (x & Point))   # [] Strain
     stress = core.cauchy_stress(strain, LAME, SHEAR_MODULUS)                  # [] Stress
     return strain, stress, *core.principal_frame(stress)
 
 
-def frames() -> tuple[tuple[core.Vector, core.Vector, core.Vector, core.Vector, core.Vector], core.Scalar]:
+def frames() -> tuple[tuple[core.Point, core.Point, core.Point, core.Point, core.Point], core.Scalar]:
     """The cube seen from the lab, from the principal frame, and from the frame an eighth of a turn
     on, where the shear is greatest `[3]`; with the principal stresses."""
     strain, stress, values, directions, principal = material()
@@ -46,7 +46,7 @@ def turns() -> core.Rotor:
     return ((x ^ y) * (-angles / 2)).exp() * principal                        # [frames] Rotor
 
 
-def turning() -> Iterator[tuple[core.Vector, core.Vector, core.Vector, core.Vector, core.Vector]]:
+def turning() -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, core.Point]]:
     """Per frame, the cube seen from a frame turning in the shear plane."""
     strain, stress, _, directions, _ = material()
     rotors = turns()                                                          # [frames] Rotor
@@ -63,21 +63,22 @@ def main() -> None:
     save_animation(render.animate_turning(values, turning()), "stress_rotation", DURATION_MS)
 
     # checks
-    # In the principal frame no face is sheared, and the normal tractions on the faces facing x, y and
-    # z are the principal stresses, the turned axes their directions.
+    # In the principal frame no face is sheared, and the tractions across the faces facing x, y and z
+    # are the principal stresses, the turned planes' directions the principal directions.
     _, stress, _, directions, principal = material()
     _, _, normal, shear, _ = seen
     np.testing.assert_allclose(shear[1].norm().to_array(), 0.0, atol=1e-14)
-    np.testing.assert_allclose(np.sort((normal[1, :3] | core.axes).to_array()), values.to_array(), rtol=1e-12)
-    turned = principal >> core.axes                                            # [3] Vector
-    np.testing.assert_allclose((stress(turned) ^ turned).norm().to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose(np.sort((core.axes & normal[1, :3]).to_array()), values.to_array(), rtol=1e-12)
+    turned = principal >> core.axes                                            # [3] Plane
+    # Two parallel directions join to nothing.
+    np.testing.assert_allclose((turned.dual() & stress(turned)).norm().to_array(), 0.0, atol=1e-14)
     # An eighth of a turn on, the face facing x feels the largest shear, the radius of Mohr's circle.
     centre, radius = core.mohr_circle(values)
     np.testing.assert_allclose(shear[2, 0].norm().to_array(), radius.to_array(), rtol=1e-8)
     # Turning, the normal and shear traction on the face facing x go around Mohr's circle.
     strain, _, _, _, _ = material()
-    _, _, turning_normal, turning_shear, _ = core.views(strain, stress, directions, turns())   # [frames, 6] Vector
-    along, across = turning_normal[:, 0] | x, turning_shear[:, 0] | y          # [frames] Scalar
+    _, _, turning_normal, turning_shear, _ = core.views(strain, stress, directions, turns())   # [frames, 6] Point
+    along, across = x & turning_normal[:, 0], y & turning_shear[:, 0]          # [frames] Scalar
     np.testing.assert_allclose(((along - centre).squared() + across.squared()).to_array(), radius.squared().to_array(), rtol=1e-8)
 
 

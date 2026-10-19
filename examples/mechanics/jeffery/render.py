@@ -21,7 +21,7 @@ from numga import stack
 from examples.animation import capture
 from examples.mechanics.jeffery import core
 
-x, y, z = core.axes                                        # flow, gradient, vorticity
+x, y, z = core.axes.dual()                                 # along the flow, gradient and vorticity
 # The colours of the starts, of the bodies and of the flow. The view as (elevation, azimuth) in
 # degrees: raised from the vorticity axis towards the gradient, then turned towards the flow. The lamp
 # over the viewer's left shoulder, by its parts towards the viewer, to the right and up, and the share
@@ -37,10 +37,10 @@ PIXELS = 200
 SUPERSAMPLE = 2
 
 
-def coordinates(vectors: core.Vector) -> np.ndarray:
-    """Vectors for matplotlib's three-dimensional axes: along the vorticity axis, along the flow, and
+def coordinates(points: core.Point) -> np.ndarray:
+    """Points for matplotlib's three-dimensional axes: along the vorticity axis, along the flow, and
     along the gradient, so that the gradient points up and the order stays right-handed."""
-    return vectors.cast(core.ga.subspace("z x y")).kernel
+    return points.cast(core.ga.subspace("xy yz zx")).kernel
 
 
 def draw_sphere(ax) -> None:
@@ -62,7 +62,7 @@ def frame_axes(ax, limit: float) -> None:
     ax.set_axis_off()
 
 
-def draw_orbits(trails: core.Vector) -> plt.Figure:
+def draw_orbits(trails: core.Point) -> plt.Figure:
     """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
     directions, both ends of the axis drawn."""
     paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
@@ -79,34 +79,34 @@ def draw_orbits(trails: core.Vector) -> plt.Figure:
     return figure
 
 
-def camera() -> tuple[core.Vector, core.Vector, core.Vector]:
+def camera() -> tuple[core.Point, core.Point, core.Point]:
     """The orthographic camera's right, up and back directions: the axes turned by the view, which
     raises the vorticity axis towards the gradient, then turns it about the gradient towards the flow;
     the same view as `frame_axes` gives matplotlib."""
     elevation, azimuth = np.radians(VIEW)
-    view = ((z ^ x) * (-azimuth / 2)).exp() * ((z ^ y) * (-elevation / 2)).exp()   # [] Rotor
+    view = ((core.mv.z ^ core.mv.x) * (-azimuth / 2)).exp() * ((core.mv.z ^ core.mv.y) * (-elevation / 2)).exp()   # [] Rotor
     return view >> x, view >> y, view >> z
 
 
-def screen(vectors: core.Vector, right: core.Vector, up: core.Vector) -> np.ndarray:
+def screen(points: core.Point, right: core.Point, up: core.Point) -> np.ndarray:
     """Positions in the picture `[..., 2]`: along the camera's right and up."""
-    return np.stack([(vectors | right).to_array(), (vectors | up).to_array()], axis=-1)
+    return np.stack([(~points | right).to_array(), (~points | up).to_array()], axis=-1)
 
 
-def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Vector, up: core.Vector,
-             back: core.Vector) -> np.ndarray:
+def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up: core.Point,
+             back: core.Point) -> np.ndarray:
     """Each body, ray cast, as an RGBA picture `[bodies, pixels, pixels, 4]`, transparent where the
     rays miss it."""
     samples = PIXELS * SUPERSAMPLE
     offsets = (np.arange(samples) + 0.5) / samples * 2 * LIMIT - LIMIT        # [samples]
-    origins = right * offsets[None, :] + up * offsets[::-1, None] + back * (2 * LIMIT)   # [samples, samples] Vector
+    origins = right * offsets[None, :] + up * offsets[::-1, None] + back * (2 * LIMIT)   # [samples, samples] Point
     turns, stretches = rotors[:, None, None], stretches[:, None, None]        # [bodies, 1, 1] each
     # Into each body's frame and back through its stretch: the unit sphere, and the ray in its parameter.
-    start = stretches.solve(turns << origins)                                 # [bodies, samples, samples] Vector
-    heading = stretches.solve(turns << -back)                                 # [bodies, 1, 1] Vector
-    a = (heading | heading).to_array()
-    b = (heading | start).to_array()
-    c = (start | start).to_array() - 1
+    start = stretches.solve(turns << origins)                                 # [bodies, samples, samples] Point
+    heading = stretches.solve(turns << -back)                                 # [bodies, 1, 1] Point
+    a = (~heading | heading).to_array()
+    b = (~heading | start).to_array()
+    c = (~start | start).to_array() - 1
     discriminant = b * b - a * c
     hit = discriminant > 0                                                    # [bodies, samples, samples]
     entering = (-b - np.sqrt(np.where(hit, discriminant, 0.0))) / a
@@ -114,10 +114,10 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Vector, up
     # The body's normal, the stretch undone once more and turned back out; lit by the lamp.
     normal = turns >> stretches.solve(direction)
     lamp = right * LAMP[1] + up * LAMP[2] + back * LAMP[0]
-    lit = (normal | lamp).to_array() / (normal.norm().to_array() * lamp.norm().to_array())
+    lit = (~normal | lamp).to_array() / (normal.norm().to_array() * lamp.norm().to_array())
     shade = AMBIENT + (1 - AMBIENT) * np.clip(lit, 0.0, 1.0)
     # The octant of the body's own direction picks the colour.
-    octant = np.prod(np.sign(direction.cast(core.ga.subspace("x y z")).kernel), axis=-1) > 0
+    octant = np.prod(np.sign(direction.cast(core.ga.subspace("yz zx xy")).kernel), axis=-1) > 0
     colour = np.array([to_rgb(BODY), to_rgb(BODY_DARK)])[octant.astype(int)] * shade[..., None]
     # Averaged over each pixel's rays, the colour weighted by coverage.
     coverage = hit[..., None].astype(float)
@@ -127,18 +127,18 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Vector, up
     return np.concatenate([covered / np.maximum(alpha, 1e-12), alpha], axis=-1)
 
 
-def draw_split(ax, vectors: core.Vector, view: tuple, **style) -> None:
+def draw_split(ax, points: core.Point, view: tuple, **style) -> None:
     """A path of points no nearer the centre than a body centred on the origin reaches: its part
     nearer the viewer than the centre in front of the body, the rest behind it."""
     right, up, back = view
-    positions = screen(vectors, right, up)                                   # [points, 2]
-    near = (vectors | back).to_array() > 0
+    positions = screen(points, right, up)                                    # [points, 2]
+    near = (~points | back).to_array() > 0
     for side, zorder in ((near, 3), (~near, 1)):
         ax.plot(*np.where(side[:, None], positions, np.nan).T, zorder=zorder, **style)
 
 
-def draw_body(ax, picture: np.ndarray, tip: core.Vector, tips: core.Vector, heights: core.Vector,
-              velocities: core.Vector, view: tuple) -> None:
+def draw_body(ax, picture: np.ndarray, tip: core.Point, tips: core.Point, heights: core.Point,
+              velocities: core.Point, view: tuple) -> None:
     """One body at one frame, its picture, the ends of its long axis, the paths of the axis's tips
     `[frames so far]` from the start, and the shear flow's velocity behind it."""
     right, up, back = view
@@ -155,8 +155,8 @@ def draw_body(ax, picture: np.ndarray, tip: core.Vector, tips: core.Vector, heig
     ax.set_axis_off()
 
 
-def animate_tumbling(stretches: core.Stretch, heights: core.Vector, velocities: core.Vector,
-                     frames: Iterable[tuple[core.Rotor, core.Vector]]) -> list[np.ndarray]:
+def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: core.Point,
+                     frames: Iterable[tuple[core.Rotor, core.Point]]) -> list[np.ndarray]:
     """Each frame of the bodies' orientations `[bodies]` and the tips of their long axes `[bodies]`: every
     body tumbling in the flow, side by side, with the paths of its tips so far."""
     view = camera()
@@ -164,7 +164,7 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Vector, velocities: 
     images, tips = [], []
     for rotors, tip in frames:
         tips.append(tip)
-        path = stack(tips)                                                    # [frames so far, bodies] Vector
+        path = stack(tips)                                                    # [frames so far, bodies] Point
         shown = pictures(stretches, rotors, *view)                            # [bodies, pixels, pixels, 4]
         figure = plt.figure(figsize=(3.6 * count, 3.6), dpi=100)
         for body in range(count):

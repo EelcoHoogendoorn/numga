@@ -21,16 +21,16 @@ DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
-def rosettes() -> tuple[core.Vector, core.Vector, core.Vector]:
+def rosettes() -> tuple[core.Point, core.Point, core.Point]:
     """Where each pendulum's bob is on its floor through the day `[latitudes, samples]`, swinging to and
     fro along its turning line, and the floor's north and east."""
     turns = np.linspace(0, 2 * np.pi, N_SAMPLES)                                 # [samples]
-    lines = core.swing(LATITUDES[:, None], turns[None, :])                     # [latitudes, samples] Vector
+    lines = core.swing(LATITUDES[:, None], turns[None, :])                     # [latitudes, samples] Point
     _, north, east = core.compass(LATITUDES)
-    return lines * np.sin(N_SWINGS * turns), north, east                         # [latitudes, samples] Vector
+    return lines * np.sin(N_SWINGS * turns), north, east                         # [latitudes, samples] Point
 
 
-def day() -> tuple[np.ndarray, core.Rotor, core.Vector, core.Vector, core.Vector, core.Vector]:
+def day() -> tuple[np.ndarray, core.Rotor, core.Point, core.Point, core.Point, core.Point]:
     """For the pendulum in Paris at every frame of a day: the earth's turn so far, the rotor of that turn,
     and the line the pendulum swings along on its floor; with the site's vertical, north and east at the
     start of the day."""
@@ -52,10 +52,10 @@ def main() -> None:
     _, north, east = core.compass(LATITUDES)
     # After a day each swing has turned clockwise from north by the sine of the latitude times a full turn,
     # and a direction carried once around the latitude circle comes back turned the same way.
-    ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Vector
+    ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Point
     expected = 2 * np.pi * np.sin(LATITUDES)
     assert np.abs(np.sin(render.turned(ends, north, east) - expected)).max() < 1e-10
-    carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Vector
+    carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Point
     assert np.abs(np.sin(render.turned(carried, north, east) - expected)).max() < 1e-4
 
 

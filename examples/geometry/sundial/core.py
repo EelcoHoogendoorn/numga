@@ -13,7 +13,7 @@ the style and the sun at a given hour holds the sun at that hour on every day of
 casts its shadow along one line of the dial, whatever the season. The tip of the gnomon, the nodus, casts
 a point whose path over a day is the season's shadow path. The ray from the nodus to the sun keeps its angle
 to the pole all day, so the day's rays sweep a cone about the pole, a quadratic form on rays
-`pole * (pole | Vector) - (pole | sun).squared() * Vector`, and the dial cuts the cone in the shadow path: a
+`pole * (~pole | Point) - (~pole | sun).squared() * Point`, and the dial cuts the cone in the shadow path: a
 conic. The cone's other nappe holds the rays at the opposite declination, so a summer day and the winter day
 as far from the equinox are the two branches of one hyperbola; at the equinoxes the cone flattens into the
 plane of the equator, and the shadow runs along a straight line.
@@ -31,48 +31,54 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
+# Directions, to the sun, the pole and the compass points, and points of the dial: antivectors with
+# intrinsic orientation.
+Point = ga.gatype.antivector()
+Plane = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
 # A quadratic form on rays.
-Cone = ga.gatype((Vector, Vector))                         # Vector <- Vector
+Cone = ga.gatype((Point, Point))                           # Point <- Point
 
-east, north, up = mv.basis()                               # [] Vector each
+east, north, up = mv.basis().dual()                        # [] Point each
 west = -east
+# The dial: the horizontal plane through the origin.
+dial = mv.z                                                # [] Plane
 
 
 # --- math -----------------------------------------------------------------------------
-def turn(plane: Bivector, angle: np.ndarray) -> Rotor:
-    """The turn by an angle in a plane through the origin."""
-    return (plane * (-angle / 2)).exp()
+def turn(start: Point, towards: Point, angle: np.ndarray) -> Rotor:
+    """The turn by an angle in the plane of two directions at right angles, from the first towards the
+    second: their commutator is the plane they span."""
+    return (towards.commutator(start) * (-angle / 2)).exp()
 
 
-def sky(latitude: float) -> tuple[Vector, Vector]:
+def sky(latitude: float) -> tuple[Point, Point]:
     """The celestial pole, north raised towards up by the latitude, and the celestial equator's highest
     point, a quarter turn further: the sun's place at noon on the equinoxes."""
-    return turn(north ^ up, latitude) >> north, turn(north ^ up, latitude + np.pi / 2) >> north
+    return turn(north, up, latitude) >> north, turn(north, up, latitude + np.pi / 2) >> north
 
 
-def sun(pole: Vector, equator: Vector, declinations: np.ndarray, hours: np.ndarray) -> Vector:
+def sun(pole: Point, equator: Point, declinations: np.ndarray, hours: np.ndarray) -> Point:
     """The direction to the sun at each declination and hour angle: the equator's highest point turned
     towards the pole by the declination, then about the pole towards the west by the hour angle."""
-    noon = turn(equator ^ pole, declinations) >> equator                      # [...] Vector
-    return turn(equator ^ west, hours) >> noon                                # [...] Vector
+    noon = turn(equator, pole, declinations) >> equator                       # [...] Point
+    return turn(equator, west, hours) >> noon                                 # [...] Point
 
 
-def shadow(nodus: Vector, suns: Vector) -> Vector:
+def shadow(nodus: Point, suns: Point) -> Point:
     """Where the shadow of the nodus falls on the dial, the horizontal plane through the origin: from the
     nodus, away from the sun, as far as the dial."""
-    return nodus - suns * ((nodus | up) / (suns | up))                         # [...] Vector
+    return nodus - suns * ((dial & nodus) / (dial & suns))                     # [...] Point
 
 
-def cone(pole: Vector, sun: Vector) -> Cone:
+def cone(pole: Point, sun: Point) -> Cone:
     """The cone of rays about the pole through a direction to the sun: zero on a ray exactly when it meets
     the pole at the sun's angle, or at its supplement, the other nappe."""
-    # A unit sun's inner product with the pole is the sine of its declination.
-    return pole * (pole | Vector) - (pole | sun).squared() * Vector              # [...] Vector <- Vector
+    # A unit sun's inner product with the pole is the sine of its declination; a direction squares to minus
+    # its length squared, so the metric reads one along another by its reverse.
+    return pole * (~pole | Point) - (~pole | sun).squared() * Point              # [...] Point <- Point
 
 
-def hour_planes(pole: Vector, equator: Vector, hours: np.ndarray) -> Bivector:
-    """The plane through the pole and the sun at each hour angle, on every day of the year."""
-    return pole ^ sun(pole, equator, np.zeros_like(hours), hours)             # [...] Bivector
+def hour_planes(pole: Point, equator: Point, hours: np.ndarray) -> Plane:
+    """The plane through the pole and the sun at each hour angle, on every day of the year: their join."""
+    return pole & sun(pole, equator, np.zeros_like(hours), hours)             # [...] Plane

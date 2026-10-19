@@ -25,17 +25,17 @@ def initial_orbit() -> tuple[core.State, core.BoundOrbit]:
     apoapsis_radius = SEMIMAJOR_AXIS * (1 + ECCENTRICITIES)              # [cases]
     speed = np.sqrt(GRAVITY / SEMIMAJOR_AXIS * (1 - ECCENTRICITIES) / (1 + ECCENTRICITIES))  # [cases]
     spinor = core.mv.rotor() * np.sqrt(apoapsis_radius)                  # [cases] Spinor
-    velocity = core.mv.y * speed                                         # [cases] Vector
+    velocity = core.mv.y.dual() * speed                                  # [cases] Point
     time = core.mv.scalar() * np.zeros_like(apoapsis_radius)             # [cases] Scalar
-    start = core.State(time, spinor >> core.mv.x, velocity)              # [cases] State
+    start = core.State(time, spinor >> core.mv.x.dual(), velocity)       # [cases] State
     return start, core.BoundOrbit.lift(start, spinor, GRAVITY)
 
 
-def lift(n_samples: int, n_revolutions: int) -> tuple[core.Vector, core.Spinor]:
+def lift(n_samples: int, n_revolutions: int) -> tuple[core.Point, core.Spinor]:
     _, orbit = initial_orbit()                                           # [cases] BoundOrbit
     parameter = np.linspace(0, n_revolutions * np.pi, n_samples + 1)[:, None] / orbit.frequency  # [samples + 1, cases] Scalar
     spinors = orbit.spinor_at(parameter)                                 # [samples + 1, cases] Spinor
-    return (spinors >> core.mv.x)[:, FEATURED_CASE], spinors[:, FEATURED_CASE]
+    return (spinors >> core.mv.x.dual())[:, FEATURED_CASE], spinors[:, FEATURED_CASE]
 
 
 def passage() -> tuple[core.State, core.State, core.State]:

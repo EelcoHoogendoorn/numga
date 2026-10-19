@@ -29,18 +29,18 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(ga.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
-    return points.cast(ga.subspace("x y z")).kernel
+    return points.cast(ga.subspace("yz zx xy")).kernel
 
 
-def lonlat(directions: core.Vector) -> np.ndarray:
+def lonlat(directions: core.Point) -> np.ndarray:
     """The longitude and latitude in radians of directions, on the last axis."""
     xyz = coordinates(directions)
     return np.stack([np.arctan2(xyz[..., 1], xyz[..., 0]), np.arcsin(np.clip(xyz[..., 2], -1, 1))], axis=-1)
 
 
-def sky_map(ax: plt.Axes, directions: core.Vector, values: core.Scalar, cmap: str, low: float, high: float) -> None:
+def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str, low: float, high: float) -> None:
     """One map over the sky, with a faint graticule and no tick labels."""
     longitudes, latitudes = np.moveaxis(lonlat(directions), -1, 0)
     ax.pcolormesh(longitudes, latitudes, scalars(values), shading="gouraud", cmap=cmap, vmin=low, vmax=high)
@@ -49,7 +49,7 @@ def sky_map(ax: plt.Axes, directions: core.Vector, values: core.Scalar, cmap: st
     ax.set_yticklabels([])
 
 
-def mark_sites(ax: plt.Axes, zeniths: core.Vector, names: list[str]) -> None:
+def mark_sites(ax: plt.Axes, zeniths: core.Point, names: list[str]) -> None:
     """A star over each site, with its name."""
     for (longitude, latitude), name in zip(lonlat(zeniths), names):
         ax.plot(longitude, latitude, "*", color=SITE, markersize=9, markeredgecolor=LABEL, markeredgewidth=0.5)
@@ -57,8 +57,8 @@ def mark_sites(ax: plt.Axes, zeniths: core.Vector, names: list[str]) -> None:
                     path_effects=[patheffects.withStroke(linewidth=2.5, foreground="white")])
 
 
-def draw_patterns(directions: core.Vector, plus: core.Scalar, cross: core.Scalar, sensitivities: core.Scalar,
-                  zeniths: core.Vector, names: list[str]) -> plt.Figure:
+def draw_patterns(directions: core.Point, plus: core.Scalar, cross: core.Scalar, sensitivities: core.Scalar,
+                  zeniths: core.Point, names: list[str]) -> plt.Figure:
     """A row per detector: its response to the plus strain, to the cross strain, and its sensitivity."""
     figure = plt.figure(figsize=(14, 2.5 * len(names) + 0.2), dpi=110)
     for detector, name in enumerate(names):
@@ -71,7 +71,7 @@ def draw_patterns(directions: core.Vector, plus: core.Scalar, cross: core.Scalar
     return figure
 
 
-def draw_network(directions: core.Vector, network: core.Scalar, alike: core.Scalar, zeniths: core.Vector,
+def draw_network(directions: core.Point, network: core.Scalar, alike: core.Scalar, zeniths: core.Point,
                  names: list[str]) -> plt.Figure:
     """The network's sensitivity, and how alike the detectors' readings of the same wave are."""
     figure = plt.figure(figsize=(11, 2.9), dpi=110)
@@ -84,10 +84,10 @@ def draw_network(directions: core.Vector, network: core.Scalar, alike: core.Scal
     return figure
 
 
-def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Vector, ring: core.Vector) -> None:
+def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point) -> None:
     """The ring of free masses across a wave from overhead, at rest and stretched, with the detector's
     arms, seen from above: east to the right, north up."""
-    def level(vectors: core.Vector) -> np.ndarray:
+    def level(vectors: core.Point) -> np.ndarray:
         """East and north of vectors at the site, on the last axis: their coordinates in the site's frame."""
         return coordinates(site.reverse() >> vectors)[..., 1:]
 
@@ -102,8 +102,8 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Vector, ring: core.Vect
     ax.set_axis_off()
 
 
-def animate_polarization(directions: core.Vector, responses: core.Scalar, site: core.Rotor, arms: core.Vector,
-                         rings: core.Vector, name: str) -> list[np.ndarray]:
+def animate_polarization(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
+                         rings: core.Point, name: str) -> list[np.ndarray]:
     """Each frame: the ring stretched by the plus strain at the polarization angle, beside the detector's
     response to it over the sky."""
 
@@ -112,7 +112,7 @@ def animate_polarization(directions: core.Vector, responses: core.Scalar, site: 
         draw_ring(figure.add_subplot(1, 2, 1), site, arms, rings[index])
         ax = figure.add_subplot(1, 2, 2, projection="mollweide")
         sky_map(ax, directions, responses[index], SIGNED, -1, 1)
-        mark_sites(ax, site[None] >> core.mv.x, [name])
+        mark_sites(ax, site[None] >> core.mv.x.dual(), [name])
         figure.subplots_adjust(left=0.01, right=0.99, bottom=0.03, top=0.97, wspace=0.05)
         pixels = capture(figure)
         plt.close(figure)

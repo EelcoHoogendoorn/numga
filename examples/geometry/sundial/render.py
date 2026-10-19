@@ -32,22 +32,22 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """East, north and up of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def bearings(offsets: core.Vector) -> np.ndarray:
+def bearings(offsets: core.Point) -> np.ndarray:
     """The bearing of each offset across the dial, its angle from north towards east."""
     xyz = coordinates(offsets)
     return np.arctan2(xyz[..., 0], xyz[..., 1])
 
 
-def shadows(nodus: core.Vector, suns: core.Vector) -> np.ndarray:
+def shadows(nodus: core.Point, suns: core.Point) -> np.ndarray:
     """East and north of the nodus's shadow for each sun, and nothing where the sun is below the horizon
     or the shadow falls off the dial."""
     tips = coordinates(core.shadow(nodus, suns))[..., :2]
-    inside = (scalars(suns | core.up) > 0) & (tips[..., 0] > EAST[0]) & (tips[..., 0] < EAST[1]) \
+    inside = (scalars(core.dial & suns) > 0) & (tips[..., 0] > EAST[0]) & (tips[..., 0] < EAST[1]) \
         & (tips[..., 1] > NORTH[0]) & (tips[..., 1] < NORTH[1])
     return np.where(inside[..., None], tips, np.nan)
 
@@ -58,8 +58,8 @@ def season_colours(seasons: np.ndarray) -> np.ndarray:
     return plt.get_cmap(SEASON_MAP)(0.15 + 0.7 * np.abs(seasons) / np.abs(seasons).max())
 
 
-def draw_face(ax: plt.Axes, nodus: core.Vector, foot: core.Vector, seasons: np.ndarray, days: core.Vector,
-              suns: core.Vector, hours: np.ndarray, faint: bool) -> None:
+def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point,
+              suns: core.Point, hours: np.ndarray, faint: bool) -> None:
     """The dial's face: each season's shadow path, each hour line through the shadows at that hour from
     solstice to solstice, numbered where it leaves the dial, and the gnomon's edge along the noon line."""
     paths = shadows(nodus, days)                                               # [seasons, samples, 2]
@@ -79,14 +79,14 @@ def draw_face(ax: plt.Axes, nodus: core.Vector, foot: core.Vector, seasons: np.n
     ax.set_axis_off()
 
 
-def draw_dial(nodus: core.Vector, foot: core.Vector, seasons: np.ndarray, days: core.Vector, suns: core.Vector,
+def draw_dial(nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point, suns: core.Point,
               hours: np.ndarray) -> plt.Figure:
     figure, ax = plt.subplots(figsize=(6.0, 4.6), layout="constrained")
     draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
     return figure
 
 
-def draw_sky(ax: plt.Axes, nodus: core.Vector, foot: core.Vector, rays: core.Vector, day: core.Vector) -> None:
+def draw_sky(ax: plt.Axes, nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Point) -> None:
     """The dial in space with its gnomon, and the day's rays of sunlight past the nodus onto the dial: the
     cone they sweep about the pole, on both sides of the nodus, and its cut with the dial, the shadow path."""
     corners = np.array([[EAST[0], NORTH[0], 0], [EAST[1], NORTH[0], 0], [EAST[1], NORTH[1], 0], [EAST[0], NORTH[1], 0]])
@@ -106,8 +106,8 @@ def draw_sky(ax: plt.Axes, nodus: core.Vector, foot: core.Vector, rays: core.Vec
     ax.set_axis_off()
 
 
-def animate_year(declinations: np.ndarray, rays: core.Vector, days: core.Vector, nodus: core.Vector, foot: core.Vector,
-                 seasons: np.ndarray, season_days: core.Vector, suns: core.Vector, hours: np.ndarray) -> list[np.ndarray]:
+def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, nodus: core.Point, foot: core.Point,
+                 seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> list[np.ndarray]:
     """Per frame of the year: the day's rays past the nodus in space, and the day's shadow path over the
     dial's face."""
 

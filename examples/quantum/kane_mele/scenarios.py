@@ -106,9 +106,9 @@ def main() -> None:
     # half clockwise: the sine of each half's turn from the start, by its centre.
     along = spins[N_FRAMES // 4] | mv.z                                          # Scalar[atoms]
     up, down = (density[N_FRAMES // 4] + along) * 0.5, (density[N_FRAMES // 4] - along) * 0.5
-    start = flake.positions.batch()[flake.start].normalized()                 # [] Vector
+    start = flake.positions.batch()[flake.start].normalized()                 # [] Point
     centres = [((half * flake.positions).sites.sum() / half.sites.sum()).normalized() for half in (up, down)]
-    sines = [(mv.xy | (centre ^ start)).to_array().item() for centre in centres]
+    sines = [(mv.xy | start.commutator(centre)).to_array().item() for centre in centres]
     assert sines[0] > 0.5 and sines[1] < -0.5
 
 

@@ -20,19 +20,19 @@ from examples.quadrics.elliptic_physics.render import hemisphere
 
 
 def test_null_cone_pixels():
-    """Hemisphere pixels are null vectors of weight one on the unit sphere."""
+    """Hemisphere pixels are null, of weight one on the unit sphere."""
     coordinates, inside, rim = hemisphere(60)
     assert inside.sum() > 0
     pixels = point(coordinates)
     np.testing.assert_allclose((pixels | pixels).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((pixels | mv.w).to_array(), -1.0, atol=1e-12)
+    np.testing.assert_allclose((mv.w & pixels).to_array(), 1.0, atol=1e-12)
 
 
 def test_conical_donut_topology():
     """Verify conical donut has valid Quadric GAType and apex touches north pole."""
     conical = make_conical_donut(0.55, 0.22)
     assert conical.gatype == Quadric
-    p_apex = mv.vector([0.0, 0.0, 1.0, 1.0])
+    p_apex = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
     np.testing.assert_allclose((conical(p_apex) & p_apex).kernel[0], 0.0, atol=1e-12)
 
 
@@ -42,20 +42,20 @@ def test_spherical_donut_topology():
     r_tube = np.radians(10.0)
     donut = make_spherical_donut(r_core, r_tube)
 
-    p_hole = mv.vector([0.0, 0.0, 1.0, 1.0])
+    p_hole = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
     assert (donut(p_hole) & p_hole).kernel[0] > 0.0
 
-    p_ring = mv.vector([np.sin(r_core), 0.0, np.cos(r_core), 1.0])
+    p_ring = mv.vector([np.sin(r_core), 0.0, np.cos(r_core), 1.0]).dual()
     assert (donut(p_ring) & p_ring).kernel[0] < 0.0
 
-    p_out = mv.vector([1.0, 0.0, 0.0, 1.0])
+    p_out = mv.vector([1.0, 0.0, 0.0, 1.0]).dual()
     assert (donut(p_out) & p_out).kernel[0] > 0.0
 
 
 def test_pinched_horn_cusp():
     """Verify pinched horn cyclide touches the pole with zero potential."""
     horn = make_pinched_horn(np.radians(60.0))
-    p_cusp = mv.vector([0.0, 0.0, 1.0, 1.0])
+    p_cusp = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
     np.testing.assert_allclose((horn(p_cusp) & p_cusp).kernel[0], 0.0, atol=1e-12)
 
 
@@ -71,7 +71,7 @@ def test_circle_intersection_vortex():
     np.testing.assert_allclose(generator.squared().kernel[0], -1.0, atol=1e-12)
 
     rotor = (generator * 0.4).exp()
-    p_test = mv.vector([0.5, 0.5, np.sqrt(0.5), 1.0])
+    p_test = mv.vector([0.5, 0.5, np.sqrt(0.5), 1.0]).dual()
     p_flow = rotor >> p_test
     np.testing.assert_allclose(p_flow.squared().kernel[0], 0.0, atol=1e-12)
 

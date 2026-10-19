@@ -28,15 +28,15 @@ FRAME_MS = 50
 # --- math -----------------------------------------------------------------------------
 def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
     """The mass, the cluster as a disc of stars in the plane z = 0, and its shape."""
-    masses = core.Masses(core.mv.vector([[0.0, 0.0, 0.0]]), np.array([MASS]), MASS_CORE)
+    masses = core.Masses(core.mv.vector([[0.0, 0.0, 0.0]]).dual(), np.array([MASS]), MASS_CORE)
     rng = np.random.default_rng(SEED)
     # Uniform over the disc: a radius growing as the square root, turned by a rotor to a random angle.
     radii = CLUSTER_RADIUS * np.sqrt(rng.uniform(size=STARS))
     turns = (core.mv.xy * (-np.pi * rng.uniform(size=STARS))).exp()           # [stars] Rotor
-    offsets = turns >> (core.mv.x * radii)                                   # [stars] Vector
-    centre, velocity = core.mv.vector(START), core.mv.vector(START_VELOCITY)  # [] Vector each
+    offsets = turns >> (core.mv.x.dual() * radii)                            # [stars] Point
+    centre, velocity = core.mv.vector(START).dual(), core.mv.vector(START_VELOCITY).dual()   # [] Point each
     stars = core.Stars(centre + offsets, velocity.broadcast_to(offsets.shape))
-    shape = core.Shape(centre, velocity, core.Vector, 0 * core.Vector)
+    shape = core.Shape(centre, velocity, core.Point, 0 * core.Point)
     return masses, stars, shape
 
 
@@ -49,16 +49,16 @@ def flyby(frames: int) -> Iterator[tuple[core.Stars, core.Shape]]:
             stars, shape = stars.fall(masses, DT), shape.deform(masses, DT)
 
 
-def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Vector, core.Form]:
+def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form]:
     """The stars' centre of mass and the rim the deformation predicts around it. The shape is first
     order in the cluster's size; the drift of its centre of mass off the orbit is second order."""
     return stars.centre(), shape.rim(CLUSTER_RADIUS)
 
 
-def field() -> tuple[core.Vector, core.Even, core.Scalar]:
+def field() -> tuple[core.Point, core.Even, core.Scalar]:
     """The derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
     masses, _, _ = setting()
-    points = core.grid(HALF_WIDTH, HALF_HEIGHT, COLUMNS, ROWS)              # [rows, columns] Vector
+    points = core.grid(HALF_WIDTH, HALF_HEIGHT, COLUMNS, ROWS)              # [rows, columns] Point
     derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even
     return points, derivative, -derivative.select[0] / (4 * np.pi)
 
@@ -77,16 +77,16 @@ def main() -> None:
     # The derivative of gravity is minus four pi times the Plummer density, and has no curl.
     masses, _, _ = setting()
     towards = masses.centres - points[..., None]
-    softened = (towards | towards) + MASS_CORE**2
+    softened = towards.scalar_norm_squared() + MASS_CORE**2
     plummer = (3 * masses.masses * MASS_CORE**2 / (4 * np.pi) / (softened * softened * softened.square_root())).sum(axis=-1)
     np.testing.assert_allclose((derivative + 4 * np.pi * plummer).kernel, 0.0, atol=1e-10)
     # Through the whole flyby the stars spread in the plane as the deformation predicts: a uniform
     # disc's moment is a quarter of its radius squared. Measured against the largest spread, the
     # sampling of the disc costs about a tenth, and the passage through the mass's core a quarter.
-    directions = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [directions] Vector
+    directions = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x.dual()   # [directions] Point
     for stars, shape in states:
-        measured = (directions | stars.moment()(directions)).to_array()      # [directions]
-        predicted = (directions | (shape.spread(CLUSTER_RADIUS) / 4)(directions)).to_array()
+        measured = (~directions | stars.moment()(directions)).to_array()     # [directions]
+        predicted = (~directions | (shape.spread(CLUSTER_RADIUS) / 4)(directions)).to_array()
         np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())
 
 

@@ -26,25 +26,25 @@ DURATION_MS = 90
 
 
 # --- math -----------------------------------------------------------------------------
-def dial() -> tuple[core.Vector, np.ndarray, core.Vector, core.Vector, np.ndarray]:
+def dial() -> tuple[core.Point, np.ndarray, core.Point, core.Point, np.ndarray]:
     """The nodus, the seasons' declinations and the sun through each of their days `[seasons, samples]`,
     and the sun along each hour line from the winter solstice to the summer one `[hours, samples]`, with
     the hours."""
     pole, equator = core.sky(LATITUDE)
     seasons = TILT * np.sin(np.pi / 2 * np.arange(-N_MONTHS, N_MONTHS + 1) / N_MONTHS)   # [seasons]
-    days = core.sun(pole, equator, seasons[:, None], hour_angle(DAY_HOURS)[None, :])   # [seasons, samples] Vector
+    days = core.sun(pole, equator, seasons[:, None], hour_angle(DAY_HOURS)[None, :])   # [seasons, samples] Point
     declinations = np.linspace(-TILT, TILT, N_DECLINATIONS)                # [samples]
-    hours = core.sun(pole, equator, declinations[None, :], hour_angle(HOURS)[:, None])   # [hours, samples] Vector
+    hours = core.sun(pole, equator, declinations[None, :], hour_angle(HOURS)[:, None])   # [hours, samples] Point
     return core.up * HEIGHT, seasons, days, hours, HOURS
 
 
-def year() -> tuple[np.ndarray, core.Vector, core.Vector]:
+def year() -> tuple[np.ndarray, core.Point, core.Point]:
     """At every frame of a year: the sun's declination, the sun at each of the day's hours `[frames,
     hours]`, and through the whole day `[frames, samples]`."""
     pole, equator = core.sky(LATITUDE)
     declinations = TILT * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))   # [frames]
-    rays = core.sun(pole, equator, declinations[:, None], hour_angle(RAY_HOURS)[None, :])   # [frames, hours] Vector
-    days = core.sun(pole, equator, declinations[:, None], hour_angle(DAY_HOURS)[None, :])   # [frames, samples] Vector
+    rays = core.sun(pole, equator, declinations[:, None], hour_angle(RAY_HOURS)[None, :])   # [frames, hours] Point
+    days = core.sun(pole, equator, declinations[:, None], hour_angle(DAY_HOURS)[None, :])   # [frames, samples] Point
     return declinations, rays, days
 
 
@@ -61,17 +61,17 @@ def main() -> None:
 
     nodus, seasons, days, suns, hours = dial()
     pole, _ = core.sky(LATITUDE)
-    foot = core.shadow(nodus, pole)                                             # [] Vector
+    foot = core.shadow(nodus, pole)                                             # [] Point
     save_figure(render.draw_dial(nodus, foot, seasons, days, suns, hours), "sundial")
     save_animation(render.animate_year(*year(), nodus, foot, seasons, days, suns, hours), "sundial_year", DURATION_MS)
 
     # checks
     # Every shadow of the nodus through each season's day lies on that season's cone of rays.
-    rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Vector
-    assert np.abs(render.scalars(rays | core.cone(pole, days[:, 0])[:, None](rays))).max() < 1e-10
+    rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Point
+    assert np.abs(render.scalars(~rays | core.cone(pole, days[:, 0])[:, None](rays))).max() < 1e-10
     # Each hour's shadows at every season lie on one line through the foot of the style, at the angle
     # of gnomonics.
-    tips = core.shadow(nodus, suns)                                             # [hours, samples] Vector
+    tips = core.shadow(nodus, suns)                                             # [hours, samples] Point
     angles = render.bearings(tips - foot)                                       # [hours, samples]
     expected = np.arctan2(np.sin(LATITUDE) * np.sin(hour_angle(hours)), np.cos(hour_angle(hours)))
     assert np.abs(np.sin(angles - expected[:, None])).max() < 1e-10

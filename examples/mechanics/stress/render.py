@@ -25,13 +25,13 @@ LIMIT = 0.75
 REACH = 0.75
 
 
-def coordinates(vectors: core.Vector) -> np.ndarray:
-    """The x, y and z coordinates of vectors."""
-    return vectors.cast(core.ga.subspace("x y z")).kernel
+def coordinates(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def draw_cube(ax, corners: core.Vector, centres: core.Vector, normal: core.Vector, shear: core.Vector,
-              principal: core.Vector) -> None:
+def draw_cube(ax, corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point,
+              principal: core.Point) -> None:
     """The cube seen from one frame: the undeformed cube dashed, the deformed one shaded, the normal
     traction on each face in blue and the shear in red, and the principal directions dotted."""
     ghost, corners = coordinates(core.corners), coordinates(corners)
@@ -56,7 +56,7 @@ def draw_cube(ax, corners: core.Vector, centres: core.Vector, normal: core.Vecto
     ax.set_axis_off()
 
 
-def draw_mohr(ax, values: core.Scalar, normal: core.Vector, shear: core.Vector) -> None:
+def draw_mohr(ax, values: core.Scalar, normal: core.Point, shear: core.Point) -> None:
     """Mohr's circles of the principal stresses, and for each frame `[frames]` the diameter joining the
     normal and shear traction on the faces facing x, filled, and y, open, in the frame's colour."""
     stresses = np.sort(values.to_array())
@@ -95,7 +95,7 @@ def draw_mohr(ax, values: core.Scalar, normal: core.Vector, shear: core.Vector) 
     ax.set_aspect("equal")
 
 
-def draw_frames(views: tuple[core.Vector, core.Vector, core.Vector, core.Vector, core.Vector],
+def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, core.Point],
                 values: core.Scalar) -> plt.Figure:
     """The cube seen from each frame `[frames]`, and Mohr's circles with each frame's diameter."""
     corners, centres, normal, shear, principal = views
@@ -109,8 +109,8 @@ def draw_frames(views: tuple[core.Vector, core.Vector, core.Vector, core.Vector,
     return figure
 
 
-def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Vector, core.Vector, core.Vector, core.Vector,
-                                                                   core.Vector]]) -> list[np.ndarray]:
+def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Point,
+                                                                   core.Point]]) -> list[np.ndarray]:
     """Each frame of the cube seen from a turning frame, and its diameter on Mohr's circles."""
     images = []
     for corners, centres, normal, shear, principal in frames:

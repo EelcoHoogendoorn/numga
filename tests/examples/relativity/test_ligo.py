@@ -14,7 +14,7 @@ def test_sensitivity_is_the_closed_form_for_a_detector_at_the_pole():
     from the first arm is seen with the squared sensitivity
     `((1 + cos(theta)**2) / 2)**2 * cos(2 * phi)**2 + cos(theta)**2 * sin(2 * phi)**2`."""
     pole = core.place(np.array(np.pi / 2), np.array(0))                      # [] Rotor
-    arms = core.arms(pole, np.radians([0, 90]))                              # [2] Vector
+    arms = core.arms(pole, np.radians([0, 90]))                              # [2] Point
     latitudes = np.radians(np.linspace(-80, 80, 9))[:, None]
     longitudes = np.radians(np.linspace(-170, 170, 13))[None, :]
     plus, cross = core.strains(core.place(latitudes, longitudes))
@@ -27,7 +27,7 @@ def test_sensitivity_is_the_closed_form_for_a_detector_at_the_pole():
 def test_figures_draw():
     sites, arms = scenarios.detectors()
     frames = scenarios.sky()
-    directions, zeniths = frames >> core.mv.x, sites >> core.mv.x
+    directions, zeniths = frames >> core.mv.x.dual(), sites >> core.mv.x.dual()
     to_plus, to_cross = scenarios.patterns(arms, frames)
     sensitivities = core.sensitivity(to_plus, to_cross)
     plt.close(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, scenarios.NAMES))

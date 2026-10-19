@@ -35,7 +35,10 @@ from numga.sparse import SparseExtensor
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
+# A spin, read out in its own space.
 Vector = ga.gatype.vector()
+# The atoms' positions, and displacements between them, are antivectors with intrinsic orientation.
+Point = ga.gatype.antivector()
 Even = ga.gatype.even()
 # The spinors with spin up along z, and those with spin down.
 Up = Even.derive.within("x y")
@@ -82,12 +85,12 @@ def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.n
 
 # --- plumbing -------------------------------------------------------------------------
 class Flake:
-    """A hexagonal graphene flake with armchair edges: the atoms' positions `Vector[atoms]` and
+    """A hexagonal graphene flake with armchair edges: the atoms' positions `Point[atoms]` and
     sublattices, plus and minus one; the pairs of neighbours `[pairs, 2]` and of second neighbours,
     both ways round, each with the plane its path from the second atom to the first turns in,
     `Bivector[pairs]`; the atoms on the rim; and the atom in the middle of the edge facing x."""
 
-    def __init__(self, positions: Vector, sublattice: np.ndarray, first: np.ndarray, second: np.ndarray,
+    def __init__(self, positions: Point, sublattice: np.ndarray, first: np.ndarray, second: np.ndarray,
                  turns: Bivector, rim: Scalar, start: int) -> None:
         self.positions = positions
         self.sublattice = sublattice
@@ -131,18 +134,19 @@ def flake(size: int, rim: float) -> Flake:
     shared = (own[:, None, :, None, :] == theirs[:, :, None, :, :]).all(axis=-1).any(axis=-1)   # [atoms, steps, 3]
     middles = own[np.arange(len(i))[:, None], shared.argmax(axis=-1)]         # [atoms, steps, 2]
 
-    a = mv.x
-    b = ((mv.x ^ mv.y) * (-np.pi / 6)).exp() >> a                             # [] Vector, 60 degrees from a
-    positions = (a * u + b * v).field()                                        # Vector[atoms]
+    a = mv.x.dual()
+    b = ((mv.x ^ mv.y) * (-np.pi / 6)).exp() >> a                             # [] Point, 60 degrees from a
+    positions = (a * u + b * v).field()                                        # Point[atoms]
     # Lattice coordinates of each pair's two atoms and the site between, a third of the way along the
     # cell's long diagonal on the second sublattice, `[pairs, 2]`.
     present = seconds >= 0
     near = np.broadcast_to(np.stack([u, v], axis=-1)[:, None, :], ends.shape)[present]
     far = (ends + s[:, None, None] / 3)[present]
     middle = (middles + (1 - s[:, None, None]) / 3)[present]
-    near, far, middle = (a * coordinates[..., 0] + b * coordinates[..., 1] for coordinates in (near, far, middle))   # [pairs] Vector each
-    # The path runs from the second atom, through the site between, to the first.
-    turns = ((middle - far) ^ (near - middle)).normalized()                   # [pairs] Bivector
+    near, far, middle = (a * coordinates[..., 0] + b * coordinates[..., 1] for coordinates in (near, far, middle))   # [pairs] Point each
+    # The path runs from the second atom, through the site between, to the first; the commutator of its
+    # two steps is the plane they span.
+    turns = (near - middle).commutator(middle - far).normalized()             # [pairs] Bivector
     facing = np.flatnonzero(2 * u + v == (2 * u + v).max())
     start = facing[np.argmin(np.abs(v[facing]))]
     # One on the atoms of the rim, zero elsewhere.

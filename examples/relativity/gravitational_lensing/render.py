@@ -25,10 +25,10 @@ HALF = 1.4
 ANIMATION_DPI = 72
 
 
-def xy(vectors: core.Vector) -> np.ndarray:
-    """The x and y components of directions, read in their own algebra."""
-    mv = vectors.context.multivector
-    return np.stack([(vectors | axis).to_array() for axis in (mv.x, mv.y)], axis=-1)
+def xy(directions: core.Point) -> np.ndarray:
+    """The x and y components of directions, their pairings with the planes x and y."""
+    mv = directions.context.multivector
+    return np.stack([(plane & directions).to_array() for plane in (mv.x, mv.y)], axis=-1)
 
 
 def sky_axes(ax: plt.Axes) -> None:
@@ -36,15 +36,15 @@ def sky_axes(ax: plt.Axes) -> None:
     ax.set(xlim=(-HALF, HALF), ylim=(-HALF, HALF), aspect="equal", xticks=[], yticks=[])
 
 
-def critical_curve(ax: plt.Axes, directions: core.Vector, area: core.Scalar, colour: str) -> list[core.Vector]:
+def critical_curve(ax: plt.Axes, directions: core.Point, area: core.Scalar, colour: str) -> list[core.Point]:
     """The critical curve, drawn as the zero level of the area ratio; returned as its pieces."""
     x, y = np.moveaxis(xy(directions), -1, 0)
     level = ax.contour(x, y, area.to_array(), levels=[0.0], colors=colour, linewidths=0.9)
-    return [directions.context.multivector.vector(piece) for piece in level.allsegs[0]]
+    return [directions.context.multivector.vector(piece).dual() for piece in level.allsegs[0]]
 
 
-def draw(directions: core.Vector, area: core.Scalar, lens: Callable[[core.Vector], core.Vector],
-         positions: core.Vector, step: Step) -> plt.Figure:
+def draw(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point], core.Point],
+         positions: core.Point, step: Step) -> plt.Figure:
     """The source with the caustic, and its images on the sky with the critical
     curve and the masses, both over the same directions and at the same scale. The caustic is the
     critical curve carried to the source by the lens."""
@@ -64,8 +64,8 @@ def draw(directions: core.Vector, area: core.Scalar, lens: Callable[[core.Vector
     return figure
 
 
-def animate(directions: core.Vector, area: core.Scalar, lens: Callable[[core.Vector], core.Vector],
-            positions: core.Vector, steps: Iterable[Step]) -> list[np.ndarray]:
+def animate(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point], core.Point],
+            positions: core.Point, steps: Iterable[Step]) -> list[np.ndarray]:
     """One frame per step: the figure is drawn once, and each step replaces its two images."""
     steps = iter(steps)
     figure = draw(directions, area, lens, positions, next(steps))

@@ -30,8 +30,8 @@ def test_p_wave_is_twice_the_product_of_components():
     normal, slip = frames >> -core.down, frames >> core.north
     grid = scenarios.sphere()
     push, shear = core.radiation(core.double_couple(normal, slip, 1.0), grid)
-    np.testing.assert_allclose(push.to_array(), 2 * ((grid | normal) * (grid | slip)).to_array(), atol=1e-13)
-    np.testing.assert_allclose((shear | grid).to_array(), 0.0, atol=1e-13)
+    np.testing.assert_allclose(push.to_array(), 2 * ((~grid | normal) * (~grid | slip)).to_array(), atol=1e-13)
+    np.testing.assert_allclose((~shear | grid).to_array(), 0.0, atol=1e-13)
 
 
 def test_scenes_draw():
