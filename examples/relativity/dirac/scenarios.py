@@ -19,24 +19,6 @@ MIXTURES = (0.1, 0.25, 0.5)
 
 
 # --- math -----------------------------------------------------------------------------
-def mass_shell(extent: float, count: int):
-    """The Hamiltonian's eigenvalues over a grid of momenta in the xy plane."""
-    along = np.linspace(-extent, extent, count)
-    px, py = np.meshgrid(along, along)
-    momenta = mv(core.Spatial, np.stack([px, py, np.zeros_like(px)], axis=-1))  # [count, count] Spatial
-    values, states = core.hamiltonian(momenta, MASS).eigh()                     # [count, count, 8] each
-
-    # --- checks
-    # Each momentum has the energies minus and plus `E`, each fourfold; the positive-energy states
-    # have `beta == 0` and the negative-energy states `beta == np.pi`, where `core.invariants(states)`
-    # has a negative scalar part.
-    E = core.energy(momenta, MASS).to_array()[..., None]
-    np.testing.assert_allclose(values.to_array(), np.concatenate([-E.repeat(4, -1), E.repeat(4, -1)], -1), atol=1e-12)
-    scalar = core.invariants(states).select[0].to_array()
-    np.testing.assert_allclose(np.sign(scalar), np.concatenate([-np.ones(4), np.ones(4)]) * np.ones_like(scalar))
-    return momenta, values
-
-
 def trembling(momentum: core.Vector, seconds: float, count: int):
     """Electrons of the given momentum with a share of negative energy mixed in, followed in time:
     their spinors, and the paths their currents trace."""
@@ -69,7 +51,6 @@ if __name__ == "__main__":
     from examples.animation import save_animation, save_figure
     from examples.relativity.dirac import render
 
-    save_figure(render.draw_mass_shell(*mass_shell(2.0, 41), MASS), "dirac_mass_shell")
     times, spinors, paths = trembling(mv(core.Spatial, np.array([0.0, 0.0, 0.3])), 12.0, 600)
     save_figure(render.draw_paths(times, spinors, paths, MIXTURES), "dirac_trembling")
     save_animation(render.animate_paths(times, spinors, paths, MIXTURES, 6), "dirac_trembling", 40)

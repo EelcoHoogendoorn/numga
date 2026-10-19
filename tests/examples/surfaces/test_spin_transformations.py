@@ -23,17 +23,23 @@ def test_conformal_error_falls_with_refinement():
     assert errors[1] < 0.6 * errors[0]
 
 
-def test_scenes_and_figures():
-    figure = render.draw_dipole(*scenarios.dipole())
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    mesh, gallery = scenarios.dirac()
-    figure = render.draw_dirac(gallery, mesh)
-    assert isinstance(figure, plt.Figure)
-    plt.close(figure)
-    meshes = scenarios.rounding()
-    assert len(meshes) == scenarios.STEPS + 1
-    assert len(render.animate_rounding(meshes[:2])) == 2
+def test_a_dipole_change_keeps_angles_and_raises_curvature_where_asked():
+    mesh, curvature_change, deformed = scenarios.dipole()
+    np.testing.assert_allclose((deformed.corner_cosines() - mesh.corner_cosines()).to_array(), 0.0, atol=0.05)
+    risen = core.mean_curvature(core._recenter(deformed)) - core.mean_curvature(mesh)
+    assert np.corrcoef(risen.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
+    plt.close(render.draw_dipole(mesh, curvature_change, deformed))
+
+
+def test_the_dirac_spheres_have_fields_of_zero_energy():
+    sphere, gallery, energies = scenarios.dirac()
+    assert np.all(np.abs(energies) < 0.05)
+    plt.close(render.draw_dirac(gallery, sphere))
+
+
+def test_the_rounding_animation_draws():
+    frames = core.conformal_smooth(core.spot(), 1, scenarios.RATE)
+    assert len(render.animate_rounding(frames)) == 2
 
 
 def test_the_dirac_operator_is_the_geometric_derivative_divided_by_the_face_planes():

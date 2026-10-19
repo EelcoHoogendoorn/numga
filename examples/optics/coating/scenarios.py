@@ -10,8 +10,8 @@ from numga import stack
 from examples.optics.coating import core
 
 DESIGN_WAVELENGTH = 550.0                                      # nm
-WAVELENGTH_SAMPLES = 401
-WAVELENGTHS = np.linspace(450, 850, WAVELENGTH_SAMPLES)          # nm
+N_WAVELENGTHS = 401
+WAVELENGTHS = np.linspace(450, 850, N_WAVELENGTHS)          # nm
 INCIDENT_INDEX = 1.0
 SUBSTRATE_INDEX = 1.5
 COATING_NAMES = ("Bare glass", "Ideal matching layer", "MgF₂ layer")
@@ -22,11 +22,11 @@ ORDINARY_INDEX = 1.5
 EXTRAORDINARY_INDEX = 1.8
 SURROUNDING_INDEX = (ORDINARY_INDEX + EXTRAORDINARY_INDEX) / 2
 PITCH = 400.0                                                 # nm per full director turn
-TURNS = 6
-SLICES_PER_TURN = 16
-LAYERS = TURNS * SLICES_PER_TURN
-THICKNESS = PITCH / SLICES_PER_TURN
-DEPTHS = (np.arange(LAYERS) + 0.5) * THICKNESS                 # nm, slice centres
+N_TURNS = 6
+N_SLICES_PER_TURN = 16
+N_LAYERS = N_TURNS * N_SLICES_PER_TURN
+THICKNESS = PITCH / N_SLICES_PER_TURN
+DEPTHS = (np.arange(N_LAYERS) + 0.5) * THICKNESS                 # nm, slice centres
 CRYSTAL_PERMITTIVITY = np.array([EXTRAORDINARY_INDEX ** 2, ORDINARY_INDEX ** 2, ORDINARY_INDEX ** 2])
 TWIST_SIGNS = np.array([1.0, -1.0])
 POLARIZATION_SIGNS = np.array([1.0, -1.0])
@@ -34,21 +34,21 @@ POLARIZATION_NAMES = ("x + i y", "x − i y")
 BAND_WAVELENGTH = PITCH * SURROUNDING_INDEX                   # nm, the reflection band's centre
 # The time domain: the band's pulse sent along a line of nodes through the same helix, light speed one.
 SPACING = 40.0                                                # nm between nodes
-CELLS = 1000
+N_NODES = 1000
 COURANT = 1.0                                                 # time step per node spacing
 SLAB_START = 18000.0                                          # nm
 PULSE_START = 10000.0                                         # nm, the pulse's centre
 PULSE_WIDTH = 2000.0                                          # nm, its envelope's standard deviation
 DURATION = 27000.0                                            # nm of light travel
-FRAMES = 120
+N_FRAMES = 120
 HANDS = np.array([1.0, -1.0])                                 # turning with and against the helix
-AXION_SAMPLES = 241
-AXION_JUMPS = np.linspace(-3, 3, AXION_SAMPLES)
+N_AXION_JUMPS = 241
+AXION_JUMPS = np.linspace(-3, 3, N_AXION_JUMPS)
 AXION_NAMES = ("Parallel to incident", "Perpendicular to incident", "Total reflection")
-ANGLE_SAMPLES = 41
-ANGLES = np.linspace(0, np.deg2rad(70), ANGLE_SAMPLES)
-MAP_WAVELENGTH_SAMPLES = 121
-MAP_WAVELENGTHS = np.linspace(450, 850, MAP_WAVELENGTH_SAMPLES)
+N_ANGLES = 41
+ANGLES = np.linspace(0, np.deg2rad(70), N_ANGLES)
+N_MAP_WAVELENGTHS = 121
+MAP_WAVELENGTHS = np.linspace(450, 850, N_MAP_WAVELENGTHS)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -126,14 +126,14 @@ def penetration() -> tuple[np.ndarray, core.Vector]:
     wavelength = BAND_WAVELENGTH
     samples_per_layer = 5
     fractions = np.linspace(0, 1, samples_per_layer)
-    depths = (np.arange(LAYERS)[:, None] + fractions) * THICKNESS
+    depths = (np.arange(N_LAYERS)[:, None] + fractions) * THICKNESS
     _, chi = helix(DEPTHS)
     medium = core.Medium.from_chi(chi[:, 0], core.mv.t)
     ports = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
-    layers = core.propagate(medium.generator, np.full(LAYERS, 2 * np.pi * THICKNESS / wavelength))
+    layers = core.propagate(medium.generator, np.full(N_LAYERS, 2 * np.pi * THICKNESS / wavelength))
     scattering = core.scatter(core.compose(layers)(ports.outgoing), ports)
     exit_state = ports.outgoing(scattering.transmission(circular()))
-    fields = medium.interior(np.full(LAYERS, THICKNESS), wavelength, exit_state, fractions)   # [cases, layers, samples] Bivector
+    fields = medium.interior(np.full(N_LAYERS, THICKNESS), wavelength, exit_state, fractions)   # [cases, layers, samples] Bivector
     return depths, core.mv.t | fields
 
 
@@ -154,8 +154,8 @@ def time_domain() -> tuple[core.Vector, core.Vector, core.Vector, core.Bivector,
     [frames, cases, nodes], and per case the energy before, reflected out of the front and
     transmitted out of the back.
     """
-    positions = np.arange(CELLS) * SPACING
-    inside = ((positions >= SLAB_START) & (positions < SLAB_START + TURNS * PITCH)).astype(float)
+    positions = np.arange(N_NODES) * SPACING
+    inside = ((positions >= SLAB_START) & (positions < SLAB_START + N_TURNS * PITCH)).astype(float)
     directors, chi = helix(positions - SLAB_START)
     surrounding_chi = core.dielectric(np.full(3, SURROUNDING_INDEX ** 2), 1.0)
     nodes = (inside * chi[:, 0] + (1 - inside) * surrounding_chi).real()            # [nodes] Antibivector <- Bivector
@@ -168,13 +168,13 @@ def time_domain() -> tuple[core.Vector, core.Vector, core.Vector, core.Bivector,
     magnetic = SURROUNDING_INDEX * (core.real.t | (core.real.z ^ pulse(positions + SPACING / 2 + interval / (2 * SURROUNDING_INDEX))))
     before = line.energy(electric, magnetic).sum(axis=-1)
     steps = round(DURATION / interval)
-    stride = steps // FRAMES
+    stride = steps // N_FRAMES
     states = list(islice(line.evolve(electric, magnetic, interval, steps), stride - 1, None, stride))
     electric, magnetic = stack([e for e, _ in states]), stack([m for _, m in states])  # [frames, cases, nodes] Bivector
 
     energy = line.energy(electric[-1], magnetic[-1])                                  # [cases, nodes] Scalar
     reflected = (energy * (positions < SLAB_START)).sum(axis=-1)
-    transmitted = (energy * (positions >= SLAB_START + TURNS * PITCH)).sum(axis=-1)
+    transmitted = (energy * (positions >= SLAB_START + N_TURNS * PITCH)).sum(axis=-1)
     slab = np.flatnonzero(inside)
     return (core.real.z * positions, core.real.z * positions[slab], directors[slab, 0].real(),
             electric, before, reflected, transmitted)

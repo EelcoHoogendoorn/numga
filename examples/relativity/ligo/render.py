@@ -40,14 +40,13 @@ def lonlat(directions: core.Vector) -> np.ndarray:
     return np.stack([np.arctan2(xyz[..., 1], xyz[..., 0]), np.arcsin(np.clip(xyz[..., 2], -1, 1))], axis=-1)
 
 
-def sky_map(ax: plt.Axes, directions: core.Vector, values: core.Scalar, cmap: str, low: float, high: float):
+def sky_map(ax: plt.Axes, directions: core.Vector, values: core.Scalar, cmap: str, low: float, high: float) -> None:
     """One map over the sky, with a faint graticule and no tick labels."""
     longitudes, latitudes = np.moveaxis(lonlat(directions), -1, 0)
-    mesh = ax.pcolormesh(longitudes, latitudes, scalars(values), shading="gouraud", cmap=cmap, vmin=low, vmax=high)
+    ax.pcolormesh(longitudes, latitudes, scalars(values), shading="gouraud", cmap=cmap, vmin=low, vmax=high)
     ax.grid(color="white", alpha=0.25, linewidth=0.5)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
-    return mesh
 
 
 def mark_sites(ax: plt.Axes, zeniths: core.Vector, names: list[str]) -> None:
@@ -61,32 +60,27 @@ def mark_sites(ax: plt.Axes, zeniths: core.Vector, names: list[str]) -> None:
 def draw_patterns(directions: core.Vector, plus: core.Scalar, cross: core.Scalar, sensitivities: core.Scalar,
                   zeniths: core.Vector, names: list[str]) -> plt.Figure:
     """A row per detector: its response to the plus strain, to the cross strain, and its sensitivity."""
-    figure = plt.figure(figsize=(14, 2.5 * len(names) + 0.9), dpi=110)
-    meshes = []
+    figure = plt.figure(figsize=(14, 2.5 * len(names) + 0.2), dpi=110)
     for detector, name in enumerate(names):
         maps = [plus[detector], cross[detector], sensitivities[detector]]
         for column, (values, cmap, low) in enumerate(zip(maps, [SIGNED, SIGNED, SENSITIVE], [-1, -1, 0])):
             ax = figure.add_subplot(len(names), 3, 3 * detector + column + 1, projection="mollweide")
-            meshes.append(sky_map(ax, directions, values, cmap, low, 1))
+            sky_map(ax, directions, values, cmap, low, 1)
             mark_sites(ax, zeniths[detector:detector + 1], [name])
-    figure.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.12, hspace=0.08, wspace=0.06)
-    for mesh in meshes[-3:]:
-        box = mesh.axes.get_position()
-        figure.colorbar(mesh, cax=figure.add_axes([box.x0 + 0.2 * box.width, 0.05, 0.6 * box.width, 0.02]),
-                        orientation="horizontal")
+    figure.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.02, hspace=0.08, wspace=0.06)
     return figure
 
 
 def draw_network(directions: core.Vector, network: core.Scalar, alike: core.Scalar, zeniths: core.Vector,
                  names: list[str]) -> plt.Figure:
     """The network's sensitivity, and how alike the detectors' readings of the same wave are."""
-    figure = plt.figure(figsize=(11, 3.5), dpi=110)
+    figure = plt.figure(figsize=(11, 2.9), dpi=110)
     for column, (values, cmap, low, high) in enumerate([(network, SENSITIVE, 0, np.sqrt(len(names))),
                                                         (alike, SIGNED, -1, 1)]):
         ax = figure.add_subplot(1, 2, column + 1, projection="mollweide")
-        mesh = sky_map(ax, directions, values, cmap, low, high)
+        sky_map(ax, directions, values, cmap, low, high)
         mark_sites(ax, zeniths, names)
-        figure.colorbar(mesh, ax=ax, orientation="horizontal", shrink=0.7, pad=0.05)
+    figure.subplots_adjust(left=0.01, right=0.99, top=0.98, bottom=0.02, wspace=0.06)
     return figure
 
 
@@ -118,7 +112,7 @@ def animate_polarization(directions: core.Vector, responses: core.Scalar, site: 
         draw_ring(figure.add_subplot(1, 2, 1), site, arms, rings[index])
         ax = figure.add_subplot(1, 2, 2, projection="mollweide")
         sky_map(ax, directions, responses[index], SIGNED, -1, 1)
-        mark_sites(ax, site[None] >> core.x, [name])
+        mark_sites(ax, site[None] >> core.mv.x, [name])
         figure.subplots_adjust(left=0.01, right=0.99, bottom=0.03, top=0.97, wspace=0.05)
         pixels = capture(figure)
         plt.close(figure)

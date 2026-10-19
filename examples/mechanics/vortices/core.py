@@ -7,8 +7,8 @@ does not repeat has the zero offset alone. The velocity is a sum over the vortic
 and so is the velocity gradient at a point: a map on displacements, `Vector <- Vector`, the change in
 velocity over a small step, written in closed form.
 
-Contracting the gradient against an open vector gives the derivative of the flow,
-`(Vector * gradient(Vector)).contract(1, 2)`: its scalar part is the divergence, zero for this flow, and
+The gradient multiplied by `Vector`, the space of all vectors, and contracted is the derivative of the
+flow, `(Vector * gradient(Vector)).contract(1, 2)`: its scalar part is the divergence, zero for this flow, and
 its bivector part the vorticity, the rate at which the fluid turns. The trace of the gradient applied
 twice needs no metric and tells swirl from strain: `-0.5 * gradient(gradient).trace()` is positive
 where the fluid turns faster than it stretches. Each vortex moves with the flow at its centre, to

@@ -31,9 +31,9 @@ FOLLOWING = stack([ORBITALS[1], ORBITALS[2], ORBITALS[3], ORBITALS[0]])         
 
 # --- math -----------------------------------------------------------------------------
 def lift(one_electron: OneElectron) -> Hamiltonian:
-    """A one-electron map acting on each of the four electrons in turn: the join with an open
-    complement removes one occupied orbital, wedging its image back in replaces it, with its exchange
-    sign, and the trace pairs the map's input with the complementary slot."""
+    """A one-electron map acting on each of the four electrons in turn: the join with `Complement`, the
+    space of all complements, removes one occupied orbital, wedging its image back in replaces it, with
+    its exchange sign, and the trace pairs the map's input with the orbital removed."""
     return (one_electron ^ (State & Complement)).trace(1, 3)   # [...] State <- State
 
 

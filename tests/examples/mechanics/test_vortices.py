@@ -33,8 +33,8 @@ def test_the_derivative_of_the_flow_and_the_leapfrog():
 
     # The two pairs take turns in the lead.
     leads = []
-    for _ in range(scene.frames):
-        vortices = run(vortices, scene.dt, scene.substeps)
+    for _ in range(scene.n_frames):
+        vortices = run(vortices, scene.dt, scene.n_substeps)
         leads.append(((vortices.centres[2] - vortices.centres[0]) | core.mv.x).kernel[0])
     assert np.count_nonzero(np.diff(np.sign(leads))) >= 6
 
@@ -45,7 +45,7 @@ def test_the_shear_layer_rolls_up():
     def across(vortices: core.Vortices) -> np.ndarray:
         return (vortices.centres | core.mv.y).kernel[..., 0]
 
-    rolled = run(scene.vortices, scene.dt, scene.frames * scene.substeps)
+    rolled = run(scene.vortices, scene.dt, scene.n_frames * scene.n_substeps)
     assert np.ptp(across(rolled)) > 10 * np.ptp(across(scene.vortices))
 
 
@@ -67,8 +67,8 @@ def test_the_gas_keeps_its_impulses():
 def test_the_walkabout_takes_one_lap_and_leapfrogs_on():
     walker, _ = scenarios.walkabout()
     farthest = []
-    for _ in range(scenarios.WALKABOUT_FRAMES):
-        walker = run(walker, scenarios.WALKABOUT_DT, scenarios.WALKABOUT_SUBSTEPS)
+    for _ in range(scenarios.N_WALKABOUT_FRAMES):
+        walker = run(walker, scenarios.WALKABOUT_DT, scenarios.N_WALKABOUT_SUBSTEPS)
         farthest.append(np.abs((walker.centres | core.mv.y).kernel).max())
 
     # The vortices swing far out of the leapfrog's band over one unbroken stretch, then leapfrog on

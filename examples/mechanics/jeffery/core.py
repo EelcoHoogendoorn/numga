@@ -28,7 +28,6 @@ $\\Omega$ the vorticity and $E$ the strain rate of the flow.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterator
 
 import numpy as np
@@ -91,18 +90,3 @@ def tumble(rotors: Rotor, stretches: Stretch, gradient: Gradient, dt: float, ste
         rotors = step(rotors, stretches, gradient, dt)
         yield rotors
 
-
-# --- plumbing -------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Tumbling:
-    """The bodies over time: the long axis of each body from each start `[steps + 1, bodies, starts]`;
-    for the animation, each body's stretch `[bodies]`, its orientation from the start shown
-    `[frames, bodies]` and the tip of its long axis `[frames, bodies]`; and the flow's velocity at
-    points across it."""
-
-    trails: Vector
-    stretches: Stretch
-    rotors: Rotor
-    tips: Vector
-    heights: Vector
-    velocities: Vector

@@ -1,4 +1,4 @@
-"""The tracking scene for the Kalman example: a meandering drive with sparse pose readings."""
+"""The tracking scene for the Kalman filter simulates a meandering drive in the plane with sparse pose readings."""
 
 from __future__ import annotations
 

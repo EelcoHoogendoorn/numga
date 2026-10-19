@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from itertools import chain
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 import numpy as np
@@ -84,18 +87,19 @@ def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders:
     return figure
 
 
-def animate_weights(controls: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
-    """One frame per weighting: the control mesh, dotted, and the surface it refines to, at one framing."""
-    xyz = coordinates(controls)                                                # [frames, vertices, 3]
-    shown = coordinates(surfaces)                                              # [frames, refined, 3]
-
-    def frame(index: int) -> np.ndarray:
+def animate_weights(frames: Iterable[tuple[core.Point, core.Point]], control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
+    """One frame per weighting: the control mesh `Point[vertices]`, dotted, and the surface it refines to
+    `Point[refined]`, all framed on the first control mesh."""
+    frames = iter(frames)
+    first = next(frames)
+    framing = coordinates(first[0])                                            # [vertices, 3]
+    images = []
+    for controls, surface in chain([first], frames):
         figure = plt.figure(figsize=(4.0, 4.0), layout="constrained")
         ax = figure.add_subplot(projection="3d")
-        draw_surface(ax, shown[index], faces, np.broadcast_to(SURFACE_COLOUR, (len(faces), 3)))
-        draw_mesh(ax, xyz[index], control_faces, CONTROL_COLOUR, ":", 0.8)
-        frame_axes(ax, xyz[0])
-        pixels = capture(figure)
+        draw_surface(ax, coordinates(surface), faces, np.broadcast_to(SURFACE_COLOUR, (len(faces), 3)))
+        draw_mesh(ax, coordinates(controls), control_faces, CONTROL_COLOUR, ":", 0.8)
+        frame_axes(ax, framing)
+        images.append(capture(figure))
         plt.close(figure)
-        return pixels
-    return [frame(index) for index in range(controls.shape[0])]
+    return images

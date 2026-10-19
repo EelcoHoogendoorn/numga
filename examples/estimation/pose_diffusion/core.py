@@ -1,4 +1,5 @@
-"""How far a station-keeping vessel wanders from its set point, in PGA2D.
+"""Station keeping in gusts: how far a vessel on dynamic positioning wanders from its set point, in
+PGA2D.
 
 A vessel on dynamic positioning holds a fixed position and heading with its thrusters. Wind and
 wave gusts push it off; the controller pushes it back in proportion to the error. The vessel
@@ -40,7 +41,7 @@ Dynamics = ga.gatype((Twist, Twist))              # Twist <- Twist
 # Covariance of two position measurements.
 Spread = ga.gatype((Scalar, Line, Line))          # Scalar <- (Line, Line)
 # White noise to a gust's push on the vessel.
-Kicks = ga.gatype((Twist, Line))                  # Twist <- Line
+Gusts = ga.gatype((Twist, Line))                  # Twist <- Line
 # The set point; in PGA2D a point is a bivector.
 ORIGIN = mv.w.dual()                              # [] Point
 
@@ -70,25 +71,26 @@ def growth(dynamics: Dynamics, covariance: Covariance, noise: Covariance) -> Cov
     return dynamics(covariance) + covariance(dynamics.adjugate()) + noise
 
 
-def covariance(kicks: Kicks) -> Covariance:
+def covariance(gusts: Gusts) -> Covariance:
     """Covariance per second of the gusts.
 
-    A gust is white noise mapped to a twist by the kick map. White noise has unit variance on each
-    basis line and no correlation between them, so the covariance is the sum over the basis lines
-    of the dyad formed by each line's image under the kick map.
+    A gust is white noise mapped to a twist by the gust map. White noise is defined in a frame of
+    lines, with unit variance along each and no correlation between them, so the covariance is the
+    sum over that frame of the dyad formed by each line's gust.
     """
-    basis = mv.antibivector(np.eye(3))                                        # [3] Line
-    return (kicks(basis) * (kicks(basis) & Line)).sum(axis=0)
+    # The frame the white noise is sampled in.
+    frame = mv.antibivector(np.eye(3))                                        # [3] Line
+    return (gusts(frame) * (gusts(frame) & Line)).sum(axis=0)
 
 
 def step(dynamics: Dynamics, noise: Covariance, errors: Twist, covariance: Covariance,
-         kicks: Twist, dt: float) -> tuple[Twist, Covariance]:
+         gusts: Twist, dt: float) -> tuple[Twist, Covariance]:
     """One explicit Euler step of length dt, for the errors and for their predicted covariance.
 
     The gusts passed in must already be scaled by the square root of dt: the variance of white
     noise over an interval grows with the length of the interval.
     """
-    return errors + dynamics(errors) * dt + kicks, covariance + growth(dynamics, covariance, noise) * dt
+    return errors + dynamics(errors) * dt + gusts, covariance + growth(dynamics, covariance, noise) * dt
 
 
 def settled(dynamics: Dynamics, noise: Covariance) -> Covariance:
@@ -96,12 +98,12 @@ def settled(dynamics: Dynamics, noise: Covariance) -> Covariance:
 
     Growth is linear in the covariance, so setting it to zero gives a linear equation whose
     unknown is a map. Write the covariance as a sum of dyads t * (s & l), with twists t and s and
-    a line l, and leave all three open. Growth then becomes a map with three inputs, and lstsq
+    a line l; as a function of all three, growth becomes a map with three inputs, and lstsq
     matches its line input against the noise and solves for the coefficients on the two twist
     inputs. The solution is a map from twists to twists; it takes a line through the line's dual,
     the twist whose coefficients are the line's measurements of the basis twists.
     """
-    # growth with the dyad open: the dynamics applied to t, and applied to s
+    # Growth as a function of the dyad: the dynamics applied to t, and applied to s.
     lyapunov = dynamics(Twist) * (Twist & Line) + Twist * (dynamics(Twist) & Line)   # Twist <- (Twist, Twist, Line)
     return lyapunov.lstsq(-noise)(Line.dual())
 

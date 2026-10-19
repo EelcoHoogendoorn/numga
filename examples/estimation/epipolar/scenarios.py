@@ -1,8 +1,4 @@
-"""Scenes for epipolar geometry and two-view 3D reconstruction.
-
-One function per figure. Builds the synthetic scene, injects sensor noise, calls the
-mathematics in `core`, and returns the resulting geometry for `render`.
-"""
+"""Scenes for epipolar geometry and two-view 3D reconstruction build a synthetic two-camera view of a wireframe house, inject sensor noise, and recover the relative pose and 3D landmarks."""
 
 from __future__ import annotations
 

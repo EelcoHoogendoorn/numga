@@ -1,4 +1,4 @@
-"""Coincident, uniaxial and biaxial wave surfaces, computed from adjugates."""
+"""Fresnel wave surfaces: coincident, uniaxial and biaxial, computed from adjugates."""
 
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ PERMITTIVITY = np.array([[1.0, 1.0, 1.0],
 RELUCTIVITY = np.array([1.0, 1.0, 1.0])
 AXION_COUPLING = 0.3                                                              # illustrative
 FREQUENCY = 1.0
-LATITUDES = 33
-LONGITUDES = 2 * (LATITUDES - 1) + 1
-SECTION_SAMPLES = 4 * (LATITUDES - 1) + 1
-FRAMES = 32
-MOVIE_LATITUDES = 19
-MOVIE_LONGITUDES = 2 * (MOVIE_LATITUDES - 1) + 1
+N_LATITUDES = 33
+N_LONGITUDES = 2 * (N_LATITUDES - 1) + 1
+N_SECTION_SAMPLES = 4 * (N_LATITUDES - 1) + 1
+N_FRAMES = 32
+N_MOVIE_LATITUDES = 19
+N_MOVIE_LONGITUDES = 2 * (N_MOVIE_LATITUDES - 1) + 1
 DURATION_MS = 90
 
 
@@ -29,8 +29,8 @@ DURATION_MS = 90
 def comparison() -> tuple[core.Vector, core.Vector]:
     """Both wavevector sheets and their xz sections for each material."""
     media = core.dielectric(PERMITTIVITY, RELUCTIVITY)
-    directions = core.sphere(LATITUDES, LONGITUDES)
-    sections = core.radial_sheets(media[:, None], core.circle(SECTION_SAMPLES), FREQUENCY)
+    directions = core.sphere(N_LATITUDES, N_LONGITUDES)
+    sections = core.radial_sheets(media[:, None], core.circle(N_SECTION_SAMPLES), FREQUENCY)
     sheets = core.radial_sheets(media[:, None, None], directions, FREQUENCY)
 
     # --- checks
@@ -51,13 +51,13 @@ def comparison() -> tuple[core.Vector, core.Vector]:
 
 def birefringence() -> Iterator[tuple[core.Vector, core.Vector]]:
     """The sheets and sections as the dielectric changes from vacuum to a biaxial crystal."""
-    phase = np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)
+    phase = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
     weight = (1 - np.cos(phase)) / 2
     permittivity = PERMITTIVITY[0] + weight[:, None] * (PERMITTIVITY[-1] - PERMITTIVITY[0])
     media = core.dielectric(permittivity, RELUCTIVITY[-1])
-    directions = core.sphere(MOVIE_LATITUDES, MOVIE_LONGITUDES)
+    directions = core.sphere(N_MOVIE_LATITUDES, N_MOVIE_LONGITUDES)
     sheets = core.radial_sheets(media[:, None, None], directions, FREQUENCY)
-    sections = core.radial_sheets(media[:, None], core.circle(SECTION_SAMPLES), FREQUENCY)
+    sections = core.radial_sheets(media[:, None], core.circle(N_SECTION_SAMPLES), FREQUENCY)
     yield from zip(sheets, sections)
 
 

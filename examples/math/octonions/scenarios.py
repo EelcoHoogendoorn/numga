@@ -36,7 +36,7 @@ def main() -> None:
     print("G₂ rotation: the same difference")
     print(defects[1].coefficient_table())
 
-    # --- checks
+    # checks
     np.testing.assert_allclose((left_action(left_action) + Octonion).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose((core.associator(first, second, third) - 2 * mv.g).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose(defects[1].kernel, 0, atol=TOLERANCE)

@@ -3,6 +3,8 @@ flow field beside the reciprocal flapper and their paths in hinge-angle space.""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -100,25 +102,26 @@ def animate_swimmers(
     positions: core.Point,
     world_sites: core.Point,
     grid: core.Point,
-    flow: core.Direction,
+    flows: Iterable[core.Direction],
     every: int,
 ) -> list[np.ndarray]:
-    """Frames of Purcell's non-reciprocal swimmer (top) and the reciprocal flapper (bottom)."""
+    """Frames of Purcell's non-reciprocal swimmer (top), with the flow it drives at each frame
+    `[grid_y, grid_x] Direction`, and the reciprocal flapper (bottom)."""
     beads_xy = point_coords(world_sites.batch())[::every]                       # [frames, swimmers, beads, 2]
     all_pos_xy = point_coords(positions)                                        # [steps + 1, swimmers, 2]
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
-    flow_xy = point_coords(flow)                                                # [frames, gy, gx, 2]
 
     x_min = min(float(all_pos_xy[:, 0, 0].min()), 0.0) - 2.3
     x_max = max(float(all_pos_xy[:, 0, 0].max()), 0.0) + 2.3
     images = []
-    for frame in range(len(beads_xy)):
+    for frame, flow in enumerate(flows):
+        flow_xy = point_coords(flow)                                            # [gy, gx, 2]
         figure, (ax_top, ax_bot) = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=85)
         step_end = frame * every + 1
 
         ax_top.quiver(
             grid_xy[..., 0], grid_xy[..., 1],
-            flow_xy[frame, ..., 0], flow_xy[frame, ..., 1],
+            flow_xy[..., 0], flow_xy[..., 1],
             color=FLOW_COLOUR, scale=3.2, width=0.003, zorder=1,
         )
         ax_top.plot(all_pos_xy[:step_end, 0, 0], all_pos_xy[:step_end, 0, 1], color=TRAIL_COLOUR, linewidth=1.6, zorder=2)

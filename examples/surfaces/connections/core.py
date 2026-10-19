@@ -120,14 +120,13 @@ def transport_step(normal_tail: Vector, normal_head: Vector) -> Rotor:
     return (normal_head * normal_tail).square_root()                            # [...] Rotor
 
 
-def loop_transport(normals: Vector, start: Vector) -> Vector:
+def transported(normals: Vector, start: Vector) -> Iterator[Vector]:
     """Parallel transport of a tangent vector `start` along a sequence of unit normals
-    `[steps + 1, ...] Vector`."""
-    turns = transport_step(normals[:-1], normals[1:])                           # [steps, ...] Rotor
-    carried = [start]
-    for turn in turns:
-        carried.append(turn >> carried[-1])                                     # [...] Vector
-    return stack(carried)                                                       # [steps + 1, ...] Vector
+    `[steps + 1, ...] Vector`: the vector at each of them."""
+    yield start
+    for tail, head in zip(normals[:-1], normals[1:]):
+        start = transport_step(tail, head) >> start                             # [...] Vector
+        yield start
 
 
 def turn(rotors: Rotor, normals: Vector) -> Scalar:
@@ -179,11 +178,11 @@ def heat_transport(laplacian: SparseExtensor, areas: Scalar, source: Vector, ste
     vector heat steps of duration `step_time` with the connection Laplacian of the surface's own
     transport and the vertex areas `Scalar[V]`: yields the diffused field and the unit-normalized
     field at each step."""
-    M0 = spdiag(areas)                                                          # [V, V] Scalar
-    step_operator = M0 * Vector + step_time * laplacian                         # [V, V] Vector <- Vector
+    area_weights = spdiag(areas)                                                # [V, V] Scalar
+    step_operator = area_weights * Vector + step_time * laplacian               # [V, V] Vector <- Vector
     field = source                                                              # Vector[V]
     for _ in range(steps):
-        field = step_operator.solve(M0 * field)                                 # Vector[V]
+        field = step_operator.solve(area_weights * field)                       # Vector[V]
         yield field, field / field.norm()                                       # Vector[V], Vector[V]
 
 

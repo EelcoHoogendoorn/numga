@@ -46,7 +46,7 @@ def kirsch(positions: Planar, radius: float, remote: Stress) -> Stress:
                          - anisotropy * (1 + 3 * radius_ratio.squared()))         # [...] Scalar
     shear_stress = shear * (1 + 2 * radius_ratio - 3 * radius_ratio.squared())    # [...] Scalar
 
-    # Leaving the surface normal open makes each dyad a traction map. At the rim,
+    # Over `Planar`, the space of all surface normals, each dyad is a traction map. At the rim,
     # radial traction vanishes; far away these three readings recover the remote map.
     return (radial_stress * radial * (radial | Planar)
             + tangential_stress * tangent * (tangent | Planar)

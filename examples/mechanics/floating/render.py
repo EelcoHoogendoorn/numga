@@ -45,12 +45,12 @@ def coordinates(points: core.Point) -> np.ndarray:
     return kernel[..., :3] / kernel[..., 3:]
 
 
-def degrees(rolls: core.Line) -> np.ndarray:
+def degrees(rolls: core.Twist) -> np.ndarray:
     """The angle of turns about the axis of heel, in degrees."""
     return np.degrees(rolls.cast(ga.subspace("yz")).kernel[..., 0])
 
 
-def arms(couples: core.Line, weight: core.Scalar) -> np.ndarray:
+def arms(couples: core.Forque, weight: core.Scalar) -> np.ndarray:
     """The righting arm of each couple: its turn back about the axis of heel, over the weight."""
     return scalars(-(couples & core.heel_axis) / weight)
 
@@ -62,7 +62,7 @@ def shade(triangles: np.ndarray) -> np.ndarray:
     return 1 / 3 + 2 / 3 * lit
 
 
-def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Line, centre: core.Point) -> None:
+def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Forque, centre: core.Point) -> None:
     """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their
     vertical lines across an end view, and the righting arm between them at the centre's height."""
     gravity = coordinates(placed >> centre)[1:]
@@ -75,7 +75,7 @@ def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Line, centre: cor
     ax.plot(*gravity, "o", color=WEIGHT, markeredgecolor="white", markersize=7, zorder=8)
 
 
-def draw_ship(hull: core.Point, placed: core.Motor, push: core.Line, centre: core.Point) -> plt.Figure:
+def draw_ship(hull: core.Point, placed: core.Motor, push: core.Forque, centre: core.Point) -> plt.Figure:
     """The heeled hull: in space, its dry surface pale and its wet surface darker with depth, in the water;
     and seen along its axis of heel, with its weight, its buoyancy and the righting arm between them."""
     triangles = coordinates(placed >> hull)                                  # [triangles, 3, 3]
@@ -101,7 +101,7 @@ def draw_ship(hull: core.Point, placed: core.Motor, push: core.Line, centre: cor
     return figure
 
 
-def draw_curves(heels: np.ndarray, couples: core.Line, weight: core.Scalar, stiffness: core.Stiffness) -> plt.Figure:
+def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, stiffness: core.Stiffness) -> plt.Figure:
     """The righting arm of each load over the heels `[heels, loads]`, with the tangent at upright that the
     stiffness gives, and the line of no righting."""
     righting = arms(couples, weight)                                         # [heels, loads]
@@ -131,7 +131,7 @@ def end_view(ax: plt.Axes, triangles: np.ndarray) -> None:
     ax.set_axis_off()
 
 
-def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Line, fluid_weight: float, cube: core.Point,
+def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, fluid_weight: float, cube: core.Point,
                shown: core.Motor, shown_densities: list[float], rests: np.ndarray) -> plt.Figure:
     """Above, cubes of a few densities at rest; below, the cube's righting couple over density and heel, blue
     turning it back upright and red over, its rests where it turns from over to back drawn thick, its
@@ -158,8 +158,8 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Line, flu
     return figure
 
 
-def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[core.Line, core.Motor, core.Line, core.Line]],
-                    heels: np.ndarray, couples: core.Line, weight: core.Scalar) -> list[np.ndarray]:
+def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[core.Twist, core.Motor, core.Forque, core.Forque]],
+                    heels: np.ndarray, couples: core.Forque, weight: core.Scalar) -> list[np.ndarray]:
     """Each frame: the released hull with each load seen along its axis of heel, its weight from its centre of
     gravity and its buoyancy from the water surface, as arrows on their lines, beside the righting arm curves
     of the loads, each with the hull's heel so far."""

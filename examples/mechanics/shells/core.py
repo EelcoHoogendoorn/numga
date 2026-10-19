@@ -125,16 +125,18 @@ def forque(points: Point, pushes: Direction) -> Line:
     return (points & pushes).sites.sum()
 
 
-def relax(sheet: Sheet, points: Point, step: float, damping: float, steps: int, every: int) -> Iterator[Point]:
+def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: int, n_steps_per_frame: int
+          ) -> Iterator[Point]:
     """The sheet moving under its own forces from the given points `Point[V]`, from rest, losing a share
-    `damping` of its velocity every step of the given size until it settles: the points every `every`
-    steps, and at the end."""
+    `damping` of its velocity every step of the given size until it settles: the points at every frame,
+    so many steps apart, and at the end."""
     velocity = points - points                                                   # Direction[V]
-    for count in range(steps + 1):
-        if count % every == 0 or count == steps:
-            yield points
-        velocity = (velocity + forces(sheet, points) * (step / sheet.masses)) * (1 - damping)
-        points = points + velocity * step
+    for _ in range(n_frames):
+        yield points
+        for _ in range(n_steps_per_frame):
+            velocity = (velocity + forces(sheet, points) * (step / sheet.masses)) * (1 - damping)
+            points = points + velocity * step
+    yield points
 
 
 def sheet(mesh: Mesh, lengths: Scalar, curvature: Curvature, top: Plane, thickness: float) -> Sheet:
@@ -154,8 +156,8 @@ def sheet(mesh: Mesh, lengths: Scalar, curvature: Curvature, top: Plane, thickne
     planes = corner_points[0] & corner_points[1] & corner_points[2]              # Plane[F]
     facing = (planes | top).sites.sum()                                          # [] Scalar
     # Each vertex carries a third of the mass of every face at it.
-    doubled = planes.norm()                                                      # Scalar[F]
-    masses = ~mesh.at_corners(stack([doubled] * 3)) * as_scalar(np.ones(len(mesh.faces))).field() * (thickness / 6)
+    double_areas = planes.norm()                                                 # Scalar[F]
+    masses = ~mesh.at_corners(stack([double_areas] * 3)) * as_scalar(np.ones(len(mesh.faces))).field() * (thickness / 6)
     return Sheet(
         mesh=mesh,
         corners=corners,

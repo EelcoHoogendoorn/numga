@@ -1,4 +1,5 @@
-"""The field of a soft charge moving at any speed, from the derivatives of its potential.
+"""Moving charges: the field of a soft charge moving at any speed, from the derivatives of its
+potential.
 
 The charge is a Plummer-softened point charge: beyond its core it is a point charge, and its density
 is smooth and finite at its centre. At rest its potential points along its time direction and falls
@@ -7,10 +8,10 @@ maps on displacements, written in closed form. A moving charge is the charge at 
 a boost: its gradients are the rest-frame ones with the boost sandwiched around them, the
 displacement pulled into the rest frame and the result pushed back out.
 
-Contracting a gradient against an open vector gives the derivative: of the potential, the field
+Contracting a gradient against the space of vectors gives the derivative: of the potential, the field
 bivector plus the Lorenz-gauge scalar, which vanishes; of the field, the current plus a trivector,
 which vanishes. Both halves of Maxwell's equations also follow without a metric, from the incidence
-trace of the field's gradient against an open antivector: on the field itself the trace is the
+trace of the field's gradient against the space of antivectors: on the field itself the trace is the
 current, on its dual it vanishes. The metric enters only through that dual.
 
 A point charge circling at constant speed radiates. Its potential at an event is set by where the

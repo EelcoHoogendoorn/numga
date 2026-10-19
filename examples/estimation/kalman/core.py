@@ -1,13 +1,10 @@
-"""Pose filtering on the motor manifold in PGA2D: the covariance is a map from readouts to bivectors.
+"""Pose filtering on the motor manifold tracks a moving body's pose and uncertainty in the plane.
 
-The state is a motor; its uncertainty is a covariance over body-frame bivector perturbations.
-A linear readout of a bivector is a line, so the covariance is a unary extensor, Bivector <- Line:
-the twist correlated with a readout. Prediction moves it like any map, pulling the readout
-through the step and pushing the twist back, and the update solves with the map inverse.
+The state is a pose motor and its uncertainty is a covariance over body-frame bivector perturbations. A linear readout of a bivector is a line, so the covariance is a linear map `Bivector <- Line` taking each readout line to the twist correlated with it. Prediction carries the covariance through each motion step by sandwiching both slots, and measurement updates correct the motor and covariance using the logarithm of the relative pose innovation.
 
-In the matrix notation of the extended Kalman filter the covariance reads as a three-by-three
-matrix, propagated and updated with the Jacobians of the motion and measurement models; those
-Jacobians are never derived by hand here.
+In 2D Projective Geometric Algebra (`PGA2D`, signature `x+y+w0`), lines are vectors, points and infinitesimal twists are bivectors, and rigid motions in the plane are even-grade motors.
+
+In the matrix notation of the extended Kalman filter the covariance reads as a three-by-three matrix propagated and updated by the Jacobians of the motion and measurement models.
 """
 
 from __future__ import annotations

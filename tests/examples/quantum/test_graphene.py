@@ -1,5 +1,5 @@
 """Graphene: the Hamiltonian squares to the field's length, transport around a circle turns a frame
-by the solid angle it encloses, and the scenarios pass their checks and draw."""
+by the solid angle it encloses, and the scenarios draw."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def test_transport_around_a_circle_of_latitude_turns_by_the_enclosed_solid_angle
     np.testing.assert_allclose(holonomy.select[0].to_array(), np.cos(np.pi * (1 - np.cos(theta))), atol=1e-3)
 
 
-def test_scenarios_pass_their_checks_and_draw():
+def test_scenarios_draw():
     radii, gaps = np.linspace(0.01, 0.4, 5), np.array([0.0, 0.5])
     momenta, field, values = scenarios.bands(4.5, 21, 0.0)
     for figure in (render.draw_field(momenta, field),

@@ -31,18 +31,18 @@ PointMap = ga.gatype((Point, Point))                                           #
 
 
 # --- math -----------------------------------------------------------------------------
-def refinements(mesh: Mesh, pinned: np.ndarray, depth: int) -> Iterator[tuple[SparseExtensor, Mesh]]:
+def refinements(mesh: Mesh, pinned: np.ndarray, n_steps: int) -> Iterator[tuple[SparseExtensor, Mesh]]:
     """The map of each of so many Loop steps from a mesh, with the finer mesh it gives."""
-    for _ in range(depth):
+    for _ in range(n_steps):
         step = mesh.loop(pinned)                                               # [finer, coarser] Scalar
         mesh, pinned = Mesh(step * mesh.vertices, mesh.split_faces), mesh.split_pins(pinned)
         yield step, mesh
 
 
-def subdivision(mesh: Mesh, depth: int) -> tuple[SparseExtensor, Mesh]:
+def subdivision(mesh: Mesh, n_steps: int) -> tuple[SparseExtensor, Mesh]:
     """So many Loop steps from a closed mesh, nothing pinned, composed into one map from its vertex sites to
     those of the refined mesh, and the refined mesh."""
-    steps, meshes = zip(*refinements(mesh, np.zeros(mesh.vertices.batch().shape[-1], dtype=bool), depth))
+    steps, meshes = zip(*refinements(mesh, np.zeros(mesh.vertices.batch().shape[-1], dtype=bool), n_steps))
     return reduce(lambda total, step: step * total, steps), meshes[-1]       # [refined, vertices] Scalar
 
 

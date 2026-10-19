@@ -13,7 +13,7 @@ the state `rho`, with `back = process.reverse() * process`. One is the vector x 
 a spin against the field, which turns that part of the state over onto the field at the rate
 `1 / t1`; the half turn in the plane xy scrambles the phase, an even element, so its sandwich is a turn;
 the vector z would do the same up to the central pseudoscalar, a phase that cancels from the sandwich.
-Both are built as maps by leaving the state open. Where
+Both are built as maps over `State`, the space of all states. Where
 the generator vanishes the state is steady; since the generator keeps the scalar part, finding
 that state is a linear equation with the scalar part pinned.
 

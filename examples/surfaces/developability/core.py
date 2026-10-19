@@ -26,7 +26,7 @@ corner's angle opens as either neighbour moves along the face square to the edge
 step over that edge's length: `(plane | edge) / (edge | edge)` with `plane` the corner's two edges
 wedged, over the plane's size.
 
-In the notation of the paper the energy reads $E = \\sum_i \\lambda_{\\min}\\left(\\sum_{ijk}
+In matrix notation the energy reads $E = \\sum_i \\lambda_{\\min}\\left(\\sum_{ijk}
 \\theta_i^{jk} N_{ijk} N_{ijk}^{\\mathsf T}\\right)$ over the faces $ijk$ around each vertex $i$, with
 $\\theta_i^{jk}$ the face's angle at the vertex.
 """
@@ -68,14 +68,14 @@ def gradient(mesh: Mesh, normals: Vector, directions: Vector) -> Vector:
     moves with its two neighbours, each along the face square to the edge from the corner, over that
     edge's length, and with the corner itself against both."""
     edges = mesh.triangle_edges.batch()                                         # [3, F] Vector
-    doubled = (edges[0] ^ edges[1]).norm()                                      # [F] Scalar: twice the area
+    double_areas = (edges[0] ^ edges[1]).norm()                                 # [F] Scalar
     face_normals = normals.batch()                                              # [F] Vector
     angles = mesh.corner_cosines().batch().arccos()                               # [3, F] Scalar
     corner_directions = directions[mesh.faces.T]                                # [3, F] Vector
     along = corner_directions | face_normals                                    # [3, F] Scalar
     pulled = (corner_directions * (along * angles)).sum(axis=0)                 # [F] Vector
     across = 2 * (pulled - face_normals * (face_normals | pulled))             # [F] Vector
-    turning = (across ^ edges).dual() / doubled                                 # [3, F] Vector: one per corner
+    turning = (across ^ edges).dual() / double_areas                            # [3, F] Vector: one per corner
     # The edges from each corner to the next corner and to the one after, and the plane they span.
     ahead, behind = edges[[2, 0, 1]], -edges[[1, 2, 0]]                         # [3, F] Vector each
     plane = ahead ^ behind                                                      # [3, F] Bivector
@@ -89,24 +89,23 @@ def gradient(mesh: Mesh, normals: Vector, directions: Vector) -> Vector:
 def stiffness(mesh: Mesh) -> Scalar:
     """How sharply the energy curves at each vertex `Scalar[V]`: moving a corner turns its face's normal by
     the step over the corner's height above the opposite edge, so each face around the vertex adds its
-    angle there over that height squared, `(edge | edge) / doubled**2` with `doubled` twice the area."""
+    angle there over that height squared, `(edge | edge) / double_areas**2`."""
     edges = mesh.triangle_edges.batch()                                         # [3, F] Vector
-    doubled = (edges[0] ^ edges[1]).norm()                                      # [F] Scalar
+    double_areas = (edges[0] ^ edges[1]).norm()                                 # [F] Scalar
     angles = mesh.corner_cosines().batch().arccos()                             # [3, F] Scalar
-    return ~mesh.at_corners(angles * (edges | edges) / (doubled * doubled)) * as_scalar(np.ones(len(mesh.faces))).field()
+    return ~mesh.at_corners(angles * (edges | edges) / double_areas.squared()) * as_scalar(np.ones(len(mesh.faces))).field()
 
 
-def flow(mesh: Mesh, step: float, steps: int, every: int) -> Iterator[tuple[Vector, Scalar]]:
-    """Gradient descent on the developability energy by `steps` steps, each vertex's step the gradient over
-    the energy's stiffness there, times `step`: every `every` steps, and at the end, the vertices
-    `Vector[V]` and each vertex's smallest eigenvalue `[V] Scalar`. A step of the same size everywhere
+def flow(mesh: Mesh, step: float) -> Iterator[tuple[Vector, Scalar]]:
+    """Gradient descent on the developability energy, each vertex's step the gradient over the energy's
+    stiffness there, times `step`: at every step, without end, the vertices `Vector[V]` and each vertex's
+    smallest eigenvalue `[V] Scalar`. A step of the same size everywhere
     overshoots where triangles are small or thin, and the flow jitters there; over the stiffness, every
     vertex moves by the same share of what its faces can take."""
     vertices = mesh.vertices
-    for count in range(steps + 1):
+    while True:
         current = mesh.copy(vertices)
         normals, spreads = spread(current)
         values, vectors = spreads.batch().eigh()                                # [V, 3] Scalar, [V, 3] Vector
-        if count % every == 0 or count == steps:
-            yield vertices, values[:, 0]
+        yield vertices, values[:, 0]
         vertices = vertices - step * gradient(current, normals, vectors[:, 0]) / stiffness(current)

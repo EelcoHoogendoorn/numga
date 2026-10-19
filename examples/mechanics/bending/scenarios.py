@@ -20,10 +20,10 @@ MODULUS = 1.0
 POISSON = 0.3
 SHEAR_MODULUS = MODULUS / (2 * (1 + POISSON))
 LENGTH = 10.0
-PIECES = 40
+N_PIECES = 40
 LOAD = 1e-5
 # The frames of the load's turn and of its move across, and the duration of each.
-FRAMES = 48
+N_FRAMES = 48
 DURATION_MS = 60
 # The ends of the slotted tube's load's move across, across and up.
 ACROSS = [[0.4, 0.0], [-1.15, 0.0]]
@@ -44,20 +44,20 @@ def tip(points: core.Point, length: float) -> core.Point:
     return (core.shift_along_beam * (length / 2)).exp() >> points
 
 
-def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads: core.Line, length: float,
-               shear_modulus: float) -> tuple[core.Line, core.Motor, core.Strain, core.Scalar]:
+def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads: core.Forque, length: float,
+               shear_modulus: float) -> tuple[core.Twist, core.Motor, core.Strain, core.Scalar]:
     """A cantilever of a length, under load lines at its tip, batched over loads: the strain of each piece
     `[..., pieces]`, the frame of each cross-section `[..., pieces + 1]`, the principal bending axes `[2]`,
     and the stress at the clamp at the ends of the section's walls `[..., walls, 2]`."""
-    step = length / PIECES
+    step = length / N_PIECES
     # The middle of each piece.
-    stations = (np.arange(PIECES) + 0.5) * step                             # [pieces]
+    stations = (np.arange(N_PIECES) + 0.5) * step                             # [pieces]
     walls = nodes[ends]                                                     # [walls, 2] Point
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
-    whole = core.stiffness(nodes, ends, thickness, MODULUS, shear_modulus)  # [] Line <- Line
+    whole = core.stiffness(nodes, ends, thickness, MODULUS, shear_modulus)  # [] Forque <- Twist
     # Lever arms are measured on the straight reference beam. A strain moves the frames by
     # `exp(strain * step / 2)`, against its own sense, so it is solved against the load turned in sign.
-    strains = whole.solve(-core.loads_at_stations(loads, stations))         # [..., pieces] Line
+    strains = whole.solve(-core.loads_at_stations(loads, stations))         # [..., pieces] Twist
     frames = core.bend(strains, step)                                       # [..., pieces + 1] Motor
     # Principal bending axes pass through the centroid; the metric does not see the shift along the
     # beam. Weakest first, then the shift.
@@ -68,14 +68,14 @@ def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads
 
 def turning_loads() -> core.Point:
     """The tip load turning once around the beam, in the plane of the section."""
-    angles = np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)               # [frames]
+    angles = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)               # [frames]
     return (mv.xy * (-angles / 2)).exp() >> (LOAD * -up_direction)           # [frames] Point
 
 
 def across_points() -> core.Point:
     """The points the slotted tube's load goes through as it moves across the section."""
     start, end = core.point(ACROSS)                                          # [] Point each
-    fractions = np.linspace(0, 1, FRAMES)                                    # [frames]
+    fractions = np.linspace(0, 1, N_FRAMES)                                    # [frames]
     return start * (1 - fractions) + end * fractions                        # [frames] Point
 
 
@@ -108,7 +108,7 @@ def main() -> None:
     across = across_points()
     moved = cantilever(*tube, tip(across, LENGTH) & down, LENGTH, SHEAR_MODULUS)
     stubby = sections[NAMES.index("I-section")]
-    stubby_load = tip(centres[NAMES.index("I-section")], STUBBY_LENGTH) & (STUBBY_LOAD * -up_direction)   # [] Line
+    stubby_load = tip(centres[NAMES.index("I-section")], STUBBY_LENGTH) & (STUBBY_LOAD * -up_direction)   # [] Forque
     stubs = [cantilever(*stubby, stubby_load, STUBBY_LENGTH, shear) for shear in (SHEAR_MODULUS, RIGID_SHEAR)]
     points = core.point(PUSH_POINTS)                                         # [pushes] Point
     pushes = [push_section(*section, points) for section in sections]
@@ -134,10 +134,10 @@ def main() -> None:
     # The slotted tube's load through its centroid passes beside its shear centre and twists it; moved
     # across, the load twists it one way, then the other, and through the shear centre not at all.
     # The turn about the beam, per unit length.
-    twists = (moved[0][:, 0] & core.shift_along_beam).to_array()             # [frames]
-    assert twists[0] * twists[-1] < 0
+    twist_rates = (moved[0][:, 0] & core.shift_along_beam).to_array()             # [frames]
+    assert twist_rates[0] * twist_rates[-1] < 0
     passing = np.argmin(np.abs(render.flat(across)[:, 0] - render.flat(shear_centres[-1])[0]))
-    assert np.abs(twists[passing]) < 0.1 * np.abs(twists).max()
+    assert np.abs(twist_rates[passing]) < 0.1 * np.abs(twist_rates).max()
     # The stubby beam's slides add a deflection comparable to its bending's.
     sliding, rigid = (render.flat(frames[-1] >> centres[0])[1] for _, frames, _, _ in stubs)
     assert sliding < rigid < 0 and sliding < 1.2 * rigid

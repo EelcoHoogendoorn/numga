@@ -58,7 +58,6 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
     ax.set_ylabel("momentum y (1/a)")
     ax.set_zlabel("energy (eV)")
     ax.view_init(elev=22, azim=-60)
-    ax.set_title("graphene's bands: cones where they meet")
     figure.tight_layout()
     return figure
 
@@ -68,11 +67,10 @@ def draw_textures(offsets: core.Vector, directions: core.Vector) -> plt.Figure:
     along z as colour. It winds once around each valley, in opposite senses."""
     k, s = components(offsets), components(directions)                            # [n, n, 3], [valleys, n, n, 3]
     figure, panels = plt.subplots(1, 2, figsize=(10, 4.8))
-    for ax, spin, name in zip(panels, s, ("valley K", "valley K'")):
+    for ax, spin in zip(panels, s):
         arrows = ax.quiver(k[..., 0], k[..., 1], spin[..., 0], spin[..., 1], spin[..., 2], cmap="coolwarm",
                            clim=(-1, 1), pivot="mid", scale=18)
         ax.set_aspect("equal")
-        ax.set_title(name)
         ax.set_xlabel("momentum from the valley, x (1/a)")
     panels[0].set_ylabel("y (1/a)")
     figure.colorbar(arrows, ax=panels, label="pseudospin along z")
@@ -90,7 +88,6 @@ def draw_berry(radii: np.ndarray, gaps: np.ndarray, rotors: core.Rotor, starts: 
     ax.axhline(0, color="0.85", linewidth=0.6)
     ax.set_xlabel("loop radius (1/a)")
     ax.set_ylabel("Berry phase (π)")
-    ax.set_title("solid: valley K, dashed: valley K'")
     ax.legend()
     figure.tight_layout()
     return figure

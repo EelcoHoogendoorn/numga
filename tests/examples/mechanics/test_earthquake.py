@@ -1,5 +1,5 @@
 """Earthquake beachballs: the fault rotor matches the angles' formulas, the P wave is the moment's form
-along each direction, and the scenes pass their checks and draw."""
+along each direction, and the scenes draw."""
 
 from __future__ import annotations
 
@@ -34,12 +34,9 @@ def test_p_wave_is_twice_the_product_of_components():
     np.testing.assert_allclose((shear | grid).to_array(), 0.0, atol=1e-13)
 
 
-def test_scenes_pass_their_checks_and_draw():
-    figure = render.draw_mechanisms(scenarios.mechanisms(), scenarios.NAMES)
+def test_scenes_draw():
+    _, _, moment = scenarios.faults(np.deg2rad(scenarios.STRIKES), np.deg2rad(scenarios.DIPS), np.deg2rad(scenarios.RAKES))
+    figure = render.draw_mechanisms(scenarios.hemisphere(), *scenarios.beachballs(moment))
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    frames = core.fault_frame(np.deg2rad(30.0), np.deg2rad(50.0), np.deg2rad([45.0]))
-    balls = core.mechanism(frames, 1.0, scenarios.hemisphere())
-    lobes = core.mechanism(frames, 1.0, frames[:, None, None] >> scenarios.sphere())
-    assert len(render.animate_sweep(balls, lobes)) == 1
-    scenarios.sweep()
+    assert len(render.animate_sweep(scenarios.hemisphere(), scenarios.sweep(1))) == 1

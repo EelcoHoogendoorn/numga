@@ -13,17 +13,17 @@ from examples.mechanics.slip_systems import core
 # The normals of the four slip planes, the {111} planes.
 NORMALS = [[1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
 # The samples across the stereographic disk of pull directions.
-GRID = 1000
+N_PIXELS = 1000
 # The axes the pulls start along, spread over the standard triangle between [001], [011] and [111] away from
 # [001], where eight systems nearly tie; the slip of a step on the leading system, and how steeply a system's
-# slip falls off below the leading factor, so steeply that the leading system takes almost all of it and two systems with equal factors
-# share it alike; the steps taken; and the frames drawn, the duration of each.
+# slip falls off below the leading factor, so steeply that the leading system takes almost all of it and two
+# systems with equal factors share it alike; the steps taken; and the frames drawn, the duration of each.
 STARTS = [[0.05, 0.3, 1], [0.15, 0.32, 1], [0.03, 0.5, 1], [0.2, 0.5, 1], [0.05, 0.75, 1],
           [0.3, 0.6, 1], [0.12, 0.62, 1], [0.4, 0.55, 1]]
 AMOUNT = 0.01
 STEEPNESS = 30
-STEPS = 500
-FRAMES = 50
+N_STEPS = 500
+N_FRAMES = 50
 DURATION_MS = 70
 
 
@@ -34,7 +34,7 @@ def chart() -> tuple[core.Vector, core.Scalar, core.Vector, core.Vector]:
     and slip directions."""
     # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
     # reflected in the line along [001] plus the point.
-    across = np.linspace(-1, 1, GRID)
+    across = np.linspace(-1, 1, N_PIXELS)
     points = core.mv.x * across + core.mv.y * across[:, None]                  # [rows, columns] Vector
     directions = (core.mv.z + points).normalized() >> core.mv.z               # [rows, columns] Vector
     normals = core.mv.vector(NORMALS).normalized()                            # [planes] Vector
@@ -45,7 +45,7 @@ def chart() -> tuple[core.Vector, core.Scalar, core.Vector, core.Vector]:
 def rotation(axis: core.Vector, normals: core.Vector, slips: core.Vector) -> Iterator[tuple[core.Vector, core.Scalar]]:
     """Each pull's axis after every slip step, and how much each system slipped in the step: every system
     slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
-    for _ in range(STEPS):
+    for _ in range(N_STEPS):
         amounts = power_law(core.schmid(axis, normals, slips))                 # [starts, planes, directions] Scalar
         axis = core.slipped(axis, normals, slips, amounts)
         yield axis, amounts                                                   # [starts] Vector
@@ -78,7 +78,7 @@ def main() -> None:
     directions, factors, normals, slips = chart()
     axes, amounts = paths()
     save_figure(render.draw_chart(directions, factors, normals, slips, axes, amounts), "slip_systems")
-    save_animation(render.animate_paths(directions, factors, axes, amounts, FRAMES), "slip_systems_paths", DURATION_MS)
+    save_animation(render.animate_paths(directions, factors, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
 
     # checks
     values = render.scalars(factors)                                          # [rows, columns, planes, directions]

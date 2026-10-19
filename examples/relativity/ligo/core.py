@@ -41,27 +41,25 @@ Rotor = ga.gatype.rotor()
 # Fractional stretch per offset.
 Strain = ga.gatype((Vector, Vector))                       # Vector <- Vector
 
-# Fixed to the Earth: to longitude zero on the equator, to ninety degrees east on it, to the north pole.
-x, y, z = mv.x, mv.y, mv.z
-
 
 # --- math -----------------------------------------------------------------------------
 def place(latitudes: np.ndarray, longitudes: np.ndarray) -> Rotor:
     """The frame at each latitude and longitude, in radians: the rotor turning the first axis to that
     point on the unit sphere, the second to east and the third to north there; a turn from the equator
-    towards the pole, then about the pole."""
-    return ((x ^ y) * (-longitudes / 2)).exp() * ((x ^ z) * (-latitudes / 2)).exp()
+    towards the pole, then about the pole. The axes are fixed to the Earth: x through longitude zero on
+    the equator, y through ninety degrees east on it, z through the north pole."""
+    return (mv.xy * (-longitudes / 2)).exp() * (mv.xz * (-latitudes / 2)).exp()
 
 
 def polarized(frames: Rotor, angles: np.ndarray) -> Rotor:
     """The frames turned about their first axis, the wave's direction, by the polarization angles."""
-    return frames * ((y ^ z) * (-angles / 2)).exp()
+    return frames * (mv.yz * (-angles / 2)).exp()
 
 
 def strains(frames: Rotor) -> tuple[Strain, Strain]:
     """The plus and cross strains of waves from the direction each frame's first axis points to, with
     its second and third axes across the wave."""
-    east, north = frames >> y, frames >> z                                   # [...] Vector each
+    east, north = frames >> mv.y, frames >> mv.z                             # [...] Vector each
     plus = east * (east | Vector) - north * (north | Vector)                  # [...] Strain
     cross = east * (north | Vector) + north * (east | Vector)                 # [...] Strain
     return plus, cross
@@ -70,7 +68,7 @@ def strains(frames: Rotor) -> tuple[Strain, Strain]:
 def arms(sites: Rotor, azimuths: np.ndarray) -> Vector:
     """The arms of detectors at their sites `[...]`, from their azimuths `[..., 2]` in radians,
     clockwise from north: north turned towards east in each site's level plane."""
-    east, north = sites[..., None] >> y, sites[..., None] >> z                # [..., 1] Vector each
+    east, north = sites[..., None] >> mv.y, sites[..., None] >> mv.z          # [..., 1] Vector each
     return ((north ^ east) * (-azimuths / 2)).exp() >> north                 # [..., 2] Vector
 
 

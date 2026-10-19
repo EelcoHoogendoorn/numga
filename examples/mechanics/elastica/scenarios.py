@@ -18,7 +18,7 @@ mv = core.mv
 # across, up and along: to turning, bending across and up and twisting, and none to shifting, a rod that only
 # bends and twists.
 LENGTH = 1.0
-PIECES = 200
+N_PIECES = 200
 TURNING = np.array([1.0, 1.0, 1.4])
 SHIFTING = np.zeros(3)
 # The curled strip: its couple in whole turns of its end.
@@ -31,12 +31,12 @@ DURATION_MS = 60
 # Kirchhoff's helices: the tilt of the rod's start from the couple, upward, in degrees, the whole turns the
 # couple coils the rod through, and the width of the ribbon drawn along the rod.
 TILTS = [80.0, 60.0, 40.0, 20.0]
-COILS = 3
+N_TURNS = 3
 RIBBON = 0.015
 # The uncoiling wire: the whole turns its couple coils it through, its tilt from the couple swept from square to
 # along and back over the frames, the width of its ribbon, and the duration of a frame.
 UNCOIL_TURNS = 1.5
-UNCOIL_FRAMES = 90
+N_UNCOIL_FRAMES = 90
 UNCOIL_RIBBON = 0.035
 UNCOIL_MS = 60
 # The telephone cord: its length in metres, its coils, the segments per coil, and the angle of its wire to the
@@ -45,7 +45,7 @@ UNCOIL_MS = 60
 # newtons; its mass per metre in
 # kilograms, the radius its segments' mass is spread over as a share of a segment's length, gravity in metres
 # per second squared, and its damping per second.
-CORD_LENGTH, CORD_COILS, PER_COIL, CORD_PITCH = 1.0, 5, 6, 10.0
+CORD_LENGTH, N_CORD_COILS, N_PER_COIL, CORD_PITCH = 1.0, 5, 6, 10.0
 CORD_TURNING = np.array([1e-3, 1e-3, 7e-4])
 CORD_SHIFTING = np.array([20.0, 20.0, 20.0])
 CORD_MASS, CORD_SPREAD, GRAVITY, CORD_DAMPING = 0.05, 2.0, 9.81, 1.0
@@ -53,8 +53,8 @@ CORD_MASS, CORD_SPREAD, GRAVITY, CORD_DAMPING = 0.05, 2.0, 9.81, 1.0
 # held, and the time it takes back, in seconds and metres; the time step, the steps per frame, the frames, the
 # drawn frames between neighbouring segments, the width of the drawn ribbon, and the duration of a frame.
 HANG, OUT, REACH, HOLD, BACK = 0.3, 0.9, 0.6, 0.3, 0.4
-TIME_STEP, STEPS_PER_FRAME, CORD_FRAMES = 1e-3, 40, 70
-DRAWN_BETWEEN, CORD_RIBBON, CORD_MS = 4, 0.025, 40
+TIME_STEP, N_STEPS_PER_FRAME, N_CORD_FRAMES = 1e-3, 40, 70
+N_DRAWN_BETWEEN, CORD_RIBBON, CORD_MS = 4, 0.025, 40
 
 
 # --- math -----------------------------------------------------------------------------
@@ -66,63 +66,63 @@ def turned(degrees: np.ndarray) -> core.Motor:
 def curling() -> core.Motor:
     """The strip's frames under a couple about the axis across it, by each number of turns of its end
     `[curls, pieces + 1]`: the couple whose rigidity over it is the strip's length over the turns."""
-    couples = (mv.y ^ mv.z).dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Line
-    return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, PIECES)
+    couples = (mv.y ^ mv.z).dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Forque
+    return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, N_PIECES)
 
 
 def euler(degrees: np.ndarray) -> core.Motor:
     """The frames of rods leaving their first pin at each angle to the line of thrust through both pins
     `[angles, pieces + 1]`, under the thrust that brings them back to the line at their full length."""
-    thrust = (core.centre & mv.z.dual()) * thrusts(np.radians(degrees))     # [angles] Line
-    return core.rod(thrust, core.compliance(TURNING, SHIFTING), turned(degrees), LENGTH, PIECES)
+    thrust = (core.centre & mv.z.dual()) * thrusts(np.radians(degrees))     # [angles] Forque
+    return core.rod(thrust, core.compliance(TURNING, SHIFTING), turned(degrees), LENGTH, N_PIECES)
 
 
 def kirchhoff() -> core.Motor:
     """The frames of rods started at each tilt from an upward couple `[tilts, pieces + 1]`, the couple coiling
     them through whole turns."""
-    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * COILS / (TURNING[0] * LENGTH))           # [] Line
-    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, PIECES)
+    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * N_TURNS / (TURNING[0] * LENGTH))           # [] Forque
+    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, N_PIECES)
 
 
 def uncoiling() -> core.Motor:
     """The frames of a wire under a fixed upward couple, its start tilted from the couple by an angle swept
     from square to along it and back `[frames, pieces + 1]`: the couple bending it into a ring, coiling it,
     and twisting it straight."""
-    tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, UNCOIL_FRAMES, endpoint=False)))   # [frames] degrees
-    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Line
-    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, PIECES)
+    tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, N_UNCOIL_FRAMES, endpoint=False)))   # [frames] degrees
+    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Forque
+    return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, N_PIECES)
 
 
-def coil(pieces: int) -> tuple[core.Line, core.Motor]:
+def coil(n_pieces: int) -> tuple[core.Twist, core.Motor]:
     """The cord at rest: its turn per unit length, a shift along it with a bend and a twist that coil it, and
     the rest frames of its segments with one held frame beyond each end `[pieces + 2]`."""
-    turning = 2 * np.pi * CORD_COILS / CORD_LENGTH
+    turning = 2 * np.pi * N_CORD_COILS / CORD_LENGTH
     pitch = np.radians(CORD_PITCH)
-    rest = core.shift_along_rod + mv.yz * (turning * np.cos(pitch)) + mv.xy * (turning * np.sin(pitch))   # [] Line
-    step = CORD_LENGTH / pieces
-    return rest, (rest * (np.arange(-1, pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor
+    rest = core.shift_along_rod + mv.yz * (turning * np.cos(pitch)) + mv.xy * (turning * np.sin(pitch))   # [] Twist
+    step = CORD_LENGTH / n_pieces
+    return rest, (rest * (np.arange(-1, n_pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor
 
 
 def pulled() -> Iterator[core.Motor]:
     """The cord's frames at every frame of the scene: hanging from its base under its weight, its handset
     pulled out along the coil's axis, held, and let back, the cord following by its dynamics."""
-    pieces = CORD_COILS * PER_COIL
-    step = CORD_LENGTH / pieces
-    rest, frames = coil(pieces)
+    n_pieces = N_CORD_COILS * N_PER_COIL
+    step = CORD_LENGTH / n_pieces
+    rest, frames = coil(n_pieces)
     stiff = core.stiffness(CORD_TURNING, CORD_SHIFTING)
     mass = CORD_MASS * step
-    inertia = core.segment_inertia(mass, step, CORD_SPREAD * step)            # [] Line <- Line
-    inverse = inertia.inverse()                                              # [] Line <- Line
+    inertia = core.segment_inertia(mass, step, CORD_SPREAD * step)            # [] Forque <- Twist
+    inverse = inertia.inverse()                                              # [] Twist <- Forque
     weight = mv.y.dual() * (-GRAVITY * mass)                                 # [] Point
     # The coil's axis is the direction of its turn; the handset moves along it, keeping its turn.
     axis = mv.x * np.cos(np.radians(CORD_PITCH)) + mv.z * np.sin(np.radians(CORD_PITCH))   # [] Vector
     handset = frames[-1]
-    rates = mv.bivector(np.zeros((pieces, 6)))
+    rates = mv.bivector(np.zeros((n_pieces, 6)))
     joint = (rest * (step / 2)).exp()                                        # [] Motor
-    for index in range(CORD_FRAMES):
+    for index in range(N_CORD_FRAMES):
         yield frames
-        for tick in range(STEPS_PER_FRAME):
-            out = (((axis ^ mv.w) * (reach((index * STEPS_PER_FRAME + tick) * TIME_STEP) / 2)).exp() * handset)
+        for tick in range(N_STEPS_PER_FRAME):
+            out = (((axis ^ mv.w) * (reach((index * N_STEPS_PER_FRAME + tick) * TIME_STEP) / 2)).exp() * handset)
             frames = concatenate([frames[:-1], out[None]])
             frames, rates = core.moving(frames, rates, joint, stiff, step, inertia, inverse, weight, CORD_DAMPING,
                                         TIME_STEP)
@@ -180,7 +180,7 @@ def main() -> None:
     save_animation(render.animate_uncoiling(uncoiled >> core.centre, ribbon(uncoiled, UNCOIL_RIBBON)),
                    "elastica_uncoiling", UNCOIL_MS)
     moved = stack(list(pulled()))                                            # [frames, pieces + 2] Motor
-    cord = core.between(moved, DRAWN_BETWEEN)                                # [frames, drawn] Motor
+    cord = core.between(moved, N_DRAWN_BETWEEN)                                # [frames, drawn] Motor
     save_animation(render.animate_cord(cord >> core.centre, ribbon(cord, CORD_RIBBON)), "elastica_cord", CORD_MS)
 
     # checks
@@ -198,10 +198,10 @@ def main() -> None:
     assert np.abs(tips - LENGTH * np.cos(np.radians(TILTS))[:, None] * [0, 0, 1]).max() < 3e-3
     # The telephone cord bends and twists but hardly stretches or shears: its joints' shifts stay within a few
     # hundredths of their rest, the most where the handset springs back.
-    rest, _ = coil(CORD_COILS * PER_COIL)
-    joint = (rest * (CORD_LENGTH / (CORD_COILS * PER_COIL) / 2)).exp()
-    deviations = (joint.reverse() * moved[:, :-1].reverse() * moved[:, 1:]).log() * 2   # [frames, joints] Line
-    shifts = deviations.cast(core.ga.subspace("wx wy wz")).kernel / (CORD_LENGTH / (CORD_COILS * PER_COIL))
+    rest, _ = coil(N_CORD_COILS * N_PER_COIL)
+    joint = (rest * (CORD_LENGTH / (N_CORD_COILS * N_PER_COIL) / 2)).exp()
+    deviations = (joint.reverse() * moved[:, :-1].reverse() * moved[:, 1:]).log() * 2   # [frames, joints] Twist
+    shifts = deviations.cast(core.ga.subspace("wx wy wz")).kernel / (CORD_LENGTH / (N_CORD_COILS * N_PER_COIL))
     assert np.abs(shifts).max() < 0.1
 
 

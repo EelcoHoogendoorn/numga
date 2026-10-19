@@ -40,21 +40,11 @@ def draw_surface(ax, mesh: core.Mesh, vertices: core.Vector) -> None:
     ax.set_axis_off()
 
 
-def draw_before_after(flowed: list[tuple[core.Mesh, list[tuple[core.Vector, core.Scalar]]]]) -> plt.Figure:
-    """Each shape before its flow and after it, side by side."""
-    figure = plt.figure(figsize=(3.4 * 2 * len(flowed), 3.4), dpi=220)
-    for case, (mesh, states) in enumerate(flowed):
-        for column, (vertices, _) in enumerate((states[0], states[-1])):
-            draw_surface(figure.add_subplot(1, 2 * len(flowed), 2 * case + column + 1, projection="3d"), mesh, vertices)
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
-    return figure
-
-
 def animate_flow(mesh: core.Mesh, states: list[tuple[core.Vector, core.Scalar]]) -> list[np.ndarray]:
     """Frames of a surface flowing towards developable patches."""
     images = []
     for vertices, _ in states:
-        figure = plt.figure(figsize=(4.0, 4.0), dpi=90)
+        figure = plt.figure(figsize=(4.0, 4.0), dpi=120)
         draw_surface(figure.add_axes((0, 0, 1, 1), projection="3d"), mesh, vertices)
         images.append(capture(figure))
         plt.close(figure)

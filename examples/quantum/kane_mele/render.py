@@ -39,24 +39,22 @@ def draw_levels(masses: np.ndarray, energies: core.Scalar, shares: core.Scalar, 
     ax.axvline(transition, color="0.4", linestyle="--", linewidth=1)
     ax.set_xlabel("mass / hop")
     ax.set_ylabel("energy / hop")
-    ax.set_title("levels nearest zero, spin up")
     figure.colorbar(dots, ax=ax, label="share on the rim")
     return figure
 
 
-def draw_states(flake: core.Flake, densities: core.Scalar, titles: list[str]) -> plt.Figure:
+def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
     """Each density on the flake, as dots sized and shaded by it."""
     positions, values = coordinates(flake.positions), densities.to_array()   # [atoms, 2], [cases, atoms]
     figure, axes = plt.subplots(1, len(values), figsize=(5 * len(values), 5))
-    for ax, value, title in zip(np.atleast_1d(axes), values, titles):
+    for ax, value in zip(np.atleast_1d(axes), values):
         draw_bonds(ax, flake)
         scaled = value / value.max()
         ax.scatter(*positions.T, s=DOT * scaled, c=scaled, cmap="magma_r", vmin=0, vmax=1)
-        ax.set_title(title)
     return figure
 
 
-def draw_spin(flake: core.Flake, spin: core.Vector, title: str) -> plt.Figure:
+def draw_spin(flake: core.Flake, spin: core.Vector) -> plt.Figure:
     """A spin density on the flake: dots sized by the density, red where the spin is up and blue
     where it is down."""
     positions, vectors = coordinates(flake.positions), spin.cast(core.ga.subspace("x y z")).kernel
@@ -65,7 +63,6 @@ def draw_spin(flake: core.Flake, spin: core.Vector, title: str) -> plt.Figure:
     draw_bonds(ax, flake)
     ax.scatter(*positions.T, s=DOT * density / density.max(), c=vectors[:, 2] / density.max(), cmap="RdBu_r",
                vmin=-1, vmax=1)
-    ax.set_title(title)
     return figure
 
 
@@ -73,7 +70,7 @@ def animate_spin(flake: core.Flake, spins: core.Vector) -> list[np.ndarray]:
     """Each frame of the spin density."""
     images = []
     for spin in spins:
-        figure = draw_spin(flake, spin, "spin up red, spin down blue")
+        figure = draw_spin(flake, spin)
         images.append(capture(figure))
         plt.close(figure)
     return images

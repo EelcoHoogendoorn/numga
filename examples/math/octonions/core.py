@@ -1,10 +1,20 @@
-"""Octonion multiplication and the rotations that preserve it.
+"""Octonions: the eight-component numbers whose product keeps lengths but not brackets, and the rotations
+that preserve it.
 
-The scalar and seven vectors of Cl(0, 7) carry the eight octonion components.
-A fixed trivector supplies their multiplication; the bivectors that commute with
-that trivector generate its automorphisms, the exceptional group G₂. The same octonions are every multivector
-of space, Cl(3, 0): the even part a quaternion and the odd part the pseudoscalar times a second, multiplied by
-doubling the quaternions; with one direction squaring to minus one they are the split octonions.
+The real numbers, the complex numbers, the quaternions and the octonions are the only number systems in which
+the length of a product is the product of the lengths. The octonions pay for their eight components with
+associativity: in a product of three, the brackets matter. The rotations of their seven imaginary directions
+that keep the product intact form the exceptional group G2.
+
+An octonion is modelled as the scalar plus a vector of Cl(0, 7), and the seven multiplication triples as one
+trivector, `orientation`; the product is a single map from pairs of octonions to octonions, the geometric
+product times `1 - orientation`, keeping the scalar and vector parts. The symmetries are the bivectors whose
+commutator with that trivector vanishes. The same octonions are every multivector of space, Cl(3, 0): the even
+part a quaternion and the odd part the pseudoscalar times a second, multiplied by doubling the quaternions;
+with one direction squaring to minus one they are the split octonions.
+
+In index notation the imaginary units multiply as e_i e_j = -delta_ij + epsilon_ijk e_k, with epsilon totally
+antisymmetric and one on each of the seven triples, and G2 is the group of rotations that keep epsilon.
 """
 
 from numga import Algebra, NumpyContext, stack
@@ -54,13 +64,14 @@ def derivation_defect(generator: Bivector, first: Octonion, second: Octonion) ->
             - multiply(first, generator.commutator(second)))
 
 
-def doubled(first: SpaceOctonion, second: SpaceOctonion) -> SpaceOctonion:
+def space_multiply(first: SpaceOctonion, second: SpaceOctonion) -> SpaceOctonion:
     """The octonion product of two multivectors of space, by doubling the quaternions: the even parts multiply
     as quaternions, and the odd parts, a second quaternion apiece, enter reversed and in swapped order."""
     # The even parts are quaternions; the odd parts, the pseudoscalar times a second quaternion apiece.
-    a, b = first.restrict.even(), first.restrict.odd()
-    c, d = second.restrict.even(), second.restrict.odd()
-    return a * c - d.reverse() * b + d * a + b * c.reverse()
+    first_even, first_odd = first.restrict.even(), first.restrict.odd()
+    second_even, second_odd = second.restrict.even(), second.restrict.odd()
+    return (first_even * second_even - second_odd.reverse() * first_odd
+            + second_odd * first_even + first_odd * second_even.reverse())
 
 
 def multiplication_defect(rotor: Rotor, first: Octonion, second: Octonion) -> Octonion:

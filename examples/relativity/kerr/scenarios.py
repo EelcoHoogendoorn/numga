@@ -8,17 +8,17 @@ from numga import stack
 from examples.relativity.kerr import core
 
 MASS = 1.0
-FRAMES = 80
+N_FRAMES = 80
 MAX_SPIN = 0.8 * MASS
-SPINS = -MAX_SPIN * np.cos(np.linspace(0, 2 * np.pi, FRAMES, endpoint=False))
+SPINS = -MAX_SPIN * np.cos(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))
 DURATION_MS = 80
 EXTENT = 12.0 * MASS
-RAYS = 31
-OFFSETS = np.linspace(-8, 8, RAYS) * MASS
+N_RAYS = 31
+OFFSETS = np.linspace(-8, 8, N_RAYS) * MASS
 STEP_SIZE = 0.1 * MASS
-STEPS = 400
+N_STEPS = 400
 STOP_FRACTION = 0.8
-RING_SAMPLES = 128
+N_RING_SAMPLES = 128
 CAMERA_SPIN = 0.8 * MASS
 CAMERA_DISTANCE = 28.0 * MASS
 CAMERA_INCLINATION = np.deg2rad(75.0)
@@ -26,7 +26,7 @@ HALF_VIEW = np.tan(np.deg2rad(19.0))
 IMAGE_WIDTH = 480
 IMAGE_HEIGHT = IMAGE_WIDTH * 2 // 3
 CAMERA_STEP_FRACTION = 0.2
-CAMERA_STEPS = 720
+N_CAMERA_STEPS = 720
 DISK_OUTER_RADIUS = 12.0 * MASS
 # The disk's optical depth straight through its thickness, at its inner edge.
 DISK_DEPTH = 4.0
@@ -38,10 +38,10 @@ CAPTURE_RADIUS = 1.05 * (MASS + np.sqrt(MASS**2 - CAMERA_SPIN**2))
 SKY_WIDTH = 2048
 SKY_HEIGHT = SKY_WIDTH // 2
 SKY_SEED = 8
-POLARIZER_FRAMES = 80
-POLARIZER_ANGLES = np.linspace(0, np.pi, POLARIZER_FRAMES, endpoint=False)
+N_POLARIZER_FRAMES = 80
+POLARIZER_ANGLES = np.linspace(0, np.pi, N_POLARIZER_FRAMES, endpoint=False)
 POLARIZATION_DEGREE = 0.8
-FLOW_FRAMES = 80
+N_FLOW_FRAMES = 80
 WEB_SCALE = 2 / 3                                               # the camera's animations, box-filtered to this share of its size
 FLOW_TIME = 50.0 * MASS                                         # coordinate time the disk turns through in one loop
 
@@ -53,12 +53,12 @@ def scene() -> tuple[core.Vector, core.Vector]:
     momentum = core.initial_momentum(position, core.mv.x, spin, MASS)
     position = position.broadcast_to(momentum.shape)
     paths = stack(tuple(position for position, _ in core.trace(
-        position, momentum, spin, MASS, STEP_SIZE, STEPS, STOP_FRACTION, core.rates)))
+        position, momentum, spin, MASS, STEP_SIZE, N_STEPS, STOP_FRACTION, core.rates)))
 
     # A constant oblate radius cuts the equatorial plane in this circle.
     horizon = MASS + np.sqrt(MASS**2 - SPINS**2)
     radius = np.sqrt(horizon**2 + SPINS**2)
-    angles = np.linspace(0, 2 * np.pi, RING_SAMPLES + 1)
+    angles = np.linspace(0, 2 * np.pi, N_RING_SAMPLES + 1)
     turns = (core.mv.xy * (angles / 2)).exp()
     horizons = (turns >> core.mv.x) * radius[:, None]
     return paths, horizons
@@ -77,7 +77,7 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
                                          HALF_VIEW, spin, MASS)
     screen = core.camera_screen(position, momentum, orientation, spin, MASS)
     steps = core.camera_trace((position, momentum, screen), spin, MASS,
-                              CAMERA_STEP_FRACTION, CAMERA_STEPS, core.polarized_rates)
+                              CAMERA_STEP_FRACTION, N_CAMERA_STEPS, core.polarized_rates)
     def opacity(event: core.Vector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         depth = core.disk_depth(radius, inner_radius, DISK_OUTER_RADIUS, DISK_DEPTH)
         return core.disk_opacity(event, momentum, depth, core.mv.z, core.mv.xy, spin, MASS)
@@ -99,7 +99,7 @@ def disk_flow(image: core.Image) -> Iterator[core.Vector]:
     stays steady."""
     points, _, _ = image.disk
     spin = core.mv.xy * CAMERA_SPIN
-    for elapsed in np.linspace(0, FLOW_TIME, FLOW_FRAMES, endpoint=False):
+    for elapsed in np.linspace(0, FLOW_TIME, N_FLOW_FRAMES, endpoint=False):
         yield core.carried(points, image.disk_radii, core.mv.xy, spin, MASS, np.array([elapsed, elapsed - FLOW_TIME]))
 
 
@@ -116,7 +116,7 @@ def main() -> None:
     save_figure(render.draw_camera(image, temperature, EXPOSURE_TEMPERATURE, shape, sky), "kerr_camera")
     save_animation(render.animate_polarizer(image, temperature, EXPOSURE_TEMPERATURE, transmission, shape, sky),
                    "kerr_polarizer", DURATION_MS, scale=WEB_SCALE)
-    save_animation(render.animate_disk(image, temperature, EXPOSURE_TEMPERATURE, disk_flow(image), FLOW_FRAMES, shape, sky),
+    save_animation(render.animate_disk(image, temperature, EXPOSURE_TEMPERATURE, disk_flow(image), N_FLOW_FRAMES, shape, sky),
                    "kerr_disk", DURATION_MS, scale=WEB_SCALE)
 
     # --- checks

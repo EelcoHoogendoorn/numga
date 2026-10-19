@@ -24,8 +24,6 @@ the P wave's amplitude along the unit direction $\\gamma$ as $\\gamma_i M_{ij}\\
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from numga import NumpyContext, stack
@@ -81,34 +79,7 @@ def fault_planes(moment: Moment) -> tuple[Vector, Vector]:
     return stack([first, second], axis=-1), stack([second, first], axis=-1)   # [..., 2] Vector each
 
 
-def mechanism(frames: Rotor, moments: np.ndarray, directions: Vector) -> Mechanism:
-    """Each fault of the given orientation and moment: its moment and principal axes, and the P
-    and S first motions along each of the directions `[rings, spokes]`."""
-    normals, slips = frames >> -down, frames >> north                         # [faults] Vector each
-    moment = double_couple(normals, slips, moments)                           # [faults] Moment
-    values, axes = moment.eigh()                                              # [faults, 3] Scalar, Vector
-    push, shear = radiation(moment[:, None, None], directions)               # [faults, rings, spokes]
-    return Mechanism(frames, normals, slips, moment, values, axes, directions, push, shear)
-
-
 # --- plumbing -------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Mechanism:
-    """A batch of faults `[faults]`: their orientations, normals and slips, their moments with their
-    principal values and axes `[faults, 3]`, from pressure to tension, and the P and S first motions
-    `[faults, rings, spokes]` along a grid of directions `[rings, spokes]`."""
-
-    frames: Rotor
-    normals: Vector
-    slips: Vector
-    moment: Moment
-    values: Scalar
-    axes: Vector
-    directions: Vector
-    push: Scalar
-    shear: Vector
-
-
 def directions(polar: np.ndarray, azimuths: np.ndarray) -> Vector:
     """Directions on the sphere `[rings, spokes]`, by two turns: away from straight down towards
     north by each polar angle, then about the vertical from north towards east by each azimuth."""

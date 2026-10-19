@@ -42,6 +42,16 @@ def paint(coverage: np.ndarray, colors: np.ndarray, inside: np.ndarray, rim: np.
     return (image * 255.0).round().astype(np.uint8)
 
 
+def picture(image: np.ndarray) -> plt.Figure:
+    """A painted image of the hemisphere as a figure, at its own size."""
+    height, width = image.shape[:2]
+    figure = plt.figure(figsize=(width / 100, height / 100), dpi=100)
+    ax = figure.add_axes((0, 0, 1, 1))
+    ax.imshow(image)
+    ax.set_axis_off()
+    return figure
+
+
 def rgb(colors: list[str]) -> np.ndarray:
     """RGB rows (bodies, 3) of matplotlib colour names."""
     return np.array([to_rgb(color) for color in colors])

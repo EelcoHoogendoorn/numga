@@ -1,9 +1,8 @@
-"""Recover a camera pose by gradient descent through the extensor pytree, in PGA3D with JAX.
+"""Camera pose recovery by gradient descent differentiates the reprojection misfit directly through the motor exponential and projective camera map.
 
-The camera is the join-then-meet expression from the projection example with the point left
-open; the moved camera is that map conjugated by the rig motor. The motor is the exponential
-of a bivector, and jax.grad differentiates the image misfit with respect to it through exp,
-the sandwich, the bind and the normalization. Nothing is linearised by hand.
+A pinhole camera joins each world point with the optical centre into a ray and meets that ray with the image plane, and a posed camera conjugates that map by the rig motor. Because the motor is the exponential of a bivector generator and every Extensor is a JAX pytree, `jax.grad` differentiates the mean squared image displacement directly with respect to the generator.
+
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, lines are bivectors, points are antivectors (trivectors), and rigid motions are even-grade motors.
 """
 
 from __future__ import annotations

@@ -1,22 +1,10 @@
-"""Two-view epipolar geometry, relative pose, and 3D reconstruction in PGA3D.
+"""Two-view epipolar geometry recovers the relative pose of two cameras and the 3D positions of observed points from corresponding sight rays.
 
-In projective geometric algebra (PGA3D), camera sight rays are lines (bivectors).
-Two sight rays intersect in 3D if and only if their regressive product, a number, vanishes:
-    rays_1 & rays_2 == 0
+Two camera sight rays intersect in space when they are coplanar, which holds when their regressive product `rays_1 & (motor >> rays_2)` vanishes. Perturbing the relative camera motor by a body-frame twist varies the rotated rays by their commutator with the twist, yielding Gauss-Newton normal equations on the six-dimensional twist space. Once the relative pose is known, each sight ray defines a squared point-to-line distance quadric `(ray & Point)`, and summing those quadrics across the two views yields a quadratic form on points whose smallest eigenvector is the triangulated 3D landmark.
 
-For a candidate relative camera motor, both cameras shoot sight rays into the world.
-Infinitesimal motor updates follow the commutator extensor, minimizing
-the mutual line intersection error across corresponding screen points without any
-separation of rotation and translation.
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, lines and twists are bivectors, points are antivectors (trivectors), and rigid motions are even-grade motors.
 
-With the relative pose solved, the 3D world coordinates are implied: each sight ray
-measures distance to an unknown point via the join `ray & Point`, a plane whose
-squared norm is a rank-2 distance quadric; summing these quadrics across cameras
-produces a form whose vertex is the reconstructed 3D world point.
-
-In the matrix notation of projective vision the same reconstruction reads as the 8-point
-essential matrix, its SVD decomposition into four candidate poses, and triangulation by
-normal equations; `textbook.py` implements it.
+In the matrix notation of projective vision this reconstruction reads as the eight-point essential matrix constraint, its singular-value decomposition into candidate rotation-translation pairs, and linear triangulation.
 """
 
 from __future__ import annotations

@@ -1,9 +1,10 @@
-"""Developability: a cylinder has no energy, the gradient is the energy's derivative, and the bunny passes
-its checks and draws."""
+"""Developability: a cylinder has no energy, the gradient is the energy's derivative, and the bunny's flow takes
+away nearly all its energy."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from itertools import islice
+
 import numpy as np
 
 from examples.surfaces.developability import core, render, scenarios
@@ -52,7 +53,10 @@ def test_the_gradient_is_the_energys_derivative():
         np.testing.assert_allclose((ahead - behind) / (2 * epsilon), gradient[vertex, axis], rtol=1e-6, atol=1e-8)
 
 
-def test_the_bunny_passes_its_checks_and_draws():
-    mesh, states = scenarios.flowed()
-    plt.close(render.draw_before_after([(mesh, states)]))
+def test_the_bunny_flow_takes_away_nearly_all_its_energy():
+    mesh = scenarios.bunny()
+    states = list(islice(core.flow(mesh, scenarios.STEP), 0, 101, 25))
+    energies = np.array([values.sum(axis=0).to_array() for _, values in states])
+    assert np.all(np.diff(energies) < 0)
+    assert energies[-1] < 0.2 * energies[0]
     assert len(render.animate_flow(mesh, states[:1])) == 1

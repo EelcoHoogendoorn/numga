@@ -1,8 +1,4 @@
-"""Scenes for the projective camera example.
-
-One function per figure. Each builds the concrete scene, hands it to the mathematics
-in `core`, and returns the resulting geometry for `render`.
-"""
+"""Scenes for projective cameras cast shadows from a point light and a directional sun and image a subject from a stereo camera pair."""
 
 from __future__ import annotations
 

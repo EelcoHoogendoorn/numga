@@ -4,12 +4,12 @@ import numpy as np
 
 from examples.relativity.spinors import core
 
-ROTATION_FRAMES = 96
-ROTATION_ANGLES = np.linspace(0, 4 * np.pi, ROTATION_FRAMES, endpoint=False)
+N_ROTATION_FRAMES = 96
+ROTATION_ANGLES = np.linspace(0, 4 * np.pi, N_ROTATION_FRAMES, endpoint=False)
 DURATION_MS = 80
 RAPIDITY = 0.7
-PHASE_SAMPLES = 129
-PHASE_ANGLES = np.linspace(0, 2 * np.pi, PHASE_SAMPLES)
+N_PHASE_SAMPLES = 129
+PHASE_ANGLES = np.linspace(0, 2 * np.pi, N_PHASE_SAMPLES)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -39,9 +39,24 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.relativity.spinors import render
 
-    save_animation(render.animate_rotation(*rotation()), "spinor_rotation", DURATION_MS)
-    save_figure(render.draw_chirality(*chirality()), "spinor_chirality")
-    save_figure(render.draw_majorana(PHASE_ANGLES, *majorana()), "spinor_majorana")
+    spin, bright, dark = rotation()
+    left_current, right_current, current = chirality()
+    fixed_density, negated_density = majorana()
+    save_animation(render.animate_rotation(spin, bright, dark), "spinor_rotation", DURATION_MS)
+    save_figure(render.draw_chirality(left_current, right_current, current), "spinor_chirality")
+    save_figure(render.draw_majorana(PHASE_ANGLES, fixed_density, negated_density), "spinor_majorana")
+
+    # checks
+    # One full turn restores the spin but darkens the sum port: the spinor has changed sign.
+    half = N_ROTATION_FRAMES // 2
+    np.testing.assert_allclose((spin[half] - spin[0]).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(bright[half].to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose(dark[half].to_array(), 1.0, atol=1e-12)
+    # Each Weyl current is null, and the two add to the Dirac current.
+    np.testing.assert_allclose([left_current.squared().to_array(), right_current.squared().to_array()], 0.0, atol=1e-12)
+    np.testing.assert_allclose((left_current + right_current - current).kernel, 0.0, atol=1e-12)
+    # The phase moves the density between the conjugation eigenspaces, never losing any.
+    np.testing.assert_allclose((fixed_density + negated_density).to_array(), 1.0, atol=1e-12)
 
 
 if __name__ == "__main__":

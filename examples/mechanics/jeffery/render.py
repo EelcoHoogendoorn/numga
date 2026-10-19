@@ -10,11 +10,14 @@ direction there: its octant paints the body, so the pattern is carried by the bo
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import cm
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.animation import capture
 from examples.mechanics.jeffery import core
 
@@ -46,12 +49,10 @@ def draw_sphere(ax) -> None:
     ax.plot_wireframe(np.sin(polar) * np.cos(azimuth), np.sin(polar) * np.sin(azimuth), np.cos(polar),
                       color="#cbd5e1", linewidth=0.4, alpha=0.6)
     ax.quiver(0, 0, 0, 0, 1.35, 0, color=FLOW, linewidth=1.4, arrow_length_ratio=0.12)
-    ax.text(0, 1.35, 0.12, "flow", fontsize=8, color="#64748b", ha="right")
     ax.quiver(0, 0, 0, 1.35, 0, 0, color=FLOW, linewidth=1.4, arrow_length_ratio=0.12)
-    ax.text(1.45, 0, 0, "vorticity", fontsize=8, color="#64748b")
 
 
-def frame_axes(ax, limit: float, title: str) -> None:
+def frame_axes(ax, limit: float) -> None:
     ax.set_xlim(-limit, limit)
     ax.set_ylim(-limit, limit)
     ax.set_zlim(-limit, limit)
@@ -59,21 +60,21 @@ def frame_axes(ax, limit: float, title: str) -> None:
     ax.set_proj_type("ortho")
     ax.view_init(*VIEW)
     ax.set_axis_off()
-    ax.set_title(title, fontsize=11, pad=0)
 
 
-def draw_orbits(tumbling: core.Tumbling, names: list[str]) -> plt.Figure:
-    """The path of each body's long axis from each start, on the sphere of directions, both ends of
-    the axis drawn."""
-    trails = coordinates(tumbling.trails)                                    # [steps + 1, bodies, starts, 3]
-    figure = plt.figure(figsize=(4.4 * len(names), 4.6), dpi=120)
-    for body, name in enumerate(names):
-        ax = figure.add_subplot(1, len(names), body + 1, projection="3d")
+def draw_orbits(trails: core.Vector) -> plt.Figure:
+    """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
+    directions, both ends of the axis drawn."""
+    paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
+    count = paths.shape[1]
+    figure = plt.figure(figsize=(4.4 * count, 4.6), dpi=120)
+    for body in range(count):
+        ax = figure.add_subplot(1, count, body + 1, projection="3d")
         draw_sphere(ax)
         for start, colour in enumerate(STARTS):
             for end in (1, -1):
-                ax.plot(*(end * trails[:, body, start]).T, color=colour, linewidth=1.3)
-        frame_axes(ax, 1.05, name)
+                ax.plot(*(end * paths[:, body, start]).T, color=colour, linewidth=1.3)
+        frame_axes(ax, 1.05)
     figure.tight_layout()
     return figure
 
@@ -136,37 +137,40 @@ def draw_split(ax, vectors: core.Vector, view: tuple, **style) -> None:
         ax.plot(*np.where(side[:, None], positions, np.nan).T, zorder=zorder, **style)
 
 
-def draw_body(ax, tumbling: core.Tumbling, picture: np.ndarray, frame: int, body: int, title: str,
-              view: tuple) -> None:
+def draw_body(ax, picture: np.ndarray, tip: core.Vector, tips: core.Vector, heights: core.Vector,
+              velocities: core.Vector, view: tuple) -> None:
     """One body at one frame, its picture, the ends of its long axis, the paths of the axis's tips
-    from the start, and the shear flow's velocity behind it."""
+    `[frames so far]` from the start, and the shear flow's velocity behind it."""
     right, up, back = view
-    tip = tumbling.tips[frame, body]                                         # [] Vector
-    tips = tumbling.tips[:frame + 1, body]                                   # [frame + 1] Vector
     for end in (1, -1):
         draw_split(ax, tip * (end * np.array([1.0, 1.15])), view, color=TIP, linewidth=1.4)
         draw_split(ax, tips * end, view, color=TIP, linewidth=1.0, alpha=0.9)
-    bases = screen(tumbling.heights - tumbling.velocities / 2, right, up)    # [heights, 2]
-    arrows = screen(tumbling.velocities, right, up)                          # [heights, 2]
+    bases = screen(heights - velocities / 2, right, up)                       # [heights, 2]
+    arrows = screen(velocities, right, up)                                    # [heights, 2]
     ax.quiver(*bases.T, *arrows.T, angles="xy", scale_units="xy", scale=1, color=FLOW, width=0.005, zorder=0)
     ax.imshow(picture, extent=(-LIMIT, LIMIT, -LIMIT, LIMIT), interpolation="bilinear", zorder=2)
     ax.set_xlim(-LIMIT, LIMIT)
     ax.set_ylim(-LIMIT, LIMIT)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    ax.set_title(title, fontsize=11, pad=0)
 
 
-def animate_tumbling(tumbling: core.Tumbling, names: list[str]) -> list[np.ndarray]:
-    """Each frame: every body tumbling in the flow, side by side."""
+def animate_tumbling(stretches: core.Stretch, heights: core.Vector, velocities: core.Vector,
+                     frames: Iterable[tuple[core.Rotor, core.Vector]]) -> list[np.ndarray]:
+    """Each frame of the bodies' orientations `[bodies]` and the tips of their long axes `[bodies]`: every
+    body tumbling in the flow, side by side, with the paths of its tips so far."""
     view = camera()
-    images = []
-    for frame in range(tumbling.rotors.shape[0]):
-        shown = pictures(tumbling.stretches, tumbling.rotors[frame], *view)  # [bodies, pixels, pixels, 4]
-        figure = plt.figure(figsize=(3.6 * len(names), 3.8), dpi=100)
-        for body, name in enumerate(names):
-            draw_body(figure.add_subplot(1, len(names), body + 1), tumbling, shown[body], frame, body, name, view)
-        figure.subplots_adjust(left=0, right=1, bottom=0, top=0.92, wspace=0)
+    count = stretches.shape[0]
+    images, tips = [], []
+    for rotors, tip in frames:
+        tips.append(tip)
+        path = stack(tips)                                                    # [frames so far, bodies] Vector
+        shown = pictures(stretches, rotors, *view)                            # [bodies, pixels, pixels, 4]
+        figure = plt.figure(figsize=(3.6 * count, 3.6), dpi=100)
+        for body in range(count):
+            draw_body(figure.add_subplot(1, count, body + 1), shown[body], tip[body], path[:, body], heights,
+                      velocities, view)
+        figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
         images.append(capture(figure))
         plt.close(figure)
     return images

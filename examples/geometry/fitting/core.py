@@ -1,10 +1,8 @@
-"""Least-squares fitting of PGA3D primitives to points, in one pattern.
+"""Least-squares fitting of projective primitives to noisy samples minimizes the squared join residual in a single eigenproblem.
 
-A point, a line and a plane are fitted to noisy samples with the same three lines: the
-join of the samples with the unknown left open, that residual squared and summed into a
-quadratic form, and its smallest unit eigenvector. Unit is the scalar part of the unknown's
-own reverse product, which is degenerate exactly on the coefficients least squares leaves free. The
-roles swap freely: a point fitted to a bundle of lines is their point of closest approach.
+A point, a line, and a plane are fitted to noisy samples with the same three steps: joining the samples with the open unknown slot, squaring and summing that residual into a quadratic form, and selecting its smallest unit eigenvector. The unit constraint uses the scalar part of the unknown's reverse product, which is degenerate on the position components that least squares leaves free. Because the join is symmetric in its slots, fitting a point to a bundle of lines triangulates their point of closest approach with the same function.
+
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, lines are bivectors, and points are antivectors (trivectors).
 """
 
 from __future__ import annotations

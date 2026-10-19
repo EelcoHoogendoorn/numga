@@ -1,137 +1,126 @@
-"""Neutrino flavor isospin and open quantum systems in 3D Euclidean Geometric Algebra (VGA3D).
+"""Neutrino flavor oscillations, coherent and decohering, in the geometric algebra of three-dimensional space.
 
-Neutrinos are produced and detected as flavor eigenstates, but propagate as mass eigenstates
-with distinct dispersion relations. Under plane-wave propagation, the density operator is an element
-of the self-reverse subspace `State: 1 x y z`, with isospin vector `P = 2 * rho.select[1]`.
+Neutrinos are produced and detected in flavors but travel as mass states, which run at slightly different
+rates, so a neutrino born an electron neutrino turns into a muon neutrino and back as it travels. Over
+astrophysical distances the mass states' wavepackets drift apart and the oscillation fades into a fixed
+mixture; inside the Sun, the electrons' density tilts the turning slowly enough that a neutrino follows it and
+leaves as a muon neutrino.
 
-1. State and Superoperators:
-   - `State = ga.gatype.self_reverse()` (density operator rho = 0.5 * (1 + P)).
-   - `Rates = ga.gatype((State, State))` (Liouvillian superoperator: State <- State).
-   - `Evolution = ga.gatype((State, State))` (quantum transfer map: State <- State).
+A two-flavor state is modelled as half of one plus its isospin vector, `0.5 * (one + isospin)`, a point of the
+flavor sphere with the electron flavor at z. The Hamiltonian is a bivector, the plane the state turns in, and
+the change of a state under it is the map `-plane.commutator(State)`; matter shifts that plane, and the drift
+of the wavepackets apart dephases the state by the half turn in the mass states' plane. The evolution over a
+step is the exponential of the rates, one map from states to states.
 
-2. Coherent and Dissipative Generators:
-   - Coherent rotation in Hamiltonian bivector plane b:
-     `turning = - b.commutator(State).cast(Rates)`.
-   - Dissipative wavepacket separation / dephasing by the half turn l in the mass basis's phase plane:
-     `dephasing = gamma * ((l >> State) - (l * l).anticommutator(State))`.
-
-3. Finite Transfer Maps:
-   - Propagation over distance dx is an extensor exponential:
-     `transfer = exp(rates * dx)`.
-   - Composing transfers across inhomogeneous matter layers is extensor map composition.
+In the notation of neutrino physics the two-flavor survival probability in vacuum reads as
+$P_{ee} = 1 - \\sin^2 2\\theta \\, \\sin^2(\\Delta m^2 L / 4E)$, and the matter potential as $V = \\sqrt2 \\, G_F N_e$.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
+
 import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
-ctx = NumpyContext(ga)
-mv = ctx.multivector
-
+mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-
-# Density operators and superoperators (capitalized GATypes):
+# A two-flavor state, half of one plus its isospin vector; its rates of change, and its evolution over a step.
 State = ga.gatype.self_reverse()                                             # 1 x y z
 Rates = ga.gatype((State, State))                                            # State <- State
 Evolution = ga.gatype((State, State))                                        # State <- State
 
-# Values and basis blades (lowercase):
 one = mv.scalar([1.0])
-flavor_e = mv.z                                                              # [] Vector (+z: electron neutrino)
-flavor_mu = -mv.z                                                            # [] Vector (-z: muon neutrino)
-
-phase_plane = mv.x ^ mv.y                                                    # [] Bivector (quantum phase accumulation)
-transition_plane = mv.y ^ mv.z                                               # [] Bivector (flavor conversion)
-mixing_plane = mv.x ^ mv.z                                                   # [] Bivector (mass-flavor mixing)
+# The flavors at the poles of the flavor sphere: the electron neutrino along z, the muon neutrino against it.
+flavor_e = mv.z                                                              # [] Vector
+flavor_mu = -mv.z                                                            # [] Vector
+# The plane a flavor state's phase turns in, and the plane the mixing angle tilts it in.
+phase_plane = mv.x ^ mv.y                                                    # [] Bivector
+mixing_plane = mv.x ^ mv.z                                                   # [] Bivector
 
 
 # --- math -----------------------------------------------------------------------------
-def state(bloch: Vector) -> State:
-    """Construct density operator state: 0.5 * (1 + P)."""
-    return 0.5 * (one + bloch)
+def state(isospin: Vector) -> State:
+    """The state with the given isospin vector."""
+    return 0.5 * (one + isospin)                                             # [...] State
 
 
 def isospin(rho: State) -> Vector:
-    """Extract isospin vector P from density operator: 2 * rho.select[1]."""
-    return 2.0 * rho.select[1]
+    """The isospin vector of a state, twice its vector part."""
+    return 2.0 * rho.select[1]                                               # [...] Vector
 
 
-def flavor_probabilities(p: Vector) -> tuple[Scalar, Scalar]:
-    """Electron and muon flavor probabilities as exact scalar projections onto the flavor axis."""
-    p_z = p | flavor_e
-    return 0.5 * (one + p_z), 0.5 * (one - p_z)
+def flavor_probabilities(isospin: Vector) -> tuple[Scalar, Scalar]:
+    """The probabilities of the electron and the muon flavor, from the isospin vector's part along the flavor axis."""
+    along = isospin | flavor_e                                               # [...] Scalar
+    return 0.5 * (one + along), 0.5 * (one - along)
 
 
 def mixing_rotor(theta: float) -> Rotor:
-    """Rotor turning the flavor basis into the mass eigenstate basis by mixing angle theta."""
-    return (mixing_plane * (-theta)).exp()
+    """The turn from the flavor states to the mass states, by the mixing angle."""
+    return (mixing_plane * (-theta)).exp()                                   # [] Rotor
 
 
 def vacuum_hamiltonian(omega: float, theta: float) -> Bivector:
-    """Vacuum Hamiltonian bivector: phase plane tilted by mixing angle theta."""
-    rotor = mixing_rotor(theta)
-    return omega * (rotor >> (-phase_plane))
+    """The plane a state turns in through vacuum: the phase plane tilted by the mixing angle, at the rate omega."""
+    return omega * (mixing_rotor(theta) >> (-phase_plane))                   # [] Bivector
 
 
-def matter_hamiltonian(b_vac: Bivector, potential: float) -> Bivector:
-    """Effective Hamiltonian bivector in matter: phase plane shifted by electron potential."""
-    return b_vac + potential * phase_plane
+def matter_hamiltonian(vacuum: Bivector, potential: np.ndarray) -> Bivector:
+    """The plane in matter: the vacuum plane shifted along the phase plane by the electrons' potential."""
+    return vacuum + potential * phase_plane                                  # [...] Bivector
 
 
 def resonance_potential(omega: float, theta: float) -> float:
-    """Matter potential v at which the MSW resonance occurs: `omega * np.cos(2 * theta)`."""
+    """The matter potential at which the MSW resonance occurs."""
     return float(omega * np.cos(2.0 * theta))
 
 
 def coherent_generator(plane: Bivector) -> Rates:
-    """Unitary rotation generator: - plane.commutator(State)."""
-    return - plane.commutator(State).cast(Rates)
+    """The rates of a state turning in the plane: its commutator with the plane, a map from states to rates."""
+    # The commutator of a bivector with a state has no scalar part; the cast embeds it among the states.
+    return -plane.commutator(State).cast(Rates)                              # [...] State <- State
 
 
 def relaxation(process: Bivector) -> Rates:
-    """Lindblad dissipator: (l >> State) - (l * l).anticommutator(State)."""
-    back = process.reverse().symmetric_reverse_product()                  # [] State
-    return (process >> State) - back.anticommutator(State)                 # State <- State
+    """The rates of a state under a relaxation process: its sandwich of the state, less the process's reverse
+    times itself, half on either side."""
+    back = process.reverse().symmetric_reverse_product()                     # [] State
+    return (process >> State) - back.anticommutator(State)                   # State <- State
 
 
 def dephasing_generator(plane: Bivector, gamma: float) -> Rates:
-    """Wavepacket decoherence at rate gamma: dephasing by the half turn in the given phase plane."""
-    return gamma * relaxation(plane)
+    """Dephasing at the rate gamma by the half turn in the given plane."""
+    return gamma * relaxation(plane)                                         # State <- State
 
 
 def evolution(rates: Rates, dx: float) -> Evolution:
-    """Quantum transfer map over distance dx: exp(rates * dx) as composed extensor map."""
-    small = rates * dx                                                     # State <- State
+    """What becomes of each state over a distance dx: the exponential series of the rates to fifth order."""
+    small = rates * dx                                                       # [...] State <- State
     term = total = State
     for order in range(1, 6):
-        term = small(term) / order                                         # State <- State
+        term = small(term) / order                                           # [...] State <- State
         total = total + term
-    return total                                                           # State <- State
+    return total                                                             # [...] State <- State
 
 
-def evolve_channel(initial_state: State, transfer: Evolution, steps: int) -> Iterator[Vector]:
-    """Yield isospin vector of state propagating under constant transfer map."""
+def evolve_channel(initial_state: State, transfer: Evolution, n_steps: int) -> Iterator[Vector]:
+    """The isospin vector at each step of a state carried by one transfer map."""
     rho = initial_state
-    for _ in range(steps):
-        yield isospin(rho)
+    for _ in range(n_steps):
+        yield isospin(rho)                                                   # [] Vector
         rho = transfer(rho)
 
 
-def adiabatic_channel(
-    initial_state: State,
-    rates_profile: Iterable[tuple[Rates, Bivector]],
-    dx: float,
-) -> Iterator[tuple[Vector, Bivector]]:
-    """Yield isospin vector and Hamiltonian plane under varying generator profile."""
+def adiabatic_channel(initial_state: State, rates: Rates, planes: Bivector, dx: float) -> Iterator[tuple[Vector, Bivector]]:
+    """The isospin vector and the Hamiltonian's plane at each step of a state carried through rates that change
+    along the way `[steps]`."""
     rho = initial_state
-    for rates, plane in rates_profile:
-        yield isospin(rho), plane
-        step_map = evolution(rates, dx)
-        rho = step_map(rho)
+    for step in range(rates.shape[0]):
+        yield isospin(rho), planes[step]                                     # [] Vector, [] Bivector
+        rho = evolution(rates[step], dx)(rho)

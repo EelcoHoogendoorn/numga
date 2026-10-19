@@ -1,11 +1,8 @@
-"""Compare two motor fits on the same corresponding PGA3D points.
+"""Point-cloud registration recovers the rigid motor aligning two corresponding point sets either by centered rotor alignment or by a one-sided motor eigenproblem.
 
-The centered sandwich alignment gives a Cartesian least-squares rotation;
-matching the centroids supplies translation. The one-sided equation
-`target * motor - motor * source == 0` fits rotation and translation together, minimizing the residual
-against the motor's own metric, followed by motor normalization. That metric
-measures the rotor part alone, and with it the one-sided fit reaches the same
-least-squares pose as the centered alignment, noisy data included.
+Centered sandwich alignment subtracts the centroids, fits the Euclidean rotation by maximizing the scalar product of rotated displacements, and translates the rotated source centroid onto the target centroid. The one-sided equation `target * Motor - Motor * source == 0` fits rotation and translation simultaneously by minimizing the sum of bulk and weight squared residuals against the motor's own metric, which measures only the rotational norm and leaves translation unconstrained until motor normalization.
+
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), points are antivectors (trivectors) and rigid motions are even-grade motors.
 """
 
 from __future__ import annotations

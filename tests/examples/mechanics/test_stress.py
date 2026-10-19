@@ -1,6 +1,8 @@
-"""The stressed cube: the isotropic stress is Lamé's formula, and the scenes pass their checks and draw."""
+"""The stressed cube: the isotropic stress is Lamé's formula, and the scenes draw."""
 
 from __future__ import annotations
+
+from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,10 +20,9 @@ def test_isotropic_stress_is_lames_formula():
     np.testing.assert_allclose(entries, lame * np.trace(matrix) * np.eye(3) + 2 * shear_modulus * matrix, rtol=1e-12)
 
 
-def test_scenes_pass_their_checks_and_draw():
-    figure = render.draw_frames(*scenarios.frames(), ["lab frame", "principal frame", "greatest shear"])
+def test_scenes_draw():
+    figure = render.draw_frames(*scenarios.frames())
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    _, values = scenarios.turning()
-    strain, stress, _, directions, principal = scenarios.material()
-    assert len(render.animate_turning(core.views(strain, stress, directions, principal[None]), values)) == 1
+    _, values = scenarios.frames()
+    assert len(render.animate_turning(values, islice(scenarios.turning(), 1))) == 1

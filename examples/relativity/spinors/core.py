@@ -10,7 +10,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Spinor = ga.gatype.even()
 
-# Each operation leaves the spinor input open, so these are maps on the same carrier.
+# Phase, chirality and charge conjugation are right multiplications, maps from Spinor to Spinor.
 PHASE = Spinor * mv.yx
 CHIRALITY = Spinor * mv.zt
 CHARGE_CONJUGATION = Spinor * mv.yt

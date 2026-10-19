@@ -1,4 +1,4 @@
-"""Smallest faithful real representations of nondegenerate Clifford algebras.
+"""Extensor representations: the smallest faithful real representations of nondegenerate Clifford algebras.
 
 Commuting blades select a left ideal. Multiplication acts on that ideal, and a
 blade chart expresses the representation as an extensor on a smaller real space.
@@ -28,15 +28,16 @@ def main(positive: int, negative: int) -> Extensor:
     for blade in involutions:
         projector = projector * (1 + mv.blade(blade)) / 2
 
-    # The open Spinor slot carries independent real coefficients into the ideal.
+    # Multiplied by Spinor, the space of states, the projector carries their independent real coefficients
+    # into the ideal.
     # Left multiplication preserves it: a * (state * projector) stays in the ideal.
     state_embedding = Spinor * projector
 
     # Every chart blade retains exactly 1 / multiplicity of its coefficient in
     # the embedding. Casting back and rescaling therefore recovers the state.
     state_readout = (multiplicity * Full).cast(Spinor)
-    # Keep Full open as well: embedding, multiplying on the left and reading out
-    # converts any multivector into a Spinor map.
+    # Multiplied by Full as well, embedding, multiplying on the left and reading out is a map from any
+    # multivector to its map on states.
     representations = state_readout(Full * state_embedding)
 
     # --- checks

@@ -10,8 +10,8 @@ bead's force is spread over a blob of the bead's size, a regularized Stokeslet. 
 beads these flows make one map from the forces the beads push with to the velocities they move at.
 
 The body's own motion is a rate, a bivector, and the commutator of each bead with the rate is that
-bead's velocity: with the rate open, `sites.commutator(Twist)` is the map from the body's rate to every
-bead's velocity. The same map, carried across the regressive product, sums the beads' forces into the
+bead's velocity: over `Twist`, the space of all rates, `sites.commutator(Twist)` is the map from the body's
+rate to every bead's velocity. The same map, carried across the regressive product, sums the beads' forces into the
 forque on the body: its adjugate, because a forque paired with a rate is the power the forces deliver
 to beads moving at that rate, `rigid.adjugate()(forces) & rate` the summed power of the forces. As the
 swimmer changes its shape, one solve finds the body's rate that keeps that forque zero.
@@ -59,10 +59,10 @@ def stokeslet(separations: Force, radius: float) -> Mobility:
     Stokeslets of blob `radius`."""
     # The blob spreads each force over the bead's size: softening the distance by the radius keeps the
     # flow finite where the force acts.
-    r2 = separations.norm_squared() + radius**2                                 # [...] Scalar
+    softened = separations.norm_squared() + radius**2                                 # [...] Scalar
     # The fluid moves along the force, and further along the separation by as much of the force as
     # points along it; both parts fall off with distance.
-    return ((r2 + radius**2) * Force.dual() + separations.dual() * (separations | Force)) / (r2 * r2.square_root())
+    return ((softened + radius**2) * Force.dual() + separations.dual() * (separations | Force)) / (softened * softened.square_root())
 
 
 def mobility(sites: Point, radius: float) -> Mobility:
@@ -79,16 +79,16 @@ def swim(sites: Point, shape_velocity: Direction, radius: float) -> tuple[Twist,
     """Solve for the body-frame rigid rate `[...] Twist` and bead forces `[...] Force[beads]` of a
     force- and torque-free swimmer with bead positions `sites` `[...] Point[beads]` and prescribed
     body-frame deformation velocities `shape_velocity` `[...] Direction[beads]`."""
-    M = mobility(sites, radius)                                                  # [...] Direction[beads] <- Force[beads]
-    # With the body's rate open, each bead's commutator with it is that bead's velocity.
+    bead_mobility = mobility(sites, radius)                                                  # [...] Direction[beads] <- Force[beads]
+    # Over `Twist`, the space of all rates, each bead's commutator with the rate is that bead's velocity.
     rigid = sites.commutator(Twist)                                              # [...] Direction[beads] <- Twist
     # The forces that carry the beads along with the body at a given rate, summed into the forque on the
     # body: the adjugate carries forces back across the map that carried the rate out to velocities.
-    resistance = rigid.adjugate()(M.solve(rigid))                               # [...] Forque <- Twist
+    resistance = rigid.adjugate()(bead_mobility.solve(rigid))                               # [...] Forque <- Twist
     # Changing shape alone would push on the fluid too; the body moves at the rate whose forque cancels it.
-    body_rate = -resistance.solve(rigid.adjugate()(M.solve(shape_velocity)))
+    body_rate = -resistance.solve(rigid.adjugate()(bead_mobility.solve(shape_velocity)))
     # The forces the beads push with under both motions together, balanced by construction.
-    forces = M.solve(rigid(body_rate) + shape_velocity)                         # [...] Force[beads]
+    forces = bead_mobility.solve(rigid(body_rate) + shape_velocity)                         # [...] Force[beads]
     return body_rate, forces
 
 

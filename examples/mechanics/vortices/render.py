@@ -78,7 +78,7 @@ def window(points: core.Vector, frames: Iterable[tuple[core.Vortices, core.Even]
     """Vorticity on one fixed strip of the plane, frame by frame, each vortex trailing the path it has
     taken. One figure is updated in place and drawn once per frame, without supersampling, to keep
     pace."""
-    result = plt.figure(figsize=(10, 10 / aspect(points) + 0.2), dpi=80, layout="constrained")
+    result = plt.figure(figsize=(12, 12 / aspect(points) + 0.2), dpi=80, layout="constrained")
     ax = result.subplots()
     image = field(ax, points, np.zeros(points.shape), vorticity_limit, "RdBu_r")
     path = ax.add_collection(LineCollection([], colors="#0f172a", linewidths=0.8, alpha=0.5))

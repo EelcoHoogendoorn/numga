@@ -3,14 +3,12 @@
 A vortex is a bivector: a point of the sphere, the meet of two great circles, oriented by the circulation
 around it. Its rotor turns the sphere about the point, and the turn leaves exactly two places fixed, the
 antipodal pair the bivector stands for; both are the vortex's points, the invariants of its turn, and a
-vortex of circulation `Γ` with bivector `A` is the same vortex as one of circulation `-Γ` with bivector
-`-A`. A place on the sphere is held the same way, by its bivector. The flow of the vortex turns every
-place about the vortex at the rate `Γ / (2 pi |A & B|**2)`, with `A & B` the join of the vortex and the
-place, the great circle through the two, whose norm is the sine of the angle between them. Along each
-circle about the vortex the speed is `Γ / (2 pi)`
-over the circle's radius, so the circulation around every such circle is `Γ`: the flow is irrotational
-everywhere except at the vortex's two points, where its vorticity sits, `Γ` at the one and `-Γ` at the
-other, as a flow on a closed surface must have. A core radius softens the rate near the two points. The
+vortex with both its bivector and its circulation negated is the same vortex. A place on the sphere is held the same way, by its bivector. The flow of the vortex turns every
+place about the vortex at a rate of its circulation over two pi times the squared norm of `A & B`, the join
+of the vortex and the place, the great circle through the two, whose norm is the sine of the angle between
+them. Along each circle about the vortex the speed is the circulation over two pi over the circle's radius, so the circulation around every such circle is the vortex's: the flow is irrotational
+everywhere except at the vortex's two points, where its vorticity sits, the circulation at the one and its
+negative at the other, as a flow on a closed surface must have. A core radius softens the rate near the two points. The
 rate is the same expression as in the plane, where the norm of the join of two points is their distance;
 only the algebra's signature changes.
 

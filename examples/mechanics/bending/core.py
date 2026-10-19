@@ -20,13 +20,13 @@ each, and a slide of the section across the beam each along itself, by its area:
 slides pass through the shear centre, so a twist about the line along the beam through it costs no
 slide, and the twist settles on that line.
 
-A strain is any line, and the whole stiffness, `Stiffness = Line <- Line`, takes it to the resultant
-line of everything the section exerts: a sum of dyads of lines, the fibres' for stretch and bending,
-the line at infinity of the section's plane for the twist, and the slides' forces for shear. A load is a
-line, and one solve gives the strain it causes. The running product of the twists along the beam gives
-the frame of each cross-section. Each constant-strain piece is integrated exactly, but loads and lever
-arms are evaluated on the straight reference beam, and the clamp is free to warp: this is a
-small-deflection load calculation with a finite-motion reconstruction.
+A strain is any twist, a line of motion, and the whole stiffness, `Stiffness = Forque <- Twist`, takes it
+to the forque, the line of force, of everything the section exerts: a sum of dyads of lines, the fibres'
+for stretch and bending, the line at infinity of the section's plane for the twist, and the slides'
+forces for shear. A load is a forque, and one solve gives the strain it causes. The running product of
+the motors along the beam gives the frame of each cross-section. Each constant-strain piece is integrated
+exactly, but loads and lever arms are evaluated on the straight reference beam, and the clamp is free to
+warp: this is a small-deflection load calculation with a finite-motion reconstruction.
 
 In the matrix notation of beam theory the curvatures read as
 $\\begin{pmatrix}\\kappa_x\\\\ \\kappa_y\\end{pmatrix} = \\frac{1}{E}\\begin{pmatrix}I_{yy} & -I_{xy}\\\\ -I_{xy} & I_{xx}\\end{pmatrix}^{-1}\\begin{pmatrix}M_x\\\\ M_y\\end{pmatrix}$,
@@ -46,13 +46,15 @@ from examples.mechanics.simplex import barycentric_samples, simplex_inertia_weig
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
-Line = ga.gatype.bivector()
+Twist = ga.gatype.bivector()
+# Lines of force: loads, and the resultant of everything a section exerts.
+Forque = ga.gatype.antibivector()
 Motor = ga.gatype.rotor()
 Plane = ga.gatype.vector()
 # Lines in the section's plane.
-Strain = Line.derive.containing("z")
+Strain = Twist.derive.containing("z")
 # Lines along the beam, and couples across it.
-Resultant = ga.gatype.antibivector().derive.within("x y w")
+Resultant = Forque.derive.within("x y w")
 # The fibres' pulls weighted by a warping, a swept area signed by the sense of the sweep: resultants of the
 # other orientation, and their couples across the beam.
 Warped = Resultant.derive.flipped_orientation
@@ -61,17 +63,17 @@ Couples = Warped.derive.containing("w")
 Shift = ga.gatype.antivector().derive.containing("w z")
 # A bending strain to the resultant of the fibres' pulls.
 Bending = ga.gatype((Resultant, Strain))                   # Resultant <- Strain
-# Any strain to the resultant line of everything the section exerts.
-Stiffness = ga.gatype((Line, Line))                        # Line <- Line
+# Any strain to the forque of everything the section exerts.
+Stiffness = ga.gatype((Forque, Twist))                      # Forque <- Twist
 
 # The cross-section at the clamp, the point at infinity along the beam, and the twist that carries a
 # section along the beam.
 section_plane = mv.z                                       # [] Plane
 beam_direction = section_plane.dual()                      # [] Point
-shift_along_beam = section_plane ^ mv.w                    # [] Line
+shift_along_beam = section_plane ^ mv.w                    # [] Twist
 # The couple about the beam: the line at infinity of the section's plane as a load, the join of the
 # directions across and up.
-couple_about_beam = mv.x.dual() & mv.y.dual()              # [] Line
+couple_about_beam = mv.x.dual() & mv.y.dual()              # [] Forque
 
 
 # --- math -----------------------------------------------------------------------------
@@ -136,32 +138,32 @@ def stiffness(nodes: Point, ends: np.ndarray, thickness: np.ndarray, modulus: fl
     about the beam; and for each wall, a force along it through the shear centre for a slide along it."""
     walls = nodes[ends]                                                     # [walls, 2] Point
     fibres = beam_direction & samples(walls, thickness)                     # [walls, 2] Resultant
-    pulling = (modulus * fibres * (Line & fibres)).sum(axis=(-2, -1))       # [] Resultant <- Line
-    twisted = twisting(walls, thickness, shear_modulus) * couple_about_beam * (couple_about_beam & Line)   # [] Line <- Line
+    pulling = (modulus * fibres * (Twist & fibres)).sum(axis=(-2, -1))       # [] Resultant <- Twist
+    twisted = twisting(walls, thickness, shear_modulus) * couple_about_beam * (couple_about_beam & Twist)   # [] Forque <- Twist
     along = (walls[..., 1] - walls[..., 0]) / lengths(walls)                # [walls] Point: each wall's direction
-    slides = shear_centre(nodes, ends, thickness) & along                   # [walls] Line
-    sliding = (shear_modulus * lengths(walls) * thickness * slides * (slides & Line)).sum(axis=-1)   # [] Line <- Line
-    return pulling + twisted + sliding                                      # [] Line <- Line
+    slides = shear_centre(nodes, ends, thickness) & along                   # [walls] Forque
+    sliding = (shear_modulus * lengths(walls) * thickness * slides * (slides & Twist)).sum(axis=-1)   # [] Forque <- Twist
+    return pulling + twisted + sliding                                      # [] Forque <- Twist
 
 
-def loads_at_stations(loads: Line, stations: np.ndarray) -> Line:
+def loads_at_stations(loads: Forque, stations: np.ndarray) -> Forque:
     """The loads seen from each station `[stations]` along the beam, as if the station were the clamp."""
     shifts = (shift_along_beam * (stations / 2)).exp()                       # [stations] Motor
-    return shifts << loads[..., None]                                        # [..., stations] Line
+    return shifts << loads[..., None]                                        # [..., stations] Forque
 
 
-def bend(strains: Line, step: float) -> Motor:
+def bend(strains: Twist, step: float) -> Motor:
     """The frame of each cross-section from the clamp to the tip `[..., pieces + 1]`: the running
-    product of the twists of the pieces `[..., pieces]` before it, each the shift along the beam plus
+    product of the motors of the pieces `[..., pieces]` before it, each the shift along the beam plus
     the piece's strain."""
-    twists = ((shift_along_beam + strains) * (step / 2)).exp()               # [..., pieces] Motor
-    clamp = mv.rotor().broadcast_to(twists.shape[:-1] + (1,))                # [..., 1] Motor
+    piece_motors = ((shift_along_beam + strains) * (step / 2)).exp()               # [..., pieces] Motor
+    clamp = mv.rotor().broadcast_to(piece_motors.shape[:-1] + (1,))                # [..., 1] Motor
     # Each twist acts in the frame of the cross-section before it, so each later twist multiplies
     # from the right: the reverse of the running product of the reverses, which multiplies from the left.
-    return concatenate([clamp, twists.reverse().cumprod(axis=-1).reverse()], axis=-1)   # [..., pieces + 1] Motor
+    return concatenate([clamp, piece_motors.reverse().cumprod(axis=-1).reverse()], axis=-1)   # [..., pieces + 1] Motor
 
 
-def stress(strains: Line, modulus: float, points: Point) -> Scalar:
+def stress(strains: Twist, modulus: float, points: Point) -> Scalar:
     """The stress along the beam at points of the section under the strains: the modulus times each
     fibre's stretch."""
     return modulus * (strains & (beam_direction & points))                   # [...] Scalar

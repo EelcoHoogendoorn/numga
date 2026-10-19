@@ -1,8 +1,4 @@
-"""Scenes for the fitting example: one per figure, each returning the geometry to draw.
-
-Every scene samples a primitive in a standard position, moves the samples by one shared
-pose, and fits. The truth is the same pose applied to the standard primitive.
-"""
+"""Scenes for projective primitive fitting sample a point cloud, a line segment, a planar patch, and a line bundle in a shared pose and fit the corresponding primitive to each."""
 
 from __future__ import annotations
 

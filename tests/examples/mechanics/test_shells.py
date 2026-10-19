@@ -1,5 +1,5 @@
 """Discrete shells: the forces are the energy's downhill direction and balance as internal forces, and the
-scenes pass their checks and draw."""
+scenes draw."""
 
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ def test_forces_are_the_energy_gradient_and_balance():
     assert np.abs(total.kernel).max() < 1e-12
 
 
-def test_the_scenes_pass_their_checks_and_draw():
-    disc_faces, disc_frames = scenarios.disc()
-    strip_faces, strip_frames = scenarios.strip()
-    plt.close(render.draw_settled([(disc_faces, disc_frames[-1]), (strip_faces, strip_frames[-1])]))
-    assert len(render.animate(strip_faces, strip_frames[-1:])) == 1
+def test_the_scenes_draw():
+    disc, disc_frames = scenarios.disc()
+    strip, strip_frames = scenarios.strip()
+    plt.close(render.draw_settled([(disc.mesh.faces, disc_frames[-1]), (strip.mesh.faces, strip_frames[-1])]))
+    assert len(render.animate(strip.mesh.faces, strip_frames[-1:])) == 1

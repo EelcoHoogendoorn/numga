@@ -33,7 +33,7 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms(
     # Wall-sided, until the deck edge dips: the righting arm is sin(heel) * (GM + BM / 2 * tan(heel)**2).
     heels = np.radians([10.0, 20.0, 30.0])
     turns = (mv.yz * (-heels / 2)).exp()
-    heights = core.afloat(box, turns, weight, mv.scalar(np.zeros((len(heels), 1))), 1.0, scenarios.NEWTON_STEPS)
+    heights = core.afloat(box, turns, weight, mv.scalar(np.zeros((len(heels), 1))), 1.0, scenarios.N_NEWTON_STEPS)
     push, weighing = core.forces(box, turns, heights, weight, centre, 1.0)
     righting = render.arms(push + weighing, weight)
     expected = np.sin(heels) * (across + beam ** 2 / (12 * DRAFT) / 2 * np.tan(heels) ** 2)

@@ -71,5 +71,14 @@ def test_scenes_pass_their_checks_and_draw():
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
     assert len(render.animate(directions, area, scenarios.deflected, scenarios.POSITIONS, steps)) == 3
-    figure = render.draw_tissot(directions, area, scenarios.POSITIONS, *scenarios.tissot(5, 0.025))
-    plt.close(figure)
+
+
+def test_the_local_map_is_undone_by_its_trace_two_inverse():
+    """A map of the plane with trace two is undone by `(2 * Vector - local) / area`."""
+    spread = np.linspace(-1.25, 1.25, 5)
+    centres = core.mv.x * spread[None, :] + core.mv.y * spread[:, None]       # [rows, columns] Vector
+    local = core.local_map(centres, scenarios.POSITIONS, scenarios.MASSES)     # [rows, columns] Vector <- Vector
+    area = local.outermorphism(core.Area)(core.mv.xy) / core.mv.xy            # [rows, columns] Scalar
+    offsets = core.mv.vector([[0.3, -0.2], [-0.1, 0.4]])                      # [offsets] Vector
+    np.testing.assert_allclose((local[..., None].solve(offsets) - ((2 * core.Vector - local) / area)[..., None](offsets)).kernel,
+                               0.0, atol=1e-11)

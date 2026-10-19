@@ -1,5 +1,7 @@
 """Loop subdivision of weighted points: weights shape the surface, and refining commutes with perspective."""
 
+from itertools import islice
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -21,8 +23,8 @@ def test_a_heavy_vertex_pulls_the_surface_and_a_light_one_releases_it():
     # With all weights alike the surface is Loop subdivision of the positions.
     assert render.separation(stack([surfaces[0], core.unit(surfaces[0])])) < 1e-12
     plt.close(render.draw_weights(controls, scenarios.FACES, surfaces, faces))
-    swept, swept_surfaces, faces = scenarios.sweep()
-    assert len(render.animate_weights(swept[:2], swept_surfaces[:2], scenarios.FACES, faces)) == 2
+    frames, faces = scenarios.sweep()
+    assert len(render.animate_weights(islice(frames, 2), scenarios.FACES, faces)) == 2
 
 
 def test_a_loop_step_keeps_unit_weights_and_splits_every_face_in_four():

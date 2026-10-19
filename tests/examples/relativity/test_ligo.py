@@ -27,7 +27,7 @@ def test_sensitivity_is_the_closed_form_for_a_detector_at_the_pole():
 def test_figures_draw():
     sites, arms = scenarios.detectors()
     frames = scenarios.sky()
-    directions, zeniths = frames >> core.x, sites >> core.x
+    directions, zeniths = frames >> core.mv.x, sites >> core.mv.x
     to_plus, to_cross = scenarios.patterns(arms, frames)
     sensitivities = core.sensitivity(to_plus, to_cross)
     plt.close(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, scenarios.NAMES))

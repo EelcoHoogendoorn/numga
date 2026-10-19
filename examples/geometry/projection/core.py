@@ -1,15 +1,10 @@
-"""Projective cameras, shadows and epipolar geometry from supplied geometric data.
+r"""Projective cameras, shadow casting, and two-view epipolar geometry all evaluate the same join-and-meet expression with different slots left open.
 
-The camera is an expression with a hole, `(centre & Point) ^ screen`: join the point
-with the centre into a ray, and meet the ray with the screen. Every question below is
-the same expression with a different slot open.
+The pinhole camera is an expression with an open slot, `(centre & Point) ^ screen`, joining a world point with the optical centre into a sight ray and meeting that ray with the image plane. Leaving the point open casts shadows from a point light or a directional sun; leaving the light open sweeps the shadow trail of a fixed corner; and moving the camera map by two pose motors relates their images through the epipoles and epipolar lines.
 
-This module is the mathematics: types, constructors, and the expressions with holes.
-The scenarios choose the scene and the reference frame.
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, lines are bivectors, points are antivectors (trivectors), and rigid motions are even-grade motors.
 
-In the matrix notation of projective vision the camera reads as a four-by-four projection
-matrix applied at the end of a pipeline, the spotlight and sunlight maps as shadow matrices,
-and the correspondence form as the fundamental matrix.
+In the matrix notation of projective vision the camera reads as a $3 \times 4$ projection matrix, the spotlight and sunlight maps as $4 \times 4$ shadow projection matrices, and the two-view correspondence form as the fundamental matrix.
 """
 
 from __future__ import annotations
@@ -64,8 +59,8 @@ def shadows(body: Point, ground: Plane, point_light: Point, sun: Point,
     spotlight: Camera = (point_light & Point) ^ ground
     sunlight: Camera = (sun & Point) ^ ground
 
-    # Bind a different slot and you ask a different question. Fix one corner and leave
-    # the light open: the corner's shadow is now a linear map of the light position, so a
+    # Binding a different slot asks a different question. Fix one corner and leave
+    # the light open: the corner's shadow is a linear map of the light position, so a
     # whole path of light positions binds in one call.
     shadow_of_corner: ShadowTrail = (Point & corner) ^ ground
 

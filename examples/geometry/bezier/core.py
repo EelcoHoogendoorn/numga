@@ -1,8 +1,9 @@
-"""Rational quadratic Bézier curves as curves of vectors, and the cone of their conic.
+"""The cone of a rational Bézier curve: rational quadratic Bézier curves as curves of vectors, and the cone
+of their conic.
 
 A rational Bézier curve is the sum of its control points, each weighted by its weight and its Bernstein
-polynomial. With the weight as a third coordinate, a point (x, y) at weight w is the vector
-`w * (x * e1 + y * e2 + e3)`, and the sum is a plain Bézier curve of vectors. A point is the line through the
+polynomial. With the plane as the plane z = 1 of space, a point (x, y) at weight w is the vector
+`w * (x * mv.x + y * mv.y + mv.z)`, and the sum is a plain quadratic Bézier curve of vectors. A point is the line through the
 origin along its vector, read where it meets the unit sphere: the projective plane as a sphere, every point on it
 twice, at opposite ends of a diameter, its equator the line at infinity. The rays of a quadratic curve sweep a
 cone: the zero set of a quadratic form on vectors, built from the control triangle, whose two opposite loops on
@@ -64,5 +65,5 @@ def conic(controls: Vector, weights: np.ndarray) -> Conic:
 
 # --- plumbing -------------------------------------------------------------------------
 def point(coords: np.ndarray) -> Vector:
-    """Points (x, y) at unit weight: the vectors `x * e1 + y * e2 + e3`."""
+    """Points (x, y) at unit weight: the vectors `x * mv.x + y * mv.y + mv.z`, in the plane z = 1."""
     return mv(Vector.derive.within("x y"), coords) + mv.z

@@ -3,6 +3,8 @@ hemisphere, and the fault in space with the lobes of its P waves."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LightSource, to_rgba
@@ -41,49 +43,48 @@ def upright(vectors: core.Vector) -> np.ndarray:
     return np.stack([ned[..., 1], ned[..., 0], -ned[..., 2]], axis=-1)
 
 
-def draw_ball(ax, faults: core.Mechanism, index: int, title: str) -> None:
-    """The beachball of one fault: the lower hemisphere with the pushes shaded, its nodal lines, and
-    its pressure and tension axes."""
-    grid, push = lambert(faults.directions), faults.push[index].to_array()
+def draw_ball(ax, directions: core.Vector, push: core.Scalar, axes: core.Vector) -> None:
+    """The beachball of one fault: the lower hemisphere `[rings, spokes]` with the pushes shaded, its
+    nodal lines, and its pressure and tension axes, north up."""
+    grid, push = lambert(directions), push.to_array()
     bound = 2 * np.abs(push).max()
     ax.contourf(*np.moveaxis(grid, -1, 0), push, levels=[-bound, 0, bound], colors=[PULL, PUSH])
     ax.contour(*np.moveaxis(grid, -1, 0), push, levels=[0], colors=NODAL, linewidths=1.4)
     angle = np.linspace(0, 2 * np.pi, 200)
     ax.plot(np.cos(angle), np.sin(angle), color=NODAL, linewidth=1.6)
-    axes = lambert(faults.axes[index])
-    for point, label, colour in [(axes[0], "P", PRESSURE), (axes[2], "T", TENSION)]:
+    principal = lambert(axes)
+    for point, colour in [(principal[0], PRESSURE), (principal[2], TENSION)]:
         ax.scatter(*point, s=110, color=colour, edgecolor="white", linewidth=1.2, zorder=5)
-        ax.text(*point, label, ha="center", va="center", fontsize=7, color="white", fontweight="bold", zorder=6)
-    ax.text(0, 1.06, "N", ha="center", va="bottom", fontsize=8, color="#64748b")
     ax.set_xlim(-1.12, 1.12)
-    ax.set_ylim(-1.12, 1.18)
+    ax.set_ylim(-1.12, 1.12)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    ax.set_title(title, fontsize=11, pad=6)
 
 
-def draw_mechanisms(faults: core.Mechanism, names: list[str]) -> plt.Figure:
-    """The beachball of each fault, side by side."""
-    figure, axes = plt.subplots(1, len(names), figsize=(3.2 * len(names), 3.4), dpi=120)
-    for index, (ax, name) in enumerate(zip(axes, names)):
-        draw_ball(ax, faults, index, name)
+def draw_mechanisms(directions: core.Vector, push: core.Scalar, axes: core.Vector) -> plt.Figure:
+    """The beachball of each fault `[faults]`, side by side."""
+    count = push.shape[0]
+    figure, panels = plt.subplots(1, count, figsize=(3.2 * count, 3.2), dpi=120)
+    for index, ax in enumerate(panels):
+        draw_ball(ax, directions, push[index], axes[index])
     figure.tight_layout()
     return figure
 
 
-def draw_fault(ax, lobes: core.Mechanism, index: int) -> None:
+def draw_fault(ax, directions: core.Vector, push: core.Scalar, normal: core.Vector, slip: core.Vector,
+               null: core.Vector) -> None:
     """One fault in space: the patch of the fault, the slip of each side across it, and the lobes of
     the P waves, each direction drawn as far as its first motion, pushes dark and pulls pale."""
     # The rings in reverse, so that the cells of the surface face outwards, towards the light.
-    push = lobes.push[index].to_array()[::-1]
-    surface = upright(lobes.directions[index])[::-1] * np.abs(push)[..., None]
+    push = push.to_array()[::-1]
+    surface = upright(directions)[::-1] * np.abs(push)[..., None]
     # The colour of each cell by the sign at its middle: the nodal planes run along the grid lines.
     middle = (push[1:, 1:] + push[:-1, :-1] + push[1:, :-1] + push[:-1, 1:])[..., None]
     colours = np.where(middle > 0, to_rgba(PUSH_LOBE), to_rgba(PULL_LOBE))
     ax.computed_zorder = False
     ax.plot_surface(*np.moveaxis(surface, -1, 0), facecolors=colours, linewidth=0, antialiased=False, shade=True,
                     lightsource=LIGHT, rstride=1, cstride=1, zorder=1)
-    normal, slip, null = upright(lobes.normals[index]), upright(lobes.slips[index]), upright(lobes.axes[index, 1])
+    normal, slip, null = upright(normal), upright(slip), upright(null)
     angle = np.linspace(0, 2 * np.pi, 64, endpoint=False)[:, None]
     rim = PATCH * (slip * np.cos(angle) + null * np.sin(angle))
     ax.add_collection3d(Poly3DCollection([rim], alpha=0.3, facecolor="#fde68a", edgecolor="#b45309", linewidth=1.2, zorder=2))
@@ -98,13 +99,15 @@ def draw_fault(ax, lobes: core.Mechanism, index: int) -> None:
     ax.set_axis_off()
 
 
-def animate_sweep(balls: core.Mechanism, lobes: core.Mechanism) -> list[np.ndarray]:
-    """Each frame of the rake's turn: the fault in space with its P lobes, and its beachball."""
+def animate_sweep(hemisphere: core.Vector, frames: Iterable[tuple[core.Vector, core.Vector, core.Vector, core.Scalar,
+                                                                     core.Vector, core.Scalar]]) -> list[np.ndarray]:
+    """Each frame of the rake's turn: the fault in space with its P lobes, and its beachball over the
+    lower hemisphere."""
     images = []
-    for index in range(balls.push.shape[0]):
+    for normal, slip, axes, ball, sphere, lobes in frames:
         figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
-        draw_fault(figure.add_subplot(1, 2, 1, projection="3d"), lobes, index)
-        draw_ball(figure.add_subplot(1, 2, 2), balls, index, "beachball")
+        draw_fault(figure.add_subplot(1, 2, 1, projection="3d"), sphere, lobes, normal, slip, axes[1])
+        draw_ball(figure.add_subplot(1, 2, 2), hemisphere, ball, axes)
         figure.tight_layout()
         images.append(capture(figure))
         plt.close(figure)

@@ -1,8 +1,4 @@
-"""Scenes for the registration example: both fits on the same noisy correspondences.
-
-Each scene returns the source points, the target points, and the source moved by the
-estimated motor.
-"""
+"""Scenes for point-cloud registration compare centered sandwich alignment and the one-sided motor residual on the same noisy point correspondences."""
 
 from __future__ import annotations
 

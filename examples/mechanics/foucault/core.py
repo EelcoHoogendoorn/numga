@@ -10,8 +10,8 @@ lies in the floor, at the equator none. So the swing turns against its floor at 
 rate, backwards, clockwise from above in the north: once a day at the poles, never at the equator, and in Paris
 three quarters of a turn a day.
 
-The same turn is a holonomy. Carry the swing's direction around the latitude circle, step by step, each step
-the least turn that takes one floor to the next, and it comes back turned: by the area of the polar cap the
+The same turn is a holonomy. The swing's direction, carried around the latitude circle step by step, each
+step the least turn that takes one floor to the next, comes back turned: by the area of the polar cap the
 circle encloses on the unit sphere, a full turn less the pendulum's.
 
 In the notation of rotating frames the swing turns at the vertical component of the earth's angular velocity,
@@ -57,7 +57,7 @@ def compass(latitudes: np.ndarray) -> tuple[Vector, Vector, Vector]:
 def felt(floors: Bivector) -> Scalar:
     """How much of the earth's turn lies in each floor's plane: the earth's plane projected onto it, as a
     fraction of the floor's own turn."""
-    return equator.scalar_product(floors) / floors.scalar_product(floors)      # [...] Scalar
+    return (equator | floors) / floors.squared()                       # [...] Scalar
 
 
 def swing(latitudes: np.ndarray, earth_turns: np.ndarray) -> Vector:

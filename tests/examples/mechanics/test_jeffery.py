@@ -1,7 +1,9 @@
 """Jeffery orbits: the spin solve agrees with Jeffery's formula in the body's frame, a needle's axis
-moves as a line of fluid, and the scenes pass their checks and draw."""
+moves as a line of fluid, and the scenes draw."""
 
 from __future__ import annotations
+
+from itertools import islice
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,10 +41,11 @@ def test_needle_axis_moves_with_the_fluid():
     np.testing.assert_allclose((axis | spin).kernel, (along - axis * (axis | along)).kernel, atol=1e-6)
 
 
-def test_scenes_pass_their_checks_and_draw():
-    scene = scenarios.tumbling()
-    figure = render.draw_orbits(scene, scenarios.NAMES)
+def test_scenes_draw():
+    rotors = scenarios.tumbling()
+    figure = render.draw_orbits(rotors >> x)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    one = core.Tumbling(scene.trails, scene.stretches, scene.rotors[:1], scene.tips[:1], scene.heights, scene.velocities)
-    assert len(render.animate_tumbling(one, scenarios.NAMES)) == 1
+    heights = y * scenarios.HEIGHTS
+    first = islice(scenarios.frames(rotors), 1)
+    assert len(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow()(heights), first)) == 1

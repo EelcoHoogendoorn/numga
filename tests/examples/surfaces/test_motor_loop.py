@@ -7,7 +7,7 @@ from examples.surfaces.motor_loop import core, render, scenarios
 
 def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
     control, surfaces, control_faces, faces = scenarios.winding()
-    (points_rest, motors_rest), (points_peak, motors_peak) = render.reach(surfaces[[0, scenarios.FRAMES // 2]])
+    (points_rest, motors_rest), (points_peak, motors_peak) = render.reach(surfaces[[0, scenarios.N_FRAMES // 2]])
     # Untwisted the two agree; wound up, the points wring the ribbon towards its axis and the motors do not.
     assert abs(points_rest - motors_rest) < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest

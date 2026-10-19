@@ -1,5 +1,5 @@
-"""A quadratic curve whose middle weight sweeps it from an ellipse through a parabola to a hyperbola and back,
-with its complement and the cone of its conic."""
+"""The cone of a rational Bézier curve: a quadratic curve whose middle weight sweeps it from an ellipse
+through a parabola to a hyperbola and back, with its complement and the cone of its conic."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from numga import stack
 from examples.geometry.bezier import core
 
 # Samples along each curve.
-SAMPLES = 400
+N_SAMPLES = 400
 # The control triangle of the quadratic curve.
 QUADRATIC_POINTS = np.array([[-1.0, 0.0], [0.0, 1.5], [1.0, 0.0]])
 # The middle weight swept from an ellipse through a parabola to a hyperbola and back, the frames of the
 # sweep, and the duration of each.
 SWEEP = (0.3, 2.0)
-SWEEP_FRAMES = 48
+N_FRAMES = 48
 DURATION_MS = 80
 
 
@@ -23,11 +23,11 @@ DURATION_MS = 80
 def sweep() -> tuple[core.Vector, core.Vector, core.Vector, core.Conic]:
     """As the middle weight sweeps out and back: the weighted control points of the curve and of its
     complement, the curve, its complement, and the form of its cone."""
-    phase = np.linspace(0, 2 * np.pi, SWEEP_FRAMES, endpoint=False)
+    phase = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
     middle = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
     weights = np.stack([np.ones_like(middle), middle, np.ones_like(middle)], axis=-1)   # [frames, 3]
     controls = core.point(QUADRATIC_POINTS)                                    # [controls] Vector
-    parameters = np.linspace(0.0, 1.0, SAMPLES + 1)                            # [samples + 1]
+    parameters = np.linspace(0.0, 1.0, N_SAMPLES + 1)                            # [samples + 1]
     weighted = stack([controls * weights, controls * core.complementary(weights)], axis=1)   # [frames, 2, controls] Vector
     curves = core.blend(controls, weights, parameters)                         # [frames, samples + 1] Vector
     complements = core.blend(controls, core.complementary(weights), parameters)   # [frames, samples + 1] Vector

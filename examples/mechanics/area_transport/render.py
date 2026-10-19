@@ -41,19 +41,18 @@ def measures(ax: Axes, normals: core.Vector, volume: core.Scalar) -> None:
     values = np.concatenate([areas, volume.kernel])
     ax.bar(np.arange(len(values)), values, color=(*COLOURS, "#334155"), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
-    ax.set(xticks=np.arange(len(values)), xticklabels=("yz face", "zx face", "xy face", "volume"),
-           ylim=(0, 1.35), ylabel="Area / volume, unit cube")
+    ax.set(xticks=[], ylim=(0, 1.35))
     ax.spines[["top", "right"]].set_visible(False)
 
 
-def comparison(surface: core.Surface, volume: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
+def comparison(vertices: core.Vector, centres: core.Vector, normals: core.Vector, volume: core.Scalar) -> plt.Figure:
+    """One column per deformation: the cube with its area normals above, and below, the areas of the faces
+    normal to x, y and z and the volume, against the unit cube's."""
     figure = plt.figure(figsize=(12, 6.5), layout="constrained")
-    count = len(names)
-    for i, name in enumerate(names):
-        ax = figure.add_subplot(2, count, i + 1, projection="3d")
-        cube(ax, surface.vertices[i], surface.centres[i], surface.area_normals[i])
-        ax.set_title(name, fontsize=11)
-        measures(figure.add_subplot(2, count, count + i + 1), surface.area_normals[i], volume[i])
+    count = vertices.shape[0]
+    for i in range(count):
+        cube(figure.add_subplot(2, count, i + 1, projection="3d"), vertices[i], centres[i], normals[i])
+        measures(figure.add_subplot(2, count, count + i + 1), normals[i], volume[i])
     return figure
 
 

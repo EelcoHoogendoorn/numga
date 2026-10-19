@@ -13,6 +13,8 @@ hidden where the surface is in front of them."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -37,7 +39,7 @@ VIEW = np.array([24.0, -36.0])
 # needles along the rings, and those of the designed fields' sphere and torus.
 HOLONOMY_LIMITS = np.array([[-1.15, 1.15], [-1.15, 1.15], [-1.15, 1.15]])
 TRANSPORT_LIMITS = np.array([[-2.75, 2.75], [-2.75, 2.75], [-1.15, 1.15]])
-HOLONOMY_STRIDE = 6
+HOLONOMY_STRIDE = 3
 HOLONOMY_NEEDLE = 0.25
 TRANSPORT_NEEDLE = 0.32
 SPHERE_LIMITS = np.array([[-1.1, 1.1], [-1.1, 1.1], [-1.1, 1.1]])
@@ -94,33 +96,39 @@ def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, le
 
 
 # --- parallel transport ---------------------------------------------------------------
-def draw_holonomy(sphere: core.Mesh, rings: core.Vector, carried: core.Vector) -> plt.Figure:
-    """The unit sphere, the three latitude circles, and the parallel-transported tangent vectors along each."""
-    figure = plt.figure(figsize=(5.4, 5.4), dpi=100)
-    ax = figure.add_axes((0, 0, 1, 1), projection="3d")
+def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tuple[core.Vector, core.Vector]]
+                     ) -> list[np.ndarray]:
+    """The unit sphere and the three latitude circles `[steps + 1, rings]`, and each frame's points on
+    them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and
+    where they are."""
     verts = coordinates(sphere.vertices)
     view_dir = facing(TRANSPORT_VIEW)
-    ax.add_collection3d(
-        Poly3DCollection(verts[sphere.faces], facecolors=SURFACE_COLOUR, shade=True, linewidths=0, alpha=0.22)
-    )
-
     ring_xyz = coordinates(rings)                                               # [steps + 1, rings, 3]
-    carried_xyz = coordinates(carried)                                          # [steps + 1, rings, 3]
-    sample = np.arange(0, len(ring_xyz) - 1, HOLONOMY_STRIDE)
-    for r, colour in enumerate(RING_COLOURS):
-        curve = ring_xyz[:, r]
-        in_front = curve @ view_dir >= -0.05
-        ax.plot(*np.where(~in_front[:, None], curve, np.nan).T, color=colour, linewidth=1.0, alpha=0.35, linestyle="--")
-        ax.plot(*np.where(in_front[:, None], curve, np.nan).T, color=colour, linewidth=1.8)
-
-        shown = sample[curve[sample] @ view_dir >= -0.05]
-        segments = needles(curve[shown], carried_xyz[shown, r], curve[shown], HOLONOMY_NEEDLE)
-        ax.add_collection3d(Line3DCollection(segments, colors=colour, linewidths=1.35))
-        end_segments = needles(curve[-1:], carried_xyz[-1:, r], curve[-1:], HOLONOMY_NEEDLE * 1.15)
-        ax.add_collection3d(Line3DCollection(end_segments, colors="#111111", linewidths=2.3))
-
-    setup_axes(ax, HOLONOMY_LIMITS, 1.35, TRANSPORT_VIEW)
-    return figure
+    points, carried = [], []
+    frames = []
+    for point, vector in states:
+        points.append(coordinates(point))                                       # [rings, 3]
+        carried.append(coordinates(vector))                                     # [rings, 3]
+        trail = slice(None, None, HOLONOMY_STRIDE)
+        figure = plt.figure(figsize=(5.4, 5.4), dpi=100)
+        ax = figure.add_axes((0, 0, 1, 1), projection="3d")
+        ax.add_collection3d(
+            Poly3DCollection(verts[sphere.faces], facecolors=SURFACE_COLOUR, shade=True, linewidths=0, alpha=0.22)
+        )
+        for r, colour in enumerate(RING_COLOURS):
+            curve = ring_xyz[:, r]
+            in_front = curve @ view_dir >= -0.05
+            ax.plot(*np.where(~in_front[:, None], curve, np.nan).T, color=colour, linewidth=1.0, alpha=0.35, linestyle="--")
+            ax.plot(*np.where(in_front[:, None], curve, np.nan).T, color=colour, linewidth=1.8)
+            past, along = np.array(points)[trail, r], np.array(carried)[trail, r]   # [trail, 3] each
+            ax.add_collection3d(Line3DCollection(needles(past, along, past, HOLONOMY_NEEDLE),
+                                                 colors=colour, linewidths=1.0, alpha=0.5))
+            ax.add_collection3d(Line3DCollection(needles(points[-1][r:r + 1], carried[-1][r:r + 1], points[-1][r:r + 1],
+                                                         HOLONOMY_NEEDLE * 1.15), colors=colour, linewidths=2.6))
+        setup_axes(ax, HOLONOMY_LIMITS, 1.35, TRANSPORT_VIEW)
+        frames.append(capture(figure))
+        plt.close(figure)
+    return frames
 
 
 def _draw_torus_panel(ax, torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray) -> None:

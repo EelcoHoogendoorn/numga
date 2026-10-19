@@ -22,9 +22,20 @@ def test_a_spinor_is_rho_times_a_lorentz_map_and_beta_acts_only_on_bivectors():
 
 
 def test_scenarios_pass_their_checks_and_draw():
-    momenta, values = scenarios.mass_shell(1.0, 5)
     times, spinors, paths = scenarios.trembling(core.mv(core.Spatial, np.array([0.0, 0.0, 0.3])), 3.0, 60)
-    for figure in (render.draw_mass_shell(momenta, values, scenarios.MASS),
-                   render.draw_paths(times, spinors, paths, scenarios.MIXTURES)):
+    for figure in (render.draw_paths(times, spinors, paths, scenarios.MIXTURES),):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
+
+
+def test_plane_wave_energies_are_fourfold_with_beta_telling_their_sign():
+    """Each momentum has the energies minus and plus E, each fourfold; the positive-energy states have
+    beta zero and the negative-energy states beta a half turn, where the invariants' scalar part is negative."""
+    along = np.linspace(-1.0, 1.0, 5)
+    px, py = np.meshgrid(along, along)
+    momenta = core.mv(core.Spatial, np.stack([px, py, np.zeros_like(px)], axis=-1))
+    values, states = core.hamiltonian(momenta, scenarios.MASS).eigh()
+    energy = core.energy(momenta, scenarios.MASS).to_array()[..., None]
+    np.testing.assert_allclose(values.to_array(), np.concatenate([-energy.repeat(4, -1), energy.repeat(4, -1)], -1), atol=1e-12)
+    scalar = core.invariants(states).select[0].to_array()
+    np.testing.assert_allclose(np.sign(scalar), np.concatenate([-np.ones(4), np.ones(4)]) * np.ones_like(scalar))

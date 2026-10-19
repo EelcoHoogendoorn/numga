@@ -1,5 +1,5 @@
-"""The Kane–Mele flake: its spin-up levels are those of the model's complex Hamiltonian, and the scenes
-pass their checks and draw."""
+"""The Kane–Mele flake: its spin-up levels are those of the model's complex Hamiltonian, the edge states lie on
+the rim with the two spins circling oppositely, and the scenes draw."""
 
 from __future__ import annotations
 
@@ -25,11 +25,27 @@ def test_spin_up_levels_are_those_of_the_complex_hamiltonian():
     np.testing.assert_allclose(np.sort(energies.to_array())[::2], nearest, atol=1e-10)
 
 
-def test_scenes_pass_their_checks_and_draw():
+def test_edge_states_lie_on_the_rim_and_the_spins_circle_oppositely():
     flake = core.flake(scenarios.SIZE, scenarios.RIM)
-    spins = scenarios.helical(flake)
+    energies, states, spins = scenarios.helical(flake)
+    assert core.rim_share(flake, states).to_array().min() > 0.9
+    # A quarter lap on, the spin-up half has turned counterclockwise around the flake and the spin-down half
+    # clockwise: the sine of each half's turn from the start, by its centre.
+    quarter = scenarios.N_FRAMES // 4
+    density, along = spins[quarter].norm(), spins[quarter] | core.mv.z
+    start = flake.positions.batch()[flake.start].normalized()
+    sines = []
+    for half in ((density + along) * 0.5, (density - along) * 0.5):
+        centre = ((half * flake.positions).sites.sum() / half.sites.sum()).normalized()
+        sines.append((core.mv.xy | (centre ^ start)).to_array().item())
+    assert sines[0] > 0.5 and sines[1] < -0.5
+
+
+def test_scenes_draw():
+    flake = core.flake(scenarios.SIZE, scenarios.RIM)
+    _, _, spins = scenarios.helical(flake)
     for figure in (render.draw_levels(scenarios.MASSES, *scenarios.sweep(flake, scenarios.MASSES), 3 * 3**0.5 * scenarios.SPIN_ORBIT),
-                   render.draw_states(flake, scenarios.nearest(flake, scenarios.CASES), ["", ""])):
+                   render.draw_states(flake, scenarios.nearest(flake, scenarios.CASES))):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
     assert len(render.animate_spin(flake, spins[:2])) == 2

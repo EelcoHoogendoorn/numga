@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.colors import TwoSlopeNorm
@@ -77,12 +79,12 @@ def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: cor
     return figure
 
 
-def animate(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> list[np.ndarray]:
-    """The figure at every frame."""
-
-    def frame(index: int) -> np.ndarray:
-        figure = draw(mesh, heights[index], stresses[index], duals[index])
-        pixels = capture(figure)
+def animate(mesh: core.Mesh, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> list[np.ndarray]:
+    """The figure at every frame: its heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
+    vertices `[faces] Vector`."""
+    images = []
+    for heights, stresses, duals in frames:
+        figure = draw(mesh, heights, stresses, duals)
+        images.append(capture(figure))
         plt.close(figure)
-        return pixels
-    return [frame(index) for index in range(heights.shape[0])]
+    return images

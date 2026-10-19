@@ -42,15 +42,14 @@ def diffraction(ax: Axes, reciprocal: core.Vector, grid: core.Vector, intensity:
     ax.set(xlim=extent[:2], ylim=extent[2:], xticks=[], yticks=[])
 
 
-def comparison(crystal: core.Crystal, grid: core.Vector, intensity: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
+def comparison(positions: core.Vector, reciprocal: core.Vector, grid: core.Vector, intensity: core.Scalar) -> plt.Figure:
+    """For each case `[cases]`, its atoms above and its diffraction pattern below, with the carried reciprocal
+    lattice ringed."""
     figure = plt.figure(figsize=(12, 8), layout="constrained")
-    count = len(names)
-    lower = [figure.add_subplot(2, count, count + i + 1) for i in range(count)]
-    for i, name in enumerate(names):
-        ax = figure.add_subplot(2, count, i + 1)
-        atoms(ax, crystal.positions[i])
-        ax.set_title(name, fontsize=11)
-        diffraction(lower[i], crystal.reciprocal[i], grid, intensity[i])
+    count = positions.shape[0]
+    for i in range(count):
+        atoms(figure.add_subplot(2, count, i + 1), positions[i])
+        diffraction(figure.add_subplot(2, count, count + i + 1), reciprocal[i], grid, intensity[i])
     return figure
 
 

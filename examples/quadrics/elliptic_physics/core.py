@@ -1,8 +1,8 @@
 """Rigid quadric bodies on a sphere: one engine for S² in Cl(3) and S³ in Cl(4).
 
 A body is a dual quadric, an ellipsoid of the sphere, placed by a motor, a rotation of the ambient space. Its inertia
-is the sum over its mass points of the regressive product of each point with its own motion
-under an open bivector rate, and its momentum is kept in the body frame, stepped by a Lie
+is the sum over its mass points of the regressive product of each point with its own motion,
+a map from bivector rates to momenta, and its momentum is kept in the body frame, stepped by a Lie
 midpoint rule. Two bodies meet when no blend A + B * weight of their forms, with a positive
 weight, is positive semidefinite; the least eigenvector of the best blend is the deepest
 point, and the first body's polar plane there is the contact plane, whose inner product with
@@ -109,7 +109,7 @@ def ellipsoid(half_widths: np.ndarray) -> DualQuadric:
 
 
 def pointcloud_inertia(points: Point, masses: Scalar) -> Inertia:
-    """Momentum of the cloud under an open rate: each point's join with its own motion, mass-weighted."""
+    """The inertia of the cloud, a map from rates to momenta: each point's join with its own motion, mass-weighted."""
     return (points.regressive(points.commutator(Bivector)) * masses).sum(axis=-1)
 
 

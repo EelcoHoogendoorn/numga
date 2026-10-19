@@ -22,6 +22,11 @@ def components(vectors: core.Vector) -> np.ndarray:
     return vectors.cast(core.ga.subspace("x y z")).kernel
 
 
+def spinor_components(spinors: core.Even) -> np.ndarray:
+    """The scalar, yz, zx and xy components of spinors."""
+    return spinors.cast(core.ga.subspace("1 yz zx xy")).kernel
+
+
 def colour(directions: core.Vector) -> np.ndarray:
     """An RGB colour for each direction: its azimuth as the hue, darker towards the south pole."""
     x, y, z = np.moveaxis(components(directions), -1, 0)

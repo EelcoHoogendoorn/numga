@@ -24,18 +24,19 @@ FRAME_DPI = 36
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw(ax, flow: core.Flow, lift: core.Vector, speed: float) -> None:
+def draw(ax, points: core.Vector, velocity: core.Vector, stream: core.Bivector, lift: core.Vector, speed: float) -> None:
+    """The pressure coefficient around the wing at the points, the streamlines, the wing, and its lift."""
     # Each ring closed, its first angle repeated at the end, so no seam is left unpainted.
     def closed(values: np.ndarray) -> np.ndarray:
         return np.concatenate([values, values[:, :1]], axis=1)
 
-    xy = closed(flow.points.cast(core.ga.subspace("x y")).kernel)
-    speed_squared = closed((flow.velocity | flow.velocity).kernel[..., 0])
+    xy = closed(points.cast(core.ga.subspace("x y")).kernel)
+    speed_squared = closed((velocity | velocity).kernel[..., 0])
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
     ax.pcolormesh(xy[..., 0], xy[..., 1], pressure, cmap="RdBu", shading="gouraud",
                   norm=TwoSlopeNorm(0.0, *PRESSURE_RANGE))
-    ax.contour(xy[..., 0], xy[..., 1], closed(flow.stream.cast(core.ga.subspace("xy")).kernel[..., 0]), levels=STREAM_LEVELS,
+    ax.contour(xy[..., 0], xy[..., 1], closed(stream.cast(core.ga.subspace("xy")).kernel[..., 0]), levels=STREAM_LEVELS,
                colors="#334155", linewidths=0.6)
     ax.fill(xy[0, :, 0], xy[0, :, 1], color=WING)
     arrow = lift.cast(core.ga.subspace("x y")).kernel * LIFT_SCALE
@@ -44,39 +45,45 @@ def draw(ax, flow: core.Flow, lift: core.Vector, speed: float) -> None:
     ax.set_aspect("equal")
 
 
-def figure(flow: core.Flow, lift: core.Vector, speed: float) -> plt.Figure:
+def figure(points: core.Vector, velocity: core.Vector, stream: core.Bivector, lift: core.Vector, speed: float) -> plt.Figure:
     result = plt.figure(figsize=(8, 4.6), layout="constrained")
-    draw(result.subplots(), flow, lift, speed)
+    draw(result.subplots(), points, velocity, stream, lift, speed)
     return result
 
 
-def frame(flow: core.Flow, lift: core.Vector, speed: float) -> np.ndarray:
-    result = plt.figure(figsize=(8, 4.6), dpi=FRAME_DPI, layout="constrained")
-    draw(result.subplots(), flow, lift, speed)
-    pixels = capture(result)
-    plt.close(result)
-    return pixels
-
-
-def marked_frame(flow: core.Flow, lift: core.Vector, speed: float, critical: core.Vector, centre: core.Vector) -> np.ndarray:
-    """A frame with the images of the map's critical points and the cylinder's centre marked."""
+def frame(points: core.Vector, velocity: core.Vector, stream: core.Bivector, lift: core.Vector, speed: float,
+          critical: core.Vector, centre: core.Vector) -> np.ndarray:
+    """One frame, with the images of the map's critical points and the cylinder's centre marked."""
     result = plt.figure(figsize=(8, 4.6), dpi=FRAME_DPI, layout="constrained")
     ax = result.subplots()
-    draw(ax, flow, lift, speed)
-    for points, colour in ((critical, MARK), (centre, CENTRE)):
-        xy = points.cast(core.ga.subspace("x y")).kernel
+    draw(ax, points, velocity, stream, lift, speed)
+    for marks, colour in ((critical, MARK), (centre, CENTRE)):
+        xy = marks.cast(core.ga.subspace("x y")).kernel
         ax.scatter(xy[..., 0], xy[..., 1], s=30, color=colour, edgecolors=WING, linewidths=0.8, zorder=3)
     pixels = capture(result)
     plt.close(result)
     return pixels
 
 
-def animate_marked(frames: Iterable[tuple[core.Flow, core.Vector, core.Vector, core.Vector]], speed: float) -> list[np.ndarray]:
-    return [marked_frame(flow, lift, speed, critical, centre) for flow, lift, critical, centre in frames]
+def animate_marked(frames: Iterable[tuple[core.Vector, core.Vector, core.Bivector, core.Vector, core.Vector, core.Vector]],
+                   speed: float) -> list[np.ndarray]:
+    """Each frame of points, velocity, stream function and lift, with the critical points' images and the
+    cylinder's centre marked."""
+    return [frame(points, velocity, stream, lift, speed, critical, centre)
+            for points, velocity, stream, lift, critical, centre in frames]
 
 
-def animate(frames: Iterable[tuple[core.Flow, core.Vector]], speed: float) -> list[np.ndarray]:
-    return [frame(flow, lift, speed) for flow, lift in frames]
+def animate(frames: Iterable[tuple[core.Vector, core.Vector, core.Bivector, core.Vector]], speed: float) -> list[np.ndarray]:
+    """Each frame of points, velocity, stream function and lift."""
+    return [plain_frame(points, velocity, stream, lift, speed) for points, velocity, stream, lift in frames]
+
+
+def plain_frame(points: core.Vector, velocity: core.Vector, stream: core.Bivector, lift: core.Vector, speed: float) -> np.ndarray:
+    result = plt.figure(figsize=(8, 4.6), dpi=FRAME_DPI, layout="constrained")
+    draw(result.subplots(), points, velocity, stream, lift, speed)
+    pixels = capture(result)
+    plt.close(result)
+    return pixels
 
 
 def bipolar(grid: core.Vector, grid_images: core.Vector, circle: core.Vector, circle_image: core.Vector,

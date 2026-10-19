@@ -44,23 +44,6 @@ def light(directions: core.Vector, reached: core.Vector, centre: core.Vector, wi
     return core.brightness(directions, centre, width), core.brightness(reached, centre, width)
 
 
-def tissot(count: int, radius: float) -> tuple[core.Vector, core.Scalar]:
-    """Small round sources behind a lattice of sightlines, as they appear on the sky: each circle
-    carried by the inverse of the local map, about its sightline; with the area ratio there."""
-    spread = np.linspace(-1.25, 1.25, count)
-    centres = core.mv.x * spread[None, :] + core.mv.y * spread[:, None]       # [rows, columns] Vector
-    angles = np.linspace(0, 2 * np.pi, 64)
-    offsets = ((core.mv.xy * (-angles / 2)).exp() >> core.mv.x) * radius             # [angles] Vector
-    local = core.local_map(centres, POSITIONS, MASSES)                        # [rows, columns] Vector <- Vector
-    seen = local[..., None].solve(offsets)                                 # [rows, columns, angles] Vector
-    area = local.outermorphism(core.Area)(core.mv.xy) / core.mv.xy            # [rows, columns] Scalar
-
-    # --- checks
-    # With trace two the inverse is `(2 * Vector - local) / area`.
-    np.testing.assert_allclose((seen - ((2 * core.Vector - local) / area)[..., None](offsets)).kernel, 0.0, atol=1e-11)
-    return centres[..., None] + seen, area
-
-
 if __name__ == "__main__":
     from examples.animation import save_animation, save_figure
     from examples.relativity.gravitational_lensing import render
@@ -70,4 +53,3 @@ if __name__ == "__main__":
     save_figure(render.draw(directions, area, deflected, POSITIONS, light(directions, reached, path[21], 0.035)), "gravitational_lensing")
     steps = (light(directions, reached, centre, 0.035) for centre in path)
     save_animation(render.animate(directions, area, deflected, POSITIONS, steps), "gravitational_lensing", 90)
-    save_figure(render.draw_tissot(directions, area, POSITIONS, *tissot(11, 0.025)), "gravitational_lensing_tissot")

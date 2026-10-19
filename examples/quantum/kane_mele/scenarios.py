@@ -22,40 +22,26 @@ SPIN_ORBIT = 0.1
 MASSES = np.linspace(0.0, 0.8, 41)
 # The levels nearest zero followed through the sweep, among the spin-up states, which hold each
 # energy twice.
-LEVELS = 32
+N_LEVELS = 32
 # The masses whose states nearest zero are drawn: below the spin-orbit coupling's 3 * 3**0.5 times,
 # and above.
 CASES = np.array([0.0, 0.8])
 # The states inside the gap without a mass, each energy four times, and the electron's spinor, spin
 # along x, half up and half down.
-IN_GAP = 32
+N_IN_GAP = 32
 SPINOR = (1 - mv.zx) * 0.5**0.5
 # The time for the edge states to run once around the flake, and the frames over it.
 LAP = 50.0
-FRAMES = 50
+N_FRAMES = 50
+DURATION_MS = 120
 
 
 # --- math -----------------------------------------------------------------------------
 def sweep(flake: core.Flake, masses: np.ndarray):
     """The spin-up levels nearest zero for each mass, and how much of each lies on the rim."""
-    spectra = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, LEVELS) for mass in masses]
+    spectra = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, N_LEVELS) for mass in masses]
     energies = stack([energy for energy, _ in spectra])                         # [masses, levels] Scalar
     shares = stack([core.rim_share(flake, states) for _, states in spectra])    # [masses, levels] Scalar
-
-    # --- checks
-    # The Hamiltonian is its own reverse: every coupling's reverse couples the other way.
-    energy = core.hamiltonian(flake, SPIN_ORBIT, masses[0])
-    np.testing.assert_array_equal((~energy).cells.kernel, energy.cells.kernel)
-    np.testing.assert_array_equal((~energy).columns, energy.columns)
-    # Every spin-up level holds its energy twice, the state and the state times mv.xy.
-    ordered = np.sort(energies.to_array(), axis=-1)
-    np.testing.assert_allclose(ordered[:, ::2], ordered[:, 1::2], atol=1e-8)
-    # Without a mass the levels inside the bulk gap, half of it 3 * 3**0.5 * SPIN_ORBIT, lie on the
-    # rim; with the mass well past the spin-orbit coupling, the gap is empty.
-    half = np.abs(3 * 3**0.5 * SPIN_ORBIT - masses)
-    inside = np.abs(energies.to_array()[0]) < 0.9 * half[0]
-    assert inside.sum() >= 8 and np.all(shares.to_array()[0, inside] > 0.9)
-    assert np.abs(energies.to_array()[-1]).min() > 0.5 * half[-1]
     return energies, shares
 
 
@@ -63,25 +49,51 @@ def nearest(flake: core.Flake, masses: np.ndarray):
     """The density of the spin-up state nearest zero for each mass."""
     states = [core.levels(core.hamiltonian(flake, SPIN_ORBIT, mass), core.Up, 2)[1][0] for mass in masses]
     densities = stack(states).scalar_norm_squared()                            # [masses] Scalar[atoms]
-
-    # --- checks
-    # Without a mass the state nearest zero lies on the rim; with a large one it spreads inside.
-    shares = ((densities * flake.rim).sites.sum() / densities.sites.sum()).to_array()
-    assert shares[0] > 0.9 and shares[-1] < 0.6
     return densities
 
 
 def helical(flake: core.Flake):
-    """An electron started at the middle of the edge facing x, spin along x, keeping its part inside
-    the gap without a mass: its spin density at each frame over one lap."""
-    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, IN_GAP)   # [states] Scalar, [states] Even[atoms]
-    times = np.linspace(0.0, LAP, FRAMES + 1)
+    """The levels inside the gap without a mass and their states, and an electron started at the middle of the
+    edge facing x, spin along x, keeping its part in those states: its spin density at each frame over one lap."""
+    energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar, [states] Even[atoms]
+    times = np.linspace(0.0, LAP, N_FRAMES + 1)
     spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Vector[atoms]
+    return energies, states, spins
 
-    # --- checks
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    from examples.animation import save_animation, save_figure
+    from examples.quantum.kane_mele import render
+
+    flake = core.flake(SIZE, RIM)
+    energies, shares = sweep(flake, MASSES)
+    densities = nearest(flake, CASES)
+    in_gap, states, spins = helical(flake)
+    save_figure(render.draw_levels(MASSES, energies, shares, 3 * 3**0.5 * SPIN_ORBIT), "kane_mele_levels")
+    save_figure(render.draw_states(flake, densities), "kane_mele_states")
+    save_animation(render.animate_spin(flake, spins), "kane_mele_helical", DURATION_MS)
+
+    # checks
+    # The Hamiltonian is its own reverse: every coupling's reverse couples the other way.
+    energy = core.hamiltonian(flake, SPIN_ORBIT, MASSES[0])
+    np.testing.assert_array_equal((~energy).cells.kernel, energy.cells.kernel)
+    np.testing.assert_array_equal((~energy).columns, energy.columns)
+    # Every spin-up level holds its energy twice, the state and the state times mv.xy.
+    ordered = np.sort(energies.to_array(), axis=-1)
+    np.testing.assert_allclose(ordered[:, ::2], ordered[:, 1::2], atol=1e-8)
+    # Without a mass the levels inside the bulk gap, half of it 3 * 3**0.5 * SPIN_ORBIT, lie on the
+    # rim; with the mass well past the spin-orbit coupling, the gap is empty.
+    half = np.abs(3 * 3**0.5 * SPIN_ORBIT - MASSES)
+    inside = np.abs(energies.to_array()[0]) < 0.9 * half[0]
+    assert inside.sum() >= 8 and np.all(shares.to_array()[0, inside] > 0.9)
+    assert np.abs(energies.to_array()[-1]).min() > 0.5 * half[-1]
+    # Without a mass the state nearest zero lies on the rim; with a large one it spreads inside.
+    nearest_shares = ((densities * flake.rim).sites.sum() / densities.sites.sum()).to_array()
+    assert nearest_shares[0] > 0.9 and nearest_shares[-1] < 0.6
     # Every state is inside the bulk gap and on the rim, and every energy is held four times: the two
     # spins, each with its state times mv.xy.
-    ordered = np.sort(energies.to_array())
+    ordered = np.sort(in_gap.to_array())
     assert np.abs(ordered).max() < 3 * 3**0.5 * SPIN_ORBIT
     np.testing.assert_allclose(ordered[::4], ordered[3::4], atol=1e-8)
     assert core.rim_share(flake, states).to_array().min() > 0.9
@@ -92,20 +104,13 @@ def helical(flake: core.Flake):
     np.testing.assert_array_less(0.9 * totals, (density * flake.rim).sites.sum().to_array())
     # A quarter lap on, the spin-up half has turned counterclockwise around the flake and the spin-down
     # half clockwise: the sine of each half's turn from the start, by its centre.
-    along = spins[FRAMES // 4] | mv.z                                          # Scalar[atoms]
-    up, down = (density[FRAMES // 4] + along) * 0.5, (density[FRAMES // 4] - along) * 0.5
+    along = spins[N_FRAMES // 4] | mv.z                                          # Scalar[atoms]
+    up, down = (density[N_FRAMES // 4] + along) * 0.5, (density[N_FRAMES // 4] - along) * 0.5
     start = flake.positions.batch()[flake.start].normalized()                 # [] Vector
     centres = [((half * flake.positions).sites.sum() / half.sites.sum()).normalized() for half in (up, down)]
     sines = [(mv.xy | (centre ^ start)).to_array().item() for centre in centres]
     assert sines[0] > 0.5 and sines[1] < -0.5
-    return spins
 
 
 if __name__ == "__main__":
-    from examples.animation import save_animation, save_figure
-    from examples.quantum.kane_mele import render
-
-    flake = core.flake(SIZE, RIM)
-    save_figure(render.draw_levels(MASSES, *sweep(flake, MASSES), 3 * 3**0.5 * SPIN_ORBIT), "kane_mele_levels")
-    save_figure(render.draw_states(flake, nearest(flake, CASES), [f"mass {mass}" for mass in CASES]), "kane_mele_states")
-    save_animation(render.animate_spin(flake, helical(flake)), "kane_mele_helical", 120)
+    main()

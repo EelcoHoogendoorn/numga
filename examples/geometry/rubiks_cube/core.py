@@ -1,5 +1,4 @@
-"""A Rubik's cube as points: turned, drawn and solved with the same quarter-turn maps, in the geometric
-algebra of three-dimensional space.
+"""A Rubik's cube represents its 54 stickers as integer-coordinate vectors in 3D space that are turned, drawn, and solved with the same quarter-turn rotor maps.
 
 The cube is 27 cubies, their centres at -1, 0 and 1 along each axis, and a sticker is a cubie's face
 on the cube's surface: a face is a side and an axis, and a cubie shows the faces whose side it lies

@@ -18,8 +18,6 @@ In tensor notation the stress reads as $\\sigma_{ij} = \\lambda\\,\\varepsilon_{
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import numpy as np
 
 from numga import NumpyContext, concatenate
@@ -66,26 +64,14 @@ def mohr_circle(values: Scalar) -> tuple[Scalar, Scalar]:
     return (values[0] + values[2]) / 2, (values[2] - values[0]).abs() / 2
 
 
-def views(strain: Strain, stress: Stress, directions: Vector, rotors: Rotor) -> Views:
-    """The cube seen from each of a batch of frames `[frames]`: the strain and the stress as each frame
-    sees them, the cube deformed, the tractions on its faces, and the principal directions."""
-    local_strain = rotors << strain(rotors >> Vector)                          # [frames] Strain
-    local_stress = rotors << stress(rotors >> Vector)                          # [frames] Stress
-    normal, shear = tractions(local_stress[:, None], normals)                 # [frames, 6] Vector
-    return Views(corners + local_strain[:, None](corners),                      # [frames, 8] Vector
-                 0.5 * (normals + local_strain[:, None](normals)),             # [frames, 6] Vector
-                 normal, shear, rotors[:, None] << directions)                   # [frames, 3] Vector
-
-
-# --- plumbing -------------------------------------------------------------------------
-@dataclass(frozen=True)
-class Views:
-    """The cube seen from each of a batch of frames: its deformed corners `[frames, 8]`, the centres
-    of its deformed faces `[frames, 6]`, the normal and shear traction on each face `[frames, 6]`,
-    and the principal directions `[frames, 3]`."""
-
-    corners: Vector
-    centres: Vector
-    normal: Vector
-    shear: Vector
-    principal: Vector
+def views(strain: Strain, stress: Stress, directions: Vector, rotors: Rotor
+          ) -> tuple[Vector, Vector, Vector, Vector, Vector]:
+    """The cube seen from each frame `[...]`: the strain and the stress as each frame sees them, the cube's
+    deformed corners `[..., 8]` and face centres `[..., 6]`, the normal and shear traction on each face
+    `[..., 6]`, and the principal directions `[..., 3]`."""
+    local_strain = rotors << strain(rotors >> Vector)                          # [...] Strain
+    local_stress = rotors << stress(rotors >> Vector)                          # [...] Stress
+    normal, shear = tractions(local_stress[..., None], normals)               # [..., 6] Vector
+    return (corners + local_strain[..., None](corners),                         # [..., 8] Vector
+            0.5 * (normals + local_strain[..., None](normals)),                # [..., 6] Vector
+            normal, shear, rotors[..., None] << directions)                    # [..., 3] Vector

@@ -1,23 +1,21 @@
-"""The Hopf fibration: the spinors of three-dimensional space, sorted by the direction they point.
+"""The Hopf fibration: the unit spinors of three-dimensional space, sorted by the direction they point.
 
-A spinor of the geometric algebra of three-dimensional space is an even multivector, four real
-numbers, and the unit spinors form the three-sphere. Sandwiching z with a spinor gives a unit vector,
-its direction. With the spinor left open, `Even >> mv.z` is that sandwich as a form with two spinor
-slots, a vector from a pair of spinors; on one spinor twice it is that spinor's direction.
+A unit spinor turns z into a direction, but it holds more than the direction: turning it in the xy plane
+before it acts changes the spinor and not where z ends up. The spinors over each direction therefore form
+a circle, the fibre over that direction; the fibres fill the three-sphere of unit spinors, and every two of
+them are linked once. Carried around a closed loop of directions, a spinor comes back onto its own fibre,
+turned along it by half the solid angle the loop encloses.
 
-Turning a spinor on the right in the xy plane leaves its direction alone, since z commutes with xy:
-the spinors that point the same way form a circle, the fibre over that direction. The fibre is also
-where the form `direction | HOPF`, a scalar from two spinors, is largest: its eigenvalues are minus
-one twice and plus one twice, and the eigenspace of plus one is the plane of the circle.
+Spinors are modelled as the even multivectors, and the sandwich `Even >> mv.z` is a vector-valued form on
+pairs of spinors whose value on one spinor twice is that spinor's direction. Paired with a direction,
+`direction | HOPF` is a scalar form on pairs of spinors, with eigenvalues minus one twice and plus one
+twice; its top eigenspace is the plane of the fibre over that direction. A phase is a turn on the right,
+`psi * (mv.xy * angle).exp()`, which the direction cannot see because z commutes with xy.
 
-Through the stereographic projection of the three-sphere from the spinor -1, every fibre is a circle
-in space, any two of them linked once, and the fibres over a circle of directions fill a torus.
-Carrying a spinor around a closed loop of directions, by the smallest rotation from each direction to
-the next, brings it back on its own fibre, turned along it by half the solid angle the loop encloses.
-
-In the notation of quaternions a spinor reads as a unit quaternion and its direction as the quaternion
-conjugating k, the map of Hopf's 1931 paper; in matrix notation, as a two-component complex spinor and
-its Bloch vector, the state of a spin one half, and the turn along the fibre as its Berry phase.
+In quaternion notation a spinor reads as a unit quaternion q and its direction as q k q*; in complex
+coordinates, as in Hopf's 1931 paper, the map sends a pair (z1, z2) on the unit sphere of C^2 to the point
+z1 / z2 of the Riemann sphere; in bra-ket notation it sends the state of a spin one half to its Bloch
+vector, and the turn along the fibre is the Berry phase.
 """
 
 from __future__ import annotations
@@ -32,7 +30,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Even = ga.gatype.even()
 Rotor = ga.gatype.rotor()
-# A spinor's direction, with the spinor left open in both places it appears.
+# A spinor's direction, as a form on pairs of spinors.
 HOPF = Even >> mv.z                                # [] Vector <- (Even, Even)
 
 
@@ -63,12 +61,13 @@ def transport(directions: Vector) -> Rotor:
 
 
 def linking(first: Vector, second: Vector) -> Scalar:
-    """Gauss's linking number of two closed polygons: the volume each pair of segments spans with the
-    line between them, over the cube of its length, summed and divided by four pi."""
-    step_first = first[1:] - first[:-1]                                          # [n] Vector
-    step_second = second[1:] - second[:-1]                                       # [m] Vector
-    middle_first = 0.5 * (first[1:] + first[:-1])                                # [n] Vector
-    middle_second = 0.5 * (second[1:] + second[:-1])                             # [m] Vector
-    separation = middle_first[:, None] - middle_second[None, :]              # [n, m] Vector
-    volume = (separation ^ step_first[:, None] ^ step_second[None, :]).dual()       # [n, m] Scalar
-    return (volume / (separation | separation).square_root() ** 3).sum() / (4 * np.pi)   # [] Scalar
+    """Gauss's linking number of pairs of closed polygons, the vertices on the last axis: the volume each
+    pair of segments spans with the line between them, over the cube of its length, summed and divided by
+    four pi."""
+    step_first = first[..., 1:] - first[..., :-1]                                # [..., segments] Vector
+    step_second = second[..., 1:] - second[..., :-1]                             # [..., segments] Vector
+    middle_first = 0.5 * (first[..., 1:] + first[..., :-1])                      # [..., segments] Vector
+    middle_second = 0.5 * (second[..., 1:] + second[..., :-1])                   # [..., segments] Vector
+    separation = middle_first[..., :, None] - middle_second[..., None, :]        # [..., segments, segments] Vector
+    volume = (separation ^ step_first[..., :, None] ^ step_second[..., None, :]).dual()   # [..., segments, segments] Scalar
+    return (volume / (separation | separation).square_root() ** 3).sum(axis=(-2, -1)) / (4 * np.pi)   # [...] Scalar

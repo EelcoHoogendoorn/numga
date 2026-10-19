@@ -1,5 +1,4 @@
-"""Scenes for the cube: a scramble of random quarter turns, solved by meeting in the middle, and the
-cube turned through the scramble and back through the solution."""
+"""Scenes for the Rubik's cube generate a random scramble of quarter turns, solve it by bidirectional breadth-first search, and animate the scramble and solution."""
 
 from __future__ import annotations
 

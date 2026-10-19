@@ -121,7 +121,7 @@ def draw_walls(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centre
 
 
 def draw_section(ax, walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
-                 shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Line,
+                 shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Twist,
                  largest: float) -> None:
     """One section: the stress along the beam over its walls at the clamp, the walls at the tip as the
     tip has moved, its principal axes dashed through the centroid, the neutral axis, and the load's
@@ -172,7 +172,7 @@ def draw_beam(ax, walls: core.Point, shears: core.Point, through: core.Point, lo
 
 def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
                shears: list[core.Point], load: core.Point,
-               beams: list[tuple[core.Line, core.Motor, core.Strain, core.Scalar]]) -> plt.Figure:
+               beams: list[tuple[core.Twist, core.Motor, core.Strain, core.Scalar]]) -> plt.Figure:
     """Top, each section with its stress at the clamp; below, each cantilever bent under the load
     through its centroid."""
     figure = plt.figure(figsize=(4.4 * len(sections), 8.6), dpi=110)
@@ -213,7 +213,7 @@ def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list
 
 def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
                   through: core.Point, loads: core.Point,
-                  beam: tuple[core.Line, core.Motor, core.Strain, core.Scalar]) -> list[np.ndarray]:
+                  beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> list[np.ndarray]:
     """Each frame of a changing tip load, through points `through` in directions `loads`, either batched
     over the frames: the bent beam, and its section's stress at the clamp with the tip's cross-section."""
     nodes, ends, _ = section

@@ -4,6 +4,9 @@ from the sphere they came from."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from itertools import chain
+
 import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -21,7 +24,7 @@ def euclidean(vertices) -> np.ndarray:
     return vertices.cast(ga.subspace("x y z")).kernel
 
 
-def draw_mesh(ax, mesh: Mesh, colours: np.ndarray, title: str) -> None:
+def draw_mesh(ax, mesh: Mesh, colours: np.ndarray) -> None:
     """The mesh, each face in its colour, darkened as it turns from the light."""
     triangles = euclidean(mesh.vertices)[mesh.faces]                          # [F, 3, 3]
     normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
@@ -35,7 +38,6 @@ def draw_mesh(ax, mesh: Mesh, colours: np.ndarray, title: str) -> None:
     ax.set_box_aspect([1, 1, 1])
     ax.view_init(elev=18, azim=-60)
     ax.set_axis_off()
-    ax.set_title(title)
 
 
 def face_colours(values: Scalar, limit: float) -> np.ndarray:
@@ -43,10 +45,10 @@ def face_colours(values: Scalar, limit: float) -> np.ndarray:
     return plt.get_cmap("coolwarm")((values.to_array().ravel() / limit + 1) / 2)
 
 
-def draw_surface(mesh: Mesh, values: Scalar, limit: float, title: str) -> plt.Figure:
+def draw_surface(mesh: Mesh, values: Scalar, limit: float) -> plt.Figure:
     """The mesh, its faces coloured by a field in [-limit, limit]."""
     figure = plt.figure(figsize=(5, 5))
-    draw_mesh(figure.add_subplot(projection="3d"), mesh, face_colours(values, limit), title)
+    draw_mesh(figure.add_subplot(projection="3d"), mesh, face_colours(values, limit))
     figure.tight_layout()
     return figure
 
@@ -56,21 +58,19 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
     textured with the sphere's checkerboard."""
     limit = np.abs(curvature.to_array()).max()
     figure = plt.figure(figsize=(7, 3.5))
-    draw_mesh(figure.add_subplot(1, 2, 1, projection="3d"), mesh, face_colours(curvature, limit), "change in mean curvature")
+    draw_mesh(figure.add_subplot(1, 2, 1, projection="3d"), mesh, face_colours(curvature, limit))
     axis = figure.add_subplot(1, 2, 2)
     axis.imshow(render_surface(deformed, mesh, PIXELS))
     axis.set_axis_off()
-    axis.set_title("spin transformation")
     figure.tight_layout()
     return figure
 
 
-def draw_textured(mesh: Mesh, reference: Mesh, title: str) -> plt.Figure:
+def draw_textured(mesh: Mesh, reference: Mesh) -> plt.Figure:
     """The surface rendered with the reference's checkerboard."""
     figure, axis = plt.subplots(figsize=(3, 3))
     axis.imshow(render_surface(mesh, reference, PIXELS))
     axis.set_axis_off()
-    axis.set_title(title)
     figure.tight_layout()
     return figure
 
@@ -82,18 +82,20 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
     for row, (eigenvalue, spheres) in enumerate(gallery.items()):
         for column, sphere in enumerate(spheres):
             axes[row, column].imshow(render_surface(sphere, reference, TILE))
-            axes[row, column].set_title(f"n = {eigenvalue}")
+        axes[row, 0].set_title(f"n = {eigenvalue}", loc="left")
         for axis in axes[row]:
             axis.set_axis_off()
     figure.tight_layout()
     return figure
 
 
-def animate_rounding(frames: list[Mesh]) -> list[np.ndarray]:
+def animate_rounding(frames: Iterable[Mesh]) -> list[np.ndarray]:
     """Each step of the flow, textured with the checkerboard of the first."""
+    frames = iter(frames)
+    first = next(frames)
     images = []
-    for frame in frames:
-        figure = draw_textured(frame, frames[0], "conformal flow")
+    for frame in chain([first], frames):
+        figure = draw_textured(frame, first)
         images.append(capture(figure))
         plt.close(figure)
     return images

@@ -13,7 +13,7 @@ the style and the sun at a given hour holds the sun at that hour on every day of
 casts its shadow along one line of the dial, whatever the season. The tip of the gnomon, the nodus, casts
 a point whose path over a day is the season's shadow path. The ray from the nodus to the sun keeps its angle
 to the pole all day, so the day's rays sweep a cone about the pole, a quadratic form on rays
-`pole * (pole | Vector) - sin(declination)**2 * Vector`, and the dial cuts the cone in the shadow path: a
+`pole * (pole | Vector) - (pole | sun).squared() * Vector`, and the dial cuts the cone in the shadow path: a
 conic. The cone's other nappe holds the rays at the opposite declination, so a summer day and the winter day
 as far from the equinox are the two branches of one hyperbola; at the equinoxes the cone flattens into the
 plane of the equator, and the shadow runs along a straight line.
@@ -66,10 +66,11 @@ def shadow(nodus: Vector, suns: Vector) -> Vector:
     return nodus - suns * ((nodus | up) / (suns | up))                         # [...] Vector
 
 
-def cone(pole: Vector, declinations: np.ndarray) -> Cone:
-    """The cone of rays at a declination's angle from the celestial equator: zero on a ray exactly when its
-    angle to the pole is a quarter turn less the declination, or a quarter turn more."""
-    return pole * (pole | Vector) - mv.scalar(np.sin(declinations)[..., None] ** 2) * Vector   # [...] Vector <- Vector
+def cone(pole: Vector, sun: Vector) -> Cone:
+    """The cone of rays about the pole through a direction to the sun: zero on a ray exactly when it meets
+    the pole at the sun's angle, or at its supplement, the other nappe."""
+    # A unit sun's inner product with the pole is the sine of its declination.
+    return pole * (pole | Vector) - (pole | sun).squared() * Vector              # [...] Vector <- Vector
 
 
 def hour_planes(pole: Vector, equator: Vector, hours: np.ndarray) -> Bivector:

@@ -127,12 +127,11 @@ def induced(points: Vector, circulations: Circulation, core_radius: float) -> Ve
     return pulls.sum(axis=1).reshape(points.shape)                               # [rings, n] Vector
 
 
-def flow(points: Vector, rate: Callable[[Vector], Vector], step: float, steps: int, every: int) -> Iterator[Vector]:
+def flow(points: Vector, rate: Callable[[Vector], Vector], step: float) -> Iterator[Vector]:
     """A flow of polygons with the given velocity, by classical Runge–Kutta steps of duration `step`: the
-    polygons every `every` steps, and at the end."""
-    for count in range(steps + 1):
-        if count % every == 0 or count == steps:
-            yield points
+    polygons at every step, without end."""
+    while True:
+        yield points
         first = rate(points)
         second = rate(points + first * (step / 2))
         third = rate(points + second * (step / 2))

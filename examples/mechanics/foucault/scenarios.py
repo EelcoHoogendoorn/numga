@@ -12,11 +12,11 @@ LATITUDES = np.radians(np.array([0.0, 30.0, 48.85, 90.0]))
 PARIS = 2
 # The swings drawn in a day, far fewer than the thousands a real pendulum makes, so that each stays apart;
 # the samples of a day; and the steps a direction is carried around a latitude circle in.
-SWINGS = 40
-SAMPLES = 4000
-STEPS = 720
+N_SWINGS = 40
+N_SAMPLES = 4000
+N_STEPS = 720
 # The frames of the day in Paris, and the duration of each.
-FRAMES = 72
+N_FRAMES = 72
 DURATION_MS = 80
 
 
@@ -24,17 +24,17 @@ DURATION_MS = 80
 def rosettes() -> tuple[core.Vector, core.Vector, core.Vector]:
     """Where each pendulum's bob is on its floor through the day `[latitudes, samples]`, swinging to and
     fro along its turning line, and the floor's north and east."""
-    turns = np.linspace(0, 2 * np.pi, SAMPLES)                                 # [samples]
+    turns = np.linspace(0, 2 * np.pi, N_SAMPLES)                                 # [samples]
     lines = core.swing(LATITUDES[:, None], turns[None, :])                     # [latitudes, samples] Vector
     _, north, east = core.compass(LATITUDES)
-    return lines * np.sin(SWINGS * turns), north, east                         # [latitudes, samples] Vector
+    return lines * np.sin(N_SWINGS * turns), north, east                         # [latitudes, samples] Vector
 
 
 def day() -> tuple[np.ndarray, core.Rotor, core.Vector, core.Vector, core.Vector, core.Vector]:
     """For the pendulum in Paris at every frame of a day: the earth's turn so far, the rotor of that turn,
     and the line the pendulum swings along on its floor; with the site's vertical, north and east at the
     start of the day."""
-    turns = np.linspace(0, 2 * np.pi, FRAMES + 1)                              # [frames + 1]
+    turns = np.linspace(0, 2 * np.pi, N_FRAMES + 1)                              # [frames + 1]
     vertical, north, east = core.compass(LATITUDES[PARIS])
     return turns, core.turn(core.equator, turns), core.swing(LATITUDES[PARIS], turns), vertical, north, east
 
@@ -55,7 +55,7 @@ def main() -> None:
     ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Vector
     expected = 2 * np.pi * np.sin(LATITUDES)
     assert np.abs(np.sin(render.turned(ends, north, east) - expected)).max() < 1e-10
-    carried = core.carried(LATITUDES, STEPS) >> north                          # [latitudes] Vector
+    carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Vector
     assert np.abs(np.sin(render.turned(carried, north, east) - expected)).max() < 1e-4
 
 

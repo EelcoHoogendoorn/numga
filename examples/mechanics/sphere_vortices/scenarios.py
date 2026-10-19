@@ -33,20 +33,20 @@ SEED = 0
 # The time step, the midpoint step's fixed-point sweeps, the steps, the steps compared between the two
 # time steps, the steps between frames, and the duration of a frame.
 DT = 0.05
-SWEEPS = 3
-STEPS = 1200
-COMPARED_STEPS = 100
-EVERY = 4
+N_SWEEPS = 3
+N_STEPS = 1200
+N_COMPARED_STEPS = 100
+N_STEPS_PER_FRAME = 4
 DURATION_MS = 60
 
 
 # --- math -----------------------------------------------------------------------------
-def history(vortices: core.Vortices, step: Callable[[core.Vortices], core.Vortices], steps: int) -> core.Pivot:
+def history(vortices: core.Vortices, step: Callable[[core.Vortices], core.Vortices], n_steps: int) -> core.Pivot:
     """The vortices' pivots at every step `[steps + 1, vortices] Pivot`."""
     def stepped() -> Iterator[core.Pivot]:
         current = vortices
         yield current.pivots
-        for _ in range(steps):
+        for _ in range(n_steps):
             current = step(current)
             yield current.pivots
 
@@ -62,7 +62,7 @@ def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
 
 
 def stepped(vortices: core.Vortices) -> core.Pivot:
-    return history(vortices, lambda current: core.midpoint(current, DT, SWEEPS), STEPS)
+    return history(vortices, lambda current: core.midpoint(current, DT, N_SWEEPS), N_STEPS)
 
 
 def rings() -> list[core.Pivot]:
@@ -70,41 +70,19 @@ def rings() -> list[core.Pivot]:
     pivots `[steps + 1, vortices] Pivot` of each ring."""
     rng = np.random.default_rng(SEED)
 
-    def ring(count: int) -> core.Pivot:
-        places = turned(np.full(count, RING_ANGLE), 2 * np.pi * np.arange(count) / count)   # [vortices] Pivot
-        nudges = (core.pivot(rng.normal(size=(count, 3))) * DISTURBANCE).exp()       # [vortices] Rotor
-        return stepped(core.Vortices(nudges >> places, np.ones(count), RING_CORE))
+    def ring(size: int) -> core.Pivot:
+        places = turned(np.full(size, RING_ANGLE), 2 * np.pi * np.arange(size) / size)   # [vortices] Pivot
+        nudges = (core.pivot(rng.normal(size=(size, 3))) * DISTURBANCE).exp()       # [vortices] Rotor
+        return stepped(core.Vortices(nudges >> places, np.ones(size), RING_CORE))
 
-    histories = [ring(count) for count in RING_COUNTS]
-
-    # --- checks
-    # The ring of five keeps its shape, the ring of six nearly; the ring of seven, neutral in the plane,
-    # breaks up on the sphere.
-    changes = [chord_change(pivots) for pivots in histories]
-    assert changes[0] < 0.01 and changes[1] < 0.05 and changes[2] > 0.2
-    return histories
+    return [ring(size) for size in RING_COUNTS]
 
 
 def travelling() -> list[core.Pivot]:
     """A dipole and two leapfrogging pairs travelling around the equator: their pivots
     `[steps + 1, vortices] Pivot`."""
-    histories = [stepped(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE))
-                 for angles, circulations in ((DIPOLE_ANGLES, DIPOLE_CIRCULATIONS), (LEAPFROG_ANGLES, LEAPFROG_CIRCULATIONS))]
-
-    # --- checks
-    # The dipole keeps its chord, closely: two vortices alone turn rigidly about their centre of
-    # vorticity, which the midpoint turns, each vortex about the other, follow to their second order; the
-    # tolerance tests that. The leapfrogging pairs stay mirror images across the equator, the mirror
-    # taking each positive vortex onto the negative one beside it.
-    dipole, frogs = histories
-    chords = (dipole[:, 0] - dipole[:, 1]).norm_squared().to_array()               # [steps + 1]
-    np.testing.assert_allclose(chords, chords[0], rtol=1e-2)
-    # The mirror in the equator takes each positive vortex's flow, its circulation times its bivector, onto the
-    # flow of the negative vortex beside it.
-    equator = core.mv.z                                                              # [] Plane
-    mirrored = equator >> (frogs[:, ::2] * LEAPFROG_CIRCULATIONS[::2])               # [steps + 1, pairs] Pivot
-    np.testing.assert_allclose(np.abs((mirrored - frogs[:, 1::2] * LEAPFROG_CIRCULATIONS[1::2]).kernel).max(), 0.0, atol=1e-8)
-    return histories
+    return [stepped(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE))
+            for angles, circulations in ((DIPOLE_ANGLES, DIPOLE_CIRCULATIONS), (LEAPFROG_ANGLES, LEAPFROG_CIRCULATIONS))]
 
 
 def chord_change(pivots: core.Pivot) -> float:
@@ -117,18 +95,8 @@ def compared() -> tuple[core.Pivot, core.Pivot]:
     """The leapfrogging pairs by the rotors of pairs and by midpoint turns, over the first steps: the
     impulse kept exactly by the one and closely by the other."""
     frogs = core.Vortices(turned(np.pi / 2 - LEAPFROG_ANGLES, np.zeros(len(LEAPFROG_ANGLES))), LEAPFROG_CIRCULATIONS, PAIR_CORE)
-    by_pairs = history(frogs, lambda current: core.paired(current, core.schedule(len(frogs.circulations)), DT), COMPARED_STEPS)
-    by_midpoints = history(frogs, lambda current: core.midpoint(current, DT, SWEEPS), COMPARED_STEPS)
-
-    # --- checks
-    # The pairs keep the impulse to round-off; the midpoint turns, each vortex by its own rotor, only
-    # closely, the tolerance testing their accuracy; and both steps agree closely, being of second order.
-    for pivots, tolerance in ((by_pairs, 1e-12), (by_midpoints, 1e-2)):
-        impulses = core.impulse(core.Vortices(pivots, frogs.circulations, PAIR_CORE)).kernel   # [steps + 1, 3]
-        np.testing.assert_allclose(impulses, np.broadcast_to(impulses[0], impulses.shape), atol=tolerance)
-    parting = np.sqrt((by_pairs[-1] - by_midpoints[-1]).norm_squared().to_array().max())
-    travel = np.sqrt((by_midpoints[-1] - by_midpoints[0]).norm_squared().to_array().max())
-    assert parting < 0.05 * travel
+    by_pairs = history(frogs, lambda current: core.paired(current, core.schedule(len(frogs.circulations)), DT), N_COMPARED_STEPS)
+    by_midpoints = history(frogs, lambda current: core.midpoint(current, DT, N_SWEEPS), N_COMPARED_STEPS)
     return by_pairs, by_midpoints
 
 
@@ -137,9 +105,36 @@ def main() -> None:
     from examples.animation import save_animation
     from examples.mechanics.sphere_vortices import render
 
-    save_animation(render.animate(rings(), RING_VIEW, EVERY), "sphere_vortices_rings", DURATION_MS)
-    save_animation(render.animate(travelling(), TRAVEL_VIEW, EVERY), "sphere_vortices_travelling", DURATION_MS)
-    compared()
+    histories = rings()
+    dipole, frogs = travelling()
+    by_pairs, by_midpoints = compared()
+    save_animation(render.animate(histories, RING_VIEW, N_STEPS_PER_FRAME), "sphere_vortices_rings", DURATION_MS)
+    save_animation(render.animate([dipole, frogs], TRAVEL_VIEW, N_STEPS_PER_FRAME), "sphere_vortices_travelling", DURATION_MS)
+
+    # checks
+    # The ring of five keeps its shape, the ring of six nearly; the ring of seven, neutral in the plane,
+    # breaks up on the sphere.
+    changes = [chord_change(pivots) for pivots in histories]
+    assert changes[0] < 0.01 and changes[1] < 0.05 and changes[2] > 0.2
+    # The dipole keeps its chord, closely: two vortices alone turn rigidly about their centre of
+    # vorticity, which the midpoint turns, each vortex about the other, follow to their second order; the
+    # tolerance tests that. The leapfrogging pairs stay mirror images across the equator, the mirror
+    # taking each positive vortex onto the negative one beside it.
+    chords = (dipole[:, 0] - dipole[:, 1]).norm_squared().to_array()               # [steps + 1]
+    np.testing.assert_allclose(chords, chords[0], rtol=1e-2)
+    # The mirror in the equator takes each positive vortex's flow, its circulation times its bivector, onto the
+    # flow of the negative vortex beside it.
+    equator = core.mv.z                                                              # [] Plane
+    mirrored = equator >> (frogs[:, ::2] * LEAPFROG_CIRCULATIONS[::2])               # [steps + 1, pairs] Pivot
+    np.testing.assert_allclose(np.abs((mirrored - frogs[:, 1::2] * LEAPFROG_CIRCULATIONS[1::2]).kernel).max(), 0.0, atol=1e-8)
+    # The pairs keep the impulse to round-off; the midpoint turns, each vortex by its own rotor, only
+    # closely, the tolerance testing their accuracy; and both steps agree closely, being of second order.
+    for pivots, tolerance in ((by_pairs, 1e-12), (by_midpoints, 1e-2)):
+        impulses = core.impulse(core.Vortices(pivots, LEAPFROG_CIRCULATIONS, PAIR_CORE)).kernel   # [steps + 1, 3]
+        np.testing.assert_allclose(impulses, np.broadcast_to(impulses[0], impulses.shape), atol=tolerance)
+    parting = np.sqrt((by_pairs[-1] - by_midpoints[-1]).norm_squared().to_array().max())
+    travel = np.sqrt((by_midpoints[-1] - by_midpoints[0]).norm_squared().to_array().max())
+    assert parting < 0.05 * travel
 
 
 if __name__ == "__main__":

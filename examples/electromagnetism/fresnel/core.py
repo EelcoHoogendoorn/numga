@@ -1,7 +1,7 @@
-"""Light's wave surface in a crystal, from extensors in spacetime algebra.
+"""Fresnel wave surfaces: light's wave surface in a crystal, from extensors in spacetime algebra.
 
-A material is a map from the field, a bivector, to its excitation, built by leaving the field open:
-`dielectric` weights the observer's electric planes by their permittivities and the magnetic planes
+A material is a map from the field, a bivector, to its excitation, built by multiplying by the space
+of fields: `dielectric` weights the observer's electric planes by their permittivities and the magnetic planes
 by one reluctivity. A potential A gives the field `k ^ A`, and `potential_map` is the map from A to
 what is left of Maxwell's other equation, `(k ^ material(k ^ A)).dual()`, a map `Vector <- Vector`.
 It always loses the potential along k; a wave is a second potential it loses, which its action on

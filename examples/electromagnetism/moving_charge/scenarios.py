@@ -1,5 +1,5 @@
-"""A soft charge sped up to near the speed of light and slowed down again, and a point charge
-circling slowly and fast, shedding waves."""
+"""Moving charges: a soft charge sped up to near the speed of light and slowed down again, and a point
+charge circling slowly and fast, shedding waves."""
 
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ CORE_RADIUS = 0.08
 TOP_RAPIDITY = 2.0
 HALF_WIDTH = 1.5
 HALF_HEIGHT = 1.0
-COLUMNS = 300
-ROWS = 200
-FRAMES = 90
+N_COLUMNS = 300
+N_ROWS = 200
+N_FRAMES = 90
 DURATION_MS = 60
 
 ORBIT_CHARGE = 1.0
 ORBIT_RADIUS = 1.0
 ORBIT_SPEEDS = {"slow": 0.5, "fast": 0.9}
 ORBIT_HALF_WIDTH = 10.0
-ORBIT_PIXELS = 300
-ORBIT_FRAMES = 60
+N_ORBIT_PIXELS = 300
+N_ORBIT_FRAMES = 60
 
 
 # --- math -----------------------------------------------------------------------------
@@ -36,9 +36,9 @@ def charge(rapidity: float) -> core.Charge:
 def speed_up() -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
     """The lab's view at time zero as the charge speeds up: the events, the field, and the current
     from the metric-free trace of the field's gradient."""
-    events = core.grid(HALF_WIDTH, HALF_HEIGHT, COLUMNS, ROWS)               # [rows, columns] Vector
+    events = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)               # [rows, columns] Vector
     # Slowing down retraces speeding up: the rise alone is half the frames.
-    rapidities = TOP_RAPIDITY * (1 - np.cos(2 * np.pi * np.arange(FRAMES // 2 + 1) / FRAMES)) / 2
+    rapidities = TOP_RAPIDITY * (1 - np.cos(2 * np.pi * np.arange(N_FRAMES // 2 + 1) / N_FRAMES)) / 2
     for rapidity in rapidities:
         moving = charge(rapidity)
         field = core.field(core.potential_gradient(moving, events))           # [rows, columns] Bivector
@@ -49,9 +49,9 @@ def speed_up() -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
 def circling(orbit: core.Orbit) -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
     """Over one turn: the events in the orbit's plane at each lab time, the field there, and the
     charge."""
-    plane = core.grid(ORBIT_HALF_WIDTH, ORBIT_HALF_WIDTH, ORBIT_PIXELS, ORBIT_PIXELS)   # [rows, columns] Vector
+    plane = core.grid(ORBIT_HALF_WIDTH, ORBIT_HALF_WIDTH, N_ORBIT_PIXELS, N_ORBIT_PIXELS)   # [rows, columns] Vector
     period = 2 * np.pi * orbit.radius / orbit.speed
-    for time in period * np.arange(ORBIT_FRAMES) / ORBIT_FRAMES:
+    for time in period * np.arange(N_ORBIT_FRAMES) / N_ORBIT_FRAMES:
         events = plane + core.mv.t * time                                    # [rows, columns] Vector
         field = core.field(core.orbit_potential_gradient(orbit, events))     # [rows, columns] Bivector
         position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Vector

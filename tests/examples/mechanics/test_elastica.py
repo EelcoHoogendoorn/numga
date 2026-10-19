@@ -32,7 +32,7 @@ def test_helices_end_above_their_starts():
 def test_moving_cord_keeps_its_energy():
     """Kicked, with no weight and no damping, the cord's kinetic and elastic energy together stay put: the joint
     loads are exactly the derivative of the joints' energy."""
-    pieces = scenarios.CORD_COILS * scenarios.PER_COIL
+    pieces = scenarios.N_CORD_COILS * scenarios.N_PER_COIL
     step = scenarios.CORD_LENGTH / pieces
     rest, frames = scenarios.coil(pieces)
     joint = (rest * (step / 2)).exp()

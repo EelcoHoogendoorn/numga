@@ -1,7 +1,7 @@
 """Potential flow past a wing: a velocity whose geometric derivative vanishes.
 
-The velocity is a vector field. Its geometric derivative, the open vector times the velocity's
-gradient map contracted, has a scalar part, the divergence, and a bivector part, the vorticity. Air
+The velocity is a vector field. Its geometric derivative, the velocity's gradient map multiplied by
+`Vector`, the space of all vectors, and contracted, has a scalar part, the divergence, and a bivector part, the vorticity. Air
 past a wing, taken as ideal, has neither: its velocity's derivative vanishes everywhere.
 
 Past a cylinder in a uniform stream the velocity is a formula: the stream, the stream's image in the
@@ -13,8 +13,8 @@ the two parts of `velocity * step`. The circulation is the one that lets the flo
 sharp trailing edge smoothly, the Kutta condition, `4 * pi * (stream ^ edge)`.
 
 The Joukowski map, `p + (critical.dual() >> p.inverse())`, adds to each point its inverse reflected in
-the critical direction: in the line along it, whose normal is its dual. Its Jacobian turns and scales every step, keeping angles, except at the two
-critical points, `critical` and its negative, where it vanishes and doubles angles instead. Circles
+the critical direction: in the line along it, whose normal is its dual. Its Jacobian turns and scales every step, keeping
+angles, except at the two critical points, `critical` and its negative, where it vanishes and doubles angles instead. Circles
 through both critical points and circles around each land on circles of the same kinds around their
 images. The cylinder through `critical`, the trailing edge, becomes the wing, its smooth edge folded
 there into a cusp. The potential and the stream function keep their values at a point's image, so
@@ -49,14 +49,6 @@ class Wing:
     centre: Vector                                           # [] Vector, the cylinder's centre before the map
     scale: float                                             # the cylinder passes through scale * chord, the trailing edge
     chord: Vector                                            # [] Vector, unit, from the leading to the trailing edge
-
-
-@dataclass(frozen=True)
-class Flow:
-    points: Vector                                           # [...] Vector, around the wing
-    velocity: Vector                                         # [...] Vector
-    potential_gradient: PotentialGradient                    # [...] Scalar <- Vector
-    stream: Bivector                                         # [...] Bivector, constant along streamlines
 
 
 # --- math -----------------------------------------------------------------------------
@@ -95,17 +87,19 @@ def joukowski(critical: Vector, plane: Vector) -> Vector:
     return plane + (critical.dual() >> plane.inverse())                      # [...] Vector
 
 
-def flow(wing: Wing, stream: Vector, plane: Vector, critical: Vector) -> Flow:
+def flow(wing: Wing, stream: Vector, plane: Vector, critical: Vector
+         ) -> tuple[Vector, Vector, PotentialGradient, Bivector]:
     """The flow past the image of the cylinder under the Joukowski map with the given critical
-    point, at the images of points around the cylinder; the wing's critical point is its trailing
-    edge, `wing.scale * wing.chord`."""
+    point, at the images of points around the cylinder: the images, the velocity there, the
+    potential's gradient map, and the stream function, constant along streamlines. The wing's
+    critical point is its trailing edge, `wing.scale * wing.chord`."""
     velocity, _, flux = cylinder(wing, stream, plane)
     # How the map moves a small step: less the step turned and scaled by the even `critical * p.inverse()`.
     jacobian = Vector - ((critical * plane.inverse()) >> Vector)             # [...] Vector <- Vector
     # The potential keeps its value at a point's image: a step there is first undone by the Jacobian.
     potential_gradient = (velocity | Vector)(jacobian.inverse())             # [...] Scalar <- Vector
     at_wing = (Vector * potential_gradient(Vector)).contract(1, 2)           # [...] Vector
-    return Flow(joukowski(critical, plane), at_wing, potential_gradient, flux)
+    return joukowski(critical, plane), at_wing, potential_gradient, flux
 
 
 def derivative(gradient: VelocityGradient) -> Even:

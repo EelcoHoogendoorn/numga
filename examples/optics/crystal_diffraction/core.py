@@ -1,7 +1,7 @@
 """A crystal's atoms and its diffraction peaks carried through a deformation.
 
-A phase is a pairing of a wavevector with a position, `k | x`. The deformation, a map on positions
-built by leaving the position open, moves the atoms; its adjoint is defined by that pairing,
+A phase is a pairing of a wavevector with a position, `k | x`. The deformation, a map on positions,
+the identity `Vector` plus a stretch, a shear and a turn, moves the atoms; its adjoint is defined by that pairing,
 `deformation.adjoint()(k) | x == k | deformation(x)`, so solving through it moves the wavevectors so
 that every phase is kept. Read as phase planes, the duals of the wavevectors, the same phase is the
 incidence `planes & x`, carried across by the adjugate without the metric. The intensity sums each

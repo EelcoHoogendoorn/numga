@@ -1,4 +1,5 @@
-"""Blade charts for faithful Clifford actions on their smallest real state spaces."""
+"""Extensor representations: blade charts for faithful Clifford actions on their smallest real state
+spaces."""
 
 from numga import Algebra, Extensor, GAType, Orientation
 

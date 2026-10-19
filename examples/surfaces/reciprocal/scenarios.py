@@ -8,14 +8,14 @@ from examples.surfaces.reciprocal import core
 
 # The grid: its vertices per side across the square from -1 to 1, how far its interior vertices are nudged,
 # and the seed of the nudges.
-SIDE = 5
+N_SIDE = 5
 JITTER = 0.08
 GRID_SEED = 11
 # How far each height breathes about the paraboloid, the seed of the phases, the frames of one breath and
 # the duration of each.
 AMPLITUDE = 0.02
 PHASE_SEED = 3
-FRAMES = 48
+N_FRAMES = 48
 DURATION_MS = 80
 
 
@@ -23,7 +23,7 @@ DURATION_MS = 80
 def grid() -> tuple[core.Mesh, np.ndarray]:
     """The grid's mesh, and its points' heights on the paraboloid, half their squared distance from the
     centre."""
-    across = np.linspace(-1, 1, SIDE)
+    across = np.linspace(-1, 1, N_SIDE)
     coords = np.stack(np.meshgrid(across, across, indexing="ij"), axis=-1).reshape(-1, 2)   # [vertices, 2]
     inside = (np.abs(coords) < 1).all(axis=-1)
     coords[inside] += JITTER * np.random.default_rng(GRID_SEED).normal(size=(inside.sum(), 2))
@@ -36,7 +36,7 @@ def breathing() -> tuple[core.Mesh, np.ndarray]:
     phase."""
     mesh, heights = grid()
     phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, len(heights))
-    times = np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)[:, None]
+    times = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None]
     return mesh, heights + AMPLITUDE * np.sin(times + phases)                  # [frames, vertices]
 
 
@@ -48,8 +48,8 @@ def main() -> None:
     mesh, heights = grid()
     save_figure(render.draw(mesh, heights, core.stresses(mesh, heights), core.reciprocal(mesh, heights)), "reciprocal")
     mesh, breaths = breathing()
-    save_animation(render.animate(mesh, breaths, core.stresses(mesh, breaths), core.reciprocal(mesh, breaths)),
-                   "reciprocal_breath", DURATION_MS)
+    frames = ((breath, core.stresses(mesh, breath), core.reciprocal(mesh, breath)) for breath in breaths)
+    save_animation(render.animate(mesh, frames), "reciprocal_breath", DURATION_MS)
 
     # checks
     inner, left, right = core.beside(mesh)

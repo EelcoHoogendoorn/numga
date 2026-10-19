@@ -4,8 +4,8 @@ The inverse metric is an identity plus a null dyad. Its quadratic form gives the
 differentiating with respect to momentum gives the tangent, and differentiating with respect to
 position gives minus the momentum rate. Momentum is a covector represented by its Minkowski dual.
 The scalar profile's gradient is a vector, whose inner product with a step is the profile's change,
-and the null direction's derivative is a map with the step left open; together they give the
-Hamiltonian's gradient, minus the force on the ray, without component equations.
+and the null direction's derivative is a map from a step to the null direction's change along it;
+together they give the Hamiltonian's gradient, minus the force on the ray, without component equations.
 Camera rays are followed until each is captured or escapes; the disk takes a share of each ray
 it crosses, by its optical depth along the ray. What each ray met is decided here, and the renderer
 only colours the pixels.
@@ -212,16 +212,16 @@ def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, s
     innermost stable orbit, falling as the radius to the power -3/4 far out. `scale` is
     (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
     ratio = -spin.scalar_product(orbit) / mass                                              # [] Scalar
-    x = (radius / mass).square_root()                                                       # [...] Scalar
+    root_radius = (radius / mass).square_root()                                             # [...] Scalar
     edge = (innermost_stable_orbit(orbit, spin, mass) / mass).square_root()                 # [] Scalar
-    # The roots of x^3 - 3x + 2 ratio, and the weight of each in the torque; the product of a root's
-    # differences from the other two is the cubic's derivative there, 3 root^2 - 3.
+    # The roots of the cubic `root_radius**3 - 3 * root_radius + 2 * ratio`, and the weight of each in
+    # the torque; the product of a root's differences from the other two is the cubic's derivative there.
     roots = 2 * ((ratio.arccos() + np.array([-np.pi, np.pi, 3 * np.pi])) / 3).cos()       # [3] Scalar
     weights = (roots - ratio) ** 2 / (roots * (roots ** 2 - 1))                             # [3] Scalar
     # The torque the disk carries, zero at the innermost stable orbit; round-off kept non-negative.
-    torque = (x - edge - 1.5 * ratio * (x / edge).log()
-              - (weights * ((x[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar
-    flux = 3 / (8 * np.pi) * torque / (x ** 4 * (x * x * x - 3 * x + 2 * ratio))            # [...] Scalar
+    torque = (root_radius - edge - 1.5 * ratio * (root_radius / edge).log()
+              - (weights * ((root_radius[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar
+    flux = 3 / (8 * np.pi) * torque / (root_radius ** 4 * (root_radius ** 3 - 3 * root_radius + 2 * ratio))  # [...] Scalar
     return scale * flux.square_root().square_root()                                         # [...] Scalar
 
 
