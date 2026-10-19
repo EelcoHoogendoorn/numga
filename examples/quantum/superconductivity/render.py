@@ -25,13 +25,13 @@ def plain_axes(axis: plt.Axes) -> None:
 
 
 def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
-    energies = (dispersion | core.mv.z).to_array()
-    coherence = spins.cast(core.ga.subspace("x y z")).kernel
+    energies = (dispersion | core.mv.xy.reverse()).to_array()
+    coherence = spins.cast(core.ga.subspace("yz zx xy")).kernel
     figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
     axes[0].set(ylabel="occupation per electron state", ylim=(-0.04, 1.04))
     axes[1].plot(energies, coherence[:, 0], color=PAIR, linewidth=2)
-    axes[1].set(ylabel="pair coherence along x", ylim=(-0.02, 0.54))
+    axes[1].set(ylabel="pair coherence in yz", ylim=(-0.02, 0.54))
     for axis in axes:
         axis.set(xlabel=r"energy from chemical potential, $\xi/E_0$", xlim=(energies[0], energies[-1]))
         axis.axvline(0, color="0.85", linewidth=0.8, zorder=0)
@@ -43,8 +43,8 @@ def animate_quench(
     dispersion: core.Spin, spins: core.Spin, gaps: core.Spin, times: np.ndarray,
 ) -> list[np.ndarray]:
     """Arrows in each energy level's pairing plane, beside their collective gap."""
-    energies = (dispersion | core.mv.z).to_array()
-    transverse = spins.cast(core.ga.subspace("x y")).kernel
+    energies = (dispersion | core.mv.xy.reverse()).to_array()
+    transverse = spins.cast(core.ga.subspace("yz zx")).kernel
     amplitudes = gaps.norm().to_array()
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
     indices = visible[np.linspace(0, len(visible) - 1, DISPLAY_LEVELS, dtype=int)]
@@ -61,7 +61,7 @@ def animate_quench(
         axis.plot(np.full_like(circles, energy), 0.5 * np.cos(circles), 0.5 * np.sin(circles),
                   color="0.88", linewidth=0.6)
     axis.set(xlim=(-DISPLAY_CUTOFF, DISPLAY_CUTOFF), ylim=(-0.53, 0.53), zlim=(-0.53, 0.53),
-             xlabel=r"$\xi/E_0$", ylabel=r"$s_x$", zlabel=r"$s_y$",
+             xlabel=r"$\xi/E_0$", ylabel=r"$s_{yz}$", zlabel=r"$s_{zx}$",
              yticks=[-0.5, 0, 0.5], zticks=[-0.5, 0, 0.5])
     axis.set_box_aspect((2.4, 1, 1))
     axis.view_init(elev=24, azim=-58)
@@ -115,14 +115,14 @@ def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> 
 def draw_response(
     times: np.ndarray, exact: core.Spin, predicted: core.Spin, names: tuple[str, str],
 ) -> Figure:
-    exact_amplitude = (exact | core.mv.x).to_array()
-    predicted_amplitude = (predicted | core.mv.x).to_array()
+    exact_amplitude = (exact | core.mv.yz.reverse()).to_array()
+    predicted_amplitude = (predicted | core.mv.yz.reverse()).to_array()
     figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
         axis.plot(times, values, color=colour, linewidth=1.5, linestyle="--", label=name)
     axis.axhline(0, color="0.85", linewidth=0.8, zorder=0)
-    axis.set(xlim=(times[0], times[-1]), xlabel=r"$t E_0/\hbar$", ylabel=r"$\delta\Delta_x/E_0$")
+    axis.set(xlim=(times[0], times[-1]), xlabel=r"$t E_0/\hbar$", ylabel=r"$\delta\Delta_{yz}/E_0$")
     axis.legend(frameon=False, ncol=3, loc="upper center", fontsize=9)
     plain_axes(axis)
     return figure

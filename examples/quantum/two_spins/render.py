@@ -7,6 +7,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import Extensor
 from examples.animation import capture
 from examples.quantum.two_spins import core
 
@@ -131,4 +132,74 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
         curves.plot(times, curve, color=colour, linewidth=1.5, label=f"exchange rate {rate:g}")
     curves.set(xlim=(times[0], times[-1]), ylim=(-0.05, 1.05), xlabel="time, in units of the field difference", ylabel="back in the singlet")
     curves.legend(frameon=False, fontsize=8, loc="lower left")
+    return figure
+
+
+# --- spin planes ----------------------------------------------------------------------
+# In two copies of spacetime each spin shows itself as the plane it turns in, drawn as a point of the
+# three-dimensional space of its planes, with coordinates along yz, zx and xy of its own space.
+FIRST_PLANES, SECOND_PLANES = "yz zx xy", "YZ ZX XY"
+
+
+def plane_sizes(planes: Extensor, names: str) -> np.ndarray:
+    """The size of each plane: the length of its coordinates along the named planes."""
+    return np.linalg.norm(components(planes, names), axis=-1)
+
+
+def draw_planes(first: Extensor, second: Extensor) -> plt.Figure:
+    """Each spin's plane in the space of its planes, the first left and the second right."""
+    figure = plt.figure(figsize=(7, 3.4))
+    for column, (tip, colour) in enumerate(((components(first, FIRST_PLANES), FIRST), (components(second, SECOND_PLANES), SECOND))):
+        ax = figure.add_axes((column / 2, 0.0, 0.5, 1.0), projection="3d")
+        ball(ax)
+        arrow(ax, tip, colour)
+    return figure
+
+
+def draw_exchange_planes(angles: np.ndarray, bells: Extensor, first: Extensor) -> plt.Figure:
+    """Over the exchange: the size of each spin's plane, and the largest Bell combination against the
+    bound for spins that carry their own answers and the bound for any pair."""
+    figure, (size, bell) = plt.subplots(1, 2, figsize=(11, 3.0), layout="constrained")
+    size.plot(angles, plane_sizes(first, FIRST_PLANES), color=FIRST, linewidth=1.5)
+    size.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)", ylabel="size of each spin's plane")
+    bell.plot(angles, bells.to_array(), color=TOGETHER, linewidth=1.5)
+    bell.axhline(2.0, color="0.5", linestyle="--", linewidth=0.8)
+    bell.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=0.8)
+    bell.set(xlim=(angles[0], angles[-1]), ylim=(1.9, 2.95), xlabel="exchange angle (rad)", ylabel="largest Bell combination")
+    return figure
+
+
+def animate_steering_planes(planes: Extensor, probability: Extensor, steered: Extensor) -> list[np.ndarray]:
+    """The first spin's measurement planes in the space of its planes, and where finding +1 in each
+    leaves the second spin's plane, one frame per entry of the leading axis. Each measurement plane keeps
+    its colour, its coordinates read as red, green and blue, and each landing point is sized by how
+    likely it is."""
+    points = components(planes, FIRST_PLANES).reshape(-1, 3)                  # [planes, 3]
+    colours = np.clip((points + 1) / 2, 0.0, 1.0)
+    figure = plt.figure(figsize=(8, 4.2), dpi=80)
+    measured, landed = (figure.add_axes((column / 2, 0.0, 0.5, 1.0), projection="3d") for column in range(2))
+    for ax in (measured, landed):
+        ball(ax)
+    measured.scatter(*points.T, c=colours, s=16, depthshade=False)
+    targets = components(steered, SECOND_PLANES).reshape(len(steered), -1, 3)  # [frames, planes, 3]
+    weights = probability.kernel.reshape(len(probability), -1)                # [frames, planes]
+    dots = landed.scatter(*targets[0].T, c=colours, s=40 * weights[0], depthshade=False)
+    frames = []
+    for target, weight in zip(targets, weights):
+        dots._offsets3d = tuple(target.T)
+        dots.set_sizes(40 * weight)
+        frames.append(capture(figure))
+    plt.close(figure)
+    return frames
+
+
+def draw_entanglement_planes(angles: np.ndarray, singular_values: Extensor, first: Extensor) -> plt.Figure:
+    """The correlation map's singular values over the exchange, and the size of the first spin's plane."""
+    values = singular_values.to_array()                                         # [angles, 3]
+    figure, ax = plt.subplots(figsize=(8, 3.0), layout="constrained")
+    ax.plot(angles, values[:, 0], color=TOGETHER, linewidth=1.5, label="largest singular value")
+    ax.plot(angles, values[:, 1], color=TOGETHER, linewidth=1.5, linestyle="--", label="the other two: the concurrence")
+    ax.plot(angles, plane_sizes(first, FIRST_PLANES), color=FIRST, linewidth=1.5, label="size of each spin's plane")
+    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)")
+    ax.legend(frameon=False, loc="center right")
     return figure

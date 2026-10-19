@@ -14,14 +14,20 @@ from examples.animation import capture
 from examples.quantum.magnetic_resonance import core
 
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
-# Where the Bloch vector lives in each algebra: the vectors of space, or in spacetime the planes
-# through the observer's time direction t.
-BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("xt yt zt")}
+# Where the spin lives in each algebra: the vectors of space, or in spacetime the planes the spin
+# turns in, the spacelike planes yz, zx and xy, read as the directions x, y and z across them.
+BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("yz zx xy")}
 
 
 def components(rho: core.State) -> np.ndarray:
     """The Bloch vector's x, y and z components: twice the state's part along the Bloch axes."""
     return 2 * rho.cast(BLOCH_AXES[rho.algebra]).kernel
+
+
+def timelike_components(rho: core.State) -> np.ndarray:
+    """The parts of a spacetime state in the planes through the time direction t, xt, yt and zt: the part
+    of it that an observer moving along t cannot read as a spin."""
+    return 2 * rho.cast(STA.subspace("xt yt zt")).kernel
 
 
 def ball(ax) -> None:

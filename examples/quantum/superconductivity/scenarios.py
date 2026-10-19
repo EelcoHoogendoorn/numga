@@ -1,4 +1,4 @@
-"""A pairing-strength quench and the collective response of a superconducting condensate."""
+"""The superconducting Higgs mode: a pairing-strength quench and the collective response of the condensate."""
 
 from __future__ import annotations
 
@@ -7,16 +7,16 @@ import numpy as np
 from numga import stack
 from examples.quantum.superconductivity import core
 
-LEVELS = 240
+N_LEVELS = 240
 CUTOFF = 5.0
 COUPLING = 4.4
 QUENCH_RATIO = 0.88
 SMALL_QUENCH_RATIO = 0.99
-EQUILIBRIUM_ITERATIONS = 160
+N_EQUILIBRIUM_ITERATIONS = 160
 DT = 0.05
-STEPS = 480
-STRIDE = 2
-MIDPOINT_ITERATIONS = 3
+N_STEPS = 480
+STEPS_PER_FRAME = 2
+N_MIDPOINT_ITERATIONS = 3
 DURATION_MS = 50
 FEEDBACK_STRENGTHS = np.array([1.0, 0.0])
 RESPONSE_NAMES = ("collective response", "fixed pairing field")
@@ -24,15 +24,15 @@ RESPONSE_NAMES = ("collective response", "fixed pairing field")
 
 # --- math -----------------------------------------------------------------------------
 def quench(ratio: float) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndarray, core.Spin]:
-    dispersion = core.energy_levels(LEVELS, CUTOFF)
-    # Remove occupation; only the transverse coherence contributes to pairing.
-    transverse = core.Spin - core.mv.z * (core.mv.z | core.Spin)
+    dispersion = core.energy_levels(N_LEVELS, CUTOFF)
+    # Remove occupation, the part in the plane xy; only the coherence contributes to pairing.
+    transverse = core.Spin - core.mv.xy.inverse() * (core.mv.xy | core.Spin)
     before = core.Condensate(dispersion, COUPLING * transverse)
     after = core.Condensate(dispersion, ratio * before.pairing)
-    initial = before.equilibrium(core.mv.x, EQUILIBRIUM_ITERATIONS)
-    equilibrium = after.equilibrium(core.mv.x, EQUILIBRIUM_ITERATIONS)
-    history = stack(core.evolution(initial, after.rate, DT, STEPS, STRIDE, MIDPOINT_ITERATIONS))
-    times = np.arange(STEPS // STRIDE + 1) * STRIDE * DT
+    initial = before.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)
+    equilibrium = after.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)
+    history = stack(core.evolution(initial, after.rate, DT, N_STEPS, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
+    times = np.arange(N_STEPS // STEPS_PER_FRAME + 1) * STEPS_PER_FRAME * DT
     return after, initial, equilibrium, times, history
 
 
@@ -47,7 +47,7 @@ def response(
     def rate(delta: core.Spin) -> core.Spin:
         return local(delta) + feedbacks(delta.sites.mean())
 
-    return stack(core.evolution(disturbance, rate, DT, STEPS, STRIDE, MIDPOINT_ITERATIONS))
+    return stack(core.evolution(disturbance, rate, DT, N_STEPS, STEPS_PER_FRAME, N_MIDPOINT_ITERATIONS))
 
 
 # --- plumbing -------------------------------------------------------------------------

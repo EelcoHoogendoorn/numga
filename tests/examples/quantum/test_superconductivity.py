@@ -21,7 +21,7 @@ def test_equilibrium_gap_and_phase_symmetry(quench):
     coupling = scenarios.COUPLING * scenarios.QUENCH_RATIO
     continuum_gap = scenarios.CUTOFF / np.sinh(2 * scenarios.CUTOFF / coupling)
     # This tolerance tests the finite energy quadrature against the continuum gap equation.
-    np.testing.assert_allclose(model.gap(equilibrium).kernel[0], continuum_gap, rtol=1e-5)
+    np.testing.assert_allclose(model.gap(equilibrium).norm().to_array(), continuum_gap, rtol=1e-5)
 
     phase = 0.73
     rotor = (core.mv.xy * (-phase / 2)).exp()
@@ -66,7 +66,7 @@ def test_midpoint_converges_at_second_order(quench):
     duration = 2.0
     steps = (40, 80, 160)
     ends = [tuple(core.evolution(initial, model.rate, duration / count, count, count,
-                                 scenarios.MIDPOINT_ITERATIONS))[-1] for count in steps]
+                                 scenarios.N_MIDPOINT_ITERATIONS))[-1] for count in steps]
     coarse = np.linalg.norm((ends[0] - ends[1]).kernel)
     fine = np.linalg.norm((ends[1] - ends[2]).kernel)
     assert 3.8 < coarse / fine < 4.2
@@ -85,3 +85,12 @@ def test_figures_and_animation_draw(quench):
     frames = render.animate_quench(model.dispersion, history[:2], model.gap(history[:2]), times[:2])
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])
+
+
+def test_precession_is_mirror_covariant(quench):
+    # Mirroring the condensate, its occupation planes and its pairing map with it, mirrors its motion.
+    model, initial, _, _, _ = quench
+    for mirror in (core.mv.x, core.mv.z, core.mv.vector([0.6, 0.0, 0.8])):
+        mirrored = core.Condensate(mirror >> model.dispersion, mirror >> model.pairing(mirror << core.Spin))
+        np.testing.assert_allclose((mirrored.rate(mirror >> initial) - (mirror >> model.rate(initial))).kernel,
+                                   0, atol=ROUND_OFF, rtol=0)
