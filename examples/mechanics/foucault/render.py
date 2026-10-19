@@ -36,7 +36,7 @@ def coordinates(points: core.Point) -> np.ndarray:
 
 def on_floor(points: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
     """East and north of points on a floor, on the last axis."""
-    return np.stack([scalars(~points | east), scalars(~points | north)], axis=-1)
+    return np.stack([scalars(points.dot(east)), scalars(points.dot(north))], axis=-1)
 
 
 def turned(directions: core.Point, north: core.Point, east: core.Point) -> np.ndarray:

@@ -11,10 +11,10 @@ from examples.math.hopf import core, render, scenarios
 
 
 def test_the_fibre_is_the_top_eigenspace_of_the_paired_form():
-    """(~spin | HOPF) has eigenvalues -1, -1, 1, 1, and both spinors of the top pair have the spin;
+    """spin.dot(HOPF) has eigenvalues -1, -1, 1, 1, and both spinors of the top pair have the spin;
     turning a spinor on the right in the xy plane keeps it on its fibre."""
     spin = core.mv.bivector([0.3, -0.5, 0.8]).normalized()
-    values, spinors = (~spin | core.HOPF).eigh()
+    values, spinors = spin.dot(core.HOPF).eigh()
     np.testing.assert_allclose(values.to_array(), [-1.0, -1.0, 1.0, 1.0], atol=1e-12)
     top = spinors[-2:]
     np.testing.assert_allclose((core.HOPF(top, top) - spin).kernel, 0.0, atol=1e-12)

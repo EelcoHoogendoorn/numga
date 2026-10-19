@@ -10,7 +10,7 @@ and cross, the same turned by an eighth of a turn, `east.dual() * (north & Point
 turns plus into cross after an eighth of a turn and back into itself after half a turn: the strain is
 a spin-two field.
 
-An arm along the unit direction `arm` lengthens by the fraction `(~arm | strain(arm)) / 2`, and the
+An arm along the unit direction `arm` lengthens by the fraction `arm.dot(strain(arm)) / 2`, and the
 interferometer reads the difference between its two arms. The responses to a direction's plus and
 cross strains are the detector's antenna patterns. Their root sum of squares does not depend on how
 the axes across the wave are turned: it is the detector's sensitivity to that direction, largest
@@ -77,9 +77,8 @@ def arms(sites: Rotor, azimuths: np.ndarray) -> Point:
 
 def response(arms: Point, strain: Strain) -> Scalar:
     """The interferometer's reading: the difference between its two arms' stretches, each arm
-    lengthening by the fraction `(~arm | strain(arm)) / 2`."""
-    # A direction squares to minus its length squared, so the metric reads one along another by its reverse.
-    stretches = (~arms | strain[..., None](arms)) / 2                         # [..., 2] Scalar
+    lengthening by the fraction `arm.dot(strain(arm)) / 2`."""
+    stretches = arms.dot(strain[..., None](arms)) / 2                         # [..., 2] Scalar
     return stretches[..., 0] - stretches[..., 1]                             # [...] Scalar
 
 

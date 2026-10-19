@@ -4,15 +4,15 @@ space.
 
 The surface's energy is the cotangent-weighted squared mismatch, over every edge at each of its two
 ends, between the edge as it is and the rest edge turned by a rotor of that end's own. A rotor keeps
-lengths, so an edge's two mismatches add up to `2 * (edge**2 + rest**2 - 2 * ~edge | turned)`, with
+lengths, so an edge's two mismatches add up to `2 * (edge**2 + rest**2 - 2 * edge.dot(turned))`, with
 `turned` the rest edge turned by the mean of its two ends' turns. The energy falls in two alternating
 steps.
 
 With the vertices held, each vertex's best rotor `R` turns its rest edges onto its edges as they are:
-it makes the most of `~edge | (R >> rest)`, summed over the vertex's edges. Multiplied by `Even`, the
+it makes the most of `edge.dot(R >> rest)`, summed over the vertex's edges. Multiplied by `Even`, the
 space of even multivectors, `Even >> rest` is the rest edge turned by any even multivector, a map
 `Point <- (Even, Even)` of the rotor in both places the sandwich holds it. Paired with the edge it is a form
-`Scalar <- (Even, Even)`, a number for every two rotors, with `form(R, R) == ~edge | (R >> rest)`. The
+`Scalar <- (Even, Even)`, a number for every two rotors, with `form(R, R) == edge.dot(R >> rest)`. The
 sparse mean over each edge's ends sums each vertex's forms as it would sum numbers, weighted by the
 edges, and the rotor that makes the most of each sum is its top eigenvector: one batched `eigh` over
 every vertex.
@@ -75,11 +75,11 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Point], stiffness: f
         for _ in range(n_iterations):
             edges = T10 * vertices                                          # Point[E]
             # each vertex's best rotor: the top eigenvector of its edges' summed form
-            forms = ~A10 * H1 * (~edges | (Even >> rest))                   # Scalar[V] <- (Even, Even)
+            forms = ~A10 * H1 * edges.dot(Even >> rest)                     # Scalar[V] <- (Even, Even)
             rotors = forms.batch().eigh()[1][..., -1].field()                       # Even[V]
             # each rest edge turned by its two ends' rotors, the turns averaged
             turned = (A10 * (rotors >> Point))(rest)                        # Point[E]
-            mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * (~edges | turned))  # Scalar[E]
+            mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * edges.dot(turned))   # Scalar[E]
             penalty = P * (vertices - targets).norm_squared()               # Scalar[V]
             energies.append(2 * mismatch.sites.sum() + penalty.sites.sum())
             # the vertices whose edges best match the turned ones

@@ -25,7 +25,7 @@ Polarization = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Retarder = ga.gatype.rotor()
 # An eighth of a turn in the plate: the linear state it gives is a quarter of the sphere from the first.
-EIGHTH_TURN = (mv.xy * (-np.pi / 8)).exp()
+eighth_turn = (mv.xy * (-np.pi / 8)).exp()
 
 
 # --- math -----------------------------------------------------------------------------
@@ -68,7 +68,7 @@ def half_turn(stress: Stress, stress_phase: float) -> Bivector:
     retardance = stress_phase * (principal[..., 1] - principal[..., 0])           # [...] Scalar
     # The plane of the turn, square to its axis: the linear state an eighth of a turn from the principal
     # direction, and the circular state.
-    return (polarization(EIGHTH_TURN >> directions[..., 1]) ^ mv.z) * (retardance / 2)   # [...] Bivector
+    return (polarization(eighth_turn >> directions[..., 1]) ^ mv.z) * (retardance / 2)   # [...] Bivector
 
 
 def retarder(stress: Stress, stress_phase: float) -> Retarder:

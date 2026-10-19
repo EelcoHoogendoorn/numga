@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.quadrics.cayley_klein.core import (
-    Point, Polarity, circles, crossing, invariant, mv, perpendicular, triangle,
+    Point, Polarity, circles, invariant, mv, perpendicular, triangle,
 )
 
 
@@ -16,14 +16,14 @@ def hyperbolic_plane():
     # x**2 + y**2 - w**2 == 0, the unit circle. The pole map is the inverse polarity.
     C: Polarity = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 
-    vertices = crossing(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
+    vertices = mv.point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
     sides, angles, lengths, area = triangle(C, vertices)
 
-    P = crossing(np.array([-0.15, 0.15]))
+    P = mv.point(np.array([-0.15, 0.15]))
     side = sides[1]
     pole, normal, foot, reflected = perpendicular(C, side, P)
 
-    centres = crossing(np.array([[0.0, 0.0], [0.45, 0.25]]))
+    centres = mv.point(np.array([[0.0, 0.0], [0.45, 0.25]]))
     radii = np.array([0.25, 0.55, 0.9, 1.3])
     rings = circles(C, centres, radii)
 
@@ -31,7 +31,8 @@ def hyperbolic_plane():
     # A hyperbolic angle defect, a perpendicular, and a reflection that is an isometry.
     distance_pairing = -Point.regressive(C(Point))
     assert area.to_array() > 0.0
-    np.testing.assert_allclose((side & C.solve(normal)).to_array(), 0.0, atol=1e-12)
+    # The perpendicular's pole, the meet of the polars of the two points it joins, lies on the side.
+    np.testing.assert_allclose(((C(P) ^ C(pole)) & side).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose(
         invariant(distance_pairing, P, foot).to_array(),
         invariant(distance_pairing, reflected, foot).to_array(), atol=1e-12,

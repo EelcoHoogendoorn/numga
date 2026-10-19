@@ -8,7 +8,7 @@ presses on it until it turns at the one rate that leaves no torque on it, found 
 
 The particle is an ellipsoid, a stretch of the unit sphere along its own axes, and its shape is the
 stretch applied twice: a map `Shape = Point <- Point` whose surface is the offsets `x` with
-`~x | shape.solve(x) == 1`. Jeffery's spin, a bivector, makes the shape's product with the particle's
+`x.dot(shape.solve(x)) == 1`. Jeffery's spin, a bivector, makes the shape's product with the particle's
 turning map, from both sides, equal to the gradient's product with the shape less the shape's with
 the gradient's adjoint:
 

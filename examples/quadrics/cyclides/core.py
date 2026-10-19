@@ -27,8 +27,9 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 Scalar = ga.gatype.scalar()
-# Spheres and great spheres are vectors, points the duals of null vectors, and directions at the eye
-# the vectors in x, y and z. Motors rotate R⁴ and dilate conformally; a quadric maps a point to its
+# Spheres and great spheres are vectors, and points the duals of null vectors. A direction at the eye is
+# held by the great sphere through the eye across it, a vector in x, y and z; in the flat chart, the plane
+# through its origin across the direction. Motors rotate R⁴ and dilate conformally; a quadric maps a point to its
 # polar sphere.
 Sphere = ga.gatype.vector()
 Point = ga.gatype.antivector()

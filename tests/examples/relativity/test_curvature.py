@@ -7,7 +7,7 @@ import pytest
 
 from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
-    Bivector, Curvature, Tidal, Vector, curvature_of_strain, detector_ring, integrate_acceleration, mv,
+    Bivector, Curvature, I, Tidal, Vector, curvature_of_strain, detector_ring, integrate_acceleration, mv,
     polarizations, polarized_strain, polarized_waves, strain_patterns, t, wave_packet, x, y, z,
 )
 
@@ -84,9 +84,8 @@ def test_observer_sees_opposite_transverse_tides_and_doppler_scaling():
 
 def test_curvature_and_observer_binding_are_lorentz_covariant():
     plus, cross = polarizations()
-    # The duality turn -I is the eighth turn about the wave axis.
-    eighth_turn = (mv.xy * (np.pi / 8)).exp()
-    np.testing.assert_allclose(cross.kernel, (eighth_turn >> plus(eighth_turn << Bivector)).kernel, atol=1e-9)
+    # The eighth turn across the wave is the quarter duality turn -I: spin two.
+    np.testing.assert_allclose((cross - -I * plus).kernel, 0, atol=1e-9)
     rotor = (mv.tx * .31).exp() * (mv.yz * -.23).exp()
     transformed = plane_wave(rotor >> (t + z), rotor >> x, rotor >> y)
     conjugated = rotor >> plus(rotor << Bivector)

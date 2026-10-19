@@ -25,7 +25,7 @@ def plain_axes(axis: plt.Axes) -> None:
 
 
 def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
-    energies = (dispersion | core.mv.xy.reverse()).to_array()
+    energies = dispersion.dot(core.mv.xy).to_array()
     coherence = spins.cast(core.ga.subspace("yz zx xy")).kernel
     figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
@@ -43,7 +43,7 @@ def animate_quench(
     dispersion: core.Spin, spins: core.Spin, gaps: core.Spin, times: np.ndarray,
 ) -> list[np.ndarray]:
     """Arrows in each energy level's pairing plane, beside their collective gap."""
-    energies = (dispersion | core.mv.xy.reverse()).to_array()
+    energies = dispersion.dot(core.mv.xy).to_array()
     transverse = spins.cast(core.ga.subspace("yz zx")).kernel
     amplitudes = gaps.norm().to_array()
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
@@ -115,8 +115,8 @@ def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> 
 def draw_response(
     times: np.ndarray, exact: core.Spin, predicted: core.Spin, names: tuple[str, str],
 ) -> Figure:
-    exact_amplitude = (exact | core.mv.yz.reverse()).to_array()
-    predicted_amplitude = (predicted | core.mv.yz.reverse()).to_array()
+    exact_amplitude = exact.dot(core.mv.yz).to_array()
+    predicted_amplitude = predicted.dot(core.mv.yz).to_array()
     figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):

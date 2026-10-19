@@ -6,15 +6,14 @@ the fault plane, by the dip about the strike, and by the strike from north. It c
 the slip, the direction the far side moves, and up onto the fault's normal.
 
 A slip on a fault acts on the ground as a moment, a map on directions, `Moment = Point <- Point`:
-the slip times the normal's component of its argument, plus the normal times the slip's. Directions
-are antivectors, which square to minus their length squared, so a component reads through the
-reverse, `~normal | direction`. The first
+the slip times the normal's component of its argument, `normal.dot(direction)`, plus the normal times
+the slip's. The first
 term alone is a single couple, which would turn the ground; the second, its mirror, cancels the
 turning, and the curl of the sum vanishes. The sum is symmetric in the normal and the slip: a fault
 and the plane perpendicular to its slip, the auxiliary plane, give the same moment, and no record of
 the waves can tell them apart.
 
-Along a direction the P wave's first motion is `~direction | moment(direction)`: a push away from the
+Along a direction the P wave's first motion is `direction.dot(moment(direction))`: a push away from the
 source where it is positive, a pull where it is negative. Over the lower half of the sphere of
 directions, flattened by an equal-area projection, the pushes are shaded: the beachball. Its two
 nodal lines are the fault and the auxiliary plane, and the moment's eigenvectors are the pressure
@@ -60,7 +59,7 @@ def fault_frame(strikes: np.ndarray, dips: np.ndarray, rakes: np.ndarray) -> Rot
 def double_couple(normals: Point, slips: Point, moments: np.ndarray) -> Moment:
     """The moment of each slip on its fault: the slip's couple across the fault, and the mirrored
     couple that keeps the ground from turning."""
-    return moments * (slips * (~normals | Point) + normals * (~slips | Point))   # [...] Moment
+    return moments * (slips * normals.dot(Point) + normals * slips.dot(Point))     # [...] Moment
 
 
 def curl(moment: Moment) -> Bivector:
@@ -73,7 +72,7 @@ def radiation(moment: Moment, directions: Point) -> tuple[Scalar, Point]:
     """Along each direction, the P wave's first motion, positive for a push away from the source,
     and the S wave's, the part of the moment's response across the direction."""
     response = moment(directions)                                             # [...] Point
-    push = ~directions | response                                             # [...] Scalar
+    push = directions.dot(response)                                           # [...] Scalar
     return push, response - directions * push
 
 

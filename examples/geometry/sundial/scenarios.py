@@ -68,7 +68,7 @@ def main() -> None:
     # checks
     # Every shadow of the nodus through each season's day lies on that season's cone of rays.
     rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Point
-    assert np.abs(render.scalars(~rays | core.cone(pole, days[:, 0])[:, None](rays))).max() < 1e-10
+    assert np.abs(render.scalars(rays.dot(core.cone(pole, days[:, 0])[:, None](rays)))).max() < 1e-10
     # Each hour's shadows at every season lie on one line through the foot of the style, at the angle
     # of gnomonics.
     tips = core.shadow(nodus, suns)                                             # [hours, samples] Point

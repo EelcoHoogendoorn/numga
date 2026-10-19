@@ -85,8 +85,8 @@ def main() -> None:
     # sampling of the disc costs about a tenth, and the passage through the mass's core a quarter.
     directions = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x.dual()   # [directions] Point
     for stars, shape in states:
-        measured = (~directions | stars.moment()(directions)).to_array()     # [directions]
-        predicted = (~directions | (shape.spread(CLUSTER_RADIUS) / 4)(directions)).to_array()
+        measured = directions.dot(stars.moment()(directions)).to_array()     # [directions]
+        predicted = directions.dot((shape.spread(CLUSTER_RADIUS) / 4)(directions)).to_array()
         np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())
 
 

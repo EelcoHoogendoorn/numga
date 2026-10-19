@@ -90,7 +90,7 @@ def camera() -> tuple[core.Point, core.Point, core.Point]:
 
 def screen(points: core.Point, right: core.Point, up: core.Point) -> np.ndarray:
     """Positions in the picture `[..., 2]`: along the camera's right and up."""
-    return np.stack([(~points | right).to_array(), (~points | up).to_array()], axis=-1)
+    return np.stack([points.dot(right).to_array(), points.dot(up).to_array()], axis=-1)
 
 
 def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up: core.Point,
@@ -104,9 +104,9 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up:
     # Into each body's frame and back through its stretch: the unit sphere, and the ray in its parameter.
     start = stretches.solve(turns << origins)                                 # [bodies, samples, samples] Point
     heading = stretches.solve(turns << -back)                                 # [bodies, 1, 1] Point
-    a = (~heading | heading).to_array()
-    b = (~heading | start).to_array()
-    c = (~start | start).to_array() - 1
+    a = heading.dot(heading).to_array()
+    b = heading.dot(start).to_array()
+    c = start.dot(start).to_array() - 1
     discriminant = b * b - a * c
     hit = discriminant > 0                                                    # [bodies, samples, samples]
     entering = (-b - np.sqrt(np.where(hit, discriminant, 0.0))) / a
@@ -114,7 +114,7 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up:
     # The body's normal, the stretch undone once more and turned back out; lit by the lamp.
     normal = turns >> stretches.solve(direction)
     lamp = right * LAMP[1] + up * LAMP[2] + back * LAMP[0]
-    lit = (~normal | lamp).to_array() / (normal.norm().to_array() * lamp.norm().to_array())
+    lit = normal.dot(lamp).to_array() / (normal.norm().to_array() * lamp.norm().to_array())
     shade = AMBIENT + (1 - AMBIENT) * np.clip(lit, 0.0, 1.0)
     # The octant of the body's own direction picks the colour.
     octant = np.prod(np.sign(direction.cast(core.ga.subspace("yz zx xy")).kernel), axis=-1) > 0
@@ -132,7 +132,7 @@ def draw_split(ax, points: core.Point, view: tuple, **style) -> None:
     nearer the viewer than the centre in front of the body, the rest behind it."""
     right, up, back = view
     positions = screen(points, right, up)                                    # [points, 2]
-    near = (~points | back).to_array() > 0
+    near = points.dot(back).to_array() > 0
     for side, zorder in ((near, 3), (~near, 1)):
         ax.plot(*np.where(side[:, None], positions, np.nan).T, zorder=zorder, **style)
 

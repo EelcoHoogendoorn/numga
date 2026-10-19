@@ -19,13 +19,14 @@ ga = PGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-# Whole-extensor types (GATypes); map types read output <- inputs. Every line here is the join of two
-# points and every point the meet of two lines: a join is oriented along itself and a meet by what turns
-# around it, so lines are intrinsic and points extrinsic. The polarity maps a point to its polar line,
-# and the pole map a line to its pole:
+# Whole-extensor types (GATypes); map types read output <- inputs. Points are antivectors with intrinsic
+# orientation and lines vectors with extrinsic orientation, each with a side, as polars and mirrors are. A
+# join of two points is a line oriented along itself instead, intrinsic; times an intrinsic scalar from
+# the data, it becomes a line with a side. The polarity maps a point to its polar line, and the pole map
+# a line to its pole:
 Scalar = ga.gatype.scalar()
-Point = ga.gatype.bivector()
-Line = ga.gatype.antibivector()
+Point = ga.gatype.antivector()
+Line = ga.gatype.vector()
 Polarity = ga.gatype((Line, Point))       # Line <- Point
 Pole = ga.gatype((Point, Line))           # Point <- Line
 
@@ -50,8 +51,11 @@ def triangle(C: Polarity, vertices: Point):
     # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the
     # angle defect.
     neighbours = vertices[[1, 2, 0]]
-    to_next = vertices.regressive(neighbours)
-    to_prev = vertices.regressive(vertices[[2, 0, 1]])
+    # The triangle's winding, an intrinsic scalar: the joins leaving each vertex times it are lines with a
+    # side, which the absolute reads, and one factor on both lines of an angle leaves the angle as it is.
+    winding = vertices[0].regressive(vertices[1]).regressive(vertices[2])
+    to_next = vertices.regressive(neighbours) * winding
+    to_prev = vertices.regressive(vertices[[2, 0, 1]]) * winding
     angles = invariant(angle_pairing, to_next, to_prev).clip(-1.0, 1.0).arccos()
     lengths = invariant(distance_pairing, vertices, neighbours).clip(1.0, np.inf).arccosh()
     area = np.pi - angles.sum()
@@ -80,9 +84,3 @@ def circles(C: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
     polar = C(centre)
     return polar * polar.regressive(Point) - centre.regressive(polar) * np.cosh(radii) ** 2 * C
 
-
-# --- plumbing -------------------------------------------------------------------------
-def crossing(coordinates: np.ndarray) -> Point:
-    """Points at the given coordinates `[..., 2]`, made as the constructions make their points: the meet
-    of the lines x = a and y = b."""
-    return (mv.x - mv.w * coordinates[..., 0]) ^ (mv.y - mv.w * coordinates[..., 1])

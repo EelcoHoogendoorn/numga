@@ -57,7 +57,7 @@ class Condensate:
         """Energy per pair orbital, counting the shared interaction only once."""
         mean = spins.sites.mean()
         # Planes pair with their reverses: a plane against itself is then its squared size.
-        return 2 * (self.dispersion | spins.reverse()).sites.mean() - (mean | self.pairing(mean).reverse())
+        return 2 * self.dispersion.dot(spins).sites.mean() - mean.dot(self.pairing(mean))
 
 
 # --- plumbing -------------------------------------------------------------------------

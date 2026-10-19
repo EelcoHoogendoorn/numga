@@ -25,7 +25,7 @@ def test_spin_is_jefferys_formula_in_the_principal_frame():
     squares = semi_axes**2
     for first, second in [(0, 1), (1, 2), (0, 2)]:
         plane = core.axes[first] ^ core.axes[second]
-        relative = (spin - fluid).scalar_product(plane.reverse()).to_array()
+        relative = (spin - fluid).dot(plane).to_array()
         expected = (squares[first] - squares[second]) / (squares[first] + squares[second]) * strain[first, second]
         np.testing.assert_allclose(relative, expected, atol=1e-12)
 
@@ -38,7 +38,7 @@ def test_needle_axis_moves_with_the_fluid():
     spin = core.spin(core.placed(core.stretch(np.array([1e4, 1.0, 1.0])), turn), gradient)
     axis = turn >> x.dual()
     along = gradient(axis)
-    np.testing.assert_allclose(axis.commutator(spin).kernel, (along - axis * (~axis | along)).kernel, atol=1e-6)
+    np.testing.assert_allclose(axis.commutator(spin).kernel, (along - axis * axis.dot(along)).kernel, atol=1e-6)
 
 
 def test_scenes_draw():

@@ -343,7 +343,7 @@ class Mesh:
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
         # the cotangent at each corner; against the reverse of another, an edge pairs positively
-        cotangents = -(after | ~before) / (after & before).norm()             # [3] Scalar[F]
+        cotangents = -after.dot(before) / (after & before).norm()             # [3] Scalar[F]
         return ~self.by_corner(cotangents / 2) * face_weights
 
     @cached_property
@@ -364,7 +364,7 @@ class Mesh:
         """[3] Scalar[F]: the cosine of each corner's angle, kept exactly by a conformal map."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
-        return -(after | ~before) / (after.norm() * before.norm())
+        return -after.dot(before) / (after.norm() * before.norm())
 
     @cached_property
     def reconstruction(self) -> SparseExtensor:

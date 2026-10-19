@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.cayley_klein import render, scenarios
-from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, crossing, mv
+from examples.quadrics.cayley_klein.core import Point, Polarity, Pole, mv
 
 HYPERBOLIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) - mv.w * mv.w.regressive(Point)
 ELLIPTIC = mv.x * mv.x.regressive(Point) + mv.y * mv.y.regressive(Point) + mv.w * mv.w.regressive(Point)
@@ -27,37 +27,40 @@ def test_absolute_from_line_dyads_is_the_diagonal_polarity():
 
 
 def test_hyperbolic_distance_along_a_diameter_is_arctanh():
-    origin = crossing(np.array([0.0, 0.0]))
+    origin = mv.point(np.array([0.0, 0.0]))
     for x in (0.2, 0.5, 0.75):
-        np.testing.assert_allclose((-invariant(HYPERBOLIC, origin, crossing(np.array([x, 0.0])))).clip(1.0, np.inf).arccosh().to_array(), np.arctanh(x), atol=1e-12)
+        np.testing.assert_allclose((-invariant(HYPERBOLIC, origin, mv.point(np.array([x, 0.0])))).clip(1.0, np.inf).arccosh().to_array(), np.arctanh(x), atol=1e-12)
 
 
 def test_elliptic_distance_along_a_diameter_is_arctan():
     """On the gnomonic chart of the sphere, the distance from the origin is arctan of the radius."""
-    origin = crossing(np.array([0.0, 0.0]))
+    origin = mv.point(np.array([0.0, 0.0]))
     for x in (0.2, 0.5, 2.0):
-        np.testing.assert_allclose(invariant(ELLIPTIC, origin, crossing(np.array([x, 0.0]))).clip(-1.0, 1.0).arccos().to_array(), np.arctan(x), atol=1e-12)
+        np.testing.assert_allclose(invariant(ELLIPTIC, origin, mv.point(np.array([x, 0.0]))).clip(-1.0, 1.0).arccos().to_array(), np.arctan(x), atol=1e-12)
 
 
 def test_perpendicular_through_the_pole_and_reflection_in_both_geometries():
     for C in (HYPERBOLIC, ELLIPTIC):
         Q = C.inverse()
-        side = crossing(np.array([0.65, 0.0])).regressive(crossing(np.array([0.2, 0.55])))
-        P = crossing(np.array([-0.15, 0.15]))
+        A, B, P = mv.point(np.array([0.65, 0.0])), mv.point(np.array([0.2, 0.55])), mv.point(np.array([-0.15, 0.15]))
+        # The line through A and B, given a side by the winding of A, B and P.
+        side = A.regressive(B) * A.regressive(B).regressive(P)
         pole = Q(side)
         perpendicular = P.regressive(pole)
         foot = side.wedge(perpendicular)
         reflected = P - pole * (2.0 * P.regressive(side) / pole.regressive(side))
-        np.testing.assert_allclose(side.regressive(Q(perpendicular)).kernel, 0.0, atol=1e-14)
+        # The perpendicular's pole, the meet of the polars of the two points it joins, lies on the side.
+        np.testing.assert_allclose(side.regressive(C(P).wedge(C(pole))).kernel, 0.0, atol=1e-14)
         np.testing.assert_allclose(foot.regressive(side).kernel, 0.0, atol=1e-14)
         np.testing.assert_allclose((invariant(C, P, foot) - invariant(C, reflected, foot)).kernel, 0.0, atol=1e-12)
         np.testing.assert_allclose(reflected.regressive(perpendicular).kernel, 0.0, atol=1e-14)
 
 
 def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
-    vertices = crossing(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
-    to_next = vertices.regressive(vertices[[1, 2, 0]])
-    to_prev = vertices.regressive(vertices[[2, 0, 1]])
+    vertices = mv.point(np.array([[0.0, 0.0], [0.65, 0.0], [0.2, 0.55]]))
+    winding = vertices[0].regressive(vertices[1]).regressive(vertices[2])
+    to_next = vertices.regressive(vertices[[1, 2, 0]]) * winding
+    to_prev = vertices.regressive(vertices[[2, 0, 1]]) * winding
     sums = {}
     for name, C in (("hyperbolic", HYPERBOLIC), ("elliptic", ELLIPTIC)):
         Q = C.inverse()
@@ -67,14 +70,14 @@ def test_triangle_angle_sum_is_below_pi_hyperbolic_and_above_pi_elliptic():
 
 def test_circle_quadric_contains_the_points_at_its_radius():
     C = HYPERBOLIC
-    centre, R = crossing(np.array([0.45, 0.25])), 0.9
+    centre, R = mv.point(np.array([0.45, 0.25])), 0.9
     polar = C(centre)
     circle = polar * polar.regressive(Point) - centre.regressive(C(centre)) * (np.cosh(R) ** 2) * C
     lo, hi = 0.45, 0.999
     for _ in range(60):
         mid = 0.5 * (lo + hi)
-        lo, hi = (mid, hi) if (-invariant(C, centre, crossing(np.array([mid, 0.25])))).clip(1.0, np.inf).arccosh() < R else (lo, mid)
-    on_circle = crossing(np.array([lo, 0.25]))
+        lo, hi = (mid, hi) if (-invariant(C, centre, mv.point(np.array([mid, 0.25])))).clip(1.0, np.inf).arccosh() < R else (lo, mid)
+    on_circle = mv.point(np.array([lo, 0.25]))
     np.testing.assert_allclose(on_circle.regressive(circle(on_circle)).kernel, 0.0, atol=1e-12)
 
 

@@ -6,8 +6,9 @@ of its eigenvalues vanish. Binding an observer's velocity turns it into the tida
 to relative accelerations, whose eigenvalues are the stretch and squeeze that observer measures: binding
 composes different maps rather than conjugating one.
 
-The cross polarization is the plus pattern times minus the pseudoscalar, and a wave packet's phase is the
-pseudoscalar's exponential. In gauge theory gravity the same wave is a strain map on vectors, whose value on
+The cross polarization is the plus pattern turned an eighth of a turn in the plane across the wave, which for
+a spin-two wave is a quarter duality turn, `-I * plus`, and a wave packet's phase is the pseudoscalar's
+exponential. In gauge theory gravity the same wave is a strain map on vectors, whose value on
 a bead's rest separation is its displacement, and whose second derivative along the wave gives the curvature.
 
 In the tensor notation of general relativity the curvature map reads as the Riemann tensor and the strain map
@@ -48,8 +49,10 @@ Strain = STA.gatype((Vector, Vector))               # Vector <- Vector
 
 # Canonical spacetime basis:
 t, x, y, z = mv.vector(np.eye(4))
-# The pseudoscalar squares to minus one and commutes with every bivector.
+# The pseudoscalar squares to minus one and commutes with every bivector: it turns a field by duality.
 I = mv.txyz
+# An eighth of a turn in the plane across a wave travelling along z.
+eighth_turn = (mv.xy * (np.pi / 8)).exp()
 
 
 # ---------------------------------------------------------------------------
@@ -67,13 +70,12 @@ def plane_wave_curvature(k: Vector, a: Vector, b: Vector) -> Curvature:
 
 
 def polarizations() -> tuple[Curvature, Curvature]:
-    """Unit plus and cross curvature maps for a wave travelling along +z.
-
-    The cross polarization is the dual of plus: a quarter duality turn, `-I * plus`, turns the
-    stretch and squeeze pattern of a null curvature by an eighth turn, 45 degrees about the axis.
+    """Unit plus and cross curvature maps for a wave travelling along +z: cross is plus turned an eighth of
+    a turn in the plane across the wave, on its output and its input. For this null curvature the turn is a
+    quarter duality turn, `-I * plus`: the pattern turns by half the duality angle, as a spin-two field does.
     """
     plus = plane_wave_curvature(t + z, x, y)                             # [] Bivector <- Bivector
-    return plus, -I * plus
+    return plus, eighth_turn >> plus(eighth_turn << Bivector)
 
 
 def tidal_map(curvature: Curvature, observer: Vector) -> Tidal:
@@ -99,14 +101,11 @@ def boosted_observers(rapidities: np.ndarray, direction: Vector) -> Vector:
 def strain_patterns() -> tuple[Strain, Strain]:
     """Unit plus and cross strain maps for a wave travelling along +z.
 
-    The plus pattern stretches along x and squeezes along y; the cross pattern is the same map
-    turned by an eighth turn about the wave axis. The transverse plane `xy` squares to minus one and
-    turns each output a quarter turn, which turns the stretch and squeeze pattern by an eighth: on
-    the strain it makes the turn that the duality `-I` makes on the curvature.
+    The plus pattern stretches along x and squeezes along y; the cross pattern is the same map turned an
+    eighth of a turn in the plane across the wave, as the curvature's is.
     """
     plus = y * (y | Vector) - x * (x | Vector)                           # [] Vector <- Vector
-    cross = mv.xy | plus                                                 # [] Vector <- Vector
-    return plus, cross
+    return plus, eighth_turn >> plus(eighth_turn << Vector)
 
 
 def polarized_strain(plus: Strain, cross: Strain, profile: Phasor) -> Strain:

@@ -185,12 +185,12 @@ def hinges(mesh: Mesh) -> np.ndarray:
 
 
 def flat_mesh(coords: np.ndarray, spacing: float) -> Mesh:
-    """The counter-clockwise Delaunay triangulation of points in the xy plane `[V, 2]`, without the slivers
-    along straight rows of the boundary."""
+    """The Delaunay triangulation of points in the xy plane `[V, 2]`, every face wound as the largest, without
+    the slivers along straight rows of the boundary. Which way that is the sheet reads off its top side."""
     faces = Delaunay(coords).simplices
     first, second = coords[faces[:, 1]] - coords[faces[:, 0]], coords[faces[:, 2]] - coords[faces[:, 0]]
     turning = first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0]
-    faces = np.where((turning < 0)[:, None], faces[:, [0, 2, 1]], faces)
+    faces = np.where((turning * turning[np.argmax(np.abs(turning))] < 0)[:, None], faces[:, [0, 2, 1]], faces)
     points = mv.point(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point[V]
     return Mesh(points, faces[np.abs(turning) > 1e-6 * spacing ** 2])
 

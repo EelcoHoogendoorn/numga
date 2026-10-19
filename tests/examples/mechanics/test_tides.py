@@ -20,8 +20,8 @@ def test_contracting_the_tidal_map_gives_minus_four_pi_times_the_density():
 def test_the_tidal_map_predicts_the_cluster_through_the_core_and_a_frame_draws():
     directions = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x.dual()   # [directions] Point
     for stars, shape in scenarios.flyby(75):
-        measured = (~directions | stars.moment()(directions)).to_array()
-        predicted = (~directions | (shape.spread(scenarios.CLUSTER_RADIUS) / 4)(directions)).to_array()
+        measured = directions.dot(stars.moment()(directions)).to_array()
+        predicted = directions.dot((shape.spread(scenarios.CLUSTER_RADIUS) / 4)(directions)).to_array()
         np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())
     masses, _, _ = scenarios.setting()
     points = core.grid(1.0, 1.0, 8, 8)                                       # [rows, columns] Point

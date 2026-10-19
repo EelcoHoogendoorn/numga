@@ -24,9 +24,11 @@ AMPLIFICATION = 4000
 
 def curvature_map_scenario():
     """The plus wave at one event, with the rest observer, the wave direction and a transverse edge."""
-    plus, _ = core.polarizations()
+    plus, cross = core.polarizations()
 
     # --- checks -------------------------------------------------------------
+    # Spin two: the eighth turn across the wave is the quarter duality turn.
+    np.testing.assert_allclose((cross - -core.I * plus).kernel, 0.0, atol=1e-12)
     # Nonzero, yet applying the curvature twice gives zero.
     np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
     assert np.abs(plus.kernel).max() > 0.0

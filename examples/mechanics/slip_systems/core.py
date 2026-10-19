@@ -9,8 +9,8 @@ three in three slip directions, twelve slip systems in all.
 A slip plane is a vector, the pull's axis a direction, an antivector, and a slip direction the line where two
 slip planes meet, `plane ^ other`, a bivector whose sense the order of the planes sets. A pull along an axis is the stress map `axis * (Plane & axis)`,
 the traction on a plane pointing along the axis by the plane's pairing with it. The part of that traction along
-a slip direction, the resolved shear stress, is `~direction | stress(plane)`: the Schmid factor
-`(~direction | axis) * (plane & axis)` times the pull, at most a half. The system with the largest Schmid factor
+a slip direction, the resolved shear stress, is `direction.dot(stress(plane))`: the Schmid factor
+`direction.dot(axis) * (plane & axis)` times the pull, at most a half. The system with the largest Schmid factor
 slips first.
 
 A small slip on a system shears the crystal, the map `Direction + amount * direction * (plane & Direction)`:
@@ -61,8 +61,7 @@ def tension(axis: Direction) -> Stress:
 def schmid(axis: Direction, planes: Plane, directions: Line) -> Scalar:
     """The shear stress each pull resolves along each slip system, per unit pull: the traction on the slip
     plane, along the slip direction."""
-    # A bivector squares to minus its length squared, so the metric reads one along another by its reverse.
-    return ~directions | tension(axis[..., None, None])(planes[:, None])      # [..., planes, directions] Scalar
+    return directions.dot(tension(axis[..., None, None])(planes[:, None]))   # [..., planes, directions] Scalar
 
 
 def slipped(axis: Direction, planes: Plane, directions: Line, amounts: Scalar) -> Direction:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, crossing, ga, mv
+from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, ga, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # Grid samples per axis for level sets.
@@ -37,7 +37,7 @@ def draw_level_sets(ax, quadrics: Polarity, **style) -> None:
     """Draw each locus P & quadric(P) == 0 by contouring it on a grid."""
     xs = np.linspace(BOX[0], BOX[1], RESOLUTION)
     ys = np.linspace(BOX[2], BOX[3], RESOLUTION)
-    samples = crossing(np.stack(np.meshgrid(xs, ys), axis=-1))
+    samples = mv.point(np.stack(np.meshgrid(xs, ys), axis=-1))
     quadrics = quadrics.reshape(-1)
     values = (samples[..., None] & quadrics(samples[..., None])).to_array()
     for index in range(quadrics.shape[0]):

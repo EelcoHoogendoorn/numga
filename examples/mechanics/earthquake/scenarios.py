@@ -85,7 +85,7 @@ def main() -> None:
     np.testing.assert_allclose(moment.det().to_array(), 0.0, atol=1e-14)
     np.testing.assert_allclose(values.to_array(), np.array([-MOMENT, 0.0, MOMENT]) * np.ones((len(STRIKES), 1)), atol=1e-13)
     # The slip's couple alone would turn the ground, by the plane of shear; the double couple does not.
-    single = slips * (~normals | core.Point)                                  # [faults] Moment
+    single = slips * normals.dot(core.Point)                                  # [faults] Moment
     np.testing.assert_allclose(core.curl(single).kernel, slips.commutator(normals).kernel, atol=1e-14)
     np.testing.assert_allclose(core.curl(moment).kernel, 0.0, atol=1e-14)
     # The fault and the auxiliary plane give the same moment.
@@ -95,7 +95,7 @@ def main() -> None:
     plane_normals, plane_slips = core.fault_planes(moment)                    # [faults, 2] Point each
     rebuilt = core.double_couple(plane_normals, plane_slips, MOMENT)          # [faults, 2] Moment
     np.testing.assert_allclose(rebuilt.kernel, moment[:, None].broadcast_to(rebuilt.shape).kernel, atol=1e-13)
-    alignment = (~plane_normals | normals[:, None]).abs().to_array()          # [faults, 2]
+    alignment = plane_normals.dot(normals[:, None]).abs().to_array()          # [faults, 2]
     np.testing.assert_allclose(alignment.max(axis=-1), 1.0, rtol=1e-12)
     # The P wave is strongest along the tension axis, and silent across the fault and along the slip.
     axis_push, _ = core.radiation(moment[:, None], axes)                      # [faults, 3] Scalar
@@ -106,7 +106,7 @@ def main() -> None:
     rakes = np.linspace(-np.pi, np.pi, N_FRAMES, endpoint=False)               # [frames]
     sweep_normals, sweep_slips, sweep_moment = faults(np.deg2rad(SWEEP_STRIKE), np.deg2rad(SWEEP_DIP), rakes)
     np.testing.assert_allclose((sweep_normals - sweep_normals[0]).norm().to_array(), 0.0, atol=1e-14)
-    np.testing.assert_allclose((~sweep_slips | sweep_normals).to_array(), 0.0, atol=1e-14)
+    np.testing.assert_allclose(sweep_slips.dot(sweep_normals).to_array(), 0.0, atol=1e-14)
     half = N_FRAMES // 2
     np.testing.assert_allclose((sweep_moment[half:] + sweep_moment[:half]).kernel, 0.0, atol=1e-14)
 

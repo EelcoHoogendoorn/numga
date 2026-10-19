@@ -68,7 +68,7 @@ def from_wedge_powers(bivector: Bivector) -> tuple[Scalar, Bivector]:
     triple = (bivector ^ pair) / 3                                             # [...] Pseudoscalar
     powers = stack([bivector, pair, triple], axis=-1)                          # [..., 3] Even
     # The squares of the planes are the roots of the cubic with these coefficients after the leading one.
-    squares = cubic_roots(powers.scalar_product(powers.reverse()))            # [..., 3] Scalar
+    squares = cubic_roots(powers.scalar_norm_squared())            # [..., 3] Scalar
     parts = (triple[..., None] + squares * bivector[..., None]) * inverse(pair[..., None] + squares)   # [..., 3] Even
     return squares, parts.cast(Bivector)                                       # [..., 3] Scalar, [..., 3] Bivector
 

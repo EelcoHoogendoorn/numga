@@ -92,7 +92,7 @@ class BoundOrbit:
         # Physical time advances by the radius: the clock slows smoothly near the centre.
         initial_radius = self.spinor.scalar_norm_squared()               # [...] Scalar
         rate_radius = self.rate.scalar_norm_squared() / frequency.squared()  # [...] Scalar
-        overlap = self.spinor.scalar_product(self.rate.reverse()) / frequency  # [...] Scalar
+        overlap = self.spinor.dot(self.rate) / frequency                      # [...] Scalar
         time = ((initial_radius + rate_radius) * parameter / 2
                 + (initial_radius - rate_radius) * (2 * phase).sin() / (4 * frequency)
                 + overlap * sine.squared() / frequency)                  # [...] Scalar

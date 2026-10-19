@@ -11,7 +11,7 @@ density, which is Poisson's equation, and its bivector part, the curl, vanishes.
 field; its shape, to first order in its size, is a map too, the deformation, which the tidal map
 drives along the cluster's centre: `deformation'' == tidal(deformation)`, the Jacobi equation. A
 round cluster's spread is then its starting radius squared times `deformation(deformation.adjoint())`,
-and its rim the offsets `x` with `~x | spread.solve(x) == 1`.
+and its rim the offsets `x` with `x.dot(spread.solve(x)) == 1`.
 """
 
 from __future__ import annotations
@@ -51,10 +51,9 @@ class Masses:
         towards = self.centres - points[..., None]                           # [..., masses] Point
         pull, pull_change = self._profile(towards)                           # [..., masses] Scalar each
         # A displacement moves away from each mass by itself, and changes the pull by its component
-        # towards the mass, which acts along the direction to the mass. An antivector squares to minus
-        # its length squared, so the metric reads one along another by its reverse.
+        # towards the mass, which acts along the direction to the mass.
         squeeze = -pull * Point                                              # [..., masses] Point <- Point
-        stretch = -2 * pull_change * towards * (~towards | Point)            # [..., masses] Point <- Point
+        stretch = -2 * pull_change * towards * towards.dot(Point)              # [..., masses] Point <- Point
         return (squeeze + stretch).sum(axis=-1)                              # [...] Point <- Point
 
     def _profile(self, towards: Point) -> tuple[Scalar, Scalar]:
@@ -77,7 +76,7 @@ class Stars:
         """The stars' spread about their centre of mass: the mean of each offset times its component
         along the open point."""
         offsets = self.positions - self.centre()[..., None]                # [..., stars] Point
-        return (offsets * (~offsets | Point)).mean(axis=-1)                # [...] Point <- Point
+        return (offsets * offsets.dot(Point)).mean(axis=-1)                  # [...] Point <- Point
 
     def fall(self, masses: Masses, dt: float) -> Stars:
         """The stars moved for a time `dt` by the velocity Verlet rule."""
@@ -109,13 +108,13 @@ class Shape:
 
     def spread(self, radius: float) -> Deformation:
         """Where a round cluster of the given starting radius has spread to, to first order in its size:
-        its rim's offsets `x` have `~x | spread.solve(x) == 1`."""
+        its rim's offsets `x` have `x.dot(spread.solve(x)) == 1`."""
         return radius**2 * self.deformation(self.deformation.adjoint())     # [] Point <- Point
 
     def rim(self, radius: float) -> Form:
         """The rim of a round cluster of the given starting radius, carried by the deformation: the form
         that is one, on the same offset twice, at the rim's offsets from the centre."""
-        return Point.reverse() | self.spread(radius).solve(Point)             # [] Scalar <- (Point, Point)
+        return Point.dot(self.spread(radius).solve(Point))                   # [] Scalar <- (Point, Point)
 
 
 def derivative(tides: Tidal) -> Even:
