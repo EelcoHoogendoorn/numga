@@ -20,8 +20,9 @@ LIGHT = np.array([0.4, -0.5, 0.8]) / np.linalg.norm([0.4, -0.5, 0.8])
 AMBIENT = 0.45
 
 
-def euclidean(vertices) -> np.ndarray:
-    return vertices.cast(ga.subspace("x y z")).kernel
+def euclidean(points) -> np.ndarray:
+    """x, y and z of points, antivectors, on the last axis."""
+    return points.cast(ga.subspace("yz zx xy")).kernel
 
 
 def draw_mesh(ax, mesh: Mesh, colours: np.ndarray) -> None:

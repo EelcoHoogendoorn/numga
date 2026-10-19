@@ -1,11 +1,15 @@
 """Oriented triangle meshes, their geometric fields, and sparse incidence operators.
 
-Quantities on the mesh are fields over its vertices, edges or faces, `Vector[V]` or `Scalar[F]`;
+Quantities on the mesh are fields over its vertices, edges or faces, `Point[V]` or `Scalar[F]`;
 a quantity per corner of each face is a `[3]` batch of face fields, one per corner.
 
 The algebra is not fixed here. `ga` is supplied per instance, by `examples.instantiate("examples.mesh", VGA3D)`
 or any other algebra. The incidence operators and the Loop step hold scalar cells and act on fields of
-any type; the geometric quantities read the vertices as vectors."""
+any type. The vertices are points, antivectors, intrinsic like all geometry, and so are the edges between
+them; the geometric quantities pair them with the meet `&` and the inner product `|`: two edges meet in
+their face's normal, twice its area long, and three corners meet in the sense the face turns about the
+origin. That is the metric of points of the algebra of space; projective points carry theirs in joins,
+the line through two points as long as their distance, and a projective surface reads it there."""
 
 from __future__ import annotations
 
@@ -26,8 +30,10 @@ mv = ctx.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
-Trivector = ga.gatype.trivector()
-PlanarVector = ga.gatype.from_blades("x y")
+# A position: an antivector, intrinsic.
+Point = ga.gatype.antivector()
+# The points of the xy plane, by the blades their x and y coordinates sit on.
+PlanarPoint = ga.subspace("yz zx")
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -43,12 +49,12 @@ def as_ga_sparse(C: np.ndarray, V: Extensor) -> SparseExtensor:
 
 
 class Mesh:
-    """An oriented triangle mesh: vertices `Vector[V]` and faces `[F, 3]`, counter-clockwise
+    """An oriented triangle mesh: vertices `Point[V]` and faces `[F, 3]`, counter-clockwise
     from outside, with its edges `[E, 2]` from lower to higher vertex, the edge facing each corner of
     each face `[F, 3]`, and that edge's orientation relative to the face. A mesh does not change, so
     each quantity derived from it is computed once."""
 
-    def __init__(self, vertices: Vector, faces: np.ndarray) -> None:
+    def __init__(self, vertices: Point, faces: np.ndarray) -> None:
         corner = np.arange(3)
         # the ends of the edge facing each corner, counter-clockwise
         facing = np.stack([faces[:, (corner + 1) % 3], faces[:, (corner + 2) % 3]], axis=-1)   # [F, 3, 2]
@@ -57,17 +63,17 @@ class Mesh:
         self.face_edges = face_edges.reshape(-1, 3)
         self.face_edge_orientation = np.where(facing[..., 0] < facing[..., 1], 1.0, -1.0)
 
-    def copy(self, vertices: Vector) -> Mesh:
-        return Mesh(vertices, self.faces)
+    def copy(self, vertices: Point) -> Mesh:
+        return type(self)(vertices, self.faces)
 
     @classmethod
     def disk(cls, radius: float, rings: int, sectors: int) -> Mesh:
         """A flat disk with concentric rings and a counter-clockwise triangular boundary."""
         angles = np.linspace(0, 2 * np.pi, sectors, endpoint=False)
         radii = np.linspace(radius / rings, radius, rings)
-        directions = (mv.xy * (-angles / 2)).exp() >> mv.x                # [sectors] Vector
-        positions = directions[None, :] * radii[:, None]                  # [rings, sectors] Vector
-        vertices = concatenate([mv.vector([[0, 0, 0]]), positions.reshape(-1)]).field()  # Vector[V]
+        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [sectors] Point
+        positions = directions[None, :] * radii[:, None]                  # [rings, sectors] Point
+        vertices = concatenate([mv.antivector([[0, 0, 0]]), positions.reshape(-1)]).field()  # Point[V]
 
         # Each sector starts with a centre triangle; successive rings contribute two triangles.
         indices = np.arange(rings * sectors).reshape(rings, sectors) + 1
@@ -98,8 +104,8 @@ class Mesh:
         ring = np.repeat(np.arange(len(radii)), populations)
         offsets = np.repeat(np.cumsum(populations) - populations, populations)
         angles = 2 * np.pi * (np.arange(populations.sum()) - offsets + (ring % 2) / 2) / populations[ring]
-        directions = (mv.xy * (-angles / 2)).exp() >> mv.x                # [nodes] Vector
-        vertices = concatenate((mv.vector([[0, 0, 0]]), directions * radii[ring])).field()   # Vector[V]
+        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [nodes] Point
+        vertices = concatenate((mv.antivector([[0, 0, 0]]), directions * radii[ring])).field()   # Point[V]
         return cls._triangulate(vertices)
 
     @classmethod
@@ -113,11 +119,12 @@ class Mesh:
         layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
         inside = (layers > 0) & (layers <= divisions)
         lattice = np.stack((columns[inside], rows[inside]), axis=-1)          # [nodes, axes]
-        axes = stack((mv.x, (mv.xy * (-np.pi / 6)).exp() >> mv.x))           # [axes] Vector
-        positions = (axes * lattice).sum(axis=-1)                          # [nodes] Vector
+        unit = mv.x.dual()                                   # [] Point
+        axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))        # [axes] Point
+        positions = (axes * lattice).sum(axis=-1)                          # [nodes] Point
         # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
         positions = spacing * layers[inside] * positions.normalized()
-        vertices = concatenate((mv.vector([[0, 0, 0]]), positions)).field()   # Vector[V]
+        vertices = concatenate((mv.antivector([[0, 0, 0]]), positions)).field()   # Point[V]
         mesh = cls._triangulate(vertices)
         boundary = np.flatnonzero(layers[inside] == divisions) + 1
 
@@ -125,9 +132,9 @@ class Mesh:
         # slide along the circle; the incidence adjoint sums edge forces at each vertex.
         target = (4 * mesh.triangle_areas.batch().sum() / (np.sqrt(3) * len(mesh.faces))).square_root()
         for _ in range(relaxation_steps):
-            edges = mesh.edge_vectors
-            force = edges * (1 - target / edges.norm())                    # Vector[E]
-            positions = (mesh.vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Vector
+            edges = mesh.edge_displacements
+            force = edges * (1 - target / edges.norm())                    # Point[E]
+            positions = (mesh.vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Point
             positions = positions.at[boundary].set(radius * positions[boundary].normalized())
             mesh = cls._triangulate(positions.field())
         return mesh
@@ -136,7 +143,7 @@ class Mesh:
     def icosphere(cls, levels: int) -> Mesh:
         """A unit sphere: an icosahedron with each face split in four, the given number of times."""
         golden = (1 + 5 ** 0.5) / 2
-        vertices = mv.vector([
+        vertices = mv.antivector([
             [-1, golden, 0], [1, golden, 0], [-1, -golden, 0], [1, -golden, 0],
             [0, -1, golden], [0, 1, golden], [0, -1, -golden], [0, 1, -golden],
             [golden, 0, -1], [golden, 0, 1], [-golden, 0, -1], [-golden, 0, 1],
@@ -160,7 +167,7 @@ class Mesh:
         places = np.array([[float(word) for word in row[1:4]] for row in rows if row[:1] == ["v"]])
         faces = np.array([[int(word.split("/")[0]) - 1 for word in row[1:4]] for row in rows if row[:1] == ["f"]])
         middle, extent = (places.max(axis=0) + places.min(axis=0)) / 2, np.ptp(places, axis=0).max()
-        return cls(mv.vector(((places - middle) * size / extent).tolist()).field(), faces)
+        return cls(mv.antivector(((places - middle) * size / extent).tolist()).field(), faces)
 
     @classmethod
     def torus(cls, major_radius: float, minor_radius: float, major_count: int, minor_count: int) -> Mesh:
@@ -170,8 +177,9 @@ class Mesh:
         minor_angles = np.linspace(0.0, 2 * np.pi, minor_count, endpoint=False)
         around_tube = (mv.xz * (-minor_angles / 2)).exp()                       # [minor_count] Rotor
         around_axis = (mv.xy * (-major_angles / 2)).exp()                       # [major_count] Rotor
-        tube = mv.x * major_radius + (around_tube >> (mv.x * minor_radius))     # [minor_count] Vector
-        vertices = (around_axis[:, None] >> tube[None, :]).reshape(-1).field()  # Vector[V]
+        unit = mv.x.dual()                                       # [] Point
+        tube = unit * major_radius + (around_tube >> (unit * minor_radius))     # [minor_count] Point
+        vertices = (around_axis[:, None] >> tube[None, :]).reshape(-1).field()  # Point[V]
 
         u, v = np.meshgrid(np.arange(major_count), np.arange(minor_count), indexing="ij")
         v00 = u * minor_count + v
@@ -185,11 +193,11 @@ class Mesh:
         return cls(vertices, faces)
 
     @classmethod
-    def _triangulate(cls, vertices: Vector) -> Mesh:
+    def _triangulate(cls, vertices: Point) -> Mesh:
         """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
         from scipy.spatial import Delaunay
 
-        coordinates = vertices.cast(PlanarVector).kernel
+        coordinates = vertices.cast(PlanarPoint).kernel
         return cls(vertices, Delaunay(coordinates).simplices)
 
     @cached_property
@@ -272,28 +280,28 @@ class Mesh:
         return np.flatnonzero(np.bincount(self.face_edges.ravel()) == 1)
 
     @cached_property
-    def edge_vectors(self) -> Vector:
-        """Vector[E]: the displacement from each edge's tail to its head."""
+    def edge_displacements(self) -> Point:
+        """Point[E]: the displacement from each edge's tail to its head, a difference of points."""
         return self.d0 * self.vertices
 
     @cached_property
-    def edge_midpoints(self) -> Vector:
-        """Vector[E]: the midpoint of each edge."""
+    def edge_midpoints(self) -> Point:
+        """Point[E]: the midpoint of each edge."""
         return as_ga_sparse(self.edges, as_scalar(np.full(self.edges.shape, 1 / 2))) * self.vertices
 
     @cached_property
-    def face_centers(self) -> Vector:
-        """Vector[F]: the centroid of each face."""
+    def face_centers(self) -> Point:
+        """Point[F]: the centroid of each face."""
         return as_ga_sparse(self.faces, as_scalar(np.full(self.faces.shape, 1 / 3))) * self.vertices
 
     @cached_property
-    def corners(self) -> Vector:
-        """[3] Vector[F]: each face's vertex at each of its corners."""
+    def corners(self) -> Point:
+        """[3] Point[F]: each face's vertex at each of its corners."""
         return SparseExtensor.selection(ctx, self.faces.T, len(self.vertices.batch())) * self.vertices
 
     @cached_property
-    def triangle_edges(self) -> Vector:
-        """[3] Vector[F]: the edge facing each corner, counter-clockwise, from the corner after it to the
+    def triangle_edges(self) -> Point:
+        """[3] Point[F]: the edge facing each corner, counter-clockwise, from the corner after it to the
         corner after that."""
         corners = self.corners
         return corners[[2, 0, 1]] - corners[[1, 2, 0]]
@@ -302,21 +310,27 @@ class Mesh:
     def face_planes(self) -> Bivector:
         """Bivector[F]: each face's unit plane, counter-clockwise seen from outside."""
         edges = self.triangle_edges
-        return (edges[0] ^ edges[1]).normalized()
+        return edges[1].commutator(edges[0]).normalized()
 
     @cached_property
-    def unit_volume(self) -> Trivector:
-        """Trivector: the solid's oriented volume over its size, the sense its counter-clockwise faces give
-        space."""
+    def face_normals(self) -> Vector:
+        """Vector[F]: each face's unit normal, outwards: where two of its edges meet."""
+        edges = self.triangle_edges
+        return (edges[0] & edges[1]).normalized()
+
+    @cached_property
+    def unit_volume(self) -> Scalar:
+        """Scalar: the sense its counter-clockwise faces give space, plus or minus one: the faces' corners
+        meeting about the origin, summed over the solid, over its size."""
         corners = self.corners
-        volume = (corners[0] ^ corners[1] ^ corners[2]).sites.sum()
+        volume = (corners[0] & corners[1] & corners[2]).sites.sum()
         return volume / volume.norm()
 
     @cached_property
     def triangle_areas(self) -> Scalar:
-        """Scalar[F]."""
+        """Scalar[F]: half the size of where two edges meet."""
         edges = self.triangle_edges
-        return (edges[0] ^ edges[1]).norm() / 2
+        return (edges[0] & edges[1]).norm() / 2
 
     @cached_property
     def edge_ratio(self) -> Scalar:
@@ -328,8 +342,8 @@ class Mesh:
         `face_weights` `Scalar[F]`."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
-        # the cotangent at each corner
-        cotangents = -(after | before) / (after ^ before).norm()               # [3] Scalar[F]
+        # the cotangent at each corner; against the reverse of another, an edge pairs positively
+        cotangents = -(after | ~before) / (after & before).norm()             # [3] Scalar[F]
         return ~self.by_corner(cotangents / 2) * face_weights
 
     @cached_property
@@ -337,7 +351,7 @@ class Mesh:
         """Vector[V]."""
         edges = self.triangle_edges
         # each face's normal, twice its area long
-        face_normals = (edges[0] ^ edges[1]).dual()                           # Vector[F]
+        face_normals = edges[0] & edges[1]                                     # Vector[F]
         spread = as_ga_sparse(self.faces, as_scalar(np.ones_like(self.faces, dtype=float)))
         return (~spread * face_normals).normalized()
 
@@ -350,13 +364,13 @@ class Mesh:
         """[3] Scalar[F]: the cosine of each corner's angle, kept exactly by a conformal map."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
-        return -(after | before) / (after.norm() * before.norm())
+        return -(after | ~before) / (after.norm() * before.norm())
 
     @cached_property
     def reconstruction(self) -> SparseExtensor:
         """[F, E] Vector <- Scalar: Whitney edge integrals evaluated at face centroids."""
         # The gradient of each corner's hat function points across its opposite edge.
-        gradients = (self.triangle_edges | self.face_planes) / (2 * self.triangle_areas)   # [3] Vector[F]
+        gradients = (self.triangle_edges | self.face_normals) / (2 * self.triangle_areas)   # [3] Vector[F]
         # All three hat functions equal one third at the centroid. The difference of two
         # gradients reconstructs an oriented edge integral, with the mesh edge's sign.
         coefficients = (gradients[[2, 0, 1]] - gradients[[1, 2, 0]]) / 3   # [3] Vector[F]

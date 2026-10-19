@@ -86,7 +86,7 @@ def discrete() -> core.Vector:
     """The plain and the wavy ring through the discrete-time flow, one Bäcklund transformation per step:
     their curves `[steps + 1, rings, n] Vector`, the wavy ring's sweeping a discrete Hashimoto surface."""
     rings = stack([core.ring(N_DISCRETE), core.wavy_ring(N_DISCRETE, WAVY_MODE, WAVY_TILT)])   # [rings, n] Vector
-    twist = mv.xyz * PARAMETER                                                   # [] Pseudoscalar
+    twist = mv(core.Parameter, [PARAMETER])                                      # [] Parameter
 
     def stepped() -> Iterator[core.Vector]:
         curves = rings
@@ -101,9 +101,9 @@ def soliton() -> core.Vector:
     """A loop made on a straight vortex line by one Bäcklund transformation, from an offset leaning just
     off the line's forward direction, and carried along it by the discrete-time flow: the curves
     `[steps + 1, n] Vector`."""
-    line = mv.x * (np.arange(N_SOLITON) - N_SOLITON / 2)                         # [n] Vector
-    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x) * SOLITON_REACH               # [] Vector
-    twist, carry = mv.xyz * SOLITON_PARAMETER, mv.xyz * CARRY_PARAMETER          # [] Pseudoscalar
+    line = mv.x.dual() * (np.arange(N_SOLITON) - N_SOLITON / 2)                  # [n] Point
+    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x.dual()) * SOLITON_REACH        # [] Point
+    twist, carry = mv(core.Parameter, [SOLITON_PARAMETER]), mv(core.Parameter, [CARRY_PARAMETER])   # [] Parameter
 
     def carried() -> Iterator[core.Vector]:
         curve = core.backlund(line, start, twist)                                # [n] Vector
@@ -130,8 +130,9 @@ def leapfrog() -> core.Vector:
 def passes(curves: core.Vector) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The mean height and radius of each ring at each time `[times, rings]`, and the times just before
     one ring passes through the other."""
-    heights = (curves | mv.z).to_array().mean(axis=-1)                           # [times, rings]
-    radii = (curves - mv.z * (curves | mv.z)).norm().to_array().mean(axis=-1)    # [times, rings]
+    # Each point paired with the axis: its height along it.
+    heights = (curves & mv.z).to_array().mean(axis=-1)                           # [times, rings]
+    radii = (curves - mv.z.dual() * (curves & mv.z)).norm().to_array().mean(axis=-1)   # [times, rings]
     return heights, radii, np.flatnonzero(np.diff(np.sign(heights[:, 1] - heights[:, 0])))
 
 
@@ -155,7 +156,7 @@ def main() -> None:
     # checks
     # The ring flies rigidly along its axis at twice the tangent of half its turn per vertex.
     np.testing.assert_allclose((velocities - velocities[0]).norm().to_array(), 0.0, atol=1e-13)
-    np.testing.assert_allclose((velocities | mv.z).to_array(), -2 * np.tan(np.pi / N_RING), rtol=1e-12)
+    np.testing.assert_allclose((velocities & mv.z).to_array(), -2 * np.tan(np.pi / N_RING), rtol=1e-12)
     # The flows keep every edge's length and the polygon's vector area; the tolerance on the area tests
     # the time steps.
     for curves in (surface, trefoil):
@@ -167,8 +168,8 @@ def main() -> None:
     # moves rigidly: all its points keep one radius and one height.
     np.testing.assert_allclose(core.edges(stepped).norm().to_array(), 1.0, atol=1e-12)
     moved = stepped[-1, 0]
-    np.testing.assert_allclose((moved - mv.z * (moved | mv.z)).norm().to_array(), (moved[0] - mv.z * (moved[0] | mv.z)).norm().to_array(), rtol=1e-12)
-    np.testing.assert_allclose((moved | mv.z).to_array(), (moved[0] | mv.z).to_array(), atol=1e-12)
+    np.testing.assert_allclose((moved - mv.z.dual() * (moved & mv.z)).norm().to_array(), (moved[0] - mv.z.dual() * (moved[0] & mv.z)).norm().to_array(), rtol=1e-12)
+    np.testing.assert_allclose((moved & mv.z).to_array(), (moved[0] & mv.z).to_array(), atol=1e-12)
     # Each step is a time of about half the parameter along the smoke ring flow, closer the smaller the
     # parameter; the tolerance tests the discrete time against Runge–Kutta's, relative to the travel.
     continuous = list(islice(core.flow(stepped[0, 1], flying, PARAMETER / 2), N_DISCRETE_STEPS + 1))[-1]

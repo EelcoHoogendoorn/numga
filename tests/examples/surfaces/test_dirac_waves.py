@@ -19,7 +19,7 @@ def test_the_pulse_keeps_its_energy_and_gathers_at_the_south_pole():
                       for (vertices, after), (_, before) in zip(states[1:], states)]).to_array()
     np.testing.assert_allclose(energies, energies[0], rtol=1e-12)
     density = (vertex_areas * states[int(round(np.pi / scenarios.INTERVAL))][0].scalar_norm_squared()).to_array()
-    assert density[(sphere.vertices | mv.z) < -0.9].sum() > 0.5 * density.sum()
+    assert density[(sphere.vertices & mv.z) < -0.9].sum() > 0.5 * density.sum()
     vertices, faces = states[0]
     assert len(render.animate(sphere, vertices[None, None], faces[None, None], 1)) == 1
 

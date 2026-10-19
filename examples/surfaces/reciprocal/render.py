@@ -30,16 +30,21 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
-    """x, y and z of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+def coordinates(vectors: core.Vector) -> np.ndarray:
+    """x, y and z of each vector, on the last axis."""
+    return vectors.cast(core.ga.subspace("x y z")).kernel
+
+
+def positions(points: core.Point) -> np.ndarray:
+    """x, y and z of each point, an antivector, on the last axis."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def unbalanced(mesh: core.Mesh, stresses: core.Scalar) -> float:
     """The largest net force on an interior vertex from the bars meeting there, each pulling along itself
     by its stress times its length."""
     inner, _, _ = core.beside(mesh)
-    pull = coordinates(mesh.edge_vectors.batch()[inner])[..., :2] * scalars(stresses)[..., None]   # [..., inner, 2]
+    pull = positions(mesh.edge_displacements.batch()[inner])[..., :2] * scalars(stresses)[..., None]   # [..., inner, 2]
     ends = np.zeros((len(mesh.vertices.batch()), len(inner)))                 # [vertices, inner]
     ends[mesh.edges[inner, 0], np.arange(len(inner))] = 1
     ends[mesh.edges[inner, 1], np.arange(len(inner))] = -1
@@ -56,7 +61,7 @@ def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: cor
     """Left, the terrain the heights lift the mesh to, its creases coloured by stress; right, the planar
     truss, its bars coloured by stress, and the reciprocal diagram over it, an edge across every bar."""
     inner, left, right = core.beside(mesh)
-    xy = coordinates(mesh.vertices.batch())[:, :2]                             # [vertices, 2]
+    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
     lifted = np.concatenate([xy, heights[:, None]], axis=-1)                   # [vertices, 3]
     shades = colours(scalars(stresses))                                        # [inner, 4]
     figure = plt.figure(figsize=(10.0, 5.0))

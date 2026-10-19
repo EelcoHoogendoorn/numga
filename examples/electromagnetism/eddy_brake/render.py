@@ -162,10 +162,10 @@ def current_contours(ax: plt.Axes, triangles: Triangulation, streamfunction: np.
     return contours
 
 
-def draw(mesh: Mesh, response: core.Response, centre: core.Vector, width: float) -> plt.Figure:
+def draw(mesh: Mesh, response: core.Response, centre: core.Point, width: float) -> plt.Figure:
     """The materials' solved currents, with magnitude on one colour scale and field width dashed."""
-    positions = mesh.vertices.cast(core.ga.subspace("x y")).kernel
-    field_centre = centre.cast(core.ga.subspace("x y")).kernel
+    positions = mesh.vertices.cast(core.ga.subspace("yz zx")).kernel
+    field_centre = centre.cast(core.ga.subspace("yz zx")).kernel
     triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
 
     # Average the face currents at shared vertices solely to draw a continuous field.
@@ -199,7 +199,7 @@ def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
     """Streamfunctions of current patterns `[cases, patterns] Scalar[V]`, a row of patterns per
     material: current circulates along their contours, opposite ways around warm and cool peaks."""
     values = streamfunctions.cast(core.ga.subspace.scalar()).kernel[..., 0]   # [cases, patterns, V]
-    positions = mesh.vertices.cast(core.ga.subspace("x y")).kernel
+    positions = mesh.vertices.cast(core.ga.subspace("yz zx")).kernel
     triangles = Triangulation(positions[:, 0], positions[:, 1], mesh.faces)
     extent = np.linalg.norm(positions, axis=-1).max()
     boundary = mesh.edges[mesh.boundary_edges]
@@ -219,7 +219,7 @@ def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
     return figure
 
 
-def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, width: float,
+def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
             fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
     """Batched rotating materials and currents, with `[curves, samples]` body-fixed guide families
     drawn on the panels that show them, `[cases, families]`."""
@@ -230,11 +230,11 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, widt
     magnitude = np.linalg.norm(current, axis=-1)
     peak = magnitude.max()
     current_scale = PowerNorm(CURRENT_GAMMA, vmin=0, vmax=peak)
-    reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
+    reference = mesh.vertices.cast(core.ga.subspace("yz zx")).kernel
     extent = np.linalg.norm(reference, axis=-1).max()
     sample_axis = np.linspace(-extent, extent, IMAGE_SAMPLES)
     horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
-    field_centre = centre.cast(core.ga.subspace("x y")).kernel
+    field_centre = centre.cast(core.ga.subspace("yz zx")).kernel
     boundary = mesh.edges[mesh.boundary_edges]
     guides = concatenate(fibres)                                              # [curves, samples] Vector
 
@@ -247,7 +247,7 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, widt
     fixed_patches = len(panels[0][0].patches)
     images = []
     for state, vectors, speed, frame_marks in zip(states, current, magnitude, marks):
-        positions = state.vertices.cast(core.ga.subspace("x y")).kernel
+        positions = state.vertices.cast(core.ga.subspace("yz zx")).kernel
         threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
         paths, surfaces = [], []
         for i, (ax, threads, marker, outline) in enumerate(panels):
@@ -275,7 +275,7 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, widt
     return images
 
 
-def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector, width: float,
+def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
                  fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one common scale."""
     states = list(frames)
@@ -283,9 +283,9 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector,
     density = stack([state.heat for state in states]) / mesh.triangle_areas  # [frames, cases] Scalar[F]
     heat_scale = PowerNorm(HEAT_GAMMA, vmin=0, vmax=density.cast(core.ga.subspace.scalar()).kernel.max())
     values = at_vertices(mesh, density).cast(core.ga.subspace.scalar()).kernel[..., 0]  # [frames, cases, V]
-    reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
+    reference = mesh.vertices.cast(core.ga.subspace("yz zx")).kernel
     extent = np.linalg.norm(reference, axis=-1).max()
-    field_centre = centre.cast(core.ga.subspace("x y")).kernel
+    field_centre = centre.cast(core.ga.subspace("yz zx")).kernel
     boundary = mesh.edges[mesh.boundary_edges]
     guides = concatenate(fibres)                                              # [curves, samples] Vector
     marks = rotation_marks(stack([state.orientation for state in states]), extent)
@@ -295,7 +295,7 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector,
               for i, colours in enumerate(fibre_colours(fibres, shown))]
     images = []
     for state, densities, frame_marks in zip(states, values, marks):
-        positions = state.vertices.cast(core.ga.subspace("x y")).kernel
+        positions = state.vertices.cast(core.ga.subspace("yz zx")).kernel
         threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
         surfaces = []
         for i, (ax, threads, marker, outline) in enumerate(panels):
@@ -313,11 +313,11 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Vector,
     return images
 
 
-def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre: core.Vector, width: float,
+def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre: core.Point, width: float,
                       fibres: tuple[core.Vector, ...], shown: np.ndarray) -> list[np.ndarray]:
     """Current build-up and decay on a moving material mesh, on one scale across cases and time."""
     states = list(frames)
-    reference = mesh.vertices.cast(core.ga.subspace("x y")).kernel
+    reference = mesh.vertices.cast(core.ga.subspace("yz zx")).kernel
     # The current belongs to material faces; turn its direction into the laboratory frame.
     field = stack([state.orientation >> state.current for state in states])  # [frames, cases] Vector[F]
     magnitude = field.norm().cast(core.ga.subspace.scalar()).kernel[..., 0]
@@ -333,7 +333,7 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
     current_scale = PowerNorm(CURRENT_GAMMA, vmin=0, vmax=peak)
     vertex_magnitude = at_vertices(mesh, field.norm()).cast(core.ga.subspace.scalar()).kernel[..., 0]
     extent = np.linalg.norm(reference, axis=-1).max()
-    field_centre = centre.cast(core.ga.subspace("x y")).kernel
+    field_centre = centre.cast(core.ga.subspace("yz zx")).kernel
     boundary = mesh.edges[mesh.boundary_edges]
     guides = concatenate(fibres)                                              # [curves, samples] Vector
     marks = rotation_marks(stack([state.orientation for state in states]), extent)
@@ -345,7 +345,7 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
     images = []
     for state, vectors, speed, stream, alpha, frame_marks in zip(
             states, current, vertex_magnitude, streamfunction, opacity, marks):
-        positions = state.vertices.cast(core.ga.subspace("x y")).kernel
+        positions = state.vertices.cast(core.ga.subspace("yz zx")).kernel
         threads_at = (state.orientation[:, None, None] >> guides).cast(core.ga.subspace("x y")).kernel
         paths, surfaces = [], []
         for i, (ax, threads, marker, outline) in enumerate(panels):
@@ -370,8 +370,9 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
 
 
 def readout(response: core.Response, labels: tuple[str, ...]) -> str:
-    """Material, signed torque about the disc axis, and total dissipated power."""
-    torque = response.torque.cast(core.ga.subspace("xy")).kernel[..., 0] * 1e3
+    """Material, signed torque in the disc's plane, and total dissipated power."""
+    # The moment paired with the disc's plane: the torque in its sense.
+    torque = (core.mv.xy & response.torque).cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
     heating = response.heating.sites.sum().cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
     label_width = max(len("material"), *(len(label) for label in labels))
     header = f"{'material':<{label_width}}  {'torque (mN m)':>14}  {'heating (mW)':>14}"

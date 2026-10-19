@@ -61,7 +61,7 @@ def materials() -> tuple[Mesh, core.Conductivity]:
 
 def scene(mesh: Mesh, conductivity: core.Conductivity) -> tuple[core.Response, core.Vector]:
     """The steady currents, heating and torque of all three material fields."""
-    centre = core.mv.x * MAGNET_OFFSET                                      # [] Vector
+    centre = (core.mv.x * MAGNET_OFFSET).dual()                       # [] Point
     magnetic = core.field(mesh.edge_midpoints, centre, core.mv.xy,
                           FIELD_STRENGTH, FIELD_WIDTH)                      # Bivector[E]
     spin = ANGULAR_SPEED * core.mv.xy                                       # [] Bivector
@@ -75,7 +75,7 @@ def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
     directions = stack((core.mv.x, core.mv.y))                               # [axes] Vector
     principal = THICKNESS * np.array([ALONG_CONDUCTIVITY, ACROSS_CONDUCTIVITY])
     conductivity = (directions * (directions | core.Vector) * principal).sum(axis=-1)[None]  # [cases] Conductivity
-    centre = core.mv.x * MAGNET_OFFSET                                      # [] Vector
+    centre = (core.mv.x * MAGNET_OFFSET).dual()                       # [] Point
     orientation = (core.mv.xy * (-INITIAL_ANGLE / 2)).exp()[None]             # [cases] Rotor
     spin = (core.mv.xy * INITIAL_SPEED)[None]                                # [cases] Bivector
     heat = (mesh.triangle_areas * 0)[None]                                  # [cases] Scalar[F]
@@ -87,7 +87,7 @@ def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
 def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.Motion], core.Vector]:
     """The three material discs released at the same speed, retaining their Joule heat on the
     rotating material triangles."""
-    centre = core.mv.x * MAGNET_OFFSET                                     # [] Vector
+    centre = (core.mv.x * MAGNET_OFFSET).dual()                      # [] Point
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)          # [cases] Rotor
     spin = (core.mv.xy * INITIAL_SPEED).broadcast_to(orientation.shape)     # [cases] Bivector
     heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar[F]
@@ -99,7 +99,7 @@ def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iter
 def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.InductiveMotion], core.Vector]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
     modes = core.current_modes(mesh, conductivity, PERMEABILITY, N_MODES)
-    centre = core.mv.x * MAGNET_OFFSET                                     # [] Vector
+    centre = (core.mv.x * MAGNET_OFFSET).dual()                      # [] Point
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)          # [cases] Rotor
     spin = (core.mv.xy * INDUCTIVE_INITIAL_SPEED).broadcast_to(orientation.shape)  # [cases] Bivector
     heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar[F]
@@ -110,7 +110,8 @@ def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[It
     times = (np.arange(N_INDUCTIVE_STEPS * N_SUBSTEPS) + 0.5) * INDUCTIVE_TIME_STEP / N_SUBSTEPS
     phase = np.clip(times / SPINUP_TIME, 0, 1)
     acceleration = INDUCTIVE_TARGET_SPEED * np.pi / (2 * SPINUP_TIME) * np.sin(np.pi * phase) * (times < SPINUP_TIME)
-    motor_torque = core.mv.xy * (INERTIA * acceleration.reshape(N_INDUCTIVE_STEPS, N_SUBSTEPS, 1))
+    # The motor's torque about the turning plane, in its sense.
+    motor_torque = core.mv.scalar(INERTIA * acceleration.reshape(N_INDUCTIVE_STEPS, N_SUBSTEPS, 1, 1))
     frames = core.inductive_braking(mesh, modes, forcing, core.mv.xy, INERTIA,
                                      orientation, spin, heat, amplitudes,
                                      motor_torque, INDUCTIVE_TIME_STEP)
@@ -151,7 +152,7 @@ def main() -> None:
     # The steady currents turn the mechanical power into heat. The braking discs conserve their
     # rotational energy plus heat; the inductive discs add the magnetic energy and the motor's work.
     spin = ANGULAR_SPEED * core.mv.xy
-    np.testing.assert_allclose((spin | response.torque).kernel, response.heating.sites.sum().kernel, rtol=1e-12)
+    np.testing.assert_allclose((-(spin & response.torque)).kernel, response.heating.sites.sum().kernel, rtol=1e-12)
     energy = stack([state.heat.sites.sum() + INERTIA / 2 * state.spin.scalar_norm_squared() for state in braked])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-13)
     energy = stack([state.heat.sites.sum() + state.magnetic_energy - state.motor_work

@@ -18,7 +18,8 @@ def test_affine_field_reconstruction_and_energy_follow_a_turned_mesh(mesh: Mesh)
     turn = (mv.xz * 0.31).exp()
     mesh = mesh.copy(vertices=turn >> mesh.vertices)
     gradient = turn >> (mv.x + 2 * mv.y)
-    potential = mesh.vertices | gradient
+    # A linear function's value at each vertex: the point paired with the gradient.
+    potential = mesh.vertices & gradient
     differences = mesh.d0 * potential
 
     # Integrating a gradient around a triangle vanishes, and edge integrals reconstruct
@@ -38,15 +39,15 @@ def test_affine_field_reconstruction_and_energy_follow_a_turned_mesh(mesh: Mesh)
                          ids=("rings", "triangular", "concentric"))
 def test_boundary_integral_matches_oriented_face_area(mesh: Mesh):
     turn = (mv.yz * -0.24).exp()
-    mesh = mesh.copy(vertices=turn >> mesh.vertices + mv.x)
+    mesh = mesh.copy(vertices=turn >> mesh.vertices + mv.x.dual())
 
     # Interior edges cancel in the sum of face boundaries. The surviving edge pairs
     # enclose exactly the same oriented area as the sum of triangular faces.
     boundary = ~mesh.d1 * as_scalar(np.ones(len(mesh.faces))).field()
-    tail, head = SparseExtensor.selection(context, mesh.edges.T, len(mesh.vertices.batch())) * mesh.vertices   # [ends] Vector[E]
-    edge_area = tail ^ head
+    tail, head = SparseExtensor.selection(context, mesh.edges.T, len(mesh.vertices.batch())) * mesh.vertices   # [ends] Point[E]
+    edge_area = tail & head
     boundary_area = (boundary * edge_area).batch().sum() / 2
-    face_area = (mesh.triangle_areas * mesh.face_planes).batch().sum()
+    face_area = (mesh.triangle_areas * mesh.face_normals).batch().sum()
     np.testing.assert_allclose((boundary_area - face_area).kernel, 0.0, atol=1e-11)
     np.testing.assert_array_equal(np.flatnonzero(boundary.kernel[:, 0]), mesh.boundary_edges)
 
@@ -60,7 +61,7 @@ def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(div
     degrees = np.bincount(mesh.edges.ravel(), minlength=len(mesh.vertices.batch()))
     interior = np.setdiff1d(np.arange(len(mesh.vertices.batch())), boundary)
     angles = np.rad2deg(np.arccos(np.clip(mesh.corner_cosines().kernel, -1, 1)))
-    lengths = mesh.edge_vectors.norm().kernel[:, 0]
+    lengths = mesh.edge_displacements.norm().kernel[:, 0]
     areas = mesh.triangle_areas.kernel[:, 0]
     rim_areas = areas[mesh.face_centers.norm().kernel[:, 0] > 0.75 * radius]
 

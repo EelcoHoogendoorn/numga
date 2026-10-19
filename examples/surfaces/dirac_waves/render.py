@@ -1,6 +1,5 @@
 """Drawing for spinor waves on a surface: each tile the surface over time, lit from above, coloured red,
-green and blue by the vertex field's planes yz, zx and xy together with the face field's directions x,
-y and z across them."""
+green and blue by the planes yz, zx and xy of the vertex field together with those of the face field."""
 
 from __future__ import annotations
 
@@ -23,26 +22,26 @@ PIXELS = 128
 SUPERSAMPLE = 2
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
-    """The x, y and z coordinates of points."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+def coordinates(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points, antivectors."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
+
+
+def directions(normals) -> np.ndarray:
+    """The x, y and z components of vectors."""
+    return normals.cast(core.ga.subspace("x y z")).kernel
 
 
 def planes(fields: core.Even) -> np.ndarray:
-    """The absolute amplitudes of vertex fields' planes yz, zx and xy `[..., V, 3]`."""
+    """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`."""
     return np.abs(fields.cast(core.ga.subspace("yz zx xy")).kernel)
-
-
-def directions(fields: core.Odd) -> np.ndarray:
-    """The absolute amplitudes of face fields' directions x, y and z, across those planes `[..., F, 3]`."""
-    return np.abs(fields.cast(core.ga.subspace("x y z")).kernel)
 
 
 def view(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """The surface as the camera sees it, the same for every field on it: the covered pixels of the
     supersampled image, the face at each and its corners' weights there, and the light falling there."""
     points, triangles = coordinates(mesh.vertices), mesh.faces
-    normals = coordinates(mesh.vertex_normals)
+    normals = directions(mesh.vertex_normals)
     elevation, azimuth = np.radians(ELEVATION), np.radians(AZIMUTH)
     toward = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
     right = np.cross([0.0, 0.0, 1.0], toward)
@@ -71,10 +70,10 @@ def image(mesh: Mesh, seen: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray
     return picture.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).mean(axis=(1, 3))
 
 
-def animate(mesh: Mesh, vertices: core.Even, faces: core.Odd, columns: int) -> list[np.ndarray]:
-    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Odd[F]`, the tiles in rows
+def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> list[np.ndarray]:
+    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]`, the tiles in rows
     of the given count, each exposed over all its frames."""
-    corners, sides = planes(vertices), directions(faces)                      # [tiles, frames, V, 3], [tiles, frames, F, 3]
+    corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
     exposure = np.percentile(np.concatenate([corners, sides], axis=2), EXPOSURE, axis=(1, 2, 3), keepdims=True)
     corners, sides = corners / exposure, sides / exposure
     tiles, frames = corners.shape[:2]
@@ -87,8 +86,8 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Odd, columns: int) -> l
     return list((255 * layout).astype(np.uint8))
 
 
-def still(mesh: Mesh, vertices: core.Even, faces: core.Odd) -> plt.Figure:
-    """A vertex field `Even[V]` and a face field `Odd[F]` on the surface, exposed together."""
+def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:
+    """A vertex field `Even[V]` and a face field `Even[F]` on the surface, exposed together."""
     picture, = animate(mesh, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))
     ax.imshow(picture)

@@ -27,7 +27,8 @@ def dipole() -> tuple[core.Mesh, core.Scalar, core.Mesh]:
     the spin transformation that makes it."""
     mesh = core.icosphere(N_SUBDIVISIONS)
     centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * mesh.vertices
-    curvature_change = (centroids | core.context.multivector.y) * DIPOLE        # Scalar[F]
+    # Each centroid paired with the direction y: its height along y.
+    curvature_change = (centroids & core.context.multivector.y) * DIPOLE        # Scalar[F]
     return mesh, curvature_change, core.spin_transform_deform(mesh, curvature_change)
 
 

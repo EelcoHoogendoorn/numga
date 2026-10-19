@@ -1,5 +1,12 @@
 """Eddy-current braking: the currents and braking torque in a conducting disc turning under a prescribed
-magnetic field."""
+magnetic field.
+
+The disc's points are antivectors, intrinsic like all geometry, and the physics is their pairing with
+extrinsic quantities: a point moves under the spin by their commutator, `position.commutator(spin)`; the
+Lorentz electric field is that velocity met with the magnetic field's plane, `velocity & magnetic`, a
+vector; its pairing with an edge, `electric & edge`, is the edge's electromotive force; and a force's
+moment about the origin, `force | midpoint`, pairs with the spin, `spin & moment`, into the power it
+feeds the turning."""
 
 from __future__ import annotations
 
@@ -14,13 +21,16 @@ from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 mesh_module = instantiate("examples.mesh", ga)
-Mesh, Scalar, Vector, Bivector = mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector, mesh_module.Bivector
+Mesh, Scalar, Vector, Bivector, Point = (mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector,
+                                         mesh_module.Bivector, mesh_module.Point)
 as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
 
 mv = context.multivector
 Conductivity = ga.gatype((Vector, Vector))
 Projection = ga.gatype((Scalar, Scalar))
 Rotor = ga.gatype.rotor()
+# A force's moment about the origin: the force met with the point it acts at, intrinsic.
+Moment = Vector.derive.flipped_orientation
 MAGNETIC_BLOCK_FACES = 64
 
 
@@ -34,7 +44,7 @@ class Response:
     flux: Scalar                         # Scalar[E]
     current: Vector                      # Vector[F]
     heating: Scalar                      # Scalar[F]
-    torque: Bivector                      # [] Bivector
+    torque: Moment                       # [] Moment
 
 
 @dataclass
@@ -43,7 +53,7 @@ class Motion:
 
     orientation: Rotor                   # [cases] Rotor
     spin: Bivector                       # [cases] Bivector
-    vertices: Vector                     # [cases] Vector[V], world positions
+    vertices: Point                      # [cases] Point[V], world positions
     heat: Scalar                         # [cases] Scalar[F], joules per material face
     current: Vector                      # [cases] Vector[F], body-frame sheet current
 
@@ -98,7 +108,7 @@ class CurrentModes:
               heat: Scalar, amplitudes: Scalar, thermal_energy: Scalar,
               motor_work: Scalar) -> InductiveMotion:
         """Reconstruct the moving current and heat fields from their material amplitudes."""
-        vertices = orientation >> mesh.vertices                           # [cases] Vector[V]
+        vertices = orientation >> mesh.vertices                           # [cases] Point[V]
         magnetic_energy = amplitudes.squared().sites.sum() / 2            # [cases] Scalar
         return InductiveMotion(orientation, spin, vertices, heat, self.currents(amplitudes),
                                self.streamfunctions(amplitudes), magnetic_energy, thermal_energy, motor_work)
@@ -117,8 +127,9 @@ def fibre_conductivity(mesh: Mesh, principal: np.ndarray, inner: float, outer: f
     `principal` `[cases, axes]` holds each material's conductance along the radius and around it;
     outside the annulus, the disc conducts `mean` in every direction.
     """
-    radial = mesh.face_centers.normalized()                                # Vector[F]
-    directions = stack((radial, mv.xy | radial), axis=-1)                  # [axes] Vector[F]
+    # Each face's centre met with its normal points around the disc; turned in the face, along the radius.
+    around = (mesh.face_centers | mesh.face_normals).normalized()          # Vector[F]
+    directions = stack((mesh.face_planes | around, around), axis=-1)       # [axes] Vector[F]
     distance = mesh.face_centers.norm()                                    # Scalar[F]
     fibre_band = as_scalar((distance >= inner) & (distance <= outer)).field()
     local_principal = mean + fibre_band * (principal - mean)               # [cases, axes] Scalar[F]
@@ -156,25 +167,25 @@ def current_modes(mesh: Mesh, conductivity: Conductivity,
     return CurrentModes(decay.field(), projection, current, embedder, resistivity)
 
 
-def field(positions: Vector, centre: Vector, plane: Bivector,
+def field(positions: Point, centre: Point, plane: Bivector,
           strength: float, width: float) -> Bivector:
     """A magnetic footprint whose strength falls as a Gaussian in distance from its centre."""
     distance_squared = (positions - centre).scalar_norm_squared()          # Scalar[E]
     return plane * strength * (-distance_squared / (2 * width ** 2)).exp()
 
 
-def periodic_drive(mesh: Mesh, modes: CurrentModes, centre: Vector, plane: Bivector,
+def periodic_drive(mesh: Mesh, modes: CurrentModes, centre: Point, plane: Bivector,
                    strength: float, width: float, orientation: Rotor, n_harmonics: int) -> PeriodicDrive:
     """Project one revolution of the magnetic forcing into real harmonic mode coefficients."""
     n_samples = 2 * n_harmonics + 1
     angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
     turns = (plane * (-angles / 2)).exp()
     orientations = turns[:, None] * orientation                          # [samples, cases] Rotor
-    positions = orientations >> mesh.face_centers                        # [samples, cases] Vector[F]
+    positions = orientations >> mesh.face_centers                        # [samples, cases] Point[F]
     magnetic = orientations << field(positions, centre, plane, strength, width)
     body_plane = orientation << plane                                   # [cases] Bivector
-    velocity = -(body_plane | mesh.face_centers)                          # [cases] Vector[F]
-    electric = magnetic | velocity                                      # [samples, cases] Vector[F]
+    velocity = mesh.face_centers.commutator(body_plane)                  # [cases] Point[F]
+    electric = velocity & magnetic                                      # [samples, cases] Vector[F]
     values = modes.drive(mesh, electric)                                # [samples, cases] Scalar[modes]
     harmonics = np.arange(1, n_harmonics + 1)
     phase = angles[:, None] * harmonics                                 # [samples, harmonics]
@@ -190,10 +201,12 @@ def solve(mesh: Mesh, magnetic: Bivector, spin: Bivector,
     The disc has an insulating boundary. Its magnetic field and angular velocity are prescribed;
     the magnetic field generated by the induced currents is neglected.
     """
-    velocity = -(spin | mesh.edge_midpoints)                               # Vector[E]
-    lorentz = magnetic | Vector                                            # Vector[E] <- Vector
-    # Integrate the motion's electrical drive along each oriented edge.
-    emf = lorentz(velocity) | mesh.edge_vectors                             # Scalar[E]
+    # Each edge's midpoint moves under the spin; met with the magnetic field's plane, its velocity
+    # gives the Lorentz electric field, a vector.
+    velocity = mesh.edge_midpoints.commutator(spin)                        # Point[E]
+    lorentz = Point & magnetic                                             # Vector[E] <- Point
+    # The electrical drive paired with each oriented edge.
+    emf = lorentz(velocity) & mesh.edge_displacements                      # Scalar[E]
 
     # Face-averaged Whitney vectors reconstruct edge circulations at each triangle's centroid,
     # where the conductivity map acts on the electrical drive.
@@ -218,8 +231,9 @@ def solve(mesh: Mesh, magnetic: Bivector, spin: Bivector,
 
     # The same skew map gives the magnetic force. The adjoint pairing makes charge balance
     # equate mechanical power loss with Joule heating.
-    force = flux * lorentz(mesh.edge_vectors)                               # Vector[E]
-    torque = (mesh.edge_midpoints ^ force).sites.sum()                      # [] Bivector
+    force = flux * lorentz(mesh.edge_displacements)                         # Vector[E]
+    # Each force's moment about the origin: the force met with the edge's midpoint.
+    torque = (force | mesh.edge_midpoints).sites.sum()                      # [] Moment
     heating = mesh.triangle_areas * (electric | current)                    # Scalar[F]
     return Response(potential, voltage, flux, current, heating, torque)
 
@@ -233,7 +247,7 @@ def turned(orientation: Rotor, spin: Bivector, midpoint_spin: Bivector,
     return (midpoint_spin * (-step / 2)).exp() * orientation, 2 * midpoint_spin - spin
 
 
-def braking(mesh: Mesh, centre: Vector, plane: Bivector,
+def braking(mesh: Mesh, centre: Point, plane: Bivector,
             strength: float, width: float, conductivity: Conductivity,
             inertia: float, orientation: Rotor, spin: Bivector,
             heat: Scalar, step: float, n_steps: int) -> Iterator[Motion]:
@@ -249,12 +263,12 @@ def braking(mesh: Mesh, centre: Vector, plane: Bivector,
     def response(orientation: Rotor, spin: Bivector) -> Response:
         # Sample the fixed magnet on the moving edges, then pull its field back into
         # the material frame. Incidence, reconstruction and conductivity stay on that mesh.
-        positions = orientation >> mesh.edge_midpoints                     # [cases] Vector[E]
+        positions = orientation >> mesh.edge_midpoints                     # [cases] Point[E]
         magnetic = orientation << field(positions, centre, plane, strength, width)  # [cases] Bivector[E]
         return solve(mesh, magnetic, orientation << spin, conductivity)
 
     def state(orientation: Rotor, spin: Bivector, heat: Scalar) -> Motion:
-        vertices = orientation >> mesh.vertices                            # [cases] Vector[V]
+        vertices = orientation >> mesh.vertices                            # [cases] Point[V]
         return Motion(orientation, spin, vertices, heat, response(orientation, spin).current)
 
     yield state(orientation, spin, heat)
@@ -263,7 +277,8 @@ def braking(mesh: Mesh, centre: Vector, plane: Bivector,
         # current at unit spin. Linearity supplies the response at any spin, including rest.
         midpoint_orientation = (spin * (-step / 4)).exp() * orientation     # [cases] Rotor
         unit_response = response(midpoint_orientation, plane)
-        drag = (midpoint_orientation << plane) | unit_response.torque      # [cases] Scalar
+        # The moment paired with the turning plane: the power it takes out, per unit spin squared.
+        drag = -((midpoint_orientation << plane) & unit_response.torque)   # [cases] Scalar
 
         # The same midpoint spin sets the mechanical loss and every face's heat gain.
         # Face identities do not change as the mesh turns, so transport needs no resampling.
@@ -276,7 +291,7 @@ def braking(mesh: Mesh, centre: Vector, plane: Bivector,
 def inductive_braking(mesh: Mesh, modes: CurrentModes, forcing: PeriodicDrive, plane: Bivector,
                       inertia: float,
                       orientation: Rotor, spin: Bivector, heat: Scalar, amplitudes: Scalar,
-                      motor_torque: Bivector, step: float) -> Iterator[InductiveMotion]:
+                      motor_torque: Scalar, step: float) -> Iterator[InductiveMotion]:
     """Advance current memory, rotation and material heat with coupled midpoint steps.
 
     Current amplitudes are `[cases] Scalar[modes]` in the material frame. Their magnetic
@@ -295,7 +310,8 @@ def inductive_braking(mesh: Mesh, modes: CurrentModes, forcing: PeriodicDrive, p
     for torques in motor_torque:
         for substep, torque in enumerate(torques):
             speed = -(plane | spin)                                           # [cases] Scalar
-            motor = -(plane | torque)                                         # [cases] Scalar
+            # The motor's torque about the turning plane, in the plane's own sense.
+            motor = torque                                                    # [cases] Scalar
             drive = forcing(angle + speed * (interval / 2))                   # [cases] Scalar[modes]
             free_amplitudes = amplitudes / damping                            # [cases] Scalar[modes]
             driven_amplitudes = interval / 2 * drive / damping                 # [cases] Scalar[modes]
@@ -336,10 +352,11 @@ def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
     Summing their pullbacks and then taking the symmetric part gives the same inductance
     as the full face coupling, without keeping all face-pair vector maps in memory.
     """
-    corners = mesh.corners                                                  # [corners] Vector[F]
-    edges = corners[[1, 2, 0]] - corners                                   # [edges] Vector[F]
+    corners = mesh.corners                                                  # [corners] Point[F]
+    edges = corners[[1, 2, 0]] - corners                                   # [edges] Point[F]
     lengths = edges.norm()                                                # [edges] Scalar[F]
-    outward = mesh.face_planes | (edges / lengths)                         # [edges] Vector[F]
+    # The face's normal met with each edge: the direction out across it within the face.
+    outward = mesh.face_normals | (edges / lengths)                       # [edges] Vector[F]
     # A triangle's double integral stays finite despite the point kernel's singularity.
     semiperimeter = lengths.sum(axis=0) / 2                                # Scalar[F]
     logarithms = (semiperimeter / (semiperimeter - lengths)).log()
@@ -350,13 +367,13 @@ def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
         rows = indices[start:start + block_faces]
         # These positive quadrature points have barycentric weights two-thirds, one-sixth,
         # one-sixth; their equal weights integrate a quadratic exactly.
-        targets = (corners.batch()[:, rows] + centres[rows]) / 2           # [samples, block] Vector
+        targets = (corners.batch()[:, rows] + centres[rows]) / 2           # [samples, block] Point
         # Target points are a batch against the source faces' field: every pair of the two.
-        relative = corners - targets[..., None]                           # [samples, block, edges] Vector[F]
+        relative = corners - targets[..., None]                           # [samples, block, edges] Point[F]
         distances = relative.norm()                                      # [samples, block, edges] Scalar[F]
         endpoint_sum = distances + distances[..., [1, 2, 0]]               # [samples, block, edges] Scalar[F]
         edge_potential = ((endpoint_sum + lengths) / (endpoint_sum - lengths)).log()
-        heights = relative | outward                                    # [samples, block, edges] Scalar[F]
+        heights = outward & relative                                    # [samples, block, edges] Scalar[F]
         source_potential = (heights * edge_potential).sum(axis=-1)         # [samples, block] Scalar[F]
         integral = (areas[rows] * source_potential.mean(axis=0)).batch()   # [block, F] Scalar
         integral = integral.at[np.arange(len(rows)), rows].set(self_integral.batch()[rows])

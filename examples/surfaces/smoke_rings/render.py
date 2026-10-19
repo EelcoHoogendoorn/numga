@@ -27,9 +27,9 @@ ELEVATION, AZIMUTH = 50.0, -50.0
 MARGIN = 1.05
 
 
-def coordinates(vectors: core.Vector) -> np.ndarray:
-    """The x, y and z coordinates of vectors."""
-    return vectors.cast(core.ga.subspace("x y z")).kernel
+def coordinates(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points, antivectors."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def bounds(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -50,7 +50,7 @@ def frame(ax, points: np.ndarray) -> None:
     ax.set_axis_off()
 
 
-def draw_surface(curves: core.Vector) -> plt.Figure:
+def draw_surface(curves: core.Point) -> plt.Figure:
     """The surface swept by a curve through time `[times, n]`: a quad between each edge at one time and
     the same edge at the next, coloured from early to late."""
     points = coordinates(curves)                                               # [times, n, 3]
@@ -71,7 +71,7 @@ def toward() -> np.ndarray:
     return np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
 
 
-def draw_swept(curves: core.Vector) -> plt.Figure:
+def draw_swept(curves: core.Point) -> plt.Figure:
     """The tubes swept by closed curves through time `[times, rings, n]`, each in its own colour, with the
     half of every tube nearer the viewer cut away, so that the tubes inside show."""
     points = coordinates(curves)                                               # [times, rings, n, 3]
@@ -88,7 +88,7 @@ def draw_swept(curves: core.Vector) -> plt.Figure:
     return figure
 
 
-def animate_curves(curves: core.Vector) -> list[np.ndarray]:
+def animate_curves(curves: core.Point) -> list[np.ndarray]:
     """Frames of curves flowing `[times, ..., n]`, all from one view and to one scale, the curves shaded
     from far to near."""
     points = coordinates(curves)                                               # [times, ..., n, 3]
@@ -111,7 +111,7 @@ def animate_curves(curves: core.Vector) -> list[np.ndarray]:
     return images
 
 
-def animate_trail(curves: core.Vector) -> list[np.ndarray]:
+def animate_trail(curves: core.Point) -> list[np.ndarray]:
     """Frames of a curve flowing `[times, n]`, each over the surface the curve has swept so far, coloured
     from early to late, and framed on the part of space where the curve moves."""
     points = coordinates(curves)                                               # [times, n, 3]

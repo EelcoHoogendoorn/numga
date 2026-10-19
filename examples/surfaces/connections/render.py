@@ -62,8 +62,13 @@ SPHERE_REACH = 1.1
 
 
 def coordinates(vectors: core.Vector) -> np.ndarray:
-    """The x, y and z coordinates of vectors."""
+    """The x, y and z components of vectors."""
     return vectors.cast(core.ga.subspace("x y z")).kernel
+
+
+def positions(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points, antivectors."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def print_scalars(label: str, values: core.Scalar) -> None:
@@ -101,7 +106,7 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
     """The unit sphere and the three latitude circles `[steps + 1, rings]`, and each frame's points on
     them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and
     where they are."""
-    verts = coordinates(sphere.vertices)
+    verts = positions(sphere.vertices)
     view_dir = facing(TRANSPORT_VIEW)
     ring_xyz = coordinates(rings)                                               # [steps + 1, rings, 3]
     points, carried = [], []
@@ -133,7 +138,7 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
 
 def _draw_torus_panel(ax, torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray) -> None:
     """One shaded torus with face colours weighted by `amplitudes` and front-facing tangent needles."""
-    verts = coordinates(torus.vertices)
+    verts = positions(torus.vertices)
     normals = coordinates(torus.vertex_normals)
     vecs = coordinates(field)
     norms = np.linalg.norm(vecs, axis=-1, keepdims=True)
@@ -189,13 +194,13 @@ def draw_field(ax, mesh: core.Mesh, field: core.Vector, singular: np.ndarray, in
                needle: float) -> None:
     """One surface with its unit tangent field on the vertices facing the viewer, and those of its
     singular faces `[S]` that face the viewer, drawn in that order rather than sorted by depth."""
-    points, normals, directions = coordinates(mesh.vertices), coordinates(mesh.vertex_normals), coordinates(field)
+    points, normals, directions = positions(mesh.vertices), coordinates(mesh.vertex_normals), coordinates(field)
     ax.computed_zorder = False
     ax.add_collection3d(Poly3DCollection(points[mesh.faces], facecolors=SURFACE_COLOUR, shade=True, linewidths=0))
     seen = normals @ facing(VIEW) > 0.1
     ax.add_collection3d(Line3DCollection(needles(points[seen] + 0.01 * normals[seen], directions[seen], normals[seen],
                                                  needle), colors=NEEDLE_COLOUR, linewidths=0.9))
-    centres = coordinates(mesh.face_centers)[singular]                         # [S, 3]
+    centres = positions(mesh.face_centers)[singular]                           # [S, 3]
     toward = normals[mesh.faces[singular, 0]] @ facing(VIEW) > 0.1             # [S]
     for centre, index in zip(centres[toward], np.asarray(indices)[toward]):
         ax.scatter(*centre, s=DISC * abs(index), color=POSITIVE if index > 0 else NEGATIVE, depthshade=False,
@@ -303,7 +308,7 @@ def raster(mesh: core.Mesh, view: np.ndarray, reach: float, size: int) -> tuple[
     """The mesh rasterised from the given view: each covered pixel, its face and barycentric weights, its
     depth, and the light on it from the vertex normals interpolated across the face."""
     frame = view_frame(*view)
-    places = screen(coordinates(mesh.vertices), frame, np.zeros(3), reach, size)
+    places = screen(positions(mesh.vertices), frame, np.zeros(3), reach, size)
     pixel, face, weights, depth = rasterise(places, mesh.faces, size)
     normals = np.einsum("pk,pkd->pd", weights, coordinates(mesh.vertex_normals)[mesh.faces[face]])
     return pixel, face, weights, depth, lit(normals)
@@ -339,7 +344,7 @@ def draw_lines(ax, mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, cor
     pixel, _, _, depth, light = raster(mesh, view, reach, size)
     ax.imshow(picture(pixel, light[:, None] * LIGHT, size), origin="lower", extent=(0, PIXELS, 0, PIXELS), interpolation="none")
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
-    points, normals = coordinates(mesh.vertices), coordinates(mesh.vertex_normals)
+    points, normals = positions(mesh.vertices), coordinates(mesh.vertex_normals)
     lifted = (points + STANDOFF * normals)[mesh.faces]                         # [F, 3, 3]
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])                # [S, 2, 3]

@@ -109,6 +109,7 @@ Mesh, as_ga_sparse, as_scalar, context = mesh_module.Mesh, mesh_module.as_ga_spa
 mv = context.multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
+Point = mesh_module.Point
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 
@@ -200,10 +201,10 @@ def trivial_connection(mesh: Mesh, indices: np.ndarray, generators: list[np.ndar
 
 
 def targets(mesh: Mesh, field: Vector, frequency: float) -> Scalar:
-    """The phase advance across every edge `Scalar[E]`: the frequency times the field's component along
-    the edge, the field averaged over the edge's two ends."""
+    """The phase advance across every edge `Scalar[E]`: the frequency times the field paired with the
+    edge's displacement, the field averaged over the edge's two ends."""
     ends = field.batch()[mesh.edges]                                             # [E, 2] Vector
-    return ((ends.sum(axis=-1) / 2 | mesh.edge_vectors.batch()) * frequency).field()
+    return ((ends.sum(axis=-1) / 2 & mesh.edge_displacements.batch()) * frequency).field()
 
 
 def quarter_turn(mesh: Mesh, field: Vector) -> Vector:
@@ -215,7 +216,7 @@ def quarter_turn(mesh: Mesh, field: Vector) -> Vector:
 def carried_out(mesh: Mesh, angles: Scalar) -> Vector:
     """A unit tangent vector at every vertex `Vector[V]`, carried out from the first vertex by the transport
     of the given turns along a breadth-first tree: one sparse solve, each tree edge asking its head to be
-    its tail carried across it, and the first vertex asking to point along its first edge. Where the turns
+    its tail carried across it, and the first vertex asking to point across its first edge. Where the turns
     make a trivial connection whose faces turn by quarter turns, this is a cross field: carried across
     any edge, the tail's vector lands on the head's turned by a whole number of quarter turns."""
     children, tree = spanning_tree(mesh)
@@ -224,7 +225,8 @@ def carried_out(mesh: Mesh, angles: Scalar) -> Vector:
     along_tree = SparseExtensor.from_indices((turns >> Vector) * np.array([-1, 1]), children[:, None], mesh.edges[tree], (count, count))
     first = SparseExtensor.from_indices(as_scalar([1.0]), np.array([0]), np.array([0]), (count, count)) * Vector
     normal = mesh.vertex_normals.batch()[0]                                      # Vector
-    seed = ((mesh.edge_vectors.batch()[0] ^ normal) | normal).normalized()     # Vector
+    # the first edge met with the normal: a tangent direction across it
+    seed = (mesh.edge_displacements.batch()[0] | normal).normalized()          # Vector
     return (along_tree + first).solve((seed * as_scalar(np.arange(count) == 0)).field())
 
 
@@ -249,7 +251,7 @@ def cross_stripes(mesh: Mesh, angles: Scalar, cross: Vector, regular: Scalar, fr
     # zero where it lands across it.
     match = ahead[:, :, None] | (forward[:, None] >> lines[tails])[:, None, :]  # [E, 2, 2] Scalar
     behind = (match * lines[tails][:, None, :]).sum(axis=-1)                     # [E, 2] Vector
-    advance = (((ahead + behind) / 2) | mesh.edge_vectors.batch()[:, None]) * frequency   # [E, 2] Scalar
+    advance = (((ahead + behind) / 2) & mesh.edge_displacements.batch()[:, None]) * frequency   # [E, 2] Scalar
     turn = (mesh.vertex_normals.batch()[heads][:, None].dual() * (-advance / 2)).exp()     # [E, 2] Rotor
     # Carried, then mirrored onto the head's line where it lands against it.
     moved = forward[:, None, None] >> Vector                                     # [E, 1, 1] Vector <- Vector

@@ -2,12 +2,14 @@
 
 https://www.cs.cmu.edu/~kmcrane/Projects/SpinTransformations/paper.pdf
 
-A spin transformation changes a surface's mean curvature by a prescribed amount rho while keeping
-every angle: a quaternion at each vertex turns and scales the edges around it. The quaternions are
-the least eigenfield of the Dirac operator less rho, and the new vertices are those whose edges
-best match the turned ones. In Cl(3,0) the quaternions are the even subalgebra, the edges vectors,
-and rho times the pseudoscalar a trivector; the operators are sparse linear maps between fields on
-the vertices, edges and faces, coupling their elements through extensors, here multivectors.
+A spin transformation changes a surface's mean curvature by a prescribed amount while keeping every
+angle: a quaternion at each vertex turns and scales the edges around it. The quaternions are the field
+of least energy, the area-weighted squared residual of the Dirac operator less the curvature change, and
+the new vertices are those whose edges best match the turned ones. In the algebra of space the
+quaternions are the even multivectors, and the vertices and edges are points, antivectors, intrinsic:
+bivectors, the paper's imaginary quaternions. The Dirac operator's couplings are bivectors, the curvature
+change a scalar against the sense the surface turns, and the operators are sparse linear maps between
+fields on the vertices, edges and faces, coupling their elements through multivectors.
 """
 
 from __future__ import annotations
@@ -22,7 +24,8 @@ from numga.algebras import VGA3D as ga
 from examples import instantiate
 
 mesh_module = instantiate("examples.mesh", ga)
-Mesh, Scalar, Vector, Bivector = mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector, mesh_module.Bivector
+Mesh, Scalar, Vector, Bivector, Point = (mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector,
+                                         mesh_module.Bivector, mesh_module.Point)
 as_ga_sparse, as_scalar, context = mesh_module.as_ga_sparse, mesh_module.as_scalar, mesh_module.ctx
 
 Even = ga.gatype.even()
@@ -32,96 +35,62 @@ SPOT = Path(__file__).parents[2] / "models" / "spot.obj"
 UPRIGHT = ((context.multivector.x ^ context.multivector.y) * (-np.pi / 4)).exp() * ((context.multivector.y ^ context.multivector.z) * (-np.pi / 4)).exp()
 
 
-def spin_transform_deform(mesh: Mesh, rho) -> Mesh:
-    """The mesh after the spin transformation that changes each face's mean curvature by rho,
-    `Scalar[F]`, with every operator a sparse linear map coupling elements through multivectors, nullary
-    extensors, as the paper's quaternionic matrices do; the energy and the Laplacian are formed with
-    their reverses, and the couplings become maps only for the solvers."""
-    # the face-vertex and edge-vertex incidences, and the edges' orientations
-    I20, I10 = mesh.faces, mesh.edges                                       # [F, 3], [E, 2]
-    O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
+def energy(mesh: Mesh, curvature_change: Scalar) -> SparseExtensor:
+    """`[V, V] Even`: the area-weighted squared residual of the equation the transformation's quaternions
+    solve, `dirac * field == potential * field`, for a change in each face's mean curvature `Scalar[F]`."""
+    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
+    face_areas, inverse_face_areas = spdiag(mesh.triangle_areas), spdiag(1 / mesh.triangle_areas)   # [F, F] Scalar
+    # each face takes each corner by the edge it faces, over twice the face's area
+    dirac = inverse_face_areas * mesh.at_corners(mesh.triangle_edges) * 0.5    # [F, V] Point
+    # the curvature change, against the sense the faces give space, on each face's mean
+    potential = spdiag(curvature_change * mesh.unit_volume) * face_means       # [F, V] Scalar
+    residual = dirac - potential                                               # [F, V] Even
+    return ~residual * face_areas * residual                                   # [V, V] Even
 
-    # the boundary, taking each edge's tail from its head, and the means over each edge and each face
-    T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
-    A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))               # [E, V] Scalar
-    A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))               # [F, V] Scalar
 
-    # diagonal operators: the triangle areas, the vertex areas, and each edge's cotangent weight
-    M2 = spdiag(mesh.triangle_areas)                                       # [F, F] Scalar
-    M2i = spdiag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
-    M0 = spdiag(mesh.vertex_areas)                                         # [V, V] Scalar
-    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
+def turned(mesh: Mesh, quaternions: Even) -> Point:
+    """The vertices `[...] Point[V]` whose edges best match the mesh's edges turned and scaled by the
+    quaternion field `[...] Even[V]` along them, integrated by Simpson's rule: the turns at the two ends,
+    averaged as maps, and twice the turn at the middle; matched by the cotangent Laplacian, centred."""
+    boundary = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) * [-1, 1]))   # [E, V] Scalar
+    edge_means = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) / 2))     # [E, V] Scalar
+    edge_weights = spdiag(mesh.edge_ratio)                                     # [E, E] Scalar
+    edges = boundary * mesh.vertices                                           # Point[E]
+    laplacian = ~boundary * edge_weights * boundary                            # [V, V] Scalar
+    moved = ((edge_means * (quaternions << Point))(edges) + 2 * ((edge_means * quaternions) << edges)) / 3   # [...] Point[E]
+    return (laplacian * Point).lstsq(~boundary * edge_weights * moved)
 
-    edges = T10 * mesh.vertices                                             # Vector[E]
-    L = ~T10 * H1 * T10                                                     # [V, V] Scalar
 
-    # each face takes each corner by the edge it faces, over minus twice the face's area: the geometric
-    # derivative divided by each face's plane
-    D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
-    R = spdiag(rho * mesh.unit_volume) * A20                               # [F, V] Pseudoscalar
-    A = D - R                                                               # [F, V] Odd
-    Q = ~A * M2 * A                                                         # [V, V] Even
-
-    # the field of least energy per unit of vertex area, divided by its area-weighted mean
-    _, modes = (Q * Even).eigh(M0 * Even, 1)                                # [1] Even[V]
-    mean = (M0 * modes[0]).sites.sum() / mesh.vertex_areas.sites.sum()   # [] Even
-    q = modes[0] / mean                                                     # Even[V]
-
-    # each edge turned and scaled by the field along it, integrated by Simpson's rule: the turns at its
-    # two ends, averaged as maps, and twice the turn at its middle; and the vertices that match them best
-    transformed_edges = ((A10 * (q << Vector))(edges) + 2 * ((A10 * q) << edges)) / 3   # Vector[E]
-    b = ~T10 * H1 * transformed_edges                                       # Vector[V]
-    return mesh.copy(vertices=(L * Vector).lstsq(b))
+def spin_transform_deform(mesh: Mesh, curvature_change: Scalar) -> Mesh:
+    """The mesh after the spin transformation that changes each face's mean curvature by
+    `curvature_change`, `Scalar[F]`: the field of least energy per unit of vertex area, divided by its
+    area-weighted mean, turning the edges."""
+    vertex_areas = spdiag(mesh.vertex_areas)                                   # [V, V] Scalar
+    _, modes = (energy(mesh, curvature_change) * Even).eigh(vertex_areas * Even, 1)   # [1] Even[V]
+    mean = (vertex_areas * modes[0]).sites.sum() / mesh.vertex_areas.sites.sum()   # [] Even
+    return mesh.copy(vertices=turned(mesh, modes[0] / mean))
 
 
 def dirac_spheres(mesh: Mesh, eigenvalue: int, count: int):
-    """The energies of the count least-energy fields for a constant rho, the given eigenvalue, and
-    the surfaces they spin the mesh into.
+    """The energies of the count least-energy fields for a constant curvature change, the given
+    eigenvalue, and the surfaces they spin the mesh into.
 
-    With rho constant, the fields of zero energy are the eigenfields of the Dirac operator itself: on
-    the unit sphere the spinor spherical harmonics, and the surfaces are the Dirac spheres. Their eigenvalues are the integers
-    but -1, each with multiplicity its value plus one. The fields are taken as they come, at unit
-    size per unit of vertex area: their mean vanishes.
+    With the change constant, the fields of zero energy are the eigenfields of the Dirac operator itself:
+    on the unit sphere the spinor spherical harmonics, and the surfaces are the Dirac spheres. Their
+    eigenvalues are the integers but -1, each with multiplicity its value plus one. The fields are taken
+    as they come, at unit size per unit of vertex area: their mean vanishes.
     """
-    # the face-vertex and edge-vertex incidences, and the edges' orientations
-    I20, I10 = mesh.faces, mesh.edges                                       # [F, 3], [E, 2]
-    O10 = np.ones_like(I10) * [-1, 1]                                       # [E, 2]
-
-    # the boundary, taking each edge's tail from its head, and the means over each edge and each face
-    T10 = as_ga_sparse(I10, as_scalar(O10))                                 # [E, V] Scalar
-    A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))               # [E, V] Scalar
-    A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))               # [F, V] Scalar
-
-    # diagonal operators: the triangle areas, the vertex areas, and each edge's cotangent weight
-    M2 = spdiag(mesh.triangle_areas)                                       # [F, F] Scalar
-    M2i = spdiag(1 / mesh.triangle_areas)                                  # [F, F] Scalar
-    M0 = spdiag(mesh.vertex_areas)                                         # [V, V] Scalar
-    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
-
-    edges = T10 * mesh.vertices                                             # Vector[E]
-    L = ~T10 * H1 * T10                                                     # [V, V] Scalar
-
-    # each face takes each corner by the edge it faces, over minus twice the face's area
-    rho = as_scalar(np.full(len(I20), float(eigenvalue))).field()           # Scalar[F]
-    D = M2i * mesh.at_corners(mesh.triangle_edges) * -0.5                  # [F, V] Vector
-    R = spdiag(rho * mesh.unit_volume) * A20                               # [F, V] Pseudoscalar
-    A = D - R                                                               # [F, V] Odd
-    Q = ~A * M2 * A                                                         # [V, V] Even
-
-    # the fields of least energy per unit of vertex area, and the surfaces whose edges match theirs
-    energies, fields = (Q * Even).eigh(M0 * Even, count)                    # [count] Scalar, [count] Even[V]
-    turned = ((A10 * (fields << Vector))(edges) + 2 * ((A10 * fields) << edges)) / 3   # [count] Vector[E]
-    spheres = [mesh.copy(vertices=vertices) for vertices in (L * Vector).lstsq(~T10 * H1 * turned)]
-    return energies, spheres
+    constant = as_scalar(np.full(len(mesh.faces), float(eigenvalue))).field()   # Scalar[F]
+    energies, fields = (energy(mesh, constant) * Even).eigh(spdiag(mesh.vertex_areas) * Even, count)   # [count] Scalar, [count] Even[V]
+    return energies, [mesh.copy(vertices=vertices) for vertices in turned(mesh, fields)]
 
 
 def geometric_derivative(mesh: Mesh) -> SparseExtensor:
     """The geometric derivative of fields on the vertices, linear on each face, `[F, V] Vector`: on
-    each face, each corner's coupling is the gradient of its hat function, the edge facing it turned
-    a quarter turn in the face's plane, over twice the face's area. Divided by each face's plane, it
-    is the Dirac operator."""
-    turned = mesh.triangle_edges | mesh.face_planes                         # [3] Vector[F]
-    return mesh.at_corners(turned / (2 * mesh.triangle_areas))
+    each face, each corner's coupling is the gradient of its hat function, the edge facing it paired with
+    the face's unit normal, over twice the face's area."""
+    gradients = mesh.triangle_edges | mesh.face_normals                        # [3] Vector[F]
+    return mesh.at_corners(gradients / (2 * mesh.triangle_areas))
 
 
 def mean_curvature(mesh: Mesh):
@@ -130,21 +99,16 @@ def mean_curvature(mesh: Mesh):
     The cotan-laplacian of the positions gives the *area-integrated* mean
     curvature normal `L x = 2 A_v H n` at each vertex; dividing by twice the
     vertex (barycentric) area recovers the pointwise `H`, which we then average
-    onto faces (the domain `rho` lives on).
+    onto faces (the domain the curvature change lives on).
     """
-    I20, I10 = mesh.faces, mesh.edges
-    T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))
-    A20 = as_ga_sparse(I20, as_scalar(np.ones_like(I20) / 3))
-    H1 = spdiag(mesh.edge_ratio)
-
-    L = ~T10 * H1 * T10                                 # [V, V] Scalar
-    # the integrated mean-curvature normal, its signed size at each vertex, the pointwise
-    # curvature at each vertex, and its mean over each face
-    Hn = L * mesh.vertices                              # Vector[V]
-    # its volume with each vertex's plane, read against the solid's own oriented volume
-    h_integrated = (Hn ^ mesh.vertex_normals.dual()) / mesh.unit_volume   # Scalar[V]
-    h = h_integrated / (2 * mesh.vertex_areas)          # Scalar[V]
-    return A20 * h                                      # Scalar[F]
+    boundary = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) * [-1, 1]))
+    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))
+    laplacian = ~boundary * spdiag(mesh.edge_ratio) * boundary                 # [V, V] Scalar
+    # the integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal:
+    # its signed size, read against the sense the faces give space
+    curving = laplacian * mesh.vertices                                        # Point[V]
+    integrated = (curving & mesh.vertex_normals) * mesh.unit_volume            # Scalar[V]
+    return face_means * (integrated / (2 * mesh.vertex_areas))                 # Scalar[F]
 
 
 def _recenter(mesh: Mesh):
@@ -195,7 +159,7 @@ def cube(divisions: int) -> Mesh:
             faces.append(side + len(coords) * len(u))
             coords.append(point)
     unique, inverse = np.unique(np.round(np.concatenate(coords), 9), axis=0, return_inverse=True)
-    return Mesh(context.multivector.vector(unique).field(), inverse.reshape(-1)[np.concatenate(faces)])
+    return Mesh(context.multivector.antivector(unique).field(), inverse.reshape(-1)[np.concatenate(faces)])
 
 
 def spot() -> Mesh:

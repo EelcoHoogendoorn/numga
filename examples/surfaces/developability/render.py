@@ -18,9 +18,9 @@ REACH = 1.15
 ELEVATION, AZIMUTH = 24.0, -36.0
 
 
-def coordinates(vectors: core.Vector) -> np.ndarray:
-    """The x, y and z coordinates of vectors."""
-    return vectors.cast(core.ga.subspace("x y z")).kernel
+def coordinates(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points, antivectors."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def draw_surface(ax, mesh: core.Mesh, vertices: core.Vector) -> None:

@@ -58,14 +58,16 @@ def main() -> None:
     assert np.array_equal(stresses > 0, folds > 0) and (stresses < 0).any()
     # Every reciprocal edge is perpendicular to its bar, and every interior vertex is in equilibrium.
     duals = core.reciprocal(mesh, breaths)                                     # [frames, faces] Vector
-    bars = mesh.edge_vectors.batch()[inner]                                    # [inner] Vector
-    assert np.abs(render.scalars((duals[:, left] - duals[:, right]) | bars)).max() < 1e-10
+    bars = mesh.edge_displacements.batch()[inner]                              # [inner] Point
+    # The jump in slope pairs to nothing with its bar: both planes agree along it.
+    assert np.abs(render.scalars((duals[:, left] - duals[:, right]) & bars)).max() < 1e-10
     assert render.unbalanced(mesh, core.stresses(mesh, breaths)) < 1e-10
     # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
     assert np.abs(render.scalars(core.stresses(mesh, heights)) - render.scalars(mesh.edge_ratio)[inner]).max() < 1e-10
     centres = core.reciprocal(mesh, heights)                                   # [faces] Vector
     corners = mesh.corners                                                     # [3] Vector[faces]
-    reach = [render.scalars((centres - corner.batch()) | (centres - corner.batch())) for corner in corners]
+    # The slopes, read as points by the metric, lie as far from each of their face's corners.
+    reach = [render.scalars((centres.dual() - corner.batch()).scalar_norm_squared()) for corner in corners]
     assert np.abs(reach[0] - reach[1]).max() < 1e-10 and np.abs(reach[0] - reach[2]).max() < 1e-10
 
 

@@ -90,7 +90,7 @@ def torus_fields() -> tuple[core.Mesh, core.Vector, core.Vector, core.Vector, co
     `[modes] Vector[V]` with their energies, and the covariant derivative."""
     torus = core.Mesh.torus(MAJOR_RADIUS, MINOR_RADIUS, N_HEAT_MAJOR, N_HEAT_MINOR)
     normals = torus.vertex_normals.batch()                                      # [V] Vector
-    centre = mv.x * (MAJOR_RADIUS + MINOR_RADIUS)                               # [] Vector
+    centre = (mv.x * (MAJOR_RADIUS + MINOR_RADIUS)).dual()                 # [] Point
     weight = ((torus.vertices.batch() - centre).norm_squared() * (-0.5 / SOURCE_WIDTH**2)).exp()   # [V] Scalar
     direction = (mv.y + mv.z).normalized()                                      # [] Vector
     tangent_direction = direction - normals * (normals | direction)             # [V] Vector
@@ -232,7 +232,7 @@ def face_indices(mesh: core.Mesh, singular: np.ndarray, indices: list[float]) ->
 
 def nearest_faces(mesh: core.Mesh, directions: core.Vector) -> np.ndarray:
     """The face whose centre lies furthest along each direction `[n]`."""
-    return np.argmax((mesh.face_centers.batch()[:, None] | directions.batch()[None]).to_array(), axis=0)
+    return np.argmax((mesh.face_centers.batch()[:, None] & directions.batch()[None]).to_array(), axis=0)
 
 
 def stripe_mismatch(mesh: core.Mesh, lines: core.Vector, stripes: core.Vector, advance: core.Scalar) -> np.ndarray:
