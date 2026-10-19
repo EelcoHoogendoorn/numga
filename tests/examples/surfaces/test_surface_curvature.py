@@ -40,10 +40,18 @@ def test_curvature_and_confocal_parameters_do_not_depend_on_placement():
     np.testing.assert_allclose(core.confocal(placed, moved).to_array(), core.confocal(ellipsoid, points).to_array(), rtol=1e-6)
 
 
+def test_the_net_of_curvature_lines_closes_up_at_the_umbilics():
+    """At the ellipsoid's umbilics the two principal curvatures agree and the two confocal parameters meet."""
+    ellipsoid, _ = scenarios.surfaces()
+    curvatures, parameters = core.principal(ellipsoid, scenarios.umbilics()), core.confocal(ellipsoid, scenarios.umbilics())
+    np.testing.assert_allclose(curvatures[:, 0].to_array(), curvatures[:, 1].to_array(), rtol=1e-8)
+    np.testing.assert_allclose(parameters[:, 0].to_array(), parameters[:, 1].to_array(), rtol=1e-6)
+
+
 def test_figure_renders():
-    """The scenario passes its checks, and each stage draws."""
+    """Each stage draws."""
     scenes, curvatures, parameters = scenarios.curvature_lines(48)
-    heights = (np.inf, 2.0)
+    heights = scenarios.HEIGHTS
     for draw in (render.draw_surfaces(scenes, heights), render.draw_gaussian_curvature(scenes, curvatures, heights, 1.2),
                  render.draw_curvature_lines(scenes, curvatures, parameters, heights, 1.2)):
         assert isinstance(draw, plt.Figure)

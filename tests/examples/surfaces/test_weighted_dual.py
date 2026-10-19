@@ -6,15 +6,16 @@ import numpy as np
 from examples.surfaces.weighted_dual import core, render, scenarios
 
 
-def test_poles_have_inner_product_one_with_their_faces_vertices_on_a_fixed_mesh():
+def test_face_planes_pair_to_one_with_their_vertices_on_a_fixed_mesh():
     frames = [frame for _, frame in zip(range(3), scenarios.breath())]
     assert all(np.array_equal(faces, frames[0][1]) for _, faces, _ in frames)
     for points, faces, duals in frames:
-        assert np.abs(render.scalars(duals[:, None] | points[faces]) - 1).max() < 1e-10
+        # A face's plane is the dual of its pole.
+        assert np.abs(render.scalars(duals.dual_inverse()[:, None] & points[faces]) - 1).max() < 1e-10
 
 
 def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres():
-    points = scenarios.directions(scenarios.POINTS)                            # [points] Vector
+    points = scenarios.directions(scenarios.N_POINTS)                          # [points] Point
     faces = core.hull(points)
     duals = core.poles(points, faces)
     corners = render.coordinates(points)[faces]                                # [faces, 3, 3]
@@ -36,7 +37,7 @@ def test_the_nearest_rescue_unfolds_the_mesh_steadily():
     faces = settled[0][1]
     # The crossed dual edges are exactly the folded ones.
     assert np.array_equal(scenarios.scalars(core.dual_lengths(settled[0][0], faces)) < 0,
-                          scenarios.scalars(core.folds(scenarios.directions(scenarios.POINTS), np.ones(scenarios.POINTS), faces)) < 0)
+                          scenarios.scalars(core.folds(scenarios.directions(scenarios.N_POINTS), np.ones(scenarios.N_POINTS), faces)) < 0)
     crossed = [(scenarios.scalars(core.dual_lengths(points, faces)) < 0).sum() for points, _, _ in settled]
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # Every image on the sphere is held.
@@ -61,7 +62,7 @@ def test_a_mesh_that_is_no_hull_at_any_distances_has_no_rescue():
     # The sphere's mesh with so many random edges flipped, from this seed.
     flips, seed = 8, 6
     rng = np.random.default_rng(seed)
-    faces = core.hull(scenarios.directions(scenarios.POINTS))
+    faces = core.hull(scenarios.directions(scenarios.N_POINTS))
     for _ in range(flips):
         faces = flip(faces, rng.integers(len(core.adjacency(faces)[0])))
     assert scenarios.widest(scenarios.fold_map(faces))[1] < 0

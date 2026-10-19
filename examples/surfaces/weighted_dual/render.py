@@ -28,9 +28,9 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(values.algebra.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def arcs(ends: np.ndarray) -> np.ndarray:
@@ -66,13 +66,13 @@ def front(paths: np.ndarray) -> np.ndarray:
     return np.where((paths @ facing() > 0)[..., None], paths, np.nan)
 
 
-def draw_complex(points: core.Vector, faces: np.ndarray, duals: core.Vector) -> plt.Figure:
+def draw_complex(points: core.Point, faces: np.ndarray, duals: core.Point) -> plt.Figure:
     """In space, the polyhedron of the points and its polar dual, the parts facing away from the viewer
     culled; on the sphere, the half facing the viewer of both projected from the centre."""
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
     edges, beside = core.adjacency(faces)                                      # [edges, 2] each
     corners = xyz[faces]                                                       # [faces, 3, 3]
-    visible = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]) @ facing() > 0   # [faces]
+    visible = corners.mean(axis=1) @ facing() > 0                             # [faces]
     # A dual face is the polar plane of a hull vertex, facing along it; a dual edge is in front where
     # either of its two dual faces is.
     dual_visible = (xyz[edges] @ facing() > 0).any(axis=-1)                   # [edges]
@@ -100,7 +100,7 @@ def draw_complex(points: core.Vector, faces: np.ndarray, duals: core.Vector) -> 
     return figure
 
 
-def animate(frames: list[tuple[core.Vector, np.ndarray, core.Vector]]) -> list[np.ndarray]:
+def animate(frames: list[tuple[core.Point, np.ndarray, core.Point]]) -> list[np.ndarray]:
     """The complex at every frame, from one view."""
 
     def picture(geometry: tuple) -> np.ndarray:
