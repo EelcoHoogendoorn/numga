@@ -8,8 +8,8 @@ from examples.surfaces.koebe import core, render, scenarios
 
 def test_circles_touch_along_every_edge_and_both_polyhedra_touch_the_sphere_under_every_boost():
     frames, faces, edges = scenarios.boosted()
-    assert np.abs(scenarios.scalars(frames | frames) - 1).max() < 1e-10
-    assert np.abs(scenarios.scalars(frames[:, edges[:, 0]] | frames[:, edges[:, 1]]) + 1).max() < 1e-10
+    assert np.abs((frames | frames).to_array() - 1).max() < 1e-10
+    assert np.abs((frames[:, edges[:, 0]] | frames[:, edges[:, 1]]).to_array() + 1).max() < 1e-10
     assert np.abs(render.edge_distances(core.apexes(frames), edges) - 1).max() < 1e-10
     duals = core.apexes(core.face_circles(frames, faces))                      # [frames, faces] Vector
     assert np.abs(render.edge_distances(duals, render.beside(faces, edges)) - 1).max() < 1e-10

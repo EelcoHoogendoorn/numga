@@ -1,19 +1,16 @@
 """Elastic waves in crystals: their speeds, their polarizations, and where they carry energy.
 
-A crystal's stiffness is a map with three slots: given the normal of a face, and a displacement
-that varies along a direction, it returns the traction on that face, a vector. An isotropic solid
-has two terms, a pressure along the normal from the dilation and a shear; a cubic crystal adds
-one more, in which each of its axes reads all three slots.
+A crystal's stiffness is modelled as a map from three vectors to one: from the normal of a face, a
+displacement, and the direction along which it varies, to the traction on that face. An isotropic solid
+has two terms, a pressure along the normal from the dilation and a shear; a cubic crystal adds one more,
+in which each of its axes reads all three arguments.
 
-A plane wave travelling along a heading binds the heading into the normal and gradient slots.
-What is left is the Christoffel map on displacements, and its eigenpairs are the wave's density
-times squared speed and its polarization: one compressional wave and two shear waves for every
-heading.
-
-Binding the polarization into the normal and displacement slots and the heading into the gradient
-slot gives a vector: the flow of the wave's energy. In an isotropic solid it runs along the wave;
-in a crystal it swings away, and where the energy of many headings converges on one, heat pulses
-focus into bright caustics.
+Binding a wave's heading as the normal and the direction gives the Christoffel map on displacements,
+whose eigenpairs are the wave's density times squared speed and its polarization: one compressional wave
+and two shear waves for every heading. Binding the polarization as the normal and the displacement, and
+the heading as the direction, gives a vector, the flow of the wave's energy. In a crystal it swings away
+from the heading, and where the energy of many headings converges on one, heat pulses focus into bright
+caustics.
 """
 
 from __future__ import annotations
@@ -28,7 +25,7 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 # The traction on a face, from the face's normal, the displacement and its gradient direction.
 Stiffness = ga.gatype((Vector, Vector, Vector, Vector))             # Vector <- (Vector, Vector, Vector)
-# The crystal's axes.
+# The crystal's cube axes, which its anisotropy singles out.
 axes = mv.basis()                                                   # [3] Vector
 
 
@@ -53,8 +50,8 @@ def stiffness(c11: np.ndarray, c12: np.ndarray, c44: np.ndarray) -> Stiffness:
 def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Vector]:
     """The waves travelling along each heading: density times squared speed, and polarization.
 
-    The heading bound into the normal and the gradient slots leaves the Christoffel map on
-    displacements; its eigenpairs are the three waves, slowest first.
+    The heading bound as the normal and the direction gives the Christoffel map on displacements;
+    its eigenpairs are the three waves, slowest first.
     """
     return crystal(heading, Vector, heading).eigh()                  # [..., 3] Scalar, [..., 3] Vector
 
@@ -62,12 +59,12 @@ def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Vector]:
 def energy_flow(crystal: Stiffness, heading: Vector, polarization: Vector, density: np.ndarray) -> Vector:
     """The velocity of each wave's energy: its group velocity.
 
-    With the polarization in the normal and displacement slots and the heading in the gradient
-    slot, the stiffness returns the flux of the wave's energy. Divided by density times phase speed
+    With the polarization bound as the normal and the displacement and the heading as the direction,
+    the stiffness returns the flux of the wave's energy. Divided by density times phase speed
     it is the group velocity, whose component along the heading is the phase speed.
     """
     # The crystal, its density and the heading against each of the waves, and each wave's density
     # times squared speed.
-    crystal, density, along = crystal[..., None], density[..., None], heading[..., None]   # [..., 1] each
-    squared = polarization | crystal(along, polarization, along)        # [..., 3] Scalar
-    return crystal(polarization, polarization, along) / (squared * density).square_root()
+    crystal, density, wave_heading = crystal[..., None], density[..., None], heading[..., None]   # [..., 1] each
+    wave_modulus = polarization | crystal(wave_heading, polarization, wave_heading)   # [..., 3] Scalar
+    return crystal(polarization, polarization, wave_heading) / (wave_modulus * density).square_root()

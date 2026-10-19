@@ -1,10 +1,11 @@
-"""Materials map field bivectors to excitation antibivectors: `excitation = medium(field)`.
+"""Constitutive maps: a material's response to the electromagnetic field, a map from the field, a
+bivector, to the excitation it causes, an antibivector, `excitation = medium(field)`.
 
-Electric and magnetic plane weights describe glass, crystals and ferrites;
-the identity adds an axion response, and a Lorentz boost sets a medium in motion.
-Pairing with an open field gives the constitutive bilinear form. The field and
-excitation also determine a stress-energy map from vectors to current antivectors.
-Plane waves are bivectors annihilated by both source-free Maxwell equations.
+Weights on the field's electric and magnetic planes describe glass, crystals and ferrites; a term
+proportional to the field itself adds an axion response, and a Lorentz boost sets a medium in motion.
+Pairing the excitation with a second field gives the constitutive form, a form on pairs of fields, and the
+field and excitation together give the stress-energy map, from directions to currents. A plane wave is a
+field that both source-free Maxwell equations send to nothing.
 """
 
 from __future__ import annotations

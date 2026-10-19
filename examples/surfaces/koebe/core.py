@@ -16,23 +16,23 @@ centre.
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial import ConvexHull
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, NumpyContext, concatenate
+from numga.sparse import SparseExtensor
 
 ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-# The unit volume that no motion changes: an oriented volume over it reads as its signed size.
-unit_volume = mv.antiscalar([1.0])
 Rotor = ga.gatype.rotor()
 
 
 # --- math -----------------------------------------------------------------------------
-def caps(directions: Vector, radii: np.ndarray) -> Vector:
-    """The circles on the sphere around unit directions, at angular radii: the plane at the cosine along each
-    direction, `direction + cos(radius) * w`, scaled to square to one."""
-    return (directions + mv.w * np.cos(radii)) * (1 / np.sin(radii))          # [...] Vector
+def caps(directions: Vector, radius: Scalar) -> Vector:
+    """The circles on the sphere around unit directions, at an angular radius: the plane at the cosine along
+    each direction, `direction + cos(radius) * w`, scaled to square to one."""
+    return (directions + mv.w * radius.cos()) / radius.sin()                   # [...] Vector
 
 
 def touching(circles: Vector, edges: np.ndarray) -> Vector:
@@ -51,6 +51,38 @@ def apexes(circles: Vector) -> Vector:
     return circles / -(circles | mv.w)                                         # [...] Vector
 
 
+def koebe(start: Vector, edges: np.ndarray, n_steps: int) -> Vector:
+    """The circles, by Gauss-Newton from the start, that square to one and touch from outside along every
+    edge: inner product minus one. The residuals change with the circles by a map from the circles to the
+    residuals; each step solves through that map composed with its adjoint, leaving the maps that keep the
+    sphere, along which nothing changes, where they were."""
+    tails, heads = edges[:, 0], edges[:, 1]
+    n_vertices, n_edges = start.shape[-1], len(edges)
+    # Each vertex's residual depends on its own circle, each edge's on the circles at its two ends.
+    rows = np.concatenate([np.arange(n_vertices), n_vertices + np.arange(n_edges), n_vertices + np.arange(n_edges)])
+    columns = np.concatenate([np.arange(n_vertices), tails, heads])
+    circles = start                                                            # [vertices] Vector
+    for _ in range(n_steps):
+        residual = concatenate([circles.squared() - 1, (circles[tails] | circles[heads]) + 1]).field()   # Scalar[vertices + edges]
+        jacobian = SparseExtensor.from_indices(
+            concatenate([2 * circles | Vector, circles[heads] | Vector, circles[tails] | Vector]),
+            rows, columns, (n_vertices + n_edges, n_vertices))                 # [vertices + edges, vertices] Scalar <- Vector
+        circles = circles - jacobian.adjoint()(jacobian(jacobian.adjoint()).solve(residual)).batch()
+    return circles
+
+
+def centre(points: Vector, n_iterations: int) -> Vector:
+    """The unit timelike vector that minimises the summed logarithms of minus its inner products with the
+    null vectors of points of the sphere: the centre seen from which they balance. There the points, each
+    weighted by minus the reciprocal of its inner product with the centre, sum along the centre itself, so the
+    centre is the fixed point of that weighted sum, normalized."""
+    centre = mv.w                                                              # [] Vector
+    for _ in range(n_iterations):
+        weighted = (points * (-1 / (centre | points))).sum()                   # [] Vector
+        centre = weighted / (-weighted.squared()).square_root()
+    return centre
+
+
 def centring(centre: Vector) -> Rotor:
     """The rotor carrying a unit timelike centre onto w: a boost along the centre's spatial part."""
     return (1 - mv.w * centre).normalized()
@@ -63,6 +95,16 @@ def boost(direction: Vector, rapidity: np.ndarray) -> Rotor:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def basis() -> Vector:
-    """x, y, z and w, as a batch."""
-    return mv.vector(np.eye(4))                                                # [4] Vector
+def spiral(n_points: int) -> Vector:
+    """Directions spread evenly over the sphere along a Fibonacci spiral: z tilted towards x by each polar
+    angle, then turned about z by each azimuth."""
+    turns = np.arange(n_points) + 0.5
+    polar, azimuth = np.arccos(1 - 2 * turns / n_points), np.pi * (1 + 5**0.5) * turns
+    tilts = ((mv.z ^ mv.x) * (-polar / 2)).exp()                               # [points] Rotor
+    return (mv.xy * (-azimuth / 2)).exp() >> (tilts >> mv.z)                   # [points] Vector
+
+
+# --- the step outside the algebra -------------------------------------------------------
+def hull(points: Vector) -> np.ndarray:
+    """The faces `[faces, 3]` of the convex hull of points around the centre."""
+    return ConvexHull(points.cast(ga.subspace("x y z")).kernel).simplices     # [faces, 3]

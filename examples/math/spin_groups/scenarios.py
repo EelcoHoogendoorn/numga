@@ -1,4 +1,4 @@
-"""Scenes for the spin groups: the table of signatures up to six dimensions, a four-dimensional rotor
+"""The spin groups: the table of signatures up to six dimensions, a four-dimensional rotor
 split into its two isoclinic factors, and the orbits of the two isoclinic flows on the three-sphere."""
 
 from __future__ import annotations

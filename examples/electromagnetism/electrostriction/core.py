@@ -1,4 +1,4 @@
-"""An elastic lattice of induced dipoles, at mechanical and electrical equilibrium.
+"""Electrostriction: an elastic lattice of induced dipoles, at mechanical and electrical equilibrium.
 
 Particles and dipoles are confined to a plane; their interaction is the three-dimensional
 electrostatic dipole field restricted to that plane. Units set four pi times permittivity to one.
@@ -38,9 +38,9 @@ class Lattice:
     @cached_property
     def bond_ends(self) -> SparseExtensor:
         """Each bond's second particle less its first, from the particles to the bonds."""
-        particles = self.rest.gatype.site_shape[0]
-        ends = (np.ones_like(self.bonds) * [-1, 1])[..., None]                # [bonds, ends, 1]
-        return SparseExtensor.from_columns(self.bonds, mv.scalar(ends), particles)
+        n_particles = self.rest.gatype.site_shape[0]
+        end_signs = (np.ones_like(self.bonds) * [-1, 1])[..., None]           # [bonds, ends, 1]
+        return SparseExtensor.from_columns(self.bonds, mv.scalar(end_signs), n_particles)
 
     def links(self, positions: Vector) -> Vector:
         """Each elastic bond, directed from its first particle to its second."""
@@ -57,8 +57,8 @@ class Lattice:
         squared_distance = separation.squared()
         # A particle has no self interaction. Its numerator vanishes identically, so the value
         # added on the diagonal is arbitrary; it keeps the denominator finite.
-        particles = self.rest.gatype.site_shape[0]
-        distance = (squared_distance + np.eye(particles)).square_root()
+        n_particles = self.rest.gatype.site_shape[0]
+        distance = (squared_distance + np.eye(n_particles)).square_root()
         coupling = ((3 * separation * (separation | Vector) - squared_distance * Vector)
                     / distance**5).field(0, 1)                         # Vector[particles] <- Vector[particles]
         return Vector / self.polarizability - coupling
@@ -78,13 +78,13 @@ class Lattice:
         electrical = -(applied | dipoles).sites.sum() / 2
         return self.elastic_energy(positions) + electrical
 
-    def equilibrium(self, applied: Vector, steps: int) -> Vector:
+    def equilibrium(self, applied: Vector, n_steps: int) -> Vector:
         """Newton relaxation from the reference lattice, for a batch of applied fields."""
         def energy(positions: Vector) -> Scalar:
             return self.energy(positions, applied)
 
         positions = self.rest.broadcast_to(applied.shape)
-        for _ in range(steps):
+        for _ in range(n_steps):
             gradient = derivative(energy)(positions)                   # Scalar <- Vector[particles]
             curvature = derivative(derivative(energy))(positions)      # Scalar <- (Vector[particles], Vector[particles])
             # The polarization solve is inside the energy: its response to motion contributes
@@ -105,12 +105,12 @@ def strain(positions: Vector, rest: Vector, direction: Vector) -> Scalar:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def hexagonal_indices(rings: int) -> tuple[np.ndarray, np.ndarray]:
+def hexagonal_indices(n_rings: int) -> tuple[np.ndarray, np.ndarray]:
     """Axial indices `[particles, axes]` of a triangular lattice patch, and its nearest-neighbour
     bonds `[bonds, ends]`."""
-    axis = np.arange(-rings, rings + 1)
+    axis = np.arange(-n_rings, n_rings + 1)
     first, second = np.meshgrid(axis, axis, indexing="ij")
-    inside = np.maximum.reduce([np.abs(first), np.abs(second), np.abs(first + second)]) <= rings
+    inside = np.maximum.reduce([np.abs(first), np.abs(second), np.abs(first + second)]) <= n_rings
     first, second = first[inside], second[inside]
     delta_first = first[:, None] - first[None, :]
     delta_second = second[:, None] - second[None, :]

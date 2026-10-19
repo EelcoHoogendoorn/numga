@@ -1,4 +1,5 @@
-"""Learn a qubit's noisy evolution from prepared states and measured probabilities.
+"""Quantum process tomography: learning a qubit's noisy evolution from prepared states and measured
+probabilities.
 
 A state is a scalar plus a vector, half of one plus its Bloch vector. Its scalar part
 keeps the normalization, so both a rotation and a relaxation towards a preferred state
@@ -7,7 +8,7 @@ are linear maps on State. Unobserved alternatives act by sandwiches whose result
 Four preparations spanning State determine such a map. A measurement reads a state by
 its scalar product with an effect; a dual frame undoes the overlap between these
 readouts. Reconstructing the outputs, then pairing them with the dual preparations,
-gives the whole channel as a sum of dyads, with the input state left open.
+gives the whole channel as a sum of dyads, a map from states to states.
 """
 
 from __future__ import annotations
@@ -69,7 +70,8 @@ def reconstruct(prepared: State, effects: State, measured: Scalar) -> Channel:
     measurement_dual = dual_frame(2 * effects)       # [outcomes] State
     outputs = (measured * measurement_dual).sum(axis=-1)  # [channels, preparations] State
     preparation_dual = dual_frame(prepared)          # [preparations] State
-    # Leaving the input open extends the measured action to every state by linearity.
+    # As a sum of dyads with the readouts of the dual preparations, a map that extends the measured action to
+    # every state by linearity.
     return (outputs * preparation_dual.scalar_product(State)).sum(axis=-1)  # [channels] State <- State
 
 

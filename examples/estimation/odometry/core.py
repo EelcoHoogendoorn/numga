@@ -1,4 +1,4 @@
-"""The most likely poses of a robot's lap, and how uncertain each one is.
+"""The most likely trajectory from odometry: the poses of a robot's lap, and how uncertain each one is.
 
 A robot drives a lap and reads, at every stop, how far it moved since the last one; each reading is a
 little off. Back at the start it recognises it, and reads one more relative pose, closing the loop.
@@ -125,11 +125,11 @@ def conjugate_gradients(poses: Motor, right: Line, weights: Information, tails: 
 
 def gauss_newton(poses: Motor, readings: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
                  anchors: Motor, anchor_weights: Information, damping: float,
-                 iterations: int) -> Iterator[Motor]:
+                 n_iterations: int) -> Iterator[Motor]:
     """Gauss-Newton, damped: each iteration solves the information at the current poses for the
     correction the gradient asks for, by conjugate gradients, and moves the poses by
     the damping's share of it. Yields the poses after each iteration."""
-    for _ in range(iterations):
+    for _ in range(n_iterations):
         right = -gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)   # [poses] Line
         *_, correction = conjugate_gradients(poses, right, weights, tails, heads, anchor_weights)   # [poses] Twist
         poses = poses * (correction * (0.5 * damping)).exp()                   # [poses] Motor

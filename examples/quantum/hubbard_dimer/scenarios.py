@@ -1,4 +1,4 @@
-"""From electron hopping to localized spins: levels, charge fluctuations and exchange."""
+"""The Hubbard dimer, from electron hopping to localized spins: levels, charge fluctuations and exchange."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from examples.quantum.hubbard_dimer import core
 HOPPING = 1.0
 NAMES = ("Delocalized", "Crossover", "Localized spins")
 REPULSIONS = HOPPING * np.array([0.0, 4.0, 20.0])
-SAMPLES = 241
-SWEEP = np.linspace(0.0, REPULSIONS[-1], SAMPLES)
+N_SAMPLES = 241
+SWEEP = np.linspace(0.0, REPULSIONS[-1], N_SAMPLES)
 # The large-repulsion approximation of the gap, away from zero repulsion where it is singular.
 STRONG_REPULSION = SWEEP[1:]
 PERTURBATIVE = 4 * HOPPING**2 / STRONG_REPULSION
-STEPS = 1200
-CYCLES = 1
-PHASE = np.linspace(0.0, CYCLES * 2 * np.pi, STEPS + 1)
+N_STEPS = 1200
+N_CYCLES = 1
+PHASE = np.linspace(0.0, N_CYCLES * 2 * np.pi, N_STEPS + 1)
 SPIN_ONLY = np.sin(PHASE / 2)**2
 # The dials: every few steps of the cycle, and each frame's duration.
 DIAL_STRIDE = 6

@@ -1,7 +1,10 @@
-"""Recover a rigid pose by successively matching a point, a line and a plane.
+"""Pose from three points: the rigid motor that carries three markers on an object onto their measured places.
 
-The construction follows the motor reconstruction example of ganja.js by Steven De Keninck,
-https://github.com/enkimute/ganja.js/blob/master/examples/example_chapter11_motor_reconstruction.html.
+Matching one marker fixes the position, matching the line through two of them fixes the direction, and matching
+the plane through all three fixes the roll about that line. In projective geometric algebra each match is the
+square root of the ratio of two elements of the same kind, two points, two lines or two planes, and the pose is
+the product of the three. The construction follows the motor reconstruction example of ganja.js by Steven
+De Keninck, https://github.com/enkimute/ganja.js/blob/master/examples/example_chapter11_motor_reconstruction.html.
 """
 
 from __future__ import annotations

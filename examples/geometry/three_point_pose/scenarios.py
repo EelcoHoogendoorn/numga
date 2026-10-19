@@ -1,10 +1,10 @@
-"""Locate a rigid marker triangle from its three measured positions."""
+"""Pose from three points: a displaced marker triangle, aligned by its three motors in turn."""
 
 import numpy as np
 
 from examples.geometry.three_point_pose import core
 
-STEPS = 24
+N_STEPS = 24
 DURATION_MS = 65
 
 
@@ -24,7 +24,7 @@ def main() -> None:
     from examples.geometry.three_point_pose import render
 
     source, target, increments = markers()
-    fractions = np.linspace(0, 1, STEPS + 1)[1:]
+    fractions = np.linspace(0, 1, N_STEPS + 1)[1:]
     fractions = fractions * fractions * (3 - 2 * fractions)
     save_figure(render.draw_stages(source, target, core.placements(source, increments)), "three_point_pose")
     save_animation(render.animate(core.alignments(source, increments, fractions), source, target),

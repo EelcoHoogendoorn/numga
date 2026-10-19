@@ -1,4 +1,4 @@
-"""Close Kepler passages as smooth motion of a scaled spinor."""
+"""Spinor regularization: close Kepler passages as smooth motion of a scaled spinor."""
 
 from __future__ import annotations
 
@@ -40,7 +40,7 @@ class State:
         """Read a position spinor and its regularized derivative in physical time."""
         # The spinor times its reverse is the radius, the distance from the attracting centre at the origin.
         radius = spinor.scalar_norm_squared()                            # [...] Scalar
-        # The sandwich differentiated in both slots; their trivector parts, the unused gauge rate, cancel.
+        # The sandwich differentiated in each of its two arguments; their trivector parts, the unused gauge rate, cancel.
         velocity = (placement(rate, spinor) + placement(spinor, rate)) / radius  # [...] Vector
         return cls(time, spinor >> mv.x, velocity)
 
@@ -93,7 +93,7 @@ class BoundOrbit:
                 + overlap * sine.squared() / frequency)                  # [...] Scalar
         return State.from_spinor(spinor, rate, time)
 
-    def at_time(self, time: Scalar, iterations: int) -> State:
+    def at_time(self, time: Scalar, n_iterations: int) -> State:
         """Invert the monotone physical clock by batched bisection."""
         frequency = self.frequency                                       # [...] Scalar
         mean_radius = (self.spinor.scalar_norm_squared()
@@ -101,28 +101,28 @@ class BoundOrbit:
         middle = time / mean_radius                                      # [...] Scalar
         half_period = np.pi / frequency                                  # [...] Scalar
         lower, upper = middle - half_period, middle + half_period        # [...] Scalar each
-        for _ in range(iterations):
+        for _ in range(n_iterations):
             middle = (lower + upper) / 2                                 # [...] Scalar
             before = self.sample(middle).time < time                     # [...] bool
             lower = before * middle + (1 - before) * lower               # [...] Scalar
             upper = before * upper + (1 - before) * middle               # [...] Scalar
         return self.sample((lower + upper) / 2)
 
-    def position_error(self, trajectory: State, iterations: int) -> Scalar:
+    def position_error(self, trajectory: State, n_iterations: int) -> Scalar:
         """Position RMS error weighted by elapsed physical time, against the exact orbit."""
-        exact = self.at_time(trajectory.time, iterations)                # [samples, ...] State
+        exact = self.at_time(trajectory.time, n_iterations)              # [samples, ...] State
         squared = (trajectory.position - exact.position).scalar_norm_squared()  # [samples, ...] Scalar
         intervals = trajectory.time[1:] - trajectory.time[:-1]           # [samples - 1, ...] Scalar
         integral = ((squared[1:] + squared[:-1]) * intervals / 2).sum(axis=0)  # [...] Scalar
         return (integral / (trajectory.time[-1] - trajectory.time[0])).square_root()
 
 
-def physical_verlet(initial: State, gravity: float, step: float, steps: int) -> Iterator[State]:
+def physical_verlet(initial: State, gravity: float, step: float, n_steps: int) -> Iterator[State]:
     """Kick-drift-kick integration with equal steps in physical time."""
     position, velocity, time = initial.position, initial.velocity, initial.time  # [...] Vector, Vector, Scalar
     acceleration = -gravity * position / position.norm() ** 3            # [...] Vector
     yield initial
-    for _ in range(steps):
+    for _ in range(n_steps):
         half_velocity = velocity + acceleration * (step / 2)             # [...] Vector
         position = position + half_velocity * step                       # [...] Vector
         acceleration = -gravity * position / position.norm() ** 3        # [...] Vector
@@ -131,11 +131,11 @@ def physical_verlet(initial: State, gravity: float, step: float, steps: int) -> 
         yield State(time, position, velocity)
 
 
-def regularized_verlet(orbit: BoundOrbit, time: Scalar, step: Scalar, steps: int) -> Iterator[State]:
+def regularized_verlet(orbit: BoundOrbit, time: Scalar, step: Scalar, n_steps: int) -> Iterator[State]:
     """Kick-drift-kick integration of the spinor oscillator from a start time, with its physical clock."""
     spinor, rate = orbit.spinor, orbit.rate                              # [...] Spinor each
     yield State.from_spinor(spinor, rate, time)
-    for _ in range(steps):
+    for _ in range(n_steps):
         half_rate = rate + orbit.energy * spinor * (step / 4)            # [...] Spinor
         following = spinor + half_rate * step                            # [...] Spinor
         # Integrate the radius, spinor.scalar_norm_squared(), by Simpson's rule over the drift.

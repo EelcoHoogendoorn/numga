@@ -1,4 +1,5 @@
-"""A light ray recovered from its twistor, linked flow lines, and a propagating electromagnetic pulse."""
+"""Twistors and linked light: a light ray recovered from its twistor, linked flow lines, and a propagating
+electromagnetic pulse."""
 
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ def incidence() -> tuple[core.Twistor, core.Event, core.Event]:
     """The twistor of the light ray through two null-separated events, the events and the reconstructed
     ray, once per boost."""
     emission, light_direction, separation = mv.x * -0.6 + mv.z * 0.3, mv.t + (mv.x + mv.z) / np.sqrt(2), 1.4
-    margin, ray_samples = 0.6, 120
+    margin, n_ray_samples = 0.6, 120
     events = stack([emission, emission + light_direction * separation])       # [events] Event
     points = core.point(events)                                              # [events] Vector
     twistor = core.through(points[0], points[1])                              # [] Twistor
@@ -31,17 +32,17 @@ def incidence() -> tuple[core.Twistor, core.Event, core.Event]:
     planes = core.RAY(twistors, twistors)                                     # [cases] Bivector
     moved_points = BOOST[:, None] >> points                                   # [cases, events] Vector
     moved_events = moved_points.cast(core.Event) / -(core.INFINITY | moved_points)   # [cases, events] Event
-    fractions = np.linspace(-margin, 1 + margin, ray_samples)
+    fractions = np.linspace(-margin, 1 + margin, n_ray_samples)
     event_times = -(mv.t | moved_events)                                     # [cases, events] Scalar
     ray_times = event_times[:, :1] + (event_times[:, 1:] - event_times[:, :1]) * fractions
-    rays = core.at_time(planes[:, None], ray_times)                           # [cases, ray_samples] Event
+    rays = core.at_time(planes[:, None], ray_times)                           # [cases, ray samples] Event
     return twistors, moved_events, rays
 
 
 def congruence() -> core.Spatial:
     """Instantaneous flow lines of the Robinson congruence at time zero."""
-    polars, per_circle, fibre_samples = np.pi * np.array([0.5, 0.65, 0.8]), 10, 240
-    return core.fibres(polars, per_circle, fibre_samples)
+    polars, n_per_circle, n_fibre_samples = np.pi * np.array([0.5, 0.65, 0.8]), 10, 240
+    return core.fibres(polars, n_per_circle, n_fibre_samples)
 
 
 def electric_lines() -> core.Spatial:
@@ -52,8 +53,8 @@ def electric_lines() -> core.Spatial:
 
 def propagation(times: np.ndarray) -> Iterator[core.Event]:
     """Electric field lines transported along straight null rays, one set per instant."""
-    electric = electric_lines()                                               # [polars, per_circle, fibre_samples + 1] Spatial
-    rays = core.robinson(electric)                                            # [polars, per_circle, fibre_samples + 1] Event
+    electric = electric_lines()                                               # [polars, per circle, fibre samples + 1] Spatial
+    rays = core.robinson(electric)                                            # [polars, per circle, fibre samples + 1] Event
     # The null field's lines are carried by its energy flow: each material point follows one
     # straight light ray, even as the lines deform.
     for time in times:

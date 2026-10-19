@@ -45,9 +45,9 @@ def test_physical_clock_inversion_and_inverse_square_acceleration():
     _, orbit = scenarios.initial_orbit()
     times = np.linspace(0.2, 1.0, 7)[:, None]
     delta = 1e-4
-    state = orbit.at_time(times, scenarios.CLOCK_ITERATIONS)
-    before = orbit.at_time(times - delta, scenarios.CLOCK_ITERATIONS)
-    after = orbit.at_time(times + delta, scenarios.CLOCK_ITERATIONS)
+    state = orbit.at_time(times, scenarios.N_CLOCK_ITERATIONS)
+    before = orbit.at_time(times - delta, scenarios.N_CLOCK_ITERATIONS)
+    after = orbit.at_time(times + delta, scenarios.N_CLOCK_ITERATIONS)
     acceleration = (after.velocity - before.velocity) / (2 * delta)
     force = -scenarios.GRAVITY * state.position / state.position.norm() ** 3
 

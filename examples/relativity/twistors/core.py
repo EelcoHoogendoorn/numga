@@ -1,8 +1,9 @@
-"""Light rays carried by twistors, and a twisting family of rays filling spacetime.
+"""Twistors and linked light: light rays carried by twistors, and a twisting family of rays filling spacetime.
 
-A conformal event acts on eight real spinor components. Its kernel contains the twistors of the
-light rays through that event. Applying the event to a fixed non-null twistor chooses one ray;
-the resulting family is the Robinson congruence.
+A twistor is modelled as eight real components of the conformal algebra that left multiplication preserves,
+so every multivector acts on twistors. An event's action sends to zero the twistors of the light rays through
+it; applying the event to a fixed non-null twistor picks one ray, and the resulting family is the Robinson
+congruence.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ INFINITY = mv.v + mv.u                                                       # [
 # a second one, also preserved.
 PAIRING = 8 * exact.yz.scalar_product(STATE_EMBEDDING.reverse() * exact.xyztuv * STATE_EMBEDDING)
 
-# Pair a twistor with the action of an open plane, and raise that plane's input slot.
+# A twistor paired with each plane's action is a form on planes; contracting turns it into the plane itself.
 # On a null twistor twice the result is the null plane of its light ray.
 RAY = (Bivector * PAIRING(Twistor, VOLUME(REPRESENTATIONS(Bivector.reverse(), Twistor)))).contract(1, 3)
 ROBINSON = 1 + exact.y - exact.zu + exact.yzu                                 # [] Twistor
@@ -90,11 +91,11 @@ def hopfion(event: Event) -> Faraday:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def fibres(polars: np.ndarray, per_circle: int, fibre_samples: int) -> Spatial:
+def fibres(polars: np.ndarray, n_per_circle: int, n_fibre_samples: int) -> Spatial:
     """Linked circles tangent to the Robinson directions at time zero, sampled on nested tori."""
-    azimuths = np.linspace(0, 2 * np.pi, per_circle, endpoint=False)
-    phases = np.linspace(-np.pi, np.pi, fibre_samples + 1)
+    azimuths = np.linspace(0, 2 * np.pi, n_per_circle, endpoint=False)
+    phases = np.linspace(-np.pi, np.pi, n_fibre_samples + 1)
     starts = ((mv.zx * (-azimuths[None, :] / 2)).exp()
-              * (mv.xy * (polars[:, None] / 2)).exp())                         # [polars, per_circle] Even
-    orbit = starts[..., None] * (SPATIAL_VOLUME * mv.y * phases).exp()        # [polars, per_circle, fibre_samples + 1] Even
+              * (mv.xy * (polars[:, None] / 2)).exp())                         # [polars, per circle] Even
+    orbit = starts[..., None] * (SPATIAL_VOLUME * mv.y * phases).exp()        # [polars, per circle, fibre samples + 1] Even
     return -SPATIAL_VOLUME * orbit.restrict[2] / (1 + orbit.select[0])

@@ -1,4 +1,4 @@
-"""Crease construction, polygon splitting and rigid folds of a sheet of paper.
+"""Folding a Kabuto helmet: crease construction, polygon splitting and rigid folds of a sheet of paper.
 
 The construction follows the origami example of ganja.js by Steven De Keninck,
 https://github.com/enkimute/ganja.js/blob/master/examples/example_pga3d_origami.html.

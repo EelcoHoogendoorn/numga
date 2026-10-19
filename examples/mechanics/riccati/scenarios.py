@@ -1,4 +1,4 @@
-"""Dock with three reversible thrusters, trading speed against effort."""
+"""Docking by Riccati feedback: three reversible thrusters, trading speed against effort."""
 
 import numpy as np
 
@@ -8,7 +8,7 @@ from examples.mechanics.riccati import core
 mv, Twist, Forque = core.mv, core.Twist, core.Forque
 
 LABELS = ("Lower effort penalty", "Higher effort penalty")
-CASES = len(LABELS)
+N_CASES = len(LABELS)
 EFFORT_SCALES = np.array([0.05, 5.])                                   # [cases]
 THRUSTER_WEIGHTS = np.array([1., 2., 3.])                               # [thrusters]
 # Drag along the forward and sideways directions through the centre, and against turning.
@@ -16,10 +16,10 @@ DRAG_WEIGHTS = np.array([2., 3., 1.])                                   # [modes
 # Rows: bow and stern; columns: forward and sideways displacement.
 TRACKING_WEIGHTS = np.array([[4., 8.], [1., 2.]])                       # [sites, directions]
 DT = 0.1
-STEPS = 72
+N_STEPS = 72
 # How much stiffer the pose is priced at the deadline than along the way: the vessel must be there.
-LANDING = 1e6
-FRAME_DURATION = 40
+LANDING_WEIGHT = 1e6
+DURATION_MS = 40
 ARROW_SCALE = 0.04
 
 HULL = mv.antivector([[-.45, -.23, 1], [.28, -.23, 1], [.55, 0, 1],
@@ -29,12 +29,12 @@ AXES = mv.antivector([[1, 0, 0], [0, 1, 0]])                            # [direc
 MOUNTS = mv.antivector([[-.3, .2, 1], [-.3, -.2, 1], [.35, 0, 1]])      # [thrusters] Point
 DIRECTIONS = mv.antivector([[1, 0, 0], [1, 0, 0], [0, 1, 0]])           # [thrusters] Point at infinity
 TRACKING_POINTS = mv.antivector([[.45, 0, 1], [-.35, 0, 1]])            # [sites] Point
-INITIAL = (mv.xw * .4 + mv.yw * .5 + mv.xy * .35) * np.ones(CASES)      # [cases] Twist
+INITIAL = (mv.xw * .4 + mv.yw * .5 + mv.xy * .35) * np.ones(N_CASES)      # [cases] Twist
 
 
 # --- math -----------------------------------------------------------------------------
 def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
-    """Costs for one through STEPS remaining actions, then the policy, errors, and commands."""
+    """Costs for one through N_STEPS remaining actions, then the policy, errors, and commands."""
     # Joining a mount to its ideal direction gives its line of force, including the lever arm.
     thrusters = MOUNTS & DIRECTIONS                                    # [thrusters] Forque
     authority = (thrusters * (thrusters & Twist) / THRUSTER_WEIGHTS).sum(axis=0)   # [] Forque <- Twist
@@ -53,10 +53,10 @@ def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
     dynamics = Twist                                                   # [] Twist <- Twist: without a push, the vessel stays put
     actuation = drag.inverse() * DT                                    # [] Twist <- Forque
 
-    # From the deadline back, where whatever error is left is priced LANDING times as stiffly.
-    costs, gains = zip(*core.riccati(state_cost * LANDING * np.ones(CASES), dynamics, actuation, state_cost,
-                                     effort_cost, STEPS))
-    values = stack(costs)                                              # [steps, cases] Scalar <- (Twist, Twist): horizons 1 through STEPS
+    # From the deadline back, where whatever error is left is priced LANDING_WEIGHT times as stiffly.
+    costs, gains = zip(*core.riccati(state_cost * LANDING_WEIGHT * np.ones(N_CASES), dynamics, actuation, state_cost,
+                                     effort_cost, N_STEPS))
+    values = stack(costs)                                              # [steps, cases] Scalar <- (Twist, Twist): horizons 1 through N_STEPS
     feedbacks = stack(gains)[::-1]                                     # [steps, cases] Forque <- Twist
     errors = stack(tuple(core.rollout(INITIAL, dynamics, actuation, feedbacks)))   # [steps + 1, cases] Twist
     pushes = feedbacks(errors[:-1])                                    # [steps, cases] Forque
@@ -79,4 +79,4 @@ if __name__ == "__main__":
     # Include the landed pose with the thrusters off, after the final commanded step.
     commands = concatenate((commands, commands[-1:] * 0))         # [steps + 1, cases, thrusters] Scalar
     save_animation(render.animate(HULL, MOUNTS, DIRECTIONS, poses, commands, LABELS, ARROW_SCALE),
-                   "riccati", FRAME_DURATION)
+                   "riccati", DURATION_MS)

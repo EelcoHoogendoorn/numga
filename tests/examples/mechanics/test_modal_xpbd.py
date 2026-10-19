@@ -66,18 +66,18 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
 
 
 def test_a_clamped_beam_buckles_past_its_euler_load():
-    beam = core.girder(scenarios.BEAM_CELLS, float(scenarios.BEAM_CELLS), scenarios.BEAM_HEIGHT, scenarios.BEAM_STIFFNESS, scenarios.DENSITY, scenarios.MODES)
-    bodies, constraints = scenarios.clamped_beam(core, beam, scenarios.BEAM_GIRDERS, scenarios.BEAM_DAMPING)
+    beam = core.girder(scenarios.N_BEAM_CELLS, float(scenarios.N_BEAM_CELLS), scenarios.BEAM_HEIGHT, scenarios.BEAM_STIFFNESS, scenarios.DENSITY, scenarios.N_MODES)
+    bodies, constraints = scenarios.clamped_beam(core, beam, scenarios.N_BEAM_GIRDERS, scenarios.BEAM_DAMPING)
     # The two middle girders lifted by a hair: an imperfection to buckle from, so that the buckle grows within
     # a few steps rather than from round-off.
     frames, substeps, dt, imperfection = 24, 4, 0.02, 1e-6
-    lift = np.zeros(scenarios.BEAM_GIRDERS + 2)
-    lift[scenarios.BEAM_GIRDERS // 2:scenarios.BEAM_GIRDERS // 2 + 2] = imperfection
+    lift = np.zeros(scenarios.N_BEAM_GIRDERS + 2)
+    lift[scenarios.N_BEAM_GIRDERS // 2:scenarios.N_BEAM_GIRDERS // 2 + 2] = imperfection
     bodies = replace(bodies, motor=(bodies.motor * (core.mv.yw * (lift / 2)).exp().field()).cast(core.Motor))
     displacements = scenarios.END_DISPLACEMENT * np.arange(frames) / frames
     midspans = [midspan for _, midspan in scenarios.compress(core, beam, bodies, constraints, displacements, dt, substeps)]
     deflection = np.array([abs(midspan.dual().cast(core.Force).kernel[0, 1]) for midspan in midspans])
-    critical = scenarios.critical(scenarios.BEAM_HEIGHT, scenarios.BEAM_GIRDERS * scenarios.BEAM_CELLS)
+    critical = scenarios.critical(scenarios.BEAM_HEIGHT, scenarios.N_BEAM_GIRDERS * scenarios.N_BEAM_CELLS)
     assert deflection[displacements < 0.8 * critical].max() < 1e-6
     assert deflection[displacements > 2 * critical].min() > 0.5
 

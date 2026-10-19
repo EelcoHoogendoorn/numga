@@ -11,7 +11,7 @@ mv = core.mv
 
 
 def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_slot_at_a_time():
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     rng = np.random.default_rng(814)
     first, second = rng.normal(size=(19, 3)), rng.normal(size=(19, 3))
     # The six permutations of three distinct axes share one unit coefficient.
@@ -28,35 +28,35 @@ def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_slot_at
 
 
 def test_the_response_turns_with_the_crystal_and_reverses_with_its_bonds():
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     rng = np.random.default_rng(177)
     fields, probes = mv.bivector(rng.normal(size=(23, 6))), mv.bivector(rng.normal(size=(23, 6)))
     rotation = (mv.xy * 0.37).exp() * (mv.yz * 0.23).exp()
-    turned = core.turned(crystal, rotation)
-    rebuilt = core.response(rotation >> core.BONDS)
+    turned = core.turned_response(crystal, rotation)
+    rebuilt = core.bond_response(rotation >> core.BONDS)
     np.testing.assert_allclose(
         (turned(rotation >> fields, rotation >> probes) - (rotation >> crystal(fields, probes))).kernel,
         0, atol=1e-8)
     np.testing.assert_allclose((turned(fields, probes) - rebuilt(fields, probes)).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((core.response(-core.BONDS)(fields, probes) + crystal(fields, probes)).kernel, 0, atol=2e-12)
+    np.testing.assert_allclose((core.bond_response(-core.BONDS)(fields, probes) + crystal(fields, probes)).kernel, 0, atol=2e-12)
 
 
 def test_110_cut_has_the_analytic_polarization_and_power():
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     headings = np.linspace(0, 2 * np.pi, 129)
     across, up = np.cos(headings), np.sin(headings)
     pumps, _ = scenarios.turning(1, len(headings))
-    harmonic = core.doubled(crystal, pumps)
-    expected = -core.HORIZONTAL * (across * up) - core.VERTICAL * (across**2 / 2)
+    harmonic = core.second_harmonic(crystal, pumps)
+    expected = -core.HORIZONTAL_FIELD * (across * up) - core.VERTICAL_FIELD * (across**2 / 2)
     np.testing.assert_allclose((harmonic - expected).kernel, 0, atol=1e-6)
     np.testing.assert_allclose((harmonic | harmonic).to_array(), across**2 * (4 - 3 * across**2) / 4, atol=1e-6)
 
 
 def test_pump_bound_response_is_the_mixed_part_of_the_doubled_field():
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     pumps, probes, generated = scenarios.mixing(49)
-    change = (core.doubled(crystal, pumps[:, None] + probes)
-              - core.doubled(crystal, pumps[:, None]) - core.doubled(crystal, probes))
+    change = (core.second_harmonic(crystal, pumps[:, None] + probes)
+              - core.second_harmonic(crystal, pumps[:, None]) - core.second_harmonic(crystal, probes))
     np.testing.assert_allclose((change - generated).kernel, 0, atol=1e-12)
 
 
@@ -64,7 +64,7 @@ def test_uniform_growth_follows_the_closed_form():
     slices = 512
     depths = (np.arange(slices) + 0.5) / slices
     mismatch = np.array([[0.0], [2 * np.pi], [4 * np.pi]])
-    source = (core.HORIZONTAL + core.VERTICAL) / np.sqrt(2)
+    source = (core.HORIZONTAL_FIELD + core.VERTICAL_FIELD) / np.sqrt(2)
     amplitude = core.growth(source, np.ones((3, slices)), mismatch, depths)
     # The running sum of midpoint slices, against the integral up to each slice's far edge.
     edges = depths + 0.5 / slices

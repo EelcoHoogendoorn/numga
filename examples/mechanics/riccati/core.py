@@ -1,11 +1,11 @@
-"""Finite-horizon feedback for a local docking error, with costs as quadratic forms.
+"""Docking by Riccati feedback: finite-horizon feedback for a local docking error, with costs as quadratic forms.
 
 A twist describes the remaining displacement and turn, with pose `exp(-error / 2)`. A forque is the
 total force and torque from the thrusters. Strong drag makes their relation a mobility rather than an
 acceleration: one step adds the mobility of the push to the pose error.
 
-Every cost is a quadratic form, a scalar with two open slots: the cost of an error is
-`value(error, error)`. Filling both slots with maps pulls a form back through them, so
+Every cost is a quadratic form, a form on pairs of twists or of pushes: the cost of an error is
+`value(error, error)`. Applying a form to maps pulls it back through them, so
 `value(dynamics, actuation)` is the future cost seen from the present error and push, with no
 transposes. The Riccati recursion pulls the future cost back through one step and minimizes over the
 push; its solve returns a feedback map from a twist to a forque.
@@ -32,9 +32,9 @@ Feedback = ga.gatype((Forque, Twist))              # Forque <- Twist
 
 # --- math -----------------------------------------------------------------------------
 def riccati(value: StateCost, dynamics: Dynamics, actuation: Actuation, state_cost: StateCost,
-            effort_cost: EffortCost, steps: int) -> Iterator[tuple[StateCost, Feedback]]:
+            effort_cost: EffortCost, n_steps: int) -> Iterator[tuple[StateCost, Feedback]]:
     """The cost still to pay and the feedback, one more step back from the given cost each time."""
-    for _ in range(steps):
+    for _ in range(n_steps):
         # A push costs effort now and moves the error whose cost is paid next.
         control_cost = effort_cost + value(actuation, actuation)             # [cases] Scalar <- (Forque, Forque)
         # The push that cancels the cost's derivative, for every error at once.

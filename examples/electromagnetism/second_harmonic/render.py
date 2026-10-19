@@ -22,8 +22,8 @@ CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 # --- plumbing -------------------------------------------------------------------------
 def transverse(fields: core.Bivector) -> np.ndarray:
     """Electric components across the beam for the observer's screen."""
-    return np.stack(((fields | core.HORIZONTAL).to_array(),
-                     (fields | core.VERTICAL).to_array()), axis=-1)          # [..., 2]
+    return np.stack(((fields | core.HORIZONTAL_FIELD).to_array(),
+                     (fields | core.VERTICAL_FIELD).to_array()), axis=-1)          # [..., 2]
 
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
@@ -110,8 +110,8 @@ def draw_response(pumps: core.Bivector, bonds: core.Bivector, harmonic: core.Biv
 def draw_waveform(phase: np.ndarray, pump: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
     """Signed pump and doubled-frequency field components over two pump periods."""
     cycles = phase / (2 * np.pi)                                               # [times]
-    pump_field = (pump | core.HORIZONTAL).to_array()                           # [times]
-    harmonic_field = (harmonic | core.VERTICAL).to_array()                     # [times]
+    pump_field = (pump | core.HORIZONTAL_FIELD).to_array()                           # [times]
+    harmonic_field = (harmonic | core.VERTICAL_FIELD).to_array()                     # [times]
     figure, axes = plt.subplots(figsize=(8, 3.3), layout="constrained")
     axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     axes.plot(cycles, pump_field, color=PUMP_COLOUR, linewidth=2, label="Pump field")
@@ -152,7 +152,7 @@ def draw_mixing(pumps: core.Bivector, probes: core.Bivector, generated: core.Biv
 def draw_growth(depths: np.ndarray, amplitude: core.Bivector) -> plt.Figure:
     """The amplitude's path in the phase plane and the power along each crystal."""
     power = (amplitude | amplitude).sum(axis=-1).to_array()                  # [cases, slices]
-    amplitude = (amplitude | core.VERTICAL).to_array()                      # [cases, slices, quadratures]
+    amplitude = (amplitude | core.VERTICAL_FIELD).to_array()                      # [cases, slices, quadratures]
     figure, axes = plt.subplots(1, 2, figsize=(9.5, 4), layout="constrained")
     phasor_axes, power_axes = axes
     for label, path, intensity, colour in zip(CASES, amplitude, power, CASE_COLOURS):

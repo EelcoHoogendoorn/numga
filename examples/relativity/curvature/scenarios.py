@@ -1,7 +1,5 @@
-"""Scenes of the plane-wave curvature example: one function per figure.
-
-Each runs the mathematics in `core` and returns the geometry its figure draws.
-"""
+"""Curvature of a gravitational wave: the curvature map at one event, boosted observers, and a ring of beads
+through a wave packet in three polarizations."""
 
 from __future__ import annotations
 
@@ -11,15 +9,15 @@ from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Curvature, Scalar, Tidal, Vector, t, x, z
 
 # Wave packet and detector parameters, with the speed of light one.
-# Packet window; the carrier wavelength is `DURATION / CYCLES`, two thirds.
+# Packet window; the carrier wavelength is `DURATION / N_CYCLES`, two thirds.
 DURATION = 6.0
-CYCLES = 9
+N_CYCLES = 9
 # Peak strain.
 AMPLITUDE = 1e-4
-SAMPLES = 1201
+N_SAMPLES = 1201
 # Detector radius, much smaller than the wavelength.
 RADIUS = 0.01
-BEADS = 24
+N_BEADS = 24
 # Display magnification of the displacements.
 AMPLIFICATION = 4000
 
@@ -42,17 +40,17 @@ def detector_scenario():
     magnification of the displacements.
     """
     plus, _ = core.polarizations()
-    time = np.linspace(0.0, DURATION, SAMPLES)
-    _, second = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
+    time = np.linspace(0.0, DURATION, N_SAMPLES)
+    _, second = core.wave_packet(time, DURATION, N_CYCLES, AMPLITUDE)
     waves: Curvature = core.polarized_waves(plus, second)          # [n_time, n_polarizations] Bivector <- Bivector
     response: Tidal = core.tidal_map(waves, t)                            # [n_time, n_polarizations] Vector <- Vector
-    reference: Vector = core.detector_ring(BEADS) * RADIUS                # [n_beads] Vector
+    reference: Vector = core.detector_ring(N_BEADS) * RADIUS                # [n_beads] Vector
     acceleration: Vector = response[:, :, None](reference)                # [n_time, n_polarizations, n_beads] Vector
     displacement: Vector = core.integrate_acceleration(time, acceleration)
 
     # --- checks -------------------------------------------------------------
     # The integrated ring lands on the strain map applied to the rest separations.
-    strain, _ = core.wave_packet(time, DURATION, CYCLES, AMPLITUDE)
+    strain, _ = core.wave_packet(time, DURATION, N_CYCLES, AMPLITUDE)
     plus_strain, cross_strain = core.strain_patterns()
     predicted = core.polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
     np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=1e-12)
@@ -88,7 +86,7 @@ if __name__ == "__main__":
     if args.animate:
         time, reference, displacement, acceleration, amplification = detector
         # The middle half of the window, three packet widths either side of the peak, where the ring moves.
-        shown = slice(SAMPLES // 4, 3 * SAMPLES // 4 + 1)
+        shown = slice(N_SAMPLES // 4, 3 * N_SAMPLES // 4 + 1)
         save_animation(
             render.animate_detector(time[shown], reference, displacement[shown], acceleration[shown], amplification),
             "curvature", 50,

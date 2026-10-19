@@ -1,4 +1,4 @@
-"""Stretch and twist of balanced angle-ply strips under uniform tension.
+"""Extension–twist coupling: the stretch and twist of balanced angle-ply strips under uniform tension.
 
 The state holds axial strain as a scalar and thickness times twist per length in the yz plane.
 Each ply measures that state's stretch along and across its fibres, and its shear. Pairing these
@@ -30,9 +30,9 @@ twist: Measurement = (-mv.yz).scalar_product(State)            # []
 
 # --- math -----------------------------------------------------------------------------
 def strain(height: Scalar, thickness: float) -> Strain:
-    """The midsurface strain at a height through the thickness, as a map on directions with the
-    stretch–twist state left open: the stretch along the strip, and the shear the twist brings at
-    that height, opposite above and below the middle."""
+    """The midsurface strain at a height through the thickness, a map from a direction and a
+    stretch–twist state to the change in that direction: the stretch along the strip, and the shear
+    the twist brings at that height, opposite above and below the middle."""
     stretch = mv.x * (mv.x | Vector) * extension                                        # [] Vector <- (Vector, State)
     # Twist tilts the normal both ways in the plane; dividing by thickness gives angle per length.
     shear = -height / thickness * (mv.x * (mv.y | Vector) + mv.y * (mv.x | Vector)) * twist  # [...] Vector <- (Vector, State)
@@ -41,7 +41,7 @@ def strain(height: Scalar, thickness: float) -> Strain:
 
 def read(strain: Extensor, fibres: Vector) -> Extensor:
     """A strain map's readings along a ply's fibres, across them, and as their shear, stacked on a
-    leading axis, with any further slots of the strain left open."""
+    leading axis; each reading is a map of the strain's further arguments."""
     transverse: Vector = mv.xy | fibres
     return stack([fibres | strain(fibres), transverse | strain(transverse), 2 * (fibres | strain(transverse))])
 
@@ -66,24 +66,24 @@ def response(fibres: Vector, heights: Vector, weights: np.ndarray, thickness: fl
     """
     moduli = (longitudinal_modulus, transverse_modulus, poisson, shear_modulus)
     # Each ply reads the strain along its fibres, across them, and as their shear.
-    local: Strain = strain(heights | mv.z, thickness)                                  # [plies, samples]
-    readings = read(local, fibres)                                                     # [3, cases, plies, samples] Measurement
+    strain_at_heights: Strain = strain(heights | mv.z, thickness)                      # [plies, samples]
+    readings = read(strain_at_heights, fibres)                                                     # [3, cases, plies, samples] Measurement
     # A unit width strain, read the same ways.
     widening = mv.y * (mv.y | Vector)                                                  # [] Vector <- Vector
     width_readings = read(widening, fibres)                                            # [3, cases, plies, 1] Scalar
     stresses = stack(ply_stress(*readings, *moduli))                                   # [3, cases, plies, samples] Measurement
     width_stresses = stack(ply_stress(*width_readings, *moduli))                       # [3, cases, plies, 1] Scalar
     # Strain read against stress, summed over the three readings and through the thickness. Each
-    # product of two readings leaves two State slots open: half energy(state, state) is the stored
+    # product of two readings is a form on pairs of states: half energy(state, state) is the stored
     # energy per midsurface area.
     energy: Energy = (readings * stresses * weights).sum(axis=(0, -2, -1))             # [cases]
     # With the width held fixed, coupling(state) is the transverse force per unit length.
     coupling: Measurement = (width_readings * stresses * weights).sum(axis=(0, -2, -1))   # [cases]
     width_stiffness: Scalar = (width_readings * width_stresses * weights).sum(axis=(0, -2, -1))  # [cases]
     # Free edges let the width contract until its force vanishes, reducing the state's stiffness.
-    relaxed: Energy = energy - coupling * coupling / width_stiffness                    # [cases]
+    free_width_energy: Energy = energy - coupling * coupling / width_stiffness          # [cases]
     # Apply only axial force; the twist is free to settle through the coupling in the energy.
-    state: State = relaxed.solve(tension * extension)                                  # [cases]
+    state: State = free_width_energy.solve(tension * extension)                        # [cases]
     width_strain: Scalar = -coupling(state) / width_stiffness                          # [cases]
     return state, width_strain
 

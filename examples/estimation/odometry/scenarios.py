@@ -1,5 +1,5 @@
-"""Scenes for the lap: the most likely poses given every reading, the steps and then the one that
-closes the loop, by Gauss-Newton from dead reckoning; in the plane, and in space.
+"""The most likely trajectory from odometry: the poses most likely given every reading, the steps and
+then the one that closes the loop, by Gauss-Newton from dead reckoning; in the plane, and in space.
 
 The core is instantiated for the algebra of the true steps, so the same scenes run on a lap in PGA2D
 and on one in PGA3D.
@@ -17,8 +17,8 @@ from examples import instantiate
 
 CORE = "examples.estimation.odometry.core"
 # The steps of a lap in the plane, and of a short one in space.
-PLANE_STEPS = 36
-SPACE_STEPS = 6
+N_PLANE_STEPS = 36
+N_SPACE_STEPS = 6
 # How far a step reading and the closing reading, recognising the start, are trusted, how well the first
 # pose is known, and how vaguely the others are known before any reading, as translation and rotation
 # standard deviations.
@@ -29,7 +29,7 @@ VAGUE = (100.0, 30.0)
 
 
 # --- math -----------------------------------------------------------------------------
-def damped(steps, damping: float, iterations: int, seed: int):
+def damped(steps, damping: float, n_iterations: int, seed: int):
     """Gauss-Newton with every reading from the dead-reckoned poses, damped by the given share, and each
     pose's uncertainty along it from dead reckoning's. Returns the true and dead-reckoned poses, dead
     reckoning's uncertainty, and the iterations, yielding the poses and their uncertainties after each."""
@@ -37,19 +37,19 @@ def damped(steps, damping: float, iterations: int, seed: int):
     truth, dead, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
     weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Information, [poses] Information
     reckoned = core.reckon(dead, noises, priors)                               # [poses] Covariance
-    poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, damping, iterations)
+    poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, damping, n_iterations)
     iterates = core.uncertainties(poses, reckoned, damping, noises, tails, heads, priors, weights, anchor_weights)
     return truth, dead, reckoned, iterates
 
 
-def closing(steps, iterations: int, seed: int):
+def closing(steps, n_iterations: int, seed: int):
     """The most likely poses given every reading, by the given full Gauss-Newton iterations. Returns the
     true and dead-reckoned poses, dead reckoning's uncertainty, and the most likely poses with theirs."""
     core = instantiate(CORE, steps.algebra)
     truth, dead, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
     weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Information, [poses] Information
     reckoned = core.reckon(dead, noises, priors)                               # [poses] Covariance
-    *_, poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, 1.0, iterations)   # [poses] Motor
+    *_, poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, 1.0, n_iterations)   # [poses] Motor
     uncertainty = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)   # [poses] Covariance
 
     # --- checks
@@ -83,21 +83,21 @@ def survey(core: ModuleType, steps, seed: int):
 
 
 def lap_in_plane():
-    """A lap of PLANE_STEPS steps of 0.7 m in the plane, turning faster and slower twice a lap,
+    """A lap of N_PLANE_STEPS steps of 0.7 m in the plane, turning faster and slower twice a lap,
     and slipping sideways a little, one way and back twice a lap, which leaves the lap closed."""
     mv = instantiate(CORE, PGA2D).mv
-    phase = 2 * np.pi * np.arange(PLANE_STEPS) / PLANE_STEPS
-    turn = mv.xy * (1 + 0.4 * np.sin(2 * phase)) * 2 * np.pi / PLANE_STEPS       # [steps] Twist
+    phase = 2 * np.pi * np.arange(N_PLANE_STEPS) / N_PLANE_STEPS
+    turn = mv.xy * (1 + 0.4 * np.sin(2 * phase)) * 2 * np.pi / N_PLANE_STEPS       # [steps] Twist
     slip = mv.yw * 0.1 * np.cos(2 * phase)                                     # [steps] Twist
     return ((turn + slip + mv.xw * 0.7) * 0.5).exp()                           # [steps] Motor
 
 
 def lap_in_space():
-    """A short lap in space, a turn of SPACE_STEPS steps of 0.7 m, pitching and rolling once a lap, and
+    """A short lap in space, a turn of N_SPACE_STEPS steps of 0.7 m, pitching and rolling once a lap, and
     slipping sideways and rising and falling twice a lap, which leaves the lap closed."""
     mv = instantiate(CORE, PGA3D).mv
-    phase = 2 * np.pi * np.arange(SPACE_STEPS) / SPACE_STEPS
-    turn = mv.xy * 2 * np.pi / SPACE_STEPS                                      # [] Twist
+    phase = 2 * np.pi * np.arange(N_SPACE_STEPS) / N_SPACE_STEPS
+    turn = mv.xy * 2 * np.pi / N_SPACE_STEPS                                      # [] Twist
     sway = (mv.zx * np.cos(phase) + mv.yz * np.sin(phase)) * 0.1               # [steps] Twist
     slip = mv.yw * 0.1 * np.cos(2 * phase) + mv.zw * 0.05 * np.sin(2 * phase)  # [steps] Twist
     return ((turn + sway + slip + mv.xw * 0.7) * 0.5).exp()                    # [steps] Motor

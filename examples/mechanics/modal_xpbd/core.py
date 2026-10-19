@@ -1,11 +1,12 @@
-"""Flexible bodies joined by point constraints, in the projective geometric algebra of the plane.
+"""Modal extended position-based dynamics: flexible bodies joined by point constraints, in the projective
+geometric algebra of the plane.
 
 Each body is a girder of bars. Its rigid motion is a motor and its deformation a combination of its
 lowest vibration modes, the eigenfields of its sparse stiffness against its masses. Bodies are
 connected by point constraints between anchor points. Time stepping is modal extended position-based
 dynamics: rigid bodies under compliant constraints, each mode one more constraint. For an anchor,
 `anchor.commutator(Twist)` maps a twist of its body to the anchor's displacement,
-`Direction <- Twist`; over all constraints and bodies these maps form a sparse extensor, and its
+`Direction <- Twist`; over all constraints and bodies these maps form one map, and its
 adjugate maps forces at the constraints to forques on the bodies. Composed through the inverse
 inertia, with the modes' and constraints' compliance added, they give one sparse system for all
 constraints, solved once per step. Solving the constraints one at a time converges too slowly for
@@ -162,7 +163,7 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     local_anchors = constraints.anchors + (constraints.modes * (constraints.ends * bodies.amplitudes[..., None])).sum(axis=-2)  # [..., sides] Point[constraints]
     # A gap is the second anchor's position minus the first's.
     signs = np.array([-1, 1])
-    # How each anchor moves for a twist of its body: the commutator with the open twist, in the world frame.
+    # How each anchor moves for a twist of its body: its commutator with the space of twists, in the world frame.
     anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs     # [..., sides] (Direction <- Twist)[constraints]
     # How each anchor moves for each mode amplitude of its body: the mode's shape at the anchor, in the world frame.
     anchor_modes = (motor[..., None, :] >> constraints.modes) * signs      # [..., modes, sides] Direction[constraints]

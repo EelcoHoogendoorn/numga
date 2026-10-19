@@ -2,7 +2,7 @@
 differentiation.
 
 `core.py` builds by hand how each constraint's gap changes as its two bodies move and deform: each
-anchor's commutator with an open twist, each mode's shape at each anchor, signed for the two sides and
+anchor's commutator with the space of twists, each mode's shape at each anchor, signed for the two sides and
 gathered by index into sparse maps. Here the gaps are written once, as a function of the coordinates of
 the step, how far each body moves and how far each mode deforms, and the couplings are its derivative:
 dense field maps from the bodies to the constraints, one for the twists and one for each mode's
@@ -132,11 +132,11 @@ def main():
     from examples.animation import save_animation
     from . import render, scenarios
 
-    shape = core.girder(scenarios.CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.MODES)
-    bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.LINKS, scenarios.DAMPING)
+    shape = core.girder(scenarios.N_CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.N_MODES)
+    bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.N_LINKS, scenarios.DAMPING)
     gravity = (mv.y * -scenarios.GRAVITY).dual()                            # [] Direction
     points = jax.jit(lambda moment: core.points(moment, shape))
-    frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.FRAMES))
+    frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.N_FRAMES))
     save_animation(render.swinging_chain(frames, shape.edges, core.points(bodies, shape)), "modal_xpbd_derived_swing", scenarios.DURATION_MS)
 
 

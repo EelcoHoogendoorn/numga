@@ -1,4 +1,5 @@
-"""Currents and braking torque in a conducting disc under a prescribed magnetic field."""
+"""Eddy-current braking: the currents and braking torque in a conducting disc turning under a prescribed
+magnetic field."""
 
 from __future__ import annotations
 
@@ -126,14 +127,14 @@ def fibre_conductivity(mesh: Mesh, principal: np.ndarray, inner: float, outer: f
 
 
 def current_modes(mesh: Mesh, conductivity: Conductivity,
-                  permeability: float, count: int) -> CurrentModes:
+                  permeability: float, n_modes: int) -> CurrentModes:
     """The slowest inductive current patterns of a conducting disc, with an insulating rim."""
     boundary = np.unique(mesh.edges[mesh.boundary_edges])
-    vertex_count = len(mesh.vertices.batch())
-    interior = np.setdiff1d(np.arange(vertex_count), boundary)
+    n_vertices = len(mesh.vertices.batch())
+    interior = np.setdiff1d(np.arange(n_vertices), boundary)
     # A streamfunction is zero on the rim. Its turned gradient forms closed currents,
     # with continuous normal flux across every interior edge.
-    embedder = ~SparseExtensor.selection(context, interior, vertex_count) * Scalar  # [V] Scalar <- [interior] Scalar
+    embedder = ~SparseExtensor.selection(context, interior, n_vertices) * Scalar  # [V] Scalar <- [interior] Scalar
     gradient = mesh.reconstruction((mesh.d0 * Scalar)(embedder))           # [F] Vector <- [interior] Scalar
     current = spdiag(mesh.face_planes | Vector)(gradient)                 # [F] Vector <- [interior] Scalar
     # The material map has no normal conduction. Its least-squares inverse gives
@@ -149,7 +150,7 @@ def current_modes(mesh: Mesh, conductivity: Conductivity,
         inductance = inductance + current_adjoint(coupling(current))
     inductance = (inductance + inductance.adjoint()) / 2
     # The eigenfields are orthonormal in magnetic energy; their eigenvalues are decay rates.
-    decay, modes = resistance.eigh(inductance, count)                     # [cases, modes] Scalar; [cases, modes] Scalar[interior]
+    decay, modes = resistance.eigh(inductance, n_modes)                     # [cases, modes] Scalar; [cases, modes] Scalar[interior]
     # Each pattern's streamfunction on the interior, read as the map onto its amplitude.
     projection = (modes.batch() * Scalar).field(0, 1)                     # [cases] Scalar[modes] <- Scalar[interior]
     return CurrentModes(decay.field(), projection, current, embedder, resistivity)
@@ -163,10 +164,10 @@ def field(positions: Vector, centre: Vector, plane: Bivector,
 
 
 def periodic_drive(mesh: Mesh, modes: CurrentModes, centre: Vector, plane: Bivector,
-                   strength: float, width: float, orientation: Rotor, count: int) -> PeriodicDrive:
+                   strength: float, width: float, orientation: Rotor, n_harmonics: int) -> PeriodicDrive:
     """Project one revolution of the magnetic forcing into real harmonic mode coefficients."""
-    samples = 2 * count + 1
-    angles = np.linspace(0, 2 * np.pi, samples, endpoint=False)
+    n_samples = 2 * n_harmonics + 1
+    angles = np.linspace(0, 2 * np.pi, n_samples, endpoint=False)
     turns = (plane * (-angles / 2)).exp()
     orientations = turns[:, None] * orientation                          # [samples, cases] Rotor
     positions = orientations >> mesh.face_centers                        # [samples, cases] Vector[F]
@@ -175,7 +176,7 @@ def periodic_drive(mesh: Mesh, modes: CurrentModes, centre: Vector, plane: Bivec
     velocity = -(body_plane | mesh.face_centers)                          # [cases] Vector[F]
     electric = magnetic | velocity                                      # [samples, cases] Vector[F]
     values = modes.drive(mesh, electric)                                # [samples, cases] Scalar[modes]
-    harmonics = np.arange(1, count + 1)
+    harmonics = np.arange(1, n_harmonics + 1)
     phase = angles[:, None] * harmonics                                 # [samples, harmonics]
     cosine = 2 * (values[..., None] * np.cos(phase)[:, None]).mean(axis=0)  # [cases, harmonics] Scalar[modes]
     sine = 2 * (values[..., None] * np.sin(phase)[:, None]).mean(axis=0)    # [cases, harmonics] Scalar[modes]
@@ -235,7 +236,7 @@ def turned(orientation: Rotor, spin: Bivector, midpoint_spin: Bivector,
 def braking(mesh: Mesh, centre: Vector, plane: Bivector,
             strength: float, width: float, conductivity: Conductivity,
             inertia: float, orientation: Rotor, spin: Bivector,
-            heat: Scalar, step: float, steps: int) -> Iterator[Motion]:
+            heat: Scalar, step: float, n_steps: int) -> Iterator[Motion]:
     """Turn a material mesh under a fixed magnet and accumulate the generated heat on its faces.
 
     Conductivity and heat are `[cases]` fields over the reference mesh's faces; orientation and
@@ -257,7 +258,7 @@ def braking(mesh: Mesh, centre: Vector, plane: Bivector,
         return Motion(orientation, spin, vertices, heat, response(orientation, spin).current)
 
     yield state(orientation, spin, heat)
-    for _ in range(steps):
+    for _ in range(n_steps):
         # Predict where the material points halfway through the step, then solve the
         # current at unit spin. Linearity supplies the response at any spin, including rest.
         midpoint_orientation = (spin * (-step / 4)).exp() * orientation     # [cases] Rotor
@@ -283,12 +284,12 @@ def inductive_braking(mesh: Mesh, modes: CurrentModes, forcing: PeriodicDrive, p
     shape `[steps, substeps, cases]`. Substeps resolve electrical relaxation between frames. Thermal diffusion,
     displacement current and variation through the sheet thickness are omitted.
     """
-    substeps = motor_torque.shape[1]
-    interval = step / substeps
+    n_substeps = motor_torque.shape[1]
+    interval = step / n_substeps
     angle = mv.scalar([0]).broadcast_to(orientation.shape)                # [cases] Scalar
     thermal_energy = heat.sites.sum()                                    # [cases] Scalar
     motor_work = thermal_energy * 0                                      # [cases] Scalar
-    factors = (amplitudes * 0).broadcast_to((substeps,) + amplitudes.shape)  # [substeps, cases] Scalar[modes]
+    factors = (amplitudes * 0).broadcast_to((n_substeps,) + amplitudes.shape)  # [substeps, cases] Scalar[modes]
     damping = 1 + interval * modes.decay / 2                              # [cases] Scalar[modes]
     yield modes.state(mesh, orientation, spin, heat, amplitudes, thermal_energy, motor_work)
     for torques in motor_torque:

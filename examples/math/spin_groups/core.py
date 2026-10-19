@@ -3,10 +3,10 @@
 The algebra has six directions squaring to plus one, x y z w v u, and three squaring to minus one,
 t s r. Choosing p of the first and q of the second picks out the signature (p, q): the bivectors of
 the chosen directions generate its rotors, the spin group, and their even products are its spinors.
-Three maps with open slots tell the groups apart.
+Three maps, built from types alone, tell the groups apart.
 
-The invariant form of the rotors' Lie algebra, the trace of the double commutator with two
-bivectors left open, is the algebra's own inner product on those bivectors, times `2 * (n - 2)`:
+The invariant form of the rotors' Lie algebra, the trace of the double commutator, a form
+on pairs of bivectors, is the algebra's own inner product on those bivectors, times `2 * (n - 2)`:
 the geometric product carries it already.
 
 Sandwiching the bivectors with the product of the chosen positive directions is an involution: it
@@ -51,8 +51,8 @@ Euclidean = Vector.derive.within("x y z w")
 
 # --- math -----------------------------------------------------------------------------
 def invariant_form(Bivector: GAType) -> Extensor:
-    """The invariant form of the Lie algebra: the trace of the double commutator, with two bivectors
-    open, exact in integers."""
+    """The invariant form of the Lie algebra: the trace of the double commutator, a form on
+    pairs of bivectors, exact in integers."""
     return Bivector.commutator(Bivector.commutator(Bivector)).trace(0, 3)   # [] Scalar <- (Bivector, Bivector)
 
 

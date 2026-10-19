@@ -1,4 +1,4 @@
-"""Loading and slowly turning the field applied to a polarizable elastic lattice."""
+"""Electrostriction: loading and slowly turning the field applied to a polarizable elastic lattice."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from numga import stack
 from numga.backend.jax import derivative
 from examples.electromagnetism.electrostriction import core
 
-RINGS = 2
+N_RINGS = 2
 SPACING = 1.0
 POLARIZABILITY = 0.035 * SPACING**3
 STIFFNESS = 1.0
 TETHER = 0.15 * STIFFNESS
 FIELD = 3.05
-NEWTON_STEPS = 4
-LOAD_SAMPLES = 25
-FRAMES = 72
+N_NEWTON_STEPS = 4
+N_LOAD_SAMPLES = 25
+N_FRAMES = 72
 DURATION_MS = 70
 DIPOLE_SCALE = 4.0
 FIELD_SCALE = 0.65 / FIELD
@@ -24,29 +24,29 @@ FIELD_SCALE = 0.65 / FIELD
 
 # --- math -----------------------------------------------------------------------------
 def lattice() -> core.Lattice:
-    indices, bonds = core.hexagonal_indices(RINGS)
+    indices, bonds = core.hexagonal_indices(N_RINGS)
     # The two lattice directions meet at sixty degrees.
-    across = (core.mv.xy * (-np.pi / 6)).exp() >> core.mv.x
-    axes = stack((core.mv.x, across))                                         # [axes] Vector
+    second_axis = (core.mv.xy * (-np.pi / 6)).exp() >> core.mv.x
+    axes = stack((core.mv.x, second_axis))                                         # [axes] Vector
     rest = (SPACING * (axes * indices).sum(axis=-1)).field()                  # Vector[particles]
     return core.Lattice(rest, bonds, POLARIZABILITY, STIFFNESS, TETHER)
 
 
 def loading(model: core.Lattice) -> tuple[np.ndarray, core.Vector, core.Vector, core.Vector]:
-    strengths = np.linspace(0, FIELD, LOAD_SAMPLES)
+    strengths = np.linspace(0, FIELD, N_LOAD_SAMPLES)
     applied = core.mv.x * strengths
-    positions = model.equilibrium(applied, NEWTON_STEPS)
+    positions = model.equilibrium(applied, N_NEWTON_STEPS)
     dipoles = model.response(positions).solve(applied)
     return strengths, applied, positions, dipoles
 
 
 def turning(model: core.Lattice) -> tuple[core.Vector, core.Vector, core.Vector]:
-    phase = np.linspace(0, 2 * np.pi, FRAMES, endpoint=False)
+    phases = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
     # A smooth rise and fall closes the loop at the unloaded lattice. Every frame is an
     # independent static equilibrium; the phase is a control setting rather than time.
-    strength = FIELD * (1 - np.cos(phase)) / 2
-    applied = ((core.mv.xy * (-phase / 2)).exp() >> core.mv.x) * strength
-    positions = model.equilibrium(applied, NEWTON_STEPS)
+    strengths = FIELD * (1 - np.cos(phases)) / 2
+    applied = ((core.mv.xy * (-phases / 2)).exp() >> core.mv.x) * strengths
+    positions = model.equilibrium(applied, N_NEWTON_STEPS)
     dipoles = model.response(positions).solve(applied)
     return applied, positions, dipoles
 
@@ -58,16 +58,16 @@ def main() -> None:
 
     model = lattice()
     strengths, applied, positions, dipoles = loading(model)
-    fixed = model.response(model.rest).solve(applied[-1])
-    save_figure(render.draw_lattice(model.rest, model.bonds, model.rest, fixed, applied[-1],
+    rest_dipoles = model.response(model.rest).solve(applied[-1])
+    save_figure(render.draw_lattice(model.rest, model.bonds, model.rest, rest_dipoles, applied[-1],
                                     DIPOLE_SCALE, FIELD_SCALE), "electrostriction_fixed")
     save_figure(render.draw_lattice(model.rest, model.bonds, positions[-1], dipoles[-1], applied[-1],
                                     DIPOLE_SCALE, FIELD_SCALE), "electrostriction_relaxed")
     parallel = core.strain(positions, model.rest, core.mv.x)
     transverse = core.strain(positions, model.rest, core.mv.y)
     save_figure(render.draw_loading(strengths, parallel, transverse), "electrostriction_loading")
-    turned, shapes, polarizations = turning(model)
-    frames = render.animate_lattice(model.rest, model.bonds, shapes, polarizations, turned,
+    turning_fields, shapes, polarizations = turning(model)
+    frames = render.animate_lattice(model.rest, model.bonds, shapes, polarizations, turning_fields,
                                      DIPOLE_SCALE, FIELD_SCALE)
     save_animation(frames, "electrostriction", DURATION_MS)
 

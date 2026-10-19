@@ -1,52 +1,17 @@
-"""A curvature map with only zero eigenvalues, and the tides it produces: core mathematics.
+"""Curvature of a gravitational wave: a nilpotent map on spacetime planes, and the tides it raises.
 
-In a vacuum plane wave, curvature is a nonzero bivector-to-bivector extensor
-whose composition with itself vanishes. Its image consists of null bivectors
-containing the wave's propagation direction; that image lies in its kernel.
-An indefinite metric allows a self-adjoint map to have this structure. All
-six eigenvalues vanish, although the map and its physical effects do not.
+The curvature of a vacuum plane wave is modelled as a map from bivectors to bivectors, a sum of two dyads
+of null planes that contain the wave's direction. It is nonzero, yet applied twice it gives zero, so all six
+of its eigenvalues vanish. Binding an observer's velocity turns it into the tidal map, a map from separations
+to relative accelerations, whose eigenvalues are the stretch and squeeze that observer measures: binding
+composes different maps rather than conjugating one.
 
-Fix an observer. Wedge a neighbouring particle's separation with the observer's
-velocity to form a spacetime ribbon, apply curvature, then let the resulting
-bivector act on that velocity. Leaving separation open gives the tidal map,
-from separation to relative acceleration. This observer binding is a composition of
-different maps, not a similarity transformation. Its spatial eigenvalues can
-therefore be positive, negative and zero even though curvature is nilpotent.
+The cross polarization is the plus pattern times minus the pseudoscalar, and a wave packet's phase is the
+pseudoscalar's exponential. In gauge theory gravity the same wave is a strain map on vectors, whose value on
+a bead's rest separation is its displacement, and whose second derivative along the wave gives the curvature.
 
-The full curvature is assembled from null-bivector dyads. The cross
-polarization is the dual of plus, `-I * plus`: for a null curvature a duality
-rotation by `(I * theta).exp()` turns the pattern by half that angle about the
-wave axis, the mark of a spin-two field. A wave packet's phase is therefore the
-pseudoscalar's exponential, and the circular case is one phasor times plus.
-Geometry stays in GA, with coefficient work confined to the numerical
-integration of the detector.
-
-In gauge theory gravity the same wave is carried by a map on vectors, the
-position gauge field, which differs from the identity by a strain map: each
-bead's displacement is the strain map applied to its rest separation, with no
-integration. Its second derivative along the wave, wedged with the wave vector
-and weighted by the overlap with it, is the curvature as a map on pairs of
-vectors, and it agrees with the dyad construction at every time and
-polarization.
-
-This is first-order geodesic deviation for a weak wave and a detector much
-smaller than its wavelength. Acceleration acts on each bead's unperturbed
-separation. A Gaussian strain packet is negligible at both ends of its window,
-so the initially stationary ring returns to rest, to first order and to within
-those tails.
-Units set the speed of light to one.
-
-In tensor index notation the curvature map reads as the Riemann tensor and
-the strain map as half the metric perturbation.
-
-References:
-  Coley & Hervik, "Higher dimensional bivectors and classification of the Weyl
-  operator", CQG 27 (2010) 015002, Sec. 4.5 and Appendix B (type N):
-  https://arxiv.org/pdf/0909.1160#page=11
-  Tong, General Relativity, Sec. 5.2.2, "Bobbing on the Waves":
-  https://www.damtp.cam.ac.uk/user/tong/gr/grhtml/S5.html#S5.S2.SS2
-
-This module never imports a plotting library.
+In the tensor notation of general relativity the curvature map reads as the Riemann tensor and the strain map
+as half the metric perturbation.
 """
 
 from __future__ import annotations
@@ -166,7 +131,7 @@ def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
     """Curvature as a map on pairs of vectors, from the strain's second derivative along the wave.
 
     Applied to edges `a` and `b` it gives
-    `k.wedge(second(a)) * (k | b) - (k | a) * k.wedge(second(b))`; the two open vectors are the
+    `k.wedge(second(a)) * (k | b) - (k | a) * k.wedge(second(b))`; its two arguments are the
     plane's edges, in that order. Binding one edge gives the same map as the dyad curvature applied
     to the wedge with that edge.
     """

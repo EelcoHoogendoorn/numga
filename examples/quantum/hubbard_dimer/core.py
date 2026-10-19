@@ -1,4 +1,4 @@
-"""Two electrons hopping between two sites, with an energy cost for sharing a site.
+"""The Hubbard dimer: two electrons hopping between two sites, with an energy cost for sharing a site.
 
 The four vector blades label left up, left down, right up and right down orbitals. A
 two-electron state is a bivector: its wedge supplies exclusion and exchange signs. The

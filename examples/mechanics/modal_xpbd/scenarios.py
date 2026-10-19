@@ -1,4 +1,4 @@
-"""Girders constrained at their corners: a spliced cantilever, a hinged chain under gravity, and a spliced
+"""Modal extended position-based dynamics of girders constrained at their corners: a spliced cantilever, a hinged chain under gravity, and a spliced
 beam fixed at both ends and compressed until it buckles. Each scene is built in the core it is given, an
 instance of `core.py` for a context."""
 
@@ -14,22 +14,22 @@ from numga.sparse import SparseExtensor
 
 # The chain's girder: its cells, length and height, its bars' stiffness, its density, and the
 # vibration modes it keeps.
-CELLS, LENGTH, HEIGHT = 4, 1.0, 0.2
-STIFFNESS, DENSITY, MODES = 300.0, 1.0, 8
+N_CELLS, LENGTH, HEIGHT = 4, 1.0, 0.2
+STIFFNESS, DENSITY, N_MODES = 300.0, 1.0, 8
 # The chain's moving girders, their modes' damping ratio, and the acceleration of gravity, downward.
-LINKS = 4
+N_LINKS = 4
 DAMPING = np.array([0.02])
 GRAVITY = 4.0
 # A constraint's compliance, rigid to round-off; it keeps the two constraints of a rigid splice solvable.
 SPLICE = 1e-14
 # The swing's time step, one per frame, its frames, and the frame duration.
-INTERVAL, FRAMES = 0.03, 200
+INTERVAL, N_FRAMES = 0.03, 200
 DURATION_MS = 30
 # The beam: its moving girders, their cells of unit length, their height, the bars' stiffness, the
 # modes' damping ratio, the final end displacement, its frames and the steps between them.
-BEAM_GIRDERS, BEAM_CELLS, BEAM_HEIGHT = 8, 32, 1.0
+N_BEAM_GIRDERS, N_BEAM_CELLS, BEAM_HEIGHT = 8, 32, 1.0
 BEAM_STIFFNESS, BEAM_DAMPING = 1e11, np.array([3.0])
-END_DISPLACEMENT, BEAM_FRAMES, BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 120, 2, 0.02
+END_DISPLACEMENT, N_BEAM_FRAMES, N_BEAM_SUBSTEPS, BEAM_INTERVAL = 0.15, 120, 2, 0.02
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -134,16 +134,16 @@ def main():
     from . import render
 
     core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
-    shape = core.girder(CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, MODES)
-    bodies, constraints = hinged_chain(core, shape, LINKS, DAMPING)
+    shape = core.girder(N_CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, N_MODES)
+    bodies, constraints = hinged_chain(core, shape, N_LINKS, DAMPING)
     gravity = (core.mv.y * -GRAVITY).dual()                                # [] Direction
-    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, FRAMES)
+    geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, N_FRAMES)
     save_animation(render.swinging_chain(geometry, shape.edges, core.points(bodies, shape)), "modal_xpbd_swing", DURATION_MS)
 
-    beam = core.girder(BEAM_CELLS, float(BEAM_CELLS), BEAM_HEIGHT, BEAM_STIFFNESS, DENSITY, MODES)
-    bodies, constraints = clamped_beam(core, beam, BEAM_GIRDERS, BEAM_DAMPING)
-    displacements = END_DISPLACEMENT * np.arange(BEAM_FRAMES) / BEAM_FRAMES
-    frames = [shapes for shapes, _ in compress(core, beam, bodies, constraints, displacements, BEAM_INTERVAL, BEAM_SUBSTEPS)]
+    beam = core.girder(N_BEAM_CELLS, float(N_BEAM_CELLS), BEAM_HEIGHT, BEAM_STIFFNESS, DENSITY, N_MODES)
+    bodies, constraints = clamped_beam(core, beam, N_BEAM_GIRDERS, BEAM_DAMPING)
+    displacements = END_DISPLACEMENT * np.arange(N_BEAM_FRAMES) / N_BEAM_FRAMES
+    frames = [shapes for shapes, _ in compress(core, beam, bodies, constraints, displacements, BEAM_INTERVAL, N_BEAM_SUBSTEPS)]
     save_animation(render.beam(frames, beam.edges), "modal_xpbd_buckle", DURATION_MS)
 
 

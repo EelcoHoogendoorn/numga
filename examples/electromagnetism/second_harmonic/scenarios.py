@@ -16,49 +16,49 @@ from examples.electromagnetism.second_harmonic import core
 def waveform(samples: int) -> tuple[np.ndarray, core.Bivector, core.Bivector]:
     """Two pump periods: the pump and the doubled-frequency polarization it drives across the beam,
     its static half removed."""
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     phase = np.linspace(0, 4 * np.pi, samples)
-    pump = core.HORIZONTAL * np.cos(phase)
+    pump = core.HORIZONTAL_FIELD * np.cos(phase)
     # The square of the cosine is half static and half at twice the frequency.
-    harmonic = core.TRANSVERSE(crystal(pump, pump)) - core.doubled(crystal, core.HORIZONTAL)
+    harmonic = core.TRANSVERSE(crystal(pump, pump)) - core.second_harmonic(crystal, core.HORIZONTAL_FIELD)
     return phase, pump, harmonic
 
 
 def turning(frames: int, samples: int) -> tuple[core.Bivector, Iterator[tuple[core.Bivector, core.Bivector]]]:
     """Pump polarizations all around the beam, and per turn of the crystal about the beam its bonds
     and the doubled-frequency polarization each pump drives."""
-    crystal = core.response(core.BONDS)
+    crystal = core.bond_response(core.BONDS)
     headings = np.linspace(0, 2 * np.pi, samples)
-    turn_plane = core.HORIZONTAL.commutator(core.VERTICAL)
-    pumps = (turn_plane * (-headings / 2)).exp() >> core.HORIZONTAL
+    turn_plane = core.HORIZONTAL_FIELD.commutator(core.VERTICAL_FIELD)
+    pumps = (turn_plane * (-headings / 2)).exp() >> core.HORIZONTAL_FIELD
     turns = np.linspace(0, 2 * np.pi, frames, endpoint=False)
     rotations = (turn_plane * (-turns / 2)).exp()
-    return pumps, ((rotation >> core.BONDS, core.doubled(core.turned(crystal, rotation), pumps)) for rotation in rotations)
+    return pumps, ((rotation >> core.BONDS, core.second_harmonic(core.turned_response(crystal, rotation), pumps)) for rotation in rotations)
 
 
 def mixing(samples: int) -> tuple[core.Bivector, core.Bivector, core.Bivector]:
     """Two fixed pumps, a circle of weak probe fields, and the doubled-frequency polarization that
     the linear map each pump leaves makes of the probes."""
-    crystal = core.response(core.BONDS)
-    pumps = stack((core.HORIZONTAL, (core.HORIZONTAL + core.VERTICAL) / np.sqrt(2)))
+    crystal = core.bond_response(core.BONDS)
+    pumps = stack((core.HORIZONTAL_FIELD, (core.HORIZONTAL_FIELD + core.VERTICAL_FIELD) / np.sqrt(2)))
     headings = np.linspace(0, 2 * np.pi, samples)
-    probes = 0.2 * ((core.HORIZONTAL.commutator(core.VERTICAL) * (-headings / 2)).exp() >> core.HORIZONTAL)
+    probes = 0.2 * ((core.HORIZONTAL_FIELD.commutator(core.VERTICAL_FIELD) * (-headings / 2)).exp() >> core.HORIZONTAL_FIELD)
     # Binding a pump into one input leaves a linear map on the other.
     probe_map = core.TRANSVERSE(crystal(pumps[:, None], core.Bivector))
     return pumps, probes, probe_map(probes)
 
 
-def phase_matching(slices: int) -> tuple[np.ndarray, core.Bivector]:
+def phase_matching(n_slices: int) -> tuple[np.ndarray, core.Bivector]:
     """The light grown along a matched crystal, a mismatched one, and a mismatched one flipped every
     time the slip reaches half a turn: the depth of each slice and the amplitude after it."""
-    depths = (np.arange(slices) + 0.5) / slices
+    depths = (np.arange(n_slices) + 0.5) / n_slices
     # The slip over the whole crystal: none, and two full turns.
     mismatch = np.array([[0.0], [4 * np.pi], [4 * np.pi]])
     # Inverting the bonds reverses the response, so a flipped slice adds with the opposite sign; the
     # slip reaches half a turn every quarter of the crystal.
     flips = (-1.0) ** np.floor(depths * 4)
-    orientation = np.stack([np.ones(slices), np.ones(slices), flips])
-    amplitude = core.growth(core.VERTICAL, orientation, mismatch, depths)
+    bond_orientation = np.stack([np.ones(n_slices), np.ones(n_slices), flips])
+    amplitude = core.growth(core.VERTICAL_FIELD, bond_orientation, mismatch, depths)
     return depths, amplitude
 
 

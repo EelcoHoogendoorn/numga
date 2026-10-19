@@ -1,4 +1,4 @@
-"""Rotating conducting discs with isotropic, radial and circumferential conductivity."""
+"""Eddy-current braking of rotating conducting discs with isotropic, radial and circumferential conductivity."""
 
 from collections.abc import Iterator
 
@@ -20,38 +20,38 @@ ANGULAR_SPEED = 1.0                                # rad/s
 FIELD_STRENGTH = 0.2                               # T
 FIELD_WIDTH = 0.02                                 # m, Gaussian standard deviation
 MAGNET_OFFSET = 0.055                              # m, along x
-DIVISIONS = 16
+N_DIVISIONS = 16
 INERTIA = 0.005                                    # kg m², disc and attached rotor
 INITIAL_SPEED = 2.0                               # rad/s
 INITIAL_ANGLE = 0.0                               # rad, straight fibres initially along x
 ALONG_CONDUCTIVITY = CONDUCTIVITY * 1.9
 ACROSS_CONDUCTIVITY = CONDUCTIVITY * 0.1
 ELAPSED = 12.0                                    # s
-STEPS = 120
-STEP = ELAPSED / STEPS
+N_STEPS = 120
+TIME_STEP = ELAPSED / N_STEPS
 DURATION_MS = 80
-FIBRE_LINES = 12
-FIBRE_SAMPLES = 64
+N_FIBRE_LINES = 12
+N_FIBRE_SAMPLES = 64
 FIBRE_INNER_RADIUS = 0.2 * RADIUS
 FIBRE_OUTER_RADIUS = 0.85 * RADIUS
 MATERIAL_RADII = np.array([FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS, RADIUS])
 PERMEABILITY = 4 * np.pi * 1e-7                   # H/m, nonmagnetic conductor in free space
-CURRENT_MODES = 63
-DRIVE_HARMONICS = 16
+N_MODES = 63
+N_HARMONICS = 16
 INDUCTIVE_FIELD_STRENGTH = 1.0                    # T
 INDUCTIVE_INITIAL_SPEED = 0.0                     # rad/s
 INDUCTIVE_TARGET_SPEED = 600.0                    # rad/s, unloaded motor pulse
 SPINUP_TIME = 0.012                               # s
 INDUCTIVE_ELAPSED = 0.1                           # s
-INDUCTIVE_STEPS = 120
-INDUCTIVE_STEP = INDUCTIVE_ELAPSED / INDUCTIVE_STEPS
-ELECTRICAL_SUBSTEPS = 8
+N_INDUCTIVE_STEPS = 120
+INDUCTIVE_TIME_STEP = INDUCTIVE_ELAPSED / N_INDUCTIVE_STEPS
+N_SUBSTEPS = 8
 
 
 # --- math -----------------------------------------------------------------------------
 def materials() -> tuple[Mesh, core.Conductivity]:
     """The disc mesh and its three material fields, each with the same mean conductivity."""
-    mesh = Mesh.concentric_disk(MATERIAL_RADII, DIVISIONS)
+    mesh = Mesh.concentric_disk(MATERIAL_RADII, N_DIVISIONS)
     principal = THICKNESS * np.stack((RADIAL_CONDUCTIVITY, CIRCUMFERENTIAL_CONDUCTIVITY), axis=-1)  # [cases, axes]
     # Fibres occupy an annulus; the centre and rim conduct equally in both directions.
     conductivity = core.fibre_conductivity(mesh, principal, FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS,
@@ -71,7 +71,7 @@ def scene(mesh: Mesh, conductivity: core.Conductivity) -> tuple[core.Response, c
 
 def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
     """A disc with straight fibres, released to slow under its own magnetic drag."""
-    mesh = Mesh.triangular_disk(RADIUS, DIVISIONS)
+    mesh = Mesh.triangular_disk(RADIUS, N_DIVISIONS)
     directions = stack((core.mv.x, core.mv.y))                               # [axes] Vector
     principal = THICKNESS * np.array([ALONG_CONDUCTIVITY, ACROSS_CONDUCTIVITY])
     conductivity = (directions * (directions | core.Vector) * principal).sum(axis=-1)[None]  # [cases] Conductivity
@@ -80,7 +80,7 @@ def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
     spin = (core.mv.xy * INITIAL_SPEED)[None]                                # [cases] Bivector
     heat = (mesh.triangle_areas * 0)[None]                                  # [cases] Scalar[F]
     frames = core.braking(mesh, centre, core.mv.xy, FIELD_STRENGTH, FIELD_WIDTH,
-                          conductivity, INERTIA, orientation, spin, heat, STEP, STEPS)
+                          conductivity, INERTIA, orientation, spin, heat, TIME_STEP, N_STEPS)
     return mesh, frames, centre
 
 
@@ -92,28 +92,28 @@ def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iter
     spin = (core.mv.xy * INITIAL_SPEED).broadcast_to(orientation.shape)     # [cases] Bivector
     heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar[F]
     frames = core.braking(mesh, centre, core.mv.xy, FIELD_STRENGTH, FIELD_WIDTH,
-                          conductivity, INERTIA, orientation, spin, heat, STEP, STEPS)
+                          conductivity, INERTIA, orientation, spin, heat, TIME_STEP, N_STEPS)
     return frames, centre
 
 
 def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.InductiveMotion], core.Vector]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
-    modes = core.current_modes(mesh, conductivity, PERMEABILITY, CURRENT_MODES)
+    modes = core.current_modes(mesh, conductivity, PERMEABILITY, N_MODES)
     centre = core.mv.x * MAGNET_OFFSET                                     # [] Vector
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)          # [cases] Rotor
     spin = (core.mv.xy * INDUCTIVE_INITIAL_SPEED).broadcast_to(orientation.shape)  # [cases] Bivector
     heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)       # [cases] Scalar[F]
     amplitudes = modes.decay * 0                                           # [cases] Scalar[modes]
     forcing = core.periodic_drive(mesh, modes, centre, core.mv.xy,
-                                   INDUCTIVE_FIELD_STRENGTH, FIELD_WIDTH, orientation, DRIVE_HARMONICS)
+                                   INDUCTIVE_FIELD_STRENGTH, FIELD_WIDTH, orientation, N_HARMONICS)
     # A half-sine torque pulse accelerates the rotor, then releases it to magnetic braking.
-    times = (np.arange(INDUCTIVE_STEPS * ELECTRICAL_SUBSTEPS) + 0.5) * INDUCTIVE_STEP / ELECTRICAL_SUBSTEPS
+    times = (np.arange(N_INDUCTIVE_STEPS * N_SUBSTEPS) + 0.5) * INDUCTIVE_TIME_STEP / N_SUBSTEPS
     phase = np.clip(times / SPINUP_TIME, 0, 1)
     acceleration = INDUCTIVE_TARGET_SPEED * np.pi / (2 * SPINUP_TIME) * np.sin(np.pi * phase) * (times < SPINUP_TIME)
-    motor_torque = core.mv.xy * (INERTIA * acceleration.reshape(INDUCTIVE_STEPS, ELECTRICAL_SUBSTEPS, 1))
+    motor_torque = core.mv.xy * (INERTIA * acceleration.reshape(N_INDUCTIVE_STEPS, N_SUBSTEPS, 1))
     frames = core.inductive_braking(mesh, modes, forcing, core.mv.xy, INERTIA,
                                      orientation, spin, heat, amplitudes,
-                                     motor_torque, INDUCTIVE_STEP)
+                                     motor_torque, INDUCTIVE_TIME_STEP)
     return frames, centre
 
 
@@ -126,11 +126,11 @@ def main() -> None:
     response, centre = scene(mesh, conductivity)
     save_figure(render.draw(mesh, response, centre, FIELD_WIDTH), "eddy_brake_materials")
     straight, frames, centre = spin_down()
-    parallel = (render.parallel_fibres(RADIUS, FIBRE_LINES, FIBRE_SAMPLES),)
+    parallel = (render.parallel_fibres(RADIUS, N_FIBRE_LINES, N_FIBRE_SAMPLES),)
     save_animation(render.animate(straight, frames, centre, FIELD_WIDTH, parallel, np.ones((1, 1))),
                    "eddy_brake_spin_down", DURATION_MS)
-    fibres = (render.radial_fibres(FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS, FIBRE_LINES, FIBRE_SAMPLES),
-              render.circular_fibres(FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS, FIBRE_LINES, FIBRE_SAMPLES))
+    fibres = (render.radial_fibres(FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS, N_FIBRE_LINES, N_FIBRE_SAMPLES),
+              render.circular_fibres(FIBRE_INNER_RADIUS, FIBRE_OUTER_RADIUS, N_FIBRE_LINES, N_FIBRE_SAMPLES))
     # Each disc shows the guides of the direction it conducts along best; the isotropic disc has none.
     shown = np.stack((RADIAL_CONDUCTIVITY > CIRCUMFERENTIAL_CONDUCTIVITY,
                       CIRCUMFERENTIAL_CONDUCTIVITY > RADIAL_CONDUCTIVITY), axis=-1)  # [cases, families]

@@ -1,4 +1,5 @@
-"""Majorana boundary modes and their transport in a gated Kitaev wire.
+"""Majorana modes at the ends of a gated topological segment of a Kitaev wire, and their transport by the
+gate.
 
 The two vector components at each site are real Majorana amplitudes. Hopping,
 pairing and chemical potential couple them through a skew field map. Its action

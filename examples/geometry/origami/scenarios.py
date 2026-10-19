@@ -1,4 +1,4 @@
-"""The eleven-fold Kabuto helmet sequence of the origami example of ganja.js by Steven De Keninck,
+"""Folding a Kabuto helmet: the eleven-fold sequence of the origami example of ganja.js by Steven De Keninck,
 https://github.com/enkimute/ganja.js/blob/master/examples/example_pga3d_origami.html."""
 
 import numpy as np
@@ -6,7 +6,7 @@ from numga import stack
 
 from examples.geometry.origami import core
 
-HALF_STEPS = 8
+N_HALF_STEPS = 8
 DURATION_MS = 65
 SIDE = 2.0
 SHEET = core.mv.z
@@ -59,7 +59,7 @@ def main() -> None:
     from examples.geometry.origami import render
 
     paper, planes = kabuto()
-    states = tuple(core.folding(paper, planes, SELECTIONS, PEAKS, ENDS, HALF_STEPS, CREASE_TOLERANCE))
+    states = tuple(core.folding(paper, planes, SELECTIONS, PEAKS, ENDS, N_HALF_STEPS, CREASE_TOLERANCE))
     save_figure(render.draw(states[-1]), "origami_kabuto")
     save_animation(render.animate(iter(states)), "origami_kabuto", DURATION_MS)
 

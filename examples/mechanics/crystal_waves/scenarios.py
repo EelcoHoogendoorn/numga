@@ -1,8 +1,5 @@
-"""Scenes for elastic waves in cubic crystals.
-
-One function per figure. Builds each crystal's stiffness, calls the mathematics in `core`, and
-returns the geometry for `render`.
-"""
+"""Elastic waves in crystals: three cubic materials, their waves along chosen headings, and the focusing
+of their energy."""
 
 from __future__ import annotations
 
@@ -27,13 +24,13 @@ def crystals() -> tuple[core.Stiffness, np.ndarray]:
     return core.stiffness(C11, C12, C44), DENSITY                               # [materials] Stiffness
 
 
-def focusing(count: int, seed: int) -> core.Vector:
+def focusing(n_headings: int, seed: int) -> core.Vector:
     """Group velocities of the three waves in every material, for headings spread evenly over the
     sphere."""
     stiffness, density = crystals()
-    heading = core.mv.vector(np.random.default_rng(seed).normal(size=(count, 3))).normalized()   # [count] Vector
-    values, polarization = core.waves(stiffness[:, None], heading)                # [materials, count, 3] each
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, count, 3] Vector
+    heading = core.mv.vector(np.random.default_rng(seed).normal(size=(n_headings, 3))).normalized()   # [headings] Vector
+    values, polarization = core.waves(stiffness[:, None], heading)                # [materials, headings, 3] each
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
 
     # --- checks
     # Along its heading, the group velocity has the phase speed.
@@ -42,7 +39,7 @@ def focusing(count: int, seed: int) -> core.Vector:
     return velocity
 
 
-def wave_fronts(count: int) -> core.Vector:
+def wave_fronts(n_angles: int) -> core.Vector:
     """Group velocities in every material for headings in the xy plane, a cube face: where each
     wave's energy is after unit time, a section through its wave surface.
 
@@ -50,11 +47,11 @@ def wave_fronts(count: int) -> core.Vector:
     shear wave swap polarizations; each curve follows a speed rank, not one polarization.
     """
     stiffness, density = crystals()
-    angle = np.linspace(0.0, 2 * np.pi, count, endpoint=False)
+    angles = np.linspace(0.0, 2 * np.pi, n_angles, endpoint=False)
     # The x axis turned through every angle in the face z = 0.
-    heading = (core.mv.xy * (-angle / 2)).exp() >> core.mv.x                    # [count] Vector
-    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, count, 3] Vector
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, count, 3] Vector
+    heading = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x                    # [headings] Vector
+    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Vector
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
 
     # --- checks
     # The textbook speeds along a cube edge and a face diagonal.

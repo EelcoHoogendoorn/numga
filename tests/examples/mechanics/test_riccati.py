@@ -84,7 +84,7 @@ def test_docking_realizes_its_bellman_cost_in_tracking_displacements_and_command
     tracking = (displacements.squared() * scenarios.TRACKING_WEIGHTS).sum(axis=(-2, -1)) * scenarios.DT
     command_effort = (commands.squared() * scenarios.THRUSTER_WEIGHTS).sum(axis=-1)
     running = tracking[:-1] + command_effort * scenarios.EFFORT_SCALES * scenarios.DT
-    landing = tracking[-1] * scenarios.LANDING
+    landing = tracking[-1] * scenarios.LANDING_WEIGHT
     predicted = values[-1](errors[0], errors[0])
     np.testing.assert_allclose((running.sum(axis=0) + landing - predicted).kernel, 0, atol=1e-9)
 

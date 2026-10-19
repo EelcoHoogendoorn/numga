@@ -9,16 +9,16 @@ lengths, so an edge's two mismatches add up to `2 * (edge**2 + rest**2 - 2 * edg
 steps.
 
 With the vertices held, each vertex's best rotor `R` turns its rest edges onto its edges as they are:
-it makes the most of `edge | (R >> rest)`, summed over the vertex's edges. Leaving the rotor open,
-`Even >> rest` is the rest edge turned by any even multivector, a map `Vector <- (Even, Even)` with the
-rotor open in both places the sandwich holds it. Paired with the edge it is a form
+it makes the most of `edge | (R >> rest)`, summed over the vertex's edges. Multiplied by `Even`, the
+space of even multivectors, `Even >> rest` is the rest edge turned by any even multivector, a map
+`Vector <- (Even, Even)` of the rotor in both places the sandwich holds it. Paired with the edge it is a form
 `Scalar <- (Even, Even)`, a number for every two rotors, with `form(R, R) == edge | (R >> rest)`. The
 sparse mean over each edge's ends sums each vertex's forms as it would sum numbers, weighted by the
 edges, and the rotor that makes the most of each sum is its top eigenvector: one batched `eigh` over
 every vertex.
 
 With the rotors held, the best vertices match every edge to its rest edge turned by its two ends'
-rotors. A rotor bound into the sandwich with the vector left open, `R >> Vector`, is the turn itself, a
+rotors. A rotor sandwiching `Vector`, the space of all vectors, `R >> Vector`, is the turn itself, a
 map `Vector <- Vector`; the sparse mean averages the two turns at each edge's ends as maps, and the
 averaged map takes the rest edge. The average of the maps does not depend on the sign the eigensolver
 gives each rotor, as an average of rotors would: `R >> Vector` and `-R >> Vector` are one map. The
@@ -53,7 +53,7 @@ Even = ga.gatype.even()
 
 # --- math -----------------------------------------------------------------------------
 def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: float,
-           iterations: int) -> Iterator[tuple[Vector, Vector, Scalar]]:
+           n_iterations: int) -> Iterator[tuple[Vector, Vector, Scalar]]:
     """For each pose of the handles, the targets of every vertex `Vector[V]` of which the handles' are
     held: the mesh as rigid as possible after the given iterations, each pose starting from the last
     one's; the mesh by Laplacian editing; and the energy at each iteration `[iterations] Scalar`."""
@@ -73,7 +73,7 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Vector], stiffness: 
     vertices = mesh.vertices                                                # Vector[V]
     for targets in poses:
         energies = []
-        for _ in range(iterations):
+        for _ in range(n_iterations):
             edges = T10 * vertices                                          # Vector[E]
             # each vertex's best rotor: the top eigenvector of its edges' summed form
             forms = ~A10 * H1 * (edges | (Even >> rest))                    # Scalar[V] <- (Even, Even)

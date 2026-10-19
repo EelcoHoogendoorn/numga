@@ -1,8 +1,9 @@
-"""Frequency doubling from an electric-dipole crystal.
+"""Second-harmonic generation: a crystal whose response is quadratic in the electric field doubles the
+frequency of the light passing through it.
 
-Two electric field bivectors drive a polarization source through a bilinear extensor.
-Each directed bond spans an electric plane with the observer's time direction.
-Coherent growth retains two real bivector quadratures of the temporal oscillation.
+The electric field is a bivector, and the crystal's response a map from two fields to one, a sum over its
+bonds, each a plane spanned by the observer's time direction and the bond. The doubled light grown through
+the crystal is tracked as the cosine and sine amplitudes of one field.
 """
 
 from __future__ import annotations
@@ -20,35 +21,35 @@ Rotor = ga.gatype.rotor()
 Response = ga.gatype((Bivector, Bivector, Bivector))
 
 # Electric planes across a beam along a face diagonal of the crystal.
-HORIZONTAL = (mv.ty - mv.tx) / np.sqrt(2)
-VERTICAL = mv.tz
-LONGITUDINAL = (mv.tx + mv.ty) / np.sqrt(2)
+HORIZONTAL_FIELD = (mv.ty - mv.tx) / np.sqrt(2)
+VERTICAL_FIELD = mv.tz
+LONGITUDINAL_FIELD = (mv.tx + mv.ty) / np.sqrt(2)
 ELECTRIC = (Bivector - (mv.t >> Bivector)) / 2
-TRANSVERSE = ELECTRIC - LONGITUDINAL * (LONGITUDINAL | Bivector)
+TRANSVERSE = ELECTRIC - LONGITUDINAL_FIELD * (LONGITUDINAL_FIELD | Bivector)
 # Four directed bond planes, each spanned by the time direction and a bond, with unit response coefficients.
 BONDS = mv.t ^ mv(Spatial, [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]]) / np.sqrt(3)
-STRENGTH = 3 * np.sqrt(3) / 4
+BOND_STRENGTH = 3 * np.sqrt(3) / 4
 
 
 # --- math -----------------------------------------------------------------------------
-def response(bonds: Bivector) -> Response:
+def bond_response(bonds: Bivector) -> Response:
     """Each bond responds to the product of the two electric fields along it."""
-    return STRENGTH * (bonds * (bonds | Bivector) * (bonds | Bivector)).sum(axis=-1)
+    return BOND_STRENGTH * (bonds * (bonds | Bivector) * (bonds | Bivector)).sum(axis=-1)
 
 
-def turned(crystal: Response, rotation: Rotor) -> Response:
+def turned_response(crystal: Response, rotation: Rotor) -> Response:
     """Pull both fields into the crystal and turn its response forward."""
     return rotation >> crystal(rotation << Bivector, rotation << Bivector)
 
 
-def doubled(crystal: Response, pump: Bivector) -> Bivector:
+def second_harmonic(crystal: Response, pump: Bivector) -> Bivector:
     """The transverse polarization source at twice the pump frequency."""
     return 0.5 * TRANSVERSE(crystal(pump, pump))
 
 
-def growth(source: Bivector, orientation: np.ndarray, mismatch: np.ndarray, depths: np.ndarray) -> Bivector:
+def growth(source: Bivector, bond_orientation: np.ndarray, mismatch: np.ndarray, depths: np.ndarray) -> Bivector:
     """Accumulate source fields with their temporal phase; final axes are slices and quadratures."""
     thickness = depths[1] - depths[0]
     phase = mismatch * depths
     quadratures = stack((source[..., None] * np.cos(phase), source[..., None] * np.sin(phase)), axis=-1)
-    return (quadratures * orientation[..., None] * thickness).cumsum(axis=-2)
+    return (quadratures * bond_orientation[..., None] * thickness).cumsum(axis=-2)
