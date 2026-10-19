@@ -25,14 +25,14 @@ FIELD_SCALE = 0.65 / FIELD
 # --- math -----------------------------------------------------------------------------
 def lattice() -> core.Lattice:
     indices, bonds = core.hexagonal_indices(N_RINGS)
-    # The two lattice directions meet at sixty degrees.
-    second_axis = (core.mv.xy * (-np.pi / 6)).exp() >> core.mv.x
-    axes = stack((core.mv.x, second_axis))                                         # [axes] Vector
-    rest = (SPACING * (axes * indices).sum(axis=-1)).field()                  # Vector[particles]
+    # The points one spacing along the two lattice directions, which meet at sixty degrees.
+    along_x = core.mv.x.dual()                                                     # [] Point
+    axes = stack((along_x, (core.mv.xy * (-np.pi / 6)).exp() >> along_x))        # [axes] Point
+    rest = (SPACING * (axes * indices).sum(axis=-1)).field()                  # Point[particles]
     return core.Lattice(rest, bonds, POLARIZABILITY, STIFFNESS, TETHER)
 
 
-def loading(model: core.Lattice) -> tuple[np.ndarray, core.Vector, core.Vector, core.Vector]:
+def loading(model: core.Lattice) -> tuple[np.ndarray, core.Field, core.Point, core.Point]:
     strengths = np.linspace(0, FIELD, N_LOAD_SAMPLES)
     applied = core.mv.x * strengths
     positions = model.equilibrium(applied, N_NEWTON_STEPS)
@@ -40,7 +40,7 @@ def loading(model: core.Lattice) -> tuple[np.ndarray, core.Vector, core.Vector, 
     return strengths, applied, positions, dipoles
 
 
-def turning(model: core.Lattice) -> tuple[core.Vector, core.Vector, core.Vector]:
+def turning(model: core.Lattice) -> tuple[core.Field, core.Point, core.Point]:
     phases = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
     # A smooth rise and fall closes the loop at the unloaded lattice. Every frame is an
     # independent static equilibrium; the phase is a control setting rather than time.

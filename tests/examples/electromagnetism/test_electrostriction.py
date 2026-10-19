@@ -26,17 +26,24 @@ def test_polarization_minimizes_the_full_electrical_energy(loading):
     response = model.response(positions)
     dipoles = response.solve(fields)
     np.testing.assert_allclose((response(dipoles) - fields).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((response - response.adjoint()).kernel, 0, atol=ROUND_OFF, rtol=0)
+    # The work of one dipole field on another is symmetric between the two.
+    rng = np.random.default_rng(1)
+    particles = model.rest.gatype.site_shape[0]
+    first = core.mv.vector(rng.normal(size=(particles, 2))).dual().field()
+    second = core.mv.vector(rng.normal(size=(particles, 2))).dual().field()
+    np.testing.assert_allclose(((response[1](first) & second) - (response[1](second) & first)).sites.sum().kernel,
+                               0, atol=ROUND_OFF, rtol=0)
 
     def electrical(polarization):
-        return ((polarization | response(polarization)) / 2
-                - (fields | polarization)).sites.sum()
+        return ((response(polarization) & polarization) / 2
+                - (fields & polarization)).sites.sum()
 
     np.testing.assert_allclose(derivative(electrical)(dipoles).kernel, 0, atol=ROUND_OFF, rtol=0)
     reduced = model.energy(positions, fields) - model.elastic_energy(positions)
     np.testing.assert_allclose((electrical(dipoles) - reduced).kernel, 0, atol=ROUND_OFF, rtol=0)
 
-    assert response.eigvalsh().to_array().min() > 20
+    # Read back on dipoles through the dual, the field map is positive: every polarization costs energy.
+    assert response.dual().eigvalsh().to_array().min() > 20
 
 
 def test_typed_derivatives_predict_changes_of_energy_and_response(loading):
@@ -44,8 +51,8 @@ def test_typed_derivatives_predict_changes_of_energy_and_response(loading):
     position, field = positions[1], fields[1]
     particles = model.rest.gatype.site_shape[0]
     rng = np.random.default_rng(2)
-    displacement = core.mv.vector(rng.normal(size=(particles, 2))).field() * 0.01
-    other = core.mv.vector(rng.normal(size=(particles, 2))).field() * 0.01
+    displacement = core.mv.vector(rng.normal(size=(particles, 2))).dual().field() * 0.01
+    other = core.mv.vector(rng.normal(size=(particles, 2))).dual().field() * 0.01
     increment = 1e-3
 
     def energy(value):
@@ -80,15 +87,15 @@ def test_dipole_readjustment_changes_stiffness_but_not_the_stationary_first_deri
         return model.energy(value, field)
 
     def fixed_dipoles(value):
-        electrical = ((dipoles | model.response(value)(dipoles)) / 2
-                      - (field | dipoles)).sites.sum()
+        electrical = ((model.response(value)(dipoles) & dipoles) / 2
+                      - (field & dipoles)).sites.sum()
         return model.elastic_energy(value) + electrical
 
     np.testing.assert_allclose((derivative(relaxed)(position) - derivative(fixed_dipoles)(position)).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     full = derivative(derivative(relaxed))(position)
     frozen = derivative(derivative(fixed_dipoles))(position)
-    compression = -core.mv.x * (core.mv.x | position)
+    compression = -(core.mv.x & position) * core.mv.x.dual()
     # Allowing an internal degree of freedom to relax softens the mechanical response.
     assert (frozen(compression, compression) - full(compression, compression)).to_array() > 0.1
 

@@ -308,10 +308,9 @@ def inductive_braking(mesh: Mesh, modes: CurrentModes, forcing: PeriodicDrive, p
     damping = 1 + interval * modes.decay / 2                              # [cases] Scalar[modes]
     yield modes.state(mesh, orientation, spin, heat, amplitudes, thermal_energy, motor_work)
     for torques in motor_torque:
-        for substep, torque in enumerate(torques):
+        # The motor's torque about the turning plane, in the plane's own sense.
+        for substep, motor in enumerate(torques):
             speed = -(plane | spin)                                           # [cases] Scalar
-            # The motor's torque about the turning plane, in the plane's own sense.
-            motor = torque                                                    # [cases] Scalar
             drive = forcing(angle + speed * (interval / 2))                   # [cases] Scalar[modes]
             free_amplitudes = amplitudes / damping                            # [cases] Scalar[modes]
             driven_amplitudes = interval / 2 * drive / damping                 # [cases] Scalar[modes]

@@ -59,7 +59,7 @@ def materials() -> tuple[Mesh, core.Conductivity]:
     return mesh, conductivity
 
 
-def scene(mesh: Mesh, conductivity: core.Conductivity) -> tuple[core.Response, core.Vector]:
+def scene(mesh: Mesh, conductivity: core.Conductivity) -> tuple[core.Response, core.Point]:
     """The steady currents, heating and torque of all three material fields."""
     centre = (core.mv.x * MAGNET_OFFSET).dual()                       # [] Point
     magnetic = core.field(mesh.edge_midpoints, centre, core.mv.xy,
@@ -69,7 +69,7 @@ def scene(mesh: Mesh, conductivity: core.Conductivity) -> tuple[core.Response, c
     return response, centre
 
 
-def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
+def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Point]:
     """A disc with straight fibres, released to slow under its own magnetic drag."""
     mesh = Mesh.triangular_disk(RADIUS, N_DIVISIONS)
     directions = stack((core.mv.x, core.mv.y))                               # [axes] Vector
@@ -84,7 +84,7 @@ def spin_down() -> tuple[Mesh, Iterator[core.Motion], core.Vector]:
     return mesh, frames, centre
 
 
-def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.Motion], core.Vector]:
+def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.Motion], core.Point]:
     """The three material discs released at the same speed, retaining their Joule heat on the
     rotating material triangles."""
     centre = (core.mv.x * MAGNET_OFFSET).dual()                      # [] Point
@@ -96,7 +96,7 @@ def materials_braking(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iter
     return frames, centre
 
 
-def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.InductiveMotion], core.Vector]:
+def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[Iterator[core.InductiveMotion], core.Point]:
     """Current build-up and magnetic braking, with inductive memory on the rotating discs."""
     modes = core.current_modes(mesh, conductivity, PERMEABILITY, N_MODES)
     centre = (core.mv.x * MAGNET_OFFSET).dual()                      # [] Point

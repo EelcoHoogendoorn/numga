@@ -633,6 +633,11 @@ class Extensor:
     def scalar_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return numga.expression.scalar_product(self, other)
 
+    def dot(self, other: Extensor | GAType | SubSpace) -> Extensor:
+        """The metric on every grade: the scalar part of `self * other.reverse()`, positive on every blade
+        of a Euclidean signature."""
+        return numga.expression.dot(self, other)
+
     def inner(self, other: Extensor | GAType | SubSpace) -> Extensor:
         return numga.expression.inner(self, other)
 

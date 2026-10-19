@@ -9,6 +9,8 @@ import numpy as np
 from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
+from numga import stack
+
 from examples.animation import capture
 from examples.electromagnetism.second_harmonic import core
 
@@ -20,10 +22,23 @@ CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 
 
 # --- plumbing -------------------------------------------------------------------------
-def transverse(fields: core.Bivector) -> np.ndarray:
-    """Electric components across the beam for the observer's screen."""
-    return np.stack(((fields | core.HORIZONTAL_FIELD).to_array(),
-                     (fields | core.VERTICAL_FIELD).to_array()), axis=-1)          # [..., 2]
+def transverse(fields: core.Field) -> np.ndarray:
+    """Horizontal and vertical components of fields across the beam, for the observer's screen: their
+    pairings with the polarizations along those directions."""
+    polarizations = stack((core.HORIZONTAL_POLARIZATION, core.VERTICAL_POLARIZATION))
+    return (fields[..., None] & polarizations).to_array()                     # [..., 2]
+
+
+def transverse_polarization(polarizations: core.Polarization) -> np.ndarray:
+    """Horizontal and vertical components of polarizations across the beam: the pairings of the
+    horizontal and vertical fields with them."""
+    fields = stack((core.HORIZONTAL_FIELD, core.VERTICAL_FIELD))
+    return (fields & polarizations[..., None]).to_array()                     # [..., 2]
+
+
+def coordinates(directions: core.Direction) -> np.ndarray:
+    """x, y and z of directions in space: their pairings with the planes x, y and z."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()   # [..., 3]
 
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
@@ -38,7 +53,7 @@ def screen_axes(axes: plt.Axes, limit: float) -> None:
 class ResponseView:
     """One response figure for a fixed set of pumps, its artists updated for each crystal."""
 
-    def __init__(self, pumps: core.Bivector) -> None:
+    def __init__(self, pumps: core.Field) -> None:
         pumps = transverse(pumps)                                            # [angles, 2]
         pump = pumps[0]
         self.angles = np.arctan2(pumps[:, 1], pumps[:, 0])                  # [angles]
@@ -55,7 +70,7 @@ class ResponseView:
         self.bond_ends = crystal_axes.scatter([], [], [], s=45, color=GENERATED_COLOUR, depthshade=False)
         crystal_axes.scatter(0, 0, 0, s=30, color="0.3", depthshade=False)
         crystal_axes.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1),
-                         xlabel="x", ylabel="y", zlabel="z", title="Crystal bonds")
+                         xlabel="x", ylabel="y", zlabel="z")
         crystal_axes.set_box_aspect((1, 1, 1))
         crystal_axes.view_init(elev=23, azim=-56)
         crystal_axes.set_xticks([-1, 0, 1])
@@ -73,22 +88,20 @@ class ResponseView:
                                                     angles="xy", scale_units="xy", scale=1, width=0.012,
                                                     label="Second harmonic")
         screen_axes(response_axes, 1.15)
-        response_axes.set_title("Transverse polarization")
         response_axes.legend(loc="upper right", fontsize=8, frameon=False)
 
         self.intensity_curve, = self.intensity_axes.plot([], [], color=GENERATED_COLOUR, linewidth=2)
         self.intensity_fill, = self.intensity_axes.fill([], [], color=GENERATED_COLOUR, alpha=0.08)
         self.selected_power, = self.intensity_axes.plot([], [], "o", color=PUMP_COLOUR, markersize=7)
         self.intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
-        self.intensity_axes.set_title("Power by pump direction", pad=22)
         self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
         self.intensity_axes.set_rlabel_position(22.5)
         self.intensity_axes.tick_params(labelsize=8)
 
-    def update(self, bonds: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
-        intensity = (harmonic | harmonic).to_array()                         # [angles]
-        bonds = (core.mv.t | bonds).cast(core.ga.subspace("x y z")).kernel   # [bonds, 3]
-        harmonic = transverse(harmonic)                                      # [angles, 2]
+    def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
+        bonds = coordinates(bonds)                                           # [bonds, 3]
+        harmonic = transverse_polarization(harmonic)                         # [angles, 2]
+        intensity = (harmonic ** 2).sum(axis=-1)                             # [angles]
         self.bond_lines.set_segments(np.stack((np.zeros_like(bonds), bonds), axis=1))   # [bonds, 2, 3]
         self.bond_ends.set_offsets(bonds[:, :2])
         self.bond_ends.set_3d_properties(bonds[:, 2], "z")
@@ -101,17 +114,17 @@ class ResponseView:
         return self.figure
 
 
-def draw_response(pumps: core.Bivector, bonds: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
+def draw_response(pumps: core.Field, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
     """Crystal bonds, the doubled-frequency polarization over pump polarizations and its power; the
     first pump, horizontal, marked."""
     return ResponseView(pumps).update(bonds, harmonic)
 
 
-def draw_waveform(phase: np.ndarray, pump: core.Bivector, harmonic: core.Bivector) -> plt.Figure:
+def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarization) -> plt.Figure:
     """Signed pump and doubled-frequency field components over two pump periods."""
     cycles = phase / (2 * np.pi)                                               # [times]
-    pump_field = (pump | core.HORIZONTAL_FIELD).to_array()                           # [times]
-    harmonic_field = (harmonic | core.VERTICAL_FIELD).to_array()                     # [times]
+    pump_field = transverse(pump)[..., 0]                                     # [times]
+    harmonic_field = transverse_polarization(harmonic)[..., 1]                # [times]
     figure, axes = plt.subplots(figsize=(8, 3.3), layout="constrained")
     axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     axes.plot(cycles, pump_field, color=PUMP_COLOUR, linewidth=2, label="Pump field")
@@ -124,11 +137,11 @@ def draw_waveform(phase: np.ndarray, pump: core.Bivector, harmonic: core.Bivecto
     return figure
 
 
-def draw_mixing(pumps: core.Bivector, probes: core.Bivector, generated: core.Bivector) -> plt.Figure:
+def draw_mixing(pumps: core.Field, probes: core.Field, generated: core.Polarization) -> plt.Figure:
     """A probe circle and its image with each fixed pump, at a shared display scale."""
     pumps = transverse(pumps)                                                # [cases, 2]
     probes = transverse(probes)                                              # [angles, 2]
-    generated = transverse(generated)                                        # [cases, angles, 2]
+    generated = transverse_polarization(generated)                           # [cases, angles, 2]
     limit = 1.25 * max(float(np.max(np.abs(probes))), float(np.max(np.abs(generated))))
     figure, grid = plt.subplots(1, len(pumps), figsize=(4 * len(pumps), 4),
                                 squeeze=False, layout="constrained")
@@ -142,17 +155,16 @@ def draw_mixing(pumps: core.Bivector, probes: core.Bivector, generated: core.Biv
         axes.plot(response[:, 0], response[:, 1], color=GENERATED_COLOUR,
                   linewidth=2, label="Mixed response")
         screen_axes(axes, limit)
-        angle = np.degrees(np.arctan2(pump[1], pump[0]))
-        axes.set_title(f"Pump at {angle:.0f}°")
     figure.legend(*grid[0, 0].get_legend_handles_labels(), loc="outside lower center",
                   ncol=3, fontsize=9, frameon=False)
     return figure
 
 
-def draw_growth(depths: np.ndarray, amplitude: core.Bivector) -> plt.Figure:
-    """The amplitude's path in the phase plane and the power along each crystal."""
-    power = (amplitude | amplitude).sum(axis=-1).to_array()                  # [cases, slices]
-    amplitude = (amplitude | core.VERTICAL_FIELD).to_array()                      # [cases, slices, quadratures]
+def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
+    """The amplitude's vertical path in the phase plane and the power along each crystal."""
+    components = transverse_polarization(amplitude)                          # [cases, slices, quadratures, 2]
+    power = (components ** 2).sum(axis=(-2, -1))                            # [cases, slices]
+    amplitude = components[..., 1]                                          # [cases, slices, quadratures]
     figure, axes = plt.subplots(1, 2, figsize=(9.5, 4), layout="constrained")
     phasor_axes, power_axes = axes
     for label, path, intensity, colour in zip(CASES, amplitude, power, CASE_COLOURS):
@@ -161,15 +173,15 @@ def draw_growth(depths: np.ndarray, amplitude: core.Bivector) -> plt.Figure:
         power_axes.plot(depths, intensity, color=colour, linewidth=2, label=label)
     phasor_axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     phasor_axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    phasor_axes.set(aspect="equal", xlabel="in phase", ylabel="in quadrature", title="accumulated field")
-    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", title="growth", xlim=(0, 1))
+    phasor_axes.set(aspect="equal", xlabel="in phase", ylabel="in quadrature")
+    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1))
     for panel in axes:
         panel.spines[["top", "right"]].set_visible(False)
     power_axes.legend(loc="upper left", frameon=False, fontsize=9)
     return figure
 
 
-def animate(pumps: core.Bivector, frames: Iterable[tuple[core.Bivector, core.Bivector]]) -> list[np.ndarray]:
+def animate(pumps: core.Field, frames: Iterable[tuple[core.Direction, core.Polarization]]) -> list[np.ndarray]:
     """The response while the crystal turns about the beam, one frame per turn."""
     view = ResponseView(pumps)
     images = []

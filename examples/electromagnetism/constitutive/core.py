@@ -1,11 +1,14 @@
 """Constitutive maps: a material's response to the electromagnetic field, a map from the field, a
 bivector, to the excitation it causes, an antibivector, `excitation = medium(field)`.
 
-Weights on the field's electric and magnetic planes describe glass, crystals and ferrites; a term
-proportional to the field itself adds an axion response, and a Lorentz boost sets a medium in motion.
-Pairing the excitation with a second field gives the constitutive form, a form on pairs of fields, and the
-field and excitation together give the stress-energy map, from directions to currents. A plane wave is a
-field that both source-free Maxwell equations send to nothing.
+A medium at rest weights each of the observer's electric planes, a spatial axis against the time
+direction, by its permittivity, and each magnetic plane, the dual of an electric one, by its inverse
+permeability: glass weights all three alike, a crystal its electric planes apart, a ferrite its magnetic
+ones. Seen moving, a medium is its rest map carried by the boost, `boost >> medium(boost << Bivector)`,
+and an axion response adds a term proportional to the field itself. Pairing the excitation with a second
+field gives the constitutive form, a form on pairs of fields, and the field and excitation together give
+the stress-energy map, from directions to currents. A plane wave is a field that both source-free Maxwell
+equations along its wavevector send to nothing.
 """
 
 from __future__ import annotations
@@ -15,93 +18,34 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import STA
 
-# ---------------------------------------------------------------------------
-# 1. Spacetime Algebra Setup (STA: Algebra("t+x-y-z-"))
-# ---------------------------------------------------------------------------
-ctx = NumpyContext(STA)
-mv = ctx.multivector
-
-from numga.extensor.extensor import Extensor
-
-# GATypes:
+mv = NumpyContext(STA).multivector
 Scalar = STA.gatype.scalar()
 Vector = STA.gatype.vector()
 Bivector = STA.gatype.bivector()
 Antibivector = STA.gatype.antibivector()
 Antivector = STA.gatype.antivector()
-Constitutive = STA.gatype((Antibivector, Bivector))
+Constitutive = STA.gatype((Antibivector, Bivector))          # Antibivector <- Bivector
 # An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
 AxionCoupling = Scalar.derive.flipped_orientation
-StressEnergy = STA.gatype((Antivector, Vector))
-WaveMap = STA.gatype((STA.gatype.odd(), Bivector))
-Modes = tuple[np.ndarray, Bivector]
+StressEnergy = STA.gatype((Antivector, Vector))              # Antivector <- Vector
+WaveMap = STA.gatype((STA.gatype.odd(), Bivector))           # Odd <- Bivector
 
-# Canonical Spacetime Basis & Pseudoscalar:
 t, x, y, z = mv.vector(np.eye(4))
-spatial_axes = stack((x, y, z))
-I = mv.txyz
+# The observer's electric planes, each spatial axis against its time direction, and its magnetic planes,
+# their duals.
+electric_planes = stack((x, y, z)) ^ t                       # [3] Bivector
+magnetic_planes = electric_planes.dual()                     # [3] Bivector
 
 
-# ---------------------------------------------------------------------------
-# 2. Projectors & Media Builders
-# ---------------------------------------------------------------------------
-def observer_projectors(observer=t) -> tuple[Extensor, Extensor]:
-    """Split bivectors into electric and magnetic parts for a unit timelike observer (Bivector <- Bivector)."""
-    electric = (Bivector - (observer >> Bivector)) / 2
-    magnetic = Bivector - electric
-    return electric, magnetic
-
-
-def isotropic_medium(eps: float, mu: float = 1.0, observer: Vector = t) -> Constitutive:
-    """Weight the observer's electric and magnetic planes, then apply the Hodge map."""
-    electric, magnetic = observer_projectors(observer)
-    return (eps * electric + (1.0 / mu) * magnetic).dual()
-
-
-def crystal_medium(
-    eps_x: float,
-    eps_y: float,
-    eps_z: float,
-    mu: float = 1.0,
-    observer: Vector = t,
-) -> Constitutive:
-    """Anisotropic electric plane response (Antibivector <- Bivector)."""
-    _, magnetic = observer_projectors(observer)
-    permittivity = np.array([eps_x, eps_y, eps_z])
-    planes = spatial_axes ^ observer
-    return ((permittivity * planes * (planes | Bivector)).sum(axis=0) + magnetic / mu).dual()
-
-
-def ferrite_medium(
-    eps: float,
-    mu_inv_x: float,
-    mu_inv_y: float,
-    mu_inv_z: float,
-    observer: Vector = t,
-) -> Constitutive:
-    """Anisotropic magnetic plane response (Antibivector <- Bivector)."""
-    electric, _ = observer_projectors(observer)
-    permeability_inv = np.array([mu_inv_x, mu_inv_y, mu_inv_z])
-    planes = (spatial_axes ^ observer).dual()
-    return (eps * electric - (permeability_inv * planes * (planes | Bivector)).sum(axis=0)).dual()
-
-
-def axion_medium(base_medium: Constitutive, coupling: AxionCoupling) -> Constitutive:
-    """Add the axion response, proportional to the identity on field planes."""
-    return base_medium + coupling * Bivector
-
-
-def boost_rotor(beta: float, direction=z):
-    """Construct the Lorentz boost rotor for relative speed beta in given spatial direction."""
-    rapidity = np.arctanh(beta)
-    boost_bivector = (direction ^ t) * (rapidity / 2.0)
-    return boost_bivector.exp()
-
-
-def boosted_medium(base_medium: Constitutive, beta: float, direction=z) -> Constitutive:
-    """Conjugate a rest constitutive map by a Lorentz boost (Antibivector <- Bivector)."""
-    rotor = boost_rotor(beta, direction)
-    return rotor >> base_medium(rotor << Bivector)
+# --- math -----------------------------------------------------------------------------
+def medium(permittivities: np.ndarray, inverse_permeabilities: np.ndarray) -> Constitutive:
+    """A medium at rest, from its permittivity along each axis and its inverse permeability across each
+    `[..., 3]`: every electric plane weighted by its permittivity, every magnetic plane by its inverse
+    permeability, and the dual of the sum."""
+    # Electric planes square to one and magnetic planes to minus one: each dyad is a projector.
+    electric = (permittivities * electric_planes * (electric_planes | Bivector)).sum(axis=-1)
+    magnetic = -(inverse_permeabilities * magnetic_planes * (magnetic_planes | Bivector)).sum(axis=-1)
+    return (electric + magnetic).dual()                                       # [...] Constitutive
 
 
 def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
@@ -115,53 +59,33 @@ def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
     return ((Vector | field) ^ excitation) + lagrangian * Vector.dual()
 
 
-# ---------------------------------------------------------------------------
-# 3. Wave Maps & Dispersion Solvers
-# ---------------------------------------------------------------------------
-def wave_map(k: Vector, medium: Constitutive) -> WaveMap:
+def wave_map(wavevectors: Vector, media: Constitutive) -> WaveMap:
     """Both exterior Maxwell residuals, packed into separate grades (Odd <- Bivector)."""
     # Dualizing the excitation residual keeps the two equations from cancelling.
-    return (k ^ Bivector) + (k ^ medium).dual()
+    return (wavevectors ^ Bivector) + (wavevectors ^ media).dual()
 
 
-def solve_dispersion_scan(
-    speeds: np.ndarray,
-    medium: Constitutive,
-    direction=z,
-) -> Scalar:
-    """Compute smallest singular values of wave map across a range of trial phase speeds."""
-    k = speeds * t + direction
-    wave = wave_map(k, medium)
-    return wave.svdvals()[..., -1]
+def residuals(wavevectors: Vector, media: Constitutive) -> Scalar:
+    """How far the nearest field is from a wave along each wavevector: the wave map's smallest singular
+    value, zero where a wave travels."""
+    return wave_map(wavevectors, media).svdvals()[..., -1]
 
 
-def minimum_speeds(
-    speeds: np.ndarray,
-    svals: Scalar,
-    threshold: float = 2e-3,
-) -> np.ndarray:
-    """Detect local minima in singular value curve corresponding to allowed wave speeds."""
-    left, mid, right = svals[:-2], svals[1:-1], svals[2:]
-    is_dip = (mid <= left) & (mid <= right) & (mid < threshold)
-    return speeds[1:-1][is_dip]
+def field_modes(wavevectors: Vector, media: Constitutive) -> Bivector:
+    """The field each wave carries: the wave map's last right singular vector."""
+    _, _, fields = wave_map(wavevectors, media).svd()
+    return fields[..., -1]
 
 
-def field_eigenmodes(k: Vector, medium: Constitutive) -> Bivector:
-    """Field bivectors in the wave map's nullspace, batched over wave vectors."""
-    w = wave_map(k, medium)
-    _, _, vh = w.svd()
-    return vh[..., -1]
+# --- the step outside the algebra -------------------------------------------------------
+def dips(speeds: np.ndarray, residual: Scalar, threshold: float) -> np.ndarray:
+    """Where the residuals along the speeds, the first axis, fall to a local minimum under the threshold:
+    the speeds at which waves travel, as a mask over the interior speeds `[speeds - 2, ...]`."""
+    values = residual.to_array()
+    left, middle, right = values[:-2], values[1:-1], values[2:]
+    return (middle <= left) & (middle <= right) & (middle < threshold)
 
 
-def fresnel_drag_velocities(
-    eps: float,
-    mu: float,
-    betas: np.ndarray,
-    speeds: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Compute downstream and upstream phase speeds across a range of medium boost speeds."""
-    glass = isotropic_medium(eps, mu)
-    moving = boosted_medium(glass, betas, direction=z)
-    down = solve_dispersion_scan(speeds[:, None], moving, direction=z)
-    up = solve_dispersion_scan(speeds[:, None], moving, direction=-z)
-    return speeds[down.argmin(axis=0)], speeds[up.argmin(axis=0)]
+def deepest(speeds: np.ndarray, residual: Scalar) -> np.ndarray:
+    """The speed at which the residual along the speeds, the first axis, is smallest `[...]`."""
+    return speeds[residual.to_array().argmin(axis=0)]

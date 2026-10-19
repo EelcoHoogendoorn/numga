@@ -1,23 +1,15 @@
-"""Rendering and plotting functions for electromagnetic constitutive maps.
-
-Visualizations:
-1. 3D Traveling wave propagation & polarization precession.
-2. 1D Dispersion resonance spectrum (singular value dips).
-3. 2D Transverse polarization mode quivers.
-4. 2D Polar Fresnel wave surfaces (ordinary/extraordinary sheets and Doppler shift).
-5. Relativistic Fresnel drag curves vs. Einstein velocity addition.
-"""
+"""Drawing the waves media carry: the fields along their way, the residual against trial speeds, the
+speeds by heading, and the drag of moving glass."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import Extensor
-
 from examples.animation import capture
 from examples.electromagnetism.constitutive import core
 
+Modes = tuple[np.ndarray, core.Bivector]
 
 
 def _no_ticks(ax: plt.Axes) -> None:
@@ -27,7 +19,7 @@ def _no_ticks(ax: plt.Axes) -> None:
 
 def draw_wave_propagation(
     ax: plt.Axes,
-    modes: core.Modes,
+    modes: Modes,
     tau: float = 0.0,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
@@ -68,8 +60,8 @@ def draw_wave_propagation(
 
 def draw_wave_comparison_3d(
     fig: plt.Figure,
-    glass_modes: core.Modes,
-    crystal_modes: core.Modes,
+    glass_modes: Modes,
+    crystal_modes: Modes,
     z_max: float = 4.0 * np.pi,
 ) -> tuple[plt.Axes, plt.Axes]:
     """Render side-by-side 3D views comparing isotropic vs birefringent medium."""
@@ -82,8 +74,8 @@ def draw_wave_comparison_3d(
 
 
 def draw_wave_comparison_figure(
-    glass_modes: core.Modes,
-    crystal_modes: core.Modes,
+    glass_modes: Modes,
+    crystal_modes: Modes,
     z_max: float = 4.0 * np.pi,
 ) -> plt.Figure:
     """Render standalone figure with side-by-side 3D views comparing isotropic vs birefringent medium."""
@@ -93,30 +85,10 @@ def draw_wave_comparison_figure(
     return fig
 
 
-def animate_wave_propagation(
-    modes: core.Modes,
-    n_frames: int = 24,
-    z_max: float = 4.0 * np.pi,
-    omega: float = 1.0,
-) -> list[np.ndarray]:
-    """Frames of the traveling E and B field vectors through one period."""
-    fig = plt.figure(figsize=(8, 6), dpi=100)
-    ax = fig.add_subplot(111, projection="3d")
-
-    frames = []
-    for tau in np.linspace(0, 2.0 * np.pi / omega, n_frames, endpoint=False):
-        ax.cla()
-        draw_wave_propagation(ax, modes, tau=float(tau), z_max=z_max, omega=omega)
-        frames.append(capture(fig))
-
-    plt.close(fig)
-    return frames
-
-
 def animate_wave_comparison(
-    glass_modes: core.Modes,
-    crystal_modes: core.Modes,
-    n_frames: int = 24,
+    glass_modes: Modes,
+    crystal_modes: Modes,
+    n_frames: int,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
 ) -> list[np.ndarray]:
@@ -139,30 +111,20 @@ def animate_wave_comparison(
     return frames
 
 
-def draw_dispersion(
-    ax: plt.Axes,
-    speeds: np.ndarray,
-    curves: dict[str, np.ndarray],
-    expected: dict[str, list[float]],
-) -> None:
-    """Plot log smallest singular values vs. trial phase speeds, marking expected roots."""
-    for name, curve in curves.items():
-        is_axion = "axion" in name
-        line, = ax.semilogy(
-            speeds,
-            curve.to_array(),
-            linestyle="--" if is_axion else "-",
-            linewidth=1.8 if is_axion else 1.5,
-        )
-        for v in expected.get(name, []):
-            ax.axvline(v, color=line.get_color(), linestyle=":", linewidth=1.2, alpha=0.8)
+def draw_dispersion(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:
+    """Each medium's residual against the trial speeds on a log scale `[speeds, media]`, its expected
+    speeds `[media, 2]` marked in its colour."""
+    lines = ax.semilogy(speeds, residual.to_array(), linewidth=1.5)
+    for line, marks in zip(lines, expected):
+        for speed in marks:
+            ax.axvline(speed, color=line.get_color(), linestyle=":", linewidth=1.2, alpha=0.8)
 
     _no_ticks(ax)
 
 
 def draw_polarizations(
     ax: plt.Axes,
-    modes: core.Modes,
+    modes: Modes,
 ) -> None:
     """Draw 2D transverse polarization arrows in the xy plane for the slow and fast birefringent modes."""
     ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
@@ -187,33 +149,19 @@ def draw_polarizations(
 def draw_fresnel_surface_polar(
     ax: plt.Axes,
     angles: np.ndarray,
-    surfaces: dict[str, Extensor],
+    residual: core.Scalar,
     speeds: np.ndarray,
+    threshold: float,
 ) -> None:
-    """Plot 2D polar Fresnel wave normal surfaces, phase speed against angle, in the xz propagation plane.
-
-    Each surface is the smallest singular value of the wave map over (speed, angle); its
-    local minima along speed are the sheets.
-    """
-    for name, data in surfaces.items():
-        svals = data.to_array()
-        left, mid, right = svals[:-2], svals[1:-1], svals[2:]
-        interior = (mid <= left) & (mid <= right) & (mid < 4e-3)
-        sheet_speeds = []
-        for j in range(len(angles)):
-            idx = np.where(interior[:, j])[0]
-            sheet_speeds.append(speeds[1:-1][idx].tolist())
-
-        max_branches = max((len(s) for s in sheet_speeds), default=0)
-        for b in range(max_branches):
-            branch_r = []
-            branch_theta = []
-            for theta, spds in zip(angles, sheet_speeds):
-                if b < len(spds):
-                    branch_r.append(spds[b])
-                    branch_theta.append(theta)
-            if branch_r:
-                ax.plot(branch_theta, branch_r, linewidth=1.6)
+    """The speeds of the waves against their heading in the xz plane, one colour per medium: the dips of
+    each medium's residual along speed `[speeds, headings, media]`, the n-th dip at each heading on the
+    n-th sheet."""
+    for dips, color in zip(np.moveaxis(core.dips(speeds, residual, threshold), -1, 0), plt.rcParams["axes.prop_cycle"].by_key()["color"]):
+        # Each dip's place among the dips at its heading, counting from the slowest.
+        sheets = np.cumsum(dips, axis=0) * dips                                # [speeds - 2, headings]
+        for sheet in range(1, sheets.max() + 1):
+            heading_idx, speed_idx = np.nonzero((sheets == sheet).T)
+            ax.plot(angles[heading_idx], speeds[1:-1][speed_idx], color=color, linewidth=1.6)
 
     # Zero radians along +z (North), angles clockwise: +x along East.
     ax.set_theta_zero_location("N")
@@ -223,51 +171,31 @@ def draw_fresnel_surface_polar(
 
 def draw_fresnel_drag_curves(
     ax: plt.Axes,
-    betas: np.ndarray,
-    v_down: np.ndarray,
-    v_up: np.ndarray,
-    eps: float,
-    mu: float,
+    fractions: np.ndarray,
+    found: np.ndarray,
+    curve: np.ndarray,
+    relativistic: np.ndarray,
+    first_order: np.ndarray,
 ) -> None:
-    """Plot downstream/upstream phase speed vs medium velocity beta."""
-    refractive_index = np.sqrt(eps * mu)
-    beta_fine = np.linspace(betas[0], betas[-1], 200)
-
-    # Einstein relativistic velocity addition:
-    einstein_down = (1.0 / refractive_index + beta_fine) / (1.0 + beta_fine / refractive_index)
-    einstein_up = (1.0 / refractive_index - beta_fine) / (1.0 - beta_fine / refractive_index)
-
-    # Classical 1st order Fresnel drag:
-    fresnel_drag_coeff = 1.0 - 1.0 / (refractive_index * refractive_index)
-    fresnel_down = 1.0 / refractive_index + beta_fine * fresnel_drag_coeff
-    fresnel_up = 1.0 / refractive_index - beta_fine * fresnel_drag_coeff
-
-    # Eigensolve points from boosted constitutive extensor:
-    ax.plot(betas, v_down, "ro", markersize=5)
-    ax.plot(betas, v_up, "bs", markersize=5)
-
-    # Analytical theory curves:
-    ax.plot(beta_fine, einstein_down, "r-", linewidth=1.5)
-    ax.plot(beta_fine, einstein_up, "b-", linewidth=1.5)
-    ax.plot(beta_fine, fresnel_down, "r--", linewidth=1.1, alpha=0.7)
-    ax.plot(beta_fine, fresnel_up, "b--", linewidth=1.1, alpha=0.7)
+    """The speeds of light found in the moving glass, with it in red and against it in blue `[2, drags]`,
+    over the relativistic sum, solid, and Fresnel's first-order drag, dashed `[2, curve]`."""
+    for speeds, exact, approximate, color, marker in zip(found, relativistic, first_order, "rb", "os"):
+        ax.plot(fractions, speeds, color=color, marker=marker, linestyle="none", markersize=5)
+        ax.plot(curve, exact, color=color, linewidth=1.5)
+        ax.plot(curve, approximate, color=color, linestyle="--", linewidth=1.1, alpha=0.7)
 
     _no_ticks(ax)
 
 
-def draw_dispersion_figure(
-    speeds: np.ndarray,
-    curves: dict[str, np.ndarray],
-    expected: dict[str, list[float]],
-) -> plt.Figure:
-    """Render standalone figure for 1D dispersion resonance notches."""
+def draw_dispersion_figure(speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> plt.Figure:
+    """Each medium's residual against the trial speeds."""
     fig, ax = plt.subplots(figsize=(7, 5), dpi=120)
-    draw_dispersion(ax, speeds, curves, expected)
+    draw_dispersion(ax, speeds, residual, expected)
     plt.tight_layout()
     return fig
 
 
-def draw_polarizations_figure(modes: core.Modes) -> plt.Figure:
+def draw_polarizations_figure(modes: Modes) -> plt.Figure:
     """Render standalone figure for 2D transverse polarization eigenmode quivers."""
     fig, ax = plt.subplots(figsize=(6, 6), dpi=120)
     draw_polarizations(ax, modes)
@@ -275,23 +203,24 @@ def draw_polarizations_figure(modes: core.Modes) -> plt.Figure:
     return fig
 
 
-def draw_fresnel_surface_figure(angles: np.ndarray, surfaces: dict[str, Extensor], speeds: np.ndarray) -> plt.Figure:
-    """Render standalone polar figure for 2D Fresnel wave normal surfaces."""
+def draw_fresnel_surface_figure(angles: np.ndarray, residual: core.Scalar, speeds: np.ndarray,
+                                threshold: float) -> plt.Figure:
+    """The speeds of the waves against their heading, on polar axes."""
     fig, ax = plt.subplots(figsize=(7, 6), dpi=120, subplot_kw={"projection": "polar"})
-    draw_fresnel_surface_polar(ax, angles, surfaces, speeds)
+    draw_fresnel_surface_polar(ax, angles, residual, speeds, threshold)
     plt.tight_layout()
     return fig
 
 
 def draw_fresnel_drag_figure(
-    betas: np.ndarray,
-    v_down: np.ndarray,
-    v_up: np.ndarray,
-    eps: float,
-    mu: float,
+    fractions: np.ndarray,
+    found: np.ndarray,
+    curve: np.ndarray,
+    relativistic: np.ndarray,
+    first_order: np.ndarray,
 ) -> plt.Figure:
-    """Render standalone figure for relativistic Fresnel drag curves."""
+    """The speeds of light in the moving glass, against the speed of the glass."""
     fig, ax = plt.subplots(figsize=(7, 5), dpi=120)
-    draw_fresnel_drag_curves(ax, betas, v_down, v_up, eps=eps, mu=mu)
+    draw_fresnel_drag_curves(ax, fractions, found, curve, relativistic, first_order)
     plt.tight_layout()
     return fig

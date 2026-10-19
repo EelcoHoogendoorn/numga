@@ -550,6 +550,9 @@ class GAType:
     def inner(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return numga.expression.inner(self, other)
 
+    def dot(self, other: SubSpace | GAType | Extensor) -> Extensor:
+        return numga.expression.dot(self, other)
+
     def commutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
         return numga.expression.commutator(self, other)
 

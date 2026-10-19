@@ -12,6 +12,8 @@ from matplotlib.colors import TwoSlopeNorm
 from matplotlib.image import AxesImage
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
+from numga import stack
+
 from examples.animation import capture
 from examples.mechanics.vortices import core
 
@@ -25,8 +27,8 @@ PANEL_SIZE = 6.0
 
 # --- plumbing -------------------------------------------------------------------------
 def positions(points: core.Point) -> np.ndarray:
-    """x and y of each point, on the last axis."""
-    return points.dual_inverse().cast(core.ga.subspace("x y")).kernel
+    """x and y of each point, on the last axis: its pairings with the lines x and y."""
+    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
 
 
 def extent(points: core.Point) -> tuple[float, float, float, float]:

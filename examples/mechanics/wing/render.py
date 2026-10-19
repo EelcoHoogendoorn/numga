@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import TwoSlopeNorm
 
+from numga import stack
+
 from examples.animation import capture
 from examples.mechanics.wing import core
 
@@ -24,13 +26,18 @@ FRAME_DPI = 36
 
 
 # --- plumbing -------------------------------------------------------------------------
+def coordinates(points: core.Point) -> np.ndarray:
+    """x and y of each point, on the last axis: its pairings with the lines x and y."""
+    return (stack((core.mv.x, core.mv.y)) & points[..., None]).to_array()
+
+
 def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Point, speed: float) -> None:
     """The pressure coefficient around the wing at the points, the streamlines, the wing, and its lift."""
     # Each ring closed, its first angle repeated at the end, so no seam is left unpainted.
     def closed(values: np.ndarray) -> np.ndarray:
         return np.concatenate([values, values[:, :1]], axis=1)
 
-    xy = closed(points.dual_inverse().cast(core.ga.subspace("x y")).kernel)
+    xy = closed(coordinates(points))
     speed_squared = closed((velocity | velocity).kernel[..., 0])
     # The pressure coefficient: low where the flow is fast.
     pressure = 1 - speed_squared / speed**2
@@ -39,7 +46,7 @@ def draw(ax, points: core.Point, velocity: core.Point, stream: core.Bivector, li
     ax.contour(xy[..., 0], xy[..., 1], closed(stream.cast(core.ga.subspace("xy")).kernel[..., 0]), levels=STREAM_LEVELS,
                colors="#334155", linewidths=0.6)
     ax.fill(xy[0, :, 0], xy[0, :, 1], color=WING)
-    arrow = lift.dual_inverse().cast(core.ga.subspace("x y")).kernel * LIFT_SCALE
+    arrow = coordinates(lift) * LIFT_SCALE
     ax.annotate("", xy=arrow, xytext=(0.0, 0.0), arrowprops=dict(arrowstyle="-|>", color=LIFT, linewidth=2.5))
     ax.set(xlim=WINDOW[:2], ylim=WINDOW[2:], xticks=[], yticks=[])
     ax.set_aspect("equal")
@@ -58,7 +65,7 @@ def frame(points: core.Point, velocity: core.Point, stream: core.Bivector, lift:
     ax = result.subplots()
     draw(ax, points, velocity, stream, lift, speed)
     for marks, colour in ((critical, MARK), (centre, CENTRE)):
-        xy = marks.dual_inverse().cast(core.ga.subspace("x y")).kernel
+        xy = coordinates(marks)
         ax.scatter(xy[..., 0], xy[..., 1], s=30, color=colour, edgecolors=WING, linewidths=0.8, zorder=3)
     pixels = capture(result)
     plt.close(result)
@@ -93,11 +100,11 @@ def bipolar(grid: core.Point, grid_images: core.Point, circle: core.Point, circl
     result = plt.figure(figsize=(10, 4.2), layout="constrained")
     for ax, curves, outline, marks in zip(
             result.subplots(1, 2), (grid, grid_images), (circle, circle_image), (critical, 2 * critical)):
-        for curve in curves.dual_inverse().cast(core.ga.subspace("x y")).kernel:
+        for curve in coordinates(curves):
             ax.plot(curve[:, 0], curve[:, 1], color="#94a3b8", linewidth=0.9)
-        xy = outline.dual_inverse().cast(core.ga.subspace("x y")).kernel
+        xy = coordinates(outline)
         ax.plot(xy[:, 0], xy[:, 1], color=WING, linewidth=2.2)
-        ends = marks.dual_inverse().cast(core.ga.subspace("x y")).kernel
+        ends = coordinates(marks)
         ax.scatter([ends[0], -ends[0]], [ends[1], -ends[1]], color=MARK, edgecolors=WING, zorder=4)
         ax.set(xlim=WINDOW[:2], ylim=WINDOW[2:], xticks=[], yticks=[])
         ax.set_aspect("equal")

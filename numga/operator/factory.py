@@ -191,6 +191,20 @@ class OperatorFactory:
     def scalar_product(self, left: OperandType, right: OperandType) -> Extensor:
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 0)
 
+    def dot(self, left: OperandType, right: OperandType) -> Extensor:
+        """The dot product: the scalar part of ``left * reverse(right)``. On blades of one grade it is the
+        determinant of the dot products of their vector factors, the metric extended to every grade: in a
+        Euclidean signature positive on every blade, zero between grades, and on a value with itself its
+        ``scalar_norm_squared``."""
+        return self._dot(self._operand_gatype(left), self._operand_gatype(right))
+
+    @lru_cache(maxsize=None)
+    def _dot(self, left: GAType, right: GAType) -> Extensor:
+        product = self._grade_product(left, right, 0)
+        # The scalar product with every blade of the right operand reversed: its slices by their reverse signs.
+        reverses = grade_transform_signs(self.algebra, "reverse", right.output_subspace.masks)
+        return Extensor(self.algebra.exact, product.gatype, SymbolicKernel(product._kernel._values * reverses))
+
     def bivector_product(self, left: OperandType, right: OperandType) -> Extensor:
         return self._grade_product(self._operand_gatype(left), self._operand_gatype(right), 2)
 

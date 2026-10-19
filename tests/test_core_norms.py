@@ -153,3 +153,22 @@ def test_scalar_norm_squared_is_the_scalar_part_of_the_reverse_product_for_value
     # With the value left open it is a form, which evaluated on the value gives the same norm.
     form = (mv.rotor() >> Bivector).scalar_norm_squared()
     np.testing.assert_allclose(form(bivectors, bivectors).kernel, squared.kernel, atol=1e-13)
+
+
+@pytest.mark.parametrize("signature, grade", [("x+y+z+", 2), ("x+y+z+w+", 3), ("x+y+z+w+", 2), ("x+y+z+w+v+", 4)])
+def test_dot_is_the_gram_determinant_of_the_factors_on_every_grade(signature, grade):
+    """For blades `a1 ^ ... ^ ak` and `b1 ^ ... ^ bk` the dot product is det(ai | bj): the vector metric
+    extended to every grade, positive on a blade with itself, as a value and as a form."""
+    algebra = Algebra(signature)
+    mv = NumpyContext(algebra).multivector
+    rng = np.random.default_rng(grade)
+    left, right = rng.normal(size=(2, grade, algebra.dimension))
+    a, b = mv.vector(left[0]), mv.vector(right[0])
+    for i in range(1, grade):
+        a, b = a ^ mv.vector(left[i]), b ^ mv.vector(right[i])
+
+    np.testing.assert_allclose(a.dot(b).to_array(), np.linalg.det(left @ right.T), rtol=1e-10)
+    np.testing.assert_allclose(a.dot(a).to_array(), a.scalar_norm_squared().to_array(), rtol=1e-12)
+    assert a.dot(a).to_array() > 0
+    Blade = algebra.gatype.oriented((a.subspace,), (a.gatype.orientation,))
+    np.testing.assert_allclose(Blade.dot(Blade)(a, b).to_array(), a.dot(b).to_array(), rtol=1e-12)
