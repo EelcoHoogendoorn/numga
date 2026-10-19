@@ -26,7 +26,7 @@ DURATION_MS = 120
 
 
 # --- math -----------------------------------------------------------------------------
-def comparison() -> tuple[core.Crystal, core.Crystal, core.Vector, core.Scalar]:
+def comparison() -> tuple[core.Crystal, core.Crystal, core.Plane, core.Scalar]:
     """The square layer at rest, the three crystals carried from it, the transfer grid, and their coherent
     scattering intensities."""
     reference = core.square(N_SHELLS, N_ORDERS, SPACING)
@@ -35,8 +35,8 @@ def comparison() -> tuple[core.Crystal, core.Crystal, core.Vector, core.Scalar]:
     return reference, crystals, grid, crystals.intensity(grid)
 
 
-def deformation(grid: core.Vector) -> Iterator[tuple[core.Vector, core.Vector, core.Scalar]]:
-    """Per frame of a stretch, shear and turn and back, the atoms, reciprocal vectors and intensity."""
+def deformation(grid: core.Plane) -> Iterator[tuple[core.Point, core.Plane, core.Scalar]]:
+    """Per frame of a stretch, shear and turn and back, the atoms, the reciprocal lattice and the intensity."""
     reference = core.square(N_SHELLS, N_ORDERS, SPACING)
     for phase in np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False):
         weight = np.array((1 - np.cos(phase)) / 2)
@@ -55,11 +55,10 @@ def main() -> None:
     save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", DURATION_MS)
 
     # checks
-    # Every phase measured at every atom is kept, and the phase planes are the reciprocal vectors' duals.
-    phases = crystals.reciprocal[:, :, None] | crystals.positions[:, None, :]
-    reference_phases = reference.reciprocal[:, None] | reference.positions[None, :]
+    # Every phase measured at every atom is kept.
+    phases = crystals.reciprocal[:, :, None] & crystals.positions[:, None, :]
+    reference_phases = reference.reciprocal[:, None] & reference.positions[None, :]
     np.testing.assert_allclose((phases - reference_phases).kernel, 0, atol=1e-10)
-    np.testing.assert_allclose((crystals.phase_planes - crystals.reciprocal.dual()).kernel, 0, atol=1e-11)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,12 @@
 """Koebe polyhedra: every triangulation of the sphere as a polyhedron whose edges all touch the unit sphere.
 
-The algebra has the unit sphere as its metric: x, y and z square to one and w to minus one. A point x of the
-sphere is the null vector `x + w`, and a circle on the sphere, where the plane `n | x == s` cuts it, is the
-vector `n + s * w`, scaled to square to one: a point lies on the circle exactly when its inner product with it
-is zero. Two circles touch from outside exactly when their inner product is minus one, and then their sum is
-the null vector of the point where they touch. Read as a point, a circle's vector is the apex of the cone that
-touches the sphere along it, so circles touching along every edge of a triangulation are the vertices of a
-polyhedron whose edges all touch the sphere. The circle through the three touching points of a face is
+The algebra has the unit sphere as its metric: x, y and z square to one and w to minus one. A circle on the
+sphere, where the plane `n | x == s` cuts it, is the vector `n + s * w`, scaled to square to one, and a point x
+of the sphere is held by its tangent plane, the null vector `x + w`: a point lies on the circle exactly when
+their inner product is zero. Two circles touch from outside exactly when their inner product is minus one, and
+then their sum is the tangent plane at the point where they touch. A circle's dual is a point, the apex of the
+cone that touches the sphere along it: polarity in the sphere is the dual. So circles touching along every
+edge of a triangulation have the vertices of a polyhedron whose edges all touch the sphere as their duals. The circle through the three touching points of a face is
 orthogonal to its vertices' circles, the dual of their wedge, and its apex is a vertex of the dual
 polyhedron, which touches the sphere at the same points. The equations fix the circles up to the maps that
 keep the sphere, the rotors of the algebra; the centred one has the touching points balanced about the
@@ -25,6 +25,8 @@ ga = Algebra("x+y+z+w-")
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
+# A point of space, the dual of a plane: antivectors with intrinsic orientation.
+Point = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 
 
@@ -36,7 +38,8 @@ def caps(directions: Vector, radius: Scalar) -> Vector:
 
 
 def touching(circles: Vector, edges: np.ndarray) -> Vector:
-    """The null vector of the point where the circles at the ends of each edge touch: their sum."""
+    """The tangent plane at the point where the circles at the ends of each edge touch: their sum, a null
+    vector."""
     return circles[..., edges[:, 0]] + circles[..., edges[:, 1]]               # [..., edges] Vector
 
 
@@ -46,9 +49,10 @@ def face_circles(circles: Vector, faces: np.ndarray) -> Vector:
     return (circles[..., faces[:, 0]] ^ circles[..., faces[:, 1]] ^ circles[..., faces[:, 2]]).dual()   # [..., faces] Vector
 
 
-def apexes(circles: Vector) -> Vector:
-    """The apex of the cone touching the sphere along each circle, as a point at unit weight along w."""
-    return circles / -(circles | mv.w)                                         # [...] Vector
+def apexes(circles: Vector) -> Point:
+    """The apex of the cone touching the sphere along each circle, the circle's dual, at unit weight along w."""
+    poles = circles.dual()                                                     # [...] Point
+    return poles / (mv.w & poles)                                              # [...] Point
 
 
 def koebe(start: Vector, edges: np.ndarray, n_steps: int) -> Vector:
@@ -73,7 +77,7 @@ def koebe(start: Vector, edges: np.ndarray, n_steps: int) -> Vector:
 
 def centre(points: Vector, n_iterations: int) -> Vector:
     """The unit timelike vector that minimises the summed logarithms of minus its inner products with the
-    null vectors of points of the sphere: the centre seen from which they balance. There the points, each
+    tangent planes of points of the sphere: the centre seen from which they balance. There the points, each
     weighted by minus the reciprocal of its inner product with the centre, sum along the centre itself, so the
     centre is the fixed point of that weighted sum, normalized."""
     centre = mv.w                                                              # [] Vector

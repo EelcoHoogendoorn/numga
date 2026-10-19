@@ -20,18 +20,18 @@ DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
-def sweep() -> tuple[core.Vector, core.Vector, core.Vector, core.Conic]:
+def sweep() -> tuple[core.Point, core.Point, core.Point, core.Conic]:
     """As the middle weight sweeps out and back: the weighted control points of the curve and of its
     complement, the curve, its complement, and the form of its cone."""
     phase = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)
     middle = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
     weights = np.stack([np.ones_like(middle), middle, np.ones_like(middle)], axis=-1)   # [frames, 3]
-    controls = core.point(QUADRATIC_POINTS)                                    # [controls] Vector
+    controls = core.point(QUADRATIC_POINTS)                                    # [controls] Point
     parameters = np.linspace(0.0, 1.0, N_SAMPLES + 1)                            # [samples + 1]
-    weighted = stack([controls * weights, controls * core.complementary(weights)], axis=1)   # [frames, 2, controls] Vector
-    curves = core.blend(controls, weights, parameters)                         # [frames, samples + 1] Vector
-    complements = core.blend(controls, core.complementary(weights), parameters)   # [frames, samples + 1] Vector
-    return weighted, curves, complements, core.conic(controls, weights)        # [frames] Vector <- Vector
+    weighted = stack([controls * weights, controls * core.complementary(weights)], axis=1)   # [frames, 2, controls] Point
+    curves = core.blend(controls, weights, parameters)                         # [frames, samples + 1] Point
+    complements = core.blend(controls, core.complementary(weights), parameters)   # [frames, samples + 1] Point
+    return weighted, curves, complements, core.conic(controls, weights)        # [frames] Plane <- Point
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -44,8 +44,8 @@ def main() -> None:
 
     # checks
     # Both arcs of the curve lie on the cone of its conic, at every middle weight.
-    assert np.abs(render.scalars(curves | shapes[:, None](curves))).max() < 1e-10
-    assert np.abs(render.scalars(complements | shapes[:, None](complements))).max() < 1e-10
+    assert np.abs(render.scalars(shapes[:, None](curves) & curves)).max() < 1e-10
+    assert np.abs(render.scalars(shapes[:, None](complements) & complements)).max() < 1e-10
 
 
 if __name__ == "__main__":

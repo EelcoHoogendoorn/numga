@@ -16,19 +16,19 @@ ELEVATION, AZIMUTH = 18.0, -64.0
 LIMITS = np.array([[-3.3, 3.5], [-1.5, 1.5], [-1.1, 4.0]])
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
+def coordinates(points: core.Point) -> np.ndarray:
     """The x, y and z coordinates of points."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def checker(rest: core.Vector, faces: np.ndarray, cell: np.ndarray) -> np.ndarray:
+def checker(rest: core.Point, faces: np.ndarray, cell: np.ndarray) -> np.ndarray:
     """Each triangle's colour: the parity of the cell of the given size its centroid sat in at rest."""
     centroids = coordinates(rest)[faces].mean(axis=1)                          # [F, 3]
     parity = np.floor(centroids / cell).astype(int).sum(axis=-1) % 2
     return np.where(parity[:, None] == 1, DARK, LIGHT)
 
 
-def draw(ax, vertices: core.Vector, faces: np.ndarray, colours: np.ndarray, title: str) -> None:
+def draw(ax, vertices: core.Point, faces: np.ndarray, colours: np.ndarray, title: str) -> None:
     """The bar's triangles, shaded, in the fixed box."""
     ax.add_collection3d(Poly3DCollection(coordinates(vertices)[faces], facecolors=colours, shade=True, linewidths=0))
     for set_limit, limit in zip((ax.set_xlim, ax.set_ylim, ax.set_zlim), LIMITS):
@@ -39,7 +39,7 @@ def draw(ax, vertices: core.Vector, faces: np.ndarray, colours: np.ndarray, titl
     ax.set_title(title)
 
 
-def side_by_side(bar, shapes: list[core.Vector], titles: list[str], cell: np.ndarray) -> plt.Figure:
+def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndarray) -> plt.Figure:
     """The bar in each of the given shapes, side by side, checkered by where each triangle sat at rest."""
     colours = checker(bar.vertices, bar.faces, cell)
     figure = plt.figure(figsize=(4 * len(shapes), 4), dpi=80)
@@ -48,7 +48,7 @@ def side_by_side(bar, shapes: list[core.Vector], titles: list[str], cell: np.nda
     return figure
 
 
-def animate(bar, shapes: core.Vector, cell: np.ndarray) -> list[np.ndarray]:
+def animate(bar, shapes: core.Point, cell: np.ndarray) -> list[np.ndarray]:
     """The bar in each of the given shapes, one frame each."""
     images = []
     colours = checker(bar.vertices, bar.faces, cell)

@@ -36,9 +36,19 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
-    """x, y and z of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+def coordinates(directions: core.Direction) -> np.ndarray:
+    """x, y and z of each direction, on the last axis."""
+    return directions.cast(core.ga.subspace("yz zx xy")).kernel
+
+
+def along(lines: core.Line) -> np.ndarray:
+    """x, y and z along each line, on the last axis."""
+    return lines.cast(core.ga.subspace("yz zx xy")).kernel
+
+
+def normals(planes: core.Plane) -> np.ndarray:
+    """x, y and z of each plane's normal, on the last axis."""
+    return planes.cast(core.ga.subspace("x y z")).kernel
 
 
 def projected(xyz: np.ndarray) -> np.ndarray:
@@ -73,19 +83,19 @@ def draw_triangle(ax: plt.Axes) -> None:
         ax.plot(*projected(start * (1 - share) + end * share).T, color=EDGE_COLOUR, linewidth=0.9)
 
 
-def draw_disk(ax: plt.Axes, factors: core.Scalar, normals: core.Vector, slips: core.Vector) -> None:
+def draw_disk(ax: plt.Axes, factors: core.Scalar, planes: core.Plane, slips: core.Line) -> None:
     """The whole disk: each region in the colour of its first system, the slip planes' normals as triangles and
     the slip directions as dots, and the standard triangle."""
     ax.imshow(shades(factors), extent=(-1, 1, -1, 1), origin="lower", interpolation="bilinear")
     ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR, linewidth=0.9))
-    ax.scatter(*projected(coordinates(normals)).T, marker="^", s=40, color=NORMAL_COLOUR, zorder=3)
-    ax.scatter(*projected(coordinates(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
+    ax.scatter(*projected(normals(planes)).T, marker="^", s=40, color=NORMAL_COLOUR, zorder=3)
+    ax.scatter(*projected(along(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
     draw_triangle(ax)
     ax.set(xlim=(-1.02, 1.02), ylim=(-1.02, 1.02), aspect="equal")
     ax.set_axis_off()
 
 
-def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Vector, amounts: core.Scalar) -> None:
+def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar) -> None:
     """The standard triangle close up, in the colours of its systems, with each pull's axis's path so far and
     its current place, each step in the colours of the systems that slipped in it, mixed by how much, and the
     directions the axes head for."""
@@ -109,16 +119,16 @@ def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Vector, amounts: c
     ax.set_axis_off()
 
 
-def draw_chart(directions: core.Vector, factors: core.Scalar, normals: core.Vector, slips: core.Vector,
-               axes: core.Vector, amounts: core.Scalar) -> plt.Figure:
+def draw_chart(directions: core.Direction, factors: core.Scalar, planes: core.Plane, slips: core.Line,
+               axes: core.Direction, amounts: core.Scalar) -> plt.Figure:
     """The whole disk, and the standard triangle with the paths."""
     figure, (disk, close) = plt.subplots(1, 2, figsize=(9.0, 4.5), layout="constrained")
-    draw_disk(disk, factors, normals, slips)
+    draw_disk(disk, factors, planes, slips)
     draw_paths(close, factors, axes, amounts)
     return figure
 
 
-def animate_paths(directions: core.Vector, factors: core.Scalar, axes: core.Vector, amounts: core.Scalar,
+def animate_paths(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
                   frames: int) -> list[np.ndarray]:
     """The paths through the standard triangle growing, over so many frames."""
     reached = np.linspace(2, axes.shape[0], frames).round().astype(int)

@@ -18,8 +18,8 @@ INTENSITY_FLOOR = 1e-4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def atoms(ax: Axes, positions: core.Vector) -> None:
-    points = positions.cast(core.ga.subspace("x y z")).kernel
+def atoms(ax: Axes, positions: core.Point) -> None:
+    points = positions.cast(core.ga.subspace("yz zx xy")).kernel
     ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
     ax.axhline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
     ax.axvline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
@@ -28,7 +28,7 @@ def atoms(ax: Axes, positions: core.Vector) -> None:
     ax.spines[:].set_visible(False)
 
 
-def diffraction(ax: Axes, reciprocal: core.Vector, grid: core.Vector, intensity: core.Scalar) -> None:
+def diffraction(ax: Axes, reciprocal: core.Plane, grid: core.Plane, intensity: core.Scalar) -> None:
     samples = grid.cast(core.ga.subspace("x y z")).kernel
     peaks = reciprocal.cast(core.ga.subspace("x y z")).kernel
     values = intensity.kernel[..., 0]
@@ -42,7 +42,7 @@ def diffraction(ax: Axes, reciprocal: core.Vector, grid: core.Vector, intensity:
     ax.set(xlim=extent[:2], ylim=extent[2:], xticks=[], yticks=[])
 
 
-def comparison(positions: core.Vector, reciprocal: core.Vector, grid: core.Vector, intensity: core.Scalar) -> plt.Figure:
+def comparison(positions: core.Point, reciprocal: core.Plane, grid: core.Plane, intensity: core.Scalar) -> plt.Figure:
     """For each case `[cases]`, its atoms above and its diffraction pattern below, with the carried reciprocal
     lattice ringed."""
     figure = plt.figure(figsize=(12, 8), layout="constrained")
@@ -53,7 +53,7 @@ def comparison(positions: core.Vector, reciprocal: core.Vector, grid: core.Vecto
     return figure
 
 
-def frame(positions: core.Vector, reciprocal: core.Vector, intensity: core.Scalar, grid: core.Vector) -> np.ndarray:
+def frame(positions: core.Point, reciprocal: core.Plane, intensity: core.Scalar, grid: core.Plane) -> np.ndarray:
     figure, panels = plt.subplots(1, 2, figsize=(6, 3), dpi=70, layout="constrained")
     atoms(panels[0], positions)
     diffraction(panels[1], reciprocal, grid, intensity)
@@ -62,7 +62,7 @@ def frame(positions: core.Vector, reciprocal: core.Vector, intensity: core.Scala
     return pixels
 
 
-def animate(frames: Iterable[tuple[core.Vector, core.Vector, core.Scalar]], grid: core.Vector) -> list[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Point, core.Plane, core.Scalar]], grid: core.Plane) -> list[np.ndarray]:
     return [frame(positions, reciprocal, intensity, grid) for positions, reciprocal, intensity in frames]
 
 

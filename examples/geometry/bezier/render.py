@@ -29,9 +29,9 @@ def scalars(values: core.Scalar) -> np.ndarray:
     return values.cast(values.algebra.subspace.scalar()).kernel[..., 0]
 
 
-def homogeneous(points: core.Vector) -> np.ndarray:
+def homogeneous(points: core.Point) -> np.ndarray:
     """x, y and weight of each point, on the last axis."""
-    return points.cast(core.ga.subspace("x y z")).kernel
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
 def cones(shapes: core.Conic) -> list[list[np.ndarray]]:
@@ -39,14 +39,14 @@ def cones(shapes: core.Conic) -> list[list[np.ndarray]]:
     each an array of unit vectors in x, y and weight."""
     longitude, latitude = np.meshgrid(np.linspace(-np.pi, np.pi, SPHERE_GRID), np.linspace(-np.pi / 2, np.pi / 2, SPHERE_GRID))
     xyw = np.stack([np.cos(latitude) * np.cos(longitude), np.cos(latitude) * np.sin(longitude), np.sin(latitude)], axis=-1)
-    grid = core.mv.vector(xyw)[..., None]                                      # [grid, grid, 1] Vector
-    values = np.moveaxis(scalars(grid | shapes(grid)), -1, 0)                  # [conics, grid, grid]
+    grid = core.mv.vector(xyw).dual()[..., None]                               # [grid, grid, 1] Point
+    values = np.moveaxis(scalars(shapes(grid) & grid), -1, 0)                  # [conics, grid, grid]
     return [[np.stack([np.cos(lat) * np.cos(lon), np.cos(lat) * np.sin(lon), np.sin(lat)], axis=-1)
              for lon, lat in (loop.T for loop in contourpy.contour_generator(longitude, latitude, value).lines(0.0))]
             for value in values]
 
 
-def draw_rays(controls: core.Vector, curve: core.Vector, complement: core.Vector, loops: list[np.ndarray], reach: float,
+def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, loops: list[np.ndarray], reach: float,
               azimuth: float) -> plt.Figure:
     """A curve and its complement as their sums are, in the three dimensions of x, y and weight, with their
     weighted control points, and with the rays from the origin to the curves filled in: the part of the
@@ -82,12 +82,12 @@ def draw_rays(controls: core.Vector, curve: core.Vector, complement: core.Vector
     return figure
 
 
-def framing(points: core.Vector) -> float:
+def framing(points: core.Point) -> float:
     """The half width that frames every point, as its sum is, and the unit sphere."""
     return max(1.0, np.abs(homogeneous(points)).max())
 
 
-def animate_rays(controls: core.Vector, curves: core.Vector, complements: core.Vector, shapes: core.Conic) -> list[np.ndarray]:
+def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> list[np.ndarray]:
     """The ray figure for each conic of a batch, viewed from turning once around, at one framing."""
     loops = cones(shapes)
     half_width = framing(stack([curves, complements]))

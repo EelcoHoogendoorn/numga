@@ -23,12 +23,12 @@ N_ITERATIONS = 6
 # --- math -----------------------------------------------------------------------------
 def bending():
     """The bar bent over the frames, as rigid as possible and by Laplacian editing: the vertices at each
-    frame `[frames] Vector[V]`, both ways, and the bar at rest."""
+    frame `[frames] Point[V]`, both ways, and the bar at rest."""
     bar = core.bar(N_DIVISIONS, LENGTH)
-    along = bar.vertices | mv.x                                                # Scalar[V]
+    along = mv.x & bar.vertices                                                # Scalar[V]
     near, far = along < -LENGTH / 2 + 1e-6, along > LENGTH / 2 - 1e-6
     moved = core.as_scalar(far).field()                                        # Scalar[V]
-    poses = [bar.vertices + moved * (bent(bar.vertices, angle) - bar.vertices)   # Vector[V]
+    poses = [bar.vertices + moved * (bent(bar.vertices, angle) - bar.vertices)   # Point[V]
              for angle in np.linspace(0.0, BEND, N_FRAMES + 1)[1:]]
     frames = list(core.deform(bar, near | far, poses, STIFFNESS, N_ITERATIONS))
     rigid, laplacian = stack([shape for shape, _, _ in frames]), stack([edited for _, edited, _ in frames])
@@ -49,13 +49,13 @@ def bending():
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bent(vertices: core.Vector, angle: float) -> core.Vector:
+def bent(vertices: core.Point, angle: float) -> core.Point:
     """The far end of the bar where an arc of its length would carry it, turned by the angle about y:
     its centre on the arc from the near end, curving up."""
     radius = LENGTH / angle
-    centre = mv.x * (-LENGTH / 2 + radius * np.sin(angle)) + mv.z * (radius * (1 - np.cos(angle)))   # [] Vector
+    centre = (mv.x * (-LENGTH / 2 + radius * np.sin(angle)) + mv.z * (radius * (1 - np.cos(angle)))).dual()   # [] Point
     turn = ((mv.x ^ mv.z) * (-angle / 2)).exp()                                # [] Rotor
-    return centre + (turn >> (vertices - mv.x * (LENGTH / 2)))
+    return centre + (turn >> (vertices - mv.x.dual() * (LENGTH / 2)))
 
 
 if __name__ == "__main__":

@@ -11,11 +11,11 @@ def test_circles_touch_along_every_edge_and_both_polyhedra_touch_the_sphere_unde
     assert np.abs((frames | frames).to_array() - 1).max() < 1e-10
     assert np.abs((frames[:, edges[:, 0]] | frames[:, edges[:, 1]]).to_array() + 1).max() < 1e-10
     assert np.abs(render.edge_distances(core.apexes(frames), edges) - 1).max() < 1e-10
-    duals = core.apexes(core.face_circles(frames, faces))                      # [frames, faces] Vector
+    duals = core.apexes(core.face_circles(frames, faces))                      # [frames, faces] Point
     assert np.abs(render.edge_distances(duals, render.beside(faces, edges)) - 1).max() < 1e-10
 
 
 def test_the_centred_circles_balance_and_the_figure_draws():
     circles, faces, edges = scenarios.centred()
-    assert np.linalg.norm(render.coordinates(core.touching(circles, edges)).mean(axis=0)) < 1e-4
+    assert np.linalg.norm(render.coordinates(core.touching(circles, edges).dual()).mean(axis=0)) < 1e-4
     assert len(render.animate(circles[None], faces, edges)) == 1

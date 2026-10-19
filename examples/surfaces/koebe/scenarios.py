@@ -75,7 +75,7 @@ def main() -> None:
     # Every edge of the polyhedron touches the sphere: its line's distance from the centre is one.
     assert np.abs(render.edge_distances(core.apexes(frames), edges) - 1).max() < 1e-10
     # Centred, the touching points balance about the centre.
-    assert np.linalg.norm(render.coordinates(core.touching(circles, edges)).mean(axis=0)) < 1e-4
+    assert np.linalg.norm(render.coordinates(core.touching(circles, edges).dual()).mean(axis=0)) < 1e-4
 
 
 if __name__ == "__main__":

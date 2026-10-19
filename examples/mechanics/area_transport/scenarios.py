@@ -19,22 +19,20 @@ DURATION_MS = 70
 
 
 # --- math -----------------------------------------------------------------------------
-def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Vector, core.Vector, core.Bivector, core.Vector, core.Scalar]:
-    """The cube carried by each deformation: its corners, face centres, oriented face patches and area
-    normals, and the volume factor."""
-    deformation = core.deformation(thicknesses, shears)                       # [...] Vector <- Vector
-    areas, _, cofactor, volume = core.transport(deformation)
+def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Point, core.Point, core.Patch, core.Scalar]:
+    """The cube carried by each deformation: its corners, face centres and oriented face patches, and the
+    volume factor."""
+    deformation = core.deformation(thicknesses, shears)                       # [...] Point <- Point
+    areas, _, volume = core.transport(deformation)
     corners, centres, patches = core.cube(SIDE)
-    return (deformation[..., None](corners), deformation[..., None](centres), areas[..., None](patches),
-            cofactor[..., None](patches.dual()), volume)
+    return deformation[..., None](corners), deformation[..., None](centres), areas[..., None](patches), volume
 
 
-def collapse(n_frames: int) -> Iterator[tuple[core.Vector, core.Vector, core.Vector, core.Scalar]]:
-    """Per frame of a collapse and recovery, the cube's corners, face centres, area normals and volume."""
+def collapse(n_frames: int) -> Iterator[tuple[core.Point, core.Point, core.Patch, core.Scalar]]:
+    """Per frame of a collapse and recovery, the cube's corners, face centres, patches and volume."""
     for phase in np.linspace(0, 2 * np.pi, n_frames, endpoint=False):
         thickness = np.array((1 + np.cos(phase)) / 2)
-        vertices, centres, _, area_normals, volume = scene(thickness, MAX_SHEAR * (1 - thickness))
-        yield vertices, centres, area_normals, volume
+        yield scene(thickness, MAX_SHEAR * (1 - thickness))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -42,18 +40,16 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.mechanics.area_transport import render
 
-    vertices, centres, patches, area_normals, volume = scene(THICKNESSES, SHEARS)
-    save_figure(render.comparison(vertices, centres, area_normals, volume), "area_transport")
+    vertices, centres, patches, volume = scene(THICKNESSES, SHEARS)
+    save_figure(render.comparison(vertices, centres, patches, volume), "area_transport")
     save_animation(render.animate(collapse(N_FRAMES)), "area_transport", DURATION_MS)
 
     # checks
-    # The carried area normals are the carried patches' duals, and the deformation and its area map scale
-    # every volume by the determinant, at the flat sheet too.
-    np.testing.assert_allclose((area_normals - patches.dual()).kernel, 0, atol=1e-12)
-    deformation = core.deformation(THICKNESSES, SHEARS)                       # [cases] Vector <- Vector
-    areas, _, _, _ = core.transport(deformation)
-    volumes = deformation(core.Vector) ^ areas(core.Bivector)                 # [cases] Pseudoscalar <- (Vector, Bivector)
-    np.testing.assert_allclose((volumes - volume * (core.Vector ^ core.Bivector)).kernel, 0, atol=1e-12)
+    # The deformation and its area map scale every volume by the determinant, at the flat sheet too.
+    deformation = core.deformation(THICKNESSES, SHEARS)                       # [cases] Point <- Point
+    areas, _, _ = core.transport(deformation)
+    volumes = deformation(core.Point) & areas(core.Patch)                     # [cases] Scalar <- (Point, Patch)
+    np.testing.assert_allclose((volumes - volume * (core.Point & core.Patch)).kernel, 0, atol=1e-12)
 
 
 if __name__ == "__main__":

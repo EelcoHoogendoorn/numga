@@ -8,19 +8,19 @@ from examples.mechanics.slip_systems import core, render, scenarios
 
 
 def test_slip_directions_lie_in_their_planes_and_schmid_factors_are_at_most_a_half():
-    directions, factors, normals, slips = scenarios.chart()
-    assert np.abs(render.scalars(slips | normals[:, None])).max() < 1e-12
+    directions, factors, planes, slips = scenarios.chart()
+    assert np.abs(render.scalars(planes[:, None] & slips)).max() < 1e-12
     assert np.abs(render.scalars(factors)).max() <= 0.5 + 1e-12
-    along = np.abs(render.scalars(core.schmid(core.mv.z, normals, slips)))       # [planes, directions]
+    along = np.abs(render.scalars(core.schmid(core.mv.z.dual(), planes, slips)))   # [planes, directions]
     assert np.isclose(along.max(), 1 / np.sqrt(6)) and np.isclose(along, along.max()).sum() == 8
 
 
 def test_pulls_turn_to_the_double_slip_corner_on_two_systems_and_the_figures_draw():
-    axes, amounts = scenarios.paths()                                         # [steps + 1, starts] Vector
+    axes, amounts = scenarios.paths()                                         # [steps + 1, starts] Direction
     ends = render.coordinates(axes[-1])
     assert (np.sort(ends, axis=-1) @ (np.array([1, 1, 2]) / np.sqrt(6)) > 0.999).all()
     carried = np.sort(np.abs(render.scalars(amounts)).sum(axis=0).reshape(len(scenarios.STARTS), -1), axis=-1)   # [starts, systems]
     assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()
-    directions, factors, normals, slips = scenarios.chart()
-    plt.close(render.draw_chart(directions, factors, normals, slips, axes, amounts))
+    directions, factors, planes, slips = scenarios.chart()
+    plt.close(render.draw_chart(directions, factors, planes, slips, axes, amounts))
     assert len(render.animate_paths(directions, factors, axes, amounts, 2)) == 2

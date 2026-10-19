@@ -28,35 +28,35 @@ DURATION_MS = 70
 
 
 # --- math -----------------------------------------------------------------------------
-def chart() -> tuple[core.Vector, core.Scalar, core.Vector, core.Vector]:
+def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Line]:
     """Pull directions over the upper half of the sphere, laid out on the stereographic disk `[rows, columns]`,
-    each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes' normals
-    and slip directions."""
+    each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes and slip
+    directions."""
     # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
-    # reflected in the line along [001] plus the point.
+    # reflected in the mirror through [001] plus the point.
     across = np.linspace(-1, 1, N_PIXELS)
-    points = core.mv.x * across + core.mv.y * across[:, None]                  # [rows, columns] Vector
-    directions = (core.mv.z + points).normalized() >> core.mv.z               # [rows, columns] Vector
-    normals = core.mv.vector(NORMALS).normalized()                            # [planes] Vector
-    slips = core.slip_directions(normals)                                     # [planes, directions] Vector
-    return directions, core.schmid(directions, normals, slips), normals, slips
+    offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector
+    directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction
+    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane
+    slips = core.slip_directions(planes)                                      # [planes, directions] Line
+    return directions, core.schmid(directions, planes, slips), planes, slips
 
 
-def rotation(axis: core.Vector, normals: core.Vector, slips: core.Vector) -> Iterator[tuple[core.Vector, core.Scalar]]:
+def rotation(axis: core.Direction, planes: core.Plane, slips: core.Line) -> Iterator[tuple[core.Direction, core.Scalar]]:
     """Each pull's axis after every slip step, and how much each system slipped in the step: every system
     slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
     for _ in range(N_STEPS):
-        amounts = power_law(core.schmid(axis, normals, slips))                 # [starts, planes, directions] Scalar
-        axis = core.slipped(axis, normals, slips, amounts)
-        yield axis, amounts                                                   # [starts] Vector
+        amounts = power_law(core.schmid(axis, planes, slips))                  # [starts, planes, directions] Scalar
+        axis = core.slipped(axis, planes, slips, amounts)
+        yield axis, amounts                                                   # [starts] Direction
 
 
-def paths() -> tuple[core.Vector, core.Scalar]:
+def paths() -> tuple[core.Direction, core.Scalar]:
     """The pulls' axes at every step `[steps + 1, starts]`, and how much each system slipped in each step
     `[steps, starts, planes, directions]`."""
-    normals = core.mv.vector(NORMALS).normalized()                            # [planes] Vector
-    starts = core.mv.vector(STARTS).normalized()                              # [starts] Vector
-    axes, amounts = zip(*rotation(starts, normals, core.slip_directions(normals)))
+    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane
+    starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction
+    axes, amounts = zip(*rotation(starts, planes, core.slip_directions(planes)))
     return stack([starts, *axes]), stack(amounts)
 
 
@@ -75,16 +75,16 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.mechanics.slip_systems import render
 
-    directions, factors, normals, slips = chart()
+    directions, factors, planes, slips = chart()
     axes, amounts = paths()
-    save_figure(render.draw_chart(directions, factors, normals, slips, axes, amounts), "slip_systems")
+    save_figure(render.draw_chart(directions, factors, planes, slips, axes, amounts), "slip_systems")
     save_animation(render.animate_paths(directions, factors, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
 
     # checks
     values = render.scalars(factors)                                          # [rows, columns, planes, directions]
     # No Schmid factor exceeds a half, and along [001] eight systems share the largest, one over the root of six.
     assert np.abs(values).max() <= 0.5 + 1e-12
-    along = np.abs(render.scalars(core.schmid(core.mv.z, normals, slips)))   # [planes, directions]
+    along = np.abs(render.scalars(core.schmid(core.mv.z.dual(), planes, slips)))   # [planes, directions]
     assert np.isclose(along.max(), 1 / np.sqrt(6)) and np.isclose(along, along.max()).sum() == 8
     # Every pull's axis ends at [112], two systems carrying nearly all of its slip on the way.
     ends = render.coordinates(axes[-1])                                        # [starts, 3]

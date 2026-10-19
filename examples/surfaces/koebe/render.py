@@ -29,13 +29,13 @@ def components(values: core.Vector) -> np.ndarray:
     return values.cast(core.ga.subspace("x y z w")).kernel
 
 
-def coordinates(points: core.Vector) -> np.ndarray:
-    """x, y and z of each point, its vector divided by its part along w, on the last axis."""
-    xyzw = points.cast(core.ga.subspace("x y z w")).kernel
+def coordinates(points: core.Point) -> np.ndarray:
+    """x, y and z of each point, divided by its weight along w, on the last axis."""
+    xyzw = points.dual_inverse().cast(core.ga.subspace("x y z w")).kernel
     return xyzw[..., :3] / xyzw[..., 3:]
 
 
-def edge_distances(apexes: core.Vector, edges: np.ndarray) -> np.ndarray:
+def edge_distances(apexes: core.Point, edges: np.ndarray) -> np.ndarray:
     """The distance from the centre to the line of each edge between apexes."""
     xyz = coordinates(apexes)
     ends = xyz[..., edges[:, 0], :], xyz[..., edges[:, 1], :]
@@ -87,7 +87,7 @@ def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figu
     """Left, the polyhedron of the circles' apexes and its dual, the polyhedron of the face circles' apexes,
     every edge of both touching the sphere where the two circles of its ends touch; right, the vertex circles
     and the face circles on the sphere. Only the near side of each is drawn."""
-    touch = coordinates(core.touching(circles, edges))                         # [edges, 3]
+    touch = coordinates(core.touching(circles, edges).dual())                  # [edges, 3]
     near = touch @ facing() > 0                                                # [edges]
     apexes = coordinates(core.apexes(circles))                                 # [vertices, 3]
     duals = core.face_circles(circles, faces)                                  # [faces] Vector

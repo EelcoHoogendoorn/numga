@@ -1,4 +1,4 @@
-"""The cube's faces, area normals and volume."""
+"""The cube's faces, oriented patches and volume."""
 
 from __future__ import annotations
 
@@ -20,10 +20,11 @@ ARROW_SCALE = 0.36
 
 
 # --- plumbing -------------------------------------------------------------------------
-def cube(ax: Axes, vertices: core.Vector, centres: core.Vector, normals: core.Vector) -> None:
-    corners = vertices.cast(core.ga.subspace("x y z")).kernel
-    starts = centres.cast(core.ga.subspace("x y z")).kernel
-    arrows = normals.cast(core.ga.subspace("x y z")).kernel
+def cube(ax: Axes, vertices: core.Point, centres: core.Point, patches: core.Patch) -> None:
+    corners = vertices.cast(core.ga.subspace("yz zx xy")).kernel
+    starts = centres.cast(core.ga.subspace("yz zx xy")).kernel
+    # Each patch drawn as its normal, as long as its area.
+    arrows = patches.cast(core.ga.subspace("x y z")).kernel
     ax.add_collection3d(Poly3DCollection(
         corners[FACES], facecolors=COLOURS * 2, alpha=0.20,
         edgecolors="#334155", linewidths=1.3,
@@ -36,8 +37,8 @@ def cube(ax: Axes, vertices: core.Vector, centres: core.Vector, normals: core.Ve
     ax.set_axis_off()
 
 
-def measures(ax: Axes, normals: core.Vector, volume: core.Scalar) -> None:
-    areas = normals[:3].norm().kernel[..., 0]
+def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
+    areas = patches[:3].norm().kernel[..., 0]
     values = np.concatenate([areas, volume.kernel])
     ax.bar(np.arange(len(values)), values, color=(*COLOURS, "#334155"), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
@@ -45,25 +46,25 @@ def measures(ax: Axes, normals: core.Vector, volume: core.Scalar) -> None:
     ax.spines[["top", "right"]].set_visible(False)
 
 
-def comparison(vertices: core.Vector, centres: core.Vector, normals: core.Vector, volume: core.Scalar) -> plt.Figure:
-    """One column per deformation: the cube with its area normals above, and below, the areas of the faces
+def comparison(vertices: core.Point, centres: core.Point, patches: core.Patch, volume: core.Scalar) -> plt.Figure:
+    """One column per deformation: the cube with its patches above, and below, the areas of the faces
     normal to x, y and z and the volume, against the unit cube's."""
     figure = plt.figure(figsize=(12, 6.5), layout="constrained")
     count = vertices.shape[0]
     for i in range(count):
-        cube(figure.add_subplot(2, count, i + 1, projection="3d"), vertices[i], centres[i], normals[i])
-        measures(figure.add_subplot(2, count, count + i + 1), normals[i], volume[i])
+        cube(figure.add_subplot(2, count, i + 1, projection="3d"), vertices[i], centres[i], patches[i])
+        measures(figure.add_subplot(2, count, count + i + 1), patches[i], volume[i])
     return figure
 
 
-def frame(vertices: core.Vector, centres: core.Vector, normals: core.Vector, volume: core.Scalar) -> np.ndarray:
+def frame(vertices: core.Point, centres: core.Point, patches: core.Patch, volume: core.Scalar) -> np.ndarray:
     figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
-    cube(figure.add_subplot(1, 2, 1, projection="3d"), vertices, centres, normals)
-    measures(figure.add_subplot(1, 2, 2), normals, volume)
+    cube(figure.add_subplot(1, 2, 1, projection="3d"), vertices, centres, patches)
+    measures(figure.add_subplot(1, 2, 2), patches, volume)
     pixels = capture(figure)
     plt.close(figure)
     return pixels
 
 
-def animate(frames: Iterable[tuple[core.Vector, core.Vector, core.Vector, core.Scalar]]) -> list[np.ndarray]:
-    return [frame(vertices, centres, normals, volume) for vertices, centres, normals, volume in frames]
+def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> list[np.ndarray]:
+    return [frame(vertices, centres, patches, volume) for vertices, centres, patches, volume in frames]
