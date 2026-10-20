@@ -35,53 +35,53 @@ def rig(offsets: np.ndarray, gazes: np.ndarray) -> Motor:
     return (mv.xw * offsets / 2).exp() * (mv.xy * gazes / 2).exp()
 
 
-def observe(true_motors: Motor):
+def observe(true_poses: Motor):
     """The landmarks, the pinhole cameras, and the sight cones of their pixel measurements."""
     true_points = mv.point(LANDMARKS)
     # Pinhole at the origin, sensor line y == 1:
     camera = (mv.point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
-    cameras = camera.broadcast_to(true_motors.shape)
+    cameras = camera.broadcast_to(true_poses.shape)
 
     # Sensor pixel measurements, in [n_points, n_cams] layout, pulled back into sight cones:
-    projs = cameras(true_motors << true_points[:, None])
-    pixels = projs / (mv.w & projs)
-    return true_points, cameras, core.make_cones(cameras, core.sensor_disk(pixels))
+    images = cameras(true_poses << true_points[:, None])
+    pixels = images / (mv.w & images)
+    return true_points, cameras, core.sight_cones(cameras, core.sensor_disc(pixels))
 
 
-def cone_cost(motors: Motor, points: Point, local_cones: Quadric) -> core.Scalar:
+def cone_cost(poses: Motor, points: Point, cones: Quadric) -> core.Scalar:
     """The objective: every point's cone value, summed over the cameras that see it."""
-    local_points = motors << points[:, None]
-    return (local_cones(local_points) & local_points).sum()
+    local_points = poses << points[:, None]
+    return (cones(local_points) & local_points).sum()
 
 
 def bundle_adjustment():
     """Two convergent cameras, the second panned 5% too far, aligned by eight Gauss-Newton steps."""
     # Cam 0 on the left panned right, Cam 1 on the right panned left:
-    true_motors = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE]))
-    _, _, local_cones = observe(true_motors)
-    initial_motors = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE * 1.05]))
+    true_poses = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE]))
+    _, _, cones = observe(true_poses)
+    guess = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE * 1.05]))
 
     # Camera alignment purely via perspective cone quadrics, Cam 0 fixed as reference:
-    motors, points, fused = core.bundle_adjust(initial_motors, local_cones, 8, 0.8, np.array([0.0, 1.0]))
-    world_cones = motors >> local_cones(motors << Point)
+    poses, points, splats = core.align(guess, cones, 8, 0.8, np.array([0.0, 1.0]))
+    world_cones = poses >> cones(poses << Point)
 
     # --- checks
     # The cone cost vanishes at the aligned rig.
-    assert abs(cone_cost(motors, points, local_cones).to_array()) < 1e-12
+    assert abs(cone_cost(poses, points, cones).to_array()) < 1e-12
 
-    return motors, world_cones, fused, points
+    return poses, world_cones, splats, points
 
 
 def convergence(
-    true_motors: Motor, initial_motors: Motor, damping: float, free: np.ndarray, iterations: int,
+    true_poses: Motor, guess: Motor, damping: float, moving: np.ndarray, n_steps: int,
 ):
     """The rig after each alternating Gauss-Newton step, from the initial poses."""
-    _, _, local_cones = observe(true_motors)
-    motors = initial_motors
-    for _ in range(iterations + 1):
-        points, fused = core.triangulate_cones(motors, local_cones)
-        yield motors, motors >> local_cones(motors << Point), fused, points
-        motors, _, _ = core.bundle_adjust(motors, local_cones, 1, damping, free)
+    _, _, cones = observe(true_poses)
+    poses = guess
+    for _ in range(n_steps + 1):
+        points, splats = core.triangulate(poses, cones)
+        yield poses, poses >> cones(poses << Point), splats, points
+        poses, _, _ = core.align(poses, cones, 1, damping, moving)
 
 
 def three_camera_truth() -> Motor:
@@ -89,41 +89,41 @@ def three_camera_truth() -> Motor:
     return rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE, 0.0]))
 
 
-def one_camera(iterations: int):
+def one_camera(n_steps: int):
     """One moving camera, Cam 1 with a 25% pan mismatch; Cams 0 and 2 anchored."""
     # Damping 0.38 yields a steady visual trajectory reaching ~95% progress at step 9-10.
-    initial_motors = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
-    return convergence(three_camera_truth(), initial_motors, 0.38, np.array([0.0, 1.0, 0.0]), iterations)
+    guess = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
+    return convergence(three_camera_truth(), guess, 0.38, np.array([0.0, 1.0, 0.0]), n_steps)
 
 
-def two_cameras(iterations: int):
+def two_cameras(n_steps: int):
     """Two moving cameras, Cams 1 and 2 both perturbed; Cam 0 anchored."""
     # Damping 0.35 yields a steady visual trajectory reaching ~95% progress at step 10.
-    initial_motors = rig(np.array([-BASELINE, BASELINE, -0.1]), np.array([GAZE, -GAZE * 1.25, 0.05]))
-    return convergence(three_camera_truth(), initial_motors, 0.35, np.array([0.0, 1.0, 1.0]), iterations)
+    guess = rig(np.array([-BASELINE, BASELINE, -0.1]), np.array([GAZE, -GAZE * 1.25, 0.05]))
+    return convergence(three_camera_truth(), guess, 0.35, np.array([0.0, 1.0, 1.0]), n_steps)
 
 
-def three_cameras(iterations: int):
+def three_cameras(n_steps: int):
     """All three cameras perturbed and updating freely, without anchors."""
     # Damping 0.1 keeps every step a tenth shorter than the one before: a gradual trajectory.
-    initial_motors = rig(np.array([-BASELINE * 0.85, BASELINE, -0.25]), np.array([GAZE * 1.15, -GAZE * 1.65, 0.15]))
-    return convergence(three_camera_truth(), initial_motors, 0.1, np.array([1.0, 1.0, 1.0]), iterations)
+    guess = rig(np.array([-BASELINE * 0.85, BASELINE, -0.25]), np.array([GAZE * 1.15, -GAZE * 1.65, 0.15]))
+    return convergence(three_camera_truth(), guess, 0.1, np.array([1.0, 1.0, 1.0]), n_steps)
 
 
-def schur(iterations: int):
+def schur(n_steps: int):
     """One moving camera as in `one_camera`, solved by the joint Gauss-Newton step with the Schur complement.
 
     Each state carries the marginal information on each camera's pose from the step taken there.
     """
-    true_motors = three_camera_truth()
-    _, cameras, local_cones = observe(true_motors)
-    motors = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
-    free = np.array([0.0, 1.0, 0.0])
-    for _ in range(iterations + 1):
-        points, fused = core.triangulate_cones(motors, local_cones)
-        next_motors, _, _, information = core.bundle_adjust_schur(cameras, motors, local_cones, 1, 0.7, free)
-        yield motors, motors >> local_cones(motors << Point), fused, points, information
-        motors = next_motors
+    true_poses = three_camera_truth()
+    _, cameras, cones = observe(true_poses)
+    poses = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
+    moving = np.array([0.0, 1.0, 0.0])
+    for _ in range(n_steps + 1):
+        points, splats = core.triangulate(poses, cones)
+        next_poses, _, _, information = core.align_jointly(cameras, poses, cones, 1, 0.7, moving)
+        yield poses, poses >> cones(poses << Point), splats, points, information
+        poses = next_poses
 
 
 if __name__ == "__main__":

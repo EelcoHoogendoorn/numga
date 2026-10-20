@@ -70,10 +70,10 @@ import examples.mechanics.spinning_top.scenarios
 import examples.mechanics.symmetry.core
 import examples.mechanics.tides.core
 import examples.mechanics.tides.scenarios
-import examples.mechanics.vortices.core
-import examples.mechanics.vortices.scenarios
-import examples.mechanics.wing.core
-import examples.mechanics.wing.scenarios
+import examples.fluids.vortices.core
+import examples.fluids.vortices.scenarios
+import examples.fluids.wing.core
+import examples.fluids.wing.scenarios
 import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
 import examples.optics.photoelasticity.core
@@ -121,8 +121,8 @@ import examples.relativity.thomas_precession.core
 import examples.relativity.thomas_precession.scenarios
 import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
-import examples.mechanics.stokes_swimmer.core
-import examples.mechanics.stokes_swimmer.scenarios
+import examples.fluids.stokes_swimmer.core
+import examples.fluids.stokes_swimmer.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
 instantiate('examples.mesh', VGA3D)

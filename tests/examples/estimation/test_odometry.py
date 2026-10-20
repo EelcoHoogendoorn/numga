@@ -64,8 +64,10 @@ def test_the_lap_closes_in_the_plane_and_draws():
 
 
 def test_the_same_core_in_space():
-    # A short lap in space that pitches and rolls reaches its most likely poses by the checks inside the
-    # scenario. Its twists have six coefficients, where the plane's have three.
+    # A short lap in space that pitches and rolls reaches its most likely poses, where the gradient falls
+    # a millionfold. Its twists have six coefficients, where the plane's have three.
     steps = scenarios.lap_in_space()
-    scenarios.closing(steps, 3, 0)
+    *_, poses, _ = scenarios.closing(steps, 3, 0)
+    at_dead, at_optimum = scenarios.gradients(steps, poses, 0)
+    np.testing.assert_allclose(at_optimum.kernel, 0.0, atol=1e-6 * np.abs(at_dead.kernel).max())
     assert len(instantiate(scenarios.CORE, steps.algebra).Twist.output_subspace) == 6

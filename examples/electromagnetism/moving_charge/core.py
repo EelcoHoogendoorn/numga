@@ -2,22 +2,23 @@
 potential.
 
 The charge is a Plummer-softened point charge: beyond its core it is a point charge, and its density
-is smooth and finite at its centre. At rest its potential points along its time direction and falls
+is smooth and finite at its centre. At rest its potential points along the lab's time slice and falls
 off as one over the distance, and the gradients of the potential and of the field at an event are
-maps on displacements, written in closed form. A moving charge is the charge at rest seen through
-a boost: its gradients are the rest-frame ones with the boost sandwiched around them, the
-displacement pulled into the rest frame and the result pushed back out.
+maps from steps, antivectors like the events themselves, written in closed form. A moving charge is
+the charge at rest seen through a boost: its gradients are the rest-frame ones with the boost
+sandwiched around them, the step pulled into the rest frame and the result pushed back out.
 
-Contracting a gradient against the space of vectors gives the derivative: of the potential, the field
-bivector plus the Lorenz-gauge scalar, which vanishes; of the field, the current plus a trivector,
-which vanishes. Both halves of Maxwell's equations also follow without a metric, from the incidence
-trace of the field's gradient against the space of antivectors: on the field itself the trace is the
-current, on its dual it vanishes. The metric enters only through that dual.
+The derivative of a gradient pairs each step with its vector by incidence alone,
+`(Vector ^ gradients(Antivector)).trace(1, 2)`: of the potential it is the field; of the field it
+vanishes, and of the excitation the vacuum makes of the field it is the current, an antivector, which
+the lab's time slice reads as the charge density, `mv.t & current`. The metric enters through the
+vacuum alone: in its map from fields to excitations, and in the distances of the charge's own
+potential.
 
 A point charge circling at constant speed radiates. Its potential at an event is set by where the
 charge was when it sent the light that reaches the event, the retarded time, and the gradient of
-that potential is again a closed-form map: contracting it gives the full field, the bound field
-that moves with the charge and the waves it sheds.
+that potential is again a closed-form map: its derivative is the full field, the bound field that
+moves with the charge and the waves it sheds.
 """
 
 from __future__ import annotations
@@ -34,14 +35,21 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
+Antibivector = ga.gatype.antibivector()
 Rotor = ga.gatype.rotor()
-Even = ga.gatype.even()
-Odd = ga.gatype.odd()
-PotentialGradient = ga.gatype((Vector, Vector))              # Vector <- Vector
+PotentialGradient = ga.gatype((Vector, Antivector))          # Vector <- Antivector
+FieldGradient = ga.gatype((Bivector, Antivector))            # Bivector <- Antivector
 # The retarded time: steps that always close in, by at least the orbit's speed each, then Newton's.
 SETTLE_STEPS = 6
 NEWTON_STEPS = 6
-FieldGradient = ga.gatype((Bivector, Vector))                # Bivector <- Vector
+
+# The vacuum: from a field to the excitation it causes.
+vacuum = Bivector.dual()                                     # Antibivector <- Bivector
+# The vacuum's metric on steps: from a step, the vector that pairs with every other step as their metric
+# product does.
+lower = (Vector * (Antivector | Antivector)).trace(1, 2)     # Vector <- Antivector
+# One unit along the lab's time: the step the metric turns into the lab's time slice.
+time = lower.solve(mv.t)                                     # [] Antivector
 
 
 @dataclass(frozen=True)
@@ -56,108 +64,98 @@ class Charge:
     charge: np.ndarray                                       # [...] the strength of each charge
     core_radius: float
     boost: Rotor                                             # [...] Rotor, the rest frame seen from the lab
-    position: Vector                                         # [...] Vector, where it is at lab time zero
+    position: Antivector                                     # [...] Antivector, where it is at lab time zero
 
 
 # --- math -----------------------------------------------------------------------------
-def potential_gradient(charge: Charge, events: Vector) -> PotentialGradient:
-    """The change in the potential for a small displacement from each event."""
-    separations, weight, _ = _profile(charge, events)                        # [...] Vector, Scalar
-    # At rest the potential points along the rest time and changes with the spatial distance.
-    at_rest = weight * mv.t * (separations | Vector)                          # [...] Vector <- Vector
-    return charge.boost >> at_rest(charge.boost << Vector)                    # [...] Vector <- Vector
+def potential_gradient(charge: Charge, events: Antivector) -> PotentialGradient:
+    """The change in the potential for a small step from each event."""
+    separations, weight, _ = _profile(charge, events)                        # [...] Antivector, Scalar
+    # At rest the potential points along the time slice and changes with the spatial distance.
+    at_rest = weight * mv.t * (separations | Antivector)                      # [...] Vector <- Antivector
+    return charge.boost >> at_rest(charge.boost << Antivector)                # [...] Vector <- Antivector
 
 
-def field_gradient(charge: Charge, events: Vector) -> FieldGradient:
-    """The change in the field for a small displacement from each event."""
-    separations, weight, weight_change = _profile(charge, events)            # [...] Vector, Scalar, Scalar
-    # The radial field changes with the distance and turns with the displacement.
-    radial = weight_change * (separations ^ mv.t) * (separations | Vector)    # [...] Bivector <- Vector
-    turning = weight * (Vector ^ mv.t)                                        # [...] Bivector <- Vector
-    return charge.boost >> (radial + turning)(charge.boost << Vector)         # [...] Bivector <- Vector
-
-
-def potential_derivative(gradients: PotentialGradient) -> Even:
-    """The field bivector plus the Lorenz-gauge scalar."""
-    return (Vector * gradients(Vector)).contract(1, 2)
+def field_gradient(charge: Charge, events: Antivector) -> FieldGradient:
+    """The change in the field for a small step from each event."""
+    separations, weight, weight_change = _profile(charge, events)            # [...] Antivector, Scalar, Scalar
+    # The radial field changes with the distance and turns with the step.
+    radial = weight_change * (lower(separations) ^ mv.t) * (separations | Antivector)   # [...] Bivector <- Antivector
+    turning = weight * (lower ^ mv.t)                                        # [...] Bivector <- Antivector
+    return charge.boost >> (radial + turning)(charge.boost << Antivector)     # [...] Bivector <- Antivector
 
 
 def field(gradients: PotentialGradient) -> Bivector:
-    """The field: the bivector part of the potential's derivative."""
-    return (Vector ^ gradients(Vector)).contract(1, 2)
+    """The derivative of the potential: each step's vector wedged with the potential's change along it."""
+    return (Vector ^ gradients(Antivector)).trace(1, 2)                      # [...] Bivector
 
 
-def field_derivative(gradients: FieldGradient) -> Odd:
-    """The current plus a trivector that vanishes: Maxwell's equations through the metric."""
-    return (Vector * gradients(Vector)).contract(1, 2)
+def current(gradients: FieldGradient) -> Antivector:
+    """The derivative of the excitation the vacuum makes of the field: Maxwell's equation with sources."""
+    return (Vector ^ vacuum(gradients(Antivector))).trace(1, 2)              # [...] Antivector
 
 
-def sources(gradients: FieldGradient) -> tuple[Vector, Vector]:
-    """Maxwell's equations without a metric: the incidence trace of the field's gradient, which is
-    the current, and of its dual's, which vanishes."""
-    current = (gradients(Vector) & Antivector).trace(1, 2)                   # [...] Vector
-    magnetic_source = (gradients(Vector).dual() & Antivector).trace(1, 2)    # [...] Vector
-    return current, magnetic_source
-
-
-def orbit_potential_gradient(orbit: Orbit, events: Vector) -> PotentialGradient:
-    """The change in the circling charge's potential for a small displacement from each event."""
+def orbit_potential_gradient(orbit: Orbit, events: Antivector) -> PotentialGradient:
+    """The change in the circling charge's potential for a small step from each event."""
     emitted = retarded(orbit, events)                                        # [...] Scalar
-    position, tangent, bend = worldline(orbit, emitted)                      # [...] Vector each
+    position, tangent, bend = worldline(orbit, emitted)                      # [...] Antivector each
     # The charge's velocity and acceleration in its own time, and the light ray from it to the event.
     dilation = 1 / np.sqrt(1 - orbit.speed**2)
-    velocity, acceleration = dilation * tangent, dilation**2 * bend          # [...] Vector each
-    ray = events - position                                                  # [...] Vector
+    velocity, acceleration = dilation * tangent, dilation**2 * bend          # [...] Antivector each
+    ray = events - position                                                  # [...] Antivector
     reach = ray | velocity                                                   # [...] Scalar
-    # A displacement moves the emission along the ray, which changes the velocity and the reach.
-    emission = (ray | Vector) / reach                                        # [...] Scalar <- Vector
-    reach_change = (velocity | Vector) + ((ray | acceleration) - 1) * emission   # [...] Scalar <- Vector
+    # A step moves the emission along the ray, which changes the velocity and the reach.
+    emission = (ray | Antivector) / reach                                    # [...] Scalar <- Antivector
+    reach_change = (velocity | Antivector) + ((ray | acceleration) - 1) * emission   # [...] Scalar <- Antivector
     weight = orbit.charge / (4 * np.pi) / reach                              # [...] Scalar
-    return weight * (acceleration * emission - velocity * reach_change / reach)   # [...] Vector <- Vector
+    # The potential is the velocity the metric turns into a vector, over the reach.
+    return weight * lower(acceleration * emission - velocity * reach_change / reach)   # [...] Vector <- Antivector
 
 
-def worldline(orbit: Orbit, times: Scalar) -> tuple[Vector, Vector, Vector]:
+def worldline(orbit: Orbit, times: Scalar) -> tuple[Antivector, Antivector, Antivector]:
     """The circling charge at each lab time, its change per unit lab time, and that change's change."""
     turning = orbit.speed / orbit.radius                                     # angular rate
-    offset = (mv.xy * (-0.5 * turning) * times).exp() >> (mv.x * orbit.radius)   # [...] Vector
-    tangent = mv.t + turning * (offset | mv.xy)                              # [...] Vector
-    bend = turning * ((tangent - mv.t) | mv.xy)                              # [...] Vector
-    return times * mv.t + offset, tangent, bend
+    # The offset turned in the orbit's plane, and moving under that turn by its commutator with the plane.
+    offset = (mv.xy * (-0.5 * turning) * times).exp() >> (mv.x.dual() * orbit.radius)   # [...] Antivector
+    tangent = time + turning * offset.commutator(mv.xy)                      # [...] Antivector
+    bend = turning * (tangent - time).commutator(mv.xy)                      # [...] Antivector
+    return times * time + offset, tangent, bend
 
 
-def retarded(orbit: Orbit, events: Vector) -> Scalar:
+def retarded(orbit: Orbit, events: Antivector) -> Scalar:
     """The lab time at which the charge sent the light that reaches each event: a few steps that
     move the time back by the distance light covers, which always close in, then Newton's steps."""
     def light(times: Scalar) -> tuple[Scalar, Scalar, Scalar]:
         """How far light from the charge at each time falls short of the event, its rate, and the distance."""
-        position, tangent, _ = worldline(orbit, times)                       # [...] Vector each
-        across = (events - position) - ((events - position) | mv.t) * mv.t  # [...] Vector
+        position, tangent, _ = worldline(orbit, times)                       # [...] Antivector each
+        ray = events - position                                              # [...] Antivector
+        across = ray - (mv.t & ray) * time                                   # [...] Antivector
         distance = (-(across | across)).square_root()                        # [...] Scalar
-        return (events | mv.t) - times - distance, 1 + (across | tangent) / distance, distance
+        return (mv.t & events) - times - distance, 1 + (across | tangent) / distance, distance
 
-    times = events | mv.t                                                    # [...] Scalar
+    times = mv.t & events                                                    # [...] Scalar
     for _ in range(SETTLE_STEPS):
         _, _, distance = light(times)
-        times = (events | mv.t) - distance
+        times = (mv.t & events) - distance
     for _ in range(NEWTON_STEPS):
         shortfall, rate, _ = light(times)
         times = times + shortfall / rate
     return times
 
 
-def _profile(charge: Charge, events: Vector) -> tuple[Vector, Scalar, Scalar]:
+def _profile(charge: Charge, events: Antivector) -> tuple[Antivector, Scalar, Scalar]:
     """The spatial separation from the charge in its rest frame, the field per unit separation, and
-    that weight's change per unit of `separation | displacement`."""
-    at_rest = charge.boost << (events - charge.position)                     # [...] Vector
-    separations = at_rest - (at_rest | mv.t) * mv.t                          # [...] Vector
+    that weight's change per unit of `separation | step`."""
+    at_rest = charge.boost << (events - charge.position)                     # [...] Antivector
+    separations = at_rest - (mv.t & at_rest) * time                          # [...] Antivector
     softened = charge.core_radius**2 - (separations | separations)           # [...] Scalar
     weight = charge.charge / (4 * np.pi) / (softened * softened.square_root())   # [...] Scalar
     return separations, weight, 3 * weight / softened
 
 
 # --- plumbing -------------------------------------------------------------------------
-def grid(half_width: float, half_height: float, columns: int, rows: int) -> Vector:
+def grid(half_width: float, half_height: float, columns: int, rows: int) -> Antivector:
     """Events at lab time zero on a grid in the plane z = 0, at the centres of its cells."""
     x = (np.arange(columns) + 0.5) / columns * 2 * half_width - half_width
     y = (np.arange(rows) + 0.5) / rows * 2 * half_height - half_height
-    return (mv.x * x[None, :] + mv.y * y[:, None]).cast(Vector)              # [rows, columns] Vector
+    return (mv.x.dual() * x[None, :] + mv.y.dual() * y[:, None]).cast(Antivector)   # [rows, columns] Antivector

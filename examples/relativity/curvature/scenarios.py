@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.relativity.curvature import core
-from examples.relativity.curvature.core import Curvature, Scalar, Tidal, Vector, t, x, z
+from examples.relativity.curvature.core import lower, mv, time_direction, travel, wave_vector
 
 # Wave packet and detector parameters, with the speed of light one.
 # Packet window; the carrier wavelength is `DURATION / N_CYCLES`, two thirds.
@@ -15,81 +15,85 @@ N_CYCLES = 9
 # Peak strain.
 AMPLITUDE = 1e-4
 N_SAMPLES = 1201
+# Which of the plus and cross profiles each polarization carries: plus, cross, and circular.
+POLARIZATIONS = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
 # Detector radius, much smaller than the wavelength.
 RADIUS = 0.01
 N_BEADS = 24
 # Display magnification of the displacements.
 AMPLIFICATION = 4000
+# Observers boosted along the wave.
+MAX_RAPIDITY = 0.7
+N_OBSERVERS = 15
+# The animation's frame duration in milliseconds.
+FRAME_DURATION = 50
 
 
-def curvature_map_scenario():
-    """The plus wave at one event, with the rest observer, the wave direction and a transverse edge."""
+# --- math -----------------------------------------------------------------------------
+def curvature_map() -> tuple[core.Curvature, core.Antivector, core.Antivector, core.Antivector]:
+    """The plus wave at one event, with the observer at rest, the wave's direction and a transverse
+    separation."""
+    plus, _ = core.polarizations()
+    return plus, time_direction, travel, mv.x.dual()
+
+
+def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector, core.Antivector]:
+    """A ring of beads through the packet in the plus, cross and circular polarizations: the samples, the
+    profiles of each polarization `[times, polarizations, 2]`, the rest separations, and the displacements
+    and accelerations, integrated from rest."""
     plus, cross = core.polarizations()
-
-    # --- checks -------------------------------------------------------------
-    # Spin two: the eighth turn across the wave is the quarter duality turn.
-    np.testing.assert_allclose((cross - -core.I * plus).kernel, 0.0, atol=1e-12)
-    # Nonzero, yet applying the curvature twice gives zero.
-    np.testing.assert_allclose(plus(plus).kernel, 0.0, atol=1e-14)
-    assert np.abs(plus.kernel).max() > 0.0
-    return plus, t, t + z, x
-
-
-def detector_scenario():
-    """Integrate a ring of beads through the packet in the plus, cross and circular polarizations.
-
-    Returns the samples, rest separations, displacements and accelerations, and the display
-    magnification of the displacements.
-    """
-    plus, _ = core.polarizations()
     time = np.linspace(0.0, DURATION, N_SAMPLES)
-    _, second = core.wave_packet(time, DURATION, N_CYCLES, AMPLITUDE)
-    waves: Curvature = core.polarized_waves(plus, second)          # [n_time, n_polarizations] Bivector <- Bivector
-    response: Tidal = core.tidal_map(waves, t)                            # [n_time, n_polarizations] Vector <- Vector
-    reference: Vector = core.detector_ring(N_BEADS) * RADIUS                # [n_beads] Vector
-    acceleration: Vector = response[:, :, None](reference)                # [n_time, n_polarizations, n_beads] Vector
-    displacement: Vector = core.integrate_acceleration(time, acceleration)
-
-    # --- checks -------------------------------------------------------------
-    # The integrated ring lands on the strain map applied to the rest separations.
-    strain, _ = core.wave_packet(time, DURATION, N_CYCLES, AMPLITUDE)
-    plus_strain, cross_strain = core.strain_patterns()
-    predicted = core.polarized_strain(plus_strain, cross_strain, strain)[:, :, None](reference)
-    np.testing.assert_allclose(displacement.kernel, predicted.kernel, atol=1e-12)
-    return time, reference, displacement, acceleration, AMPLIFICATION
+    profiles, second = core.wave_packet(time, DURATION, N_CYCLES, AMPLITUDE)          # [times, 2] each
+    # The weak-wave curvature is minus half the strain's second derivative times the unit maps.
+    waves = core.polarized(plus, cross, -0.5 * second[:, None] * POLARIZATIONS)        # [times, polarizations] Curvature
+    response = core.tidal_map(waves, time_direction)                                  # [times, polarizations] Tidal
+    # Each bead is x turned toward y by its angle; x and y square to minus one, which turns the sense.
+    angles = np.linspace(0, 2 * np.pi, N_BEADS, endpoint=False)
+    reference = (mv.xy * (angles / 2)).exp() >> mv.x.dual() * RADIUS                  # [beads] Antivector
+    # The metric turns each tidal force into an acceleration.
+    acceleration = lower.solve(response[:, :, None](reference))                       # [times, polarizations, beads] Antivector
+    displacement = core.integrate_acceleration(time, acceleration)                    # [times, polarizations, beads] Antivector
+    return time, profiles[:, None] * POLARIZATIONS, reference, displacement, acceleration
 
 
-def doppler_scenario() -> tuple[np.ndarray, Scalar]:
-    """Tidal amplitude of the unit plus wave as seen by observers boosted along the wave."""
+def doppler() -> tuple[np.ndarray, core.Scalar]:
+    """The tidal amplitude of the unit plus wave as seen by observers boosted along the wave."""
     plus, _ = core.polarizations()
-    rapidities = np.linspace(-0.7, 0.7, 15)
-    observers: Vector = core.boosted_observers(rapidities, z)             # [n] Vector
-    responses: Tidal = core.tidal_map(plus, observers)                    # [n] Vector <- Vector
-    amplitudes: Scalar = responses.svdvals()[..., 0]                      # [n] Scalar
-
-    # --- checks -------------------------------------------------------------
-    # A chasing observer sees the frequency redshifted; the tide scales with its square.
-    np.testing.assert_allclose(amplitudes.to_array(), np.exp(-2 * rapidities), atol=1e-12)
-    return rapidities, amplitudes
+    rapidities = np.linspace(-MAX_RAPIDITY, MAX_RAPIDITY, N_OBSERVERS)
+    observers = core.boosted_observers(rapidities, mv.z.dual())                       # [observers] Antivector
+    accelerations = lower.solve(core.tidal_map(plus, observers))                      # [observers] Antivector <- Antivector
+    return rapidities, accelerations.svdvals()[..., 0]                                # [observers] Scalar
 
 
-if __name__ == "__main__":
-    import argparse
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.relativity.curvature import render
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--animate", action="store_true", help="Also animate the detector rings.")
-    args = parser.parse_args()
-    save_figure(render.draw_curvature_map(*curvature_map_scenario()), "curvature_map")
-    save_figure(render.draw_doppler(*doppler_scenario()), "curvature_doppler")
-    detector = detector_scenario()
-    save_figure(render.draw_detector(*detector), "curvature")
-    if args.animate:
-        time, reference, displacement, acceleration, amplification = detector
-        # The middle half of the window, three packet widths either side of the peak, where the ring moves.
-        shown = slice(N_SAMPLES // 4, 3 * N_SAMPLES // 4 + 1)
-        save_animation(
-            render.animate_detector(time[shown], reference, displacement[shown], acceleration[shown], amplification),
-            "curvature", 50,
-        )
+    plus, observer, wave, edge = curvature_map()
+    save_figure(render.draw_curvature_map(plus, observer, wave, edge), "curvature_map")
+    rapidities, amplitudes = doppler()
+    save_figure(render.draw_doppler(rapidities, amplitudes), "curvature_doppler")
+    time, profiles, reference, displacement, acceleration = detector()
+    save_figure(render.draw_detector(time, reference, displacement, acceleration, AMPLIFICATION), "curvature")
+    # The middle half of the window, three packet widths either side of the peak, where the ring moves.
+    shown = slice(N_SAMPLES // 4, 3 * N_SAMPLES // 4 + 1)
+    save_animation(render.animate_detector(time[shown], reference, displacement[shown], acceleration[shown], AMPLIFICATION),
+                   "curvature", FRAME_DURATION)
+
+    # checks
+    # Type N: every plane the curvature gives contains the wave's direction. Spin two: a quarter turn
+    # across the wave reverses the pattern. A chasing observer sees the wave redshifted, and the tide
+    # scales with the square. The integrated ring lands on the strain map applied to the rest separations.
+    area = mv.vector([0.3, -1.1, 0.7, 0.2]).dual() & mv.vector([0.9, 0.4, -0.5, 1.3]).dual()
+    np.testing.assert_allclose((wave_vector ^ plus(area)).kernel, 0.0, atol=1e-12)
+    quarter_turn = (mv.xy * (np.pi / 4)).exp()
+    np.testing.assert_allclose(((quarter_turn >> plus(quarter_turn << core.Antibivector)) + plus).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose(amplitudes.to_array(), np.exp(-2 * rapidities), atol=1e-12)
+    plus_strain, cross_strain = core.strain_patterns()
+    predicted = core.polarized(plus_strain, cross_strain, 0.5 * profiles)[:, :, None](reference)
+    np.testing.assert_allclose((displacement - predicted).kernel, 0.0, atol=1e-12)
+
+
+if __name__ == "__main__":
+    main()

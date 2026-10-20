@@ -16,9 +16,16 @@ from numga.algebras import PGA2D, PGA3D
 from examples import instantiate
 
 CORE = "examples.estimation.odometry.core"
-# The steps of a lap in the plane, and of a short one in space.
+# The steps of a lap in the plane, and of a short one in space, and the length of every step in metres.
 N_PLANE_STEPS = 36
 N_SPACE_STEPS = 6
+STEP_LENGTH = 0.7
+# How much the turn rate varies in the plane, and how far a step slips sideways, sways out of the plane and
+# rises or falls.
+TURN_VARIATION = 0.4
+SLIP = 0.1
+SWAY = 0.1
+RISE = 0.05
 # How far a step reading and the closing reading, recognising the start, are trusted, how well the first
 # pose is known, and how vaguely the others are known before any reading, as translation and rotation
 # standard deviations.
@@ -26,6 +33,13 @@ READING = (0.03, 0.01)
 CLOSING = (0.001, 0.0003)
 KNOWN = (0.01, 0.01)
 VAGUE = (100.0, 30.0)
+# The full Gauss-Newton steps, the share of each correction a damped step takes and their count, the seed of
+# the readings' errors, and the duration of a frame in milliseconds.
+N_FULL_STEPS = 3
+DAMPING = 0.2
+N_DAMPED_STEPS = 20
+SEED = 9
+FRAME_DURATION = 80
 
 
 # --- math -----------------------------------------------------------------------------
@@ -51,13 +65,17 @@ def closing(steps, n_iterations: int, seed: int):
     reckoned = core.reckon(dead, noises, priors)                               # [poses] Covariance
     *_, poses = core.gauss_newton(dead, readings, weights, tails, heads, anchors, anchor_weights, 1.0, n_iterations)   # [poses] Motor
     uncertainty = core.marginals(poses, noises, tails, heads, priors, weights, anchor_weights)   # [poses] Covariance
-
-    # --- checks
-    # The gradient falls a millionfold from dead reckoning to the most likely poses.
-    at_dead = core.gradient(dead, readings, weights, tails, heads, anchors, anchor_weights)
-    at_optimum = core.gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)
-    np.testing.assert_allclose(at_optimum.kernel, 0.0, atol=1e-6 * np.abs(at_dead.kernel).max())
     return truth, dead, reckoned, poses, uncertainty
+
+
+def gradients(steps, poses, seed: int):
+    """The gradient of the objective of a lap along the true steps at dead reckoning and at the given
+    poses."""
+    core = instantiate(CORE, steps.algebra)
+    truth, dead, readings, noises, tails, heads, anchors, priors = survey(core, steps, seed)
+    weights, anchor_weights = noises.inverse(), priors.inverse()               # [readings] Information, [poses] Information
+    return (core.gradient(dead, readings, weights, tails, heads, anchors, anchor_weights),
+            core.gradient(poses, readings, weights, tails, heads, anchors, anchor_weights))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -83,33 +101,45 @@ def survey(core: ModuleType, steps, seed: int):
 
 
 def lap_in_plane():
-    """A lap of N_PLANE_STEPS steps of 0.7 m in the plane, turning faster and slower twice a lap,
-    and slipping sideways a little, one way and back twice a lap, which leaves the lap closed."""
+    """A lap of N_PLANE_STEPS steps in the plane, turning faster and slower twice a lap, and slipping
+    sideways a little, one way and back twice a lap, which leaves the lap closed."""
     mv = instantiate(CORE, PGA2D).mv
     phase = 2 * np.pi * np.arange(N_PLANE_STEPS) / N_PLANE_STEPS
-    turn = mv.xy * (1 + 0.4 * np.sin(2 * phase)) * 2 * np.pi / N_PLANE_STEPS       # [steps] Twist
-    slip = mv.yw * 0.1 * np.cos(2 * phase)                                     # [steps] Twist
-    return ((turn + slip + mv.xw * 0.7) * 0.5).exp()                           # [steps] Motor
+    turn = mv.xy * (1 + TURN_VARIATION * np.sin(2 * phase)) * 2 * np.pi / N_PLANE_STEPS   # [steps] Twist
+    slip = mv.yw * SLIP * np.cos(2 * phase)                                    # [steps] Twist
+    return ((turn + slip + mv.xw * STEP_LENGTH) * 0.5).exp()                   # [steps] Motor
 
 
 def lap_in_space():
-    """A short lap in space, a turn of N_SPACE_STEPS steps of 0.7 m, pitching and rolling once a lap, and
-    slipping sideways and rising and falling twice a lap, which leaves the lap closed."""
+    """A short lap in space, a turn of N_SPACE_STEPS steps, pitching and rolling once a lap, and slipping
+    sideways and rising and falling twice a lap, which leaves the lap closed."""
     mv = instantiate(CORE, PGA3D).mv
     phase = 2 * np.pi * np.arange(N_SPACE_STEPS) / N_SPACE_STEPS
-    turn = mv.xy * 2 * np.pi / N_SPACE_STEPS                                      # [] Twist
-    sway = (mv.zx * np.cos(phase) + mv.yz * np.sin(phase)) * 0.1               # [steps] Twist
-    slip = mv.yw * 0.1 * np.cos(2 * phase) + mv.zw * 0.05 * np.sin(2 * phase)  # [steps] Twist
-    return ((turn + sway + slip + mv.xw * 0.7) * 0.5).exp()                    # [steps] Motor
+    turn = mv.xy * 2 * np.pi / N_SPACE_STEPS                                   # [] Twist
+    sway = (mv.zx * np.cos(phase) + mv.yz * np.sin(phase)) * SWAY              # [steps] Twist
+    slip = mv.yw * SLIP * np.cos(2 * phase) + mv.zw * RISE * np.sin(2 * phase) # [steps] Twist
+    return ((turn + sway + slip + mv.xw * STEP_LENGTH) * 0.5).exp()            # [steps] Motor
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.estimation.odometry import render
 
     # Dead reckoning drifts half a metre over the lap.
-    truth, dead, reckoned, poses, uncertainty = closing(lap_in_plane(), 3, 9)
+    truth, dead, reckoned, poses, uncertainty = closing(lap_in_plane(), N_FULL_STEPS, SEED)
     save_figure(render.draw(truth, dead, reckoned, poses, uncertainty), "odometry")
     # Closing the lap a fifth of the way at a time.
-    *_, iterates = damped(lap_in_plane(), 0.2, 20, 9)
-    save_animation(render.animate(truth, dead, reckoned, iterates), "odometry", 80)
+    *_, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
+    save_animation(render.animate(truth, dead, reckoned, iterates), "odometry", FRAME_DURATION)
+
+    # checks
+    # The gradient falls a millionfold from dead reckoning to the most likely poses, in the plane and, with
+    # the same core, in space.
+    *_, poses_in_space, _ = closing(lap_in_space(), N_FULL_STEPS, SEED)
+    for steps, most_likely in ((lap_in_plane(), poses), (lap_in_space(), poses_in_space)):
+        at_dead, at_optimum = gradients(steps, most_likely, SEED)
+        np.testing.assert_allclose(at_optimum.kernel, 0.0, atol=1e-6 * np.abs(at_dead.kernel).max())
+
+
+if __name__ == "__main__":
+    main()

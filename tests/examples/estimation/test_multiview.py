@@ -45,14 +45,14 @@ def test_triangulate_cones():
 
     camera = (mv.point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
     cameras = camera.broadcast_to((2,))
-    projs = cameras(motors << true_points[:, None])
-    pixels = projs / (mv.w & projs)
+    images = cameras(motors << true_points[:, None])
+    pixels = images / (mv.w & images)
 
     # A sensor quadric at the principal point, moved to each pixel, pulled back into cones:
-    q_sensor = mv.x * (mv.x & Point)
-    sensor_discs = core.sensor_disk_at(pixels, mv.point(np.array([0.0, 1.0])), q_sensor)
-    local_cones = core.make_cones(cameras, sensor_discs)
-    points, fused = core.triangulate_cones(motors, local_cones)
+    sensor_disc = mv.x * (mv.x & Point)
+    sensor_discs = core.sensor_disc_at(pixels, mv.point(np.array([0.0, 1.0])), sensor_disc)
+    local_cones = core.sight_cones(cameras, sensor_discs)
+    points, fused = core.triangulate(motors, local_cones)
     np.testing.assert_allclose(coordinates(points), xy, atol=1e-5)
 
     # The fused precision is positive on every displacement, so the splat is a bounded ellipse:
@@ -67,9 +67,9 @@ def test_bundle_adjust_converges():
     true_motors = scenarios.three_camera_truth()
     true_points, _, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
-    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
+    initial_points, _ = core.triangulate(initial_motors, local_cones)
 
-    _, points, _ = core.bundle_adjust(initial_motors, local_cones, 12, 0.9, np.array([0.0, 1.0, 0.0]))
+    _, points, _ = core.align(initial_motors, local_cones, 12, 0.9, np.array([0.0, 1.0, 0.0]))
     assert rmse(points, true_points) < rmse(initial_points, true_points)
     assert rmse(points, true_points) < 0.02
 
@@ -79,9 +79,9 @@ def test_schur_bundle_adjust_converges_and_yields_information():
     true_motors = scenarios.three_camera_truth()
     true_points, cameras, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
-    initial_points, _ = core.triangulate_cones(initial_motors, local_cones)
+    initial_points, _ = core.triangulate(initial_motors, local_cones)
 
-    _, points, _, information = core.bundle_adjust_schur(
+    _, points, _, information = core.align_jointly(
         cameras, initial_motors, local_cones, 10, 0.7, np.array([0.0, 1.0, 0.0]),
     )
     assert rmse(points, true_points) < rmse(initial_points, true_points)
@@ -110,13 +110,13 @@ def test_the_schur_step_moves_two_free_cameras_together():
     free = np.array([0.0, 1.0, 1.0])
 
     def cost(motors):
-        points, _ = core.triangulate_cones(motors, local_cones)
+        points, _ = core.triangulate(motors, local_cones)
         world_cones = motors >> local_cones(motors << Point)
         return float((world_cones(points[:, None]) & points[:, None]).sum().to_array())
 
     initial = cost(motors)
     for _ in range(5):
-        previous, motors = motors, core.bundle_adjust_schur(cameras, motors, local_cones, 1, 1.0, free)[0]
+        previous, motors = motors, core.align_jointly(cameras, motors, local_cones, 1, 1.0, free)[0]
     assert cost(motors) < 1e-5 * initial
     assert np.abs((motors - previous).kernel).max() < 1e-5
 
@@ -128,11 +128,11 @@ def test_splat_alignment_converges_with_the_schur_step():
     true_points, cameras, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
     free = np.array([0.0, 1.0, 0.0])
-    projs = cameras(true_motors << true_points[:, None])
-    pixels = projs / (mv.w & projs)
+    images = cameras(true_motors << true_points[:, None])
+    pixels = images / (mv.w & images)
 
     splat_motors, _ = core.align_rays_to_splats(initial_motors, local_cones, mv.point(np.zeros(2)), pixels, 4, 1.0, free)
-    schur_motors, _, _, _ = core.bundle_adjust_schur(cameras, initial_motors, local_cones, 10, 1.0, free)
+    schur_motors, _, _, _ = core.align_jointly(cameras, initial_motors, local_cones, 10, 1.0, free)
     np.testing.assert_allclose((splat_motors - true_motors).kernel, 0.0, atol=1e-10)
     np.testing.assert_allclose((splat_motors - schur_motors).kernel, 0.0, atol=1e-10)
 
@@ -172,12 +172,12 @@ def rig_3d(instance) -> tuple:
         [ 0.20,  0.30, 2.10],
         [-0.25, -0.25, 1.60],
     ])
-    projs = cameras(true_motors << instance.mv.point(xyz)[:, None])
-    pixels = projs / (mv3.w & projs)
+    images = cameras(true_motors << instance.mv.point(xyz)[:, None])
+    pixels = images / (mv3.w & images)
     # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point:
-    q_sensor = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
-    sensor_discs = instance.sensor_disk_at(pixels, instance.mv.point(np.array([0.0, 0.0, 1.0])), q_sensor)
-    return true_motors, xyz, instance.make_cones(cameras, sensor_discs)
+    sensor_disc = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
+    sensor_discs = instance.sensor_disc_at(pixels, instance.mv.point(np.array([0.0, 0.0, 1.0])), sensor_disc)
+    return true_motors, xyz, instance.sight_cones(cameras, sensor_discs)
 
 
 @pytest.mark.parametrize("rotation_deg, translation, iterations", [
@@ -197,8 +197,8 @@ def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, transl
         local_points = motors << points[:, None]
         return float((local_cones(local_points) & local_points).sum().to_array())
 
-    initial_points, _ = core3.triangulate_cones(motors, local_cones)
-    est_motors, est_points, _ = core3.bundle_adjust(motors, local_cones, iterations, 0.7, np.array([0.0, 1.0, 0.0]))
+    initial_points, _ = core3.triangulate(motors, local_cones)
+    est_motors, est_points, _ = core3.align(motors, local_cones, iterations, 0.7, np.array([0.0, 1.0, 0.0]))
 
     origin = core3.mv.point(np.zeros(3))
     np.testing.assert_allclose(coordinates_3d(est_motors[1] >> origin), [0.75, 0.0, 0.0], atol=0.02)
@@ -220,8 +220,8 @@ def test_3d_bundle_adjust_converges_from_a_small_perturbation():
         true_motors[2],
     ])
     truth = core3.mv.point(xyz)
-    initial_points, _ = core3.triangulate_cones(motors, local_cones)
-    _, points, _ = core3.bundle_adjust(motors, local_cones, 10, 0.9, np.array([0.0, 1.0, 0.0]))
+    initial_points, _ = core3.triangulate(motors, local_cones)
+    _, points, _ = core3.align(motors, local_cones, 10, 0.9, np.array([0.0, 1.0, 0.0]))
     error = lambda p: float((p - truth).dual().norm_squared().mean(axis=0).square_root().to_array())
     assert error(points) < error(initial_points)
     assert error(points) < 0.02

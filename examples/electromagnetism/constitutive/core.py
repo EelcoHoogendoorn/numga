@@ -27,7 +27,7 @@ Antivector = STA.gatype.antivector()
 Constitutive = STA.gatype((Antibivector, Bivector))          # Antibivector <- Bivector
 # An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
 AxionCoupling = Scalar.derive.flipped_orientation
-StressEnergy = STA.gatype((Antivector, Vector))              # Antivector <- Vector
+StressEnergy = STA.gatype((Antivector, Antivector))          # Antivector <- Antivector
 WaveMap = STA.gatype((STA.gatype.odd(), Bivector))           # Odd <- Bivector
 
 t, x, y, z = mv.vector(np.eye(4))
@@ -49,14 +49,16 @@ def medium(permittivities: np.ndarray, inverse_permeabilities: np.ndarray) -> Co
 
 
 def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
-    """Electromagnetic stress-energy current (Antivector <- Vector).
-
-    An observer selects a current; `observer & current(observer)` gives its energy
-    density for a unit timelike observer. In matter this is the electromagnetic
-    Minkowski current, excluding the material's own stress-energy.
+    """Electromagnetic stress-energy: from a direction in spacetime, an antivector, to the current of
+    energy and momentum along it, intrinsic like the direction. A unit timelike observer's slice of space
+    `t`, paired with the current along its direction in time, `t & current(t.dual())`, is the energy
+    density it measures. In matter this is the electromagnetic Minkowski current, excluding the material's
+    own stress-energy.
     """
     lagrangian = (field & excitation) / 2
-    return ((Vector | field) ^ excitation) + lagrangian * Vector.dual()
+    # The Lagrangian along the direction, less the field read along the direction wedged with the
+    # excitation: no metric enters.
+    return lagrangian * Antivector - ((Antivector & field) ^ excitation)
 
 
 def wave_map(wavevectors: Vector, media: Constitutive) -> WaveMap:

@@ -9,6 +9,8 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
+
 from examples.animation import capture
 from examples.relativity.thomas_precession import core
 
@@ -25,21 +27,27 @@ FRAME_INCHES, DPI = 5.0, 90
 
 
 # --- plumbing -------------------------------------------------------------------------
-def disk(velocities: core.Vector) -> np.ndarray:
+def disk(velocities: core.Antivector) -> np.ndarray:
     """Velocities as points of the Poincaré disk, their spatial part over one plus their time part,
     on the last axis."""
-    t, x, y = np.moveaxis(velocities.cast(core.ga.subspace("t x y")).kernel, -1, 0)
+    t, x, y = np.moveaxis((stack((core.mv.t, core.mv.x, core.mv.y)) & velocities[..., None]).to_array(), -1, 0)
     return np.stack([x, y], axis=-1) / (1 + t)[..., None]
 
 
-def planar(vectors: core.Vector) -> np.ndarray:
-    """x and y of vectors, on the last axis."""
-    return vectors.cast(core.ga.subspace("x y")).kernel
+def planar(directions: core.Antivector) -> np.ndarray:
+    """x and y of directions and positions, on the last axis: their pairings with the slices x and y."""
+    return (stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array()
 
 
-def unit(vectors: core.Vector) -> np.ndarray:
-    """The directions of vectors in the plane, on the last axis."""
-    xy = planar(vectors)
+def unit(directions: core.Antivector) -> np.ndarray:
+    """The directions in the plane, on the last axis."""
+    xy = planar(directions)
+    return xy / np.linalg.norm(xy, axis=-1, keepdims=True)
+
+
+def spin_axes(spins: core.Bivector) -> np.ndarray:
+    """The arrow each spin plane turns about, drawn by the right-hand rule, in the plane, on the last axis."""
+    xy = -(spins[..., None] | stack((core.mv.yz, core.mv.zx))).to_array()
     return xy / np.linalg.norm(xy, axis=-1, keepdims=True)
 
 
@@ -65,7 +73,7 @@ def disk_canvas(centre: tuple[float, float], reach: float) -> tuple[plt.Figure, 
     return figure, ax
 
 
-def animate_two_boosts(frames: Iterable[tuple[core.Vector, core.Vector, core.Vector]]) -> list[np.ndarray]:
+def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]]) -> list[np.ndarray]:
     """Each frame: the triangle of velocities `[samples]`, rest to the first boost to the second and
     straight back; its corners `[3]`, with the rocket's first axis at each as the observer at rest
     reads it `[3]`, and at the last corner that axis as the straight boost from rest would carry it."""
@@ -83,17 +91,17 @@ def animate_two_boosts(frames: Iterable[tuple[core.Vector, core.Vector, core.Vec
     return images
 
 
-def animate_orbits(loops: core.Vector, states: Iterable[tuple[core.Vector, core.Vector]]) -> list[np.ndarray]:
+def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]) -> list[np.ndarray]:
     """The circles of velocities `[steps + 1, orbits]`, and each frame's velocities and spins as the
     observer at rest reads them `[orbits]`, the first frame's spins kept faint at the start."""
     outlines = disk(loops)
     states = iter(states)
     first = next(states)
-    starts, start_directions = disk(first[0]), unit(first[1])
+    starts, start_directions = disk(first[0]), spin_axes(first[1])
     images = []
     for velocities, spins in chain([first], states):
         figure, ax = disk_canvas((0, 0), ORBIT_REACH)
-        points, directions = disk(velocities), unit(spins)
+        points, directions = disk(velocities), spin_axes(spins)
         for orbit, colour in enumerate(ORBIT_COLOURS):
             ax.plot(*outlines[:, orbit].T, color=colour, linewidth=1.2, alpha=0.5, zorder=2)
             arrows(ax, starts[orbit], start_directions[orbit], ORBIT_ARROW, FAINT, 0.010)
@@ -104,7 +112,7 @@ def animate_orbits(loops: core.Vector, states: Iterable[tuple[core.Vector, core.
     return images
 
 
-def animate_box(half_width: float, walls: core.Vector, states: Iterable[tuple[core.Vector, core.Vector]]
+def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]
                 ) -> list[np.ndarray]:
     """A square box, the diamond its particle bounces along between the midpoints of its `walls`
     `[4]`, and each frame's position and spin as the observer at rest reads it."""
@@ -116,14 +124,14 @@ def animate_box(half_width: float, walls: core.Vector, states: Iterable[tuple[co
         ax.plot(*corners.T, color=INK, linewidth=2.0, zorder=2)
         ax.plot(*diamond.T, color=FAINT, linewidth=1.0, zorder=1)
         point = planar(position)
-        arrows(ax, point, unit(spin), SCENE_ARROW * half_width, SPIN, 0.012)
+        arrows(ax, point, spin_axes(spin), SCENE_ARROW * half_width, SPIN, 0.012)
         ax.plot(*point, "o", color=INK, markersize=7, zorder=5)
         images.append(capture(figure))
         plt.close(figure)
     return images
 
 
-def animate_ring(ring: core.Vector, states: Iterable[tuple[core.Vector, core.Vector, core.Vector]]) -> list[np.ndarray]:
+def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Bivector]]) -> list[np.ndarray]:
     """The ring `[samples]`, and each frame's position, velocity and spin as the observer at rest reads
     it: the momentum's direction faint, the spin solid."""
     outline = planar(ring)
@@ -134,7 +142,7 @@ def animate_ring(ring: core.Vector, states: Iterable[tuple[core.Vector, core.Vec
         ax.plot(*outline.T, color=FAINT, linewidth=2.0, zorder=1)
         point = planar(position)
         arrows(ax, point, unit(velocity), SCENE_ARROW * radius, LINE_COLOURS[0], 0.010)
-        arrows(ax, point, unit(spin), SCENE_ARROW * radius, SPIN, 0.012)
+        arrows(ax, point, spin_axes(spin), SCENE_ARROW * radius, SPIN, 0.012)
         ax.plot(*point, "o", color=INK, markersize=7, zorder=5)
         images.append(capture(figure))
         plt.close(figure)

@@ -48,4 +48,4 @@ The form `Vector | moment` has two input slots of the same type, and its contrac
 
 In index notation, the trace reads as an index repeated between an upper and a lower position, $M^i{}_i$, and the contraction of two lower indices as one through the metric, $g^{ij} F_{ij}$.
 
-Example: [vortices in a plane of fluid](../../../examples/mechanics/vortices/vortices.ipynb), where the trace and the contraction of the flow's derivative read off how it spreads and how it turns.
+Example: [vortices in a plane of fluid](../../../examples/fluids/vortices/vortices.ipynb), where the trace and the contraction of the flow's derivative read off how it spreads and how it turns.

@@ -1,9 +1,9 @@
 """Geometric views of a plane wave's curvature and its tidal readout: drawing only.
 
-Coordinates leave the algebra here, at the plotting boundary. The map panels depict
-one local bivector map applied at one event, not successive steps in time. The
-detector panels show weak-wave displacements magnified for display; acceleration
-arrows share one fixed scale throughout an animation.
+Coordinates leave the algebra here, at the plotting boundary, as pairings with the coordinate slices.
+The map panels depict the curvature applied at one event. The detector panels show weak-wave
+displacements magnified for display; acceleration arrows share one fixed scale throughout an
+animation.
 """
 
 from __future__ import annotations
@@ -14,9 +14,11 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
+from numga import stack
+
 from examples.animation import capture
 from examples.relativity.curvature import core
-from examples.relativity.curvature.core import STA, Bivector, Curvature, I, Phasor, Scalar, Vector, mv
+from examples.relativity.curvature.core import Antivector, Curvature, Scalar, lower, mv
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 LIGHT = "#c3ccd4"
@@ -28,22 +30,30 @@ ANIMATION_DPI = 64
 
 
 # --- coordinate readout ---------------------------------------------------------------
-def transverse(value: Vector) -> np.ndarray:
-    """(..., 2) x and y coefficients: separations in the plane transverse to the wave."""
-    return value.select_subspace(STA.subspace("x y")).kernel
+def transverse(value: Antivector) -> np.ndarray:
+    """(..., 2) x and y of separations in the plane transverse to the wave: their pairings with the
+    slices x and y."""
+    return (stack((mv.x, mv.y)) & value[..., None]).to_array()
 
 
-def spacetime(value: Vector) -> np.ndarray:
-    """(..., 3) x, z and t coefficients for the spacetime panels."""
-    return value.select_subspace(STA.subspace("x z t")).kernel
+def spacetime(value: Antivector) -> np.ndarray:
+    """(..., 3) x, z and t of directions for the spacetime panels."""
+    return (stack((mv.x, mv.z, mv.t)) & value[..., None]).to_array()
 
 
-def arrow(value: Vector) -> np.ndarray:
-    """(2, 3) segment from the origin to the tip of a vector, in x, z, t."""
-    return spacetime(mv.scalar([[0], [1]]) * value)
+def arrow(value: Antivector) -> np.ndarray:
+    """(2, 3) segment from the origin to the tip of a direction, in x, z, t."""
+    return np.stack([np.zeros(3), spacetime(value)])
 
 
 # --- the curvature map at one event ---------------------------------------------------
+def patch(first: Antivector, second: Antivector) -> np.ndarray:
+    """(4, 3) corners of the area element spanned by two directions, in x, z, t."""
+    first, second = spacetime(first), spacetime(second)
+    return np.stack([sign_first * 0.5 * first + sign_second * 0.6 * second
+                     for sign_first, sign_second in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+
+
 def _arrow(ax, points: np.ndarray, colour: str, width: float = 2.0) -> None:
     start, end = points
     ax.quiver(*start, *(end - start), color=colour, linewidth=width,
@@ -69,26 +79,25 @@ def _patch(ax, vertices: np.ndarray, colour: str) -> None:
 
 
 def draw_curvature_map(
-    curvature: Curvature, observer: Vector, wave: Vector, edge: Vector,
+    curvature: Curvature, observer: Antivector, wave: Antivector, edge: Antivector,
 ) -> plt.Figure:
-    """A spacetime ribbon, its image under curvature, and that image's image.
+    """A spacetime ribbon and its image under curvature.
 
-    The ribbon is the observer's velocity wedged with a unit separation. Its image is a null
-    plane containing the wave direction; contracting that plane with the observer gives the
-    tidal readout. Applying the curvature once more gives zero.
+    The ribbon is the observer's velocity joined with a unit separation. Its image is a null plane
+    containing the wave's direction; the observer reads it as a tidal force, which the metric turns
+    into an acceleration. The image is drawn as the plane of the wave's direction and that acceleration.
     """
-    incoming: Bivector = observer.wedge(edge)                            # [] Bivector
-    outgoing: Bivector = curvature(incoming)                             # [] Bivector
-    readout: Vector = outgoing.commutator(observer)                      # [] Vector
-    patches = (spacetime(core.plane_patch(incoming, edge)), spacetime(core.plane_patch(outgoing, edge)))
+    readout = lower.solve(observer & curvature(observer & edge))        # [] Antivector
+    across = readout / np.sqrt(-readout.squared().to_array())            # [] Antivector
+    patches = (patch(observer, edge), patch(wave, across))
     observer_arrow, wave_arrow, readout_arrow = arrow(observer), arrow(wave), arrow(readout)
     extent = max(1.0, float(np.abs(np.concatenate(
         (*patches, observer_arrow, wave_arrow, readout_arrow))).max())) * 1.22
 
-    fig = plt.figure(figsize=(14, 4.8), dpi=120, facecolor="white")
+    fig = plt.figure(figsize=(9.5, 4.8), dpi=120, facecolor="white")
     axes = []
-    for column in range(3):
-        ax = fig.add_subplot(1, 3, column + 1, projection="3d")
+    for column in range(2):
+        ax = fig.add_subplot(1, 2, column + 1, projection="3d")
         _spacetime_axes(ax, extent)
         axes.append(ax)
     _patch(axes[0], patches[0], BLUE)
@@ -97,7 +106,6 @@ def draw_curvature_map(
     _arrow(axes[1], wave_arrow, BLUE, 2.3)
     _arrow(axes[1], observer_arrow, ORANGE)
     _arrow(axes[1], readout_arrow, ORANGE, 2.7)
-    axes[2].scatter([0], [0], [0], s=32, color=INK, depthshade=False)
     for left_ax, right_ax in zip(axes[:-1], axes[1:]):
         left, right = left_ax.get_position().x1 - 0.01, right_ax.get_position().x0 + 0.01
         axes[0].annotate("", xy=(right, 0.5), xytext=(left, 0.5),
@@ -107,14 +115,14 @@ def draw_curvature_map(
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
-def draw_packet(time: np.ndarray, strain: Phasor, second: Phasor) -> plt.Figure:
-    """Strain profiles and their second derivatives, the weights of the curvature batch: the plus
-    weight is the phasor's scalar part, the cross weight its pseudoscalar part turned back by I."""
+def draw_packet(time: np.ndarray, profiles: np.ndarray, second: np.ndarray) -> plt.Figure:
+    """The plus and cross strain profiles and their second derivatives `[times, 2]`, the weights of
+    the curvature batch."""
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
-    for ax, phasor in ((top, strain), (bottom, second)):
+    for ax, values in ((top, profiles), (bottom, second)):
         # Plus in blue, cross in orange.
-        ax.plot(time, phasor.select[0].to_array(), color=BLUE, lw=1.6)
-        ax.plot(time, (phasor * I).select[0].to_array(), color=ORANGE, lw=1.6)
+        ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
+        ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
         ax.spines[["top", "right"]].set_visible(False)
     return fig
 
@@ -143,10 +151,10 @@ class _Detector:
 
 
 def _detector(
-    time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector, amplification: float,
+    time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> _Detector:
     """Read the beads out in initial-radius units, with displacements magnified for display."""
-    positions: Vector = reference + amplification * displacement         # [n_time, n_polarizations, n_beads] Vector
+    positions = reference + amplification * displacement                # [n_time, n_polarizations, n_beads] Antivector
     radius = float(np.linalg.norm(transverse(reference), axis=-1).mean())
     return _Detector(
         time=np.asarray(time),
@@ -160,11 +168,10 @@ def _detector(
 def _ring_axes(fig: plt.Figure, data: _Detector) -> list[plt.Axes]:
     limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
     axes = []
-    for column, title in enumerate(POLARIZATIONS):
+    for column in range(len(POLARIZATIONS)):
         ax = fig.add_subplot(1, 3, column + 1)
         ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
         ax.set_axis_off()
-        ax.set_title(title, fontsize=14, color=INK, fontweight="bold", pad=10)
         axes.append(ax)
     return axes
 
@@ -210,7 +217,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
 
 
 def draw_detector(
-    time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector,
+    time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector,
     amplification: float,
 ) -> plt.Figure:
     """The three polarizations at one shared instant of largest deformation, with faint full trails."""
@@ -225,7 +232,7 @@ def draw_detector(
 
 
 def animate_detector(
-    time: np.ndarray, reference: Vector, displacement: Vector, acceleration: Vector, amplification: float,
+    time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> list[np.ndarray]:
     """The bead ring through the circular packet, as frames at 20 per unit time."""
     data = _detector(time, reference, displacement, acceleration, amplification)

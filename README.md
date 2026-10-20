@@ -4,7 +4,7 @@ Geometric algebra with Extensors in NumPy, JAX and PyTorch.
 
 Extensors generalize matrices and tensors from vectors to multivectors, and from the inner and tensor products to every product of geometric algebra.
 
-| [**Scenegraph and camera optics**](examples/geometry/scenegraph/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/geometry/scenegraph/scenegraph.ipynb) | [**Vanishing geometric derivative**](examples/mechanics/wing/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/mechanics/wing/wing.ipynb) |
+| [**Scenegraph and camera optics**](examples/geometry/scenegraph/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/geometry/scenegraph/scenegraph.ipynb) | [**Vanishing geometric derivative**](examples/fluids/wing/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/fluids/wing/wing.ipynb) |
 | :---: | :---: |
 | <img src="plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="420" /> | <img src="plots/wing.gif" alt="A wing pitching in a steady stream, its pressure, streamlines and lift" width="352" /> |
 

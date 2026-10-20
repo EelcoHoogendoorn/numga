@@ -3,16 +3,18 @@ behind, and a spin carried around any closed loop of velocities comes back turne
 loop encloses in the space of velocities. With a magnetic moment, the same frame-turning bivector
 gives the Bargmann–Michel–Telegdi equation that the muon g−2 storage ring measures.
 
-The velocities a particle can have are the unit timelike vectors, the time axis under every boost,
-`boost >> mv.t`: a hyperboloid whose geometry is the hyperbolic plane. The pure boost from one
-velocity to another is the square root of their product, `(head * tail).square_root()`, and carrying
-a spin along a path of velocities is the product of those boosts. An observer at rest reads a spin
-after the pure boost back to rest, `(mv.t * velocity).square_root() >> spin`.
+A velocity is a direction in time, an antivector like every direction: the lab's time direction under
+every boost, `boost >> time`, a hyperboloid whose geometry is the hyperbolic plane. The pure boost from
+one velocity to another is the square root of their product, `(head * tail).square_root()`, and
+carrying a spin along a path of velocities is the product of those boosts. A spin is the plane the
+gyroscope turns in, a rate like every turning, and an observer at rest reads it after the pure boost
+back to rest, `(time * velocity).square_root() >> spin`.
 
-In a field bivector `field`, with charge-to-mass ratio one, the acceleration is `field | velocity`,
-and the bivector `(1 + anomaly) * field - anomaly * (acceleration ^ velocity)` turns the particle's
-whole frame: its velocity as the Lorentz force does, whatever the anomaly, and its spin by the
-Bargmann–Michel–Telegdi equation.
+In a field bivector `field`, with charge-to-mass ratio one, the force is the field read along the
+velocity, `velocity & field`, and the bivector `(1 + anomaly) * field - anomaly * (lower(velocity) ^ force)`
+turns the particle's whole frame: its velocity as the Lorentz force does, whatever the anomaly, and its
+spin by the Bargmann–Michel–Telegdi equation. The metric enters through `lower`, which turns a direction
+into the vector that pairs with every other direction as their metric product does.
 
 In the four-tensor index notation of relativistic electrodynamics, the Bargmann–Michel–Telegdi
 equation reads as $\\frac{ds^\\mu}{d\\tau} = \\frac{q}{m}\\left(\\frac{g}{2} F^{\\mu}{}_{\\nu} s^\\nu
@@ -32,79 +34,88 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
+Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
+
+# The metric on directions: from a direction, the vector that pairs with every other direction as their
+# metric product does.
+lower = (Vector * (Antivector | Antivector)).trace(1, 2)     # Vector <- Antivector
+# One unit along the lab's time: the direction the metric turns into the lab's time slice.
+time = lower.solve(mv.t)                                     # [] Antivector
 
 
 # --- math -----------------------------------------------------------------------------
-def boost(direction: Vector, rapidity: np.ndarray) -> Rotor:
-    """The pure boost by `rapidity` along a unit spatial direction."""
-    return ((direction ^ mv.t) * (rapidity / 2)).exp()                          # [...] Rotor
+def boost(direction: Antivector, rapidity: np.ndarray) -> Rotor:
+    """The pure boost by `rapidity` along a unit spatial direction: a turn in the plane of the direction
+    and time, as the metric makes vectors of both."""
+    return ((lower(direction) ^ mv.t) * (rapidity / 2)).exp()                   # [...] Rotor
 
 
-def rest_boost(velocity: Vector) -> Rotor:
-    """The pure boost carrying the observer's time axis to `velocity`."""
-    return (velocity * mv.t).square_root()                                      # [...] Rotor
+def rest_boost(velocity: Antivector) -> Rotor:
+    """The pure boost carrying the lab's time direction to `velocity`."""
+    return (velocity * time).square_root()                                      # [...] Rotor
 
 
-def lab_view(velocity: Vector, vector: Vector) -> Vector:
-    """A vector of the frame moving at `velocity`, as the observer at rest reads it: after the pure
+def lab_view(velocity: Antivector, spin: Bivector) -> Bivector:
+    """A spin of the frame moving at `velocity`, as the observer at rest reads it: after the pure
     boost back to rest."""
-    return (mv.t * velocity).square_root() >> vector                            # [...] Vector
+    return (time * velocity).square_root() >> spin                              # [...] Bivector
 
 
-def transport(tail: Vector, head: Vector) -> Rotor:
+def transport(tail: Antivector, head: Antivector) -> Rotor:
     """The pure boost from velocity `tail` to velocity `head`, in their plane."""
     return (head * tail).square_root()                                          # [...] Rotor
 
 
-def geodesic(tail: Vector, head: Vector, fractions: np.ndarray) -> Vector:
+def geodesic(tail: Antivector, head: Antivector, fractions: np.ndarray) -> Antivector:
     """The velocities along the pure boost from `tail` to `head`, at each fraction of the way."""
-    return (transport(tail, head).log() * fractions).exp() >> tail             # [fractions, ...] Vector
+    return (transport(tail, head).log() * fractions).exp() >> tail             # [fractions, ...] Antivector
 
 
-def on_hyperboloid(spatial: Vector) -> Vector:
-    """The velocity whose spatial part is `spatial`: the unit timelike vector above it."""
-    return spatial + mv.t * (1 - spatial.squared()).square_root()               # [...] Vector
+def on_hyperboloid(spatial: Antivector) -> Antivector:
+    """The velocity whose spatial part is `spatial`: the unit direction in time above it."""
+    return spatial + time * (1 - spatial.squared()).square_root()               # [...] Antivector
 
 
-def carried(velocities: Vector, spin: Vector) -> Iterator[Vector]:
+def carried(velocities: Antivector, spin: Bivector) -> Iterator[Bivector]:
     """A spin carried along a path of velocities `[steps + 1, ...]` by the pure boost between each
     velocity and the next, torque-free: the spin at each velocity."""
     yield spin
     for tail, head in zip(velocities[:-1], velocities[1:]):
-        spin = transport(tail, head) >> spin                                    # [...] Vector
+        spin = transport(tail, head) >> spin                                    # [...] Bivector
         yield spin
 
 
-def bmt_generator(field: Bivector, velocity: Vector, anomaly: float) -> Bivector:
+def bmt_generator(field: Bivector, velocity: Antivector, anomaly: float) -> Bivector:
     """The bivector turning the frame of a particle of magnetic anomaly `anomaly`, `g / 2 - 1`: its
     velocity by the Lorentz force and its spin by the Bargmann–Michel–Telegdi equation."""
-    acceleration = field | velocity                                             # [...] Vector
-    # On the velocity the wedge gives back the acceleration, so the anomaly cancels there.
-    return (1 + anomaly) * field - anomaly * (acceleration ^ velocity)          # [...] Bivector
+    force = velocity & field                                                    # [...] Vector
+    # On the velocity the force's plane with the velocity acts as the field does, so the anomaly
+    # cancels there.
+    return (1 + anomaly) * field - anomaly * (lower(velocity) ^ force)          # [...] Bivector
 
 
-def ring_field(event: Vector, magnetic: float, electric: np.ndarray) -> Bivector:
+def ring_field(event: Antivector, magnetic: float, electric: np.ndarray) -> Bivector:
     """A storage ring's field at an event: a uniform magnetic field in the orbit's plane, and an
     electric field of strength `electric` pointing away from the ring's axis."""
-    position = mv.t | (mv.t ^ event)                                            # [...] Vector
-    # Vectors of space square to minus their length squared.
-    outward = position / (-position.squared()).square_root()                    # [...] Vector
-    return magnetic * mv.xy + electric * (outward ^ mv.t)                       # [...] Bivector
+    position = event - (mv.t & event) * time                                    # [...] Antivector
+    # Directions of space square to minus their length squared.
+    outward = position / (-position.squared()).square_root()                    # [...] Antivector
+    return magnetic * mv.xy + electric * (lower(outward) ^ mv.t)                # [...] Bivector
 
 
-def bmt_step(event: Vector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
-             proper_step: np.ndarray) -> tuple[Vector, Rotor]:
+def bmt_step(event: Antivector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
+             proper_step: np.ndarray) -> tuple[Antivector, Rotor]:
     """One midpoint step in proper time of a particle's event and frame in the ring's field."""
-    rate = bmt_generator(ring_field(event, magnetic, electric), frame >> mv.t, anomaly)   # [...] Bivector
+    rate = bmt_generator(ring_field(event, magnetic, electric), frame >> time, anomaly)   # [...] Bivector
     halfway_frame = (rate * (proper_step / 4)).exp() * frame                   # [...] Rotor
-    halfway_event = event + (frame >> mv.t) * (proper_step / 2)                 # [...] Vector
-    halfway_rate = bmt_generator(ring_field(halfway_event, magnetic, electric), halfway_frame >> mv.t, anomaly)
-    return event + (halfway_frame >> mv.t) * proper_step, (halfway_rate * (proper_step / 2)).exp() * frame
+    halfway_event = event + (frame >> time) * (proper_step / 2)                 # [...] Antivector
+    halfway_rate = bmt_generator(ring_field(halfway_event, magnetic, electric), halfway_frame >> time, anomaly)
+    return event + (halfway_frame >> time) * proper_step, (halfway_rate * (proper_step / 2)).exp() * frame
 
 
-def evolve(event: Vector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
-           proper_step: np.ndarray) -> Iterator[tuple[Vector, Rotor]]:
+def evolve(event: Antivector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
+           proper_step: np.ndarray) -> Iterator[tuple[Antivector, Rotor]]:
     """The particle's event and frame at every step, without end."""
     while True:
         yield event, frame
@@ -118,10 +129,13 @@ def ring_radius(gamma: np.ndarray, magnetic: float, electric: np.ndarray) -> np.
     return gamma * speed**2 / (speed * magnetic - electric)
 
 
-def anomalous_angle(velocity: Vector, spin: Vector) -> Scalar:
-    """The angle in the orbit's plane from the momentum's direction to the spin, as the observer at
-    rest reads both."""
-    motion = mv.t | (mv.t ^ velocity)                                           # [...] Vector
-    direction = motion / (-motion.squared()).square_root()                      # [...] Vector
-    # Minus the product of two unit vectors of space is the rotor through twice their angle.
-    return (-(lab_view(velocity, spin) * direction)).log().scalar_product(mv.yx)   # [...] Scalar
+def anomalous_angle(velocity: Antivector, spin: Bivector) -> Scalar:
+    """The angle in the orbit's plane from the plane a spin along the momentum turns in to the spin, as
+    the observer at rest reads both."""
+    motion = velocity - (mv.t & velocity) * time                                # [...] Antivector
+    direction = motion / (-motion.squared()).square_root()                      # [...] Antivector
+    # A spin along the momentum turns in the plane of the direction turned a quarter turn in the orbit's
+    # plane and the orbit's normal.
+    along = lower(direction.commutator(mv.xy)) ^ mv.z                           # [...] Bivector
+    # The product of two such planes is the rotor through their angle.
+    return (lab_view(velocity, spin) * along.inverse()).log().scalar_product(mv.yx)   # [...] Scalar

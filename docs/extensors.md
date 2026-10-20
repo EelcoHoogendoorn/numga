@@ -81,7 +81,7 @@ vertices = held.solve(~T10 * H1 * turned + P * targets)      # [V] Vector
 
 ## 4. Lift without Vorticity (VGA2D)
 
-**Notebook**: [`examples/mechanics/wing/wing.ipynb`](../examples/mechanics/wing/wing.ipynb)
+**Notebook**: [`examples/fluids/wing/wing.ipynb`](../examples/fluids/wing/wing.ipynb)
 
 <p align="center">
   <img src="../plots/wing.gif" alt="A wing pitching up and back in a steady stream, its pressure, streamlines and lift" width="560" />

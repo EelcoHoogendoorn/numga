@@ -21,40 +21,44 @@ DURATION_MS = 60
 
 ORBIT_CHARGE = 1.0
 ORBIT_RADIUS = 1.0
-ORBIT_SPEEDS = {"slow": 0.5, "fast": 0.9}
+# A slow and a fast orbit, as fractions of the speed of light, with the names of their animations.
+ORBIT_SPEEDS = np.array([0.5, 0.9])
+ORBIT_NAMES = ("slow", "fast")
 ORBIT_HALF_WIDTH = 10.0
 N_ORBIT_PIXELS = 300
 N_ORBIT_FRAMES = 60
+# The coarser window the checks sample.
+N_CHECK_COLUMNS = 30
+N_CHECK_ROWS = 20
 
 
 # --- math -----------------------------------------------------------------------------
 def charge(rapidity: float) -> core.Charge:
     """The charge moving along x at the given rapidity, through the origin at lab time zero."""
-    return core.Charge(np.array(CHARGE), CORE_RADIUS, (core.mv.xt * (rapidity / 2)).exp(), core.mv.vector([0.0, 0.0, 0.0, 0.0]))
+    return core.Charge(np.array(CHARGE), CORE_RADIUS, (core.mv.xt * (rapidity / 2)).exp(), 0 * core.time)
 
 
-def speed_up() -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
-    """The lab's view at time zero as the charge speeds up: the events, the field, and the current
-    from the metric-free trace of the field's gradient."""
-    events = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)               # [rows, columns] Vector
+def speed_up() -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
+    """The lab's view at time zero as the charge speeds up: the events, the field, and the current."""
+    events = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)               # [rows, columns] Antivector
     # Slowing down retraces speeding up: the rise alone is half the frames.
     rapidities = TOP_RAPIDITY * (1 - np.cos(2 * np.pi * np.arange(N_FRAMES // 2 + 1) / N_FRAMES)) / 2
     for rapidity in rapidities:
         moving = charge(rapidity)
         field = core.field(core.potential_gradient(moving, events))           # [rows, columns] Bivector
-        current, _ = core.sources(core.field_gradient(moving, events))         # [rows, columns] Vector
+        current = core.current(core.field_gradient(moving, events))            # [rows, columns] Antivector
         yield events, field, current
 
 
-def circling(orbit: core.Orbit) -> Iterator[tuple[core.Vector, core.Bivector, core.Vector]]:
+def circling(orbit: core.Orbit) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
     """Over one turn: the events in the orbit's plane at each lab time, the field there, and the
     charge."""
-    plane = core.grid(ORBIT_HALF_WIDTH, ORBIT_HALF_WIDTH, N_ORBIT_PIXELS, N_ORBIT_PIXELS)   # [rows, columns] Vector
+    plane = core.grid(ORBIT_HALF_WIDTH, ORBIT_HALF_WIDTH, N_ORBIT_PIXELS, N_ORBIT_PIXELS)   # [rows, columns] Antivector
     period = 2 * np.pi * orbit.radius / orbit.speed
     for time in period * np.arange(N_ORBIT_FRAMES) / N_ORBIT_FRAMES:
-        events = plane + core.mv.t * time                                    # [rows, columns] Vector
+        events = plane + core.time * time                                    # [rows, columns] Antivector
         field = core.field(core.orbit_potential_gradient(orbit, events))     # [rows, columns] Bivector
-        position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Vector
+        position, _, _ = core.worldline(orbit, core.mv.scalar([time]))       # [1] Antivector
         yield events, field, position
 
 
@@ -66,22 +70,22 @@ def main() -> None:
     speeding_up = render.animate(speed_up())
     # Slowing down plays the rise back.
     save_animation(speeding_up + speeding_up[-2:0:-1], "moving_charge", DURATION_MS)
-    for name, speed in ORBIT_SPEEDS.items():
+    for name, speed in zip(ORBIT_NAMES, ORBIT_SPEEDS):
         orbit = core.Orbit(ORBIT_CHARGE, ORBIT_RADIUS, speed)
         save_animation(render.animate_waves(list(circling(orbit))), f"radiating_charge_{name}", DURATION_MS)
 
-    # --- checks
-    # At the top speed: the potential's derivative has no gauge scalar, the field's has no trivector,
-    # and the metric-free traces give the current and nothing for magnetic charge.
+    # checks
+    # At the top speed the field's derivative vanishes, and the current is the softened density carried
+    # along the charge's own time.
     moving = charge(TOP_RAPIDITY)
-    events = core.grid(HALF_WIDTH, HALF_HEIGHT, 30, 20)                       # [rows, columns] Vector
-    potential = core.potential_derivative(core.potential_gradient(moving, events))
-    np.testing.assert_allclose((potential - core.field(core.potential_gradient(moving, events))).kernel, 0.0, atol=1e-12)
+    events = core.grid(HALF_WIDTH, HALF_HEIGHT, N_CHECK_COLUMNS, N_CHECK_ROWS)  # [rows, columns] Antivector
     gradients = core.field_gradient(moving, events)
-    derivative = core.field_derivative(gradients)
-    current, magnetic_source = core.sources(gradients)
-    np.testing.assert_allclose((derivative - current).kernel, 0.0, atol=1e-9)
-    np.testing.assert_allclose(magnetic_source.kernel, 0.0, atol=1e-9)
+    np.testing.assert_allclose((core.Vector ^ gradients(core.Antivector)).trace(1, 2).kernel, 0.0, atol=1e-12)
+    at_rest = moving.boost << events
+    separations = at_rest - (core.mv.t & at_rest) * core.time
+    softened = CORE_RADIUS**2 - (separations | separations)
+    density = 3 * CHARGE * CORE_RADIUS**2 / (4 * np.pi) / (softened * softened * softened.square_root())
+    np.testing.assert_allclose((core.current(gradients) - density * (moving.boost >> core.time)).kernel, 0.0, atol=1e-9)
 
 
 if __name__ == "__main__":

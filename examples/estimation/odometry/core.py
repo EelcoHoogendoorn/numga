@@ -5,7 +5,7 @@ little off. Back at the start it recognises it, and reads one more relative pose
 Wanted are the poses most likely given all the readings, and how uncertain each one is.
 
 A small error of a pose is a twist on its right, `pose * (twist * 0.5).exp()`, and its uncertainty a
-covariance, `Covariance = Twist <- Line`, whose inverse is a quadric on twists. A reading measures the
+covariance, `Covariance = Twist <- Forque`, whose inverse is a quadric on twists. A reading measures the
 twist at its head minus the twist at its tail carried there by the motor between them,
 `relative << twist`. Mismatches at the readings and at the anchors pull on the poses: each weighted by
 the inverse of its covariance, a reading's at its head, and carried to its tail with the opposite sign.
@@ -35,11 +35,11 @@ ctx: Context
 mv = ctx.multivector
 Motor = ga.gatype.rotor()
 Twist = ga.gatype.bivector()
-# A line reads out a twist: `line & twist`.
-Line = ga.gatype.antibivector()
-Covariance = ga.gatype((Twist, Line))             # Twist <- Line
+# What pulls on a pose: a forque, which paired with a twist, `forque & twist`, is the change the twist makes.
+Forque = ga.gatype.antibivector()
+Covariance = ga.gatype((Twist, Forque))           # Twist <- Forque
 # The inverse of a covariance: a quadric on twists, `twist & information(twist)`.
-Information = ga.gatype((Line, Twist))            # Line <- Twist
+Information = ga.gatype((Forque, Twist))           # Forque <- Twist
 
 
 # --- problem --------------------------------------------------------------------------
@@ -53,25 +53,25 @@ def reckon(poses: Motor, noises: Covariance, priors: Covariance) -> Covariance:
     first pose's prior and each reading's noise, entering at the pose it reaches, summed in the world
     frame from the first pose on, and read at every pose."""
     entering = concatenate([priors[:1], noises[:len(poses) - 1]])              # [poses] Covariance
-    summed = (poses >> entering(poses << Line)).cumsum(axis=0)                 # [poses] Covariance
-    return poses << summed(poses >> Line)                                      # [poses] Covariance
+    summed = (poses >> entering(poses << Forque)).cumsum(axis=0)                 # [poses] Covariance
+    return poses << summed(poses >> Forque)                                      # [poses] Covariance
 
 
 def pull(relative: Motor, at_readings: Twist, at_anchors: Twist, weights: Information, tails: np.ndarray,
-         heads: np.ndarray, anchor_weights: Information) -> Line:
+         heads: np.ndarray, anchor_weights: Information) -> Forque:
     """What mismatches at the readings and at the anchors pull on every pose: each weighted by the inverse
     of its covariance, a reading's at its head, and carried to its tail with the opposite sign; an
     anchor's at its pose."""
-    weighted = weights(at_readings)                                            # [..., readings] Line
-    anchored = anchor_weights(at_anchors)                                      # [..., poses] Line
+    weighted = weights(at_readings)                                            # [..., readings] Forque
+    anchored = anchor_weights(at_anchors)                                      # [..., poses] Forque
     # A reading pulls its head, and its tail the opposite way, carried there by the motor between them.
-    at_tails = -(relative >> weighted)                                         # [..., readings] Line
-    pulled = anchored.at[..., heads].add(weighted)                             # [..., poses] Line
-    return pulled.at[..., tails].add(at_tails)                                 # [..., poses] Line
+    at_tails = -(relative >> weighted)                                         # [..., readings] Forque
+    pulled = anchored.at[..., heads].add(weighted)                             # [..., poses] Forque
+    return pulled.at[..., tails].add(at_tails)                                 # [..., poses] Forque
 
 
 def gradient(poses: Motor, readings: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
-             anchors: Motor, anchor_weights: Information) -> Line:
+             anchors: Motor, anchor_weights: Information) -> Forque:
     """The gradient, per pose, of half the squared mismatches of every reading and of every pose from
     its anchor, each measured by its covariance: their pull."""
     relative = poses[tails].inverse() * poses[heads]                          # [readings] Motor
@@ -79,12 +79,12 @@ def gradient(poses: Motor, readings: Motor, weights: Information, tails: np.ndar
 
 
 def curvature(poses: Motor, twists: Twist, weights: Information, tails: np.ndarray, heads: np.ndarray,
-              anchor_weights: Information) -> Line:
+              anchor_weights: Information) -> Forque:
     """The information applied to a correction of every pose: the pull of what the readings and the
     anchors measure of it."""
     relative = poses[tails].inverse() * poses[heads]                          # [readings] Motor: the head, from the tail
     measured = twists[..., heads] - (relative << twists[..., tails])           # [..., readings] Twist
-    return pull(relative, measured, twists, weights, tails, heads, anchor_weights)   # [..., poses] Line
+    return pull(relative, measured, twists, weights, tails, heads, anchor_weights)   # [..., poses] Forque
 
 
 def curvature_alone(poses: Motor, weights: Information, tails: np.ndarray, heads: np.ndarray,
@@ -93,29 +93,29 @@ def curvature_alone(poses: Motor, weights: Information, tails: np.ndarray, heads
     relative = poses[tails].inverse() * poses[heads]                          # [readings] Motor: the head, from the tail
     # A reading measures its head's twist as it is, and its tail's carried to the head: its head, moved
     # alone, meets the reading's weight, and its tail the weight carried back to it.
-    at_tails = relative >> weights(relative << Twist)                          # [readings] Line <- Twist
+    at_tails = relative >> weights(relative << Twist)                          # [readings] Forque <- Twist
     # Each pose's anchor, then every reading at its head and at its tail.
-    alone = anchor_weights.at[heads].add(weights)                              # [poses] Line <- Twist
-    return alone.at[tails].add(at_tails)                                       # [poses] Line <- Twist
+    alone = anchor_weights.at[heads].add(weights)                              # [poses] Forque <- Twist
+    return alone.at[tails].add(at_tails)                                       # [poses] Forque <- Twist
 
 
 # --- solvers --------------------------------------------------------------------------
-def conjugate_gradients(poses: Motor, right: Line, weights: Information, tails: np.ndarray, heads: np.ndarray,
+def conjugate_gradients(poses: Motor, right: Forque, weights: Information, tails: np.ndarray, heads: np.ndarray,
                         anchor_weights: Information) -> Iterator[Twist]:
-    """The corrections the information sends to the given lines, by conjugate gradients preconditioned by
+    """The corrections the information sends to the given forques, by conjugate gradients preconditioned by
     each pose's curvature alone, one solve for each leading index. Yields the corrections after each
     iteration."""
-    alone = curvature_alone(poses, weights, tails, heads, anchor_weights)      # [poses] Line <- Twist
+    alone = curvature_alone(poses, weights, tails, heads, anchor_weights)      # [poses] Forque <- Twist
     correction = 0 * alone.solve(right)                                        # [..., poses] Twist
-    residual = right                                                           # [..., poses] Line
+    residual = right                                                           # [..., poses] Forque
     direction = alone.solve(residual)                                          # [..., poses] Twist
     aligned = (residual & direction).sum(axis=-1)                              # [...] Scalar
     # Exact after as many steps as there are unknowns.
     for _ in range(len(Twist.output_subspace) * len(poses)):
-        pushed = curvature(poses, direction, weights, tails, heads, anchor_weights)   # [..., poses] Line
+        pushed = curvature(poses, direction, weights, tails, heads, anchor_weights)   # [..., poses] Forque
         step = (aligned / (pushed & direction).sum(axis=-1))[..., None]        # [..., 1] Scalar
         correction = correction + direction * step                             # [..., poses] Twist
-        residual = residual - pushed * step                                    # [..., poses] Line
+        residual = residual - pushed * step                                    # [..., poses] Forque
         preconditioned = alone.solve(residual)                                 # [..., poses] Twist
         realigned = (residual & preconditioned).sum(axis=-1)                   # [...] Scalar
         direction = preconditioned + direction * (realigned / aligned)[..., None]   # [..., poses] Twist
@@ -130,7 +130,7 @@ def gauss_newton(poses: Motor, readings: Motor, weights: Information, tails: np.
     correction the gradient asks for, by conjugate gradients, and moves the poses by
     the damping's share of it. Yields the poses after each iteration."""
     for _ in range(n_iterations):
-        right = -gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)   # [poses] Line
+        right = -gradient(poses, readings, weights, tails, heads, anchors, anchor_weights)   # [poses] Forque
         *_, correction = conjugate_gradients(poses, right, weights, tails, heads, anchor_weights)   # [poses] Twist
         poses = poses * (correction * (0.5 * damping)).exp()                   # [poses] Motor
         yield poses
@@ -144,9 +144,9 @@ def marginals(poses: Motor, noises: Covariance, tails: np.ndarray, heads: np.nda
     relative = poses[tails].inverse() * poses[heads]                          # [readings] Motor
     sites = concatenate([modes(noises), modes(priors)])                        # [readings + poses, modes] Twist
     units = sites[..., None] * np.eye(len(sites))[:, None]                     # [readings + poses, modes, readings + poses] Twist
-    right = pull(relative, units[..., :len(tails)], units[..., len(tails):], weights, tails, heads, anchor_weights)   # [readings + poses, modes, poses] Line
+    right = pull(relative, units[..., :len(tails)], units[..., len(tails):], weights, tails, heads, anchor_weights)   # [readings + poses, modes, poses] Forque
     *_, errors = conjugate_gradients(poses, right, weights, tails, heads, anchor_weights)   # [readings + poses, modes, poses] Twist
-    return (errors * (errors & Line)).sum(axis=(0, 1))                         # [poses] Covariance
+    return (errors * (errors & Forque)).sum(axis=(0, 1))                         # [poses] Covariance
 
 
 def uncertainties(iterates: Iterator[Motor], uncertainty: Covariance, damping: float, noises: Covariance,
@@ -163,10 +163,10 @@ def uncertainties(iterates: Iterator[Motor], uncertainty: Covariance, damping: f
 
 # --- plumbing -------------------------------------------------------------------------
 def modes(uncertainty: Covariance) -> Twist:
-    """Twists whose outer products sum to each uncertainty: along lines orthonormal in its form."""
-    spread = Line & uncertainty                                                # [...] Scalar <- (Line, Line)
-    _, lines = spread.eigh(spread)                                             # [..., modes] Line
-    return uncertainty[..., None](lines)                                       # [..., modes] Twist
+    """Twists whose outer products sum to each uncertainty: along forques orthonormal in its form."""
+    spread = Forque & uncertainty                                                # [...] Scalar <- (Forque, Forque)
+    _, forques = spread.eigh(spread)                                           # [..., modes] Forque
+    return uncertainty[..., None](forques)                                       # [..., modes] Twist
 
 
 def isotropic(translation_std: float, rotation_std: float) -> Covariance:
@@ -175,4 +175,4 @@ def isotropic(translation_std: float, rotation_std: float) -> Covariance:
     # A basis twist turns if its reverse product is one, and slides if it is zero.
     turning = twists.scalar_norm_squared()                                     # [twists] Scalar
     variances = translation_std**2 + (rotation_std**2 - translation_std**2) * turning   # [twists] Scalar
-    return (twists * (twists & Line) * variances).sum(axis=0)                  # [] Twist <- Line
+    return (twists * (twists & Forque) * variances).sum(axis=0)                  # [] Twist <- Forque

@@ -60,16 +60,18 @@ def test_material_and_stress_forms_give_the_electric_and_magnetic_energy():
 
     np.testing.assert_allclose((bilinear_form(fields, fields) / 2 - expected_action).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((energy_form(fields, fields) / 2 - expected_energy).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((stress_form(t, t) - expected_energy).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((stress_form(t, t.dual()) - expected_energy).kernel, 0.0, atol=1e-12)
 
     flux_field = mv.tx + mv.zx
     flux_form = core.Vector & core.stress_energy(flux_field, medium(flux_field))
-    np.testing.assert_allclose(flux_form(z, t).kernel, -1 / permeability, atol=1e-12)
-    np.testing.assert_allclose(flux_form(t, z).kernel, -permittivity, atol=1e-12)
+    np.testing.assert_allclose(flux_form(z, t.dual()).kernel, -1 / permeability, atol=1e-12)
+    np.testing.assert_allclose(flux_form(t, z.dual()).kernel, -permittivity, atol=1e-12)
 
+    # In vacuum the current along a direction is the field's sandwich of the direction, halved.
     vacuum = isotropic(1.0, 1.0)
     vacuum_current = core.stress_energy(fields, vacuum(fields))
-    np.testing.assert_allclose((vacuum_current + (fields >> core.Vector).dual() / 2).kernel, 0.0, atol=1e-12)
+    for direction in (t, x, z):
+        np.testing.assert_allclose((vacuum_current(direction.dual()) + (fields >> direction).dual() / 2).kernel, 0.0, atol=1e-12)
 
 
 def test_crystal_is_birefringent_along_z_and_not_along_x():
@@ -103,7 +105,7 @@ def test_vacuum_wave_has_two_transverse_field_modes():
     np.testing.assert_allclose((wavevector ^ modes).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((wavevector ^ vacuum(modes)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(action_form(modes, modes).kernel / 2, 0.0, atol=1e-12)
-    assert np.all(stress_form(t, t).kernel > 0.0)
+    assert np.all(stress_form(t, t.dual()).kernel > 0.0)
 
 
 def test_ferrite_lifts_permeability_through_the_dual_field():
@@ -146,8 +148,8 @@ def test_material_and_stress_forms_transform_with_the_field_and_observer():
 
     np.testing.assert_allclose((moving(fields) - rebuilt(fields)).kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose((moved_form(moved_fields, moved_fields) - form(fields, fields)).kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose((moved_current - (rotation >> current(rotation << core.Vector))).kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose((moved_stress_form(observer, observer) - stress_form(t, t)).kernel, 0.0, atol=1e-7)
+    np.testing.assert_allclose((moved_current - (rotation >> current(rotation << core.Antivector))).kernel, 0.0, atol=1e-7)
+    np.testing.assert_allclose((moved_stress_form(observer, observer.dual()) - stress_form(t, t.dual())).kernel, 0.0, atol=1e-7)
 
 
 def test_moving_glass_shows_exact_fresnel_drag():

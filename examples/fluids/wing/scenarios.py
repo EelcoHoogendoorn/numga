@@ -1,0 +1,111 @@
+"""A wing pitched up and back in a steady stream: the pressure around it, its streamlines, and its lift;
+and the flow past a cylinder deformed into the flow past the wing."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import numpy as np
+
+from numga import stack
+
+from examples.fluids.wing import core
+
+# The cylinder's centre, behind and above the origin before the map: the wing's thickness and camber.
+THICKNESS = 0.1
+CAMBER = 0.08
+SCALE = 1.0
+SPEED = 1.0
+DENSITY = 1.0
+LOWEST_ATTACK = np.deg2rad(-4.0)
+HIGHEST_ATTACK = np.deg2rad(12.0)
+# The rings and angles the checks sample; the animations draw from fewer, all a picture needs.
+N_RINGS = 140
+N_ANGLES = 360
+N_DRAWN_RINGS = 35
+N_DRAWN_ANGLES = 90
+REACH = 6.0
+N_FRAMES = 80
+N_MORPH_FRAMES = 60
+MORPH_ATTACK = np.deg2rad(8.0)
+DURATION_MS = 60
+
+
+# --- math -----------------------------------------------------------------------------
+def wing(attack: float) -> core.Wing:
+    """The wing pitched nose up by the angle of attack: its cylinder's centre and its chord, level along the
+    stream, turned by one rotor."""
+    turn = (core.mv.xy * (attack / 2)).exp()                                 # [] Rotor
+    return core.Wing(turn >> (-THICKNESS * core.mv.x + CAMBER * core.mv.y).dual(), SCALE, turn >> core.mv.x.dual())
+
+
+def stream() -> core.Point:
+    return SPEED * core.mv.x.dual()
+
+
+def trailing_edge(wing: core.Wing) -> core.Point:
+    """The map's critical point that makes the wing's sharp trailing edge."""
+    return wing.scale * wing.chord
+
+
+def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point, core.Point, core.Point]]:
+    """The flow past the cylinder as the map's critical points move apart from its centre out to the
+    trailing edge, deforming the cylinder into the wing, with the wing's circulation throughout; the
+    critical points' images, where the map doubles angles; and the cylinder's centre before the map,
+    whose offset from where the critical points start shapes the wing."""
+    pitched = wing(MORPH_ATTACK)
+    plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, REACH)            # [rings, angles] Point
+    spread = (1 - np.cos(2 * np.pi * np.arange(N_MORPH_FRAMES) / N_MORPH_FRAMES)) / 2
+    for fraction in spread:
+        critical = fraction * trailing_edge(pitched)                         # [] Point
+        images = 2 * stack([critical, -critical])                            # [2] Point
+        points, velocity, _, flux = core.flow(pitched, stream(), plane, critical)
+        yield points, velocity, flux, core.lift(pitched, stream(), DENSITY), images, pitched.centre
+
+
+def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point]]:
+    """The flow past the wing and its lift as the wing pitches up and back."""
+    phase = (1 - np.cos(2 * np.pi * np.arange(N_FRAMES) / N_FRAMES)) / 2
+    for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
+        pitched = wing(attack)
+        plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, REACH)        # [rings, angles] Point
+        points, velocity, _, flux = core.flow(pitched, stream(), plane, trailing_edge(pitched))
+        yield points, velocity, flux, core.lift(pitched, stream(), DENSITY)
+
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    from examples.animation import save_animation
+    from examples.fluids.wing import render
+
+    save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS)
+    save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS)
+
+    # checks
+    pitched = wing(HIGHEST_ATTACK)
+    plane = core.rings(pitched, N_RINGS, N_ANGLES, REACH)                        # [rings, angles] Point
+    points, velocity, _, _ = core.flow(pitched, stream(), plane, trailing_edge(pitched))
+    # The velocity's derivative vanishes everywhere past the cylinder.
+    _, gradient, _ = core.cylinder(pitched, stream(), plane)
+    np.testing.assert_allclose(core.derivative(gradient).kernel, 0.0, atol=1e-12)
+    # Around every ring about the wing the velocity times each step adds up to the circulation, with
+    # no flux: the derivative between any two rings vanishes too.
+    next_idx = (np.arange(N_ANGLES) + 1) % N_ANGLES
+    loops = ((velocity + velocity[:, next_idx]) / 2 * (points[:, next_idx] - points)).sum(axis=-1)
+    np.testing.assert_allclose(loops.kernel - loops.kernel[:1], 0.0, atol=1e-11)
+    # Each ring's own oriented area sets the sense its sum is read in.
+    areas = (points ^ points[:, next_idx]).sum(axis=-1)               # [rings] Bivector
+    np.testing.assert_allclose((loops * (areas / areas.norm()) - core.circulation(pitched, stream())).kernel, 0.0, atol=1e-3)
+    # The pressure on the surface, half the density times the squared speed along the inward
+    # normal, adds up to the Kutta–Joukowski lift, across the stream, with no drag.
+    surface, surface_velocity, _, _ = core.flow(pitched, stream(), core.rings(pitched, 1, N_ANGLES, 1.0)[0], trailing_edge(pitched))
+    steps = surface[next_idx] - surface                        # [angles] Point
+    # The inward normal: each step turned a quarter turn back.
+    inward = (core.mv.xy * (np.pi / 4)).exp() >> steps                       # [angles] Point
+    speed_squared = surface_velocity | surface_velocity                      # [angles] Scalar
+    force = (0.5 * DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * inward).sum(axis=-1)
+    np.testing.assert_allclose((force - core.lift(pitched, stream(), DENSITY)).kernel, 0.0, atol=1e-3)
+
+
+if __name__ == "__main__":
+    main()
