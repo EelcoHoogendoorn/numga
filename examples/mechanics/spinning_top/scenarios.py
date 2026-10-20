@@ -1,12 +1,9 @@
-"""Scenes for the spinning top: a disc, a stem and a tip, spun on a shallow bowl.
-
-One setup per variation. Builds the top and the ground, runs the mathematics in `core`, and yields
-the geometry for `render`.
-"""
+"""Scenes for the spinning top: a disc, a stem and a tip, spun on a shallow bowl, in four variations of
+its tip, its disc, and the friction of the ground."""
 
 from __future__ import annotations
 
-import time
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -16,14 +13,32 @@ from examples.mechanics.spinning_top import core
 
 mv = core.mv
 UP = core.mv(core.Direction, np.array([0.0, 0.0, 1.0]))
+GRAVITY = 9.81
 STATIC_FRICTION = 0.4
+# The top's stem and tip: the stem's semi-axes, how far its centre sits above the disc's, its mass, the
+# tip's height and its mass; and the disc's semi-axes.
+DISC_SEMI = np.array([0.25, 0.25, 0.04])
+STEM_SEMI = np.array([0.02, 0.02, 0.15])
+STEM_ABOVE_DISC = 0.16
+STEM_MASS = 0.05
+TIP_HEIGHT = 0.14
+TIP_MASS = 0.15
+# The tilt it is spun at, and how far the tip starts clear of the ground.
+TILT = 0.15
+CLEARANCE = 0.002
+# The run: its length in seconds, the time step, the steps per frame, and the frames' pixels and duration
+# in milliseconds.
+RUNTIME = 5.0
+STEP = 4e-3
+N_STEPS_PER_FRAME = 10
+PIXELS = 260
+FRAME_DURATION = 33
 
 
 @dataclass(frozen=True)
 class Setup:
     """A top and its ground: the spin it starts with, its tip's radius, its disc's height above the
-    tip and mass, the bowl's curvature, the dynamic friction, the air's drag rate, and the
-    indentation of the tip that sets the drilling friction."""
+    tip and mass, the bowl's curvature, the dynamic friction, and the air's drag rate."""
     spin_rate: float
     tip_radius: float
     disc_height: float
@@ -31,10 +46,9 @@ class Setup:
     bowl_curvature: float
     dynamic_friction: float
     drag: float
-    indentation: float
 
 
-BASE = Setup(18.0, 0.05, 0.10, 1.0, 0.15, 0.3, 0.13, 0.0)
+BASE = Setup(18.0, 0.05, 0.10, 1.0, 0.15, 0.3, 0.13)
 VARIATIONS = {
     "base": BASE,
     "sharp_tip": replace(BASE, tip_radius=0.02),
@@ -44,57 +58,73 @@ VARIATIONS = {
 VIEW, CENTRE, EXTENT = (30, -60), np.array([0.0, 0.0, 0.15]), 0.55
 
 
-def top(tip_radius: float, tip_height: float, disc_height: float, disc_mass: float):
-    """A disc, a stem and a tip, each a solid ellipsoid, in the frame of their centre of mass."""
-    centres = np.array([[0, 0, disc_height], [0, 0, disc_height + 0.16], [0, 0, tip_height]])
-    semi = np.array([[0.25, 0.25, 0.04], [0.02, 0.02, 0.15], [tip_radius, tip_radius, tip_height]])
-    mass = np.array([disc_mass, 0.05, 0.15])
+# --- math -----------------------------------------------------------------------------
+def top(tip_radius: float, disc_height: float, disc_mass: float):
+    """A disc, a stem and a tip, each a solid ellipsoid, in the frame of their centre of mass: the parts,
+    the inertia and its inverse, the total mass, and the height of the centre of mass above the tip."""
+    centres = np.array([[0, 0, disc_height], [0, 0, disc_height + STEM_ABOVE_DISC], [0, 0, TIP_HEIGHT]])
+    semi = np.stack([DISC_SEMI, STEM_SEMI, np.array([tip_radius, tip_radius, TIP_HEIGHT])])
+    mass = np.array([disc_mass, STEM_MASS, TIP_MASS])
     com = (centres * mass[:, None]).sum(0) / mass.sum()
     centres = centres - com
-    parts = core.ellipsoid(core.mv.point(centres), semi)
+    parts = core.ellipsoid(core.mv.point(centres), semi)                       # [parts] Plane <- Point
     points, masses = core.sigma_points(centres, semi, mass)
-    inertia = core.inertia(points, masses)
+    inertia = core.inertia(points, masses)                                     # [] Forque <- Rate
     return parts, inertia, inertia.inverse(), mass.sum(), com[2]
 
 
-def spin(setup: Setup, seconds: float, dt: float, every: int):
-    """Simulate from a slight tilt; yield the pose, the parts and the ground every few steps."""
-    parts, inertia, inertia_inv, mass, height = top(setup.tip_radius, 0.14, setup.disc_height, setup.disc_mass)
+def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Iterator[tuple]:
+    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps."""
+    parts, inertia, inverse_inertia, mass, height = top(setup.tip_radius, setup.disc_height, setup.disc_mass)
     ground = core.bowl(setup.bowl_curvature)
     origin = core.mv.point(np.zeros(3))
-    tilt = 0.15
     # `(mv.zw * a).exp()` translates up by `2 * a`, `(mv.zx * a).exp()` turns by `2 * a`: lift the
     # centre of mass so the tip clears, then tilt.
-    motor = ((mv.zw * ((height * np.cos(tilt) + 0.002) / 2)).exp() * (mv.zx * (tilt / 2)).exp()).normalized()
+    motor = ((mv.zw * ((height * np.cos(TILT) + CLEARANCE) / 2)).exp() * (mv.zx * (TILT / 2)).exp()).normalized()
     rate = mv.xy * setup.spin_rate
 
     def forces(motor, rate):
         """The weight, a force line down through the centre of mass, and the air's drag, opposing
         the momentum; in the body frame."""
-        weight = motor << ((motor >> origin) & core.mv(core.Direction, np.array([0.0, 0.0, -9.81 * mass])))
+        weight = motor << ((motor >> origin) & core.mv(core.Direction, np.array([0.0, 0.0, -GRAVITY * mass])))
         return weight - inertia(rate) * setup.drag
 
-    started = time.time()
-    for i in range(int(seconds / dt)):
+    for step in range(int(seconds / dt)):
         before = motor
         # Predict with a free step, then correct against the ground.
-        motor, rate = lie.explicit_rk4(motor, rate, inertia, inertia_inv, dt, forces)
-        motor, rate = core.project_contacts(before, motor.normalized(), inertia_inv, parts, ground,
-                                            STATIC_FRICTION, setup.dynamic_friction, setup.indentation, dt)
-        if i % every == 0:
-            yield motor, parts, ground
-        if i % 1000 == 0:
-            # The axis's angle from vertical.
-            lean = ((motor >> UP).dual() | UP.dual()).abs().arccos()
-            print(f"t={i * dt:5.1f} tilt={np.degrees(lean.to_array()):5.1f} "
-                  f"spin={-(mv.xy | rate).to_array():6.1f} ({time.time() - started:.0f}s)", flush=True)
+        motor, rate = lie.explicit_rk4(motor, rate, inertia, inverse_inertia, dt, forces)
+        motor, rate = core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
+                                            STATIC_FRICTION, setup.dynamic_friction, dt)
+        if step % n_steps_per_frame == 0:
+            yield motor, rate, parts, ground
 
 
-if __name__ == "__main__":
+def lean(motor: core.Motor) -> core.Scalar:
+    """The angle of the top's axis from vertical."""
+    return ((motor >> UP).dual() | UP.dual()).abs().arccos()
+
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation
     from examples.mechanics.spinning_top import render
 
+    runs = {}
     for name, setup in VARIATIONS.items():
-        frames = [render.frame(motor, parts, ground, VIEW, CENTRE, EXTENT, 260)
-                  for motor, parts, ground in spin(setup, 5.0, 1e-3, 40)]
-        save_animation(frames, f"spinning_top_{name}", 33)
+        states = list(spin(setup, RUNTIME, STEP, N_STEPS_PER_FRAME))
+        frames = [render.frame(motor, parts, ground, VIEW, CENTRE, EXTENT, PIXELS) for motor, _, parts, ground in states]
+        save_animation(frames, f"spinning_top_{name}", FRAME_DURATION)
+        runs[name] = states
+
+    # checks
+    # Every top stays up over the run, leaning less than it would lying down, and keeps spinning the same
+    # way while the air's drag slows it.
+    for name, states in runs.items():
+        leans = np.array([lean(motor).to_array() for motor, _, _, _ in states])
+        spins = np.array([-(mv.xy | rate).to_array() for _, rate, _, _ in states])
+        assert leans.max() < np.pi / 4
+        assert (spins > 0).all() and spins[-1] < spins[0]
+
+
+if __name__ == "__main__":
+    main()

@@ -1,6 +1,6 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input slot. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
+Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input slot. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
 
 ```python
 from numga import NumpyContext, Orientation
@@ -15,17 +15,18 @@ Every element can carry either orientation. Named constructors choose a conventi
 ga = PGA3D
 mv = NumpyContext(ga).multivector
 
-Bivector = ga.gatype.bivector()                 # extrinsic, grade 2
-Antibivector = ga.gatype.antibivector()         # intrinsic, grade 2 in this algebra
+Bivector = ga.gatype.bivector()                 # Bivector+
+Antibivector = ga.gatype.antibivector()          # Antibivector-
 ```
 
 To change only orientation, use `.derive.flipped_orientation`. It keeps the same blades:
 
 ```python
-Plane = ga.gatype.vector()
-Surface = Plane.derive.flipped_orientation      # intrinsic vector
-Point = ga.gatype.antivector()                  # intrinsic, grade 3 in this algebra
-IntrinsicScalar = ga.gatype.scalar().derive.flipped_orientation
+Plane = ga.gatype.vector()                                 # Vector+
+Surface = Plane.derive.flipped_orientation                  # Vector-
+Point = ga.gatype.antivector()                              # Antivector-
+Scalar = ga.gatype.scalar()                                # Scalar+
+IntrinsicScalar = Scalar.derive.flipped_orientation        # Scalar-
 ```
 
 The `anti` constructors select both complementary grade and intrinsic orientation. In particular, `antiscalar()` is an intrinsic pseudoscalar; `IntrinsicScalar` above is an intrinsic scalar.
@@ -47,9 +48,9 @@ The `anti` constructors select both complementary grade and intrinsic orientatio
 A type taken from an expression carries the orientation its construction produces. Narrowing a type with `.within`, `.containing`, `.degenerate` or `.nondegenerate` keeps its orientation. Constructing one directly from a subspace requires an explicit orientation:
 
 ```python
-Line = (Point & Point).output_gatype                         # intrinsic bivector
-Resultant = Antibivector.derive.within("x y w")              # intrinsic, with a narrower blade layout
-Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)
+Line = (Point & Point).output_gatype                         # Antibivector-
+Resultant = Antibivector.derive.within("x y w")               # Antibivector-
+Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
 ```
 
 `ga.gatype((Output, Input))` builds a map type from types that carry their own orientations, and refuses an `orientation=` argument. A printed type names the orientation of every slot: `intrinsic bivector <- extrinsic bivector` maps extrinsic bivectors to intrinsic ones. On a map type, `.derive.flipped_orientation` flips only the output.
@@ -74,11 +75,11 @@ Reading `extrinsic` as + and `intrinsic` as −:
 For an intrinsic scalar, an odd function keeps the sign change under a mirror; an even function removes it. A norm is extrinsic, so dividing by it preserves the element's orientation:
 
 ```python
-value = mv(IntrinsicScalar, [0.5])
-value.sin()                                     # intrinsic scalar
-value.cos()                                     # extrinsic scalar
-value.norm()                                    # extrinsic scalar
-value.normalized()                              # intrinsic scalar
+value: IntrinsicScalar = mv(IntrinsicScalar, [0.5])  # Scalar-
+value.sin()                                        # Scalar-
+value.cos()                                        # Scalar+
+value.norm()                                       # Scalar+
+value.normalized()                                 # Scalar-
 ```
 
 ## Reflection
@@ -99,8 +100,10 @@ These transformations commute with every product, the geometric, outer, inner an
 The dual complements the blade layout and flips orientation. `.dual_inverse()` reverses this operation, also flipping orientation. The regressive product is the outer product of the duals, taken back with the inverse dual:
 
 ```python
-join = Point & Point
-join_from_duals = (Point.dual() ^ Point.dual()).dual_inverse()
+Join = ga.gatype((Line, Point, Point))                         # Antibivector- <- (Antivector-, Antivector-)
+
+join: Join = Point & Point                                    # Antibivector- <- (Antivector-, Antivector-)
+join_from_duals: Join = (Point.dual() ^ Point.dual()).dual_inverse()  # Antibivector- <- (Antivector-, Antivector-)
 ```
 
 These are the same map. The three orientation flips leave one net flip, which gives `&` its propagation rule.
@@ -114,12 +117,12 @@ Multiplication by a fixed pseudoscalar follows the geometric product's orientati
 Each slot of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:
 
 ```python
-Inertia = ga.gatype((Antibivector, Bivector))
+Inertia = ga.gatype((Antibivector, Bivector))                   # Antibivector- <- Bivector+
 
-points: Point = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-inertia: Inertia = (points & points.commutator(Bivector)).sum(axis=0)
-spin: Bivector = mv.xy
-momentum: Antibivector = inertia(spin)
+points: Point = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1]])    # [points] Antivector-
+inertia: Inertia = (points & points.commutator(Bivector)).sum(axis=0)  # Antibivector- <- Bivector+
+spin: Bivector = mv.xy                                       # Bivector+
+momentum: Antibivector = inertia(spin)                        # Antibivector-
 ```
 
 | Property | Meaning |
@@ -144,8 +147,10 @@ Pairing two inputs leaves the other slots unchanged. The inertia above is a corr
 `det`, `eig`, `eigh` and `cholesky` accept endomorphisms or square scalar-valued forms. Inertia is neither, but pairing its output with a second rate gives its energy form:
 
 ```python
-kinetic = Bivector & inertia(Bivector)           # extrinsic scalar <- extrinsic bivector, extrinsic bivector
-energy = kinetic(spin, spin) / 2
+EnergyForm = ga.gatype((Scalar, Bivector, Bivector))           # Scalar+ <- (Bivector+, Bivector+)
+
+kinetic: EnergyForm = Bivector & inertia(Bivector)            # Scalar+ <- (Bivector+, Bivector+)
+energy: Scalar = kinetic(spin, spin) / 2                      # Scalar+
 ```
 
 A form's eigenvalues are measured against a metric form. Omitted, that metric is the input type's own metric; supplied explicitly, it must be a square form on the same input type. For `elastic.eigh(kinetic)`, `elastic` and `kinetic` are the stiffness and inertia forms, and `kinetic` must be positive definite. Two unary correlations must first be paired into forms this way.

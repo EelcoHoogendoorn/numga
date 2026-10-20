@@ -19,15 +19,15 @@ Plane = ga.gatype.vector()
 Scalar = ga.gatype.scalar()
 
 
-# --- math ------------------------------------------------------------------
+# --- math -----------------------------------------------------------------------------
 def fit_gaussian(points: Point, samples: Point) -> tuple[Scalar, Scalar]:
     """Fit unit-weight points and evaluate the Gaussian and its 1σ level set.
 
     Samples are unit-weight query points in the same affine chart. The returned
     density has peak one; the level vanishes at Mahalanobis distance one.
     """
-    # Leave the plane slot open: each point contributes a rank-one Point <- Plane map.
-    # Its mean contains both the cloud's location and its spread, without centering.
+    # Each point contributes its dyad, a rank-one map from planes to points; their mean holds both the
+    # cloud's location and its spread, without centering.
     moment = (points * (Plane & points)).mean(axis=0)
     precision = moment.inverse()
 

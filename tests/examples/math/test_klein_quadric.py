@@ -1,6 +1,5 @@
 """The four-line problem: the transversals from the Klein form meet all four lines, through the
-points where the fourth line crosses the quadric of the other three, real or complex; the scenes
-pass their checks and draw."""
+points where the fourth line crosses the quadric of the other three, real or complex."""
 
 from __future__ import annotations
 
@@ -23,9 +22,20 @@ def test_both_transversals_exist_whether_the_fourth_line_crosses_the_hyperboloid
     np.testing.assert_allclose((lines[1, :, None] ^ across[1, None, :]).kernel, 0.0, atol=1e-12)
 
 
-def test_scenes_pass_their_checks_and_draw():
+def test_the_transversals_meet_all_four_lines_and_pass_through_the_crossings():
+    three = scenarios.waist_lines(np.array([0.5, 2.0, 4.0]))
+    lines, rulings, across, crossing = scenarios.scene(three, scenarios.steep(np.array([1.2, -0.9])), 12)
+    surface = scenarios.core.ruled_quadric(three[0], three[1], three[2])
+    np.testing.assert_allclose((across ^ across).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((lines[..., :, None] ^ across[..., None, :]).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((surface(crossing) & crossing).kernel, 0.0, atol=1e-10)
+    off = np.abs((crossing[..., :, None] & across[..., None, :]).kernel).max(axis=-1)
+    np.testing.assert_allclose(off.min(axis=-1), 0.0, atol=1e-10)
+
+
+def test_scenes_draw():
     scenes = list(scenarios.swing(4, 12))
-    figure = render.draw(*scenes[0], azimuth=-60.0)
+    figure = render.draw(*scenes[0], azimuth=render.AZIMUTH)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
     assert len(render.animate(scenes)) == 4

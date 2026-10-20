@@ -15,6 +15,7 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
+Motor = ga.gatype.rotor()
 DualQuadric = ga.gatype((Point, Plane))
 
 

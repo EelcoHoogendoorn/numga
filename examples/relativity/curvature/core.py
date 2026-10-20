@@ -71,7 +71,7 @@ def polarizations() -> tuple[Curvature, Curvature]:
 
 
 def tidal_map(curvature: Curvature, observer: Antivector) -> Tidal:
-    """The observer bound twice and the separation open: from separation to tidal force.
+    """The observer's tidal map, from a separation to the tidal force on it.
 
     The observer and a separation span a ribbon of spacetime, the curvature turns it into a plane, and
     the observer reads the plane as a force, as a velocity reads a field.

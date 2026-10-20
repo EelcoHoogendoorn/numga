@@ -1,8 +1,9 @@
-"""Scenes for multi-camera reconstruction and camera alignment in PGA2D.
+"""Scenes of multi-view reconstruction and camera alignment in the plane.
 
-A convergent rig of planar cameras views six landmarks. `bundle_adjustment` returns the
-aligned rig for a figure; the convergence scenarios yield one state per Gauss-Newton step for an
-animation. All of them return geometry for `render`.
+Three planar cameras, one on the left and one on the right turned inwards and one between them looking
+ahead, view six landmarks. In each scene some cameras are misplaced and walk back into place: by the
+alternating steps of `align`, one state per step for an animation, or by the joint steps of
+`align_jointly`, which also give the information on every pose. All scenes return geometry for `render`.
 """
 
 from __future__ import annotations
@@ -14,124 +15,131 @@ from numga.algebras import PGA2D
 from examples import instantiate
 
 core = instantiate("examples.estimation.multiview.core", PGA2D)
-Camera, Information, Motor, Point, Quadric = core.Camera, core.Information, core.Motor, core.Point, core.Quadric
+Motor, Point, Quadric = core.Motor, core.Point, core.Quadric
 mv = core.mv
 
-# Landmarks in front of the cameras, at depths y from 0.85 to 2.55:
-LANDMARKS = np.array([
-    [ 0.15, 0.85],
-    [-0.43, 1.15],
-    [ 0.50, 1.50],
-    [ 0.03, 1.85],
-    [ 0.65, 2.20],
-    [-0.60, 2.55],
-])
-BASELINE = 0.75
-GAZE = np.radians(18.0)
+# The landmarks, in front of the cameras.
+LANDMARKS = [[0.15, 0.85], [-0.43, 1.15], [0.50, 1.50], [0.03, 1.85], [0.65, 2.20], [-0.60, 2.55]]
+# Each camera's offset along x and how far it is turned inwards: left, right, and in the middle.
+OFFSETS = np.array([-0.75, 0.75, 0.0])
+TURNS = np.radians([18.0, -18.0, 0.0])
+# The steps of each animation, and the durations of their frames in milliseconds.
+N_STEPS = 10
+N_FREE_STEPS = 30
+FRAME_DURATION = 333
+FREE_FRAME_DURATION = 120
 
 
-def rig(offsets: np.ndarray, gazes: np.ndarray) -> Motor:
-    """Camera poses at offsets along the x axis, each panned by its gaze angle."""
-    return (mv.xw * offsets / 2).exp() * (mv.xy * gazes / 2).exp()
+# --- math -----------------------------------------------------------------------------
+def rig(offsets: np.ndarray, turns: np.ndarray) -> Motor:
+    """Each camera moved along x, then turned."""
+    return (mv.xw * (offsets / 2)).exp() * (mv.xy * (turns / 2)).exp()
 
 
-def observe(true_poses: Motor):
-    """The landmarks, the pinhole cameras, and the sight cones of their pixel measurements."""
-    true_points = mv.point(LANDMARKS)
-    # Pinhole at the origin, sensor line y == 1:
-    camera = (mv.point(np.zeros(2)) & Point) ^ (mv.y - mv.w)
-    cameras = camera.broadcast_to(true_poses.shape)
-
-    # Sensor pixel measurements, in [n_points, n_cams] layout, pulled back into sight cones:
-    images = cameras(true_poses << true_points[:, None])
-    pixels = images / (mv.w & images)
-    return true_points, cameras, core.sight_cones(cameras, core.sensor_disc(pixels))
-
-
-def cone_cost(poses: Motor, points: Point, cones: Quadric) -> core.Scalar:
-    """The objective: every point's cone value, summed over the cameras that see it."""
-    local_points = poses << points[:, None]
-    return (cones(local_points) & local_points).sum()
+def observe(poses: Motor) -> tuple[Point, core.Camera, Quadric]:
+    """The landmarks, the pinhole camera at each pose, and the sight cones of the pixels where each camera
+    sees each landmark."""
+    landmarks = mv.point(LANDMARKS)                                             # [landmarks] Point
+    # The pinhole at the origin and the sensor, the line one unit in front of it.
+    pinhole = mv.point([0.0, 0.0])                                              # [] Point
+    sensor = mv.y - mv.w                                                        # [] Plane
+    cameras = ((pinhole & Point) ^ sensor).broadcast_to(poses.shape)            # [cameras] Point <- Point
+    images = cameras(poses << landmarks[:, None])                               # [landmarks, cameras] Point
+    pixels = images / (core.w & images)                                         # [landmarks, cameras] Point
+    return landmarks, cameras, core.sight_cones(cameras, core.sensor_disc(pixels))
 
 
-def bundle_adjustment():
-    """Two convergent cameras, the second panned 5% too far, aligned by eight Gauss-Newton steps."""
-    # Cam 0 on the left panned right, Cam 1 on the right panned left:
-    true_poses = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE]))
-    _, _, cones = observe(true_poses)
-    guess = rig(np.array([-BASELINE, BASELINE]), np.array([GAZE, -GAZE * 1.05]))
-
-    # Camera alignment purely via perspective cone quadrics, Cam 0 fixed as reference:
-    poses, points, splats = core.align(guess, cones, 8, 0.8, np.array([0.0, 1.0]))
-    world_cones = poses >> cones(poses << Point)
-
-    # --- checks
-    # The cone cost vanishes at the aligned rig.
-    assert abs(cone_cost(poses, points, cones).to_array()) < 1e-12
-
-    return poses, world_cones, splats, points
+def alignment(poses: Motor, guess: Motor, damping: float, moving: np.ndarray):
+    """The rig, its sight cones in the world, the splats and the landmarks, from the guess and after each
+    alternating step, without end."""
+    _, _, cones = observe(poses)
+    while True:
+        centres, splats = core.triangulate(guess, cones)
+        yield guess, guess >> cones(guess << Point), splats, centres
+        guess, _, _ = core.align(guess, cones, 1, damping, moving)
 
 
-def convergence(
-    true_poses: Motor, guess: Motor, damping: float, moving: np.ndarray, n_steps: int,
-):
-    """The rig after each alternating Gauss-Newton step, from the initial poses."""
-    _, _, cones = observe(true_poses)
-    poses = guess
-    for _ in range(n_steps + 1):
-        points, splats = core.triangulate(poses, cones)
-        yield poses, poses >> cones(poses << Point), splats, points
-        poses, _, _ = core.align(poses, cones, 1, damping, moving)
+def joint_alignment(poses: Motor, guess: Motor, damping: float, moving: np.ndarray):
+    """As `alignment`, by joint steps of cameras and landmarks, each state with the information on the
+    poses from the step taken there."""
+    _, cameras, cones = observe(poses)
+    while True:
+        centres, splats = core.triangulate(guess, cones)
+        aligned, _, _, information = core.align_jointly(cameras, guess, cones, 1, damping, moving)
+        yield guess, guess >> cones(guess << Point), splats, centres, information
+        guess = aligned
 
 
-def three_camera_truth() -> Motor:
-    """Left and right cameras panned inwards, and a third at the origin looking straight ahead."""
-    return rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE, 0.0]))
+def aligned_pair():
+    """Two cameras, the right one turned 5% too far, aligned by eight alternating steps with the left one
+    held still: the rig, its sight cones in the world, the splats and the landmarks."""
+    # How far each camera is turned, against its true turn; the steps, the share of each step taken, and
+    # the camera that moves.
+    overturns = [1.0, 1.05]
+    n_steps, damping, moving = 8, 0.8, np.array([0.0, 1.0])
+    poses = rig(OFFSETS[:2], TURNS[:2])                                         # [cameras] Motor
+    _, _, cones = observe(poses)
+    aligned, centres, splats = core.align(rig(OFFSETS[:2], TURNS[:2] * overturns), cones, n_steps, damping, moving)
+    return aligned, aligned >> cones(aligned << Point), splats, centres
 
 
-def one_camera(n_steps: int):
-    """One moving camera, Cam 1 with a 25% pan mismatch; Cams 0 and 2 anchored."""
-    # Damping 0.38 yields a steady visual trajectory reaching ~95% progress at step 9-10.
-    guess = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
-    return convergence(three_camera_truth(), guess, 0.38, np.array([0.0, 1.0, 0.0]), n_steps)
+def one_camera():
+    """The right camera turned 25% too far, the other two held still."""
+    overturns = [1.0, 1.25, 1.0]
+    damping, moving = 0.38, np.array([0.0, 1.0, 0.0])
+    return alignment(rig(OFFSETS, TURNS), rig(OFFSETS, TURNS * overturns), damping, moving)
 
 
-def two_cameras(n_steps: int):
-    """Two moving cameras, Cams 1 and 2 both perturbed; Cam 0 anchored."""
-    # Damping 0.35 yields a steady visual trajectory reaching ~95% progress at step 10.
-    guess = rig(np.array([-BASELINE, BASELINE, -0.1]), np.array([GAZE, -GAZE * 1.25, 0.05]))
-    return convergence(three_camera_truth(), guess, 0.35, np.array([0.0, 1.0, 1.0]), n_steps)
+def two_cameras():
+    """The right camera turned 25% too far and the middle one moved and turned, the left one held still."""
+    # Each camera's misplacement along x, and its overturn and added turn in radians.
+    shifts, overturns, added_turns = [0.0, 0.0, -0.1], [1.0, 1.25, 1.0], [0.0, 0.0, 0.05]
+    damping, moving = 0.35, np.array([0.0, 1.0, 1.0])
+    guess = rig(OFFSETS + shifts, TURNS * overturns + added_turns)              # [cameras] Motor
+    return alignment(rig(OFFSETS, TURNS), guess, damping, moving)
 
 
-def three_cameras(n_steps: int):
-    """All three cameras perturbed and updating freely, without anchors."""
-    # Damping 0.1 keeps every step a tenth shorter than the one before: a gradual trajectory.
-    guess = rig(np.array([-BASELINE * 0.85, BASELINE, -0.25]), np.array([GAZE * 1.15, -GAZE * 1.65, 0.15]))
-    return convergence(three_camera_truth(), guess, 0.1, np.array([1.0, 1.0, 1.0]), n_steps)
+def three_cameras():
+    """Every camera misplaced, and every camera moving with none held still."""
+    # Each camera's offset scaled and shifted along x, and its turn scaled and added to, in radians.
+    stretches, shifts = [0.85, 1.0, 1.0], [0.0, 0.0, -0.25]
+    overturns, added_turns = [1.15, 1.65, 1.0], [0.0, 0.0, 0.15]
+    damping, moving = 0.1, np.ones(3)
+    guess = rig(OFFSETS * stretches + shifts, TURNS * overturns + added_turns)  # [cameras] Motor
+    return alignment(rig(OFFSETS, TURNS), guess, damping, moving)
 
 
-def schur(n_steps: int):
-    """One moving camera as in `one_camera`, solved by the joint Gauss-Newton step with the Schur complement.
-
-    Each state carries the marginal information on each camera's pose from the step taken there.
-    """
-    true_poses = three_camera_truth()
-    _, cameras, cones = observe(true_poses)
-    poses = rig(np.array([-BASELINE, BASELINE, 0.0]), np.array([GAZE, -GAZE * 1.25, 0.0]))
-    moving = np.array([0.0, 1.0, 0.0])
-    for _ in range(n_steps + 1):
-        points, splats = core.triangulate(poses, cones)
-        next_poses, _, _, information = core.align_jointly(cameras, poses, cones, 1, 0.7, moving)
-        yield poses, poses >> cones(poses << Point), splats, points, information
-        poses = next_poses
+def jointly():
+    """The misplaced right camera of `one_camera`, aligned by joint steps."""
+    overturns = [1.0, 1.25, 1.0]
+    damping, moving = 0.7, np.array([0.0, 1.0, 0.0])
+    return joint_alignment(rig(OFFSETS, TURNS), rig(OFFSETS, TURNS * overturns), damping, moving)
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    from itertools import islice
+
     from examples.animation import save_animation, save_figure
     from examples.estimation.multiview import render
 
-    save_figure(render.draw_reconstruction(*bundle_adjustment()), "multiview_bundle_adjustment")
-    save_animation(render.animate_convergence(one_camera(10)), "multiview_convergence_1cam", 333)
-    save_animation(render.animate_convergence(two_cameras(10)), "multiview_convergence_2cams", 333)
-    save_animation(render.animate_convergence(three_cameras(30)), "multiview_convergence_3cams", 120)
-    save_animation(render.animate_convergence_with_covariance(schur(10)), "multiview_convergence_schur", 333)
+    pair = aligned_pair()
+    save_figure(render.draw_reconstruction(*pair), "multiview_aligned_pair")
+    save_animation(render.animate_convergence(islice(one_camera(), N_STEPS + 1)), "multiview_one_camera", FRAME_DURATION)
+    save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION)
+    save_animation(render.animate_convergence(islice(three_cameras(), N_FREE_STEPS + 1)), "multiview_three_cameras",
+                   FREE_FRAME_DURATION)
+    save_animation(render.animate_convergence_with_covariance(islice(jointly(), N_STEPS + 1)), "multiview_jointly",
+                   FRAME_DURATION)
+
+    # checks
+    # The aligned pair explains every pixel: every landmark's cones vanish at it. Two cameras with one held
+    # still leave the scene's scale free, so the landmarks are found only up to that scale.
+    aligned, _, _, centres = pair
+    _, _, cones = observe(rig(OFFSETS[:2], TURNS[:2]))
+    seen = aligned << centres[:, None]                                          # [landmarks, cameras] Point
+    np.testing.assert_allclose((cones(seen) & seen).sum().to_array(), 0.0, atol=1e-12)
+
+
+if __name__ == "__main__":
+    main()

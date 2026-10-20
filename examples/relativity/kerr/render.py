@@ -9,6 +9,8 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Polygon
 
+from numga import stack
+
 from examples.animation import capture
 from examples.relativity.kerr import core
 
@@ -35,11 +37,16 @@ CLUMP_CONTRAST = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
-def animate_rays(paths: core.Vector, horizons: core.Vector,
+def coordinates(events: core.Antivector, slices: tuple[core.Vector, ...]) -> np.ndarray:
+    """Coordinates of events or directions, on the last axis: their pairings with the slices."""
+    return (stack(slices) & events[..., None]).to_array()                     # [..., slices]
+
+
+def animate_rays(paths: core.Antivector, horizons: core.Antivector,
                  extent: float) -> list[np.ndarray]:
     """Sweep stationary spins with fixed ray colours and spatial scales."""
-    tracks = paths.cast(core.ga.subspace("x y")).kernel.transpose(1, 2, 0, 3)
-    outlines = horizons.cast(core.ga.subspace("x y")).kernel
+    tracks = coordinates(paths, (core.mv.x, core.mv.y)).transpose(1, 2, 0, 3)
+    outlines = coordinates(horizons, (core.mv.x, core.mv.y))
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[1]))
     ticks = [-extent / 2, 0, extent / 2]
 
@@ -104,10 +111,10 @@ def star_texture(width: int, height: int, seed: int) -> np.ndarray:
     return np.clip(texture, 0, 1)
 
 
-def sky_colour(direction: core.Vector, texture: np.ndarray) -> np.ndarray:
+def sky_colour(direction: core.Antivector, texture: np.ndarray) -> np.ndarray:
     """Look up the celestial image using the escaped ray's spatial direction."""
     horizontal_x, horizontal_y, vertical = np.moveaxis(
-        direction.cast(core.ga.subspace("x y z")).kernel, -1, 0)
+        coordinates(direction, (core.mv.x, core.mv.y, core.mv.z)), -1, 0)
     length = np.sqrt(horizontal_x ** 2 + horizontal_y ** 2 + vertical ** 2)
     height, width = texture.shape[:2]
     longitude = np.arctan2(horizontal_y, horizontal_x)
@@ -125,10 +132,10 @@ def sky_colour(direction: core.Vector, texture: np.ndarray) -> np.ndarray:
     return upper * (1 - fraction_y) + lower * fraction_y
 
 
-def clump_waves(points: core.Vector, radius: core.Scalar) -> np.ndarray:
+def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     """Random waves around and across the disk at each point, summed to unit variance, `[...]`; whole
     turns keep each continuous in angle."""
-    horizontal_x, horizontal_y = np.moveaxis(points.cast(core.ga.subspace("x y")).kernel, -1, 0)
+    horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
     angle = np.arctan2(horizontal_y, horizontal_x)
     modes = np.random.default_rng(CLUMP_SEED)
     turns = modes.integers(3, 18, CLUMP_MODES)
@@ -238,7 +245,7 @@ def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: fl
             for passed in transmission.kernel[..., 0]]
 
 
-def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, flows: Iterable[core.Vector],
+def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, flows: Iterable[core.Antivector],
                  loop_frames: int, image_shape: tuple[int, int], sky_texture: np.ndarray) -> list[np.ndarray]:
     """The camera's view as the disk's gas orbits: its light steady, its texture read where each
     crossing's gas was, `flows [2, crossings]` per frame, in this loop and the one before. Turning the

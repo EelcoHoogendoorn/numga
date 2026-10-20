@@ -1,4 +1,4 @@
-"""Unit tests for N-camera projective bundle adjustment with perspective cone quadrics."""
+"""Multi-view reconstruction and camera alignment with sight cones, in the plane and in space."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import signal
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+
+from itertools import islice
 
 from numga import stack
 from numga.algebras import PGA2D, PGA3D
@@ -62,9 +64,9 @@ def test_triangulate_cones():
     assert np.all(precision > 0)
 
 
-def test_bundle_adjust_converges():
+def test_alternating_alignment_converges():
     """Alternating Newton steps on the cone value recover the scene from a perturbed camera."""
-    true_motors = scenarios.three_camera_truth()
+    true_motors = scenarios.rig(scenarios.OFFSETS, scenarios.TURNS)
     true_points, _, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
     initial_points, _ = core.triangulate(initial_motors, local_cones)
@@ -74,9 +76,9 @@ def test_bundle_adjust_converges():
     assert rmse(points, true_points) < 0.02
 
 
-def test_schur_bundle_adjust_converges_and_yields_information():
-    """The joint Newton step with the Schur complement converges and returns pose information forms."""
-    true_motors = scenarios.three_camera_truth()
+def test_joint_alignment_converges_and_yields_information():
+    """The joint step of cameras and landmarks converges and returns pose information forms."""
+    true_motors = scenarios.rig(scenarios.OFFSETS, scenarios.TURNS)
     true_points, cameras, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
     initial_points, _ = core.triangulate(initial_motors, local_cones)
@@ -99,14 +101,14 @@ def test_schur_bundle_adjust_converges_and_yields_information():
     assert np.linalg.eigvalsh(gram[1, :, 1]).min() > 0
 
 
-def test_the_schur_step_moves_two_free_cameras_together():
+def test_the_joint_step_moves_two_free_cameras_together():
     """With two cameras free, a point's response to a step of one changes the cost seen by the other: the
     step that accounts for it settles within a few iterations. With one camera anchored the scale of the
     scene is free, so the cone cost, not the distance to the true poses, measures convergence."""
-    true_motors = scenarios.three_camera_truth()
+    true_motors = scenarios.rig(scenarios.OFFSETS, scenarios.TURNS)
     _, cameras, local_cones = scenarios.observe(true_motors)
-    motors = scenarios.rig(np.array([-scenarios.BASELINE, scenarios.BASELINE * 1.1, 0.15]),
-                           np.array([scenarios.GAZE, -scenarios.GAZE * 1.25, 0.12]))
+    motors = scenarios.rig(scenarios.OFFSETS * [1.0, 1.1, 1.0] + [0.0, 0.0, 0.15],
+                           scenarios.TURNS * [1.0, 1.25, 1.0] + [0.0, 0.0, 0.12])
     free = np.array([0.0, 1.0, 1.0])
 
     def cost(motors):
@@ -121,10 +123,10 @@ def test_the_schur_step_moves_two_free_cameras_together():
     assert np.abs((motors - previous).kernel).max() < 1e-5
 
 
-def test_splat_alignment_converges_with_the_schur_step():
+def test_ray_alignment_matches_the_joint_step():
     """Aligning sight lines to the other cameras' beliefs, weighted into pixel units by depths read off
-    those beliefs, recovers the perturbed camera as the Schur step does, without extracting a point."""
-    true_motors = scenarios.three_camera_truth()
+    those beliefs, recovers the perturbed camera as the joint step does, without placing a landmark."""
+    true_motors = scenarios.rig(scenarios.OFFSETS, scenarios.TURNS)
     true_points, cameras, local_cones = scenarios.observe(true_motors)
     initial_motors = scenarios.rig(np.array([-0.75, 0.75, 0.0]), np.radians([18.0, -18.0 * 1.05, 0.0]))
     free = np.array([0.0, 1.0, 0.0])
@@ -132,9 +134,9 @@ def test_splat_alignment_converges_with_the_schur_step():
     pixels = images / (mv.w & images)
 
     splat_motors, _ = core.align_rays_to_splats(initial_motors, local_cones, mv.point(np.zeros(2)), pixels, 4, 1.0, free)
-    schur_motors, _, _, _ = core.align_jointly(cameras, initial_motors, local_cones, 10, 1.0, free)
+    joint_motors, _, _, _ = core.align_jointly(cameras, initial_motors, local_cones, 10, 1.0, free)
     np.testing.assert_allclose((splat_motors - true_motors).kernel, 0.0, atol=1e-10)
-    np.testing.assert_allclose((splat_motors - schur_motors).kernel, 0.0, atol=1e-10)
+    np.testing.assert_allclose((splat_motors - joint_motors).kernel, 0.0, atol=1e-10)
 
 
 # --- the same module in 3D --------------------------------------------------------------
@@ -150,7 +152,7 @@ def rig_3d(instance) -> tuple:
     """Three convergent cameras and eight landmarks in PGA3D, with their sight cones, in the context
     of the given instance of the core.
 
-    Cam 0 left, panned right; Cam 1 right, panned left; Cam 2 central, raised and looking
+    The left camera turned right, the right camera turned left, and the middle one raised and looking
     slightly down. The landmarks span depths z in [1.2, 2.65].
     """
     mv3 = instance.mv
@@ -184,7 +186,7 @@ def rig_3d(instance) -> tuple:
     ((30.0, -20.0, 25.0), (-0.40, 0.30, 0.45), 30),
     ((50.0, 35.0, -40.0), (0.60, -0.50, 0.80), 40),
 ])
-def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, translation, iterations):
+def test_3d_alignment_recovers_a_badly_perturbed_camera(rotation_deg, translation, iterations):
     """In PGA3D, the moving camera returns from pose errors of tens of degrees and most of a metre."""
     mv3 = core3.mv
     true_motors, xyz, local_cones = rig_3d(core3)
@@ -209,7 +211,7 @@ def test_3d_bundle_adjust_recovers_a_badly_perturbed_camera(rotation_deg, transl
     assert cost(est_motors, est_points) < cost(motors, initial_points) * 1e-3
 
 
-def test_3d_bundle_adjust_converges_from_a_small_perturbation():
+def test_3d_alignment_converges_from_a_small_perturbation():
     """In PGA3D, the second camera panned 5% too far aligns with the other two anchored."""
     mv3 = core3.mv
     theta = np.radians(18.0)
@@ -279,19 +281,19 @@ def test_3d_coupled_newton_step_over_a_field_of_free_cameras():
 
 # --- scenarios through render -------------------------------------------------------------
 def test_figure_renders():
-    """The figure scenario passes its checks, and renders."""
-    figure = render.draw_reconstruction(*scenarios.bundle_adjustment())
+    """The aligned pair renders."""
+    figure = render.draw_reconstruction(*scenarios.aligned_pair())
     assert isinstance(figure, plt.Figure)
 
 
 @pytest.mark.parametrize("name", ["one_camera", "two_cameras", "three_cameras"])
 def test_convergence_animations_render(name):
     """Each alternating convergence scenario renders a short animation."""
-    frames = render.animate_convergence(getattr(scenarios, name)(1))
+    frames = render.animate_convergence(islice(getattr(scenarios, name)(), 2))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
 
 
-def test_schur_animation_renders():
-    """The Schur convergence scenario renders a short animation with pose covariances."""
-    frames = render.animate_convergence_with_covariance(scenarios.schur(1))
+def test_joint_animation_renders():
+    """The joint alignment renders a short animation with pose covariances."""
+    frames = render.animate_convergence_with_covariance(islice(scenarios.jointly(), 2))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

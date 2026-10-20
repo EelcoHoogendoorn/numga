@@ -10,6 +10,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.mechanics.manipulability import core
 
 mv, w = core.mv, core.w
@@ -20,10 +21,11 @@ VELOCITY_COLOUR, FORCE_COLOUR = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.
 QUADRIC_ALPHA = 0.55
 
 
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: core.Point) -> np.ndarray:
-    """Euclidean coordinates of points, from their homogeneous components at unit weight."""
-    homogeneous = points.dual().kernel
-    return homogeneous[..., :3] / homogeneous[..., 3:]
+    """Euclidean coordinates of points, `[..., 3]`: their pairings with the coordinate planes, over their
+    weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (w & points)[..., None]).to_array()
 
 
 def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float, pixels: int):

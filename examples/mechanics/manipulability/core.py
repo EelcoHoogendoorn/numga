@@ -24,7 +24,9 @@ from examples.geometry.scenegraph import core as arm
 
 ga = arm.ga
 mv = arm.mv
-Point, Plane, Line = arm.Point, arm.Plane, arm.Line
+Point, Plane = arm.Point, arm.Plane
+# A joint's rate of turning, a rate of motion about its axis.
+Twist = ga.gatype.bivector()
 # Points at infinity: velocities.
 Direction = Point.derive.degenerate
 # A point quadric takes each point to its polar plane; a dual quadric takes each plane to its pole.
@@ -37,31 +39,31 @@ coordinate_planes = Extensor.stack([mv.x, mv.y, mv.z])   # [3] Plane
 
 
 # --- math ----------------------------------------------------------------------------------------
-def arm_axes(joint_angles: tuple) -> tuple[arm.PointMap, Point, Line]:
-    """The arm's body maps, its gripper tip, and each joint's axis in the world.
+def arm_axes(joint_angles: tuple) -> tuple[arm.PointMap, Point, Twist]:
+    """The arm's body maps, its gripper tip, and each joint's twist per unit rate in the world.
 
-    A joint's axis is its rotation generator, carried into the world by its pivot: the base yaws
-    about z, the shoulder, elbow and wrist pitch about y. It is also the joint's twist per unit rate.
+    A joint's twist is its rotation generator, carried into the world by its pivot: the base yaws
+    about z, the shoulder, elbow and wrist pitch about y.
     """
     bodies, pivots = arm.robot_arm(joint_angles)
     # The top face of the gripper, on the wrist.
     tip = pivots[-1] >> mv.point([0.0, 0.0, 0.3])               # [] Point
-    axes = Extensor.stack([pivots[0] >> mv.xy] + [pivot >> mv.zx for pivot in pivots[1:]])    # [n_joints] Line
+    axes = Extensor.stack([pivots[0] >> mv.xy] + [pivot >> mv.zx for pivot in pivots[1:]])    # [joints] Twist
     return bodies, tip, axes
 
 
-def velocity_ellipsoid(tip: Point, axes: Line) -> DualQuadric:
+def velocity_ellipsoid(tip: Point, axes: Twist) -> DualQuadric:
     """The tip velocities reachable with unit joint rates: the velocities' dyads about the tip.
 
     `tip` and the joint `axes` may be in any frame, the same one for both; the ellipsoid comes out
     in that frame.
     """
     # The tip velocity per unit rate of each joint.
-    velocities = axes.commutator(tip)            # [n_joints] Direction
+    velocities = axes.commutator(tip)                              # [joints] Direction
     return (velocities * (Plane & velocities)).sum() - tip * (Plane & tip)
 
 
-def force_ellipsoid(tip: Point, axes: Line) -> Quadric:
+def force_ellipsoid(tip: Point, axes: Twist) -> Quadric:
     """The tip forces resisted with unit joint torques: the dyads of the planes through each joint's
     axis and the tip, a point quadric.
 
@@ -69,7 +71,7 @@ def force_ellipsoid(tip: Point, axes: Line) -> Quadric:
     in that frame.
     """
     # Each joint's axis joined with the tip.
-    torque_free = axes & tip                                       # [n_joints] Plane
+    torque_free = axes & tip                                       # [joints] Plane
     return (torque_free * (torque_free & Point)).sum() - w * (w & Point)
 
 

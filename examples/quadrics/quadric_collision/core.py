@@ -1,12 +1,11 @@
 """Collision of two ellipses in PGA2D, read off the blends of their dual quadrics.
 
-A dual ellipse Q maps lines to points: a line L is tangent where L & Q(L) == 0, and Q(L)
-is then its point of contact. A motor moves the whole map, motor >> Q(motor << Line).
-The blend Q1 * (1 - lam) + Q2 * lam of two dual ellipses keeps their common tangents,
-and its determinant is a cubic in lam that peaks between 0 and 1: above zero the ellipses are
-apart and a separating line exists, at zero they touch, below zero they overlap. At
-contact the blend at the peak is singular; its null line is the shared tangent, and both
-ellipses map it to the same contact point.
+A dual ellipse maps lines to points: a line is tangent where `line & dual(line) == 0`, and
+`dual(line)` is then its point of contact. A motor moves the whole map, `motor >> dual(motor << Line)`.
+A blend of two dual ellipses, `first * (1 - share) + second * share`, keeps their common tangents, and its
+determinant is a cubic in the share that peaks between 0 and 1: above zero the ellipses are apart and a
+separating line exists, at zero they touch, below zero they overlap. At contact the blend at the peak is
+singular; its null line is the shared tangent, and both ellipses map it to the same contact point.
 """
 
 from __future__ import annotations
@@ -27,53 +26,52 @@ Motor = ga.gatype.rotor()
 Quadric = ga.gatype((Point, Line))                  # Point <- Line
 Polarity = ga.gatype((Line, Point))                 # Line <- Point
 
-# The line at infinity.
+# The line at infinity, the origin, and the directions along x and y.
 infinity = mv.w                                     # [] Line
-origin = mv.xy
+origin = mv.point([0.0, 0.0])                       # [] Point
+along_x, along_y = mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])   # [] Point each
 
 
-def ellipse(rx: float, ry: float) -> Quadric:
-    """The dual ellipse with semi-axes rx and ry along x and y, centred at the origin.
-
-    Its principal directions are the ideal points yw and wx: each paired with itself and
-    weighted by its squared semi-axis, less the origin paired with itself.
-    """
-    return mv.yw * (Line & mv.yw) * rx**2 + mv.wx * (Line & mv.wx) * ry**2 - origin * (Line & origin)
+def ellipse(semi_x: float, semi_y: float) -> Quadric:
+    """The dual ellipse with the given semi-axes along x and y, centred at the origin: each axis
+    direction paired with itself and weighted by its squared semi-axis, less the origin paired with
+    itself."""
+    return along_x * (Line & along_x) * semi_x**2 + along_y * (Line & along_y) * semi_y**2 - origin * (Line & origin)
 
 
-def motor(tx: float, ty: float, angle: float) -> Motor:
-    """The rigid motion rotating by angle about the origin, then translating by (tx, ty)."""
-    translator = (infinity.wedge(mv.x * tx + mv.y * ty) * -0.5).exp()
-    rotor = (origin * (-angle / 2.0)).exp()
+def motor(shift_x: float, shift_y: float, angle: float) -> Motor:
+    """The rigid motion turning by an angle about the origin, then moving it by the given shifts."""
+    translator = (infinity.wedge(mv.x * shift_x + mv.y * shift_y) * -0.5).exp()
+    rotor = (mv.xy * (-angle / 2.0)).exp()
     return translator * rotor
 
 
 # --- math -----------------------------------------------------------------------------
-def tangent_line(Q: Quadric, normal: Line) -> Line:
-    """The tangent line of Q with the given outward normal direction, whatever the scale or sign of Q.
+def tangent_line(dual: Quadric, normal: Line) -> Line:
+    """The tangent line of a dual ellipse with the given outward normal, whatever its scale or sign.
 
-    The lines with normal n are n - infinity * offset. Tangency, L & Q(L) == 0, is quadratic in
-    the offset: a * offset**2 - 2 * b * offset + c == 0, for
-    a, b, c = infinity & Q(infinity), n & Q(infinity), n & Q(n). Its two roots lie either side of
-    the centre's offset b / a; the outward one lies beyond it along n. Rescaling Q rescales all
-    three coefficients alike, so neither root moves.
+    The lines with the normal's direction are `normal - infinity * offset`. Tangency is quadratic in the
+    offset: `a * offset**2 - 2 * b * offset + c == 0`, with `a`, `b` and `c` the pairings of the line at
+    infinity and the normal through the dual. Its two roots lie either side of the centre's offset
+    `b / a`; the outward one lies beyond it along the normal. Rescaling the dual rescales all three
+    coefficients alike, so neither root moves.
     """
-    n = normal.normalized()
-    a, b, c = infinity & Q(infinity), n & Q(infinity), n & Q(n)
-    return n - infinity * (b / a + ((b * b - a * c) / (a * a)).square_root())
+    unit = normal.normalized()                                                 # [...] Line
+    a, b, c = infinity & dual(infinity), unit & dual(infinity), unit & dual(unit)   # [...] Scalar each
+    return unit - infinity * (b / a + ((b * b - a * c) / (a * a)).square_root())
 
 
-def blend(Q1: Quadric, Q2: Quadric, lam: Scalar) -> Quadric:
-    """The blend Q1 * (1 - lam) + Q2 * lam of two dual quadrics."""
-    return Q1 * (1.0 - lam) + Q2 * lam
+def blend(first: Quadric, second: Quadric, share: Scalar) -> Quadric:
+    """The blend of two dual quadrics, the given share of the way from the first to the second."""
+    return first * (1.0 - share) + second * share
 
 
 def cubic_peak(values: Scalar) -> tuple[Scalar, Scalar]:
-    """The maximum of a cubic in lam, sampled at 0, 1, 2 and -1 along the first axis.
+    """The maximum of a cubic in the share, sampled at 0, 1, 2 and -1 along the first axis.
 
     The cubic is concave between 0 and 1, so its maximum is the root of the derivative
-    3 * c3 * lam**2 + 2 * c2 * lam + c1 where the second derivative is negative. Written as
-    c1 / ((c2 * c2 - 3 * c3 * c1).square_root() - c2), that root stays finite as c3 vanishes.
+    `3 * c3 * share**2 + 2 * c2 * share + c1` where the second derivative is negative. Written as
+    `c1 / ((c2 * c2 - 3 * c3 * c1).square_root() - c2)`, that root stays finite as c3 vanishes.
     """
     y0, y1, y2, y3 = values
     c3 = (3.0 * y0 - 3.0 * y1 + y2 - y3) / 6.0

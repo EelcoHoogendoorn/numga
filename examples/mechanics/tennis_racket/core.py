@@ -1,8 +1,9 @@
-"""The tennis racket theorem, or medial axis theorem.
+"""The tennis racket theorem: a body spun about its intermediate axis tumbles.
 
-The Dzhanibekov effect / intermediate axis theorem: a rigid body with 3 distinct principal
-moments of inertia rotates stably around its major and minor axes, but tumbles unstably
-around its intermediate (medial) axis.
+A rigid body with three distinct principal moments of inertia spins stably about its major and minor
+axes, but about its intermediate axis the smallest disturbance grows, and the body flips over and back,
+the Dzhanibekov effect. A rate is a bivector, the plane the body turns in, and a body has a principal
+plane for every plane of its space; the same racket spins in any dimension, one body per principal plane.
 
 The algebra is not fixed here. `ga` is supplied per instance, by
 `examples.instantiate("examples.mechanics.tennis_racket.core", Algebra.from_pqr(p, 0, 0))`,
@@ -11,11 +12,13 @@ so the same body spins in any dimension p.
 
 from __future__ import annotations
 
-from typing import Callable, NamedTuple
+from collections.abc import Callable, Iterator
+from itertools import islice
+from typing import NamedTuple
 
 import numpy as np
 
-from numga import Algebra, Extensor
+from numga import Algebra, stack
 from numga.backend.context import Context
 from examples.mechanics import lie_integrators as lie
 
@@ -33,43 +36,43 @@ InverseInertia = ga.gatype((Rate, Forque))
 
 
 class Body(NamedTuple):
-    """Rigid body dynamical state in Geometric Algebra."""
+    """A rigid body: where it is, how fast it turns, and its inertia and inverse inertia."""
     motor: Motor
     rate: Rate
     inertia: Inertia
-    inertia_inv: InverseInertia
+    inverse_inertia: InverseInertia
 
 
 def racket(seed: int) -> Body:
-    """Batched bodies spinning in each independent bivector plane.
+    """One body for each principal plane, spun in that plane with a small disturbance.
 
-    The body is a rectangular cuboid with distinct axis lengths 1, 2, 3, ... Works for p of
-    2, 3, 4 and 5. For `p > 3` some medial axes become seemingly chaotic, and some medial
-    axes stabilize.
+    The body is the corners of a box with distinct half-lengths 1, 2, 3, and so on. Beyond three
+    dimensions some intermediate planes tumble irregularly, and some become stable.
     """
-    p = ga.dimension
-    bits = (np.arange(2**p)[:, None] & (1 << np.arange(p))) > 0
-    corners = (2.0 * bits - 1.0) * (np.arange(p) + 1.0)
-    points = mv.vector(corners).dual()
-
-    planes = len(Rate.output_subspace)
-    inertia, inertia_inv = lie.inertia_from_points(points[None, :].broadcast_to((planes, len(corners))))
-    motor = mv.rotor().broadcast_to(planes)
-
-    # Initial spin in each principal plane with a small perturbation
+    dimension = ga.dimension
+    # Each corner's signs along the axes, from the bits of its index, times the half-lengths.
+    signs = 2.0 * ((np.arange(2**dimension)[:, None] & (1 << np.arange(dimension))) > 0) - 1.0
+    corners = mv.vector(signs * (np.arange(dimension) + 1.0)).dual()                        # [corners] Antivector
+    n_planes = len(Rate.output_subspace)
+    inertia, inverse_inertia = lie.inertia_from_points(corners[None, :].broadcast_to((n_planes, len(signs))))
+    motor = mv.rotor().broadcast_to(n_planes)
     rng = np.random.default_rng(seed)
-    rate = mv.bivector(np.eye(planes) + rng.normal(scale=1e-5, size=(planes, planes)))
-    return Body(motor, rate, inertia, inertia_inv)
+    rate = mv.bivector(np.eye(n_planes) + rng.normal(scale=1e-5, size=(n_planes, n_planes)))   # [bodies] Rate
+    return Body(motor, rate, inertia, inverse_inertia)
 
 
-def simulate(body: Body, step: Callable, dt: float, steps: int) -> tuple[Motor, Rate]:
-    """Torque-free motion: motors and rates stacked over time, starting with the initial state."""
-    motors, rates = [body.motor], [body.rate]
-    for _ in range(steps):
-        motor, rate = step(motors[-1], rates[-1], body.inertia, body.inertia_inv, dt, lie.free)
-        motors.append(motor)
-        rates.append(rate)
-    return Extensor.stack(motors), Extensor.stack(rates)
+def motion(body: Body, step: Callable, dt: float) -> Iterator[tuple[Motor, Rate]]:
+    """Torque-free motion from the body's state, one step at a time, without end."""
+    motor, rate = body.motor, body.rate
+    while True:
+        yield motor, rate
+        motor, rate = step(motor, rate, body.inertia, body.inverse_inertia, dt, lie.free)
+
+
+def simulate(body: Body, step: Callable, dt: float, n_steps: int) -> tuple[Motor, Rate]:
+    """The motors and rates of the first steps, stacked over time, the initial state first."""
+    motors, rates = zip(*islice(motion(body, step, dt), n_steps + 1))
+    return stack(motors), stack(rates)                                                      # [steps + 1, bodies] Motor, Rate
 
 
 def momentum_drift(motors: Motor, rates: Rate, inertia: Inertia) -> Scalar:

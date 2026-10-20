@@ -84,6 +84,6 @@ def test_intermediate_axis_tumbles_and_others_do_not():
 def test_figures_draw():
     figures = [
         render.draw_trajectories(*scenarios.spinning_racket(4, 0.25, 10.0, 42)),
-        render.draw_integrator_comparison(scenarios.integrator_comparison((3,), 0.25, 10.0, 42), 0.25),
+        render.draw_integrator_comparison(list(scenarios.integrator_comparison((3,), 0.25, 10.0, 42)), 0.25),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)

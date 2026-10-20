@@ -15,8 +15,8 @@ although the camera loses a dimension. A cone moves between frames like any map,
 
 A landmark is the centre of its splat, its cones from every camera added: the splat's polar vanishes at
 its centre, and a dyad on the plane at infinity makes the centre that plane's pole. The cone is also the
-cost, so a camera aligns by Gauss-Newton on the cone's value: the motion of the points under an open step
-of the camera, joined with its own polar, is the curvature, and with the points' polar the slope. Three
+cost, so a camera aligns by Gauss-Newton on the cone's value: the motion of the points, a map from the
+camera's steps, joined with its own polar, is the curvature, and with the points' polar the slope. Three
 ways to align are given: alternating the landmarks and the camera steps, `align`; one joint step that lets
 the landmarks move with the cameras, `align_jointly`; and aligning each pixel's sight line to the other
 cameras' belief about its landmark, with no landmark placed at all, `align_rays_to_splats`.

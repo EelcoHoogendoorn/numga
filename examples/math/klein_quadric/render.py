@@ -12,11 +12,14 @@ from examples.animation import capture
 from examples.math.klein_quadric import core
 
 mv = core.mv
-# Lines are drawn inside this ball.
+# Lines are drawn inside this ball, seen from this height and, at first, this azimuth, in degrees.
 RADIUS = 3.0
+ELEVATION = 18.0
+AZIMUTH = -60.0
 AXES = mv(core.Plane.derive.nondegenerate, np.eye(3))                          # [3] Plane
 
 
+# --- plumbing -------------------------------------------------------------------------
 def real(kernel: np.ndarray) -> np.ndarray:
     """Which extensors, by their coefficients on the last axis, are real up to round-off."""
     return np.abs(kernel.imag).max(axis=-1) <= 1e-6 * np.abs(kernel).max(axis=-1)
@@ -48,7 +51,6 @@ def draw_on(ax: plt.Axes, lines: core.Bivector, rulings: core.Bivector, across: 
     ax.add_collection(Line3DCollection(chords(across)[visible], colors="#c0392b", linewidths=2.4), autolim=False)
     points = coordinates(crossing)[real(crossing.kernel)]
     ax.scatter(*points.T, color="#c0392b", s=45, depthshade=False)
-    ax.set_title("two real transversals" if visible.all() else "two complex-conjugate transversals", fontsize=11)
     ax.set(xlim=(-RADIUS, RADIUS), ylim=(-RADIUS, RADIUS), zlim=(-RADIUS, RADIUS))
     ax.set_box_aspect((1, 1, 1), zoom=1.7)
     ax.set_axis_off()
@@ -61,7 +63,7 @@ def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, cr
     figure = plt.figure(figsize=(6.5, 6.5))
     ax = figure.add_subplot(projection="3d")
     draw_on(ax, lines, rulings, across, crossing)
-    ax.view_init(elev=18, azim=azimuth)
+    ax.view_init(elev=ELEVATION, azim=azimuth)
     return figure
 
 
@@ -69,7 +71,7 @@ def animate(scenes: list[tuple[core.Bivector, core.Bivector, core.Bivector, core
     """One frame per scene, the view turning once around the hyperboloid over the loop."""
     frames = []
     for index, scene in enumerate(scenes):
-        figure = draw(*scene, azimuth=-60.0 + 360.0 * index / len(scenes))
+        figure = draw(*scene, azimuth=AZIMUTH + 360.0 * index / len(scenes))
         frames.append(capture(figure))
         plt.close(figure)
     return frames

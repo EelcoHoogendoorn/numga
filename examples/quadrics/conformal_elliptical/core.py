@@ -1,13 +1,14 @@
-"""The thirteen mirror planes of the octahedral group, drawn on the unit sphere in Cl(3).
+"""The thirteen planes across the rotation axes of the cube, drawn on the unit sphere.
 
-A plane through the origin is a vector, its normal. A point of the sphere lies on the
-plane's great circle where its inner product with the normal vanishes, so the sign of
-that product marks the two hemispheres the circle separates.
+The cube turns into itself about thirteen axes: three through the centres of opposite faces, six through
+the midpoints of opposite edges and four through opposite corners. The plane across each axis, through
+the centre, is a vector; a point of the sphere is an antivector, and pairing the two, `plane & point`, is
+the point's height above the plane, zero on its great circle. Every rotation of the cube carries the
+thirteen planes onto one another. Nine of them, those across the face and edge axes, are also the cube's
+mirror planes.
 """
 
 from __future__ import annotations
-
-import numpy as np
 
 from numga import NumpyContext
 from numga.algebra import Algebra
@@ -16,9 +17,15 @@ ga = Algebra("x+y+z+")
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Vector = ga.gatype.vector()
+Point = ga.gatype.antivector()
+
+# One direction along each rotation axis of the cube: through its faces, its edges and its corners.
+FACE_AXES = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+EDGE_AXES = [[1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1], [0, 1, 1], [0, 1, -1]]
+CORNER_AXES = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [-1, 1, 1]]
 
 
-def octahedral_planes() -> Vector:
-    """All 13 planes of the octahedral symmetry group: normals along the axes, face and body diagonals."""
-    x, y, z = np.array(np.meshgrid(*[[1, 0, -1]] * 3)).reshape(3, -1)[:, :13]
-    return (mv.x * x + mv.y * y + mv.z * z).normalized()
+# --- math -----------------------------------------------------------------------------
+def planes_across_axes() -> Vector:
+    """The unit plane across each rotation axis of the cube, through its centre."""
+    return mv.vector(FACE_AXES + EDGE_AXES + CORNER_AXES).normalized()                 # [planes] Vector

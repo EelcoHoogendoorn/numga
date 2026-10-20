@@ -69,8 +69,8 @@ def crossings(hexagon: Point) -> Point:
 
 
 def pascal(five: Point) -> Form:
-    """Pascal's condition on a sixth point after five, as a form with the sixth point open in both
-    places it appears: the join of the three crossings of opposite sides, zero exactly when they lie
+    """Pascal's condition on a sixth point after five, a form on the sixth point, which appears in two of
+    the hexagon's sides: the join of the three crossings of opposite sides, zero exactly when they lie
     on one line."""
     first, second, third, fourth, fifth = (five[..., index] for index in range(5))
     return (((first & second) ^ (fourth & fifth))

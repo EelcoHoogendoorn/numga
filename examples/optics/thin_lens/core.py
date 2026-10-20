@@ -1,9 +1,9 @@
 """Gaussian optics in PGA2D: a thin lens is a linear map on lines, so it is an extensor.
 
 A ray is a line. A thin lens of focal length `focal` at the origin sends the line
-`a * mv.x + b * mv.y + c * mv.w` to `(a - c / focal) * mv.x + b * mv.y + c * mv.w`, which is
-`Line - (Line & origin) * (mv.x / focal)` with the line left open. A lens elsewhere is that map
-conjugated by a translator, and a system of lenses is a composition. Lines are global, so the
+`a * mv.x + b * mv.y + c * mv.w` to `(a - c / focal) * mv.x + b * mv.y + c * mv.w`: it is the map on
+lines `Line - (Line & origin) * (mv.x / focal)`. A lens elsewhere is that map conjugated by a
+translator, and a system of lenses is a composition. Lines are global, so the
 free space between elements needs no map of its own.
 
 In ray-transfer optics a ray reads as its height and slope where it crosses one reference plane,
@@ -12,6 +12,9 @@ propagation matrix of its own.
 """
 
 from __future__ import annotations
+
+from functools import reduce
+from itertools import accumulate
 
 from numga import NumpyContext, stack
 from numga.algebras import PGA2D
@@ -68,12 +71,9 @@ def trace(rays: Line, motors: tuple[Motor, ...], elements: tuple[LineMap, ...]):
     [element + 1, ray], and the train: the composition of the placed elements, one map on
     lines that acts on the whole bundle.
     """
-    train: LineMap = Line
-    legs = [rays]
-    for motor, element in zip(motors, elements):
-        # The element conjugated into place, the bundle after it, and the train so far as one map.
-        placed: LineMap = motor >> element(motor << Line)   # [] Line <- Line
-        rays = placed(rays)                                 # [ray] Line
-        train = placed(train)                               # [] Line <- Line
-        legs.append(rays)
-    return stack([motor >> home for motor in motors]), stack(legs), train
+    # Each element conjugated into place.
+    placed = [motor >> element(motor << Line) for motor, element in zip(motors, elements)]   # [] Line <- Line each
+    # The bundle after each element, and the train as one map, each placed element applied to the last.
+    legs = stack(list(accumulate(placed, lambda bundle, element: element(bundle), initial=rays)))   # [element + 1, ray] Line
+    train = reduce(lambda composed, element: element(composed), placed, Line)             # [] Line <- Line
+    return stack([motor >> home for motor in motors]), legs, train

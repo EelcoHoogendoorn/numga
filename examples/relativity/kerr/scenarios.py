@@ -47,10 +47,13 @@ FLOW_TIME = 50.0 * MASS                                         # coordinate tim
 
 
 # --- math -----------------------------------------------------------------------------
-def scene() -> tuple[core.Vector, core.Vector]:
+def scene() -> tuple[core.Antivector, core.Antivector]:
+    """Rays sent along x past the hole, one sweep of its spin, and the horizon's cut through the
+    equatorial plane at each spin."""
+    x, y = core.mv.x.dual(), core.mv.y.dual()
     spin = core.mv.xy * SPINS[:, None]                         # [frames, 1] Spin
-    position = -core.mv.x * EXTENT + core.mv.y * OFFSETS        # [rays] Vector
-    momentum = core.initial_momentum(position, core.mv.x, spin, MASS)
+    position = -x * EXTENT + y * OFFSETS                        # [rays] Antivector
+    momentum = core.initial_momentum(position, x, spin, MASS)
     position = position.broadcast_to(momentum.shape)
     paths = stack(tuple(position for position, _ in core.trace(
         position, momentum, spin, MASS, STEP_SIZE, N_STEPS, STOP_FRACTION, core.rates)))
@@ -60,7 +63,7 @@ def scene() -> tuple[core.Vector, core.Vector]:
     radius = np.sqrt(horizon**2 + SPINS**2)
     angles = np.linspace(0, 2 * np.pi, N_RING_SAMPLES + 1)
     turns = (core.mv.xy * (angles / 2)).exp()
-    horizons = (turns >> core.mv.x) * radius[:, None]
+    horizons = (turns >> x) * radius[:, None]
     return paths, horizons
 
 
@@ -69,7 +72,7 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     Scalar`; and the power its emission passes through each analyzer, `[analyzers, crossings]
     Scalar`."""
     orientation = (core.mv.zx * (CAMERA_INCLINATION / 2)).exp()
-    eye = (orientation >> core.mv.z) * CAMERA_DISTANCE
+    eye = (orientation >> core.mv.z.dual()) * CAMERA_DISTANCE
     spin = core.mv.xy * CAMERA_SPIN
     # The thin disk ends at the innermost stable orbit of gas turning with the hole.
     inner_radius = core.innermost_stable_orbit(core.mv.xy, spin, MASS)
@@ -78,7 +81,7 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     screen = core.camera_screen(position, momentum, orientation, spin, MASS)
     steps = core.camera_trace((position, momentum, screen), spin, MASS,
                               CAMERA_STEP_FRACTION, N_CAMERA_STEPS, core.polarized_rates)
-    def opacity(event: core.Vector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
+    def opacity(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         depth = core.disk_depth(radius, inner_radius, DISK_OUTER_RADIUS, DISK_DEPTH)
         return core.disk_opacity(event, momentum, depth, core.mv.z, core.mv.xy, spin, MASS)
     image = core.resolve(steps, IMAGE_WIDTH * IMAGE_HEIGHT, core.mv.z, inner_radius, DISK_OUTER_RADIUS, opacity,
@@ -89,13 +92,13 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     # A blackbody shifted in frequency is a blackbody at the shifted temperature.
     temperature = shift * core.disk_temperature(image.disk_radii, core.mv.xy, spin, MASS, DISK_TEMPERATURE_SCALE)
     coherency = core.disk_coherency(points, momenta, screens, core.mv.z, spin, MASS, POLARIZATION_DEGREE)
-    analyzers = (core.mv.xy * (POLARIZER_ANGLES / 2)).exp() >> core.mv.x       # [analyzers] Screen
+    analyzers = (core.mv.xy * (POLARIZER_ANGLES / 2)).exp() >> core.mv.x.dual()   # [analyzers] Screen
     return image, temperature, core.transmitted(coherency, analyzers[:, None])
 
 
-def disk_flow(image: core.Image) -> Iterator[core.Vector]:
+def disk_flow(image: core.Image) -> Iterator[core.Antivector]:
     """Where the gas seen at each disk crossing was at each frame of one loop, and one loop before
-    that, `[2, crossings] Vector` per frame: the flow carries the disk's texture, while its light
+    that, `[2, crossings] Antivector` per frame: the flow carries the disk's texture, while its light
     stays steady."""
     points, _, _ = image.disk
     spin = core.mv.xy * CAMERA_SPIN
@@ -129,7 +132,7 @@ def main() -> None:
     np.testing.assert_allclose((disk_share + sky_share)[image.sky_pixels], 1, atol=1e-13, rtol=0)
     points, momenta, _ = image.disk
     tangent, _ = core.rates(points, momenta, core.mv.xy * CAMERA_SPIN, MASS)
-    np.testing.assert_allclose((momenta | tangent).kernel, 0, atol=7e-2, rtol=0)
+    np.testing.assert_allclose((momenta & tangent).kernel, 0, atol=7e-2, rtol=0)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -41,7 +40,13 @@ def test_cubic_peak_matches_a_dense_sweep():
     np.testing.assert_allclose(maximum.to_array(), values.max(), atol=1e-8)
 
 
+def test_the_three_poses_are_apart_touching_and_overlapping():
+    """The blend's peak determinant is positive apart, zero touching and negative overlapping."""
+    maximum = scenarios.collision()[3].to_array()
+    assert maximum[0] > 0 > maximum[2]
+    np.testing.assert_allclose(maximum[1], 0, atol=1e-12)
+
+
 def test_scenario_renders():
-    """The scenario classifies its three poses (its checks) and the figure draws."""
     figure = render.draw_collision(*scenarios.collision())
     assert isinstance(figure, plt.Figure)

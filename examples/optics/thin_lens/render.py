@@ -1,7 +1,7 @@
 """Ray diagrams of the thin-lens example: drawing only.
 
-Coordinates leave the algebra here: a point is read in the blade layout yw, wx, xy and
-divided by its weight, a line in the layout x, y, w.
+Coordinates leave the algebra here: a point is read by its pairings with the lines x = 0 and y = 0 over
+its weight, a line in the layout x, y, w.
 """
 
 from __future__ import annotations
@@ -9,17 +9,19 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
+
 from examples.animation import capture
 from examples.optics.thin_lens.core import Line, LineMap, Plane, Point, ga, mv
 
-POINT_LAYOUT = ga.subspace("yw wx xy")
 LINE_LAYOUT = ga.subspace("x y w")
 
 
+# --- plumbing -------------------------------------------------------------------------
 def xy(points: Point) -> np.ndarray:
-    """(..., 2) Euclidean coordinates of finite points."""
-    k = points.cast(POINT_LAYOUT).kernel
-    return k[..., :2] / k[..., 2:]
+    """(..., 2) Euclidean coordinates of finite points: their pairings with the lines x = 0 and y = 0,
+    over their weights."""
+    return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def travel(rays: Line, handedness: np.ndarray) -> np.ndarray:
@@ -48,14 +50,13 @@ def draw_plane(ax, plane: Plane, half_height: float) -> None:
 def draw_lenses(one_lens: list, one_planes: list[Plane], two_lenses: list, two_planes: list[Plane]) -> plt.Figure:
     """One lens imaging a point, and two lenses focusing parallel rays."""
     fig, axes = plt.subplots(2, 1, figsize=(8, 6), dpi=120, sharex=True)
-    systems = ((one_lens, one_planes, ("tab:orange", "tab:blue"), "one thin lens"),
-               (two_lenses, two_planes, ("tab:orange", "tab:green", "tab:blue"), "two lenses"))
-    for ax, (legs, planes, colors, title) in zip(axes, systems):
+    systems = ((one_lens, one_planes, ("tab:orange", "tab:blue")),
+               (two_lenses, two_planes, ("tab:orange", "tab:green", "tab:blue")))
+    for ax, (legs, planes, colors) in zip(axes, systems):
         for (rays, start, stop), color in zip(legs, colors):
             draw_rays(ax, rays, start, stop, color)
         for plane in planes:
             draw_plane(ax, plane, 1.0)
-        ax.set_title(title)
         ax.set_aspect("equal")
     return fig
 
