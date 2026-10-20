@@ -8,6 +8,7 @@ import numpy as np
 from examples.quadrics.s3_raytracer.core import Motor, Point, Quadric, ScreenPoint, origin, pixel_chart, project, reproject
 
 
+# --- plumbing -------------------------------------------------------------------------
 def shadowed(hit: Point, surfaces: Quadric, light: Point) -> np.ndarray:
     """Test the short hit-to-light arcs for entry into any negative-inside quadric, without roots."""
     hit = hit + (light - hit) * 1e-6
@@ -72,9 +73,9 @@ def frames(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Poin
 
 def draw_walk(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
               shape: tuple[int, int], supersample: int) -> plt.Figure:
+    """The view from the eye's first frame."""
     image = frames(eye_frames[:1], surfaces, colors, light, fov, shape, supersample)[0]
     fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
     ax.imshow(image, interpolation="nearest")
     ax.axis("off")
-    ax.set_title("four identical ellipsoids at angles 0.7, 1.4, 2.1, 2.6 along the line of sight")
     return fig

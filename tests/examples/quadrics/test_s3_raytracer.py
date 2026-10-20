@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -26,7 +25,7 @@ def test_reprojected_hits_lie_on_the_ellipsoid():
 
 
 def test_walk_renders():
-    """The walk's outline and depth checks hold, and its figure and animation render."""
+    """The walk's figure and animation render."""
     scene = scenarios.walk(6)
     assert isinstance(render.draw_walk(*scene, (45, 60), 1), plt.Figure)
     frames = render.frames(*scene, (45, 60), 1)

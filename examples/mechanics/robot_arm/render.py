@@ -8,15 +8,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.animation import capture
-from examples.mechanics.robot_arm.core import Point
+from numga import stack
+from examples.mechanics.robot_arm.core import Point, mv
 
 BOX_EDGES = [(0, 1), (1, 3), (3, 2), (2, 0), (4, 5), (5, 7), (7, 6), (6, 4), (0, 4), (1, 5), (2, 6), (3, 7)]
 
 
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(points.algebra.subspace("wzy wxz wyx xyz")).kernel
-    return k[..., :3] / k[..., 3:]
+    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def draw_arm(ax, boxes: Point, target: Point, trail: list[np.ndarray]) -> None:

@@ -97,7 +97,7 @@ def expose(
     image: Point = unit(collineation(focus))
     frame: Motor = (image / origin).square_root() * tilt
     sensor: Plane = frame >> home
-    cam: Camera = train(Point & Point) ^ sensor
+    camera: Camera = train(Point & Point) ^ sensor
 
     # Project through each subject onto the pupil, then pull back its quadric.
     # Pull back once more through the inverse lens train to get the image cones.
@@ -109,7 +109,7 @@ def expose(
     rays: Line = subject & (placements[0] >> rim)
     legs: Point = stack([subject.broadcast_to(rays.shape), rays ^ front_plane,
                          front(rays) ^ rear_plane, rear(front(rays)) ^ sensor])
-    return collineation, cam, frame, cones, stack([front_plane, rear_plane, sensor]), legs
+    return collineation, camera, frame, cones, stack([front_plane, rear_plane, sensor]), legs
 
 
 def section(cone: Quadric, start: Point, frame: Motor, samples: int) -> Point:

@@ -28,7 +28,7 @@ def test_distance_projection_closes_a_joint():
     pair = motor[joints.bodies]
     for _ in range(30):
         pair = core.project_distance_constraint(
-            pair, joints.anchors, chain.inertia_inv[joints.bodies], joints.compliance, 0.01
+            pair, joints.anchors, chain.inverse_inertia[joints.bodies], joints.compliance, 0.01
         )
     world_anchors = pair >> joints.anchors
     assert (world_anchors[0] & world_anchors[1]).norm().to_array().max() < 0.0001
@@ -49,13 +49,18 @@ def test_velocity_projection_cancels_relative_anchor_velocity():
         return (velocities[0] - velocities[1]).norm().select[0].to_array().max()
 
     assert relative(rates) > 0.01
-    resolved = core.project_velocity_constraint(motors, rates, joints.anchors, chain.inertia_inv[joints.bodies])
+    resolved = core.project_velocity_constraint(motors, rates, joints.anchors, chain.inverse_inertia[joints.bodies])
     assert relative(resolved) < 1e-6
 
 
-def test_numpy_chain_draws():
-    """The scenario asserts closed joints and a fixed first link; the figure draws."""
-    assert isinstance(render.draw_chain(*scenarios.swinging_chain(4, 20, 2, 0.02)), plt.Figure)
+def test_numpy_chain_keeps_its_joints_closed_and_draws():
+    """The joints stay closed and the first link fixed; the animation and the figure draw."""
+    centres, gaps = scenarios.swinging_chain(4, 20, 2, 0.02)
+    assert gaps.to_array().max() < 1e-2 * scenarios.LINK_SPACING
+    assert (centres[:, 0] & mv.w.dual()).norm().to_array().max() < 1e-6
+    assert isinstance(render.draw_gaps(gaps), plt.Figure)
+    frames = render.animate_chain(centres[:3])
+    assert frames and all(f.shape == frames[0].shape for f in frames)
 
 
 def test_jax_chain_matches_numpy():
@@ -63,4 +68,4 @@ def test_jax_chain_matches_numpy():
     numpy_centres, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
     jax_centres, jax_gaps = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
     np.testing.assert_allclose(render.euclidean(jax_centres), render.euclidean(numpy_centres), atol=0.0001)
-    assert isinstance(render.draw_chain(jax_centres, jax_gaps), plt.Figure)
+    assert isinstance(render.draw_gaps(jax_gaps), plt.Figure)

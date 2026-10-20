@@ -1,7 +1,10 @@
-"""Scenes for the XPBD chain: links of 5 cm, 9 cm apart, with stiff joints and light damping,
-in gravity of 0.5, stepped with NumPy and under jax.jit."""
+"""Scenes for the XPBD chain: links of 5 cm, 9 cm apart, with stiff joints and light damping, in gravity
+of 0.5, stepped with NumPy and under jax.jit."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
+from itertools import islice
 
 import numpy as np
 
@@ -10,9 +13,21 @@ from examples.mechanics.lie_integrators import inertia_from_points
 from examples.mechanics.xpbd import core
 from examples.mechanics.xpbd.core import Chain, Joints, Motor, Point, Scalar
 
+# The chain: its links, their spacing and size, the joints' compliance, the damping and gravity.
+N_LINKS = 6
 LINK_SPACING = 9e-2
+LINK_SIZE = 5e-2
+COMPLIANCE = 1e-9
+DAMPING = 1e-3
+GRAVITY = 0.5
+# The run: its steps, the substeps per step and the time step; and the duration of a frame in milliseconds.
+N_STEPS = 200
+N_SUBSTEPS = 5
+STEP = 0.02
+FRAME_DURATION = 60
 
 
+# --- math -----------------------------------------------------------------------------
 def chain(
     context: Context, bodies: int, distance: float, size: float,
     compliance: float, damping: float, gravity: float,
@@ -31,7 +46,7 @@ def chain(
     # Mass properties of one link, from its point cloud, replicated over all links.
     reach = np.diag([1.0, 2.0, 3.0]) * size / 3
     cloud = mv.point(np.concatenate([reach, -reach]))
-    inertia, inertia_inv = inertia_from_points(cloud)
+    inertia, inverse_inertia = inertia_from_points(cloud)
 
     # The fixed link has infinite mass: zero inverse inertia.
     mobility = np.concatenate([[0.0], np.ones(bodies - 1)])
@@ -41,7 +56,7 @@ def chain(
         rate=mv.bivector().broadcast_to(bodies),
         first_moment=cloud.sum(axis=-1)[None].broadcast_to(bodies),
         inertia=inertia[None].broadcast_to(bodies),
-        inertia_inv=inertia_inv[None].broadcast_to(bodies) * mobility,
+        inverse_inertia=inverse_inertia[None].broadcast_to(bodies) * mobility,
         damping=(mv.scalar() * damping).broadcast_to(bodies),
         gravity=mv.direction([0.0, 0.0, -gravity]).broadcast_to(bodies),
     )
@@ -56,53 +71,56 @@ def chain(
     return state, partitions
 
 
-def swinging_chain(links: int, steps: int, substeps: int, dt: float) -> tuple[Point, Scalar]:
+def swinging_chain(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tuple[Point, Scalar]:
     """The link centres over time, and the gap at every joint, stepped with NumPy."""
-    initial, partitions = chain(NumpyContext(core.ga), links, LINK_SPACING, 5e-2, 1e-9, 1e-3, 0.5)
-    states = [initial]
-    for _ in range(steps):
-        states.append(core.advance(states[-1], partitions, substeps, dt))
-    return trajectory(states, partitions)
+    initial, partitions = chain(NumpyContext(core.ga), n_links, LINK_SPACING, LINK_SIZE, COMPLIANCE, DAMPING, GRAVITY)
+    return trajectory(list(islice(states(initial, lambda state: core.advance(state, partitions, n_substeps, dt)), n_steps + 1)), partitions)
 
 
-def swinging_chain_jax(links: int, steps: int, substeps: int, dt: float) -> tuple[Point, Scalar]:
+def swinging_chain_jax(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tuple[Point, Scalar]:
     """The same chain in single precision, each step compiled by jax.jit. Needs JAX installed."""
     import jax
     from numga.backend.jax import JaxContext
 
-    initial, partitions = chain(JaxContext(core.ga), links, LINK_SPACING, 5e-2, 1e-9, 1e-3, 0.5)
-    advance = jax.jit(lambda state: core.advance(state, partitions, substeps, dt))
-    # The first step runs eagerly: it settles the traits the initial state is built with,
-    # so that jit traces the step once.
-    states = [initial, core.advance(initial, partitions, substeps, dt)]
-    for _ in range(steps - 1):
-        states.append(advance(states[-1]))
-    return trajectory(states, partitions)
+    initial, partitions = chain(JaxContext(core.ga), n_links, LINK_SPACING, LINK_SIZE, COMPLIANCE, DAMPING, GRAVITY)
+    compiled = jax.jit(lambda state: core.advance(state, partitions, n_substeps, dt))
+    # The first step runs eagerly: it settles the traits the initial state is built with, so that jit
+    # traces the step once.
+    first = core.advance(initial, partitions, n_substeps, dt)
+    return trajectory([initial] + list(islice(states(first, compiled), n_steps)), partitions)
 
 
-def trajectory(states: list[Chain], partitions: list[Joints]) -> tuple[Point, Scalar]:
+def states(state: Chain, advance) -> Iterator[Chain]:
+    """The chain from a state on, one step at a time, without end."""
+    while True:
+        yield state
+        state = advance(state)
+
+
+def trajectory(history: list[Chain], partitions: list[Joints]) -> tuple[Point, Scalar]:
     """The origin of every link frame, and every joint gap, stacked over time."""
-    motors = Extensor.stack([state.motor for state in states])
-    origin = motors.context.multivector.w.dual()
-    centres = motors >> origin
-    gaps = Extensor.stack([core.joint_gaps(state.motor, partitions) for state in states])
-
-    # --- checks
-    # The joints stay closed to within 1% of the link spacing.
-    assert gaps.to_array().max() < 1e-2 * LINK_SPACING
-    # The fixed link has infinite mass: its centre never leaves the origin.
-    assert (centres[:, 0] & origin).norm().to_array().max() < 1e-6
+    motors = Extensor.stack([state.motor for state in history])
+    centres = motors >> motors.context.multivector.w.dual()                   # [steps + 1, links] Point
+    gaps = Extensor.stack([core.joint_gaps(state.motor, partitions) for state in history])   # [steps + 1, joints] Scalar
     return centres, gaps
 
 
-if __name__ == "__main__":
-    import argparse
-    from examples.animation import save_figure
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    from examples.animation import save_animation, save_figure
     from examples.mechanics.xpbd import render
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--jax", action="store_true", help="Also run the chain under jax.jit.")
-    args = parser.parse_args()
-    save_figure(render.draw_chain(*swinging_chain(6, 60, 5, 0.02)), "xpbd_chain")
-    if args.jax:
-        save_figure(render.draw_chain(*swinging_chain_jax(6, 60, 5, 0.02)), "xpbd_chain_jax")
+    centres, gaps = swinging_chain(N_LINKS, N_STEPS, N_SUBSTEPS, STEP)
+    save_animation(render.animate_chain(centres), "xpbd_chain", FRAME_DURATION)
+    save_figure(render.draw_gaps(gaps), "xpbd_gaps")
+
+    # checks
+    # The joints stay closed to within 1% of the link spacing, and the fixed link, of infinite mass, never
+    # leaves the origin.
+    origin = NumpyContext(core.ga).multivector.w.dual()
+    assert gaps.to_array().max() < 1e-2 * LINK_SPACING
+    assert (centres[:, 0] & origin).norm().to_array().max() < 1e-6
+
+
+if __name__ == "__main__":
+    main()

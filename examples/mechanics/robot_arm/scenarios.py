@@ -2,92 +2,103 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
-from numga import Extensor
+from numga import stack
 from examples.mechanics.robot_arm import core
 from examples.mechanics.robot_arm.core import Point, Scalar, mv
 
-# Parameter along the loop the tip follows, one target per frame.
-LOOP = np.linspace(0.0, 2 * np.pi, 72, endpoint=False)
+# The elbow's and wrist's heights in the home pose, and the tip's; the rest angles of the base yaw and the
+# two pitches; the joint rates and the tip force, its point and its direction, of the statics.
+ELBOW_HEIGHT, WRIST_HEIGHT, TIP_HEIGHT = 1.0, 2.0, 3.0
+REST_ANGLES = np.array([0.3, 0.5, 0.8])
+RATES = np.array([0.5, -1.0, 0.25])
+LOAD_AT, LOAD = [1.0, 0.0, 3.0], [0.0, 2.0, -1.0]
+# The loop the tip follows: its centre, its radii along x and y and its height's swing, one target per frame.
+LOOP_CENTRE = np.array([1.0, 1.0, 1.2])
+LOOP_RADII = np.array([0.5, 0.5, 0.3])
+N_FRAMES = 72
+# The solver's steps when homing and per target when tracking; the links' half-width and half-depth; and
+# the duration of a frame in milliseconds.
+N_HOMING_STEPS, N_TRACKING_STEPS = 8, 2
+LINK_WIDTH, LINK_DEPTH = 0.15, 0.06
+FRAME_DURATION = 50
+# The step of the finite difference the tip velocity is checked against.
+DIFFERENCE = 1e-6
 
 
+# --- math -----------------------------------------------------------------------------
 def arm():
     """The joint axes in the home pose, the tip in the home pose, and a rest configuration."""
     # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y, at the elbow
     # and the wrist. Each axis is a line to turn about: the meet of two planes.
-    yaw = mv.y ^ mv.x
-    pitch_1 = mv.x ^ (mv.z - 1.0 * mv.w)
-    pitch_2 = mv.x ^ (mv.z - 2.0 * mv.w)
-    axis = Extensor.stack([yaw, pitch_1, pitch_2])            # [3] Line
-    tip_home = mv.point(np.array([0.0, 0.0, 3.0]))
-    # Joint state: axis times angle.
-    rest = axis * np.array([0.3, 0.5, 0.8])                       # [3] Line
-    return axis, tip_home, rest
+    axis = stack([mv.y ^ mv.x, mv.x ^ (mv.z - ELBOW_HEIGHT * mv.w), mv.x ^ (mv.z - WRIST_HEIGHT * mv.w)])   # [joints] Twist
+    tip_home = mv.point([0.0, 0.0, TIP_HEIGHT])                                # [] Point
+    # A joint's state: its axis times its angle.
+    return axis, tip_home, axis * REST_ANGLES                                  # [joints] Twist, [] Point, [joints] Twist
 
 
 def loop_targets() -> Point:
     """Targets along a tilted loop in front of the arm."""
-    return mv.point(np.stack([1.0 + 0.5 * np.sin(LOOP), 1.0 + 0.5 * np.cos(LOOP), 1.2 + 0.3 * np.sin(2 * LOOP)], axis=-1))
+    phase = np.linspace(0.0, 2 * np.pi, N_FRAMES, endpoint=False)
+    return mv.point(LOOP_CENTRE + LOOP_RADII * np.stack([np.sin(phase), np.cos(phase), np.sin(2 * phase)], axis=-1))
 
 
-def link_boxes(count: int, width: float, depth: float) -> Point:
-    """Corner points of slender boxes along z, one per unit link, in the home pose: shape (count, 8)."""
+def link_boxes(n_links: int, width: float, depth: float) -> Point:
+    """Corner points of slender boxes along z, one per unit link, in the home pose: shape (links, 8)."""
     corners = np.array([[x, y, z] for x in (-width, width) for y in (-depth, depth) for z in (0.0, 1.0)])
-    return mv.point(corners[None] + np.array([[0.0, 0.0, 1.0]]) * np.arange(count)[:, None, None])
+    return mv.point(corners[None] + np.array([[0.0, 0.0, 1.0]]) * np.arange(n_links)[:, None, None])
 
 
 def statics() -> tuple[Point, Scalar]:
     """Tip velocity under joint rates, and the joint torques of a forque at the tip, at rest."""
     axis, tip_home, rest = arm()
-    # Joint rates: axis times angular rate.
-    rates = axis * np.array([0.5, -1.0, 0.25])                    # [3] Line
-    # A force at a point is a forque: join that point with the weighted direction.
-    forque = mv.point(np.array([1.0, 0.0, 3.0])) & mv.direction(np.array([0.0, 2.0, -1.0]))
-    velocity, joint_torques = core.mechanics(rest, axis, rates, tip_home, forque)
-
-    # --- checks
-    # The tip velocity is the derivative of forward kinematics along the joint rates.
-    step = 1e-6
-    ahead, _ = core.forward_kinematics(rest + rates * step)
-    here, _ = core.forward_kinematics(rest)
-    predicted = (here >> tip_home) + velocity * step
-    assert ((ahead >> tip_home) & predicted).norm().to_array().max() < 1e-9
-    return velocity, joint_torques
+    rates = axis * RATES                                                       # [joints] Twist
+    # A force at a point is a forque: the point joined with the weighted direction.
+    forque = mv.point(LOAD_AT) & mv.direction(LOAD)                            # [] Forque
+    return core.mechanics(rest, axis, rates, tip_home, forque)
 
 
 def homing() -> tuple[Scalar, Scalar]:
     """Solve from rest onto the start of the loop: the remaining tip error and the joint angles."""
     axis, tip_home, rest = arm()
     target = loop_targets()[0]
-    joints, _, tip = core.inverse_kinematics(rest, axis, tip_home, target, 8)
+    joints, _, tip = core.inverse_kinematics(rest, axis, tip_home, target, N_HOMING_STEPS)
     # The distance, the norm of the join, and each angle, the joint projected on its axis.
-    error = (target & tip).norm()
-    angles = (joints | axis) / (axis | axis)
-
-    # --- checks
-    assert error.to_array().max() < 1e-8
-    return error, angles
+    return (target & tip).norm(), (joints | axis) / (axis | axis)
 
 
-def tracking():
-    """Home onto the loop, then follow it with two steps per target: link boxes, target and tip."""
+def tracking() -> Iterator[tuple]:
+    """Home onto the loop, then follow it: per target the link boxes, the target and the tip."""
     axis, tip_home, rest = arm()
     targets = loop_targets()
-    boxes_home = link_boxes(3, width=0.15, depth=0.06)
-    joints, _, _ = core.inverse_kinematics(rest, axis, tip_home, targets[0], 8)
-    for _, link_motors, target, tip in core.track(joints, axis, tip_home, targets, 2):
+    boxes_home = link_boxes(len(REST_ANGLES), LINK_WIDTH, LINK_DEPTH)
+    joints, _, _ = core.inverse_kinematics(rest, axis, tip_home, targets[0], N_HOMING_STEPS)
+    for _, link_motors, target, tip in core.track(joints, axis, tip_home, targets, N_TRACKING_STEPS):
         yield link_motors[:, None] >> boxes_home, target, tip
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation
     from examples.mechanics.robot_arm import render
 
-    velocity, joint_torques = statics()
-    error, angles = homing()
-    save_animation(render.animate_tracking(tracking()), "robot_arm", 50)
+    save_animation(render.animate_tracking(tracking()), "robot_arm", FRAME_DURATION)
 
-    print(f"homing tip error: {error.to_array().max():.2e}")
-    print("joint torques:", np.round(joint_torques.to_array(), 4))
-    print("homed joint angles:", np.round(angles.to_array(), 4))
+    # checks
+    # The tip velocity is the derivative of forward kinematics along the joint rates; homing reaches the
+    # target.
+    velocity, _ = statics()
+    axis, tip_home, rest = arm()
+    ahead, _ = core.forward_kinematics(rest + axis * RATES * DIFFERENCE)
+    here, _ = core.forward_kinematics(rest)
+    predicted = (here >> tip_home) + velocity * DIFFERENCE
+    assert ((ahead >> tip_home) & predicted).norm().to_array().max() < 1e-9
+    error, _ = homing()
+    assert error.to_array().max() < 1e-8
+
+
+if __name__ == "__main__":
+    main()

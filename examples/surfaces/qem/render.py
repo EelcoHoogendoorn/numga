@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
-from examples.surfaces.qem.core import Point, Quadric, ga, mv
+from numga import stack
+from examples.surfaces.qem.core import Point, Quadric, mv
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -23,10 +24,10 @@ if TYPE_CHECKING:
 FACE_COLORS = np.array(["#0ea5e9", "#0284c7", "#f43f5e", "#e11d48", "#8b5cf6", "#7c3aed"])
 
 
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Read Cartesian coordinates from homogeneous points."""
-    values = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
-    return values[..., :3] / values[..., 3:]
+    """Cartesian coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def draw_mesh_triangles(
@@ -84,9 +85,8 @@ def draw_error_ellipsoid(
     )
 
 
-def style_axes(ax: Axes, title: str) -> None:
+def style_axes(ax: Axes) -> None:
     """Shared view, limits and labels of the three panels."""
-    ax.set_title(title, fontsize=10, pad=8)
     ax.set_box_aspect([1.8, 1.4, 0.75])
     ax.set_xlim(-0.9, 0.9)
     ax.set_ylim(-0.7, 0.7)
@@ -95,7 +95,6 @@ def style_axes(ax: Axes, title: str) -> None:
     ax.set_ylabel("y", labelpad=-5, fontsize=8)
     ax.set_zlabel("z", labelpad=-5, fontsize=8)
     ax.view_init(elev=24, azim=48)
-    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.7)
 
 
 def draw_vertex_panel(
@@ -103,7 +102,6 @@ def draw_vertex_panel(
     triangles: np.ndarray,
     vertex: Point,
     quadric: Quadric,
-    title: str,
     colors: np.ndarray,
     ellipsoid_color: str,
 ) -> None:
@@ -118,9 +116,8 @@ def draw_vertex_panel(
         color="#0f172a",
         s=70,
         depthshade=False,
-        label="Mesh vertex",
     )
-    style_axes(ax, title)
+    style_axes(ax)
 
 
 def draw_collapse_panel(
@@ -130,7 +127,6 @@ def draw_collapse_panel(
     edge_coords: np.ndarray,
     quadric: Quadric,
     optimal_vertex: Point,
-    title: str,
     original_colors: np.ndarray,
     simplified_colors: np.ndarray,
 ) -> None:
@@ -151,7 +147,6 @@ def draw_collapse_panel(
         color="#ef4444",
         linewidth=2.8,
         linestyle="--",
-        label="Contracted edge (a, b)",
     )
 
     ax.scatter(
@@ -161,7 +156,6 @@ def draw_collapse_panel(
         color="#475569",
         s=50,
         depthshade=False,
-        label="Original endpoints",
     )
 
     ax.scatter(
@@ -172,11 +166,10 @@ def draw_collapse_panel(
         marker="*",
         s=260,
         depthshade=False,
-        label="Optimal vertex v_edge",
     )
 
     draw_error_ellipsoid(ax, quadric, opt_xyz, 0.12, 0.4, "#10b981", 0.35)
-    style_axes(ax, title)
+    style_axes(ax)
 
 
 def draw_qem(
@@ -184,10 +177,10 @@ def draw_qem(
     faces: np.ndarray,
     incident_a: np.ndarray,
     incident_b: np.ndarray,
-    qa: Quadric,
-    qb: Quadric,
-    q_edge: Quadric,
-    v_edge: Point,
+    quadric_a: Quadric,
+    quadric_b: Quadric,
+    edge_quadric: Quadric,
+    optimum: Point,
     collapsed: Point,
     surviving: np.ndarray,
 ) -> plt.Figure:
@@ -198,20 +191,15 @@ def draw_qem(
 
     draw_vertex_panel(
         fig.add_subplot(1, 3, 1, projection="3d"),
-        triangles[incident_a], vertices[0], qa,
-        "1. Vertex a Neighborhood (Sharp Corner)\nFlanking ridge faces (blue) + end faces (red)",
-        FACE_COLORS[incident_a], "#f43f5e",
+        triangles[incident_a], vertices[0], quadric_a, FACE_COLORS[incident_a], "#f43f5e",
     )
     draw_vertex_panel(
         fig.add_subplot(1, 3, 2, projection="3d"),
-        triangles[incident_b], vertices[1], qb,
-        "2. Vertex b Neighborhood (Crease Transition)\nShared ridge faces (blue) + transition ramp (purple)",
-        FACE_COLORS[incident_b], "#8b5cf6",
+        triangles[incident_b], vertices[1], quadric_b, FACE_COLORS[incident_b], "#8b5cf6",
     )
     draw_collapse_panel(
         fig.add_subplot(1, 3, 3, projection="3d"),
-        triangles, euclidean(collapsed)[faces[surviving]], coords[:2], q_edge, v_edge,
-        "3. Simplified Mesh (Edge Contraction)\nFlanking faces vanish; optimal vertex minimizes Q_edge",
+        triangles, euclidean(collapsed)[faces[surviving]], coords[:2], edge_quadric, optimum,
         FACE_COLORS, FACE_COLORS[surviving],
     )
     return fig

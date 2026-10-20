@@ -1,46 +1,55 @@
-"""Drawing for the XPBD chain: link positions at a few moments, and the joint gaps over time."""
+"""Drawing for the XPBD chain: the links swinging, and the joint gaps over time."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
+from examples.animation import capture
 from examples.mechanics.xpbd.core import Point, Scalar
 
+# The view's margin around the chain's whole swing, and its angles.
+MARGIN = 1.1
+ELEVATION, AZIMUTH = 20, -60
 
+
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = np.asarray(points.cast(points.algebra.subspace("wzy wxz wyx xyz")).kernel)
-    return k[..., :3] / k[..., 3:]
+    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    mv = points.context.multivector
+    return np.asarray(((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array())
 
 
-def draw_chain(centres: Point, gaps: Scalar) -> plt.Figure:
-    """Render link positions at five moments, and the history of the joint gaps."""
-    fig = plt.figure(figsize=(12, 5), dpi=120)
+def animate_chain(centres: Point) -> list[np.ndarray]:
+    """One frame per step: the links' centres joined in order, the fixed link at the origin."""
+    xyz = euclidean(centres)                                                   # [steps + 1, links, 3]
+    # A cube about the whole swing.
+    low, high = xyz.reshape(-1, 3).min(axis=0), xyz.reshape(-1, 3).max(axis=0)
+    centre, half_width = (low + high) / 2, MARGIN * (high - low).max() / 2
+    fig = plt.figure(figsize=(5, 5), dpi=100)
+    ax = fig.add_subplot(projection="3d")
+    frames = []
+    for links in xyz:
+        ax.cla()
+        ax.plot(*links.T, "-o", color="#2c5d9e", markersize=5)
+        ax.set(xlim=centre[0] + np.array([-half_width, half_width]), ylim=centre[1] + np.array([-half_width, half_width]),
+               zlim=centre[2] + np.array([-half_width, half_width]))
+        ax.set_box_aspect((1, 1, 1))
+        ax.view_init(elev=ELEVATION, azim=AZIMUTH)
+        frames.append(capture(fig))
+    plt.close(fig)
+    return frames
 
-    # 1. 3D link trajectory
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
-    xyz = euclidean(centres)                                 # [steps, links, 3]
-    last = len(xyz) - 1
-    moments = [0, last // 4, last // 2, 3 * last // 4, last]
-    colors = plt.cm.viridis(np.linspace(0.2, 1.0, len(moments)))
-    for moment, color in zip(moments, colors):
-        ax1.plot(*xyz[moment].T, "-o", color=color, label=f"Step {moment}", markersize=5)
-    ax1.set_title("Swinging Chain (XPBD Rigid Body Poses)", fontsize=11, fontweight="bold")
-    ax1.set_xlabel("X"); ax1.set_ylabel("Y"); ax1.set_zlabel("Z")
-    ax1.legend(loc="upper left", fontsize=8)
 
-    # 2. Joint separation history
-    ax2 = fig.add_subplot(1, 2, 2)
-    separation = np.asarray(gaps.to_array())                 # [steps, joints]
-    ax2.plot(separation.max(axis=1), label="Max joint separation", color="crimson", linewidth=1.5)
-    ax2.plot(separation.mean(axis=1), label="Mean joint separation", color="royalblue", linestyle="--")
-    ax2.set_yscale("log")
-    ax2.set_title("Constraint Violation History", fontsize=11, fontweight="bold")
-    ax2.set_xlabel("Time step")
-    ax2.set_ylabel("Anchor distance (m)")
-    ax2.grid(True, alpha=0.3)
-    ax2.legend()
-
+def draw_gaps(gaps: Scalar) -> plt.Figure:
+    """The largest and the mean joint gap at each step, on a log scale."""
+    separation = np.asarray(gaps.to_array())                                   # [steps + 1, joints]
+    fig, ax = plt.subplots(figsize=(6, 4), dpi=120)
+    ax.plot(separation.max(axis=1), color="crimson", linewidth=1.5)
+    ax.plot(separation.mean(axis=1), color="royalblue", linestyle="--")
+    ax.set_yscale("log")
+    ax.set(xlabel="time step", ylabel="anchor distance (m)")
+    ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig

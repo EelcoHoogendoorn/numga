@@ -72,6 +72,6 @@ def test_edge_collapse_minimizes_joint_error():
 
 
 def test_scenario_renders():
-    """The scenario passes its checks, and its geometry renders as a figure."""
+    """The scenario's geometry renders as a figure."""
     figure = render.draw_qem(*scenarios.qem())
     assert isinstance(figure, plt.Figure)

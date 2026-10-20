@@ -5,11 +5,10 @@ supporting plane. A point's squared distance to a plane is a rank-one dyad.
 Summing these dyads across incident faces yields the quadric error metric (QEM):
 an extensor mapping points to polar planes.
 
-Edge contraction combines the quadrics of its endpoints by extensor addition:
-`q_edge = qa + qb`. The optimal collapsed vertex position has vanishing spatial
-gradient, meaning its polar plane is the plane at infinity: `q_edge(v_edge)` is a
-multiple of `mv.w`. Solving `q_edge.lstsq(mv.w)` yields the optimal vertex in a single
-linear solve.
+Edge contraction combines the quadrics of its endpoints by extensor addition. The optimal
+collapsed vertex has vanishing spatial gradient, meaning its polar plane is the plane at
+infinity: the edge's quadric sends it to a multiple of `mv.w`, so one least-squares solve
+against `mv.w` gives it.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ import numpy as np
 from numga import NumpyContext
 from numga.algebras import PGA3D
 
-# --- algebra and types -----------------------------------------------------
 ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
@@ -29,7 +27,7 @@ Plane = ga.gatype.vector()
 Quadric = ga.gatype((Plane, Point))
 
 
-# --- plumbing ----------------------------------------------------------------
+# --- plumbing -------------------------------------------------------------------------
 def ridge_patch() -> tuple[Point, np.ndarray]:
     """A surface patch with a sharp ridge ending in an apex: six vertices and six triangles."""
     vertices = mv.point([
@@ -51,7 +49,7 @@ def ridge_patch() -> tuple[Point, np.ndarray]:
     return vertices, faces
 
 
-# --- math ------------------------------------------------------------------
+# --- math -----------------------------------------------------------------------------
 def edge_collapse(
     planes_a: Plane,
     planes_b: Plane,
@@ -62,17 +60,13 @@ def edge_collapse(
     to the edge's two endpoint vertices, a and b. In a 2-manifold mesh, the
     faces flanking the edge contain both endpoints and appear in both sets.
     """
-    # A plane P measures scalar distance to a point X as P & X. Leaving the point slot
-    # open yields a rank-1 dyad P * (P & Point): Plane <- Point.
-    # Summing incident plane dyads at each vertex yields its error quadric:
-    qa: Quadric = (planes_a * (planes_a & Point)).sum(axis=0)
-    qb: Quadric = (planes_b * (planes_b & Point)).sum(axis=0)
-
-    # Edge contraction combines quadrics across endpoints by extensor addition:
-    q_edge: Quadric = qa + qb
-
-    # The optimal vertex has vanishing spatial gradient, so its polar plane
-    # is the plane at infinity: q_edge(v_edge) is a multiple of mv.w.
-    v_edge: Point = q_edge.lstsq(mv.w).normalized()
-
-    return qa, qb, q_edge, v_edge
+    # A unit plane measures a point's signed distance from it as `plane & point`; its dyad,
+    # `plane * (plane & Point)`, a map from points to planes, gives the squared distance.
+    # Summing the incident planes' dyads at each vertex gives its error quadric.
+    quadric_a: Quadric = (planes_a * (planes_a & Point)).sum(axis=0)
+    quadric_b: Quadric = (planes_b * (planes_b & Point)).sum(axis=0)
+    # Contracting the edge adds the endpoints' quadrics.
+    edge_quadric: Quadric = quadric_a + quadric_b
+    # The optimal vertex has vanishing spatial gradient, so its polar plane is the plane at infinity.
+    optimum: Point = edge_quadric.lstsq(mv.w).normalized()
+    return quadric_a, quadric_b, edge_quadric, optimum

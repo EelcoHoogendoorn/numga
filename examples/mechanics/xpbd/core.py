@@ -1,31 +1,21 @@
-"""Extended Position-Based Dynamics (XPBD) and Geometric Constraint Projection in PGA.
+"""Extended position-based dynamics of a chain of rigid links, in PGA3D.
 
-In 3D Projective Geometric Algebra (PGA3D) with Extensors, the entire constraint projection
-of a rigid-body spherical joint or distance constraint is coordinate-free geometry:
-1. World anchors:
-       world_anchors = motors >> anchors
-2. Constraint violation line (the join of two points):
-       line = world_anchors[0] & world_anchors[1]
-   The line's norm is the exact Euclidean distance; its direction is the forque's line of action.
-3. Pullback to body frames:
-       local_dir = motors << direction
-4. Inertia maps the forque to twist step:
-       steps = inertia_inv(local_dir)
-5. Effective inertial compliance (generalized inverse mass):
-       inertial_compliances = steps & local_dir
-6. XPBD Lagrange multiplier:
-       multiplier = magnitude / (compliance / dt ** 2 + inertial_compliances.sum(axis=0))
-7. Corrective displacement via the Lie algebra exponential map:
-       motors * (steps * multiplier * -0.5).exp()
+Each step moves the links freely, then closes every joint they have pulled apart. A joint is two
+anchor points, one on each link, that should coincide; the line joining them, their regressive
+product, says both how far apart they are, its norm, and along which line the correcting load acts,
+its direction, a forque. Pulled into each link's own frame, that forque turns through the link's
+inverse inertia into the twist it would cause, and the twist paired with the forque is the link's
+compliance along that line. One Lagrange multiplier, the gap over the summed compliances and the joint's
+own, sets equal and opposite twists, and each link moves by their exponential. After the positions,
+the joints' relative velocities are cancelled the same way, with impulses. A fixed link has zero
+inverse inertia, so no load ever moves it.
 
-A fixed body has infinite mass: its inverse inertia is zero, so no constraint and no
-external forque ever moves it.
+The joints are relaxed in two alternating halves whose links do not overlap, so each half relaxes in
+one batch. The context is chosen by the caller, so the same lines run on NumPy and under jax.jit.
 
-The context is chosen by the caller, so the same lines run on NumPy and under jax.jit.
-
-In matrix notation the projection reads as explicit Jacobian matrices, a generalized
-inverse-mass matrix built from the Jacobians and the inverse mass matrix, a solve for Lagrange
-multipliers, and separate linear and angular impulses on velocities and quaternion poses.
+In matrix notation the projection reads as explicit Jacobian matrices, a generalized inverse-mass
+matrix built from the Jacobians and the inverse mass matrix, a solve for Lagrange multipliers, and
+separate linear and angular impulses on velocities and quaternion poses.
 """
 
 from __future__ import annotations
@@ -57,7 +47,7 @@ class Chain(NamedTuple):
     first_moment: Point           # [bodies] Point
     inertia: Inertia              # [bodies] Forque <- Rate
     # Zero for a fixed body.
-    inertia_inv: InverseInertia   # [bodies] Rate <- Forque
+    inverse_inertia: InverseInertia   # [bodies] Rate <- Forque
     damping: Scalar               # [bodies] Scalar
     # An ideal point: the gravitational acceleration.
     gravity: Point                # [bodies] Point
@@ -75,7 +65,7 @@ class Joints(NamedTuple):
 
 # --- math -----------------------------------------------------------------------------
 def project_distance_constraint(
-    motors: Motor, anchors: Point, inertia_inv: InverseInertia, compliance: Scalar, dt: float,
+    motors: Motor, anchors: Point, inverse_inertia: InverseInertia, compliance: Scalar, dt: float,
 ) -> Motor:
     """Close the gap between the anchors of body pairs, motors and anchors of shape [2, ...]."""
     # 1. Transform anchor points to world frame via motor pushforward:
@@ -93,11 +83,11 @@ def project_distance_constraint(
     local_dir = motors << direction
 
     # 4. Inverse inertia maps the forque to an impulsive twist step:
-    steps = inertia_inv(local_dir)
+    steps = inverse_inertia(local_dir)
 
     # 5. Generalized inverse mass / compliance along the constraint line:
     # Pairing the twist with the forque gives the effective compliance:
-    # `inertia_inv(local_dir) & local_dir`
+    # `inverse_inertia(local_dir) & local_dir`
     inertial_compliances = steps & local_dir
     total_compliance = (compliance / (dt**2)) + inertial_compliances.sum(axis=0) + 1e-24
 
@@ -112,7 +102,7 @@ def project_distance_constraint(
 
 
 def project_velocity_constraint(
-    motors: Motor, rates: Rate, anchors: Point, inertia_inv: InverseInertia,
+    motors: Motor, rates: Rate, anchors: Point, inverse_inertia: InverseInertia,
 ) -> Rate:
     """Cancel the relative velocity of the anchors of body pairs, with an impulse along it."""
     # Relative anchor velocity in world coordinates:
@@ -123,7 +113,7 @@ def project_velocity_constraint(
     direction = forque / (magnitude + 1e-24)
 
     local_dir = motors << direction
-    steps = inertia_inv(local_dir)
+    steps = inverse_inertia(local_dir)
     inertial_compliances = steps & local_dir
     total_compliance = inertial_compliances.sum(axis=0) + 1e-24
     multiplier = (magnitude / total_compliance) * np.array([[+1], [-1]])
@@ -153,13 +143,13 @@ def step(chain: Chain, partitions: list[Joints], dt: float) -> Chain:
         return external_forque(motor, rate, chain.first_moment, chain.gravity, chain.damping)
 
     # 1. Unconstrained inertial pre-integration:
-    motor, rate = lie.explicit_rk4(chain.motor, chain.rate, chain.inertia, chain.inertia_inv, dt, forque)
+    motor, rate = lie.explicit_rk4(chain.motor, chain.rate, chain.inertia, chain.inverse_inertia, dt, forque)
 
     # 2. Relax position constraints (Gauss-Seidel over red-black partitions):
     for joints in partitions:
         pair = joints.bodies
         relaxed = project_distance_constraint(
-            motor[pair], joints.anchors, chain.inertia_inv[pair], joints.compliance, dt
+            motor[pair], joints.anchors, chain.inverse_inertia[pair], joints.compliance, dt
         )
         motor = motor.at[pair].set(relaxed)
 
@@ -169,7 +159,7 @@ def step(chain: Chain, partitions: list[Joints], dt: float) -> Chain:
     # 4. Resolve velocity constraints:
     for joints in partitions:
         pair = joints.bodies
-        resolved = project_velocity_constraint(motor[pair], rate[pair], joints.anchors, chain.inertia_inv[pair])
+        resolved = project_velocity_constraint(motor[pair], rate[pair], joints.anchors, chain.inverse_inertia[pair])
         rate = rate.at[pair].set(resolved)
 
     return chain._replace(motor=motor, rate=rate)

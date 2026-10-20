@@ -8,58 +8,76 @@ from examples.quadrics.spherical_quadrics.core import (
     Plane, Point, Turn, cone, geodesic, great_circles, mv, oval, polarity, sphere,
 )
 
+# The polarity's eigenvalues on the planes x, y and z, and the turn that places it, by its two planes.
+EIGENVALUES = np.array([1.0, 0.4, -0.8])
+TURN_XY, TURN_YZ = 0.25, 0.15
+# Points along the oval; the one the geodesics from the foci run to, and their samples; the tangent great
+# circles drawn and their samples; the cone's rings and samples around; the sphere's grid.
+N_CURVE = 200
+SAMPLE = 25
+N_ARC = 30
+N_TOUCHING = 16
+N_CIRCLE = 120
+CONE_RADII = np.linspace(0.1, 1.25, 20)
+N_AROUND = 60
+GRID = (60, 30)
 
+
+# --- math -----------------------------------------------------------------------------
 def spherical_conic():
-    # In principal axes both the primal quadric C (Plane <- Point) and the dual quadric
-    # Q (Point <- Plane) are diagonal. A rotor moves either by the same sandwich.
-    eigenvalues = np.array([1.0, 0.4, -0.8])
-    rotor = (mv.xy * 0.25 + mv.yz * 0.15).exp()
-    C = rotor >> polarity(eigenvalues)(rotor << Point)
-    Q = rotor >> polarity(eigenvalues).solve(rotor << Plane)
+    """The oval, its foci and their geodesics to one point of it, its semi-major arc, its tangent great
+    circles, the cone through it, the sphere's grid with the polarity's form on it, and the polarity and
+    its dual."""
+    # In principal axes both the polarity, from points to planes, and its dual, from planes to points,
+    # are diagonal; a rotor moves either by the same sandwich.
+    rotor = (mv.xy * TURN_XY + mv.yz * TURN_YZ).exp()                          # [] Rotor
+    conic = rotor >> polarity(EIGENVALUES)(rotor << Point)                     # [] Plane <- Point
+    dual = rotor >> polarity(EIGENVALUES).solve(rotor << Plane)                # [] Point <- Plane
 
-    # Points along the spherical oval and its foci, carried into the world frame.
-    curve, foci, theta_a = oval(eigenvalues, np.linspace(0, 2 * np.pi, 200))
-    P = rotor >> curve
-    foci = rotor >> foci
-    F1, F2 = foci
+    # Points along the spherical oval and its foci, carried into the world.
+    unturned, unturned_foci, semi_major = oval(EIGENVALUES, np.linspace(0, 2 * np.pi, N_CURVE))
+    curve = rotor >> unturned                                                  # [curve] Point
+    foci = rotor >> unturned_foci                                              # [2] Point
 
-    # The distance between unit points on the sphere is (-(P | F)).arccos(). The sum of the
-    # geodesic distances from F1 and F2 to any point on the oval is constant: 2 * theta_a.
-    dist_F1 = (-(P | F1)).clip(-1.0, 1.0).arccos()
-    dist_F2 = (-(P | F2)).clip(-1.0, 1.0).arccos()
-    focal_sum = dist_F1 + dist_F2
+    # The polar plane of a point of the oval is its tangent great circle.
+    tangents = conic(curve).normalized()                                       # [curve] Plane
 
-    # The polar plane of P with respect to C is its tangent great circle, and every tangent
-    # great circle satisfies the dual equation tangents & Q(tangents) == 0.
-    tangents = C(P).normalized()
-
-    # Dual focal property: the product of the sines of the distances from F1 and F2 to the
-    # tangent great circles is constant; the sine of the distance from F1 is
-    # F1.regressive(tangents).norm().
-    dual_product = F1.regressive(tangents).norm() * F2.regressive(tangents).norm()
-
-    # For the figure: geodesics from both foci to one point of the oval, sixteen tangent
-    # great circles, the cone through the oval, and the potential P & C(P) on the sphere.
-    sample = P[25]
-    arcs = geodesic(foci[:, None], sample, np.linspace(0, 1, 30))
-    touching = np.linspace(0, P.shape[0] - 1, 16, dtype=int)
-    turns = mv(Turn, np.linspace(0, 2 * np.pi, 120)[:, None])                     # [120] Turn
-    circles = great_circles(tangents[touching][:, None], P[touching][:, None], turns)
-    radius, t = np.meshgrid(np.linspace(0.1, 1.25, 20), np.linspace(0, 2 * np.pi, 60))
-    surface = rotor >> cone(eigenvalues, radius, t)
-    grid = sphere(60, 30)
-    potential = grid.regressive(C(grid))
-
-    # --- checks ---------------------------------------------------------------------------
-    np.testing.assert_allclose(P.regressive(C(P)).to_array(), 0.0, atol=1e-13)
-    np.testing.assert_allclose(focal_sum.to_array(), 2.0 * theta_a, atol=1e-11)
-    np.testing.assert_allclose(tangents.regressive(Q(tangents)).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose(dual_product.to_array(), dual_product.mean().to_array(), atol=1e-14)
-    return P, foci, arcs, sample, theta_a, tangents, tangents[touching], circles, surface, grid, potential
+    # For the figure: geodesics from both foci to one point of the oval, some tangent great circles, the
+    # cone through the oval, and the polarity's form on the sphere.
+    sample = curve[SAMPLE]
+    arcs = geodesic(foci[:, None], sample, np.linspace(0, 1, N_ARC))           # [2, arc] Point
+    touching = np.linspace(0, N_CURVE - 1, N_TOUCHING, dtype=int)
+    turns = mv(Turn, np.linspace(0, 2 * np.pi, N_CIRCLE)[:, None])             # [circle] Turn
+    circles = great_circles(tangents[touching][:, None], curve[touching][:, None], turns)   # [touching, circle] Point
+    radius, around = np.meshgrid(CONE_RADII, np.linspace(0, 2 * np.pi, N_AROUND))
+    surface = rotor >> cone(EIGENVALUES, radius, around)                       # [around, radii] Point
+    grid = sphere(*GRID)                                                       # [latitudes, longitudes] Point
+    potential = grid & conic(grid)                                             # [latitudes, longitudes] Scalar
+    return curve, foci, arcs, sample, semi_major, tangents, tangents[touching], circles, surface, grid, potential, conic, dual
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_figure
     from examples.quadrics.spherical_quadrics import render
 
-    save_figure(render.draw_spherical_conic(*spherical_conic()), "spherical_quadrics")
+    curve, foci, arcs, sample, semi_major, tangents, touching, circles, surface, grid, potential, conic, dual = spherical_conic()
+    save_figure(render.draw_spherical_conic(curve, foci, arcs, sample, tangents, touching, circles, surface, grid, potential),
+                "spherical_quadrics")
+
+    # checks
+    # Every point of the oval lies on its own polar. The distance between unit points on the sphere is
+    # `(-(curve | focus)).arccos()`, and the sum of the distances to both foci is twice the semi-major arc.
+    # Every tangent great circle lies on the dual conic, and the product of the sines of the foci's distances
+    # to the tangent circles, each the norm of the focus joined with the circle, is constant.
+    first, second = foci
+    focal_sum = (-(curve | first)).clip(-1.0, 1.0).arccos() + (-(curve | second)).clip(-1.0, 1.0).arccos()
+    dual_product = (first & tangents).norm() * (second & tangents).norm()
+    np.testing.assert_allclose((curve & conic(curve)).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose(focal_sum.to_array(), 2.0 * semi_major, atol=1e-11)
+    np.testing.assert_allclose((tangents & dual(tangents)).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose(dual_product.to_array(), dual_product.mean().to_array(), atol=1e-14)
+
+
+if __name__ == "__main__":
+    main()

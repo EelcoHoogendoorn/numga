@@ -1,4 +1,4 @@
-"""The robot arm scenarios check their kinematics; the tracking animation renders."""
+"""The robot arm's statics and homing, and the tracking animation."""
 
 from __future__ import annotations
 
@@ -10,10 +10,11 @@ from examples.mechanics.robot_arm import render, scenarios
 
 
 def test_statics_and_homing():
-    """statics asserts the tip velocity against finite differences; homing asserts the tip reaches the target."""
+    """The tip force loads the joints by its pairing with each carried axis; homing reaches the target."""
     _, joint_torques = scenarios.statics()
     np.testing.assert_allclose(joint_torques.to_array(), [-2.0, -2.1374, -1.1393], atol=0.01)
-    scenarios.homing()
+    error, _ = scenarios.homing()
+    assert error.to_array().max() < 1e-8
 
 
 def test_tracking_animation_renders():
