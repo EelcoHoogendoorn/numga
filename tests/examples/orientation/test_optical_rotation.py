@@ -11,7 +11,7 @@ def test_isolator_and_its_mirror_image():
     entering = polarizations[:, :, 0, 0]
     leaving = polarizations[:, :, 1, -1]
     # Malus's law: the share of the returning light that passes the polarizer it entered through.
-    passed = (leaving | entering).squared()
+    passed = leaving.dot(entering).squared()
 
     np.testing.assert_allclose(passed.to_array()[0], 1, atol=1e-12)
     np.testing.assert_allclose(passed.to_array()[1], 0, atol=1e-12)

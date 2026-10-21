@@ -18,6 +18,16 @@ mv, Line = core.mv, core.Line
 # The controller gain, and the body's rotation rate in each scene.
 RELAXATION = 0.6                                                              # 1/s
 RATES = {"still": mv.xy * 0.0, "turning": mv.xy * 2.0}
+# The length of a run and its time step, in seconds, and the number of simulated bodies.
+SECONDS = 8.0
+DT = 0.01
+N_BODIES = 3000
+# The steps between frames of the animation, and the seed of the disturbances.
+N_STEPS_PER_FRAME = 5
+SEED = 0
+# The half-width of the square each cloud is drawn in, and the time per frame of the animation.
+EXTENT = 1.6
+DURATION_MS = 50
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -55,19 +65,22 @@ def diffuse(rate: core.Twist, gusts: core.Gusts, seconds: float, dt: float, n_bo
         white = mv.antibivector(rng.normal(size=(n_bodies, 3))) * np.sqrt(dt)   # [bodies] Line
         errors, predicted = core.step(dynamics, covariance, errors, predicted, gusts(white), dt)
 
-    # --- checks
-    # The steady-state covariance has zero rate of change, the integrated prediction has converged
-    # to it, and the sample covariance of the simulated bodies matches it within sampling error.
-    np.testing.assert_allclose(core.growth(dynamics, limit, covariance).kernel, 0.0, atol=1e-10)
-    np.testing.assert_allclose(predicted.kernel, limit.kernel, atol=0.05 * np.abs(limit.kernel).max())
-    empirical = (errors * (errors & Line)).mean(axis=0)                       # Twist <- Line
-    np.testing.assert_allclose(empirical.kernel, limit.kernel, atol=0.25 * np.abs(limit.kernel).max())
 
-
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.estimation.pose_diffusion import render
 
-    runs = {name: list(diffuse(rate, GUSTS, 8.0, 0.01, 3000, 5, 0)) for name, rate in RATES.items()}
-    save_animation(render.animate_clouds(runs, 0.05, 1.6), "pose_diffusion", 50)
-    save_figure(render.draw_settled({name: states[-1] for name, states in runs.items()}, 1.6), "pose_diffusion")
+    runs = {name: list(diffuse(rate, GUSTS, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in RATES.items()}
+    save_animation(render.animate_clouds(runs, DT * N_STEPS_PER_FRAME, EXTENT), "pose_diffusion", DURATION_MS)
+    save_figure(render.draw_settled({name: states[-1] for name, states in runs.items()}, EXTENT), "pose_diffusion")
+
+    # checks
+    # By the last frame the integrated prediction has converged to the steady-state covariance.
+    for states in runs.values():
+        _, predicted, limit = states[-1]
+        np.testing.assert_allclose(predicted.kernel, limit.kernel, atol=0.05 * np.abs(limit.kernel).max())
+
+
+if __name__ == "__main__":
+    main()

@@ -18,7 +18,7 @@ from __future__ import annotations
 import numpy as np
 from scipy.spatial import ConvexHull
 
-from numga import Algebra, NumpyContext, concatenate
+from numga import Algebra, NumpyContext, concatenate, stack
 from numga.sparse import SparseExtensor
 
 ga = Algebra("x+y+z+w-")
@@ -110,5 +110,6 @@ def spiral(n_points: int) -> Vector:
 
 # --- the step outside the algebra -------------------------------------------------------
 def hull(points: Vector) -> np.ndarray:
-    """The faces `[faces, 3]` of the convex hull of points around the centre."""
-    return ConvexHull(points.cast(ga.subspace("x y z")).kernel).simplices     # [faces, 3]
+    """The faces `[faces, 3]` of the convex hull of points around the centre, read by their inner products
+    with x, y and z."""
+    return ConvexHull((points[..., None] | stack((mv.x, mv.y, mv.z))).to_array()).simplices   # [faces, 3]

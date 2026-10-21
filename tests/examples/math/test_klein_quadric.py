@@ -15,7 +15,7 @@ def test_both_transversals_exist_whether_the_fourth_line_crosses_the_hyperboloid
     meeting all four."""
     three = scenarios.waist_lines(np.array([0.3, 2.3, 4.4]))
     lines, _, across, _ = scenarios.scene(three, scenarios.steep(np.array([1.4, 0.0])), 12)
-    assert render.real(across[0].kernel).all() and not render.real(across[1].kernel).any()
+    assert render.real(across[0]).all() and not render.real(across[1]).any()
     # The complex conjugate of one transversal is a multiple of the other.
     pair = np.stack([across[1, 0].kernel.conj(), across[1, 1].kernel])
     assert np.linalg.svd(pair, compute_uv=False)[-1] < 1e-12

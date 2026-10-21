@@ -4,7 +4,7 @@ A joint's configuration is its axis line scaled by the angle, a bivector, and so
 rate. Forward kinematics exponentiates those bivectors in order; the frame in which each
 joint acts is the product of the joints before it. Carrying the axis lines into those frames
 gives the Jacobian, so it is never derived. The map from a twist to the tip velocity is the
-commutator with the tip and a bivector hole, and the generalized force a forque exerts on a
+commutator of the twist with the tip, `Twist.commutator(tip)`, and the generalized force a forque exerts on a
 joint is the pairing of the carried axis with that forque. No transpose is ever written.
 """
 

@@ -45,11 +45,8 @@ NEWTON_STEPS = 6
 
 # The vacuum: from a field to the excitation it causes.
 vacuum = Bivector.dual()                                     # Antibivector <- Bivector
-# The vacuum's metric on steps: from a step, the vector that pairs with every other step as their metric
-# product does.
-lower = (Vector * (Antivector | Antivector)).trace(1, 2)     # Vector <- Antivector
-# One unit along the lab's time: the step the metric turns into the lab's time slice.
-time = lower.solve(mv.t)                                     # [] Antivector
+# One unit along the lab's time: the step across the lab's slice of space `mv.t`.
+time = -mv.t.dual()                                          # [] Antivector
 
 
 @dataclass(frozen=True)
@@ -80,8 +77,9 @@ def field_gradient(charge: Charge, events: Antivector) -> FieldGradient:
     """The change in the field for a small step from each event."""
     separations, weight, weight_change = _profile(charge, events)            # [...] Antivector, Scalar, Scalar
     # The radial field changes with the distance and turns with the step.
-    radial = weight_change * (lower(separations) ^ mv.t) * (separations | Antivector)   # [...] Bivector <- Antivector
-    turning = weight * (lower ^ mv.t)                                        # [...] Bivector <- Antivector
+    # Each is the plane of a step and time, their join, which the dual turns into a field.
+    radial = weight_change * (separations & time).dual() * (separations | Antivector)   # [...] Bivector <- Antivector
+    turning = weight * (Antivector & time).dual()                            # [...] Bivector <- Antivector
     return charge.boost >> (radial + turning)(charge.boost << Antivector)     # [...] Bivector <- Antivector
 
 
@@ -108,8 +106,8 @@ def orbit_potential_gradient(orbit: Orbit, events: Antivector) -> PotentialGradi
     emission = (ray | Antivector) / reach                                    # [...] Scalar <- Antivector
     reach_change = (velocity | Antivector) + ((ray | acceleration) - 1) * emission   # [...] Scalar <- Antivector
     weight = orbit.charge / (4 * np.pi) / reach                              # [...] Scalar
-    # The potential is the velocity the metric turns into a vector, over the reach.
-    return weight * lower(acceleration * emission - velocity * reach_change / reach)   # [...] Vector <- Antivector
+    # The potential is the slice across the velocity, its dual, over the reach.
+    return -weight * (acceleration * emission - velocity * reach_change / reach).dual()   # [...] Vector <- Antivector
 
 
 def worldline(orbit: Orbit, times: Scalar) -> tuple[Antivector, Antivector, Antivector]:

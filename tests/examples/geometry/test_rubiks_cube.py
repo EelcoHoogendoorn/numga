@@ -30,7 +30,7 @@ def test_the_frontier_is_every_turn_of_every_state():
 
 
 def test_the_scene_solves_and_draws():
-    scramble, solution = scenarios.scrambled_and_solved()
+    _, solution, _ = scenarios.scrambled_and_solved()
     solved, corners, colours = core.solved_cube()
     images = render.animate(core.animate(solved, corners, solution[:1], 2), colours)
     assert len(images) == 3

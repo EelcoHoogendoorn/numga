@@ -6,7 +6,7 @@ it lies on. Each sticker is a point, its cubie's centre plus half its face, in u
 `2 * cubie + face.dual()`, so every coordinate is an integer, and so are its corners. A face's layer is
 the stickers that reach past 1 along it, `face & sticker > 1`, and a quarter turn is the rotor
 `1 + plane`, the bivector of the plane the face turns in, as a map on points halved: its sandwich doubles
-lengths, so `((1 + plane) >> Point) * 0.5` turns by exactly a quarter, with coefficients 0 and 1, and
+lengths, so `((1 + plane) >> Point) * 0.5` turns by exactly a quarter, with coefficients 0 and ±1, and
 `1 - plane` turns it back. Which way a quarter turn goes is the notation's choice: Singmaster's turns each
 face clockwise seen from outside, a hand the notation picks, and in a mirror R reads as L'. A point turned
 any number of times keeps integer coordinates, and the cube is solved when every sticker is back at its
@@ -148,14 +148,20 @@ class Search:
         return np.array(moves[::-1], dtype=int).reshape(-1, 3)
 
 
+def codes(states: Point) -> np.ndarray:
+    """Each state's sticker coefficients `[states, 54 * 3]`, as exact small integers: the search compares
+    states by their coefficients, which say nothing geometric beyond being equal or not."""
+    return np.rint(states.kernel).astype(np.int8).reshape(len(states), -1)
+
+
 def keys(states: Point) -> set[bytes]:
-    """Each state's sticker coordinates as bytes: exact, since they are integers."""
-    return {row.tobytes() for row in np.rint(states.kernel).astype(np.int8).reshape(len(states), -1)}
+    """Each state's sticker coordinates as bytes."""
+    return {row.tobytes() for row in codes(states)}
 
 
 def fresh(states: Point, seen: set[bytes]) -> np.ndarray:
     """The indices of the first copy of each state not already seen."""
-    rows = np.rint(states.kernel).astype(np.int8).reshape(len(states), -1)
+    rows = codes(states)
     _, first = np.unique(rows, axis=0, return_index=True)
     first = np.sort(first)
     return first[[rows[i].tobytes() not in seen for i in first]]
@@ -163,7 +169,7 @@ def fresh(states: Point, seen: set[bytes]) -> np.ndarray:
 
 def meeting(these: Point, those: Point) -> tuple[np.ndarray, np.ndarray]:
     """The indices of the states the two sets share, in each."""
-    index = {row.tobytes(): i for i, row in enumerate(np.rint(those.kernel).astype(np.int8).reshape(len(those), -1))}
-    rows = np.rint(these.kernel).astype(np.int8).reshape(len(these), -1)
+    index = {row.tobytes(): i for i, row in enumerate(codes(those))}
+    rows = codes(these)
     here = [i for i, row in enumerate(rows) if row.tobytes() in index]
     return np.array(here, dtype=int), np.array([index[rows[i].tobytes()] for i in here], dtype=int)

@@ -51,7 +51,7 @@ N_FROG_STEPS = 50
 # transformation's parameter, and how far the first offset leans off the line; the parameter of the
 # transformations that carry it, their number, and the steps between frames.
 N_SOLITON = 75
-SOLITON_REACH = 4.0
+SOLITON_OFFSET_LENGTH = 4.0
 SOLITON_PARAMETER = 2.0
 SOLITON_LEAN = 1e-5
 CARRY_PARAMETER = 1.0
@@ -102,7 +102,7 @@ def soliton() -> core.Vector:
     off the line's forward direction, and carried along it by the discrete-time flow: the curves
     `[steps + 1, n] Vector`."""
     line = mv.x.dual() * (np.arange(N_SOLITON) - N_SOLITON / 2)                  # [n] Point
-    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x.dual()) * SOLITON_REACH        # [] Point
+    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x.dual()) * SOLITON_OFFSET_LENGTH        # [] Point
     twist, carry = mv(core.Parameter, [SOLITON_PARAMETER]), mv(core.Parameter, [CARRY_PARAMETER])   # [] Parameter
 
     def carried() -> Iterator[core.Vector]:

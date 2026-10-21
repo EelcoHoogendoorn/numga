@@ -112,6 +112,8 @@ In a non-degenerate algebra, normalized versor transformations commute with the 
 
 Multiplication by a fixed pseudoscalar follows the geometric product's orientation rule. With an extrinsic `I`, `a * I` keeps `a`'s orientation; with an intrinsic `I`, it flips it. In `a * I`, `I` is an element that transforms along with the rest of the scene. Where a complement is meant, use `.dual()`.
 
+The three operations line up. Multiplying by the intrinsic scalar one keeps every coefficient and flips only the orientation: a cast between extrinsic and intrinsic. Multiplying by the extrinsic pseudoscalar complements the grade and keeps the orientation. The dual does both: in a non-degenerate algebra it is the reverse times the intrinsic pseudoscalar, `a.dual() == a.reverse() * antiscalar`, at every grade. The reverse is what makes an element's outer product with a dual its dot product with the dualized element, `b ^ a.dual() == b.dot(a) * antiscalar`; without it the sign flips on bivectors and trivectors, which square to minus their size. In a degenerate algebra the pseudoscalar squares to zero and no product with it gives the dual, which remains the complement of the blade layout.
+
 ## Maps
 
 Each slot of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:

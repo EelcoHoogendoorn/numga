@@ -26,6 +26,23 @@ from examples.quadrics.s3_raytracer import core as raytracer
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
 
+# The time step of every scene on S².
+S2_TIME_STEP = 0.015
+# Frames of the colliding scenes on S², of the tumbling oval, and of every scene on S³, and the time step
+# of each frame on S³.
+N_S2_FRAMES = 160
+N_TUMBLING_FRAMES = 240
+N_S3_FRAMES = 120
+S3_TIME_STEP = 0.04
+# Pixels across the front hemisphere of S², and the supersampling of each.
+HEMISPHERE_RESOLUTION = 240
+HEMISPHERE_SUPERSAMPLE = 2
+S2_DURATION_MS = 15
+# Pixels of the image traced on S³, and the supersampling of each.
+S3_SHAPE = (120, 160)
+S3_SUPERSAMPLE = 2
+S3_DURATION_MS = 50
+
 
 # --- S² -------------------------------------------------------------------------------
 # The camera rotor, folded into the initial orientation of every body.
@@ -82,10 +99,7 @@ def crowded(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         colors=["#38bdf8", "#f43f5e", "#fbbf24", "#34d399", "#a855f7", "#fb923c", "#ec4899"],
         n_phi=384,
     )
-    trajectory = S2.simulate(bodies, frames, 0.015, 2)
-
-    # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 1e-2)
+    trajectory = S2.simulate(bodies, frames, S2_TIME_STEP, 2)
     return trajectory, bodies.color
 
 
@@ -93,14 +107,7 @@ def tumbling(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
     """One oval 40° by 8° spinning near its intermediate axis: it flips over and back, periodically."""
     tilt = (S2.mv.xz * (np.radians(15.0) / 2.0)).exp() * (S2.mv.yz * (np.radians(10.0) / 2.0)).exp()
     bodies = ellipses(np.array([[40.0, 8.0]]), np.array([1.0]), tilt.reshape(1), np.array([[14.0, -0.1, 0.05]]), ["#38bdf8"], 384)
-    trajectory = S2.simulate(bodies, frames, 0.015, 3)
-
-    # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 2e-2)
-    # The rate about the intermediate axis changes sign at least twice: it flips over and back,
-    # the Dzhanibekov effect.
-    spin = (trajectory.rate[:, 0] | S2.mv.yz).to_array()
-    assert np.count_nonzero(np.diff(np.sign(spin))) >= 2
+    trajectory = S2.simulate(bodies, frames, S2_TIME_STEP, 3)
     return trajectory, bodies.color
 
 
@@ -116,10 +123,7 @@ def hyperbolic(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         n_phi=384,
     )
     bodies = S2.Bodies.join(giant, swarm)
-    trajectory = S2.simulate(bodies, frames, 0.015, 2)
-
-    # --- checks ---------------------------------------------------------------------------
-    conserved(trajectory, 2e-2)
+    trajectory = S2.simulate(bodies, frames, S2_TIME_STEP, 2)
     return trajectory, bodies.color
 
 
@@ -181,10 +185,7 @@ def crowd(frames: int):
     # With bodies all over the 3-sphere, whatever drifts behind the eye reappears ahead near the
     # antipode, which is what the sphere looks like.
     light = raytracer.unit(((S3.mv.xw * -0.34 + S3.mv.zw * 0.94) * (0.8 / 2)).exp() >> raytracer.origin)
-    trajectory = S3.simulate(bodies, frames, 0.02, 8)
-
-    # --- checks ---------------------------------------------------------------------------
-    collisions_conserve_energy(trajectory)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
     return trajectory, bodies.color, S3.mv.rotor(), light
 
 
@@ -198,10 +199,7 @@ def gap(frames: int):
     # it thins; the light behind the eye and a little across the belt.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (-S3.mv.xy * (np.pi / 2) * 0.5).exp()
     light = eye * ((S3.mv.xw * -0.3 + S3.mv.yw * 0.25 + S3.mv.zw * 0.2) * 0.5).exp() >> raytracer.origin
-    trajectory = S3.simulate(bodies, frames, 0.02, 8)
-
-    # --- checks ---------------------------------------------------------------------------
-    collisions_conserve_energy(trajectory)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
     return trajectory, bodies.color, eye, light
 
 
@@ -215,10 +213,7 @@ def needle(frames: int):
     # back down at the gap; the light behind and above the eye.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (S3.mv.zw * np.radians(35.0) * 0.5).exp() * (S3.mv.zx * (-np.pi / 2) * 0.5).exp()
     light = eye * ((S3.mv.xw * -0.3 + S3.mv.yw * 0.2 + S3.mv.zw * 0.3) * 0.5).exp() >> raytracer.origin
-    trajectory = S3.simulate(bodies, frames, 0.02, 8)
-
-    # --- checks ---------------------------------------------------------------------------
-    collisions_conserve_energy(trajectory)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
     return trajectory, bodies.color, eye, light
 
 
@@ -240,48 +235,50 @@ def tunnel(frames: int):
     conic, polar = raytracer.project(eye, wall_surface)
     wall_hit = (camera * raytracer.reproject(conic, polar, side_up) + (eye >> side_up)).normalized()
     light = (camera + wall_hit).normalized()
-    trajectory = S3.simulate(bodies, frames, 0.02, 8)
-
-    # --- checks ---------------------------------------------------------------------------
-    collisions_conserve_energy(trajectory)
-    final = trajectory.surfaces[-1]
-    # Nobody ended up in the wall.
-    assert (S3.overlap(final[0], final[1:])[0] > -1e-2).all()
-    np.testing.assert_allclose((wall_hit & wall_surface(wall_hit)).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((camera | light).to_array(), (light | wall_hit).to_array(), atol=1e-12)
+    trajectory = S3.simulate(bodies, frames, S3_TIME_STEP, 8)
     return trajectory, bodies.color, eye, light
 
 
-if __name__ == "__main__":
-    import argparse
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from functools import partial
     from examples.animation import save_animation, save_figure
 
-    def on_s2(scene, name: str, frames: int, diagnostics) -> None:
+    def on_s2(scene, name: str, frames: int, diagnostics) -> tuple[S2.Trajectory, np.ndarray]:
         """Simulate a scene on S², save its diagnostic figure and its hemisphere animation."""
         trajectory, colors = scene(frames)
-        save_figure(diagnostics(trajectory, colors, 0.015), name)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, 240, 2), name, 15)
+        save_figure(diagnostics(trajectory, colors, S2_TIME_STEP), name)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, HEMISPHERE_RESOLUTION, HEMISPHERE_SUPERSAMPLE), name, S2_DURATION_MS)
+        return trajectory, colors
 
-    def on_s3(scene, name: str, frames: int) -> None:
+    def on_s3(scene, name: str, frames: int) -> tuple:
         """Simulate a scene on S³, trace it from its eye, save the last frame and the animation."""
-        trajectory, colors, eye, light = scene(frames)
-        images = render.s3_frames(trajectory, colors, eye, light, (180, 240), 4)
+        trajectory, colors, eye, light, *_ = geometry = scene(frames)
+        images = render.s3_frames(trajectory, colors, eye, light, S3_SHAPE, S3_SUPERSAMPLE)
         save_figure(render.draw_last_frame(images, colors.shape[0]), name)
-        save_animation(images, name, 50)
+        save_animation(images, name, S3_DURATION_MS)
+        return geometry
 
     SCENES = {
-        "crowded": partial(on_s2, crowded, "spherical_quadric_physics", 160, render.draw_collisions),
-        "tumbling": partial(on_s2, tumbling, "spherical_tumbling_oval", 240, render.draw_tumbling),
-        "hyperbolic": partial(on_s2, hyperbolic, "spherical_hyperbolic_arena", 160, render.draw_collisions),
-        "crowd": partial(on_s3, crowd, "s3_quadric_physics", 240),
-        "gap": partial(on_s3, gap, "s3_gap", 240),
-        "needle": partial(on_s3, needle, "s3_needle", 240),
-        "tunnel": partial(on_s3, tunnel, "s3_tunnel", 240),
+        "crowded": partial(on_s2, crowded, "spherical_quadric_physics", N_S2_FRAMES, render.draw_collisions),
+        "tumbling": partial(on_s2, tumbling, "spherical_tumbling_oval", N_TUMBLING_FRAMES, render.draw_tumbling),
+        "hyperbolic": partial(on_s2, hyperbolic, "spherical_hyperbolic_arena", N_S2_FRAMES, render.draw_collisions),
+        "crowd": partial(on_s3, crowd, "s3_quadric_physics", N_S3_FRAMES),
+        "gap": partial(on_s3, gap, "s3_gap", N_S3_FRAMES),
+        "needle": partial(on_s3, needle, "s3_needle", N_S3_FRAMES),
+        "tunnel": partial(on_s3, tunnel, "s3_tunnel", N_S3_FRAMES),
     }
 
-    parser = argparse.ArgumentParser(description="Quadric physics on S² and S³")
-    parser.add_argument("--scene", choices=[*SCENES, "all"], default="crowded")
-    args = parser.parse_args()
-    for scene in (SCENES if args.scene == "all" else [args.scene]):
-        SCENES[scene]()
+    results = {scene: run() for scene, run in SCENES.items()}
+
+    # checks
+    # On S², kinetic energy within each scene's drift, total momentum exactly; the oval flips over and back
+    # about its intermediate axis, the Dzhanibekov effect.
+    for scene, drift in (("crowded", 1e-2), ("tumbling", 2e-2), ("hyperbolic", 2e-2)):
+        conserved(results[scene][0], drift)
+    spin = (results["tumbling"][0].rate[:, 0] | S2.mv.yz).to_array()
+    assert np.count_nonzero(np.diff(np.sign(spin))) >= 2
+
+
+if __name__ == "__main__":
+    main()

@@ -44,38 +44,38 @@ def draw_level_sets(ax, quadrics: Polarity, **style) -> None:
         ax.contour(xs, ys, values[..., index], levels=[0.0], **style)
 
 
-def style_axis(ax, title: str) -> None:
+def style_axis(ax) -> None:
     ax.set_xlim(BOX[0], BOX[1])
     ax.set_ylim(BOX[2], BOX[3])
     ax.set_aspect("equal")
-    ax.set_title(title, fontsize=11)
-    ax.grid(True, alpha=0.2)
+    ax.set_axis_off()
 
 
 def draw_hyperbolic_plane(
     C: Polarity, vertices: Point, sides: Line, angles: Scalar, area: Scalar, P: Point, foot: Point,
     normal: Line, reflected: Point, pole: Point, circles: Polarity, centres: Point,
 ) -> plt.Figure:
-    """The triangle with its perpendicular on the left, the circles on the right."""
+    """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
+    the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
+    purple diamond. Right, the circles about the two centres, blue and orange."""
     fig, (left, right) = plt.subplots(1, 2, figsize=(13, 6), dpi=120)
     draw_level_sets(left, C, colors="black", linewidths=2.0)
     draw_lines(left, sides, color="#2563eb", linewidth=2.0)
     draw_lines(left, normal, color="#dc2626", linewidth=1.6)
     draw_points(left, vertices, color="#1d4ed8", s=40)
-    draw_points(left, P, color="#dc2626", s=50, label="P")
-    draw_points(left, foot, color="#b91c1c", marker="s", s=40, label="foot")
-    draw_points(left, reflected, color="#f97316", s=45, label="reflection")
-    draw_points(left, pole, color="#a855f7", marker="D", s=45, label="pole of BC")
+    draw_points(left, P, color="#dc2626", s=50)
+    draw_points(left, foot, color="#b91c1c", marker="s", s=40)
+    draw_points(left, reflected, color="#f97316", s=45)
+    draw_points(left, pole, color="#a855f7", marker="D", s=45)
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(6, 6), fontsize=9)
-    style_axis(left, f"Triangle area {area.to_array():.3f} by Gauss-Bonnet; the perpendicular runs through the pole")
-    left.legend(loc="lower left", fontsize=8)
+    style_axis(left)
 
     draw_level_sets(right, C, colors="black", linewidths=2.0)
     for family, colour in zip(circles, ("#3b82f6", "#f97316")):
         draw_level_sets(right, family, colors=colour, linewidths=1.4)
     draw_points(right, centres, color="#111827", s=35)
-    style_axis(right, "Circles as level sets of a quadric")
+    style_axis(right)
 
     fig.tight_layout()
     return fig

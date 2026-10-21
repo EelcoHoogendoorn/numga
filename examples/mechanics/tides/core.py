@@ -5,8 +5,8 @@ one over the squared distance, and its density is smooth and finite at the centr
 is a sum over the masses, and so is the tidal map at a point: a map on displacements,
 `Point <- Point`, the change in acceleration over a small step, written in closed form.
 
-Contracting the tidal map against the reciprocal of an open point, its reverse, gives the derivative of
-gravity, `(Point.reverse() * tidal(Point)).contract(1, 2)`: its scalar part is minus four pi times the
+Multiplying the tidal map by the reciprocal of `Point`, the space of all displacements, and contracting
+the two gives the derivative of gravity, `(Point.reverse() * tidal(Point)).contract(1, 2)`: its scalar part is minus four pi times the
 density, which is Poisson's equation, and its bivector part, the curl, vanishes. A cluster of stars falls through the
 field; its shape, to first order in its size, is a map too, the deformation, which the tidal map
 drives along the cluster's centre: `deformation'' == tidal(deformation)`, the Jacobi equation. A
@@ -73,8 +73,8 @@ class Stars:
         return self.positions.mean(axis=-1)                                  # [...] Point
 
     def moment(self) -> Deformation:
-        """The stars' spread about their centre of mass: the mean of each offset times its component
-        along the open point."""
+        """The stars' spread about their centre of mass, a map on directions: the mean of each offset times
+        its component along the direction."""
         offsets = self.positions - self.centre()[..., None]                # [..., stars] Point
         return (offsets * offsets.dot(Point)).mean(axis=-1)                  # [...] Point <- Point
 

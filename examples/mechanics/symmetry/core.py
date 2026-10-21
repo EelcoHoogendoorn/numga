@@ -1,7 +1,6 @@
 """Which responses survive averaging over an object's rotation symmetries?
 
 Heat conduction: a positive conductivity, averaged over rotation groups, and its heat-flow ellipsoids.
-Flywheel: a flywheel with three arms, assembled by adding their rotated inertia maps.
 Crystal lattice: the same cubic bond orbits give isotropic conduction and anisotropic elasticity.
 Optical activity: a rotary power has a sense, so mirrors and the inversion restrict it where they leave conduction alone.
 
@@ -15,24 +14,25 @@ import numpy as np
 from numga import Algebra, Extensor, NumpyContext, concatenate
 from numga.algebras import PGA3D
 
-# Conductivity acts on Euclidean driving-field and heat-flow vectors.
 ga = Algebra("x+y+z+")
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
+# A driving field, the temperature's fall per unit length, is read by crossing it: a vector. Heat flows,
+# bonds and the paths of light are carried by geometry: directions, antivectors.
+Field = ga.gatype.vector()
+Direction = ga.gatype.antivector()
+Conductivity = ga.gatype((Direction, Field))       # Direction <- Field
 Rotor = ga.gatype.rotor()
 ImproperRotation = ga.gatype.odd()
 Plane = ga.gatype.bivector()
 
-# Mechanics uses projective points and a momentum response to rigid-body motion.
+# The lattice's sites are projective points.
 pga_mv = NumpyContext(PGA3D).multivector
 Point = PGA3D.gatype.antivector()
-Bivector = PGA3D.gatype.bivector()
-AntiBivector = PGA3D.gatype.antibivector()
 
 
-# --- construction ---------------------------------------------------------------------
+# --- plumbing -------------------------------------------------------------------------
 def turns(plane: Plane, order: int) -> Rotor:
     """The cyclic group of `order` equal turns in a unit plane, the identity first."""
     # A rotor turns by twice its angle: element k, `(plane * (np.pi * k / order)).exp()`, turns by
@@ -48,19 +48,22 @@ def cube_rotations() -> Rotor:
     return (faces[:, None] * turns(mv.xy, 4)[None, :]).reshape(-1)
 
 
-def directions() -> Vector:
-    """A sphere of unit driving fields, sampled for drawing."""
+def sphere_turns() -> Rotor:
+    """Turns that carry x over a sphere, sampled for drawing: up toward z by the latitude, then about z by
+    the longitude."""
     longitude = np.linspace(0, 2 * np.pi, 65)[None, :]
     latitude = np.linspace(-np.pi / 2, np.pi / 2, 33)[:, None]
-    # x turned up toward z by the latitude, then about z by the longitude.
-    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp() >> mv.x
+    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp()        # [latitudes, longitudes] Rotor
 
 
-def arm_samples() -> Point:
-    """Equal-mass samples of a thin rectangular flywheel arm attached to a massless hub."""
-    translations = (pga_mv.xw * np.linspace(0.25, 2.2, 24)[:, None]
-                    + pga_mv.yw * np.linspace(-0.14, 0.14, 5)[None, :]) / 2
-    return translations.exp() >> pga_mv.xyz
+def fields() -> Field:
+    """A sphere of unit driving fields."""
+    return sphere_turns() >> mv.x                                                    # [latitudes, longitudes] Field
+
+
+def directions() -> Direction:
+    """A sphere of unit directions, each the direction of the field at the same place in `fields`."""
+    return sphere_turns() >> mv.x.dual()                                             # [latitudes, longitudes] Direction
 
 
 def lattice_samples():
@@ -72,31 +75,27 @@ def lattice_samples():
 
 
 # --- math -----------------------------------------------------------------------------
-def conductivities(axes: Vector, gains: np.ndarray, groups: list[Rotor]) -> Extensor:
+def conductivities(axes: Direction, gains: np.ndarray, groups: list[Rotor]) -> Conductivity:
     """Which heat-conduction responses are compatible with a crystal's symmetry?
 
-    Conductivity maps the negative temperature gradient to heat flow. In an anisotropic
-    material these vectors need not be parallel. Start with a positive conductivity,
+    Conductivity maps the driving field, the temperature's fall, to heat flow. In an anisotropic
+    material the flow need not run along the field. Start with a positive conductivity,
     rotate the whole response through each symmetry, and average. This Reynolds
     projection gives the closest invariant response in the Frobenius norm, preserving
     positive definiteness. Symmetry constrains the response, not its numerical gains.
 
     Returns the measured conductivity followed by its average over each group.
     """
-    # Each principal axis measures one component of the driving field and contributes
-    # heat flow along that axis. Positive gains make this a passive conductivity.
-    conductivity = (axes * (axes | Vector) * gains).sum(axis=0)
-    responses = [conductivity]
-    for group in groups:
-        # Pull the input into each rotated frame, apply the conductivity, and rotate the output back.
-        # The mean is unchanged by any rotation in the group: those rotations merely
-        # permute the terms. This projects a measured response onto the allowed ones.
-        invariant = (group >> Vector)(conductivity(group << Vector)).mean(axis=0)
-        responses.append(invariant)
-    return Extensor.stack(responses)
+    # Each principal axis reads the driving field by their pairing and contributes heat flow along
+    # itself. Positive gains make this a passive conductivity.
+    conductivity = (axes * (Field & axes) * gains).sum(axis=0)                     # Direction <- Field
+    # Pull the field into each rotated frame, apply the conductivity, and turn the flow back. The mean is
+    # unchanged by any rotation in the group: those rotations merely permute the terms. This projects a
+    # measured response onto the allowed ones.
+    return Extensor.stack([conductivity] + [(group >> conductivity(group << Field)).mean(axis=0) for group in groups])
 
 
-def rotary_powers(axes: Vector, powers: np.ndarray, groups: list[tuple[Rotor, ImproperRotation]]) -> Extensor:
+def rotary_powers(axes: Direction, powers: np.ndarray, groups: list[tuple[Rotor, ImproperRotation]]) -> Extensor:
     """Which crystals can rotate polarized light?
 
     Light crossing an optically active crystal along a unit direction `d` has its plane of polarization
@@ -113,43 +112,21 @@ def rotary_powers(axes: Vector, powers: np.ndarray, groups: list[tuple[Rotor, Im
     Returns the candidate followed by its average over each group.
     """
     handedness = mv.xyz.dual()                                                   # [] Scalar, intrinsic
-    gyration = ((axes | Vector) * (axes | Vector) * powers).sum(axis=0) * handedness
-    responses = [gyration]
-    for rotations, improper in groups:
-        # Turn both directions into each element's frame, and carry the rotary power back out:
-        # an improper rotation reverses its sense.
-        transformed = [element >> gyration(element << Vector, element << Vector) for element in (rotations, improper)]
-        responses.append(concatenate(transformed).mean(axis=0))
-    return Extensor.stack(responses)
+    gyration = (axes.dot(Direction) * axes.dot(Direction) * powers).sum(axis=0) * handedness   # Scalar <- (Direction, Direction)
+
+    def average(rotations: Rotor, improper: ImproperRotation) -> Extensor:
+        # Turn both directions into each element's frame, and carry the rotary power back out: an improper
+        # rotation reverses its sense.
+        return concatenate([element >> gyration(element << Direction, element << Direction) for element in (rotations, improper)]).mean(axis=0)
+
+    return Extensor.stack([gyration] + [average(rotations, improper) for rotations, improper in groups])
 
 
-def flywheel_inertia(arm: Point, rotations: Rotor) -> tuple[Extensor, Extensor]:
-    """Assemble a flywheel by adding rotated copies of one arm's inertia.
-
-    Each arm has unit mass. Threefold symmetry puts the center of mass at the hub
-    and makes all transverse moments equal, even though the shape has only three arms.
-    Rotation about z still has a different moment: for this thin planar object it is
-    twice the transverse moment.
-
-    Mass locations are PGA points (antivectors). Inertia maps bivector rigid-body
-    velocities to antibivector momenta, including translation as well as rotation.
-    Returns the inertia of one arm and of the whole flywheel.
-    """
-    # The commutator gives each point's velocity under the open rigid-motion slot.
-    # Join point and velocity to get momentum, then average for a unit-mass arm.
-    arm_inertia = (arm & arm.commutator(Bivector)).mean()
-
-    # Rotate that entire response and add the three arms. Unlike conductivity's mean,
-    # this sum assembles actual masses: the finished flywheel has mass three.
-    inertia = (rotations >> AntiBivector)(arm_inertia(rotations << Bivector)).sum(axis=0)
-    return arm_inertia, inertia
-
-
-def lattice_responses(seeds: Vector, cube: Rotor) -> tuple[Extensor, Extensor]:
+def lattice_responses(seeds: Direction, cube: Rotor) -> tuple[Conductivity, Extensor]:
     """Average microscopic bond responses over a crystal's cubic point group.
 
     A simple-cubic lattice has axial and face-diagonal bond families. Starting with
-    `mv.x` and `(mv.x + mv.y).normalized()`, the 24 cube rotations generate every
+    `mv.x.dual()` and `(mv.x + mv.y).dual().normalized()`, the 24 cube rotations generate every
     direction in each family. Every member has the same weight, so another cube
     rotation just permutes the terms in the average. This is the microscopic meaning
     of the group projection.
@@ -161,10 +138,10 @@ def lattice_responses(seeds: Vector, cube: Rotor) -> tuple[Extensor, Extensor]:
     equal elastic constants c12 and c44; a general cubic crystal need not have that
     extra relation.
 
-    A unit bond n measures a thermal gradient g through `n | g`. For an imposed strain
-    of size s along a unit direction d, `strain(v) == s * d * (d | v)`, its fractional
-    extension is `s * (n | d) ** 2`. Squaring to get spring energy gives four factors
-    of `n | d`, hence a scalar form with four vector slots. Its value
+    A unit bond n reads a driving field f through their pairing, `f & n`. For an imposed
+    strain of size s along a unit direction d, its fractional extension is `s * n.dot(d) ** 2`,
+    measured by the metric between the two directions. Squaring to get spring energy gives
+    four factors of `n.dot(d)`, hence a scalar form with four direction slots. Its value
     `elasticity(d, d, d, d)` is the stiffness, with energy density
     `s ** 2 * elasticity(d, d, d, d) / 2`. It holds transverse strain fixed; it is not
     the relaxed Young's modulus.
@@ -174,14 +151,14 @@ def lattice_responses(seeds: Vector, cube: Rotor) -> tuple[Extensor, Extensor]:
     """
     # Batch axes are [24 rotations, 2 bond families]. These are free bond directions;
     # the actual lattice sites are projective points.
-    bonds = cube[:, None] >> seeds[None, :]
-    projection = bonds | Vector                         # Scalar <- Vector
+    bonds = cube[:, None] >> seeds[None, :]                                      # [rotations, families] Direction
 
-    # Average over the group, then add the two families. No direction is privileged
-    # within either orbit. Conductivity measures the gradient and returns flow along n.
-    conductivity = (bonds * projection).mean(axis=0).sum(axis=0)
+    # Average over the group, then add the two families. No direction is privileged within either
+    # orbit. Conductivity reads the field along each bond and returns flow along it.
+    conductivity = (bonds * (Field & bonds)).mean(axis=0).sum(axis=0)            # Direction <- Field
+    projection = bonds.dot(Direction)                                            # [rotations, families] Scalar <- Direction
 
     # Four independent slots encode the spring stiffness. The same group average
-    # leaves cubic structure here, although it made the vector response isotropic.
+    # leaves cubic structure here, although it made the conduction isotropic.
     elasticity = (projection * projection * projection * projection).mean(axis=0).sum(axis=0)
     return conductivity, elasticity

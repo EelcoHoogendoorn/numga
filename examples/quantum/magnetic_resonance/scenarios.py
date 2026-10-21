@@ -18,37 +18,36 @@ mv = core.mv
 T1, T2 = 10.0, 4.0
 # All spins along the field.
 EQUILIBRIUM = core.state(mv.z)                     # [] State
+# Nutation: the detunings, the drive, the duration and time step, and the steps between states kept.
+NUTATION_DETUNINGS = np.array([0.0, 0.5, 1.0])
+NUTATION_DRIVE, NUTATION_SECONDS, NUTATION_DT, NUTATION_EVERY = 1.0, 40.0, 0.02, 5
+# The lines: detunings, and the drive strengths from weak to saturating.
+N_LINE_DETUNINGS = 241
+LINE_DETUNINGS = np.linspace(-3.0, 3.0, N_LINE_DETUNINGS)
+LINE_DRIVES = np.array([0.05, 0.3, 1.0])
+# The echo: the spins, the spread of their detunings, the delay, the duration and time step, the steps
+# between states kept, the seed; the steps between frames drawn, and a frame's duration in milliseconds.
+N_SPINS, SPREAD, DELAY, ECHO_SECONDS, ECHO_DT, ECHO_EVERY, SEED = 300, 2.0, 2.5, 8.0, 0.01, 4, 0
+FRAME_STRIDE, FRAME_DURATION = 2, 40
+# The echo and the free decay over doubling delays: the shortest delay's steps, and the doublings.
+N_DOUBLINGS = 11
 
 
 # --- math -----------------------------------------------------------------------------
 def nutation(detunings: np.ndarray, drive: float, seconds: float, dt: float, every: int):
     """Spins switched on to a steady drive at the given detunings, from equilibrium: their states
-    every few steps, and the steady states they settle into."""
+    every few steps, the steady states they settle into, and the last state reached."""
     rates = core.generator(detunings, drive, T1, T2)   # [detunings] State <- State
     states = list(core.evolve(core.evolution(rates, dt), EQUILIBRIUM.broadcast_to(detunings.shape), int(seconds / dt) + 1))
-    settled = core.steady(rates)
-
-    # --- checks
-    # After several T1 the driven spins have reached the steady states the solve predicts.
-    np.testing.assert_allclose(states[-1].kernel, settled.kernel, atol=1e-2)
-    return stack(states[::every]), settled                                              # [times, detunings] State, [detunings] State
+    return stack(states[::every]), core.steady(rates), states[-1]                       # [times, detunings] State, [detunings] State, [detunings] State
 
 
-def lines(detunings: np.ndarray, drives: np.ndarray) -> core.State:
-    """The steady states over a grid of detunings and drive strengths, in one solve."""
+def lines(detunings: np.ndarray, drives: np.ndarray):
+    """The steady states over a grid of detunings and drive strengths, in one solve, and their rates of
+    change, which vanish."""
     rates = core.generator(detunings[:, None], drives[None, :], T1, T2)
     settled = core.steady(rates)                                                        # [detunings, drives] State
-
-    # --- checks
-    # The steady states do not change, and they match the closed form: along the field
-    # `(1 + (D * T2) ** 2) / d` and absorbing `W * T2 / d`, with `d = 1 + (D * T2) ** 2 + W**2 * T1 * T2`.
-    np.testing.assert_allclose(rates(settled).kernel, 0.0, atol=1e-12)
-    D, W = detunings[:, None], drives[None, :]
-    d = 1 + (D * T2) ** 2 + W**2 * T1 * T2
-    r = core.bloch(settled)
-    np.testing.assert_allclose((r | mv.z).to_array(), (1 + (D * T2) ** 2) / d, atol=1e-12)
-    np.testing.assert_allclose(-(r | mv.y).to_array(), W * T2 / d, atol=1e-12)
-    return settled
+    return settled, rates(settled)
 
 
 def echo(spins: int, spread: float, delay: float, seconds: float, dt: float, every: int, seed: int):
@@ -61,20 +60,12 @@ def echo(spins: int, spread: float, delay: float, seconds: float, dt: float, eve
     start = EQUILIBRIUM.broadcast_to(detunings.shape)                                    # [spins] State
     waits = round(delay / dt)
     states = core.echo(core.evolution(rates, dt), start, waits, int(seconds / dt) - waits)
-    ensemble = stack(list(states)[::every])                                              # [times, spins] State
-
-    # --- checks
-    # At twice the delay the spins have refocused: the mean transverse Bloch vector has decayed only
-    # by the true dephasing, `np.exp(-2 * delay / T2)`, not by the spread of the field.
-    r = core.bloch(ensemble[int(round(2 * delay / (dt * every)))])
-    transverse = np.hypot((r | mv.x).to_array().mean(), (r | mv.y).to_array().mean())
-    np.testing.assert_allclose(transverse, np.exp(-2 * delay / T2), rtol=0.02)
-    return detunings, ensemble
+    return detunings, stack(list(states)[::every])                                       # [spins], [times, spins] State
 
 
 def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
     """The echo and the free decay of an ensemble with detunings scattered by an uneven field, as
-    maps from state to state: one step on the open state, doubled for delays from dt to
+    maps from state to state: one step as a map on states, doubled for delays from dt to
     `2 ** (count - 1) * dt`, composed with the pulses, and averaged over the spins. Returns the times after
     the first pulse, and the states the two sequences leave from equilibrium."""
     detunings = np.random.default_rng(seed).normal(0.0, spread, spins)
@@ -85,23 +76,46 @@ def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
     echo = waiting(turn(waiting(tip))).mean(axis=-1)                                     # [delays] State <- State
     decay = waiting(waiting(tip)).mean(axis=-1)                                          # [delays] State <- State
     times = 2 * dt * 2.0 ** np.arange(count)
-    echoed, faded = echo(EQUILIBRIUM), decay(EQUILIBRIUM)                                # [delays] State
-
-    # --- checks
-    # The echo has lost only the true dephasing, `np.exp(-times / T2)`, whatever the spread of the field.
-    r = core.bloch(echoed)
-    np.testing.assert_allclose(np.hypot((r | mv.x).to_array(), (r | mv.y).to_array()), np.exp(-times / T2), rtol=1e-5)
-    return times, echoed, faded
+    return times, echo(EQUILIBRIUM), decay(EQUILIBRIUM)                                  # [delays], [delays] State, [delays] State
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quantum.magnetic_resonance import render
 
-    save_figure(render.draw_nutation(*nutation(np.array([0.0, 0.5, 1.0]), 1.0, 40.0, 0.02, 5)), "resonance_nutation")
-    detunings, drives = np.linspace(-3.0, 3.0, 241), np.array([0.05, 0.3, 1.0])
-    save_figure(render.draw_lines(detunings, drives, lines(detunings, drives)), "resonance_lines")
-    detunings, ensemble = echo(300, 2.0, 2.5, 8.0, 0.01, 4, 0)
-    save_figure(render.draw_echo(ensemble, 0.04, 2.5, T2), "resonance_echo")
-    save_animation(render.animate_echo(detunings, ensemble, 0.04, 2.5, T2, 2), "resonance_echo", 40)
-    save_figure(render.draw_decays(*echo_decay(300, 2.0, 0.01, 11, 0), T2), "resonance_echo_decay")
+    history, settled, last = nutation(NUTATION_DETUNINGS, NUTATION_DRIVE, NUTATION_SECONDS, NUTATION_DT, NUTATION_EVERY)
+    save_figure(render.draw_nutation(history, settled), "resonance_nutation")
+    line_states, line_rates = lines(LINE_DETUNINGS, LINE_DRIVES)
+    save_figure(render.draw_lines(LINE_DETUNINGS, LINE_DRIVES, line_states), "resonance_lines")
+    detunings, ensemble = echo(N_SPINS, SPREAD, DELAY, ECHO_SECONDS, ECHO_DT, ECHO_EVERY, SEED)
+    frame_time = ECHO_DT * ECHO_EVERY
+    save_figure(render.draw_echo(ensemble, frame_time, DELAY, T2), "resonance_echo")
+    save_animation(render.animate_echo(detunings, ensemble, frame_time, DELAY, T2, FRAME_STRIDE), "resonance_echo", FRAME_DURATION)
+    times, echoed, faded = echo_decay(N_SPINS, SPREAD, ECHO_DT, N_DOUBLINGS, SEED)
+    save_figure(render.draw_decays(times, echoed, faded, T2), "resonance_echo_decay")
+
+    # checks
+    # After several T1 the driven spins have reached the steady states the solve predicts.
+    np.testing.assert_allclose(last.kernel, settled.kernel, atol=1e-2)
+    # The steady states do not change, and they match the closed form: along the field
+    # `(1 + (D * T2) ** 2) / d` and absorbing `W * T2 / d`, with `d = 1 + (D * T2) ** 2 + W**2 * T1 * T2`.
+    np.testing.assert_allclose(line_rates.kernel, 0.0, atol=1e-12)
+    D, W = LINE_DETUNINGS[:, None], LINE_DRIVES[None, :]
+    d = 1 + (D * T2) ** 2 + W**2 * T1 * T2
+    r = core.bloch(line_states)
+    np.testing.assert_allclose((r | mv.z).to_array(), (1 + (D * T2) ** 2) / d, atol=1e-12)
+    np.testing.assert_allclose(-(r | mv.y).to_array(), W * T2 / d, atol=1e-12)
+    # At twice the delay the spins have refocused: the mean transverse Bloch vector has decayed only
+    # by the true dephasing, `np.exp(-2 * delay / T2)`, not by the spread of the field.
+    r = core.bloch(ensemble[int(round(2 * DELAY / frame_time))])
+    transverse = np.hypot((r | mv.x).to_array().mean(), (r | mv.y).to_array().mean())
+    np.testing.assert_allclose(transverse, np.exp(-2 * DELAY / T2), rtol=0.02)
+    # Over every delay the echo has lost only the true dephasing, `np.exp(-times / T2)`, whatever the
+    # spread of the field.
+    r = core.bloch(echoed)
+    np.testing.assert_allclose(np.hypot((r | mv.x).to_array(), (r | mv.y).to_array()), np.exp(-times / T2), rtol=1e-5)
+
+
+if __name__ == "__main__":
+    main()

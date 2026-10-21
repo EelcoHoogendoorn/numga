@@ -11,10 +11,10 @@ gyroscope turns in, a rate like every turning, and an observer at rest reads it 
 back to rest, `(time * velocity).square_root() >> spin`.
 
 In a field bivector `field`, with charge-to-mass ratio one, the force is the field read along the
-velocity, `velocity & field`, and the bivector `(1 + anomaly) * field - anomaly * (lower(velocity) ^ force)`
+velocity, `velocity & field`, and the bivector `(1 + anomaly) * field - anomaly * (force ^ velocity.dual())`
 turns the particle's whole frame: its velocity as the Lorentz force does, whatever the anomaly, and its
-spin by the Bargmann–Michel–Telegdi equation. The metric enters through `lower`, which turns a direction
-into the vector that pairs with every other direction as their metric product does.
+spin by the Bargmann–Michel–Telegdi equation. The metric enters through the dual, which turns the velocity,
+a direction, into the slice of space across it that the force's plane is built from.
 
 In the four-tensor index notation of relativistic electrodynamics, the Bargmann–Michel–Telegdi
 equation reads as $\\frac{ds^\\mu}{d\\tau} = \\frac{q}{m}\\left(\\frac{g}{2} F^{\\mu}{}_{\\nu} s^\\nu
@@ -37,18 +37,15 @@ Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 
-# The metric on directions: from a direction, the vector that pairs with every other direction as their
-# metric product does.
-lower = (Vector * (Antivector | Antivector)).trace(1, 2)     # Vector <- Antivector
-# One unit along the lab's time: the direction the metric turns into the lab's time slice.
-time = lower.solve(mv.t)                                     # [] Antivector
+# One unit along the lab's time: the direction across the lab's slice of space `mv.t`.
+time = -mv.t.dual()                                          # [] Antivector
 
 
 # --- math -----------------------------------------------------------------------------
 def boost(direction: Antivector, rapidity: np.ndarray) -> Rotor:
     """The pure boost by `rapidity` along a unit spatial direction: a turn in the plane of the direction
-    and time, as the metric makes vectors of both."""
-    return ((lower(direction) ^ mv.t) * (rapidity / 2)).exp()                   # [...] Rotor
+    and time, their join, which the dual turns into a generator."""
+    return ((direction & time).dual() * (rapidity / 2)).exp()                   # [...] Rotor
 
 
 def rest_boost(velocity: Antivector) -> Rotor:
@@ -92,7 +89,7 @@ def bmt_generator(field: Bivector, velocity: Antivector, anomaly: float) -> Bive
     force = velocity & field                                                    # [...] Vector
     # On the velocity the force's plane with the velocity acts as the field does, so the anomaly
     # cancels there.
-    return (1 + anomaly) * field - anomaly * (lower(velocity) ^ force)          # [...] Bivector
+    return (1 + anomaly) * field - anomaly * (force ^ velocity.dual())         # [...] Bivector
 
 
 def ring_field(event: Antivector, magnetic: float, electric: np.ndarray) -> Bivector:
@@ -101,7 +98,7 @@ def ring_field(event: Antivector, magnetic: float, electric: np.ndarray) -> Bive
     position = event - (mv.t & event) * time                                    # [...] Antivector
     # Directions of space square to minus their length squared.
     outward = position / (-position.squared()).square_root()                    # [...] Antivector
-    return magnetic * mv.xy + electric * (lower(outward) ^ mv.t)                # [...] Bivector
+    return magnetic * mv.xy + electric * (outward & time).dual()               # [...] Bivector
 
 
 def bmt_step(event: Antivector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
@@ -136,6 +133,6 @@ def anomalous_angle(velocity: Antivector, spin: Bivector) -> Scalar:
     direction = motion / (-motion.squared()).square_root()                      # [...] Antivector
     # A spin along the momentum turns in the plane of the direction turned a quarter turn in the orbit's
     # plane and the orbit's normal.
-    along = lower(direction.commutator(mv.xy)) ^ mv.z                           # [...] Bivector
+    along = mv.z ^ direction.commutator(mv.xy).dual()                          # [...] Bivector
     # The product of two such planes is the rotor through their angle.
     return (lab_view(velocity, spin) * along.inverse()).log().scalar_product(mv.yx)   # [...] Scalar

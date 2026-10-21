@@ -13,9 +13,9 @@ over time is its Hashimoto surface.
 The polygon's points are antivectors, intrinsic like all geometry, and so are its edges. At a vertex
 between the incoming edge `S_prev` and the outgoing edge `S`, the product with the reverse, `S * ~S_prev`,
 is the turn from one edge to the next, `|S| |S_prev| + S.dot(S_prev)` its scalar part and the edges'
-commutator its plane. Their ratio is the tangent of half the turning angle times the unit plane, the
-Cayley parameter of the turn; times the filament's circulation, an intrinsic scalar, the plane is a
-point, the step along the binormal. Twice that, over the mean length of the two edges, is the vertex's
+commutator its bivector. Their ratio is the tangent of half the turning angle times the unit bivector,
+the Cayley parameter of the turn; times the filament's circulation, an intrinsic scalar, the bivector is
+a point, the step along the binormal. Twice that, over the mean length of the two edges, is the vertex's
 velocity: on unit edges exactly Hoffmann's `2 * S_prev.commutator(S) * circulation / (1 + S.dot(S_prev))`,
 and in the limit of short edges the curvature times the binormal. The velocity is perpendicular to both
 edges at its vertex, so every edge keeps its length, whatever the lengths are; the vector area of the
@@ -106,14 +106,14 @@ def velocity(points: Point, circulation: Circulation) -> Point:
     outgoing = edges(points)                                                     # [..., n] Point
     incoming = concatenate([outgoing[..., -1:], outgoing[..., :-1]], axis=-1)    # [..., n] Point
     lengths = outgoing.norm() * incoming.norm()                                  # [..., n] Scalar
-    # The commutator of the two edges is the plane of the turn; over the lengths plus the edges paired,
+    # The commutator of the two edges is the bivector of the turn; over the lengths plus the edges paired,
     # it is the tangent of half the turning angle.
-    halving = 2 * incoming.commutator(outgoing) * circulation / (lengths + outgoing.dot(incoming))     # [..., n] Point
-    return halving / ((outgoing.norm() + incoming.norm()) / 2)                   # [..., n] Point
+    binormal_step = 2 * incoming.commutator(outgoing) * circulation / (lengths + outgoing.dot(incoming))   # [..., n] Point
+    return binormal_step / ((outgoing.norm() + incoming.norm()) / 2)             # [..., n] Point
 
 
 def impulse(points: Point) -> Vector:
-    """The vector area of closed polygons, twice over: the sum of each point met with the next."""
+    """The vector area of closed polygons, twice over: the sum of each point joined with the next."""
     return (points & (points + edges(points))).sum(axis=-1)                     # [...] Vector
 
 

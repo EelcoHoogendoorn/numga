@@ -18,8 +18,12 @@ from examples.quadrics.cyclides.core import (
 
 SHAPE = (180, 240)
 PIXELS = sensor(SHAPE, np.radians(90))
+# Frames in each turning animation.
+N_FRAMES = 36
+DURATION_MS = 60
 
 
+# --- math -----------------------------------------------------------------------------
 def placement(toward: Sphere, ahead: np.ndarray, tilt: np.ndarray) -> Motor:
     """Turn the point `toward` onto the point `ahead` rad in front of the eye, after a tilt that keeps it fixed."""
     target = (mv.wx * (ahead / 2)).exp() >> mv.w
@@ -277,15 +281,20 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     return facing.abs(), angle
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quadrics.cyclides import render
 
     save_figure(render.draw_facing(*tori(), SHAPE), "cyclides_tori")
-    save_animation(render.facing_frames(vortex(36), SHAPE), "cyclides_vortex", 60)
+    save_animation(render.facing_frames(vortex(N_FRAMES), SHAPE), "cyclides_vortex", DURATION_MS)
     for name, (build, *_) in FLAT_SCENES.items():
         turning, _ = build()
-        save_animation(render.scene_frames(flat_scene(name, 36 if turning else 1), render.PALETTE, SHAPE), f"cyclides_{name}", 60)
+        save_animation(render.scene_frames(flat_scene(name, N_FRAMES if turning else 1), render.PALETTE, SHAPE), f"cyclides_{name}", DURATION_MS)
     save_figure(render.draw_facing(*dupin(), SHAPE), "cyclides_dupin")
     save_figure(render.draw_facing(*spindles(), SHAPE),
                 "cyclides_spindles")
+
+
+if __name__ == "__main__":
+    main()

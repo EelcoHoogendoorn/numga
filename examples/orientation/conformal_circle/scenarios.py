@@ -9,6 +9,9 @@ from numga import stack
 from examples.orientation.conformal_circle import core
 from examples.orientation.conformal_circle.core import Circle, Path, Point, Sphere, mv
 
+# The duration of each animation frame in milliseconds.
+DURATION_MS = 70
+
 
 def circle() -> tuple[Point, Point, Point, Sphere, Sphere]:
     """Ordered circle points stay fixed while one cutting surface changes side."""
@@ -57,11 +60,14 @@ def circle_motions() -> tuple[Point, Point]:
     return moving_grid, fixed_points
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.orientation.conformal_circle import render
 
     save_figure(render.draw_circle(*circle()), "orientation_conformal_circle")
-    duration_ms = 70
     save_animation(render.animate_circle_motions(*circle_motions()),
-                   "orientation_circle_motions", duration_ms)
+                   "orientation_circle_motions", DURATION_MS)
+
+
+if __name__ == "__main__":
+    main()

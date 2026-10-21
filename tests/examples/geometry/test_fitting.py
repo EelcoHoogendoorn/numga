@@ -11,7 +11,7 @@ from examples.geometry.fitting.core import (
 )
 from examples.geometry.fitting.render import euclidean
 
-POSE = scenarios.pose
+POSE = scenarios.POSE
 
 
 def same_element(a, b, atol: float) -> bool:

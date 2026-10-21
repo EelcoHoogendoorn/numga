@@ -2,25 +2,27 @@
 
 Commuting blades select a left ideal. Multiplication acts on that ideal, and a
 blade chart expresses the representation as an extensor on a smaller real space.
-
-Run with python -m examples.math.extensor_representations.scenarios --dimensions 6.
 """
 
 import numpy as np
 
-from numga import Algebra, Extensor, NumpyContext
+from numga import Algebra, Extensor, GAType, NumpyContext
 
 from examples.math.extensor_representations.core import spinor_layout
 
+# Every signature of every dimension up to this one is represented.
+N_DIMENSIONS = 6
+
 
 # --- math -----------------------------------------------------------------------------
-def main(positive: int, negative: int) -> Extensor:
+def representation(positive: int, negative: int) -> tuple[Algebra, GAType, Extensor]:
+    """The algebra of the given signature, its space of states, and its representation: a map from any
+    multivector to its map on states."""
     ga = Algebra((positive, negative, 0))
     mv = ga.exact.multivector
     Full = ga.gatype.full()
     Spinor, involutions = spinor_layout(ga)
     multiplicity = 2 ** len(involutions)
-    state_dimension = len(Spinor.output_subspace)
 
     # Each commuting blade that squares to one halves the state space. Their
     # projectors commute too, so their product selects the common positive part.
@@ -38,34 +40,34 @@ def main(positive: int, negative: int) -> Extensor:
     state_readout = (multiplicity * Full).cast(Spinor)
     # Multiplied by Full as well, embedding, multiplying on the left and reading out is a map from any
     # multivector to its map on states.
-    representations = state_readout(Full * state_embedding)
+    return ga, Spinor, state_readout(Full * state_embedding)
 
-    # --- checks
-    context = NumpyContext(ga)
-    basis = context.multivector.full(np.eye(ga.blade_count))
-    blade_representations = representations(basis)
-    composition = blade_representations[:, None](blade_representations[None, :])
-    product = representations(basis[:, None] * basis[None, :])
-    identity = representations(context.multivector.scalar())
-    np.testing.assert_array_equal((composition - product).kernel, 0)
-    np.testing.assert_array_equal((identity - Spinor).kernel, 0)
 
-    # The blade images are orthogonal signed permutations, so none of the algebra
-    # is lost, including either split block. Generator relations alone do not test this.
-    coefficients = blade_representations.kernel.reshape(ga.blade_count, -1)
-    np.testing.assert_array_equal(coefficients @ coefficients.T, state_dimension * np.eye(ga.blade_count))
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    for dimension in range(N_DIMENSIONS + 1):
+        for positive in range(dimension, -1, -1):
+            ga, Spinor, representations = representation(positive, dimension - positive)
+            state_dimension = len(Spinor.output_subspace)
+            print(f"Cl({positive},{dimension - positive}): {ga.blade_count:3d} coefficients -> "
+                  f"{state_dimension:2d} x {state_dimension:<2d} real")
 
-    print(f"Cl({positive},{negative}): {ga.blade_count:3d} coefficients -> "
-          f"{state_dimension:2d} x {state_dimension:<2d} real")
-    return representations
+            # checks
+            # The representation of a product is the composition of the representations, and of one the
+            # identity on states.
+            context = NumpyContext(ga)
+            basis = context.multivector.full(np.eye(ga.blade_count))
+            blade_representations = representations(basis)
+            composition = blade_representations[:, None](blade_representations[None, :])
+            product = representations(basis[:, None] * basis[None, :])
+            identity = representations(context.multivector.scalar())
+            np.testing.assert_array_equal((composition - product).kernel, 0)
+            np.testing.assert_array_equal((identity - Spinor).kernel, 0)
+            # The blade images are orthogonal signed permutations, so none of the algebra is lost,
+            # including either split block. Generator relations alone do not test this.
+            coefficients = blade_representations.kernel.reshape(ga.blade_count, -1)
+            np.testing.assert_array_equal(coefficients @ coefficients.T, state_dimension * np.eye(ga.blade_count))
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dimensions", type=int, default=6)
-    arguments = parser.parse_args()
-    for dimension in range(arguments.dimensions + 1):
-        for positive in range(dimension, -1, -1):
-            main(positive, dimension - positive)
+    main()

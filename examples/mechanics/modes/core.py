@@ -1,29 +1,16 @@
-"""Planar rigid-body stiffness, assembled from spring lines with an open twist.
+"""Vibration modes of a suspended plate in PGA2D: stiffness and inertia as maps from twists to forques.
 
-A spring joins a fixed anchor to a point on the body. Its normalized PGA line
-is both its line of action and a measurement: pairing it with a small rigid
-motion gives the spring's extension. Leave that motion open, multiply by the
-same line and the spring constant, and sum. The result is a stiffness extensor
-mapping body displacement to the opposing forque (force and torque).
+A spring is the line from its anchor to its attachment; paired with a twist, `Twist & line`, it reads
+how far the motion stretches the spring, and the spring's stiffness is the dyad
+`line * (Twist & line) * k`, a map from twists to forques. The plate's stiffness is the sum over its
+springs, and its inertia the sum over its mass points, each joined with its own motion under a twist,
+`points & points.commutator(Twist)`. Paired back with a twist, both maps are energies, symmetric forms
+on twists, and the natural modes are the twists where the two energies are proportional: one
+eigenproblem of one form against the other.
 
-Pair the output with another open motion to obtain the bilinear energy form.
-The inertia extensor uses the same input and output spaces; their generalized
-eigenvectors are the body's normal modes. No stiffness or mass matrix entries
-are written by hand: the forms go directly to the library eigensolver.
-
-Two vertical springs allow a sideways slide, a bounce and a rocking motion.
-Adding an off-centre angled spring removes the free slide and couples these
-motions. The plots show each mode's displacement and which springs stretch.
-
-This is a small-motion model about an unstressed equilibrium, with no gravity
-or damping. Springs carry both tension and compression. The sideways mode is
-free to first order, not an exact finite mechanism: sideways motion changes
-the vertical springs' lengths at second order. Displayed displacements are
-enlarged linear mode shapes. A zero-frequency mode released at rest remains
-displaced; the other modes oscillate at their computed natural frequencies.
-
-Run from the repository root with python -m examples.mechanics.modes.scenarios.
-Add --animate to also save plots/modes.gif.
+Two vertical springs let the plate slide sideways freely, bounce and rock; an angled spring removes the
+free slide and mixes the three. The model is linear about an unstressed equilibrium, so the slide is
+free to first order only.
 """
 
 from __future__ import annotations
@@ -111,29 +98,30 @@ def mode_case(
 
 def normal_modes(system: Suspension) -> ModeCase:
     """Stiffness and inertia of one suspension, and its three modes."""
-    # 1. Spring lines of action in PGA (joining anchor to attachment):
+    # Each spring's line, from its anchor to its attachment.
     lines: Forque = (system.anchors & system.attachments).normalized()           # [n_springs] Forque
 
-    # 2. Pairing an open twist with the spring line measures linear stretch (Scalar <- Twist):
+    # How far a twist stretches each spring: the twist paired with the spring's line.
     extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
 
-    # 3. Hooke's law: line of action scaled by extension and spring constant (Forque <- Twist):
+    # Each spring pulls back along its line by its stretch times its constant, Hooke's law.
     spring_stiffness: Stiffness = lines * extension * system.spring_constants    # [n_springs] Forque <- Twist
     stiffness: Stiffness = spring_stiffness.sum(axis=0)                          # [] Forque <- Twist
 
-    # 4. Direction of motion (velocity) of each point under an open twist:
+    # Each mass point's velocity as a map of the twist, and its momentum, the line through it along that
+    # velocity; the inertia is their sum.
     velocities: Point = system.mass_points.commutator(Twist)                     # [mass_points] Point <- Twist
     point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [mass_points] Forque <- Twist
     inertia: Inertia = point_momenta.sum(axis=0)                                 # [] Forque <- Twist
 
-    # 5. Bilinear energy forms (Scalar <- Twist, Twist):
+    # Each map paired with a second twist is an energy, a form on two twists.
     pe_form = Twist & stiffness                                                  # [] Scalar <- (Twist, Twist)
     ke_form = Twist & inertia                                                    # [] Scalar <- (Twist, Twist)
 
-    # 6. Solve generalized symmetric eigenvalue problem directly on bilinear energy forms:
+    # The natural modes: the twists where the two energies are proportional.
     values, modes = pe_form.eigh(ke_form)                                        # values: [modes] Scalar, modes: [modes] Twist
 
-    # 7. Evaluate physical displacements (Lie bracket) and spring extensions:
+    # How each mode moves the corners and the attachments, and stretches the springs.
     body_offsets: Point = system.body[None, :].commutator(modes[:, None])        # [modes, corners] Point
     attachment_offsets: Point = system.attachments[None, :].commutator(modes[:, None])  # [modes, n_springs] Point
     extensions: Scalar = extension(modes[:, None])                               # [modes, n_springs] Scalar

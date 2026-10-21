@@ -21,6 +21,14 @@ def test_turning_the_bar_and_its_handles_turns_the_answer():
 
 
 def test_the_bending_scene_passes_its_checks_and_draws():
-    bar, rigid, laplacian = scenarios.bending()
+    bar, rigid, laplacian, handles, target, last_energies = scenarios.bending()
+    # At the last frame the energy falls with every iteration, and the handles are where they were moved to.
+    energies = last_energies.to_array()
+    assert np.all(np.diff(energies) <= 1e-9 * energies[0])
+    assert (rigid[-1] - target).norm().batch()[handles].to_array().max() < 1e-3
+    # The bar keeps its angles: its corners' cosines change a fraction as much as by Laplacian editing.
+    change = [np.abs((bar.copy(vertices=shape).corner_cosines() - bar.corner_cosines()).to_array()).mean()
+              for shape in (rigid[-1], laplacian[-1])]
+    assert change[0] < 0.5 * change[1]
     images = render.animate(bar, rigid[-1:], np.array([scenarios.LENGTH, 2.0, 2.0]) / scenarios.N_DIVISIONS)
     assert len(images) == 1

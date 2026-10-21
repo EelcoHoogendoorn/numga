@@ -22,7 +22,7 @@ HALF_WIDTH = 10.0
 N_PIXELS = 161
 N_FRAMES = 20
 N_MOVIE_PIXELS = 81
-DURATION_MS = 120
+FRAME_DURATION = 120
 
 
 # --- math -----------------------------------------------------------------------------
@@ -52,7 +52,7 @@ def main() -> None:
     reference, crystals, grid, intensity = comparison()
     movie_grid = core.transfer_grid(HALF_WIDTH, N_MOVIE_PIXELS)
     save_figure(render.comparison(crystals.positions, crystals.reciprocal, grid, intensity), "crystal_diffraction")
-    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", DURATION_MS)
+    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", FRAME_DURATION)
 
     # checks
     # Every phase measured at every atom is kept.

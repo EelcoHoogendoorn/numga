@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 import numpy as np
 
+from numga import stack
 from examples.animation import capture
 from examples.surfaces.koebe import core
 
@@ -19,20 +20,11 @@ ELEVATION, AZIMUTH = 20.0, -60.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for the solves and checks."""
-    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
-
-
-def components(values: core.Vector) -> np.ndarray:
-    """x, y, z and w of a batch of vectors, for the solves."""
-    return values.cast(core.ga.subspace("x y z w")).kernel
-
-
 def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of each point, divided by its weight along w, on the last axis."""
-    xyzw = points.dual_inverse().cast(core.ga.subspace("x y z w")).kernel
-    return xyzw[..., :3] / xyzw[..., 3:]
+    """x, y and z of each point on the last axis: its pairings with the planes x, y and z, over its weight.
+    A point here is the dual of a plane, and w squares to minus one, so its weight is its pairing with -w."""
+    mv = core.mv
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (-mv.w & points)[..., None]).to_array()
 
 
 def edge_distances(apexes: core.Point, edges: np.ndarray) -> np.ndarray:
@@ -52,9 +44,13 @@ def beside(faces: np.ndarray, edges: np.ndarray) -> np.ndarray:
 def circles_on_sphere(circles: core.Vector) -> np.ndarray:
     """Points around each circle on the unit sphere, [..., samples, 3]: the plane `n | x == s` of a circle
     `n + s * w` cuts the sphere at the distance `s / |n|` along `n`."""
-    xyzw = circles.cast(core.ga.subspace("x y z w")).kernel
-    normal = xyzw[..., :3] / np.linalg.norm(xyzw[..., :3], axis=-1, keepdims=True)
-    height = xyzw[..., 3] / np.linalg.norm(xyzw[..., :3], axis=-1)
+    mv = core.mv
+    # A circle's normal part, its inner products with x, y and z, which square to one, and its part along w,
+    # which squares to minus one.
+    along = (circles[..., None] | stack((mv.x, mv.y, mv.z))).to_array()      # [..., 3]
+    offset = -(circles | mv.w).to_array()                                      # [...]
+    normal = along / np.linalg.norm(along, axis=-1, keepdims=True)
+    height = offset / np.linalg.norm(along, axis=-1)
     side = np.cross(normal, np.where(np.abs(normal[..., :1]) < 0.9, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]))
     side /= np.linalg.norm(side, axis=-1, keepdims=True)
     other = np.cross(normal, side)

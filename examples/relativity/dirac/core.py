@@ -116,5 +116,6 @@ def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spi
 
 
 def path(velocities: Bivector, dt: float) -> Bivector:
-    """The positions a velocity carries a point through, from the origin, one step at a time."""
-    return concatenate([velocities[:1] * 0.0, (velocities[:-1] * dt).cumsum(axis=0)])
+    """The positions a velocity carries a point through, from the origin, one step at a time along the
+    last axis."""
+    return concatenate([velocities[..., :1] * 0.0, (velocities[..., :-1] * dt).cumsum(axis=-1)], axis=-1)

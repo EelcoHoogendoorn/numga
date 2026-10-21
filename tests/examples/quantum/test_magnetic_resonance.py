@@ -22,10 +22,10 @@ def test_generator_is_the_bloch_equations():
 
 def test_scenarios_pass_their_checks_and_draw():
     detunings, drives = np.linspace(-2.0, 2.0, 9), np.array([0.1, 1.0])
-    history, settled = scenarios.nutation(np.array([0.0, 0.5]), 1.0, 60.0, 0.05, 20)
+    history, settled, _ = scenarios.nutation(np.array([0.0, 0.5]), 1.0, 60.0, 0.05, 20)
     detuned, ensemble = scenarios.echo(40, 2.0, 2.5, 6.0, 0.01, 20, 1)
     for figure in (render.draw_nutation(history, settled),
-                   render.draw_lines(detunings, drives, scenarios.lines(detunings, drives)),
+                   render.draw_lines(detunings, drives, scenarios.lines(detunings, drives)[0]),
                    render.draw_echo(ensemble, 0.2, 2.5, scenarios.T2),
                    render.draw_decays(*scenarios.echo_decay(40, 2.0, 0.01, 8, 1), scenarios.T2)):
         assert isinstance(figure, plt.Figure)

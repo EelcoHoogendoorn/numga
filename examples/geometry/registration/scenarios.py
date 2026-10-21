@@ -4,37 +4,58 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import stack
 from examples.geometry.registration.core import Point, cloud, fit_motor, fit_motor_alignment, jitter, mv
 
-
-def correspondences() -> tuple[Point, Point]:
-    """The same seeded, noisy rigid correspondences for both fitting methods."""
-    rng = np.random.default_rng(0)
-    source = cloud(60, rng)
-    truth = (mv.xw * 0.75 - mv.yw * 0.25 + mv.zw).exp() * (mv.xy * 0.4 - mv.yz * 0.3 + mv.zx * 0.7).exp()
-    target = jitter(truth >> source, 0.02, rng)
-    return source, target
-
-
-def sandwich_alignment():
-    """Cartesian least squares: center, fit rotation, then match centroids."""
-    source, target = correspondences()
-    estimate = fit_motor_alignment(source, target)
-    return source, target, estimate >> source
+# The source cloud: its points, its spreads along x, y and z, and the seed of its noise; the true motion, a
+# shift after a turn; and the noise that moves each target point.
+N_POINTS = 60
+CLOUD_SPREAD = np.array([2.0, 1.0, 0.5])
+SEED = 0
+SHIFT = np.array([1.5, -0.5, 2.0])
+TURN = np.array([0.8, -0.6, 1.4])
+NOISE = 0.02
 
 
-def one_sided_residual():
-    """Coefficient least squares: fit and normalize a motor in one eigenproblem."""
-    source, target = correspondences()
-    estimate = fit_motor(source, target)
-    return source, target, estimate >> source
+# --- math -----------------------------------------------------------------------------
+def true_motor():
+    """The true motion: a shift after a turn, each the exponential of half its generator."""
+    shift = (stack((mv.xw, mv.yw, mv.zw)) * SHIFT).sum(axis=0) / 2
+    turn = (stack((mv.xy, mv.yz, mv.zx)) * TURN).sum(axis=0) / 2
+    return shift.exp() * turn.exp()
 
 
-if __name__ == "__main__":
+def registration() -> tuple[Point, Point, Point, Point]:
+    """The same noisy rigid correspondences fitted both ways: the source, the target, and the source moved
+    by the centered sandwich alignment and by the one-sided motor residual."""
+    rng = np.random.default_rng(SEED)
+    source = cloud(N_POINTS, CLOUD_SPREAD, rng)                                # [points] Point
+    target = jitter(true_motor() >> source, NOISE, rng)                        # [points] Point
+    return source, target, fit_motor_alignment(source, target) >> source, fit_motor(source, target) >> source
+
+
+def squared_distances(points: Point, targets: Point):
+    """The summed squared distances of points of unit weight from their targets: the squared norms of their
+    differences' complements."""
+    return ((points.normalized() - targets.normalized()).dual().norm_squared()).sum(axis=0)
+
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_figure
     from examples.geometry.registration import render
 
-    save_figure(render.draw_registration(*sandwich_alignment(), "Centered sandwich alignment"),
-                "registration_sandwich_alignment")
-    save_figure(render.draw_registration(*one_sided_residual(), "One-sided motor residual"),
-                "registration_one_sided_residual")
+    source, target, sandwich, one_sided = registration()
+    save_figure(render.draw_registration(source, target, sandwich), "registration_sandwich_alignment")
+    save_figure(render.draw_registration(source, target, one_sided), "registration_one_sided_residual")
+
+    # checks
+    # Centering then aligning minimizes the summed squared point distances, so the one-sided fit cannot beat
+    # it on that measure; both come within the noise of the target, a few centimetres per point.
+    cartesian, coefficient = squared_distances(sandwich, target), squared_distances(one_sided, target)
+    assert cartesian.to_array() <= coefficient.to_array() * (1 + 1e-12)
+    assert np.sqrt(coefficient.to_array() / N_POINTS) < 3 * NOISE * np.sqrt(3)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,15 +1,15 @@
 """Least-squares fitting of projective primitives to noisy samples minimizes the squared join residual in a single eigenproblem.
 
-A point, a line, and a plane are fitted to noisy samples with the same three steps: joining the samples with the open unknown slot, squaring and summing that residual into a quadratic form, and selecting its smallest unit eigenvector. The unit constraint uses the scalar part of the unknown's reverse product, which is degenerate on the position components that least squares leaves free. Because the join is symmetric in its slots, fitting a point to a bundle of lines triangulates their point of closest approach with the same function.
+A point, a line, and a plane are fitted to noisy samples with the same three steps: joining the samples with the unknown, as a map on its type, squaring and summing that residual into a quadratic form, and selecting its smallest unit eigenvector. The unit constraint uses the scalar part of the unknown's reverse product, which is degenerate on the position components that least squares leaves free. Because the join does not care which of its arguments is the sample and which the unknown, fitting a point to a bundle of lines triangulates their point of closest approach with the same function.
 
-In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, lines are bivectors, and points are antivectors (trivectors).
+In 3D Projective Geometric Algebra (`PGA3D`, signature `x+y+z+w0`), planes are vectors, points are antivectors (trivectors), and lines, the joins of points, are bivectors.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from numga import Extensor, GAType, NumpyContext
+from numga import Extensor, GAType, NumpyContext, stack
 from numga.algebras import PGA3D
 
 
@@ -17,7 +17,8 @@ ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Point = ga.gatype.antivector()
-Line = ga.gatype.bivector()
+# A line through points is their join, intrinsic like them.
+Line = ga.gatype.antibivector()
 Plane = ga.gatype.vector()
 
 
@@ -25,26 +26,27 @@ Plane = ga.gatype.vector()
 def fit(Unknown: GAType, samples: Extensor) -> Extensor:
     """Fit a PGA primitive to a batch of points or lines by squared join distance.
 
-    Unknown is the point, line or plane slot being solved for.
+    Unknown is the type solved for: points, lines or planes.
     """
     samples = samples.normalized()
-    # Joining each sample with the open unknown measures its incidence error:
+    # Joining each sample with the unknown measures its incidence error:
     # point & plane is a scalar, point & line a plane, point & point a line.
     residual = samples & Unknown
-    misfit = residual.scalar_norm_squared().sum(axis=0)
+    misfit = residual.scalar_norm_squared().sum(axis=0)                  # [] Scalar <- (Unknown, Unknown)
 
-    # The slot's own metric, the scalar part of the primitive's reverse product, fixes its
+    # The unknown's own metric, the scalar part of the primitive's reverse product, fixes its
     # geometric size, leaving its position free: plane normal, line direction, or point weight
     # has unit norm. For a line it leaves out the condition to be a line, the pseudoscalar part;
     # the fitted moment is the centroid's moment about the fitted direction, which meets that
     # condition. The metric is blind to the ideal components, so for each mode eigh chooses them
     # to minimize the misfit:
-    values, modes = misfit.eigh()
+    values, modes = misfit.eigh()                                        # [modes] Scalar, [modes] Unknown
     return modes[values.argmin()]
 
 
 # --- samples ---------------------------------------------------------------------------
 def cloud(n: int, spread: float, rng: np.random.Generator) -> Point:
+    """Points scattered normally about the origin."""
     return mv.point(rng.normal(scale=spread, size=(n, 3)))
 
 
@@ -55,23 +57,23 @@ def segment(n: int, half_length: float) -> Point:
 
 def patch(n: int, half_width: float, rng: np.random.Generator) -> Point:
     """Points on a square of the plane z == 0."""
-    uv = rng.uniform(-half_width, half_width, size=(n, 2))
-    return mv.w.dual() + mv.direction([1, 0, 0]) * uv[:, 0] + mv.direction([0, 1, 0]) * uv[:, 1]
+    in_plane = mv.direction([[1, 0, 0], [0, 1, 0]])                      # [2] Point
+    return mv.w.dual() + (in_plane * rng.uniform(-half_width, half_width, size=(n, 2))).sum(axis=-1)
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:
     """Move each point by an independent Gaussian translation."""
     noise = rng.normal(scale=sigma, size=(*points.shape, 3))
-    translation = (mv.xw * noise[..., 0] + mv.yw * noise[..., 1] + mv.zw * noise[..., 2]) * 0.5
+    translation = (stack((mv.xw, mv.yw, mv.zw)) * noise).sum(axis=-1) / 2
     return translation.exp() >> points
 
 
 def bundle(n: int, spread: float, rng: np.random.Generator) -> Line:
     """Lines with unit directions, passing near the origin."""
-    directions = rng.normal(size=(n, 3))
-    directions /= np.linalg.norm(directions, axis=1, keepdims=True)
+    directions = mv.direction(rng.normal(size=(n, 3)))
     feet = mv.point(rng.normal(scale=spread, size=(n, 3)))
-    return feet & mv.direction(directions)
+    # A direction has no weight; its length is the norm of its complement.
+    return feet & (directions / directions.dual().norm())
 
 
 # --- clipping geometry -----------------------------------------------------------------

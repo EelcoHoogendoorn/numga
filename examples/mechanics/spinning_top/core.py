@@ -64,7 +64,8 @@ def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray):
 
 
 def inertia(points: Point, masses: np.ndarray):
-    """Momentum <- rate: each mass point joined with its own motion under an open rate."""
+    """The inertia, a map from rates to forques: each mass point joined with its own motion under the
+    rate, its momentum, summed over the points."""
     return (points & points.commutator(Rate) * masses).sum()
 
 

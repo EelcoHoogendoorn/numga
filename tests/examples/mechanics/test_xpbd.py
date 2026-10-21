@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -15,7 +14,7 @@ mv = context.multivector
 
 def test_distance_projection_closes_a_joint():
     """Repeated projection closes the gap between two displaced anchors."""
-    chain, partitions = scenarios.chain(context, 2, 0.1, 5e-2, 0.0, 1e-3, 0.5)
+    chain, partitions = scenarios.chain(context, 1, 0.1, scenarios.SEMI_AXES, 0.0, 0.0, 1e-3, 0.5)
     joints = partitions[0]
     assert core.joint_gaps(chain.motor, partitions).to_array().max() < 1e-12
 
@@ -32,12 +31,12 @@ def test_distance_projection_closes_a_joint():
         )
     world_anchors = pair >> joints.anchors
     assert (world_anchors[0] & world_anchors[1]).norm().to_array().max() < 0.0001
-    # The fixed link has infinite mass: only link 1 moved.
+    # The pin has infinite mass: only link 1 moved.
     np.testing.assert_allclose(pair[0, 0].kernel, motor[0].kernel)
 
 
 def test_velocity_projection_cancels_relative_anchor_velocity():
-    chain, partitions = scenarios.chain(context, 2, 0.1, 5e-2, 1e-9, 1e-3, 0.5)
+    chain, partitions = scenarios.chain(context, 1, 0.1, scenarios.SEMI_AXES, 0.0, 1e-9, 1e-3, 0.5)
     joints = partitions[0]
     motors = chain.motor[joints.bodies]
     rates = chain.rate[joints.bodies] + (mv.xw * 0.5 + mv.yz * 0.3) * np.array([[0.0], [1.0]])
@@ -54,18 +53,17 @@ def test_velocity_projection_cancels_relative_anchor_velocity():
 
 
 def test_numpy_chain_keeps_its_joints_closed_and_draws():
-    """The joints stay closed and the first link fixed; the animation and the figure draw."""
-    centres, gaps = scenarios.swinging_chain(4, 20, 2, 0.02)
+    """The joints stay closed and the pin fixed; the animation draws."""
+    motors, gaps = scenarios.swinging_chain(4, 20, 2, 0.02)
     assert gaps.to_array().max() < 1e-2 * scenarios.LINK_SPACING
-    assert (centres[:, 0] & mv.w.dual()).norm().to_array().max() < 1e-6
-    assert isinstance(render.draw_gaps(gaps), plt.Figure)
-    frames = render.animate_chain(centres[:3])
+    origin = mv.w.dual()
+    assert ((motors[:, 0] >> origin) & origin).norm().to_array().max() < 1e-6
+    frames = render.animate_chain(motors[:3], scenarios.SEMI_AXES, scenarios.LINK_SPACING)
     assert frames and all(f.shape == frames[0].shape for f in frames)
 
 
 def test_jax_chain_matches_numpy():
     pytest.importorskip("jax")
-    numpy_centres, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
-    jax_centres, jax_gaps = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
-    np.testing.assert_allclose(render.euclidean(jax_centres), render.euclidean(numpy_centres), atol=0.0001)
-    assert isinstance(render.draw_gaps(jax_gaps), plt.Figure)
+    numpy_motors, _ = scenarios.swinging_chain(4, 5, 2, 0.02)
+    jax_motors, _ = scenarios.swinging_chain_jax(4, 5, 2, 0.02)
+    np.testing.assert_allclose(np.asarray(jax_motors.kernel), numpy_motors.kernel, atol=0.0001)

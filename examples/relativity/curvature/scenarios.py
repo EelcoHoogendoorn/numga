@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.relativity.curvature import core
-from examples.relativity.curvature.core import lower, mv, time_direction, travel, wave_vector
+from examples.relativity.curvature.core import mv, time_direction, travel, wave_vector
 
 # Wave packet and detector parameters, with the speed of light one.
 # Packet window; the carrier wavelength is `DURATION / N_CYCLES`, two thirds.
@@ -50,8 +50,8 @@ def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector
     # Each bead is x turned toward y by its angle; x and y square to minus one, which turns the sense.
     angles = np.linspace(0, 2 * np.pi, N_BEADS, endpoint=False)
     reference = (mv.xy * (angles / 2)).exp() >> mv.x.dual() * RADIUS                  # [beads] Antivector
-    # The metric turns each tidal force into an acceleration.
-    acceleration = lower.solve(response[:, :, None](reference))                       # [times, polarizations, beads] Antivector
+    # The dual, the metric, turns each tidal force into an acceleration.
+    acceleration = -response[:, :, None](reference).dual()                            # [times, polarizations, beads] Antivector
     displacement = core.integrate_acceleration(time, acceleration)                    # [times, polarizations, beads] Antivector
     return time, profiles[:, None] * POLARIZATIONS, reference, displacement, acceleration
 
@@ -61,7 +61,7 @@ def doppler() -> tuple[np.ndarray, core.Scalar]:
     plus, _ = core.polarizations()
     rapidities = np.linspace(-MAX_RAPIDITY, MAX_RAPIDITY, N_OBSERVERS)
     observers = core.boosted_observers(rapidities, mv.z.dual())                       # [observers] Antivector
-    accelerations = lower.solve(core.tidal_map(plus, observers))                      # [observers] Antivector <- Antivector
+    accelerations = -core.tidal_map(plus, observers).dual()                           # [observers] Antivector <- Antivector
     return rapidities, accelerations.svdvals()[..., 0]                                # [observers] Scalar
 
 

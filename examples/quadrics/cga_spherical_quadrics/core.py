@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import Algebra, NumpyContext, stack
 
 ga = Algebra("x+y+z+w-")
 ctx = NumpyContext(ga)
@@ -30,12 +30,12 @@ Rotor = ga.gatype.rotor()
 
 def point(xyz: np.ndarray) -> Point:
     """The points of S² at (..., 3) unit coordinates: the duals of their null vectors, with weight one on w."""
-    return (mv.x * xyz[..., 0] + mv.y * xyz[..., 1] + mv.z * xyz[..., 2] + mv.w).dual()
+    return ((stack((mv.x, mv.y, mv.z)) * xyz).sum(axis=-1) + mv.w).dual()
 
 
-def moved(Q: Quadric, versor: Rotor) -> Quadric:
+def moved(quadric: Quadric, versor: Rotor) -> Quadric:
     """A quadric carried by a versor: pull the point back, push the plane forward."""
-    return versor >> Q(versor << Point)
+    return versor >> quadric(versor << Point)
 
 
 # --- shapes ---------------------------------------------------------------------------

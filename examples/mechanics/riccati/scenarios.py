@@ -66,7 +66,7 @@ def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
 
 
 # --- plumbing -------------------------------------------------------------------------
-if __name__ == "__main__":
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.mechanics.riccati import render
 
@@ -80,3 +80,7 @@ if __name__ == "__main__":
     commands = concatenate((commands, commands[-1:] * 0))         # [steps + 1, cases, thrusters] Scalar
     save_animation(render.animate(HULL, MOUNTS, DIRECTIONS, poses, commands, LABELS, ARROW_SCALE),
                    "riccati", DURATION_MS)
+
+
+if __name__ == "__main__":
+    main()

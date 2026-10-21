@@ -5,21 +5,24 @@ from __future__ import annotations
 from examples.mechanics.modes import core
 from examples.mechanics.modes.core import ModeCase
 
+# The frames of the animation, and the time per frame.
+N_FRAMES = 120
+DURATION_MS = 50
+
 
 def suspensions() -> list[ModeCase]:
     """Two vertical springs, then the same with an off-centre angled spring added."""
     return [core.normal_modes(core.suspension(2)), core.normal_modes(core.suspension(3))]
 
 
-if __name__ == "__main__":
-    import argparse
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.mechanics.modes import render
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--animate", action="store_true", help="Also save the normal modes as a GIF.")
-    args = parser.parse_args()
     coupled = suspensions()[1:]
     save_figure(render.draw_modes(coupled), "modes")
-    if args.animate:
-        save_animation(render.animate_modes(coupled, 120), "modes", 50)
+    save_animation(render.animate_modes(coupled, N_FRAMES), "modes", DURATION_MS)
+
+
+if __name__ == "__main__":
+    main()

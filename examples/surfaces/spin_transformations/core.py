@@ -6,8 +6,8 @@ A spin transformation changes a surface's mean curvature by a prescribed amount 
 angle: a quaternion at each vertex turns and scales the edges around it. The quaternions are the field
 of least energy, the area-weighted squared residual of the Dirac operator less the curvature change, and
 the new vertices are those whose edges best match the turned ones. In the algebra of space the
-quaternions are the even multivectors, and the vertices and edges are points, antivectors, intrinsic:
-bivectors, the paper's imaginary quaternions. The Dirac operator's couplings are bivectors, the curvature
+quaternions are the even multivectors, and the vertices and edges are points, antivectors, intrinsic,
+which in three dimensions are bivectors. The Dirac operator's couplings are bivectors, the curvature
 change a scalar against the sense the surface turns, and the operators are sparse linear maps between
 fields on the vertices, edges and faces, coupling their elements through multivectors.
 """

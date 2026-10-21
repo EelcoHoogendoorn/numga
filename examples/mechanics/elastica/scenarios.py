@@ -93,12 +93,17 @@ def uncoiling() -> core.Motor:
     return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, N_PIECES)
 
 
+def cord_tilt() -> core.Motor:
+    """The turn by the cord's pitch from the rod's cross-section towards its length: it tilts the coil's
+    turn, about the line along x, towards the line along z."""
+    return ((mv.x ^ mv.z) * (-np.radians(CORD_PITCH) / 2)).exp()             # [] Motor
+
+
 def coil(n_pieces: int) -> tuple[core.Twist, core.Motor]:
     """The cord at rest: its turn per unit length, a shift along it with a bend and a twist that coil it, and
     the rest frames of its segments with one held frame beyond each end `[pieces + 2]`."""
     turning = 2 * np.pi * N_CORD_COILS / CORD_LENGTH
-    pitch = np.radians(CORD_PITCH)
-    rest = core.shift_along_rod + mv.yz * (turning * np.cos(pitch)) + mv.xy * (turning * np.sin(pitch))   # [] Twist
+    rest = core.shift_along_rod + (cord_tilt() >> mv.yz) * turning          # [] Twist
     step = CORD_LENGTH / n_pieces
     return rest, (rest * (np.arange(-1, n_pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor
 
@@ -115,7 +120,7 @@ def pulled() -> Iterator[core.Motor]:
     inverse = inertia.inverse()                                              # [] Twist <- Forque
     weight = mv.y.dual() * (-GRAVITY * mass)                                 # [] Point
     # The coil's axis is the direction of its turn; the handset moves along it, keeping its turn.
-    axis = mv.x * np.cos(np.radians(CORD_PITCH)) + mv.z * np.sin(np.radians(CORD_PITCH))   # [] Vector
+    axis = cord_tilt() >> mv.x                                               # [] Vector
     handset = frames[-1]
     rates = mv.bivector(np.zeros((n_pieces, 6)))
     joint = (rest * (step / 2)).exp()                                        # [] Motor

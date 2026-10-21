@@ -12,6 +12,17 @@ from examples.quadrics.cga_spherical_quadrics.core import (
     moved, mv, point,
 )
 
+# The two circles whose intersection generates the flow: each the plane z tilted toward x or y, and its radius.
+FIRST_TILT, FIRST_RADIUS = 0.35, np.radians(48.0)
+SECOND_TILT, SECOND_RADIUS = 0.40, np.radians(52.0)
+# The shapes carried, by name in `shapes`; the frames of one turn, the pixels across, the traced pixels along
+# each side of a shown one, and a frame's duration in milliseconds.
+SHAPES = ["trio"]
+N_FRAMES = 60
+RESOLUTION = 300
+SUPERSAMPLE = 2
+FRAME_DURATION = 33
+
 
 def shapes() -> dict[str, tuple[Quadric, list[str]]]:
     """Every shape, tilted into view, with its colour; the trio combines three of them."""
@@ -47,40 +58,43 @@ def shapes() -> dict[str, tuple[Quadric, list[str]]]:
     return table
 
 
-def vortex(names: list[str], frames: int) -> tuple[Quadric, list[str]]:
+def vortex_generator():
+    """The intersection 2-blade of two off-centre circles, each the plane z tilted toward x or y with its
+    radius: its exponential is the conformal flow."""
+    return make_circle_intersection_vortex(
+        (mv.zx * (-FIRST_TILT / 2)).exp() >> mv.z, FIRST_RADIUS,
+        (mv.zy * (-SECOND_TILT / 2)).exp() >> mv.z, SECOND_RADIUS,
+    )
+
+
+def vortex(names: list[str], n_frames: int) -> tuple[Quadric, list[str]]:
     """The chosen shapes carried once around by the exponential of two circles' intersection."""
     table = shapes()
     quadrics = Extensor.concatenate([table[name][0] for name in names])
     colors = [color for name in names for color in table[name][1]]
-    generator = make_circle_intersection_vortex(
-        (mv.zx * (-0.35 / 2)).exp() >> mv.z, np.radians(48.0),
-        (mv.zy * (-0.40 / 2)).exp() >> mv.z, np.radians(52.0),
-    )
-    world = flow(quadrics, generator, np.linspace(0.0, 2.0 * np.pi, frames, endpoint=False))
+    world = flow(quadrics, vortex_generator(), np.linspace(0.0, 2.0 * np.pi, n_frames, endpoint=False))
+    return world, colors
 
-    # --- checks ---------------------------------------------------------------------------
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    from examples.animation import save_animation
+    from examples.quadrics.cga_spherical_quadrics import render
+
+    world, colors = vortex(SHAPES, N_FRAMES)
+    save_animation(render.vortex_frames(world, colors, RESOLUTION, SUPERSAMPLE), f"cga_{'_'.join(SHAPES)}_vortex", FRAME_DURATION)
+
+    # checks
     # The flow is conformal, so points of S² stay null; and a full turn brings every quadric back.
+    generator = vortex_generator()
+    quadrics = Extensor.concatenate([shapes()[name][0] for name in SHAPES])
     probes = point(np.array([[0.6, 0.0, 0.8], [0.0, -0.28, 0.96], [0.36, 0.48, 0.8]]))
     carried = (generator * 0.4).exp() >> probes
     np.testing.assert_allclose((carried | carried).to_array(), 0.0, atol=1e-12)
     returned = flow(quadrics, generator, np.array([2.0 * np.pi]))[0]
     np.testing.assert_allclose((returned(probes[:, None]) & probes[:, None]).to_array(),
                                (quadrics(probes[:, None]) & probes[:, None]).to_array(), atol=1e-6)
-    return world, colors
 
 
 if __name__ == "__main__":
-    import argparse
-    from examples.animation import save_animation
-    from examples.quadrics.cga_spherical_quadrics import render
-
-    parser = argparse.ArgumentParser(description="Spherical quadric vortex in Cl(3, 1)")
-    parser.add_argument("--shape", type=str, default="trio", help="comma-separated names: " + ", ".join(shapes()))
-    parser.add_argument("--frames", type=int, default=60)
-    parser.add_argument("--resolution", type=int, default=300)
-    parser.add_argument("--supersample", type=int, default=2)
-    args = parser.parse_args()
-
-    names = [name.strip() for name in args.shape.split(",")]
-    world, colors = vortex(names, args.frames)
-    save_animation(render.vortex_frames(world, colors, args.resolution, args.supersample), f"cga_{'_'.join(names)}_vortex", 33)
+    main()

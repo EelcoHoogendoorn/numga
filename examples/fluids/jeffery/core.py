@@ -7,17 +7,14 @@ fluid itself would both turn and stretch with it; a rigid particle can only turn
 presses on it until it turns at the one rate that leaves no torque on it, found by Jeffery in 1922.
 
 The particle is an ellipsoid, a stretch of the unit sphere along its own axes, and its shape is the
-stretch applied twice: a map `Shape = Point <- Point` whose surface is the offsets `x` with
-`x.dot(shape.solve(x)) == 1`. Jeffery's spin, a bivector, makes the shape's product with the particle's
-turning map, from both sides, equal to the gradient's product with the shape less the shape's with
-the gradient's adjoint:
+stretch applied twice: a map `Shape = Point <- Point` whose surface is the offsets with
+`offset.dot(shape.solve(offset)) == 1`. Jeffery's spin, a bivector, satisfies one equation between maps:
 
     shape(turning) + turning(shape) == gradient(shape) - shape(gradient.adjoint())
 
 with `turning = Point.commutator(spin)`, the velocity each offset has under the spin. Both sides are
 antisymmetric maps, so their curls, `Point.reverse().commutator(map(Point)).contract(1, 2)`, carry them
-whole: a
-linear map from the spin's bivector to a bivector, and one solve. A sphere spins at the flow's own
+whole: a linear map from the spin's bivector to a bivector, and one solve. A sphere spins at the flow's own
 rate, half the curl of the gradient. A rod lingers along the flow, then flips end over end, and its
 axis comes back to where it started after a fixed time, on a closed path on the sphere of
 directions: a Jeffery orbit. An ellipsoid with three different axes never quite repeats.
@@ -46,7 +43,7 @@ Stretch = ga.gatype((Point, Point))                        # Point <- Point: the
 Shape = ga.gatype((Point, Point))                          # Point <- Point: the body's quadric
 Gradient = ga.gatype((Point, Point))                       # Point <- Point: velocity per offset
 
-# The planes across the flow, the gradient and the vorticity.
+# The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
 axes = mv.basis()                                          # [3] Plane
 
 

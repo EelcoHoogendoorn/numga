@@ -3,8 +3,9 @@
 One spin lives in the directions x y z, the other in X Y Z. The state of one spin is an even
 multivector of its own space, as in the Pauli algebra; the state of the pair is a product of the
 two, taken in the ideal of the correlator `CORRELATOR = 0.5 * (1 - xy * XY)`. In that ideal,
-multiplying on the right by either spin's xy plane is the same: it is `IMAGINARY = CORRELATOR * xy`,
-the pair's imaginary unit. The two spins' planes act on the pair from the left, and planes of
+multiplying on the right by either spin's xy plane is the same: it is the reference spin,
+`REFERENCE_SPIN = CORRELATOR * xy`, which the state with both spins up carries to `xy + XY` and every
+state to its own spin. The two spins' planes act on the pair from the left, and planes of
 different spins commute. A state is normalized to `2 * (state >> ONE)` of one in its scalar part.
 
 The exchange interaction couples each plane of one spin to the same plane of the other:
@@ -13,7 +14,7 @@ multivectors `(1 + COUPLING) / 4` and `(3 - COUPLING) / 4` are idempotent and su
 every state into its singlet part, on which the coupling is 3, and its triplet part, on which it is
 -1. Over time each part turns by its own rotor in the xy plane, multiplied on the right.
 
-What one spin shows by itself is the part of its spin, `2 * (state >> IMAGINARY)`, in its own
+What one spin shows by itself is the part of its spin, `2 * (state >> REFERENCE_SPIN)`, in its own
 planes, read as a vector of its space: its Bloch vector, of length one when the spin is in a state
 of its own and shorter when the pair is entangled. What the two spins show together are their
 correlations along a direction of each: a map from the second spin's directions to the first's,
@@ -39,7 +40,8 @@ first spin's directions and the plane spanned by the second's. Neither plane is 
 no state takes the combination past `2 * sqrt(2)`.
 
 In bra-ket notation the state reads as a ket of two qubits, `-(pseudoscalar * direction) * state *
-IMAGINARY` as the Pauli operator along a direction of one spin, `-COUPLING` as the Hamiltonian
+REFERENCE_SPIN` as the Pauli operator along a direction of one spin, right multiplication by
+`REFERENCE_SPIN` as multiplication by i, `-COUPLING` as the Hamiltonian
 sigma_1 . sigma_2, the Bloch vector of one spin as the trace of its reduced density matrix against
 the Pauli matrices, the correlation map as the correlation tensor, and the Bell element as the CHSH
 operator.
@@ -68,9 +70,9 @@ FirstSpinor = ga.gatype.even().derive.within("x y z")
 SecondSpinor = ga.gatype.even().derive.within("X Y Z")
 Spinor = (FirstSpinor * SecondSpinor).output_gatype
 Correlation = ga.gatype((First, Second))                                       # First <- Second
-# The correlator, and the pair's imaginary unit.
+# The correlator, and the reference spin, which every state carries to its own spin.
 CORRELATOR = 0.5 * (ONE - mv.xy * mv.XY)                                       # [] Spinor
-IMAGINARY = CORRELATOR * mv.xy                                                 # [] Spinor
+REFERENCE_SPIN = CORRELATOR * mv.xy                                            # [] Spinor
 # The coupling of the exchange, and the singlet and triplet parts it splits the states into.
 COUPLING = mv.yz * mv.YZ + mv.zx * mv.ZX + mv.xy * mv.XY                       # [] Spinor
 SINGLET = 0.25 * (ONE + COUPLING)                                              # [] Spinor
@@ -96,9 +98,9 @@ def qubit_turn(state: Spinor, exchange_rate: np.ndarray, difference: np.ndarray,
     differs between the spins. Such a state is a combination of the singlet and the triplet of zero spin
     along z, on which the generator applied twice is minus the rate squared: its exponential is a cosine
     and a sine, as for a rotor."""
-    # The exchange, minus one on the singlet and one on the triplet, times minus the imaginary unit; and
+    # The exchange, minus one on the singlet and one on the triplet, turned about the reference spin; and
     # the field difference, turning the first spin's xy plane against the second's.
-    generator = -exchange_rate * (0.5 * (ONE - COUPLING) * state) * IMAGINARY - difference * 0.5 * (mv.xy - mv.XY) * state   # [...] Spinor
+    generator = -exchange_rate * (0.5 * (ONE - COUPLING) * state) * REFERENCE_SPIN - difference * 0.5 * (mv.xy - mv.XY) * state   # [...] Spinor
     rate = np.sqrt(exchange_rate**2 + difference**2)
     return np.cos(rate * times) * state + np.sin(rate * times) / rate * generator   # [...] Spinor
 
@@ -117,7 +119,7 @@ def qubit(state: Spinor) -> tuple[Scalar, Scalar, Scalar]:
 
 def bloch(state: Spinor) -> tuple[First, Second]:
     """Each spin's Bloch vector: the part of the spin in its own planes, read as a vector of its space."""
-    spin = 2 * (state >> IMAGINARY)                                            # [...] Bivector
+    spin = 2 * (state >> REFERENCE_SPIN)                                       # [...] Bivector
     first = I_FIRST.inverse() * spin.cast(FirstPlanes)                         # [...] First
     second = I_SECOND.inverse() * spin.cast(SecondPlanes)                      # [...] Second
     return first, second
@@ -133,9 +135,9 @@ def correlation(state: Spinor) -> Correlation:
 def steer(state: Spinor, direction: First) -> tuple[Scalar, Second]:
     """Measuring the first spin along a unit direction and finding +1: how likely that is, and the
     second spin's Bloch vector after. The first spin's value along the direction acts on the pair
-    from the left as `-(I_FIRST * direction) * state * IMAGINARY`, and the measurement keeps the part
+    from the left as `-(I_FIRST * direction) * state * REFERENCE_SPIN`, and the measurement keeps the part
     of the state on which it is +1."""
-    measured = 0.5 * (state - (I_FIRST * direction) * state * IMAGINARY)      # [...] Spinor
+    measured = 0.5 * (state - (I_FIRST * direction) * state * REFERENCE_SPIN) # [...] Spinor
     probability = expectation(ONE, measured)                                   # [...] Scalar
     _, steered = bloch(measured / probability.square_root())                   # [...] Second
     return probability, steered

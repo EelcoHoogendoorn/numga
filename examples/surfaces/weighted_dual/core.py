@@ -109,4 +109,6 @@ def weighted(directions: Point, weights: np.ndarray) -> Point:
 def hull(points: Point) -> np.ndarray:
     """The faces of the convex hull of points around the centre. The one step outside the algebra: scipy
     finds the triangles from the points' coordinates."""
-    return ConvexHull(points.cast(ga.subspace("yz zx xy")).kernel).simplices  # [faces, 3]
+    # Each point read by pairing it with the planes across x, y and z.
+    coordinates = (stack((mv.x, mv.y, mv.z), axis=-1) & points[..., None]).to_array()   # [points, 3]
+    return ConvexHull(coordinates).simplices                                  # [faces, 3]

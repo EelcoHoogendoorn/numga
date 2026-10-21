@@ -172,7 +172,7 @@ class Scattering:
 
 
 def scatter(entrance: Outgoing, incident: Ports) -> Scattering:
-    """Solve the interface conditions with the incident polarization left open.
+    """Solve the interface conditions as maps on the incident polarization.
 
     The entrance state is the substrate's outgoing wave, carried back through any coating to the
     entrance face.

@@ -11,6 +11,16 @@ from examples.math.spin_groups import core
 
 mv = core.mv
 SIGNATURES = ((3, 0), (2, 1), (4, 0), (3, 1), (2, 2), (5, 0), (4, 1), (3, 2), (6, 0), (5, 1), (4, 2), (3, 3))
+# The seed of the sample bivectors and of the random rotor.
+SEED = 0
+# The starts of the orbits: a ring of azimuths around the xy plane at each height along z, and the
+# steps along one full turn.
+N_AZIMUTHS = 12
+HEIGHTS = np.array([0.25, 0.6, 1.0])
+N_STEPS = 240
+# The frames of the animation, and the time per frame.
+N_FRAMES = 80
+DURATION_MS = 60
 
 
 # --- math -----------------------------------------------------------------------------
@@ -25,15 +35,6 @@ def zoo(signatures: tuple[tuple[int, int], ...], seed: int) -> Iterator[tuple]:
         factor = form.materialize(core.context)(sample, sample) / (sample | sample)   # [] Scalar
         signs = core.involution(Bivector, positives).eigvals()                  # [generators] Scalar
         square = (pseudoscalar * pseudoscalar).select[0]                        # [] Scalar
-
-        # --- checks
-        # The invariant form is 2 * (n - 2) times the inner product, exactly; the involution fixes
-        # p * (p - 1) // 2 + q * (q - 1) // 2 planes and negates p * q.
-        n = p + q
-        inner = (Bivector | Bivector).materialize(core.context)
-        np.testing.assert_array_equal(form.materialize(core.context).kernel, 2 * (n - 2) * inner.kernel)
-        values = np.real(signs.to_array())
-        assert (values > 0).sum() == p * (p - 1) // 2 + q * (q - 1) // 2 and (values < 0).sum() == p * q
         yield p, q, factor, signs, square
 
 
@@ -44,38 +45,26 @@ def centres(signatures: tuple[tuple[int, int], ...]) -> Iterator[tuple]:
     for p, q in signatures:
         _, Even, _, pseudoscalar = core.signature(p, q)
         action = (pseudoscalar * Even).eigvals()                               # [spinors] Scalar
-
-        # --- checks
-        # The eigenvalues square to the pseudoscalar's square.
-        square = (pseudoscalar * pseudoscalar).select[0].to_array()
-        np.testing.assert_allclose(action.to_array() ** 2, square, atol=1e-12)
         yield p, q, action
 
 
-def split(seed: int) -> tuple[core.Extensor, core.Extensor, core.Extensor]:
-    """A random rotor of the four Euclidean directions and its two isoclinic factors."""
+def split(seed: int) -> tuple[core.Extensor, core.Extensor, core.Extensor, core.Extensor, core.Extensor]:
+    """A random rotor of the four Euclidean directions and its two isoclinic factors, and the two
+    halves of its generator they are the exponentials of."""
     Bivector, _, _, pseudoscalar = core.signature(4, 0)
     generator = mv(Bivector, np.random.default_rng(seed).normal(size=6))   # [] Bivector
     along, against = core.isoclinic(generator, pseudoscalar)                   # [] Bivector each
     rotor = generator.exp()                                                    # [] Rotor
     left, right = along.exp(), against.exp()                                   # [] Rotor each
-
-    # --- checks
-    # The halves commute, the factors multiply to the rotor, and each factor turns all its planes
-    # through one angle.
-    np.testing.assert_allclose((along * against - against * along).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((left * right - rotor).kernel, 0.0, atol=1e-8)
-    for factor in (left, right):
-        angles = np.abs(np.angle((factor >> core.Euclidean).eigvals().to_array()))
-        np.testing.assert_allclose(angles, angles[0], atol=1e-9)
-    return rotor, left, right
+    return rotor, left, right, along, against
 
 
-def flows(azimuths: int, heights: np.ndarray, count: int) -> tuple[core.Extensor, core.Extensor, core.Extensor]:
+def flows(azimuths: int, heights: np.ndarray, count: int
+          ) -> tuple[core.Extensor, core.Extensor, core.Extensor, core.Extensor, core.Extensor]:
     """The orbits of points of the three-sphere under the two isoclinic flows, turning xy together with
     zw one way and the other, and under a rotation turning xy twice while zw turns three times, the
     two flows combined at different rates, `5 * against - along`, from one start at each height; all
-    projected into space."""
+    projected into space. Then the planes of the two flows."""
     _, _, _, pseudoscalar = core.signature(4, 0)
     # The planes of the two flows: xy turned along with its dual plane, and against it.
     along, against = core.isoclinic(mv.xy, pseudoscalar)                       # [] Bivector each
@@ -88,26 +77,55 @@ def flows(azimuths: int, heights: np.ndarray, count: int) -> tuple[core.Extensor
     left = core.stereographic((2 * along * turn).exp() >> starts[..., None])  # [heights, azimuths, count + 1] Space
     right = core.stereographic((2 * against * turn).exp() >> starts[..., None])   # [heights, azimuths, count + 1] Space
     knotted = core.stereographic(((2 * mv.xy + 3 * mv.zw) * turn).exp() >> starts[:, :1, None])   # [heights, 1, count + 1] Space
+    return left, right, knotted, along, against
 
-    # --- checks
+
+def main() -> None:
+    from examples.animation import save_animation, save_figure
+    from examples.math.spin_groups import render
+
+    rows = list(zoo(SIGNATURES, SEED))
+    actions = list(centres(tuple(s for s in SIGNATURES if sum(s) % 2 == 0)))
+    print(render.table(rows, actions))
+    rotor, left_factor, right_factor, along_generator, against_generator = split(SEED)
+    left, right, knotted, along, against = flows(N_AZIMUTHS, HEIGHTS, N_STEPS)
+    save_figure(render.draw_flows(left, right, knotted), "spin_groups_isoclinic")
+    save_animation(render.animate_flows(left, right, knotted, N_FRAMES), "spin_groups_isoclinic", DURATION_MS)
+
+    # checks
+    # The invariant form is 2 * (n - 2) times the inner product, exactly; the involution fixes
+    # p * (p - 1) // 2 + q * (q - 1) // 2 planes and negates p * q.
+    for p, q, _, signs, _ in rows:
+        Bivector, _, _, _ = core.signature(p, q)
+        form = core.invariant_form(Bivector)                                   # [] Scalar <- (Bivector, Bivector), exact
+        n = p + q
+        inner = (Bivector | Bivector).materialize(core.context)
+        np.testing.assert_array_equal(form.materialize(core.context).kernel, 2 * (n - 2) * inner.kernel)
+        values = np.real(signs.to_array())
+        assert (values > 0).sum() == p * (p - 1) // 2 + q * (q - 1) // 2 and (values < 0).sum() == p * q
+    # The eigenvalues of the pseudoscalar on the spinors square to the pseudoscalar's square.
+    squares = {(p, q): square for p, q, _, _, square in rows}
+    for p, q, action in actions:
+        np.testing.assert_allclose(action.to_array() ** 2, squares[p, q].to_array(), atol=1e-12)
+    # The halves of the random rotor's generator commute, the factors multiply to the rotor, and each
+    # factor turns all its planes through one angle.
+    np.testing.assert_allclose((along_generator * against_generator - against_generator * along_generator).kernel,
+                               0.0, atol=1e-12)
+    np.testing.assert_allclose((left_factor * right_factor - rotor).kernel, 0.0, atol=1e-8)
+    for factor in (left_factor, right_factor):
+        angles = np.abs(np.angle((factor >> core.Euclidean).eigvals().to_array()))
+        np.testing.assert_allclose(angles, angles[0], atol=1e-9)
     # Turning xy twice while zw turns three times is the flow against run five times over and the flow
     # along run once backward. Every orbit closes, and two orbits of one flow link once, with opposite
     # signs for the two flows.
     np.testing.assert_allclose((2 * mv.xy + 3 * mv.zw - (5 * against - along)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((left[..., 0] - left[..., -1]).kernel, 0.0, atol=1e-5)
     np.testing.assert_allclose((knotted[..., 0] - knotted[..., -1]).kernel, 0.0, atol=1e-5)
-    forward = core.linking(left[0, 0], left[-1, azimuths // 3])
-    backward = core.linking(right[0, 0], right[-1, azimuths // 3])
+    forward = core.linking(left[0, 0], left[-1, N_AZIMUTHS // 3])
+    backward = core.linking(right[0, 0], right[-1, N_AZIMUTHS // 3])
     np.testing.assert_allclose(forward.norm().to_array(), 1.0, atol=1e-2)
     np.testing.assert_allclose((forward + backward).kernel, 0.0, atol=1e-2)
-    return left, right, knotted
 
 
 if __name__ == "__main__":
-    from examples.animation import save_animation, save_figure
-    from examples.math.spin_groups import render
-
-    print(render.table(zoo(SIGNATURES, 0), centres(tuple(s for s in SIGNATURES if sum(s) % 2 == 0))))
-    orbits = flows(12, np.array([0.25, 0.6, 1.0]), 240)
-    save_figure(render.draw_flows(*orbits), "spin_groups_isoclinic")
-    save_animation(render.animate_flows(*orbits, 80), "spin_groups_isoclinic", 60)
+    main()

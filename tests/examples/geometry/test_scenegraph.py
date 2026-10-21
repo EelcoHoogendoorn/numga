@@ -40,7 +40,7 @@ def test_compound_optics_lands_on_the_sensor():
 
 
 def test_scenario_renders():
-    """The scenario passes its checks; its figures and a short animation render."""
+    """The figures and a short animation render."""
     world_vertices, projected_pixels, camera_pose, rays = scenarios.scenegraph()
     figures = [
         render.draw_scenegraph(world_vertices, projected_pixels, camera_pose, rays),

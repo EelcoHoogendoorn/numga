@@ -11,15 +11,16 @@ from numga import stack
 from examples.fluids.jeffery import core
 
 Point = core.Point
-x, y, z = core.axes                                        # the planes across the flow, gradient and vorticity
+# The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
+x, y, z = core.axes
 # The bodies, a sphere, a rod and an ellipsoid with three different axes: their semi-axes, and the rod's long
 # semi-axis over its short ones.
 SEMI_AXES = np.array([[1.0, 1.0, 1.0], [4.0, 1.0, 1.0], [4.0, 2.0, 1.0]])
 ASPECT = 4.0
 # The flow: its velocity along the first axis, per offset along the second.
 SHEAR_RATE = 1.0
-# The angles of each body's long axis from the vorticity axis at the start, in the plane of the flow
-# and the vorticity, and the start the animation shows.
+# The angles of each body's long axis from the normal of the vortex plane at the start, in the plane of the flow
+# and that normal, and the start the animation shows.
 TILTS = np.array([0.15, 0.4, 0.7, 1.0, 1.3])
 SHOWN = 2
 # The time span in periods of the rod's orbit, the steps per period, and the steps per frame.

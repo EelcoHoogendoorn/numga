@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
+from numga import NumpyContext, stack
 from numga.algebras import PGA3D
 
 
@@ -27,7 +27,7 @@ Vector = ga.gatype.vector().derive.nondegenerate
 def fit_motor(source: Point, target: Point) -> Motor:
     """Fit a motor by the coefficient residual of the one-sided equations."""
     source, target = source.normalized(), target.normalized()
-    # target * Motor == Motor * source leaves the unknown motor in a single linear slot.
+    # target * Motor == Motor * source is linear in the motor: the residual is a map on motors.
     residual = target * Motor - Motor * source
 
     # The bulk norm alone would discard translation: the PGA scalar product is degenerate on
@@ -70,12 +70,13 @@ def fit_motor_alignment(source: Point, target: Point) -> Motor:
 
 
 # --- samples ---------------------------------------------------------------------------
-def cloud(n: int, rng: np.random.Generator) -> Point:
-    return mv.point(rng.normal(size=(n, 3)) * [2.0, 1.0, 0.5])
+def cloud(n_points: int, spread: np.ndarray, rng: np.random.Generator) -> Point:
+    """Points scattered normally about the origin, with the given spreads along x, y and z."""
+    return mv.point(rng.normal(size=(n_points, 3)) * spread)
 
 
 def jitter(points: Point, sigma: float, rng: np.random.Generator) -> Point:
     """Move each point by an independent Gaussian translation."""
     noise = rng.normal(scale=sigma, size=(*points.shape, 3))
-    translation = (mv.xw * noise[..., 0] + mv.yw * noise[..., 1] + mv.zw * noise[..., 2]) * 0.5
+    translation = (stack((mv.xw, mv.yw, mv.zw)) * noise).sum(axis=-1) / 2
     return translation.exp() >> points

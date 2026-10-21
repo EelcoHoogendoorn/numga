@@ -6,9 +6,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.projection import core, render, scenarios
-from examples.geometry.projection.core import Camera, Correspondence, Line, Plane, Point, cube, ga
+from examples.geometry.projection.core import Camera, Correspondence, Line, Plane, Point, cube, ga, mv
 from examples.geometry.projection.render import screen_coordinates
-from examples.geometry.projection.scenarios import mv, origin
+
+origin = mv.w.dual()
 
 
 def dehomogenize(p: Point) -> np.ndarray:
@@ -44,7 +45,7 @@ def test_camera_is_a_rank_three_projection():
 
 
 def test_ternary_projector_binds_to_camera():
-    """Binding centre and screen of the open ternary projector yields the camera map."""
+    """Binding centre and screen of the projector, a map on centre, point and screen, yields the camera map."""
     projector = Point.regressive(Point).wedge(Plane)
     assert projector.gatype <= ga.gatype((Point, Point, Point, Plane))
     assert projector.kernel.shape == (4, 4, 4, 4)
@@ -143,7 +144,7 @@ def test_fundamental_form_and_epipolar_geometry():
 
 
 def test_shadow_trail_agrees_with_the_body_shadow():
-    """Reopening the light slot reproduces the corner's shadow under the bound light."""
+    """The shadow as a map on the light reproduces the corner's shadow under that light."""
     body = cube(1.0)
     ground = mv.z
     light = mv.point(np.array([1.0, -1.0, 4.0]))
@@ -156,11 +157,7 @@ def test_shadow_trail_agrees_with_the_body_shadow():
 
 def test_stereo_correspondence_and_epipolar_lines_vanish():
     """Corresponding images annihilate the form, and epipolar lines meet their points."""
-    subject = (mv.zw * 2.5).exp() >> cube(1.6)
-    screen = mv.z - mv.w
-    rig_1 = (mv.xw * -0.3).exp() * (mv.xz * +0.06).exp()
-    rig_2 = (mv.xw * +0.3).exp() * (mv.xz * -0.06).exp()
-    image_1, image_2, epipole_2, epipolar_lines_2, correspondence = core.stereo(subject, origin, screen, rig_1, rig_2)
+    *_, (image_1, image_2, epipole_2, epipolar_lines_2, correspondence), _, _ = scenarios.projection()
 
     np.testing.assert_allclose(correspondence(image_1, image_2).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(correspondence.bind({1: epipole_2}).kernel, 0.0, atol=1e-12)
@@ -171,3 +168,4 @@ def test_scenario_renders():
     """The scenario's geometry renders as a figure."""
     figure = render.draw_projection(*scenarios.projection())
     assert isinstance(figure, plt.Figure)
+    plt.close(figure)

@@ -14,7 +14,8 @@ PERMITTIVITY = np.array([[1.0, 1.0, 1.0],
                          [2.25, 2.25, 3.24],
                          [1.44, 2.25, 3.24]])
 RELUCTIVITY = np.array([1.0, 1.0, 1.0])
-AXION_COUPLING = 0.3                                                              # illustrative
+# An axion coupling, of an illustrative size: light does not see it.
+AXION_COUPLING = 0.3
 FREQUENCY = 1.0
 N_LATITUDES = 33
 N_LONGITUDES = 2 * (N_LATITUDES - 1) + 1
@@ -22,31 +23,18 @@ N_SECTION_SAMPLES = 4 * (N_LATITUDES - 1) + 1
 N_FRAMES = 32
 N_MOVIE_LATITUDES = 19
 N_MOVIE_LONGITUDES = 2 * (N_MOVIE_LATITUDES - 1) + 1
-DURATION_MS = 90
+FRAME_DURATION = 90
 
 
 # --- math -----------------------------------------------------------------------------
 def comparison() -> tuple[core.Vector, core.Vector]:
-    """Both wavevector sheets and their xz sections for each material."""
+    """Both wavevector sheets and their xz sections for each material, with the media and the directions."""
     media = core.dielectric(PERMITTIVITY, RELUCTIVITY)
     directions = core.sphere(N_LATITUDES, N_LONGITUDES)
     sections = core.radial_sheets(media[:, None], core.circle(N_SECTION_SAMPLES), FREQUENCY)
     sheets = core.radial_sheets(media[:, None, None], directions, FREQUENCY)
 
-    # --- checks
-    # Every wavevector on the sheets solves the quartic, and lies in its potential map's kernel.
-    wavevectors = core.mv.t * FREQUENCY + sheets
-    residual = core.polynomial(media[:, None, None, None], core.mv.xyz, wavevectors)
-    wave = core.potential_map(media[:, None, None, None], wavevectors)
-    np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
-    np.testing.assert_allclose(wave(wavevectors).kernel, 0, atol=1e-11)
-    # The axion part adds nothing to any potential map, and leaves every sheet where it is; where two
-    # sheets coincide, the square root of the vanishing discriminant loses half the digits.
-    axion = core.axion(core.mv(core.Axion, [AXION_COUPLING]))                      # [] Antibivector <- Bivector
-    np.testing.assert_allclose(core.potential_map(axion, wavevectors).kernel, 0, atol=1e-12)
-    coupled_sheets = core.radial_sheets((media + axion)[:, None, None], directions, FREQUENCY)
-    np.testing.assert_allclose((coupled_sheets - sheets).kernel, 0, atol=1e-6)
-    return sheets, sections
+    return media, directions, sheets, sections
 
 
 def birefringence() -> Iterator[tuple[core.Vector, core.Vector]]:
@@ -66,9 +54,23 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.electromagnetism.fresnel import render
 
-    sheets, sections = comparison()
+    media, directions, sheets, sections = comparison()
     save_figure(render.comparison(sheets, sections, CASE_NAMES), "fresnel_adjugate")
-    save_animation(render.animate(birefringence()), "fresnel_adjugate", DURATION_MS)
+    save_animation(render.animate(birefringence()), "fresnel_adjugate", FRAME_DURATION)
+
+    # checks
+    # Every wavevector on the sheets solves the quartic, and lies in its potential map's kernel.
+    wavevectors = core.mv.t * FREQUENCY + sheets
+    residual = core.polynomial(media[:, None, None, None], core.mv.xyz, wavevectors)
+    wave = core.potential_map(media[:, None, None, None], wavevectors)
+    np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
+    np.testing.assert_allclose(wave(wavevectors).kernel, 0, atol=1e-11)
+    # The axion part adds nothing to any potential map, and leaves every sheet where it is; where two
+    # sheets coincide, the square root of the vanishing discriminant loses half the digits.
+    axion = core.axion(core.mv(core.Axion, [AXION_COUPLING]))                      # [] Antibivector <- Bivector
+    np.testing.assert_allclose(core.potential_map(axion, wavevectors).kernel, 0, atol=1e-12)
+    coupled_sheets = core.radial_sheets((media + axion)[:, None, None], directions, FREQUENCY)
+    np.testing.assert_allclose((coupled_sheets - sheets).kernel, 0, atol=1e-6)
 
 
 if __name__ == "__main__":

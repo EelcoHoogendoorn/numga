@@ -6,7 +6,7 @@ import pytest
 
 from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
-    Antibivector, Antivector, curvature_of_strain, integrate_acceleration, lower, mv, polarizations, polarized,
+    Antibivector, Antivector, curvature_of_strain, integrate_acceleration, mv, polarizations, polarized,
     strain_patterns, tidal_map, time_direction, travel, wave_packet, wave_vector,
 )
 
@@ -45,20 +45,20 @@ def test_pair_symmetry_bianchi_identity_and_vacuum():
     np.testing.assert_allclose(cyclic.kernel, 0, atol=1e-13)
     # Vacuum: every observer's tides stretch as much as they squeeze.
     for rapidity, direction in ((0.0, mv.x.dual()), (0.4, mv.y.dual()), (-0.8, mv.z.dual())):
-        observer = ((lower(direction) ^ mv.t) * (rapidity / 2)).exp() >> time_direction
-        accelerations = lower.solve(tidal_map(curvature, observer))
+        observer = ((direction & time_direction).dual() * (rapidity / 2)).exp() >> time_direction
+        accelerations = -tidal_map(curvature, observer).dual()
         np.testing.assert_allclose(accelerations.eigvals().to_array().real.sum(), 0, atol=1e-12)
 
 
 def test_observer_sees_opposite_transverse_tides_and_doppler_scaling():
     plus, _ = polarizations()
     for rapidity in (-.7, 0, .5):
-        observer = ((lower(mv.z.dual()) ^ mv.t) * (rapidity / 2)).exp() >> time_direction
+        observer = ((mv.z.dual() & time_direction).dual() * (rapidity / 2)).exp() >> time_direction
         response = tidal_map(plus, observer)
         # A chasing observer sees the wave's frequency redshifted; the curvature takes the observer twice,
         # so the tidal amplitude scales with the frequency squared.
         amplitude = np.exp(-2 * rapidity)
-        np.testing.assert_allclose(np.sort(lower.solve(response).eigvals().to_array().real),
+        np.testing.assert_allclose(np.sort((-response.dual()).eigvals().to_array().real),
                                    [-amplitude, 0, 0, amplitude], atol=1e-13)
         np.testing.assert_allclose(response(observer).kernel, 0, atol=1e-13)
         np.testing.assert_allclose(response(travel).kernel, 0, atol=1e-13)
@@ -98,7 +98,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
         time = np.linspace(-1, 7, count)
         _, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
         waves = polarized(plus, cross, -0.5 * second[:, None] * POLARIZATIONS)
-        acceleration = lower.solve(tidal_map(waves, time_direction)[:, :, None](reference))
+        acceleration = -tidal_map(waves, time_direction)[:, :, None](reference).dual()
         displacement = render.transverse(integrate_acceleration(time, acceleration))
 
         # Independent prediction: the displacement is half the strain applied to the separation, for all
@@ -132,14 +132,14 @@ def test_strain_map_predicts_the_ring_and_its_second_derivative_is_the_curvature
     waves = polarized(plus, cross, -0.5 * second[:, None] * POLARIZATIONS)
     reference = ring(12)
     response = tidal_map(waves, time_direction)
-    displacement = integrate_acceleration(time, lower.solve(response[:, :, None](reference)))
+    displacement = integrate_acceleration(time, -response[:, :, None](reference).dual())
     predicted = polarized(plus_strain, cross_strain, 0.5 * strain[:, None] * POLARIZATIONS)[:, :, None](reference)
     np.testing.assert_allclose((displacement - predicted).kernel, 0, atol=2e-9)
     assert np.abs(predicted.kernel).max() > 4e-5
 
     # The tidal acceleration is the strain's second time derivative as a map on separations.
     acceleration_map = polarized(plus_strain, cross_strain, 0.5 * second[:, None] * POLARIZATIONS)
-    np.testing.assert_allclose((lower.solve(response) - acceleration_map).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((-response.dual() - acceleration_map).kernel, 0, atol=1e-12)
 
     # Wedged with the wave vector, that second derivative is the curvature on pairs of directions.
     two_form = curvature_of_strain(wave_vector, acceleration_map)

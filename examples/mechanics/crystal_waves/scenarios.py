@@ -18,25 +18,27 @@ DENSITY = np.array([2.20, 2.33, 7.60])
 
 MODES = ("slow shear", "fast shear", "compression")
 
+# Headings sampled over the sphere for the focusing, their seed, and the bins across each map.
+N_HEADINGS = 400_000
+SEED = 0
+N_BINS = 400
+# Headings around the cube face for the wave fronts.
+N_ANGLES = 4000
+
 
 def crystals() -> tuple[core.Stiffness, np.ndarray]:
     """Every material's stiffness from its elastic constants, and its density, on the first axis."""
     return core.stiffness(C11, C12, C44), DENSITY                               # [materials] Stiffness
 
 
-def focusing(n_headings: int, seed: int) -> core.Vector:
+def focusing(n_headings: int, seed: int) -> tuple[core.Vector, core.Vector, core.Scalar]:
     """Group velocities of the three waves in every material, for headings spread evenly over the
-    sphere."""
+    sphere; then the headings, and the stiffness eigenvalues of the three waves along them."""
     stiffness, density = crystals()
     heading = core.mv.vector(np.random.default_rng(seed).normal(size=(n_headings, 3))).normalized()   # [headings] Vector
     values, polarization = core.waves(stiffness[:, None], heading)                # [materials, headings, 3] each
     velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
-
-    # --- checks
-    # Along its heading, the group velocity has the phase speed.
-    phase = (values / density[:, None, None]).square_root()
-    np.testing.assert_allclose((velocity | heading[:, None]).to_array(), phase.to_array(), rtol=1e-8)
-    return velocity
+    return velocity, heading, values
 
 
 def wave_fronts(n_angles: int) -> core.Vector:
@@ -52,20 +54,29 @@ def wave_fronts(n_angles: int) -> core.Vector:
     heading = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x                    # [headings] Vector
     _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Vector
     velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
-
-    # --- checks
-    # The textbook speeds along a cube edge and a face diagonal.
-    values = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar
-    speeds = (values / density[:, None, None]).square_root().to_array()      # [materials, 2, 3]
-    np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
-    expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)
-    np.testing.assert_allclose(speeds[:, 1], np.sqrt(expected / density[:, None]), rtol=1e-8)
     return velocity
 
 
-if __name__ == "__main__":
+def main() -> None:
     from examples.animation import save_figure
     from examples.mechanics.crystal_waves import render
 
-    save_figure(render.draw_focusing(focusing(400_000, 0), NAMES, 400), "crystal_waves_focusing")
-    save_figure(render.draw_wave_fronts(wave_fronts(4000), NAMES), "crystal_waves_fronts")
+    velocity, heading, values = focusing(N_HEADINGS, SEED)
+    save_figure(render.draw_focusing(velocity, NAMES, N_BINS), "crystal_waves_focusing")
+    save_figure(render.draw_wave_fronts(wave_fronts(N_ANGLES), NAMES), "crystal_waves_fronts")
+
+    # checks
+    stiffness, density = crystals()
+    # Along its heading, the group velocity has the phase speed.
+    phase = (values / density[:, None, None]).square_root()
+    np.testing.assert_allclose((velocity | heading[:, None]).to_array(), phase.to_array(), rtol=1e-8)
+    # The textbook speeds along a cube edge and a face diagonal.
+    edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar
+    speeds = (edge_and_diagonal / density[:, None, None]).square_root().to_array()      # [materials, 2, 3]
+    np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
+    expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)
+    np.testing.assert_allclose(speeds[:, 1], np.sqrt(expected / density[:, None]), rtol=1e-8)
+
+
+if __name__ == "__main__":
+    main()

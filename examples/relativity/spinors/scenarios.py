@@ -6,7 +6,7 @@ from examples.relativity.spinors import core
 
 N_ROTATION_FRAMES = 96
 ROTATION_ANGLES = np.linspace(0, 4 * np.pi, N_ROTATION_FRAMES, endpoint=False)
-DURATION_MS = 80
+FRAME_DURATION = 80
 RAPIDITY = 0.7
 N_PHASE_SAMPLES = 129
 PHASE_ANGLES = np.linspace(0, 2 * np.pi, N_PHASE_SAMPLES)
@@ -14,18 +14,23 @@ PHASE_ANGLES = np.linspace(0, 2 * np.pi, N_PHASE_SAMPLES)
 
 # --- math -----------------------------------------------------------------------------
 def rotation() -> tuple[core.Vector, core.Scalar, core.Scalar]:
+    """A spinor turned through two full turns about y: its spin, and the intensities at the two outputs
+    where it is recombined with the unturned spinor, their sum and their difference."""
     reference = core.mv.scalar()
     psi = (core.mv.xz * (ROTATION_ANGLES / 2)).exp()
     return core.spin(psi), core.interference(psi, reference), core.interference(psi, -reference)
 
 
 def chirality() -> tuple[core.Vector, core.Vector, core.Vector]:
+    """A boosted spinor split into its left- and right-handed parts: their currents, and the spinor's."""
     psi = (core.mv.tz * (-RAPIDITY / 2)).exp()
     right, left = core.RIGHT(psi), core.LEFT(psi)
     return core.current(left), core.current(right), core.current(psi)
 
 
 def majorana() -> tuple[core.Scalar, core.Scalar]:
+    """A Majorana spinor turned by a phase: the densities of the parts charge conjugation keeps and
+    negates, over the phase angles."""
     psi = core.MAJORANA(core.mv.scalar())
     psi = psi / core.density(psi).square_root()
     phase = (core.mv.yx * PHASE_ANGLES).exp()
@@ -42,7 +47,7 @@ def main() -> None:
     spin, bright, dark = rotation()
     left_current, right_current, current = chirality()
     fixed_density, negated_density = majorana()
-    save_animation(render.animate_rotation(spin, bright, dark), "spinor_rotation", DURATION_MS)
+    save_animation(render.animate_rotation(spin, bright, dark), "spinor_rotation", FRAME_DURATION)
     save_figure(render.draw_chirality(left_current, right_current, current), "spinor_chirality")
     save_figure(render.draw_majorana(PHASE_ANGLES, fixed_density, negated_density), "spinor_majorana")
 

@@ -36,9 +36,20 @@ def test_energy_follows_the_wave_only_when_isotropic():
 
 
 def test_figures_render():
-    """The scenarios pass their checks, and both figures draw."""
+    """Along its heading the group velocity has the phase speed, the speeds along a cube edge and a
+    face diagonal are the textbook ones, and both figures draw."""
     names = scenarios.NAMES
-    for figure in (render.draw_focusing(scenarios.focusing(2000, 0), names, 32),
+    stiffness, density = scenarios.crystals()
+    velocity, heading, values = scenarios.focusing(2000, 0)
+    phase = (values / density[:, None, None]).square_root()
+    np.testing.assert_allclose((velocity | heading[:, None]).to_array(), phase.to_array(), rtol=1e-8)
+    edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]
+    speeds = (edge_and_diagonal / density[:, None, None]).square_root().to_array()
+    C11, C12, C44 = scenarios.C11, scenarios.C12, scenarios.C44
+    np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
+    expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)
+    np.testing.assert_allclose(speeds[:, 1], np.sqrt(expected / density[:, None]), rtol=1e-8)
+    for figure in (render.draw_focusing(velocity, names, 32),
                    render.draw_wave_fronts(scenarios.wave_fronts(64), names)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)

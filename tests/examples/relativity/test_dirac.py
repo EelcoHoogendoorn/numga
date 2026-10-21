@@ -22,7 +22,7 @@ def test_a_spinor_is_rho_times_a_lorentz_map_and_beta_acts_only_on_bivectors():
 
 
 def test_scenarios_pass_their_checks_and_draw():
-    times, spinors, paths = scenarios.trembling(core.mv(core.Spatial, np.array([0.0, 0.0, 0.3])), 3.0, 60)
+    times, spinors, paths, _ = scenarios.trembling(core.mv(core.Spatial, np.array([0.0, 0.0, 0.3])), 3.0, 60)
     for figure in (render.draw_paths(times, spinors, paths, scenarios.MIXTURES),):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)

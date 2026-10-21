@@ -15,8 +15,9 @@ from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
 
+from numga import stack
 from examples.animation import capture
-from examples.geometry.scenegraph.core import Motor, Point, ga, mv, unit_box_topology
+from examples.geometry.scenegraph.core import Motor, Point, mv, unit_box_topology
 
 
 # Colors for the robot arm bodies:
@@ -35,10 +36,10 @@ RAY_COLORS = [
 ]
 
 
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
-    return k[..., :3] / k[..., 3:]
+    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 # --- 3D scene view ----------------------------------------------------------------------

@@ -1,26 +1,21 @@
 """Magnetic resonance: a spin in a magnetic field, driven by a radio-frequency field and relaxing,
 in the Pauli algebra of three-dimensional space.
 
-The state of a spin, or of an ensemble of spins, is `0.5 * (ONE + bloch)` for a vector `bloch`,
-the Bloch vector: it points along the spin, and its length is one for a single pure spin and less
-for a mixture. The pseudoscalar I squares to minus one and commutes with everything.
+The state of a spin, or of an ensemble of spins, is half of one plus a vector, the Bloch vector: it
+points along the spin, and its length is one for a single pure spin and less for a mixture. The
+pseudoscalar I squares to minus one and commutes with everything.
 
-The state changes by a linear map, the generator. In the frame that turns with the drive, the
-Hamiltonian is half the detuning along z plus half the drive strength along x, and the state turns
-by -I times its commutator with the Hamiltonian. Relaxation enters through multivectors `process`,
-each adding `(process >> rho) - back.anticommutator(rho)` to the change of
-the state `rho`, with `back = process.reverse() * process`. One is the vector x times the state of
-a spin against the field, which turns that part of the state over onto the field at the rate
-`1 / t1`; the half turn in the plane xy scrambles the phase, an even element, so its sandwich is a turn;
-the vector z would do the same up to the central pseudoscalar, a phase that cancels from the sandwich.
-Both are built as maps over `State`, the space of all states. Where
-the generator vanishes the state is steady; since the generator keeps the scalar part, finding
-that state is a linear equation with the scalar part pinned.
+The state changes by one linear map, the generator. In the frame that turns with the drive the fields
+turn the state about the vector of the detuning along z and the drive along x. Relaxation processes
+each move part of the state elsewhere by their sandwich: x times the state of a spin against the field
+turns that part over onto the field, and the half turn in the plane xy scrambles the phase, the same
+process as the vector z up to a phase that cancels from the sandwich. Where the generator vanishes the
+state is steady; since the generator never changes the scalar part, that state is a single solve with
+the scalar part pinned.
 
-The evolution over a short time dt is a map as well, the exponential of the generator times dt to
-fourth order in dt: a sum of powers of the generator. Composed with itself it spans two steps, then
-four; composed with the pulses, whose sandwiches are maps too, it gives a whole pulse sequence as
-one map.
+The evolution over a short time is a map as well, the exponential of the generator to fourth order.
+Composed with itself it spans two steps, then four; composed with the pulses, whose sandwiches are maps
+too, it gives a whole pulse sequence as one map.
 
 In matrix notation the state reads as a 2x2 Hermitian density matrix, the reverse as the Hermitian
 conjugate, the pseudoscalar as the imaginary unit, the generator as a 4x4 superoperator on the
@@ -40,13 +35,13 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-# A spin's state is its own reverse: a scalar plus a vector, `0.5 * (ONE + bloch)`.
+# A spin's state is its own reverse: a scalar plus a vector, half of one plus the Bloch vector.
 State = ga.gatype.self_reverse()                   # 1 x y z
-Rates = ga.gatype((State, State))              # State <- State
+Rates = ga.gatype((State, State))                  # State <- State
 # What becomes of each state over a stretch of time.
 Evolution = ga.gatype((State, State))              # State <- State
 # A relaxation process is a vector plus a bivector, `v + I * w` for vectors v and w.
-Process = ga.gatype.from_grades([1, 2])           # x y z yz zx xy
+Process = ga.gatype.from_grades([1, 2])            # x y z yz zx xy
 Rotor = ga.gatype.rotor()
 # The pseudoscalar squares to minus one and commutes with everything.
 I = mv.xyz                                         # [] Pseudoscalar
@@ -62,8 +57,8 @@ def state(bloch: Vector) -> State:
 
 
 def relaxation(process: Process) -> Rates:
-    """The change of a state `rho` due to a relaxation `process`:
-    `(process >> rho) - back.anticommutator(rho)`, with `back = process.reverse() * process`."""
+    """The change of a state `rho` due to a relaxation `process`, as a map from states to their rates of
+    change: `(process >> rho) - back.anticommutator(rho)`, with `back = process.reverse() * process`."""
     back = process.reverse().symmetric_reverse_product()   # [] State
     return (process >> State) - back.anticommutator(State)
 

@@ -1,193 +1,99 @@
-"""Drawing and coordinate read-out for epipolar geometry and two-view reconstruction.
+"""Drawing for epipolar geometry and two-view reconstruction: the search animated, a ray-traced view of the
+cameras, the house and the points the search triangulates.
 
 Constructs viewport geometry only; the mathematics in core never imports this module.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.estimation.epipolar.core import Line, Motor, Point, ga, mv
+from numga import stack
+from examples import raytrace as rt
+from examples.estimation.epipolar.core import Motor, Point, mv
 
-if TYPE_CHECKING:
-    from matplotlib.axes import Axes
+# Camera 1, blue, camera 2 where it is, grey, and where the search puts it, green; the true landmarks, grey.
+CAMERA_1, CAMERA_2_TRUE, CAMERA_2_FOUND, LANDMARK = [0.15, 0.45, 0.75], [0.62, 0.64, 0.68], [0.15, 0.65, 0.45], [0.70, 0.71, 0.74]
+HOUSE = [0.80, 0.81, 0.83]
+BACKGROUND = np.array([1.0, 1.0, 1.0])
+# The view's angles, the pixels across the scene, and the margin around what it shows as a fraction of its
+# larger side.
+VIEW = (24, -125)
+PIXELS = 560
+MARGIN = 0.08
+# Radii of the landmarks, of a camera's edges and of the sight rays; a camera's depth, and its screen's half
+# width and height, as drawn; the landmarks whose sight rays are drawn, every so many.
+LANDMARK_RADIUS, EDGE_RADIUS, RAY_RADIUS = 0.045, 0.012, 0.012
+CAMERA_DEPTH, CAMERA_HALF = 0.35, (0.5, 0.38)
+RAY_EVERY = 4
+# A quarter turn about x for display: the cameras look along z with y down; the view has z up.
+DISPLAY = (mv.yz * (np.pi / 4)).exp()
 
 
+# --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Read xyz coordinates using an explicit coordinate basis, independent of storage order."""
-    k = points.cast(ga.subspace("wzy wxz wyx xyz")).kernel
-    return k[..., :3] / k[..., 3:]
+    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
-def screen_line_endpoints(lines: Line, half_width: float) -> np.ndarray:
-    """Clip lines on the screen z == 1 at x == -half_width and x == half_width, returning (..., 2, 2)
-    screen coordinates."""
-    ends = [euclidean(lines ^ (mv.x - mv.w * x))[..., :2] for x in (-half_width, half_width)]
-    return np.stack(ends, axis=-2)
+def camera_edges(pose: Motor) -> tuple[np.ndarray, np.ndarray]:
+    """The edges of a camera drawn as a pyramid, placed by its pose and turned for display: from the eye to
+    the corners of its screen, and around the screen; their starts and ends `[edges, 3]`."""
+    corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * CAMERA_HALF * CAMERA_DEPTH
+    local = mv.point(np.concatenate([[[0.0, 0.0, 0.0]], np.c_[corners, np.full(4, CAMERA_DEPTH)]]))
+    placed = euclidean(DISPLAY >> (pose >> local))                            # [eye and corners, 3]
+    eye, ring = placed[0], placed[1:]
+    return np.concatenate([np.broadcast_to(eye, ring.shape), ring]), np.concatenate([ring, np.roll(ring, -1, axis=0)])
 
 
-def draw_camera_frustum(
-    ax: Axes,
-    pose: Motor,
-    scale: float,
-    color: str,
-    linestyle: str,
-    linewidth: float,
-    label: str,
-) -> None:
-    """Draw a 3D camera wireframe pyramid: its centre, sensor rectangle and optical axis."""
-    # Camera local sensor corners at depth `scale`, and the optical axis tip, moved by the pose:
-    w, h = 0.5 * scale, 0.38 * scale
-    local = np.array([
-        [-w, -h, scale],
-        [ w, -h, scale],
-        [ w,  h, scale],
-        [-w,  h, scale],
-        [0.0, 0.0, scale * 1.3],
-        [0.0, 0.0, 0.0],
-    ])
-    placed = euclidean(pose >> mv.point(local))
-    corners, axis_end, center = placed[:4], placed[4], placed[5]
-
-    # Sensor rectangle:
-    loop = np.concatenate([corners, corners[:1]], axis=0)
-    ax.plot(
-        loop[:, 0], loop[:, 1], loop[:, 2],
-        color=color, linestyle=linestyle, linewidth=linewidth, label=label,
-    )
-
-    # Rays from center to corners:
-    for corner in corners:
-        segment = np.stack([center, corner], axis=0)
-        ax.plot(
-            segment[:, 0], segment[:, 1], segment[:, 2],
-            color=color, linestyle=linestyle, linewidth=linewidth * 0.8,
-        )
-
-    # Optical axis:
-    ax.plot(
-        [center[0], axis_end[0]], [center[1], axis_end[1]], [center[2], axis_end[2]],
-        color=color, linestyle=linestyle, linewidth=linewidth * 1.2,
-    )
-
-    # Camera center dot:
-    ax.scatter([center[0]], [center[1]], [center[2]], color=color, s=45, depthshade=False)
+def solids(matrices: list[np.ndarray], centres: list[np.ndarray], colours: list[np.ndarray]):
+    """Quadrics, as one batch, with their colours."""
+    return rt.quadric(np.concatenate(matrices), np.concatenate(centres)), np.concatenate(colours)
 
 
-def draw_camera_view(
-    ax: Axes,
-    image: Point,
-    measured: Point,
-    title: str,
-    point_colors: np.ndarray,
-) -> None:
-    """Draw a 2D camera sensor view with true and measured keypoints."""
-    true_uv = euclidean(image)[:, :2]
-    measured_uv = euclidean(measured)[:, :2]
-    ax.scatter(
-        true_uv[:, 0], true_uv[:, 1],
-        color="#94a3b8", s=30, alpha=0.6, marker="o", label="True projection",
-    )
-    ax.scatter(measured_uv[:, 0], measured_uv[:, 1], c=point_colors, s=40, edgecolors="#1e293b", linewidths=0.6)
-    ax.scatter([], [], color="#3b82f6", s=40, label="Measured keypoint (with noise)")
-
-    ax.set_title(title, fontsize=10, pad=8)
-    ax.set_xlim(-0.6, 0.6)
-    ax.set_ylim(-0.5, 0.5)
-    ax.set_aspect("equal")
-    ax.set_xlabel("Sensor u", fontsize=8, labelpad=-2)
-    ax.set_ylabel("Sensor v", fontsize=8, labelpad=-2)
-    ax.grid(True, linestyle=":", alpha=0.5)
-    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.8)
+def spheres(centres: np.ndarray, radius: float) -> tuple[np.ndarray, np.ndarray]:
+    """Spheres of a radius about centres `[n, 3]`: their matrices and centres."""
+    return np.broadcast_to(np.eye(3) / radius**2, centres.shape + (3,)), centres
 
 
-def draw_epipolar_lines(ax: Axes, lines: Line, point_colors: np.ndarray) -> None:
-    """Draw epipolar lines on a camera's screen, one per keypoint."""
-    for (a, b), color in zip(screen_line_endpoints(lines, 0.6), point_colors):
-        ax.plot([a[0], b[0]], [a[1], b[1]], color=color, alpha=0.35, linewidth=1.0)
+def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Motor,
+                           states: Iterator[tuple[Motor, Point]]) -> list[np.ndarray]:
+    """One frame per state of the search: camera 1, blue, camera 2 where it is, grey, and where the search
+    puts it, green; the true landmarks, grey, with the house's edges between them by index pairs
+    `[edges, 2]`; and the landmarks the pose triangulates, coloured, with the sight rays of a few from both
+    cameras, which cross at them."""
+    n_landmarks = landmarks.shape[0]
+    colours = plt.colormaps["turbo"].resampled(n_landmarks)(np.arange(n_landmarks))[:, :3]
+    truth = euclidean(DISPLAY >> landmarks)                                   # [landmarks, 3]
+    eye_1 = euclidean(DISPLAY >> mv.w.dual())
 
+    # The scene that does not move, traced once.
+    edges_1, edges_2 = camera_edges(mv.rotor()), camera_edges(true_motor)
+    parts = [spheres(truth, LANDMARK_RADIUS), rt.segments(*edges_1, EDGE_RADIUS), rt.segments(*edges_2, EDGE_RADIUS),
+             rt.segments(truth[edges[:, 0]], truth[edges[:, 1]], EDGE_RADIUS)]
+    fixed, fixed_colours = solids([m for m, _ in parts], [c for _, c in parts],
+                                  [np.tile(LANDMARK, (n_landmarks, 1)), np.tile(CAMERA_1, (8, 1)), np.tile(CAMERA_2_TRUE, (8, 1)),
+                                   np.tile(HOUSE, (len(edges), 1))])
+    framed = np.concatenate([rt.ellipsoid_points(*spheres(truth, LANDMARK_RADIUS), 24).reshape(-1, 3), *edges_1, *edges_2])
+    middle, half = rt.framing(framed, *VIEW, MARGIN)
+    view = (*VIEW, middle, half, PIXELS * rt.SUPERSAMPLE)
+    still, still_depth = rt.scene(fixed, fixed_colours, view, BACKGROUND)
 
-def draw_3d_reconstruction(
-    ax: Axes,
-    landmarks: Point,
-    reconstructed: Point,
-    true_motor: Motor,
-    est_motor: Motor,
-    title: str,
-    point_colors: np.ndarray,
-) -> None:
-    """Draw the 3D world scene overlaying true vs estimated cameras and landmarks."""
-    points_true = euclidean(landmarks)
-    points_reconstructed = euclidean(reconstructed)
-    ax.scatter(
-        points_true[:, 0], points_true[:, 1], points_true[:, 2],
-        color="#94a3b8", s=35, alpha=0.5, label="Ground truth 3D landmarks",
-    )
-    ax.scatter(
-        points_reconstructed[:, 0], points_reconstructed[:, 1], points_reconstructed[:, 2],
-        c=point_colors, marker="*", s=90, depthshade=False,
-    )
-    ax.scatter([], [], color="#10b981", marker="*", s=90, label="Triangulated 3D points")
-
-    # Camera frustums:
-    draw_camera_frustum(ax, mv.rotor(), 0.4, "#0284c7", "-", 1.5, "Camera 1 (World origin)")
-    draw_camera_frustum(ax, true_motor, 0.4, "#94a3b8", "--", 1.2, "Camera 2 Ground Truth")
-    draw_camera_frustum(ax, est_motor, 0.4, "#10b981", "-", 1.6, "Camera 2 Reconstructed")
-
-    # Sight rays for a subset of landmarks to show intersection:
-    c1 = euclidean(mv.w.dual())
-    c2 = euclidean(est_motor >> mv.w.dual())
-    for target in points_reconstructed[::5]:
-        ray1_seg = np.stack([c1, target], axis=0)
-        ray2_seg = np.stack([c2, target], axis=0)
-        ax.plot(ray1_seg[:, 0], ray1_seg[:, 1], ray1_seg[:, 2], color="#0284c7", alpha=0.3, linewidth=0.8, linestyle=":")
-        ax.plot(ray2_seg[:, 0], ray2_seg[:, 1], ray2_seg[:, 2], color="#10b981", alpha=0.3, linewidth=0.8, linestyle=":")
-
-    ax.set_title(title, fontsize=10, pad=8)
-    ax.set_xlim(-1.2, 1.2)
-    ax.set_ylim(-1.0, 1.0)
-    ax.set_zlim(-0.2, 4.8)
-    ax.set_box_aspect([1.8, 1.5, 3.5])
-    ax.set_xlabel("X (m)", fontsize=8, labelpad=-5)
-    ax.set_ylabel("Y (m)", fontsize=8, labelpad=-5)
-    ax.set_zlabel("Z (depth)", fontsize=8, labelpad=-5)
-    ax.view_init(elev=18, azim=-55)
-    ax.legend(loc="upper left", fontsize=7.5, framealpha=0.8)
-
-
-def draw_epipolar(
-    landmarks: Point,
-    image_1: Point,
-    image_2: Point,
-    noisy_1: Point,
-    noisy_2: Point,
-    epipolar_lines_2: Line,
-    reconstructed: Point,
-    true_motor: Motor,
-    est_motor: Motor,
-) -> plt.Figure:
-    """Both camera images, epipolar lines on the second, and the 3D reconstruction."""
-    # One colour per landmark, matching keypoints across the views and the reconstruction:
-    point_colors = plt.colormaps["turbo"].resampled(landmarks.shape[0])(np.arange(landmarks.shape[0]))
-    fig = plt.figure(figsize=(19.0, 5.8), dpi=140, layout="constrained")
-
-    draw_camera_view(
-        fig.add_subplot(1, 3, 1), image_1, noisy_1,
-        f"1. Camera 1 Image ({landmarks.shape[0]} Keypoints)\nForward projection + Gaussian pixel noise",
-        point_colors,
-    )
-    ax2 = fig.add_subplot(1, 3, 2)
-    draw_epipolar_lines(ax2, epipolar_lines_2, point_colors)
-    draw_camera_view(
-        ax2, image_2, noisy_2,
-        "2. Camera 2 Image (Epipolar Constraint)\nKeypoints lie along 1D epipolar search lines",
-        point_colors,
-    )
-    draw_3d_reconstruction(
-        fig.add_subplot(1, 3, 3, projection="3d"), landmarks, reconstructed, true_motor, est_motor,
-        "3. 3D World Reconstruction (PGA3D Motor & Line Quadrics)",
-        point_colors,
-    )
-    return fig
+    frames = []
+    for motor, points in states:
+        found = euclidean(DISPLAY >> points)                                  # [landmarks, 3]
+        eye = euclidean(DISPLAY >> (motor >> mv.w.dual()))
+        found_edges = camera_edges(motor)
+        shown = found[::RAY_EVERY]
+        parts = [spheres(found, LANDMARK_RADIUS), rt.segments(*found_edges, EDGE_RADIUS),
+                 rt.segments(np.broadcast_to(eye_1, shown.shape), shown, RAY_RADIUS),
+                 rt.segments(np.broadcast_to(eye, shown.shape), shown, RAY_RADIUS)]
+        moving, moving_colours = solids([m for m, _ in parts], [c for _, c in parts],
+                                        [colours, np.tile(CAMERA_2_FOUND, (8, 1)), colours[::RAY_EVERY], colours[::RAY_EVERY]])
+        rgb, depth = rt.scene(moving, moving_colours, view, BACKGROUND)
+        image = rt.downsample(np.where((depth < still_depth)[..., None], rgb, still), rt.SUPERSAMPLE)
+        frames.append((np.clip(image, 0, 1) * 255).astype(np.uint8))
+    return frames

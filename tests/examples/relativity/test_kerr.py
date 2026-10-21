@@ -37,7 +37,7 @@ def test_null_congruence_and_exact_inverse_metric():
     np.testing.assert_allclose(geometry.null_gradient(geometry.null).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     # The closed-form curl is the derivative of the null covector: a wedge and a trace.
-    curl = (core.Vector ^ core.lower(geometry.null_gradient(core.Antivector))).trace(1, 2)
+    curl = -(core.Vector ^ geometry.null_gradient(core.Antivector).dual()).trace(1, 2)
     np.testing.assert_allclose((geometry.null_curl - curl).kernel, 0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((core.metric(geometry)(core.inverse_metric(geometry)) - core.Vector).kernel,
                                0, atol=ROUND_OFF, rtol=0)
@@ -66,7 +66,7 @@ def test_directional_derivatives_drive_hamiltonian_rates():
     tangent, force = core.rates(position, momentum, spin, mass)
 
     def hamiltonian(geometry, momentum):
-        return (momentum & core.direction_of(momentum)) / 2 + geometry.profile * (momentum & geometry.null).squared()
+        return -(momentum & momentum.dual()) / 2 + geometry.profile * (momentum & geometry.null).squared()
 
     profile_change = (ahead.profile - behind.profile) / (2 * increment)
     null_change = (ahead.null - behind.null) / (2 * increment)
@@ -102,7 +102,7 @@ def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
     positions = stack([state[0] for state in states])
     momenta = stack([state[1] for state in states])
     geometry = core.field(positions, spin, mass)
-    hamiltonian = (momenta & core.direction_of(momenta)) / 2 + geometry.profile * (momenta & geometry.null).squared()
+    hamiltonian = -(momenta & momenta.dual()) / 2 + geometry.profile * (momenta & geometry.null).squared()
     energy = momenta & T
     # The momentum along the direction the spin turns each event in.
     angular_momentum = momenta & spin.commutator(positions)
@@ -233,7 +233,7 @@ def test_connection_matches_directional_metric_variation():
     behind = core.field(position - increment * DIRECTIONS, spin, mass)
 
     def dyad(geometry):
-        return geometry.profile * geometry.null * (core.lower(geometry.null) & core.Antivector)
+        return geometry.profile * geometry.null * (geometry.null | core.Antivector)
 
     def metric(geometry):
         return (core.metric(geometry)[..., None, None](DIRECTIONS[None, :]) & DIRECTIONS[:, None]).to_array()

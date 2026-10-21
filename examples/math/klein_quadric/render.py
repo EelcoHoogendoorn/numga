@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
+from numga import Extensor
 from examples.animation import capture
 from examples.math.klein_quadric import core
 
@@ -20,8 +21,9 @@ AXES = mv(core.Plane.derive.nondegenerate, np.eye(3))                          #
 
 
 # --- plumbing -------------------------------------------------------------------------
-def real(kernel: np.ndarray) -> np.ndarray:
-    """Which extensors, by their coefficients on the last axis, are real up to round-off."""
+def real(extensors: Extensor) -> np.ndarray:
+    """Which extensors are real up to round-off, by their coefficients."""
+    kernel = extensors.kernel
     return np.abs(kernel.imag).max(axis=-1) <= 1e-6 * np.abs(kernel).max(axis=-1)
 
 
@@ -47,9 +49,9 @@ def draw_on(ax: plt.Axes, lines: core.Bivector, rulings: core.Bivector, across: 
     ax.add_collection(Line3DCollection(chords(rulings[1]), colors="#c7c7c7", linewidths=0.7), autolim=False)
     ax.add_collection(Line3DCollection(chords(lines[:3]), colors="#08306b", linewidths=2.2), autolim=False)
     ax.add_collection(Line3DCollection(chords(lines[3:]), colors="#e67e22", linewidths=2.2), autolim=False)
-    visible = real(across.kernel)
+    visible = real(across)
     ax.add_collection(Line3DCollection(chords(across)[visible], colors="#c0392b", linewidths=2.4), autolim=False)
-    points = coordinates(crossing)[real(crossing.kernel)]
+    points = coordinates(crossing)[real(crossing)]
     ax.scatter(*points.T, color="#c0392b", s=45, depthshade=False)
     ax.set(xlim=(-RADIUS, RADIUS), ylim=(-RADIUS, RADIUS), zlim=(-RADIUS, RADIUS))
     ax.set_box_aspect((1, 1, 1), zoom=1.7)

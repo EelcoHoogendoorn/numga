@@ -8,6 +8,7 @@ from examples.orientation.normals import core
 from examples.orientation.normals.core import Axis, Plane, Point, Spear, Surface, mv
 
 
+# --- math -----------------------------------------------------------------------------
 def normals() -> tuple[Point, Plane, Surface, Plane]:
     """A plane's positive side and a triangle's winding under the same reflection."""
     triangle: Point = mv.antivector([
@@ -36,10 +37,15 @@ def pairs_in_mirror() -> tuple[Plane, Point, Axis, Spear, Plane]:
     return *core.reflect_crossing(planes, ends, mirror), mirror
 
 
-if __name__ == "__main__":
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
     from examples.animation import save_figure
     from examples.orientation.normals import render
 
     save_figure(render.draw_normals(*normals()), "normal_orientation")
     save_figure(render.draw_line_in_mirror(*line_in_mirror()), "line_in_mirror")
     save_figure(render.draw_pairs_in_mirror(*pairs_in_mirror()), "pairs_in_mirror")
+
+
+if __name__ == "__main__":
+    main()

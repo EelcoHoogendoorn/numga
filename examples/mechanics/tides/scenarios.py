@@ -8,21 +8,23 @@ import numpy as np
 
 from examples.mechanics.tides import core
 
+# The mass and its core radius; the cluster's stars, its radius and the seed that places them, its starting
+# centre and velocity; and the time step and the steps per frame.
 MASS = 1.0
 MASS_CORE = 0.3
-STARS = 300
+N_STARS = 300
 CLUSTER_RADIUS = 0.25
 SEED = 1
 START = [-3.0, 0.5, 0.0]
 START_VELOCITY = [0.5, 0.0, 0.0]
 DT = 0.005
-SUBSTEPS = 10
+N_SUBSTEPS = 10
 # The field's half extents and its sample counts in the plane z = 0.
 HALF_WIDTH, HALF_HEIGHT = 3.6, 2.4
-COLUMNS, ROWS = 360, 240
-# The flyby ends while the stream is still in the picture.
-FRAMES = 120
-FRAME_MS = 50
+N_COLUMNS, N_ROWS = 360, 240
+# The flyby's frames, ending while the stream is still in the picture, and a frame's duration in milliseconds.
+N_FRAMES = 120
+FRAME_DURATION = 50
 
 
 # --- math -----------------------------------------------------------------------------
@@ -31,8 +33,8 @@ def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
     masses = core.Masses(core.mv.vector([[0.0, 0.0, 0.0]]).dual(), np.array([MASS]), MASS_CORE)
     rng = np.random.default_rng(SEED)
     # Uniform over the disc: a radius growing as the square root, turned by a rotor to a random angle.
-    radii = CLUSTER_RADIUS * np.sqrt(rng.uniform(size=STARS))
-    turns = (core.mv.xy * (-np.pi * rng.uniform(size=STARS))).exp()           # [stars] Rotor
+    radii = CLUSTER_RADIUS * np.sqrt(rng.uniform(size=N_STARS))
+    turns = (core.mv.xy * (-np.pi * rng.uniform(size=N_STARS))).exp()           # [stars] Rotor
     offsets = turns >> (core.mv.x.dual() * radii)                            # [stars] Point
     centre, velocity = core.mv.vector(START).dual(), core.mv.vector(START_VELOCITY).dual()   # [] Point each
     stars = core.Stars(centre + offsets, velocity.broadcast_to(offsets.shape))
@@ -40,12 +42,12 @@ def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
     return masses, stars, shape
 
 
-def flyby(frames: int) -> Iterator[tuple[core.Stars, core.Shape]]:
+def flyby(n_frames: int) -> Iterator[tuple[core.Stars, core.Shape]]:
     """The stars, and the cluster's shape as the tidal map deforms it, frame by frame."""
     masses, stars, shape = setting()
-    for _ in range(frames):
+    for _ in range(n_frames):
         yield stars, shape
-        for _ in range(SUBSTEPS):
+        for _ in range(N_SUBSTEPS):
             stars, shape = stars.fall(masses, DT), shape.deform(masses, DT)
 
 
@@ -58,7 +60,7 @@ def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form
 def field() -> tuple[core.Point, core.Even, core.Scalar]:
     """The derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
     masses, _, _ = setting()
-    points = core.grid(HALF_WIDTH, HALF_HEIGHT, COLUMNS, ROWS)              # [rows, columns] Point
+    points = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)              # [rows, columns] Point
     derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even
     return points, derivative, -derivative.select[0] / (4 * np.pi)
 
@@ -69,11 +71,11 @@ def main() -> None:
     from examples.mechanics.tides import render
 
     points, derivative, density = field()
-    states = list(flyby(FRAMES))
+    states = list(flyby(N_FRAMES))
     drawn = [(stars, *outline(stars, shape)) for stars, shape in states]
-    save_animation(render.animate(points, density, drawn), "tides_flyby", FRAME_MS)
+    save_animation(render.animate(points, density, drawn), "tides_flyby", FRAME_DURATION)
 
-    # --- checks
+    # checks
     # The derivative of gravity is minus four pi times the Plummer density, and has no curl.
     masses, _, _ = setting()
     towards = masses.centres - points[..., None]

@@ -5,7 +5,8 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.orientation.optical_rotation.core import Polarization, ga
+from numga import stack
+from examples.orientation.optical_rotation.core import Polarization, mv
 
 LEG_COLOURS = ("#df7246", "#238c9b")
 HALF_WIDTH = 0.45                                     # drawn half-length of a polarization line
@@ -22,7 +23,8 @@ def _segment(ax: plt.Axes, position: float, vector: np.ndarray, half_width: floa
 def draw_isolator(polarizations: Polarization, depths: np.ndarray) -> plt.Figure:
     """`[media, setups, legs, depths]` polarizations: one panel per medium and setup, the beam running
     left to right, out to the reflector and back, with the entering polarization dashed at both ends."""
-    vectors = polarizations.cast(ga.subspace("x y z")).kernel                    # [media, setups, legs, depths, 3]
+    # Each polarization read by pairing it with the planes across x, y and z.
+    vectors = (stack((mv.x, mv.y, mv.z), axis=-1) & polarizations[..., None]).to_array()   # [media, setups, legs, depths, 3]
     length = depths[-1]
     along = np.stack([depths, length + depths])                                   # [legs, depths]
     media, setups = vectors.shape[:2]

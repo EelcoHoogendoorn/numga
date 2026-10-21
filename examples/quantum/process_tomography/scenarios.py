@@ -53,7 +53,7 @@ def completeness() -> core.Scalar:
 
 
 # --- plumbing -------------------------------------------------------------------------
-if __name__ == "__main__":
+def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quantum.process_tomography import render
 
@@ -71,3 +71,7 @@ if __name__ == "__main__":
     frames = ((combined[:, None, None](surface), combined[:, None](prepared))
               for combined in core.powers(learned, STEPS))
     save_animation(render.animate(surface, prepared, frames, LABELS), "process_tomography", FRAME_DURATION)
+
+
+if __name__ == "__main__":
+    main()

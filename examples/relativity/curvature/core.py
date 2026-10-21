@@ -40,14 +40,11 @@ Tidal = STA.gatype((Vector, Antivector))            # Vector <- Antivector
 Strain = STA.gatype((Antivector, Antivector))       # Antivector <- Antivector
 
 t, x, y, z = mv.vector(np.eye(4))
-# The metric on directions: from a direction, the vector that pairs with every other direction as their
-# metric product does.
-lower = (Vector * (Antivector | Antivector)).trace(1, 2)     # Vector <- Antivector
-# One unit along the lab's time: the direction the metric turns into the lab's time slice.
-time_direction = lower.solve(t)                              # [] Antivector
-# A wave travelling along z at the speed of light, and its wave vector, the metric's vector of that direction.
+# One unit along the lab's time: the direction across the lab's slice of space `t`.
+time_direction = -t.dual()                                   # [] Antivector
+# A wave travelling along z at the speed of light, and its wave vector, the slice its dual gives that direction.
 travel = time_direction + mv.z.dual()                        # [] Antivector
-wave_vector = lower(travel)                                  # [] Vector
+wave_vector = -travel.dual()                                 # [] Vector
 # An eighth of a turn in the plane across the wave.
 eighth_turn = (mv.xy * (np.pi / 8)).exp()
 
@@ -81,7 +78,8 @@ def tidal_map(curvature: Curvature, observer: Antivector) -> Tidal:
 
 def boosted_observers(rapidities: np.ndarray, direction: Antivector) -> Antivector:
     """Velocities of observers boosted along a spatial direction, one per rapidity."""
-    boosts = ((lower(direction) ^ t) * (rapidities / 2)).exp()               # [n] Rotor
+    # The plane of the boost is the join of the direction and time, which the dual turns into a generator.
+    boosts = ((direction & time_direction).dual() * (rapidities / 2)).exp()  # [n] Rotor
     return boosts >> time_direction                                          # [n] Antivector
 
 
@@ -104,10 +102,10 @@ def polarized(plus: Extensor, cross: Extensor, profiles: np.ndarray) -> Extensor
 def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
     """Curvature as a map on pairs of directions, from the strain's second derivative along the wave.
 
-    Applied to edges `a` and `b` it gives `(k & a) * (k ^ lower(second(b))) - (k ^ lower(second(a))) * (k & b)`;
+    Applied to edges `a` and `b` it gives `(k & a) * (second(b).dual() ^ k) - (second(a).dual() ^ k) * (k & b)`;
     its two arguments are the plane's edges, in that order.
     """
-    bent = k ^ lower(second)                                                 # [...] Bivector <- Antivector
+    bent = second.dual() ^ k                                                 # [...] Bivector <- Antivector
     return (k & Antivector) * bent - bent * (k & Antivector)                 # [...] Bivector <- (Antivector, Antivector)
 
 

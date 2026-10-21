@@ -1,139 +1,177 @@
-"""Drawing for the symmetry example: heat-flow ellipsoids, flywheel moments, lattice responses."""
+"""Drawing for the symmetry example, ray traced: heat-flow ellipsoids, the cubic lattice and its responses, and
+rotary powers on the sphere of directions."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import numpy as np
 
-from examples.mechanics.symmetry.core import Point, Scalar, Vector
+from numga import stack
+from examples import raytrace as rt
+from examples.raster import rasterise, screen, view_frame
+from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, mv, pga_mv
+
+DRIVING_COLOUR, FLOW_COLOUR = "#262b32", "#d44e1a"
+SURFACE_COLOUR = np.array([0.36, 0.60, 0.80])
+STIFFNESS_COLOUR = np.array([0.88, 0.52, 0.30])
+SITE_COLOURS = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
+BACKGROUND = np.array([1.0, 1.0, 1.0])
+# The view's angles, the pixels across a panel, the margin around what it shows as a fraction of its larger
+# side, and the surface samples it is framed by.
+VIEW = (23, -55)
+PIXELS = 360
+MARGIN = 0.08
+N_FRAMING = 400
+# The lattice's site and bond radii, in lattice spacings.
+SITE_RADIUS, BOND_RADIUS = 0.13, 0.035
 
 
-def draw_conduction(labels: list[str], surfaces: Vector, driving: Vector, fluxes: Vector) -> plt.Figure:
-    """Draw the image of the unit input sphere, and one common input/output pair."""
-    coordinates = surfaces.cast(Vector.output_subspace).kernel
-    flow = fluxes.cast(Vector.output_subspace).kernel
-    direction = driving.cast(Vector.output_subspace).kernel
-    radius = np.linalg.norm(coordinates, axis=-1).max() * 1.05
-    arrow = direction * radius * 0.85
-    angles = np.degrees(np.arccos(np.clip(flow @ direction / np.linalg.norm(flow, axis=-1), -1, 1)))
+# --- plumbing -------------------------------------------------------------------------
+def euclidean(points: Point) -> np.ndarray:
+    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    return ((stack((pga_mv.x, pga_mv.y, pga_mv.z)) & points[..., None]) / (pga_mv.w & points)[..., None]).to_array()
 
-    fig = plt.figure(figsize=(15, 5.6), dpi=140)
-    fig.suptitle("What heat flow does crystal symmetry allow?", fontsize=19, y=0.97)
-    fig.text(0.5, 0.895, "Each surface is K applied to every unit driving field: a heat-flow ellipsoid.",
-             ha="center", fontsize=12, color="#46505a")
-    for i, (label, surface, flux, angle) in enumerate(zip(labels, coordinates, flow, angles)):
-        ax = fig.add_subplot(1, 4, i + 1, projection="3d", computed_zorder=False)
-        ax.plot_surface(*np.moveaxis(surface, -1, 0), color="#438ab0", alpha=0.4,
-                        linewidth=0.15, edgecolor="#356781", rstride=2, cstride=2)
-        ax.quiver(0, 0, 0, *arrow, color="#262b32", linewidth=2, arrow_length_ratio=0.12, zorder=3)
-        ax.quiver(0, 0, 0, *flux, color="#d44e1a", linewidth=3, arrow_length_ratio=0.16, zorder=4)
-        ax.set(xlim=(-radius, radius), ylim=(-radius, radius), zlim=(-radius, radius),
-               xlabel="flow x", ylabel="flow y", zlabel="flow z")
-        ax.set_box_aspect((1, 1, 1))
-        ax.view_init(elev=25, azim=-120)
-        ax.set_xticks([-4, 0, 4])
-        ax.set_yticks([-4, 0, 4])
-        ax.set_zticks([-4, 0, 4])
-        ax.tick_params(labelsize=8, pad=0)
-        ax.set_title(label, fontsize=11, pad=7)
-        ax.text2D(0.5, -0.16, f"Flow deflection: {angle:.1f}°", transform=ax.transAxes,
-                  ha="center", fontsize=11, color="#a53c14")
-    fig.legend([Line2D([], [], color="#262b32", lw=2), Line2D([], [], color="#d44e1a", lw=3)],
-               ["Same driving direction (arrow length arbitrary)", "Resulting heat flow"],
-               loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.06))
-    fig.text(0.5, 0.025, "Symmetry constrains the response: 6 → 3 → 2 → 1 independent components.",
-             ha="center", fontsize=11)
-    fig.subplots_adjust(left=0.01, right=0.975, bottom=0.22, top=0.78, wspace=0.03)
+
+def along(directions: Direction) -> np.ndarray:
+    """The components of directions along x, y and z: their pairings with the planes x, y and z."""
+    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
+
+
+def across(fields: Field) -> np.ndarray:
+    """The components of fields along x, y and z: their pairings with the directions x, y and z."""
+    return (fields[..., None] & stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))).to_array()
+
+
+def matrices(conductivities: Conductivity) -> np.ndarray:
+    """The conductivities' matrices `[..., 3, 3]`: column j the flow driven by the unit field along axis j."""
+    return np.swapaxes(along(conductivities[..., None](stack((mv.x, mv.y, mv.z)))), -1, -2)
+
+
+def image_of_sphere(matrix: np.ndarray) -> rt.Quadric:
+    """The solid ellipsoid a map with these matrices makes of the unit ball: its points x satisfy
+    `x @ inv(matrix @ matrix.T) @ x <= 1`."""
+    return rt.quadric(np.linalg.inv(matrix @ np.swapaxes(matrix, -1, -2)), np.zeros(matrix.shape[:-2] + (3,)))
+
+
+def panel(ax: plt.Axes, rgb: np.ndarray, middle: np.ndarray, half: np.ndarray) -> None:
+    """An image on screen coordinates, framed about the middle with the given half width and height, without
+    axes."""
+    x, y = on_screen(middle)
+    ax.imshow(np.clip(rt.downsample(rgb, rt.SUPERSAMPLE), 0, 1), extent=(x - half[0], x + half[0], y - half[1], y + half[1]), interpolation="bilinear")
+    ax.set_axis_off()
+
+
+def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
+    """A row of panels with the given half widths and heights, each as wide as its aspect asks, filling the
+    figure's height, with a thin gap between them."""
+    widths = [height * half[0] / half[1] for half in halves]
+    fig = plt.figure(figsize=(sum(widths) * 1.02, height), dpi=120)
+    grid = fig.add_gridspec(1, len(halves), width_ratios=widths, left=0, right=1, bottom=0, top=1, wspace=0.02)
+    return fig, [fig.add_subplot(cell) for cell in grid]
+
+
+def on_screen(points: np.ndarray) -> np.ndarray:
+    """Points `[..., 3]` in screen coordinates about the view's centre at the origin."""
+    return points @ rt.view_axes(*VIEW)[:2].T
+
+
+def mesh_image(vertices: np.ndarray, colour: np.ndarray, middle: np.ndarray, extent: float) -> np.ndarray:
+    """A square RGB image, of half width extent about the middle, of a closed surface sampled on a
+    latitude-longitude grid `[latitudes, longitudes, 3]`, smooth shaded by normals interpolated from the corners, each the mean of its triangles' normals."""
+    rows, cols = vertices.shape[:2]
+    index = np.arange(rows * cols).reshape(rows, cols)
+    corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
+    faces = np.concatenate([np.stack([corner[0], corner[1], corner[2]], -1), np.stack([corner[0], corner[2], corner[3]], -1)])
+    flat = vertices.reshape(-1, 3)
+    normal = np.cross(flat[faces[:, 1]] - flat[faces[:, 0]], flat[faces[:, 2]] - flat[faces[:, 0]])
+    # Outward: away from the centre.
+    normal *= np.sign(np.sum(normal * flat[faces].mean(axis=1), axis=-1, keepdims=True))
+    corner_normal = np.zeros_like(flat)
+    np.add.at(corner_normal, faces.ravel(), np.repeat(normal, 3, axis=0))
+    corner_normal /= np.linalg.norm(corner_normal, axis=-1, keepdims=True) + 1e-12
+    frame = view_frame(*VIEW)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pixel, owner, weight, _ = rasterise(screen(flat, frame, middle, extent, PIXELS * rt.SUPERSAMPLE), faces, PIXELS * rt.SUPERSAMPLE)
+    smooth = np.einsum("pk,pkc->pc", weight, corner_normal[faces[owner]])
+    smooth /= np.linalg.norm(smooth, axis=-1, keepdims=True)
+    size = PIXELS * rt.SUPERSAMPLE
+    rgb = np.ones((size * size, 3)) * BACKGROUND
+    rgb[pixel] = rt.shade(colour, smooth, rt.lamp(*VIEW), frame[2], 1.0)
+    return rgb.reshape(size, size, 3)[::-1]
+
+
+def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direction) -> plt.Figure:
+    """For the candidate and each group's average, the image of the unit ball of driving fields, a heat-flow
+    ellipsoid, with one driving field, dark, and the heat flow it drives, orange."""
+    matrix = matrices(conductivities)                                         # [panels, 3, 3]
+    flow_matrix = matrix @ np.swapaxes(matrix, -1, -2)
+    largest = np.sqrt(np.linalg.eigvalsh(flow_matrix).max())
+    # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
+    driving_tip, flows = across(driving) * largest, along(fluxes)
+    surfaces = rt.ellipsoid_points(np.linalg.inv(flow_matrix), np.zeros(3), N_FRAMING)
+    middle, half = rt.framing(np.concatenate([surfaces.reshape(-1, 3), driving_tip[None], flows]), *VIEW, MARGIN)
+    fig, axes = figure([half] * len(matrix), 3.6)
+    for ax, panel_matrix, flow in zip(axes, matrix, flows):
+        rgb, _ = rt.scene(image_of_sphere(panel_matrix)[None], SURFACE_COLOUR[None], (*VIEW, middle, half, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
+        panel(ax, rgb, middle, half)
+        for vector, colour, width in ((driving_tip, DRIVING_COLOUR, 1.8), (flow, FLOW_COLOUR, 2.6)):
+            ax.annotate("", xy=on_screen(vector), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=colour, lw=width))
     return fig
 
 
-def draw_flywheel(arms: Point, angles: np.ndarray, moments: Scalar) -> plt.Figure:
-    """Show the point masses and moment of inertia versus the in-plane axis direction."""
-    homogeneous = arms.cast(Point.output_subspace).kernel
-    coordinates = homogeneous[..., :3] / homogeneous[..., 3:]
-    curves = moments.kernel[..., 0]
-    fig = plt.figure(figsize=(11, 5.6), dpi=140)
-    fig.suptitle("Threefold shape, axially symmetric inertia", fontsize=18, y=0.97)
-    ax = fig.add_subplot(1, 2, 1)
-    for points, color in zip(coordinates, ("#d44e1a", "#438ab0", "#438ab0")):
-        points = points.reshape(-1, 3)
-        ax.scatter(points[:, 0], points[:, 1], s=12, color=color)
-    ax.scatter([0], [0], s=30, color="#262b32")
-    ax.axhline(0, color="#adb4bb", lw=0.7, zorder=0)
-    ax.axvline(0, color="#adb4bb", lw=0.7, zorder=0)
-    ax.set(aspect="equal", xlabel="x", ylabel="y", title="Three unit-mass arms, 120° apart")
-    ax.spines[["top", "right"]].set_visible(False)
+def lattice_scene(sites: Point, axial: Point, diagonal: Point) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The lattice's sites as spheres, the centre dark, its axial neighbours orange, its diagonal ones blue,
+    and the bonds from the centre to them as thin ellipsoids: their matrices, centres and colours."""
+    positions, axial_ends, diagonal_ends = euclidean(sites), euclidean(axial), euclidean(diagonal)
+    kind = np.where(np.linalg.norm(positions, axis=-1) < 1e-9, "centre", "other").astype(object)
+    for ends, name in ((axial_ends, "axial"), (diagonal_ends, "diagonal")):
+        kind[np.isclose(positions[:, None], ends[None]).all(axis=-1).any(axis=1)] = name
+    ends = np.concatenate([axial_ends, diagonal_ends])
+    length = np.linalg.norm(ends, axis=-1, keepdims=True)
+    unit = ends / length
+    # A bond: a cigar from the centre to its end, long along the bond and thin across it.
+    across_bond = (np.eye(3) - unit[:, :, None] * unit[:, None, :]) / BOND_RADIUS**2
+    bond_matrix = unit[:, :, None] * unit[:, None, :] / (length[..., None] / 2) ** 2 + across_bond
+    matrix = np.concatenate([np.broadcast_to(np.eye(3) / SITE_RADIUS**2, (len(positions), 3, 3)), bond_matrix])
+    centre = np.concatenate([positions, ends / 2])
+    colours = np.array([SITE_COLOURS[name] for name in kind] + [SITE_COLOURS["axial"]] * len(axial_ends)
+                       + [SITE_COLOURS["diagonal"]] * len(diagonal_ends))
+    return matrix, centre, colours
 
-    ax = fig.add_subplot(1, 2, 2, projection="polar")
-    for curve, color, label in zip(curves, ("#d44e1a", "#438ab0"), ("One arm", "Whole flywheel")):
-        ax.plot(angles, curve, color=color, lw=2.5, label=label)
-    ax.set_title("Moment about an axis in the wheel's plane", pad=24)
-    ax.set_rlabel_position(65)
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False)
-    fig.text(0.5, 0.025, "Polar angle = axis direction; radius = moment of inertia. All axes pass through the hub.",
-             ha="center", fontsize=11)
-    fig.subplots_adjust(left=0.07, right=0.94, top=0.79, bottom=0.2, wspace=0.32)
+
+def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Conductivity, stiffness: Direction) -> plt.Figure:
+    """The lattice with its bonds; the lattice's conduction, the image of the unit ball of fields, a sphere;
+    and its stiffness along every direction as a radius, a cube with rounded faces."""
+    lattice_matrix, lattice_centre, colours = lattice_scene(sites, axial, diagonal)
+    lattice_view = rt.framing(rt.ellipsoid_points(lattice_matrix, lattice_centre, N_FRAMING), *VIEW, MARGIN)
+    matrix = matrices(conductivity)
+    conduction_view = rt.framing(rt.ellipsoid_points(np.linalg.inv(matrix @ matrix.T), np.zeros(3), N_FRAMING), *VIEW, MARGIN)
+    vertices = along(stiffness)
+    stiffness_middle, stiffness_half = rt.framing(vertices, *VIEW, MARGIN)
+    stiffness_half = np.full(2, stiffness_half.max())
+    fig, axes = figure([lattice_view[1], conduction_view[1], stiffness_half], 4.0)
+    lattice, _ = rt.scene(rt.quadric(lattice_matrix, lattice_centre), colours, (*VIEW, *lattice_view, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
+    panel(axes[0], lattice, *lattice_view)
+    conduction, _ = rt.scene(image_of_sphere(matrix)[None], SURFACE_COLOUR[None], (*VIEW, *conduction_view, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
+    panel(axes[1], conduction, *conduction_view)
+    panel(axes[2], mesh_image(vertices, STIFFNESS_COLOUR, stiffness_middle, stiffness_half[0]), stiffness_middle, stiffness_half)
     return fig
 
 
-def draw_crystal(sites: Point, axial: Point, diagonal: Point,
-                 conduction: Vector, stiffness: Vector) -> plt.Figure:
-    """Plot the lattice bonds and radial directional responses, each in its own units."""
-    fig = plt.figure(figsize=(15, 5.6), dpi=140)
-    fig.suptitle("One cubic symmetry group, two different kinds of response", fontsize=18, y=0.97)
-    ax = fig.add_subplot(1, 3, 1, projection="3d")
-    homogeneous = sites.cast(Point.output_subspace).kernel
-    coordinates = homogeneous[..., :3] / homogeneous[..., 3:]
-    ax.scatter(*coordinates.T, s=30, color="#7e8b98", alpha=0.6)
-    for neighbours, color, label in ((axial, "#d44e1a", "6 axial neighbours"),
-                                      (diagonal, "#438ab0", "12 face-diagonal neighbours")):
-        homogeneous = neighbours.cast(Point.output_subspace).kernel
-        coordinates = homogeneous[..., :3] / homogeneous[..., 3:]
-        for end in coordinates:
-            ax.plot([0, end[0]], [0, end[1]], [0, end[2]], color=color, lw=1.5)
-        ax.scatter(*coordinates.T, s=45, color=color, label=label)
-    ax.scatter([0], [0], [0], s=70, color="#262b32")
-    ax.set(title="Two seed bonds generate both families", xlabel="x", ylabel="y", zlabel="z")
-    ax.set_box_aspect((1, 1, 1))
-    ax.view_init(elev=23, azim=-55)
-    ax.legend(loc="lower center", bbox_to_anchor=(0.5, -0.25), frameon=False, fontsize=10)
-
-    for panel, surface, color, title, caption in (
-        (2, conduction, "#438ab0", "Conductivity: isotropic", "Radius = d · K(d) = 2/3 in every direction"),
-        (3, stiffness, "#d44e1a", "Elastic stiffness: cubic anisotropy", "Radius = C(d, d, d, d)\n1/2 on axes; 1/3 on body diagonals"),
-    ):
-        coordinates = surface.cast(Vector.output_subspace).kernel
-        limit = np.linalg.norm(coordinates, axis=-1).max() * 1.05
-        ax = fig.add_subplot(1, 3, panel, projection="3d")
-        ax.plot_surface(*np.moveaxis(coordinates, -1, 0), color=color,
-                        linewidth=0.15, edgecolor="#48505a", rstride=1, cstride=1, alpha=0.85)
-        ax.set(title=title, xlim=(-limit, limit), ylim=(-limit, limit), zlim=(-limit, limit),
-               xlabel="x", ylabel="y", zlabel="z", xticks=[], yticks=[], zticks=[])
-        ax.set_box_aspect((1, 1, 1))
-        ax.view_init(elev=23, azim=-55)
-        ax.text2D(0.5, -0.14, caption, transform=ax.transAxes, ha="center", fontsize=10)
-    fig.text(0.5, 0.035, "Averaging over the same 24 cube rotations makes conductivity isotropic while preserving cubic elastic anisotropy.",
-             ha="center", fontsize=11)
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.82, bottom=0.22, wspace=0.05)
-    return fig
-
-
-def draw_optical_activity(labels: list[str], surfaces: Scalar, sphere: Vector) -> plt.Figure:
-    """Colour the unit sphere of light directions by the rotary power along each, one sphere per group."""
-    powers = surfaces.cast(Scalar.output_subspace).kernel[..., 0]
-    coordinates = sphere.cast(Vector.output_subspace).kernel
+def draw_optical_activity(rotary: Scalar) -> plt.Figure:
+    """For the candidate and each group's average, the sphere of light directions coloured by the rotary
+    power along each, red for one sense and blue for the other, shaded by the lamp."""
+    middle, half = rt.framing(rt.ellipsoid_points(np.eye(3), np.zeros(3), N_FRAMING), *VIEW, MARGIN)
+    origins, heading, lamp = rt.camera(*VIEW, middle, half, PIXELS * rt.SUPERSAMPLE)
+    distance, hit = rt.hits(rt.ellipsoid(np.ones(3)), origins, heading)
+    normal = rt.normals(rt.ellipsoid(np.ones(3)), hit)                         # [pixels, pixels, 3]
+    directions = mv.vector(normal).dual()                                     # [pixels, pixels] Direction
+    powers = rotary[:, None, None](directions[None], directions[None]).to_array()   # [panels, pixels, pixels]
     limit = np.abs(powers).max()
-    colors = plt.get_cmap("RdBu_r")((powers / limit + 1) / 2)
-
-    fig = plt.figure(figsize=(16, 3.2), dpi=140)
-    for i, (label, color) in enumerate(zip(labels, colors)):
-        ax = fig.add_subplot(1, len(labels), i + 1, projection="3d")
-        ax.plot_surface(*np.moveaxis(coordinates, -1, 0), facecolors=color, rstride=1, cstride=1,
-                        linewidth=0, antialiased=False, shade=False)
-        ax.set(xticks=[], yticks=[], zticks=[], xlabel="x", ylabel="y", zlabel="z")
-        ax.set_box_aspect((1, 1, 1))
-        ax.view_init(elev=23, azim=-55)
-        ax.set_title(label, fontsize=11)
-    fig.subplots_adjust(left=0.01, right=0.99, top=0.88, bottom=0.05, wspace=0.02)
+    colours = plt.get_cmap("RdBu_r")((powers / limit + 1) / 2)[..., :3]
+    toward_viewer = rt.view_axes(*VIEW)[2]
+    fig, axes = figure([half] * len(powers), 2.6)
+    for ax, colour in zip(axes, colours):
+        rgb = np.where(np.isfinite(distance)[..., None], rt.shade(colour, normal, lamp, toward_viewer, 1.0), BACKGROUND)
+        panel(ax, rgb, middle, half)
     return fig

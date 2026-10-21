@@ -2,78 +2,131 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from itertools import islice
+
 import numpy as np
 
-from examples.estimation.epipolar.core import Camera, Line, Plane, Point, house_landmarks, mv, reconstruct
+from numga import Extensor, stack
+from examples.estimation.epipolar.core import Camera, Line, Motor, Point, mv, reconstruction, triangulate
+
+# The house, in camera 1's frame: the corners of its walls, its roof ridge and apexes, and a grid of ground
+# markers in front of it, by its half extents and depth.
+WALLS = [[-0.5, -0.4, 3.0], [0.5, -0.4, 3.0], [0.5, 0.4, 3.0], [-0.5, 0.4, 3.0],
+         [-0.5, -0.4, 4.0], [0.5, -0.4, 4.0], [0.5, 0.4, 4.0], [-0.5, 0.4, 4.0]]
+ROOF = [[0.0, -0.4, 4.6], [0.0, 0.4, 4.6], [-0.25, 0.0, 4.3], [0.25, 0.0, 4.3]]
+# The house's edges, by the landmarks they join: the walls' two rings and the four edges between them, and the
+# roof's ridge and the rafters from its ends.
+HOUSE_EDGES = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7],
+               [8, 9], [8, 4], [8, 5], [9, 6], [9, 7]]
+N_GROUND = (4, 3)
+GROUND_EXTENT = (0.8, 0.6)
+GROUND_DEPTH = 2.5
+# Camera 2's true pose: turned about y, then shifted.
+TURN = np.radians(14.0)
+SHIFT = np.array([0.65, 0.08, 0.18])
+# Sensor noise on the screen at unit distance, about 1.5 pixels on a 1000 pixel sensor, and its seed.
+NOISE = 0.0015
+SEED = 42
+# The Gauss-Newton steps; the animation's frames from one step to the next and held at the end, and the
+# duration of a frame in milliseconds.
+N_ITERATIONS = 4
+N_EASING, N_HOLD = 10, 16
+FRAME_DURATION = 50
 
 
-def epipolar():
-    """Two cameras view a house; from their noisy images recover the relative pose and the house."""
-    # The house, in camera 1's frame:
-    landmarks = house_landmarks()                     # [n] Point
-    n_points = landmarks.shape[0]
+# --- plumbing --------------------------------------------------------------
+def house() -> Point:
+    """The landmarks: the house's corners and the ground markers."""
+    across, up = (np.linspace(-extent, extent, count) for extent, count in zip(GROUND_EXTENT, N_GROUND))
+    grid_x, grid_y = np.meshgrid(across, up)
+    ground = np.stack([grid_x.ravel(), grid_y.ravel(), np.full(grid_x.size, GROUND_DEPTH)], axis=-1)
+    return mv.point(np.concatenate([WALLS, ROOF, ground]))                    # [landmarks] Point
 
-    # Camera 1 is at the world origin, looking along +z at the screen z == 1:
+
+# --- math ------------------------------------------------------------------
+def epipolar(noise: float):
+    """Two cameras view a house; from their images, with sensor noise of the given size, recover the
+    relative pose and the house. Returns the landmarks, the images and their measurements in both views,
+    the measured sight rays, over the iterations of the search the reconstructed landmarks, camera 2's true
+    pose, and over the iterations its found pose."""
+    landmarks = house()                                                       # [landmarks] Point
+
+    # Camera 1 is at the world origin, looking along +z at the screen z == 1: a point's image is where the
+    # sight ray through it, its join with the eye, meets the screen.
     origin = mv.w.dual()
     screen = mv.z - mv.w
-    camera: Camera = (origin & Point) ^ screen
+    camera: Camera = (origin & Point) ^ screen                                # [] Point <- Point
 
-    # Camera 2 ground truth pose: rotated 14 degrees around y, translated along [0.65, 0.08, 0.18]:
-    theta = np.radians(14.0)
-    true_rot = (mv.zx * (theta * 0.5)).exp()
-    true_trans = (mv.xw * 0.65 + mv.yw * 0.08 + mv.zw * 0.18) * 0.5
-    true_motor = (true_trans.exp() * true_rot).normalized()
+    true_shift = (stack((mv.xw, mv.yw, mv.zw)) * SHIFT).sum(axis=0) / 2       # [] Twist
+    true_motor: Motor = (true_shift.exp() * (mv.zx * (TURN / 2)).exp()).normalized()
 
-    # Each camera images the landmarks in its own frame, onto its own screen. Dividing by
-    # the weight, the pairing with the plane at infinity, gives the image points unit weight:
-    projected_1 = camera(landmarks)
-    projected_2 = camera(true_motor << landmarks)
-    image_1 = projected_1 / (mv.w & projected_1)      # [n] Point
-    image_2 = projected_2 / (mv.w & projected_2)
+    # Each camera images the landmarks in its own frame, onto its own screen. Dividing by the weight, the
+    # pairing with the plane at infinity, gives the image points unit weight.
+    projected = camera(Extensor.stack([landmarks, true_motor << landmarks]))  # [views, landmarks] Point
+    images = projected / (mv.w & projected)                                   # [views, landmarks] Point
 
-    # Realistic sensor measurement noise (standard deviation 0.0015, ~1.5 pixels on a 1000px sensor),
-    # a displacement within the screen:
-    rng = np.random.default_rng(42)
-    noise_sigma = 0.0015
-    in_screen = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-    noisy_1 = image_1 + mv.direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
-    noisy_2 = image_2 + mv.direction(rng.normal(0.0, noise_sigma, size=(n_points, 2)) @ in_screen)
+    # Sensor noise, a displacement within the screen.
+    in_screen = mv.direction([[1, 0, 0], [0, 1, 0]])                          # [2] Point
+    offsets = np.random.default_rng(SEED).normal(0.0, noise, size=images.shape + (2,))
+    measured = images + (in_screen * offsets).sum(axis=-1)                    # [views, landmarks] Point
 
-    # Measured sight rays, each in its own camera's frame:
-    rays_1 = (origin & noisy_1).normalized()
-    rays_2 = (origin & noisy_2).normalized()
+    # Measured sight rays, each in its own camera's frame. Jointly solve for the relative pose and the
+    # world points, starting from the right baseline without any rotation.
+    rays: Line = (origin & measured).normalized()                             # [views, landmarks] Line
+    iterates = islice(reconstruction(rays[0], rays[1], true_shift.exp().normalized()), N_ITERATIONS + 1)
+    est_motors, reconstructed = (Extensor.stack(path) for path in zip(*iterates))   # [iterations] Motor, [iterations, landmarks] Point
 
-    # Jointly solve for relative camera pose and 3D world points from the noisy measurements,
-    # starting from the right baseline without any rotation:
-    est_motor, reconstructed = reconstruct(rays_1, rays_2, true_trans.exp().normalized(), 10)
+    return landmarks, images, measured, rays, reconstructed, true_motor, est_motors
 
-    # The epipolar lines on camera 2's screen are the images of camera 1's rays: the line
-    # camera is the same join-then-meet with a line in the open slot.
-    line_camera = (origin & Line) ^ screen
-    epipolar_lines_2 = line_camera(est_motor << rays_1)
 
-    # --- checks
-    # The noise limits the recovery: the rotation comes back within half a degree, each
-    # rotated axis plane agreeing with the truth.
-    axes = mv(Plane.derive.nondegenerate, np.eye(3))
-    turned = (est_motor >> axes).normalized() | (true_motor >> axes).normalized()
-    assert np.all(turned.to_array() > np.cos(np.radians(0.5)))
-    # The baseline direction comes back within two degrees; its length is not observable.
-    true_baseline = origin & (true_motor >> origin)
-    est_baseline = origin & (est_motor >> origin)
-    assert (-(true_baseline.normalized() | est_baseline.normalized())).to_array() > np.cos(np.radians(2.0))
-    # Scaled about camera 1 to the true baseline, the house comes back within 10 cm RMS.
-    scale = true_baseline.norm() / est_baseline.norm()
+def easing(rays: Line, est_motors: Motor, n_easing: int, n_hold: int) -> Iterator[tuple[Motor, Point]]:
+    """The search drawn as a motion: camera 2's pose eased from one Gauss-Newton iterate to the next along
+    the screw between them, then held, with the world points the pose triangulates."""
+    fractions = np.arange(n_easing) / n_easing
+    for start, end in zip(est_motors[:-1], est_motors[1:]):
+        # The screw from one pose to the next, its log, taken a fraction of the way.
+        screw = (end * start.inverse()).log()                                 # [] Twist
+        for fraction in fractions:
+            motor = ((screw * fraction).exp() * start).normalized()
+            yield motor, triangulate(rays[0], rays[1], motor)
+    for _ in range(n_hold):
+        yield est_motors[-1], triangulate(rays[0], rays[1], est_motors[-1])
+
+
+def errors(landmarks: Point, reconstructed: Point, true_motor: Motor, est_motor: Motor):
+    """How far the recovery is from the truth: the cosines between the true and found turns of the axis
+    planes and between the baselines, and the house's RMS error once scaled about camera 1 to the true
+    baseline, the baseline's length being unobservable."""
+    axes = stack((mv.x, mv.y, mv.z))                                          # [3] Plane
+    alignment = (est_motor >> axes).normalized() | (true_motor >> axes).normalized()   # [3] Scalar
+    origin = mv.w.dual()
+    true_baseline = origin & (true_motor >> origin)                           # [] Line
+    est_baseline = origin & (est_motor >> origin)                             # [] Line
+    agreement = true_baseline.normalized().dot(est_baseline.normalized())     # [] Scalar
+    scale = true_baseline.norm() / est_baseline.norm()                        # [] Scalar
+    unit = reconstructed / (mv.w & reconstructed)                             # [landmarks] Point
     # The difference of two unit points is a direction; its length is the norm of its complement.
-    unit = reconstructed / (mv.w & reconstructed)
-    error = ((unit * scale + origin * (1.0 - scale)) - landmarks).dual()
-    assert error.norm_squared().mean(axis=0).square_root().to_array() < 0.1
+    error = ((unit * scale + origin * (1.0 - scale)) - landmarks).dual()      # [landmarks] Plane
+    return alignment, agreement, error.norm_squared().mean(axis=0).square_root()
 
-    return landmarks, image_1, image_2, noisy_1, noisy_2, epipolar_lines_2, reconstructed, true_motor, est_motor
+
+def main() -> None:
+    from examples.animation import save_animation
+    from examples.estimation.epipolar import render
+
+    landmarks, images, measured, rays, reconstructed, true_motor, est_motors = epipolar(NOISE)
+    frames = render.animate_reconstruction(landmarks, np.array(HOUSE_EDGES), true_motor, easing(rays, est_motors, N_EASING, N_HOLD))
+    save_animation(frames, "epipolar_reconstruction", FRAME_DURATION)
+
+    # checks
+    # The noise limits the recovery: each axis plane turns within half a degree of the truth, the baseline
+    # direction comes back within two degrees, and the house within 10 cm RMS.
+    alignment, agreement, rms = errors(landmarks, reconstructed[-1], true_motor, est_motors[-1])
+    assert np.all(alignment.to_array() > np.cos(np.radians(0.5)))
+    assert agreement.to_array() > np.cos(np.radians(2.0))
+    assert rms.to_array() < 0.1
 
 
 if __name__ == "__main__":
-    from examples.animation import save_figure
-    from examples.estimation.epipolar import render
-
-    save_figure(render.draw_epipolar(*epipolar()), "epipolar_reconstruction")
+    main()

@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Ellipse, FancyArrowPatch
 
-from examples.orientation.wu_experiment.core import Direction, Scalar, Spin, ga
+from numga import stack
+from examples.orientation.wu_experiment.core import Direction, Scalar, Spin, mv
 
 COIL_RADIUS = 0.55
 # The coil seen slightly from above: its near half drawn below its centre.
@@ -16,9 +17,10 @@ COIL_TILT = 0.22
 def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Figure:
     """One panel per case `[cases]`: the emission rate along each direction `[cases, directions]` as a
     polar curve in the xz plane, and the coil with the sense of its current."""
-    senses = spins.cast(ga.subspace("xy")).kernel[..., 0]                         # [cases]
-    coordinates = directions.cast(ga.subspace("x z")).kernel                       # [directions, 2]
-    curves = rates.cast(ga.subspace.scalar()).kernel[..., :1] * coordinates      # [cases, directions, 2]
+    # The sense of each coil's current, and each direction read by pairing it with the planes across x and z.
+    senses = spins.dot(mv.xy).to_array()                                          # [cases]
+    coordinates = (stack((mv.x, mv.z), axis=-1) & directions[..., None]).to_array()   # [directions, 2]
+    curves = rates.to_array()[..., None] * coordinates                            # [cases, directions, 2]
     limit = np.abs(curves).max() * 1.1
 
     figure, panels = plt.subplots(1, len(senses), figsize=(10, 3.9), dpi=100)

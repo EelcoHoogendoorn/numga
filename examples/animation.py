@@ -54,7 +54,7 @@ def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float
 def save_figure(figure: plt.Figure, name: str) -> Path:
     """Save a figure as PLOT_DIR/<name>.png, or the next free <name>_NN.png."""
     path = auto_increment_path(PLOT_DIR / f"{name}.png")
-    figure.savefig(path, bbox_inches="tight")
+    figure.savefig(path, bbox_inches="tight", pad_inches=0.02)
     print(f"Saved {path}")
     return path
 

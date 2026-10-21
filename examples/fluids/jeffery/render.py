@@ -1,6 +1,6 @@
 """Drawing for Jeffery orbits: the paths of the long axes on the sphere of directions, and the bodies
-tumbling in the shear flow. The flow runs to the right, its gradient points up, and the vorticity
-axis points out of the picture.
+tumbling in the shear flow. The flow runs to the right, its gradient points up, and the normal of the vortex plane
+points out of the picture.
 
 The bodies are ray cast. Each pixel's ray is taken into the body's frame by its rotor and back
 through its stretch onto the unit sphere the body was stretched from, where the ray keeps its
@@ -21,9 +21,10 @@ from numga import stack
 from examples.animation import capture
 from examples.fluids.jeffery import core
 
-x, y, z = core.axes.dual()                                 # along the flow, gradient and vorticity
+# The directions along the flow and along the gradient, and the normal of the vortex plane.
+x, y, z = core.axes.dual()
 # The colours of the starts, of the bodies and of the flow. The view as (elevation, azimuth) in
-# degrees: raised from the vorticity axis towards the gradient, then turned towards the flow. The lamp
+# degrees: raised from the normal of the vortex plane towards the gradient, then turned towards the flow. The lamp
 # over the viewer's left shoulder, by its parts towards the viewer, to the right and up, and the share
 # of a body's colour lit even where it faces away. The half width of the tumbling view, its pixels
 # across, and the rays per pixel along each side.
@@ -38,13 +39,13 @@ SUPERSAMPLE = 2
 
 
 def coordinates(points: core.Point) -> np.ndarray:
-    """Points for matplotlib's three-dimensional axes: along the vorticity axis, along the flow, and
+    """Points for matplotlib's three-dimensional axes: along the normal of the vortex plane, along the flow, and
     along the gradient, so that the gradient points up and the order stays right-handed."""
     return points.cast(core.ga.subspace("xy yz zx")).kernel
 
 
 def draw_sphere(ax) -> None:
-    """A faint unit sphere, with the flow's direction and the vorticity axis."""
+    """A faint unit sphere, with the flow's direction and the normal of the vortex plane."""
     polar, azimuth = np.meshgrid(np.linspace(0, np.pi, 13), np.linspace(0, 2 * np.pi, 25), indexing="ij")
     ax.plot_wireframe(np.sin(polar) * np.cos(azimuth), np.sin(polar) * np.sin(azimuth), np.cos(polar),
                       color="#cbd5e1", linewidth=0.4, alpha=0.6)
@@ -81,7 +82,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
 
 def camera() -> tuple[core.Point, core.Point, core.Point]:
     """The orthographic camera's right, up and back directions: the axes turned by the view, which
-    raises the vorticity axis towards the gradient, then turns it about the gradient towards the flow;
+    raises the normal of the vortex plane towards the gradient, then turns it about the gradient towards the flow;
     the same view as `frame_axes` gives matplotlib."""
     elevation, azimuth = np.radians(VIEW)
     view = ((core.mv.z ^ core.mv.x) * (-azimuth / 2)).exp() * ((core.mv.z ^ core.mv.y) * (-elevation / 2)).exp()   # [] Rotor

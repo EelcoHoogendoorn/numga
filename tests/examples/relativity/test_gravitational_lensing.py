@@ -65,7 +65,13 @@ def test_finite_source_light_integrates_to_the_radial_magnification():
 
 
 def test_scenes_pass_their_checks_and_draw():
-    directions, reached, area = scenarios.lens(97)
+    directions, reached, area, local = scenarios.lens(97)
+    # The reflections have no trace, so the trace is two; the local map is the derivative of the deflection.
+    np.testing.assert_allclose(local.trace().to_array(), 2.0, atol=1e-11)
+    probe, step = directions[::24, ::24], 1e-6 * mv.x.dual()
+    difference = (core.deflected(probe + step, scenarios.POSITIONS, scenarios.MASSES)
+                  - core.deflected(probe - step, scenarios.POSITIONS, scenarios.MASSES)) / 2e-6
+    np.testing.assert_allclose((difference - local[::24, ::24](mv.x.dual())).kernel, 0.0, atol=1e-7)
     steps = [scenarios.light(directions, reached, centre, 0.035) for centre in mv.x.dual() * np.array([-0.3, 0.0, 0.3])]
     figure = render.draw(directions, area, scenarios.deflected, scenarios.POSITIONS, steps[0])
     assert isinstance(figure, plt.Figure)

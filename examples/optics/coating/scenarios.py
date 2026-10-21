@@ -42,6 +42,9 @@ PULSE_WIDTH = 2000.0                                          # nm, its envelope
 DURATION = 27000.0                                            # nm of light travel
 N_FRAMES = 120
 HANDS = np.array([1.0, -1.0])                                 # turning with and against the helix
+# Field samples across each slice, and an animation frame's duration in milliseconds.
+N_SAMPLES_PER_LAYER = 5
+FRAME_DURATION = 50
 N_AXION_JUMPS = 241
 AXION_JUMPS = np.linspace(-3, 3, N_AXION_JUMPS)
 AXION_NAMES = ("Parallel to incident", "Perpendicular to incident", "Total reflection")
@@ -67,6 +70,8 @@ def circular() -> core.Polarization:
 
 
 def antireflection() -> tuple[core.Scalar, core.Scalar]:
+    """The reflected and transmitted power of x-polarized light at normal incidence on bare glass and on
+    glass under each quarter-wave coating, over the wavelengths: `[coatings, wavelengths]`."""
     incident = core.Ports.isotropic(INCIDENT_INDEX, core.mv.t)
     substrate = core.Ports.isotropic(SUBSTRATE_INDEX, core.mv.t)
     chi = core.dielectric(COATING_INDICES[:, None] ** 2 * np.ones(3), 1.0)
@@ -78,6 +83,8 @@ def antireflection() -> tuple[core.Scalar, core.Scalar]:
 
 
 def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
+    """The twisted reflector at normal incidence: its slices' centres and optic axes, and the reflected and
+    transmitted power of both circular polarizations through both helices, over the wavelengths."""
     directors, chi = helix(DEPTHS)
     medium = core.Medium.from_chi(chi, core.mv.t)
     distance = 2 * np.pi * THICKNESS / WAVELENGTHS
@@ -91,6 +98,8 @@ def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
 
 
 def axion() -> core.Scalar:
+    """The power reflected off a jump in the axion coupling alone, for x-polarized light at normal
+    incidence: along x, across it, and in all, for each jump."""
     # Identical ordinary dielectric responses: all reflection comes from the axion jump.
     chi = core.dielectric(np.full(3, SURROUNDING_INDEX ** 2), 1.0)
     incident = core.Ports.isotropic(SURROUNDING_INDEX, core.mv.t)
@@ -105,6 +114,8 @@ def axion() -> core.Scalar:
 
 
 def angular() -> core.Scalar:
+    """The positive helix's reflection of both circular polarizations over the angles of incidence and
+    the wavelengths."""
     _, chi = helix(DEPTHS)
     parallel = core.mv.t + core.mv.x * (SURROUNDING_INDEX * np.sin(ANGLES))
     medium = core.Medium.from_chi(chi[:, 0, None], parallel)
@@ -124,8 +135,7 @@ def penetration() -> tuple[np.ndarray, core.Vector]:
     """The electric field at the band's centre through the positive helix, `[cases, layers, samples]`,
     at the depths `[layers, samples]`."""
     wavelength = BAND_WAVELENGTH
-    samples_per_layer = 5
-    fractions = np.linspace(0, 1, samples_per_layer)
+    fractions = np.linspace(0, 1, N_SAMPLES_PER_LAYER)
     depths = (np.arange(N_LAYERS)[:, None] + fractions) * THICKNESS
     _, chi = helix(DEPTHS)
     medium = core.Medium.from_chi(chi[:, 0], core.mv.t)
@@ -198,9 +208,10 @@ def main() -> None:
     save_figure(render.field(depths, electric), "coating_internal_field")
     nodes, slab, directors, pulses, before, pulse_reflected, pulse_transmitted = time_domain()
     # The pulse that does not turn: one handedness comes back, the other passes.
-    save_animation(render.pulse(nodes, slab, directors, pulses[:, 2]), "coating_pulse", 50)
+    save_animation(render.pulse(nodes, slab, directors, pulses[:, 2]), "coating_pulse", FRAME_DURATION)
 
-    # --- checks
+    # checks
+    # Lossless layers conserve power: what is not reflected is transmitted.
     np.testing.assert_allclose((reflection + transmission).kernel, 1, atol=1e-10)
     np.testing.assert_allclose((twisted_reflection + twisted_transmission).kernel, 1, atol=1e-10)
     # The leapfrog keeps the pulse's energy, and the helix returns the hand that turns with it.

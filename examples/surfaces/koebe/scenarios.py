@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import stack
 from examples.surfaces.koebe import core
 
 # The number of points, how far their directions are nudged off an even spread, and its seed; the spread and
@@ -20,7 +21,7 @@ N_CENTRE_ITERATIONS = 8
 RAPIDITY = 0.6
 TILT = 0.4
 N_FRAMES = 48
-DURATION_MS = 80
+FRAME_DURATION = 80
 
 
 # --- math -----------------------------------------------------------------------------
@@ -28,7 +29,8 @@ def triangulation() -> tuple[core.Vector, np.ndarray, np.ndarray]:
     """Directions spread over the sphere along a Fibonacci spiral, each nudged a little at random, and the
     faces and edges of the hull of the points at random distances along them: a triangulation of the sphere
     with triangles of uneven shape."""
-    nudges = core.mv(core.Vector.derive.within("x y z"), np.random.default_rng(DIRECTION_SEED).normal(size=(N_POINTS, 3)))
+    axes = stack((core.mv.x, core.mv.y, core.mv.z))                           # [3] Vector
+    nudges = (axes * np.random.default_rng(DIRECTION_SEED).normal(size=(N_POINTS, 3))).sum(axis=-1)   # [points] Vector
     directions = (core.spiral(N_POINTS) + nudges * JITTER).normalized()        # [points] Vector
     faces = core.hull(directions * np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=N_POINTS)))
     edges = np.unique(np.sort(np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]]), axis=-1), axis=0)
@@ -63,7 +65,7 @@ def main() -> None:
     circles, faces, edges = centred()
     save_figure(render.draw(circles, faces, edges), "koebe")
     frames, faces, edges = boosted()
-    save_animation(render.animate(frames, faces, edges), "koebe_boost", DURATION_MS)
+    save_animation(render.animate(frames, faces, edges), "koebe_boost", FRAME_DURATION)
 
     # checks
     # Every circle squares to one, and the circles at the ends of every edge touch from outside.

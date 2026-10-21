@@ -8,7 +8,7 @@ from examples.orientation.wu_experiment import render, scenarios
 
 
 def test_emission_and_its_mirror_image():
-    spins, directions, rates = scenarios.experiment()
+    spins, directions, rates, _, _ = scenarios.experiment()
     original, image, built = rates.to_array()
 
     # Around the circle the rate averages to that of unpolarized nuclei; the closing sample repeats the first.

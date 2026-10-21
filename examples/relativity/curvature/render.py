@@ -18,7 +18,7 @@ from numga import stack
 
 from examples.animation import capture
 from examples.relativity.curvature import core
-from examples.relativity.curvature.core import Antivector, Curvature, Scalar, lower, mv
+from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 LIGHT = "#c3ccd4"
@@ -87,7 +87,7 @@ def draw_curvature_map(
     containing the wave's direction; the observer reads it as a tidal force, which the metric turns
     into an acceleration. The image is drawn as the plane of the wave's direction and that acceleration.
     """
-    readout = lower.solve(observer & curvature(observer & edge))        # [] Antivector
+    readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector
     across = readout / np.sqrt(-readout.squared().to_array())            # [] Antivector
     patches = (patch(observer, edge), patch(wave, across))
     observer_arrow, wave_arrow, readout_arrow = arrow(observer), arrow(wave), arrow(readout)

@@ -9,6 +9,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.colors import LogNorm
 
+from numga import NumpyContext, stack
 from numga.algebras import STA
 from examples.animation import capture
 from examples.optics.crystal_diffraction import core
@@ -69,6 +70,9 @@ def animate(frames: Iterable[tuple[core.Point, core.Plane, core.Scalar]], grid: 
 # --- spacetime read-out ---------------------------------------------------------------
 # Events, wavevectors and transfers in the algebra of spacetime, read along the observer's directions in space.
 SpacetimeVector = STA.gatype.vector()
+# Events are antivectors of spacetime.
+SpacetimeAntivector = STA.gatype.antivector()
+SPACETIME = NumpyContext(STA).multivector
 SpacetimeScalar = STA.gatype.scalar()
 OBSERVER_SPACE = STA.subspace("x y z")
 
@@ -93,10 +97,11 @@ def _draw_intensity(ax: Axes, peaks: np.ndarray, samples: np.ndarray, values: np
     ax.set(xlim=extent[:2], ylim=extent[2:], xticks=[], yticks=[])
 
 
-def spacetime_comparison(positions: SpacetimeVector, reciprocal: SpacetimeVector, transfers: SpacetimeVector,
+def spacetime_comparison(positions: SpacetimeAntivector, reciprocal: SpacetimeVector, transfers: SpacetimeVector,
                          energy_density: SpacetimeScalar) -> plt.Figure:
     """The atoms above and the energy density of the scattered field below, one column per case."""
-    points = positions.cast(OBSERVER_SPACE).kernel                      # [cases, atoms, 3]
+    # The events' positions: their pairings with the planes x, y and z.
+    points = (stack((SPACETIME.x, SPACETIME.y, SPACETIME.z)) & positions[..., None]).to_array()   # [cases, atoms, 3]
     peaks = reciprocal.cast(OBSERVER_SPACE).kernel                      # [cases, reflections, 3]
     samples = transfers.cast(OBSERVER_SPACE).kernel                     # [rows, columns, 3]
     values = energy_density.kernel[..., 0]                              # [cases, rows, columns]
