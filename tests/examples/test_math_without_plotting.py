@@ -48,6 +48,8 @@ import examples.math.klein_quadric.core
 import examples.math.klein_quadric.scenarios
 import examples.math.pascal.core
 import examples.math.pascal.scenarios
+import examples.math.penrose.core
+import examples.math.penrose.scenarios
 import examples.math.poncelet.core
 import examples.math.poncelet.scenarios
 import examples.math.spin_groups.core
