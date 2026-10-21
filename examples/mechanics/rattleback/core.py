@@ -1,0 +1,114 @@
+"""A rattleback: an ellipsoid rolling without slipping on a table, which turns rocking into spin and
+spin of one sense into rocking and back, in PGA3D.
+
+Its points and directions are antivectors, and its shape a map from planes to directions, the support
+map: the table's plane through the centre, read in the body, goes to the direction from the centre to
+the point that touches the table, `-shape(normal) / height`, with the height the pairing
+`normal & shape(normal)` under its square root. Rolling holds that point still: a spin of the body
+about its centre becomes the rate that turns it about the contact, the spin carried by the translation
+to the contact, the product `contact * origin.inverse()`. The adjugate of that rolling map pulls forques
+back onto spins and does so without the contact's reaction, which does no work under any rolling
+motion, so one solve gives the body's angular acceleration with the reaction eliminated.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterator
+
+from numga import Algebra
+from numga.backend.context import Context
+
+ga: Algebra
+ctx: Context
+mv = ctx.multivector
+
+Scalar = ga.gatype.scalar()
+# Planes through the origin; points and directions are antivectors, intrinsic.
+Plane = ga.gatype.vector().derive.nondegenerate
+Point = ga.gatype.antivector()
+Direction = Point.derive.degenerate
+Spin = ga.gatype.bivector().derive.nondegenerate
+Rate = ga.gatype.bivector()
+Motor = ga.gatype.rotor()
+Forque = ga.gatype.antibivector()
+AngularMomentum = Forque.derive.degenerate
+Shape = ga.gatype((Direction, Plane))                    # Direction <- Plane: the support map
+Stretch = ga.gatype((Direction, Direction))              # Direction <- Direction: the unit sphere onto the shell
+Rolling = ga.gatype((Rate, Spin))
+Inertia = ga.gatype((Forque, Rate))
+
+infinity = mv.w
+origin = infinity.dual()
+
+
+# --- math
+
+def contact_geometry(motor: Motor, shape: Shape, up: Direction) -> tuple[Plane, Direction, Scalar, Rolling]:
+    """The table's plane in the body, the direction from the centre to the lowest point, the centre's
+    height, and the motions that keep the lowest point instantaneously at rest."""
+    normal = (motor << up).dual_inverse()                         # Plane
+    height = (normal & shape(normal)).square_root()               # Scalar
+    contact = -shape(normal) / height                             # Direction
+
+    # A spin about the centre carried to the contact by the translation there, the product of the two
+    # points, turns the body about the contact.
+    rolling = (contact * origin.inverse() / 2).exp() >> Spin      # Rate <- Spin
+    return normal, contact, height, rolling
+
+
+def dynamics(motor: Motor, spin: Spin, shape: Shape, inertia: Inertia,
+             mass: float, gravity: Direction, up: Direction) -> tuple[Rate, Spin]:
+    """Rolling velocity and angular acceleration, with the contact force eliminated."""
+    normal, contact, height, rolling = contact_geometry(motor, shape, up)
+    rate = rolling(spin)                                          # Rate
+
+    # The touching point changes as the body rocks; differentiate its support geometry.
+    normal_rate = spin.commutator(normal)                         # Plane
+    contact_rate = -shape(normal_rate) / height - contact * (normal & shape(normal_rate)) / height.squared()  # Direction
+    rolling_change = (contact_rate * origin.inverse()).commutator(spin)   # Rate
+    force = (origin & (motor << gravity)) * mass                  # Forque
+
+    # The adjugate pairs forces with allowed rolling motions, so the resting contact does no work.
+    pullback = rolling.adjugate()                                 # AngularMomentum <- Forque
+    effective = pullback(inertia(rolling))                        # AngularMomentum <- Spin
+    acceleration = effective.solve(pullback(
+        force - inertia(rate).commutator(rate) - inertia(rolling_change)
+    ))                                                           # Spin
+    return rate, acceleration
+
+
+def energy(motor: Motor, spin: Spin, shape: Shape, inertia: Inertia,
+           mass: float, gravity: Direction, up: Direction) -> Scalar:
+    """Kinetic and gravitational energy of a rolling body."""
+    _, _, _, rolling = contact_geometry(motor, shape, up)
+    rate = rolling(spin)                                          # Rate
+    potential = -mass * (gravity.dual_inverse() & (motor >> origin))  # Scalar
+    return (rate & inertia(rate)) / 2 + potential
+
+
+# --- plumbing
+
+def step(motor: Motor, spin: Spin, dt: float,
+         velocity_and_acceleration: Callable[[Motor, Spin], tuple[Rate, Spin]]) -> tuple[Motor, Spin]:
+    """A fourth-order Runge–Kutta–Munthe-Kaas step in the body's motion algebra."""
+    def derivative(increment: Rate, angular: Spin) -> tuple[Rate, Spin]:
+        rate, acceleration = velocity_and_acceleration(motor * increment.exp(), angular)
+        ad = increment.commutator(Rate) * 2                       # Rate <- Rate
+        differential = Rate + ad / 2 + ad(ad) / 12                # Rate <- Rate
+        return differential(-rate / 2), acceleration
+
+    first_motion, first_spin = derivative(spin * 0, spin)
+    second_motion, second_spin = derivative(first_motion * (dt / 2), spin + first_spin * (dt / 2))
+    third_motion, third_spin = derivative(second_motion * (dt / 2), spin + second_spin * (dt / 2))
+    fourth_motion, fourth_spin = derivative(third_motion * dt, spin + third_spin * dt)
+    increment = (first_motion + 2 * second_motion + 2 * third_motion + fourth_motion) * (dt / 6)  # Rate
+    spin = spin + (first_spin + 2 * second_spin + 2 * third_spin + fourth_spin) * (dt / 6)  # Spin
+    return motor * increment.exp(), spin
+
+
+def evolve(motor: Motor, spin: Spin, dt: float,
+           velocity_and_acceleration: Callable[[Motor, Spin], tuple[Rate, Spin]]) -> Iterator[tuple[Motor, Spin]]:
+    """Placements and body-frame spins, from the start, without end."""
+    while True:
+        yield motor, spin
+        motor, spin = step(motor, spin, dt, velocity_and_acceleration)
