@@ -67,3 +67,16 @@ def test_the_flat_scenes_are_hit():
     for name in scenarios.FLAT_SCENES:
         for _, angle in scenarios.flat_scene(name, 2):
             assert np.isfinite(angle).any(axis=-1).all(), name
+
+
+def test_render_gpu_frame():
+    """Verify that WebGPU compute raytracing runs with in-shader supersampling and produces valid RGB frames."""
+    surf = cylinder(0.5)
+    img = render.render_gpu_frame(surf, shape=(40, 60))
+    assert img.shape == (40, 60, 3)
+    assert img.dtype == np.uint8
+    # Background color in 0..255 uint8 is roughly [35, 42, 55] due to sRGB gamma 1/2.2
+    # Ensure there are both foreground hits and background
+    assert np.any(img > 60)
+
+

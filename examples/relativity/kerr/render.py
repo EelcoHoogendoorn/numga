@@ -137,12 +137,47 @@ def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
     angle = np.arctan2(horizontal_y, horizontal_x)
+    turns, wavenumbers, phases = np.moveaxis(wave_modes(), -1, 0)
+    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
+    return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
+
+
+def wave_modes() -> np.ndarray:
+    """The disk's random waves, `[modes, 3]`: each one's whole turns around the disk, waves per unit
+    radius across it, and phase."""
     modes = np.random.default_rng(clump_seed)
     turns = modes.integers(3, 18, clump_modes)
     wavenumbers = modes.uniform(0.8, 4.0, clump_modes)
     phases = modes.uniform(0, 2 * np.pi, clump_modes)
-    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
-    return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
+    return np.stack([turns, wavenumbers, phases], axis=-1)
+
+
+def blackbody_table(hottest: float, n_entries: int) -> np.ndarray:
+    """White-balanced blackbody light from zero to the `hottest` temperature, K, as a one-row image
+    `[1, entries, 3]`."""
+    white = blackbody(np.array(white_temperature))
+    temperatures = np.linspace(0, hottest, n_entries)
+    return (blackbody(temperatures) * (white @ luminance_weights) / white)[None]
+
+
+def draw_frame(frame: np.ndarray) -> plt.Figure:
+    """A display image `[rows, columns, 3]`, edge to edge on black."""
+    figure = plt.figure(figsize=(9, 9 * frame.shape[0] / frame.shape[1]), facecolor="black")
+    ax = figure.add_axes((0, 0, 1, 1))
+    ax.imshow(frame)
+    ax.set_axis_off()
+    return figure
+
+
+def develop(disk: np.ndarray, sky: np.ndarray, reference: float, supersampling: int) -> np.ndarray:
+    """A display image from linear disk light and sky colour, `[rows, columns, 4]` each, rendered at
+    `supersampling` times the display's size: each averaged over its pixel's samples, the disk light
+    exposed so a blackbody at the `reference` temperature shows mid-grey."""
+    rows, columns = disk.shape[0] // supersampling, disk.shape[1] // supersampling
+    def averaged(light: np.ndarray) -> np.ndarray:
+        return light[..., :3].reshape(rows, supersampling, columns, supersampling, 3).mean(axis=(1, 3))
+    shown = exposed(averaged(disk), reference) + averaged(sky)
+    return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
 def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:
