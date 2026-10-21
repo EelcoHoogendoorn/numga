@@ -1,10 +1,15 @@
 """Light rays in the Kerr geometry, driven by geometric derivatives of their Hamiltonian.
 
 Events and the directions between them are antivectors, and a ray's momentum is a covector, a vector
-that pairs with a direction to a number, `momentum & direction`. The metric takes a direction to its
-covector: the flat metric, minus the dual, less a null dyad. Its inverse, the flat inverse plus the dyad, gives the ray
-Hamiltonian; differentiating with respect to momentum gives the tangent, a direction, and differentiating
-with respect to position gives minus the momentum rate, a covector. The scalar profile's gradient is a
+that pairs with a direction to a number, `momentum & direction`. The geometry is gauge theory gravity's:
+a flat background, and a position gauge field that carries the directions of a local frame, measured flat,
+to the directions of the Kerr geometry, `gauge(geometry)`: the identity plus the profile times the null
+dyad. The dyad squares to zero, so its inverse is the identity less the dyad, and no metric is written
+down: an observer's interval is the flat square of its direction carried back into the local frame, and a
+ray's Hamiltonian is half the flat square of its momentum raised and carried into it. Differentiating
+with respect to momentum gives the tangent, a direction, and differentiating with respect to position
+gives minus the momentum rate, a covector. The rotation gauge field, `rotation(geometry, direction)`,
+is the plane the local frame turns in per step along a direction. The scalar profile's gradient is a
 covector, paired with a small step to give the profile's change, and the null direction's derivative is a
 map from a step to the null direction's change along it; together they give the Hamiltonian's gradient,
 minus the force on the ray, without component equations. Camera rays are followed until each is captured
@@ -40,9 +45,9 @@ Rotor = ga.gatype.rotor()
 Screen = Antivector.derive.containing("t z")
 ScreenFrame = ga.gatype((Antivector, Screen))                # Antivector <- Screen
 Coherency = ga.gatype((Screen, Screen))                      # Screen <- Screen
-Metric = ga.gatype((Vector, Antivector))                     # Vector <- Antivector
-InverseMetric = ga.gatype((Antivector, Vector))              # Antivector <- Vector
 DirectionGradient = ga.gatype((Antivector, Antivector))      # Antivector <- Antivector
+# The position gauge field: from a direction of the local frame to one of the Kerr geometry.
+GaugeField = ga.gatype((Antivector, Antivector))             # Antivector <- Antivector
 # One unit along the lab's time, the direction across the lab's slice of space `mv.t`, and the part of a
 # direction within that slice.
 time = -mv.t.dual()                                          # [] Antivector
@@ -65,11 +70,13 @@ def field(position: Antivector, spin: Spin, mass: float) -> Field:
     radius = radius_squared.square_root()                                                   # [...] Scalar
     # Paired with a small step, how far the step changes the oblate radius.
     radius_gradient = (radius_squared * spatial - height).dual() / (radius * discriminant)  # [...] Vector
-    direction = (radius * spatial + spatial.commutator(spin) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector
+    # The hole turns as `(spin * (-angle / 2)).exp()` does, and drags the frame with it: the outgoing
+    # direction twists against the turning, by the position's commutator with the spin.
+    direction = (radius * spatial - spatial.commutator(spin) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector
     lever = spatial - 2 * radius * direction + height / radius_squared                      # [...] Antivector
     direction_gradient = (
         lever * (radius_gradient & Antivector)
-        + radius * space + space.commutator(spin)
+        + radius * space - space.commutator(spin)
         - (space.anticommutator(spin) ^ spin) / radius
     ) / (radius_squared + spin_squared)                                                     # [...] Antivector <- Antivector
     denominator = radius_squared.squared() - volume.squared()                               # [...] Scalar
@@ -77,31 +84,42 @@ def field(position: Antivector, spin: Spin, mass: float) -> Field:
     profile_gradient = profile * (3 * radius_gradient / radius
         - (4 * radius**3 * radius_gradient - 2 * height.dual()) / denominator)              # [...] Vector
     # The curl of the null covector, `-(Vector ^ null_gradient(Antivector).dual()).trace(1, 2)`, piece by
-    # piece: the rank-one piece gives its two covectors wedged, the turn by the spin twice the spin, the
+    # piece: the rank-one piece gives its two covectors wedged, the twist by the spin twice the spin, the
     # rest none.
-    null_curl = ((radius_gradient ^ lever.dual()) + 2 * spin) / (radius_squared + spin_squared)   # [...] Bivector
-    return Field(radius, profile, time - direction, profile_gradient, -direction_gradient, null_curl)  # [...] Field
+    null_curl = ((radius_gradient ^ lever.dual()) - 2 * spin) / (radius_squared + spin_squared)   # [...] Bivector
+    # The null direction light runs along, and its null plane, the light cone's tangent plane along it: the
+    # observer's slice tilted by the slice across the direction. The plane contains the direction.
+    null = time - direction                                                                 # [...] Antivector
+    null_plane = mv.t + direction.dual()                                                    # [...] Vector
+    return Field(radius, profile, null, null_plane, profile_gradient, -direction_gradient, null_curl)  # [...] Field
 
 
-def metric(geometry: Field) -> Metric:
-    """The flat metric, minus the dual, less the null dyad: a direction to its covector."""
-    null = -geometry.null.dual()                                                            # [...] Vector
-    return -Antivector.dual() + 2 * geometry.profile * null * (geometry.null | Antivector)  # [...] Vector <- Antivector
+def dyad(geometry: Field) -> GaugeField:
+    """The null dyad, weighted by the profile: the null direction, read by its null plane."""
+    return geometry.profile * geometry.null * (geometry.null_plane & Antivector)            # [...] Antivector <- Antivector
 
 
-def inverse_metric(geometry: Field) -> InverseMetric:
-    """The flat inverse plus the null dyad: covector momentum to the ray's tangent."""
-    return -Vector.dual() + 2 * geometry.profile * geometry.null * (Vector & geometry.null)       # [...] Antivector <- Vector
+def gauge(geometry: Field) -> GaugeField:
+    """The position gauge field: the identity plus the weighted null dyad, from a direction of the local
+    frame to one of the Kerr geometry."""
+    return Antivector + dyad(geometry)                                                      # [...] Antivector <- Antivector
+
+
+def gauge_inverse(geometry: Field) -> GaugeField:
+    """The gauge field's inverse: the dyad squares to zero, so the identity less the dyad."""
+    return Antivector - dyad(geometry)                                                      # [...] Antivector <- Antivector
 
 
 def local(geometry: Field, momentum: Vector) -> Antivector:
-    """A covector momentum's direction in the local Kerr–Schild frame: the flat inverse plus half the dyad."""
-    return -momentum.dual() + geometry.profile * geometry.null * (momentum & geometry.null)  # [...] Antivector
+    """A covector momentum's direction in the local frame: raised flat, `-momentum.dual()`, and carried
+    through the gauge field. Half its flat square is the ray's Hamiltonian."""
+    return gauge(geometry)(-momentum.dual())                                                # [...] Antivector
 
 
-def interval(geometry: Field, direction: Antivector) -> Scalar:
-    """The metric's square of a direction: the direction paired with its covector."""
-    return metric(geometry)(direction) & direction                                          # [...] Scalar
+def proper_squared(geometry: Field, direction: Antivector) -> Scalar:
+    """The squared proper length of a timelike direction: minus the flat square of the direction carried
+    back into the local frame."""
+    return -gauge_inverse(geometry)(direction).squared()                                    # [...] Scalar
 
 
 def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
@@ -113,9 +131,9 @@ def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
 def motion(geometry: Field, momentum: Vector) -> tuple[Antivector, Vector]:
     """The two Hamiltonian derivatives at a field: the ray tangent and minus its position gradient."""
     overlap = momentum & geometry.null                                                      # [...] Scalar
-    # Half the momentum paired with its image under the inverse metric, the flat inverse plus the null
-    # dyad, is the Hamiltonian; its momentum derivative is that image.
-    tangent = -momentum.dual() + 2 * geometry.profile * geometry.null * overlap             # [...] Antivector
+    # Half the flat square of the momentum's local direction is the Hamiltonian; its momentum derivative
+    # is that direction carried through the gauge field once more.
+    tangent = gauge(geometry)(local(geometry, momentum))                                    # [...] Antivector
     # The gradient of profile * overlap squared, by the product rule.
     gradient = (geometry.profile_gradient * overlap.squared()
                 + 2 * geometry.profile * overlap * overlap_gradient(geometry, momentum))      # [...] Vector
@@ -134,10 +152,12 @@ def camera_rates(position: Antivector, momentum: Vector, spin: Spin, mass: float
     return tangent / clock, momentum_rate / clock                                           # [...] Antivector, [...] Vector
 
 
-def connection(geometry: Field, direction: Antivector) -> Bivector:
-    """The plane the local Kerr–Schild frame turns or boosts in, per unit step along a direction."""
-    null = -geometry.null.dual()                                                            # [...] Vector
-    along = -(geometry.null | direction)                                                    # [...] Scalar
+def rotation(geometry: Field, direction: Antivector) -> Bivector:
+    """The rotation gauge field: the plane the local frame turns or boosts in, per unit step along a
+    direction."""
+    # The null plane's reading of the direction.
+    null = geometry.null_plane                                                              # [...] Vector
+    along = null & direction                                                                # [...] Scalar
     # The gradient of profile * along.
     turning = geometry.profile_gradient * along + geometry.profile * overlap_gradient(geometry, -direction.dual())  # [...] Vector
     return -(turning ^ null) - geometry.profile * geometry.null_curl * along                # [...] Bivector
@@ -149,7 +169,7 @@ def polarized_rates(position: Antivector, momentum: Vector, screen: ScreenFrame,
     coordinate time."""
     geometry = field(position, spin, mass)                                                  # [...] Field
     tangent, momentum_rate = motion(geometry, momentum)                                     # [...] Antivector, [...] Vector
-    screen_rate = -connection(geometry, local(geometry, momentum)).commutator(screen)       # [...] Antivector <- Screen
+    screen_rate = -rotation(geometry, local(geometry, momentum)).commutator(screen)         # [...] Antivector <- Screen
     clock = -(mv.t & tangent)                                                               # [...] Scalar
     return tangent / clock, momentum_rate / clock, screen_rate / clock                      # [...] Antivector, [...] Vector, [...] Antivector <- Screen
 
@@ -163,8 +183,8 @@ def disk_coherency(position: Antivector, momentum: Vector, screen: ScreenFrame,
     # The magnetic direction circles the normal, square to the plane through the normal and the
     # emitter. Emission is polarized perpendicular to it across the ray: in that plane, square to the ray.
     meridian = space(position).dual() ^ normal                                              # [...] Bivector
-    electric = meridian.commutator(direction) / meridian.norm()                             # [...] Antivector
-    polarization = screen.adjoint()(electric)                                               # [...] Screen
+    polarization_axis = meridian.commutator(direction) / meridian.norm()                    # [...] Antivector
+    polarization = screen.adjoint()(polarization_axis)                                      # [...] Screen
     # Polarization vanishes smoothly when looking along the magnetic direction.
     polarized_fraction = polarization_degree * polarization.squared()                       # [...] Scalar
     return ((1 - polarized_fraction) / 2 * Screen
@@ -181,7 +201,7 @@ def frequency_ratio(position: Antivector, momentum: Vector, camera: Antivector, 
     """The frequency a camera at rest at `camera` sees, over the one emitted by gas on a circular
     orbit in the unit plane `orbit`, for rays whose momenta are given at the gas."""
     gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Antivector
-    at_rest = time / interval(field(camera, spin, mass), time).square_root()               # [] Antivector
+    at_rest = time / proper_squared(field(camera, spin, mass), time).square_root()         # [] Antivector
     # The momentum paired with time is conserved along the ray, so the camera's frequency reads here.
     return (momentum & at_rest) / (momentum & gas)                                          # [...] Scalar
 
@@ -190,8 +210,9 @@ def orbiting_gas(position: Antivector, orbit: Bivector, spin: Spin, mass: float)
     """The unit velocity of gas on a circular equatorial orbit in the unit plane `orbit`, at each event."""
     geometry = field(position, spin, mass)                                                  # [...] Field
     angular_speed = orbital_speed(geometry.radius, orbit, spin, mass)                       # [...] Scalar
-    flow = time + angular_speed * orbit.commutator(space(position))                         # [...] Antivector
-    return flow / interval(geometry, flow).square_root()                                    # [...] Antivector
+    # A point turned by `(orbit * (-angle / 2)).exp()` moves by its commutator with the orbit's plane.
+    flow = time + angular_speed * space(position).commutator(orbit)                         # [...] Antivector
+    return flow / proper_squared(geometry, flow).square_root()                              # [...] Antivector
 
 
 def orbital_speed(radius: Scalar, orbit: Bivector, spin: Spin, mass: float) -> Scalar:
@@ -294,7 +315,7 @@ def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, norm
         weights = remaining[crossing] * opacity(at_plane[0], at_plane[1], radii)            # [crossings] Scalar
         remaining = replaced(remaining, crossing, remaining[crossing] - weights)            # [rays] Scalar
         escaped, keep = step.outcomes(remaining, escape_radius, capture_radius)
-        # An escaped ray's direction is its tangent, from its momentum by the inverse metric.
+        # An escaped ray's direction is its tangent, its momentum carried through the gauge field.
         directions, _ = rates(step.end[0][escaped], step.end[1][escaped], spin, mass)       # [escaped] Antivector
         yield Image(pixels[crossing], at_plane, radii, weights, pixels[escaped], directions, remaining[escaped])
         pixels, remaining = pixels[keep], remaining[keep]
@@ -323,6 +344,7 @@ class Field:
     radius: Scalar
     profile: Scalar
     null: Antivector
+    null_plane: Vector
     profile_gradient: Vector
     null_gradient: DirectionGradient
     null_curl: Bivector
@@ -391,9 +413,8 @@ def initial_momentum(position: Antivector, direction: Antivector, spin: Spin, ma
     """A future null covector with the given unit spatial direction in the Kerr–Schild frame."""
     geometry = field(position, spin, mass)                                                  # [...] Field
     local_null = time + direction                                                           # [...] Antivector
-    # The null dyad squares to zero, so undoing the frame just changes its sign.
-    null = -geometry.null.dual()                                                            # [...] Vector
-    momentum = -local_null.dual() + geometry.profile * null * (geometry.null | local_null)  # [...] Vector
+    # Carried back out of the local frame and lowered flat.
+    momentum = -gauge_inverse(geometry)(local_null).dual()                                  # [...] Vector
     return momentum / (momentum & time)                                                     # [...] Vector
 
 

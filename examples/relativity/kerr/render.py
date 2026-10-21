@@ -15,25 +15,25 @@ from examples.animation import capture
 from examples.relativity.kerr import core
 
 # The spin sweep's resolution: its thin rays need no more.
-SWEEP_DPI = 64
+sweep_dpi = 64
 # Wavelengths across the visible band, nm, and the second radiation constant, nm K.
-WAVELENGTHS = np.linspace(380.0, 780.0, 81)
-RADIATION_CONSTANT = 1.4388e7
+visible_wavelengths = np.linspace(380.0, 780.0, 81)
+radiation_constant = 1.4388e7
 # Linear sRGB from CIE XYZ.
-XYZ_TO_RGB = np.array([[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.2040, 1.0570]])
+xyz_to_rgb = np.array([[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.2040, 1.0570]])
 # The luminance of linear sRGB, and the exposure of the reference temperature.
-LUMINANCE = np.array([0.2126, 0.7152, 0.0722])
-MID_GREY = 0.5
+luminance_weights = np.array([0.2126, 0.7152, 0.0722])
+mid_grey = 0.5
 # A milder lift than a display's gamma of 2.2, so brightness differences stay visible.
-GAMMA = 1.6
+display_gamma = 1.6
 # Blackbody colours look pale on a display; their saturation is exaggerated to show the shift.
-SATURATION = 2.5
+colour_saturation = 2.5
 # The white balance: a blackbody at this temperature shows neutral, hotter ones blue, cooler ones red.
-WHITE_TEMPERATURE = 6500.0                                                     # K
+white_temperature = 6500.0                                                     # K
 # The disk's clumpy texture: how many random waves make it, their seed, and its contrast.
-CLUMP_MODES = 24
-CLUMP_SEED = 5
-CLUMP_CONTRAST = 0.35
+clump_modes = 24
+clump_seed = 5
+clump_contrast = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -50,7 +50,7 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[1]))
     ticks = [-extent / 2, 0, extent / 2]
 
-    figure, ax = plt.subplots(figsize=(5, 5), dpi=SWEEP_DPI, layout="constrained")
+    figure, ax = plt.subplots(figsize=(5, 5), dpi=sweep_dpi, layout="constrained")
     rays = LineCollection(tracks[0], colors=colours, linewidths=1.0, alpha=0.9)
     horizon = Polygon(outlines[0], facecolor="#161b22", edgecolor="none", zorder=3)
     ax.add_collection(rays)
@@ -137,12 +137,12 @@ def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
     angle = np.arctan2(horizontal_y, horizontal_x)
-    modes = np.random.default_rng(CLUMP_SEED)
-    turns = modes.integers(3, 18, CLUMP_MODES)
-    wavenumbers = modes.uniform(0.8, 4.0, CLUMP_MODES)
-    phases = modes.uniform(0, 2 * np.pi, CLUMP_MODES)
+    modes = np.random.default_rng(clump_seed)
+    turns = modes.integers(3, 18, clump_modes)
+    wavenumbers = modes.uniform(0.8, 4.0, clump_modes)
+    phases = modes.uniform(0, 2 * np.pi, clump_modes)
     waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
-    return waves.sum(axis=-1) / np.sqrt(CLUMP_MODES / 2)
+    return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
 
 
 def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:
@@ -150,7 +150,7 @@ def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:
     flow leaves in place, and clumps from `waves`."""
     radius = radius.kernel[..., 0]
     rings = 0.90 + 0.045 * np.sin(11 * radius) + 0.025 * np.sin(19 * radius)
-    return rings * np.exp(CLUMP_CONTRAST * waves)
+    return rings * np.exp(clump_contrast * waves)
 
 
 def colour_matching(wavelengths: np.ndarray) -> np.ndarray:
@@ -169,30 +169,30 @@ def blackbody(temperature: np.ndarray) -> np.ndarray:
     """The visible light of a blackbody at each temperature, K, in linear sRGB, relative units,
     `[..., 3]`; a temperature of zero is dark."""
     with np.errstate(divide="ignore", over="ignore"):
-        spectrum = 1 / (WAVELENGTHS ** 5 * np.expm1(RADIATION_CONSTANT / (WAVELENGTHS * temperature[..., None])))
-    return np.clip(spectrum @ colour_matching(WAVELENGTHS) @ XYZ_TO_RGB.T, 0, None)
+        spectrum = 1 / (visible_wavelengths ** 5 * np.expm1(radiation_constant / (visible_wavelengths * temperature[..., None])))
+    return np.clip(spectrum @ colour_matching(visible_wavelengths) @ xyz_to_rgb.T, 0, None)
 
 
 def exposed(light: np.ndarray, reference: float) -> np.ndarray:
     """Linear light shown on the display: the luminance scaled so a blackbody at the reference
     temperature sits at mid-grey, kept linear below it and rolled off smoothly above, the colour kept,
     then gamma-encoded and its saturation exaggerated, any channel above one scaled back."""
-    luminance = light @ LUMINANCE                                                   # [...]
-    exposure = luminance / (blackbody(np.array(reference)) @ LUMINANCE)
-    mapped = np.where(exposure < 1, MID_GREY * exposure, 1 - (1 - MID_GREY) * np.exp(-(exposure - 1)))
+    luminance = light @ luminance_weights                                                   # [...]
+    exposure = luminance / (blackbody(np.array(reference)) @ luminance_weights)
+    mapped = np.where(exposure < 1, mid_grey * exposure, 1 - (1 - mid_grey) * np.exp(-(exposure - 1)))
     with np.errstate(divide="ignore", invalid="ignore"):
         scale = np.where(luminance > 0, mapped / luminance, 0)
-    shown = (light * scale[..., None]) ** (1 / GAMMA)
-    grey = shown @ LUMINANCE
-    vivid = np.clip(grey[..., None] + SATURATION * (shown - grey[..., None]), 0, None)
+    shown = (light * scale[..., None]) ** (1 / display_gamma)
+    grey = shown @ luminance_weights
+    vivid = np.clip(grey[..., None] + colour_saturation * (shown - grey[..., None]), 0, None)
     return vivid / np.maximum(vivid.max(axis=-1, keepdims=True), 1)
 
 
 def disk_glow(image: core.Image, temperature: core.Scalar) -> np.ndarray:
     """Each disk crossing's linear light before its texture, `[crossings, 3]`: a blackbody at its
     observed temperature, white-balanced, and weighted by the share of its pixel the crossing gives."""
-    white = blackbody(np.array(WHITE_TEMPERATURE))
-    balanced = blackbody(temperature.kernel[..., 0]) * (white @ LUMINANCE) / white
+    white = blackbody(np.array(white_temperature))
+    balanced = blackbody(temperature.kernel[..., 0]) * (white @ luminance_weights) / white
     return balanced * image.disk_weights.kernel
 
 
