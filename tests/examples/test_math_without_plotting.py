@@ -88,6 +88,8 @@ import examples.optics.coating.core
 import examples.optics.coating.scenarios
 import examples.optics.crystal_diffraction.core
 import examples.optics.crystal_diffraction.scenarios
+import examples.optics.rainbow.core
+import examples.optics.rainbow.scenarios
 import examples.optics.thin_lens.core
 import examples.quantum.graphene.core
 import examples.quantum.graphene.scenarios
