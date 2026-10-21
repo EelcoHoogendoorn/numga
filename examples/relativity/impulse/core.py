@@ -60,14 +60,19 @@ import numpy as np
 from numga import Algebra, NumpyContext, concatenate, stack
 
 
-Spacetime = Algebra("t+x-")
+Spacetime = Algebra("x+t-")
 ctx = NumpyContext(Spacetime)
 mv = ctx.multivector
 
 Scalar = Spacetime.gatype.scalar()
-Vector = Spacetime.gatype.vector()
+# Events and directions are antivectors, intrinsic like all geometry.
+Point = Spacetime.gatype.antivector()
 Rotor = Spacetime.gatype.rotor()
-VectorMap = Spacetime.gatype((Vector, Vector))
+PointMap = Spacetime.gatype((Point, Point))
+
+# The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
+# t's square.
+time = -mv.t.dual()
 
 # Allow for the library's approximate bivector exp().
 GEOMETRY_ATOL = 1e-9
@@ -75,16 +80,16 @@ GEOMETRY_ATOL = 1e-9
 ENDS: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
 
 
-def boost(rapidity: np.ndarray) -> VectorMap:
+def boost(rapidity: np.ndarray) -> PointMap:
     """The Lorentz boost adding `rapidity` to every velocity, as an open sandwich on events and directions.
 
     Normalizing removes exp's tiny scale error before the map is reused.
     """
-    rotor: Rotor = (-mv.tx * rapidity / 2).exp().normalized()
-    return rotor.transform(Vector)
+    rotor: Rotor = (mv.xt * rapidity / 2).exp().normalized()
+    return rotor.transform(Point)
 
 
-def strain_preserving_kinks(before: Vector, after: Vector) -> Vector:
+def strain_preserving_kinks(before: Point, after: Point) -> Point:
     """Join unit future timelike directions with a unit-proper-length step.
 
     The summed directions give the midpoint observer's time axis. Its
@@ -92,11 +97,11 @@ def strain_preserving_kinks(before: Vector, after: Vector) -> Vector:
     rest frames measure the unit proper spacing. Anchor the left kink
     at the origin. This construction is specific to the plane of `mv.t` and `mv.x`.
     """
-    separation: Vector = ((before + after) * mv.tx) / (1 + (before | after))
+    separation: Point = ((before + after) * mv.tx) / (1 + (-before.dual_inverse() & after))
     return ENDS * separation
 
 
-def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Vector, Vector]:
+def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Point, Point]:
     """A prescribed rigid-to-rigid step, anchored at the left endpoint's kink.
 
     Return the two kink events and unit before/after directions. For unequal
@@ -110,11 +115,11 @@ def velocity_step(before_rapidity: float, after_rapidity: float) -> tuple[Vector
     it does not establish uniqueness for general dynamical histories. The
     proper rod length is 1.
     """
-    directions: Vector = boost(np.array([before_rapidity, after_rapidity]))(mv.t)   # [step + 1] Vector
+    directions: Point = boost(np.array([before_rapidity, after_rapidity]))(time)   # [step + 1] Point
     return strain_preserving_kinks(directions[0], directions[1]), directions
 
 
-def small_impulses(final_rapidity: float, count: int, dt: float) -> tuple[Vector, Vector]:
+def small_impulses(final_rapidity: float, count: int, dt: float) -> tuple[Point, Point]:
     """Compose one fixed boost-plus-translation to generate successive steps.
 
     Return kink events with batch shape (step, end), and the directions
@@ -123,11 +128,11 @@ def small_impulses(final_rapidity: float, count: int, dt: float) -> tuple[Vector
     its linear part advances the worldline directions. Negative steps need
     sufficient spacing to keep the right-end events in chronological order.
     """
-    step: VectorMap = boost(final_rapidity / count)
-    before: Vector = mv.vector([1.0, 0.0])
-    after: Vector = step(before)
-    events: Vector = strain_preserving_kinks(before, after)
-    offset: Vector = dt * after
+    step: PointMap = boost(final_rapidity / count)
+    before: Point = time
+    after: Point = step(before)
+    events: Point = strain_preserving_kinks(before, after)
+    offset: Point = dt * after
 
     event_history = [events]
     direction_history = [before, after]
@@ -140,12 +145,12 @@ def small_impulses(final_rapidity: float, count: int, dt: float) -> tuple[Vector
     return stack(event_history), stack(direction_history)
 
 
-def coasting(events: Vector, direction: Vector, times: Scalar) -> Vector:
+def coasting(events: Point, direction: Point, times: Scalar) -> Point:
     """The events at observer times `times` on the straight worldlines through `events` along `direction`."""
-    return events + direction * ((times - (events | mv.t)) / (direction | mv.t))
+    return events + direction * ((times - (mv.t & events)) / (mv.t & direction))
 
 
-def worldline_events(times: Scalar, kinks: Vector, directions: Vector) -> Vector:
+def worldline_events(times: Scalar, kinks: Point, directions: Point) -> Point:
     """Each end's event at observer times `times`, on its piecewise straight worldline: [..., end].
 
     kinks has batch shape (step, end); directions (step + 1), the motion before,
@@ -153,15 +158,15 @@ def worldline_events(times: Scalar, kinks: Vector, directions: Vector) -> Vector
     then add each velocity jump only after that end has crossed its kink.
     """
     # Velocities per unit observer time.
-    rates: Vector = directions / (directions | mv.t)                     # [step + 1] Vector
-    elapsed: Scalar = times.reshape(*times.shape, 1, 1) - (kinks | mv.t)  # [..., step, end]
-    jumps: Vector = rates[1:] - rates[:-1]                               # [step]
+    rates: Point = directions / (mv.t & directions)                      # [step + 1] Point
+    elapsed: Scalar = times.reshape(*times.shape, 1, 1) - (mv.t & kinks)  # [..., step, end]
+    jumps: Point = rates[1:] - rates[:-1]                               # [step]
     return kinks[0] + rates[0] * elapsed[..., 0, :] + (jumps[:, None] * elapsed.clip(0.0, np.inf)).sum(axis=-2)
 
 
-def worldlines(kinks: Vector, directions: Vector, span: Scalar) -> Vector:
+def worldlines(kinks: Point, directions: Point, span: Scalar) -> Point:
     """Each end's worldline as a polyline over the observer times span [limit], through its kinks: [step + 2, end]."""
-    ends: Vector = worldline_events(span, kinks, directions)             # [limit, end]
+    ends: Point = worldline_events(span, kinks, directions)             # [limit, end]
     return concatenate((ends[:1], kinks, ends[1:]))
 
 

@@ -10,15 +10,17 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 
-from examples.relativity.impulse.core import Spacetime, Vector
+from numga import stack
+
+from examples.relativity.impulse.core import Point, mv
 
 REAR, FRONT, IMPULSE = "#2475ba", "#db7220", "#258e59"
 DOOR, ELASTIC, CONTACT = "#59616c", "#a64479", "#ba4242"
 
 
-def ct_x(events: Vector) -> np.ndarray:
+def ct_x(events: Point) -> np.ndarray:
     """(..., 2) the ct and x coordinates of events."""
-    return events.cast(Spacetime.subspace("t x")).kernel
+    return (stack((mv.t, mv.x)) & events[..., None]).to_array()
 
 
 def plot_worldlines(ax, lines: np.ndarray, colors: tuple[str, str], **style) -> None:
@@ -29,7 +31,7 @@ def plot_worldlines(ax, lines: np.ndarray, colors: tuple[str, str], **style) -> 
 
 # --- relativistic impulse -------------------------------------------------------------
 def draw_impulse(
-    worldlines: Vector, kinks: Vector, slices: Vector, train: Vector, steps: Vector, train_slice: Vector,
+    worldlines: Point, kinks: Point, slices: Point, train: Point, steps: Point, train_slice: Point,
 ) -> plt.Figure:
     """The symmetric reversal, the same drawing boosted, and a train of ten small impulses."""
     fig, axes = plt.subplots(1, 3, figsize=(16.0, 7.1), dpi=160)
@@ -103,7 +105,7 @@ def style_axis(ax, title, xlim, ylim, primed):
     ax.set_title(title, fontsize=12, pad=13)
 
 
-def barn_background(ax, doors: Vector, closure: Vector) -> None:
+def barn_background(ax, doors: Point, closure: Point) -> None:
     """The barn between its door worldlines (time, door), and the door-closure events."""
     lines, events = ct_x(doors), ct_x(closure)
     ax.fill_betweenx(lines[:, 0, 0], lines[:, 0, 1], lines[:, 1, 1], color=DOOR, alpha=0.07)
@@ -112,7 +114,7 @@ def barn_background(ax, doors: Vector, closure: Vector) -> None:
                color=DOOR, edgecolor="white", linewidth=0.7, zorder=6)
 
 
-def length_bar(ax, ends: Vector, label, offset, color):
+def length_bar(ax, ends: Point, label, offset, color):
     """A bar across the equal-time events at both ends, labelled above or below."""
     events = ct_x(ends)
     positions, time = events[:, 1], events[0, 0]
@@ -124,8 +126,8 @@ def length_bar(ax, ends: Vector, label, offset, color):
 
 
 def draw_ladder(
-    barn_frame: tuple[Vector, ...], ladder_frame: tuple[Vector, ...],
-    strain_preserving: tuple[Vector, ...], ringing: tuple[Vector, ...],
+    barn_frame: tuple[Point, ...], ladder_frame: tuple[Point, ...],
+    strain_preserving: tuple[Point, ...], ringing: tuple[Point, ...],
 ) -> plt.Figure:
     """The ladder in the barn frame and its own frame, a strain-preserving stop, and a stop inside."""
     fig, axes = plt.subplots(2, 2, figsize=(12.8, 12.0), dpi=170)
@@ -235,7 +237,7 @@ def rope_comparison(ax, gap, y, color, title, label):
     ax.text(gap / 2, y - 0.29, label, color=color, ha="center", va="top", fontsize=10)
 
 
-def draw_spaceships(tracks: Vector, schedules: Vector, slices: Vector, final_events: Vector) -> plt.Figure:
+def draw_spaceships(tracks: Point, schedules: Point, slices: Point, final_events: Point) -> plt.Figure:
     """Both impulse schedules in the lab, and the rope each demands in the final rest frame."""
     fig, axes = plt.subplots(1, 3, figsize=(16.7, 7.5), dpi=170,
                              gridspec_kw={"width_ratios": [1.0, 1.0, 0.85]})

@@ -8,14 +8,14 @@ import numpy as np
 import pytest
 
 from examples.relativity.impulse import render, scenarios
-from examples.relativity.impulse.core import mv, small_impulses, velocity_step, worldline_events
+from examples.relativity.impulse.core import mv, small_impulses, time, velocity_step, worldline_events
 
 
 ATOL = 1e-9
 
 
 def velocity(directions):
-    return (-(directions | mv.x) / (directions | mv.t)).to_array()
+    return ((mv.x & directions) / (mv.t & directions)).to_array()
 
 
 def test_velocity_step_preserves_proper_spacing_and_requested_directions():
@@ -29,7 +29,7 @@ def test_velocity_step_preserves_proper_spacing_and_requested_directions():
     np.testing.assert_allclose(velocity(directions), np.tanh([before_rapidity, after_rapidity]), atol=ATOL)
     separation = events[1] - events[0]
     assert separation.squared().kernel.item() < 0.0
-    np.testing.assert_allclose((directions.wedge(separation) - mv.tx).kernel, 0.0, atol=ATOL)
+    np.testing.assert_allclose((directions.wedge(separation) - time.wedge(mv.x.dual())).kernel, 0.0, atol=ATOL)
     np.testing.assert_allclose(((directions[0] + directions[1]) | separation).kernel, 0.0, atol=ATOL)
 
 
@@ -43,17 +43,17 @@ def test_impulse_train_forms_continuous_worldlines_with_fixed_proper_spacing(fin
 
     separation = events[:, 1] - events[:, 0]
     for adjacent_directions in (directions[:-1], directions[1:]):
-        np.testing.assert_allclose((adjacent_directions.wedge(separation) - mv.tx).kernel, 0.0, atol=ATOL)
+        np.testing.assert_allclose((adjacent_directions.wedge(separation) - time.wedge(mv.x.dual())).kernel, 0.0, atol=ATOL)
 
     advances = events[1:] - events[:-1]
-    assert np.all((advances | mv.t).to_array() > 0.0)
+    assert np.all((mv.t & advances).to_array() > 0.0)
     np.testing.assert_allclose(advances[:, 0].norm().kernel, dt, atol=ATOL)
     np.testing.assert_allclose(advances.wedge(directions[1:-1, None]).kernel, 0.0, atol=ATOL)
 
     # Compare the ends at one common observer time after their final kinks.
-    coasting_time = (events[-1] | mv.t).to_array().max() + 0.5
+    coasting_time = (mv.t & events[-1]).to_array().max() + 0.5
     ends = worldline_events(mv.scalar([coasting_time]), events, directions)
-    np.testing.assert_allclose((-((ends[1] - ends[0]) | mv.x)).to_array(), np.sqrt(1 - final_velocity**2), atol=ATOL)
+    np.testing.assert_allclose((mv.x & (ends[1] - ends[0])).to_array(), np.sqrt(1 - final_velocity**2), atol=ATOL)
 
 
 @pytest.mark.parametrize("final_rapidity", [-1.1, 1.1])

@@ -11,7 +11,7 @@ import numpy as np
 from numga import stack
 
 from examples.relativity.impulse.core import (
-    GEOMETRY_ATOL, Scalar, Vector, VectorMap, boost, coasting, mv, ringing_length,
+    GEOMETRY_ATOL, Point, PointMap, Scalar, boost, coasting, mv, ringing_length, time,
     small_impulses, velocity_step, worldline_events, worldlines,
 )
 
@@ -34,19 +34,19 @@ def impulse():
     # Start in the symmetric frame: two identical velocity reversals at time zero.
     kinks, directions = velocity_step(-half_rapidity, half_rapidity)
     before, after = directions
-    bisector: Vector = (before + after).normalized()
+    bisector: Point = (before + after).normalized()
 
     # Leave the passenger open to obtain the observer change as an extensor. Apply each
     # observer map to both events and tangents, preserving incidence.
     # The symmetric frame, boosted by nothing, and the initial rest frame.
-    views: VectorMap = boost(np.array([0.0, half_rapidity]))
-    view_kinks: Vector = views[:, None](kinks)                          # [view, end]
-    view_directions: Vector = views[:, None](directions)                # [view, step + 1]
-    view_worldlines: Vector = stack([
+    views: PointMap = boost(np.array([0.0, half_rapidity]))
+    view_kinks: Point = views[:, None](kinks)                          # [view, end]
+    view_directions: Point = views[:, None](directions)                # [view, step + 1]
+    view_worldlines: Point = stack([
         worldlines(view_kinks[view, None], view_directions[view], times(-0.60, 1.45))
         for view in range(2)
     ])
-    view_slices: Vector = stack([
+    view_slices: Point = stack([
         worldline_events(times(-0.30, 1.05), view_kinks[view, None], view_directions[view])
         for view in range(2)
     ])
@@ -54,20 +54,20 @@ def impulse():
     # Repeat a fixed boost and fixed translation to build a train of impulses.
     steps, train_directions = small_impulses(2 * half_rapidity, 10, 0.1)
     # The front's last kink ends the train.
-    finish: Scalar = steps[-1, 1] | mv.t
-    train: Vector = worldlines(steps, train_directions, stack((mv.scalar([-0.30]), finish + 0.40)))
-    train_slice: Vector = worldline_events(finish + 0.20, steps, train_directions)
+    finish: Scalar = mv.t & steps[-1, 1]
+    train: Point = worldlines(steps, train_directions, stack((mv.scalar([-0.30]), finish + 0.40)))
+    train_slice: Point = worldline_events(finish + 0.20, steps, train_directions)
 
     # --- checks -------------------------------------------------------------
     # The kinks are simultaneous for the symmetric observer, whose time axis bisects the motions.
-    np.testing.assert_allclose((bisector | mv.t).to_array(), 1.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.t & bisector).to_array(), 1.0, atol=GEOMETRY_ATOL)
     np.testing.assert_allclose((kinks | bisector).to_array(), 0.0, atol=GEOMETRY_ATOL)
     # Boosted, the same drawing is a step from rest to the relativistic sum of the speeds,
     # and the kinks are not simultaneous.
-    boosted: Vector = view_directions[1]
-    np.testing.assert_allclose((-(boosted | mv.x) / (boosted | mv.t)).to_array(),
+    boosted: Point = view_directions[1]
+    np.testing.assert_allclose(((mv.x & boosted) / (mv.t & boosted)).to_array(),
                                [0.0, 2 * speed / (1 + speed**2)], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((view_kinks[1] | mv.t).to_array(), [0.0, 0.5], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.t & view_kinks[1]).to_array(), [0.0, 0.5], atol=GEOMETRY_ATOL)
 
     return view_worldlines, view_kinks, view_slices, train, steps, train_slice
 
@@ -130,17 +130,17 @@ def ladder():
     moving_length = 1 / np.cosh(rapidity)
     rear_at_closure = (barn_length - moving_length) / 2
     # The door-closure events, and the ladder's ends at closure.
-    closure: Vector = mv.vector([[0.0, 0.0], [0.0, barn_length]])        # [door] Vector
-    incoming: Vector = mv.vector([[0.0, rear_at_closure], [0.0, rear_at_closure + moving_length]])  # [end] Vector
-    incoming_direction: Vector = boost(rapidity)(mv.t)
-    at_rest: Vector = mv.vector([1.0, 0.0])
+    closure: Point = mv.x.dual() * np.array([0.0, barn_length])           # [door] Point
+    incoming: Point = mv.x.dual() * np.array([rear_at_closure, rear_at_closure + moving_length])  # [end] Point
+    incoming_direction: Point = boost(rapidity)(time)
+    at_rest: Point = time
 
     # 1. The ordinary paradox concerns simultaneous door closure, without a stop.
     span = times(-0.6, 0.65)[:, None]
     barn_frame = (coasting(closure, at_rest, span), closure, coasting(incoming, incoming_direction, span), incoming)
 
     # 2. One extensor transforms all events and tangents to the incoming rest frame.
-    to_ladder: VectorMap = boost(-rapidity)
+    to_ladder: PointMap = boost(-rapidity)
     moving_closure, moving_events = to_ladder(closure), to_ladder(incoming)
     moving_direction, moving_doors = to_ladder(incoming_direction), to_ladder(at_rest)
     span = times(-1.62, 0.30)[:, None]
@@ -152,9 +152,9 @@ def ladder():
     # 3. The unchanged-proper-length stop is the same velocity-step building block.
     limits = times(-0.48, 2.12)
     kinks, directions = velocity_step(rapidity, 0.0)
-    steps: Vector = (kinks + mv.vector([0.0, rear_at_closure]))[None]  # [step, end]
+    steps: Point = (kinks + mv.x.dual() * rear_at_closure)[None]       # [step, end]
     contact_time = (barn_length - rear_at_closure - moving_length) / beta
-    stopped: Vector = worldline_events(mv.scalar([1.43]), steps, directions)
+    stopped: Point = worldline_events(mv.scalar([1.43]), steps, directions)
     strain_preserving = (
         coasting(closure, at_rest, limits[:, None]), closure, worldlines(steps, directions, limits), steps[0],
         incoming, stopped, worldline_events(mv.scalar([contact_time]), steps, directions)[1],
@@ -167,9 +167,9 @@ def ladder():
     ring_times = np.linspace(0.0, 2.12, 1000)
     lengths = ringing_length(ring_times, damping_ratio, natural_frequency)
     centre = barn_length / 2
-    ring: Vector = mv.t * ring_times[:, None] + mv.x * (centre + np.array([-0.5, 0.5]) * lengths[:, None])
+    ring: Point = time * ring_times[:, None] + mv.x.dual() * (centre + np.array([-0.5, 0.5]) * lengths[:, None])
     # The relaxed ends at time zero.
-    relaxed: Vector = mv.x * (centre + np.array([-0.5, 0.5]))            # [end] Vector
+    relaxed: Point = mv.x.dual() * (centre + np.array([-0.5, 0.5]))      # [end] Point
     first_peak = ring_times <= np.pi / (natural_frequency * np.sqrt(1.0 - damping_ratio**2))
     ringing_contact = np.interp(barn_length, lengths[first_peak], ring_times[first_peak])
     ringing = (
@@ -182,16 +182,16 @@ def ladder():
     # --- checks -------------------------------------------------------------
     # In its own frame the incoming ladder is at rest with its full proper length,
     # and the exit closes first.
-    np.testing.assert_allclose((-(moving_direction | mv.x)).to_array(), 0.0, atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((-((moving_events[1] - moving_events[0]) | mv.x)).to_array(), 1.0, atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((moving_closure | mv.t).to_array(), [0.0, -np.sinh(rapidity) * barn_length],
+    np.testing.assert_allclose((mv.x & moving_direction).to_array(), 0.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.x & (moving_events[1] - moving_events[0])).to_array(), 1.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.t & moving_closure).to_array(), [0.0, -np.sinh(rapidity) * barn_length],
                                atol=GEOMETRY_ATOL)
     # The strain-preserving stop joins kinks perpendicular to the rapidity bisector; the front
     # stops beyond the exit, and at rest the ladder has its relaxed length.
     np.testing.assert_allclose(((directions[0] + directions[1]) | (steps[0, 1] - steps[0, 0])).to_array(),
                                0.0, atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((-(steps[0] | mv.x)).to_array(), [0.1, 1.1], atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((-((stopped[1] - stopped[0]) | mv.x)).to_array(), 1.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.x & steps[0]).to_array(), [0.1, 1.1], atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.x & (stopped[1] - stopped[0])).to_array(), 1.0, atol=GEOMETRY_ATOL)
 
     return barn_frame, ladder_frame, strain_preserving, ringing
 
@@ -254,19 +254,19 @@ def spaceships():
 
     preserved, directions = small_impulses(rapidity, count, dt)
     # Bell's front follows an exact spatial translation of the SAME rear path.
-    bell: Vector = preserved[:, :1] + mv.vector([[0.0, 0.0], [0.0, 1.0]])
-    schedules: Vector = stack((preserved, bell))                          # [schedule, step, end]
+    bell: Point = preserved[:, :1] + mv.x.dual() * np.array([0.0, 1.0])
+    schedules: Point = stack((preserved, bell))                          # [schedule, step, end]
 
     # Boost the final coasting worldlines, then measure at equal final-frame time. Anchor each
     # view at the rear's final kink; the front's kink need not be simultaneous. Its final
     # worldline is vertical, so its position in the final frame is constant.
-    final_frame: VectorMap = boost(-rapidity)
-    final_events: Vector = final_frame(schedules[:, -1] - schedules[:, -1, :1])   # [schedule, end]
+    final_frame: PointMap = boost(-rapidity)
+    final_events: Point = final_frame(schedules[:, -1] - schedules[:, -1, :1])   # [schedule, end]
 
     # The front's last kink ends the train.
-    end_time: Scalar = (preserved[-1, 1] | mv.t) + 0.53
-    tracks: Vector = stack([worldlines(schedule, directions, stack((mv.scalar([-0.30]), end_time))) for schedule in (preserved, bell)])
-    slices: Vector = stack([worldline_events(stack((mv.scalar([-0.18]), end_time - 0.22)), schedule, directions)
+    end_time: Scalar = (mv.t & preserved[-1, 1]) + 0.53
+    tracks: Point = stack([worldlines(schedule, directions, stack((mv.scalar([-0.30]), end_time))) for schedule in (preserved, bell)])
+    slices: Point = stack([worldline_events(stack((mv.scalar([-0.18]), end_time - 0.22)), schedule, directions)
                             for schedule in (preserved, bell)])
 
     # --- checks -------------------------------------------------------------
@@ -275,16 +275,16 @@ def spaceships():
     ticks: Scalar = (schedules[:, 1:] - schedules[:, :-1]).norm()          # [schedule, step - 1, end]
     np.testing.assert_allclose(ticks[0, :, 0].to_array(), dt, atol=GEOMETRY_ATOL)
     np.testing.assert_allclose(ticks[1].to_array(), dt, atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((bell[0] | mv.t).to_array(), 0.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.t & bell[0]).to_array(), 0.0, atol=GEOMETRY_ATOL)
     # Both ships end at rest in the final frame: the strain-preserving rope keeps its length,
     # Bell's is stretched by gamma. In the lab it is the other way round.
-    np.testing.assert_allclose((-(final_frame(directions[-1]) | mv.x)).to_array(), 0.0, atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((-(final_events[:, 1] | mv.x)).to_array(), [1.0, np.cosh(rapidity)],
+    np.testing.assert_allclose((mv.x & final_frame(directions[-1])).to_array(), 0.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.x & final_events[:, 1]).to_array(), [1.0, np.cosh(rapidity)],
                                atol=GEOMETRY_ATOL)
-    np.testing.assert_allclose((-((slices[:, 1, 1] - slices[:, 1, 0]) | mv.x)).to_array(),
+    np.testing.assert_allclose((mv.x & (slices[:, 1, 1] - slices[:, 1, 0])).to_array(),
                                [1.0 / np.cosh(rapidity), 1.0], atol=GEOMETRY_ATOL)
     along = worldline_events(times(*np.linspace(-0.3, 3.0, 300)), bell, directions)
-    np.testing.assert_allclose((-((along[:, 1] - along[:, 0]) | mv.x)).to_array(), 1.0, atol=GEOMETRY_ATOL)
+    np.testing.assert_allclose((mv.x & (along[:, 1] - along[:, 0])).to_array(), 1.0, atol=GEOMETRY_ATOL)
 
     return tracks, schedules, slices, final_events
 
