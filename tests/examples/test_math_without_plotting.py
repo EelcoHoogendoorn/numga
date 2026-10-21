@@ -78,6 +78,8 @@ import examples.fluids.vortices.core
 import examples.fluids.vortices.scenarios
 import examples.fluids.wing.core
 import examples.fluids.wing.scenarios
+import examples.fluids.kirchhoff.core
+import examples.fluids.kirchhoff.scenarios
 import examples.mechanics.xpbd.core
 import examples.optics.lens_camera.core
 import examples.optics.photoelasticity.core
