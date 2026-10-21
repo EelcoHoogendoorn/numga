@@ -87,11 +87,7 @@ def field(position: Antivector, spin: Spin, mass: float) -> Field:
     # piece: the rank-one piece gives its two covectors wedged, the twist by the spin twice the spin, the
     # rest none.
     null_curl = ((radius_gradient ^ lever.dual()) - 2 * spin) / (radius_squared + spin_squared)   # [...] Bivector
-    # The null direction light runs along, and its null plane, the light cone's tangent plane along it: the
-    # observer's slice tilted by the slice across the direction. The plane contains the direction.
-    null = time - direction                                                                 # [...] Antivector
-    null_plane = mv.t + direction.dual()                                                    # [...] Vector
-    return Field(radius, profile, null, null_plane, profile_gradient, -direction_gradient, null_curl)  # [...] Field
+    return Field(radius, profile, time - direction, profile_gradient, -direction_gradient, null_curl)  # [...] Field
 
 
 def dyad(geometry: Field) -> GaugeField:
@@ -344,10 +340,15 @@ class Field:
     radius: Scalar
     profile: Scalar
     null: Antivector
-    null_plane: Vector
     profile_gradient: Vector
     null_gradient: DirectionGradient
     null_curl: Bivector
+
+    @property
+    def null_plane(self) -> Vector:
+        """The null direction's plane, the light cone's tangent plane along it, which contains the
+        direction: minus its dual."""
+        return -self.null.dual()                                                            # [...] Vector
 
 
 @dataclass(frozen=True)

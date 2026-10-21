@@ -200,7 +200,7 @@ media = ((permittivities * electric_projectors).sum(axis=-1)
 moving_glass = boosts >> glass(boosts << Bivector)                     # [drags] Antibivector <- Bivector: the glass, moving
 wave = (wavevectors ^ Bivector) + (wavevectors ^ media).dual()         # [speeds, media] Odd <- Bivector
 wave.svdvals()                                                         # near zero where light can travel
-stress_map = lagrangian * Antivector - ((Antivector & field) ^ excitation)   # [] Antivector <- Antivector
+stress_map = negative_lagrangian * Antivector - ((Antivector & field) ^ excitation)   # [] Antivector <- Antivector
 ```
 
 * **A material is a map.** It takes the field to its excitation: glass weights the observer's electric and magnetic planes alike, a crystal weights its electric planes apart, and a ferrite its magnetic planes.
@@ -217,11 +217,11 @@ stress_map = lagrangian * Antivector - ((Antivector & field) ^ excitation)   # [
 <p align="center"><img src="../plots/curvature.gif" alt="A ring of free masses in a circularly polarized gravitational wave" width="360" /></p>
 
 ```python
-na, nb = wave_vector ^ x, wave_vector ^ y                        # [] Bivector: two null planes along the wave
-plus = na * (na & Antibivector) - nb * (nb & Antibivector)       # [] Bivector <- Antibivector
+nx, ny = wave_vector ^ x, wave_vector ^ y                        # [] Bivector: two null planes along the wave
+plus = nx * (nx & Antibivector) - ny * (ny & Antibivector)       # [] Bivector <- Antibivector
 cross = eighth_turn >> plus(eighth_turn << Antibivector)         # [] Bivector <- Antibivector: plus, turned across the wave
 tidal = observer & plus(observer & Antivector)                   # [] Vector <- Antivector: from separation to tidal force
-accelerations = lower.solve(tidal)                               # [] Antivector <- Antivector: no trace, in vacuum
+accelerations = -tidal.dual()                                    # [] Antivector <- Antivector: no trace, in vacuum
 ```
 
 * **Curvature is a map from areas to planes,** built from two null planes along the wave, with no metric. The cross polarization is the plus turned an eighth of a turn across the wave, and a quarter turn reverses the pattern: spin two.

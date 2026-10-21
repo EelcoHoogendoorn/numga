@@ -47,9 +47,9 @@ def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector
     # The weak-wave curvature is minus half the strain's second derivative times the unit maps.
     waves = core.polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)        # [times, polarizations] Curvature
     response = core.tidal_map(waves, time_direction)                                  # [times, polarizations] Tidal
-    # Each bead is x turned toward y by its angle; x and y square to minus one, which turns the sense.
+    # Each bead is x turned toward y by its angle.
     angles = np.linspace(0, 2 * np.pi, n_beads, endpoint=False)
-    reference = (mv.xy * (angles / 2)).exp() >> mv.x.dual() * ring_radius                  # [beads] Antivector
+    reference = (mv.xy * (-angles / 2)).exp() >> mv.x.dual() * ring_radius                  # [beads] Antivector
     # The dual, the metric, turns each tidal force into an acceleration.
     acceleration = -response[:, :, None](reference).dual()                            # [times, polarizations, beads] Antivector
     displacement = core.integrate_acceleration(time, acceleration)                    # [times, polarizations, beads] Antivector
