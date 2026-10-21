@@ -8,7 +8,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from numga.sparse import SparseExtensor
-from examples.math.isospectral_drums.core import Scalar, Vector, context, mv, tile_mixing
+from examples.math.isospectral_drums.core import Point, Scalar, context, mv, tile_mixing
 from examples.math.isospectral_drums.numerics import drum, triangle
 
 N_LATTICE = 4
@@ -44,14 +44,14 @@ DURATION_MS = 60
 
 
 # --- math -----------------------------------------------------------------------------
-def drums() -> tuple[Vector, tuple[Vector, Vector], tuple[np.ndarray, np.ndarray], Scalar, Scalar, Scalar, SparseExtensor,
+def drums() -> tuple[Point, tuple[Point, Point], tuple[np.ndarray, np.ndarray], Scalar, Scalar, Scalar, SparseExtensor,
                      SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
     """The two drums' tiles `[2, tiles, 3]`, vertices and faces, the source drum's standing waves and their
     squared frequencies `[modes]`, the transplantation, the restriction of the source field to its tiles,
     the two wave operators, and the maps that put the fixed boundary back."""
     offsets = np.arange(N_LATTICE)
-    lattice = (mv.x * offsets[None, :] + mv.y * offsets[:, None]).reshape((-1,))  # [lattice vertices] Vector
-    tiles = stack((lattice[SOURCE_INDICES], lattice[TARGET_INDICES]))   # [2, tiles, 3] Vector
+    lattice = (mv.x.dual() * offsets[None, :] + mv.y.dual() * offsets[:, None]).reshape((-1,))  # [lattice vertices] Point
+    tiles = stack((lattice[SOURCE_INDICES], lattice[TARGET_INDICES]))   # [2, tiles, 3] Point
     source_vertices, source_faces, source_neighbors, source_restriction, _, source_lift = drum(
         SOURCE_INDICES, N_LATTICE, N_SUBDIVISIONS)
     target_vertices, target_faces, target_neighbors, _, target_assembly, target_lift = drum(

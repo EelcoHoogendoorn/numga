@@ -6,20 +6,26 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.raster import rasterise
 from examples.surfaces.dirac_waves import core
+from examples.wgsl import meshes, solids
 
 Mesh = core.Mesh
 
 # Each tile's exposure, the percentile of its amplitudes over all its frames that shows at full
-# brightness; the surface's own grey under the field; the view; the light; and the image size.
-EXPOSURE = 99.3
-BASE = 0.12
-ELEVATION, AZIMUTH = 8.0, -55.0
-LIGHT = np.array([0.4, -0.5, 0.8]) / np.linalg.norm([0.4, -0.5, 0.8])
-AMBIENT = 0.35
-PIXELS = 128
-SUPERSAMPLE = 2
+# brightness; the surface's own grey under the field; the view; and each tile's pixels across.
+exposure = 99.3
+base = 0.12
+elevation, azimuth = np.radians(8.0), np.radians(35.0)
+margin = 0.06
+pixels = 192
+background = np.zeros(3)
+
+# A pixel's colour: the surface's grey, and the vertices' field blended across the face joined with the face's own.
+colour = f"""
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+    return {base} + sqrt(values.rgb * values.rgb + face_values.rgb * face_values.rgb);
+}}
+"""
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -27,63 +33,41 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def directions(normals) -> np.ndarray:
-    """The x, y and z components of vectors."""
-    return normals.cast(core.ga.subspace("x y z")).kernel
-
-
 def planes(fields: core.Even) -> np.ndarray:
     """The absolute amplitudes of fields' planes yz, zx and xy `[..., sites, 3]`."""
     return np.abs(fields.cast(core.ga.subspace("yz zx xy")).kernel)
 
 
-def view(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """The surface as the camera sees it, the same for every field on it: the covered pixels of the
-    supersampled image, the face at each and its corners' weights there, and the light falling there."""
-    points, triangles = coordinates(mesh.vertices), mesh.faces
-    normals = directions(mesh.vertex_normals)
-    elevation, azimuth = np.radians(ELEVATION), np.radians(AZIMUTH)
-    toward = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
-    right = np.cross([0.0, 0.0, 1.0], toward)
-    right /= np.linalg.norm(right)
-    frame = np.stack([right, np.cross(toward, right), toward])
-    size = PIXELS * SUPERSAMPLE
-    viewed = points @ frame.T
-    screen = viewed * (0.46 * size / np.abs(viewed[:, :2]).max()) + [size / 2, size / 2, 0.0]
-    pixel, face, weights, _ = rasterise(screen, triangles, size)
-    normal = np.einsum("pk,pkd->pd", weights, normals[triangles[face]]) @ frame.T
-    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
-    light = AMBIENT + (1 - AMBIENT) * np.clip(normal @ (frame @ LIGHT), 0, 1)
-    return pixel, face, weights, light
+def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
+    """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours spread over the faces between
+    them, joined with each face's own, and lit."""
+    points, normals, camera, half = seen
+    return meshes.draw(points, mesh.faces, corners[mesh.faces], normals, camera, half, elevation, azimuth, pixels, background,
+                       face_values=sides, colour=colour) / 255
 
 
-def image(mesh: Mesh, seen: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], corners: np.ndarray,
-          faces: np.ndarray) -> np.ndarray:
-    """The surface as an RGB image: its vertices' colours spread over the faces between them, joined
-    with each face's own, and lit."""
-    pixel, face, weights, light = seen
-    size = PIXELS * SUPERSAMPLE
-    colour = np.hypot(np.einsum("pk,pkc->pc", weights, corners[mesh.faces[face]]), faces[face])
-    picture = np.zeros((size * size, 3))
-    picture[pixel] = np.clip((BASE + colour) * light[:, None], 0, 1)
-    picture = picture.reshape(size, size, 3)[::-1]
-    return picture.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).mean(axis=(1, 3))
+def view(mesh: Mesh) -> tuple:
+    """The surface as the camera sees it, the same for every field on it: its points carried into projective
+    space, their smooth normals, and the camera framing them."""
+    points = solids.mv.point(coordinates(mesh.vertices))
+    camera, half = solids.view([points], 0.0, elevation, azimuth, margin)
+    return points, meshes.smooth(points, mesh.faces), camera, np.full(2, half.max())
 
 
 def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> list[np.ndarray]:
     """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]`, the tiles in rows
     of the given count, each exposed over all its frames."""
     corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
-    exposure = np.percentile(np.concatenate([corners, sides], axis=2), EXPOSURE, axis=(1, 2, 3), keepdims=True)
-    corners, sides = corners / exposure, sides / exposure
+    level = np.percentile(np.concatenate([corners, sides], axis=2), exposure, axis=(1, 2, 3), keepdims=True)
+    corners, sides = corners / level, sides / level
     tiles, frames = corners.shape[:2]
     seen = view(mesh)
     pictures = np.stack([[image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)]
                          for frame in range(frames)])
     pictures = np.concatenate([pictures, np.zeros((frames, -tiles % columns) + pictures.shape[2:])], axis=1)
     rows = pictures.reshape((frames, -1, columns) + pictures.shape[2:])       # [frames, rows, columns, P, P, 3]
-    layout = rows.transpose(0, 1, 3, 2, 4, 5).reshape(frames, rows.shape[1] * PIXELS, columns * PIXELS, 3)
-    return list((255 * layout).astype(np.uint8))
+    layout = rows.transpose(0, 1, 3, 2, 4, 5).reshape(frames, rows.shape[1] * pixels, columns * pixels, 3)
+    return list(np.round(255 * layout).astype(np.uint8))
 
 
 def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:

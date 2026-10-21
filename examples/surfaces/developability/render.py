@@ -91,7 +91,7 @@ def camera() -> tuple[core.Extensor, core.Point]:
 def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
     """One surface on the background, every face shaded flat by the light falling on it, `[rows, columns, 3]`."""
     turn, eye = camera()
-    drawn = shader().draw(frame_shape, 3 * len(mesh.faces), points=vertices.batch(), faces=mesh.faces,
+    drawn, = shader().draw(frame_shape, 3 * len(mesh.faces), points=vertices.batch(), faces=mesh.faces,
                           turn=turn, eye=eye, lamp=light_direction.normalized(), half_view=half_view,
                           colour=surface_colour, ambient=ambient)
     # The colour is premultiplied by each pixel's coverage; the background shows through the rest.

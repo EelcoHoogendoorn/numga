@@ -8,6 +8,8 @@ and `screen(place)`, the place's direction across the view.
 
 from __future__ import annotations
 
+import numpy as np
+
 
 def supersampled(samples_per_side: int) -> str:
     """WGSL for an image of `samples_per_side` squared samples a pixel, on a grid turned so that no two
@@ -45,3 +47,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
     image[id.y * pixels.x + id.x] = total;
 }}
 """
+
+
+def compose(layers: list[tuple[np.ndarray, np.ndarray, float]], background: np.ndarray) -> np.ndarray:
+    """Layers blended over a background, nearest first at each pixel, `[rows, columns, 3]` bytes: each layer its
+    colour and its depth along the view, `[rows, columns, 4]` and `[rows, columns]`, both weighted by how much of
+    the pixel it covers, and its opacity."""
+    colours = np.stack([colour * opacity for colour, _, opacity in layers])          # [layers, rows, columns, 4]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        depths = np.stack([np.where(colour[..., 3] > 0, depth / colour[..., 3], np.inf) for colour, depth, _ in layers])
+    order = np.argsort(depths, axis=0)
+    shown = np.zeros(colours.shape[1:3] + (3,))
+    passing = np.ones(colours.shape[1:3] + (1,))
+    for nearest in np.take_along_axis(colours, order[..., None], axis=0):
+        shown += passing * nearest[..., :3]
+        passing *= 1 - nearest[..., 3:]
+    return np.round(np.clip(shown + passing * background, 0, 1) * 255).astype(np.uint8)

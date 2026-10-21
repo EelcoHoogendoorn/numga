@@ -668,7 +668,8 @@ _SCALAR_FUNCTIONS = {"square_root": "sqrt", "exp": "exp", "log": "log", "cos": "
 _ELEMENTWISE = {"abs", "sqrt", "exp", "exp2", "log", "log2", "sin", "cos", "tan", "asin", "acos", "atan",
                 "atan2", "sinh", "cosh", "tanh", "pow", "min", "max", "clamp", "mix", "smoothstep", "step",
                 "floor", "ceil", "fract", "round", "trunc", "sign", "normalize", "select", "inverseSqrt",
-                "fma", "saturate", "cross", "reflect", "degrees", "radians"}
+                "fma", "saturate", "cross", "reflect", "degrees", "radians",
+                "fwidth", "dpdx", "dpdy", "fwidthFine", "dpdxFine", "dpdyFine", "fwidthCoarse", "dpdxCoarse", "dpdyCoarse"}
 _REDUCING = {"length", "distance", "dot", "determinant"}
 _OPERATORS: dict[str, Callable] = {"+": operator.add, "-": operator.sub, "*": operator.mul,
                                    "&": operator.and_, "|": operator.or_, "^": operator.xor,
@@ -697,6 +698,8 @@ class Program:
     entry_points: list[tuple[str, tuple[int, int, int]]]
     vertex: str | None
     fragment: str | None
+    # The colour targets the fragment stage writes, one per location.
+    targets: int
 
 
 class Compiler:
@@ -724,6 +727,7 @@ class Compiler:
         self.uniforms: list[tuple[str, Any]] = []
         self.entry_points: list[tuple[str, tuple[int, int, int]]] = []
         self.stages: dict[str, str] = {}
+        self.targets = 0
         self.member_attributes: dict[str, list[list[str]]] = {}
 
     def error(self, line: int, message: str) -> SyntaxError:
@@ -1291,7 +1295,7 @@ class Compiler:
                          + helpers + functions)
         return Program(code, self.bindings, self.uniforms, dict(self.structs),
                        {name: kind for kind, name in self.names.items()}, self.entry_points,
-                       self.stages.get("vertex"), self.stages.get("fragment"))
+                       self.stages.get("vertex"), self.stages.get("fragment"), self.targets)
 
     def struct_code(self, name: str, members: list) -> str:
         attributes = self.member_attributes.get(name, [[] for _ in members])
@@ -1338,6 +1342,11 @@ class Compiler:
         for stage in ("vertex", "fragment"):
             if f"@{stage}" in node.attributes:
                 self.stages[stage] = node.name
+        if "@fragment" in node.attributes:
+            # A struct of outputs writes one target per located member, a single output one.
+            located = [any(attribute.startswith("@location") for attribute in attributes)
+                       for attributes in self.member_attributes.get(node.result, [])]
+            self.targets = sum(located) if node.result in self.structs else 1
         parameters, result = self.functions[node.name]
         frame = {name: Value(name, kind) for (_, name, _), kind in zip(node.parameters, parameters)}
         signature = ", ".join(" ".join(attributes + [f"{name}: {self.wgsl(kind)}"])

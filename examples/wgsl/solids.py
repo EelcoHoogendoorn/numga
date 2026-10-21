@@ -17,6 +17,7 @@ import numpy as np
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.wgsl import Shader, supersampled
+from examples.wgsl.library import compose
 
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
@@ -45,12 +46,15 @@ var<uniform> camera: Motor;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
 var<uniform> lamp: Point;
-var<uniform> background: vec3<f32>;
 var<uniform> ambient: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
 
-alias Sample = vec3<f32>;
+// A sample's colour and its depth along the view, in the first channel, each with its coverage.
+struct Sample {
+    colour: vec4<f32>,
+    depth: vec4<f32>,
+}
 
 const origin = mv.w.dual();
 const far = 1e30;
@@ -74,7 +78,7 @@ fn inside_others(solid: Solid, own: u32, point: Point) -> bool {
 
 // The first point a ray meets on a solid's surface: on one of its quadrics, and inside all the others.
 fn first_hit(start: Point, direction: Point) -> Hit {
-    var hit = Hit(far, mv.z, background);
+    var hit = Hit(far, mv.z, vec3<f32>(0.0));
     for (var index = 0u; index < arrayLength(&solids); index++) {
         let solid = solids[index];
         for (var own = solid.first; own < solid.end; own++) {
@@ -109,7 +113,7 @@ fn sample(place: vec2<f32>) -> Sample {
     let direction = camera >> -mv.z.dual();
     let hit = first_hit(start, direction);
     if (hit.distance >= far) {
-        return background;
+        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
     }
     // Facing the viewer: a tangent plane is lit on the side the ray comes from.
     let tangent = hit.tangent * select(1.0, -1.0, (hit.tangent & direction) > 0);
@@ -117,7 +121,8 @@ fn sample(place: vec2<f32>) -> Sample {
     let light = max(normal & lamp, 0.0);
     // The view ray reflected in the tangent plane, against the lamp: `-d.dual()` is the plane square to d.
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    return hit.colour * (ambient + (1 - ambient) * light) + gloss * glint;
+    let colour = hit.colour * (ambient + (1 - ambient) * light) + gloss * glint;
+    return Sample(vec4<f32>(colour, 1.0), vec4<f32>(hit.distance - back, 0.0, 0.0, 1.0));
 }
 """
 
@@ -232,12 +237,18 @@ def lamp(elevation: float, azimuth: float) -> Point:
     return toward / (-(toward.dual() & toward)).square_root()
 
 
-def draw(parts: list[tuple[Quadric, np.ndarray]], camera: Motor, half: np.ndarray, elevation: float,
-         azimuth: float, pixels: int, background: np.ndarray) -> np.ndarray:
-    """The solids as the camera sees them, `[rows, columns, 3]`, `pixels` across."""
+def layer(parts: list[tuple[Quadric, np.ndarray]], camera: Motor, half: np.ndarray, elevation: float, azimuth: float,
+          pixels: int) -> tuple[np.ndarray, np.ndarray]:
+    """The solids as the camera sees them, `pixels` across: their colour, `[rows, columns, 4]`, and their depth along
+    the view, `[rows, columns]`, each weighted by coverage."""
     quadrics, solids = scene(parts)
     shape = (int(round(pixels * half[1] / half[0])), pixels)
     image = shader()(shape, quadrics=quadrics, solids=solids, camera=camera, back=4 * half.max(), half_height=half[1],
-                     lamp=lamp(elevation, azimuth), background=background, ambient=ambient, gloss=gloss,
-                     shininess=shininess)["image"]
-    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+                     lamp=lamp(elevation, azimuth), ambient=ambient, gloss=gloss, shininess=shininess)["image"]
+    return image["colour"], image["depth"][..., 0]
+
+
+def draw(parts: list[tuple[Quadric, np.ndarray]], camera: Motor, half: np.ndarray, elevation: float,
+         azimuth: float, pixels: int, background: np.ndarray) -> np.ndarray:
+    """The solids as the camera sees them on the background, `[rows, columns, 3]`, `pixels` across."""
+    return compose([(*layer(parts, camera, half, elevation, azimuth, pixels), 1.0)], background)

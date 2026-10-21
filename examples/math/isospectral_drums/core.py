@@ -11,14 +11,15 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import NumpyContext
-from numga.algebras import VGA3D as ga
+from numga import Algebra, NumpyContext
 from numga.sparse import SparseExtensor
 
+ga = Algebra("x+y+")
 context = NumpyContext(ga)
 mv = context.multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
+# Places on a drum: antivectors of the plane, intrinsic.
+Point = ga.gatype.antivector()
 
 
 # --- math -----------------------------------------------------------------------------

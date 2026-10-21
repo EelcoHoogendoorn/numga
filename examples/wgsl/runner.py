@@ -177,7 +177,8 @@ class Shader:
             self.raster = self.device.create_render_pipeline(
                 layout=pipeline_layout,
                 vertex={"module": module, "entry_point": self.program.vertex, "buffers": []},
-                fragment={"module": module, "entry_point": self.program.fragment, "targets": [{"format": "rgba16float"}]},
+                fragment={"module": module, "entry_point": self.program.fragment,
+                          "targets": [{"format": "rgba16float"}] * self.program.targets},
                 primitive={"topology": "triangle-list", "cull_mode": "none"},
                 depth_stencil={"format": "depth32float", "depth_write_enabled": True, "depth_compare": "less"},
                 multisample={"count": self.multisample})
@@ -220,24 +221,28 @@ class Shader:
             compute.end()
         return self.read(encoder, outputs, shape)
 
-    def draw(self, shape: tuple[int, int], n_vertices: int, **values: Any) -> np.ndarray:
-        """The image the shader's vertex and fragment stages draw, `[rows, columns, 4]`, its colour
-        premultiplied by how much of each pixel the triangles cover: `n_vertices` invocations of the vertex
-        stage, three to a triangle, which read the vertices they place from storage, with the nearest
-        surface kept by depth and edges resolved over several samples a pixel."""
+    def draw(self, shape: tuple[int, int], n_vertices: int, **values: Any) -> list[np.ndarray]:
+        """The images the shader's vertex and fragment stages draw, one per target the fragment stage writes,
+        `[rows, columns, 4]` each, premultiplied by how much of each pixel the triangles cover: `n_vertices`
+        invocations of the vertex stage, three to a triangle, which read the vertices they place from storage,
+        with the nearest surface kept by depth and edges resolved over several samples a pixel."""
         import wgpu
 
         group, _ = self.bind(shape, values)
         rows, columns = shape
         attachment = dict(size=(columns, rows, 1), sample_count=self.multisample, usage=wgpu.TextureUsage.RENDER_ATTACHMENT)
-        colour = self.device.create_texture(format="rgba16float", **attachment)
         depth = self.device.create_texture(format="depth32float", **attachment)
-        resolved = self.device.create_texture(size=(columns, rows, 1), format="rgba16float",
-                                              usage=wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC)
+        targets = []
+        for _ in range(self.program.targets):
+            sampled = self.device.create_texture(format="rgba16float", **attachment)
+            resolved = self.device.create_texture(size=(columns, rows, 1), format="rgba16float",
+                                                  usage=wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC)
+            targets.append((sampled, resolved))
         encoder = self.device.create_command_encoder()
         drawing = encoder.begin_render_pass(
-            color_attachments=[{"view": colour.create_view(), "resolve_target": resolved.create_view(),
-                                "clear_value": (0, 0, 0, 0), "load_op": "clear", "store_op": "discard"}],
+            color_attachments=[{"view": sampled.create_view(), "resolve_target": resolved.create_view(),
+                                "clear_value": (0, 0, 0, 0), "load_op": "clear", "store_op": "discard"}
+                               for sampled, resolved in targets],
             depth_stencil_attachment={"view": depth.create_view(), "depth_clear_value": 1.0,
                                       "depth_load_op": "clear", "depth_store_op": "discard"})
         drawing.set_pipeline(self.raster)
@@ -246,15 +251,20 @@ class Shader:
         drawing.end()
         # Rows of a texture copy start at multiples of 256 bytes.
         row_bytes = -(-columns * 8 // 256) * 256
-        readback = self.device.create_buffer(size=row_bytes * rows, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
-        encoder.copy_texture_to_buffer({"texture": resolved}, {"buffer": readback, "bytes_per_row": row_bytes, "rows_per_image": rows},
-                                       (columns, rows, 1))
+        readbacks = []
+        for _, resolved in targets:
+            readback = self.device.create_buffer(size=row_bytes * rows, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
+            encoder.copy_texture_to_buffer({"texture": resolved}, {"buffer": readback, "bytes_per_row": row_bytes, "rows_per_image": rows},
+                                           (columns, rows, 1))
+            readbacks.append(readback)
         self.device.queue.submit([encoder.finish()])
-        readback.map_sync(wgpu.MapMode.READ)
-        data = np.frombuffer(readback.read_mapped(), dtype=np.float16).reshape(rows, row_bytes // 2)
-        image = data[:, :columns * 4].reshape(rows, columns, 4).astype(np.float32)
-        readback.unmap()
-        return image
+        images = []
+        for readback in readbacks:
+            readback.map_sync(wgpu.MapMode.READ)
+            data = np.frombuffer(readback.read_mapped(), dtype=np.float16).reshape(rows, row_bytes // 2)
+            images.append(data[:, :columns * 4].reshape(rows, columns, 4).astype(np.float32))
+            readback.unmap()
+        return images
 
     def bind(self, shape: tuple[int, int], values: dict) -> tuple[Any, dict]:
         """The bind group of the values the shader declares, and the arrays it writes, one element per

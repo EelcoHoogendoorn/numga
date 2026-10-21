@@ -257,27 +257,27 @@ def main() -> None:
     save_animation(render.animate_diffusion(torus, diffused), "connections_diffusion", DURATION_MS)
 
     sphere, sphere_scenes, sphere_residuals, sphere_energies = field_spheres()
-    save_figure(render.draw_fields(sphere, sphere_scenes, render.SPHERE_LIMITS, render.SPHERE_NEEDLE), "connections_fields_spheres")
+    save_figure(render.draw_fields(sphere, sphere_scenes, render.sphere_limits, render.sphere_needle), "connections_fields_spheres")
     ring, torus_scenes, torus_residuals, torus_energies = field_tori()
-    save_figure(render.draw_fields(ring, torus_scenes, render.TORUS_LIMITS, render.TORUS_NEEDLE), "connections_fields_tori")
+    save_figure(render.draw_fields(ring, torus_scenes, render.torus_limits, render.torus_needle), "connections_fields_tori")
     field, singular, indices = sphere_scenes[0]
     save_animation(render.animate_turning(sphere, turning(sphere, field), singular, indices), "connections_turning",
                    DURATION_MS)
 
-    views = np.broadcast_to(render.VIEW, (len(SPHERE_CORNERS), 2))               # every panel seen alike
+    views = np.broadcast_to(render.view, (len(SPHERE_CORNERS), 2))               # every panel seen alike
     fine, sphere_patterns, stripe_energies = stripe_spheres()
     bands = [tuple(family[..., :1] for family in pattern) for pattern in sphere_patterns]
-    save_figure(render.draw_patterns(fine, bands, render.draw_bands, render.SPHERE_REACH, views), "connections_stripes_spheres")
-    save_figure(render.draw_patterns(fine, sphere_patterns, render.draw_lines, render.SPHERE_REACH, views),
+    save_figure(render.draw_patterns(fine, bands, render.draw_bands, render.sphere_reach, views), "connections_stripes_spheres")
+    save_figure(render.draw_patterns(fine, sphere_patterns, render.draw_lines, render.sphere_reach, views),
                 "connections_stripes_sphere_grids")
     stripe_torus, torus_patterns, torus_stripe_energies = stripe_tori()
     bands = [tuple(family[..., :1] for family in pattern) for pattern in torus_patterns]
     save_figure(render.draw_patterns(stripe_torus, bands, render.draw_bands, TORUS_REACH, views), "connections_stripes_tori")
     save_figure(render.draw_patterns(stripe_torus, torus_patterns, render.draw_lines, TORUS_REACH, views), "connections_stripes_torus_grids")
     _, cross_patterns, cross_angles = crosses()
-    save_figure(render.draw_patterns(fine, cross_patterns, render.draw_lines, render.SPHERE_REACH, views), "connections_stripes_crosses")
+    save_figure(render.draw_patterns(fine, cross_patterns, render.draw_lines, render.sphere_reach, views), "connections_stripes_crosses")
     lines, stripe_fields, advance = (family[..., :1] for family in sphere_patterns[2])
-    save_animation(render.animate_flow(fine, lines, sliding(fine, stripe_fields), advance, render.SPHERE_REACH),
+    save_animation(render.animate_flow(fine, lines, sliding(fine, stripe_fields), advance, render.sphere_reach),
                    "connections_stripes_sliding", DURATION_MS)
 
     # checks
