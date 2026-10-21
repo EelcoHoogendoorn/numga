@@ -15,6 +15,8 @@ import examples.electromagnetism.eddy_brake.core
 import examples.electromagnetism.eddy_brake.scenarios
 import examples.electromagnetism.fresnel.core
 import examples.electromagnetism.fresnel.scenarios
+import examples.electromagnetism.magnetic_bottle.core
+import examples.electromagnetism.magnetic_bottle.scenarios
 import examples.electromagnetism.moving_charge.core
 import examples.electromagnetism.moving_charge.scenarios
 import examples.electromagnetism.second_harmonic.core
