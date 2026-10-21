@@ -251,7 +251,7 @@ selected = representations(point(event), fixed_twistor)    # [...] Twistor: one 
 
 ## 12. Magnetic Resonance & Spin Echoes (VGA3D)
 
-**Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance.ipynb)
+**Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
 ![Spins fanning out in an uneven field and refocusing into an echo](../plots/resonance_echo.gif)
 
