@@ -39,8 +39,8 @@ HEMISPHERE_RESOLUTION = 240
 HEMISPHERE_SUPERSAMPLE = 2
 S2_DURATION_MS = 15
 # Pixels of the image traced on S³, and the supersampling of each.
-S3_SHAPE = (120, 160)
-S3_SUPERSAMPLE = 2
+S3_SHAPE = (360, 480)
+S3_SUPERSAMPLE = 3
 S3_DURATION_MS = 50
 
 

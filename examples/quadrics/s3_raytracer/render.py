@@ -33,9 +33,18 @@ var<uniform> light: Point;
 alias Sample = vec3<f32>;
 
 const ambient = 0.15;
+// The glint's share and sharpness.
+const gloss = 0.35;
+const shininess = 40.0;
 const background = BACKGROUND;
 // How far along the arc to the light a shadow test starts.
 const clearance = 1e-4;
+
+// A point's direction along the sphere at a place on it, unit: its part square to the place.
+fn along(place: Point, toward: Point) -> Point {
+    let tangent = toward - place * place.dot(toward);
+    return tangent / sqrt(tangent.dot(tangent));
+}
 
 // Whether the short arc from a hit to the light enters any body, without roots: it does when either end lies
 // inside, or the pairing with the light's polar plane falls below zero between them.
@@ -81,8 +90,17 @@ fn sample(place: vec2<f32>) -> Sample {
     let polar = quadrics[body](hit);
     let arc = acos(clamp((hit | light) / (light | light), -1.0, 1.0));
     let cosine = (polar & light) / ((polar | polar).square_root() * sin(arc));
-    let lambert = select(clamp(-cosine / (sin(arc) * sin(arc)), 0.0, 1.0), 0.0, cosine >= 0 || shadowed(hit));
-    return colours[body] * (ambient + (1 - ambient) * lambert);
+    let lit = cosine < 0 && !shadowed(hit);
+    // Rolled off softly where the light is strongest, rather than clipped, so the brightest faces keep their form.
+    let lambert = select(0.0, tanh(-cosine / (sin(arc) * sin(arc))), lit);
+    // A glint where the normal, the polar plane's dual along the sphere and facing the eye, bisects the ways
+    // back to the eye and on to the light.
+    let to_eye = along(hit, eye);
+    let normal = along(hit, polar.dual());
+    let facing = normal * select(-1.0, 1.0, normal.dot(to_eye) >= 0);
+    let halfway = along(hit, to_eye + along(hit, light));
+    let glint = select(0.0, pow(max(facing.dot(halfway), 0.0), shininess), lit);
+    return colours[body] * (ambient + (1 - ambient) * lambert) + gloss * glint;
 }
 """.replace("BACKGROUND", repr(background))
 

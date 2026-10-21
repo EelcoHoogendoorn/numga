@@ -23,8 +23,8 @@ WALK = 1.2
 # The frames of the walk, the image's pixels and their supersampling, and the duration of a frame in
 # milliseconds; the coarser chart the checks run on, and every how many covered pixels a hit is checked.
 N_FRAMES = 48
-SHAPE = (180, 240)
-SUPERSAMPLE = 2
+SHAPE = (360, 480)
+SUPERSAMPLE = 3
 FRAME_DURATION = 80
 CHECK_SHAPE = (90, 120)
 CHECK_STRIDE = 10

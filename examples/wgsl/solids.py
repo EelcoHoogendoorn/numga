@@ -28,7 +28,10 @@ axes = stack((mv.x, mv.y, mv.z))                                             # [
 origin = mv.w.dual()                                                         # [] Point
 # The light that falls everywhere, the glint's share and sharpness, and the lamp: from up and to the right
 # of a viewer looking along -y.
-ambient, gloss, shininess = 0.3, 0.3, 40.0
+ambient, gloss, shininess = 0.22, 0.45, 32.0
+# How much brighter the light that falls everywhere is on faces turned up than on faces turned sideways, and dimmer
+# on faces turned down: a sky above and a ground below, so the form reads away from the lamp too.
+fill_tilt = 0.5
 
 source = supersampled(2) + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and its colour.
@@ -47,6 +50,7 @@ var<uniform> back: f32;
 var<uniform> half_height: f32;
 var<uniform> lamp: Point;
 var<uniform> ambient: f32;
+var<uniform> fill_tilt: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
 
@@ -121,7 +125,8 @@ fn sample(place: vec2<f32>) -> Sample {
     let light = max(normal & lamp, 0.0);
     // The view ray reflected in the tangent plane, against the lamp: `-d.dual()` is the plane square to d.
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    let colour = hit.colour * (ambient + (1 - ambient) * light) + gloss * glint;
+    let fill = ambient * (1 + fill_tilt * (normal | mv.z));
+    let colour = hit.colour * (fill + (1 - ambient) * light) + gloss * glint;
     return Sample(vec4<f32>(colour, 1.0), vec4<f32>(hit.distance - back, 0.0, 0.0, 1.0));
 }
 """
@@ -250,7 +255,7 @@ def layer(parts: list[tuple[Quadric, np.ndarray]], camera: Motor, half: np.ndarr
     quadrics, solids = scene(parts)
     shape = (int(round(pixels * half[1] / half[0])), pixels)
     image = shader()(shape, quadrics=quadrics, solids=solids, camera=camera, back=4 * half.max(), half_height=half[1],
-                     lamp=lamp(elevation, azimuth), ambient=ambient, gloss=gloss, shininess=shininess)["image"]
+                     lamp=lamp(elevation, azimuth), ambient=ambient, fill_tilt=fill_tilt, gloss=gloss, shininess=shininess)["image"]
     return image["colour"], image["depth"][..., 0]
 
 

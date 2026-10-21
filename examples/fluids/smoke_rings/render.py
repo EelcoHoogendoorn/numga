@@ -1,144 +1,154 @@
-"""Drawing for the smoke ring flow: the Hashimoto surface swept by a curve, as shaded strips between the
-curve at successive times; the tubes swept by several rings, cut open to show how they pass through each
-other; curves flowing, as lines shaded by their depth; and the turning angle along a curve through time.
+"""Drawing for the smoke ring flow, on the GPU: the Hashimoto surface swept by a curve, as shaded strips between the
+curve at successive times; the tubes swept by several rings, cut open to show how they pass through each other;
+curves flowing, as thin tubes shaded from far to near; and the turning angle along a curve through time.
 Curves are polylines; a closed one repeats its first vertex at the end."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 
-from examples.animation import capture
+from numga import stack
 from examples.fluids.smoke_rings import core
+from examples.wgsl import compose, meshes, solids
 
-# The surface's colour from the first time to the last, the curve's colour from far to near, the curve's
-# width, the view as (elevation, azimuth) in degrees, and the margin around the drawn extent.
-EARLY, LATE = np.array([0.93, 0.88, 0.78]), np.array([0.55, 0.69, 0.80])
-FAR, NEAR = np.array([0.75, 0.80, 0.86]), np.array([0.11, 0.21, 0.34])
-# The colours of the rings' swept tubes, one per ring.
-TUBES = np.array([[0.85, 0.52, 0.32], [0.38, 0.58, 0.78]])
-WIDTH = 2.4
+# The surface's colour from the first time to the last, the curve's colour from far to near, and the colours of
+# the rings' swept tubes, one per ring.
+early, late = np.array([0.93, 0.88, 0.78]), np.array([0.55, 0.69, 0.80])
+far, near = np.array([0.75, 0.80, 0.86]), np.array([0.11, 0.21, 0.34])
+tubes = np.array([[0.85, 0.52, 0.32], [0.38, 0.58, 0.78]])
+background = np.ones(3)
+# The view, elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the subject as
+# a share of its larger side; the pictures' pixels across, and the gloss of the swept surfaces.
+elevation, azimuth = np.radians([50.0, 40.0])
+margin = 0.05
+n_picture_pixels = 660
+n_frame_pixels = 500
+surface_gloss = 0.1
+# A curve's tube: its radius in pixels, and the vertices around it.
+tube_radius = 2.2
+n_around = 10
 # The share of the largest motion above which a vertex counts as moving, for framing a curve's trail, and
 # the trail's opacity, so that the curve shows through it.
-MOVING = 0.01
-TRAIL_OPACITY = 0.6
-ELEVATION, AZIMUTH = 50.0, -50.0
-MARGIN = 1.05
+moving_share = 0.01
+trail_opacity = 0.6
 
 
+# --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
     """The x, y and z coordinates of points, antivectors."""
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def bounds(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """The lowest and highest corner `[3]` of the box around points `[..., 3]`, with the margin."""
-    low, high = points.reshape(-1, 3).min(axis=0), points.reshape(-1, 3).max(axis=0)
-    middle, reach = (low + high) / 2, MARGIN * (high - low) / 2
-    return middle - reach, middle + reach
+def places(points: np.ndarray) -> solids.Point:
+    """Coordinates `[..., 3]` as the drawing's points."""
+    return solids.mv.point(points)
 
 
-def frame(ax, points: np.ndarray) -> None:
-    """Limits around points `[..., 3]` in a box of their shape, at one scale along every axis, and the
-    view."""
-    low, high = bounds(points)
-    ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
-    ax.set_box_aspect(tuple(high - low), zoom=1.25)
-    ax.set_proj_type("ortho")
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
+def strips(points: np.ndarray) -> np.ndarray:
+    """The triangles between successive curves `[times, n]`: two to each quad between an edge at one time and the
+    same edge at the next, `[times - 1, n - 1, 2, 3]` indices into the curves' vertices, flattened."""
+    index = np.arange(points.shape[0] * points.shape[1]).reshape(points.shape[:2])
+    corners = np.stack([index[:-1, :-1], index[1:, :-1], index[1:, 1:], index[:-1, 1:]], axis=-1)   # [times - 1, n - 1, 4]
+    return corners[..., [[0, 1, 2], [0, 2, 3]]]
+
+
+def view(points: np.ndarray, pixels: int) -> tuple[solids.Motor, np.ndarray, np.ndarray]:
+    """A camera framing points `[..., 3]`, half the image's width and height, and the direction toward the
+    viewer `[3]`."""
+    camera, half = solids.view([places(points.reshape(-1, 3))], 0.0, elevation, azimuth, margin)
+    half = half * np.array([1, round(pixels * half[1] / half[0]) / pixels * half[0] / half[1]])
+    toward = (stack((solids.mv.x, solids.mv.y, solids.mv.z)) & (camera >> solids.mv.z.dual())).to_array()
+    return camera, half, toward
+
+
+def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray, camera: solids.Motor, half: np.ndarray,
+          pixels: int) -> tuple[np.ndarray, np.ndarray]:
+    """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, as a layer."""
+    corners = places(points)
+    return meshes.layer(corners, faces, colours, meshes.smooth(corners, faces), camera, half, elevation, azimuth,
+                        pixels, gloss=surface_gloss)
+
+
+def curves_layer(points: np.ndarray, toward: np.ndarray, camera: solids.Motor, half: np.ndarray,
+                 pixels: int) -> tuple[np.ndarray, np.ndarray]:
+    """Polylines `[curves, n, 3]` as thin tubes, coloured from far to near by their depth `[curves, n]`, as a
+    layer."""
+    rings, faces = meshes.tube(points, tube_radius * 2 * half[0] / pixels, n_around)
+    depth = points @ toward                                                    # [curves, n]
+    share = np.repeat(((depth - depth.min()) / np.ptp(depth)).reshape(-1), n_around)[faces][..., None]
+    return meshes.layer(rings, faces, (1 - share) * far + share * near, meshes.smooth(rings, faces), camera, half,
+                        elevation, azimuth, pixels)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
-    """The surface swept by a curve through time `[times, n]`: a quad between each edge at one time and
-    the same edge at the next, coloured from early to late."""
+    """The surface swept by a curve through time `[times, n]`, coloured from early to late."""
     points = coordinates(curves)                                               # [times, n, 3]
-    before, after = points[:, :-1], points[:, 1:]
-    quads = np.stack([before[:-1], after[:-1], after[1:], before[1:]], axis=-2)   # [times - 1, n - 1, 4, 3]
-    share = np.linspace(0, 1, len(quads))[:, None, None] * np.ones(quads.shape[:2] + (1,))
-    colours = ((1 - share) * EARLY + share * LATE).reshape(-1, 3)
-    figure = plt.figure(figsize=(6.0, 6.0), dpi=110)
-    ax = figure.add_axes((0, 0, 1, 1), projection="3d")
-    ax.add_collection3d(Poly3DCollection(quads.reshape(-1, 4, 3), facecolors=colours, shade=True, linewidths=0))
-    frame(ax, points)
-    return figure
-
-
-def toward() -> np.ndarray:
-    """The unit vector towards the viewer."""
-    elevation, azimuth = np.radians(ELEVATION), np.radians(AZIMUTH)
-    return np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
+    faces = strips(points).reshape(-1, 3)
+    share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
+    colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
+    camera, half, _ = view(points, n_picture_pixels)
+    return image_figure(compose([(*sheet(points.reshape(-1, 3), faces, colours, camera, half, n_picture_pixels), 1.0)],
+                                background))
 
 
 def draw_swept(curves: core.Point) -> plt.Figure:
-    """The tubes swept by closed curves through time `[times, rings, n]`, each in its own colour, with the
-    half of every tube nearer the viewer cut away, so that the tubes inside show."""
+    """The tubes swept by closed curves through time `[times, rings, n]`, each in its own colour, with the half of
+    every tube nearer the viewer cut away, so that the tubes inside show."""
     points = coordinates(curves)                                               # [times, rings, n, 3]
-    before, after = points[:, :, :-1], points[:, :, 1:]
-    quads = np.stack([before[:-1], after[:-1], after[1:], before[1:]], axis=-2)   # [times - 1, rings, n - 1, 4, 3]
+    camera, half, toward = view(points, n_picture_pixels)
+    rings = np.moveaxis(points, 1, 0)                                          # [rings, times, n, 3]
     # Cut by the plane through the axis facing the viewer: keep the far half of each tube.
-    centres = quads.mean(axis=-2)                                              # [times - 1, rings, n - 1, 3]
-    far = centres[..., :2] @ toward()[:2] < 0                                  # [times - 1, rings, n - 1]
-    colours = np.broadcast_to(TUBES[:, None, :], centres.shape)               # [times - 1, rings, n - 1, 3]
-    figure = plt.figure(figsize=(6.0, 6.0), dpi=110)
-    ax = figure.add_axes((0, 0, 1, 1), projection="3d")
-    ax.add_collection3d(Poly3DCollection(quads[far], facecolors=colours[far], shade=True, linewidths=0))
-    frame(ax, points)
-    return figure
+    centres = (rings[:, :-1, :-1] + rings[:, 1:, 1:]) / 2                      # [rings, times - 1, n - 1, 3]
+    kept = (centres[..., :2] @ toward[:2] < 0)                                 # [rings, times - 1, n - 1]
+    offsets = np.arange(len(rings))[:, None, None, None, None] * np.prod(rings.shape[1:3])
+    faces = (strips(rings[0]) + offsets)[kept].reshape(-1, 3)                  # [faces, 3]
+    colours = np.broadcast_to(tubes[:, None, None, None, None, :], kept.shape + (2, 3, 3))[kept].reshape(-1, 3, 3)
+    layer = sheet(rings.reshape(-1, 3), faces, colours, camera, half, n_picture_pixels)
+    return image_figure(compose([(*layer, 1.0)], background))
 
 
 def animate_curves(curves: core.Point) -> list[np.ndarray]:
-    """Frames of curves flowing `[times, ..., n]`, all from one view and to one scale, the curves shaded
-    from far to near."""
+    """Frames of curves flowing `[times, ..., n]`, all from one view and to one scale."""
     points = coordinates(curves)                                               # [times, ..., n, 3]
-    depth = points @ toward()
-    low, high = depth.min(), depth.max()
-    images = []
-    for curve, near in zip(points, depth):
-        segments = np.stack([curve[..., :-1, :], curve[..., 1:, :]], axis=-2).reshape(-1, 2, 3)   # [segments, 2, 3]
-        share = (((near[..., :-1] + near[..., 1:]) / 2 - low) / (high - low)).reshape(-1)
-        # Far segments first, so that near ones are drawn over them.
-        order = np.argsort(share)
-        figure = plt.figure(figsize=(5.0, 5.0), dpi=90)
-        ax = figure.add_axes((0, 0, 1, 1), projection="3d")
-        ax.computed_zorder = False
-        ax.add_collection3d(Line3DCollection(segments[order], colors=(1 - share[order, None]) * FAR + share[order, None] * NEAR,
-                                             linewidths=WIDTH, capstyle="round"))
-        frame(ax, points)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    camera, half, toward = view(points, n_frame_pixels)
+    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), toward, camera, half, n_frame_pixels), 1.0)],
+                    background) for curve in points]
 
 
 def animate_trail(curves: core.Point) -> list[np.ndarray]:
-    """Frames of a curve flowing `[times, n]`, each over the surface the curve has swept so far, coloured
-    from early to late, and framed on the part of space where the curve moves."""
+    """Frames of a curve flowing `[times, n]`, each over the surface the curve has swept so far, coloured from early
+    to late, and framed on the part of space where the curve moves."""
     points = coordinates(curves)                                               # [times, n, 3]
-    before, after = points[:, :-1], points[:, 1:]
-    quads = np.stack([before[:-1], after[:-1], after[1:], before[1:]], axis=-2)   # [times - 1, n - 1, 4, 3]
-    share = np.linspace(0, 1, len(quads))[:, None]
-    colours = np.broadcast_to(((1 - share) * EARLY + share * LATE)[:, None], quads.shape[:2] + (3,))
-    # The vertices that move, and the box around their paths; what lies outside is left out.
+    # The vertices that move, and the box around their paths, with the margin; what lies outside is left out.
     travel = np.linalg.norm(points - points[0], axis=-1).max(axis=0)          # [n]
-    moving = points[:, travel > MOVING * travel.max()]                         # [times, moving, 3]
-    low, high = bounds(moving)
-    inside = np.all((points >= low) & (points <= high), axis=-1)              # [times, n]
-    quads_inside = inside[:-1, :-1] & inside[:-1, 1:] & inside[1:, :-1] & inside[1:, 1:]   # [times - 1, n - 1]
-    segments_inside = inside[:, :-1] & inside[:, 1:]                           # [times, n - 1]
+    moving = points[:, travel > moving_share * travel.max()]                   # [times, moving, 3]
+    low, high = moving.reshape(-1, 3).min(axis=0), moving.reshape(-1, 3).max(axis=0)
+    inside = np.all((points >= low - margin * (high - low)) & (points <= high + margin * (high - low)), axis=-1)
+    camera, half, toward = view(moving, n_frame_pixels)
+    faces = strips(points)                                                     # [times - 1, n - 1, 2, 3]
+    flat = inside.reshape(-1)
+    kept = flat[faces].all(axis=-1)                                            # [times - 1, n - 1, 2]
+    share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
+    colours = ((1 - share) * early + share * late).reshape(-1, 3)
     images = []
     for time in range(len(points)):
-        figure = plt.figure(figsize=(6.0, 6.0), dpi=90)
-        ax = figure.add_axes((0, 0, 1, 1), projection="3d")
-        ax.computed_zorder = False
-        ax.add_collection3d(Poly3DCollection(quads[:time][quads_inside[:time]], facecolors=colours[:time][quads_inside[:time]],
-                                             shade=True, linewidths=0, alpha=TRAIL_OPACITY))
-        segments = np.stack([before[time], after[time]], axis=-2)[segments_inside[time]]   # [segments, 2, 3]
-        ax.add_collection3d(Line3DCollection(segments, colors=NEAR, linewidths=WIDTH, capstyle="round"))
-        frame(ax, moving)
-        images.append(capture(figure))
-        plt.close(figure)
+        swept = faces[:time][kept[:time]]                                      # [faces, 3]
+        layers = [(*curves_layer(points[time][inside[time]][None], toward, camera, half, n_frame_pixels), 1.0)]
+        if len(swept):
+            layers.append((*sheet(points.reshape(-1, 3), swept, colours[swept], camera, half, n_frame_pixels),
+                           trail_opacity))
+        images.append(compose(layers, background))
     return images
+
+
+def image_figure(image: np.ndarray) -> plt.Figure:
+    """An image at its pixel size, without axes or margins."""
+    figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
+    ax.imshow(image)
+    ax.set_axis_off()
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    return figure
 
 
 def draw_turns(turns: core.Rotor) -> plt.Figure:
