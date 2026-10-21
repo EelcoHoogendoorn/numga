@@ -1,0 +1,159 @@
+"""Active bonds, cyclic work and waves in a planar elastic lattice."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.collections import LineCollection
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.patches import Polygon
+
+from numga import stack
+from examples.animation import capture
+from examples.mechanics.odd_elasticity import core
+
+BACKGROUND = "#fbfaf7"
+BOND = "#267c8b"
+FORCE = "#db663d"
+ANCHOR = "#35434d"
+REFERENCE = "#d9dcda"
+SWEPT = "#f6d9c9"
+TRACK = "#f3b83f"
+STRAIN = LinearSegmentedColormap.from_list("bond_extension", ["#4775bd", "#32666d", "#ed8b3d"])
+
+
+# --- plumbing -------------------------------------------------------------------------
+def _coordinates(points: core.Antivector) -> np.ndarray:
+    """Positions read by pairing with the lines across the axes; sites become a batch axis."""
+    lines = stack((core.mv.x, core.mv.y))
+    return (lines & points.batch()[..., None]).to_array()
+
+
+def _arrows(forces: core.Vector) -> np.ndarray:
+    """Forces drawn along their metric directions."""
+    return _coordinates(forces.dual())
+
+
+def _bounds(coordinates: np.ndarray, margin: float) -> tuple[np.ndarray, np.ndarray]:
+    low = coordinates.reshape(-1, 2).min(axis=0)
+    high = coordinates.reshape(-1, 2).max(axis=0)
+    padding = margin * np.max(high - low)
+    return low - padding, high + padding
+
+
+def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: tuple[float, float, float, float]) -> plt.Axes:
+    ax = figure.add_axes(position, facecolor=BACKGROUND)
+    low, high = bounds
+    ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), aspect="equal")
+    ax.set_axis_off()
+    return ax
+
+
+def bond_frames(
+    anchor: core.Antivector, reference: core.Antivector, path: core.Antivector,
+    states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
+) -> list[np.ndarray]:
+    """An endpoint follows its closed path, the area it has swept about its rest position shaded, while
+    the bond's force changes."""
+    fixed = _coordinates(anchor)
+    rest = _coordinates(reference)
+    loop = _coordinates(path)
+    endpoints, forces = (np.stack(values) for values in zip(*((_coordinates(endpoint), _arrows(force))
+                                                               for endpoint, force in states)))
+    arrow_tips = endpoints + force_scale * forces
+    bounds = _bounds(np.concatenate((fixed[None], rest[None], loop, arrow_tips)), 0.08)
+
+    figure = plt.figure(figsize=(6.2, 2.9), dpi=100, facecolor=BACKGROUND)
+    ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
+    swept = Polygon(np.stack((rest, rest)), closed=True, facecolor=SWEPT, edgecolor="none", zorder=0)
+    ax.add_patch(swept)
+    ax.plot(*np.stack((fixed, rest)).T, color=REFERENCE, linewidth=2, linestyle="--")
+    ax.plot(*loop.T, color=REFERENCE, linewidth=1.5)
+    ax.plot(*fixed, "o", color=ANCHOR, markersize=9)
+    ax.plot(*rest, "+", color=ANCHOR, markersize=8, markeredgewidth=1)
+    bond, = ax.plot([], [], color=BOND, linewidth=4, solid_capstyle="round")
+    endpoint, = ax.plot([], [], "o", color=BOND, markersize=9)
+    trail, = ax.plot([], [], color=BOND, linewidth=1.4, alpha=0.55)
+    arrow = ax.quiver(*endpoints[0], 0, 0, angles="xy", scale_units="xy", scale=1,
+                      color=FORCE, width=0.011, headwidth=4, headlength=5, zorder=5)
+
+    images = []
+    for i, (position, force) in enumerate(zip(endpoints, forces)):
+        swept.set_xy(np.concatenate((rest[None], endpoints[:i + 1])))
+        bond.set_data(*np.stack((fixed, position)).T)
+        endpoint.set_data([position[0]], [position[1]])
+        trail.set_data(*endpoints[:i + 1].T)
+        arrow.set_offsets(position)
+        arrow.set_UVC(*(force_scale * force))
+        images.append(capture(figure))
+    plt.close(figure)
+    return images
+
+
+def patch_frames(
+    reference: core.Antivector, edges: np.ndarray,
+    states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
+) -> list[np.ndarray]:
+    """A deforming patch pushes on its boundary around its closed cycle."""
+    rest = _coordinates(reference)
+    boundary = np.bincount(edges.reshape(-1), minlength=len(rest)) < 6
+    positions, forces = (np.stack(values) for values in zip(*((_coordinates(position), _arrows(force))
+                                                               for position, force in states)))
+    arrow_tips = positions[:, boundary] + force_scale * forces[:, boundary]
+    bounds = _bounds(np.concatenate((rest, positions.reshape(-1, 2), arrow_tips.reshape(-1, 2))), 0.055)
+
+    figure = plt.figure(figsize=(5.2, 3.6), dpi=100, facecolor=BACKGROUND)
+    ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
+    ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=1))
+    bonds = LineCollection([], colors=BOND, linewidths=1.7)
+    ax.add_collection(bonds)
+    nodes = ax.scatter(*rest.T, s=13, c=ANCHOR, linewidths=0, zorder=3)
+    arrows = ax.quiver(*rest[boundary].T, *np.zeros_like(rest[boundary]).T,
+                       angles="xy", scale_units="xy", scale=1, color=FORCE,
+                       width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
+
+    images = []
+    for position, force in zip(positions, forces):
+        bonds.set_segments(position[edges])
+        nodes.set_offsets(position)
+        arrows.set_offsets(position[boundary])
+        arrows.set_UVC(*(force_scale * force[boundary]).T)
+        images.append(capture(figure))
+    plt.close(figure)
+    return images
+
+
+def wave_frames(
+    reference: core.Antivector, edges: np.ndarray,
+    states: Iterable[tuple[core.Antivector, core.Scalar]],
+    displacement_scale: float, extension_scale: float, tracked_index: int,
+) -> list[np.ndarray]:
+    """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
+    rest = _coordinates(reference)
+    figure = plt.figure(figsize=(6.5, 3.7), dpi=100, facecolor=BACKGROUND)
+    ax = _scene(figure, _bounds(rest, 0.035), (0.015, 0.015, 0.97, 0.97))
+    ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=0.65))
+    bonds = LineCollection([], linewidths=1.15, cmap=STRAIN, norm=Normalize(-extension_scale, extension_scale))
+    ax.add_collection(bonds)
+    nodes = ax.scatter(*rest.T, s=3, c=ANCHOR, linewidths=0, zorder=3)
+    trail, = ax.plot([], [], color=TRACK, linewidth=2.2, zorder=4)
+    tracked, = ax.plot([], [], "o", color=TRACK, markersize=7, markeredgecolor=ANCHOR,
+                       markeredgewidth=0.7, zorder=5)
+
+    n_trail_frames = 18
+    history = []
+    images = []
+    for positions, extensions in states:
+        position = rest + displacement_scale * (_coordinates(positions) - rest)
+        bonds.set_segments(position[edges])
+        bonds.set_array(extensions.batch().to_array())
+        nodes.set_offsets(position)
+        history.append(position[tracked_index])
+        trajectory = np.stack(history[-n_trail_frames:])
+        trail.set_data(*trajectory.T)
+        tracked.set_data([position[tracked_index, 0]], [position[tracked_index, 1]])
+        images.append(capture(figure))
+    plt.close(figure)
+    return images
