@@ -1,175 +1,277 @@
-"""A rattleback with a curved underside and flat deck, viewed above its ground."""
+"""A rattleback as built, a wooden boat with steel balls pressed into its sides, above its ground, ray traced on the
+GPU.
+
+The drawing traces the quadrics the mass is read from: each part an intersection of quadrics, `quadric(point) & point`
+negative inside, a ray's first meeting with one part's quadric that lies inside all its others is what it sees, and
+the quadric's plane there is the tangent plane. Each quadric colours the surface it bounds: the painted underside,
+the bare wood of the deck and the cuts; the steel mirrors what lies around it.
+"""
 
 from __future__ import annotations
 
+from functools import cache
+
 import matplotlib.pyplot as plt
 import numpy as np
-from PIL import Image
 
-from numga import stack
+from numga import concatenate
 from numga.algebras import PGA3D
 from examples import instantiate
-from examples.raster import view_frame
+from examples.wgsl import Shader, solids, supersampled
 
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
-# The planes across the axes, which read points and directions by pairing, and the axes' directions.
-mirrors = stack((mv.x, mv.y, mv.z))
-directions = mirrors.dual()
 
 n_pixels = 500
-n_supersamples = 2
-VIEW = (25, -90)
-SETUP_VIEW = (58, -68)
-LIGHT = np.array([-0.3, -0.6, 0.85])
-BODY = np.array([0.19, 0.52, 0.62])
-NOSE = np.array([0.95, 0.48, 0.18])
-DECK = np.array([0.91, 0.81, 0.60])
-GROUND = np.array([0.95, 0.94, 0.91])
-MASS = np.array([0.81, 0.34, 0.12])
-AMBIENT = 0.38
-SHADOW = 0.22
-NOSE_START = 0.65
-STRIPE_HALF_WIDTH = 0.06
-GRID_SPACING = 2
-GRID_WIDTH = 0.018
-GRID_CONTRAST = 0.07
+# The views, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the subject as a
+# share of its larger side.
+view = np.radians([25.0, 0.0])
+setup_view = np.radians([58.0, 22.0])
+margin = 0.1
+lamp = mv.direction([-0.3, -0.6, 0.85])
+lamp = lamp / (-(lamp.dual() & lamp)).square_root()
+ambient, shininess = 0.38, 32.0
+# The surfaces' colours; the glint of the satin paint, the bare wood having none; and how much of what lies around
+# it the steel mirrors.
+paint = np.array([0.19, 0.52, 0.62])
+deck_wood = np.array([0.91, 0.81, 0.60])
+cut_wood = np.array([0.80, 0.63, 0.42])
+steel = np.array([0.68, 0.68, 0.70])
+paint_gloss = 0.08
+steel_mirroring = 1.0
+# The points of the body the framing follows.
+n_framing = 400
+
+source = supersampled(2) + """
+// A part: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`; each quadric's finish, the
+// colour of the surface it bounds and how much that mirrors.
+struct Part {
+    first: u32,
+    end: u32,
+}
+
+struct Finish {
+    colour: vec3<f32>,
+    gloss: f32,
+    mirroring: f32,
+}
+
+var<storage, read> parts: array<Part>;
+var<storage, read> quadrics: array<Quadric>;
+var<storage, read> finishes: array<Finish>;
+// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the image
+// half as high as this.
+var<uniform> camera: Motor;
+var<uniform> back: f32;
+var<uniform> half_height: f32;
+var<uniform> lamp: Point;
+var<uniform> ambient: f32;
+var<uniform> shininess: f32;
+
+alias Sample = vec3<f32>;
+
+const origin = mv.w.dual();
+const ground_plane = mv.z;
+// The ground: tiles of warm grey stone, each a little lighter or darker than its neighbours and softly mottled,
+// honed smooth enough to mirror a little of what stands on it, the more the more glancing the view.
+const stone = vec3<f32>(0.47, 0.44, 0.40);
+const tile_variation = 0.06;
+const mottling = 0.07;
+const mottle_scale = 1.5;
+const stone_reflectance = 0.04;
+// The sky as a mirror shows it: bright at the horizon, deepening overhead, with the lamp a bright disc in it.
+const horizon = vec3<f32>(0.86, 0.86, 0.86);
+const zenith = vec3<f32>(0.38, 0.39, 0.41);
+const lamp_size = 0.995;
+const lamp_brightness = 5.0;
+const shadow = 0.22;
+// The tiles' size, and the joints between them: their width and how much darker they are.
+const tile_size = 2.0;
+const joint_width = 0.02;
+const joint_darkness = 0.45;
+const far = 1e30;
+// How far a point may lie outside a quadric and still count as inside, for points on two surfaces; and how far
+// past its start a ray leaving a surface looks.
+const tolerance = 1e-4;
+const clearance = 1e-3;
+
+struct Hit {
+    distance: f32,
+    quadric: u32,
+    tangent: Cut,
+}
+
+fn inside_others(part: Part, own: u32, point: Point) -> bool {
+    for (var index = part.first; index < part.end; index++) {
+        if (index != own && (quadrics[index](point) & point) > tolerance) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The first point past `nearest` along a ray on a part's surface: on one of its quadrics, inside all the others.
+fn first_hit(start: Point, direction: Point, nearest: f32) -> Hit {
+    var hit = Hit(far, 0u, mv.z);
+    for (var index = 0u; index < arrayLength(&parts); index++) {
+        let part = parts[index];
+        for (var own = part.first; own < part.end; own++) {
+            let quadric = quadrics[own];
+            // Along the ray the quadric is a quadratic in the distance, a t^2 + 2 b t + c.
+            let a = quadric(direction) & direction;
+            let b = ((quadric(direction) & start) + (quadric(start) & direction)) / 2;
+            let c = quadric(start) & start;
+            let discriminant = b * b - a * c;
+            if (discriminant < 0) {
+                continue;
+            }
+            // Both roots without cancellation; a half-space, with no square term, has only the second.
+            let q = -(b + select(-1.0, 1.0, b >= 0) * sqrt(discriminant));
+            let roots = vec2<f32>(select(q / a, far, a == 0), c / q);
+            for (var which = 0u; which < 2u; which++) {
+                let distance = roots[which];
+                let point = start + direction * distance;
+                if (distance > nearest && distance < hit.distance && inside_others(part, own, point)) {
+                    // The quadric's plane at a point of its surface is the tangent plane there.
+                    hit = Hit(distance, own, quadric(point));
+                }
+            }
+        }
+    }
+    return hit;
+}
+
+// A value for each cell of a lattice, and a smooth blend of them between the cells.
+fn hash(cell: vec2<f32>) -> f32 {
+    return fract(sin(dot(cell, vec2<f32>(127.1, 311.7))) * 43758.5453);
+}
+
+fn noise(spot: vec2<f32>) -> f32 {
+    let cell = floor(spot);
+    let within = fract(spot);
+    let blend = within * within * (3 - 2 * within);
+    return mix(mix(hash(cell), hash(cell + vec2<f32>(1.0, 0.0)), blend.x),
+               mix(hash(cell + vec2<f32>(0.0, 1.0)), hash(cell + vec2<f32>(1.0, 1.0)), blend.x), blend.y);
+}
+
+// The ground where a ray meets it, tiled, mottled and darker where the body stands between it and the lamp; the
+// sky, with the lamp in it, where the ray rises.
+fn surroundings(start: Point, direction: Point) -> vec3<f32> {
+    let to_ground = -(ground_plane & start) / (ground_plane & direction);
+    let on_ground = start + direction * to_ground;
+    let spot = vec2<f32>(mv.x & on_ground, mv.y & on_ground) / tile_size;
+    let off_joint = min(abs(spot.x - round(spot.x)), abs(spot.y - round(spot.y))) * tile_size;
+    let joint = clamp(1 - off_joint / joint_width, 0.0, 1.0);
+    let tone = 1 + tile_variation * (2 * hash(floor(spot)) - 1);
+    let mottle = 1 + mottling * (noise(spot * mottle_scale) + noise(spot * mottle_scale * 2.3) / 2 - 0.75);
+    let shaded = select(1.0, 1 - shadow, first_hit(on_ground, lamp, clearance).distance < far);
+    let floor = stone * tone * mottle * (1 - joint_darkness * joint) * shaded;
+    let rise = max(mv.z & direction, 0.0);
+    let toward_lamp = -(direction.dual() & lamp);
+    let heaven = mix(horizon, zenith, sqrt(rise)) + lamp_brightness * smoothstep(lamp_size, 1.0, toward_lamp);
+    // Every ray starts on or above the ground, so it meets the ground only heading down.
+    return select(heaven, floor, (ground_plane & direction) < 0);
+}
+
+// A surface lit by the lamp unless the body stands between them, with a glint where the ray, reflected in its
+// tangent plane, meets the lamp.
+fn lit(hit: Hit, start: Point, direction: Point) -> vec3<f32> {
+    // Facing the viewer: a tangent plane is lit on the side the ray comes from.
+    let tangent = hit.tangent * select(1.0, -1.0, (hit.tangent & direction) > 0);
+    let normal = tangent / (tangent | tangent).square_root();
+    let blocked = first_hit(start + direction * hit.distance, lamp, clearance).distance < far;
+    let light = select(max(normal & lamp, 0.0), 0.0, blocked);
+    let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
+    let finish = finishes[hit.quadric];
+    return finish.colour * (ambient + (1 - ambient) * light) + finish.gloss * glint;
+}
+
+// What a ray sees, without looking into mirrors.
+fn seen(start: Point, direction: Point) -> vec3<f32> {
+    let hit = first_hit(start, direction, clearance);
+    if (hit.distance < far) {
+        return lit(hit, start, direction);
+    }
+    return surroundings(start, direction);
+}
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_height;
+    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
+    let direction = camera >> -mv.z.dual();
+    let hit = first_hit(start, direction, 0.0);
+    let to_ground = -(ground_plane & start) / (ground_plane & direction);
+    if (hit.distance >= far || hit.distance > to_ground) {
+        // The honed stone mirrors a little of what the ray, reflected in the ground, goes on to see.
+        let glancing = pow(1 - abs(ground_plane & direction), 5.0);
+        let reflectance = stone_reflectance + (1 - stone_reflectance) * glancing;
+        return mix(surroundings(start, direction), seen(start + direction * to_ground, ground_plane >> direction), reflectance);
+    }
+    // A mirroring surface shows what the ray, reflected in its tangent plane, goes on to see, tinted by its own
+    // colour as a metal is, and less tinted the more glancing the ray.
+    let point = start + direction * hit.distance;
+    let normal = hit.tangent / (hit.tangent | hit.tangent).square_root();
+    let finish = finishes[hit.quadric];
+    let glancing = pow(1 - abs(normal & direction), 5.0);
+    let reflectance = finish.colour + (1 - finish.colour) * glancing;
+    return mix(lit(hit, start, direction), reflectance * seen(point, normal >> direction), finish.mirroring);
+}
+"""
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: core.Point) -> np.ndarray:
-    """Cartesian positions at unit weight: each point paired with the planes across the axes, over its
-    pairing with the plane at infinity."""
-    return ((mirrors & points[..., None]) / (core.infinity & points[..., None])).to_array()
+@cache
+def shader() -> Shader:
+    return Shader(source, PGA3D, dict(Point=core.Point, Cut=core.Cut, Motor=core.Motor, Quadric=core.Quadric))
 
 
-def matrix(outline: core.Stretch) -> np.ndarray:
-    """The stretch as a matrix on the last two axes: each axis's direction stretched, read by the planes."""
-    return (mirrors[:, None] & outline[..., None, None](directions[None, :])).to_array()
+def scene(built: core.Body, motor: core.Motor) -> dict:
+    """The parts placed by a motor, their quadrics one after another, and each quadric's finish: the wood first,
+    then each ball."""
+    wood = built.wood()                                                         # [quadrics] Quadric
+    quadrics = concatenate([wood, built.balls])                                 # [quadrics] Quadric
+    n_wood, n_balls = wood.shape[0], built.balls.shape[0]
+    ends = np.concatenate([[n_wood], n_wood + 1 + np.arange(n_balls)])
+    starts = np.concatenate([[0], ends[:-1]])
+    # The underside painted, the deck and the cuts bare wood; the pockets lie under the balls.
+    colours = np.concatenate([[paint, deck_wood], np.repeat([cut_wood], n_wood - 2, axis=0),
+                              np.repeat([steel], n_balls, axis=0)])
+    gloss = np.concatenate([[paint_gloss], np.zeros(n_wood - 1 + n_balls)])
+    mirroring = np.concatenate([np.zeros(n_wood), np.full(n_balls, steel_mirroring)])
+    return dict(parts=dict(first=starts, end=ends), quadrics=solids.placed(quadrics, motor),
+                finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def placements(motors: core.Motor, outline: core.Stretch) -> tuple[np.ndarray, np.ndarray]:
-    """The ellipsoid's centres and maps from its unit sphere, for ray casting."""
-    return coordinates(motors >> core.origin), matrix(motors >> outline)
+def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float) -> tuple[core.Motor, np.ndarray]:
+    """A camera framing the body over every placement and its shadow on the ground, cast along the lamp: its motor,
+    and half the image's width and height, the height rounded to whole pixels."""
+    body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point
+    shadows = (body & lamp) ^ mv.z                                                # [..., points] Point
+    camera, half = solids.view([body, shadows], 0.0, elevation, azimuth, margin)
+    n_rows = round(n_pixels * half[1] / half[0])
+    return camera, np.array([half[0], half[0] * n_rows / n_pixels])
 
 
-def camera(centres: np.ndarray, transforms: np.ndarray, view: tuple[float, float]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Parallel camera rays and a fixed viewport enclosing the complete motion."""
-    frame = view_frame(*view)
-    viewed = centres @ frame.T
-    radii = np.linalg.norm(np.einsum("ij,...jk->...ik", frame, transforms), axis=-1)
-    # The directional shadow belongs to the scene bounds as well as the body.
-    shadow_centres = centres - centres[..., 2:] * LIGHT / LIGHT[2]
-    shadow_transforms = transforms - LIGHT[:, None] * transforms[..., 2:3, :] / LIGHT[2]
-    shadow_viewed = shadow_centres @ frame.T
-    shadow_radii = np.linalg.norm(np.einsum("ij,...jk->...ik", frame, shadow_transforms), axis=-1)
-    low = np.minimum(viewed - radii, shadow_viewed - shadow_radii).reshape(-1, 3).min(axis=0)
-    high = np.maximum(viewed + radii, shadow_viewed + shadow_radii).reshape(-1, 3).max(axis=0)
-    middle = (low + high) / 2
-    extent = 0.55 * (high - low)[:2]
-    n_height = round(n_pixels * extent[1] / extent[0])
-    extent[1] = extent[0] * n_height / n_pixels
-    n_samples = n_pixels * n_supersamples
-    n_rows = n_height * n_supersamples
-    horizontal = ((np.arange(n_samples) + 0.5) / n_samples * 2 - 1) * extent[0]
-    vertical = ((np.arange(n_rows) + 0.5) / n_rows * 2 - 1) * extent[1]
-    origin = middle @ frame + frame[2] * (2 * extent.max())
-    rays = origin + horizontal[None, :, None] * frame[0] - vertical[:, None, None] * frame[1]
-    return rays, -frame[2], frame, middle, extent
+def picture(built: core.Body, motor: core.Motor, camera: core.Motor, half: np.ndarray) -> np.ndarray:
+    """The body and its shadow, `[rows, columns, 3]` bytes."""
+    shape = (round(n_pixels * half[1] / half[0]), n_pixels)
+    traced = shader()(shape, **scene(built, motor), camera=camera, back=4 * half.max(), half_height=half[1],
+                      lamp=lamp, ambient=ambient, shininess=shininess)["image"]
+    return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
-def intersection(origins: np.ndarray, heading: np.ndarray, centre: np.ndarray,
-                 inverse: np.ndarray, deck_fraction: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """The ray's entry into the ellipsoid below its flat deck."""
-    start = (origins - centre) @ inverse.T
-    direction = heading @ inverse.T
-    quadratic = np.dot(direction, direction)
-    linear = start @ direction
-    constant = np.einsum("...i,...i->...", start, start) - 1
-    discriminant = linear * linear - quadratic * constant
-    root = np.sqrt(np.maximum(discriminant, 0))
-    entering = (-linear - root) / quadratic
-    leaving = (-linear + root) / quadratic
-    # Clip the interval inside the ellipsoid to the halfspace below the deck.
-    with np.errstate(divide="ignore", invalid="ignore"):
-        deck_distance = (deck_fraction - start[..., 2]) / direction[2]
-    distance = np.where(direction[2] < 0, np.maximum(entering, deck_distance), entering)
-    leaving = np.where(direction[2] > 0, np.minimum(leaving, deck_distance), leaving)
-    hit = (discriminant >= 0) & (distance >= 0) & (distance <= leaving)
-    hit &= (direction[2] != 0) | (start[..., 2] <= deck_fraction)
-    deck = (direction[2] < 0) & (distance == deck_distance)
-    local = start + distance[..., None] * direction
-    return hit, distance, local, deck
-
-
-def picture(centre: np.ndarray, transform: np.ndarray, rays: np.ndarray,
-            heading: np.ndarray, deck_fraction: float) -> np.ndarray:
-    """The hull and its shadow, with a striped deck and an orange nose."""
-    inverse = np.linalg.inv(transform)
-    lamp = LIGHT / np.linalg.norm(LIGHT)
-    ground_distance = -rays[..., 2] / heading[2]
-    ground = rays + ground_distance[..., None] * heading
-    shadow, _, _, _ = intersection(ground, lamp, centre, inverse, deck_fraction)
-    grid_distance = np.abs(ground[..., :2] / GRID_SPACING - np.rint(ground[..., :2] / GRID_SPACING)) * GRID_SPACING
-    grid = np.clip(1 - grid_distance.min(axis=-1) / GRID_WIDTH, 0, 1)
-    colour = GROUND * (1 - GRID_CONTRAST * grid[..., None]) * (1 - SHADOW * shadow[..., None])
-
-    hit, distance, local, deck = intersection(rays, heading, centre, inverse, deck_fraction)
-    hit &= distance < ground_distance
-    # Pulling a sphere normal back through the stretch gives the hull's surface normal.
-    local_normal = np.where(deck[hit, None], [0, 0, 1], local[hit])
-    normal = local_normal @ inverse
-    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)
-    diffuse = AMBIENT + (1 - AMBIENT) * np.maximum(normal @ lamp, 0)
-    halfway = lamp - heading
-    halfway /= np.linalg.norm(halfway)
-    highlight = 0.13 * np.maximum(normal @ halfway, 0) ** 32
-    paint = np.where((local[hit, 0] > NOSE_START)[:, None], NOSE, BODY)
-    deck_paint = np.where((np.abs(local[hit, 1]) < STRIPE_HALF_WIDTH)[:, None], BODY, DECK)
-    paint = np.where(deck[hit, None], deck_paint, paint)
-    colour[hit] = np.clip(paint * diffuse[:, None] + highlight[:, None], 0, 1)
-
-    image = np.rint(colour * 255).astype(np.uint8)
-    n_height = image.shape[0] // n_supersamples
-    return np.asarray(Image.fromarray(image).resize((n_pixels, n_height), Image.Resampling.BOX))
-
-
-def frames(motors: core.Motor, outline: core.Stretch, deck_fraction: float) -> list[np.ndarray]:
+def frames(motors: core.Motor, built: core.Body, samples: core.Point) -> list[np.ndarray]:
     """The rolling body, viewed from a fixed camera."""
-    centres, transforms = placements(motors, outline)
-    rays, heading, _, _, _ = camera(centres, transforms, VIEW)
-    return [picture(centre, transform, rays, heading, deck_fraction) for centre, transform in zip(centres, transforms)]
+    camera, half = framing(motors, samples, *view)
+    return [picture(built, motor, camera, half) for motor in motors]
 
 
-def image_figure(image: np.ndarray) -> plt.Figure:
-    """An image at its pixel size, without axes or margins."""
+def draw_setup(built: core.Body, samples: core.Point, motor: core.Motor) -> plt.Figure:
+    """The body at rest, seen from above, its steel balls on opposite corners."""
+    camera, half = framing(motor, samples, *setup_view)
+    image = picture(built, motor, camera, half)
     figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
     ax.imshow(image)
     ax.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
-
-
-def draw_setup(outline: core.Stretch, mass_points: core.Point, deck_fraction: float) -> plt.Figure:
-    """The six masses inside a translucent hull, viewed across their skewed axes."""
-    transform = matrix(outline)
-    centre = np.array([0, 0, np.linalg.norm(transform[2])])
-    rays, heading, frame, middle, extent = camera(centre, transform, SETUP_VIEW)
-    image = picture(centre, transform, rays, heading, deck_fraction)
-    image = np.rint(0.23 * image + 0.77 * 255).astype(np.uint8)
-    figure = image_figure(image)
-    ax, = figure.axes
-
-    positions = (coordinates(mass_points) + centre) @ frame.T - middle
-    n_height = image.shape[0]
-    image_size = np.array([n_pixels, n_height])
-    projected = positions[:, :2] / (2 * extent) * image_size
-    projected[:, 0] += n_pixels / 2
-    projected[:, 1] = n_height / 2 - projected[:, 1]
-    origin = (centre @ frame.T - middle)[:2] / (2 * extent) * image_size
-    origin = np.array([origin[0] + n_pixels / 2, n_height / 2 - origin[1]])
-    for endpoint in projected:
-        ax.plot([origin[0], endpoint[0]], [origin[1], endpoint[1]], color=BODY, linewidth=1.4)
-    order = np.argsort(positions[:, 2])
-    ax.scatter(*projected[order].T, s=105, color=MASS, edgecolors="white", linewidths=0.8)
     return figure

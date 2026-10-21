@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
-from examples.quadrics.s3_raytracer.render import render as trace
+from examples.quadrics.s3_raytracer.render import picture as trace
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
@@ -154,10 +154,8 @@ FOV = np.radians(120.0)                            # rad
 
 def s3_frames(trajectory: S3.Trajectory, colors: np.ndarray, eye: S3.Motor, light: S3.Point,
               shape: tuple[int, int], supersample: int) -> list[np.ndarray]:
-    """Every frame traced from the eye: each ellipsoid projected onto the image sphere, lit by the light."""
-    chart = raytracer.pixel_chart(FOV, (shape[0] * supersample, shape[1] * supersample))
-    return [(trace(eye, surfaces, colors, light, chart, shape, supersample) * 255).astype(np.uint8)
-            for surfaces in trajectory.surfaces]
+    """Every frame traced from the eye along great circles, each ellipsoid lit by the light."""
+    return [trace(eye, surfaces, colors, light, FOV, shape, supersample) for surfaces in trajectory.surfaces]
 
 
 def draw_last_frame(frames: list[np.ndarray], bodies: int) -> plt.Figure:

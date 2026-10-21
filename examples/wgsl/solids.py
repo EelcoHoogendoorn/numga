@@ -218,8 +218,14 @@ def view(points: list[Point], reach: float, elevation: float, azimuth: float, ma
     middle = np.array([right.max() + right.min(), up.max() + up.min()]) / 2
     half = np.array([np.ptp(right), np.ptp(up)]) / 2 + reach
     half = half + margin * half.max()
-    centre = turn >> (origin + mv.x.dual() * middle[0] + mv.y.dual() * middle[1])
-    return translator(centre - origin) * turn, half
+    return aim(turn >> (origin + mv.x.dual() * middle[0] + mv.y.dual() * middle[1]), elevation, azimuth), half
+
+
+def aim(centre: Point, elevation: float, azimuth: float) -> Motor:
+    """A camera looking at a point, of any weight, from an elevation and azimuth, in radians, z up and azimuth zero
+    looking along +y."""
+    turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
+    return translator(centre / (mv.w & centre) - origin) * turn
 
 
 def on_screen(points: Point, elevation: float, azimuth: float) -> np.ndarray:

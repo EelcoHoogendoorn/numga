@@ -11,6 +11,7 @@ direction there: its octant paints the body, so the pattern is carried by the bo
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import cache
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,6 +21,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.fluids.jeffery import core
+from examples.wgsl import Shader, supersampled
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()
@@ -98,34 +100,62 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up:
              back: core.Point) -> np.ndarray:
     """Each body, ray cast, as an RGBA picture `[bodies, pixels, pixels, 4]`, transparent where the
     rays miss it."""
-    samples = PIXELS * SUPERSAMPLE
-    offsets = (np.arange(samples) + 0.5) / samples * 2 * LIMIT - LIMIT        # [samples]
-    origins = right * offsets[None, :] + up * offsets[::-1, None] + back * (2 * LIMIT)   # [samples, samples] Point
-    turns, stretches = rotors[:, None, None], stretches[:, None, None]        # [bodies, 1, 1] each
-    # Into each body's frame and back through its stretch: the unit sphere, and the ray in its parameter.
-    start = stretches.solve(turns << origins)                                 # [bodies, samples, samples] Point
-    heading = stretches.solve(turns << -back)                                 # [bodies, 1, 1] Point
-    a = heading.dot(heading).to_array()
-    b = heading.dot(start).to_array()
-    c = start.dot(start).to_array() - 1
-    discriminant = b * b - a * c
-    hit = discriminant > 0                                                    # [bodies, samples, samples]
-    entering = (-b - np.sqrt(np.where(hit, discriminant, 0.0))) / a
-    direction = start + heading * entering                                    # the body's own direction met
-    # The body's normal, the stretch undone once more and turned back out; lit by the lamp.
-    normal = turns >> stretches.solve(direction)
     lamp = right * LAMP[1] + up * LAMP[2] + back * LAMP[0]
-    lit = normal.dot(lamp).to_array() / (normal.norm().to_array() * lamp.norm().to_array())
-    shade = AMBIENT + (1 - AMBIENT) * np.clip(lit, 0.0, 1.0)
-    # The octant of the body's own direction picks the colour.
-    octant = np.prod(np.sign(direction.cast(core.ga.subspace("yz zx xy")).kernel), axis=-1) > 0
-    colour = np.array([to_rgb(BODY), to_rgb(BODY_DARK)])[octant.astype(int)] * shade[..., None]
-    # Averaged over each pixel's rays, the colour weighted by coverage.
-    coverage = hit[..., None].astype(float)
-    blocks = (len(hit), PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE)
-    covered = (colour * coverage).reshape(*blocks, 3).mean(axis=(2, 4))
-    alpha = coverage.reshape(*blocks, 1).mean(axis=(2, 4))
-    return np.concatenate([covered / np.maximum(alpha, 1e-12), alpha], axis=-1)
+    unstretches = stretches.inverse()                                        # [bodies] Point <- Point
+    shown = [shader()((PIXELS, PIXELS), turn=turn, unstretch=unstretch, right=right, up=up, back=back, lamp=lamp,
+                      half_width=LIMIT)["image"] for turn, unstretch in zip(rotors, unstretches)]
+    pictures = np.stack(shown)                                               # [bodies, pixels, pixels, 4]
+    alpha = pictures[..., 3:]
+    return np.concatenate([pictures[..., :3] / np.maximum(alpha, 1e-12), alpha], axis=-1)
+
+
+source = supersampled(SUPERSAMPLE) + """
+// A body's turn and the map from it back onto the unit sphere it was stretched from; the camera's right, up and
+// back directions, the lamp, and the half width of the view.
+var<uniform> turn: Rotor;
+var<uniform> unstretch: Stretch;
+var<uniform> right: Point;
+var<uniform> up: Point;
+var<uniform> back: Point;
+var<uniform> lamp: Point;
+var<uniform> half_width: f32;
+
+// The colour, and its coverage.
+alias Sample = vec4<f32>;
+
+const body = BODY;
+const body_dark = BODY_DARK;
+const ambient = AMBIENT;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_width;
+    // Into the body's frame and back through its stretch: the unit sphere, and the ray in its parameter.
+    let start = unstretch(turn << (right * across.x + up * across.y + back * (2 * half_width)));
+    let heading = unstretch(turn << -back);
+    let a = heading.dot(heading);
+    let b = heading.dot(start);
+    let c = start.dot(start) - 1;
+    let discriminant = b * b - a * c;
+    if (discriminant <= 0) {
+        return vec4<f32>(0.0);
+    }
+    // The body's own direction met; its normal, the stretch undone once more and turned back out.
+    let direction = start + heading * ((-b - sqrt(discriminant)) / a);
+    let normal = turn >> unstretch(direction);
+    let lit = normal.dot(lamp) / (normal.norm() * lamp.norm());
+    let shade = ambient + (1 - ambient) * clamp(lit, 0.0, 1.0);
+    // The octant of the body's own direction picks the colour.
+    let octant = direction.dot(mv.yz) * direction.dot(mv.zx) * direction.dot(mv.xy) > 0;
+    return vec4<f32>(select(body, body_dark, octant) * shade, 1.0);
+}
+"""
+source = (source.replace("BODY_DARK", "vec3<f32>({:.6f}, {:.6f}, {:.6f})".format(*to_rgb(BODY_DARK)))
+          .replace("BODY", "vec3<f32>({:.6f}, {:.6f}, {:.6f})".format(*to_rgb(BODY))).replace("AMBIENT", repr(AMBIENT)))
+
+
+@cache
+def shader() -> Shader:
+    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.Rotor, Stretch=core.Stretch))
 
 
 def draw_split(ax, points: core.Point, view: tuple, **style) -> None:
