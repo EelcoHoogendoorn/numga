@@ -11,14 +11,14 @@ from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from examples.animation import capture
 from examples.optics.coating import core
 
-COLOURS = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
+case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
 
 
 # --- plumbing -------------------------------------------------------------------------
 def spectra(wavelengths: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
     """Reflected power as a percentage of the incident power for each coating."""
     figure, ax = plt.subplots(figsize=(8, 4.5), layout="constrained")
-    ax.set_prop_cycle(color=COLOURS)
+    ax.set_prop_cycle(color=case_colours)
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
     for spectrum, name in zip(values, names):
         ax.plot(wavelengths, spectrum * 100, linewidth=1.8, label=name)
@@ -75,7 +75,7 @@ def twist(centres: core.Vector, directors: core.Vector) -> plt.Figure:
     directions = directors.real().cast(directors.algebra.subspace("x y z")).kernel
     half_width = np.ptp(positions[:, 2]) * 0.14
     ends = np.stack([positions - half_width * directions, positions + half_width * directions], axis=1)
-    ax.add_collection3d(Line3DCollection(ends, colors=COLOURS[0], linewidths=1.4))
+    ax.add_collection3d(Line3DCollection(ends, colors=case_colours[0], linewidths=1.4))
     ax.plot(*positions.T, color="#cbd5e1", linewidth=0.7)
     ax.set(xlim=(-half_width * 1.15, half_width * 1.15),
            ylim=(-half_width * 1.15, half_width * 1.15),
@@ -98,7 +98,7 @@ def handedness(wavelengths: np.ndarray, reflectance: core.Scalar, polarizations:
                                layout="constrained")
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
     for helix, ax in enumerate(axes):
-        ax.set_prop_cycle(color=COLOURS)
+        ax.set_prop_cycle(color=case_colours)
         for spectrum, polarization in zip(values[:, helix], polarizations):
             ax.plot(wavelengths, spectrum * 100, linewidth=1.8, label=polarization)
         ax.set(xlim=(wavelengths[0], wavelengths[-1]), ylim=(0, 100),
@@ -112,7 +112,7 @@ def handedness(wavelengths: np.ndarray, reflectance: core.Scalar, polarizations:
 def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -> plt.Figure:
     """Reflected power in each polarization channel across an axion discontinuity."""
     figure, ax = plt.subplots(figsize=(8, 4.5), layout="constrained")
-    ax.set_prop_cycle(color=COLOURS)
+    ax.set_prop_cycle(color=case_colours)
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
     for channel, name in zip(values, names):
         ax.plot(jumps, channel * 100, linewidth=1.8, label=name)

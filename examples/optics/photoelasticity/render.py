@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
 
+from numga import stack
 from examples.animation import capture
 from examples.optics.photoelasticity import core
 
@@ -18,7 +19,8 @@ ANIMATION_PIXELS = 200
 # --- plumbing -------------------------------------------------------------------------
 def window(positions: core.Planar) -> tuple[np.ndarray, tuple[float, float, float, float]]:
     """Pixel-centre coordinates `[rows, columns, 2]` of an image grid, and its extent on the pixels' outer edges."""
-    coordinates = positions.cast(core.ga.subspace("x y")).kernel
+    # Positions read by pairing with the planes across x and y.
+    coordinates = (stack((core.mv.x, core.mv.y)) & positions[..., None]).to_array().real
     horizontal, vertical = coordinates[0, :, 0], coordinates[:, 0, 1]
     half_x, half_y = (horizontal[1] - horizontal[0]) / 2, (vertical[1] - vertical[0]) / 2
     return coordinates, (horizontal[0] - half_x, horizontal[-1] + half_x, vertical[0] - half_y, vertical[-1] + half_y)
@@ -38,7 +40,7 @@ def draw_stress(
 ) -> plt.Figure:
     """Principal stress difference over the applied stress, on the `[rows, columns]` pixel grid."""
     coordinates, extent = window(positions)
-    values = difference.cast(core.ga.subspace.scalar()).kernel[..., 0] / far_stress
+    values = difference.cast(core.ga.subspace.scalar()).kernel[..., 0].real / far_stress
     # The colour scale spans the plate only, not the pixels the hole covers.
     plate_pixels = np.linalg.norm(coordinates, axis=-1) >= hole_radius
 
@@ -51,7 +53,7 @@ def draw_stress(
 def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radius: float) -> plt.Figure:
     """Transmitted intensities `[views, rows, columns]` side by side, on a shared physical scale."""
     _, extent = window(positions)
-    values = intensities.cast(core.ga.subspace.scalar()).kernel[..., 0]
+    values = intensities.cast(core.ga.subspace.scalar()).kernel[..., 0].real
 
     figure, panels = plt.subplots(1, len(values), figsize=(10.8, 3.7), layout="constrained")
     for ax, intensity in zip(panels, values):
@@ -68,7 +70,7 @@ def animate_polariscope(positions: core.Planar, frames: Iterable[core.Scalar], h
     image = plate(ax, np.zeros(positions.shape), extent, hole_radius, cmap="gray", vmin=0, vmax=1)
     rendered = []
     for intensity in frames:
-        image.set_data(intensity.cast(core.ga.subspace.scalar()).kernel[..., 0])
+        image.set_data(intensity.cast(core.ga.subspace.scalar()).kernel[..., 0].real)
         rendered.append(capture(figure))
     plt.close(figure)
     return rendered

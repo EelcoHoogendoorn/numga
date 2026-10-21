@@ -42,10 +42,10 @@ Readout = ga.gatype((Polarization, Boundary))
 # An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
 AxionCoupling = Scalar.derive.flipped_orientation
 axes = stack([mv.x, mv.y, mv.z])
-field_boundary = mv.t ^ (mv.t | (mv.z ^ Bivector))
-excitation_boundary = mv.t | (mv.t ^ (mv.z ^ Antibivector).dual())
+field_boundary = mv.t ^ (mv.t.inverse() | (mv.z ^ Bivector))
+excitation_boundary = mv.t.inverse() | (mv.t ^ (mv.z ^ Antibivector).dual())
 # The tangential electric field the boundary state holds: undo the wedge with the normal.
-electric_trace = -(mv.z | Boundary)                        # Polarization <- Boundary
+electric_trace = mv.z.inverse() | Boundary                 # Polarization <- Boundary
 
 
 # --- math -----------------------------------------------------------------------------
@@ -76,9 +76,11 @@ class Medium:
         constraint = (-(mv.z | (mv.z ^ (parallel ^ Bivector)))
                       - mv.z * (mv.z | (parallel ^ chi).dual()))
         reconstruct = (boundary + constraint).solve(Boundary)
-        # Positive eigenvalues give phase propagation towards +z when temporal phase increases.
-        generator = -(field_boundary(mv.z | (parallel ^ reconstruct))
-                      + excitation_boundary(mv.z | (parallel ^ chi(reconstruct))))
+        # Maxwell's `parallel ^ field + z ^ (d field / dz) == 0`: undoing the wedge with the normal, the
+        # boundary state changes along z by minus the parallel part's. Positive eigenvalues give phase
+        # propagation towards +z when temporal phase increases.
+        generator = -(field_boundary(mv.z.inverse() | (parallel ^ reconstruct))
+                      + excitation_boundary(mv.z.inverse() | (parallel ^ chi(reconstruct))))
         return cls(boundary, reconstruct, generator)
 
     def interior(self, thicknesses: np.ndarray, wavelength: float,
@@ -136,7 +138,7 @@ class Ports:
         normal_index = (index ** 2 - (parallel - mv.t).squared()).square_root()
         # The potential whose wave has the polarization as its tangential electric field, completed to be
         # perpendicular to the ray.
-        tangential = Polarization | mv.t                                            # Vector <- Polarization
+        tangential = mv.t.inverse() | Polarization                                  # Vector <- Polarization
         potential = tangential - mv.z * (parallel | tangential) / normal_index
         wavevector = parallel + mv.z * normal_index
         outgoing = medium.boundary(wavevector ^ potential)
@@ -214,17 +216,17 @@ class Line:
                count: int) -> Iterator[tuple[Bivector, Bivector]]:
         """Both exterior Maxwell equations, `d ^ field == 0` and `d ^ excitation == 0`, as a leapfrog.
 
-        The time part of `d ^ X` is `t ^ (dX / dt)`; contracting with the observer `t` undoes that
-        wedge, so each update is minus `t | (z ^ dX / dz)`. Magnetic planes move with the electric
+        The time part of `d ^ X` is `t ^ (dX / dt)`; contracting with the inverse of the observer `t`
+        undoes that wedge, so each update is minus `t.inverse() | (z ^ dX / dz)`. Magnetic planes move with the electric
         ones on either side; the excitation's spatial planes move with the excitation of the magnetic
         planes on either side, and the inverse response turns them back into electric planes.
         """
         rate = interval / self.spacing
         for _ in range(count):
-            magnetic = magnetic - (real.t | (real.z ^ (self.difference * electric.field()).batch())) * rate
+            magnetic = magnetic - (real.t.inverse() | (real.z ^ (self.difference * electric.field()).batch())) * rate
             excitation = self.between(magnetic)
             # The reverse runs each difference back, from the magnetic planes to the electric planes
             # between them: the adjoint pair under which the leapfrog keeps its energy.
-            displacement = (real.t | (real.z ^ (~self.difference * excitation.field()).batch())) * rate
+            displacement = (real.t.inverse() | (real.z ^ (~self.difference * excitation.field()).batch())) * rate
             electric = electric + self.inverse(displacement)
             yield electric, magnetic

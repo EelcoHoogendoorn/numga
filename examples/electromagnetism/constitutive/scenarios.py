@@ -50,7 +50,7 @@ def media() -> core.Constitutive:
 def moving(medium: core.Constitutive, fractions: np.ndarray) -> core.Constitutive:
     """The medium seen moving along z at each fraction of the speed of light: its rest map carried by the
     boost."""
-    boosts = ((t ^ z) * (np.arctanh(fractions) / 2)).exp()                    # [...] Rotor
+    boosts = ((z ^ t) * (np.arctanh(fractions) / 2)).exp()                    # [...] Rotor
     return boosts >> medium(boosts << Bivector)                                # [...] Constitutive
 
 
@@ -72,7 +72,7 @@ def dispersion() -> tuple[np.ndarray, core.Scalar, np.ndarray]:
     """The trial speeds along z, each medium's residual at each `[speeds, media]`, and the expected
     speeds `[media, 2]`."""
     speeds = np.linspace(*speed_range, n_speeds)
-    return speeds, core.residuals((speeds * t + z)[:, None], media()), expected_speeds()
+    return speeds, core.residuals((speeds * t - z)[:, None], media()), expected_speeds()
 
 
 def modes() -> tuple[Modes, Modes]:
@@ -80,8 +80,8 @@ def modes() -> tuple[Modes, Modes]:
     the last two fields of its wave map, and the crystal one at each of its two speeds."""
     glass, crystal, _ = media()
     glass_speeds, crystal_speeds, _ = expected_speeds()
-    _, _, glass_fields = core.wave_map(glass_speeds[0] * t + z, glass).svd()
-    return (glass_speeds, glass_fields[-2:]), (crystal_speeds, core.field_modes(crystal_speeds * t + z, crystal))
+    _, _, glass_fields = core.wave_map(glass_speeds[0] * t - z, glass).svd()
+    return (glass_speeds, glass_fields[-2:]), (crystal_speeds, core.field_modes(crystal_speeds * t - z, crystal))
 
 
 def headings() -> tuple[np.ndarray, core.Scalar, np.ndarray]:
@@ -93,7 +93,7 @@ def headings() -> tuple[np.ndarray, core.Scalar, np.ndarray]:
     directions = (mv.zx * (-angles / 2)).exp() >> z                           # [headings] Vector
     glass, crystal, _ = media()
     cases = stack([glass, crystal, moving(glass, np.array(glass_speed))])    # [media] Constitutive
-    wavevectors = speeds[:, None] * t + directions                            # [speeds, headings] Vector
+    wavevectors = speeds[:, None] * t - directions                            # [speeds, headings] Vector
     return angles, core.residuals(wavevectors[..., None], cases), speeds
 
 
@@ -104,7 +104,7 @@ def drag() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     fractions = np.linspace(*drag_range, n_drags)
     speeds = np.linspace(*drag_speed_range, n_drag_speeds)
     glass, _, _ = media()
-    wavevectors = speeds[:, None, None] * t + senses[:, None] * z             # [speeds, 2, 1] Vector
+    wavevectors = speeds[:, None, None] * t - senses[:, None] * z             # [speeds, 2, 1] Vector
     found = core.deepest(speeds, core.residuals(wavevectors, moving(glass, fractions)))   # [2, drags]
 
     light = expected_speeds()[0, 0]
@@ -139,12 +139,12 @@ def main() -> None:
         np.testing.assert_allclose(speeds[1:-1][dips], np.unique(speed), atol=step)
     # The crystal's waves satisfy both source-free Maxwell equations.
     crystal_speeds, fields = crystal_modes
-    wavevectors = crystal_speeds * t + z                                      # [2] Vector
+    wavevectors = crystal_speeds * t - z                                      # [2] Vector
     np.testing.assert_allclose((wavevectors ^ fields).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((wavevectors ^ crystal(fields)).kernel, 0.0, atol=1e-12)
     # The axion term changes no wave's speed.
     axion = glass + mv(core.AxionCoupling, [axion_coupling]) * Bivector
-    axion_dips = core.dips(speeds, core.residuals(speeds * t + z, axion), threshold)
+    axion_dips = core.dips(speeds, core.residuals(speeds * t - z, axion), threshold)
     np.testing.assert_allclose(speeds[1:-1][axion_dips], np.unique(expected[0]), atol=step)
     # Light in the moving glass travels at the relativistic sum of the two speeds.
     drag_step = (drag_speed_range[1] - drag_speed_range[0]) / (n_drag_speeds - 1)

@@ -23,9 +23,9 @@ def test_two_equal_perpendicular_boosts_leave_the_closed_form_turn():
 def test_a_circular_orbit_turns_the_spin_back_by_the_caps_area():
     gammas = np.array([1.25, 1.5])
     velocities = scenarios.orbit_velocities(gammas, 360)
-    # A spin along x, the plane yz in each orbit's first frame.
-    *_, (velocity, spin) = scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> mv.zy, 1)
-    expected = (mv.yx * (-np.pi * (gammas - 1))).exp() >> mv.zy
+    # A spin along x, the plane turning about it, in each orbit's first frame.
+    *_, (velocity, spin) = scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> core.about(mv.x.dual()), 1)
+    expected = (mv.xy * (np.pi * (gammas - 1))).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((spin - expected).kernel, 0.0, atol=2e-3)
 
 
@@ -35,10 +35,10 @@ def test_each_round_trip_in_the_box_turns_the_spin_back_by_the_area_of_its_veloc
     over a quarter of it."""
     momentum = 0.8
     positions, path = scenarios.box_path(1.0, momentum, 2, 60)
-    *_, (_, spin) = scenarios.bouncing(positions, path, core.rest_boost(path[0]) >> mv.zy)
+    *_, (_, spin) = scenarios.bouncing(positions, path, core.rest_boost(path[0]) >> core.about(mv.x.dual()))
     a = momentum
     area = 4 * (2 * a * np.arcsinh(a / np.sqrt(1 + a * a)) - np.arctan(a * a / np.sqrt(1 + 2 * a * a)))
-    expected = (mv.yx * (-area / 2)).exp() >> mv.zy
+    expected = (mv.xy * (area / 2)).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((spin - expected).kernel, 0.0, atol=2e-3)
 
 
@@ -53,11 +53,11 @@ def test_the_magic_lorentz_factor_removes_the_electric_field():
 def test_the_animations_draw():
     two = render.animate_two_boosts(scenarios.two_boosts(np.array([1.0]), np.linspace(0, 1, 5)))
     velocities = scenarios.orbit_velocities(np.array([1.25, 1.5, 1.75]), 4)
-    orbit = render.animate_orbits(velocities, scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> mv.zy, 4))
+    orbit = render.animate_orbits(velocities, scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> core.about(mv.x.dual()), 4))
     positions, path = scenarios.box_path(1.0, 0.8, 2, 2)
-    walls = (mv.yx * (np.arange(4) * np.pi / 4)).exp() >> mv.x.dual()
-    box = render.animate_box(1.0, walls, scenarios.bouncing(positions[:2], path[:2], core.rest_boost(path[0]) >> mv.zy))
-    outline = (mv.yx * (np.linspace(0, 2 * np.pi, 8) / 2)).exp() >> mv.x.dual()
+    walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> mv.x.dual()
+    box = render.animate_box(1.0, walls, scenarios.bouncing(positions[:2], path[:2], core.rest_boost(path[0]) >> core.about(mv.x.dual())))
+    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, 8) / 2)).exp() >> mv.x.dual()
     ring = render.animate_ring(outline, scenarios.ring(2.0, 1.0, 0.0, 0.1, 1, 4, 4))
     assert [len(two), len(orbit), len(box), len(ring)] == [1, 2, 2, 2]
     plt.close(render.draw_magic(np.zeros(2), mv.scalar(np.ones((2, 2, 1)))))

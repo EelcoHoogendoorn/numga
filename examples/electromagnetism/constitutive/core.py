@@ -55,10 +55,12 @@ def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
     density it measures. In matter this is the electromagnetic Minkowski current, excluding the material's
     own stress-energy.
     """
-    lagrangian = (field & excitation) / 2
-    # The Lagrangian along the direction, less the field read along the direction wedged with the
+    # An electric plane pairs with its own dual to minus its square, so the field paired with its
+    # excitation is minus twice the Lagrangian.
+    negative_lagrangian = (field & excitation) / 2
+    # Minus the Lagrangian along the direction, less the field read along the direction wedged with the
     # excitation: no metric enters.
-    return lagrangian * Antivector - ((Antivector & field) ^ excitation)
+    return negative_lagrangian * Antivector - ((Antivector & field) ^ excitation)
 
 
 def wave_map(wavevectors: Vector, media: Constitutive) -> WaveMap:

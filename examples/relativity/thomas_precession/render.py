@@ -47,7 +47,9 @@ def unit(directions: core.Antivector) -> np.ndarray:
 
 def spin_axes(spins: core.Bivector) -> np.ndarray:
     """The arrow each spin plane turns about, drawn by the right-hand rule, in the plane, on the last axis."""
-    xy = -(spins[..., None] | stack((core.mv.zy, core.mv.xz))).to_array()
+    # The spins along x and y.
+    planes = stack((core.about(core.mv.x.dual()), core.about(core.mv.y.dual())))   # [2] Bivector
+    xy = (spins[..., None] | planes.inverse()).to_array()
     return xy / np.linalg.norm(xy, axis=-1, keepdims=True)
 
 

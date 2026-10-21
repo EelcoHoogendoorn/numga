@@ -86,7 +86,7 @@ def outline(camera: Antivector, centre: Antivector, radius: float, angles: np.nd
     distance = offset.squared().square_root()                                   # [...] Scalar
     # The grazing points ring the line from the sphere's centre to the camera. The ring is built around the
     # direction to a camera straight in front, and turned onto the camera's, which is never straight behind.
-    turn = ((offset / distance) * -line_of_sight).square_root()                 # [...] Rotor
+    turn = ((offset / distance) * (-line_of_sight).inverse()).square_root()     # [...] Rotor
     nearest = (radius / distance) * -line_of_sight + (1 - (radius / distance).squared()).square_root() * up
     circle = (mv.zx * (angles / 2)).exp() >> nearest[..., None]                # [..., angles] Antivector
     return centre + radius * (turn[..., None] >> circle)                        # [..., angles] Antivector

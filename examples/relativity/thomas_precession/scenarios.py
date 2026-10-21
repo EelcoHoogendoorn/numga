@@ -72,7 +72,7 @@ def wigner_turn(rapidity: np.ndarray) -> core.Rotor:
 def orbit_velocities(gammas: np.ndarray, n_steps: int) -> core.Antivector:
     """Velocities around circular orbits at each Lorentz factor, counterclockwise from moving along y."""
     phases = np.linspace(0, 2 * np.pi, n_steps + 1)
-    directions = (mv.yx * (phases[:, None] / 2)).exp() >> mv.y.dual()          # [steps + 1, 1] Antivector
+    directions = (mv.xy * (-phases[:, None] / 2)).exp() >> mv.y.dual()          # [steps + 1, 1] Antivector
     return core.boost(directions, np.arccosh(gammas)) >> core.time              # [steps + 1, orbits] Antivector
 
 
@@ -87,7 +87,7 @@ def box_path(half_width: float, momentum: float, n_flight: int, n_bounce: int) -
     walls: its positions and velocities. In flight the velocity holds; at a wall the momentum along
     the wall holds and the momentum across it reverses."""
     # Quarter turns from one before the first wall to one past the last.
-    quarters = (mv.yx * (np.arange(-1, 5) * np.pi / 4)).exp()                  # [6] Rotor
+    quarters = (mv.xy * (-np.arange(-1, 5) * np.pi / 4)).exp()                  # [6] Rotor
     walls = quarters >> (half_width * mv.x.dual())                              # [6] Antivector
     corners = quarters >> (momentum * (mv.x.dual() + mv.y.dual()))              # [6] Antivector
     # Each flight runs from the wall before to its wall; each bounce from its momentum to the next.
@@ -109,7 +109,7 @@ def bouncing(positions: core.Antivector, velocities: core.Antivector, spin: core
 
 def ring_start(gamma: np.ndarray, magnetic: float, electric: np.ndarray) -> tuple[core.Antivector, core.Rotor]:
     """A particle on the circular orbit at Lorentz factor `gamma`, at x and moving along y: its event,
-    and its frame, the pure boost from rest, so that its spin, the frame's plane zx, lies along the
+    and its frame, the pure boost from rest, so that its spin, turning about y, lies along the
     momentum."""
     event = mv.x.dual() * core.ring_radius(gamma, magnetic, electric)           # [...] Antivector
     frame = core.boost(mv.y.dual(), np.arccosh(gamma))                          # [...] Rotor
@@ -126,7 +126,7 @@ def ring(gamma: float, magnetic: float, electric: float, anomaly: float, n_turns
     states = core.evolve(event, frame, magnetic, electric, anomaly, proper_period / n_turn_steps)
     for event, frame in islice(states, 0, n_turns * n_turn_steps + 1, stride):
         velocity = frame >> core.time                                           # [] Antivector
-        yield event, velocity, core.lab_view(velocity, frame >> mv.xz)
+        yield event, velocity, core.lab_view(velocity, frame >> core.about(mv.y.dual()))
 
 
 def anomalous_rates(gammas: np.ndarray, magnetic: float, electric: np.ndarray, anomaly: float,
@@ -137,7 +137,7 @@ def anomalous_rates(gammas: np.ndarray, magnetic: float, electric: np.ndarray, a
     event, frame = ring_start(gammas, magnetic, electric)
     proper_step = lab_duration / (gammas * n_steps)
     *_, (event, frame) = islice(core.evolve(event, frame, magnetic, electric, anomaly, proper_step), n_steps + 1)
-    angle = core.anomalous_angle(frame >> core.time, frame >> mv.xz)            # [gammas, fields] Scalar
+    angle = core.anomalous_angle(frame >> core.time, frame >> core.about(mv.y.dual()))   # [gammas, fields] Scalar
     return angle / (anomaly * magnetic * lab_duration)
 
 
@@ -151,17 +151,17 @@ def main() -> None:
     fractions = np.linspace(0, 1, N_EDGE_SAMPLES)
     save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", DURATION_MS)
     velocities = orbit_velocities(GAMMAS, N_ORBIT_STEPS)
-    # A spin along x, the plane yz in each orbit's first frame.
-    start_spin = core.rest_boost(velocities[0]) >> mv.zy
+    # A spin along x, the plane turning about it, in each orbit's first frame.
+    start_spin = core.rest_boost(velocities[0]) >> core.about(mv.x.dual())
     save_animation(render.animate_orbits(velocities, orbits(velocities, start_spin, ORBIT_STRIDE)), "thomas_orbits", DURATION_MS)
     positions, path = box_path(HALF_WIDTH, MOMENTUM, N_FLIGHT_FRAMES, N_BOUNCE_STEPS)
     positions, path = concatenate([positions] * N_LOOPS), concatenate([path] * N_LOOPS)
-    box_spin = core.rest_boost(path[0]) >> mv.zy
-    walls = (mv.yx * (np.arange(4) * np.pi / 4)).exp() >> (HALF_WIDTH * mv.x.dual())
+    box_spin = core.rest_boost(path[0]) >> core.about(mv.x.dual())
+    walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> (HALF_WIDTH * mv.x.dual())
     save_animation(render.animate_box(HALF_WIDTH, walls, bouncing(positions, path, box_spin)), "thomas_box", DURATION_MS)
     magic = np.sqrt(1 + 1 / ANOMALY)
     radius = core.ring_radius(magic, MAGNETIC, RING_ELECTRIC)
-    outline = (mv.yx * (np.linspace(0, 2 * np.pi, N_RING_SAMPLES) / 2)).exp() >> (radius * mv.x.dual())
+    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RING_SAMPLES) / 2)).exp() >> (radius * mv.x.dual())
     states = ring(magic, MAGNETIC, RING_ELECTRIC, ANOMALY, N_TURNS, N_TURN_STEPS, RING_STRIDE)
     save_animation(render.animate_ring(outline, states), "thomas_storage_ring", DURATION_MS)
     ratios = anomalous_rates(SWEEP_GAMMAS[:, None], MAGNETIC, ELECTRIC_FIELDS, ANOMALY, LAB_DURATION, N_SWEEP_STEPS)
@@ -179,14 +179,14 @@ def main() -> None:
     np.testing.assert_allclose(angle, -(np.pi / 2 - 2 * np.arctan2(y, x)), atol=1e-12)
     # Around a circular orbit the spin turns back by the cap's area, 2 pi (gamma - 1).
     end = core.lab_view(velocities[-1], tuple(core.carried(velocities, start_spin))[-1])
-    expected = (mv.yx * (-np.pi * (GAMMAS - 1))).exp() >> mv.zy
+    expected = (mv.xy * (np.pi * (GAMMAS - 1))).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((end - expected).kernel, 0.0, atol=5e-3)
     # In the box, each round trip turns it back by the area the square of momenta encloses on the
     # hyperboloid.
     square_area = 4 * (2 * MOMENTUM * np.arcsinh(MOMENTUM / np.sqrt(1 + MOMENTUM**2))
                        - np.arctan(MOMENTUM**2 / np.sqrt(1 + 2 * MOMENTUM**2)))
     *_, (_, box_end) = bouncing(positions, path, box_spin)
-    expected = (mv.yx * (-N_LOOPS * square_area / 2)).exp() >> mv.zy
+    expected = (mv.xy * (N_LOOPS * square_area / 2)).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((box_end - expected).kernel, 0.0, atol=5e-2)
     # At the magic Lorentz factor the electric field drops out of the anomalous rate; elsewhere it
     # enters by the Bargmann–Michel–Telegdi formula.

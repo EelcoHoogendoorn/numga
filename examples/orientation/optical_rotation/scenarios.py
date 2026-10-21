@@ -52,9 +52,9 @@ def main() -> None:
     start, mirror = mv.x.dual(), mv.x
     original, mirrored = polarizations[:, 0], polarizations[:, 1]
     active, faraday = original[:, 1, -1]
-    assert (active - start).norm().to_array() < 1e-12
-    assert faraday.dot(start).norm().to_array() < 1e-12
-    assert (mirrored - (mirror >> original)).norm().to_array().max() < 1e-12
+    assert (active - start).squared().to_array() < 1e-24
+    assert abs(faraday.dot(start).to_array()) < 1e-12
+    assert (mirrored - (mirror >> original)).squared().to_array().max() < 1e-24
 
 
 if __name__ == "__main__":

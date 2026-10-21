@@ -22,7 +22,7 @@ def isotropic(permittivity, permeability):
 
 
 def phase_speeds(medium, direction, speeds):
-    return speeds[1:-1][core.dips(speeds, core.residuals(speeds * t + direction, medium), 2e-3)]
+    return speeds[1:-1][core.dips(speeds, core.residuals(speeds * t - direction, medium), 2e-3)]
 
 
 SPEEDS = np.linspace(0.05, 1.5, 6001)
@@ -86,7 +86,7 @@ def test_crystal_is_birefringent_along_z_and_not_along_x():
 def test_crystal_fields_satisfy_maxwell_and_lie_in_their_material_planes():
     _, (speeds, fields) = scenarios.modes()
     _, crystal, _ = scenarios.media()
-    wavevectors = speeds * t + z
+    wavevectors = speeds * t - z
     electric_planes = stack((mv.tx, mv.ty))
     magnetic_planes = stack((mv.xz, mv.yz))
 
@@ -98,7 +98,7 @@ def test_crystal_fields_satisfy_maxwell_and_lie_in_their_material_planes():
 
 def test_vacuum_wave_has_two_transverse_field_modes():
     vacuum = isotropic(1.0, 1.0)
-    wavevector = t + z
+    wavevector = t - z
     _, singular_values, fields = core.wave_map(wavevector, vacuum).svd()
     modes = fields[-2:]
     action_form = Bivector & vacuum
@@ -134,7 +134,7 @@ def test_axion_term_is_invisible_to_bulk_waves():
 def test_material_and_stress_forms_transform_with_the_field_and_observer():
     permittivity, permeability, fraction = 2.25, 1.5, 0.35
     medium = isotropic(permittivity, permeability)
-    rotation = ((t ^ z) * (np.arctanh(fraction) / 2)).exp()
+    rotation = ((z ^ t) * (np.arctanh(fraction) / 2)).exp()
     observer = rotation >> t
     moving = scenarios.moving(medium, np.array(fraction))
     # The same medium built from the moving observer's electric and magnetic planes.

@@ -1,8 +1,9 @@
 """Light's polarization turned by an optically active medium and by a magnetic field, out and back.
 
-Light travels along a unit direction, and its polarization is the direction of its electric field,
-across the path; both are antivectors, intrinsic like all geometry. An optically active medium, such as quartz or a sugar solution, turns the
-polarization about the direction of travel, by its rotary power per distance. The turn takes its sense
+Light travels along a unit direction in spacetime, and its polarization is the direction of its
+electric field, across the path; both are antivectors, intrinsic like all geometry. An optically active
+medium, such as quartz or a sugar solution, turns the polarization about the direction of travel, by its
+rotary power per distance, in the plane the light sweeps through time, `direction & time`. The turn takes its sense
 from the direction of travel, so the rotary power is an intrinsic scalar: the mirror image of the
 medium turns light the other way. A magnetic field turns the polarization too, the Faraday effect, in
 the part of the field's bivector that lies across the path, by the Verdet constant per distance and
@@ -14,9 +15,9 @@ from __future__ import annotations
 import numpy as np
 
 from numga import NumpyContext, Orientation, stack
-from numga.algebras import VGA3D
+from numga.algebras import STA
 
-ga = VGA3D
+ga = STA
 mv = NumpyContext(ga).multivector
 # Directions, of travel and of the electric field across the path, are antivectors, intrinsic.
 Direction = ga.gatype.antivector()
@@ -27,19 +28,25 @@ TurnRate = ga.gatype.bivector()
 # A turn per distance with a sense of its own: measured against a handedness.
 RotaryPower = ga.gatype(ga.subspace.scalar(), orientation=Orientation.intrinsic)
 
+# The direction of time of an observer at rest with the media, which pairs to one with `mv.t`; the dual
+# carries the minus of t's square.
+time = -mv.t.dual()                                                               # [] Antivector
+
 
 # --- math -----------------------------------------------------------------------------
 def active_rate(direction: Direction, rotary_power: RotaryPower) -> TurnRate:
-    """The turn per distance of an optically active medium: in the plane across the path, which the
-    direction of travel, an antivector, is in three dimensions, an intrinsic bivector oriented by the
-    travel. The rotary power's own sense makes the product extrinsic, a rate that exponentiates."""
-    return direction * rotary_power                                               # [...] TurnRate
+    """The turn per distance of an optically active medium: in the plane the light sweeps through
+    time, the join of its direction with time, an intrinsic bivector oriented by the travel, which as a
+    turn lies across the path. The rotary power's own sense makes the product extrinsic, a rate that
+    exponentiates."""
+    return (direction & time) * rotary_power                                      # [...] TurnRate
 
 
 def faraday_rate(direction: Direction, field: Field, verdet: float) -> TurnRate:
-    """The turn per distance in a magnetic field: the part of the field's bivector in the plane across
-    the path, `direction * field.dot(direction)`, the same for either direction of travel."""
-    return direction * field.dot(direction) * verdet                              # [...] TurnRate
+    """The turn per distance in a magnetic field: the part of the field's bivector in the plane the
+    light sweeps through time, `sweep * field.dot(sweep)`, the same for either direction of travel."""
+    sweep = direction & time                                                      # [...] Bivector
+    return sweep * field.dot(sweep) * verdet                                      # [...] TurnRate
 
 
 def out_and_back(out_rate: TurnRate, back_rate: TurnRate, start: Polarization, depths: np.ndarray) -> Polarization:
