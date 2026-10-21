@@ -30,7 +30,7 @@ AxionCoupling = Scalar.derive.flipped_orientation
 StressEnergy = STA.gatype((Antivector, Antivector))          # Antivector <- Antivector
 WaveMap = STA.gatype((STA.gatype.odd(), Bivector))           # Odd <- Bivector
 
-t, x, y, z = mv.vector(np.eye(4))
+t, x, y, z = mv.t, mv.x, mv.y, mv.z
 # The observer's electric planes, each spatial axis against its time direction, and its magnetic planes,
 # their duals.
 electric_planes = stack((x, y, z)) ^ t                       # [3] Bivector
@@ -51,7 +51,7 @@ def medium(permittivities: np.ndarray, inverse_permeabilities: np.ndarray) -> Co
 def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
     """Electromagnetic stress-energy: from a direction in spacetime, an antivector, to the current of
     energy and momentum along it, intrinsic like the direction. A unit timelike observer's slice of space
-    `t`, paired with the current along its direction in time, `t & current(t.dual())`, is the energy
+    `t`, paired with the current along its direction in time, `t & current(-t.dual())`, is the energy
     density it measures. In matter this is the electromagnetic Minkowski current, excluding the material's
     own stress-energy.
     """

@@ -13,7 +13,7 @@ PHASE_ANGLES = np.linspace(0, 2 * np.pi, N_PHASE_SAMPLES)
 
 
 # --- math -----------------------------------------------------------------------------
-def rotation() -> tuple[core.Vector, core.Scalar, core.Scalar]:
+def rotation() -> tuple[core.Antivector, core.Scalar, core.Scalar]:
     """A spinor turned through two full turns about y: its spin, and the intensities at the two outputs
     where it is recombined with the unturned spinor, their sum and their difference."""
     reference = core.mv.scalar()
@@ -21,7 +21,7 @@ def rotation() -> tuple[core.Vector, core.Scalar, core.Scalar]:
     return core.spin(psi), core.interference(psi, reference), core.interference(psi, -reference)
 
 
-def chirality() -> tuple[core.Vector, core.Vector, core.Vector]:
+def chirality() -> tuple[core.Antivector, core.Antivector, core.Antivector]:
     """A boosted spinor split into its left- and right-handed parts: their currents, and the spinor's."""
     psi = (core.mv.tz * (-RAPIDITY / 2)).exp()
     right, left = core.RIGHT(psi), core.LEFT(psi)

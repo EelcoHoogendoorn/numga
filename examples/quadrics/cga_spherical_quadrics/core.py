@@ -1,8 +1,8 @@
 """Spherical quadrics in the conformal algebra Cl(3, 1), carried around by a conformal flow.
 
 A circle on S², where the plane `n | x == s` cuts it, is the vector `n + s * w`, and a point of S² is the
-dual of its null vector, its unit coordinates on x, y and z and weight one on w: a circle pairs with a point
-to `s - n | x`, negative inside the circle, and `mv.w & point == 1`. A quadric Q is a map Plane <- Point,
+dual of its null vector, its unit coordinates on x, y and z plus w: a circle pairs with a point to
+`n | x - s`, positive inside the circle, and `mv.w & point == -1`, w squaring to minus one. A quadric Q is a map Plane <- Point,
 and a point p is inside where Q(p) & p < 0. Sums of circle dyads give conical donuts, peanuts, twin
 islands, lemniscates, crescents, Dupin cyclides, pinched horns, spindles, teardrops, triadic clovers,
 hourglasses and parabolic bows. Two off-centre circles c1 and c2 on S² meet in the 2-blade c1 ^ c2, and its
@@ -29,7 +29,7 @@ Rotor = ga.gatype.rotor()
 
 
 def point(xyz: np.ndarray) -> Point:
-    """The points of S² at (..., 3) unit coordinates: the duals of their null vectors, with weight one on w."""
+    """The points of S² at (..., 3) unit coordinates: the duals of their null vectors, x + y + z + w."""
     return ((stack((mv.x, mv.y, mv.z)) * xyz).sum(axis=-1) + mv.w).dual()
 
 

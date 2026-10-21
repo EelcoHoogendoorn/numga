@@ -61,7 +61,7 @@ def test_common_map_preserves_null_rays_cross_ratios_and_circle_angles():
 
     # Two circles intersect at this direction; their tangent directions determine their angle.
     direction = (mv.x * np.sqrt(0.84) + 0.4 * mv.z).dual()
-    circles = stack((mv.y, mv.z + mv.y / 3 + 0.4 * mv.t))
+    circles = stack((mv.y, mv.z + mv.y / 3 - 0.4 * mv.t))
     mapped_direction = core.directions(rotor >> (direction + core.time))
     mapped_circles = rotor >> circles
     np.testing.assert_allclose((mapped_circles & (mapped_direction + core.time)).kernel, 0, atol=1e-11)
@@ -70,7 +70,7 @@ def test_common_map_preserves_null_rays_cross_ratios_and_circle_angles():
         """The Euclidean angle between two circles at a point on both, from their cut planes' normals."""
         position = render.coordinates(point)
         coefficients = cuts.cast(core.ga.subspace("x y z t")).kernel
-        tangent_normals = coefficients[:, :3] - position * coefficients[:, 3:]
+        tangent_normals = coefficients[:, :3] + position * coefficients[:, 3:]
         tangent_normals /= np.linalg.norm(tangent_normals, axis=-1, keepdims=True)
         return tangent_normals[0] @ tangent_normals[1]
 

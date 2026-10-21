@@ -16,7 +16,7 @@ def test_bare_interface_matches_both_fresnel_polarizations_and_brewster_angle():
     angles = np.array([0.0, 0.4, 0.9, np.arctan(substrate_index / incident_index)])
     tangent = incident_index * np.sin(angles)
     parallel = core.mv.t + core.mv.x * tangent
-    polarizations = stack([core.mv.y, core.mv.x])[:, None]
+    polarizations = stack([core.mv.yt, core.mv.xt])[:, None]
     incident_normal = incident_index * np.cos(angles)
     substrate_normal = np.sqrt(substrate_index**2 - tangent**2)
     incident_admittance = np.stack([incident_normal, incident_index**2 / incident_normal])
@@ -37,7 +37,7 @@ def test_bare_interface_matches_both_fresnel_polarizations_and_brewster_angle():
     np.testing.assert_allclose(transmittance.kernel[..., 0],
                                substrate_admittance / incident_admittance * transmitted**2,
                                atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose(result.reflection(core.mv.x)[-1].kernel, 0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose(result.reflection(core.mv.xt)[-1].kernel, 0, atol=ROUND_OFF, rtol=0)
 
 
 def test_quarter_wave_matching_layer_cancels_reflection_with_the_correct_phase():
@@ -46,7 +46,7 @@ def test_quarter_wave_matching_layer_cancels_reflection_with_the_correct_phase()
     coating_index = np.sqrt(incident_index * substrate_index)
     optical_distance = np.array(np.pi / (2 * coating_index))
     parallel = core.mv.t
-    polarization = (core.mv.x + 1j * core.mv.y) / np.sqrt(2)
+    polarization = (core.mv.xt + 1j * core.mv.yt) / np.sqrt(2)
     chi = core.dielectric(np.full(3, coating_index**2), np.array(1.0))
 
     medium = core.Medium.from_chi(chi, parallel)
@@ -84,11 +84,11 @@ def test_quarter_wave_mirror_respects_layer_order_and_impedance_inversion(pairs)
     result = core.scatter(propagation(substrate.outgoing), incident)
     reflected = (incident_index - effective) / (incident_index + effective)
     transmitted = (-1) ** pairs * 2 * incident_index / (incident_index / ratio**pairs + substrate_index * ratio**pairs)
-    reflectance, transmittance = result.powers(core.mv.x, incident, substrate)
+    reflectance, transmittance = result.powers(core.mv.xt, incident, substrate)
 
-    np.testing.assert_allclose((result.reflection(core.mv.x) - core.mv.x * reflected).kernel,
+    np.testing.assert_allclose((result.reflection(core.mv.xt) - core.mv.xt * reflected).kernel,
                                0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((result.transmission(core.mv.x) - core.mv.x * transmitted).kernel,
+    np.testing.assert_allclose((result.transmission(core.mv.xt) - core.mv.xt * transmitted).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((reflectance + transmittance).kernel, 1, atol=ROUND_OFF, rtol=0)
 
@@ -102,7 +102,7 @@ def test_oblique_multilayer_matches_recursive_multiple_reflections():
     angles = np.array([0.0, 0.4, 0.85])
     tangent = incident_index * np.sin(angles)
     parallel = core.mv.t + core.mv.x * tangent
-    polarizations = stack([core.mv.y, core.mv.x])[:, None, None]
+    polarizations = stack([core.mv.yt, core.mv.xt])[:, None, None]
     normal = np.sqrt(indices[:, None] ** 2 - tangent**2)
     incident_normal = incident_index * np.cos(angles)
     substrate_normal = np.sqrt(substrate_index**2 - tangent**2)
@@ -185,15 +185,15 @@ def test_axion_jump_changes_interfaces_without_changing_bulk_wave_indices():
 
     result = core.scatter(substrate.outgoing, incident)
     denominator = 4 * index**2 + axion_jump**2
-    reflected = core.mv.x * (-axion_jump**2 / denominator) + core.mv.y * (2 * index * axion_jump / denominator)
-    reflectance, transmittance = result.powers(core.mv.x, incident, substrate)
+    reflected = core.mv.xt * (-axion_jump**2 / denominator) - core.mv.yt * (2 * index * axion_jump / denominator)
+    reflectance, transmittance = result.powers(core.mv.xt, incident, substrate)
     shifted_base = base + core.mv(core.AxionCoupling, [common_axion]) * core.Bivector
     shifted_incident = core.Ports.from_medium(core.Medium.from_chi(shifted_base, parallel), index, parallel)
     shifted_substrate = core.Ports.from_medium(core.Medium.from_chi(shifted_base + axion_map, parallel), index, parallel)
     shifted = core.scatter(shifted_substrate.outgoing, shifted_incident)
 
-    np.testing.assert_allclose((result.reflection(core.mv.x) - reflected).kernel, 0, atol=ROUND_OFF, rtol=0)
-    np.testing.assert_allclose((result.transmission(core.mv.x) - core.mv.x - reflected).kernel,
+    np.testing.assert_allclose((result.reflection(core.mv.xt) - reflected).kernel, 0, atol=ROUND_OFF, rtol=0)
+    np.testing.assert_allclose((result.transmission(core.mv.xt) - core.mv.xt - reflected).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose(reflectance.kernel[..., 0], axion_jump**2 / denominator, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((reflectance + transmittance).kernel, 1, atol=ROUND_OFF, rtol=0)
@@ -215,10 +215,10 @@ def test_twisted_chi_selects_circular_polarization_and_remains_reciprocal():
     angles = (np.arange(turns * slices_per_turn) + 0.5) * (2 * np.pi / slices_per_turn)
     wavelengths = np.array([500.0, 660.0, 850.0])
     parallel = core.mv.t
-    circular = stack([(core.mv.x + 1j * core.mv.y) / np.sqrt(2),
-                      (core.mv.x - 1j * core.mv.y) / np.sqrt(2)])[:, None, None]
+    circular = stack([(core.mv.xt + 1j * core.mv.yt) / np.sqrt(2),
+                      (core.mv.xt - 1j * core.mv.yt) / np.sqrt(2)])[:, None, None]
     base = core.dielectric(np.array([extraordinary_index**2, ordinary_index**2, ordinary_index**2]), np.array(1.0))
-    rotations = (core.mv.xy * (angles[:, None] * windings / 2)).exp()
+    rotations = (core.mv.xy * (-angles[:, None] * windings / 2)).exp()
     chi = rotations >> base(rotations << core.Bivector)
 
     medium = core.Medium.from_chi(chi, parallel)
@@ -253,8 +253,8 @@ def test_interior_fields_match_every_interface_and_conserve_normal_power():
     samples = 9
     fractions = np.linspace(0, 1, samples)
     parallel = core.mv.t + 0.3 * core.mv.x
-    polarizations = stack([(core.mv.x + 1j * core.mv.y) / np.sqrt(2),
-                           (core.mv.x - 1j * core.mv.y) / np.sqrt(2)])
+    polarizations = stack([(core.mv.xt + 1j * core.mv.yt) / np.sqrt(2),
+                           (core.mv.xt - 1j * core.mv.yt) / np.sqrt(2)])
     normal = core.mv.z.real()
     # The observer's rest space as the dual of its time direction, oriented as the excitation is.
     spatial_volume = core.mv.t.dual().real()
@@ -298,9 +298,10 @@ def test_interior_fields_match_every_interface_and_conserve_normal_power():
     # At the entrance the sampled field meets the incident and reflected exterior waves.
     forward_wavevector = parallel + core.mv.z * incident.normal_index
     backward_wavevector = parallel - core.mv.z * incident.normal_index
-    backward_electric = core.Polarization - core.mv.z * (parallel | core.Polarization) / incident.normal_index
-    exterior_field = ((forward_wavevector ^ incident.electric_field(polarizations))
-                      + (backward_wavevector ^ backward_electric(result.reflection(polarizations))))
+    tangential = core.Polarization | core.mv.t
+    backward_potential = tangential + core.mv.z * (parallel | tangential) / incident.normal_index
+    exterior_field = ((forward_wavevector ^ incident.potential(polarizations))
+                      + (backward_wavevector ^ backward_potential(result.reflection(polarizations))))
     np.testing.assert_allclose((core.mv.z ^ (right_field - exterior_field)).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((core.mv.z ^ (right_excitation - incident_chi(exterior_field))).kernel,
@@ -321,10 +322,10 @@ def test_selected_circular_wave_decays_through_the_twisted_reflector():
     samples = 9
     fractions = np.linspace(0, 1, samples)
     parallel = core.mv.t
-    circular = stack([(core.mv.x + 1j * core.mv.y) / np.sqrt(2),
-                      (core.mv.x - 1j * core.mv.y) / np.sqrt(2)])
+    circular = stack([(core.mv.xt + 1j * core.mv.yt) / np.sqrt(2),
+                      (core.mv.xt - 1j * core.mv.yt) / np.sqrt(2)])
     base = core.dielectric(np.array([extraordinary_index**2, ordinary_index**2, ordinary_index**2]), np.array(1.0))
-    rotations = (core.mv.xy * (angles / 2)).exp()
+    rotations = (core.mv.xy * (-angles / 2)).exp()
     chi = rotations >> base(rotations << core.Bivector)
 
     medium = core.Medium.from_chi(chi, parallel)

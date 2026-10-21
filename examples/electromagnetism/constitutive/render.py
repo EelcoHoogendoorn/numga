@@ -28,7 +28,7 @@ def draw_wave_propagation(
     samples, stations = 200, 21
     distance = np.linspace(0, z_max, samples)
     speeds, fields = modes
-    fields = fields / (-(fields | core.t).squared()).square_root()
+    fields = fields / (fields | core.t).squared().square_root()
     phase = omega * (distance[:, None] / speeds - tau)
     wave = (fields * np.cos(phase)).sum(axis=-1)
 
@@ -132,7 +132,7 @@ def draw_polarizations(
 
     _, fields = modes
     electric = fields | core.t
-    electric = electric / (-electric.squared()).square_root()
+    electric = electric / electric.squared().square_root()
     arrows = electric.cast(core.STA.subspace("x y")).kernel
     colors = ("crimson", "dodgerblue")
     ax.quiver(np.zeros(len(arrows)), np.zeros(len(arrows)), *arrows.T,

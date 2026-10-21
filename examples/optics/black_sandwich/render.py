@@ -26,17 +26,15 @@ RADIUS = 0.42
 
 # --- plumbing -------------------------------------------------------------------------
 def _coordinates(directions: core.Direction) -> np.ndarray:
-    """Directions in the transverse plane, read by pairing with the planes across the axes. In this
-    signature the pairing of a plane with its own direction is minus one, the sign of the metric's
-    determinant, which the minus restores."""
+    """Directions in the transverse plane, read by pairing with the planes across the axes."""
     mv = directions.context.multivector
-    return -(stack((mv.x, mv.y)) & directions[..., None]).to_array()
+    return (stack((mv.x, mv.y)) & directions[..., None]).to_array()
 
 
 def _components(fields: core.Field) -> np.ndarray:
     """Fields in the transverse plane, read by pairing with the planes the axes' directions sweep in time."""
     mv = fields.context.multivector
-    sweeps = stack((mv.x.dual(), mv.y.dual())) & mv.t.dual()
+    sweeps = stack((mv.x.dual(), mv.y.dual())) & -mv.t.dual()
     return (fields[..., None] & sweeps).to_array()
 
 

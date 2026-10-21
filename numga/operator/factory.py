@@ -287,6 +287,16 @@ class OperatorFactory:
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(pseudoscalar, mask) * self._negative_sign(mask)
 
+    def _volume_complement(self, mask: int) -> tuple[int, int]:
+        """The blade that completes mask to the unit volume, on its right: mask ^ complement == I."""
+        pseudoscalar = self.algebra.pseudoscalar_mask
+        return mask ^ pseudoscalar, self._swap_sign(mask, mask ^ pseudoscalar)
+
+    def _volume_complement_inverse(self, mask: int) -> tuple[int, int]:
+        """The blade that mask completes to the unit volume, on its left: complement ^ mask == I."""
+        pseudoscalar = self.algebra.pseudoscalar_mask
+        return mask ^ pseudoscalar, self._swap_sign(mask ^ pseudoscalar, mask)
+
     def _anti_wedge_rule(self, left_mask: int, right_mask: int) -> tuple[int, int]:
         """The anti-wedge of two basis blades: the left complement of the wedge of right complements."""
         left_complement, left_sign = self._right_complement(left_mask)
@@ -366,7 +376,13 @@ class OperatorFactory:
         return self._bilinear(rules.MULTIPLIED, left, right, basis_rule)
 
     def regressive(self, left: GAType, right: GAType) -> Extensor:
-        """Build ``dual_inverse(dual(left) ^ dual(right))`` exactly."""
+        """The regressive product, measured against the unit volume and nothing else.
+
+        Two blades of complementary grade span a volume, `left ^ right == (left & right) * I`, and
+        their regressive product is that volume in units of the intrinsic unit volume `I`; for other
+        grades it is the blade the two share, scaled by the volume they span together. No metric
+        enters, and measuring against the intrinsic `I` flips the orientation once.
+        """
 
         return self._regressive(
             self._operand_gatype(left),
@@ -376,17 +392,15 @@ class OperatorFactory:
     @lru_cache(maxsize=None)
     def _regressive(self, left: GAType, right: GAType) -> Extensor:
         def basis_rule(left_mask: int, right_mask: int) -> tuple[int, int]:
-            left_dual, left_sign = self._right_hodge(left_mask)
-            right_dual, right_sign = self._right_hodge(right_mask)
-            if left_dual & right_dual:
+            # The blades' complements are what each lacks of the volume; the complement of their outer
+            # product is what the two share.
+            left_complement, left_sign = self._volume_complement(left_mask)
+            right_complement, right_sign = self._volume_complement(right_mask)
+            if left_complement & right_complement:
                 return 0, 0
-
-            wedge = self.algebra.geometric_product(left_dual, right_dual)
-            output, inverse_sign = self._right_hodge_inverse(wedge.blade)
-            return (
-                output,
-                left_sign * right_sign * wedge.coefficient * inverse_sign,
-            )
+            swap_sign = self._swap_sign(left_complement, right_complement)
+            output, output_sign = self._volume_complement_inverse(left_complement | right_complement)
+            return output, left_sign * right_sign * swap_sign * output_sign
 
         return self._bilinear(rules.REGRESSIVE, left, right, basis_rule)
 

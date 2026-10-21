@@ -85,10 +85,10 @@ Spherical3D = Algebra(
 
 
 STA = Algebra(
-    "t+x-y-z-",
+    "x+y+z+t-",
     subspace_factory=partial(
         SubSpaceFactory,
-        default="1 t x y z xt yt zt yz zx xy xyz tyz tzx txy txyz",
+        default="1 x y z t yz zx xy xt yt zt xyz yzt zxt xyt xyzt",
     ),
 )
 

@@ -16,8 +16,8 @@ def test_half_wave_transmission_and_nilpotence():
     # One stack passes the field turned by twice the plate's angle, read along the exit axis.
     passed = fields[:, 3] & exit_sweep
     expected = 2 * (core.mv.x & plate_axes) * (core.mv.y & plate_axes)
-    dyad = exit_sweep.dual_inverse() * (core.Field & entrance_sweep)
-    strength = plate(entrance_sweep.dual_inverse()) & exit_sweep
+    dyad = core.field_along(output_axis) * (core.Field & entrance_sweep)
+    strength = plate(core.field_along(input_axis)) & exit_sweep
 
     # checks
     np.testing.assert_allclose((plate(plate) - core.Field).kernel, 0, atol=ROUND_OFF, rtol=0)
@@ -36,7 +36,7 @@ def test_moving_the_components_moves_the_whole_map():
     moved_exit = core.polarizer(mirror >> output_axis)
     rebuilt = moved_exit(moved_plate(moved_entrance))
     moved = mirror >> sandwich(mirror << core.Field)
-    incident = ((mirror >> input_axis) & core.time).dual_inverse() * np.ones(len(plate_axes))
+    incident = core.field_along(mirror >> input_axis) * np.ones(len(plate_axes))
     moved_fields = core.through_pair(moved_entrance, moved_plate, moved_exit, incident)
 
     # checks

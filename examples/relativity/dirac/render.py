@@ -5,21 +5,17 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.animation import capture
 from examples.relativity.dirac import core
 
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b")
 
 
-def relative(bivectors: core.Bivector) -> np.ndarray:
-    """Components of relative vectors along the bivectors xt, yt and zt, which square to +1."""
-    return bivectors.cast(core.ga.subspace("xt yt zt")).kernel
-
-
-def spatial(vectors: core.Vector) -> np.ndarray:
-    """The spatial components of spacetime vectors, as the observer sees them: their products with
-    the time axis, read as relative vectors."""
-    return relative(vectors ^ core.TIME)
+def spatial(directions: core.Antivector) -> np.ndarray:
+    """Directions as the observer sees them: read by pairing with the slices x, y and z, on the last axis."""
+    mv = directions.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
 
 
 def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -> plt.Figure:
@@ -33,7 +29,7 @@ def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -
 
 def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int) -> None:
     for psi, trace, share, colour in zip(spinors, paths, mixtures, COLOURS):
-        xyz = relative(trace)[:upto]                                           # [times, 3]
+        xyz = spatial(trace)[:upto]                                           # [times, 3]
         ax.plot(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=colour, linewidth=1.2, label=f"{share:.0%} negative energy")
         here = xyz[-1]
         axis = spatial(core.spin(psi[upto - 1]))

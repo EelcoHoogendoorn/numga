@@ -43,7 +43,7 @@ def dielectric(permittivity: np.ndarray, reluctivity: np.ndarray) -> Constitutiv
     electric = (permittivity * planes * (planes | Bivector)).sum(axis=-1)     # [...] Bivector <- Bivector
     # The sandwich by t keeps the magnetic planes, those without t, and turns the electric ones
     # around: half the sum with the identity keeps the magnetic planes alone.
-    magnetic = (Bivector + (mv.t >> Bivector)) / 2                            # [] Bivector <- Bivector
+    magnetic = (Bivector + mv.t * Bivector * mv.t.inverse()) / 2              # [] Bivector <- Bivector
     return (electric + reluctivity * magnetic).dual()                         # [...] Antibivector <- Bivector
 
 
@@ -96,10 +96,10 @@ def sphere(latitudes: int, longitudes: int) -> Vector:
     """A sphere of directions, made by two turns in spacetime's spatial planes."""
     polar = np.linspace(0, np.pi, latitudes)
     azimuth = np.linspace(0, 2 * np.pi, longitudes)
-    meridian = (mv.zx * (polar[:, None] / 2)).exp() >> mv.z                   # [latitudes, 1] Vector
-    return (mv.xy * (azimuth[None, :] / 2)).exp() >> meridian                 # [latitudes, longitudes] Vector
+    meridian = (mv.zx * (-polar[:, None] / 2)).exp() >> mv.z                  # [latitudes, 1] Vector
+    return (mv.xy * (-azimuth[None, :] / 2)).exp() >> meridian                # [latitudes, longitudes] Vector
 
 
 def circle(samples: int) -> Vector:
     angles = np.linspace(0, 2 * np.pi, samples)
-    return (mv.zx * (angles / 2)).exp() >> mv.z                               # [samples] Vector
+    return (mv.zx * (-angles / 2)).exp() >> mv.z                              # [samples] Vector

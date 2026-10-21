@@ -25,7 +25,7 @@ def test_principal_wave_radii_match_transverse_material_weights():
     frequency = 1.2
     medium = core.dielectric(permittivity, reluctivity)
     sheets = core.radial_sheets(medium, core.axes, frequency)
-    radii_squared = -sheets.squared()
+    radii_squared = sheets.squared()
     expected = frequency**2 * np.array([[3, 4], [2, 4], [2, 3]]) / reluctivity
     np.testing.assert_allclose(radii_squared.kernel[..., 0], expected, atol=1e-10)
 

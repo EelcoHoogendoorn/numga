@@ -67,9 +67,9 @@ def test_weyl_projections_split_the_current_into_two_covariant_null_currents():
         (right_current - left_current - core.spin(spinors)).kernel,
         0, atol=TOLERANCE,
     )
-    assert np.all((right_current | mv.t).kernel > 0)
-    assert np.all((left_current | mv.t).kernel > 0)
-    assert np.all(core.current(spinors).squared().kernel > 0)
+    assert np.all(core.density(right).kernel > 0)
+    assert np.all(core.density(left).kernel > 0)
+    assert np.all(core.current(spinors).squared().kernel < 0)
 
 
 def test_charge_conjugation_exchanges_chirality_and_reverses_the_phase():

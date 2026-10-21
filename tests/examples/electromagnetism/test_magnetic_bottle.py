@@ -24,7 +24,7 @@ def test_field_turns_velocity_by_the_lorentz_force_at_constant_speed():
     history = islice(core.evolve(*scenarios.launch(), pieces, midpoints, scenarios.CURRENT, scenarios.PROPER_STEP), 50)
     event, velocity = list(history)[-1]
     magnetic = core.field(event, pieces, midpoints, scenarios.CURRENT)
-    mismatch = velocity.commutator(magnetic).dual() + (velocity & magnetic)
+    mismatch = velocity.commutator(magnetic).dual() - (velocity & magnetic)
     np.testing.assert_allclose(mismatch.norm().to_array(), 0, atol=1e-10)
     np.testing.assert_allclose((mv.t & velocity).to_array(), 1 / np.sqrt(1 - scenarios.SPEED**2), atol=1e-11)
 

@@ -66,7 +66,7 @@ def helix(depths: np.ndarray) -> tuple[core.Vector, core.Constitutive]:
 
 def circular() -> core.Polarization:
     """The two circular inputs, x + i y and x - i y."""
-    return (core.mv.x + core.mv.y * (1j * POLARIZATION_SIGNS)) / np.sqrt(2)
+    return (core.mv.xt + core.mv.yt * (1j * POLARIZATION_SIGNS)) / np.sqrt(2)
 
 
 def antireflection() -> tuple[core.Scalar, core.Scalar]:
@@ -79,7 +79,7 @@ def antireflection() -> tuple[core.Scalar, core.Scalar]:
     distance = 2 * np.pi * COATING_THICKNESSES[:, None] / WAVELENGTHS
     coating = core.propagate(medium.generator[:, None], distance)
     result = core.scatter(coating(substrate.outgoing), incident)
-    return result.powers(core.mv.x, incident, substrate)
+    return result.powers(core.mv.xt, incident, substrate)
 
 
 def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
@@ -107,10 +107,10 @@ def axion() -> core.Scalar:
     substrate_medium = core.Medium.from_chi(axion_chi, core.mv.t)
     substrate = core.Ports.from_medium(substrate_medium, SURROUNDING_INDEX, core.mv.t)
     result = core.scatter(substrate.outgoing, incident)
-    reflected = result.reflection(core.mv.x)                  # [jumps] Polarization
-    parallel = -core.mv.x * (core.mv.x | reflected)
-    perpendicular = -core.mv.y * (core.mv.y | reflected)
-    return stack([incident.power(parallel), incident.power(perpendicular), incident.power(reflected)]) / incident.power(core.mv.x)
+    reflected = result.reflection(core.mv.xt)                  # [jumps] Polarization
+    parallel = core.mv.xt * (core.mv.xt | reflected)
+    perpendicular = core.mv.yt * (core.mv.yt | reflected)
+    return stack([incident.power(parallel), incident.power(perpendicular), incident.power(reflected)]) / incident.power(core.mv.xt)
 
 
 def angular() -> core.Scalar:
@@ -127,13 +127,14 @@ def angular() -> core.Scalar:
     scattering = core.scatter(propagation(ports.outgoing), ports)
     tilt = (core.mv.zx * (ANGLES / 2)).exp()
     field = tilt[None, :] >> circular()[:, None]
-    tangential = -core.mv.z | (core.mv.z ^ field)
+    # The field's planes across the normal: its rejection by z.
+    tangential = core.mv.z.inverse() | (core.mv.z ^ field)
     return scattering.powers(tangential[..., None], ports, ports)[0]
 
 
-def penetration() -> tuple[np.ndarray, core.Vector]:
-    """The electric field at the band's centre through the positive helix, `[cases, layers, samples]`,
-    at the depths `[layers, samples]`."""
+def penetration() -> tuple[np.ndarray, core.Bivector]:
+    """The field at the band's centre through the positive helix, `[cases, layers, samples]`, at the
+    depths `[layers, samples]`."""
     wavelength = BAND_WAVELENGTH
     fractions = np.linspace(0, 1, N_SAMPLES_PER_LAYER)
     depths = (np.arange(N_LAYERS)[:, None] + fractions) * THICKNESS
@@ -144,7 +145,7 @@ def penetration() -> tuple[np.ndarray, core.Vector]:
     scattering = core.scatter(core.compose(layers)(ports.outgoing), ports)
     exit_state = ports.outgoing(scattering.transmission(circular()))
     fields = medium.interior(np.full(N_LAYERS, THICKNESS), wavelength, exit_state, fractions)   # [cases, layers, samples] Bivector
-    return depths, core.mv.t | fields
+    return depths, fields
 
 
 def pulse(at: np.ndarray) -> core.Bivector:
@@ -152,9 +153,9 @@ def pulse(at: np.ndarray) -> core.Bivector:
     carrier turning with the helix, against it, and their average, which does not turn."""
     envelope = np.exp(-((at - PULSE_START) / PULSE_WIDTH) ** 2 / 2)
     phases = 2 * np.pi * SURROUNDING_INDEX * at / BAND_WAVELENGTH
-    turned = (core.real.xy * (HANDS[:, None] * phases / 2)).exp() >> core.real.x     # [hands, positions] Vector
-    cases = stack([turned[0], turned[1], turned.sum(axis=0) / 2])                    # [cases, positions] Vector
-    return (envelope * cases) ^ core.real.t
+    turned = (core.real.xy * (HANDS[:, None] * phases / 2)).exp() >> core.real.xt    # [hands, positions] Bivector
+    cases = stack([turned[0], turned[1], turned.sum(axis=0) / 2])                    # [cases, positions] Bivector
+    return envelope * cases
 
 
 def time_domain() -> tuple[core.Vector, core.Vector, core.Vector, core.Bivector, core.Scalar, core.Scalar, core.Scalar]:
@@ -199,13 +200,13 @@ def main() -> None:
     centres, directors, twisted_reflection, twisted_transmission = twisted()
     axion_reflection = axion()
     angle_reflection = angular()
-    depths, electric = penetration()
+    depths, fields = penetration()
     save_figure(render.spectra(WAVELENGTHS, reflection, COATING_NAMES), "coating_chi_matching")
     save_figure(render.twist(centres, directors[:, 0]), "coating_twist")
     save_figure(render.handedness(WAVELENGTHS, twisted_reflection, POLARIZATION_NAMES), "coating_handedness")
     save_figure(render.axion(AXION_JUMPS, axion_reflection, AXION_NAMES), "coating_axion")
     save_figure(render.angular(MAP_WAVELENGTHS, ANGLES, angle_reflection), "coating_polarization_map")
-    save_figure(render.field(depths, electric), "coating_internal_field")
+    save_figure(render.field(depths, fields), "coating_internal_field")
     nodes, slab, directors, pulses, before, pulse_reflected, pulse_transmitted = time_domain()
     # The pulse that does not turn: one handedness comes back, the other passes.
     save_animation(render.pulse(nodes, slab, directors, pulses[:, 2]), "coating_pulse", FRAME_DURATION)

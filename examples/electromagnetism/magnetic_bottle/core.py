@@ -42,7 +42,7 @@ Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 
-# One unit along the lab's time, and unit directions of space, which square to minus one.
+# One unit along the lab's time, and unit directions of space.
 time = -mv.t.dual()                                          # [] Antivector
 across, sideways, axis = stack([mv.x, mv.y, mv.z]).dual()    # the bottle's axis last
 
@@ -52,7 +52,7 @@ def coils(radius: float, heights: np.ndarray, n_pieces: int) -> tuple[Antivector
     """Circular coils of `radius` around the axis at each height, as straight pieces of wire: each
     piece's displacement along the current, and its midpoint `[coils * pieces]`."""
     angles = np.linspace(0, 2 * np.pi, n_pieces + 1)
-    rim = (mv.xy * (angles / 2)).exp() >> (across * radius)                   # [pieces + 1] Antivector
+    rim = (mv.xy * (-angles / 2)).exp() >> (across * radius)                  # [pieces + 1] Antivector
     wire = rim + axis * heights[:, None]                                      # [coils, pieces + 1] Antivector
     pieces = (wire[:, 1:] - wire[:, :-1]).reshape(len(heights) * n_pieces)
     return pieces, ((wire[:, 1:] + wire[:, :-1]) / 2).reshape(len(heights) * n_pieces)
@@ -64,8 +64,7 @@ def field(events: Antivector, pieces: Antivector, midpoints: Antivector, current
     # The event's place in the lab's space.
     position = events - (mv.t & events) * time                                # [...] Antivector
     separation = position[..., None] - midpoints                              # [..., pieces] Antivector
-    # Directions of space square to minus their length squared.
-    distance = (-separation.squared()).square_root()                          # [..., pieces] Scalar
+    distance = separation.squared().square_root()                             # [..., pieces] Scalar
     # The commutator of two directions is the bivector that turns one towards the other.
     planes = pieces.commutator(separation)                                    # [..., pieces] Bivector
     return current * (planes / (distance * distance.squared())).sum(axis=-1)  # [...] Bivector
@@ -77,7 +76,7 @@ def step(event: Antivector, velocity: Antivector, pieces: Antivector, midpoints:
     the velocity turned by the field there, and the other half step."""
     halfway = event + velocity * (proper_step / 2)                            # [...] Antivector
     # The velocity turns at the rate `velocity.commutator(field)`: the rotor of that turn over the step.
-    turn = (field(halfway, pieces, midpoints, current) * (-proper_step / 2)).exp()   # [...] Rotor
+    turn = (field(halfway, pieces, midpoints, current) * (proper_step / 2)).exp()    # [...] Rotor
     velocity = turn >> velocity                                               # [...] Antivector
     return halfway + velocity * (proper_step / 2), velocity
 
@@ -95,5 +94,5 @@ def moment(velocity: Antivector, magnetic: Bivector) -> Scalar:
     squared over twice the field cubed, the momentum of the circling squared over twice the field."""
     force = velocity & magnetic                                               # [...] Vector
     strength = magnetic.scalar_norm_squared().square_root()                   # [...] Scalar
-    # The force of a magnetic field is square to the lab's time, and squares to minus its size squared.
-    return -force.squared() / (2 * strength * strength.squared())             # [...] Scalar
+    # The force of a magnetic field is square to the lab's time, and squares to its size squared.
+    return force.squared() / (2 * strength * strength.squared())              # [...] Scalar

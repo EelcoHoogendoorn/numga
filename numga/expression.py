@@ -125,7 +125,7 @@ left_interior = Product(
 right_interior = Product(
     "right_interior", OperatorFactory.right_interior, "The right interior product: left, anti-wedged with the right complement of right.",
 )
-regressive = Product("regressive", OperatorFactory.regressive, "The right-Hodge regressive product.")
+regressive = Product("regressive", OperatorFactory.regressive, "The regressive product, measured against the unit volume.")
 
 transform = VersorAction(
     "transform", OperatorFactory.transform,

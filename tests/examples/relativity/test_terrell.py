@@ -25,7 +25,7 @@ def test_photograph_at_rest_matches_the_past_light_cone():
     start = centre + (frame >> point)                                         # [cases] Antivector
     velocity = frame >> time                                                  # [cases] Antivector
     lean = velocity | start                                                   # [cases] Scalar
-    proper = -lean - (lean.squared() - start.squared()).square_root()         # [cases] Scalar
+    proper = lean - (lean.squared() + start.squared()).square_root()          # [cases] Scalar
     direct = -(start + velocity * proper)                                     # [cases] Antivector
     boosted = frame >> core.rays(core.rest_camera(frame, centre), point)      # [cases] Antivector
     # Both are rays arriving at the camera: equal once scaled to one unit of its time.
@@ -47,7 +47,7 @@ def test_outline_of_a_sphere_stays_a_circle():
     np.testing.assert_allclose(joined.to_array(), 0, atol=1e-12)
     # The point of the sphere nearest the camera is seen inside the outline, not on it.
     offset = camera - centre                                                  # [cases] Antivector
-    nearest = frame >> core.rays(camera, centre + offset / (-offset.squared()).square_root())   # [cases] Antivector
+    nearest = frame >> core.rays(camera, centre + offset / offset.squared().square_root())   # [cases] Antivector
     off = points[:, 0] & points[:, 1] & points[:, 2] & (nearest / (mv.t & nearest))   # [cases] Scalar
     assert np.all(np.abs(off.to_array()) > 1e-6)
 

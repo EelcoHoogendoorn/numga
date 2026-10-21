@@ -39,14 +39,14 @@ Curvature = STA.gatype((Bivector, Antibivector))    # Bivector <- Antibivector
 Tidal = STA.gatype((Vector, Antivector))            # Vector <- Antivector
 Strain = STA.gatype((Antivector, Antivector))       # Antivector <- Antivector
 
-t, x, y, z = mv.vector(np.eye(4))
+t, x, y, z = mv.t, mv.x, mv.y, mv.z
 # One unit along the lab's time: the direction across the lab's slice of space `t`.
 time_direction = -t.dual()                                   # [] Antivector
 # A wave travelling along z at the speed of light, and its wave vector, the slice its dual gives that direction.
 travel = time_direction + mv.z.dual()                        # [] Antivector
 wave_vector = -travel.dual()                                 # [] Vector
 # An eighth of a turn in the plane across the wave.
-eighth_turn = (mv.xy * (np.pi / 8)).exp()
+eighth_turn = (mv.xy * (-np.pi / 8)).exp()
 
 
 # --- math -----------------------------------------------------------------------------
@@ -126,4 +126,4 @@ def integrate_acceleration(time: np.ndarray, acceleration: Antivector) -> Antive
     """Integrate twice along the first batch axis, starting at rest."""
     velocity = cumulative_simpson(acceleration.kernel, x=time, axis=0, initial=0)
     displacement = cumulative_simpson(velocity, x=time, axis=0, initial=0)
-    return mv(Antivector, displacement)
+    return acceleration.context.extensor(acceleration.gatype, displacement)

@@ -27,7 +27,8 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antibivector = ga.gatype.antibivector()
-Polarization = Vector.derive.within("x y")
+# The tangential electric field: the observer's temporal planes across the layer, xt and yt.
+Polarization = Bivector.derive.within("x y t").derive.containing("t")
 Boundary = ga.gatype(ga.subspace("x y txz tyz"), orientation=Orientation.extrinsic)
 Constitutive = ga.gatype((Antibivector, Bivector))
 Inverse = ga.gatype((Bivector, Antibivector))
@@ -35,7 +36,7 @@ BoundaryMap = ga.gatype((Boundary, Bivector))
 FieldMap = ga.gatype((Bivector, Boundary))
 Propagation = ga.gatype((Boundary, Boundary))
 PolarizationMap = ga.gatype((Polarization, Polarization))
-ElectricMap = ga.gatype((Vector, Polarization))
+PotentialMap = ga.gatype((Vector, Polarization))
 Outgoing = ga.gatype((Boundary, Polarization))
 Readout = ga.gatype((Polarization, Boundary))
 # An axion coupling is a pseudoscalar: a scalar with the orientation of the dual.
@@ -43,8 +44,8 @@ AxionCoupling = Scalar.derive.flipped_orientation
 axes = stack([mv.x, mv.y, mv.z])
 field_boundary = mv.t ^ (mv.t | (mv.z ^ Bivector))
 excitation_boundary = mv.t | (mv.t ^ (mv.z ^ Antibivector).dual())
-# Undo the two wedges defining the electric part of the boundary state.
-electric_trace = -mv.t | (mv.z | Boundary)                 # Polarization <- Boundary
+# The tangential electric field the boundary state holds: undo the wedge with the normal.
+electric_trace = -(mv.z | Boundary)                        # Polarization <- Boundary
 
 
 # --- math -----------------------------------------------------------------------------
@@ -52,7 +53,7 @@ def dielectric(permittivity: np.ndarray, reluctivity: np.ndarray) -> Constitutiv
     """Principal electric responses and scalar inverse permeability, in vacuum units."""
     planes = axes ^ mv.t
     electric_response = (permittivity * planes * (planes | Bivector)).sum(axis=-1)
-    magnetic_response = (Bivector + (mv.t >> Bivector)) / 2
+    magnetic_response = (Bivector + mv.t * Bivector * mv.t.inverse()) / 2
     return (electric_response + reluctivity * magnetic_response).dual()
 
 
@@ -76,8 +77,8 @@ class Medium:
                       - mv.z * (mv.z | (parallel ^ chi).dual()))
         reconstruct = (boundary + constraint).solve(Boundary)
         # Positive eigenvalues give phase propagation towards +z when temporal phase increases.
-        generator = (field_boundary(mv.z | (parallel ^ reconstruct))
-                     + excitation_boundary(mv.z | (parallel ^ chi(reconstruct))))
+        generator = -(field_boundary(mv.z | (parallel ^ reconstruct))
+                      + excitation_boundary(mv.z | (parallel ^ chi(reconstruct))))
         return cls(boundary, reconstruct, generator)
 
     def interior(self, thicknesses: np.ndarray, wavelength: float,
@@ -122,7 +123,7 @@ class Ports:
     outgoing: Outgoing
     incoming: Readout
     returning: Readout
-    electric_field: ElectricMap
+    potential: PotentialMap
     normal_index: Scalar
 
     @classmethod
@@ -130,17 +131,19 @@ class Ports:
         """Waves in a lossless, nonmagnetic isotropic exterior, including a real constant axion term.
 
         The normal index is real and nonzero: the exterior waves must propagate.
-        Polarization specifies the tangential electric field, including its phase.
+        A polarization is the tangential electric field, including its phase.
         """
-        normal_index = (index ** 2 + (parallel - mv.t).squared()).square_root()
-        # Complete the tangential electric field to a field perpendicular to the ray.
-        electric_field = Polarization + mv.z * (parallel | Polarization) / normal_index
+        normal_index = (index ** 2 - (parallel - mv.t).squared()).square_root()
+        # The potential whose wave has the polarization as its tangential electric field, completed to be
+        # perpendicular to the ray.
+        tangential = Polarization | mv.t                                            # Vector <- Polarization
+        potential = tangential - mv.z * (parallel | tangential) / normal_index
         wavevector = parallel + mv.z * normal_index
-        outgoing = medium.boundary(wavevector ^ electric_field)
+        outgoing = medium.boundary(wavevector ^ potential)
         # Exterior evolution has just two eigenvalues, the signed normal indices.
         incoming = electric_trace((Boundary + medium.generator / normal_index) / 2)
         returning = electric_trace((Boundary - medium.generator / normal_index) / 2)
-        return cls(outgoing, incoming, returning, electric_field, normal_index)
+        return cls(outgoing, incoming, returning, potential, normal_index)
 
     @classmethod
     def isotropic(cls, index: float, parallel: Vector) -> Ports:
@@ -150,11 +153,10 @@ class Ports:
 
     def power(self, polarization: Polarization) -> Scalar:
         """Normal power flux, omitting the common factor of half the vacuum admittance."""
-        field = self.electric_field(polarization)
-        # Complex coefficients carry time phase. Average the two real quadratures;
-        # the spatial metric is negative, hence the minus sign in their squared lengths.
-        magnitude = -(field.real().scalar_norm_squared()
-                      + (-1j * field).real().scalar_norm_squared())
+        potential = self.potential(polarization)
+        # Complex coefficients carry time phase. Average the two real quadratures.
+        magnitude = (potential.real().scalar_norm_squared()
+                     + (-1j * potential).real().scalar_norm_squared())
         return self.normal_index.real() * magnitude
 
 

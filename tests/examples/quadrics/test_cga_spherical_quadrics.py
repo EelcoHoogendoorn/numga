@@ -20,12 +20,12 @@ from examples.quadrics.elliptic_physics.render import hemisphere
 
 
 def test_null_cone_pixels():
-    """Hemisphere pixels are null, of weight one on the unit sphere."""
+    """Hemisphere pixels are null, their weight on the unit sphere minus one, the square of w."""
     coordinates, inside, rim = hemisphere(60)
     assert inside.sum() > 0
     pixels = point(coordinates)
     np.testing.assert_allclose((pixels | pixels).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((mv.w & pixels).to_array(), 1.0, atol=1e-12)
+    np.testing.assert_allclose((mv.w & pixels).to_array(), -1.0, atol=1e-12)
 
 
 def test_conical_donut_topology():

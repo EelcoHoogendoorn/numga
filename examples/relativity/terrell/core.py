@@ -37,7 +37,7 @@ Scalar = ga.gatype.scalar()
 Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 
-# One unit along the camera's time, and unit directions of space, which square to minus one.
+# One unit along the camera's time, and unit directions of space.
 time = -mv.t.dual()                                          # [] Antivector
 space = stack([mv.x, mv.y, mv.z]).dual()                     # [3] Antivector
 # The direction the body travels, the camera's line of sight to its track, and up.
@@ -55,7 +55,7 @@ def sighting(distance: float, angles: np.ndarray) -> Antivector:
     """The events where the body's centre sends the light the camera, at the origin, receives along a line of sight
     at each angle from the body's motion `[...]`, on a track at the given distance: on the camera's past
     light cone, the ray back along the line of sight, scaled to reach the track."""
-    sight = (mv.xy * (angles / 2)).exp() >> travel                              # [...] Antivector
+    sight = (mv.xy * (-angles / 2)).exp() >> travel                             # [...] Antivector
     return (sight - time) * (distance / (mv.y & sight))                         # [...] Antivector
 
 
@@ -70,24 +70,23 @@ def rays(camera: Antivector, points: Antivector) -> Antivector:
     """The rays from points of a body at rest to the camera at rest beside it, in their frame: straight
     lines in space, taking as long as they are long."""
     offsets = camera - points                                                   # [...] Antivector
-    # Directions of space square to minus their length squared.
-    return offsets + time * (-offsets.squared()).square_root()                  # [...] Antivector
+    return offsets + time * offsets.squared().square_root()                     # [...] Antivector
 
 
 def facing(camera: Antivector, points: Antivector, normals: Antivector) -> Scalar:
     """How far the camera is out along the outward normal at each point of a body: the point is seen
     where this is positive."""
-    return normals | (points - camera)                                          # [...] Scalar
+    return normals | (camera - points)                                          # [...] Scalar
 
 
 def outline(camera: Antivector, centre: Antivector, radius: float, angles: np.ndarray) -> Antivector:
     """The outline of a sphere as the camera sees it, at each angle around it `[..., angles]`: where the
     rays from the camera graze the sphere, a circle on the sphere square to the camera's direction."""
     offset = camera - centre                                                    # [...] Antivector
-    distance = (-offset.squared()).square_root()                                # [...] Scalar
+    distance = offset.squared().square_root()                                   # [...] Scalar
     # The grazing points ring the line from the sphere's centre to the camera. The ring is built around the
     # direction to a camera straight in front, and turned onto the camera's, which is never straight behind.
-    turn = (-((offset / distance) * -line_of_sight)).square_root()              # [...] Rotor
+    turn = ((offset / distance) * -line_of_sight).square_root()                 # [...] Rotor
     nearest = (radius / distance) * -line_of_sight + (1 - (radius / distance).squared()).square_root() * up
     circle = (mv.zx * (angles / 2)).exp() >> nearest[..., None]                # [..., angles] Antivector
     return centre + radius * (turn[..., None] >> circle)                        # [..., angles] Antivector

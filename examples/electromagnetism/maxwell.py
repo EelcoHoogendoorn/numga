@@ -34,7 +34,7 @@ StressEnergy = STA.gatype((Vector, Vector))  # Vector <- Vector
 
 # The rest observer and spatial axes, each with full vector support, so the maps built on them are maps
 # from vectors to vectors.
-t, x, y, z = mv.vector(np.eye(4))
+t, x, y, z = mv.t, mv.x, mv.y, mv.z
 # The plane wave's electric and magnetic field strengths; a field of no special form, its coefficients on
 # tx, ty, tz, yz, zx and xy.
 ELECTRIC, MAGNETIC = 2.0, 2.0

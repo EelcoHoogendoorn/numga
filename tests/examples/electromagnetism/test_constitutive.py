@@ -28,7 +28,9 @@ def phase_speeds(medium, direction, speeds):
 SPEEDS = np.linspace(0.05, 1.5, 6001)
 SCAN_TOLERANCE = SPEEDS[1] - SPEEDS[0]
 # The observer's reflection keeps magnetic planes and reverses electric ones.
-ELECTRIC = (Bivector - (t >> Bivector)) / 2
+# The observer's direction in time, which pairs to one with t; the dual carries the minus of t's square.
+time = -t.dual()
+ELECTRIC = (Bivector - t * Bivector * t.inverse()) / 2
 MAGNETIC = Bivector - ELECTRIC
 
 
@@ -53,25 +55,26 @@ def test_material_and_stress_forms_give_the_electric_and_magnetic_energy():
     electric_squared = electric_fields.scalar_product(electric_fields)
     magnetic_squared = magnetic_fields.scalar_product(magnetic_fields)
     bilinear_form = Bivector & medium
-    energy_form = -(t >> Bivector) & medium
+    energy_form = (t * Bivector * t.inverse()) & medium
     stress_form = core.Vector & core.stress_energy(fields, medium(fields))
     expected_action = (permittivity * electric_squared + magnetic_squared / permeability) / 2
     expected_energy = (permittivity * electric_squared - magnetic_squared / permeability) / 2
 
-    np.testing.assert_allclose((bilinear_form(fields, fields) / 2 - expected_action).kernel, 0.0, atol=1e-12)
+    # The constitutive form pairs the field with its excitation: minus twice the Lagrangian.
+    np.testing.assert_allclose((bilinear_form(fields, fields) / 2 + expected_action).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((energy_form(fields, fields) / 2 - expected_energy).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((stress_form(t, t.dual()) - expected_energy).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((stress_form(t, time) - expected_energy).kernel, 0.0, atol=1e-12)
 
     flux_field = mv.tx + mv.zx
     flux_form = core.Vector & core.stress_energy(flux_field, medium(flux_field))
-    np.testing.assert_allclose(flux_form(z, t.dual()).kernel, -1 / permeability, atol=1e-12)
-    np.testing.assert_allclose(flux_form(t, z.dual()).kernel, -permittivity, atol=1e-12)
+    np.testing.assert_allclose(flux_form(z, time).kernel, -1 / permeability, atol=1e-12)
+    np.testing.assert_allclose(flux_form(t, z.dual()).kernel, permittivity, atol=1e-12)
 
     # In vacuum the current along a direction is the field's sandwich of the direction, halved.
     vacuum = isotropic(1.0, 1.0)
     vacuum_current = core.stress_energy(fields, vacuum(fields))
     for direction in (t, x, z):
-        np.testing.assert_allclose((vacuum_current(direction.dual()) + (fields >> direction).dual() / 2).kernel, 0.0, atol=1e-12)
+        np.testing.assert_allclose((vacuum_current(direction.dual()) - (fields >> direction).dual() / 2).kernel, 0.0, atol=1e-12)
 
 
 def test_crystal_is_birefringent_along_z_and_not_along_x():
@@ -105,7 +108,7 @@ def test_vacuum_wave_has_two_transverse_field_modes():
     np.testing.assert_allclose((wavevector ^ modes).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((wavevector ^ vacuum(modes)).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(action_form(modes, modes).kernel / 2, 0.0, atol=1e-12)
-    assert np.all(stress_form(t, t.dual()).kernel > 0.0)
+    assert np.all(stress_form(t, time).kernel > 0.0)
 
 
 def test_ferrite_lifts_permeability_through_the_dual_field():
@@ -131,11 +134,11 @@ def test_axion_term_is_invisible_to_bulk_waves():
 def test_material_and_stress_forms_transform_with_the_field_and_observer():
     permittivity, permeability, fraction = 2.25, 1.5, 0.35
     medium = isotropic(permittivity, permeability)
-    rotation = ((z ^ t) * (np.arctanh(fraction) / 2)).exp()
+    rotation = ((t ^ z) * (np.arctanh(fraction) / 2)).exp()
     observer = rotation >> t
     moving = scenarios.moving(medium, np.array(fraction))
     # The same medium built from the moving observer's electric and magnetic planes.
-    electric = (Bivector - (observer >> Bivector)) / 2
+    electric = (Bivector - observer * Bivector * observer.inverse()) / 2
     rebuilt = (permittivity * electric + (Bivector - electric) / permeability).dual()
     rng = np.random.default_rng(627)
     fields = mv.bivector(rng.normal(size=(13, 6)))
@@ -149,7 +152,7 @@ def test_material_and_stress_forms_transform_with_the_field_and_observer():
     np.testing.assert_allclose((moving(fields) - rebuilt(fields)).kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose((moved_form(moved_fields, moved_fields) - form(fields, fields)).kernel, 0.0, atol=1e-7)
     np.testing.assert_allclose((moved_current - (rotation >> current(rotation << core.Antivector))).kernel, 0.0, atol=1e-7)
-    np.testing.assert_allclose((moved_stress_form(observer, observer.dual()) - stress_form(t, t.dual())).kernel, 0.0, atol=1e-7)
+    np.testing.assert_allclose((moved_stress_form(observer, -observer.dual()) - stress_form(t, time)).kernel, 0.0, atol=1e-7)
 
 
 def test_moving_glass_shows_exact_fresnel_drag():

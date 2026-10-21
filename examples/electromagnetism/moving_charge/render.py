@@ -15,23 +15,23 @@ from numga import stack
 from examples.animation import capture
 from examples.electromagnetism.moving_charge import core
 
-ELECTRIC_RANGE = (0.05, 50.0)
-MAGNETIC_LIMIT = 10.0
-DENSITY_LEVEL = 5.0
-DENSITY_COLOUR = "#ea580c"
+electric_range = (0.05, 50.0)
+magnetic_limit = 10.0
+density_level = 5.0
+density_colour = "#ea580c"
 # Magnitudes start at white, as the signed fields do at zero.
-STRENGTH_COLOURS = "Purples"
-WAVE_ZONE = 4.0
-WAVE_PERCENTILE = 99.0
-WAVE_POWER = 0.4
-CHARGE_COLOUR = "#facc15"
+strength_colours = "Purples"
+wave_zone = 4.0
+wave_percentile = 99.0
+wave_power = 0.4
+charge_colour = "#facc15"
 # The radiating charge's frames' dots per inch.
-WAVE_DPI = 36
+wave_dpi = 36
 # The planes the lab's time sweeps along each spatial direction, whose pairings with the field are the lab's
 # electric field, and the patch spanned by x and y, whose pairing with the field is the magnetic flux across
 # the plane.
-ELECTRIC_PLANES = core.time & stack((core.mv.x.dual(), core.mv.y.dual(), core.mv.z.dual()))   # [3] Antibivector
-ACROSS = core.mv.x.dual() & core.mv.y.dual()                                  # [] Antibivector
+electric_planes = core.time & stack((core.mv.x.dual(), core.mv.y.dual(), core.mv.z.dual()))   # [3] Antibivector
+across_patch = core.mv.x.dual() & core.mv.y.dual()                                  # [] Antibivector
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -58,12 +58,12 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: str, n
 
 def electric_strength(field: core.Bivector) -> np.ndarray:
     """The lab's electric field by its length."""
-    return np.linalg.norm((field[..., None] & ELECTRIC_PLANES).to_array(), axis=-1)
+    return np.linalg.norm((field[..., None] & electric_planes).to_array(), axis=-1)
 
 
 def magnetic_across(field: core.Bivector) -> np.ndarray:
     """The lab's magnetic field across the plane."""
-    return (field & ACROSS).to_array()
+    return (field & across_patch).to_array()
 
 
 def density(current: core.Antivector) -> np.ndarray:
@@ -78,8 +78,8 @@ def fields(events: core.Antivector, field: core.Bivector) -> plt.Figure:
     left, right, bottom, top = extent(events)
     result = plt.figure(figsize=(width, len(strengths) * width / 2 * (top - bottom) / (right - left) + 0.3), layout="constrained")
     for axes, strength, across in zip(result.subplots(len(strengths), 2, squeeze=False), strengths, magnetic):
-        panel(axes[0], events, strength, STRENGTH_COLOURS, LogNorm(*ELECTRIC_RANGE))
-        panel(axes[1], events, across, "RdBu_r", TwoSlopeNorm(0.0, -MAGNETIC_LIMIT, MAGNETIC_LIMIT))
+        panel(axes[0], events, strength, strength_colours, LogNorm(*electric_range))
+        panel(axes[1], events, across, "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit))
     return result
 
 
@@ -103,14 +103,14 @@ def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivecto
     left, right, bottom, top = extent(events)
     result = plt.figure(figsize=(11, 11 / 2 * (top - bottom) / (right - left) + 0.2), dpi=80, layout="constrained")
     axes = result.subplots(1, 2)
-    images = (panel(axes[0], events, strengths[0], STRENGTH_COLOURS, LogNorm(*ELECTRIC_RANGE)),
-              panel(axes[1], events, magnetic[0], "RdBu_r", TwoSlopeNorm(0.0, -MAGNETIC_LIMIT, MAGNETIC_LIMIT)))
+    images = (panel(axes[0], events, strengths[0], strength_colours, LogNorm(*electric_range)),
+              panel(axes[1], events, magnetic[0], "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
     pixels = []
     for strength, across, value in zip(strengths, magnetic, charge_densities):
         images[0].set_data(strength)
         images[1].set_data(across)
-        outline = axes[0].contour(xy[..., 0], xy[..., 1], np.abs(value), levels=[DENSITY_LEVEL],
-                                  colors=[DENSITY_COLOUR], linewidths=1.2)
+        outline = axes[0].contour(xy[..., 0], xy[..., 1], np.abs(value), levels=[density_level],
+                                  colors=[density_colour], linewidths=1.2)
         result.canvas.draw()
         pixels.append(np.asarray(result.canvas.buffer_rgba())[..., :3].copy())
         outline.remove()
@@ -122,9 +122,9 @@ def frame(events: core.Antivector, field: core.Bivector, current: core.Antivecto
     xy = coordinates(events)
     figure = plt.figure(figsize=(11, 3.7), dpi=80, layout="constrained")
     left, right = figure.subplots(1, 2)
-    panel(left, events, electric_strength(field), STRENGTH_COLOURS, LogNorm(*ELECTRIC_RANGE))
-    left.contour(xy[..., 0], xy[..., 1], np.abs(density(current)), levels=[DENSITY_LEVEL], colors=[DENSITY_COLOUR], linewidths=1.2)
-    panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -MAGNETIC_LIMIT, MAGNETIC_LIMIT))
+    panel(left, events, electric_strength(field), strength_colours, LogNorm(*electric_range))
+    left.contour(xy[..., 0], xy[..., 1], np.abs(density(current)), levels=[density_level], colors=[density_colour], linewidths=1.2)
+    panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit))
     pixels = capture(figure)
     plt.close(figure)
     return pixels
@@ -138,8 +138,8 @@ def wave_limit(events: core.Antivector, field: core.Bivector) -> np.ndarray:
     """One colour scale per case for a whole turn: the magnetic field times the distance from the
     orbit's centre, far from the orbit; the sharpest crests of a fast charge's beam saturate."""
     distance = np.linalg.norm(coordinates(events), axis=-1)      # [..., rows, columns]
-    far = np.where(distance > WAVE_ZONE, np.abs(magnetic_across(field) * distance), np.nan)
-    return np.nanpercentile(far, WAVE_PERCENTILE, axis=(-2, -1))                       # [...]
+    far = np.where(distance > wave_zone, np.abs(magnetic_across(field) * distance), np.nan)
+    return np.nanpercentile(far, wave_percentile, axis=(-2, -1))                       # [...]
 
 
 def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.ndarray) -> np.ndarray:
@@ -148,15 +148,15 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     a fast charge's narrow pulses and the field between them."""
     xy = coordinates(events)
     scaled = magnetic_across(field) * np.linalg.norm(xy, axis=-1) / limit[..., None, None]
-    return np.sign(scaled) * np.abs(scaled) ** WAVE_POWER
+    return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 
 def waves(events: core.Antivector, field: core.Bivector, charge: core.Antivector, limit: np.ndarray) -> np.ndarray:
     position = coordinates(charge)
-    figure = plt.figure(figsize=(5.6, 5.6), dpi=WAVE_DPI, layout="constrained")
+    figure = plt.figure(figsize=(5.6, 5.6), dpi=wave_dpi, layout="constrained")
     ax = figure.subplots()
     panel(ax, events, compressed_waves(events, field, limit), "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
-    ax.scatter(position[..., 0], position[..., 1], s=18, color=CHARGE_COLOUR, edgecolors="#0f172a", linewidths=0.8, zorder=3)
+    ax.scatter(position[..., 0], position[..., 1], s=18, color=charge_colour, edgecolors="#0f172a", linewidths=0.8, zorder=3)
     pixels = capture(figure)
     plt.close(figure)
     return pixels
@@ -176,5 +176,5 @@ def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antive
     result = plt.figure(figsize=(11, 11 / len(values) + 0.2), layout="constrained")
     for ax, value, position in zip(result.subplots(1, len(values), squeeze=False)[0], values, positions):
         panel(ax, events, value, "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
-        ax.scatter(*position, s=18, color=CHARGE_COLOUR, edgecolors="#0f172a", linewidths=0.8, zorder=3)
+        ax.scatter(*position, s=18, color=charge_colour, edgecolors="#0f172a", linewidths=0.8, zorder=3)
     return result

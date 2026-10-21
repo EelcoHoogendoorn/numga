@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
 
+from numga import stack
 from examples.animation import capture
 from examples.relativity.spinors import core
 
@@ -22,11 +23,17 @@ def plain_axes(ax: plt.Axes) -> None:
     ax.tick_params(color="0.75")
 
 
+def _read(directions: core.Antivector, *slices: str) -> np.ndarray:
+    """Directions read by pairing with the named slices, on the last axis."""
+    mv = directions.context.multivector
+    return (stack(tuple(getattr(mv, name) for name in slices)) & directions[..., None]).to_array()
+
+
 def animate_rotation(
-    spin: core.Vector, bright: core.Scalar, dark: core.Scalar,
+    spin: core.Antivector, bright: core.Scalar, dark: core.Scalar,
 ) -> list[np.ndarray]:
     """The spin direction beside two interference outputs against a fixed reference."""
-    directions = spin.cast(core.ga.subspace("x z")).kernel
+    directions = _read(spin, "x", "z")
     figure, (axis, ports) = plt.subplots(1, 2, figsize=(6.8, 3.2), dpi=85, layout="constrained")
     axis.add_patch(Circle((0, 0), 1, edgecolor="0.8", facecolor="none", linewidth=0.8))
     arrow = axis.quiver(0, 0, *directions[0], color=INK, angles="xy", scale_units="xy", scale=1, width=0.02)
@@ -52,13 +59,10 @@ def animate_rotation(
 
 
 def draw_chirality(
-    left: core.Vector, right: core.Vector, current: core.Vector,
+    left: core.Antivector, right: core.Antivector, current: core.Antivector,
 ) -> plt.Figure:
     """Two null currents and their timelike sum in the z–t plane."""
-    tips = np.stack([
-        vector.cast(core.ga.subspace("z t")).kernel
-        for vector in (left, right, current)
-    ])
+    tips = np.stack([_read(direction, "z", "t") for direction in (left, right, current)])
     extent = tips[:, 1].max() * 1.15
     figure, ax = plt.subplots(figsize=(5, 3), layout="constrained")
     ax.fill([-extent, 0, extent], [extent, 0, extent], color="0.97")

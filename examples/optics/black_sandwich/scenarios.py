@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.optics.black_sandwich.core import (
-    Direction, Field, OpticalMap, half_wave, mv, polarizer, through_pair, time,
+    Direction, Field, OpticalMap, field_along, half_wave, mv, polarizer, through_pair, time,
 )
 
 
@@ -24,8 +24,7 @@ def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap
     plate = half_wave(plate_axes)                                             # [frames] Field <- Field
     exit = polarizer(output_axis)                                             # [] Field <- Field
     sandwich = exit(plate(entrance))                                          # [frames] Field <- Field
-    # The field along the entrance axis, which pairs to one with the plane that axis sweeps in time.
-    incident = (input_axis & time).dual_inverse() * np.ones(n_frames)         # [frames] Field
+    incident = field_along(input_axis) * np.ones(n_frames)                    # [frames] Field
     fields = through_pair(entrance, plate, exit, incident)                    # [frames, stages] Field
     return fields, plate_axes, input_axis, output_axis, sandwich
 

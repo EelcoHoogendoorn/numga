@@ -25,8 +25,8 @@ Cut = ga.gatype.vector()
 Point = ga.gatype.antivector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-# The rays' time direction, which pairs to one with `mv.t`.
-time = mv.t.dual()                                                   # [] Point
+# The rays' time direction, which pairs to one with `mv.t`; the dual carries the minus of t's square.
+time = -mv.t.dual()                                                  # [] Point
 
 
 # --- math -----------------------------------------------------------------------------

@@ -6,8 +6,8 @@ from examples.electromagnetism.moving_charge import core, scenarios
 
 
 def test_maxwell_by_incidence_with_the_metric_in_the_vacuum():
-    moving = scenarios.charge(scenarios.TOP_RAPIDITY)
-    events = core.grid(scenarios.HALF_WIDTH, scenarios.HALF_HEIGHT, 15, 10)  # [rows, columns] Antivector
+    moving = scenarios.charge(scenarios.top_rapidity)
+    events = core.grid(scenarios.half_width, scenarios.half_height, 15, 10)  # [rows, columns] Antivector
 
     # The field's derivative vanishes.
     gradients = core.field_gradient(moving, events)
@@ -23,16 +23,16 @@ def test_maxwell_by_incidence_with_the_metric_in_the_vacuum():
     # The current is the Plummer density carried along the charge's time direction, and positive.
     at_rest = moving.boost << events
     separations = at_rest - (core.mv.t & at_rest) * core.time
-    softened = scenarios.CORE_RADIUS**2 - (separations | separations)
-    density = 3 * scenarios.CHARGE * scenarios.CORE_RADIUS**2 / (4 * np.pi) / (softened * softened * softened.square_root())
+    softened = scenarios.core_radius**2 + (separations | separations)
+    density = 3 * scenarios.strength * scenarios.core_radius**2 / (4 * np.pi) / (softened * softened * softened.square_root())
     current = core.current(gradients)
     np.testing.assert_allclose((current - density * (moving.boost >> core.time)).kernel, 0.0, atol=1e-9)
     assert np.all((core.mv.t & current).to_array() > 0)
 
 
 def test_the_circling_charge_is_seen_along_light_rays():
-    orbit = core.Orbit(scenarios.ORBIT_CHARGE, scenarios.ORBIT_RADIUS, scenarios.ORBIT_SPEEDS[-1])
-    events = core.grid(scenarios.ORBIT_HALF_WIDTH, scenarios.ORBIT_HALF_WIDTH, 12, 12) + core.time * 3.0
+    orbit = core.Orbit(scenarios.orbit_charge, scenarios.orbit_radius, scenarios.orbit_speeds[-1])
+    events = core.grid(scenarios.orbit_half_width, scenarios.orbit_half_width, 12, 12) + core.time * 3.0
 
     # The light from the charge at the retarded time reaches each event.
     position, _, _ = core.worldline(orbit, core.retarded(orbit, events))
@@ -41,3 +41,9 @@ def test_the_circling_charge_is_seen_along_light_rays():
     # The radiating potential keeps the Lorenz gauge.
     potentials = core.orbit_potential_gradient(orbit, events)
     np.testing.assert_allclose((core.Vector ^ potentials(core.Antivector).dual()).trace(1, 2).kernel, 0.0, atol=1e-12)
+    # Slow and far away, the circling charge has the field of a charge at rest, pointing away from it.
+    slow = core.Orbit(scenarios.orbit_charge, scenarios.orbit_radius, 1e-3)
+    distance = 29.0
+    far = (scenarios.orbit_radius + distance) * core.mv.x.dual()
+    outward = core.field(core.orbit_potential_gradient(slow, far)) & (core.mv.x.dual() & core.time)
+    np.testing.assert_allclose(outward.to_array(), scenarios.orbit_charge / (4 * np.pi * distance**2), rtol=1e-2)

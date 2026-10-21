@@ -37,7 +37,7 @@ N_GRID = 120
 def launch() -> tuple[core.Antivector, core.Antivector]:
     """The particles in the bottle's middle plane, each at its distance from the axis `[particles]`,
     moving at its angle to the axis, tilted from it sideways."""
-    direction = (mv.zy * (np.radians(PITCHES) / 2)).exp() >> axis            # [particles] Antivector
+    direction = (mv.zy * (-np.radians(PITCHES) / 2)).exp() >> axis           # [particles] Antivector
     return core.across * OFFSETS, (time + SPEED * direction) / np.sqrt(1 - SPEED**2)
 
 
@@ -68,10 +68,9 @@ def main() -> None:
     save_animation(images, "magnetic_bottle", DURATION_MS)
 
     # checks
-    # The Lorentz force is the dual of the field's turn of the velocity, with the sign the dual carries in
-    # spacetime, and the field keeps the speed.
+    # The Lorentz force is the dual of the field's turn of the velocity, and the field keeps the speed.
     magnetic = core.field(events, pieces, midpoints, CURRENT)                 # [steps, particles] Bivector
-    np.testing.assert_allclose((velocities.commutator(magnetic).dual() + (velocities & magnetic)).norm().to_array(),
+    np.testing.assert_allclose((velocities.commutator(magnetic).dual() - (velocities & magnetic)).norm().to_array(),
                                0, atol=1e-10)
     np.testing.assert_allclose((mv.t & velocities).to_array(), 1 / np.sqrt(1 - SPEED**2), atol=1e-11)
     # The particles inside the loss cone escape through the coils, those outside it stay between them;

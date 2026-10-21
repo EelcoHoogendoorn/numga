@@ -40,8 +40,8 @@ Rotor = ga.gatype.rotor()
 PotentialGradient = ga.gatype((Vector, Antivector))          # Vector <- Antivector
 FieldGradient = ga.gatype((Bivector, Antivector))            # Bivector <- Antivector
 # The retarded time: steps that always close in, by at least the orbit's speed each, then Newton's.
-SETTLE_STEPS = 6
-NEWTON_STEPS = 6
+n_settle_steps = 6
+n_newton_steps = 6
 
 # The vacuum: from a field to the excitation it causes.
 vacuum = Bivector.dual()                                     # Antibivector <- Bivector
@@ -101,13 +101,18 @@ def orbit_potential_gradient(orbit: Orbit, events: Antivector) -> PotentialGradi
     dilation = 1 / np.sqrt(1 - orbit.speed**2)
     velocity, acceleration = dilation * tangent, dilation**2 * bend          # [...] Antivector each
     ray = events - position                                                  # [...] Antivector
-    reach = ray | velocity                                                   # [...] Scalar
-    # A step moves the emission along the ray, which changes the velocity and the reach.
-    emission = (ray | Antivector) / reach                                    # [...] Scalar <- Antivector
-    reach_change = (velocity | Antivector) + ((ray | acceleration) - 1) * emission   # [...] Scalar <- Antivector
+    # The charge's own slice of space, which reads its velocity as one: minus the velocity's dual, as
+    # for the lab's `time`; and how the slice turns with the acceleration.
+    rest_slice, slice_change = -velocity.dual(), -acceleration.dual()      # [...] Vector each
+    # The ray's reach: its extent as the charge's own slice reads it.
+    reach = rest_slice & ray                                                 # [...] Scalar
+    # A step moves the emission along the ray by what the ray's slice, the light cone's tangent, reads of
+    # it; that changes the slice and the reach.
+    emission = (-ray.dual() & Antivector) / reach                            # [...] Scalar <- Antivector
+    reach_change = (rest_slice & Antivector) + ((slice_change & ray) - 1) * emission   # [...] Scalar <- Antivector
     weight = orbit.charge / (4 * np.pi) / reach                              # [...] Scalar
-    # The potential is the slice across the velocity, its dual, over the reach.
-    return -weight * (acceleration * emission - velocity * reach_change / reach).dual()   # [...] Vector <- Antivector
+    # As at rest, the potential is minus the charge's slice, here over the reach.
+    return -weight * (slice_change * emission - rest_slice * reach_change / reach)   # [...] Vector <- Antivector
 
 
 def worldline(orbit: Orbit, times: Scalar) -> tuple[Antivector, Antivector, Antivector]:
@@ -128,14 +133,14 @@ def retarded(orbit: Orbit, events: Antivector) -> Scalar:
         position, tangent, _ = worldline(orbit, times)                       # [...] Antivector each
         ray = events - position                                              # [...] Antivector
         across = ray - (mv.t & ray) * time                                   # [...] Antivector
-        distance = (-(across | across)).square_root()                        # [...] Scalar
-        return (mv.t & events) - times - distance, 1 + (across | tangent) / distance, distance
+        distance = (across | across).square_root()                           # [...] Scalar
+        return (mv.t & events) - times - distance, 1 - (across | tangent) / distance, distance
 
     times = mv.t & events                                                    # [...] Scalar
-    for _ in range(SETTLE_STEPS):
+    for _ in range(n_settle_steps):
         _, _, distance = light(times)
         times = (mv.t & events) - distance
-    for _ in range(NEWTON_STEPS):
+    for _ in range(n_newton_steps):
         shortfall, rate, _ = light(times)
         times = times + shortfall / rate
     return times
@@ -146,9 +151,9 @@ def _profile(charge: Charge, events: Antivector) -> tuple[Antivector, Scalar, Sc
     that weight's change per unit of `separation | step`."""
     at_rest = charge.boost << (events - charge.position)                     # [...] Antivector
     separations = at_rest - (mv.t & at_rest) * time                          # [...] Antivector
-    softened = charge.core_radius**2 - (separations | separations)           # [...] Scalar
+    softened = charge.core_radius**2 + (separations | separations)           # [...] Scalar
     weight = charge.charge / (4 * np.pi) / (softened * softened.square_root())   # [...] Scalar
-    return separations, weight, 3 * weight / softened
+    return separations, weight, -3 * weight / softened
 
 
 # --- plumbing -------------------------------------------------------------------------

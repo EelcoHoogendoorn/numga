@@ -6,7 +6,7 @@ import pytest
 
 from examples.relativity.curvature import render, scenarios
 from examples.relativity.curvature.core import (
-    Antibivector, Antivector, curvature_of_strain, integrate_acceleration, mv, polarizations, polarized,
+    Antibivector, Antivector, Strain, curvature_of_strain, integrate_acceleration, mv, polarizations, polarized,
     strain_patterns, tidal_map, time_direction, travel, wave_packet, wave_vector,
 )
 
@@ -46,7 +46,8 @@ def test_pair_symmetry_bianchi_identity_and_vacuum():
     # Vacuum: every observer's tides stretch as much as they squeeze.
     for rapidity, direction in ((0.0, mv.x.dual()), (0.4, mv.y.dual()), (-0.8, mv.z.dual())):
         observer = ((direction & time_direction).dual() * (rapidity / 2)).exp() >> time_direction
-        accelerations = -tidal_map(curvature, observer).dual()
+        # The tidal accelerations are transverse; a square map for their eigenvalues.
+        accelerations = (-tidal_map(curvature, observer).dual()).cast(Strain)
         np.testing.assert_allclose(accelerations.eigvals().to_array().real.sum(), 0, atol=1e-12)
 
 
@@ -58,7 +59,7 @@ def test_observer_sees_opposite_transverse_tides_and_doppler_scaling():
         # A chasing observer sees the wave's frequency redshifted; the curvature takes the observer twice,
         # so the tidal amplitude scales with the frequency squared.
         amplitude = np.exp(-2 * rapidity)
-        np.testing.assert_allclose(np.sort((-response.dual()).eigvals().to_array().real),
+        np.testing.assert_allclose(np.sort((-response.dual()).cast(Strain).eigvals().to_array().real),
                                    [-amplitude, 0, 0, amplitude], atol=1e-13)
         np.testing.assert_allclose(response(observer).kernel, 0, atol=1e-13)
         np.testing.assert_allclose(response(travel).kernel, 0, atol=1e-13)

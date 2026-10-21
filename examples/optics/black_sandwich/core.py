@@ -21,16 +21,22 @@ Field = ga.gatype.bivector()
 Direction = ga.gatype.antivector()
 OpticalMap = ga.gatype((Field, Field))
 
-# The direction in time of an observer at rest with the apparatus.
-time = mv.t.dual()
+# The direction in time of an observer at rest with the apparatus, which pairs to one with `mv.t`; the
+# dual carries the minus of t's square.
+time = -mv.t.dual()
 
 
 # --- math
+def field_along(axis: Direction) -> Field:
+    """The unit field along an axis: the one that pairs to one with the plane the axis sweeps in time."""
+    sweep = axis & time                                                    # [...] Antibivector
+    field = sweep.dual_inverse()                                           # [...] Field
+    return field / (field & sweep)
+
+
 def polarizer(axis: Direction) -> OpticalMap:
     """Transmit the field's component along a unit axis."""
-    # The plane the axis sweeps in time, and the field that pairs with it to one.
-    sweep = axis & time                                                    # [...] Antibivector
-    return sweep.dual_inverse() * (Field & sweep)                          # [...] Field <- Field
+    return field_along(axis) * (Field & (axis & time))                     # [...] Field <- Field
 
 
 def half_wave(fast_axis: Direction) -> OpticalMap:

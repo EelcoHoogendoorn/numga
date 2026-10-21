@@ -50,7 +50,7 @@ def media() -> core.Constitutive:
 def moving(medium: core.Constitutive, fractions: np.ndarray) -> core.Constitutive:
     """The medium seen moving along z at each fraction of the speed of light: its rest map carried by the
     boost."""
-    boosts = ((z ^ t) * (np.arctanh(fractions) / 2)).exp()                    # [...] Rotor
+    boosts = ((t ^ z) * (np.arctanh(fractions) / 2)).exp()                    # [...] Rotor
     return boosts >> medium(boosts << Bivector)                                # [...] Constitutive
 
 
@@ -89,8 +89,8 @@ def headings() -> tuple[np.ndarray, core.Scalar, np.ndarray]:
     crystal and the glass in motion `[speeds, headings, media]`, and the speeds."""
     angles = np.linspace(0, 2 * np.pi, n_headings)
     speeds = np.linspace(*heading_speed_range, n_heading_speeds)
-    # z turned towards x by each angle; x and z square to minus one, which turns the sense.
-    directions = (mv.zx * (angles / 2)).exp() >> z                            # [headings] Vector
+    # z turned towards x by each angle.
+    directions = (mv.zx * (-angles / 2)).exp() >> z                           # [headings] Vector
     glass, crystal, _ = media()
     cases = stack([glass, crystal, moving(glass, np.array(glass_speed))])    # [media] Constitutive
     wavevectors = speeds[:, None] * t + directions                            # [speeds, headings] Vector

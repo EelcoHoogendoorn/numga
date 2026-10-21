@@ -63,12 +63,16 @@ def test_exact_commutator_and_regressive_sign_conventions():
     assert xy_commutator.kernel.values.tolist() == [[[Fraction(1)]]]
     assert yx_commutator.kernel.values.tolist() == [[[Fraction(-1)]]]
 
-    # This fixes the right-Hodge signs in a signature containing both a
-    # negative generator and a null generator.
-    # xw and yw are points of the plane, joined into the line w.
+    # xw and yw are points of the plane, joined into the line w. The regressive product needs no
+    # metric, so a negative and a null generator leave its sign as in x+y+w0: xw ^ yw's complements
+    # are -y and x, whose outer product xy completes w to the volume xyw.
     regressive = algebra.gatype(xw, orientation=Orientation.intrinsic).regressive(algebra.gatype(yw, orientation=Orientation.intrinsic))
+    euclidean = Algebra("x+y+w0")
+    reference = euclidean.gatype(euclidean.subspace.from_masks((euclidean.parse_blade("xw").mask,)), orientation=Orientation.intrinsic).regressive(
+        euclidean.gatype(euclidean.subspace.from_masks((euclidean.parse_blade("yw").mask,)), orientation=Orientation.intrinsic))
     assert regressive.axes == (w, xw, yw)
-    assert regressive.kernel.values.tolist() == [[[Fraction(-1)]]]
+    assert regressive.kernel.values.tolist() == [[[Fraction(1)]]]
+    assert reference.kernel.values.tolist() == regressive.kernel.values.tolist()
 
     # A SubSpace has no orientation and is refused as an operand.
     with pytest.raises(TypeError):

@@ -1,16 +1,17 @@
 """The Dirac electron in the spacetime algebra.
 
 An electron's state at a point is an even multivector,
-`psi = (PSEUDOSCALAR * (beta / 2)).exp() * rotor * np.sqrt(density)`: a density, an angle beta and a
+`psi = (pseudoscalar * (beta / 2)).exp() * rotor * np.sqrt(density)`: a density, an angle beta and a
 Lorentz rotor. Sandwiching a vector with psi applies that rotor and scales by the density, so
 `psi >> Vector` is a map on spacetime: it carries the observer's frame to the electron's.
-Its image of the time axis is the electron's current, and its image of the z axis is its spin.
+Its image of the observer's direction in time is the electron's current, and its image of the z
+direction is its spin.
 beta does not act on vectors at all. It acts on bivectors, where the spinor's own sandwich differs
-from what its vector map extends to by the factor `(PSEUDOSCALAR * beta).exp() / density`.
+from what its vector map extends to by the factor `(pseudoscalar * beta).exp() / density`.
 
 For a plane wave the Dirac equation becomes a linear map on even multivectors, the Hamiltonian.
 Its eigenvalues are plus and minus the energy, each fourfold. Right multiplication by the spin plane
-`SPIN_PLANE` is a map that squares to minus one and commutes with the Hamiltonian. Positive-energy
+`spin_plane` is a map that squares to minus one and commutes with the Hamiltonian. Positive-energy
 states have `beta == 0` and negative-energy states `beta == np.pi`. A mixture of the two makes the
 current circulate at twice the energy: the trembling motion, Zitterbewegung.
 
@@ -37,22 +38,25 @@ Even = ga.gatype.even()
 Spinor = Even
 # The spinor's map on spacetime.
 Frame = ga.gatype((Vector, Vector))                 # Vector <- Vector
+# Currents, spins and positions are directions in spacetime, antivectors.
+Antivector = ga.gatype.antivector()
 # Vectors in the observer's space, perpendicular to the time axis.
 Spatial = Vector.derive.within("x y z")
 # The plane-wave Dirac equation.
 Hamiltonian = ga.gatype((Even, Even))               # Even <- Even
-# The observer's time axis.
-TIME = mv.t                                         # [] Vector
-# The unit pseudoscalar, `mv.t ^ mv.x ^ mv.y ^ mv.z`.
-PSEUDOSCALAR = mv.txyz                              # [] Pseudoscalar
-# The spin plane `mv.y ^ mv.x`: right multiplication by it squares to minus one.
-SPIN_PLANE = mv.yx                                  # [] Bivector
+# The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
+# t's square.
+time = -mv.t.dual()                                 # [] Antivector
+# The unit volume.
+pseudoscalar = mv.xyzt                              # [] Pseudoscalar
+# The spin plane `mv.x ^ mv.y`: right multiplication by it squares to minus one.
+spin_plane = mv.xy                                  # [] Bivector
 
 
 # --- math -----------------------------------------------------------------------------
 def spinor(density: float, beta: float, rotor: Even) -> Spinor:
     """The spinor with the given density, angle beta and Lorentz rotor."""
-    return (PSEUDOSCALAR * (beta / 2)).exp() * rotor * np.sqrt(density)
+    return (pseudoscalar * (beta / 2)).exp() * rotor * np.sqrt(density)
 
 
 def frame(psi: Spinor) -> Frame:
@@ -62,44 +66,48 @@ def frame(psi: Spinor) -> Frame:
 
 
 def invariants(psi: Spinor) -> Even:
-    """psi times its reverse: `(PSEUDOSCALAR * beta).exp() * density`, a scalar plus a pseudoscalar."""
+    """psi times its reverse: `(pseudoscalar * beta).exp() * density`, a scalar plus a pseudoscalar."""
     return psi.symmetric_reverse_product()
 
 
 def duality(psi: Spinor):
     """What the spinor does to bivectors beyond what its frame does: its own sandwich on bivectors,
     composed with the inverse of the frame's extension to bivectors. It is multiplication by
-    `(PSEUDOSCALAR * beta).exp() / density`."""
+    `(pseudoscalar * beta).exp() / density`."""
     return (psi >> Bivector)(frame(psi).outermorphism(Bivector).inverse())
 
 
-def current(psi: Spinor) -> Vector:
-    """The electron's current: the frame's image of the time axis."""
-    return psi >> TIME
+def current(psi: Spinor) -> Antivector:
+    """The electron's current: the observer's direction in time, carried by the spinor."""
+    return psi >> time
 
 
-def spin(psi: Spinor) -> Vector:
-    """The electron's spin, in units of half the reduced Planck constant: the frame's image of the z axis."""
-    return psi >> mv.z
+def spin(psi: Spinor) -> Antivector:
+    """The electron's spin, in units of half the reduced Planck constant: the z direction, carried by the spinor."""
+    return psi >> mv.z.dual()
 
 
-def velocity(flow: Vector) -> Bivector:
-    """The velocity a current carries, as seen by the observer: its relative vector, the part
-    across the time axis, over its density, the part along it."""
-    return (flow ^ TIME) / (flow | TIME)
+def density(flow: Antivector) -> Scalar:
+    """The charge a current carries through the observer's slice of space."""
+    return mv.t & flow
+
+
+def velocity(flow: Antivector) -> Antivector:
+    """The velocity a current carries, as seen by the observer: the direction it advances per unit of
+    the observer's time, less that time direction itself, a direction within the slice."""
+    return flow / density(flow) - time
 
 
 def hamiltonian(momentum: Vector, mass: float) -> Hamiltonian:
     """The Dirac equation for a plane wave of the given spatial momentum, as a map on spinors:
     the momentum as a relative vector on the left, and the mass through the reflection in the
-    time axis."""
-    return (momentum * TIME) * Even + mass * (TIME * Even * TIME)
+    observer's slice."""
+    return (momentum * mv.t) * Even + mass * (mv.t * Even * mv.t.inverse())
 
 
 def energy(momentum: Vector, mass: float) -> Scalar:
-    """The energy of the plane wave: the root of the mass squared plus the momentum squared. A
-    spatial vector squares to minus its length squared in this signature."""
-    return (mass**2 - (momentum | momentum)).square_root()
+    """The energy of the plane wave: the root of the mass squared plus the momentum squared."""
+    return (mass**2 + (momentum | momentum)).square_root()
 
 
 def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spinor:
@@ -111,11 +119,11 @@ def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spi
     """
     E = energy(momentum, mass)
     positive = 0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)
-    turn = (SPIN_PLANE * E * times).exp()                                   # [times] Rotor
+    turn = (spin_plane * E * times).exp()                                   # [times] Rotor
     return positive * turn.reverse() + (psi - positive) * turn
 
 
-def path(velocities: Bivector, dt: float) -> Bivector:
+def path(velocities: Antivector, dt: float) -> Antivector:
     """The positions a velocity carries a point through, from the origin, one step at a time along the
     last axis."""
     return concatenate([velocities[..., :1] * 0.0, (velocities[..., :-1] * dt).cumsum(axis=-1)], axis=-1)

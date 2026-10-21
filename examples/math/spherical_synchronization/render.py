@@ -90,11 +90,9 @@ def update(lines: LineCollection, particles: tuple[PathCollection, PathCollectio
 
 
 def coordinates(points: Point) -> np.ndarray:
-    """Positions of directions on the last axis: each paired with the planes across x, y and z. In this
-    signature the pairing of a plane with its own direction is minus one, the sign of the metric's
-    determinant, which the minus restores."""
+    """Positions of directions on the last axis: each paired with the planes across x, y and z."""
     planes = points.context.multivector
-    return -(stack((planes.x, planes.y, planes.z), axis=-1) & points[..., None]).to_array()
+    return (stack((planes.x, planes.y, planes.z), axis=-1) & points[..., None]).to_array()
 
 
 def draw(population: Point, circles: Cut) -> plt.Figure:

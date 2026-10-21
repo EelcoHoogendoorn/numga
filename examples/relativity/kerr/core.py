@@ -59,8 +59,8 @@ def field(position: Antivector, spin: Spin, mass: float) -> Field:
     volume = spatial.anticommutator(spin)                                                   # [...] Vector
     height = volume ^ spin                                                                  # [...] Antivector
     spin_squared = -spin.squared()                                                          # [...] Scalar
-    offset = -spatial.squared() - spin_squared                                              # [...] Scalar
-    discriminant = (offset.squared() + 4 * volume.squared()).square_root()                  # [...] Scalar
+    offset = spatial.squared() - spin_squared                                               # [...] Scalar
+    discriminant = (offset.squared() - 4 * volume.squared()).square_root()                  # [...] Scalar
     radius_squared = (offset + discriminant) / 2                                            # [...] Scalar
     radius = radius_squared.square_root()                                                   # [...] Scalar
     # Paired with a small step, how far the step changes the oblate radius.
@@ -72,21 +72,21 @@ def field(position: Antivector, spin: Spin, mass: float) -> Field:
         + radius * space + space.commutator(spin)
         - (space.anticommutator(spin) ^ spin) / radius
     ) / (radius_squared + spin_squared)                                                     # [...] Antivector <- Antivector
-    denominator = radius_squared.squared() + volume.squared()                               # [...] Scalar
+    denominator = radius_squared.squared() - volume.squared()                               # [...] Scalar
     profile = mass * radius**3 / denominator                                                # [...] Scalar
     profile_gradient = profile * (3 * radius_gradient / radius
         - (4 * radius**3 * radius_gradient - 2 * height.dual()) / denominator)              # [...] Vector
     # The curl of the null covector, `-(Vector ^ null_gradient(Antivector).dual()).trace(1, 2)`, piece by
     # piece: the rank-one piece gives its two covectors wedged, the turn by the spin twice the spin, the
     # rest none.
-    null_curl = ((radius_gradient ^ lever.dual()) - 2 * spin) / (radius_squared + spin_squared)   # [...] Bivector
+    null_curl = ((radius_gradient ^ lever.dual()) + 2 * spin) / (radius_squared + spin_squared)   # [...] Bivector
     return Field(radius, profile, time - direction, profile_gradient, -direction_gradient, null_curl)  # [...] Field
 
 
 def metric(geometry: Field) -> Metric:
     """The flat metric, minus the dual, less the null dyad: a direction to its covector."""
     null = -geometry.null.dual()                                                            # [...] Vector
-    return -Antivector.dual() - 2 * geometry.profile * null * (geometry.null | Antivector)  # [...] Vector <- Antivector
+    return -Antivector.dual() + 2 * geometry.profile * null * (geometry.null | Antivector)  # [...] Vector <- Antivector
 
 
 def inverse_metric(geometry: Field) -> InverseMetric:
@@ -100,9 +100,8 @@ def local(geometry: Field, momentum: Vector) -> Antivector:
 
 
 def interval(geometry: Field, direction: Antivector) -> Scalar:
-    """The metric's square of a direction: the flat square, less twice the profile times the square of
-    its pairing with the null covector."""
-    return direction.squared() - 2 * geometry.profile * (geometry.null | direction).squared()   # [...] Scalar
+    """The metric's square of a direction: the direction paired with its covector."""
+    return metric(geometry)(direction) & direction                                          # [...] Scalar
 
 
 def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
@@ -138,10 +137,10 @@ def camera_rates(position: Antivector, momentum: Vector, spin: Spin, mass: float
 def connection(geometry: Field, direction: Antivector) -> Bivector:
     """The plane the local Kerr–Schild frame turns or boosts in, per unit step along a direction."""
     null = -geometry.null.dual()                                                            # [...] Vector
-    along = geometry.null | direction                                                       # [...] Scalar
+    along = -(geometry.null | direction)                                                    # [...] Scalar
     # The gradient of profile * along.
     turning = geometry.profile_gradient * along + geometry.profile * overlap_gradient(geometry, -direction.dual())  # [...] Vector
-    return (turning ^ null) + geometry.profile * geometry.null_curl * along                 # [...] Bivector
+    return -(turning ^ null) - geometry.profile * geometry.null_curl * along                # [...] Bivector
 
 
 def polarized_rates(position: Antivector, momentum: Vector, screen: ScreenFrame,
@@ -167,14 +166,14 @@ def disk_coherency(position: Antivector, momentum: Vector, screen: ScreenFrame,
     electric = meridian.commutator(direction) / meridian.norm()                             # [...] Antivector
     polarization = screen.adjoint()(electric)                                               # [...] Screen
     # Polarization vanishes smoothly when looking along the magnetic direction.
-    polarized_fraction = -polarization_degree * polarization.squared()                      # [...] Scalar
+    polarized_fraction = polarization_degree * polarization.squared()                       # [...] Scalar
     return ((1 - polarized_fraction) / 2 * Screen
-            - polarization_degree * polarization * (polarization | Screen))                 # [...] Screen <- Screen
+            + polarization_degree * polarization * (polarization | Screen))                 # [...] Screen <- Screen
 
 
 def transmitted(coherency: Coherency, analyzers: Screen) -> Scalar:
     """The power each unit analyzer passes: its quadratic readout of the coherency."""
-    return -(analyzers | coherency(analyzers))                                              # [...] Scalar
+    return analyzers | coherency(analyzers)                                                 # [...] Scalar
 
 
 def frequency_ratio(position: Antivector, momentum: Vector, camera: Antivector, orbit: Bivector,
@@ -394,7 +393,7 @@ def initial_momentum(position: Antivector, direction: Antivector, spin: Spin, ma
     local_null = time + direction                                                           # [...] Antivector
     # The null dyad squares to zero, so undoing the frame just changes its sign.
     null = -geometry.null.dual()                                                            # [...] Vector
-    momentum = -local_null.dual() - geometry.profile * null * (geometry.null | local_null)  # [...] Vector
+    momentum = -local_null.dual() + geometry.profile * null * (geometry.null | local_null)  # [...] Vector
     return momentum / (momentum & time)                                                     # [...] Vector
 
 
@@ -423,7 +422,7 @@ def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_hei
     vertical = (1 - (np.arange(pixel_height) + 0.5) / pixel_height * 2) * half_view
     x, y, z = mv.x.dual(), mv.y.dual(), mv.z.dual()
     direction = orientation >> (-z + y * horizontal[None, :] - x * vertical[:, None])
-    direction = direction / (-direction.squared()).square_root()
+    direction = direction / direction.squared().square_root()
     momentum = -initial_momentum(eye, -direction, spin, mass)
     momentum = momentum.reshape(-1)
     return eye.broadcast_to(momentum.shape), momentum
@@ -435,13 +434,13 @@ def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
     heading = local(field(position, spin, mass), momentum)                                  # [...] Antivector
     direction = space(heading) / -(mv.t & heading)                                          # [...] Antivector
     # The camera's own right and up, local +y and -x, each less its parts along the directions before
-    # it; every direction here is a unit of space, squaring to minus one.
+    # it; every direction here is a unit of space, squaring to one.
     right = orientation >> mv.y.dual()
-    right = right + direction * (direction | right)
-    right = right / (-right.squared()).square_root()
+    right = right - direction * (direction | right)
+    right = right / right.squared().square_root()
     up = orientation >> -mv.x.dual()
-    up = up + direction * (direction | up) + right * (right | up)
-    up = up / (-up.squared()).square_root()
+    up = up - direction * (direction | up) - right * (right | up)
+    up = up / up.squared().square_root()
     # A screen direction is read by pairing with the camera's slices x and y.
     return right * (mv.x & Screen) + up * (mv.y & Screen)                                   # [...] Antivector <- Screen
 

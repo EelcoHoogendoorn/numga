@@ -47,7 +47,7 @@ def test_null_congruence_and_exact_inverse_metric():
 
     # With zero spin the profile is the mass divided by ordinary spatial distance.
     schwarzschild = core.field(positions, 0 * spin, mass)
-    radius = (-core.space(positions).squared()).square_root()
+    radius = core.space(positions).squared().square_root()
     np.testing.assert_allclose((schwarzschild.radius - radius).kernel,
                                0, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((schwarzschild.profile - mass / radius).kernel,
@@ -149,8 +149,8 @@ def test_camera_and_disk_geometry_rotate_with_the_black_hole():
     assert np.all((mv.t & tangent).kernel < 0)
     center = (pixel_width * pixel_height) // 2
     heading = core.space(core.local(core.field(position[center], spin, mass), momentum[center]))
-    center_direction = heading / (-heading.squared()).square_root()
-    toward_hole = -eye / (-eye.squared()).square_root()
+    center_direction = heading / heading.squared().square_root()
+    toward_hole = -eye / eye.squared().square_root()
     np.testing.assert_allclose((center_direction - toward_hole).kernel,
                                0, atol=ROUND_OFF, rtol=0)
 
@@ -171,7 +171,7 @@ def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
     eye = 25 * X
     slopes = np.array([0.14, 0.18, 0.20, 0.28])
     direction = -X + Y * slopes
-    direction = direction / (-direction.squared()).square_root()
+    direction = direction / direction.squared().square_root()
     momentum = -core.initial_momentum(eye, -direction, spin, mass)
     position = eye.broadcast_to(momentum.shape)
 
@@ -233,7 +233,7 @@ def test_connection_matches_directional_metric_variation():
     behind = core.field(position - increment * DIRECTIONS, spin, mass)
 
     def dyad(geometry):
-        return geometry.profile * geometry.null * (geometry.null | core.Antivector)
+        return -geometry.profile * geometry.null * (geometry.null | core.Antivector)
 
     def metric(geometry):
         return (core.metric(geometry)[..., None, None](DIRECTIONS[None, :]) & DIRECTIONS[:, None]).to_array()

@@ -43,16 +43,16 @@ def angular(wavelengths: np.ndarray, angles: np.ndarray, reflectance: core.Scala
     return figure
 
 
-def field(depths: np.ndarray, electric: core.Vector) -> plt.Figure:
-    """The signed electric x component, `[cases, layers, samples]` at the depths `[layers, samples]`,
-    over two optical cycles."""
+def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
+    """The signed electric x component of the fields, its plane `xt`, `[cases, layers, samples]` at the
+    depths `[layers, samples]`, over two optical cycles."""
     cycles = 2
     samples_per_cycle = 80
     times = np.linspace(0, cycles, cycles * samples_per_cycle + 1)
     phase = 2 * np.pi * times
     depths = depths.reshape(-1)
-    in_phase = electric.real().cast(electric.algebra.subspace("x")).kernel[..., 0].reshape(electric.shape[0], -1)
-    quadrature = (-1j * electric).real().cast(electric.algebra.subspace("x")).kernel[..., 0].reshape(electric.shape[0], -1)
+    in_phase = fields.real().cast(fields.algebra.subspace("xt")).kernel[..., 0].reshape(fields.shape[0], -1)
+    quadrature = (-1j * fields).real().cast(fields.algebra.subspace("xt")).kernel[..., 0].reshape(fields.shape[0], -1)
     waves = (in_phase[:, None, :] * np.cos(phase)[None, :, None]
              - quadrature[:, None, :] * np.sin(phase)[None, :, None])
     limit = np.max(np.abs(waves))

@@ -50,18 +50,18 @@ def boost(direction: Antivector, rapidity: np.ndarray) -> Rotor:
 
 def rest_boost(velocity: Antivector) -> Rotor:
     """The pure boost carrying the lab's time direction to `velocity`."""
-    return (velocity * time).square_root()                                      # [...] Rotor
+    return (velocity * time.inverse()).square_root()                            # [...] Rotor
 
 
 def lab_view(velocity: Antivector, spin: Bivector) -> Bivector:
     """A spin of the frame moving at `velocity`, as the observer at rest reads it: after the pure
     boost back to rest."""
-    return (time * velocity).square_root() >> spin                              # [...] Bivector
+    return (time * velocity.inverse()).square_root() >> spin                    # [...] Bivector
 
 
 def transport(tail: Antivector, head: Antivector) -> Rotor:
     """The pure boost from velocity `tail` to velocity `head`, in their plane."""
-    return (head * tail).square_root()                                          # [...] Rotor
+    return (head * tail.inverse()).square_root()                                # [...] Rotor
 
 
 def geodesic(tail: Antivector, head: Antivector, fractions: np.ndarray) -> Antivector:
@@ -71,7 +71,7 @@ def geodesic(tail: Antivector, head: Antivector, fractions: np.ndarray) -> Antiv
 
 def on_hyperboloid(spatial: Antivector) -> Antivector:
     """The velocity whose spatial part is `spatial`: the unit direction in time above it."""
-    return spatial + time * (1 - spatial.squared()).square_root()               # [...] Antivector
+    return spatial + time * (1 + spatial.squared()).square_root()               # [...] Antivector
 
 
 def carried(velocities: Antivector, spin: Bivector) -> Iterator[Bivector]:
@@ -96,9 +96,8 @@ def ring_field(event: Antivector, magnetic: float, electric: np.ndarray) -> Bive
     """A storage ring's field at an event: a uniform magnetic field in the orbit's plane, and an
     electric field of strength `electric` pointing away from the ring's axis."""
     position = event - (mv.t & event) * time                                    # [...] Antivector
-    # Directions of space square to minus their length squared.
-    outward = position / (-position.squared()).square_root()                    # [...] Antivector
-    return magnetic * mv.xy + electric * (outward & time).dual()               # [...] Bivector
+    outward = position / position.squared().square_root()                      # [...] Antivector
+    return magnetic * mv.yx + electric * (outward & time).dual()               # [...] Bivector
 
 
 def bmt_step(event: Antivector, frame: Rotor, magnetic: float, electric: np.ndarray, anomaly: float,
@@ -130,9 +129,9 @@ def anomalous_angle(velocity: Antivector, spin: Bivector) -> Scalar:
     """The angle in the orbit's plane from the plane a spin along the momentum turns in to the spin, as
     the observer at rest reads both."""
     motion = velocity - (mv.t & velocity) * time                                # [...] Antivector
-    direction = motion / (-motion.squared()).square_root()                      # [...] Antivector
+    direction = motion / motion.squared().square_root()                         # [...] Antivector
     # A spin along the momentum turns in the plane of the direction turned a quarter turn in the orbit's
     # plane and the orbit's normal.
     along = mv.z ^ direction.commutator(mv.xy).dual()                          # [...] Bivector
     # The product of two such planes is the rotor through their angle.
-    return (lab_view(velocity, spin) * along.inverse()).log().scalar_product(mv.yx)   # [...] Scalar
+    return (lab_view(velocity, spin) * along.inverse()).log().scalar_product(mv.xy)   # [...] Scalar

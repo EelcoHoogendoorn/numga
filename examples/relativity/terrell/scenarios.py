@@ -40,10 +40,10 @@ def cube() -> tuple[core.Antivector, core.Antivector]:
     normal `[6]`."""
     # One edge of the top face, turned by quarter turns about the vertical into the face's boundary.
     edge = up + travel + line_of_sight * np.linspace(-1, 1, N_EDGE, endpoint=False)  # [edge] Antivector
-    square = (mv.xy * (np.arange(4)[:, None] * np.pi / 4)).exp() >> edge      # [4, edge] Antivector
+    square = (mv.xy * (-np.arange(4)[:, None] * np.pi / 4)).exp() >> edge     # [4, edge] Antivector
     # The top face turned onto each face: itself, upside down, and by quarter turns towards the four sides.
-    turns = (mv.zx * (np.array([0, 2, 1, -1, 0, 0]) * np.pi / 4)
-             + mv.yz * (np.array([0, 0, 0, 0, 1, -1]) * np.pi / 4)).exp()      # [6] Rotor
+    turns = (mv.zx * (-np.array([0, 2, 1, -1, 0, 0]) * np.pi / 4)
+             + mv.yz * (-np.array([0, 0, 0, 0, 1, -1]) * np.pi / 4)).exp()     # [6] Rotor
     boundary = turns[:, None] >> square.reshape(4 * N_EDGE)                    # [6, 4 * edge] Antivector
     return -HEIGHT * up + HALF_WIDTH * boundary, turns >> up
 
@@ -53,8 +53,8 @@ def globe() -> core.Antivector:
     latitudes = np.linspace(-np.pi / 2, np.pi / 2, N_GRID)
     longitudes = np.linspace(0, 2 * np.pi, N_GRID)
     # A direction at a latitude and a longitude: turned up out of the motion, then about the vertical.
-    meridians = (mv.xy * (LONGITUDES[:, None] / 2)).exp() >> ((mv.zx * (-latitudes / 2)).exp() >> travel)
-    parallels = (mv.xy * (longitudes / 2)).exp() >> ((mv.zx * (-LATITUDES[:, None] / 2)).exp() >> travel)
+    meridians = (mv.xy * (-LONGITUDES[:, None] / 2)).exp() >> ((mv.zx * (latitudes / 2)).exp() >> travel)
+    parallels = (mv.xy * (-longitudes / 2)).exp() >> ((mv.zx * (LATITUDES[:, None] / 2)).exp() >> travel)
     return HEIGHT * up + RADIUS * concatenate([meridians, parallels])          # [lines, grid] Antivector
 
 
@@ -91,7 +91,7 @@ def main() -> None:
     # speed's fraction of the distance: turned by the arcsine of the speed.
     frame = core.boost(SPEEDS)                                                 # [cases] Rotor
     camera = core.rest_camera(frame, core.sighting(DISTANCE, np.pi / 2))      # [cases] Antivector
-    leaning = (mv.x & camera) / (-camera.squared()).square_root()             # [cases] Scalar
+    leaning = (mv.x & camera) / camera.squared().square_root()                # [cases] Scalar
     np.testing.assert_allclose(leaning.to_array(), -SPEEDS, atol=1e-12)
     # The sphere's outline is a circle on the sky in every frame: its rays lie in one hyperplane through
     # the camera, so the join of any four of them vanishes.
