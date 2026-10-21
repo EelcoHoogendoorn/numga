@@ -1,33 +1,52 @@
-"""Tests for Constructive Solid Geometry quadric raytracing with WebGPU / Metal."""
+"""Solids bounded by quadrics, their placement, and the GPU trace of them."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
-from examples.quadrics.csg_raytracer import core, render, scenarios
+from examples.quadrics.csg_raytracer import core, scenarios
 
-
-def test_hyperboloid_ruling_lines_lie_on_surface():
-    """Points along the ruling lines p(theta) + t * v(theta) evaluate identically to zero on the quadric."""
-    a, c = 0.55, 0.85
-    throat, v_plus, v_minus = core.ruling_lines([a, a, c], 8)
-    hyp = core.hyperboloid([a, a, c])
-
-    for t in [-2.0, -0.5, 0.0, 1.2]:
-        pts = throat + v_plus * t
-        np.testing.assert_allclose(core.evaluate(hyp, pts).to_array(), 0.0, atol=1e-7)
+mv = core.mv
+ROUND_OFF = 1e-12
 
 
-def test_csg_scene_renders_figure_and_frames():
-    """The GPU CSG raytracer renders a Figure and animation frames offscreen."""
-    scene = scenarios.make_scene()
-    fig = render.draw_scene(scene, scenarios.PRIMARY_CAM, scenarios.TARGET, 160, 160)
-    assert isinstance(fig, plt.Figure)
-    plt.close(fig)
+def test_hyperboloid_rulings_lie_in_its_surface():
+    waist, rising, falling = core.ruling_lines(scenarios.waist_axes, 8)
+    reach = np.linspace(-2, 2, 5)[:, None]
+    for direction in (rising, falling):
+        np.testing.assert_allclose(core.evaluate(core.hyperboloid(scenarios.waist_axes), waist + direction * reach).kernel,
+                                   0, atol=ROUND_OFF)
 
-    cam_orbit = scenarios.orbit_cameras(4)
-    anim_frames = render.frames(scene, cam_orbit, scenarios.TARGET, 120, 120)
-    assert len(anim_frames) == 4
-    assert anim_frames[0].shape == (120, 120, 3)
-    assert anim_frames[0].dtype == np.uint8
+
+def test_placed_quadrics_and_half_spaces_follow_their_motor():
+    motor = core.translator(mv.direction([1.0, -2.0, 0.5])) * (mv.xz * -0.3).exp()
+    ball = core.ellipsoid(np.array([0.5, 0.7, 0.9]))
+    floor = core.half_space(mv.z)
+    points = mv.point([[0.5, 0, 0], [0, 0.7, 0], [0, 0, -2], [0.1, 0.2, 0.3]])
+    np.testing.assert_allclose(core.evaluate(core.placed(ball, motor), motor >> points).kernel,
+                               core.evaluate(ball, points).kernel, atol=ROUND_OFF)
+    np.testing.assert_allclose(core.evaluate(core.placed(floor, motor), motor >> points).kernel,
+                               core.evaluate(floor, points).kernel, atol=ROUND_OFF)
+    # The half-space is negative below its plane, by the height times the weight.
+    np.testing.assert_allclose(core.evaluate(floor, points).kernel[..., 0], [0, 0, -2, 0.3], atol=ROUND_OFF)
+
+
+def test_orbit_cameras_look_at_the_target():
+    cameras = scenarios.orbit(6)
+    eyes = cameras >> core.origin
+    looks = cameras >> -mv.z.dual()
+    np.testing.assert_allclose((eyes + looks * scenarios.distance - scenarios.target).kernel, 0, atol=ROUND_OFF)
+
+
+def test_trace_shows_the_solids():
+    pytest.importorskip("wgpu")
+    from examples.quadrics.csg_raytracer import render
+
+    quadrics, solids = scenarios.solids()
+    frame, = render.frames(render.shader(), quadrics, solids, scenarios.orbit(1), scenarios.lamp,
+                           scenarios.half_view, (90, 144))
+    # The bowl's teal shows right of centre, and the floor's grey below everything.
+    right = frame[30:60, 90:130].reshape(-1, 3).astype(float)
+    assert np.any((right[:, 2] > right[:, 0] + 30))
+    assert np.all(np.abs(np.diff(frame[-1].astype(float), axis=-1)) < 12)

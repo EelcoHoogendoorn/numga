@@ -1,21 +1,79 @@
 """Drawing for developability: flat-shaded surfaces, each face lit by its own normal, so that the
-patches read as flat planes and the creases between them as sharp changes of shade."""
+patches read as flat planes and the creases between them as sharp changes of shade.
+
+The surface is rasterized on the GPU, by a shader whose geometry is written in numga: each corner
+reads its face's three vertices, lights the face by the normal its edges meet in, `(b - a) & (c - a)`,
+and places itself on the image by its pairings with the camera's own planes.
+"""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
+from functools import cache
+
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from examples.animation import capture
 from examples.surfaces.developability import core
+from examples.wgsl import Shader
 
-# The surface's colour, the light's direction and the share of light that falls everywhere, the views'
-# half extent, and the view as (elevation, azimuth) in degrees.
-SURFACE_COLOUR = np.array([0.90, 0.89, 0.86])
-LIGHT_DIRECTION, AMBIENT = np.array([-0.4, -0.7, 0.6]), 0.25
-REACH = 1.15
-ELEVATION, AZIMUTH = 24.0, -36.0
+# The surface's colour, the light's direction and the share of light that falls everywhere; the camera's
+# elevation and azimuth, its distance and half its view; the frames' size and background.
+surface_colour = np.array([0.90, 0.89, 0.86])
+light_direction, ambient = core.mv.antivector([-0.4, -0.7, 0.6]), 0.25
+elevation, azimuth = np.radians(24.0), np.radians(54.0)
+distance, half_view = 8.0, 0.17
+frame_shape = (480, 480)
+background = np.array([1.0, 1.0, 1.0])
+
+source = """
+var<storage, read> points: array<Point>;
+var<storage, read> faces: array<vec3<u32>>;
+var<uniform> turn: Rotor;
+var<uniform> eye: Point;
+var<uniform> lamp: Point;
+var<uniform> half_view: f32;
+var<uniform> pixels: vec2<u32>;
+var<uniform> colour: vec3<f32>;
+var<uniform> ambient: f32;
+
+// The depths the image holds, from the eye along the view.
+const near = 0.1;
+const far = 100.0;
+
+// A corner of a face on the image, and its face's colour, the same at every corner.
+struct Corner {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(flat) colour: vec3<f32>,
+}
+
+@vertex
+fn place(@builtin(vertex_index) index: u32) -> Corner {
+    let face = faces[index / 3];
+    let a = points[face.x];
+    let b = points[face.y];
+    let c = points[face.z];
+    // Two edges meet in the face's normal, twice its area long, and the normal pairs with the lamp's direction.
+    let normal = ((b - a) & (c - a)).normalized();
+    let lit = ambient + (1 - ambient) * max(normal & lamp, 0.0);
+    // The corner seen from the eye, in the camera's own frame, read by the camera's planes.
+    let seen = turn << (points[face[index % 3]] - eye);
+    let depth = -(mv.z & seen);
+    let aspect = f32(pixels.x) / f32(pixels.y);
+    let position = vec4<f32>((mv.x & seen) / (half_view * aspect), (mv.y & seen) / half_view,
+                             (depth - near) * far / (far - near), depth);
+    return Corner(position, colour * lit);
+}
+
+@fragment
+fn shade(corner: Corner) -> @location(0) vec4<f32> {
+    return vec4<f32>(corner.colour, 1.0);
+}
+"""
+
+
+# --- plumbing -------------------------------------------------------------------------
+@cache
+def shader() -> Shader:
+    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()))
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -23,29 +81,24 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def draw_surface(ax, mesh: core.Mesh, vertices: core.Vector) -> None:
-    """One surface, every face shaded flat by the light falling on it."""
-    triangles = coordinates(vertices)[mesh.faces]                              # [F, 3, 3]
-    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
-    normals /= np.linalg.norm(normals, axis=-1, keepdims=True)
-    light = AMBIENT + (1 - AMBIENT) * np.clip(normals @ (LIGHT_DIRECTION / np.linalg.norm(LIGHT_DIRECTION)), 0, 1)
-    colours = light[:, None] * SURFACE_COLOUR
-    # Faces filled without antialiasing meet without hairline gaps; the figure's resolution, or the
-    # animation's supersampling, smooths the outline.
-    ax.add_collection3d(Poly3DCollection(triangles, facecolors=colours, linewidths=0, antialiased=False))
-    ax.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), zlim=(-REACH, REACH))
-    ax.set_box_aspect((1, 1, 1), zoom=1.3)
-    ax.set_proj_type("ortho")
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
+def camera() -> tuple[core.Extensor, core.Point]:
+    """The camera's turn, from one looking along its own -z with y up, and its eye."""
+    pitch = (core.mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
+    turn = (core.mv.xy * (-azimuth / 2)).exp() * pitch
+    return turn, (turn >> core.mv.z.dual()) * distance
 
 
-def animate_flow(mesh: core.Mesh, states: list[tuple[core.Vector, core.Scalar]]) -> list[np.ndarray]:
+def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
+    """One surface on the background, every face shaded flat by the light falling on it, `[rows, columns, 3]`."""
+    turn, eye = camera()
+    drawn = shader().draw(frame_shape, 3 * len(mesh.faces), points=vertices.batch(), faces=mesh.faces,
+                          turn=turn, eye=eye, lamp=light_direction.normalized(), half_view=half_view,
+                          colour=surface_colour, ambient=ambient)
+    # The colour is premultiplied by each pixel's coverage; the background shows through the rest.
+    shown = drawn[..., :3] + (1 - drawn[..., 3:]) * background
+    return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
+
+
+def animate_flow(mesh: core.Mesh, states: list[tuple[core.Point, core.Scalar]]) -> list[np.ndarray]:
     """Frames of a surface flowing towards developable patches."""
-    images = []
-    for vertices, _ in states:
-        figure = plt.figure(figsize=(4.0, 4.0), dpi=120)
-        draw_surface(figure.add_axes((0, 0, 1, 1), projection="3d"), mesh, vertices)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    return [draw(mesh, vertices) for vertices, _ in states]

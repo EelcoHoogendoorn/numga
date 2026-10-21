@@ -8,8 +8,8 @@ coefficients, and every operation on such values to a function whose body is num
 evaluates the operation once over coefficients that are polynomials in the operands' coefficients, and
 the polynomials are the function. Values known when the shader compiles, blades, types and module
 constants, fold into those functions as numbers. `f32` is the algebra's scalar. A struct whose members
-are all values of the algebra adds, subtracts and scales member by member, as a state of an integrator
-does.
+are values of the algebra, numbers or vectors of numbers adds, subtracts and scales member by member, as
+a state of an integrator does, or the light a pixel's samples average.
 
 Module-scope `var<uniform>` values gather into one buffer, and storage arrays, textures and samplers are
 bound in order of declaration: a shader declares what it reads and writes, not where.
@@ -319,6 +319,13 @@ class Directive:
     line: int
 
 
+@dataclass
+class Alias:
+    name: str
+    type: str
+    line: int
+
+
 # Binding strength of binary operators: the arithmetic and bitwise ones as in Python, so that numga
 # expressions read as they do there; the logical and comparison ones as in WGSL.
 _BINARY = {"||": 1, "&&": 2, "==": 3, "!=": 3, "<": 3, ">": 3, "<=": 3, ">=": 3, "|": 4, "^": 5, "&": 6,
@@ -379,7 +386,13 @@ class Parser:
                 declaration.attributes = attributes
                 self.expect(";")
                 items.append(declaration)
-            elif word in ("enable", "requires", "diagnostic", "alias", "const_assert"):
+            elif word == "alias":
+                self.take()
+                name = self.name()
+                self.expect("=")
+                items.append(Alias(name, self.type(), line))
+                self.expect(";")
+            elif word in ("enable", "requires", "diagnostic", "const_assert"):
                 text = []
                 while not self.accept(";"):
                     text.append(self.take().text)
@@ -674,14 +687,16 @@ class Binding:
 
 @dataclass
 class Program:
-    """A compiled shader: its WGSL, what it binds, how its uniforms lie in their buffer, and the types
-    its structs stand for."""
+    """A compiled shader: its WGSL, what it binds, how its uniforms lie in their buffer, the types its
+    structs stand for, and its compute entry points in order of declaration, with their workgroup sizes."""
     code: str
     bindings: list[Binding]
     uniforms: list[tuple[str, Any]]
     structs: dict[str, list[tuple[str, Any]]]
     gatypes: dict[str, GAType]
-    workgroup_size: tuple[int, int, int]
+    entry_points: list[tuple[str, tuple[int, int, int]]]
+    vertex: str | None
+    fragment: str | None
 
 
 class Compiler:
@@ -692,6 +707,7 @@ class Compiler:
         self.names: dict[GAType, str] = {}
         self.types: dict[str, GAType] = {"f32": self.scalar}
         self.aliases: list[str] = []
+        self.native_aliases: dict[str, str] = {}
         for name, gatype in types.items():
             self.types[name] = gatype
             if gatype == self.scalar:
@@ -706,7 +722,9 @@ class Compiler:
         self.globals: dict[str, Value] = {}
         self.bindings: list[Binding] = []
         self.uniforms: list[tuple[str, Any]] = []
-        self.workgroup_size = (1, 1, 1)
+        self.entry_points: list[tuple[str, tuple[int, int, int]]] = []
+        self.stages: dict[str, str] = {}
+        self.member_attributes: dict[str, list[list[str]]] = {}
 
     def error(self, line: int, message: str) -> SyntaxError:
         return SyntaxError(f"line {line}: {message}")
@@ -717,6 +735,12 @@ class Compiler:
             return None
         if text in self.types:
             return self.types[text]
+        if text in self.native_aliases:
+            return self.resolve(self.native_aliases[text])
+        name, arguments = template(text)
+        if arguments:
+            # Aliases spelled out inside templates too, so `array<Sample>` names what it holds.
+            return f"{name}<{', '.join(self.native_aliases.get(argument, argument) for argument in arguments)}>"
         return text
 
     def wgsl(self, kind: Any) -> str:
@@ -739,8 +763,11 @@ class Compiler:
         return value.type == self.scalar or value.type == _ABSTRACT
 
     def is_state(self, kind: Any) -> bool:
-        """A struct of values of the algebra, which adds and scales member by member."""
-        return kind in self.structs and all(isinstance(member, GAType) for _, member in self.structs[kind])
+        """A struct that adds and scales member by member: its members values of the algebra, or numbers
+        and vectors of numbers."""
+        return kind in self.structs and all(
+            isinstance(member, GAType) or template(member)[0] in ("vec2", "vec3", "vec4")
+            for _, member in self.structs[kind])
 
     def element(self, kind: Any) -> Any:
         """The element type of an array, the component type of a vector, a matrix's column."""
@@ -766,10 +793,10 @@ class Compiler:
         return Value(literal(value), _ABSTRACT, float(value))
 
     def as_scalar(self, value: Extensor) -> Extensor:
-        """A scalar stored against minus one restated against plus one."""
-        if value.gatype.is_reoriented_scalar:
-            return self.context.extensor(self.scalar, -np.asarray(value.kernel))
-        return value
+        """A scalar of either orientation as the number it is, an `f32`: one stored against minus one
+        restated against plus one."""
+        sign = -1 if value.gatype.is_reoriented_scalar else 1
+        return self.context.extensor(self.scalar, sign * np.asarray(value.kernel))
 
     def text(self, value: Value) -> str:
         """WGSL for a value, spelling out a compile-time one as its coefficients."""
@@ -842,11 +869,15 @@ class Compiler:
             if value.type == _ABSTRACT and target == self.scalar:
                 return self.text(value)
             if isinstance(value.type, GAType) and self.embeds(value.type, target):
-                return self.text(self.operation("cast", lambda x: x.cast(target), [value], line))
+                return self.text(self.operation("cast", lambda x: self.cast(x, target), [value], line))
             raise self.error(line, f"a {value.type} is not a {target}; cast it with .cast()")
         if isinstance(value.type, GAType) and value.type != self.scalar:
             raise self.error(line, f"a {value.type} is not a {target}")
         return self.text(value)
+
+    def cast(self, value: Extensor, target: GAType) -> Extensor:
+        """A value cast to exactly the target type: its layout, and none of the traits a cast drops."""
+        return value.context.extensor(target, value.cast(target).kernel)
 
     def embeds(self, source: GAType, target: GAType) -> bool:
         return (source.arity == target.arity and source.orientation is target.orientation
@@ -1025,8 +1056,8 @@ class Compiler:
         if name == "cast":
             target = self.types[nodes[0].id]
             if base.text is None:
-                return self.constant(base.constant.cast(target))
-            return self.operation("cast", lambda x: x.cast(target), [base], line)
+                return self.constant(self.cast(base.constant, target))
+            return self.operation("cast", lambda x: self.cast(x, target), [base], line)
         arguments = [self.value(argument, scope) for argument in nodes]
         if self.is_scalar(base):
             if name in _SCALAR_FUNCTIONS:
@@ -1077,13 +1108,28 @@ class Compiler:
         return Value(f"{name}({self.text(base)})", kind)
 
     def builtin(self, node: Call, name: str, arguments: list[Value]) -> Value:
+        if name == "select" and isinstance(arguments[0].type, GAType) and arguments[0].type != self.scalar:
+            # A choice between two values of the algebra, of the first one's type, by a condition.
+            kind = arguments[0].type
+            key = ("select", kind)
+            if key not in self.helpers:
+                wgsl = self.wgsl(kind)
+                code = (f"fn ga_select_{len(self.helpers)}(otherwise: {wgsl}, chosen: {wgsl}, condition: bool) -> {wgsl} {{\n"
+                        f"    if (condition) {{\n        return chosen;\n    }}\n    return otherwise;\n}}\n")
+                self.helpers[key] = (f"ga_select_{len(self.helpers)}", code, kind)
+            helper, _, _ = self.helpers[key]
+            return Value(f"{helper}({self.text(arguments[0])}, {self.coerce(arguments[1], kind, node.line)}, "
+                         f"{self.text(arguments[2])})", kind)
         for argument in arguments:
             if isinstance(argument.type, GAType) and argument.type != self.scalar:
                 raise self.error(node.line, f"{name} does not take a {argument.type}")
         texts = ", ".join(self.text(argument) for argument in arguments)
         concrete = [argument.type for argument in arguments if argument.type != _ABSTRACT]
         if name in _ELEMENTWISE:
-            kind = next((kind for kind in concrete if kind != "bool"), self.scalar) if name != "select" else (concrete[0] if concrete else self.scalar)
+            # A choice takes the type of what it chooses between, not of its condition.
+            chosen = arguments[:2] if name == "select" else arguments
+            kind = next((argument.type for argument in chosen if argument.type not in (_ABSTRACT, "bool")),
+                        "i32" if all(isinstance(argument.constant, int) for argument in chosen) else self.scalar)
         elif name in _REDUCING:
             kind = self.element(concrete[0]) if concrete and str(concrete[0]).startswith("vec") else self.scalar
         elif name in ("f32", "u32", "i32", "bool"):
@@ -1098,6 +1144,8 @@ class Compiler:
             kind = "u32"
         elif name in ("any", "all"):
             kind = "bool"
+        elif name.startswith("atomic"):
+            kind = "u32"
         else:
             raise self.error(node.line, f"unknown function {name!r}")
         return Value(f"{name}({texts})", kind)
@@ -1173,7 +1221,9 @@ class Compiler:
         scope[-1][node.name] = Value(node.name, kind)
         initial = f" = {self.coerce(value, kind, node.line)}" if value is not None else ""
         keyword = "let" if node.kind == "const" else node.kind
-        return [f"{keyword} {node.name}: {self.wgsl(kind)}{initial};"]
+        # WGSL infers what the shader left to inference; a written type is kept.
+        annotation = f": {self.wgsl(kind)}" if node.type is not None else ""
+        return [f"{keyword} {node.name}{annotation}{initial};"]
 
     def simple(self, node: Any, scope: list[dict]) -> str:
         if isinstance(node, Declaration):
@@ -1198,8 +1248,17 @@ class Compiler:
         items = Parser(source).module()
         directives = [item.text for item in items if isinstance(item, Directive)]
         for item in items:
+            if isinstance(item, Alias):
+                target = self.resolve(item.type)
+                if isinstance(target, GAType):
+                    self.types[item.name] = target
+                else:
+                    self.native_aliases[item.name] = item.type
+                directives.append(f"alias {item.name} = {self.wgsl(target)};")
+        for item in items:
             if isinstance(item, Struct):
                 self.structs[item.name] = [(member, self.resolve(kind)) for _, member, kind in item.members]
+                self.member_attributes[item.name] = [attributes for attributes, _, _ in item.members]
             elif isinstance(item, Function):
                 self.functions[item.name] = ([self.resolve(kind) for _, _, kind in item.parameters], self.resolve(item.result))
         constants = []
@@ -1231,10 +1290,13 @@ class Compiler:
         code = "\n".join(directives + algebra_structs + self.aliases + structs + declarations + constants
                          + helpers + functions)
         return Program(code, self.bindings, self.uniforms, dict(self.structs),
-                       {name: kind for kind, name in self.names.items()}, self.workgroup_size)
+                       {name: kind for kind, name in self.names.items()}, self.entry_points,
+                       self.stages.get("vertex"), self.stages.get("fragment"))
 
     def struct_code(self, name: str, members: list) -> str:
-        fields = "\n".join(f"    {member}: {self.wgsl(kind)}," for member, kind in members)
+        attributes = self.member_attributes.get(name, [[] for _ in members])
+        fields = "\n".join(f"    {' '.join(attribute + [member])}: {self.wgsl(kind)},"
+                           for attribute, (member, kind) in zip(attributes, members))
         return f"struct {name} {{\n{fields}\n}};\n"
 
     def global_(self, node: Declaration) -> list[str]:
@@ -1270,9 +1332,12 @@ class Compiler:
     def function(self, node: Function) -> str:
         for attribute in node.attributes:
             match = re.fullmatch(r"@workgroup_size\((.*)\)", attribute.replace(" ", ""))
-            if match:
+            if match and "@compute" in node.attributes:
                 sizes = [int(size) for size in match.group(1).split(",")]
-                self.workgroup_size = tuple(sizes + [1] * (3 - len(sizes)))
+                self.entry_points.append((node.name, tuple(sizes + [1] * (3 - len(sizes)))))
+        for stage in ("vertex", "fragment"):
+            if f"@{stage}" in node.attributes:
+                self.stages[stage] = node.name
         parameters, result = self.functions[node.name]
         frame = {name: Value(name, kind) for (_, name, _), kind in zip(node.parameters, parameters)}
         signature = ", ".join(" ".join(attributes + [f"{name}: {self.wgsl(kind)}"])

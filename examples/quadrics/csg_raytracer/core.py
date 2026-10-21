@@ -1,10 +1,12 @@
-"""Constructive Solid Geometry on quadrics in PGA3D: ellipsoids, ruled hyperboloids, and clipping planes.
+"""Solids bounded by quadrics in PGA3D, and the motors that place them and the camera.
 
-A solid quadric is a map from points to planes, zero on its surface and negative inside.
-Bound to a ray, it yields a scalar quadratic in ray distance whose real roots give the entry
-and exit points. A ruled hyperboloid of one sheet has signature (+, +, -, -), and contains two
-infinite families of straight generator lines. Boolean CSG (intersection, difference) is formed
-by interval operations on the ray segment between quadric roots, bounded by clipping half-spaces.
+A solid quadric is a map from points to planes, `Plane <- Point`, whose pairing with a point,
+`quadric(point) & point`, is zero on its surface and negative inside; at a point on the surface the
+plane it gives is the tangent plane. A solid is the intersection of a few such quadrics: an ellipsoid,
+a ruled hyperboloid between two half-spaces, a bowl that is an ellipsoid less a smaller one, cut by a
+plane. A half-space is a quadric too, the product of its plane's pairing with the plane at infinity's,
+so the planes that cut and the floor are traced as every other quadric is. Negating a quadric swaps
+inside and outside, and subtracts its solid.
 """
 
 from __future__ import annotations
@@ -14,56 +16,68 @@ import numpy as np
 from numga import NumpyContext, stack
 from numga.algebras import PGA3D as ga
 
-ctx = NumpyContext(ga)
-mv = ctx.multivector
+mv = NumpyContext(ga).multivector
+Scalar = ga.gatype.scalar()
+# Points and directions are antivectors, planes are vectors, and a direction is a point at infinity.
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
-Line = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
-Quadric = ga.gatype((Plane, Point))
-DualQuadric = ga.gatype((Point, Plane))
-
-AXES = stack((mv.x, mv.y, mv.z))
+Quadric = ga.gatype((Plane, Point))                          # Plane <- Point
+origin = mv.point([0, 0, 0])                                 # [] Point
+# The planes through the origin square to each axis, and the plane at infinity.
+axes = stack((mv.x, mv.y, mv.z))                             # [3] Plane
 
 
 # --- math -----------------------------------------------------------------------------
 def ellipsoid(semi_axes: np.ndarray) -> Quadric:
-    """Solid ellipsoid centered at the origin: sum of squared coordinate plane pairings less infinity."""
-    weights = 1.0 / (np.asarray(semi_axes, dtype=float) ** 2)
-    return (AXES * (AXES & Point) * weights).sum(axis=-1) - mv.w * (mv.w & Point)
+    """A solid ellipsoid about the origin: each axis's squared pairing over its semi-axis squared, less
+    the plane at infinity's."""
+    return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
 def hyperboloid(semi_axes: np.ndarray) -> Quadric:
-    """Solid ruled hyperboloid of one sheet centered at the origin: positive along x and y, negative along z."""
-    a, b, c = np.asarray(semi_axes, dtype=float)
-    return ((mv.x * (mv.x & Point) / a**2)
-            + (mv.y * (mv.y & Point) / b**2)
-            - (mv.z * (mv.z & Point) / c**2)
-            - mv.w * (mv.w & Point))
+    """A solid ruled hyperboloid of one sheet about the origin, its waist around z: as an ellipsoid, with
+    the pairing along z subtracted."""
+    signs = np.array([1, 1, -1])
+    return (axes * (axes & Point) * signs / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
-def place(body: Quadric, shift_vector: np.ndarray, turn_angle: float = 0.0, turn_axis: str = "xy") -> Quadric:
-    """Place a quadric by translating and rotating with a PGA motor."""
-    generator = getattr(mv, turn_axis) * (turn_angle / 2)
-    translator = (stack((mv.xw, mv.yw, mv.zw)) * (np.asarray(shift_vector, dtype=float) / 2)).sum(axis=-1)
-    motor = translator.exp() * generator.exp()
-    return motor >> body(motor << Point)
+def half_space(plane: Plane) -> Quadric:
+    """The points on a plane's negative side, as the quadric that pairs them with the plane and with the
+    plane at infinity, symmetrized."""
+    return (plane * (mv.w & Point) + mv.w * (plane & Point)) / 2
 
 
-def ruling_lines(semi_axes: np.ndarray, n_rulings: int) -> tuple[Point, Point]:
-    """Throat points and direction vectors of the two families of generator lines on a circular hyperboloid."""
-    a, _, c = np.asarray(semi_axes, dtype=float)
-    angles = np.linspace(0.0, 2 * np.pi, n_rulings, endpoint=False)
-    cos_t = np.cos(angles)
-    sin_t = np.sin(angles)
-
-    throat_points = (mv.point(np.stack([a * cos_t, a * sin_t, np.zeros_like(angles)], axis=-1)))
-    directions_plus = (mv.direction(np.stack([-a * sin_t, a * cos_t, np.full_like(angles, c)], axis=-1)))
-    directions_minus = (mv.direction(np.stack([-a * sin_t, a * cos_t, np.full_like(angles, -c)], axis=-1)))
-
-    return throat_points, directions_plus, directions_minus
+def placed(quadric: Quadric, motor: Motor) -> Quadric:
+    """A quadric moved by a motor: each point moved back, measured, and its plane moved forward."""
+    return motor >> quadric(motor << Point)
 
 
-def evaluate(surface: Quadric, point: Point) -> ga.gatype.scalar():
-    """Evaluate quadric form at a point: zero on the boundary, negative inside, positive outside."""
-    return surface(point) & point
+def translator(offset: Point) -> Motor:
+    """The motor carrying every point along a direction, a point at infinity."""
+    return ((mv.w ^ offset.dual()) / 2).exp()
+
+
+def orbit(target: Point, distance: float, elevation: float, azimuth: np.ndarray) -> Motor:
+    """A camera's motor, from one at the origin looking along its own -z with y up: backed off by
+    `distance`, tilted down to look from `elevation` above the horizon, turned to `azimuth` about the
+    vertical, and carried to the target."""
+    pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()                          # [] Motor
+    turn = (mv.xy * (-azimuth / 2)).exp()                                            # [...] Motor
+    return translator(target - origin) * turn * pitch * translator(mv.z.dual() * distance)  # [...] Motor
+
+
+def ruling_lines(semi_axes: np.ndarray, n_rulings: int) -> tuple[Point, Point, Point]:
+    """Points around the waist of a circular hyperboloid, and the directions of the two straight lines
+    through each that lie in its surface: the point and its directions turned about z together."""
+    radius, _, height = semi_axes
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rulings, endpoint=False) / 2)).exp()   # [rulings] Motor
+    waist = turns >> mv.point([radius, 0, 0])                                         # [rulings] Point
+    rising = turns >> mv.direction([0, radius, height])                               # [rulings] Point
+    falling = turns >> mv.direction([0, radius, -height])                             # [rulings] Point
+    return waist, rising, falling
+
+
+def evaluate(quadric: Quadric, point: Point) -> Scalar:
+    """A quadric's pairing with a point: zero on its surface, negative inside."""
+    return quadric(point) & point

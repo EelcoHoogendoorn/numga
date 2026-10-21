@@ -169,14 +169,10 @@ def draw_frame(frame: np.ndarray) -> plt.Figure:
     return figure
 
 
-def develop(disk: np.ndarray, sky: np.ndarray, reference: float, supersampling: int) -> np.ndarray:
-    """A display image from linear disk light and sky colour, `[rows, columns, 4]` each, rendered at
-    `supersampling` times the display's size: each averaged over its pixel's samples, the disk light
-    exposed so a blackbody at the `reference` temperature shows mid-grey."""
-    rows, columns = disk.shape[0] // supersampling, disk.shape[1] // supersampling
-    def averaged(light: np.ndarray) -> np.ndarray:
-        return light[..., :3].reshape(rows, supersampling, columns, supersampling, 3).mean(axis=(1, 3))
-    shown = exposed(averaged(disk), reference) + averaged(sky)
+def develop(disk: np.ndarray, sky: np.ndarray, reference: float) -> np.ndarray:
+    """A display image from each pixel's linear disk light and sky colour, `[rows, columns, 3]` each: the
+    disk light exposed so a blackbody at the `reference` temperature shows mid-grey."""
+    shown = exposed(disk, reference) + sky
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 

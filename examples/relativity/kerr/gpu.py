@@ -16,13 +16,13 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.relativity.kerr import core, render, scenarios
-from examples.wgsl import Shader
+from examples.wgsl import Shader, supersampled
 
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
              Rotor=core.Rotor, Screen=core.Screen, ScreenFrame=core.ScreenFrame, Coherency=core.Coherency,
              GaugeField=core.GaugeField)
 mv = core.mv
-# Each pixel traced at this many samples a side, averaged before exposure.
+# Each pixel averages the light of this many samples a side, before exposure.
 supersampling = 2
 n_table_entries = 256
 # The colour table's hottest temperature, past any the camera sees.
@@ -236,15 +236,18 @@ var<uniform> eye: Antivector;
 var<uniform> orientation: Rotor;
 var<uniform> analyzer: Screen;
 var<uniform> half_view: f32;
-var<uniform> pixels: vec2<u32>;
 var<uniform> step_fraction: f32;
 var<uniform> n_steps: u32;
 var<uniform> escape_radius: f32;
 var<uniform> capture_radius: f32;
 var stars: texture_2d<f32>;
-var<storage, read_write> light: array<vec4<f32>>;
-var<storage, read_write> analyzed: array<vec4<f32>>;
-var<storage, read_write> sky: array<vec4<f32>>;
+
+// What a ray brings back: the disk's light, the share of it an analyzer passes, and the starlight.
+struct Sample {
+    light: vec3<f32>,
+    analyzed: vec3<f32>,
+    sky: vec3<f32>,
+}
 
 const pi = 3.141592653589793;
 
@@ -275,16 +278,11 @@ fn starlight(direction: Antivector) -> vec3<f32> {
     return textureSampleLevel(stars, filtered, place, 0.0).rgb;
 }
 
-@compute @workgroup_size(8, 8)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    if (id.x >= pixels.x || id.y >= pixels.y) {
-        return;
-    }
-    let pixel = id.y * pixels.x + id.x;
-    let horizontal = ((f32(id.x) + 0.5) / f32(pixels.x) * 2 - 1) * half_view * f32(pixels.x) / f32(pixels.y);
-    let vertical = (1 - (f32(id.y) + 0.5) / f32(pixels.y) * 2) * half_view;
+// The light along the ray through a place on the image, followed back from the camera.
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_view;
     // Past-directed light from the pixel, looking along the camera's -z.
-    var direction = orientation >> (-mv.z.dual() + mv.y.dual() * horizontal - mv.x.dual() * vertical);
+    var direction = orientation >> (-mv.z.dual() + mv.y.dual() * across.x - mv.x.dual() * across.y);
     direction = direction / direction.squared().square_root();
     let momentum = -initial_momentum(eye, -direction);
     var ray = Ray(eye, momentum, camera_screen(eye, momentum));
@@ -320,16 +318,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         ray = end;
         radius = end_radius;
     }
-    light[pixel] = vec4<f32>(disk, 1.0);
-    analyzed[pixel] = vec4<f32>(through, 1.0);
-    sky[pixel] = vec4<f32>(stars_seen, 1.0);
+    return Sample(disk, through, stars_seen);
 }
 """
 
 
 def shader() -> Shader:
     """The camera's shader, compiled."""
-    return Shader(geometry + rays + disk + camera, core.ga, types)
+    return Shader(geometry + rays + disk + camera + supersampled(supersampling), core.ga, types)
 
 
 def scene() -> dict:
@@ -348,15 +344,15 @@ def scene() -> dict:
         elapsed=0.0, flow_time=scenarios.flow_time, fade=0.0, analyzer=mv.x.dual(),
         hottest=hottest, temperatures=core.disk_temperature(radii, mv.xy, spin, scenarios.mass, scenarios.disk_temperature_scale),
         blackbodies=render.blackbody_table(hottest, n_table_entries), modes=render.wave_modes(),
-        half_view=scenarios.half_view, pixels=[image_shape()[1], image_shape()[0]],
+        half_view=scenarios.half_view,
         step_fraction=scenarios.camera_step_fraction, n_steps=scenarios.n_camera_steps,
         escape_radius=scenarios.escape_radius, capture_radius=scenarios.capture_radius,
         stars=render.star_texture(scenarios.sky_width, scenarios.sky_height, scenarios.sky_seed))
 
 
 def image_shape() -> tuple[int, int]:
-    """The traced image, rows first, at `supersampling` samples a side per pixel."""
-    return scenarios.image_height * supersampling, scenarios.image_width * supersampling
+    """The traced image, rows first."""
+    return scenarios.image_height, scenarios.image_width
 
 
 def disk_flow(tracer: Shader, values: dict) -> Iterator[dict]:
@@ -379,17 +375,17 @@ def main() -> None:
     tracer = shader()
     values = scene()
     still = tracer(image_shape(), **values)
-    save_figure(render.draw_frame(render.develop(still["light"], still["sky"], scenarios.exposure_temperature, supersampling)),
+    save_figure(render.draw_frame(render.develop(still["image"]["light"], still["image"]["sky"], scenarios.exposure_temperature)),
                 "kerr_gpu_camera")
-    save_animation([render.develop(traced["light"], traced["sky"], scenarios.exposure_temperature, supersampling)
+    save_animation([render.develop(traced["image"]["light"], traced["image"]["sky"], scenarios.exposure_temperature)
                     for traced in disk_flow(tracer, values)], "kerr_gpu_disk", scenarios.duration_ms, scale=scenarios.web_scale)
     # The exposure is doubled for the half of unpolarized light a polarizer stops.
-    save_animation([render.develop(2 * traced["analyzed"], traced["sky"], scenarios.exposure_temperature, supersampling)
+    save_animation([render.develop(2 * traced["image"]["analyzed"], traced["image"]["sky"], scenarios.exposure_temperature)
                     for traced in polarizer(tracer, values)], "kerr_gpu_polarizer", scenarios.duration_ms, scale=scenarios.web_scale)
 
     # --- checks
     # Every pixel's light is finite and none is negative.
-    for traced in (still["light"], still["analyzed"], still["sky"]):
+    for traced in still["image"].values():
         assert np.all(np.isfinite(traced)) and np.all(traced >= 0)
 
 

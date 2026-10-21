@@ -1,101 +1,76 @@
-"""Constructive Solid Geometry scene with ruled hyperboloid, hollow bowl, mirror sphere, and shadows."""
+"""A ruled hyperboloid, a hollow bowl cut open, and a mirror sphere on a checkered floor, orbited."""
 
 from __future__ import annotations
 
 import numpy as np
 
 from numga import stack
-from examples.quadrics.csg_raytracer.core import (
-    Plane, Point, Quadric, ellipsoid, evaluate, hyperboloid, mv, place, ruling_lines,
-)
+from examples.quadrics.csg_raytracer import core
+from examples.quadrics.csg_raytracer.core import Point, Quadric, ellipsoid, half_space, hyperboloid, mv, placed, translator
 
-# Geometry constants
-A_HYP, C_HYP = 0.55, 0.85
-HYP_POSITION = np.array([-1.2, 0.4, 0.85])
-HYP_TILT = np.radians(12.0)
-
-R_OUT = np.array([0.75, 0.75, 0.75])
-WALL_FRACTION = 0.80
-BOWL_POSITION = np.array([1.1, -0.2, 0.75])
-BOWL_TILT_YZ = np.radians(-35.0)
-BOWL_TILT_XZ = np.radians(15.0)
-
-R_MIRROR = 0.55
-MIRROR_POSITION = np.array([0.0, 0.1, 0.55])
-
-# Illumination and framing
-LAMP_DIRECTION = np.array([0.5, -0.5, 0.70, 0.0])
-LAMP_DIRECTION[:3] /= np.linalg.norm(LAMP_DIRECTION[:3])
-
-TARGET = np.array([0.0, 0.2, 0.7], dtype=np.float32)
-PRIMARY_CAM = np.array([0.0, -4.2, 2.5, 1.0], dtype=np.float32)
-
-N_FRAMES = 48
-ORBIT_RADIUS = 4.2
-ORBIT_HEIGHT = 2.5
-IMAGE_SIZE = (640, 640)
-ANIM_SIZE = (480, 480)
-FRAME_DURATION = 80
+# The hyperboloid's waist radius and its half-height, where two planes cut it.
+waist_axes = np.array([0.55, 0.55, 0.85])
+hyperboloid_place = mv.direction([-1.2, 0.4, 0.85])
+hyperboloid_tilt = np.radians(12.0)
+# The bowl: an ellipsoid less a smaller one, cut by a plane tilted off its top.
+bowl_axes = np.array([0.75, 0.75, 0.75])
+wall_fraction = 0.8
+bowl_place = mv.direction([1.1, -0.2, 0.75])
+bowl_tilts = np.radians([35.0, 15.0])
+bowl_cut = (mv.y * 0.15 + mv.z * 0.98) - mv.w * 0.1
+mirror_radius = 0.55
+mirror_place = mv.direction([0.0, 0.1, 0.55])
+# Each solid's colour and reflectivity, in the order of `solids`: hyperboloid, bowl, mirror, floor.
+colours = np.array([[0.84, 0.48, 0.24], [0.15, 0.45, 0.55], [0.95, 0.95, 0.96], [0.88, 0.87, 0.85]])
+reflectivities = np.array([0.0, 0.0, 0.88, 0.0])
+# Unit steps of each solid's checker: stripes crossing the hyperboloid's rulings, tiles on the floor.
+stripes = 8.0
+tiles = 1.4
+# The lamp's direction, and the camera orbiting a point above the floor.
+lamp = mv.direction([0.5, -0.5, 0.7])
+target = mv.point([0.0, 0.2, 0.7])
+distance = 4.6
+elevation = np.radians(28.0)
+half_view = 0.42
+image_shape = (450, 720)
+animation_shape = (330, 528)
+n_frames = 48
+duration_ms = 80
+n_rulings = 12
 
 
 # --- math -----------------------------------------------------------------------------
-def make_scene():
-    """Build the geometric scene in pure PGA algebraic elements."""
-    # 1. Ruled hyperboloid of one sheet:
-    hyp_raw = hyperboloid([A_HYP, A_HYP, C_HYP])
-    hyp_placed = place(hyp_raw, HYP_POSITION, HYP_TILT, turn_axis="xz")
-
-    # Bounding planes for finite height:
-    motor_hyp = (((stack((mv.xw, mv.yw, mv.zw)) * (HYP_POSITION / 2)).sum(axis=-1)).exp()
-                 * (mv.xz * (HYP_TILT / 2)).exp())
-    hyp_top = motor_hyp >> mv.vector([0.0, 0.0, 1.0, -C_HYP])
-    hyp_bot = motor_hyp >> mv.vector([0.0, 0.0, -1.0, -C_HYP])
-
-    # 2. Hollow clipped bowl (CSG):
-    r_in = R_OUT * WALL_FRACTION
-    bowl_out_raw = ellipsoid(R_OUT)
-    bowl_in_raw = ellipsoid(r_in)
-
-    motor_bowl = (((stack((mv.xw, mv.yw, mv.zw)) * (BOWL_POSITION / 2)).sum(axis=-1)).exp()
-                  * (mv.yz * (BOWL_TILT_YZ / 2)).exp()
-                  * (mv.xz * (BOWL_TILT_XZ / 2)).exp())
-    bowl_out = motor_bowl >> bowl_out_raw(motor_bowl << Point)
-    bowl_in = motor_bowl >> bowl_in_raw(motor_bowl << Point)
-
-    bowl_clip_dir = np.array([0.0, 0.15, 0.98, -0.1], dtype=np.float32)
-    bowl_clip_dir[:3] /= np.linalg.norm(bowl_clip_dir[:3])
-    bowl_clip = motor_bowl >> mv.vector(bowl_clip_dir)
-
-    # 3. Mirror sphere:
-    mirror_raw = ellipsoid([R_MIRROR, R_MIRROR, R_MIRROR])
-    mirror_placed = place(mirror_raw, MIRROR_POSITION)
-
-    # 4. Floor plane & lamp:
-    floor_plane = mv.vector([0.0, 0.0, 1.0, 0.0])
-    lamp = mv.vector(LAMP_DIRECTION)
-
-    scene_objects = {
-        "hyp": hyp_placed,
-        "hyp_top": hyp_top,
-        "hyp_bot": hyp_bot,
-        "bowl_out": bowl_out,
-        "bowl_in": bowl_in,
-        "bowl_clip": bowl_clip,
-        "mirror": mirror_placed,
-        "floor": floor_plane,
-        "lamp": lamp,
-    }
-    return scene_objects
+def solids() -> tuple[Quadric, dict]:
+    """Every solid's quadrics, solid after solid, and each solid's range of them, colour, reflectivity and
+    checker planes."""
+    lift = translator(hyperboloid_place) * (mv.xz * (-hyperboloid_tilt / 2)).exp()                 # [] Motor
+    turn_bowl = translator(bowl_place) * (mv.yz * (-bowl_tilts[0] / 2)).exp() * (mv.xz * (-bowl_tilts[1] / 2)).exp()  # [] Motor
+    height = waist_axes[2]
+    shapes = [
+        # The hyperboloid between the planes a half-height above and below its waist.
+        [placed(hyperboloid(waist_axes), lift),
+         placed(half_space(mv.z - mv.w * height), lift),
+         placed(half_space(-mv.z - mv.w * height), lift)],
+        # The bowl: inside the outer ellipsoid, outside the inner one, below the cut.
+        [placed(ellipsoid(bowl_axes), turn_bowl),
+         -placed(ellipsoid(bowl_axes * wall_fraction), turn_bowl),
+         placed(half_space(bowl_cut / (bowl_cut | bowl_cut).square_root()), turn_bowl)],
+        [placed(ellipsoid(np.full(3, mirror_radius)), translator(mirror_place))],
+        # The floor: everything below the plane z = 0.
+        [half_space(mv.z).cast(Quadric)],
+    ]
+    counts = np.array([len(shape) for shape in shapes])
+    ends = np.cumsum(counts)
+    quadrics = stack([quadric for shape in shapes for quadric in shape])          # [quadrics] Quadric
+    across = stack([lift >> (mv.x + mv.z) * stripes, 0 * mv.x, 0 * mv.x, mv.x * tiles])      # [solids] Plane
+    along = stack([lift >> (mv.y - mv.z) * stripes, 0 * mv.y, 0 * mv.y, mv.y * tiles])       # [solids] Plane
+    return quadrics, dict(first=ends - counts, end=ends, colour=colours, reflectivity=reflectivities,
+                          across=across, along=along)
 
 
-def orbit_cameras(n_frames: int, radius: float = ORBIT_RADIUS, height: float = ORBIT_HEIGHT) -> np.ndarray:
-    """Generate camera positions orbiting circularly around the scene center."""
-    angles = np.linspace(-np.pi / 2, 3 * np.pi / 2, n_frames, endpoint=False)
-    xs = radius * np.cos(angles)
-    ys = radius * np.sin(angles)
-    zs = np.full_like(angles, height)
-    ws = np.ones_like(angles)
-    return np.stack([xs, ys, zs, ws], axis=-1).astype(np.float32)
+def orbit(n_cameras: int) -> core.Motor:
+    """Cameras around the target, starting in front of the scene."""
+    return core.orbit(target, distance, elevation, np.linspace(0, 2 * np.pi, n_cameras, endpoint=False))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -103,38 +78,24 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quadrics.csg_raytracer import render
 
-    scene = make_scene()
+    tracer = render.shader()
+    quadrics, solid_values = solids()
+    still, = render.frames(tracer, quadrics, solid_values, orbit(1), lamp, half_view, image_shape)
+    save_figure(render.draw_frame(still), "csg_raytracer")
+    save_animation(list(render.frames(tracer, quadrics, solid_values, orbit(n_frames), lamp, half_view, animation_shape)),
+                   "csg_raytracer", duration_ms)
 
-    # 1. Render primary showcase figure:
-    fig = render.draw_scene(scene, PRIMARY_CAM, TARGET, *IMAGE_SIZE)
-    save_figure(fig, "csg_raytracer")
-
-    # 2. Render orbit turntable animation:
-    cam_orbit = orbit_cameras(N_FRAMES)
-    anim_frames = render.frames(scene, cam_orbit, TARGET, *ANIM_SIZE)
-    save_animation(anim_frames, "csg_raytracer", FRAME_DURATION)
-
-    # --- checks -----------------------------------------------------------------------
-    # 1. Verify ruling lines on the hyperboloid:
-    # Any point along the generator line p(theta) + t * v(theta) must lie exactly on the surface:
-    throat, v_plus, v_minus = ruling_lines([A_HYP, A_HYP, C_HYP], 12)
-    hyp_raw = hyperboloid([A_HYP, A_HYP, C_HYP])
-    for t_step in [-1.5, -0.5, 0.0, 0.8, 2.0]:
-        test_pt = throat + v_plus * t_step
-        eval_vals = evaluate(hyp_raw, test_pt).to_array()
-        np.testing.assert_allclose(eval_vals, 0.0, atol=1e-7)
-
-    # 2. Verify mirror sphere boundary:
-    mirror_quad = ellipsoid([R_MIRROR, R_MIRROR, R_MIRROR])
-    sample_pt = mv.point([R_MIRROR, 0.0, 0.0])
-    np.testing.assert_allclose(evaluate(mirror_quad, sample_pt).to_array(), 0.0, atol=1e-7)
-
-    # 3. Verify bowl inner and outer boundary radii:
-    r_in = R_OUT * WALL_FRACTION
-    out_pt = mv.point([R_OUT[0], 0.0, 0.0])
-    in_pt = mv.point([r_in[0], 0.0, 0.0])
-    np.testing.assert_allclose(evaluate(ellipsoid(R_OUT), out_pt).to_array(), 0.0, atol=1e-7)
-    np.testing.assert_allclose(evaluate(ellipsoid(r_in), in_pt).to_array(), 0.0, atol=1e-7)
+    # --- checks
+    # Both families of straight lines through the hyperboloid's waist lie in its surface.
+    waist, rising, falling = core.ruling_lines(waist_axes, n_rulings)
+    reach = np.linspace(-2, 2, 5)[:, None]
+    for direction in (rising, falling):
+        np.testing.assert_allclose(core.evaluate(hyperboloid(waist_axes), waist + direction * reach).kernel, 0, atol=1e-12)
+    # Every camera looks at the target.
+    cameras = orbit(n_frames)
+    eyes = cameras >> core.origin
+    looks = cameras >> -mv.z.dual()
+    np.testing.assert_allclose((eyes + looks * distance - target).kernel, 0, atol=1e-12)
 
 
 if __name__ == "__main__":
