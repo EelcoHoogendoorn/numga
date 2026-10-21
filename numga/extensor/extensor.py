@@ -11,7 +11,7 @@ import numga
 from numga.backend.context import binding_context
 from numga.binding import AxisTransform, BindingPlan, TypeRules, normalize_bind_arguments, nullary_identity_groups
 from numga.extension import ExtensionMethod
-from numga.gatype import GAType, GATypeError, Orientation, Trait, rules
+from numga.gatype import GAType, GATypeError, Orientation, Trait, UnorientedSubspace, rules
 from numga.subspace import SubSpace
 
 from . import operands
@@ -415,11 +415,14 @@ class Extensor:
     def __call__(self, *operands: Extensor | GAType) -> Extensor:
         """Apply to operands in slot order. Fewer operands than slots bind the leading slots. A bare
         type is its identity map: the slot's own type leaves that slot open, form(Vector, v) binds
-        only the second, and a type inside the slot narrows it to that type."""
-        if any(isinstance(operand, (GAType, SubSpace)) for operand in operands):
+        only the second, and a type inside the slot narrows it to that type. A subspace, which has no
+        orientation, is refused."""
+        if any(isinstance(operand, SubSpace) for operand in operands):
+            raise UnorientedSubspace()
+        if any(isinstance(operand, GAType) for operand in operands):
             bound = {}
             for slot, operand in enumerate(operands):
-                if not isinstance(operand, (GAType, SubSpace)):
+                if not isinstance(operand, GAType):
                     bound[slot] = operand
                 elif (narrowed := self._gatype.slots.narrowing(slot, operand)) is not None:
                     bound[slot] = narrowed
@@ -627,81 +630,81 @@ class Extensor:
             return NotImplemented
         return self.power(exponent)
 
-    def wedge(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def wedge(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.wedge(self, other)
 
-    def scalar_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def scalar_product(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.scalar_product(self, other)
 
-    def dot(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def dot(self, other: Extensor | GAType) -> Extensor:
         """The metric on every grade: the scalar part of `self * other.reverse()`, positive on every blade
         of a Euclidean signature."""
         return numga.expression.dot(self, other)
 
-    def inner(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def inner(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.inner(self, other)
 
-    def bivector_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def bivector_product(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.bivector_product(self, other)
 
-    def trivector_product(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def trivector_product(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.trivector_product(self, other)
 
-    def commutator(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def commutator(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.commutator(self, other)
 
-    def anticommutator(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def anticommutator(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.anticommutator(self, other)
 
-    def left_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def left_contraction(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.left_contraction(self, other)
 
-    def right_contraction(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def right_contraction(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.right_contraction(self, other)
 
-    def left_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def left_interior(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.left_interior(self, other)
 
-    def right_interior(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def right_interior(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.right_interior(self, other)
 
-    def regressive(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def regressive(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.regressive(self, other)
 
-    def transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
+    def transform(self, passenger: Extensor | GAType) -> Extensor:
         """The versor's action on the passenger, `self >> passenger`: the composition of the reflections
         in its vector factors. A reflection in a unit vector `m` takes an extrinsic `x` to
         `m * x.involute() * m.inverse()`, and an intrinsic `x` to its negative."""
         return numga.expression.transform(self, passenger)
 
-    def reverse_transform(self, passenger: Extensor | GAType | SubSpace) -> Extensor:
+    def reverse_transform(self, passenger: Extensor | GAType) -> Extensor:
         """The action of the versor's reverse, `self << passenger`: defined for every value, and for a
         unit versor the inverse of `self >> passenger`."""
         return numga.expression.reverse_transform(self, passenger)
 
-    def __rshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __rshift__(self, other: Extensor | GAType) -> Extensor:
         return self.transform(other)
 
-    def __lshift__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __lshift__(self, other: Extensor | GAType) -> Extensor:
         return self.reverse_transform(other)
 
     # Operands numga does not know, a sparse extensor among them, get their reflected operator.
-    def __xor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __xor__(self, other: Extensor | GAType) -> Extensor:
         return self.wedge(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rxor__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __rxor__(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.wedge(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __and__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __and__(self, other: Extensor | GAType) -> Extensor:
         return self.regressive(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rand__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __rand__(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.regressive(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __or__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __or__(self, other: Extensor | GAType) -> Extensor:
         return self.inner(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __ror__(self, other: Extensor | GAType | SubSpace) -> Extensor:
+    def __ror__(self, other: Extensor | GAType) -> Extensor:
         return numga.expression.inner(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
     def _require_compatible(self, other: "Extensor") -> None:

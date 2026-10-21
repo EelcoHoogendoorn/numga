@@ -60,22 +60,19 @@ class Slots(_Queries):
         return first, second
 
     @lru_cache(maxsize=None)
-    def narrowing(self, slot: int, operand: GAType | SubSpace) -> Extensor | None:
-        """What a type, or a subspace, given for an input slot binds there: nothing where it is the
-        slot's own type, which leaves the slot open, and otherwise the identity map on it, which
-        narrows the slot. A subspace takes the slot's orientation."""
+    def narrowing(self, slot: int, operand: GAType) -> Extensor | None:
+        """What a type given for an input slot binds there: nothing where it is the slot's own type,
+        which leaves the slot open, and otherwise the identity map on it, which narrows the slot."""
         gatype = self._gatype
-        given_subspace = isinstance(operand, SubSpace)
-        space = operand if given_subspace else operand.output_subspace
+        space = operand.output_subspace
         own = gatype.input_subspaces[slot]
-        if space.same_support(own) and (given_subspace or operand.orientation is gatype.input_orientations[slot]):
+        if space.same_support(own) and operand.orientation is gatype.input_orientations[slot]:
             return None
         if space not in own:
             raise TypeError(
                 f"slot {slot} takes {own}; {space} is not inside it, so a cast must say what is projected away"
             )
-        narrowed = gatype.algebra.gatype.oriented((space,), (gatype.input_orientations[slot],)) if given_subspace else operand
-        return gatype.algebra.operator.identity(narrowed)
+        return gatype.algebra.operator.identity(operand)
 
     def same_as(self, other: GAType) -> bool:
         """The same spaces, orientations and sites, whatever facts either type carries."""

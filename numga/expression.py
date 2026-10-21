@@ -18,9 +18,8 @@ from numga.operator.factory import OperatorFactory
 
 if TYPE_CHECKING:
     from numga.extensor import Extensor
-    from numga.subspace import SubSpace
 
-Operand = "SubSpace | GAType | Extensor"
+Operand = "GAType | Extensor"
 
 
 _EXPRESSION_KINDS = frozenset((operands.Kind.VALUE, operands.Kind.TYPE, operands.Kind.SUBSPACE))
@@ -157,6 +156,6 @@ def _operand_gatype(value: object) -> GAType:
     if found is operands.Kind.VALUE:
         return value.gatype
     raise TypeError(
-        "an expression operand must be a SubSpace, GAType, or Extensor; "
+        "an expression operand must be a GAType or Extensor; "
         f"got {type(value).__name__}"
     )

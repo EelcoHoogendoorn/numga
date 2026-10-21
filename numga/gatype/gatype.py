@@ -544,50 +544,50 @@ class GAType:
     def dual_inverse(self) -> Extensor:
         return self.algebra.operator.dual_inverse(self)
 
-    def wedge(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def wedge(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.wedge(self, other)
 
-    def inner(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def inner(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.inner(self, other)
 
-    def dot(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def dot(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.dot(self, other)
 
-    def commutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def commutator(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.commutator(self, other)
 
-    def anticommutator(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def anticommutator(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.anticommutator(self, other)
 
-    def regressive(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def regressive(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.regressive(self, other)
 
-    def transform(self, passenger: SubSpace | GAType | Extensor) -> Extensor:
+    def transform(self, passenger: GAType | Extensor) -> Extensor:
         """The action of a versor of this type on the passenger, `self >> passenger`."""
         return numga.expression.transform(self, passenger)
 
-    def __xor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __xor__(self, other: GAType | Extensor) -> Extensor:
         return self.wedge(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __and__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __and__(self, other: GAType | Extensor) -> Extensor:
         return self.regressive(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __or__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __or__(self, other: GAType | Extensor) -> Extensor:
         return self.inner(other) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rxor__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __rxor__(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.wedge(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rand__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __rand__(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.regressive(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __ror__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __ror__(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.inner(other, self) if numga.expression.is_expression_operand(other) else NotImplemented
 
-    def __rshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __rshift__(self, other: GAType | Extensor) -> Extensor:
         return self.transform(other)
 
-    def __lshift__(self, other: SubSpace | GAType | Extensor) -> Extensor:
+    def __lshift__(self, other: GAType | Extensor) -> Extensor:
         return numga.expression.reverse_transform(self, other)
 
     def __reduce__(self) -> tuple[type[GAType], tuple[object, ...]]:

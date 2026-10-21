@@ -173,16 +173,16 @@ class Context(ABC):
 
     def extensor(
         self,
-        gatype_or_subspace: GAType | SubSpace,
+        gatype: GAType,
         coefficients: object,
     ) -> Extensor:
         from numga.extensor import Extensor
 
-        if isinstance(gatype_or_subspace, SubSpace):
+        if isinstance(gatype, SubSpace):
             raise UnorientedSubspace()
-        if not isinstance(gatype_or_subspace, GAType):
+        if not isinstance(gatype, GAType):
             raise TypeError("extensor construction requires a GAType")
-        return Extensor(self, gatype_or_subspace, coefficients)
+        return Extensor(self, gatype, coefficients)
 
     def lower(self, value: Extensor) -> Extensor:
         """Represent an Extensor in this coefficient/execution context."""

@@ -65,14 +65,13 @@ class MultivectorFactory:
 
     def __call__(
         self,
-        gatype_or_subspace: GAType | SubSpace | str,
+        gatype: GAType,
         coefficients: Any = _MISSING,
     ) -> Extensor:
-        if isinstance(gatype_or_subspace, (str, SubSpace)):
+        if isinstance(gatype, (str, SubSpace)):
             raise UnorientedSubspace()
-        if not isinstance(gatype_or_subspace, GAType):
+        if not isinstance(gatype, GAType):
             raise TypeError("multivector construction requires a GAType")
-        gatype = gatype_or_subspace
         if gatype.arity != 0:
             raise ValueError(
                 "multivector construction requires an arity-0 GAType; "
