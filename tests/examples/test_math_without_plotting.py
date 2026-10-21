@@ -127,6 +127,8 @@ import examples.relativity.spinors.core
 import examples.relativity.spinors.scenarios
 import examples.relativity.thomas_precession.core
 import examples.relativity.thomas_precession.scenarios
+import examples.relativity.terrell.core
+import examples.relativity.terrell.scenarios
 import examples.relativity.twistors.core
 import examples.relativity.twistors.scenarios
 import examples.fluids.stokes_swimmer.core
