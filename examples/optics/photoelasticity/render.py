@@ -12,8 +12,8 @@ from numga import stack
 from examples.animation import capture
 from examples.optics.photoelasticity import core
 
-ANIMATION_DPI = 85
-ANIMATION_PIXELS = 200
+animation_dpi = 85
+animation_pixels = 200
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -65,7 +65,7 @@ def draw_polariscope(positions: core.Planar, intensities: core.Scalar, hole_radi
 def animate_polariscope(positions: core.Planar, frames: Iterable[core.Scalar], hole_radius: float) -> list[np.ndarray]:
     """One polariscope's transmitted intensity, `[rows, columns]` per frame, as the load changes."""
     _, extent = window(positions)
-    figure = plt.figure(figsize=(ANIMATION_PIXELS / ANIMATION_DPI,) * 2, dpi=ANIMATION_DPI)
+    figure = plt.figure(figsize=(animation_pixels / animation_dpi,) * 2, dpi=animation_dpi)
     ax = figure.add_axes((0, 0, 1, 1))
     image = plate(ax, np.zeros(positions.shape), extent, hole_radius, cmap="gray", vmin=0, vmax=1)
     rendered = []

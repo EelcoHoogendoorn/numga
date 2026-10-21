@@ -12,37 +12,37 @@ from numga import concatenate, stack
 from examples.relativity.thomas_precession import core
 
 mv = core.mv
-DURATION_MS = 50
+duration_ms = 50
 # The rocket's two equal boosts, their rapidity swelling and shrinking between two values over the
 # loop, and the samples along each side of the triangle of velocities.
-N_BOOST_FRAMES = 96
+n_boost_frames = 96
 MIN_RAPIDITY, MAX_RAPIDITY = 0.8, 2.0
-N_EDGE_SAMPLES = 32
+n_edge_samples = 32
 # Lorentz factors of the circular orbits, their steps around, and the steps between frames.
-GAMMAS = np.array([1.25, 1.5, 1.75])
-N_ORBIT_STEPS = 180
-ORBIT_STRIDE = 2
+orbit_gammas = np.array([1.25, 1.5, 1.75])
+n_orbit_steps = 180
+orbit_stride = 2
 # The box's half width, the gyroscope's momentum per unit mass along each axis, the frames of each
 # flight and the steps of each bounce, and the round trips shown.
-HALF_WIDTH = 1.0
-MOMENTUM = 0.8
-N_FLIGHT_FRAMES = 10
-N_BOUNCE_STEPS = 10
-N_LOOPS = 3
+box_half_width = 1.0
+box_momentum = 0.8
+n_flight_frames = 10
+n_bounce_steps = 10
+n_loops = 3
 # The storage ring: the muon's anomaly exaggerated so the spin laps the momentum in a few turns, the
 # magnetic field, the animation's ring purely magnetic, its turns, steps per turn and between frames.
-ANOMALY = 0.1
-MAGNETIC = 1.0
-RING_ELECTRIC = 0.0
-N_TURNS = 3
-N_TURN_STEPS = 120
-RING_STRIDE = 3
-N_RING_SAMPLES = 128
+muon_anomaly = 0.1
+ring_magnetic = 1.0
+ring_electric = 0.0
+n_ring_turns = 3
+n_ring_turn_steps = 120
+ring_stride = 3
+n_ring_samples = 128
 # The electric fields swept at two Lorentz factors, the magic one last, over a fixed time in the lab.
-ELECTRIC_FIELDS = np.linspace(-0.3, 0.3, 7)
-SWEEP_GAMMAS = np.array([2.0, np.sqrt(1 + 1 / ANOMALY)])
-LAB_DURATION = 10.0
-N_SWEEP_STEPS = 200
+electric_fields = np.linspace(-0.3, 0.3, 7)
+sweep_gammas = np.array([2.0, np.sqrt(1 + 1 / muon_anomaly)])
+sweep_lab_duration = 10.0
+n_sweep_steps = 200
 
 
 # --- math -----------------------------------------------------------------------------
@@ -146,26 +146,26 @@ def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.relativity.thomas_precession import render
 
-    swell = (1 - np.cos(np.linspace(0, 2 * np.pi, N_BOOST_FRAMES, endpoint=False))) / 2
+    swell = (1 - np.cos(np.linspace(0, 2 * np.pi, n_boost_frames, endpoint=False))) / 2
     rapidities = MIN_RAPIDITY + (MAX_RAPIDITY - MIN_RAPIDITY) * swell
-    fractions = np.linspace(0, 1, N_EDGE_SAMPLES)
-    save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", DURATION_MS)
-    velocities = orbit_velocities(GAMMAS, N_ORBIT_STEPS)
+    fractions = np.linspace(0, 1, n_edge_samples)
+    save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", duration_ms)
+    velocities = orbit_velocities(orbit_gammas, n_orbit_steps)
     # A spin along x, the plane turning about it, in each orbit's first frame.
     start_spin = core.rest_boost(velocities[0]) >> core.about(mv.x.dual())
-    save_animation(render.animate_orbits(velocities, orbits(velocities, start_spin, ORBIT_STRIDE)), "thomas_orbits", DURATION_MS)
-    positions, path = box_path(HALF_WIDTH, MOMENTUM, N_FLIGHT_FRAMES, N_BOUNCE_STEPS)
-    positions, path = concatenate([positions] * N_LOOPS), concatenate([path] * N_LOOPS)
+    save_animation(render.animate_orbits(velocities, orbits(velocities, start_spin, orbit_stride)), "thomas_orbits", duration_ms)
+    positions, path = box_path(box_half_width, box_momentum, n_flight_frames, n_bounce_steps)
+    positions, path = concatenate([positions] * n_loops), concatenate([path] * n_loops)
     box_spin = core.rest_boost(path[0]) >> core.about(mv.x.dual())
-    walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> (HALF_WIDTH * mv.x.dual())
-    save_animation(render.animate_box(HALF_WIDTH, walls, bouncing(positions, path, box_spin)), "thomas_box", DURATION_MS)
-    magic = np.sqrt(1 + 1 / ANOMALY)
-    radius = core.ring_radius(magic, MAGNETIC, RING_ELECTRIC)
-    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, N_RING_SAMPLES) / 2)).exp() >> (radius * mv.x.dual())
-    states = ring(magic, MAGNETIC, RING_ELECTRIC, ANOMALY, N_TURNS, N_TURN_STEPS, RING_STRIDE)
-    save_animation(render.animate_ring(outline, states), "thomas_storage_ring", DURATION_MS)
-    ratios = anomalous_rates(SWEEP_GAMMAS[:, None], MAGNETIC, ELECTRIC_FIELDS, ANOMALY, LAB_DURATION, N_SWEEP_STEPS)
-    save_figure(render.draw_magic(ELECTRIC_FIELDS / MAGNETIC, ratios), "thomas_magic")
+    walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> (box_half_width * mv.x.dual())
+    save_animation(render.animate_box(box_half_width, walls, bouncing(positions, path, box_spin)), "thomas_box", duration_ms)
+    magic = np.sqrt(1 + 1 / muon_anomaly)
+    radius = core.ring_radius(magic, ring_magnetic, ring_electric)
+    outline = (mv.xy * (-np.linspace(0, 2 * np.pi, n_ring_samples) / 2)).exp() >> (radius * mv.x.dual())
+    states = ring(magic, ring_magnetic, ring_electric, muon_anomaly, n_ring_turns, n_ring_turn_steps, ring_stride)
+    save_animation(render.animate_ring(outline, states), "thomas_storage_ring", duration_ms)
+    ratios = anomalous_rates(sweep_gammas[:, None], ring_magnetic, electric_fields, muon_anomaly, sweep_lab_duration, n_sweep_steps)
+    save_figure(render.draw_magic(electric_fields / ring_magnetic, ratios), "thomas_magic")
 
     # checks
     # Two boosts leave a pure turn, by the closed form for equal perpendicular boosts, and by the area
@@ -179,21 +179,21 @@ def main() -> None:
     np.testing.assert_allclose(angle, -(np.pi / 2 - 2 * np.arctan2(y, x)), atol=1e-12)
     # Around a circular orbit the spin turns back by the cap's area, 2 pi (gamma - 1).
     end = core.lab_view(velocities[-1], tuple(core.carried(velocities, start_spin))[-1])
-    expected = (mv.xy * (np.pi * (GAMMAS - 1))).exp() >> core.about(mv.x.dual())
+    expected = (mv.xy * (np.pi * (orbit_gammas - 1))).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((end - expected).kernel, 0.0, atol=5e-3)
     # In the box, each round trip turns it back by the area the square of momenta encloses on the
     # hyperboloid.
-    square_area = 4 * (2 * MOMENTUM * np.arcsinh(MOMENTUM / np.sqrt(1 + MOMENTUM**2))
-                       - np.arctan(MOMENTUM**2 / np.sqrt(1 + 2 * MOMENTUM**2)))
+    square_area = 4 * (2 * box_momentum * np.arcsinh(box_momentum / np.sqrt(1 + box_momentum**2))
+                       - np.arctan(box_momentum**2 / np.sqrt(1 + 2 * box_momentum**2)))
     *_, (_, box_end) = bouncing(positions, path, box_spin)
-    expected = (mv.xy * (N_LOOPS * square_area / 2)).exp() >> core.about(mv.x.dual())
+    expected = (mv.xy * (n_loops * square_area / 2)).exp() >> core.about(mv.x.dual())
     np.testing.assert_allclose((box_end - expected).kernel, 0.0, atol=5e-2)
     # At the magic Lorentz factor the electric field drops out of the anomalous rate; elsewhere it
     # enters by the Bargmann–Michel–Telegdi formula.
     values = ratios.kernel[..., 0]
-    speed = np.sqrt(1 - 1 / SWEEP_GAMMAS[0] ** 2)
+    speed = np.sqrt(1 - 1 / sweep_gammas[0] ** 2)
     np.testing.assert_allclose(values[1], 1.0, atol=1e-3)
-    np.testing.assert_allclose(values[0], 1 - (1 - 1 / (ANOMALY * (SWEEP_GAMMAS[0] ** 2 - 1))) * speed * ELECTRIC_FIELDS / MAGNETIC, atol=1e-3)
+    np.testing.assert_allclose(values[0], 1 - (1 - 1 / (muon_anomaly * (sweep_gammas[0] ** 2 - 1))) * speed * electric_fields / ring_magnetic, atol=1e-3)
 
 
 if __name__ == "__main__":

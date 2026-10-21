@@ -32,13 +32,17 @@ Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 # A position: an antivector, intrinsic.
 Point = ga.gatype.antivector()
-# The points of the xy plane, by the blades their x and y coordinates sit on.
-PlanarPoint = ga.subspace("yz zx")
 
 
 # --- plumbing -------------------------------------------------------------------------
 def as_scalar(values: np.ndarray) -> Scalar:
     return mv.scalar(np.asarray(values)[..., None])
+
+
+def length(directions: Point) -> Scalar:
+    """The length of each direction: its slice read along it, in any signature where the direction is
+    spacelike."""
+    return (directions.dual_inverse() & directions).square_root()
 
 
 def as_ga_sparse(C: np.ndarray, V: Extensor) -> SparseExtensor:
@@ -123,7 +127,7 @@ class Mesh:
         axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))        # [axes] Point
         positions = (axes * lattice).sum(axis=-1)                          # [nodes] Point
         # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
-        positions = spacing * layers[inside] * positions.normalized()
+        positions = spacing * layers[inside] * positions / length(positions)
         vertices = concatenate((mv.antivector([[0, 0, 0]]), positions)).field()   # Point[V]
         mesh = cls._triangulate(vertices)
         boundary = np.flatnonzero(layers[inside] == divisions) + 1
@@ -133,9 +137,9 @@ class Mesh:
         target = (4 * mesh.triangle_areas.batch().sum() / (np.sqrt(3) * len(mesh.faces))).square_root()
         for _ in range(relaxation_steps):
             edges = mesh.edge_displacements
-            force = edges * (1 - target / edges.norm())                    # Point[E]
+            force = edges * (1 - target / length(edges))                   # Point[E]
             positions = (mesh.vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Point
-            positions = positions.at[boundary].set(radius * positions[boundary].normalized())
+            positions = positions.at[boundary].set(radius * positions[boundary] / length(positions[boundary]))
             mesh = cls._triangulate(positions.field())
         return mesh
 
@@ -197,7 +201,8 @@ class Mesh:
         """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
         from scipy.spatial import Delaunay
 
-        coordinates = vertices.cast(PlanarPoint).kernel
+        # Positions read by pairing with the slices across the first two directions.
+        coordinates = (stack((mv.x, mv.y)) & vertices.batch()[..., None]).to_array()
         return cls(vertices, Delaunay(coordinates).simplices)
 
     @cached_property
@@ -314,9 +319,9 @@ class Mesh:
 
     @cached_property
     def face_normals(self) -> Vector:
-        """Vector[F]: each face's unit normal, outwards: where two of its edges meet."""
+        """Vector[F]: each face's unit normal, outwards: where two of its edges meet, over twice its area."""
         edges = self.triangle_edges
-        return (edges[0] & edges[1]).normalized()
+        return (edges[0] & edges[1]) / (2 * self.triangle_areas)
 
     @cached_property
     def unit_volume(self) -> Scalar:
@@ -328,9 +333,9 @@ class Mesh:
 
     @cached_property
     def triangle_areas(self) -> Scalar:
-        """Scalar[F]: half the size of where two edges meet."""
+        """Scalar[F]: half the size of the face's own plane, the commutator of two of its edges."""
         edges = self.triangle_edges
-        return (edges[0] & edges[1]).norm() / 2
+        return edges[1].commutator(edges[0]).norm() / 2
 
     @cached_property
     def edge_ratio(self) -> Scalar:
@@ -342,8 +347,9 @@ class Mesh:
         `face_weights` `Scalar[F]`."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
-        # the cotangent at each corner; against the reverse of another, an edge pairs positively
-        cotangents = -after.dot(before) / (after & before).norm()             # [3] Scalar[F]
+        # the cotangent at each corner: one edge's slice read along the other, over the size of the plane
+        # they span; head to tail, the corner's own edges point the other way
+        cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar[F]
         return ~self.by_corner(cotangents / 2) * face_weights
 
     @cached_property
@@ -364,13 +370,13 @@ class Mesh:
         """[3] Scalar[F]: the cosine of each corner's angle, kept exactly by a conformal map."""
         edges = self.triangle_edges
         after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
-        return -after.dot(before) / (after.norm() * before.norm())
+        return -(after.dual_inverse() & before) / (length(after) * length(before))
 
     @cached_property
     def reconstruction(self) -> SparseExtensor:
         """[F, E] Vector <- Scalar: Whitney edge integrals evaluated at face centroids."""
         # The gradient of each corner's hat function points across its opposite edge.
-        gradients = (self.triangle_edges | self.face_normals) / (2 * self.triangle_areas)   # [3] Vector[F]
+        gradients = (self.triangle_edges | self.face_normals.inverse()) / (2 * self.triangle_areas)   # [3] Vector[F]
         # All three hat functions equal one third at the centroid. The difference of two
         # gradients reconstructs an oriented edge integral, with the mesh edge's sign.
         coefficients = (gradients[[2, 0, 1]] - gradients[[1, 2, 0]]) / 3   # [3] Vector[F]

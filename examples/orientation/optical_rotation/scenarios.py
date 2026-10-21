@@ -8,11 +8,11 @@ from numga import stack
 from examples.orientation.optical_rotation import core
 from examples.orientation.optical_rotation.core import Mirror, Polarization, mv
 
-LENGTH = 2.0                                          # mm through the medium
-N_SAMPLES = 9                                         # polarization samples along each leg
-ROTARY_POWER = np.deg2rad(22.5)                       # rad per mm; quartz turns 21.7 degrees per mm
-VERDET = np.deg2rad(22.5)                             # rad per mm per tesla, illustrative
-FIELD = 1.0                                           # tesla, along the path
+length = 2.0                                          # mm through the medium
+n_samples = 9                                         # polarization samples along each leg
+quartz_rotary_power = np.deg2rad(22.5)                       # rad per mm; quartz turns 21.7 degrees per mm
+verdet = np.deg2rad(22.5)                             # rad per mm per tesla, illustrative
+field_strength = 1.0                                           # tesla, along the path
 
 
 # --- math -----------------------------------------------------------------------------
@@ -27,14 +27,14 @@ def isolator() -> tuple[Polarization, np.ndarray]:
     direction = mv.z.dual()
     start = mv.x.dual()
     # Measured against the lab's handedness, the basis volume x ^ y ^ z.
-    rotary_power = mv(core.RotaryPower, [ROTARY_POWER])                           # [] RotaryPower
-    field = mv.xy * FIELD                                                         # [] Field, along z
+    rotary_power = mv(core.RotaryPower, [quartz_rotary_power])                           # [] RotaryPower
+    field = mv.xy * field_strength                                                         # [] Field, along z
     mirror: Mirror = mv.x                                                         # the plane x = 0, holding the path
-    depths = np.linspace(0, LENGTH, N_SAMPLES)
+    depths = np.linspace(0, length, n_samples)
 
-    original = core.through_media(direction, rotary_power, field, VERDET, start, depths)
+    original = core.through_media(direction, rotary_power, field, verdet, start, depths)
     # The mirror image of the setup: the medium, the field and the incoming light, all reflected.
-    mirrored = core.through_media(direction, mirror >> rotary_power, mirror >> field, VERDET, mirror >> start, depths)
+    mirrored = core.through_media(direction, mirror >> rotary_power, mirror >> field, verdet, mirror >> start, depths)
     return stack([original, mirrored], axis=1), depths                           # [media, setups, legs, depths] Polarization
 
 

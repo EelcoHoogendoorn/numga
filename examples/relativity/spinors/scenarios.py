@@ -4,12 +4,12 @@ import numpy as np
 
 from examples.relativity.spinors import core
 
-N_ROTATION_FRAMES = 96
-ROTATION_ANGLES = np.linspace(0, 4 * np.pi, N_ROTATION_FRAMES, endpoint=False)
-FRAME_DURATION = 80
-RAPIDITY = 0.7
-N_PHASE_SAMPLES = 129
-PHASE_ANGLES = np.linspace(0, 2 * np.pi, N_PHASE_SAMPLES)
+n_rotation_frames = 96
+rotation_angles = np.linspace(0, 4 * np.pi, n_rotation_frames, endpoint=False)
+frame_duration = 80
+rapidity = 0.7
+n_phase_samples = 129
+phase_angles = np.linspace(0, 2 * np.pi, n_phase_samples)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -17,25 +17,25 @@ def rotation() -> tuple[core.Antivector, core.Scalar, core.Scalar]:
     """A spinor turned through two full turns about y: its spin, and the intensities at the two outputs
     where it is recombined with the unturned spinor, their sum and their difference."""
     reference = core.mv.scalar()
-    psi = (core.mv.xz * (ROTATION_ANGLES / 2)).exp()
+    psi = (core.mv.xz * (rotation_angles / 2)).exp()
     return core.spin(psi), core.interference(psi, reference), core.interference(psi, -reference)
 
 
 def chirality() -> tuple[core.Antivector, core.Antivector, core.Antivector]:
     """A boosted spinor split into its left- and right-handed parts: their currents, and the spinor's."""
-    psi = (core.mv.tz * (-RAPIDITY / 2)).exp()
-    right, left = core.RIGHT(psi), core.LEFT(psi)
+    psi = (core.mv.tz * (-rapidity / 2)).exp()
+    right, left = core.right_projector(psi), core.left_projector(psi)
     return core.current(left), core.current(right), core.current(psi)
 
 
 def majorana() -> tuple[core.Scalar, core.Scalar]:
     """A Majorana spinor turned by a phase: the densities of the parts charge conjugation keeps and
     negates, over the phase angles."""
-    psi = core.MAJORANA(core.mv.scalar())
+    psi = core.majorana_projector(core.mv.scalar())
     psi = psi / core.density(psi).square_root()
-    phase = (core.mv.yx * PHASE_ANGLES).exp()
+    phase = (core.mv.yx * phase_angles).exp()
     phased = psi * phase
-    conjugated = core.CHARGE_CONJUGATION(phased)
+    conjugated = core.charge_conjugation(phased)
     return core.density((phased + conjugated) / 2), core.density((phased - conjugated) / 2)
 
 
@@ -47,13 +47,13 @@ def main() -> None:
     spin, bright, dark = rotation()
     left_current, right_current, current = chirality()
     fixed_density, negated_density = majorana()
-    save_animation(render.animate_rotation(spin, bright, dark), "spinor_rotation", FRAME_DURATION)
+    save_animation(render.animate_rotation(spin, bright, dark), "spinor_rotation", frame_duration)
     save_figure(render.draw_chirality(left_current, right_current, current), "spinor_chirality")
-    save_figure(render.draw_majorana(PHASE_ANGLES, fixed_density, negated_density), "spinor_majorana")
+    save_figure(render.draw_majorana(phase_angles, fixed_density, negated_density), "spinor_majorana")
 
     # checks
     # One full turn restores the spin but darkens the sum port: the spinor has changed sign.
-    half = N_ROTATION_FRAMES // 2
+    half = n_rotation_frames // 2
     np.testing.assert_allclose((spin[half] - spin[0]).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(bright[half].to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose(dark[half].to_array(), 1.0, atol=1e-12)

@@ -15,43 +15,43 @@ mv = core.mv
 
 
 def bottle() -> tuple[core.Antivector, core.Antivector, core.Antivector, core.Antivector]:
-    pieces, midpoints = core.coils(scenarios.RADIUS, scenarios.HEIGHTS, scenarios.N_PIECES)
+    pieces, midpoints = core.coils(scenarios.coil_radius, scenarios.coil_heights, scenarios.n_pieces)
     return pieces, midpoints, *scenarios.flights(pieces, midpoints)
 
 
 def test_field_turns_velocity_by_the_lorentz_force_at_constant_speed():
-    pieces, midpoints = core.coils(scenarios.RADIUS, scenarios.HEIGHTS, scenarios.N_PIECES)
-    history = islice(core.evolve(*scenarios.launch(), pieces, midpoints, scenarios.CURRENT, scenarios.PROPER_STEP), 50)
+    pieces, midpoints = core.coils(scenarios.coil_radius, scenarios.coil_heights, scenarios.n_pieces)
+    history = islice(core.evolve(*scenarios.launch(), pieces, midpoints, scenarios.coil_current, scenarios.proper_step), 50)
     event, velocity = list(history)[-1]
-    magnetic = core.field(event, pieces, midpoints, scenarios.CURRENT)
+    magnetic = core.field(event, pieces, midpoints, scenarios.coil_current)
     mismatch = velocity.commutator(magnetic).dual() - (velocity & magnetic)
-    np.testing.assert_allclose(mismatch.norm().to_array(), 0, atol=1e-10)
-    np.testing.assert_allclose((mv.t & velocity).to_array(), 1 / np.sqrt(1 - scenarios.SPEED**2), atol=1e-11)
+    np.testing.assert_allclose(mismatch.kernel, 0, atol=1e-10)
+    np.testing.assert_allclose((mv.t & velocity).to_array(), 1 / np.sqrt(1 - scenarios.launch_speed**2), atol=1e-11)
 
 
 def test_loss_cone_and_magnetic_moment():
     """Escape through the coils exactly inside the loss cone of the field on the axis; the trapped
     particles keep their magnetic moment, averaged over a turn, through their bounces."""
     pieces, midpoints, events, velocities = bottle()
-    on_axis = core.field(core.axis * np.linspace(scenarios.HEIGHTS[0], scenarios.HEIGHTS[-1], 401), pieces, midpoints, scenarios.CURRENT)
+    on_axis = core.field(core.axis * np.linspace(scenarios.coil_heights[0], scenarios.coil_heights[-1], 401), pieces, midpoints, scenarios.coil_current)
     strengths = on_axis.scalar_norm_squared().square_root().to_array()
     loss_cone = np.degrees(np.arcsin(np.sqrt(strengths.min() / strengths.max())))
-    escaped = np.abs((mv.z & events[-1]).to_array()) > scenarios.HEIGHTS[-1]
-    np.testing.assert_array_equal(escaped, scenarios.PITCHES < loss_cone)
+    escaped = np.abs((mv.z & events[-1]).to_array()) > scenarios.coil_heights[-1]
+    np.testing.assert_array_equal(escaped, scenarios.launch_pitches < loss_cone)
     assert escaped.any() and not escaped.all()
-    magnetic = core.field(events, pieces, midpoints, scenarios.CURRENT)
+    magnetic = core.field(events, pieces, midpoints, scenarios.coil_current)
     moments = core.moment(velocities, magnetic).to_array()                    # [steps, particles]
-    n_turn = int(2 * np.pi / (strengths.min() * scenarios.PROPER_STEP))
+    n_turn = int(2 * np.pi / (strengths.min() * scenarios.proper_step))
     means = np.apply_along_axis(np.convolve, 0, moments, np.ones(n_turn) / n_turn, "valid")
     np.testing.assert_allclose(means[:, ~escaped] / means[0, ~escaped], 1, rtol=0.2)
     assert (np.abs(means[:, escaped] / means[0, escaped] - 1).max(axis=0) > 1).all()
 
 
 def test_scene_draws():
-    pieces, midpoints = core.coils(scenarios.RADIUS, scenarios.HEIGHTS, scenarios.N_PIECES)
-    history = islice(core.evolve(*scenarios.launch(), pieces, midpoints, scenarios.CURRENT, scenarios.PROPER_STEP), 24)
+    pieces, midpoints = core.coils(scenarios.coil_radius, scenarios.coil_heights, scenarios.n_pieces)
+    history = islice(core.evolve(*scenarios.launch(), pieces, midpoints, scenarios.coil_current, scenarios.proper_step), 24)
     events = stack([event for event, _ in history])
     points, strength = scenarios.section(pieces, midpoints)
-    images = render.animate_flights(events, scenarios.PITCHES, points, strength, scenarios.RADIUS,
-                                    scenarios.HEIGHTS, scenarios.N_STEPS_PER_FRAME)
+    images = render.animate_flights(events, scenarios.launch_pitches, points, strength, scenarios.coil_radius,
+                                    scenarios.coil_heights, scenarios.n_steps_per_frame)
     assert len(images) == 2

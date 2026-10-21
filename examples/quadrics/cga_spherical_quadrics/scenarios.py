@@ -17,11 +17,11 @@ FIRST_TILT, FIRST_RADIUS = 0.35, np.radians(48.0)
 SECOND_TILT, SECOND_RADIUS = 0.40, np.radians(52.0)
 # The shapes carried, by name in `shapes`; the frames of one turn, the pixels across, the traced pixels along
 # each side of a shown one, and a frame's duration in milliseconds.
-SHAPES = ["trio"]
-N_FRAMES = 60
-RESOLUTION = 300
-SUPERSAMPLE = 2
-FRAME_DURATION = 33
+shape_names = ["trio"]
+n_animation_frames = 60
+resolution = 300
+supersample = 2
+frame_duration = 33
 
 
 def shapes() -> dict[str, tuple[Quadric, list[str]]]:
@@ -81,13 +81,13 @@ def main() -> None:
     from examples.animation import save_animation
     from examples.quadrics.cga_spherical_quadrics import render
 
-    world, colors = vortex(SHAPES, N_FRAMES)
-    save_animation(render.vortex_frames(world, colors, RESOLUTION, SUPERSAMPLE), f"cga_{'_'.join(SHAPES)}_vortex", FRAME_DURATION)
+    world, colors = vortex(shape_names, n_animation_frames)
+    save_animation(render.vortex_frames(world, colors, resolution, supersample), f"cga_{'_'.join(shape_names)}_vortex", frame_duration)
 
     # checks
     # The flow is conformal, so points of S² stay null; and a full turn brings every quadric back.
     generator = vortex_generator()
-    quadrics = Extensor.concatenate([shapes()[name][0] for name in SHAPES])
+    quadrics = Extensor.concatenate([shapes()[name][0] for name in shape_names])
     probes = point(np.array([[0.6, 0.0, 0.8], [0.0, -0.28, 0.96], [0.36, 0.48, 0.8]]))
     carried = (generator * 0.4).exp() >> probes
     np.testing.assert_allclose((carried | carried).to_array(), 0.0, atol=1e-12)

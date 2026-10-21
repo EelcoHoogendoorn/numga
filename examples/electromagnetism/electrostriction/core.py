@@ -3,8 +3,10 @@
 Particles and dipoles are confined to a plane; their interaction is the three-dimensional
 electrostatic dipole field restricted to that plane. Units set four pi times permittivity to one.
 The particles' positions and their dipoles, a charge times a displacement, are antivectors,
-intrinsic like all geometry; the electric field is a vector, extrinsic, and pairs with a dipole
-into an energy, `field & dipole`.
+intrinsic like all geometry. The electric field is a bivector of spacetime, extrinsic, through the
+observer's time: the field along a direction is the dual of the plane the direction sweeps through
+time, `(direction & time).dual()`, and a dipole meets the field in the plane it sweeps, an energy
+`field & (dipole & time)`.
 Central springs join neighbours, and weak tethers to the reference sites support the lattice.
 The energy at fixed applied field includes the work exchanged with the source of that field.
 """
@@ -17,19 +19,23 @@ from functools import cached_property
 import jax
 import numpy as np
 
-from numga import Algebra
+from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
 
 jax.config.update("jax_enable_x64", True)
-ga = Algebra("x+y+")
 mv = JaxContext(ga, np.float64).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
-# Electric fields are vectors; positions, displacements and dipoles are antivectors.
-Field = Vector
-Point = ga.gatype.antivector()
+# Positions, displacements and dipoles are directions in the plane, antivectors; the electric field
+# there is a bivector through time, its planes xt and yt.
+Point = ga.gatype.antivector().derive.containing("z t")
+Field = ga.gatype.bivector().derive.within("x y t").derive.containing("t")
 Response = ga.gatype((Field, Point))                       # Field <- Point
+
+# The direction in time of an observer at rest with the lattice, which pairs to one with `mv.t`; the
+# dual carries the minus of t's square.
+time = -mv.t.dual()                                        # [] Antivector
 
 
 # --- math -----------------------------------------------------------------------------
@@ -54,7 +60,7 @@ class Lattice:
 
     @cached_property
     def lengths(self) -> Scalar:
-        return self.links(self.rest).norm()
+        return self.links(self.rest).squared().square_root()
 
     def response(self, positions: Point) -> Response:
         """The field each dipole needs, its own restoring field less the field supplied by the
@@ -66,17 +72,16 @@ class Lattice:
         # added on the diagonal is arbitrary; it keeps the denominator finite.
         n_particles = self.rest.gatype.site_shape[0]
         distance = (squared_distance + np.eye(n_particles)).square_root()
-        # A dipole's field at a separation; the dual's inverse reads the displacement it points
-        # along as the field's direction.
-        coupling = ((3 * separation * (separation | Point) - squared_distance * Point).dual_inverse()
+        # A dipole's field at a separation: the field along the direction its law gives.
+        coupling = (field_along(3 * separation * (separation | Point) - squared_distance * Point)
                     / distance**5).field(0, 1)                         # Field[particles] <- Point[particles]
-        return Point.dual_inverse() / self.polarizability - coupling
+        return field_along(Point) / self.polarizability - coupling
 
     def elastic_energy(self, positions: Point) -> Scalar:
         """Stretching energy of the bonds and displacement energy of the supporting tethers."""
-        extension = self.links(positions).norm() - self.lengths
+        extension = self.links(positions).squared().square_root() - self.lengths
         bonds = self.stiffness / 2 * extension.squared().sites.sum()
-        tethers = self.tether / 2 * (positions - self.rest).scalar_norm_squared().sites.sum()
+        tethers = self.tether / 2 * (positions - self.rest).squared().sites.sum()
         return bonds + tethers
 
     def energy(self, positions: Point, applied: Field) -> Scalar:
@@ -84,7 +89,7 @@ class Lattice:
         dipoles = self.response(positions).solve(applied)
         # Building induced dipoles costs energy. At their minimum the total electric energy,
         # including that cost and mutual interactions, is minus half their pairing with the field.
-        electrical = -(applied & dipoles).sites.sum() / 2
+        electrical = -(applied & (dipoles & time)).sites.sum() / 2
         return self.elastic_energy(positions) + electrical
 
     def equilibrium(self, applied: Field, n_steps: int) -> Point:
@@ -100,6 +105,12 @@ class Lattice:
             # to the mechanical curvature as well as the first derivative.
             positions = positions - curvature.solve(gradient)
         return positions
+
+
+def field_along(direction: Point) -> Field:
+    """The field along a direction in the plane, as strong as the direction is long: the dual of the
+    plane the direction sweeps through time."""
+    return (direction & time).dual()                                          # [...] Field
 
 
 def extent(positions: Point, direction: Vector) -> Scalar:

@@ -12,16 +12,16 @@ from numga import stack
 from examples.animation import capture
 from examples.optics.black_sandwich import core
 
-BACKGROUND = "#fbfaf7"
-BEAM = "#2b8cbe"
-OUTLINE = "#8a949c"
-POLARIZER = "#35434d"
-PLATE = "#db663d"
-FAINT = "#d9dcda"
-COMPONENT_POSITIONS = np.array([1.2, 3.2, 5.2, 8.2, 10.2, 12.2])
-FIELD_POSITIONS = np.array([0.1, 2.2, 4.2, 6.7, 9.2, 11.2, 13.7])
-FIELD_HEIGHT = 1.25
-RADIUS = 0.42
+background_colour = "#fbfaf7"
+beam_colour = "#2b8cbe"
+outline_colour = "#8a949c"
+polarizer_colour = "#35434d"
+plate_colour = "#db663d"
+faint_colour = "#d9dcda"
+component_positions = np.array([1.2, 3.2, 5.2, 8.2, 10.2, 12.2])
+field_positions = np.array([0.1, 2.2, 4.2, 6.7, 9.2, 11.2, 13.7])
+field_height = 1.25
+component_radius = 0.42
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -43,43 +43,43 @@ def _segments(centres: np.ndarray, directions: np.ndarray, length: float) -> np.
 
 
 def _scene(input_axis: np.ndarray, output_axis: np.ndarray) -> tuple[plt.Figure, LineCollection, LineCollection, LineCollection]:
-    figure = plt.figure(figsize=(9.2, 2.2), dpi=100, facecolor=BACKGROUND)
-    ax = figure.add_axes((0, 0, 1, 1), facecolor=BACKGROUND)
+    figure = plt.figure(figsize=(9.2, 2.2), dpi=100, facecolor=background_colour)
+    ax = figure.add_axes((0, 0, 1, 1), facecolor=background_colour)
     ax.set(xlim=(-0.5, 14.3), ylim=(-0.75, 1.85), aspect="equal")
     ax.set_axis_off()
 
-    boundaries = np.r_[FIELD_POSITIONS[0] - 0.3, COMPONENT_POSITIONS, FIELD_POSITIONS[-1] + 0.3]
-    beam_segments = np.stack((np.column_stack((boundaries[:-1], np.zeros(len(FIELD_POSITIONS)))),
-                              np.column_stack((boundaries[1:], np.zeros(len(FIELD_POSITIONS))))), axis=1)
-    ax.add_collection(LineCollection(beam_segments, colors=FAINT, linewidths=1, zorder=1))
+    boundaries = np.r_[field_positions[0] - 0.3, component_positions, field_positions[-1] + 0.3]
+    beam_segments = np.stack((np.column_stack((boundaries[:-1], np.zeros(len(field_positions)))),
+                              np.column_stack((boundaries[1:], np.zeros(len(field_positions))))), axis=1)
+    ax.add_collection(LineCollection(beam_segments, colors=faint_colour, linewidths=1, zorder=1))
     beam = LineCollection(beam_segments, linewidths=4, capstyle="butt", zorder=2)
     ax.add_collection(beam)
 
-    for position in COMPONENT_POSITIONS:
-        ax.add_patch(Circle((position, 0), RADIUS, facecolor=BACKGROUND, edgecolor=OUTLINE, linewidth=1, zorder=3))
-    polarizer_centres = np.column_stack((COMPONENT_POSITIONS[[0, 2, 3, 5]], np.zeros(4)))
+    for position in component_positions:
+        ax.add_patch(Circle((position, 0), component_radius, facecolor=background_colour, edgecolor=outline_colour, linewidth=1, zorder=3))
+    polarizer_centres = np.column_stack((component_positions[[0, 2, 3, 5]], np.zeros(4)))
     polarizer_axes = np.stack((input_axis, output_axis, input_axis, output_axis))
-    ax.add_collection(LineCollection(_segments(polarizer_centres, polarizer_axes, 0.8 * RADIUS),
-                                     colors=POLARIZER, linewidths=2.2, capstyle="round", zorder=4))
-    plate_lines = LineCollection([], colors=PLATE, linewidths=2.2, capstyle="round", zorder=4)
+    ax.add_collection(LineCollection(_segments(polarizer_centres, polarizer_axes, 0.8 * component_radius),
+                                     colors=polarizer_colour, linewidths=2.2, capstyle="round", zorder=4))
+    plate_lines = LineCollection([], colors=plate_colour, linewidths=2.2, capstyle="round", zorder=4)
     ax.add_collection(plate_lines)
 
-    for position in FIELD_POSITIONS:
-        ax.add_patch(Circle((position, FIELD_HEIGHT), 0.38, fill=False, edgecolor=FAINT, linewidth=0.8))
-    field_lines = LineCollection([], colors=BEAM, linewidths=2.2, capstyle="round", zorder=4)
+    for position in field_positions:
+        ax.add_patch(Circle((position, field_height), 0.38, fill=False, edgecolor=faint_colour, linewidth=0.8))
+    field_lines = LineCollection([], colors=beam_colour, linewidths=2.2, capstyle="round", zorder=4)
     ax.add_collection(field_lines)
     return figure, beam, field_lines, plate_lines
 
 
 def _update(beam: LineCollection, field_lines: LineCollection, plate_lines: LineCollection,
             fields: np.ndarray, plate_axis: np.ndarray) -> None:
-    colours = np.tile(to_rgba(BEAM), (len(fields), 1))
+    colours = np.tile(to_rgba(beam_colour), (len(fields), 1))
     colours[:, 3] = np.clip(np.sum(fields * fields, axis=-1), 0, 1)
     beam.set_color(colours)
-    field_centres = np.column_stack((FIELD_POSITIONS, np.full(len(fields), FIELD_HEIGHT)))
+    field_centres = np.column_stack((field_positions, np.full(len(fields), field_height)))
     field_lines.set_segments(_segments(field_centres, fields, 0.34))
-    plate_centres = np.column_stack((COMPONENT_POSITIONS[[1, 4]], np.zeros(2)))
-    plate_lines.set_segments(_segments(plate_centres, plate_axis, 0.8 * RADIUS))
+    plate_centres = np.column_stack((component_positions[[1, 4]], np.zeros(2)))
+    plate_lines.set_segments(_segments(plate_centres, plate_axis, 0.8 * component_radius))
 
 
 def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,

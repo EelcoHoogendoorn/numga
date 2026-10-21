@@ -39,21 +39,21 @@ def test_weyl_projections_split_the_current_into_two_covariant_null_currents():
     rng = np.random.default_rng(932)
     mv = core.mv
     spinors = mv(core.Spinor, rng.normal(size=(SAMPLES, 8)) * 0.3)
-    right, left = core.RIGHT(spinors), core.LEFT(spinors)
+    right, left = core.right_projector(spinors), core.left_projector(spinors)
     rotor = (mv.tx * 0.27).exp() * (mv.yz * -0.38).exp()
     right_current, left_current = core.current(right), core.current(left)
 
     # checks: complementary projections commute with every left Lorentz action.
     np.testing.assert_allclose((right + left - spinors).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose((core.RIGHT(right) - right).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose((core.LEFT(left) - left).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.RIGHT(left).kernel, 0, atol=TOLERANCE)
-    np.testing.assert_allclose(core.LEFT(right).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose((core.right_projector(right) - right).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose((core.left_projector(left) - left).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose(core.right_projector(left).kernel, 0, atol=TOLERANCE)
+    np.testing.assert_allclose(core.left_projector(right).kernel, 0, atol=TOLERANCE)
     np.testing.assert_allclose(
-        (core.RIGHT(rotor * spinors) - rotor * right).kernel, 0, atol=TOLERANCE,
+        (core.right_projector(rotor * spinors) - rotor * right).kernel, 0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
-        (core.LEFT(rotor * spinors) - rotor * left).kernel, 0, atol=TOLERANCE,
+        (core.left_projector(rotor * spinors) - rotor * left).kernel, 0, atol=TOLERANCE,
     )
     # Each current is future null, while their sum is the Dirac current and
     # their difference is the spin current.
@@ -76,10 +76,10 @@ def test_charge_conjugation_exchanges_chirality_and_reverses_the_phase():
     rng = np.random.default_rng(933)
     mv = core.mv
     spinors = mv(core.Spinor, rng.normal(size=(SAMPLES, 8)) * 0.3)
-    conjugate = core.CHARGE_CONJUGATION
+    conjugate = core.charge_conjugation
     phase = (mv.yx * 0.43).exp()
     rotor = (mv.ty * -0.32).exp() * (mv.xz * 0.24).exp()
-    majorana = core.MAJORANA(spinors)
+    majorana = core.majorana_projector(spinors)
 
     # checks: charge conjugation is an involution, commutes with Lorentz action, and
     # reverses the chosen phase rather than being linear over that phase.
@@ -90,7 +90,7 @@ def test_charge_conjugation_exchanges_chirality_and_reverses_the_phase():
         0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
-        (conjugate(core.PHASE(spinors)) + core.PHASE(conjugate(spinors))).kernel,
+        (conjugate(core.phase_unit(spinors)) + core.phase_unit(conjugate(spinors))).kernel,
         0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
@@ -98,7 +98,7 @@ def test_charge_conjugation_exchanges_chirality_and_reverses_the_phase():
         0, atol=TOLERANCE,
     )
     np.testing.assert_allclose(
-        (conjugate(core.RIGHT(spinors)) - core.LEFT(conjugate(spinors))).kernel,
+        (conjugate(core.right_projector(spinors)) - core.left_projector(conjugate(spinors))).kernel,
         0, atol=TOLERANCE,
     )
     # These commuting Majorana states are fixed by conjugation and carry a

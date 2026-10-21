@@ -28,7 +28,7 @@ WaveMap = ga.gatype((Vector, Vector))                         # Vector <- Vector
 # A coupling of the excitation to the field itself, with a sense of its own: measured against a handedness.
 Axion = ga.gatype(ga.subspace.scalar(), orientation=Orientation.intrinsic)
 axes = stack([mv.x, mv.y, mv.z])
-ROOT_SIGNS = np.array([-1.0, 1.0])
+root_signs = np.array([-1.0, 1.0])
 
 
 # --- math -----------------------------------------------------------------------------
@@ -67,10 +67,12 @@ def polynomial(medium: Constitutive, rest_space: Trivector, wavevector: Vector) 
     `rest_space`; the volume enters twice, so its sense drops out."""
     wave = potential_map(medium, wavevector)                                  # [...] Vector <- Vector
     adjugate = wave.outermorphism(Trivector).adjugate()                       # [...] Vector <- Vector
-    # The adjugate acts on complements of volumes: the observer enters as the dual of its rest space.
+    # The adjugate acts on complements of volumes: the observer enters as the dual of its rest space, and
+    # its output is read by pairing with the rest space.
     observer = rest_space.dual()                                              # [...] Vector
-    frequency = observer | wavevector                                         # [...] Scalar
-    return -(observer | adjugate(observer)) / frequency.squared()             # [...] Scalar
+    # The frequency the observer measures: the wavevector paired with its rest space.
+    frequency = wavevector & rest_space                                       # [...] Scalar
+    return (rest_space & adjugate(observer)) / frequency.squared()            # [...] Scalar
 
 
 def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) -> Vector:
@@ -87,7 +89,7 @@ def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) ->
     linear = unit - constant - quadratic                                      # [...] Scalar
     # Where the sheets coincide the discriminant vanishes, up to round-off of either sign.
     discriminant = (linear.squared() - 4 * quadratic * constant).abs().square_root()  # [...] Scalar
-    radii_squared = (-linear[..., None] + discriminant[..., None] * ROOT_SIGNS) / (2 * quadratic[..., None])  # [..., sheets] Scalar
+    radii_squared = (-linear[..., None] + discriminant[..., None] * root_signs) / (2 * quadratic[..., None])  # [..., sheets] Scalar
     return directions[..., None] * radii_squared.square_root()                # [..., sheets] Vector
 
 

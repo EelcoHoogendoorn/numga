@@ -15,12 +15,12 @@ Spinor = ga.gatype.even()
 time = -mv.t.dual()
 
 # Phase, chirality and charge conjugation are right multiplications, maps from Spinor to Spinor.
-PHASE = Spinor * mv.yx
-CHIRALITY = Spinor * mv.zt
-CHARGE_CONJUGATION = Spinor * mv.yt
-RIGHT = (Spinor + CHIRALITY) / 2
-LEFT = (Spinor - CHIRALITY) / 2
-MAJORANA = (Spinor + CHARGE_CONJUGATION) / 2
+phase_unit = Spinor * mv.yx
+chirality_map = Spinor * mv.zt
+charge_conjugation = Spinor * mv.yt
+right_projector = (Spinor + chirality_map) / 2
+left_projector = (Spinor - chirality_map) / 2
+majorana_projector = (Spinor + charge_conjugation) / 2
 
 
 # --- math -----------------------------------------------------------------------------

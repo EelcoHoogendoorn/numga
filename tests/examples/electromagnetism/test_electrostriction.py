@@ -13,10 +13,15 @@ ROUND_OFF = 1e-12
 CONVERGED_STEPS = 7
 
 
+def planar(coordinates: np.ndarray) -> core.Point:
+    """A field of directions in the plane from their x and y coordinates `[particles, 2]`."""
+    return (core.mv.x.dual() * coordinates[:, 0] + core.mv.y.dual() * coordinates[:, 1]).field()
+
+
 @pytest.fixture(scope="module")
 def loading():
     model = scenarios.lattice()
-    fields = core.mv.x * np.array([0, scenarios.FIELD, -scenarios.FIELD])
+    fields = core.field_along(core.mv.x.dual()) * np.array([0, scenarios.field_strength, -scenarios.field_strength])
     positions = model.equilibrium(fields, CONVERGED_STEPS)
     return model, fields, positions
 
@@ -29,21 +34,22 @@ def test_polarization_minimizes_the_full_electrical_energy(loading):
     # The work of one dipole field on another is symmetric between the two.
     rng = np.random.default_rng(1)
     particles = model.rest.gatype.site_shape[0]
-    first = core.mv.vector(rng.normal(size=(particles, 2))).dual().field()
-    second = core.mv.vector(rng.normal(size=(particles, 2))).dual().field()
-    np.testing.assert_allclose(((response[1](first) & second) - (response[1](second) & first)).sites.sum().kernel,
+    first = planar(rng.normal(size=(particles, 2)))
+    second = planar(rng.normal(size=(particles, 2)))
+    np.testing.assert_allclose(((response[1](first) & (second & core.time))
+                                - (response[1](second) & (first & core.time))).sites.sum().kernel,
                                0, atol=ROUND_OFF, rtol=0)
 
     def electrical(polarization):
-        return ((response(polarization) & polarization) / 2
-                - (fields & polarization)).sites.sum()
+        sweeps = polarization & core.time
+        return ((response(polarization) & sweeps) / 2 - (fields & sweeps)).sites.sum()
 
     np.testing.assert_allclose(derivative(electrical)(dipoles).kernel, 0, atol=ROUND_OFF, rtol=0)
     reduced = model.energy(positions, fields) - model.elastic_energy(positions)
     np.testing.assert_allclose((electrical(dipoles) - reduced).kernel, 0, atol=ROUND_OFF, rtol=0)
 
-    # Read back on dipoles through the dual, the field map is positive: every polarization costs energy.
-    assert response.dual().eigvalsh().to_array().min() > 20
+    # The electrical energy's curvature, a form on the dipoles, is positive: every polarization costs energy.
+    assert derivative(derivative(electrical))(dipoles).eigvalsh().to_array().min() > 20
 
 
 def test_typed_derivatives_predict_changes_of_energy_and_response(loading):
@@ -51,8 +57,8 @@ def test_typed_derivatives_predict_changes_of_energy_and_response(loading):
     position, field = positions[1], fields[1]
     particles = model.rest.gatype.site_shape[0]
     rng = np.random.default_rng(2)
-    displacement = core.mv.vector(rng.normal(size=(particles, 2))).dual().field() * 0.01
-    other = core.mv.vector(rng.normal(size=(particles, 2))).dual().field() * 0.01
+    displacement = planar(rng.normal(size=(particles, 2))) * 0.01
+    other = planar(rng.normal(size=(particles, 2))) * 0.01
     increment = 1e-3
 
     def energy(value):
@@ -87,8 +93,8 @@ def test_dipole_readjustment_changes_stiffness_but_not_the_stationary_first_deri
         return model.energy(value, field)
 
     def fixed_dipoles(value):
-        electrical = ((model.response(value)(dipoles) & dipoles) / 2
-                      - (field & dipoles)).sites.sum()
+        sweeps = dipoles & core.time
+        electrical = ((model.response(value)(dipoles) & sweeps) / 2 - (field & sweeps)).sites.sum()
         return model.elastic_energy(value) + electrical
 
     np.testing.assert_allclose((derivative(relaxed)(position) - derivative(fixed_dipoles)(position)).kernel,
@@ -132,15 +138,15 @@ def test_figures_and_animation_draw(loading):
     model, fields, positions = loading
     dipoles = model.response(positions).solve(fields)
     shape = render.draw_lattice(model.rest, model.bonds, positions[1], dipoles[1], fields[1],
-                                 scenarios.DIPOLE_SCALE, scenarios.FIELD_SCALE)
+                                 scenarios.dipole_scale, scenarios.field_scale)
     parallel = core.strain(positions[:2], model.rest, core.mv.x)
     transverse = core.strain(positions[:2], model.rest, core.mv.y)
-    curve = render.draw_loading(np.array([0, scenarios.FIELD]), parallel, transverse)
+    curve = render.draw_loading(np.array([0, scenarios.field_strength]), parallel, transverse)
     lattice = render.draw_rest(model.rest, model.bonds)
     for figure in (shape, curve, lattice):
         figure.canvas.draw()
         plt.close(figure)
     frames = render.animate_lattice(model.rest, model.bonds, positions[:2], dipoles[:2], fields[:2],
-                                     scenarios.DIPOLE_SCALE, scenarios.FIELD_SCALE)
+                                     scenarios.dipole_scale, scenarios.field_scale)
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])

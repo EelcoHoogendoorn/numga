@@ -9,7 +9,7 @@ from numga import stack
 from examples.animation import capture
 from examples.relativity.dirac import core
 
-COLOURS = ("#2e86c1", "#7d3c98", "#c0392b")
+colours = ("#2e86c1", "#7d3c98", "#c0392b")
 
 
 def spatial(directions: core.Antivector) -> np.ndarray:
@@ -28,7 +28,7 @@ def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -
 
 
 def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int) -> None:
-    for psi, trace, share, colour in zip(spinors, paths, mixtures, COLOURS):
+    for psi, trace, share, colour in zip(spinors, paths, mixtures, colours):
         xyz = spatial(trace)[:upto]                                           # [times, 3]
         ax.plot(xyz[:, 0], xyz[:, 1], xyz[:, 2], color=colour, linewidth=1.2, label=f"{share:.0%} negative energy")
         here = xyz[-1]

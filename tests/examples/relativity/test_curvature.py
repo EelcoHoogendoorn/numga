@@ -10,7 +10,7 @@ from examples.relativity.curvature.core import (
     strain_patterns, tidal_map, time_direction, travel, wave_packet, wave_vector,
 )
 
-POLARIZATIONS = scenarios.POLARIZATIONS
+polarization_weights = scenarios.polarization_weights
 
 
 def ring(count: int) -> Antivector:
@@ -98,7 +98,7 @@ def test_integrated_detector_response_converges_to_weak_wave_displacements():
     for count in (321, 641):
         time = np.linspace(-1, 7, count)
         _, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
-        waves = polarized(plus, cross, -0.5 * second[:, None] * POLARIZATIONS)
+        waves = polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)
         acceleration = -tidal_map(waves, time_direction)[:, :, None](reference).dual()
         displacement = render.transverse(integrate_acceleration(time, acceleration))
 
@@ -130,16 +130,16 @@ def test_strain_map_predicts_the_ring_and_its_second_derivative_is_the_curvature
     time = np.linspace(-1, 7, 641)
     strain, second = wave_packet(time, duration=6.0, cycles=3, amplitude=1e-4)
     plus, cross = polarizations()
-    waves = polarized(plus, cross, -0.5 * second[:, None] * POLARIZATIONS)
+    waves = polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)
     reference = ring(12)
     response = tidal_map(waves, time_direction)
     displacement = integrate_acceleration(time, -response[:, :, None](reference).dual())
-    predicted = polarized(plus_strain, cross_strain, 0.5 * strain[:, None] * POLARIZATIONS)[:, :, None](reference)
+    predicted = polarized(plus_strain, cross_strain, 0.5 * strain[:, None] * polarization_weights)[:, :, None](reference)
     np.testing.assert_allclose((displacement - predicted).kernel, 0, atol=2e-9)
     assert np.abs(predicted.kernel).max() > 4e-5
 
     # The tidal acceleration is the strain's second time derivative as a map on separations.
-    acceleration_map = polarized(plus_strain, cross_strain, 0.5 * second[:, None] * POLARIZATIONS)
+    acceleration_map = polarized(plus_strain, cross_strain, 0.5 * second[:, None] * polarization_weights)
     np.testing.assert_allclose((-response.dual() - acceleration_map).kernel, 0, atol=1e-12)
 
     # Wedged with the wave vector, that second derivative is the curvature on pairs of directions.
@@ -153,10 +153,10 @@ def test_figures_and_animation_draw():
     figures = [
         render.draw_curvature_map(*scenarios.curvature_map()),
         render.draw_doppler(*scenarios.doppler()),
-        render.draw_detector(time, reference, displacement, acceleration, scenarios.AMPLIFICATION),
-        render.draw_packet(time, *wave_packet(time, scenarios.DURATION, scenarios.N_CYCLES, scenarios.AMPLITUDE)),
+        render.draw_detector(time, reference, displacement, acceleration, scenarios.amplification),
+        render.draw_packet(time, *wave_packet(time, scenarios.wave_duration, scenarios.n_cycles, scenarios.wave_amplitude)),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
     frames = render.animate_detector(time[::100], reference, displacement[::100], acceleration[::100],
-                                     scenarios.AMPLIFICATION)
+                                     scenarios.amplification)
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

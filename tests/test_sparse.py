@@ -173,3 +173,26 @@ def test_leading_axes_index_and_a_map_without_sites_adds_on_the_diagonal():
     # Each of the two maps against each of the three fields:
     np.testing.assert_allclose(maps[:, None](values).kernel[1, 2], maps[1](values[2]).kernel, atol=1e-12)
     np.testing.assert_allclose((Vector - maps)(values[:, None]).kernel, (values[:, None] - maps(values[:, None])).kernel, atol=1e-12)
+
+
+def test_a_pencil_of_forms_has_the_eigenpairs_of_its_numbers():
+    pytest.importorskip("scipy")
+    context = NumpyContext(Algebra("x+y+t-"))
+    mv, Scalar = context.multivector, context.algebra.gatype.scalar()
+    # A form on scalar fields maps them to amounts, the pseudoscalars they pair with.
+    Amount = context.algebra.gatype.pseudoscalar().derive.flipped_orientation
+    count = 6
+    boundary = SparseExtensor(
+        mv.scalar(np.tile([[-1.0], [1.0]], (count - 1, 1))),
+        np.repeat(np.arange(count - 1), 2), np.stack([np.arange(count - 1), np.arange(1, count)], -1).ravel(), (count - 1, count),
+    )
+    laplacian = ~boundary * boundary
+    weights = SparseExtensor.from_diagonal(mv.scalar(np.linspace(1.0, 2.0, count)[:, None]).field())
+    to_amount = SparseExtensor.from_diagonal(mv.scalar(np.ones((count, 1))).field() * (mv(Amount, [1.0]) * Scalar))
+    stiffness, mass = to_amount(laplacian * Scalar), to_amount(weights * Scalar)  # [count] Amount <- [count] Scalar
+    values, modes = stiffness.eigh(mass, 3)
+    numbers, _ = (laplacian * Scalar).eigh(weights * Scalar, 3)
+
+    # checks
+    np.testing.assert_allclose(values.to_array(), numbers.to_array(), atol=1e-10)
+    np.testing.assert_allclose((stiffness(modes) - values * mass(modes)).kernel, 0.0, atol=1e-10)

@@ -52,7 +52,7 @@ class SparseExtensor:
     adjoint = ExtensionMethod("adjoint", takes="a sparse map")
     solve = ExtensionMethod("solve", takes="a sparse map whose cells map between spaces of equal dimension")
     lstsq = ExtensionMethod("lstsq", takes="a sparse map")
-    eigh = ExtensionMethod("eigh", takes="a sparse map whose cells map a space to itself")
+    eigh = ExtensionMethod("eigh", takes="a sparse map whose cells map a space to itself, or to its dual")
 
     def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
         if cells.ndim == 0 or not cells.shape[-1] == len(rows) == len(columns):
@@ -369,10 +369,11 @@ def lstsq(value: SparseExtensor, rhs: Extensor) -> Extensor:
     ]))
 
 
-@SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism)
+@SparseExtensor.eigh.register(lambda cell_type, other: cell_type.is_endomorphism or cell_type.is_correlation)
 def eigh(value: SparseExtensor, metric: SparseExtensor, count: int) -> tuple[Extensor, Extensor]:
     """The count eigenpairs nearest zero of value(x) == eigenvalue * metric(x), for a symmetric
-    value and a positive-definite metric, for each of their leading indices: values `[..., count]
+    value and a positive-definite metric, both maps of a space to itself or both forms, maps of a
+    space to its dual, for each of their leading indices: values `[..., count]
     Scalar`, fields `[..., count]` over the elements, orthonormal in the metric. The spectrum is inverted
     about a point below zero by the square root of the precision, relative to the pencil's scale, so
     a semidefinite value with a null space still factorizes, to half the precision's digits."""

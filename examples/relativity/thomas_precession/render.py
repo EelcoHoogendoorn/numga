@@ -15,12 +15,12 @@ from examples.animation import capture
 from examples.relativity.thomas_precession import core
 
 INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"
-ORBIT_COLOURS = ("#0f766e", "#2563eb", "#7c3aed")
-LINE_COLOURS = ("#64748b", "#ea580c")
+orbit_colours = ("#0f766e", "#2563eb", "#7c3aed")
+line_colours = ("#64748b", "#ea580c")
 # Arrow lengths: in the Poincaré disk, around the orbits, and as a share of the box's or ring's half
 # width; the view's reach around the orbits.
 DISK_ARROW, ORBIT_ARROW, SCENE_ARROW = 0.16, 0.09, 0.3
-ORBIT_REACH = 0.66
+orbit_reach = 0.66
 # The window of the disk on the rocket's triangle at its largest: the centre, and its half width.
 TRIANGLE_CENTRE, TRIANGLE_REACH = (0.5, 0.2), 0.62
 FRAME_INCHES, DPI = 5.0, 90
@@ -102,9 +102,9 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     starts, start_directions = disk(first[0]), spin_axes(first[1])
     images = []
     for velocities, spins in chain([first], states):
-        figure, ax = disk_canvas((0, 0), ORBIT_REACH)
+        figure, ax = disk_canvas((0, 0), orbit_reach)
         points, directions = disk(velocities), spin_axes(spins)
-        for orbit, colour in enumerate(ORBIT_COLOURS):
+        for orbit, colour in enumerate(orbit_colours):
             ax.plot(*outlines[:, orbit].T, color=colour, linewidth=1.2, alpha=0.5, zorder=2)
             arrows(ax, starts[orbit], start_directions[orbit], ORBIT_ARROW, FAINT, 0.010)
             arrows(ax, points[orbit], directions[orbit], ORBIT_ARROW, colour, 0.011)
@@ -143,7 +143,7 @@ def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, 
         figure, ax = canvas((0, 0), 1.3 * radius)
         ax.plot(*outline.T, color=FAINT, linewidth=2.0, zorder=1)
         point = planar(position)
-        arrows(ax, point, unit(velocity), SCENE_ARROW * radius, LINE_COLOURS[0], 0.010)
+        arrows(ax, point, unit(velocity), SCENE_ARROW * radius, line_colours[0], 0.010)
         arrows(ax, point, spin_axes(spin), SCENE_ARROW * radius, SPIN, 0.012)
         ax.plot(*point, "o", color=INK, markersize=7, zorder=5)
         images.append(capture(figure))
@@ -155,7 +155,7 @@ def draw_magic(electric: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     """The anomalous precession rate over the anomaly times the magnetic field `[gammas, fields]`,
     against the electric field's strength."""
     figure, ax = plt.subplots(figsize=(6, 3.6), dpi=110, layout="constrained")
-    for values, colour in zip(ratios.cast(core.ga.subspace.scalar()).kernel[..., 0], LINE_COLOURS):
+    for values, colour in zip(ratios.cast(core.ga.subspace.scalar()).kernel[..., 0], line_colours):
         ax.plot(electric, values, "o-", color=colour, linewidth=2, markersize=4)
     ax.axhline(1.0, color=FAINT, linewidth=1.0, zorder=0)
     ax.set(xlabel="electric field over magnetic field", ylabel="anomalous rate over anomaly × field")

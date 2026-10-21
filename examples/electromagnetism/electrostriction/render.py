@@ -9,19 +9,21 @@ from matplotlib.collections import LineCollection
 from numga import stack
 
 from examples.animation import capture
-from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, mv
+from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, mv, time
 
-REST = "#c4cbd0"
-BOND = "#286580"
-DIPOLE = "#df6435"
-APPLIED = "#bd9224"
-TRANSVERSE = "#8271a6"
-MARGIN = 0.55
-FIELD_GAP = 0.8
+rest_colour = "#c4cbd0"
+bond_colour = "#286580"
+dipole_colour = "#df6435"
+applied_colour = "#bd9224"
+transverse_colour = "#8271a6"
+margin = 0.55
+field_gap = 0.8
 
 
 def coordinates(value: Field) -> np.ndarray:
-    return np.asarray(value.cast(value.algebra.subspace("x y")).kernel)
+    """Components of fields along x and y: their pairings with the planes those directions sweep in time."""
+    sweeps = stack((mv.x.dual(), mv.y.dual())) & time                                   # [2] Antibivector
+    return np.asarray((value[..., None] & sweeps).to_array())                            # [..., 2]
 
 
 def point_coordinates(value: Point) -> np.ndarray:
@@ -32,8 +34,8 @@ def point_coordinates(value: Point) -> np.ndarray:
 def lattice_axes(sites: np.ndarray) -> tuple[plt.Figure, plt.Axes, np.ndarray]:
     """A figure framing the reference sites, with room below them for the applied field."""
     figure, ax = plt.subplots(figsize=(6, 6), dpi=90)
-    reach = np.abs(sites).max(axis=0) + MARGIN
-    ax.set(xlim=(-reach[0], reach[0]), ylim=(-reach[1] - FIELD_GAP - 0.35, reach[1]), aspect="equal")
+    reach = np.abs(sites).max(axis=0) + margin
+    ax.set(xlim=(-reach[0], reach[0]), ylim=(-reach[1] - field_gap - 0.35, reach[1]), aspect="equal")
     ax.axis("off")
     figure.subplots_adjust(0.02, 0.03, 0.98, 0.98)
     return figure, ax, reach
@@ -43,8 +45,8 @@ def draw_rest(rest: Point, bonds: np.ndarray) -> plt.Figure:
     """The reference lattice: its particles and the bonds between them."""
     sites = point_coordinates(rest)
     figure, ax, _ = lattice_axes(sites)
-    ax.add_collection(LineCollection(sites[bonds], colors=BOND, linewidths=2, zorder=2))
-    ax.scatter(*sites.T, s=34, color=BOND, zorder=4)
+    ax.add_collection(LineCollection(sites[bonds], colors=bond_colour, linewidths=2, zorder=2))
+    ax.scatter(*sites.T, s=34, color=bond_colour, zorder=4)
     return figure
 
 
@@ -55,17 +57,17 @@ class LatticeView:
         self.bonds, self.dipole_scale, self.field_scale = bonds, dipole_scale, field_scale
         sites = point_coordinates(rest)
         self.figure, ax, reach = lattice_axes(sites)
-        ax.add_collection(LineCollection(sites[bonds], colors=REST, linewidths=1.2,
+        ax.add_collection(LineCollection(sites[bonds], colors=rest_colour, linewidths=1.2,
                                         linestyles="dashed", zorder=0))
-        ax.scatter(*sites.T, s=22, facecolors="white", edgecolors=REST, linewidths=1, zorder=1)
-        self.links = LineCollection(sites[bonds], colors=BOND, linewidths=2, zorder=2)
+        ax.scatter(*sites.T, s=22, facecolors="white", edgecolors=rest_colour, linewidths=1, zorder=1)
+        self.links = LineCollection(sites[bonds], colors=bond_colour, linewidths=2, zorder=2)
         ax.add_collection(self.links)
-        self.particles = ax.scatter(*sites.T, s=34, color=BOND, zorder=4)
+        self.particles = ax.scatter(*sites.T, s=34, color=bond_colour, zorder=4)
         self.dipoles = ax.quiver(*sites.T, np.zeros(len(sites)), np.zeros(len(sites)),
-                                 color=DIPOLE, angles="xy", scale_units="xy", scale=1,
+                                 color=dipole_colour, angles="xy", scale_units="xy", scale=1,
                                  pivot="middle", width=0.009, headwidth=3, headlength=4, zorder=5)
-        field_y = -reach[1] - FIELD_GAP / 2
-        self.field = ax.quiver([0], [field_y], [0], [0], color=APPLIED, angles="xy",
+        field_y = -reach[1] - field_gap / 2
+        self.field = ax.quiver([0], [field_y], [0], [0], color=applied_colour, angles="xy",
                                scale_units="xy", scale=1, pivot="middle", width=0.012,
                                headwidth=3, headlength=4)
 
@@ -97,9 +99,9 @@ def draw_loading(strengths: np.ndarray, parallel: Scalar, transverse: Scalar) ->
     figure, ax = plt.subplots(figsize=(6, 3.8))
     along = np.asarray(parallel.to_array()) * 100
     across = np.asarray(transverse.to_array()) * 100
-    ax.plot(strengths, along, color=BOND, linewidth=2.3, label="along the field")
-    ax.plot(strengths, across, color=TRANSVERSE, linewidth=2.3, label="across the field")
-    ax.axhline(0, color=REST, linewidth=0.8)
+    ax.plot(strengths, along, color=bond_colour, linewidth=2.3, label="along the field")
+    ax.plot(strengths, across, color=transverse_colour, linewidth=2.3, label="across the field")
+    ax.axhline(0, color=rest_colour, linewidth=0.8)
     ax.set(xlabel="Applied field strength", ylabel="Change in rms extent (%)")
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False)

@@ -13,12 +13,12 @@ from examples.electromagnetism.magnetic_bottle import core
 mv = core.mv
 # The colours of the background, the field's strength, the coils' wire, and the particles by their angle
 # to the axis.
-BACKGROUND = "#0b1020"
-STRENGTH = "Blues_r"
-WIRE = "#f59e0b"
-PARTICLES = plt.get_cmap("plasma")
+background_colour = "#0b1020"
+strength_colours = "Blues_r"
+wire_colour = "#f59e0b"
+particle_colours = plt.get_cmap("plasma")
 # The steps of each track drawn behind its particle.
-N_TRAIL = 60
+n_trail = 60
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -34,18 +34,18 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     tracks = side(events)                                                     # [steps, particles, 2]
     grid = side(points)                                                       # [across, along, 2]
     extent = (grid[0, 0, 0], grid[0, -1, 0], grid[0, 0, 1], grid[-1, 0, 1])
-    colours = PARTICLES(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))
+    colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))
     images = []
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
         figure = plt.figure(figsize=(8.0, 8.0 * (extent[3] - extent[2]) / (extent[1] - extent[0])), dpi=100,
-                            facecolor=BACKGROUND)
+                            facecolor=background_colour)
         ax = figure.add_axes((0, 0, 1, 1))
-        ax.imshow(np.log(strength.to_array()), origin="lower", extent=extent, cmap=STRENGTH, alpha=0.5,
+        ax.imshow(np.log(strength.to_array()), origin="lower", extent=extent, cmap=strength_colours, alpha=0.5,
                   aspect="auto")
-        trail = np.moveaxis(tracks[max(0, end - N_TRAIL):end], 0, 1)          # [particles, trail, 2]
+        trail = np.moveaxis(tracks[max(0, end - n_trail):end], 0, 1)          # [particles, trail, 2]
         ax.add_collection(LineCollection(trail, colors=colours, linewidths=1.2))
         ax.scatter(*tracks[end - 1].T, color=colours, s=18, zorder=3)
-        ax.scatter(np.repeat(heights, 2), np.tile([-radius, radius], len(heights)), color=WIRE, s=60, zorder=4)
+        ax.scatter(np.repeat(heights, 2), np.tile([-radius, radius], len(heights)), color=wire_colour, s=60, zorder=4)
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
         ax.set_axis_off()

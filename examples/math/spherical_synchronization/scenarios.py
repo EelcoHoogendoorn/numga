@@ -13,17 +13,17 @@ from examples.math.spherical_synchronization.core import Cut, Point, mv, time
 
 # The population, spread over the sphere by the golden angle, and the circles of the grid: meridians, and
 # parallels at latitudes up to a third of a turn either way.
-N_PARTICLES = 192
-N_MERIDIANS = 4
-N_PARALLELS = 5
+n_particles = 192
+n_meridians = 4
+n_parallels = 5
 # The steps and their size, the strength of the attraction, the shared rotation's speed, the boost of the
 # starting transformation, and the duration of a frame.
-N_STEPS = 100
-DT = 0.05
-COUPLING = 1.2
-ROTATION_SPEED = 0.25
-INITIAL_BIAS = 0.24
-DURATION_MS = 60
+n_steps = 100
+dt = 0.05
+coupling = 1.2
+rotation_speed = 0.25
+initial_bias = 0.24
+duration_ms = 60
 
 
 # --- math -----------------------------------------------------------------------------
@@ -31,16 +31,16 @@ def synchronization() -> tuple[Point, Cut]:
     """The population's directions and the grid's cuts at every step `[steps + 1, ...]`, both carried by
     the one transformation the population's own attraction drives."""
     golden_angle = np.pi * (3 - np.sqrt(5))
-    longitudes = golden_angle * np.arange(N_PARTICLES) % (2 * np.pi)
-    latitudes = np.arcsin(np.linspace(-1 + 1 / N_PARTICLES, 1 - 1 / N_PARTICLES, N_PARTICLES))
+    longitudes = golden_angle * np.arange(n_particles) % (2 * np.pi)
+    latitudes = np.arcsin(np.linspace(-1 + 1 / n_particles, 1 - 1 / n_particles, n_particles))
     seeds = core.sphere_points(longitudes, latitudes) + time           # [particles] Point
     # Great circles through the poles, and parallels: the cuts their points pair to nothing with.
-    meridians = (-mv.xy * np.linspace(0, np.pi, N_MERIDIANS, endpoint=False) / 2).exp() >> mv.y   # [meridians] Cut
-    parallels = mv.z + mv.t * np.sin(np.linspace(-np.pi / 3, np.pi / 3, N_PARALLELS))             # [parallels] Cut
+    meridians = (-mv.xy * np.linspace(0, np.pi, n_meridians, endpoint=False) / 2).exp() >> mv.y   # [meridians] Cut
+    parallels = mv.z + mv.t * np.sin(np.linspace(-np.pi / 3, np.pi / 3, n_parallels))             # [parallels] Cut
     grid = concatenate((meridians, parallels), axis=0)               # [circles] Cut
-    rotation = -mv.xy * ROTATION_SPEED                              # [] Bivector
-    initial = (-mv.xt * INITIAL_BIAS).exp()                         # [] Rotor
-    rotors = stack(list(islice(core.motion(initial, seeds, rotation, COUPLING, DT), N_STEPS + 1)))   # [steps + 1] Rotor
+    rotation = -mv.xy * rotation_speed                              # [] Bivector
+    initial = (-mv.xt * initial_bias).exp()                         # [] Rotor
+    rotors = stack(list(islice(core.motion(initial, seeds, rotation, coupling, dt), n_steps + 1)))   # [steps + 1] Rotor
     # One rotor carries the population and the grid alike.
     return core.directions(rotors[:, None] >> seeds), rotors[:, None] >> grid
 
@@ -51,7 +51,7 @@ def main() -> None:
     from examples.math.spherical_synchronization import render
 
     population, circles = synchronization()
-    save_animation(render.frames(population, circles), "spherical_synchronization", DURATION_MS)
+    save_animation(render.frames(population, circles), "spherical_synchronization", duration_ms)
 
     # checks
     # Every direction stays a unit direction on the sphere, and the population gathers.

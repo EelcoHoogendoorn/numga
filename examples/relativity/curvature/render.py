@@ -21,12 +21,12 @@ from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
-LIGHT = "#c3ccd4"
-TRACKING = ("#d15a67", "#b48616", "#168676", "#8759a6")
-POLARIZATIONS = ("Plus", "Cross", "Circular")
+light_colour = "#c3ccd4"
+tracking_colours = ("#d15a67", "#b48616", "#168676", "#8759a6")
+polarization_names = ("Plus", "Cross", "Circular")
 # The animated ring: the circular packet, alone, at the dots per inch its detail needs.
-ANIMATED = POLARIZATIONS.index("Circular")
-ANIMATION_DPI = 64
+animated_polarization = polarization_names.index("Circular")
+animation_dpi = 64
 
 
 # --- coordinate readout ---------------------------------------------------------------
@@ -68,7 +68,7 @@ def _spacetime_axes(ax, extent: float) -> None:
            zlim=(-extent, extent), box_aspect=(1, 1, 1))
     ax.set_axis_off()
     for end in np.eye(3) * extent * 0.88:
-        _arrow(ax, np.array([np.zeros(3), end]), LIGHT, 0.9)
+        _arrow(ax, np.array([np.zeros(3), end]), light_colour, 0.9)
 
 
 def _patch(ax, vertices: np.ndarray, colour: str) -> None:
@@ -168,7 +168,7 @@ def _detector(
 def _ring_axes(fig: plt.Figure, data: _Detector) -> list[plt.Axes]:
     limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
     axes = []
-    for column in range(len(POLARIZATIONS)):
+    for column in range(len(polarization_names)):
         ax = fig.add_subplot(1, 3, column + 1)
         ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
         ax.set_axis_off()
@@ -182,16 +182,16 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     arrows_at = np.arange(0, len(reference), max(1, len(reference) // 8))
     angles = np.linspace(0, 2 * np.pi, 200)
     radius = np.linalg.norm(reference, axis=-1).mean()
-    ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=LIGHT, ls=":", lw=1.5)
+    ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":", lw=1.5)
     ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
     ax.plot([-radius * 1.08, radius * 1.08], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
     ax.plot([0, 0], [-radius * 1.08, radius * 1.08], color="#edf0f3", lw=0.8, zorder=0)
     outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
     beads = ax.scatter([], [], s=19, color=BLUE, edgecolors="white", linewidths=0.4, zorder=5)
-    markers = ax.scatter(*reference[selected].T, s=47, c=TRACKING[:len(selected)],
+    markers = ax.scatter(*reference[selected].T, s=47, c=tracking_colours[:len(selected)],
                          edgecolors="white", linewidths=0.8, zorder=7)
     trails = [ax.plot([], [], color=colour, lw=1.6, alpha=0.60, zorder=4)[0]
-              for colour in TRACKING[:len(selected)]]
+              for colour in tracking_colours[:len(selected)]]
     maximum = float(np.linalg.norm(data.accelerations, axis=-1).max())
     quiver = ax.quiver(*reference[arrows_at].T, np.zeros(len(arrows_at)), np.zeros(len(arrows_at)),
                        color=BLUE, alpha=0.85, angles="xy", scale_units="xy",
@@ -199,7 +199,7 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     if static:
         for index in selected:
             ax.plot(*data.positions[polarization, :, index].T,
-                    color=TRACKING[list(selected).index(index)], lw=1.0, alpha=0.22)
+                    color=tracking_colours[list(selected).index(index)], lw=1.0, alpha=0.22)
 
     def update(frame: int):
         positions = data.positions[polarization, frame]
@@ -236,12 +236,12 @@ def animate_detector(
 ) -> list[np.ndarray]:
     """The bead ring through the circular packet, as frames at 20 per unit time."""
     data = _detector(time, reference, displacement, acceleration, amplification)
-    fig = plt.figure(figsize=(5.2, 5.2), dpi=ANIMATION_DPI, facecolor="white")
+    fig = plt.figure(figsize=(5.2, 5.2), dpi=animation_dpi, facecolor="white")
     limit = max(1.35, float(np.abs(data.positions).max()) + 0.31)
     ax = fig.add_axes((0, 0, 1, 1))
     ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
     ax.set_axis_off()
-    update = _ring(ax, data, ANIMATED, static=False)
+    update = _ring(ax, data, animated_polarization, static=False)
     count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * 20) + 1))
     frames = []
     for index in np.linspace(0, len(data.time) - 1, count, dtype=int):

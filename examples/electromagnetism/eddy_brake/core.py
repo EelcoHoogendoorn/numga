@@ -1,12 +1,16 @@
 """Eddy-current braking: the currents and braking torque in a conducting disc turning under a prescribed
 magnetic field.
 
-The disc's points are antivectors, intrinsic like all geometry, and the physics is their pairing with
-extrinsic quantities: a point moves under the spin by their commutator, `position.commutator(spin)`; the
-Lorentz electric field is that velocity met with the magnetic field's plane, `velocity & magnetic`, a
-vector; its pairing with an edge, `electric & edge`, is the edge's electromotive force; and a force's
-moment about the origin, `force | midpoint`, pairs with the spin, `spin & moment`, into the power it
-feeds the turning."""
+The disc lives in the spacetime of its plane, `x+y+t-`. Its points and edges are directions, antivectors,
+intrinsic like all geometry, and the physics is their pairing with extrinsic quantities. A point moves
+under the spin by their commutator, `position.commutator(spin)`. The magnet's field across the disc is the
+plane `xy`; the electric field the moving material reads is a plane through time, the magnetic plane met
+with the velocity and swept through the observer's slice of time, `(velocity & magnetic) ^ mv.t`. It sits
+on the edges: its pairing with an edge swept through time, `electric & (edge & time)`, is the edge's
+electromotive force. The current it drives is a direction like the edges; the field read along it,
+`electric & (current & time)`, is the heat, and the currents' fluxes through the dual edges are intrinsic
+amounts, pairing with the voltages on the edges into power, `voltage & flux`. A force's moment about the
+origin, `force | midpoint`, pairs with the spin, `spin & moment`, into the power it feeds the turning."""
 
 from __future__ import annotations
 
@@ -15,23 +19,37 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from numga import stack
-from numga.algebras import VGA3D as ga
+from numga import Algebra, stack
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
+# The spacetime of the disc's plane, space positive.
+ga = Algebra("x+y+t-")
 mesh_module = instantiate("examples.mesh", ga)
 Mesh, Scalar, Vector, Bivector, Point = (mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector,
                                          mesh_module.Bivector, mesh_module.Point)
 as_scalar, context = mesh_module.as_scalar, mesh_module.ctx
 
 mv = context.multivector
-Conductivity = ga.gatype((Vector, Vector))
+# The electric field, a plane through time; currents, directions in the disc like its edges.
+Field = Bivector.derive.containing("t")
+Current = Point.derive.containing("t")
+# Fluxes and charges: amounts, intrinsic, paired with voltages and potentials into power.
+Amount = ga.gatype.pseudoscalar().derive.flipped_orientation
+Conductivity = ga.gatype((Current, Field))                 # Current <- Field
+Resistivity = ga.gatype((Field, Current))                  # Field <- Current
 Projection = ga.gatype((Scalar, Scalar))
+Reading = ga.gatype((Scalar, Amount))
 Rotor = ga.gatype.rotor()
+
+# The direction in time of an observer at rest with the magnet, which pairs to one with `mv.t`; the dual
+# carries the minus of t's square.
+time = -mv.t.dual()                                        # [] Antivector
+# A quarter turn in the disc, from x towards y.
+quarter_turn = (mv.xy * (-np.pi / 4)).exp()
 # A force's moment about the origin: the force met with the point it acts at, intrinsic.
 Moment = Vector.derive.flipped_orientation
-MAGNETIC_BLOCK_FACES = 64
+n_magnetic_block_faces = 64
 
 
 # --- math -----------------------------------------------------------------------------
@@ -41,8 +59,8 @@ class Response:
 
     potential: Scalar                    # Scalar[V]
     voltage: Scalar                      # Scalar[E]
-    flux: Scalar                         # Scalar[E]
-    current: Vector                      # Vector[F]
+    flux: Amount                         # Amount[E]
+    current: Current                     # Current[F]
     heating: Scalar                      # Scalar[F]
     torque: Moment                       # [] Moment
 
@@ -55,7 +73,7 @@ class Motion:
     spin: Bivector                       # [cases] Bivector
     vertices: Point                      # [cases] Point[V], world positions
     heat: Scalar                         # [cases] Scalar[F], joules per material face
-    current: Vector                      # [cases] Vector[F], body-frame sheet current
+    current: Current                     # [cases] Current[F], body-frame sheet current
 
 
 @dataclass
@@ -88,16 +106,18 @@ class CurrentModes:
 
     decay: Scalar                        # [cases] Scalar[modes], inverse seconds
     projection: Projection               # [cases] Scalar[modes] <- Scalar[interior]
-    current: SparseExtensor              # [F] Vector <- [interior] Scalar
+    reading: Reading                     # [cases] Scalar[modes] <- Amount[interior]
+    current: SparseExtensor              # [F] Current <- [interior] Scalar
     embedder: SparseExtensor             # [V] Scalar <- [interior] Scalar
-    resistivity: Conductivity            # [cases] Conductivity[F], sheet resistance
+    resistivity: Resistivity             # [cases] Resistivity[F], sheet resistance
 
-    def drive(self, mesh: Mesh, electric: Vector) -> Scalar:
-        """The work rate of a face electric field on each pattern's current, Scalar[modes]."""
-        return self.projection(self.current.adjoint()(mesh.triangle_areas * electric))
+    def drive(self, mesh: Mesh, electric: Field) -> Scalar:
+        """The work rate of a face electric field on each pattern's current, Scalar[modes]: the field read
+        along the swept current, through the current map's pairing transpose."""
+        return self.reading(sweep(mesh, Current & time)(self.current).adjugate()(mesh.triangle_areas * electric))
 
-    def currents(self, amplitudes: Scalar) -> Vector:
-        """The sheet current of mode amplitudes `Scalar[modes]`, Vector[F]."""
+    def currents(self, amplitudes: Scalar) -> Current:
+        """The sheet current of mode amplitudes `Scalar[modes]`, Current[F]."""
         return self.current(self.projection.adjoint()(amplitudes))
 
     def streamfunctions(self, amplitudes: Scalar) -> Scalar:
@@ -116,8 +136,8 @@ class CurrentModes:
     def deposited_heat(self, mesh: Mesh, factors: Scalar) -> Scalar:
         """Read out spatial heat from weighted modal amplitudes `[substeps, cases] Scalar[modes]`."""
         # The factors retain all mode-pair products, without storing a dense covariance.
-        current = self.currents(factors)                                  # [substeps, cases] Vector[F]
-        return mesh.triangle_areas * (current | self.resistivity(current)).sum(axis=0)
+        current = self.currents(factors)                                  # [substeps, cases] Current[F]
+        return mesh.triangle_areas * (self.resistivity(current) & (current & time)).sum(axis=0)
 
 
 def fibre_conductivity(mesh: Mesh, principal: np.ndarray, inner: float, outer: float,
@@ -127,50 +147,68 @@ def fibre_conductivity(mesh: Mesh, principal: np.ndarray, inner: float, outer: f
     `principal` `[cases, axes]` holds each material's conductance along the radius and around it;
     outside the annulus, the disc conducts `mean` in every direction.
     """
-    # Each face's centre met with its normal points around the disc; turned in the face, along the radius.
-    around = (mesh.face_centers | mesh.face_normals).normalized()          # Vector[F]
-    directions = stack((mesh.face_planes | around, around), axis=-1)       # [axes] Vector[F]
-    distance = mesh.face_centers.norm()                                    # Scalar[F]
+    distance = mesh.face_centers.squared().square_root()                   # Scalar[F]
+    # Each face's centre along the radius, and turned a quarter in the disc, around it.
+    radial = (mesh.face_centers / distance).cast(Current)                  # Current[F]
+    directions = stack((radial, quarter_turn >> radial), axis=-1)          # [axes] Current[F]
     fibre_band = as_scalar((distance >= inner) & (distance <= outer)).field()
     local_principal = mean + fibre_band * (principal - mean)               # [cases, axes] Scalar[F]
-    # Each dyad conducts along one direction; summing the weighted dyads gives the material law.
-    return (directions * (directions | Vector) * local_principal).sum(axis=-1)  # [cases] Conductivity[F]
+    return principal_conductivity(directions, local_principal)              # [cases] Conductivity[F]
+
+
+def principal_conductivity(directions: Current, principal: Scalar) -> Conductivity:
+    """Sheet conductance along principal directions `[..., axes]`: each dyad reads the field along one
+    direction, its pairing with the plane the direction sweeps through time, and conducts along it."""
+    return (directions * (Field & (directions & time)) * principal).sum(axis=-1)   # [...] Conductivity
+
+
+def closed_currents(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor]:
+    """Streamfunctions zero on the rim, from their interior values, and their currents.
+
+    A streamfunction's current runs along each face's edges, each weighted by the streamfunction at the
+    corner it faces, over twice the face's area: closed currents, with continuous flux across every
+    interior edge.
+    """
+    boundary = np.unique(mesh.edges[mesh.boundary_edges])
+    n_vertices = len(mesh.vertices.batch())
+    interior = np.setdiff1d(np.arange(n_vertices), boundary)
+    embedder = ~SparseExtensor.selection(context, interior, n_vertices) * Scalar  # [V] Scalar <- [interior] Scalar
+    edges = mesh.triangle_edges.cast(Current)                              # [3] Current[F]
+    current = mesh.at_corners(edges / (2 * mesh.triangle_areas) * Scalar)(embedder)   # [F] Current <- [interior] Scalar
+    return embedder, current
 
 
 def current_modes(mesh: Mesh, conductivity: Conductivity,
                   permeability: float, n_modes: int) -> CurrentModes:
     """The slowest inductive current patterns of a conducting disc, with an insulating rim."""
-    boundary = np.unique(mesh.edges[mesh.boundary_edges])
-    n_vertices = len(mesh.vertices.batch())
-    interior = np.setdiff1d(np.arange(n_vertices), boundary)
-    # A streamfunction is zero on the rim. Its turned gradient forms closed currents,
-    # with continuous normal flux across every interior edge.
-    embedder = ~SparseExtensor.selection(context, interior, n_vertices) * Scalar  # [V] Scalar <- [interior] Scalar
-    gradient = mesh.reconstruction((mesh.d0 * Scalar)(embedder))           # [F] Vector <- [interior] Scalar
-    current = spdiag(mesh.face_planes | Vector)(gradient)                 # [F] Vector <- [interior] Scalar
-    # The material map has no normal conduction. Its least-squares inverse gives
-    # the resistance acting on tangential currents without inventing a normal component.
-    # Each face's map is inverted on its own, as a batch of independent maps.
-    resistivity = conductivity.batch().lstsq(Vector).field()              # [cases] Conductivity[F]
-    resistance = current.adjoint()(spdiag(mesh.triangle_areas * resistivity)(current))  # [cases, interior] Scalar <- [interior] Scalar
+    embedder, current = closed_currents(mesh)
+    # Each face's material map is inverted on its own, as a batch of independent maps.
+    resistivity = conductivity.batch().inverse().field()                  # [cases] Resistivity[F]
+    # The resistance pairs each current's field with every current swept through time: a form on
+    # streamfunctions.
+    swept = sweep(mesh, Current & time)(current)                          # [F] Vector <- [interior] Scalar
+    resistance = swept.adjugate()(spdiag(mesh.triangle_areas * resistivity)(current))  # [cases, interior] Amount <- [interior] Scalar
     # Pull each face block back immediately, keeping only the smaller streamfunction map.
-    blocks = magnetic_coupling_blocks(mesh, permeability, MAGNETIC_BLOCK_FACES)
-    current_adjoint = current.adjoint()
-    inductance = current_adjoint(next(blocks)(current))                  # [interior] Scalar <- [interior] Scalar
+    blocks = magnetic_coupling_blocks(mesh, permeability, n_magnetic_block_faces)
+    # Each current's vector potential, read along every current through the current map's pairing transpose.
+    pairing = current.adjugate()                                         # [interior] Amount <- [F] Vector
+    inductance = pairing(next(blocks)(current))                          # [interior] Amount <- [interior] Scalar
     for coupling in blocks:
-        inductance = inductance + current_adjoint(coupling(current))
-    inductance = (inductance + inductance.adjoint()) / 2
+        inductance = inductance + pairing(coupling(current))
+    inductance = (inductance + inductance.adjugate()) / 2
     # The eigenfields are orthonormal in magnetic energy; their eigenvalues are decay rates.
     decay, modes = resistance.eigh(inductance, n_modes)                     # [cases, modes] Scalar; [cases, modes] Scalar[interior]
-    # Each pattern's streamfunction on the interior, read as the map onto its amplitude.
+    # Each pattern's streamfunction on the interior, read as the map onto its amplitude, and paired with
+    # amounts on the interior.
     projection = (modes.batch() * Scalar).field(0, 1)                     # [cases] Scalar[modes] <- Scalar[interior]
-    return CurrentModes(decay.field(), projection, current, embedder, resistivity)
+    reading = (modes.batch() & Amount).field(0, 1)                        # [cases] Scalar[modes] <- Amount[interior]
+    return CurrentModes(decay.field(), projection, reading, current, embedder, resistivity)
 
 
 def field(positions: Point, centre: Point, plane: Bivector,
           strength: float, width: float) -> Bivector:
     """A magnetic footprint whose strength falls as a Gaussian in distance from its centre."""
-    distance_squared = (positions - centre).scalar_norm_squared()          # Scalar[E]
+    distance_squared = (positions - centre).squared()                      # Scalar[E]
     return plane * strength * (-distance_squared / (2 * width ** 2)).exp()
 
 
@@ -185,13 +223,38 @@ def periodic_drive(mesh: Mesh, modes: CurrentModes, centre: Point, plane: Bivect
     magnetic = orientations << field(positions, centre, plane, strength, width)
     body_plane = orientation << plane                                   # [cases] Bivector
     velocity = mesh.face_centers.commutator(body_plane)                  # [cases] Point[F]
-    electric = velocity & magnetic                                      # [samples, cases] Vector[F]
+    electric = lorentz(velocity, magnetic)                              # [samples, cases] Field[F]
     values = modes.drive(mesh, electric)                                # [samples, cases] Scalar[modes]
     harmonics = np.arange(1, n_harmonics + 1)
     phase = angles[:, None] * harmonics                                 # [samples, harmonics]
     cosine = 2 * (values[..., None] * np.cos(phase)[:, None]).mean(axis=0)  # [cases, harmonics] Scalar[modes]
     sine = 2 * (values[..., None] * np.sin(phase)[:, None]).mean(axis=0)    # [cases, harmonics] Scalar[modes]
     return PeriodicDrive(values.mean(axis=0), cosine, sine, harmonics)
+
+
+def lorentz(velocity: Point, magnetic: Bivector) -> Field:
+    """The electric field material moving at `velocity` reads in the magnetic field: the magnetic plane met
+    with the velocity, swept through the observer's slice of time."""
+    return (velocity & magnetic) ^ mv.t                                    # [...] Field
+
+
+def sweep(mesh: Mesh, cell) -> SparseExtensor:
+    """A map applied on every face alike, as a diagonal map over the faces."""
+    return spdiag(as_scalar(np.ones(len(mesh.faces))).field() * cell)       # [F, F]
+
+
+def face_sense(mesh: Mesh) -> Scalar:
+    """Each face's sense, plus or minus one, intrinsic: two of its edges swept through time, over twice
+    its area. Signed areas and fluxes read in it are ordinary numbers."""
+    edges = mesh.triangle_edges
+    return (edges[0] & edges[1] & time) / (2 * mesh.triangle_areas)        # Scalar[F]
+
+
+def fluxes(mesh: Mesh, current: Current) -> Amount:
+    """The conserved fluxes of a face current through the dual edges, Amount[E]: the field reconstruction's
+    pairing transpose, against the current swept through time."""
+    reconstruction = sweep(mesh, Vector ^ mv.t)(mesh.reconstruction)       # [F] Field <- [E] Scalar
+    return reconstruction.adjugate()(sweep(mesh, Current & time)(mesh.triangle_areas * current))
 
 
 def solve(mesh: Mesh, magnetic: Bivector, spin: Bivector,
@@ -201,40 +264,40 @@ def solve(mesh: Mesh, magnetic: Bivector, spin: Bivector,
     The disc has an insulating boundary. Its magnetic field and angular velocity are prescribed;
     the magnetic field generated by the induced currents is neglected.
     """
-    # Each edge's midpoint moves under the spin; met with the magnetic field's plane, its velocity
-    # gives the Lorentz electric field, a vector.
+    # Each edge's midpoint moves under the spin, and reads the magnet's field as electric; paired with
+    # the edge swept through time, that field is the edge's electromotive force.
     velocity = mesh.edge_midpoints.commutator(spin)                        # Point[E]
-    lorentz = Point & magnetic                                             # Vector[E] <- Point
-    # The electrical drive paired with each oriented edge.
-    emf = lorentz(velocity) & mesh.edge_displacements                      # Scalar[E]
+    emf = lorentz(velocity, magnetic) & (mesh.edge_displacements & time)    # Scalar[E]
 
-    # Face-averaged Whitney vectors reconstruct edge circulations at each triangle's centroid,
-    # where the conductivity map acts on the electrical drive.
-    reconstruction = mesh.reconstruction                                   # [F] Vector <- [E] Scalar
+    # Face-averaged Whitney vectors reconstruct edge circulations at each triangle's centroid; swept
+    # through time they are the field there, on which the conductivity map acts.
+    reconstruction = sweep(mesh, Vector ^ mv.t)(mesh.reconstruction)       # [F] Field <- [E] Scalar
     derivative = mesh.d0 * Scalar                                          # [E] Scalar <- [V] Scalar
-    gradient = reconstruction(derivative)                                  # [F] Vector <- [V] Scalar
-    drive = reconstruction(emf)                                            # Vector[F]
-    material = spdiag(mesh.triangle_areas * conductivity)                   # [F, F] Vector <- Vector
-    balance = gradient.adjoint()(material(gradient))                       # [V] Scalar <- [V] Scalar
-    # The adjoint sums outgoing currents. No exterior fluxes gives an insulating rim.
+    gradient = reconstruction(derivative)                                  # [F] Field <- [V] Scalar
+    drive = reconstruction(emf)                                            # Field[F]
+    material = spdiag(mesh.triangle_areas * conductivity)                   # [F, F] Current <- Field
+    # The charge each potential's current leaves at each vertex: the field map's pairing transpose,
+    # against the currents swept through time.
+    outflow = gradient.adjugate()(sweep(mesh, Current & time))             # [V] Amount <- [F] Current
+    balance = outflow(material(gradient))                                  # [V] Amount <- [V] Scalar
+    # No exterior fluxes gives an insulating rim.
     # Set one vertex's potential to zero to fix the free additive constant; this changes
     # no edge voltage or current and is not an electrical contact to the disc.
     # A least-squares solve of the singular balance finds the same currents at many times the cost.
     reference = as_scalar(np.arange(len(mesh.vertices.batch())) == 0).field()   # Scalar[V]
     gauge = spdiag(balance.diagonal() * reference)                         # [V] Scalar <- [V] Scalar
-    potential = (balance + gauge).solve(gradient.adjoint()(material(drive)))  # Scalar[V]
+    potential = (balance + gauge).solve(outflow(material(drive)))          # Scalar[V]
     voltage = emf - derivative(potential)                                  # Scalar[E]
-    electric = reconstruction(voltage)                                    # Vector[F]
-    current = conductivity(electric)                                      # Vector[F]
-    # Applying the reconstruction's adjoint returns the conserved dual-edge fluxes.
-    flux = reconstruction.adjoint()(mesh.triangle_areas * current)         # Scalar[E]
+    electric = reconstruction(voltage)                                    # Field[F]
+    current = conductivity(electric)                                      # Current[F]
+    flux = fluxes(mesh, current)                                          # Amount[E]
 
-    # The same skew map gives the magnetic force. The adjoint pairing makes charge balance
-    # equate mechanical power loss with Joule heating.
-    force = flux * lorentz(mesh.edge_displacements)                         # Vector[E]
+    # Each edge's flux meets the magnetic field's plane with the edge: the magnetic force. The pairing
+    # transpose makes charge balance equate mechanical power loss with Joule heating.
+    force = flux & (mesh.edge_displacements & magnetic)                     # Vector[E]
     # Each force's moment about the origin: the force met with the edge's midpoint.
     torque = (force | mesh.edge_midpoints).sites.sum()                      # [] Moment
-    heating = mesh.triangle_areas * (electric | current)                    # Scalar[F]
+    heating = mesh.triangle_areas * (electric & (current & time))           # Scalar[F]
     return Response(potential, voltage, flux, current, heating, torque)
 
 
@@ -341,7 +404,7 @@ def magnetic_coupling(mesh: Mesh, permeability: float) -> SparseExtensor:
     conductivity, not a numerical cutoff in the magnetic kernel.
     """
     coupling = next(magnetic_coupling_blocks(mesh, permeability, len(mesh.faces)))
-    return (coupling + coupling.adjoint()) / 2
+    return (coupling + coupling.adjugate()) / 2
 
 
 def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
@@ -353,9 +416,8 @@ def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
     """
     corners = mesh.corners                                                  # [corners] Point[F]
     edges = corners[[1, 2, 0]] - corners                                   # [edges] Point[F]
-    lengths = edges.norm()                                                # [edges] Scalar[F]
-    # The face's normal met with each edge: the direction out across it within the face.
-    outward = mesh.face_normals | (edges / lengths)                       # [edges] Vector[F]
+    lengths = edges.squared().square_root()                               # [edges] Scalar[F]
+    sense = face_sense(mesh)                                              # Scalar[F], intrinsic
     # A triangle's double integral stays finite despite the point kernel's singularity.
     semiperimeter = lengths.sum(axis=0) / 2                                # Scalar[F]
     logarithms = (semiperimeter / (semiperimeter - lengths)).log()
@@ -369,13 +431,17 @@ def magnetic_coupling_blocks(mesh: Mesh, permeability: float,
         targets = (corners.batch()[:, rows] + centres[rows]) / 2           # [samples, block] Point
         # Target points are a batch against the source faces' field: every pair of the two.
         relative = corners - targets[..., None]                           # [samples, block, edges] Point[F]
-        distances = relative.norm()                                      # [samples, block, edges] Scalar[F]
+        distances = relative.squared().square_root()                     # [samples, block, edges] Scalar[F]
         endpoint_sum = distances + distances[..., [1, 2, 0]]               # [samples, block, edges] Scalar[F]
         edge_potential = ((endpoint_sum + lengths) / (endpoint_sum - lengths)).log()
-        heights = outward & relative                                    # [samples, block, edges] Scalar[F]
+        # Each quadrature point's height above each edge's line, in the face's own sense: the area the
+        # corner's offset spans with the edge's unit direction, swept through time.
+        heights = (relative & (edges / lengths) & time) / sense          # [samples, block, edges] Scalar[F]
         source_potential = (heights * edge_potential).sum(axis=-1)         # [samples, block] Scalar[F]
         integral = (areas[rows] * source_potential.mean(axis=0)).batch()   # [block, F] Scalar
         integral = integral.at[np.arange(len(rows)), rows].set(self_integral.batch()[rows])
         yield SparseExtensor.from_indices(
-            integral * (permeability / (4 * np.pi)) * Vector,
-            rows[:, None], indices[None, :], (len(indices), len(indices)))  # [F, F] Vector <- Vector
+            # A current's vector potential: the metric turns the current's direction into a covector,
+            # Neumann's pairing of current elements.
+            integral * (permeability / (4 * np.pi)) * Current.dual_inverse(),
+            rows[:, None], indices[None, :], (len(indices), len(indices)))  # [F, F] Vector <- Current
