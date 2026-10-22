@@ -184,14 +184,34 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
         coupled = [dimension for dimension in range(len(value_batch)) if dimension not in shared_value]
         coupled_shape = tuple(value_batch[dimension] for dimension in coupled)
 
-        # One tangent per coupled element and coefficient of the value, spread over every element of
-        # the shared axes at once, which is valid because those elements are independent:
+        # The shared axes lead both the value and the result; past them, each case has this many coefficients
+        # of the value to vary and of the result to vary.
+        shared_shape = value_batch[:len(shared_value)]
+        image_shape = image.kernel.shape[len(shared_value):]
         count = int(np.prod(coupled_shape + axis, dtype=int))
-        basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + axis)
-        for dimension in sorted(shared_value):
-            basis = jnp.expand_dims(basis, 1 + dimension)
-        tangents = jnp.broadcast_to(basis, (count,) + value_batch + axis)
-        changes = jax.vmap(lambda tangent: jax.jvp(result, (value.kernel,), (tangent,))[1])(tangents)
+        image_count = int(np.prod(image_shape, dtype=int))
+        if image_count < count:
+            # Fewer coefficients come out than go in, as for a scalar function: one cotangent per coefficient
+            # of the result, spread over every element of the shared axes at once, each pulled back to the
+            # whole value in one reverse pass.
+            basis = jnp.eye(image_count, dtype=value.kernel.dtype).reshape((image_count,) + image_shape)
+            for dimension in range(len(shared_value)):
+                basis = jnp.expand_dims(basis, 1 + dimension)
+            cotangents = jnp.broadcast_to(basis, (image_count,) + image.kernel.shape)
+            _, pullback = jax.vjp(result, value.kernel)
+            pulled = jax.vmap(lambda cotangent: pullback(cotangent)[0])(cotangents)
+            # [result coefficients, shared..., coupled..., value axis] to [coupled..., value axis, shared..., result coefficients]
+            pulled = pulled.reshape(image_shape + value_batch + axis)
+            r, s = len(image_shape), len(shared_shape)
+            changes = jnp.transpose(pulled, tuple(range(r + s, pulled.ndim)) + tuple(range(r, r + s)) + tuple(range(r)))
+        else:
+            # One tangent per coupled element and coefficient of the value, spread over every element of
+            # the shared axes at once, which is valid because those elements are independent:
+            basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + axis)
+            for dimension in sorted(shared_value):
+                basis = jnp.expand_dims(basis, 1 + dimension)
+            tangents = jnp.broadcast_to(basis, (count,) + value_batch + axis)
+            changes = jax.vmap(lambda tangent: jax.jvp(result, (value.kernel,), (tangent,))[1])(tangents)
         # [coupled..., value sites, value blades, result batch..., result sites..., result blades...] to
         # [result batch..., coupled..., result sites..., value sites, result blades..., value blades]
         changes = changes.reshape(coupled_shape + axis + image.kernel.shape)
