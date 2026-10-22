@@ -49,6 +49,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
 """
 
 
+def behind(layer: tuple[np.ndarray, np.ndarray], distance: float) -> tuple[np.ndarray, np.ndarray]:
+    """A layer, its colour `[rows, columns, 4]` and its depth `[rows, columns]` weighted by coverage, pushed a distance
+    back along the view: for a surface that lines are drawn on, so that the lines stay in front of it where their
+    depths all but meet, while what lies truly behind it stays hidden."""
+    colour, depth = layer
+    return colour, depth + distance * colour[..., 3]
+
+
 def compose(layers: list[tuple[np.ndarray, np.ndarray, float]], background: np.ndarray) -> np.ndarray:
     """Layers blended over a background, nearest first at each pixel, `[rows, columns, 3]` bytes: each layer its
     colour and its depth along the view, `[rows, columns, 4]` and `[rows, columns]`, both weighted by how much of
@@ -63,3 +71,32 @@ def compose(layers: list[tuple[np.ndarray, np.ndarray, float]], background: np.n
         shown += passing * nearest[..., :3]
         passing *= 1 - nearest[..., 3:]
     return np.round(np.clip(shown + passing * background, 0, 1) * 255).astype(np.uint8)
+
+
+def vec3(rgb: np.ndarray) -> str:
+    """A colour as a WGSL constant."""
+    return f"vec3<f32>({', '.join(f'{value:.6f}' for value in rgb)})"
+
+
+def show(ax, image: np.ndarray, view):
+    """An image of a view in matplotlib axes, its middle at the origin, in the scene's units, so that places from
+    `view.across` land where they are seen; without axes. The image, for an animation to set its data."""
+    shown = ax.imshow(image, extent=view.extent, interpolation="bilinear")
+    ax.set_axis_off()
+    return shown
+
+
+def labels(ax, view, places, texts: list[str], **style) -> None:
+    """Texts at points, of any weight, as a view sees them, over its image shown by `show`."""
+    for (x, y), text in zip(view.across(places), texts):
+        ax.text(x, y, text, **style)
+
+
+def image_figure(image: np.ndarray):
+    """A figure of an image at its pixel size, without axes or margins."""
+    import matplotlib.pyplot as plt
+    figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
+    ax.imshow(image)
+    ax.set_axis_off()
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
+    return figure

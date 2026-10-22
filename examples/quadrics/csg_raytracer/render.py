@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.csg_raytracer import core
@@ -154,11 +153,3 @@ def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, cameras: core.M
                         lamp=lamp, half_view=half_view)["image"]
         yield np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
-
-def draw_frame(frame: np.ndarray) -> plt.Figure:
-    """An image `[rows, columns, 3]`, edge to edge."""
-    figure = plt.figure(figsize=(7, 7 * frame.shape[0] / frame.shape[1]))
-    ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow(frame)
-    ax.set_axis_off()
-    return figure

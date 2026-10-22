@@ -37,9 +37,9 @@ def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray) -> np.
     """The bar's triangles, each its own colour, flat, framed on the fixed box."""
     places = solids.mv.point(coordinates(vertices))
     corners = solids.mv.point(np.array(list(itertools.product(*limits))))      # [8] Point
-    camera, half = solids.view([corners], 0.0, elevation, azimuth, margin)
-    return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), camera, half, elevation, azimuth,
-                       n_pixels, background, face_values=colours, colour=meshes.by_face)
+    view = solids.view([corners], 0.0, elevation, azimuth, margin, n_pixels)
+    return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
+                       colour=meshes.by_face)
 
 
 def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndarray) -> plt.Figure:

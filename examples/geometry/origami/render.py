@@ -14,7 +14,7 @@ import numpy as np
 
 from numga import concatenate
 from examples.geometry.origami import core
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import meshes, show, solids, vec3
 
 front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])
@@ -30,16 +30,10 @@ layer_spacing = 1e-4
 edge_width = 1.8
 
 
-
-def vec3(rgb: np.ndarray) -> str:
-    """A colour as a WGSL constant."""
-    return f"vec3<f32>({', '.join(f'{value:.6f}' for value in rgb)})"
-
-
 colour = f"""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
     // Ink where the pixel lies within the crease width of an edge of its polygon, by how many pixels away it lies.
-    let edges = clamp(1 - corner / ({edge_width} * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
+    let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
     let paper = select({vec3(back_colour)}, {vec3(front_colour)}, front);
     return mix(paper, {vec3(edge_colour)}, ink);
@@ -64,30 +58,28 @@ def fans(paper: core.Paper) -> tuple[np.ndarray, np.ndarray]:
     return np.concatenate(triangles), np.concatenate(perimeter).astype(float)
 
 
-def viewport(points: core.Point) -> tuple[core.Motor, np.ndarray]:
-    """A camera framing points, and half the square image's width and height."""
-    camera, half = solids.view([points], 0.0, elevation, azimuth, margin)
-    return camera, np.full(2, half.max())
+def viewport(points: core.Point) -> solids.View:
+    """A view framing points in a square image."""
+    return solids.view([points], 0.0, elevation, azimuth, margin, pixels).squared()
 
 
-def picture(paper: core.Paper, camera: core.Motor, half: np.ndarray) -> np.ndarray:
-    """The paper as the camera sees it, `[pixels, pixels, 3]` bytes."""
+def picture(paper: core.Paper, view: solids.View) -> np.ndarray:
+    """The paper as the view sees it, `[pixels, pixels, 3]` bytes."""
     # Each corner held off its layer by its facet's offset, carried with the facet through every fold.
     corners = paper.points + paper.offsets[np.repeat(np.arange(len(paper.counts)), paper.counts)] * layer_spacing
     triangles, perimeter = fans(paper)
-    image = meshes.layer(corners, triangles, np.zeros(3), meshes.flat(corners, triangles), camera, half, elevation,
-                         azimuth, pixels, face_values=perimeter, colour=colour, gloss=0.0)
-    return compose([(*image, 1.0)], background)
+    return meshes.draw(corners, triangles, np.zeros(3), meshes.flat(corners, triangles), view, background,
+                       face_values=perimeter, colour=colour, gloss=0.0)
 
 
 def draw(paper: core.Paper) -> plt.Figure:
     figure, ax = plt.subplots(figsize=(6, 6), layout="constrained")
-    ax.imshow(picture(paper, *viewport(paper.points)))
-    ax.set_axis_off()
+    view = viewport(paper.points)
+    show(ax, picture(paper, view), view)
     return figure
 
 
 def animate(states: Iterator[core.Paper]) -> list[np.ndarray]:
     states = tuple(states)
-    camera, half = viewport(concatenate([state.points for state in states]))
-    return [picture(state, camera, half) for state in states]
+    view = viewport(concatenate([state.points for state in states]))
+    return [picture(state, view) for state in states]

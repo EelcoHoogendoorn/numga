@@ -48,16 +48,6 @@ def boundary_corners(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
     return (counts[inverse] == 1).reshape(-1, 3)
 
 
-def image_figure(picture: np.ndarray) -> plt.Figure:
-    """An image at its pixel size without margins or axes."""
-    figure, ax = plt.subplots(figsize=(picture.shape[1] / 100, picture.shape[0] / 100), dpi=100)
-    ax.imshow(picture)
-    ax.set_axis_off()
-    figure.subplots_adjust(0, 0, 1, 1)
-    plt.close(figure)
-    return figure
-
-
 def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
     points = coordinates(tiles)

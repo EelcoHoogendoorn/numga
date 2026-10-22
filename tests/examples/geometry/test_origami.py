@@ -108,8 +108,8 @@ def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevat
         hinge = plane ^ paper.sheet
         starting = split.folded(hinge, turning, np.copysign(angle_step, peak))
         view = render.viewport(split.points)
-        before = render.picture(split, *view).astype(float)
-        after = render.picture(starting, *view).astype(float)
+        before = render.picture(split, view).astype(float)
+        after = render.picture(starting, view).astype(float)
         changed = np.max(np.abs(after - before), axis=-1) > 5
 
         # An infinitesimal motion may change edge coverage, but cannot recolour a flap.
@@ -120,8 +120,8 @@ def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevat
         approaching = split.folded(hinge, turning, end - np.copysign(angle_step, peak)
                                    if end else np.copysign(angle_step, peak))
         paper = split.folded(hinge, turning, end)
-        before = render.picture(approaching, *view).astype(float)
-        after = render.picture(paper, *view).astype(float)
+        before = render.picture(approaching, view).astype(float)
+        after = render.picture(paper, view).astype(float)
         changed = np.max(np.abs(after - before), axis=-1) > 5
         assert changed.mean() < 0.02
 

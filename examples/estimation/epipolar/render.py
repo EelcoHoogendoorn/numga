@@ -58,7 +58,7 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
     fixed = [(solids.ball(truth, landmark_radius)[:, None], landmark),
              (solids.rods(*edges_1, edge_radius), camera_1), (solids.rods(*edges_2, edge_radius), camera_2_true),
              (solids.rods(truth[edges[:, 0]], truth[edges[:, 1]], edge_radius), house)]
-    camera, half = solids.view([truth, *edges_1, *edges_2], landmark_radius, elevation, azimuth, margin)
+    view = solids.view([truth, *edges_1, *edges_2], landmark_radius, elevation, azimuth, margin, pixels)
 
     frames = []
     for motor, points in states:
@@ -69,5 +69,5 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
                   (solids.rods(*camera_edges(motor), edge_radius), camera_2_found),
                   (solids.rods(eye_1.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every]),
                   (solids.rods(eye.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every])]
-        frames.append(solids.draw(fixed + moving, camera, half, elevation, azimuth, pixels, background))
+        frames.append(solids.draw(fixed + moving, view, background))
     return frames

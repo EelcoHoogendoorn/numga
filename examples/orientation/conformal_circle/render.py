@@ -1,25 +1,89 @@
-"""Ordered points and the chosen sides of a circle's two cutting surfaces."""
+"""Ordered points and the chosen sides of a circle's two cutting surfaces. The circle, its plane and its sphere
+are drawn on the GPU: the plane a translucent sheet, the sphere a translucent ball under its sampled wireframe, the
+points balls and the sides arrows; the circle's motions are drawn by matplotlib."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.orientation.conformal_circle.core import Point, Sphere
+from examples.wgsl import compose, meshes, show, solids
 
+sm = solids.mv
 PLANE = "#218c9d"
 SPHERE = "#ce713f"
 CURVE = "#3d354a"
 MARKERS = ("#9861ba", "#dd9650", "#4f9b85")
+background = np.ones(3)
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the scene as a share
+# of the larger side, and the pixels across each panel.
+ELEVATION, AZIMUTH = np.radians(26.0), np.radians(32.0)
+MARGIN, N_PIXELS = 0.25, 500
+# The plane's sheet, a square about the origin; the opacities of the sheet, its rim, the ball and the sphere's wireframe.
+SHEET = 1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]])
+SHEET_OPACITY, RIM_OPACITY, BALL_OPACITY, WIREFRAME_OPACITY = 0.14, 0.7, 0.12, 0.22
+# The widths of the circle, the sheet's rim, the wireframe and the chord arrows, the plane's and the sphere's
+# arrows, in pixels, the arrowheads' lengths and widths, and the points' radius, in pixels.
+CIRCLE_WIDTH, RIM_WIDTH, WIREFRAME_WIDTH = 4.0, 3.0, 3.0
+CHORD_WIDTH, PLANE_ARROW_WIDTH, SPHERE_ARROW_WIDTH = 3.5, 5.0, 4.5
+CHORD_HEAD, ARROW_HEAD, HEAD_WIDTH = 22.0, 22.0, 16.0
+DOT_RADIUS = 8.0
+# The lengths of the plane's and the sphere's arrows per unit of their normals.
+PLANE_ARROW_LENGTH, SPHERE_ARROW_LENGTH = 0.85, 0.45
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
     values = points.dual().cast(points.algebra.subspace("x y z w e")).kernel
     return values[..., :3] / (values[..., 4:] - values[..., 3:4])
+
+
+def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head: float, view: solids.View
+           ) -> tuple[solids.Quadric, solids.Quadric]:
+    """Arrows between places `[..., 3]`, their shafts `width` and their heads `head` pixels long."""
+    return solids.arrows(sm.point(starts), sm.point(ends), width / 2 * view.pixel, head * view.pixel,
+                         HEAD_WIDTH / 2 * view.pixel)
+
+
+def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np.ndarray, sphere: np.ndarray,
+          view: solids.View) -> np.ndarray:
+    """One side of the mirror: the circle through its ordered points, on the plane's sheet and in the sphere,
+    with arrows into the positive sides of the plane and the sphere."""
+    plane_colour, sphere_colour, curve_colour = (np.array(to_rgb(colour)) for colour in (PLANE, SPHERE, CURVE))
+    corners, quad = sm.point(SHEET), np.array([[0, 1, 2], [0, 2, 3]])
+    sheet = meshes.layer(corners, quad, plane_colour, meshes.flat(corners, quad), view, gloss=0.1)
+    rim = meshes.tubes([(np.concatenate([SHEET, SHEET[:1]]), plane_colour)], RIM_WIDTH, view)
+    # The sphere's sampled parallels and meridians, and the ball they lie on: its centre and radius from the
+    # sphere's coefficients, as the centre's coordinates and squared radius over its weight.
+    wireframe = meshes.tubes([(line, sphere_colour) for line in [*globe, *globe.transpose(1, 0, 2)]],
+                             WIREFRAME_WIDTH, view)
+    weight = sphere[4] - sphere[3]
+    centre = sphere[:3] / weight
+    ball = solids.layer([(solids.ball(sm.point(centre), np.sqrt(centre @ centre - (sphere[3] + sphere[4]) / weight))
+                          [None, None], sphere_colour)], view)
+    curve = meshes.tubes([(circle, curve_colour)], CIRCLE_WIDTH, view)
+
+    # Short arrows follow the point order around the circle in both views.
+    count = len(circle) - 1
+    starts = np.arange(3) * count // 3 + count // 12
+    chords = arrows(circle[starts], circle[starts + count // 18], CHORD_WIDTH, CHORD_HEAD, view)
+    # The arrows point into the positive sides of the incidence functions.
+    plane_arrow = arrows(np.zeros((1, 3)), -plane[None, :3] * PLANE_ARROW_LENGTH, PLANE_ARROW_WIDTH, ARROW_HEAD, view)
+    sphere_anchor = circle[None, count // 3]
+    sphere_direction = -sphere[:3] - (sphere[3] - sphere[4]) * sphere_anchor
+    sphere_arrow = arrows(sphere_anchor, sphere_anchor + sphere_direction * SPHERE_ARROW_LENGTH, SPHERE_ARROW_WIDTH,
+                          ARROW_HEAD, view)
+    marks = solids.layer([(chords[0], curve_colour), (chords[1], curve_colour),
+                          (plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
+                          (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
+                          (solids.ball(sm.point(vertices), DOT_RADIUS * view.pixel)[:, None],
+                           np.array([to_rgb(colour) for colour in MARKERS]))], view)
+    return compose([(*sheet, SHEET_OPACITY), (*rim, RIM_OPACITY), (*ball, BALL_OPACITY),
+                    (*wireframe, WIREFRAME_OPACITY), (*curve, 1.0), (*marks, 1.0)], background)
 
 
 def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,
@@ -30,42 +94,12 @@ def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,
     plane_values = planes.cast(planes.algebra.subspace("x y z w e")).kernel
     sphere_values = spheres.cast(spheres.algebra.subspace("x y z w e")).kernel
 
-    figure = plt.figure(figsize=(10, 4.5), layout="constrained")
-    sheet = np.array([[-1.23, -1.23, 0], [1.23, -1.23, 0],
-                      [1.23, 1.23, 0], [-1.23, 1.23, 0]])
+    # One view for both sides, framing the sheet and the sphere.
+    view = solids.view([sm.point(SHEET), sm.point(surfaces)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    figure = plt.figure(figsize=(2 * N_PIXELS / 100, view.shape[0] / 100), dpi=100)
     for index in range(len(vertices)):
-        ax = figure.add_subplot(1, 2, index + 1, projection="3d", computed_zorder=False)
-        ax.set(xlim=(-1.4, 1.4), ylim=(-1.4, 1.4), zlim=(-1.4, 1.4))
-        ax.set_box_aspect((1, 1, 1), zoom=1.25)
-        ax.view_init(elev=26, azim=-58)
-        ax.set_axis_off()
-
-        ax.add_collection3d(Poly3DCollection([sheet], facecolors=PLANE, edgecolors=PLANE,
-                                            alpha=0.09, linewidths=0.8, zorder=1))
-        globe = surfaces[index]
-        ax.plot_wireframe(*np.moveaxis(globe, -1, 0), color=SPHERE,
-                          linewidth=0.6, alpha=0.27, zorder=2)
-        circle = curves[index]
-        ax.plot(*circle.T, color=CURVE, linewidth=2.8, zorder=4)
-        ax.scatter(*vertices[index].T, c=MARKERS, s=85, edgecolors="white",
-                   linewidths=1.5, depthshade=False, zorder=6)
-
-        # Short arrows follow the point order around the circle in both views.
-        count = len(circle) - 1
-        starts = np.arange(3) * count // 3 + count // 12
-        chord = circle[starts + count // 18] - circle[starts]
-        ax.quiver(*circle[starts].T, *chord.T, color=CURVE, linewidth=2.3,
-                  arrow_length_ratio=0.6, zorder=5)
-
-        # The arrows point into the positive sides of the incidence functions.
-        plane_arrow = -plane_values[index, :3]
-        ax.quiver(0, 0, 0, *plane_arrow, length=0.85, color=PLANE,
-                  linewidth=3.5, arrow_length_ratio=0.24, zorder=7)
-        sphere_anchor = circle[count // 3]
-        sphere_arrow = (-sphere_values[index, :3]
-                        - (sphere_values[index, 3] - sphere_values[index, 4]) * sphere_anchor)
-        ax.quiver(*sphere_anchor, *sphere_arrow, length=0.45, color=SPHERE,
-                  linewidth=3, arrow_length_ratio=0.3, zorder=7)
+        image = panel(vertices[index], curves[index], surfaces[index], plane_values[index], sphere_values[index], view)
+        show(figure.add_axes((index / 2, 0.0, 0.5, 1.0)), image, view)
     return figure
 
 

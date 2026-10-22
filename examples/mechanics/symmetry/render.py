@@ -13,9 +13,9 @@ from functools import cache
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate, stack
+from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
-from examples.wgsl import Shader, meshes, solids, supersampled
+from examples.wgsl import Shader, meshes, show, solids, supersampled
 
 driving_colour, flow_colour = "#262b32", "#d44e1a"
 surface_colour = np.array([0.36, 0.60, 0.80])
@@ -99,13 +99,6 @@ def image_of_sphere(matrix: np.ndarray) -> tuple[solids.Quadric, Point]:
     return quadric, pga_mv.point(unit_directions(n_framing) @ np.swapaxes(matrix, -1, -2).reshape(-1, 3, 3)[0])
 
 
-def panel(ax: plt.Axes, image: np.ndarray, camera: solids.Motor, half: np.ndarray) -> None:
-    """A traced image on the screen coordinates of the view, framed about the camera's eye, without axes."""
-    x, y = solids.on_screen(camera >> solids.origin, elevation, azimuth)
-    ax.imshow(image, extent=(x - half[0], x + half[0], y - half[1], y + half[1]), interpolation="bilinear")
-    ax.set_axis_off()
-
-
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
     """A row of panels with the given half widths and heights, each as wide as its aspect asks, filling the
     figure's height, with a thin gap between them."""
@@ -123,13 +116,13 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
     driving_tip, flows = pga_mv.point(across(driving) * largest), pga_mv.point(along(fluxes))
     ellipsoids = [image_of_sphere(panel_matrix) for panel_matrix in matrix]
-    camera, half = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin)
-    fig, axes = figure([half] * len(matrix), 3.6)
+    view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin,
+                       pixels)
+    fig, axes = figure([view.half] * len(matrix), 3.6)
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
-        panel(ax, solids.draw([(ellipsoid[None, None], surface_colour)], camera, half, elevation, azimuth, pixels, background),
-              camera, half)
+        show(ax, solids.draw([(ellipsoid[None, None], surface_colour)], view, background), view)
         for tip, colour, width in ((driving_tip, driving_colour, 1.8), (flow, flow_colour, 2.6)):
-            ax.annotate("", xy=solids.on_screen(tip, elevation, azimuth), xytext=(0, 0),
+            ax.annotate("", xy=view.across(tip), xytext=view.across(solids.origin),
                         arrowprops=dict(arrowstyle="-|>", color=colour, lw=width))
     return fig
 
@@ -168,17 +161,16 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
     """The lattice with its bonds; the lattice's conduction, the image of the unit ball of fields, a sphere;
     and its stiffness along every direction as a radius, a cube with rounded faces."""
     parts = lattice(sites, axial, diagonal)
-    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin)
+    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, pixels)
     ellipsoid, framed = image_of_sphere(matrices(conductivity))
-    conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin)
+    conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, pixels)
     points, faces = stiffness_mesh(stiffness)
-    stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin)
-    fig, axes = figure([lattice_view[1], conduction_view[1], stiffness_view[1]], 4.0)
-    panel(axes[0], solids.draw(parts, *lattice_view, elevation, azimuth, pixels, background), *lattice_view)
-    panel(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], *conduction_view, elevation, azimuth, pixels, background),
-          *conduction_view)
-    panel(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), *stiffness_view, elevation,
-                               azimuth, pixels, background), *stiffness_view)
+    stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
+    fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 4.0)
+    show(axes[0], solids.draw(parts, lattice_view, background), lattice_view)
+    show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background), conduction_view)
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background),
+         stiffness_view)
     return fig
 
 
@@ -195,13 +187,13 @@ def draw_optical_activity(rotary: Scalar) -> plt.Figure:
     toward_lamp = turn >> (mv.x * 0.4 + mv.y * 0.7 + mv.z * 0.6)
     directions = mv.antivector(unit_directions(n_framing))                    # [directions] Direction
     limit = np.abs(rotary[:, None](directions, directions).to_array()).max()
-    half = np.full(2, 1 + margin)
+    # The sphere about the origin, seen as the other views see it.
+    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), pixels)
     colours = plt.get_cmap("RdBu_r")(np.linspace(0, 1, 256))[None, :, :3]
-    fig, axes = figure([half] * rotary.shape[0], 2.6)
+    fig, axes = figure([view.half] * rotary.shape[0], 2.6)
     for ax, response in zip(axes, rotary):
-        image = sphere_shader(rotary.gatype)((pixels, pixels), rotary=response, limit=limit, turn=turn, half_height=half[1],
+        image = sphere_shader(rotary.gatype)(view.shape, rotary=response, limit=limit, turn=turn, half_height=view.half[1],
                                 lamp=toward_lamp / (toward_lamp | toward_lamp).square_root(), background=background,
                                 ambient=solids.ambient, gloss=solids.gloss, shininess=solids.shininess, colours=colours)["image"]
-        ax.imshow(np.clip(image, 0, 1), extent=(-half[0], half[0], -half[1], half[1]), interpolation="bilinear")
-        ax.set_axis_off()
+        show(ax, np.clip(image, 0, 1), view)
     return fig

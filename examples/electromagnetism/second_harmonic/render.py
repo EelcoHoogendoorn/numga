@@ -6,19 +6,31 @@ from collections.abc import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 from matplotlib.ticker import MaxNLocator
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from numga import stack
 
 from examples.animation import capture
 from examples.electromagnetism.second_harmonic import core
+from examples.wgsl import compose, labels, show, solids
 
 PUMP_COLOUR = "#3275a8"
 GENERATED_COLOUR = "#d16a30"
 CASE_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
 # The crystals of the phase-matching scene, in its order.
 CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
+sm = solids.mv
+BOND_COLOUR, CENTRE_COLOUR, AXIS_COLOUR = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
+LABEL_COLOUR = np.array([0.4, 0.42, 0.47])
+# The crystal's view: elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square
+# view about the bonds' centre, and the pixels across it.
+ELEVATION, AZIMUTH = np.radians(23.0), np.radians(34.0)
+HALF_WIDTH, N_PIXELS = 1.35, 400
+# The widths of the bonds and the axes' arrows, the arrowheads' length and width, the radii of the bonds' ends and
+# their centre, in pixels; how far the axes reach and their names lie, in bond lengths.
+BOND_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, END_RADIUS, CENTRE_RADIUS = 5.0, 3.0, 12.0, 7.0, 7.0, 5.0
+AXIS_LENGTH, LABEL_DISTANCE = 1.15, 1.27
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -50,6 +62,19 @@ def screen_axes(axes: plt.Axes, limit: float) -> None:
     axes.spines[["top", "right"]].set_visible(False)
 
 
+def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
+    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, among the axes
+    of space."""
+    ends = sm.point(bonds)                                                   # [bonds] Point
+    shafts, heads = solids.arrows(sm.point(-np.eye(3)), sm.point(AXIS_LENGTH * np.eye(3)), ARROW_WIDTH / 2 * view.pixel,
+                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
+             (solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
+             (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR))),
+             (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
+    return compose([(*solids.layer(parts, view), 1.0)], np.ones(3))
+
+
 class ResponseView:
     """One response figure for a fixed set of pumps, its artists updated for each crystal."""
 
@@ -60,22 +85,15 @@ class ResponseView:
         self.selected_angle = np.arctan2(pump[1], pump[0])
 
         self.figure = plt.figure(figsize=(12.5, 4.1), layout="constrained")
-        crystal_axes = self.figure.add_subplot(1, 3, 1, projection="3d")
+        crystal_axes = self.figure.add_subplot(1, 3, 1)
         response_axes = self.figure.add_subplot(1, 3, 2)
         self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
 
-        # The four segments share a centre; their endpoints show the tetrahedral geometry.
-        self.bond_lines = Line3DCollection([], colors="0.45", linewidths=2)
-        crystal_axes.add_collection3d(self.bond_lines, autolim=False)
-        self.bond_ends = crystal_axes.scatter([], [], [], s=45, color=GENERATED_COLOUR, depthshade=False)
-        crystal_axes.scatter(0, 0, 0, s=30, color="0.3", depthshade=False)
-        crystal_axes.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1),
-                         xlabel="x", ylabel="y", zlabel="z")
-        crystal_axes.set_box_aspect((1, 1, 1))
-        crystal_axes.view_init(elev=23, azim=-56)
-        crystal_axes.set_xticks([-1, 0, 1])
-        crystal_axes.set_yticks([-1, 0, 1])
-        crystal_axes.set_zticks([-1, 0, 1])
+        # The crystal's image, blank until the bonds are drawn, with each axis named just past its arrow's tip.
+        self.view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), N_PIXELS)
+        self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
+        labels(crystal_axes, self.view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center",
+               fontsize=11, color=LABEL_COLOUR)
 
         response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
                            linewidth=1, alpha=0.3)
@@ -102,9 +120,7 @@ class ResponseView:
         bonds = coordinates(bonds)                                           # [bonds, 3]
         harmonic = transverse_polarization(harmonic)                         # [angles, 2]
         intensity = (harmonic ** 2).sum(axis=-1)                             # [angles]
-        self.bond_lines.set_segments(np.stack((np.zeros_like(bonds), bonds), axis=1))   # [bonds, 2, 3]
-        self.bond_ends.set_offsets(bonds[:, :2])
-        self.bond_ends.set_3d_properties(bonds[:, 2], "z")
+        self.crystal.set_data(crystal_image(bonds, self.view))
         self.harmonic_curve.set_data(harmonic[:, 0], harmonic[:, 1])
         self.generated_arrow.set_UVC(*harmonic[0])
         self.intensity_curve.set_data(self.angles, intensity)

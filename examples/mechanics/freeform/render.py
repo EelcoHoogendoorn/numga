@@ -9,7 +9,7 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.freeform.geometry import Antivector
-from examples.wgsl import meshes, solids
+from examples.wgsl import image_figure, meshes, solids
 
 n_pixels = 460
 elevation, azimuth = np.radians(24.0), np.radians(54.0)
@@ -25,31 +25,25 @@ def coordinates(vertices: Antivector) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & vertices[..., None]).to_array()
 
 
-def viewport(points: solids.Point) -> tuple[solids.Motor, np.ndarray]:
+def viewport(points: solids.Point) -> solids.View:
     """A fixed three-quarter view of a surface, square, with room for it to flex."""
-    camera, half = solids.view([points], 0.0, elevation, azimuth, margin)
-    return camera, np.full(2, half.max())
+    framed = solids.view([points], 0.0, elevation, azimuth, margin, n_pixels)
+    return solids.View(framed.camera, np.full(2, framed.half.max()), n_pixels)
 
 
-def picture(points: solids.Point, faces: np.ndarray, camera: solids.Motor, half: np.ndarray) -> np.ndarray:
+def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.ndarray:
     """The surface, smooth shaded by normals blended across each face from its vertices."""
-    return meshes.draw(points, faces, surface, meshes.smooth(points, faces), camera, half, elevation, azimuth,
-                       n_pixels, background)
+    return meshes.draw(points, faces, surface, meshes.smooth(points, faces), view, background)
 
 
 def frames(vertices: Iterable[Antivector], faces: np.ndarray) -> list[np.ndarray]:
     """Draw a sequence of surfaces with a camera fixed by the first frame."""
     states = [solids.mv.point(coordinates(state)) for state in vertices]
     view = viewport(states[0])
-    return [picture(state, faces, *view) for state in states]
+    return [picture(state, faces, view) for state in states]
 
 
 def draw(vertices: Antivector, faces: np.ndarray) -> plt.Figure:
     """One surface without axes or margins."""
     points = solids.mv.point(coordinates(vertices))
-    image = picture(points, faces, *viewport(points))
-    figure, ax = plt.subplots(figsize=(n_pixels / 100, n_pixels / 100), dpi=100)
-    ax.imshow(image)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
+    return image_figure(picture(points, faces, viewport(points)))

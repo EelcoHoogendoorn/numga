@@ -6,22 +6,32 @@ from collections.abc import Iterable
 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib.colors import TwoSlopeNorm
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+from matplotlib.colors import TwoSlopeNorm, to_rgb
 import numpy as np
 
 from examples.animation import capture
 from examples.surfaces.reciprocal import core
+from examples.wgsl import compose, meshes, show, solids
 
-TERRAIN_COLOUR = "#9fb7c4"
+TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
+BOUNDARY_COLOUR = np.full(3, 0.65)
 RECIPROCAL_COLOUR = "0.2"
 # Tension blue, compression red, white at zero, on one scale for every frame: compression is far weaker than
 # tension, so each side saturates at its own end. The widths of the bars.
 STRESS_MAP = "coolwarm_r"
 COMPRESSION, TENSION = -0.3, 1.5
 BAR_WIDTH = 2.2
-ELEVATION, AZIMUTH = 28.0, -60.0
 REACH = 1.25
+# The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
+# share of its larger side, and the pixels across its picture; the terrain's opacity, so the creases behind it show
+# through, and the widths of the creases and of the boundary as tubes, in pixels.
+ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
+MARGIN = 0.08
+N_PIXELS = 1000
+TERRAIN_OPACITY = 0.3
+CREASE_WIDTH, BOUNDARY_WIDTH = 7.0, 3.5
+N_AROUND = 8
+BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -57,22 +67,37 @@ def colours(stresses: np.ndarray) -> np.ndarray:
     return plt.get_cmap(STRESS_MAP)(TwoSlopeNorm(0.0, COMPRESSION, TENSION)(np.clip(stresses, COMPRESSION, TENSION)))
 
 
-def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> plt.Figure:
-    """Left, the terrain the heights lift the mesh to, its creases coloured by stress; right, the planar
-    truss, its bars coloured by stress, and the reciprocal diagram over it, an edge across every bar."""
-    inner, left, right = core.beside(mesh)
+def view(mesh: core.Mesh, heights: np.ndarray) -> solids.View:
+    """A view framing the terrain at all the heights `[..., vertices]`."""
+    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
+    lifted = np.concatenate([np.broadcast_to(xy, heights.shape + (2,)), heights[..., None]], axis=-1)   # [..., vertices, 3]
+    return solids.view([solids.mv.point(lifted.reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+
+
+def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: solids.View) -> np.ndarray:
+    """The terrain the heights lift the mesh to, translucent and flat over its faces, its creases tubes coloured
+    by their shades `[inner, 3]`, and its boundary grey."""
+    inner, _, _ = core.beside(mesh)
     xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
     lifted = np.concatenate([xy, heights[:, None]], axis=-1)                   # [vertices, 3]
+    places = solids.mv.point(lifted)
+    surface = meshes.layer(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing)
+    creases = meshes.tubes(list(zip(lifted[mesh.edges[inner]], shades)), CREASE_WIDTH, framing, N_AROUND)
+    boundary = meshes.tubes([(ends, BOUNDARY_COLOUR) for ends in lifted[mesh.edges[mesh.boundary_edges]]], BOUNDARY_WIDTH,
+                            framing, N_AROUND)
+    return compose([(*surface, TERRAIN_OPACITY), (*creases, 1.0), (*boundary, 1.0)], BACKGROUND)
+
+
+def panels(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector,
+           framing: solids.View) -> plt.Figure:
+    """Left, the terrain the heights lift the mesh to, its creases coloured by stress, seen by the framing camera;
+    right, the planar truss, its bars coloured by stress, and the reciprocal diagram over it, an edge across every
+    bar."""
+    inner, left, right = core.beside(mesh)
+    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
     shades = colours(scalars(stresses))                                        # [inner, 4]
     figure = plt.figure(figsize=(10.0, 5.0))
-    terrain = figure.add_axes((0.0, 0.0, 0.5, 1.0), projection="3d", computed_zorder=False)
-    terrain.add_collection3d(Poly3DCollection(lifted[mesh.faces], facecolor=TERRAIN_COLOUR, alpha=0.35, edgecolor="none", zorder=1))
-    terrain.add_collection3d(Line3DCollection(lifted[mesh.edges[inner]], colors=shades, linewidths=BAR_WIDTH, zorder=2))
-    terrain.add_collection3d(Line3DCollection(lifted[mesh.edges[mesh.boundary_edges]], colors="0.5", linewidths=1.0, zorder=2))
-    terrain.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), zlim=(0, REACH))
-    terrain.set_box_aspect((1, 1, 0.5), zoom=1.3)
-    terrain.view_init(elev=ELEVATION, azim=AZIMUTH)
-    terrain.set_axis_off()
+    show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), terrain(mesh, heights, shades[:, :3], framing), framing)
     plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
     plane.add_collection(LineCollection(xy[mesh.edges[inner]], colors=shades, linewidths=BAR_WIDTH))
     plane.add_collection(LineCollection(xy[mesh.edges[mesh.boundary_edges]], colors="0.5", linewidths=1.0))
@@ -84,12 +109,19 @@ def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: cor
     return figure
 
 
+def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> plt.Figure:
+    """The terrain beside the planar truss and its reciprocal diagram, the terrain framed on itself."""
+    return panels(mesh, heights, stresses, duals, view(mesh, heights))
+
+
 def animate(mesh: core.Mesh, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> list[np.ndarray]:
     """The figure at every frame: its heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
-    vertices `[faces] Vector`."""
+    vertices `[faces] Vector`, the terrain seen by one camera framing every frame."""
+    frames = list(frames)
+    framing = view(mesh, np.stack([heights for heights, _, _ in frames]))
     images = []
     for heights, stresses, duals in frames:
-        figure = draw(mesh, heights, stresses, duals)
+        figure = panels(mesh, heights, stresses, duals, framing)
         images.append(capture(figure))
         plt.close(figure)
     return images

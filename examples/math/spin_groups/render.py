@@ -1,5 +1,5 @@
 """Drawing for the spin groups: the table of signatures, and the orbits of the two isoclinic flows on
-the three-sphere, seen through the stereographic projection."""
+the three-sphere, seen through the stereographic projection: tubes and dots drawn on the GPU."""
 
 from __future__ import annotations
 
@@ -9,8 +9,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
-from examples.animation import capture
 from examples.math.spin_groups import core
+from examples.wgsl import compose, meshes, show, solids
+
+sm = solids.mv
+BACKGROUND = np.ones(3)
+# One view for all three families: the elevation and azimuth in radians, azimuth zero looking along +y, the margin
+# around the orbits as a share of the larger side, and the pixels across a panel of the still and of a frame.
+ELEVATION, AZIMUTH = np.radians(24.0), np.radians(35.0)
+MARGIN = 0.14
+PANEL_PIXELS, FRAME_PIXELS = 540, 440
+# The points around a tube; the widths in pixels of the circles and the knots in the still, and of the faint orbits
+# in the animation, and their opacity; the riders' radius in pixels.
+N_AROUND = 8
+CIRCLE_WIDTH, KNOT_WIDTH, FAINT_WIDTH, FAINT_OPACITY = 2.0, 3.2, 1.6, 0.45
+RIDER_RADIUS = 3.2
 
 
 def components(points: core.Extensor) -> np.ndarray:
@@ -48,34 +61,21 @@ def colours(shape: tuple[int, int]) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full(shape, 0.75), value], axis=-1))
 
 
-def panels(figure: plt.Figure, extent: np.ndarray, elevations: tuple[float, ...]):
-    """Views of space side by side, filling the figure, each fitted to the given half-widths and seen
-    from its own elevation."""
-    count = len(elevations)
-    axes = [figure.add_axes((index / count, 0.0, 1 / count, 1.0), projection="3d") for index in range(count)]
-    for ax, elevation in zip(axes, elevations):
-        ax.set(xlim=(-extent[0], extent[0]), ylim=(-extent[1], extent[1]), zlim=(-extent[2], extent[2]))
-        ax.set_box_aspect(tuple(extent), zoom=1.3)
-        ax.set_axis_off()
-        ax.view_init(elev=elevation, azim=-55)
-    return axes
+def view(pixels: int, *drawn: np.ndarray) -> solids.View:
+    """One view for every panel, `pixels` across, framing everything drawn `[..., 3]`."""
+    return solids.view([sm.point(points) for points in drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
-def extent(*drawn: np.ndarray) -> np.ndarray:
-    """The half-widths along x, y and z that hold everything drawn."""
-    points = np.concatenate([d.reshape(-1, 3) for d in drawn])
-    return np.nanmax(np.abs(points), axis=0) * 1.02
+def orbit_layer(orbits: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start."""
+    curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
+    return meshes.tubes(list(curves), width, view, N_AROUND)
 
 
-def draw_orbits(ax, orbits: np.ndarray, width: float) -> None:
-    """Each orbit as a closed curve, in the colour of its start."""
-    rgb = colours(orbits.shape[:2])
-    for curve, colour in zip(orbits.reshape(-1, *orbits.shape[-2:]), rgb.reshape(-1, 3)):
-        ax.plot(*curve.T, color=colour, linewidth=width)
-
-
-# One view for all three families.
-ELEVATIONS = (24, 24, 24)
+def rider_layer(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """A dot at each position `[n, 3]`, in its colour `[n, 3]`."""
+    balls = solids.ball(sm.point(positions), RIDER_RADIUS * view.pixel)[:, None]
+    return solids.layer([(balls, rgb)], view)
 
 
 def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor) -> plt.Figure:
@@ -83,32 +83,30 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     in opposite senses, beside the orbits of a rotation combining them at different rates: trefoil
     knots, one on each torus."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
+    panel = view(PANEL_PIXELS, *drawn)
     figure = plt.figure(figsize=(16, 5.5))
-    for ax, orbits, width in zip(panels(figure, extent(*drawn), ELEVATIONS), drawn, (0.7, 0.7, 1.4)):
-        draw_orbits(ax, orbits, width)
+    for index, (orbits, width) in enumerate(zip(drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH))):
+        ax = figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0))
+        show(ax, compose([(*orbit_layer(orbits, width, panel), 1.0)], BACKGROUND), panel)
     return figure
 
 
 def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor, frames: int) -> list[np.ndarray]:
     """The points of the three-sphere carried along every flow at once, their orbits drawn faintly;
-    six points ride along each knot."""
+    six points ride along each knot. The three panels side by side, seen by one camera."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
-    box = extent(*drawn)
+    frame = view(FRAME_PIXELS, *drawn)
+    faint = [(*orbit_layer(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
     riders = np.arange(6) * length // 6
+    knots = drawn[2]
     images = []
     for step in steps:
-        figure = plt.figure(figsize=(13, 4.4))
-        axes = panels(figure, box, ELEVATIONS)
-        for ax, orbits in zip(axes, drawn[:2]):
-            draw_orbits(ax, orbits, 0.35)
-            ax.scatter(*orbits[:, :, step].reshape(-1, 3).T, c=colours(orbits.shape[:2]).reshape(-1, 3), s=16,
-                       depthshade=False)
-        knots = drawn[2]
-        draw_orbits(axes[2], knots, 0.6)
-        positions = knots[:, :, (step + riders) % length].reshape(-1, 3)
-        axes[2].scatter(*positions.T, c=np.repeat(colours(knots.shape[:2]).reshape(-1, 3), 6, axis=0), s=16, depthshade=False)
-        images.append(capture(figure))
-        plt.close(figure)
+        # Every start carried along the two flows, and six points along each knot.
+        riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
+        riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
+                       np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
+        images.append(np.concatenate([compose([orbits, (*rider_layer(*points, frame), 1.0)], BACKGROUND)
+                                      for orbits, points in zip(faint, riding)], axis=1))
     return images

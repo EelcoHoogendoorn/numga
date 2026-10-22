@@ -13,17 +13,10 @@ from functools import cache
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
-from numga.algebras import PGA3D as ga
 from examples.mechanics.xpbd.core import Motor
-from examples.wgsl import Shader, supersampled
+from examples.wgsl import Shader, solids, supersampled
+from examples.wgsl.solids import Plane, Point, Quadric, ga, mv, origin
 
-mv = NumpyContext(ga).multivector
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
-axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane
-origin = mv.w.dual()                                                         # [] Point
 # Two alternating link colours, the pin's colour, the floor's two tiles and the background.
 link_colours = np.array([[0.86, 0.42, 0.20], [0.20, 0.52, 0.66]])
 pin_colour = np.array([0.25, 0.25, 0.28])
@@ -145,32 +138,11 @@ def shader() -> Shader:
     return Shader(source, ga, dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric))
 
 
-def ellipsoid(semi_axes: np.ndarray) -> Quadric:
-    """The solid ellipsoid about the origin: each axis's squared pairing over its semi-axis squared, less the
-    plane at infinity's."""
-    return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
-
-
-def view(points: Point, floor: Plane, reach: float) -> tuple[Motor, float]:
-    """A camera framing points and their shadows on the floor, cast along the lamp, from the view's elevation
-    and azimuth, with `reach` to spare around each: the camera's motor, and half the image's width and height."""
-    turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
+def framing(points: Point, floor: Plane, reach: float) -> solids.View:
+    """A view framing points and their shadows on the floor, cast along the lamp, with `reach` to spare around each."""
     # Where the line through each point and the lamp meets the floor.
     shadows = (points & lamp) ^ floor                                                       # [points] Point
-    seen = concatenate([points, shadows / (mv.w & shadows)])                               # [2 * points] Point
-    # Across and up the image: the pairings with the camera's planes through the origin.
-    right, up = ((turn >> mv.x) & seen).to_array(), ((turn >> mv.y) & seen).to_array()
-    middle = np.array([right.max() + right.min(), up.max() + up.min()]) / 2
-    half = np.array([np.ptp(right), np.ptp(up)]) / 2 + reach
-    half = half + margin * half.max()
-    centre = turn >> (origin + mv.x.dual() * middle[0] + mv.y.dual() * middle[1])          # [] Point
-    shift = ((mv.w ^ (centre - origin).dual()) / 2).exp()                                  # [] Motor
-    return shift * turn, half
-
-
-def translator(offset: Point) -> Motor:
-    """The motor carrying every point along a direction, a point at infinity."""
-    return ((mv.w ^ offset.dual()) / 2).exp()
+    return solids.view([points, shadows], reach, elevation, azimuth, margin, pixels)
 
 
 def animate_chain(motors: Motor, semi_axes: np.ndarray, spacing: float) -> list[np.ndarray]:
@@ -180,17 +152,15 @@ def animate_chain(motors: Motor, semi_axes: np.ndarray, spacing: float) -> list[
     place = np.stack([(axis & centres).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)  # [steps * bodies, 3]
     low, high = place.min(axis=0), place.max(axis=0)
     floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane
-    camera, half = view(centres, floor, semi_axes.max())
+    view = framing(centres, floor, semi_axes.max())
     # The pin sits at the joint of the fixed body and the first link.
-    pin = translator((motors[0, 0] >> origin) - origin + mv.x.dual() * (spacing / 2))         # [] Motor
-    pin_solid = pin >> ellipsoid(np.full(3, pin_radius * spacing))(pin << Point)           # [] Quadric
-    shape = (int(round(pixels * half[1] / half[0])), pixels)
+    pin = solids.ball((motors[0, 0] >> origin) + mv.x.dual() * (spacing / 2), pin_radius * spacing)   # [] Quadric
     n_links = motors.shape[1] - 1
-    return [np.round(np.clip(shader()(shape, motors=links, colours=link_colours[np.arange(n_links) % 2],
-                                      link=ellipsoid(semi_axes), pin=pin_solid, pin_colour=pin_colour,
+    return [np.round(np.clip(shader()(view.shape, motors=links, colours=link_colours[np.arange(n_links) % 2],
+                                      link=solids.ellipsoid(semi_axes), pin=pin, pin_colour=pin_colour,
                                       octant_contrast=octant_contrast, floor_plane=floor,
                                       floor_low=low[:2] - floor_reach * spacing, floor_high=high[:2] + floor_reach * spacing,
-                                      tile=tile * spacing, camera=camera, back=4 * half.max(), half_height=half[1],
-                                      lamp=lamp)["image"],
+                                      tile=tile * spacing, camera=view.camera, back=4 * view.half.max(),
+                                      half_height=view.half[1], lamp=lamp)["image"],
                              0, 1) * 255).astype(np.uint8)
             for links in motors[:, 1:]]

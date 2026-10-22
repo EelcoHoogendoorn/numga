@@ -1,20 +1,41 @@
-"""Pair coherence across the energy band and the gap it produces."""
+"""Pair coherence across the energy band and the gap it produces. The arrows of the quench are drawn on the GPU,
+the rest by matplotlib."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from examples.animation import capture
 from examples.quantum.superconductivity import core
+from examples.wgsl import compose, labels, meshes, solids
 
+sm = solids.mv
 INK = "#263b51"
 PAIR = "#198b87"
 FIXED = "#d17c24"
 DISPLAY_LEVELS = 33
 DISPLAY_CUTOFF = 3.0
+# The chart's axes and the circles of the largest pair coherence, a half, at every few levels, faint; the opacity of
+# the path through the arrows' tips.
+AXIS_COLOUR, CIRCLE_COLOUR, CIRCLE_OPACITY, PATH_OPACITY = np.full(3, 0.55), np.full(3, 0.75), 0.4, 0.3
+CIRCLE_RADIUS, CIRCLE_EVERY = 0.5, 8
+# The chart's scene: the length of one unit of energy along x, where the energy axis starts and ends, in units of
+# energy, how far the axes of pair coherence reach either way, and the energies and coherences ticked.
+ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
+ENERGY_TICKS, COHERENCE_TICKS = np.arange(-3.0, 4.0), np.array([-0.5, 0.5])
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
+# of the larger side, and the pixels across it.
+ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
+MARGIN, N_PIXELS = 0.08, 700
+# The points around a circle and a tube; the widths of the axes' shafts, the circles, the path and the arrows'
+# shafts, the arrowheads' lengths and widths, and the radii of the ticks and the tips, in pixels.
+N_CIRCLE, N_AROUND = 100, 8
+AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 2.0, 1.6, 2.0, 3.6
+AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 14.0, 8.0, 13.0, 10.0
+TICK_RADIUS, TIP_RADIUS = 2.6, 4.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -39,6 +60,47 @@ def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
     return figure
 
 
+def tick_places() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Where the ticks sit: on the energy axis, and on the axes of pair coherence in yz and in zx."""
+    start = ENERGY_SCALE * ENERGY_START * np.array([1, 0, 0])
+    return (np.outer(ENERGY_SCALE * ENERGY_TICKS, [1, 0, 0]), start + np.outer(COHERENCE_TICKS, [0, 1, 0]),
+            start + np.outer(COHERENCE_TICKS, [0, 0, 1]))
+
+
+def chart(energies: np.ndarray) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], np.ndarray]:
+    """The view of the chart, its axes as arrows with ticks, the energy along x and the pair coherence in yz and zx
+    along y and z through the start of the energy axis, and the circles of the largest coherence about the energy
+    axis at every few levels `[circles, circle + 1, 3]`."""
+    start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
+    starts = np.array([[start, 0, 0], [start, -COHERENCE_REACH, 0], [start, 0, -COHERENCE_REACH]])
+    ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
+    # The circles about the energy axis, square to x, through every few levels.
+    centres = np.outer(ENERGY_SCALE * energies[::CIRCLE_EVERY], [1, 0, 0])               # [circles, 3]
+    circles = meshes.circles(centres, np.full(len(centres), CIRCLE_RADIUS), np.broadcast_to([1.0, 0, 0], centres.shape),
+                             N_CIRCLE)                                                    # [circles, circle + 1, 3]
+    view = solids.view([sm.point(circles), sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,
+                                  AXIS_HEAD_LENGTH * view.pixel, AXIS_HEAD_WIDTH / 2 * view.pixel)
+    ticks = solids.ball(sm.point(np.concatenate(tick_places())), TICK_RADIUS * view.pixel)[:, None]
+    return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ticks, AXIS_COLOUR)], circles
+
+
+def label_chart(axis: plt.Axes, view: solids.View) -> None:
+    """The chart's axes named past their tips, and their ticks numbered beside them."""
+    start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
+    names = np.array([[end + 0.12, 0, 0], [start, COHERENCE_REACH + 0.1, 0], [start, 0, COHERENCE_REACH + 0.1]])
+    labels(axis, view, sm.point(names), [r"$\xi/E_0$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center", fontsize=11,
+           color=AXIS_COLOUR)
+    on_energy, on_yz, on_zx = tick_places()
+    for place, energy in zip(view.across(sm.point(on_energy)), ENERGY_TICKS):
+        axis.annotate(f"{energy:g}", place, xytext=(0, -7), textcoords="offset points", ha="center", va="top",
+                      fontsize=8, color=AXIS_COLOUR)
+    for ticks in (on_yz, on_zx):
+        for place, value in zip(view.across(sm.point(ticks)), COHERENCE_TICKS):
+            axis.annotate(f"{value:g}", place, xytext=(-6, 0), textcoords="offset points", ha="right", va="center",
+                          fontsize=8, color=AXIS_COLOUR)
+
+
 def animate_quench(
     dispersion: core.Spin, spins: core.Spin, gaps: core.Spin, times: np.ndarray,
 ) -> list[np.ndarray]:
@@ -49,29 +111,32 @@ def animate_quench(
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
     indices = visible[np.linspace(0, len(visible) - 1, DISPLAY_LEVELS, dtype=int)]
     energies, transverse = energies[indices], transverse[:, indices]
-    origins = np.stack([energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
-    colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))
+    origins = np.stack([ENERGY_SCALE * energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
+    colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
+
+    view, axes, circles = chart(energies)
+    scenery = [(*solids.layer(axes, view), 1.0),
+               (*meshes.tubes([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
+                CIRCLE_OPACITY)]
+
+    def arrows(coherence: np.ndarray) -> np.ndarray:
+        """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
+        tips."""
+        tips = origins + np.concatenate([np.zeros((len(coherence), 1)), coherence], axis=-1)
+        shafts, heads = solids.arrows(sm.point(origins), sm.point(tips), STEM_WIDTH / 2 * view.pixel,
+                                      STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
+        stems = solids.layer([(shafts, colours), (heads, colours),
+                              (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))],
+                             view)
+        path = meshes.tubes([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view, N_AROUND)
+        return compose([*scenery, (*stems, 1.0), (*path, PATH_OPACITY)], np.ones(3))
 
     figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
-    axis = figure.add_axes((0.01, 0.08, 0.57, 0.85), projection="3d")
+    axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
     curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
-    axis.plot(energies, np.zeros_like(energies), np.zeros_like(energies), color="0.7", linewidth=0.8)
-    circles = np.linspace(0, 2 * np.pi, 100)
-    for energy in energies[::8]:
-        axis.plot(np.full_like(circles, energy), 0.5 * np.cos(circles), 0.5 * np.sin(circles),
-                  color="0.88", linewidth=0.6)
-    axis.set(xlim=(-DISPLAY_CUTOFF, DISPLAY_CUTOFF), ylim=(-0.53, 0.53), zlim=(-0.53, 0.53),
-             xlabel=r"$\xi/E_0$", ylabel=r"$s_{yz}$", zlabel=r"$s_{zx}$",
-             yticks=[-0.5, 0, 0.5], zticks=[-0.5, 0, 0.5])
-    axis.set_box_aspect((2.4, 1, 1))
-    axis.view_init(elev=24, azim=-58)
-    axis.grid(False)
-    for dimension in (axis.xaxis, axis.yaxis, axis.zaxis):
-        dimension.set_pane_color((1, 1, 1, 0))
-    stems = Line3DCollection(np.stack([origins, origins], axis=1), colors=colours, linewidths=1.8)
-    axis.add_collection3d(stems)
-    tips_artist, = axis.plot([], [], [], "o", color=PAIR, markersize=3)
-    tip_path, = axis.plot([], [], [], color=INK, alpha=0.22, linewidth=0.7)
+    image = axis.imshow(arrows(transverse[0]), extent=view.extent, interpolation="bilinear")
+    axis.set_axis_off()
+    label_chart(axis, view)
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
     gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)
     curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.12),
@@ -80,19 +145,7 @@ def animate_quench(
 
     frames = []
     for index, coherence in enumerate(transverse):
-        tips = np.column_stack([energies, coherence])
-        # Short wings mark the phase direction even where neighbouring stems overlap.
-        wings = coherence * 0.83
-        sideways = np.column_stack([-coherence[:, 1], coherence[:, 0]]) * 0.08
-        first = np.column_stack([energies, wings + sideways])
-        second = np.column_stack([energies, wings - sideways])
-        segments = np.stack([np.stack([origins, tips], axis=1),
-                             np.stack([first, tips], axis=1),
-                             np.stack([second, tips], axis=1)], axis=1)
-        stems.set_segments(segments.reshape(-1, 2, 3))
-        stems.set_color(np.repeat(colours, 3, axis=0))
-        tips_artist.set_data_3d(*tips.T)
-        tip_path.set_data_3d(*tips.T)
+        image.set_data(arrows(coherence))
         gap_line.set_data(times[:index + 1], amplitudes[:index + 1])
         gap_tip.set_data([times[index]], [amplitudes[index]])
         frames.append(capture(figure))

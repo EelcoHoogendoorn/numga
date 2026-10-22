@@ -15,7 +15,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.k_surfaces import core
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import compose, image_figure, meshes, solids, vec3
 
 n_width = 640
 n_height = 480
@@ -45,11 +45,9 @@ n_connector_columns = 3
 def grid_colour(front: np.ndarray, back: np.ndarray) -> str:
     """WGSL colouring a sheet by the side the camera sees, darkened along the grid's edges: each face's ink at
     the edge opposite each corner, by how many pixels away that edge lies."""
-    def vec3(colour: np.ndarray) -> str:
-        return f"vec3<f32>({', '.join(f'{value:.6f}' for value in colour)})"
     return f"""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
-    let edges = clamp(1 - corner / ({edge_width} * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
+    let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
     return select({vec3(back)}, {vec3(front)}, front) * (1 - ink);
 }}
@@ -89,38 +87,34 @@ def landscape(half: np.ndarray) -> np.ndarray:
     return np.array([max(half[0], half[1] * aspect), max(half[1], half[0] / aspect)])
 
 
-def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float) -> tuple[solids.Motor, np.ndarray]:
-    """One orthographic camera for an entire deformation."""
-    camera, half = solids.view([projective(points)], 0.0, view_elevation, view_azimuth, margin)
-    return camera, landscape(half)
+def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float) -> solids.View:
+    """One orthographic view for an entire deformation."""
+    view = solids.view([projective(points)], 0.0, view_elevation, view_azimuth, margin, n_width)
+    return view._replace(half=landscape(view.half))
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: tuple) -> tuple[np.ndarray, np.ndarray]:
+def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
     """One sheet, lit on both sides, as a layer."""
-    camera, half, view_elevation, view_azimuth = view
     places = projective(points)
-    return meshes.layer(places, faces, np.zeros(3), meshes.smooth(places, faces), camera, half, view_elevation,
-                        view_azimuth, n_width, face_values=ink, colour=colour)
+    return meshes.layer(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink, colour=colour)
 
 
-def picture(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: tuple) -> np.ndarray:
+def picture(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
     return compose([(*sheet(points, faces, ink, grid_colour(front_colour, back_colour), view), 1.0)], background)
 
 
-def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: tuple) -> np.ndarray:
+def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
     """Two translucent sheets with common tangents and marked corresponding points."""
-    camera, half, view_elevation, view_azimuth = view
     n_rows, n_columns = source.shape[:2]
     row_margin, column_margin = n_rows // 6, n_columns // 6
     rows = np.linspace(row_margin, n_rows - row_margin - 1, n_connector_rows, dtype=int)
     columns = np.linspace(column_margin, n_columns - column_margin - 1, n_connector_columns, dtype=int)
     starts, ends = projective(source[rows[:, None], columns]), projective(partner[rows[:, None], columns])
     # Widths in pixels, as lengths in the scene.
-    pixel = 2 * half[0] / n_width
-    connectors = [(solids.rods(starts, ends, connector_width / 2 * pixel), connector_colour),
-                  (solids.ball(starts, endpoint_radius * pixel)[:, None], connector_colour),
-                  (solids.ball(ends, endpoint_radius * pixel)[:, None], connector_colour)]
-    segments, segment_depth = solids.layer(connectors, camera, half, view_elevation, view_azimuth, n_width)
+    connectors = [(solids.rods(starts, ends, connector_width / 2 * view.pixel), connector_colour),
+                  (solids.ball(starts, endpoint_radius * view.pixel)[:, None], connector_colour),
+                  (solids.ball(ends, endpoint_radius * view.pixel)[:, None], connector_colour)]
+    segments, segment_depth = solids.layer(connectors, view)
     # Their hidden parts show faintly: a copy in front of everything.
     ghost_depth = np.where(segments[..., 3] > 0, -np.inf, 0.0)
     return compose([(*sheet(source, faces, ink * pair_grid_ink, grid_colour(source_colour, source_colour), view), surface_opacity),
@@ -132,7 +126,7 @@ def frames(states: Iterable[core.Point], reference: core.Point) -> list[np.ndarr
     """Draw each point grid with the camera fixed by a reference grid."""
     states = [coordinates(state) for state in states]
     faces, ink = mesh(*states[0].shape[:2])
-    view = (*viewport(coordinates(reference), elevation, azimuth), elevation, azimuth)
+    view = viewport(coordinates(reference), elevation, azimuth)
     return [picture(points, faces, ink, view) for points in states]
 
 
@@ -140,7 +134,7 @@ def partner_frames(states: Iterable[core.Point], source: core.Point, reference: 
     """Draw a partner family against one source net and one fixed camera."""
     source = coordinates(source)
     faces, ink = mesh(*source.shape[:2])
-    view = (*viewport(coordinates(reference), elevation, azimuth), elevation, azimuth)
+    view = viewport(coordinates(reference), elevation, azimuth)
     return [partner_picture(coordinates(state), source, faces, ink, view) for state in states]
 
 
@@ -151,19 +145,9 @@ def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray,
     faces, ink = mesh(*source.shape[:2])
     points = np.concatenate([source.reshape(-1, 3), partner.reshape(-1, 3)])
     view_elevation, view_azimuths = np.radians(orbit_elevation), np.radians(azimuths + 90)
-    cameras = [viewport(points, view_elevation, view_azimuth) for view_azimuth in view_azimuths]
-    half = np.max([half for _, half in cameras], axis=0)
-    return [partner_picture(partner, source, faces, ink, (camera, half, view_elevation, view_azimuth))
-            for (camera, _), view_azimuth in zip(cameras, view_azimuths)]
-
-
-def image_figure(image: np.ndarray) -> plt.Figure:
-    """An image at its pixel size, without axes or margins."""
-    figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
-    ax.imshow(image)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
+    views = [viewport(points, view_elevation, view_azimuth) for view_azimuth in view_azimuths]
+    half = np.max([view.half for view in views], axis=0)
+    return [partner_picture(partner, source, faces, ink, view._replace(half=half)) for view in views]
 
 
 def draw(points: core.Point, reference: core.Point) -> plt.Figure:

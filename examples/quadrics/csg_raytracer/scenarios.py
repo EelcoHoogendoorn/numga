@@ -77,11 +77,12 @@ def orbit(n_cameras: int) -> core.Motor:
 def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quadrics.csg_raytracer import render
+    from examples.wgsl import image_figure
 
     tracer = render.shader()
     quadrics, solid_values = solids()
     still, = render.frames(tracer, quadrics, solid_values, orbit(1), lamp, half_view, image_shape)
-    save_figure(render.draw_frame(still), "csg_raytracer")
+    save_figure(image_figure(still), "csg_raytracer")
     save_animation(list(render.frames(tracer, quadrics, solid_values, orbit(n_frames), lamp, half_view, animation_shape)),
                    "csg_raytracer", duration_ms)
 

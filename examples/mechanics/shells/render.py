@@ -34,17 +34,16 @@ def centre(points: core.Point) -> core.Point:
 def extent(points: core.Point) -> np.ndarray:
     """Half the width and height of a view of the sheet about its mean, square."""
     places = points.batch()
-    _, half = solids.view([places - centre(points) + solids.origin], 0.0, elevation, azimuth, margin)
-    return np.full(2, half.max())
+    framed = solids.view([places - centre(points) + solids.origin], 0.0, elevation, azimuth, margin, n_pixels)
+    return np.full(2, framed.half.max())
 
 
 def picture(faces: np.ndarray, points: core.Point, half: np.ndarray) -> np.ndarray:
     """A sheet's triangles `[F, 3]` at the given points `Point[V]`, flat, lit on the side the camera sees, seen
     about its mean."""
     places = points.batch()
-    camera = solids.aim(centre(points), elevation, azimuth)
-    return meshes.draw(places, faces, colour, meshes.flat(places, faces), camera, half, elevation, azimuth, n_pixels,
-                       background, gloss=gloss)
+    view = solids.View(solids.aim(centre(points), elevation, azimuth), half, n_pixels)
+    return meshes.draw(places, faces, colour, meshes.flat(places, faces), view, background, gloss=gloss)
 
 
 def draw_settled(sheets: list[tuple[np.ndarray, core.Point]]) -> plt.Figure:

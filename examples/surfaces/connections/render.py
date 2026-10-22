@@ -20,7 +20,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.connections import core
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import compose, meshes, show, solids, vec3
 
 # Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
 # balls' radius per unit index, in pixels, and the views as (elevation, azimuth) in degrees, the azimuth measured
@@ -76,12 +76,11 @@ def print_scalars(label: str, values: core.Scalar) -> None:
 
 
 # --- views and parts ------------------------------------------------------------------
-def camera(view_degrees: np.ndarray, mesh: core.Mesh, reach: float) -> tuple[solids.Motor, np.ndarray, float, float]:
-    """A square camera framing a mesh, with `reach` to spare, from a view in degrees, the azimuth measured from x:
-    its motor, half extents, elevation and azimuth."""
+def square_view(view_degrees: np.ndarray, mesh: core.Mesh, reach: float) -> solids.View:
+    """A square view framing a mesh, with `reach` to spare, from a view in degrees, the azimuth measured from x."""
     elevation, azimuth = np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90)
-    motor, half = solids.view([solids.mv.point(positions(mesh.vertices))], reach, elevation, azimuth, margin)
-    return motor, np.full(2, half.max()), elevation, azimuth
+    frame = solids.view([solids.mv.point(positions(mesh.vertices))], reach, elevation, azimuth, margin, pixels)
+    return frame.squared()
 
 
 def facing(view_degrees: np.ndarray) -> np.ndarray:
@@ -100,28 +99,12 @@ def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, le
     return solids.rods(solids.mv.point(starts), solids.mv.point(np.concatenate([tips, tips, tips])), radius)
 
 
-def surface(mesh: core.Mesh, colours: np.ndarray, view_state: tuple, face_values: np.ndarray = np.zeros(4),
+def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
             colour: str = meshes.plain) -> tuple[np.ndarray, np.ndarray]:
     """A mesh, smooth shaded, as a layer."""
-    motor, half, elevation, azimuth = view_state
     points = solids.mv.point(positions(mesh.vertices))
-    return meshes.layer(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), motor, half, elevation, azimuth,
-                        pixels, face_values=face_values, colour=colour)
-
-
-def rods(parts: list[tuple[solids.Quadric, np.ndarray]], view_state: tuple) -> tuple[np.ndarray, np.ndarray]:
-    motor, half, elevation, azimuth = view_state
-    return solids.layer(parts, motor, half, elevation, azimuth, pixels)
-
-
-def pixel_size(view_state: tuple) -> float:
-    """One pixel's width, as a length in the scene."""
-    return 2 * view_state[1][0] / pixels
-
-
-def shown(axis: plt.Axes, image: np.ndarray) -> None:
-    axis.imshow(image)
-    axis.set_axis_off()
+    return meshes.layer(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
+                        colour=colour)
 
 
 # --- parallel transport ---------------------------------------------------------------
@@ -130,33 +113,32 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
     """The unit sphere, translucent, and the three latitude circles `[steps + 1, rings]`, and each frame's points
     on them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and where
     they are. The circles' far halves show faintly through the sphere."""
-    view_state = camera(transport_view, sphere, holonomy_needle)
-    width = line_width * pixel_size(view_state)
+    frame = square_view(transport_view, sphere, holonomy_needle)
+    width = line_width * frame.pixel
     ring_places = coordinates(rings)                                            # [steps + 1, rings, 3]
-    sphere_layer = surface(sphere, surface_colour, view_state)
+    sphere_layer = surface(sphere, surface_colour, frame)
     circles = [(solids.rods(solids.mv.point(ring_places[:-1, ring]), solids.mv.point(ring_places[1:, ring]), 2 * width),
                 to_rgb(colour)) for ring, colour in enumerate(ring_colours)]
-    circle_layer = rods(circles, view_state)
+    circle_layer = solids.layer(circles, frame)
     points, carried = [], []
     frames = []
     for point, vector in states:
         points.append(coordinates(point))                                       # [rings, 3]
         carried.append(coordinates(vector))                                     # [rings, 3]
         past, along = np.array(points)[::holonomy_stride], np.array(carried)[::holonomy_stride]   # [trail, rings, 3]
-        trail = rods([(needles(past[:, ring], along[:, ring], past[:, ring], holonomy_needle, width), to_rgb(colour))
-                      for ring, colour in enumerate(ring_colours)], view_state)
-        now = rods([(needles(points[-1][ring:ring + 1], carried[-1][ring:ring + 1], points[-1][ring:ring + 1],
-                             holonomy_needle * 1.15, 2.5 * width), to_rgb(colour)) for ring, colour in enumerate(ring_colours)],
-                   view_state)
+        trail = solids.layer([(needles(past[:, ring], along[:, ring], past[:, ring], holonomy_needle, width), to_rgb(colour))
+                              for ring, colour in enumerate(ring_colours)], frame)
+        now = solids.layer([(needles(points[-1][ring:ring + 1], carried[-1][ring:ring + 1], points[-1][ring:ring + 1],
+                                     holonomy_needle * 1.15, 2.5 * width), to_rgb(colour))
+                            for ring, colour in enumerate(ring_colours)], frame)
         ghost = np.where(circle_layer[0][..., 3] > 0, -np.inf, 0.0)
         frames.append(compose([(*sphere_layer, sphere_opacity), (*circle_layer, 1.0), (circle_layer[0], ghost, hidden_opacity),
                                (*trail, trail_opacity), (*now, 1.0)], background))
     return frames
 
 
-def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray) -> np.ndarray:
+def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, frame: solids.View) -> np.ndarray:
     """One shaded torus with face colours weighted by `amplitudes` and front-facing tangent needles."""
-    view_state = camera(transport_view, torus, transport_needle)
     places = positions(torus.vertices)
     normals = coordinates(torus.vertex_normals)
     vectors = coordinates(field)
@@ -166,17 +148,18 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray) ->
     visible = normals @ facing(transport_view) > 0.05
     scale = (0.25 + 0.75 * np.clip(amplitudes[visible], 0.0, 1.0))[:, None]
     arrows = needles(places[visible] + normals[visible] * 0.03, units[visible] * scale, normals[visible], transport_needle,
-                     line_width * pixel_size(view_state))
-    return compose([(*surface(torus, np.zeros(3), view_state, face_values=face_colours, colour=meshes.by_face), 1.0),
-                    (*rods([(arrows, needle_colour)], view_state), 1.0)], background)
+                     line_width * frame.pixel)
+    return compose([(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
+                    (*solids.layer([(arrows, needle_colour)], frame), 1.0)], background)
 
 
 def draw_torus_fields(torus: core.Mesh, fields: list[core.Vector]) -> plt.Figure:
     """The torus side by side for each tangent vector field in `fields`."""
+    frame = square_view(transport_view, torus, transport_needle)
     figure, axes = plt.subplots(1, len(fields), figsize=(3.8 * len(fields), 3.6), dpi=100)
     for axis, field in zip(np.atleast_1d(axes), fields):
         lengths = np.linalg.norm(coordinates(field), axis=-1)
-        shown(axis, torus_panel(torus, field, lengths / max(float(np.percentile(lengths, 95.0)), 1e-12)))
+        show(axis, torus_panel(torus, field, lengths / max(float(np.percentile(lengths, 95.0)), 1e-12), frame), frame)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return figure
 
@@ -186,40 +169,42 @@ def animate_diffusion(torus: core.Mesh, diffused: core.Vector) -> list[np.ndarra
     lengths = np.linalg.norm(coordinates(diffused), axis=-1)                    # [steps, V]
     peak = np.percentile(lengths, 92.0, axis=-1, keepdims=True)
     scaled = np.pow(np.clip(lengths / np.maximum(peak, 1e-12), 0.0, 1.0), 0.45)
-    return [torus_panel(torus, field, scaled[step]) for step, field in enumerate(diffused)]
+    frame = square_view(transport_view, torus, transport_needle)
+    return [torus_panel(torus, field, scaled[step], frame) for step, field in enumerate(diffused)]
 
 
 # --- designed fields ------------------------------------------------------------------
-def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indices: list[int], limits: np.ndarray,
-                needle: float) -> np.ndarray:
+def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indices: list[int], needle: float,
+                frame: solids.View) -> np.ndarray:
     """One surface with its unit tangent field on the vertices facing the viewer, and balls on its singular faces
     `[S]`, larger for larger indices."""
-    view_state = camera(view, mesh, needle)
     places, normals, directions = positions(mesh.vertices), coordinates(mesh.vertex_normals), coordinates(field)
     seen = normals @ facing(view) > 0.1
     arrows = needles(places[seen] + 0.01 * normals[seen], directions[seen], normals[seen], needle,
-                     line_width * pixel_size(view_state))
+                     line_width * frame.pixel)
     centres = solids.mv.point(positions(mesh.face_centers)[singular])          # [S] Point
-    marks = [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * pixel_size(view_state))[:, None],
+    marks = [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
               positive if value > 0 else negative) for index, value in enumerate(indices)]
-    return compose([(*surface(mesh, surface_colour, view_state), 1.0),
-                    (*rods([(arrows, needle_colour)] + marks, view_state), 1.0)], background)
+    return compose([(*surface(mesh, surface_colour, frame), 1.0),
+                    (*solids.layer([(arrows, needle_colour)] + marks, frame), 1.0)], background)
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]], limits: np.ndarray,
                 needle: float) -> plt.Figure:
     """The surface side by side for each scene's field and singular faces."""
     width = (limits[0, 1] - limits[0, 0]) / (limits[2, 1] - limits[2, 0])
+    frame = square_view(view, mesh, needle)
     figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * min(width, 1.6), 3.6), dpi=110)
     for axis, (field, singular, indices) in zip(np.atleast_1d(axes), scenes):
-        shown(axis, field_panel(mesh, field, singular, indices, limits, needle))
+        show(axis, field_panel(mesh, field, singular, indices, needle, frame), frame)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return figure
 
 
 def animate_turning(mesh: core.Mesh, fields: core.Vector, singular: np.ndarray, indices: list[int]) -> list[np.ndarray]:
     """Frames of a parallel field on the sphere turned about every normal `[frames] Vector[V]`."""
-    return [field_panel(mesh, field, singular, indices, sphere_limits, sphere_needle) for field in fields]
+    frame = square_view(view, mesh, sphere_needle)
+    return [field_panel(mesh, field, singular, indices, sphere_needle, frame) for field in fields]
 
 
 # --- stripes --------------------------------------------------------------------------
@@ -281,7 +266,6 @@ def stripe_colour(n_families: int) -> str:
     """WGSL colouring a surface by the stripes of up to four families: each family's phase, the corners'
     blended across the face, plus the whole turns a fork winds around it, spread by an angle about the face's
     middle that rises by a whole turn once around; light where every family's stripe is light."""
-    vec = lambda colour: f"vec3<f32>({', '.join(f'{value:.6f}' for value in colour)})"
     return f"""
 // An angle around the middle of a triangle from how near a pixel lies to each corner, rising by a whole turn once
 // around: piecewise linear on the three sectors nearest each edge.
@@ -299,7 +283,7 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
     for (var family = 0u; family < {n_families}u; family++) {{
         share *= shares[family];
     }}
-    return mix({vec(dark)}, {vec(light)}, share);
+    return mix({vec3(dark)}, {vec3(light)}, share);
 }}
 """
 
@@ -308,14 +292,13 @@ def draw_bands(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
                reach: float) -> None:
     """The surface shaded with the stripes of every family of a pattern of lines `[V, n]`, stripe fields `[V, n]`
     and edge targets `[E, n]`, the given share of each stripe dark."""
-    shown(axis, bands_image(mesh, pattern, view_degrees, reach))
+    frame = square_view(view_degrees, mesh, 0.0)
+    show(axis, bands_image(mesh, pattern, frame), frame)
 
 
-def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], view_degrees: np.ndarray,
-                reach: float) -> np.ndarray:
-    view_state = camera(view_degrees, mesh, 0.0)
+def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
-    return compose([(*surface(mesh, corners, view_state, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)],
+    return compose([(*surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)],
                    background)
 
 
@@ -323,7 +306,7 @@ def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
                reach: float) -> None:
     """The lit surface with the middle line of every stripe of every family of a pattern drawn on it, straight
     across each face, ending in the faces where the stripes fork, standing just off the surface."""
-    view_state = camera(view_degrees, mesh, 0.0)
+    frame = square_view(view_degrees, mesh, 0.0)
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
     places, normals = positions(mesh.vertices), coordinates(mesh.vertex_normals)
     # Off the surface by a share of its size, so the straight segments clear it between its vertices.
@@ -331,8 +314,9 @@ def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
-    lines = solids.rods(solids.mv.point(drawn[:, 0]), solids.mv.point(drawn[:, 1]), line_width / 2 * pixel_size(view_state))
-    shown(axis, compose([(*surface(mesh, light, view_state), 1.0), (*rods([(lines, dark)], view_state), 1.0)], background))
+    lines = solids.rods(solids.mv.point(drawn[:, 0]), solids.mv.point(drawn[:, 1]), line_width / 2 * frame.pixel)
+    show(axis, compose([(*surface(mesh, light, frame), 1.0), (*solids.layer([(lines, dark)], frame), 1.0)], background),
+         frame)
 
 
 def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]], draw, reach: float,
@@ -348,4 +332,5 @@ def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector
 
 def animate_flow(mesh: core.Mesh, lines: core.Vector, stripe_fields: core.Vector, advance: core.Scalar, reach: float) -> list[np.ndarray]:
     """Frames of the stripes as the stripe field `[V, 1]` turns about every normal, `[frames]`."""
-    return [bands_image(mesh, (lines, stripe_field, advance), view, reach) for stripe_field in stripe_fields]
+    frame = square_view(view, mesh, 0.0)
+    return [bands_image(mesh, (lines, stripe_field, advance), frame) for stripe_field in stripe_fields]

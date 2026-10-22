@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.spin_transformations.core import Mesh, Scalar, ga
-from examples.wgsl import meshes, solids
+from examples.wgsl import meshes, show, solids, vec3
 
 # The camera's elevation and azimuth, its margin as a share of the larger side, and the image's side in pixels,
 # alone and as a tile of a gallery.
@@ -26,16 +26,12 @@ inside = np.array([[0.70, 0.82, 0.96], [0.22, 0.42, 0.72]])
 
 # A solid checkerboard of cubes, in the place each pixel had on the reference surface, scaled so the cubes
 # are unit; light and dark squares, warm outside and cool inside.
-def wgsl_colour(colour: np.ndarray) -> str:
-    return f"vec3<f32>({', '.join(f'{value:.6f}' for value in colour)})"
-
-
 checkerboard = f"""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
     let cells = round(values.xyz);
     let dark = abs(cells.x + cells.y + cells.z) % 2.0 > 0.5;
-    let outside = select({wgsl_colour(outside[0])}, {wgsl_colour(outside[1])}, dark);
-    let inside = select({wgsl_colour(inside[0])}, {wgsl_colour(inside[1])}, dark);
+    let outside = select({vec3(outside[0])}, {vec3(outside[1])}, dark);
+    let inside = select({vec3(inside[0])}, {vec3(inside[1])}, dark);
     return select(inside, outside, front);
 }}
 """
@@ -51,9 +47,10 @@ def projective(mesh: Mesh) -> solids.Point:
     return solids.mv.point(euclidean(mesh.vertices))
 
 
-def square_view(points: solids.Point) -> tuple[solids.Motor, np.ndarray]:
-    camera, half = solids.view([points], 0.0, elevation, azimuth, margin)
-    return camera, np.full(2, half.max())
+def square_view(mesh: Mesh, side: int) -> solids.View:
+    """A square view framing the mesh, `side` pixels across."""
+    view = solids.view([projective(mesh)], 0.0, elevation, azimuth, margin, side)
+    return view.squared()
 
 
 def face_colours(values: Scalar, limit: float) -> np.ndarray:
@@ -61,33 +58,29 @@ def face_colours(values: Scalar, limit: float) -> np.ndarray:
     return plt.get_cmap("coolwarm")((values.to_array().ravel() / limit + 1) / 2)[:, :3]
 
 
-def coloured(mesh: Mesh, values: Scalar, limit: float, side: int) -> np.ndarray:
-    """The mesh, each face flat in its colour by a field in [-limit, limit], `[side, side, 3]`."""
+def coloured(mesh: Mesh, values: Scalar, limit: float, view: solids.View) -> np.ndarray:
+    """The mesh, each face flat in its colour by a field in [-limit, limit], as the view sees it."""
     points = projective(mesh)
-    return meshes.draw(points, mesh.faces, np.zeros(3), meshes.flat(points, mesh.faces), *square_view(points),
-                       elevation, azimuth, side, background, face_values=face_colours(values, limit), colour=meshes.by_face)
+    return meshes.draw(points, mesh.faces, np.zeros(3), meshes.flat(points, mesh.faces), view, background,
+                       face_values=face_colours(values, limit), colour=meshes.by_face)
 
 
-def render_surface(mesh: Mesh, reference: Mesh, side: int) -> np.ndarray:
-    """The surface as an RGB image, `[side, side, 3]`, smoothly lit on both sides, its texture a solid
+def render_surface(mesh: Mesh, reference: Mesh, view: solids.View) -> np.ndarray:
+    """The surface as an RGB image, as the view sees it, smoothly lit on both sides, its texture a solid
     checkerboard of cubes sampled on the reference mesh with the same faces: straight squares on its flat
     faces, circles on a sphere."""
     points = projective(mesh)
     original = euclidean(reference.vertices)
     cells = original / np.abs(original).max() * squares / 2
-    return meshes.draw(points, mesh.faces, cells[mesh.faces], meshes.smooth(points, mesh.faces), *square_view(points),
-                       elevation, azimuth, side, background, colour=checkerboard)
-
-
-def shown(axis: plt.Axes, image: np.ndarray) -> None:
-    axis.imshow(image)
-    axis.set_axis_off()
+    return meshes.draw(points, mesh.faces, cells[mesh.faces], meshes.smooth(points, mesh.faces), view, background,
+                       colour=checkerboard)
 
 
 def draw_surface(mesh: Mesh, values: Scalar, limit: float) -> plt.Figure:
     """The mesh, its faces coloured by a field in [-limit, limit]."""
+    view = square_view(mesh, pixels)
     figure, axis = plt.subplots(figsize=(5, 5))
-    shown(axis, coloured(mesh, values, limit, pixels))
+    show(axis, coloured(mesh, values, limit, view), view)
     figure.tight_layout()
     return figure
 
@@ -96,17 +89,19 @@ def draw_dipole(mesh: Mesh, curvature: Scalar, deformed: Mesh) -> plt.Figure:
     """The sphere coloured by the curvature change it is given, and the surface that has it,
     textured with the sphere's checkerboard."""
     limit = np.abs(curvature.to_array()).max()
+    sphere_view, deformed_view = square_view(mesh, pixels), square_view(deformed, pixels)
     figure, axes = plt.subplots(1, 2, figsize=(7, 3.5))
-    shown(axes[0], coloured(mesh, curvature, limit, pixels))
-    shown(axes[1], render_surface(deformed, mesh, pixels))
+    show(axes[0], coloured(mesh, curvature, limit, sphere_view), sphere_view)
+    show(axes[1], render_surface(deformed, mesh, deformed_view), deformed_view)
     figure.tight_layout()
     return figure
 
 
 def draw_textured(mesh: Mesh, reference: Mesh) -> plt.Figure:
     """The surface rendered with the reference's checkerboard."""
+    view = square_view(mesh, pixels)
     figure, axis = plt.subplots(figsize=(3, 3))
-    shown(axis, render_surface(mesh, reference, pixels))
+    show(axis, render_surface(mesh, reference, view), view)
     figure.tight_layout()
     return figure
 
@@ -117,7 +112,8 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
     figure, axes = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows), squeeze=False)
     for row, (eigenvalue, spheres) in enumerate(gallery.items()):
         for column, sphere in enumerate(spheres):
-            axes[row, column].imshow(render_surface(sphere, reference, tile))
+            view = square_view(sphere, tile)
+            show(axes[row, column], render_surface(sphere, reference, view), view)
         axes[row, 0].set_title(f"n = {eigenvalue}", loc="left")
         for axis in axes[row]:
             axis.set_axis_off()
@@ -128,4 +124,4 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
 def animate_rounding(frames: Iterable[Mesh]) -> list[np.ndarray]:
     """Each step of the flow, textured with the checkerboard of the first."""
     frames = list(frames)
-    return [render_surface(frame, frames[0], pixels) for frame in frames]
+    return [render_surface(frame, frames[0], square_view(frame, pixels)) for frame in frames]

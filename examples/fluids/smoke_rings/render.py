@@ -10,7 +10,7 @@ import numpy as np
 
 from numga import stack
 from examples.fluids.smoke_rings import core
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import compose, image_figure, meshes, solids
 
 # The surface's colour from the first time to the last, the curve's colour from far to near, and the colours of
 # the rings' swept tubes, one per ring.
@@ -53,32 +53,29 @@ def strips(points: np.ndarray) -> np.ndarray:
     return corners[..., [[0, 1, 2], [0, 2, 3]]]
 
 
-def view(points: np.ndarray, pixels: int) -> tuple[solids.Motor, np.ndarray, np.ndarray]:
-    """A camera framing points `[..., 3]`, half the image's width and height, and the direction toward the
-    viewer `[3]`."""
-    camera, half = solids.view([places(points.reshape(-1, 3))], 0.0, elevation, azimuth, margin)
+def framed(points: np.ndarray, pixels: int) -> tuple[solids.View, np.ndarray]:
+    """A view framing points `[..., 3]`, `pixels` across, its height fitted to whole rows, and the direction toward
+    the viewer `[3]`."""
+    camera, half, _ = solids.view([places(points.reshape(-1, 3))], 0.0, elevation, azimuth, margin, pixels)
     half = half * np.array([1, round(pixels * half[1] / half[0]) / pixels * half[0] / half[1]])
     toward = (stack((solids.mv.x, solids.mv.y, solids.mv.z)) & (camera >> solids.mv.z.dual())).to_array()
-    return camera, half, toward
+    return solids.View(camera, half, pixels), toward
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray, camera: solids.Motor, half: np.ndarray,
-          pixels: int) -> tuple[np.ndarray, np.ndarray]:
+def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
+          view: solids.View) -> tuple[np.ndarray, np.ndarray]:
     """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, as a layer."""
     corners = places(points)
-    return meshes.layer(corners, faces, colours, meshes.smooth(corners, faces), camera, half, elevation, azimuth,
-                        pixels, gloss=surface_gloss)
+    return meshes.layer(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
 
 
-def curves_layer(points: np.ndarray, toward: np.ndarray, camera: solids.Motor, half: np.ndarray,
-                 pixels: int) -> tuple[np.ndarray, np.ndarray]:
+def curves_layer(points: np.ndarray, toward: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
     """Polylines `[curves, n, 3]` as thin tubes, coloured from far to near by their depth `[curves, n]`, as a
     layer."""
-    rings, faces = meshes.tube(points, tube_radius * 2 * half[0] / pixels, n_around)
+    rings, faces = meshes.tube(points, tube_radius * view.pixel, n_around)
     depth = points @ toward                                                    # [curves, n]
     share = np.repeat(((depth - depth.min()) / np.ptp(depth)).reshape(-1), n_around)[faces][..., None]
-    return meshes.layer(rings, faces, (1 - share) * far + share * near, meshes.smooth(rings, faces), camera, half,
-                        elevation, azimuth, pixels)
+    return meshes.layer(rings, faces, (1 - share) * far + share * near, meshes.smooth(rings, faces), view)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
@@ -87,16 +84,15 @@ def draw_surface(curves: core.Point) -> plt.Figure:
     faces = strips(points).reshape(-1, 3)
     share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
-    camera, half, _ = view(points, n_picture_pixels)
-    return image_figure(compose([(*sheet(points.reshape(-1, 3), faces, colours, camera, half, n_picture_pixels), 1.0)],
-                                background))
+    view, _ = framed(points, n_picture_pixels)
+    return image_figure(compose([(*sheet(points.reshape(-1, 3), faces, colours, view), 1.0)], background))
 
 
 def draw_swept(curves: core.Point) -> plt.Figure:
     """The tubes swept by closed curves through time `[times, rings, n]`, each in its own colour, with the half of
     every tube nearer the viewer cut away, so that the tubes inside show."""
     points = coordinates(curves)                                               # [times, rings, n, 3]
-    camera, half, toward = view(points, n_picture_pixels)
+    view, toward = framed(points, n_picture_pixels)
     rings = np.moveaxis(points, 1, 0)                                          # [rings, times, n, 3]
     # Cut by the plane through the axis facing the viewer: keep the far half of each tube.
     centres = (rings[:, :-1, :-1] + rings[:, 1:, 1:]) / 2                      # [rings, times - 1, n - 1, 3]
@@ -104,16 +100,16 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     offsets = np.arange(len(rings))[:, None, None, None, None] * np.prod(rings.shape[1:3])
     faces = (strips(rings[0]) + offsets)[kept].reshape(-1, 3)                  # [faces, 3]
     colours = np.broadcast_to(tubes[:, None, None, None, None, :], kept.shape + (2, 3, 3))[kept].reshape(-1, 3, 3)
-    layer = sheet(rings.reshape(-1, 3), faces, colours, camera, half, n_picture_pixels)
+    layer = sheet(rings.reshape(-1, 3), faces, colours, view)
     return image_figure(compose([(*layer, 1.0)], background))
 
 
 def animate_curves(curves: core.Point) -> list[np.ndarray]:
     """Frames of curves flowing `[times, ..., n]`, all from one view and to one scale."""
     points = coordinates(curves)                                               # [times, ..., n, 3]
-    camera, half, toward = view(points, n_frame_pixels)
-    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), toward, camera, half, n_frame_pixels), 1.0)],
-                    background) for curve in points]
+    view, toward = framed(points, n_frame_pixels)
+    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), toward, view), 1.0)], background)
+            for curve in points]
 
 
 def animate_trail(curves: core.Point) -> list[np.ndarray]:
@@ -125,7 +121,7 @@ def animate_trail(curves: core.Point) -> list[np.ndarray]:
     moving = points[:, travel > moving_share * travel.max()]                   # [times, moving, 3]
     low, high = moving.reshape(-1, 3).min(axis=0), moving.reshape(-1, 3).max(axis=0)
     inside = np.all((points >= low - margin * (high - low)) & (points <= high + margin * (high - low)), axis=-1)
-    camera, half, toward = view(moving, n_frame_pixels)
+    view, toward = framed(moving, n_frame_pixels)
     faces = strips(points)                                                     # [times - 1, n - 1, 2, 3]
     flat = inside.reshape(-1)
     kept = flat[faces].all(axis=-1)                                            # [times - 1, n - 1, 2]
@@ -134,21 +130,11 @@ def animate_trail(curves: core.Point) -> list[np.ndarray]:
     images = []
     for time in range(len(points)):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        layers = [(*curves_layer(points[time][inside[time]][None], toward, camera, half, n_frame_pixels), 1.0)]
+        layers = [(*curves_layer(points[time][inside[time]][None], toward, view), 1.0)]
         if len(swept):
-            layers.append((*sheet(points.reshape(-1, 3), swept, colours[swept], camera, half, n_frame_pixels),
-                           trail_opacity))
+            layers.append((*sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
         images.append(compose(layers, background))
     return images
-
-
-def image_figure(image: np.ndarray) -> plt.Figure:
-    """An image at its pixel size, without axes or margins."""
-    figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
-    ax.imshow(image)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
 
 
 def draw_turns(turns: core.Rotor) -> plt.Figure:

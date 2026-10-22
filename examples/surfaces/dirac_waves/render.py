@@ -41,17 +41,17 @@ def planes(fields: core.Even) -> np.ndarray:
 def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np.ndarray:
     """The surface as an RGB image, `[pixels, pixels, 3]`: its vertices' colours spread over the faces between
     them, joined with each face's own, and lit."""
-    points, normals, camera, half = seen
-    return meshes.draw(points, mesh.faces, corners[mesh.faces], normals, camera, half, elevation, azimuth, pixels, background,
-                       face_values=sides, colour=colour) / 255
+    points, normals, frame = seen
+    return meshes.draw(points, mesh.faces, corners[mesh.faces], normals, frame, background, face_values=sides,
+                       colour=colour) / 255
 
 
 def view(mesh: Mesh) -> tuple:
     """The surface as the camera sees it, the same for every field on it: its points carried into projective
     space, their smooth normals, and the camera framing them."""
     points = solids.mv.point(coordinates(mesh.vertices))
-    camera, half = solids.view([points], 0.0, elevation, azimuth, margin)
-    return points, meshes.smooth(points, mesh.faces), camera, np.full(2, half.max())
+    frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
+    return points, meshes.smooth(points, mesh.faces), frame.squared()
 
 
 def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> list[np.ndarray]:

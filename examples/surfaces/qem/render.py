@@ -1,4 +1,5 @@
-"""Drawing and coordinate read-out for Garland–Heckbert QEM.
+"""Drawing and coordinate read-out for Garland–Heckbert QEM, on the GPU: translucent triangles with their edges as
+rods, and the region where a quadric's error stays small traced as the translucent ellipsoid it is.
 
 This module consumes the geometry that `core` produces and turns it into a figure.
 It constructs viewport geometry only, never scene geometry, and the mathematics
@@ -7,21 +8,34 @@ never imports it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.surfaces.qem.core import Point, Quadric, mv
-
-if TYPE_CHECKING:
-    from matplotlib.axes import Axes
+from examples.wgsl import compose, image_figure, meshes, solids
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
 # Red/Rose: steep corner triangles at vertex a (faces 2, 3)
 # Purple/Violet: gentle ramp triangles at vertex b (faces 4, 5)
-FACE_COLORS = np.array(["#0ea5e9", "#0284c7", "#f43f5e", "#e11d48", "#8b5cf6", "#7c3aed"])
+FACE_COLORS = np.array([to_rgb(colour) for colour in ("#0ea5e9", "#0284c7", "#f43f5e", "#e11d48", "#8b5cf6", "#7c3aed")])
+A_COLOUR, B_COLOUR, OPTIMUM_COLOUR = (np.array(to_rgb(colour)) for colour in ("#f43f5e", "#8b5cf6", "#10b981"))
+EDGE_COLOUR, FAINT_EDGE_COLOUR = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
+VERTEX_COLOUR, ENDPOINT_COLOUR, COLLAPSE_COLOUR = (np.array(to_rgb(colour)) for colour in ("#0f172a", "#475569", "#ef4444"))
+# How opaque the triangles are, the faint original mesh and its edges behind the collapsed one, and the ellipsoids.
+MESH_OPACITY, FAINT_OPACITY, FAINT_EDGE_OPACITY, ELLIPSOID_OPACITY = 0.5, 0.12, 0.5, 0.4
+# The drawn region: where the error exceeds its least by less than this distance squared.
+EPSILON = 0.12
+background = np.ones(3)
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; how far the ellipsoids reach past the
+# vertices, the margin as a share of the larger side, and the pixels across each panel.
+ELEVATION, AZIMUTH = np.radians(24.0), np.radians(138.0)
+REACH, MARGIN, N_PIXELS = 0.1, 0.1, 600
+# Widths of the edges and of the collapsing edge, the dashes along it, and the radii of the vertices and the
+# optimum, in pixels.
+EDGE_WIDTH, COLLAPSE_WIDTH, N_DASHES = 2.6, 4.0, 5
+VERTEX_RADIUS, OPTIMUM_RADIUS = 6.0, 9.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -30,146 +44,53 @@ def euclidean(points: Point) -> np.ndarray:
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
-def draw_mesh_triangles(
-    ax: Axes,
-    triangles: np.ndarray,
-    colors: np.ndarray,
-    alpha: float,
-    edgecolor: str,
-    linewidth: float,
-) -> None:
-    """Draw shaded triangular mesh facets with visible boundary edges."""
-    poly = Poly3DCollection(
-        triangles,
-        alpha=alpha,
-        edgecolor=edgecolor,
-        linewidths=linewidth,
-    )
-    poly.set_facecolor(colors)
-    ax.add_collection3d(poly)
+def error_region(quadric: Quadric, centre: Point) -> Quadric:
+    """The points whose error exceeds the centre's by less than EPSILON squared, the centre of unit weight: the
+    quadric less that level times the squared weight, negative inside, an ellipsoid about the centre where the
+    error is least."""
+    level = (quadric(centre) & centre) + EPSILON**2
+    return quadric - mv.w * (mv.w & Point) * level
 
 
-def draw_error_ellipsoid(
-    ax: Axes,
-    quadric: Quadric,
-    center: np.ndarray,
-    epsilon: float,
-    max_radius: float,
-    color: str,
-    alpha: float,
-) -> None:
-    """Draw the error quadric isosurface quadric(x) & x <= epsilon ** 2 around center."""
-    theta = np.linspace(0.0, np.pi, 17)
-    phi = np.linspace(0.0, 2.0 * np.pi, 25)
-    dx = np.sin(theta)[:, None] * np.cos(phi)[None, :]
-    dy = np.sin(theta)[:, None] * np.sin(phi)[None, :]
-    dz = np.cos(theta)[:, None] * np.ones_like(phi)[None, :]
-    dirs = np.stack([dx, dy, dz], axis=-1)
-
-    # The error grows quadratically along each direction; where it stays flat the radius
-    # is capped at max_radius.
-    dir_pts = mv.direction(dirs)
-    quad_vals = (quadric(dir_pts) & dir_pts).to_array()
-    r = epsilon / np.sqrt(np.maximum(quad_vals, (epsilon / max_radius) ** 2))
-
-    surface = center + r[..., None] * dirs
-    ax.plot_wireframe(
-        surface[..., 0],
-        surface[..., 1],
-        surface[..., 2],
-        color=color,
-        alpha=alpha,
-        rstride=1,
-        cstride=1,
-        linewidth=0.6,
-    )
+def triangles(vertices: Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """Triangles in their own colours, flat, as a layer."""
+    return meshes.layer(vertices, faces, np.zeros(3), meshes.flat(vertices, faces), view, face_values=colours,
+                        colour=meshes.by_face)
 
 
-def style_axes(ax: Axes) -> None:
-    """Shared view, limits and labels of the three panels."""
-    ax.set_box_aspect([1.8, 1.4, 0.75])
-    ax.set_xlim(-0.9, 0.9)
-    ax.set_ylim(-0.7, 0.7)
-    ax.set_zlim(-0.3, 0.45)
-    ax.set_xlabel("x", labelpad=-5, fontsize=8)
-    ax.set_ylabel("y", labelpad=-5, fontsize=8)
-    ax.set_zlabel("z", labelpad=-5, fontsize=8)
-    ax.view_init(elev=24, azim=48)
+def edges(vertices: Point, faces: np.ndarray, width: float) -> Quadric:
+    """Every edge of the faces once, as rods of a width."""
+    ends = np.unique(np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2), axis=0)
+    return solids.rods(vertices[ends[:, 0]], vertices[ends[:, 1]], width / 2)
 
 
-def draw_vertex_panel(
-    ax: Axes,
-    triangles: np.ndarray,
-    vertex: Point,
-    quadric: Quadric,
-    colors: np.ndarray,
-    ellipsoid_color: str,
-) -> None:
-    """Draw a vertex with its incident mesh triangles and error quadric ellipsoid."""
-    vertex_coord = euclidean(vertex)
-    draw_mesh_triangles(ax, triangles, colors, 0.45, "#1e293b", 1.2)
-    draw_error_ellipsoid(ax, quadric, vertex_coord, 0.12, 0.4, ellipsoid_color, 0.4)
-    ax.scatter(
-        [vertex_coord[0]],
-        [vertex_coord[1]],
-        [vertex_coord[2]],
-        color="#0f172a",
-        s=70,
-        depthshade=False,
-    )
-    style_axes(ax)
+def vertex_panel(vertices: Point, faces: np.ndarray, vertex: Point, quadric: Quadric, colours: np.ndarray,
+                 ellipsoid_colour: np.ndarray, view: solids.View) -> np.ndarray:
+    """A vertex with its incident triangles and the ellipsoid where its error stays small."""
+    marks = solids.layer([(edges(vertices, faces, EDGE_WIDTH * view.pixel), EDGE_COLOUR),
+                          (solids.ball(vertex, VERTEX_RADIUS * view.pixel)[None, None], VERTEX_COLOUR)], view)
+    ellipsoid = solids.layer([(error_region(quadric, vertex)[None, None], ellipsoid_colour)], view)
+    return compose([(*triangles(vertices, faces, colours, view), MESH_OPACITY), (*marks, 1.0),
+                    (*ellipsoid, ELLIPSOID_OPACITY)], background)
 
 
-def draw_collapse_panel(
-    ax: Axes,
-    original_triangles: np.ndarray,
-    simplified_triangles: np.ndarray,
-    edge_coords: np.ndarray,
-    quadric: Quadric,
-    optimal_vertex: Point,
-    original_colors: np.ndarray,
-    simplified_colors: np.ndarray,
-) -> None:
-    """Draw the edge collapse showing contracting edge, simplified mesh, and optimal vertex."""
-    opt_xyz = euclidean(optimal_vertex)
-
-    # Original mesh faintly in background:
-    draw_mesh_triangles(ax, original_triangles, original_colors, 0.12, "#94a3b8", 0.8)
-
-    # Simplified mesh with contracted vertex:
-    draw_mesh_triangles(ax, simplified_triangles, simplified_colors, 0.55, "#0f172a", 1.4)
-
-    # Contracting edge:
-    ax.plot(
-        edge_coords[:, 0],
-        edge_coords[:, 1],
-        edge_coords[:, 2],
-        color="#ef4444",
-        linewidth=2.8,
-        linestyle="--",
-    )
-
-    ax.scatter(
-        edge_coords[:, 0],
-        edge_coords[:, 1],
-        edge_coords[:, 2],
-        color="#475569",
-        s=50,
-        depthshade=False,
-    )
-
-    ax.scatter(
-        [opt_xyz[0]],
-        [opt_xyz[1]],
-        [opt_xyz[2]],
-        color="#10b981",
-        marker="*",
-        s=260,
-        depthshade=False,
-    )
-
-    draw_error_ellipsoid(ax, quadric, opt_xyz, 0.12, 0.4, "#10b981", 0.35)
-    style_axes(ax)
+def collapse_panel(vertices: Point, faces: np.ndarray, collapsed: Point, surviving: np.ndarray, quadric: Quadric,
+                   optimum: Point, view: solids.View) -> np.ndarray:
+    """The collapsed mesh about the optimal vertex and its ellipsoid, the contracting edge dashed between its
+    endpoints, and the original mesh faint behind."""
+    pixel = view.pixel
+    # The edge between the endpoints cut into equal pieces, one fewer than twice the dashes, every other a dash.
+    share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)                # [dashes, 2]
+    dashes = vertices[0] * (1 - share) + vertices[1] * share                    # [dashes, 2] Point
+    faint = solids.layer([(edges(vertices, faces, EDGE_WIDTH * pixel), FAINT_EDGE_COLOUR)], view)
+    marks = solids.layer([(edges(collapsed, faces[surviving], EDGE_WIDTH * pixel), EDGE_COLOUR),
+                          (solids.rods(dashes[:, 0], dashes[:, 1], COLLAPSE_WIDTH / 2 * pixel), COLLAPSE_COLOUR),
+                          (solids.ball(vertices[:2], VERTEX_RADIUS * pixel)[:, None], ENDPOINT_COLOUR),
+                          (solids.ball(optimum, OPTIMUM_RADIUS * pixel)[None, None], OPTIMUM_COLOUR)], view)
+    ellipsoid = solids.layer([(error_region(quadric, optimum)[None, None], OPTIMUM_COLOUR)], view)
+    return compose([(*triangles(vertices, faces, FACE_COLORS, view), FAINT_OPACITY), (*faint, FAINT_EDGE_OPACITY),
+                    (*triangles(collapsed, faces[surviving], FACE_COLORS[surviving], view), MESH_OPACITY),
+                    (*marks, 1.0), (*ellipsoid, ELLIPSOID_OPACITY)], background)
 
 
 def draw_qem(
@@ -184,22 +105,10 @@ def draw_qem(
     collapsed: Point,
     surviving: np.ndarray,
 ) -> plt.Figure:
-    """Both endpoint neighbourhoods with their error ellipsoids, and the collapsed mesh."""
-    coords = euclidean(vertices)
-    triangles = coords[faces]
-    fig = plt.figure(figsize=(19.0, 5.8), dpi=140, layout="constrained")
-
-    draw_vertex_panel(
-        fig.add_subplot(1, 3, 1, projection="3d"),
-        triangles[incident_a], vertices[0], quadric_a, FACE_COLORS[incident_a], "#f43f5e",
-    )
-    draw_vertex_panel(
-        fig.add_subplot(1, 3, 2, projection="3d"),
-        triangles[incident_b], vertices[1], quadric_b, FACE_COLORS[incident_b], "#8b5cf6",
-    )
-    draw_collapse_panel(
-        fig.add_subplot(1, 3, 3, projection="3d"),
-        triangles, euclidean(collapsed)[faces[surviving]], coords[:2], edge_quadric, optimum,
-        FACE_COLORS, FACE_COLORS[surviving],
-    )
-    return fig
+    """Both endpoint neighbourhoods with their error ellipsoids, and the collapsed mesh, seen by one camera."""
+    view = solids.view([vertices], REACH, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    return image_figure(np.concatenate([
+        vertex_panel(vertices, faces[incident_a], vertices[0], quadric_a, FACE_COLORS[incident_a], A_COLOUR, view),
+        vertex_panel(vertices, faces[incident_b], vertices[1], quadric_b, FACE_COLORS[incident_b], B_COLOUR, view),
+        collapse_panel(vertices, faces, collapsed, surviving, edge_quadric, optimum, view),
+    ], axis=1))

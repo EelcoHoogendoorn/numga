@@ -43,8 +43,8 @@ def run(core):
 
 def moments(contacts, forward, centres, middle, n_frames: int) -> Iterator[tuple]:
     """Per frame, the wheels, the points ahead of them and the turning centre at that moment, and the trail
-    of the middle of the rear axle so far."""
-    for step in np.linspace(0, N_STEPS - 1, n_frames).astype(int):
+    of the middle of the rear axle so far, from the first step on, so that every trail is a line."""
+    for step in np.linspace(1, N_STEPS - 1, n_frames).astype(int):
         yield contacts[step], forward[step], centres[step], middle[:step + 1]
 
 

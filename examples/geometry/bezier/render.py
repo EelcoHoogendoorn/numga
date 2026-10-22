@@ -1,26 +1,33 @@
 """The rays of a quadratic curve and its complement in the three dimensions of x, y and weight, the cone they
-sweep, and where both meet the unit sphere."""
+sweep, and where both meet the unit sphere: drawn on the GPU, the sphere traced and translucent, the curves and loops
+tubes, the swept rays a translucent mesh."""
 
 from __future__ import annotations
 
 import contourpy
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
+from matplotlib.colors import to_rgb
 
-from numga import stack
-from examples.animation import capture
 from examples.geometry.bezier import core
+from examples.wgsl import compose, meshes, solids
 
-CURVE_COLOUR = "#287fa0"
-COMPLEMENT_COLOUR = "#d06c36"
-CONTROL_COLOUR = "0.55"
-# The samples of a circle, of the sphere's mesh, and of the grid the cone is found on.
+sm = solids.mv
+CURVE_COLOUR = np.array(to_rgb("#287fa0"))
+COMPLEMENT_COLOUR = np.array(to_rgb("#d06c36"))
+CONTROL_COLOUR, ORIGIN_COLOUR = np.full(3, 0.55), np.full(3, 0.3)
+EQUATOR_COLOUR, LOOP_COLOUR, RAY_COLOUR = np.full(3, 0.55), np.full(3, 0.68), np.full(3, 0.75)
+SPHERE_COLOUR, SPHERE_OPACITY, FAN_OPACITY = np.full(3, 0.85), 0.2, 0.22
+# The samples of a circle, and of the grid the cone is found on.
 CIRCLE = 200
-SPHERE_MESH = 60
 SPHERE_GRID = 200
-# The direction homogeneous space is viewed from, in degrees.
+# The direction homogeneous space is viewed from, in degrees; the margin as a share of the larger side, and the
+# pixels across a frame.
 ELEVATION, AZIMUTH = 18.0, -62.0
+MARGIN, N_PIXELS = 0.06, 600
+# The widths of the equator, the cone's loops and the control rays, of the curves and of the curves on the sphere;
+# the spacing and radius of the dots along a control polygon, and the radius of a control point; all in pixels.
+LINE_WIDTH, CURVE_WIDTH, SPHERE_CURVE_WIDTH = 3.0, 3.5, 6.0
+DOT_SPACING, DOT_RADIUS, POINT_RADIUS = 7.0, 1.4, 3.5
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -46,56 +53,68 @@ def cones(shapes: core.Conic) -> list[list[np.ndarray]]:
             for value in values]
 
 
-def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, loops: list[np.ndarray], reach: float,
-              azimuth: float) -> plt.Figure:
+def dotted(polygon: np.ndarray, spacing: float) -> np.ndarray:
+    """Dots along a polyline `[corners, 3]`, about `spacing` apart, `[dots, 3]`."""
+    # Along each side, as many dots as fit at the spacing, from its start up to the next side's; the last corner closes it.
+    counts = np.maximum(1, np.round(np.linalg.norm(np.diff(polygon, axis=0), axis=-1) / spacing).astype(int))
+    return np.concatenate([start + np.linspace(0, 1, count, endpoint=False)[:, None] * (end - start)
+                           for start, end, count in zip(polygon[:-1], polygon[1:], counts)] + [polygon[-1:]])
+
+
+def fan(xyw: np.ndarray, offset: int) -> np.ndarray:
+    """The triangles from the origin, vertex `offset`, to each step along a curve, its vertices following it."""
+    steps = offset + 1 + np.arange(len(xyw) - 1)
+    return np.stack([np.full_like(steps, offset), steps, steps + 1], axis=-1)
+
+
+def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, loops: list[np.ndarray],
+              view: solids.View) -> np.ndarray:
     """A curve and its complement as their sums are, in the three dimensions of x, y and weight, with their
     weighted control points, and with the rays from the origin to the curves filled in: the part of the
     conic's cone each sweeps. Where the rays pierce
     the unit sphere, the curves normalised, and where the cone does, its two antipodal loops. The equator
     is the line at infinity."""
-    figure = plt.figure(figsize=(4.8, 4.4), layout="constrained")
-    ax = figure.add_subplot(projection="3d")
-    longitude, latitude = np.meshgrid(np.linspace(0, 2 * np.pi, SPHERE_MESH), np.linspace(-np.pi / 2, np.pi / 2, SPHERE_MESH))
-    ax.plot_surface(np.cos(latitude) * np.cos(longitude), np.cos(latitude) * np.sin(longitude), np.sin(latitude),
-                    color="0.85", alpha=0.18, linewidth=0, shade=False)
-    angles = np.linspace(0, 2 * np.pi, CIRCLE + 1)
-    ax.plot(np.cos(angles), np.sin(angles), 0 * angles, color="0.45", linewidth=1)
-    for loop in loops:
-        ax.plot(*loop.T, color="0.55", linewidth=1)
-    # The weighted control points of the curve and of its complement, each on its ray out to the sphere.
-    for polygon in homogeneous(controls):                                      # [controls, 3]
-        ax.plot(*polygon.T, color=CONTROL_COLOUR, linestyle=":", linewidth=1)
-        ax.scatter(*polygon.T, color=CONTROL_COLOUR, s=14, depthshade=False)
-        for corner in polygon:
-            ax.plot(*np.stack([0 * corner, corner * max(1.0, 1 / np.linalg.norm(corner))]).T, color=CONTROL_COLOUR, linewidth=0.6)
-    for points, colour in ((curve, CURVE_COLOUR), (complement, COMPLEMENT_COLOUR)):
-        xyw = homogeneous(points)                                              # [samples, 3]
-        ax.plot(*xyw.T, color=colour, linewidth=1.2)
-        fan = np.stack([np.zeros_like(xyw[:-1]), xyw[:-1], xyw[1:]], axis=1)   # [samples, 3, 3]
-        ax.add_collection3d(Poly3DCollection(fan, facecolor=colour, alpha=0.12, linewidth=0))
-        ax.plot(*(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True)).T, color=colour, linewidth=2.4)
-    ax.scatter(0, 0, 0, color="0.3", s=10)
-    ax.view_init(elev=ELEVATION, azim=azimuth)
-    ax.set(xlim=(-reach, reach), ylim=(-reach, reach), zlim=(-reach, reach))
-    ax.set_box_aspect((1, 1, 1), zoom=1.35)
-    ax.set_axis_off()
-    return figure
+    sphere = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
+    polygons = homogeneous(controls)                                           # [2, controls, 3]
+    arcs = [homogeneous(curve), homogeneous(complement)]                       # [samples, 3] each
+    colours = [CURVE_COLOUR, COMPLEMENT_COLOUR]
+    # Each weighted control point on its ray from the origin, the ray reaching out to the sphere where the point lies inside it.
+    corners = polygons.reshape(-1, 3)
+    reaches = corners * np.maximum(1.0, 1 / np.linalg.norm(corners, axis=-1, keepdims=True))
+    equator = meshes.circles(np.zeros(3), np.array(1.0), np.array([0.0, 0.0, 1.0]), CIRCLE)
+    lines = meshes.tubes([(equator, EQUATOR_COLOUR)] + [(loop, LOOP_COLOUR) for loop in loops]
+                         + [(np.stack([np.zeros(3), reach]), RAY_COLOUR) for reach in reaches]
+                         + [(xyw, colour) for xyw, colour in zip(arcs, colours)], LINE_WIDTH, view)
+    on_sphere = meshes.tubes([(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True), colour) for xyw, colour in zip(arcs, colours)],
+                             SPHERE_CURVE_WIDTH, view)
+    # The control polygons dotted, their corners and the origin as points.
+    dots = sm.point(np.concatenate([dotted(polygon, DOT_SPACING * view.pixel) for polygon in polygons]))
+    points = solids.layer([(solids.ball(dots, DOT_RADIUS * view.pixel)[:, None], CONTROL_COLOUR),
+                           (solids.ball(sm.point(corners), POINT_RADIUS * view.pixel)[:, None], CONTROL_COLOUR),
+                           (solids.ball(solids.origin, POINT_RADIUS * view.pixel)[None, None], ORIGIN_COLOUR)], view)
+    # The rays from the origin to each curve: a fan of triangles, the origin and two neighbouring samples each.
+    vertices = sm.point(np.concatenate([np.concatenate([np.zeros((1, 3)), xyw]) for xyw in arcs]))
+    faces = np.concatenate([fan(arcs[0], 0), fan(arcs[1], len(arcs[0]) + 1)])
+    face_colours = np.concatenate([np.broadcast_to(colour, (len(xyw) - 1, 3)) for xyw, colour in zip(arcs, colours)])
+    fans = meshes.layer(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view)
+    return compose([(*sphere, SPHERE_OPACITY), (*fans, FAN_OPACITY), (*lines, 1.0), (*on_sphere, 1.0), (*points, 1.0)],
+                   np.ones(3))
 
 
-def framing(points: core.Point) -> float:
-    """The half width that frames every point, as its sum is, and the unit sphere."""
-    return max(1.0, np.abs(homogeneous(points)).max())
+def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
+    """Views at the origin from each azimuth, in degrees, one size for all: framing every point of the batches, as
+    its sum is, and the unit sphere, from every azimuth."""
+    elevation, turns = np.radians(ELEVATION), np.radians(azimuths + 90)
+    cameras = [solids.aim(solids.origin, elevation, turn) for turn in turns]
+    seen = sm.point(np.concatenate([homogeneous(batch).reshape(-1, 3) for batch in points]))
+    places = np.concatenate([solids.View(camera, np.ones(2), N_PIXELS).across(seen) for camera in cameras])
+    half = np.maximum(np.abs(places).max(axis=0), 1.0)
+    return [solids.View(camera, half + MARGIN * half.max(), N_PIXELS) for camera in cameras]
 
 
 def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> list[np.ndarray]:
     """The ray figure for each conic of a batch, viewed from turning once around, at one framing."""
     loops = cones(shapes)
-    half_width = framing(stack([curves, complements]))
-    azimuths = AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False)
-
-    def frame(index: int) -> np.ndarray:
-        figure = draw_rays(controls[index], curves[index], complements[index], loops[index], half_width, azimuths[index])
-        pixels = capture(figure)
-        plt.close(figure)
-        return pixels
-    return [frame(index) for index in range(curves.shape[0])]
+    seen = views([curves, complements, controls], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
+    return [draw_rays(controls[index], curves[index], complements[index], loops[index], seen[index])
+            for index in range(curves.shape[0])]

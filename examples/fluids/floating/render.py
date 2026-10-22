@@ -7,25 +7,32 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.fluids.floating import core
+from examples.wgsl import compose, meshes, solids
 
 ga, mv = core.ga, core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
 # the colour maps of the loads and of the cube's map.
 HULL, DECK, WATER, WEIGHT, BUOYANCY = "#e7e2d6", "#c9bfa8", "#5aa9c9", "#d06c36", "#1f6f99"
 WET_MAP, LOAD_MAP, ARM_MAP = "Blues", "viridis", "RdBu"
-# The light falling on the hull, the depth at which its wet surface is darkest, the reach of the water
-# drawn around it, the drawn length of the forces, the view in space, and the heels over which each curve's
-# tangent is drawn.
-LIGHT = np.array([0.3, -0.5, 0.8]) / np.linalg.norm([0.3, -0.5, 0.8])
+# The depth at which the hull's wet surface is darkest, the reach of the water drawn around it, the drawn
+# length of the forces, and the heels over which each curve's tangent is drawn.
 DEEPEST = 0.6
 SEA = (3.0, 1.8)
 FORCE = 0.9
-VIEW = (18, -55)
 TANGENT = 25.0
+# The view in space, elevation and azimuth in radians, azimuth zero looking along +y, its margin as a share of
+# its larger side, the pixels across its picture, and the water's opacity, so the wet hull shows through it.
+ELEVATION, AZIMUTH = np.radians([18.0, 35.0])
+MARGIN = 0.04
+N_PIXELS = 1400
+WATER_OPACITY = 0.25
+# The glint on the hull, faint, so its facets do not glitter.
+HULL_GLOSS = 0.1
+BACKGROUND = np.ones(3)
 # The windows of the end views of the rolling hull and of the hull drawn whole, across and up, and the size
 # of the cube drawn above the map.
 END = ((-1.6, 1.6), (-1.0, 1.6))
@@ -55,13 +62,6 @@ def arms(couples: core.Forque, weight: core.Scalar) -> np.ndarray:
     return scalars(-(couples & core.heel_axis) / weight)
 
 
-def shade(triangles: np.ndarray) -> np.ndarray:
-    """How much light each triangle `[..., 3, 3]` faces, between a third and one."""
-    normals = np.cross(triangles[..., 1, :] - triangles[..., 0, :], triangles[..., 2, :] - triangles[..., 0, :])
-    lit = np.abs(normals @ LIGHT) / np.maximum(np.linalg.norm(normals, axis=-1), 1e-12)
-    return 1 / 3 + 2 / 3 * lit
-
-
 def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Forque, centre: core.Point) -> None:
     """The weight from the centre of gravity and the buoyancy from the water surface, as arrows on their
     vertical lines across an end view, and the righting arm between them at the centre's height."""
@@ -75,23 +75,33 @@ def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Forque, centre: c
     ax.plot(*gravity, "o", color=WEIGHT, markeredgecolor="white", markersize=7, zorder=8)
 
 
+def in_water(triangles: np.ndarray) -> np.ndarray:
+    """The hull's triangles `[triangles, 3, 3]` in space, flat, the dry ones pale and the wet ones darker with
+    depth, under a translucent patch of the water's surface, framed on the patch."""
+    depth = np.clip(-triangles[..., 2].mean(axis=-1) / DEEPEST, 0, 1)        # [triangles]
+    wet = plt.get_cmap(WET_MAP)(0.35 + 0.6 * depth)[:, :3]
+    colours = np.where((depth > 0)[:, None], wet, to_rgb(HULL))              # [triangles, 3]
+    reach, breadth = SEA
+    sea = solids.mv.point([[-reach, -breadth, 0], [reach, -breadth, 0], [reach, breadth, 0], [-reach, breadth, 0]])
+    corners = solids.mv.point(triangles.reshape(-1, 3))
+    faces = np.arange(len(corners)).reshape(-1, 3)
+    patch = np.array([[0, 1, 2], [0, 2, 3]])
+    view = solids.view([sea, corners], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    normals = meshes.flat(corners, faces)
+    hull = meshes.layer(corners, faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
+                        gloss=HULL_GLOSS)
+    water = meshes.layer(sea, patch, np.array(to_rgb(WATER)), meshes.flat(sea, patch), view)
+    return compose([(*hull, 1.0), (*water, WATER_OPACITY)], BACKGROUND)
+
+
 def draw_ship(hull: core.Point, placed: core.Motor, push: core.Forque, centre: core.Point) -> plt.Figure:
     """The heeled hull: in space, its dry surface pale and its wet surface darker with depth, in the water;
     and seen along its axis of heel, with its weight, its buoyancy and the righting arm between them."""
     triangles = coordinates(placed >> hull)                                  # [triangles, 3, 3]
-    depth = np.clip(-triangles[..., 2].mean(axis=-1) / DEEPEST, 0, 1)        # [triangles]
-    wet = plt.get_cmap(WET_MAP)(0.35 + 0.6 * depth)[:, :3]
-    colours = np.where((depth > 0)[:, None], wet, plt.matplotlib.colors.to_rgb(HULL)) * shade(triangles)[:, None]
     figure = plt.figure(figsize=(11, 4.4), dpi=110)
     grid = figure.add_gridspec(1, 2, width_ratios=(1.6, 1), wspace=0.02)
-    ax = figure.add_subplot(grid[0, 0], projection="3d")
-    ax.add_collection3d(Poly3DCollection(triangles, facecolors=colours, edgecolors="none"))
-    reach, breadth = SEA
-    ax.add_collection3d(Poly3DCollection([[[-reach, -breadth, 0], [reach, -breadth, 0], [reach, breadth, 0],
-                                           [-reach, breadth, 0]]], facecolors=WATER, alpha=0.18, edgecolors="none"))
-    ax.set(xlim=(-reach, reach), ylim=(-breadth, breadth), zlim=(-1.2, 1.2))
-    ax.set_box_aspect((2 * reach, 2 * breadth, 2.4), zoom=1.6)
-    ax.view_init(*VIEW)
+    ax = figure.add_subplot(grid[0, 0])
+    ax.imshow(in_water(triangles))
     ax.set_axis_off()
     ax = figure.add_subplot(grid[0, 1])
     end_view(ax, triangles)

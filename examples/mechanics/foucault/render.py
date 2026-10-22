@@ -1,14 +1,18 @@
-"""Bob tracks on the floor, and the earth turning a pendulum's floor underneath it."""
+"""Bob tracks on the floor, and the earth turning a pendulum's floor underneath it, on the GPU: the globe and its
+polar cap translucent, the equator and the latitude circle tubes, the floor a tile on the globe with the swing and
+north on it as rods."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
+from matplotlib.colors import to_rgb
 import numpy as np
 
+from numga import stack
 from examples.animation import capture
 from examples.mechanics.foucault import core
+from examples.wgsl import compose, meshes, show, solids
 
 TRACK_MAP = "viridis"
 SWING_COLOUR = "#d06c36"
@@ -16,11 +20,23 @@ GLOBE_COLOUR = "0.85"
 CAP_COLOUR = "#287fa0"
 FLOOR_COLOUR = "#efe9dc"
 COMPASS_COLOUR = "0.35"
-# The half width of the floor drawn on the globe, and the samples of the globe and its circles.
+FLOOR_EDGE_COLOUR = "0.5"
+EQUATOR_COLOUR = "0.6"
+# The half width of the floor drawn on the globe, how far north its compass reaches from the middle, and the
+# samples of the globe's circles.
 FLOOR = 0.3
-GLOBE_MESH = 40
+COMPASS = 1.4
 CIRCLE = 200
-ELEVATION, AZIMUTH = 22.0, -35.0
+# The view of the globe, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the
+# globe as a share of its radius, and the pixels across a picture.
+ELEVATION, AZIMUTH = np.radians([22.0, -35.0 + 90.0])
+MARGIN = 0.15
+PIXELS = 440
+# The opacities of the globe and of the cap; the width of the circles, the radii of the floor's edges, of the swing
+# and of the compass, in pixels, and the points around a circle's tube.
+GLOBE_OPACITY, CAP_OPACITY = 0.25, 0.3
+CIRCLE_WIDTH, EDGE_RADIUS, SWING_RADIUS, COMPASS_RADIUS = 2.0, 0.8, 2.0, 1.0
+N_AROUND = 8
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -68,28 +84,39 @@ def draw_globe(ax: plt.Axes, earth: core.Rotor, vertical: core.Point, swing: cor
                east: core.Point) -> None:
     """The earth turned by a rotor: its equator and the site's latitude circle, the polar cap that circle
     bounds, and the site's floor with the line the pendulum swings along."""
-    longitude, latitude = np.meshgrid(np.linspace(0, 2 * np.pi, GLOBE_MESH), np.linspace(-np.pi / 2, np.pi / 2, GLOBE_MESH))
-    ax.plot_surface(np.cos(latitude) * np.cos(longitude), np.cos(latitude) * np.sin(longitude), np.sin(latitude),
-                    color=GLOBE_COLOUR, alpha=0.25, linewidth=0, shade=False, zorder=1)
-    site = coordinates(vertical)
-    angles = np.linspace(0, 2 * np.pi, CIRCLE)
-    ring = np.stack([np.hypot(*site[:2]) * np.cos(angles), np.hypot(*site[:2]) * np.sin(angles), np.full(CIRCLE, site[2])], axis=-1)
-    cap_longitude, cap_latitude = np.meshgrid(np.linspace(0, 2 * np.pi, GLOBE_MESH), np.linspace(np.arcsin(site[2]), np.pi / 2, 12))
-    ax.plot_surface(np.cos(cap_latitude) * np.cos(cap_longitude), np.cos(cap_latitude) * np.sin(cap_longitude),
-                    np.sin(cap_latitude), color=CAP_COLOUR, alpha=0.3, linewidth=0, shade=False, zorder=2)
-    ax.plot(np.cos(angles), np.sin(angles), 0 * angles, color="0.6", linewidth=0.8, zorder=2)
-    ax.plot(*ring.T, color=CAP_COLOUR, linewidth=1.2, zorder=3)
-    centre = coordinates(earth >> vertical)
-    across, along = coordinates(earth >> east) * FLOOR, coordinates(earth >> north) * FLOOR
-    corners = centre + np.array([-1, 1, 1, -1])[:, None] * across + np.array([-1, -1, 1, 1])[:, None] * along
-    ax.add_collection3d(Poly3DCollection([corners], facecolor=FLOOR_COLOUR, edgecolor="0.5", linewidth=0.6, zorder=4))
-    line = coordinates(earth >> swing) * FLOOR
-    ax.add_collection3d(Line3DCollection([np.stack([centre - line, centre + line])], colors=SWING_COLOUR, linewidths=2.5, zorder=5))
-    ax.add_collection3d(Line3DCollection([np.stack([centre + along, centre + 1.4 * along])], colors=COMPASS_COLOUR, linewidths=1, zorder=5))
-    ax.set(xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), zlim=(-1.1, 1.1))
-    ax.set_box_aspect((1, 1, 1), zoom=1.3)
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
+    view = solids.view([solids.origin], 1.0, ELEVATION, AZIMUTH, MARGIN, PIXELS)
+    # The equator and the site's latitude circle: a direction on each turned once around the axis.
+    around = core.turn(core.equator, np.linspace(0, 2 * np.pi, CIRCLE))[:, None]   # [circle, 1] Rotor
+    equator, ring = np.moveaxis(coordinates(around >> stack([core.x.dual(), vertical])), 1, 0)   # [circle, 3] each
+    circles = meshes.tubes([(equator, np.array(to_rgb(EQUATOR_COLOUR))), (ring, np.array(to_rgb(CAP_COLOUR)))],
+                           CIRCLE_WIDTH, view, N_AROUND)
+    # The cap: the globe on the far side of the plane of the latitude circle from the equator.
+    height = coordinates(vertical)[2]
+    globe = solids.ball(solids.origin, 1.0)                                   # [] Quadric
+    cap = stack([globe, solids.half_space(solids.mv.w * height - solids.mv.z)])   # [2] Quadric
+    shells = [solids.layer([(solid, np.array(to_rgb(colour)))], view)
+              for solid, colour in ((globe[None, None], GLOBE_COLOUR), (cap[None], CAP_COLOUR))]
+    # The floor at the site, turned with the earth: a tile across the vertical, north and east along its sides,
+    # lifted off the globe by the latitude circle's thickness, so that the circle through the site passes under it.
+    site = vertical * (1 + CIRCLE_WIDTH * view.pixel)                          # [] Point
+    signs = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * FLOOR             # [corners, 2]
+    swing_start, swing_end, compass_start, compass_end, *corners = coordinates(earth >> stack(
+        [site - swing * FLOOR, site + swing * FLOOR, site + north * FLOOR, site + north * (COMPASS * FLOOR)]
+        + [site + east * across + north * along for across, along in signs]))   # [3] each
+    tile = solids.mv.point(np.array(corners))                                  # [corners] Point
+    square = np.array([[0, 1, 2], [0, 2, 3]])
+    floor = meshes.layer(tile, square, np.array(to_rgb(FLOOR_COLOUR)), meshes.flat(tile, square), view)
+    # The swing through the middle of the floor, both ways, and north from its edge outwards.
+    swing_rod = solids.rods(solids.mv.point(swing_start), solids.mv.point(swing_end), SWING_RADIUS * view.pixel)
+    compass = solids.rods(solids.mv.point(compass_start), solids.mv.point(compass_end), COMPASS_RADIUS * view.pixel)
+    edges, joints = solids.edges(tile, tile[[1, 2, 3, 0]], EDGE_RADIUS * view.pixel)
+    swing_colour, compass_colour, edge_colour = (np.array(to_rgb(colour))
+                                                 for colour in (SWING_COLOUR, COMPASS_COLOUR, FLOOR_EDGE_COLOUR))
+    lines = solids.layer([(swing_rod[None], swing_colour), (compass[None], compass_colour), (edges, edge_colour),
+                          (joints, edge_colour)], view)
+    image = compose([(*circles, 1.0), (*floor, 1.0), (*lines, 1.0), (*shells[0], GLOBE_OPACITY),
+                     (*shells[1], CAP_OPACITY)], np.ones(3))
+    show(ax, image, view)
 
 
 def animate_day(turns: np.ndarray, earth: core.Rotor, swings: core.Point, vertical: core.Point, north: core.Point,
@@ -101,9 +128,7 @@ def animate_day(turns: np.ndarray, earth: core.Rotor, swings: core.Point, vertic
 
     def frame(index: int) -> np.ndarray:
         figure = plt.figure(figsize=(9.0, 4.4))
-        # Drawn in order, globe, cap, circles, floor, swing, rather than sorted by depth.
-        globe = figure.add_axes((0.0, 0.0, 0.5, 1.0), projection="3d", computed_zorder=False)
-        draw_globe(globe, earth[index], vertical, swings[index], north, east)
+        draw_globe(figure.add_axes((0.0, 0.0, 0.5, 1.0)), earth[index], vertical, swings[index], north, east)
         face = figure.add_axes((0.52, 0.05, 0.46, 0.9))
         draw_track(face, floor[:reached[index] + 1])
         line = on_floor(swings[index], north, east)

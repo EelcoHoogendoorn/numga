@@ -8,21 +8,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.collections import LineCollection
-from matplotlib.colors import TwoSlopeNorm
+from matplotlib.colors import TwoSlopeNorm, to_rgb
 from matplotlib.image import AxesImage
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from numga import stack
 
 from examples.animation import capture
 from examples.fluids.vortices import core
+from examples.wgsl import compose, meshes, show, solids
 
-# Worldlines: one colour per vortex, the strands' width, the view as (elevation, azimuth) in degrees,
-# and the size in inches of each braid's square panel.
-STRANDS = np.array(["#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe"])
-STRAND_WIDTH = 2.0
-ELEVATION, AZIMUTH = 18.0, -60.0
+# Worldlines: one colour per vortex, the strands' width in pixels and the sides of their tubes, the view as
+# elevation and azimuth in radians, azimuth zero looking along +y, the margin around a braid as a share of its
+# larger side, the size in inches of each braid's square panel and the pixels along its larger side.
+STRANDS = np.array([to_rgb(colour) for colour in ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe")])
+STRAND_WIDTH = 4.0
+N_AROUND = 8
+ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
+MARGIN = 0.1
 PANEL_SIZE = 6.0
+PANEL_PIXELS = 600
+BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -102,28 +107,19 @@ def window(points: core.Point, frames: Iterable[tuple[core.Vortices, core.Even]]
 
 
 def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
-    """Worldlines `[times, vortices]` side by side, each a braid of curves through the plane and time, one
+    """Worldlines `[times, vortices]` side by side, each a braid of tubes through the plane and time, one
     colour per vortex, drawn following the vortices' mean position. Time runs upward and is stretched to
     `height` times the braid's width: it has no scale of its own against distance."""
     result = plt.figure(figsize=(PANEL_SIZE * len(worldlines), PANEL_SIZE))
-    toward = np.array([np.cos(np.radians(ELEVATION)) * np.cos(np.radians(AZIMUTH)),
-                       np.cos(np.radians(ELEVATION)) * np.sin(np.radians(AZIMUTH)), np.sin(np.radians(ELEVATION))])
-    for ax, centres in zip(result.subplots(1, len(worldlines), subplot_kw={"projection": "3d"}), worldlines):
+    for ax, centres in zip(result.subplots(1, len(worldlines)), worldlines):
         following = centres - centres.mean(axis=-1)[..., None]                  # [times, vortices] Point
         places = positions(following)                                            # [times, vortices, 2]
         width = np.ptp(places.reshape(-1, 2), axis=0).max()
         times = np.broadcast_to(np.linspace(0, height * width, len(places))[:, None, None], places.shape[:2] + (1,))
         drawn = np.concatenate([places, times], axis=-1)                         # [times, vortices, 3]
-        segments = np.stack([drawn[:-1], drawn[1:]], axis=-2).reshape(-1, 2, 3)  # [(times - 1) * vortices, 2, 3]
-        colours = np.broadcast_to(STRANDS[: places.shape[1]], drawn[1:].shape[:2]).reshape(-1)
-        # The far segments first, so that a strand passing in front covers the one behind it.
-        order = np.argsort(segments.mean(axis=1) @ toward)
-        ax.computed_zorder = False
-        ax.add_collection3d(Line3DCollection(segments[order], colors=colours[order], linewidths=STRAND_WIDTH, capstyle="round"))
-        low, high = drawn.reshape(-1, 3).min(axis=0), drawn.reshape(-1, 3).max(axis=0)
-        ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
-        ax.set_box_aspect(tuple(high - low))
-        ax.set_proj_type("ortho")
-        ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-        ax.set_axis_off()
+        camera, half, _ = solids.view([solids.mv.point(drawn)], 0.0, ELEVATION, AZIMUTH, MARGIN, PANEL_PIXELS)
+        # The braid's larger side spans the panel's pixels.
+        view = solids.View(camera, half, round(PANEL_PIXELS * half[0] / half.max()))
+        strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
+        show(ax, compose([(*meshes.tubes(strands, STRAND_WIDTH, view, N_AROUND), 1.0)], BACKGROUND), view)
     return result

@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ScreenPoint, ga, mv, origin
-from examples.wgsl import Shader, supersampled
+from examples.wgsl import Shader, image_figure, supersampled
 
 background = 0.02
 
@@ -131,8 +131,4 @@ def frames(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Poin
 def draw_walk(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
               shape: tuple[int, int], supersample: int) -> plt.Figure:
     """The view from the eye's first frame."""
-    image = picture(eye_frames[0], surfaces, colors, light, fov, shape, supersample)
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
-    ax.imshow(image, interpolation="nearest")
-    ax.axis("off")
-    return fig
+    return image_figure(picture(eye_frames[0], surfaces, colors, light, fov, shape, supersample))

@@ -37,10 +37,10 @@ def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, 
     centre, seen from an elevation and azimuth in degrees, the azimuth measured from x: `[pixels, pixels, 3]`
     bytes."""
     elevation, azimuth = np.radians(view[0]), np.radians(view[1] + 90)
-    camera, half = solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent)
+    seen = solids.View(solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent), pixels)
     boxes = bodies[:, None].adjugate().solve(cube(bodies[:, None].solve(core.Point)))   # [boxes, 6] Quadric
-    arm = solids.layer([(boxes, box_colours)], camera, half, elevation, azimuth, pixels)
-    ellipsoid = solids.layer([(surface[None, None], colour)], camera, half, elevation, azimuth, pixels)
+    arm = solids.layer([(boxes, box_colours)], seen)
+    ellipsoid = solids.layer([(surface[None, None], colour)], seen)
     return compose([(*arm, 1.0), (*ellipsoid, quadric_opacity)], background)
 
 

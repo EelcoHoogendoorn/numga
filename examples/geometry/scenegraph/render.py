@@ -1,6 +1,6 @@
 """Drawing and coordinate read-out for the scenegraph example.
 
-Figures show the robot arm and the camera's optics in the world, and the photograph on
+Figures show the robot arm and the camera's optics in the world, drawn on the GPU, and the photograph on
 the camera's sensor. The mathematics never imports this module.
 """
 
@@ -10,14 +10,13 @@ from collections.abc import Iterable
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, Rectangle
-from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.patches import Rectangle
 import numpy as np
 
 from numga import stack
 from examples.animation import capture
 from examples.geometry.scenegraph.core import Motor, Point, mv, unit_box_topology
+from examples.wgsl import compose, image_figure, meshes, show, solids
 
 
 # Colors for the robot arm bodies:
@@ -35,6 +34,21 @@ RAY_COLORS = [
     "#D69E2E",  # Golden amber
 ]
 
+FLOOR_COLOR, FRONT_LENS_COLOR, REAR_LENS_COLOR = "#E2E8F0", "#319795", "#805AD5"
+SENSOR_COLOR, SENSOR_EDGE_COLOR, SENSOR_OPACITY = "#F6AD55", "#C05621", 0.55
+# The floor grid's lines in the plane z == 0, and the points along a lens rim.
+FLOOR_LINES = np.linspace(-1.2, 1.2, 7)
+N_RIM = 72
+# A square's corners in order, split in two triangles.
+HALVES = np.array([[0, 1, 2], [0, 2, 3]])
+# The view's elevation and azimuth, in radians, azimuth zero looking along +y; the margin as a share of the larger
+# side, and the pixels across the scene.
+ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
+MARGIN, N_PIXELS = 0.1, 900
+# The widths of the floor grid, the lens rims, and the rays and the sensor's edge, and the radius of a ray's hit on
+# the sensor, in pixels.
+FLOOR_WIDTH, RIM_WIDTH, RAY_WIDTH, HIT_RADIUS = 3.0, 4.5, 3.5, 5.0
+
 
 # --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
@@ -43,106 +57,106 @@ def euclidean(points: Point) -> np.ndarray:
 
 
 # --- 3D scene view ----------------------------------------------------------------------
-def plot_scene_3d(ax: Axes3D, world_vertices: Point, camera_pose: Motor, rays: tuple) -> None:
-    """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays."""
-    ax.clear()
+def floor() -> np.ndarray:
+    """The floor grid's lines in the plane z == 0, across x and across y, `[lines, 2, 3]`."""
+    # Lines along x, from end to end of the grid, at each place across y; and the same with x and y swapped.
+    along_x = np.stack(np.broadcast_arrays(FLOOR_LINES[None, [0, -1]], FLOOR_LINES[:, None], 0.0), axis=-1)
+    return np.concatenate([along_x, along_x[..., [1, 0, 2]]])
+
+
+def optics(camera_pose: Motor) -> tuple[np.ndarray, np.ndarray]:
+    """The optical elements in the camera frame, moved into the world by the camera pose: the front lens rim,
+    radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3, `[2, rim + 1, 3]`; and the corners of the
+    1.6 x 1.2 sensor chip at z == -1.25, `[4, 3]`."""
+    rims = meshes.circles(np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -0.3]]), np.array([0.3, 0.25]), np.array([0.0, 0.0, 1.0]), N_RIM)
+    sensor = np.array([[-0.8, -0.6, -1.25], [0.8, -0.6, -1.25], [0.8, 0.6, -1.25], [-0.8, 0.6, -1.25]])
+    return euclidean(camera_pose >> mv.point(rims)), euclidean(camera_pose >> mv.point(sensor))
+
+
+def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
+    """One view framing the arm, the optics, the rays and the floor of every scene."""
+    points = [mv.point(floor())]
+    for world_vertices, camera_pose, rays in scenes:
+        rims, sensor = optics(camera_pose)
+        points += [world_vertices, mv.point(rims), mv.point(sensor), *rays]
+    return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+
+
+def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
+    """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
     _, faces = unit_box_topology()
+    # Every body's faces, each square split in two triangles, indexing all bodies' vertices in one list.
+    corners = np.arange(world_vertices.shape[0])[:, None, None, None] * world_vertices.shape[1] + faces[:, HALVES]
+    triangles = corners.reshape(-1, 3)                                         # [bodies * faces * 2, 3]
+    vertices = world_vertices.reshape(-1)
+    colours = np.repeat([mcolors.to_rgb(color) for color in BODY_COLORS], 2 * len(faces), axis=0)
+    arm = meshes.layer(vertices, triangles, colours[:, None], meshes.flat(vertices, triangles), view)
 
-    # Directional light source for shading 3D body faces:
-    light_dir = np.array([0.4, -0.6, 0.7])
-    light_dir = light_dir / np.linalg.norm(light_dir)
-
-    # Floor grid in the plane z == 0 (drawn behind everything at zorder=0):
-    for g in np.linspace(-1.2, 1.2, 7):
-        ax.plot3D([g, g], [-1.2, 1.2], [0, 0], color="#E2E8F0", linewidth=0.7, zorder=0)
-        ax.plot3D([-1.2, 1.2], [g, g], [0, 0], color="#E2E8F0", linewidth=0.7, zorder=0)
-
-    # All faces of all bodies in one collection so matplotlib sorts them globally, each
-    # shaded by the diffuse light on its outward normal:
-    polygons = euclidean(world_vertices)[:, faces]                  # [bodies, faces, face_corners, 3]
-    normals = np.cross(polygons[..., 1, :] - polygons[..., 0, :], polygons[..., 2, :] - polygons[..., 0, :])
-    normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)
-    shade = 0.50 + 0.50 * np.maximum(normals @ light_dir, 0.0)       # [bodies, faces]
-    base = np.array([mcolors.to_rgb(c) for c in BODY_COLORS])[:, None, :]
-    face_colors = np.concatenate([base * shade[..., None], np.ones((*shade.shape, 1))], axis=-1)
-    ax.add_collection3d(Poly3DCollection(
-        polygons.reshape(-1, 4, 3),
-        facecolors=face_colors.reshape(-1, 4),
-        edgecolors="#1A202C",
-        linewidths=0.8,
-        alpha=1.0,
-        zorder=2,
-    ))
-
-    # Optical elements in the camera frame, moved into the world by the camera pose:
-    theta = np.linspace(0, 2 * np.pi, 36)
-    ring = np.stack([np.cos(theta), np.sin(theta), np.zeros_like(theta)], axis=-1)
-    # The front lens rim, radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3:
-    front_ring = euclidean(camera_pose >> mv.point(ring * 0.3))                    # [theta, 3]
-    rear_ring = euclidean(camera_pose >> mv.point(ring * 0.25 + [0.0, 0.0, -0.3]))  # [theta, 3]
-    ax.plot3D(front_ring[:, 0], front_ring[:, 1], front_ring[:, 2], color="#319795", linewidth=2.0, zorder=3)
-    ax.plot3D(rear_ring[:, 0], rear_ring[:, 1], rear_ring[:, 2], color="#805AD5", linewidth=2.0, zorder=3)
-
-    # Sensor plane rectangle matching the physical 1.6 x 1.2 sensor chip at z == -1.25:
-    sensor = euclidean(camera_pose >> mv.point(np.array([
-        [-0.8, -0.6, -1.25],
-        [ 0.8, -0.6, -1.25],
-        [ 0.8,  0.6, -1.25],
-        [-0.8,  0.6, -1.25],
-    ])))
-    ax.add_collection3d(Poly3DCollection([sensor], facecolors="#DD6B20", edgecolors="#C05621", linewidths=1.5, alpha=0.55, zorder=3))
-
-    # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor.
-    stages = np.stack([euclidean(stage) for stage in rays], axis=-2)      # [rays, stages, 3]
-    for path, color in zip(stages, RAY_COLORS):
-        for leg, width in zip(range(3), (1.4, 1.8, 1.8)):
-            ax.plot3D(*path[leg:leg + 2].T, color=color, linewidth=width, alpha=0.9, zorder=4)
-        ax.scatter3D(*path[3:].T, color=color, s=28, edgecolors="white", linewidths=0.8, zorder=5)
-
-    ax.set_xlim(-0.9, 1.1)
-    ax.set_ylim(-4.95, 0.65)
-    ax.set_zlim(0.0, 3.1)
-    ax.set_box_aspect([2.0, 5.6, 3.1])
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_zticks([])
-    ax.view_init(elev=18, azim=-55)
+    rims, sensor = optics(camera_pose)
+    chip = meshes.layer(mv.point(sensor), HALVES, np.array(mcolors.to_rgb(SENSOR_COLOR)), meshes.flat(mv.point(sensor), HALVES),
+                        view)
+    # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor, each one polyline.
+    paths = np.stack([euclidean(stage) for stage in rays], axis=-2)           # [rays, stages, 3]
+    ray_colours = np.array([mcolors.to_rgb(color) for color in RAY_COLORS[:len(paths)]])
+    grid = meshes.tubes([(line, mcolors.to_rgb(FLOOR_COLOR)) for line in floor()], FLOOR_WIDTH, view)
+    lenses = meshes.tubes([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
+                          RIM_WIDTH, view)
+    lines = meshes.tubes([(sensor[[0, 1, 2, 3, 0]], mcolors.to_rgb(SENSOR_EDGE_COLOR))] + list(zip(paths, ray_colours)),
+                         RAY_WIDTH, view)
+    hits = solids.layer([(solids.ball(rays[3], HIT_RADIUS * view.pixel)[:, None], ray_colours)], view)
+    return compose([(*arm, 1.0), (*grid, 1.0), (*chip, SENSOR_OPACITY), (*lenses, 1.0), (*lines, 1.0), (*hits, 1.0)],
+                   np.ones(3))
 
 
-# --- 2D sensor photograph ---------------------------------------------------------------
-def plot_camera_image(ax: plt.Axes, projected_pixels: Point) -> None:
-    """The photograph on the 640 x 480 pixel sensor, bodies painted from base to end-effector."""
-    ax.clear()
-    width, height = 640, 480
+# --- sensor photograph ------------------------------------------------------------------
+# The sensor's pixels across and up, and the photograph's glint, faint, as on painted metal.
+SENSOR_PIXELS = np.array([640, 480])
+PHOTO_GLOSS = 0.15
+
+
+def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> tuple[np.ndarray, solids.View]:
+    """The photograph on the sensor's pixels, rendered, and the view it is seen by: each box's faces at their
+    places on the sensor, held at their depth in front of the lens, so nearer faces hide farther ones."""
     _, faces = unit_box_topology()
-    pixels = euclidean(projected_pixels)[..., :2]                  # [bodies, vertices, 2]
+    pixels = euclidean(projected_pixels)[..., :2]                              # [bodies, vertices, 2]
+    # The depth in front of the lens, along the camera's own z.
+    seen = camera_pose << world_vertices
+    depth = ((mv.z & seen) / (mv.w & seen)).to_array()                        # [bodies, vertices]
+    # The depth in the photograph's own units, at the scale the camera shows the arm, so the faces keep their slopes
+    # and catch the light much as they would: the pixels the bodies span over the room they take in the world.
+    world = euclidean(world_vertices)
+    scale = np.ptp(pixels, axis=1).max(axis=-1) / np.ptp(world, axis=1).max(axis=-1)   # [bodies]
+    places = np.concatenate([pixels * [1, -1], -(depth - depth.mean()) [..., None] * np.median(scale)], axis=-1)
+    corners = mv.point(places.reshape(-1, 3))                                 # [bodies * vertices] Point
+    quads = faces[None] + len(places[0]) * np.arange(len(places))[:, None, None]   # [bodies, faces, 4]
+    triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
+    colours = np.repeat([mcolors.to_rgb(colour) for colour in BODY_COLORS], 2 * len(faces), axis=0)[:, None]
+    # The sensor seen square on, its middle at the photograph's.
+    middle = mv.point([SENSOR_PIXELS[0] / 2, -SENSOR_PIXELS[1] / 2, 0.0])
+    view = solids.View(solids.aim(middle, np.pi / 2, 0.0), SENSOR_PIXELS / 2, SENSOR_PIXELS[0])
+    image = meshes.draw(corners, triangles, colours, meshes.flat(corners, triangles), view, np.ones(3), gloss=PHOTO_GLOSS)
+    return image, view
 
-    for body, color in zip(pixels, BODY_COLORS):
-        for face in faces:
-            ax.add_patch(Polygon(body[face], closed=True, facecolor=color, edgecolor="#1E293B", linewidth=1.0, alpha=0.88))
 
-    # Sensor frame boundary:
-    ax.add_patch(Rectangle((0, 0), width, height, fill=False, edgecolor="#4A5568", linewidth=1.2, linestyle="-"))
-    ax.set_xlim(0, width)
-    # Invert y so image origin (0, 0) is at top-left:
-    ax.set_ylim(height, 0)
-    ax.set_aspect("equal")
-    ax.axis("off")
+def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> None:
+    """The photograph on the sensor, with the sensor's edge."""
+    ax.clear()
+    image, view = photograph_image(world_vertices, projected_pixels, camera_pose)
+    show(ax, image, view)
+    left, _, bottom, _ = view.extent
+    ax.add_patch(Rectangle((left, bottom), *SENSOR_PIXELS, fill=False, edgecolor="#4A5568", linewidth=1.2))
 
 
 # --- figures ----------------------------------------------------------------------------
 def draw_scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple) -> plt.Figure:
     """The 3D scene on its own."""
-    fig = plt.figure(figsize=(7.5, 6.0), dpi=140)
-    plot_scene_3d(fig.add_subplot(1, 1, 1, projection="3d"), world_vertices, camera_pose, rays)
-    fig.tight_layout()
-    return fig
+    return image_figure(scene_3d(world_vertices, camera_pose, rays, framing([(world_vertices, camera_pose, rays)])))
 
 
-def draw_camera_image(projected_pixels: Point) -> plt.Figure:
+def draw_camera_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> plt.Figure:
     """The sensor photograph on its own."""
     fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=140)
-    plot_camera_image(ax, projected_pixels)
+    plot_camera_image(ax, world_vertices, projected_pixels, camera_pose)
     fig.tight_layout()
     return fig
 
@@ -150,7 +164,7 @@ def draw_camera_image(projected_pixels: Point) -> plt.Figure:
 def scenegraph_axes(dpi: int):
     """Side-by-side 3D scene and sensor photograph."""
     fig = plt.figure(figsize=(11.5, 5.5), dpi=dpi)
-    ax_3d = fig.add_axes([-0.05, -0.04, 0.63, 1.05], projection="3d")
+    ax_3d = fig.add_axes([0.0, 0.0, 0.56, 1.0])
     ax_2d = fig.add_axes([0.56, 0.08, 0.41, 0.84])
     return fig, ax_3d, ax_2d
 
@@ -158,18 +172,22 @@ def scenegraph_axes(dpi: int):
 def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose: Motor, rays: tuple) -> plt.Figure:
     """The 3D scene with its optics beside the photograph on the sensor."""
     fig, ax_3d, ax_2d = scenegraph_axes(140)
-    plot_scene_3d(ax_3d, world_vertices, camera_pose, rays)
-    plot_camera_image(ax_2d, projected_pixels)
+    view = framing([(world_vertices, camera_pose, rays)])
+    show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view), view)
+    plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose)
     return fig
 
 
 def animate_scenegraph(frames: Iterable) -> list[np.ndarray]:
-    """RGB frames of the two-panel figure, one per state."""
+    """RGB frames of the two-panel figure, one per state, the scene seen by one view that frames them all."""
+    frames = list(frames)
+    view = framing([(world_vertices, camera_pose, rays) for world_vertices, _, camera_pose, rays in frames])
     fig, ax_3d, ax_2d = scenegraph_axes(100)
     images = []
     for world_vertices, projected_pixels, camera_pose, rays in frames:
-        plot_scene_3d(ax_3d, world_vertices, camera_pose, rays)
-        plot_camera_image(ax_2d, projected_pixels)
+        ax_3d.clear()
+        show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view), view)
+        plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose)
         images.append(capture(fig))
     plt.close(fig)
     return images

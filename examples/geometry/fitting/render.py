@@ -8,16 +8,15 @@ import numpy as np
 
 from numga import stack
 from examples.geometry.fitting.core import Point, mv
-from examples.wgsl import solids
+from examples.wgsl import image_figure, solids
 
 sample_colour, true_colour, fit_colour = np.array([0.42, 0.58, 0.74]), np.array([0.55, 0.56, 0.60]), np.array([0.90, 0.28, 0.30])
 background = np.array([1.0, 1.0, 1.0])
-# The view's elevation and azimuth, the pixels across, the margin around what it shows as a fraction of its
-# larger side, and the figure's width in inches.
+# The view's elevation and azimuth, the pixels across, and the margin around what it shows as a fraction of its
+# larger side.
 elevation, azimuth = np.radians(24.0), np.radians(32.0)
 pixels = 520
 margin = 0.08
-width = 6.0
 # Radii of a sample, of a fitted or true point, and of a line or edge drawn.
 sample_radius, point_radius, line_radius = 0.035, 0.09, 0.022
 
@@ -31,13 +30,7 @@ def euclidean(points: Point) -> np.ndarray:
 def draw(framed: list[Point], reach: float, parts: list[tuple[solids.Quadric, np.ndarray]]) -> plt.Figure:
     """One figure of solids in parts, each a batch of solids with one colour, framed around batches of points
     with `reach` to spare."""
-    camera, half = solids.view(framed, reach, elevation, azimuth, margin)
-    image = solids.draw(parts, camera, half, elevation, azimuth, pixels, background)
-    figure = plt.figure(figsize=(width, width * image.shape[0] / image.shape[1]), dpi=pixels / width)
-    ax = figure.add_axes([0, 0, 1, 1])
-    ax.imshow(image)
-    ax.set_axis_off()
-    return figure
+    return image_figure(solids.draw(parts, solids.view(framed, reach, elevation, azimuth, margin, pixels), background))
 
 
 def balls(centres: Point, radius: float) -> solids.Quadric:

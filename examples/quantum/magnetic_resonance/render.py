@@ -1,5 +1,5 @@
 """Drawing for magnetic resonance: Bloch-ball trajectories, absorption and dispersion lines, and the
-spin echo."""
+spin echo. The Bloch ball is drawn on the GPU, the rest by matplotlib."""
 
 from __future__ import annotations
 
@@ -7,13 +7,29 @@ from collections.abc import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from numga.algebras import STA
 from examples.animation import capture
 from examples.quantum.magnetic_resonance import core
+from examples.wgsl import compose, labels, meshes, show, solids
 
+sm = solids.mv
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
+SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.18
+AXIS_COLOUR = np.array([0.45, 0.47, 0.52])
+CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.4
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
+# about the centre, and the pixels across it.
+ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
+REACH, N_PIXELS = 1.3, 700
+# The points along a great circle and around a tube; the widths of the great circles, the paths and the arrows, the
+# arrowheads' length and the dots' radius, in pixels; how far the axes' arrows and their names reach, in radii of the
+# ball.
+N_CIRCLE, N_AROUND = 120, 8
+CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 2.4, 3.0, 2.0, 16.0, 9.0, 6.0
+AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
 # Where the spin lives in each algebra: the vectors of space, or in spacetime the planes the spin
 # turns in, the spacelike planes yz, zx and xy, read as the directions x, y and z across them.
 BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("yz zx xy")}
@@ -30,29 +46,29 @@ def timelike_components(rho: core.State) -> np.ndarray:
     return 2 * rho.cast(STA.subspace("xt yt zt")).kernel
 
 
-def ball(ax) -> None:
-    """The unit Bloch sphere, faintly, with its axes."""
-    u, v = np.meshgrid(np.linspace(0, 2 * np.pi, 40), np.linspace(0, np.pi, 20))
-    ax.plot_wireframe(np.cos(u) * np.sin(v), np.sin(u) * np.sin(v), np.cos(v), color="0.85", linewidth=0.4)
-    for axis in np.eye(3):
-        ax.plot(*np.stack([-axis, axis]).T, color="0.6", linewidth=0.6)
-    # The sphere fills the axes: limits at its radius, and the box zoomed past its default padding.
-    ax.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1))
-    ax.set_box_aspect((1, 1, 1), zoom=1.5)
-    ax.set_axis_off()
-
-
 def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figure:
     """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
-    steady state, marked with a dot; the states are consumed as they are yielded."""
+    steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is
+    translucent, with its equator and two meridians, and its axes are arrows named at their tips."""
     paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
-    figure = plt.figure(figsize=(6.5, 6.5))
-    ax = figure.add_axes((0, 0, 1, 1), projection="3d")
-    ball(ax)
-    for index, colour in enumerate(COLOURS[: paths.shape[1]]):
-        ax.plot(*paths[:, index].T, color=colour, linewidth=1.0)
-        ax.scatter(*ends[index], color=colour, s=30)
-    ax.view_init(elev=18, azim=-50)
+    colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
+    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
+    # The sphere's equator and two meridians: the great circles square to x, y and z.
+    great_circles = meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3), N_CIRCLE)  # [3, circle + 1, 3]
+    circles = meshes.tubes([(circle, CIRCLE_COLOUR) for circle in great_circles], CIRCLE_WIDTH, view, N_AROUND)
+    tubes = meshes.tubes(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view, N_AROUND)
+    shafts, heads = solids.arrows(sm.point(-np.eye(3)), sm.point(AXIS_LENGTH * np.eye(3)), ARROW_WIDTH / 2 * view.pixel,
+                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    marks = solids.layer([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
+                          (solids.ball(sm.point(ends), DOT_RADIUS * view.pixel)[:, None], colours)], view)
+    ball = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
+    figure = plt.figure(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100)
+    ax = figure.add_axes((0, 0, 1, 1))
+    show(ax, compose([(*ball, SPHERE_OPACITY), (*circles, CIRCLE_OPACITY), (*tubes, 1.0), (*marks, 1.0)], np.ones(3)),
+         view)
+    # Each axis named just past its arrow's tip, where the camera sees it.
+    labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=13,
+           color=AXIS_COLOUR)
     return figure
 
 

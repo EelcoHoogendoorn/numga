@@ -21,7 +21,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.fluids.jeffery import core
-from examples.wgsl import Shader, supersampled
+from examples.wgsl import Shader, behind, compose, meshes, show, solids, supersampled, vec3
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()
@@ -38,31 +38,40 @@ AMBIENT = 0.4
 LIMIT = 4.2
 PIXELS = 200
 SUPERSAMPLE = 2
+# The sphere of directions, drawn on the GPU: its colour and opacity, and its grid's width in pixels, opacity and
+# points along a circle; the arrows' length in radii of the sphere, and their width and heads in pixels; the
+# orbits' width in pixels, the margin around the arrows' reach, and the pixels across a sphere.
+SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
+GRID_WIDTH, GRID_OPACITY, N_CIRCLE = 3.0, 0.3, 120
+FLOW_RGB = np.array(to_rgb(FLOW))
+ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.35, 3.0, 16.0, 10.0
+ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 3.0, 0.05, 520
 
 
 def coordinates(points: core.Point) -> np.ndarray:
-    """Points for matplotlib's three-dimensional axes: along the normal of the vortex plane, along the flow, and
-    along the gradient, so that the gradient points up and the order stays right-handed."""
+    """Points for the sphere of directions: along the normal of the vortex plane, along the flow, and along the
+    gradient, so that the gradient points up and the order stays right-handed."""
     return points.cast(core.ga.subspace("xy yz zx")).kernel
 
 
-def draw_sphere(ax) -> None:
-    """A faint unit sphere, with the flow's direction and the normal of the vortex plane."""
-    polar, azimuth = np.meshgrid(np.linspace(0, np.pi, 13), np.linspace(0, 2 * np.pi, 25), indexing="ij")
-    ax.plot_wireframe(np.sin(polar) * np.cos(azimuth), np.sin(polar) * np.sin(azimuth), np.cos(polar),
-                      color="#cbd5e1", linewidth=0.4, alpha=0.6)
-    ax.quiver(0, 0, 0, 0, 1.35, 0, color=FLOW, linewidth=1.4, arrow_length_ratio=0.12)
-    ax.quiver(0, 0, 0, 1.35, 0, 0, color=FLOW, linewidth=1.4, arrow_length_ratio=0.12)
-
-
-def frame_axes(ax, limit: float) -> None:
-    ax.set_xlim(-limit, limit)
-    ax.set_ylim(-limit, limit)
-    ax.set_zlim(-limit, limit)
-    ax.set_box_aspect([1, 1, 1], zoom=1.35)
-    ax.set_proj_type("ortho")
-    ax.view_init(*VIEW)
-    ax.set_axis_off()
+def sphere(view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    """The faint unit sphere as layers: a translucent ball pushed back behind what lies on it, its parallels and
+    meridians as faint tubes, and the flow's direction and the normal of the vortex plane as arrows."""
+    ball = behind(solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE)], view), 2 * GRID_WIDTH * view.pixel)
+    polar = np.radians(np.arange(30, 180, 30))
+    parallels = meshes.circles(np.cos(polar)[:, None] * [0, 0, 1], np.sin(polar), np.broadcast_to([0, 0, 1], (len(polar), 3)),
+                               N_CIRCLE)
+    # The meridians: great circles square to the plane x turned about the vertical by each azimuth.
+    meridians = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp() >> solids.mv.x   # [meridians] Plane
+    greats = meshes.circles(np.zeros((meridians.shape[0], 3)), np.ones(meridians.shape[0]),
+                            (solids.axes | meridians[:, None]).to_array(), N_CIRCLE)
+    grid = meshes.tubes([(circle, SPHERE) for circle in np.concatenate([parallels, greats])], GRID_WIDTH, view)
+    # The arrows' tips: along the normal of the vortex plane and along the flow.
+    ends = solids.mv.point(ARROW_LENGTH * np.eye(3)[:2])                     # [2] Point
+    shafts, heads = solids.arrows(solids.mv.point(np.zeros((2, 3))), ends, ARROW_WIDTH / 2 * view.pixel,
+                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    arrows = solids.layer([(shafts, FLOW_RGB), (heads, FLOW_RGB)], view)
+    return [(*ball, SPHERE_OPACITY), (*grid, GRID_OPACITY), (*arrows, 1.0)]
 
 
 def draw_orbits(trails: core.Point) -> plt.Figure:
@@ -70,22 +79,21 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     directions, both ends of the axis drawn."""
     paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
     count = paths.shape[1]
-    figure = plt.figure(figsize=(4.4 * count, 4.6), dpi=120)
+    view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
+                       np.full(2, ARROW_LENGTH * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
+    figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
+    shown = sphere(view)
     for body in range(count):
-        ax = figure.add_subplot(1, count, body + 1, projection="3d")
-        draw_sphere(ax)
-        for start, colour in enumerate(STARTS):
-            for end in (1, -1):
-                ax.plot(*(end * paths[:, body, start]).T, color=colour, linewidth=1.3)
-        frame_axes(ax, 1.05)
-    figure.tight_layout()
+        orbits = meshes.tubes([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
+                               for end in (1, -1)], ORBIT_WIDTH, view)
+        show(figure.add_axes((body / count, 0, 1 / count, 1)), compose([*shown, (*orbits, 1.0)], np.ones(3)), view)
     return figure
 
 
 def camera() -> tuple[core.Point, core.Point, core.Point]:
     """The orthographic camera's right, up and back directions: the axes turned by the view, which
     raises the normal of the vortex plane towards the gradient, then turns it about the gradient towards the flow;
-    the same view as `frame_axes` gives matplotlib."""
+    the same view as `draw_orbits` sees the sphere from."""
     elevation, azimuth = np.radians(VIEW)
     view = ((core.mv.z ^ core.mv.x) * (-azimuth / 2)).exp() * ((core.mv.z ^ core.mv.y) * (-elevation / 2)).exp()   # [] Rotor
     return view >> x, view >> y, view >> z
@@ -149,8 +157,8 @@ fn sample(place: vec2<f32>) -> Sample {
     return vec4<f32>(select(body, body_dark, octant) * shade, 1.0);
 }
 """
-source = (source.replace("BODY_DARK", "vec3<f32>({:.6f}, {:.6f}, {:.6f})".format(*to_rgb(BODY_DARK)))
-          .replace("BODY", "vec3<f32>({:.6f}, {:.6f}, {:.6f})".format(*to_rgb(BODY))).replace("AMBIENT", repr(AMBIENT)))
+source = (source.replace("BODY_DARK", vec3(to_rgb(BODY_DARK))).replace("BODY", vec3(to_rgb(BODY)))
+          .replace("AMBIENT", repr(AMBIENT)))
 
 
 @cache

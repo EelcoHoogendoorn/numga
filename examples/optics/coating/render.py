@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import hsv_to_rgb
+from matplotlib.colors import hsv_to_rgb, to_rgb
 from matplotlib.collections import LineCollection
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from examples.animation import capture
 from examples.optics.coating import core
+from examples.wgsl import labels, show, solids
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
+sm = solids.mv
+# The twist's view: elevation and azimuth in radians, azimuth zero looking along +y; its margin, a share of the
+# larger side, and the pixels across it.
+twist_elevation, twist_azimuth = np.radians(16.0), np.radians(35.0)
+twist_margin, n_twist_pixels = 0.06, 360
+# The widths of the optic axes, the helix's axis and the depth scale, the scale's arrowhead and its ticks' radius, in
+# pixels; the scale's tick spacing in nm, and how far the scale, its numbers and its name lie, in rod half lengths.
+rod_width, axis_width, scale_width, head_length, head_width, tick_radius = 3.0, 3.0, 3.0, 12.0, 7.0, 3.5
+depth_tick = 500.0
+scale_distance, number_distance, title_height = 1.3, 0.2, 0.25
+scale_colour, label_colour = np.array([0.6, 0.62, 0.66]), np.array([0.3, 0.32, 0.36])
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -68,26 +79,35 @@ def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
 
 
 def twist(centres: core.Vector, directors: core.Vector) -> plt.Figure:
-    """Undirected optic axes at the layer depths; rod lengths are schematic."""
-    figure = plt.figure(figsize=(5, 6), layout="constrained")
-    ax = figure.add_subplot(111, projection="3d")
+    """Undirected optic axes at the layer depths, about the helix's axis, beside a depth scale; rod lengths are
+    schematic."""
     positions = centres.real().cast(centres.algebra.subspace("x y z")).kernel
     directions = directors.real().cast(directors.algebra.subspace("x y z")).kernel
     half_width = np.ptp(positions[:, 2]) * 0.14
-    ends = np.stack([positions - half_width * directions, positions + half_width * directions], axis=1)
-    ax.add_collection3d(Line3DCollection(ends, colors=case_colours[0], linewidths=1.4))
-    ax.plot(*positions.T, color="#cbd5e1", linewidth=0.7)
-    ax.set(xlim=(-half_width * 1.15, half_width * 1.15),
-           ylim=(-half_width * 1.15, half_width * 1.15),
-           zlim=(positions[:, 2].min(), positions[:, 2].max()),
-           xticks=[], yticks=[], zlabel="depth (nm)")
-    ax.set_box_aspect((1, 1, 2.4))
-    ax.set_proj_type("ortho")
-    ax.view_init(elev=16, azim=-55)
-    ax.grid(False)
-    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-        axis.pane.fill = False
-        axis.line.set_color("0.8")
+    # The depth scale stands beside the helix, past the rods' reach to the camera's right, ticked every few hundred nm.
+    camera = solids.aim(solids.origin, twist_elevation, twist_azimuth)
+    right = (solids.axes & (camera >> sm.direction([1, 0, 0]))).to_array()
+    scale = scale_distance * half_width * right + np.eye(3)[2] * np.array([[0.0], [positions[:, 2].max()]])   # [2, 3]
+    ticks = scale[0] + np.eye(3)[2] * np.arange(depth_tick, scale[1, 2], depth_tick)[:, None]          # [ticks, 3]
+    numbers = ticks + number_distance * half_width * right
+    title = scale[1:] + title_height * half_width * np.eye(3)[2]                                       # [1, 3]
+    starts, ends = sm.point(positions - half_width * directions), sm.point(positions + half_width * directions)
+    view = solids.view([starts, ends, sm.point(numbers), sm.point(title)], 0.0, twist_elevation, twist_azimuth,
+                       twist_margin, n_twist_pixels)
+
+    shafts, heads = solids.arrows(sm.point(scale[0]), sm.point(scale[1]), scale_width / 2 * view.pixel,
+                                  head_length * view.pixel, head_width / 2 * view.pixel)
+    parts = [(solids.rods(starts, ends, rod_width / 2 * view.pixel), np.array(to_rgb(case_colours[0]))),
+             (solids.rods(sm.point(positions[0]), sm.point(positions[-1]), axis_width / 2 * view.pixel)[None],
+              np.array(to_rgb("#cbd5e1"))),
+             (shafts[None], scale_colour), (heads[None], scale_colour),
+             (solids.ball(sm.point(ticks), tick_radius * view.pixel)[:, None], scale_colour)]
+    figure = plt.figure(figsize=(view.shape[1] / 100, view.shape[0] / 100), dpi=100)
+    ax = figure.add_axes((0, 0, 1, 1))
+    show(ax, solids.draw(parts, view, np.ones(3)), view)
+    labels(ax, view, sm.point(numbers), [f"{tick[2]:g}" for tick in ticks], ha="left", va="center", fontsize=9,
+           color=label_colour)
+    labels(ax, view, sm.point(title), ["depth (nm)"], ha="center", va="bottom", fontsize=10, color=label_colour)
     return figure
 
 

@@ -17,7 +17,7 @@ import numpy as np
 from numga import concatenate
 from numga.algebras import PGA3D
 from examples import instantiate
-from examples.wgsl import Shader, solids, supersampled
+from examples.wgsl import Shader, image_figure, solids, supersampled
 
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
@@ -242,36 +242,29 @@ def scene(built: core.Body, motor: core.Motor) -> dict:
                 finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float) -> tuple[core.Motor, np.ndarray]:
-    """A camera framing the body over every placement and its shadow on the ground, cast along the lamp: its motor,
-    and half the image's width and height, the height rounded to whole pixels."""
+def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float) -> solids.View:
+    """A view framing the body over every placement and its shadow on the ground, cast along the lamp, the height
+    rounded to whole pixels."""
     body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point
     shadows = (body & lamp) ^ mv.z                                                # [..., points] Point
-    camera, half = solids.view([body, shadows], 0.0, elevation, azimuth, margin)
-    n_rows = round(n_pixels * half[1] / half[0])
-    return camera, np.array([half[0], half[0] * n_rows / n_pixels])
+    framed = solids.view([body, shadows], 0.0, elevation, azimuth, margin, n_pixels)
+    n_rows = framed.shape[0]
+    return solids.View(framed.camera, np.array([framed.half[0], framed.half[0] * n_rows / n_pixels]), n_pixels)
 
 
-def picture(built: core.Body, motor: core.Motor, camera: core.Motor, half: np.ndarray) -> np.ndarray:
+def picture(built: core.Body, motor: core.Motor, seen: solids.View) -> np.ndarray:
     """The body and its shadow, `[rows, columns, 3]` bytes."""
-    shape = (round(n_pixels * half[1] / half[0]), n_pixels)
-    traced = shader()(shape, **scene(built, motor), camera=camera, back=4 * half.max(), half_height=half[1],
-                      lamp=lamp, ambient=ambient, shininess=shininess)["image"]
+    traced = shader()(seen.shape, **scene(built, motor), camera=seen.camera, back=4 * seen.half.max(),
+                      half_height=seen.half[1], lamp=lamp, ambient=ambient, shininess=shininess)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
 def frames(motors: core.Motor, built: core.Body, samples: core.Point) -> list[np.ndarray]:
     """The rolling body, viewed from a fixed camera."""
-    camera, half = framing(motors, samples, *view)
-    return [picture(built, motor, camera, half) for motor in motors]
+    seen = framing(motors, samples, *view)
+    return [picture(built, motor, seen) for motor in motors]
 
 
 def draw_setup(built: core.Body, samples: core.Point, motor: core.Motor) -> plt.Figure:
     """The body at rest, seen from above, its steel balls on opposite corners."""
-    camera, half = framing(motor, samples, *setup_view)
-    image = picture(built, motor, camera, half)
-    figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
-    ax.imshow(image)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
+    return image_figure(picture(built, motor, framing(motor, samples, *setup_view)))

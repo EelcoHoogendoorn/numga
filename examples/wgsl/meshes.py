@@ -12,10 +12,13 @@ from functools import cache
 
 import numpy as np
 
+from numga import concatenate, stack
 from examples.wgsl import Shader
 from examples.wgsl.library import compose
-from examples.wgsl.solids import Motor, Plane, Point, ambient, fill_tilt, ga, gloss, lamp, mv, origin, shininess
+from examples.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, origin, shininess
 
+# How many times finer than the image a mesh is drawn, across and up, before it is averaged back.
+oversampling = 2
 # The intrinsic unit: the volume four points span, from the origin along each axis.
 unit = origin & mv.point([1, 0, 0]) & mv.point([0, 1, 0]) & mv.point([0, 0, 1])
 
@@ -38,6 +41,9 @@ struct Corners {
     c: Plane,
 }
 var<storage, read> normals: array<Corners>;
+// How many drawn pixels make one of the image's, across and up: a colour function inking a line some pixels wide by
+// `fwidth` scales it by this.
+const oversampling = OVERSAMPLING;
 // The camera of `solids`: looking along its own -z, its rays parallel, the image half as wide and high as these.
 var<uniform> camera: Motor;
 var<uniform> half_size: vec2<f32>;
@@ -45,6 +51,7 @@ var<uniform> depth: f32;
 var<uniform> lamp: Point;
 var<uniform> ambient: f32;
 var<uniform> fill_tilt: f32;
+var<uniform> headlight: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
 
@@ -92,8 +99,8 @@ fn shade(corner: Corner) -> Shade {
     let normal = facing / (facing | facing).square_root();
     let light = max(normal & lamp, 0.0);
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    let fill = ambient * (1 + fill_tilt * (normal | mv.z));
-    let lit = colour(corner.values, corner.face_values, corner.corner, front) * (fill + (1 - ambient) * light) + gloss * glint;
+    let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
+    let lit = colour(corner.values, corner.face_values, corner.corner, front) * (fill + (1 - ambient - headlight) * light) + gloss * glint;
     return Shade(vec4<f32>(lit, 1.0), vec4<f32>(corner.depth, 0.0, 0.0, 1.0));
 }
 """
@@ -118,7 +125,7 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader(colour: str) -> Shader:
-    return Shader(source(colour), ga, dict(Point=Point, Plane=Plane, Motor=Motor))
+    return Shader(source(colour).replace("OVERSAMPLING", f"{oversampling:.1f}"), ga, dict(Point=Point, Plane=Plane, Motor=Motor))
 
 
 def flat(points: Point, faces: np.ndarray) -> dict:
@@ -185,27 +192,57 @@ def tube(points: np.ndarray, radius: float, n_around: int) -> tuple[Point, np.nd
     return rings.reshape(-1), corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
 
 
-def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, camera: Motor, half: np.ndarray,
-          elevation: float, azimuth: float, pixels: int, face_values: np.ndarray = np.zeros(4),
-          colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
-    """The mesh as the camera sees it, `pixels` across: its colour, `[rows, columns, 4]`, and its depth along the
-    view, `[rows, columns]`, each weighted by coverage; from up to four values at each corner of each face,
-    `[faces, 3, values]` or one row for all, and at each face, coloured by `colour`, with a glint of `gloss`."""
+def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
+          face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
+    """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
+    each weighted by coverage; from up to four values at each corner of each face, `[faces, 3, values]` or one row for
+    all, and at each face, coloured by `colour`, with a glint of `gloss`."""
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
-    shape = (int(round(pixels * half[1] / half[0])), pixels)
-    colours, depths = shader(colour).draw(shape, 3 * len(faces), points=points, faces=faces,
+    # Drawn at `oversampling` times the view's pixels across and up, each with its 4 samples, and averaged back: thin
+    # strokes as smooth as the traced solids'.
+    rows, columns = view.shape
+    colours, depths = shader(colour).draw((oversampling * rows, oversampling * columns), 3 * len(faces), points=points, faces=faces,
                                           values=padded(values, (len(faces), 3)).reshape(-1, 4),
-                                          face_values=padded(face_values, (len(faces),)), normals=normals, camera=camera,
-                                          half_size=half, depth=8 * half.max(), lamp=lamp(elevation, azimuth),
-                                          ambient=ambient, fill_tilt=fill_tilt, gloss=gloss, shininess=shininess)
-    return colours, depths[..., 0]
+                                          face_values=padded(face_values, (len(faces),)), normals=normals,
+                                          camera=view.camera, half_size=view.half, depth=8 * view.half.max(),
+                                          lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt,
+                                          headlight=headlight, gloss=gloss, shininess=shininess)
+    blocks = (rows, oversampling, columns, oversampling)
+    return colours.reshape(*blocks, 4).mean(axis=(1, 3)), depths[..., 0].reshape(blocks).mean(axis=(1, 3))
 
 
-def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, camera: Motor, half: np.ndarray,
-         elevation: float, azimuth: float, pixels: int, background: np.ndarray, face_values: np.ndarray = np.zeros(4),
-         colour: str = plain, gloss: float = gloss) -> np.ndarray:
-    """The mesh as the camera sees it on the background, `[rows, columns, 3]`; as `layer`."""
-    return compose([(*layer(points, faces, values, normals, camera, half, elevation, azimuth, pixels, face_values, colour,
-                            gloss), 1.0)], background)
+def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View, n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
+    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, one layer, as `layer`: the
+    curves of each length built together."""
+    rings, faces, colours = [], [], []
+    count = 0
+    for length in sorted({len(points) for points, _ in curves}):
+        alike = [(points, colour) for points, colour in curves if len(points) == length]
+        around, triangles = tube(np.stack([points for points, _ in alike]), width / 2 * view.pixel, n_around)
+        rings.append(around)
+        faces.append(triangles + count)
+        # Each curve's faces in a run of their own, in the order the curves were stacked.
+        colours.append(np.repeat(np.stack([colour for _, colour in alike]), len(triangles) // len(alike), axis=0))
+        count += around.shape[0]
+    places, faces = concatenate(rings), np.concatenate(faces)
+    return layer(places, faces, np.concatenate(colours)[:, None], smooth(places, faces), view)
+
+
+def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_points: int) -> np.ndarray:
+    """Closed circles about centres `[..., 3]` with radii `[...]`, square to normals `[..., 3]`, as polylines
+    `[..., n_points + 1, 3]`: a point at the radius, on the axis each normal leans on least crossed with it, turned
+    about the line through the centre along the normal."""
+    across = np.cross(normals, np.eye(3)[np.argmin(np.abs(normals), axis=-1)])
+    rims = mv.point(centres + radii[..., None] * across / np.linalg.norm(across, axis=-1, keepdims=True))
+    axes = (mv.point(centres) & mv.point(centres + normals)) * unit                    # [...] Line
+    turns = ((axes / axes.norm())[..., None] * (np.linspace(0, 2 * np.pi, n_points + 1) / 2)).exp()   # [..., n + 1] Motor
+    points = turns >> rims[..., None]
+    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
+
+
+def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View, background: np.ndarray,
+         face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> np.ndarray:
+    """The mesh as the view sees it on the background, `[rows, columns, 3]`; as `layer`."""
+    return compose([(*layer(points, faces, values, normals, view, face_values, colour, gloss), 1.0)], background)

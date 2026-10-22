@@ -81,12 +81,13 @@ def cameras(n_cameras: int) -> tuple[core.Rotation, core.Euclidean]:
 def main() -> None:
     from examples.animation import save_animation, save_figure
     from examples.quadrics.glass_cyclide import render
+    from examples.wgsl import image_figure
 
     tracer = render.shader()
     quadrics, solid_values = solids()
     turns, eyes = cameras(1)
     still, = render.frames(tracer, quadrics, solid_values, turns, eyes, lamp, half_view, image_shape)
-    save_figure(render.draw_frame(still), "glass_cyclide")
+    save_figure(image_figure(still), "glass_cyclide")
     turns, eyes = cameras(n_frames)
     save_animation(list(render.frames(tracer, quadrics, solid_values, turns, eyes, lamp, half_view, animation_shape)),
                    "glass_cyclide", duration_ms)

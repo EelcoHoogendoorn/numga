@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.wgsl import Shader, supersampled
+from examples.wgsl import Shader, image_figure, supersampled
 from examples.math.spherical_synchronization.core import Cut, Point, Rotor, ga, mv
 
 size = 500
@@ -155,12 +155,7 @@ def picture(population: Point, circles: Cut) -> np.ndarray:
 
 def draw(population: Point, circles: Cut) -> plt.Figure:
     """Draw one population and the circles carried alongside it."""
-    image = picture(population, circles)
-    figure, ax = plt.subplots(figsize=(size / 100, size / 100), dpi=100)
-    ax.imshow(image)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
+    return image_figure(picture(population, circles))
 
 
 def frames(population: Point, circles: Cut) -> list[np.ndarray]:

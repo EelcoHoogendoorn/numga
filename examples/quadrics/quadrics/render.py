@@ -1,12 +1,26 @@
-"""Drawing and coordinate readout for the ellipsoid example."""
+"""Drawing and coordinate readout for the ellipsoid example, on the GPU: the ellipsoid traced as the quadric it is,
+translucent, the tangent plane a patch about its contact point, and the points balls."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.quadrics.quadrics.core import DualQuadric, Plane, Point, ga, mv, support_plane
+from examples.wgsl import compose, meshes, show, solids
+
+ELLIPSOID = np.array(to_rgb("#0284c7"))
+CONTACT = np.array(to_rgb("#e11d48"))
+background = np.ones(3)
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the ellipsoids as a
+# share of the larger side, and the pixels across each panel.
+ELEVATION, AZIMUTH = np.radians(23.0), np.radians(128.0)
+MARGIN, N_PIXELS = 0.25, 700
+# The opacities of the ellipsoid and the tangent patch; the radii of the centre and the contact point, in pixels.
+ELLIPSOID_OPACITY, PATCH_OPACITY = 0.35, 0.4
+CENTRE_RADIUS, CONTACT_RADIUS = 6.0, 8.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -25,35 +39,39 @@ def euclidean(points: Point) -> np.ndarray:
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
+def tangent_patch(quadric: DualQuadric, tangent: Plane, contact: Point) -> np.ndarray:
+    """The corners `[4, 3]` of a square piece of the tangent plane about the contact point, its side in proportion
+    to the ellipsoid."""
+    contact_xyz = euclidean(contact)
+    # A basis of the plane's normal complement also handles vertical planes.
+    normal = tangent.cast(ga.subspace("x y z w")).kernel[..., :3]
+    _, _, frame = np.linalg.svd(normal[None, :])
+    extent = np.ptp(euclidean(surface(quadric)).reshape(-1, 3), axis=0).max()
+    square = 0.22 * extent * np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
+    return contact_xyz + square[:, :1] * frame[1] + square[:, 1:] * frame[2]
+
+
 def draw_panels(panels: list) -> plt.Figure:
-    """Draw each ellipsoid with a tangent patch and its contact point."""
-    fig = plt.figure(figsize=(7 * len(panels), 6), dpi=120, layout="constrained")
-    for index, (quadric, tangent, contact) in enumerate(panels, start=1):
-        ax = fig.add_subplot(1, len(panels), index, projection="3d")
-        xyz = euclidean(surface(quadric))
-        ax.plot_wireframe(*np.moveaxis(xyz, -1, 0), color="#0284c7", alpha=0.4,
-                          rstride=2, cstride=2, linewidth=0.7)
-        center = euclidean(quadric(mv.w))
-        contact_xyz = euclidean(contact)
-        ax.scatter(*center, color="#0284c7", s=40)
-        ax.scatter(*contact_xyz, color="#e11d48", s=60)
-
-        # A basis of the plane's normal complement also handles vertical planes.
-        normal = tangent.cast(ga.subspace("x y z w")).kernel[..., :3]
-        _, _, frame = np.linalg.svd(normal[None, :])
-        extent = np.ptp(xyz.reshape(-1, 3), axis=0).max()
-        u = np.linspace(-0.22, 0.22, 2)[:, None] * extent
-        v = np.linspace(-0.22, 0.22, 2)[None, :] * extent
-        patch = contact_xyz + u[..., None] * frame[1] + v[..., None] * frame[2]
-        ax.plot_surface(*np.moveaxis(patch, -1, 0), color="#e11d48", alpha=0.25)
-
-        ax.set(xlabel="x", ylabel="y", zlabel="z")
-        ax.set_box_aspect([1, 1, 1])
-        half_width = extent * 0.6
-        for coordinate, set_limit in zip(center, (ax.set_xlim, ax.set_ylim, ax.set_zlim)):
-            set_limit(coordinate - half_width, coordinate + half_width)
-        ax.view_init(elev=23, azim=38)
-    return fig
+    """Draw each ellipsoid with a tangent patch, its contact point and its centre, each panel framing its own
+    ellipsoid at one scale for all."""
+    patches = [tangent_patch(quadric, tangent, contact) for quadric, tangent, contact in panels]
+    views = [solids.view([solids.mv.point(euclidean(surface(quadric))), solids.mv.point(patch)], 0.0, ELEVATION,
+                         AZIMUTH, MARGIN, N_PIXELS) for (quadric, _, _), patch in zip(panels, patches)]
+    half = np.max([view.half for view in views], axis=0)
+    figure = plt.figure(figsize=(len(panels) * N_PIXELS / 100, views[0]._replace(half=half).shape[0] / 100), dpi=100)
+    for index, ((quadric, _, contact), patch, view) in enumerate(zip(panels, patches, views)):
+        view = view._replace(half=half)
+        # The ellipsoid's point quadric, which pairs each point with its polar plane: the inverse of the dual quadric.
+        body = solids.layer([(quadric.inverse()[None, None], ELLIPSOID)], view)
+        marks = solids.layer([(solids.ball(solids.mv.point(euclidean(quadric(mv.w))), CENTRE_RADIUS * view.pixel)
+                               [None, None], ELLIPSOID),
+                              (solids.ball(solids.mv.point(euclidean(contact)), CONTACT_RADIUS * view.pixel)
+                               [None, None], CONTACT)], view)
+        corners, quad = solids.mv.point(patch), np.array([[0, 1, 2], [0, 2, 3]])
+        plane = meshes.layer(corners, quad, CONTACT, meshes.flat(corners, quad), view, gloss=0.1)
+        image = compose([(*body, ELLIPSOID_OPACITY), (*plane, PATCH_OPACITY), (*marks, 1.0)], background)
+        show(figure.add_axes((index / len(panels), 0.0, 1 / len(panels), 1.0)), image, view)
+    return figure
 
 
 def draw_polar_reciprocity(dual: DualQuadric, tangent: Plane, contact: Point, recovered: Plane) -> plt.Figure:

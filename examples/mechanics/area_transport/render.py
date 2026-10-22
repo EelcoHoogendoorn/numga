@@ -1,4 +1,6 @@
-"""The cube's faces, oriented patches and volume."""
+"""The cube's faces, oriented patches and volume: the deformed cube on the GPU, each face a translucent layer of its
+own so that every face shows through the others, its edges rods, and each patch an arrow from its face's centre, as
+long as its area; beside it, the areas and the volume as bars."""
 
 from __future__ import annotations
 
@@ -7,40 +9,79 @@ from collections.abc import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.animation import capture
 from examples.mechanics.area_transport import core
+from examples.wgsl import compose, meshes, show, solids
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
+# The cube's twelve edges: the corners, numbered by their bits along x, y and z, joined across each bit.
+EDGES = np.array([(corner, corner | bit) for bit in (4, 2, 1) for corner in range(8) if not corner & bit])
 COLOURS = ("#2563eb", "#0d9488", "#f97316")
-LIMIT = 0.95
+EDGE_COLOUR = "#334155"
 ARROW_SCALE = 0.36
+background = np.ones(3)
+# The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the cubes as a share
+# of the larger side, and the pixels across a picture.
+elevation, azimuth = np.radians([23.0, -57.0 + 90.0])
+margin = 0.16
+n_pixels = 520
+# The faces' opacity; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
+# arrow's, and its radius a share of its own length.
+face_opacity = 0.2
+edge_radius = 1.5
+shaft_radius = 2.5
+head_share = 0.25
+head_width = 0.4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def cube(ax: Axes, vertices: core.Point, centres: core.Point, patches: core.Patch) -> None:
-    corners = vertices.cast(core.ga.subspace("yz zx xy")).kernel
-    starts = centres.cast(core.ga.subspace("yz zx xy")).kernel
-    # Each patch drawn as its normal, as long as its area.
-    arrows = patches.cast(core.ga.subspace("x y z")).kernel
-    ax.add_collection3d(Poly3DCollection(
-        corners[FACES], facecolors=COLOURS * 2, alpha=0.20,
-        edgecolors="#334155", linewidths=1.3,
-    ))
-    ax.quiver(*starts.T, *(arrows * ARROW_SCALE).T, color=COLOURS * 2,
-              arrow_length_ratio=0.2, linewidth=2)
-    ax.set(xlim=(-LIMIT, LIMIT), ylim=(-LIMIT, LIMIT), zlim=(-LIMIT, LIMIT))
-    ax.set_box_aspect((1, 1, 1), zoom=1.2)
-    ax.view_init(elev=23, azim=-57)
-    ax.set_axis_off()
+def coordinates(points: core.Point) -> np.ndarray:
+    """The x, y and z coordinates of points, antivectors, `[..., 3]`."""
+    return points.cast(core.ga.subspace("yz zx xy")).kernel
+
+
+def arrow_ends(centres: core.Point, patches: core.Patch) -> np.ndarray:
+    """Where each patch's arrow ends, `[..., 3]`: its face's centre, moved along the patch's normal as far as its
+    area."""
+    return coordinates(centres) + patches.cast(core.ga.subspace("x y z")).kernel * ARROW_SCALE
+
+
+def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
+    """A view framing every cube and arrow given."""
+    points = [solids.mv.point(coordinates(vertices)), solids.mv.point(arrow_ends(centres, patches))]
+    return solids.view(points, 0.0, elevation, azimuth, margin, n_pixels)
+
+
+def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
+    """The cube as the view sees it: its faces translucent, its edges and arrows opaque."""
+    corners = coordinates(vertices)                                            # [vertices, 3]
+    places = solids.mv.point(corners)
+    starts, ends = coordinates(centres), arrow_ends(centres, patches)           # [faces, 3]
+    # A crushed face has no area: nothing to draw, and no arrow.
+    lengths = np.linalg.norm(ends - starts, axis=-1)
+    shown = lengths > view.pixel
+    colours = np.array([to_rgb(colour) for colour in COLOURS * 2])            # [faces, 3]
+    shafts, heads = solids.arrows(solids.mv.point(starts[shown]), solids.mv.point(ends[shown]),
+                                  shaft_radius * view.pixel, head_share * lengths[shown], head_width * head_share * lengths[shown])
+    edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
+    edge_colour = np.array(to_rgb(EDGE_COLOUR))
+    opaque = solids.layer([(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour),
+                          (joints, edge_colour)], view)
+    # Each face its own layer, two triangles of its quad.
+    triangles = FACES[:, [[0, 1, 2], [0, 2, 3]]]                               # [faces, 2, 3]
+    faces = [meshes.layer(places, face, colour, meshes.flat(places, face), view, gloss=0.1)
+             for face, colour in zip(triangles[shown], colours[shown])]
+    return compose([(*opaque, 1.0)] + [(*face, face_opacity) for face in faces], background)
 
 
 def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
     areas = patches[:3].norm().kernel[..., 0]
     values = np.concatenate([areas, volume.kernel])
-    ax.bar(np.arange(len(values)), values, color=(*COLOURS, "#334155"), width=0.58)
+    ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
     ax.set(xticks=[], ylim=(0, 1.35))
     ax.spines[["top", "right"]].set_visible(False)
@@ -51,15 +92,16 @@ def comparison(vertices: core.Point, centres: core.Point, patches: core.Patch, v
     normal to x, y and z and the volume, against the unit cube's."""
     figure = plt.figure(figsize=(12, 6.5), layout="constrained")
     count = vertices.shape[0]
+    seen = view(vertices, centres, patches)
     for i in range(count):
-        cube(figure.add_subplot(2, count, i + 1, projection="3d"), vertices[i], centres[i], patches[i])
+        show(figure.add_subplot(2, count, i + 1), picture(vertices[i], centres[i], patches[i], seen), seen)
         measures(figure.add_subplot(2, count, count + i + 1), patches[i], volume[i])
     return figure
 
 
-def frame(vertices: core.Point, centres: core.Point, patches: core.Patch, volume: core.Scalar) -> np.ndarray:
+def frame(image: np.ndarray, view: solids.View, patches: core.Patch, volume: core.Scalar) -> np.ndarray:
     figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
-    cube(figure.add_subplot(1, 2, 1, projection="3d"), vertices, centres, patches)
+    show(figure.add_subplot(1, 2, 1), image, view)
     measures(figure.add_subplot(1, 2, 2), patches, volume)
     pixels = capture(figure)
     plt.close(figure)
@@ -67,4 +109,9 @@ def frame(vertices: core.Point, centres: core.Point, patches: core.Patch, volume
 
 
 def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> list[np.ndarray]:
-    return [frame(vertices, centres, patches, volume) for vertices, centres, patches, volume in frames]
+    """The frames, all from one camera framing every frame's cube."""
+    frames = list(frames)
+    vertices, centres, patches, _ = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...]
+    seen = view(vertices, centres, patches)
+    return [frame(picture(vertices, centres, patches, seen), seen, patches, volume)
+            for vertices, centres, patches, volume in frames]

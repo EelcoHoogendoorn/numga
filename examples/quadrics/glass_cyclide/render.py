@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.glass_cyclide import core
@@ -237,11 +236,3 @@ def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, turns: core.Rot
         traced = tracer(shape, quadrics=quadrics, solids=solids, turn=turn, eye=eye, lamp=lamp, half_view=half_view)["image"]
         yield np.round(np.clip(traced, 0, 1) ** (1 / 1.2) * 255).astype(np.uint8)
 
-
-def draw_frame(frame: np.ndarray) -> plt.Figure:
-    """An image `[rows, columns, 3]`, edge to edge."""
-    figure = plt.figure(figsize=(7, 7 * frame.shape[0] / frame.shape[1]))
-    ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow(frame)
-    ax.set_axis_off()
-    return figure
