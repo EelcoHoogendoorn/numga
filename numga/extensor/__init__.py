@@ -1,3 +1,3 @@
 """Unified concrete Extensor runtime."""
 
-from numga.extensor.extensor import Extensor, concatenate, stack
+from numga.extensor.extensor import Extensor, concatenate, stack, where

@@ -25,12 +25,12 @@ https://academic.oup.com/mnras/article/515/1/1316/6631564
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
 import numpy as np
 
-from numga import NumpyContext, concatenate
+from numga import NumpyContext, concatenate, where
 from numga.algebras import STA as ga
 from numga.extensor import Extensor
 
@@ -52,6 +52,8 @@ GaugeField = ga.gatype((Antivector, Antivector))             # Antivector <- Ant
 # direction within that slice.
 time = -mv.t.dual()                                          # [] Antivector
 space = Antivector - time * (mv.t & Antivector)              # Antivector <- Antivector
+# The crossings of the disk a camera ray keeps: its direct, secondary and tertiary images, and one more.
+CROSSINGS = 4
 
 
 # --- math -----------------------------------------------------------------------------
@@ -289,49 +291,74 @@ def disk_crossing(start: tuple[Extensor, ...], end: tuple[Extensor, ...], normal
     return state, field(state[0], spin, mass).radius                                        # [...] state, [...] Scalar
 
 
-def resolutions(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-                inner_radius: Scalar, outer_radius: float, opacity: Callable[[Antivector, Vector, Scalar], Scalar],
-                escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Iterator[Image]:
-    """The camera rays resolved at each step. Each crossing of the disk, between its radii, gives its
-    state there and its weight: the disk's opacity, for the crossing's event, momentum and oblate
-    radius, times the share of the ray not yet absorbed. Rays
-    escaping give their directions, weighted by what is left of them. A ray ends when absorbed,
-    escaped or captured; the rays still unresolved are sent back to the integrator."""
-    pixels = np.arange(pixel_count)
-    remaining = mv.scalar(np.ones((pixel_count, 1)))                                        # [rays] Scalar
-    # Sending nothing starts the trace; every later send names the rays still traced.
-    keep = None
-    while pixels.size:
-        step = steps.send(keep)
-        crossing = step.crossing(normal)
-        at_plane, radii = disk_crossing(tuple(value[crossing] for value in step.start),
-                                        tuple(value[crossing] for value in step.end), normal, spin, mass)  # [crossings] state, [crossings] Scalar
-        on_disk = np.flatnonzero((radii >= inner_radius) & (radii <= outer_radius))
-        crossing, at_plane, radii = crossing[on_disk], tuple(value[on_disk] for value in at_plane), radii[on_disk]
-        weights = remaining[crossing] * opacity(at_plane[0], at_plane[1], radii)            # [crossings] Scalar
-        remaining = replaced(remaining, crossing, remaining[crossing] - weights)            # [rays] Scalar
-        escaped, keep = step.outcomes(remaining, escape_radius, capture_radius)
-        # An escaped ray's direction is its tangent, its momentum carried through the gauge field.
-        directions, _ = rates(step.end[0][escaped], step.end[1][escaped], spin, mass)       # [escaped] Antivector
-        yield Image(pixels[crossing], at_plane, radii, weights, pixels[escaped], directions, remaining[escaped])
-        pixels, remaining = pixels[keep], remaining[keep]
+def resolve(state: tuple[Extensor, ...], spin: Spin, mass: float, step_fraction: float, n_steps: int,
+            dynamics: Callable[..., tuple[Extensor, ...]], normal: Vector, inner_radius: Scalar, outer_radius: float,
+            opacity: Callable[[Antivector, Vector, Scalar], Scalar], escape_radius: float,
+            capture_radius: float) -> tuple[Image, tuple[Extensor, ...]]:
+    """The camera rays traced and resolved together, by fourth-order steps each a fraction of the oblate radius, in
+    one compiled loop. Every ray keeps its place and stops where it ends: absorbed, escaped or captured. Each crossing
+    of the disk between its radii takes the disk's opacity there of the light the ray has left, kept as the next of its
+    `CROSSINGS` crossings; a ray escaping leaves its direction, its tangent with its momentum carried through the gauge
+    field, and what light is left for the sky. The state is an event and a momentum, and the rays' screen when
+    `dynamics` transports one; the image comes with the state each ray stopped in."""
+    import jax
+    from numga.backend.jax import JaxContext
 
+    # Sparse execution spells each product as its nonzero terms, which XLA fuses across the wide batch of rays.
+    context = JaxContext(ga, execution="sparse")
+    n_rays = state[0].shape[0]
+    # The loop carries the event in the full antivector layout, whatever layout the rays start in.
+    event, *rest = state
+    traced = tuple(value.materialize(context) for value in (event.retyped(Antivector), *rest))
+    remaining = mv.scalar(np.ones((n_rays, 1))).materialize(context)                       # [rays] Scalar
+    # Each ray's crossings, empty while their weight is zero, and its escape, empty likewise.
+    crossed = tuple(value[:, None].broadcast_to((n_rays, CROSSINGS)) for value in traced)    # [rays, crossings] state
+    crossed_radii, crossed_weights = remaining[:, None] * np.zeros(CROSSINGS), remaining[:, None] * np.zeros(CROSSINGS)
+    filled = np.zeros(n_rays, dtype=int)                                                   # [rays]
+    sky, sky_weights = traced[0], remaining * 0                                            # [rays] Antivector, Scalar
 
-def resolve(steps: Generator[Step, np.ndarray, None], pixel_count: int, normal: Vector,
-            inner_radius: Scalar, outer_radius: float, opacity: Callable[[Antivector, Vector, Scalar], Scalar],
-            escape_radius: float, capture_radius: float, spin: Spin, mass: float) -> Image:
-    """What every camera ray met, gathered over all steps."""
-    parts = tuple(resolutions(steps, pixel_count, normal, inner_radius, outer_radius, opacity,
-                              escape_radius, capture_radius, spin, mass))
-    return Image(
-        np.concatenate([part.disk_pixels for part in parts]),
-        tuple(concatenate(list(values), axis=0) for values in zip(*(part.disk for part in parts))),
-        concatenate([part.disk_radii for part in parts], axis=0),
-        concatenate([part.disk_weights for part in parts], axis=0),
-        np.concatenate([part.sky_pixels for part in parts]),
-        concatenate([part.sky_directions for part in parts], axis=0),
-        concatenate([part.sky_weights for part in parts], axis=0),
-    )
+    def going(state: tuple[Extensor, ...], remaining: Scalar) -> np.ndarray:
+        """The rays still traced: with light left, neither escaped nor captured."""
+        radius = field(state[0], spin, mass).radius                                        # [rays] Scalar
+        return (remaining > 0) & (radius <= escape_radius) & (radius >= capture_radius)    # [rays]
+
+    def step(carry):
+        index, state, remaining, crossed, crossed_radii, crossed_weights, filled, sky, sky_weights = carry
+        traced = going(state, remaining)                                                   # [rays]
+        # A ray that has ended takes no step.
+        size = where(traced, step_fraction * field(state[0], spin, mass).radius, remaining * 0)   # [rays] Scalar
+        end = runge_kutta(lambda *values: dynamics(*values, spin, mass), state, size)
+        # A crossing of the disk between its radii, where the segment changes side of its plane.
+        at_plane, radii = disk_crossing(state, end, normal, spin, mass)                    # [rays] state, Scalar
+        crossing = traced & ((normal & state[0]) * (normal & end[0]) <= 0) & (radii >= inner_radius) & (radii <= outer_radius)
+        weights = where(crossing, remaining * opacity(at_plane[0], at_plane[1], radii), remaining * 0)
+        remaining = remaining - weights
+        # The crossing is stored as its ray's next one.
+        into = crossing[:, None] & (np.arange(CROSSINGS) == filled[:, None])               # [rays, crossings]
+        crossed = tuple(where(into, value[:, None], crossed_value) for value, crossed_value in zip(at_plane, crossed))
+        crossed_radii, crossed_weights = where(into, radii[:, None], crossed_radii), where(into, weights[:, None], crossed_weights)
+        filled = filled + crossing
+        # A ray leaving the escape radius with light left gives the sky its direction and that light.
+        escaping = traced & (remaining > 0) & (field(end[0], spin, mass).radius > escape_radius)
+        tangent, _ = rates(end[0], end[1], spin, mass)
+        sky, sky_weights = where(escaping, tangent, sky), where(escaping, remaining, sky_weights)
+        return index + 1, end, remaining, crossed, crossed_radii, crossed_weights, filled, sky, sky_weights
+
+    def unfinished(carry) -> bool:
+        """Steps are left, and some ray is still traced."""
+        index, state, remaining = carry[:3]
+        return (index < n_steps) & going(state, remaining).any()
+
+    carry = (0, traced, remaining, crossed, crossed_radii, crossed_weights, filled, sky, sky_weights)
+    _, *carry = jax.jit(lambda carry: jax.lax.while_loop(unfinished, step, carry))(carry)
+    traced, _, crossed, crossed_radii, crossed_weights, _, sky, sky_weights = jax.tree_util.tree_map(
+        lambda value: value.materialize(mv.context) if isinstance(value, Extensor) else np.asarray(value), carry,
+        is_leaf=lambda value: isinstance(value, Extensor))
+    rays, crossing_idx = np.nonzero(crossed_weights > 0)
+    escaped = np.flatnonzero(sky_weights > 0)
+    image = Image(rays, tuple(value[rays, crossing_idx] for value in crossed), crossed_radii[rays, crossing_idx], crossed_weights[rays, crossing_idx],
+                  escaped, sky[escaped], sky_weights[escaped])
+    return image, traced
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -352,27 +379,6 @@ class Field:
 
 
 @dataclass(frozen=True)
-class Step:
-    """One integration step of a batch of rays: their state at its start and at its end, and their
-    oblate radius at the end."""
-    start: tuple[Extensor, ...]
-    end: tuple[Extensor, ...]
-    radius: Scalar
-
-    def crossing(self, normal: Vector) -> np.ndarray:
-        """The rays whose segment crosses the plane `normal`."""
-        return np.flatnonzero((normal & self.start[0]) * (normal & self.end[0]) <= 0)
-
-    def outcomes(self, remaining: Scalar, escape_radius: float, capture_radius: float) -> tuple[np.ndarray, np.ndarray]:
-        """The rays escaping at the end of the step with light left, and the rays still traced: those
-        with light left, neither escaped nor captured."""
-        lit = remaining > 0
-        escaped = np.flatnonzero(lit & (self.radius > escape_radius))
-        traced = np.flatnonzero(lit & (self.radius <= escape_radius) & (self.radius >= capture_radius))
-        return escaped, traced
-
-
-@dataclass(frozen=True)
 class Image:
     """What camera rays met: their crossings of the disk, by pixel, with the ray's state there (event,
     momentum and, when transported, screen), the oblate radius and the share of the pixel's light the
@@ -385,13 +391,6 @@ class Image:
     sky_pixels: np.ndarray
     sky_directions: Antivector
     sky_weights: Scalar
-
-
-def replaced(values: Extensor, indices: np.ndarray, entries: Extensor) -> Extensor:
-    """`values` along their first axis with those at `indices` replaced by `entries`, built anew."""
-    rest = np.setdiff1d(np.arange(values.shape[0]), indices)
-    order = np.argsort(np.concatenate([rest, indices]))
-    return concatenate([values[rest], entries], axis=0)[order]
 
 
 def cube_root(value: Scalar) -> Scalar:
@@ -420,21 +419,30 @@ def initial_momentum(position: Antivector, direction: Antivector, spin: Spin, ma
 
 
 def trace(position: Antivector, momentum: Vector, spin: Spin, mass: float,
-          step_size: float, steps: int, stop_fraction: float,
-          dynamics: Callable[[Antivector, Vector, Spin, float], tuple[Antivector, Vector]]) -> Iterator[tuple[Antivector, Vector]]:
-    """Batched fourth-order steps; captured rays slow towards a surface inside the horizon.
+          step_size: float, n_steps: int, stop_fraction: float,
+          dynamics: Callable[[Antivector, Vector, Spin, float], tuple[Antivector, Vector]]) -> tuple[Antivector, Vector]:
+    """Batched fourth-order steps in one compiled loop; captured rays slow towards a surface inside the horizon.
+    The events and momenta along the paths, `[steps + 1, ...]`, include the starting state.
 
     The affine step is reduced only inside the horizon. This changes sampling, not the ray path,
-    and keeps every stage away from the singularity. Returned events include the starting state.
+    and keeps every stage away from the singularity.
     """
+    import jax
+    from numga.backend.jax import JaxContext
+
     horizon = mass + (mass**2 + spin.squared()).square_root()
-    state = (position, momentum)
-    yield state
-    for _ in range(steps):
+
+    def step(state: tuple[Antivector, Vector], _) -> tuple[tuple[Antivector, Vector], tuple[Antivector, Vector]]:
         radius = field(state[0], spin, mass).radius
         clock = ((radius / horizon - stop_fraction) / (1 - stop_fraction)).clip(0, 1)
         state = runge_kutta(lambda *values: dynamics(*values, spin, mass), state, step_size * clock)
-        yield state
+        return state, state
+
+    # Sparse execution spells each product as its nonzero terms, which XLA fuses across the wide batch of rays.
+    context = JaxContext(ga, execution="sparse")
+    start = (position.retyped(Antivector).materialize(context), momentum.retyped(Vector).materialize(context))
+    _, later = jax.jit(lambda start: jax.lax.scan(step, start, length=n_steps))(start)    # [steps, ...] state
+    return tuple(concatenate([first[None], after]).materialize(mv.context) for first, after in zip(start, later))
 
 
 def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_height: int,
@@ -447,6 +455,7 @@ def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_hei
     direction = direction / direction.squared().square_root()
     momentum = -initial_momentum(eye, -direction, spin, mass)
     momentum = momentum.reshape(-1)
+    # Every ray starts at the eye, as an event of the whole of spacetime, the type its steps carry.
     return eye.broadcast_to(momentum.shape), momentum
 
 
@@ -467,14 +476,3 @@ def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
     return right * (mv.x & Screen) + up * (mv.y & Screen)                                   # [...] Antivector <- Screen
 
 
-def camera_trace(state: tuple[Extensor, ...], spin: Spin, mass: float, step_fraction: float, steps: int,
-                 dynamics: Callable[..., tuple[Extensor, ...]]) -> Generator[Step, np.ndarray, None]:
-    """Fourth-order steps of camera rays, each a fraction of the oblate radius; the consumer sends
-    back the indices of the rays still traced. The state is an event and a momentum, and the rays'
-    screen when `dynamics` transports one."""
-    radius = field(state[0], spin, mass).radius
-    for _ in range(steps):
-        end = runge_kutta(lambda *values: dynamics(*values, spin, mass), state, step_fraction * radius)
-        end_radius = field(end[0], spin, mass).radius
-        keep = yield Step(state, end, end_radius)
-        state, radius = tuple(value[keep] for value in end), end_radius[keep]

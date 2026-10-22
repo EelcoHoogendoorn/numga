@@ -5,7 +5,7 @@ from fractions import Fraction
 import numpy as np
 import pytest
 
-from numga import GATypeError
+from numga import GATypeError, where
 
 from numga.algebra import Algebra
 from numga.backend import NumpyContext
@@ -303,6 +303,18 @@ def test_at_add_accumulates_where_the_index_repeats():
     expected = np.zeros((2, 3, 3))
     np.add.at(expected, (slice(None), ends), np.arange(24.0).reshape(2, 4, 3))
     np.testing.assert_array_equal(summed.kernel, expected)
+
+
+def test_where_selects_per_element_and_unions_layouts():
+    # A ray that has stopped keeps its event: the step it did not take may be anything, a 0/0 included.
+    context = NumpyContext(Algebra("x+y+z+"))
+    mv = context.multivector
+    with np.errstate(invalid="ignore"):
+        stepped = mv.x * (np.array([1.0, 0.0]) / np.array([1.0, 0.0]))                  # [2] Vector, nan in the second
+    kept = mv.y * np.array([2.0, 3.0]) + mv.z                                          # [2] Vector
+    chosen = where(np.array([True, False]), stepped, kept)                             # [2] Vector
+    np.testing.assert_array_equal((chosen - (mv.x * np.array([1.0, 0.0]) + mv.y * np.array([0.0, 3.0])
+                                             + mv.z * np.array([0.0, 1.0]))).kernel, 0)
 
 
 def test_numpy_context_rejects_lossy_numeric_kind_changes():

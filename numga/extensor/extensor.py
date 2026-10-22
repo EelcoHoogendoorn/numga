@@ -894,3 +894,16 @@ def stack(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
 
 def concatenate(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
     return Extensor.concatenate(extensors, axis=axis)
+
+
+def where(condition: Any, if_true: Extensor, if_false: Extensor) -> Extensor:
+    """Each element of `if_true` where the condition, an array over the batch axes, holds, and of `if_false` where it
+    does not, as `np.where`: a value not chosen never reaches the result, as it would through a blend by a mask, so
+    an element may hold anything, a 0/0 included, where it is not chosen."""
+    context = binding_context(if_true.context, (if_false.context,))
+    values = (context.lower(if_true), context.lower(if_false))
+    gatype = _stacked_type(values)
+    kernels = tuple(_embed_kernel(context, value, gatype.subspaces) for value in values)
+    mask = context.xp.asarray(condition)
+    mask = context.xp.reshape(mask, mask.shape + (1,) * len(gatype.structural_shape))
+    return Extensor._from_prepared_kernel(context, gatype, context.xp.where(mask, *kernels))

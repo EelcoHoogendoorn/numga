@@ -3,7 +3,7 @@
 from .algebra import Algebra, AlgebraDescription
 from .backend import Context, ExactContext, NumpyContext
 from .binding import AxisTransform, AxisTransformKind, BindingPlan
-from .extensor import Extensor, concatenate, stack
+from .extensor import Extensor, concatenate, stack, where
 from .extension import ExtensionMethod
 from . import expression
 from .gatype import (
