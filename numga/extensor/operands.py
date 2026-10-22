@@ -71,7 +71,11 @@ def scalar(context: Context, number: Number) -> Extensor:
 
 def batch(context: Context, values: Any) -> Extensor:
     """A raw array as a batch of scalars of exactly the array's shape: the structural axis is always
-    appended, so a trailing axis of length one is batch, never structural."""
+    appended, so a trailing axis of length one is batch, never structural. A JAX array, traced or not, is a batch of
+    JAX scalars whatever it meets, so that NumPy operands are carried into JAX with it."""
+    if context.key[0] == "numpy" and type(values).__module__.split(".")[0] in ("jax", "jaxlib"):
+        from numga.backend.jax import JaxContext
+        context = JaxContext(context.algebra)
     return context.multivector.scalar(values[..., None])
 
 

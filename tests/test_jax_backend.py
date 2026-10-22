@@ -165,6 +165,10 @@ def test_numpy_extensors_are_constants_to_jax_ones():
     for result in (eager, traced):
         assert result.context.key[0] == "jax"
         np.testing.assert_allclose(np.asarray(result.kernel), expected.kernel, atol=1e-12)
+    # A JAX number scaling a NumPy extensor is a JAX scalar, traced or not.
+    scaled = jax.jit(lambda amount: mv.x * amount)(jnp.asarray(2.0))
+    assert scaled.context.key[0] == "jax"
+    np.testing.assert_allclose(np.asarray(scaled.kernel), (mv.x * 2.0).kernel)
 
 
 def test_a_retyped_start_carries_through_a_scan():

@@ -110,7 +110,11 @@ def coil(n_pieces: int) -> tuple[core.Twist, core.Motor]:
 
 def pulled() -> Iterator[core.Motor]:
     """The cord's frames at every frame of the scene: hanging from its base under its weight, its handset
-    pulled out along the coil's axis, held, and let back, the cord following by its dynamics."""
+    pulled out along the coil's axis, held, and let back, the cord following by its dynamics. A frame's steps run
+    under `jax.lax.scan`: each is many small operations on a short cord, which the compiled loop does at once."""
+    import jax
+    from numga.backend.jax import JaxContext
+
     n_pieces = N_CORD_COILS * N_PER_COIL
     step = CORD_LENGTH / n_pieces
     rest, frames = coil(n_pieces)
@@ -122,15 +126,23 @@ def pulled() -> Iterator[core.Motor]:
     # The coil's axis is the direction of its turn; the handset moves along it, keeping its turn.
     axis = cord_tilt() >> mv.x                                               # [] Vector
     handset = frames[-1]
-    rates = mv.bivector(np.zeros((n_pieces, 6)))
     joint = (rest * (step / 2)).exp()                                        # [] Motor
-    for index in range(N_CORD_FRAMES):
-        yield frames
-        for tick in range(N_STEPS_PER_FRAME):
-            out = (((axis ^ mv.w) * (reach((index * N_STEPS_PER_FRAME + tick) * TIME_STEP) / 2)).exp() * handset)
-            frames = concatenate([frames[:-1], out[None]])
-            frames, rates = core.moving(frames, rates, joint, stiff, step, inertia, inverse, weight, CORD_DAMPING,
-                                        TIME_STEP)
+
+    def tick(state: tuple[core.Motor, core.Twist], out: float) -> tuple[tuple[core.Motor, core.Twist], None]:
+        frames, rates = state
+        # The handset placed out along the coil's axis, then the cord moved by its dynamics.
+        moved = concatenate([frames[:-1], (((axis ^ mv.w) * (out / 2)).exp() * handset)[None]])
+        return core.moving(moved, rates, joint, stiff, step, inertia, inverse, weight, CORD_DAMPING, TIME_STEP), None
+
+    # A frame's steps compiled into one loop over how far the handset is out at each, carrying the cord's segments as
+    # plain motors and their rates as twists.
+    frame = jax.jit(lambda state, outs: jax.lax.scan(tick, state, outs)[0])
+    outs = reach(np.arange(N_CORD_FRAMES * N_STEPS_PER_FRAME) * TIME_STEP).reshape(N_CORD_FRAMES, N_STEPS_PER_FRAME)
+    state = (frames.retyped(core.Motor).materialize(JaxContext(core.ga)),
+             mv.bivector(np.zeros((n_pieces, 6))).retyped(core.Twist).materialize(JaxContext(core.ga)))
+    for frame_outs in outs:
+        yield state[0].materialize(core.mv.context)
+        state = frame(state, frame_outs)
 
 
 # --- plumbing -------------------------------------------------------------------------
