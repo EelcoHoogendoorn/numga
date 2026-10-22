@@ -1,5 +1,6 @@
 """Drawing for the earthquake focal mechanisms: beachballs in the equal-area projection of the lower
-hemisphere, and the fault in space with the lobes of its P waves."""
+hemisphere, and the fault in space with the lobes of its P waves, on the GPU: the lobes a lit mesh, the fault a
+translucent disk, and the slip arrows."""
 
 from __future__ import annotations
 
@@ -7,21 +8,34 @@ from collections.abc import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LightSource, to_rgba
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.animation import capture
 from examples.mechanics.earthquake import core
+from examples.wgsl import compose, meshes, show, solids
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
 NODAL, PRESSURE, TENSION, SLIP = "#0f172a", "#0ea5e9", "#e11d48", "#f59e0b"
-# The lobes in space, pushing and pulling, and the light that shades them.
+# The lobes in space, pushing and pulling; the fault patch and its rim.
 PUSH_LOBE, PULL_LOBE = "#475569", "#e2e8f0"
-LIGHT = LightSource(azdeg=315, altdeg=45)
-# The half width of the fault patch, and of the view in space.
+FAULT, RIM = "#fde68a", "#b45309"
+# The radius of the fault patch, the opacity of each of its faces, front and back alike, and its thickness in pixels;
+# the slip arrows' offset from the fault, their reach behind its middle and their length.
 PATCH = 0.55
-LIMIT = 0.75
+PATCH_OPACITY, PATCH_THICKNESS = 0.16, 1.0
+OFFSET, BEHIND, SLIP_LENGTH = 0.15, 0.45, 0.9
+# The view in space, elevation and azimuth in radians, azimuth zero looking along +y; the margin as a share of
+# the larger side, and the pixels across a picture.
+ELEVATION, AZIMUTH = np.radians([24.0, -60.0 + 90.0])
+MARGIN = 0.12
+PIXELS = 440
+# The width of the rim and the radius of the slip arrows' shafts, in pixels; an arrow's head, its length a share of
+# the arrow's, and its radius a share of its own length.
+RIM_WIDTH, SHAFT_RADIUS = 2.4, 2.2
+HEAD_SHARE = 0.25
+HEAD_WIDTH = 0.4
 
 
 def coordinates(directions: core.Point) -> np.ndarray:
@@ -71,42 +85,74 @@ def draw_mechanisms(directions: core.Point, push: core.Scalar, axes: core.Point)
     return figure
 
 
-def draw_fault(ax, directions: core.Point, push: core.Scalar, normal: core.Point, slip: core.Point,
-               null: core.Point) -> None:
+def lobes(directions: core.Point, push: core.Scalar) -> np.ndarray:
+    """The lobes of the P waves in space `[rings, spokes, 3]`: each direction drawn as far as its first motion."""
+    return upright(directions) * np.abs(push.to_array())[..., None]
+
+
+def slip_arrows(normal: core.Point, slip: core.Point) -> tuple[np.ndarray, np.ndarray]:
+    """Where the slip of each side of the fault is drawn from and to `[sides, 3]`: just off the fault on the side's
+    face, along the side's slip."""
+    sides = np.array([1.0, -1.0])[:, None]                                   # [sides, 1]
+    starts = sides * (OFFSET * upright(normal) - BEHIND * upright(slip))
+    return starts, starts + sides * SLIP_LENGTH * upright(slip)
+
+
+def view(surfaces: np.ndarray, ends: np.ndarray) -> solids.View:
+    """A view framing lobes `[..., 3]` and arrows' ends `[..., 3]`."""
+    return solids.view([solids.mv.point(surfaces), solids.mv.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, PIXELS)
+
+
+def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, slip: core.Point,
+               view: solids.View) -> np.ndarray:
     """One fault in space: the patch of the fault, the slip of each side across it, and the lobes of
-    the P waves, each direction drawn as far as its first motion, pushes dark and pulls pale."""
-    # The rings in reverse, so that the cells of the surface face outwards, towards the light.
-    push = push.to_array()[::-1]
-    surface = upright(directions)[::-1] * np.abs(push)[..., None]
+    the P waves `[rings, spokes]`, each direction drawn as far as its first motion, pushes dark and pulls pale."""
+    surface = lobes(directions, push)                                         # [rings, spokes, 3]
+    # Each cell of the grid two triangles, by the indices of its corners.
+    index = np.arange(surface[..., 0].size).reshape(surface.shape[:-1])       # [rings, spokes]
+    cells = np.stack([index[:-1, :-1], index[1:, :-1], index[1:, 1:], index[:-1, 1:]], axis=-1)   # [rings - 1, spokes - 1, 4]
     # The colour of each cell by the sign at its middle: the nodal planes run along the grid lines.
-    middle = (push[1:, 1:] + push[:-1, :-1] + push[1:, :-1] + push[:-1, 1:])[..., None]
-    colours = np.where(middle > 0, to_rgba(PUSH_LOBE), to_rgba(PULL_LOBE))
-    ax.computed_zorder = False
-    ax.plot_surface(*np.moveaxis(surface, -1, 0), facecolors=colours, linewidth=0, antialiased=False, shade=True,
-                    lightsource=LIGHT, rstride=1, cstride=1, zorder=1)
-    normal, slip, null = upright(normal), upright(slip), upright(null)
-    angle = np.linspace(0, 2 * np.pi, 64, endpoint=False)[:, None]
-    rim = PATCH * (slip * np.cos(angle) + null * np.sin(angle))
-    ax.add_collection3d(Poly3DCollection([rim], alpha=0.3, facecolor="#fde68a", edgecolor="#b45309", linewidth=1.2, zorder=2))
-    for side in (1, -1):
-        base = side * 0.15 * normal - 0.45 * side * slip
-        ax.quiver(*base, *(0.9 * side * slip), color=SLIP, linewidth=2.6, arrow_length_ratio=0.25, zorder=3)
-    ax.set_xlim(-LIMIT, LIMIT)
-    ax.set_ylim(-LIMIT, LIMIT)
-    ax.set_zlim(-LIMIT, LIMIT)
-    ax.set_box_aspect([1, 1, 1])
-    ax.view_init(elev=24, azim=-60)
-    ax.set_axis_off()
+    values = push.to_array()
+    middle = values[1:, 1:] + values[:-1, :-1] + values[1:, :-1] + values[:-1, 1:]
+    colours = np.where(middle[..., None] > 0, to_rgb(PUSH_LOBE), to_rgb(PULL_LOBE))   # [rings - 1, spokes - 1, 3]
+    triangles = cells[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [cells * 2, 3]
+    colours = np.repeat(colours.reshape(-1, 1, 3), 2, axis=0)                 # [cells * 2, 1, 3]
+    # At the grid's poles a ring of directions gathers into one point: the halves of the cells there have no
+    # area and no normal, and are left out.
+    corners = surface.reshape(-1, 3)[triangles]                               # [cells * 2, 3, 3]
+    spanned = np.linalg.norm(np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]), axis=-1) > 0
+    places = solids.mv.point(surface.reshape(-1, 3))
+    lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, triangles[spanned]),
+                                  view)
+    # The patch: a thin disc about the source, square to the normal, reaching half the rim's width past the patch so
+    # that its rim, inked where the cylinder of the patch's radius about the normal meets it, lies whole on it.
+    across = PATCH_THICKNESS / 2 * view.pixel * upright(normal)              # [3]
+    faces = solids.mv.point(np.stack([-across, across]))                     # [2] Point
+    disc = solids.rods(faces[0], faces[1], PATCH + RIM_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
+    rim = solids.Ink(0, solids.rods(faces[0], faces[1], PATCH)[:1], solids.everywhere[None], np.array(to_rgb(RIM)),
+                     RIM_WIDTH, 1.0)
+    fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), PATCH_OPACITY)],
+                         meshes=[(*lobe_samples, 1.0)])
+    starts, ends = slip_arrows(normal, slip)
+    shafts, heads = solids.arrows(solids.mv.point(starts), solids.mv.point(ends), SHAFT_RADIUS * view.pixel,
+                                  HEAD_SHARE * SLIP_LENGTH, HEAD_WIDTH * HEAD_SHARE * SLIP_LENGTH)
+    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (heads, np.array(to_rgb(SLIP)))], view)
+    # The slip arrows lie inside the lobes, which meet the fault at the source: drawn over the fault and its lobes,
+    # in front.
+    return compose([(arrow_colour, np.full_like(arrow_depth, -np.inf), 1.0), (*fault, 1.0)], np.ones(3))
 
 
 def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar,
                                                                      core.Point, core.Scalar]]) -> list[np.ndarray]:
     """Each frame of the rake's turn: the fault in space with its P lobes, and its beachball over the
-    lower hemisphere."""
+    lower hemisphere; all from one camera framing every frame's lobes and arrows."""
+    frames = list(frames)
+    normals, slips, _, _, spheres, pushes = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...] each
+    seen = view(lobes(spheres, pushes), np.concatenate(slip_arrows(normals[:, None], slips[:, None])))
     images = []
-    for normal, slip, axes, ball, sphere, lobes in frames:
+    for normal, slip, axes, ball, sphere, push in frames:
         figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
-        draw_fault(figure.add_subplot(1, 2, 1, projection="3d"), sphere, lobes, normal, slip, axes[1])
+        show(figure.add_subplot(1, 2, 1), draw_fault(sphere, push, normal, slip, seen), seen)
         draw_ball(figure.add_subplot(1, 2, 2), hemisphere, ball, axes)
         figure.tight_layout()
         images.append(capture(figure))

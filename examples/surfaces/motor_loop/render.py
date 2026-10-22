@@ -1,21 +1,26 @@
-"""Refined surfaces over their control nets, with the frames of the motors."""
+"""Refined surfaces over their control nets, with the frames of the motors, drawn on the GPU: each surface a
+smooth-shaded mesh, the control net dashed rods, the frames' axes arrows."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 import numpy as np
 
-from examples.animation import capture
 from examples.surfaces.motor_loop import core
 from examples.surfaces.projective_loop.render import SURFACE_COLOUR, edges
+from examples.wgsl import meshes, solids
 
+sm = solids.mv
 AXIS_COLOURS = np.array([[0.85, 0.15, 0.15], [0.2, 0.65, 0.2], [0.15, 0.3, 0.85]])
-CONTROL_COLOUR = "0.15"
-ELEVATION, AZIMUTH = 12.0, -60.0
-# The direction towards the eye at that elevation and azimuth.
-EYE = np.array([np.cos(np.radians(ELEVATION)) * np.cos(np.radians(AZIMUTH)),
-                np.cos(np.radians(ELEVATION)) * np.sin(np.radians(AZIMUTH)), np.sin(np.radians(ELEVATION))])
+CONTROL_COLOUR = np.full(3, 0.15)
+background = np.ones(3)
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the ribbon as a
+# share of the larger side, and the pixels across each panel.
+ELEVATION, AZIMUTH = np.radians(12.0), np.radians(30.0)
+MARGIN, N_PIXELS = 0.2, 320
+# The dashes along each edge of the control net; the widths of the net and of the frames' axes, and the length and
+# width of the axes' heads, in pixels.
+N_DASHES = 4
+NET_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.4, 3.0, 9.0, 7.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -36,52 +41,29 @@ def separation(first: core.Point, second: core.Point) -> float:
     return float(np.linalg.norm(coordinates(first) - coordinates(second), axis=-1).max())
 
 
-def frame_axes(ax: plt.Axes, xyz: np.ndarray) -> None:
-    centre, half = (xyz.max(axis=0) + xyz.min(axis=0)) / 2, np.ptp(xyz, axis=0).max() / 2
-    ax.set(xlim=(centre[0] - half, centre[0] + half), ylim=(centre[1] - half, centre[1] + half), zlim=(centre[2] - half, centre[2] + half))
-    ax.set_box_aspect((1, 1, 1), zoom=1.3)
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
-
-
-def draw_shaded(ax: plt.Axes, xyz: np.ndarray, faces: np.ndarray) -> None:
-    """The faces lit from the eye, either side alike, each face's edges in its own colour so the faces join
-    without seams."""
-    triangles = xyz[faces]                                                     # [faces, 3, 3]
-    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
-    facing = np.abs(normals @ EYE) / np.linalg.norm(normals, axis=-1)
-    shaded = np.clip(SURFACE_COLOUR * (0.35 + 0.75 * facing[:, None]), 0, 1)
-    ax.add_collection3d(Poly3DCollection(triangles, facecolors=shaded, edgecolors=shaded, linewidths=0.4, zorder=1))
-
-
-def draw_net(ax: plt.Axes, xyz: np.ndarray, faces: np.ndarray) -> None:
-    """The control net, dashed, over the surface."""
-    ax.add_collection3d(Line3DCollection(xyz[edges(faces)], colors=CONTROL_COLOUR, linestyles="--", linewidths=1.1, zorder=2))
-
-
-def draw_frames(ax: plt.Axes, xyz: np.ndarray, width: float) -> None:
-    """Frames `[axes + 1, sites, 3]`, their origins first: each axis from the origin, x red, y green, z blue."""
-    segments = np.stack([np.broadcast_to(xyz[0], xyz[1:].shape), xyz[1:]], axis=2).reshape(-1, 2, 3)   # [axes * sites, ends, 3]
-    colours = np.repeat(AXIS_COLOURS, xyz.shape[1], axis=0)
-    ax.add_collection3d(Line3DCollection(segments, colors=colours, linewidths=width, zorder=3))
+def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, faces: np.ndarray,
+          view: solids.View) -> np.ndarray:
+    """A surface `[refined, 3]`, smooth shaded, with the control net, dashed, and the control frames `[axes + 1,
+    vertices, 3]`, their origins first: each axis an arrow from the origin, x red, y green, z blue."""
+    pixel = view.pixel
+    places = sm.point(surface)
+    sheet = meshes.samples(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view)
+    # Each edge of the net cut into equal pieces, one fewer than twice the dashes, every other piece a dash.
+    ends = frames[0][edges(control_faces)]                                     # [edges, 2, 3]
+    share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)[..., None]    # [dashes, 2, 1]
+    dashes = ends[:, None, None, 0] * (1 - share) + ends[:, None, None, 1] * share   # [edges, dashes, 2, 3]
+    shafts, heads = solids.arrows(sm.point(np.broadcast_to(frames[0], frames[1:].shape)), sm.point(frames[1:]),
+                                  AXIS_WIDTH / 2 * pixel, HEAD_LENGTH * pixel, HEAD_WIDTH / 2 * pixel)   # [axes, vertices, 3] each
+    colours = np.repeat(AXIS_COLOURS, frames.shape[1], axis=0)                 # [axes * vertices, 3]
+    marks = [(solids.rods(sm.point(dashes[..., 0, :]), sm.point(dashes[..., 1, :]), NET_WIDTH / 2 * pixel).reshape(-1, 3),
+              CONTROL_COLOUR), (shafts.reshape(-1, 3), colours), (heads.reshape(-1, 3), colours)]
+    return solids.draw(marks, view, background, meshes=[(*sheet, 1.0)])
 
 
 def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
-    """Per frame, the surfaces of each scheme side by side, each over the control net, dashed, and the
-    control frames."""
+    """Per frame, the surfaces of each scheme side by side, each with the control net, dashed, and the
+    control frames, seen by one camera framing every frame."""
     frames, surfaces = coordinates(control), coordinates(surfaces)           # [frames, axes + 1, vertices, 3], [frames, schemes, refined, 3]
-    extent = frames[:, 0].reshape(-1, 3)
-
-    def frame(index: int) -> np.ndarray:
-        figure = plt.figure(figsize=(8.0, 5.0), layout="constrained")
-        # Drawn in order, surface, net, frames, rather than sorted by depth, so the net and frames stay on top.
-        axes = [figure.add_subplot(1, 2, column + 1, projection="3d", computed_zorder=False) for column in range(surfaces.shape[1])]
-        for ax, surface in zip(axes, surfaces[index]):
-            draw_shaded(ax, surface, faces)
-            draw_net(ax, frames[index, 0], control_faces)
-            draw_frames(ax, frames[index], 2.0)
-            frame_axes(ax, extent)
-        pixels = capture(figure)
-        plt.close(figure)
-        return pixels
-    return [frame(index) for index in range(surfaces.shape[0])]
+    view = solids.view([sm.point(frames), sm.point(surfaces)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    return [np.concatenate([panel(frames[index], surface, control_faces, faces, view) for surface in surfaces[index]],
+                           axis=1) for index in range(len(frames))]

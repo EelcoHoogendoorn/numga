@@ -45,7 +45,7 @@ def test_scenario_renders():
     figures = [
         render.draw_scenegraph(world_vertices, projected_pixels, camera_pose, rays),
         render.draw_scene_3d(world_vertices, camera_pose, rays),
-        render.draw_camera_image(projected_pixels),
+        render.draw_camera_image(world_vertices, projected_pixels, camera_pose),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
     frames = render.animate_scenegraph(islice(scenarios.robot_sweep(36), 4))

@@ -1,73 +1,81 @@
-"""A mass distribution and its mirror, with tangent velocities on the unit sphere."""
+"""A mass distribution and its mirror, with tangent velocities on the unit sphere, drawn on the GPU: the sphere
+translucent with three great circles inked on it, each mass's path a faint tube, the masses as balls joined into
+their shape, and their velocities as arrows."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.artist import Artist
+from matplotlib.colors import to_rgb
 
-from examples.animation import capture
 from examples.orientation.mirror_energy.core import Point, ga
+from examples.wgsl import image_figure, meshes, solids
 
-COLOURS = ("#df7246", "#238c9b", "#7662a1")
+COLOURS = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
+SPHERE, CIRCLE, SHAPE = np.array(to_rgb("#e6ebf0")), np.array(to_rgb("#aab4bf")), np.array(to_rgb("#75808a"))
+# The view, elevation and azimuth in radians, azimuth zero looking along +y; its margin as a share of its larger
+# side, and the pixels across each case; how much of what lies behind them the sphere's surfaces and the paths hide;
+# in pixels, the widths of the great circles and the paths, the radius of the shape's edges, a unit mass's radius,
+# and the arrows' shafts, heads' length and heads' radius; and the drawn length of a unit velocity.
+ELEVATION, AZIMUTH = np.radians([23.0, -63.0 + 90.0])
+MARGIN, N_PIXELS = 0.04, 360
+SPHERE_OPACITY, PATH_OPACITY = 0.12, 0.5
+CIRCLE_WIDTH, PATH_WIDTH, SHAPE_RADIUS, MASS_RADIUS = 1.2, 2.0, 0.8, 6.0
+SHAFT_RADIUS, HEAD_LENGTH, HEAD_RADIUS = 1.4, 10.0, 4.0
+VELOCITY = 0.35
 
 
 # --- plumbing -------------------------------------------------------------------------
-def _scene(paths: np.ndarray) -> tuple[plt.Figure, list[plt.Axes]]:
-    figure = plt.figure(figsize=(9, 4), dpi=80)
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
-    axes = []
-    angle = np.linspace(0, 2 * np.pi, 80)
-    for case in range(paths.shape[1]):
-        ax = figure.add_subplot(1, 2, case + 1, projection="3d", computed_zorder=False)
-        ax.set(xlim=(-1.2, 1.2), ylim=(-1.2, 1.2), zlim=(-1.2, 1.2))
-        ax.set_box_aspect((1, 1, 1), zoom=1.1)
-        ax.view_init(elev=23, azim=-63)
-        ax.set_axis_off()
-        # Great circles provide depth without hiding the motion behind a solid shell.
-        zeros = np.zeros_like(angle)
-        for ring in ((np.cos(angle), np.sin(angle), zeros),
-                     (np.cos(angle), zeros, np.sin(angle)),
-                     (zeros, np.cos(angle), np.sin(angle))):
-            ax.plot(*ring, color="#aab4bf", alpha=0.55, linewidth=0.8, zorder=0)
-        closed = np.concatenate([paths[:, case], paths[:1, case]], axis=0)
-        for mass, colour in enumerate(COLOURS):
-            ax.plot(*closed[:, mass].T, color=colour, alpha=0.5, linewidth=1.4, zorder=1)
-        axes.append(ax)
-    return figure, axes
+def coordinates(points: Point) -> np.ndarray:
+    """x, y and z of points, on the last axis."""
+    return points.cast(ga.subspace("yz zx xy")).kernel
 
 
-def _markers(axes: list[plt.Axes], positions: np.ndarray, velocities: np.ndarray,
-             masses: np.ndarray) -> list[Artist]:
-    artists = []
-    for case, ax in enumerate(axes):
-        # Joining the masses makes the reflected shape visible throughout the turn.
-        closed = np.concatenate([positions[case], positions[case, :1]], axis=0)
-        artists.extend(ax.plot(*closed.T, color="#75808a", linewidth=1.2, alpha=0.8, zorder=2))
-        artists.append(ax.scatter(*positions[case].T, s=70 * masses, c=COLOURS,
-                                  edgecolors="white", linewidths=0.8, depthshade=False, zorder=4))
-        artists.append(ax.quiver(*positions[case].T, *velocities[case].T, length=0.35,
-                                 color=COLOURS, linewidth=2, arrow_length_ratio=0.3, zorder=3))
-    return artists
+def scene(paths: np.ndarray) -> tuple[solids.View, list[tuple[np.ndarray, np.ndarray]]]:
+    """The view of the unit sphere, and each case's paths of its masses `[times, cases, masses, 3]`, closed, as faint tubes
+    sampled for it."""
+    corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
+    view = solids.view([solids.mv.point(corners)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    closed = np.concatenate([paths, paths[:1]], axis=0)                       # [times + 1, cases, masses, 3]
+    return view, [meshes.tube_samples([(closed[:, case, mass], colour) for mass, colour in enumerate(COLOURS)],
+                                      PATH_WIDTH, view) for case in range(paths.shape[1])]
+
+
+def case_image(view: solids.View, path: tuple[np.ndarray, np.ndarray], positions: np.ndarray, velocities: np.ndarray,
+               masses: np.ndarray) -> np.ndarray:
+    """One case at one moment: the sphere with its great circles, the paths, and the masses at their positions
+    `[masses, 3]`, joined into their shape, with their velocities `[masses, 3]`."""
+    places = solids.mv.point(positions)                                        # [masses] Point
+    # Joining the masses makes the reflected shape visible throughout the turn.
+    shape = solids.rods(places, places[np.roll(np.arange(len(positions)), -1)], SHAPE_RADIUS * view.pixel)
+    # Each mass a ball whose area goes with its mass.
+    balls = [solids.ball(places[mass:mass + 1], MASS_RADIUS * np.sqrt(masses[mass]) * view.pixel)
+             for mass in range(len(positions))]
+    shafts, heads = solids.arrows(places, solids.mv.point(positions + VELOCITY * velocities), SHAFT_RADIUS * view.pixel,
+                                  HEAD_LENGTH * view.pixel, HEAD_RADIUS * view.pixel)
+    parts = ([(shape, SHAPE)] + [(ball[:, None], colour) for ball, colour in zip(balls, COLOURS)]
+             + [(shafts, COLOURS), (heads, COLOURS)])
+    sphere = solids.ball(solids.origin, 1.0)[None, None]
+    # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part.
+    circles = solids.Ink(len(parts), solids.half_space(solids.axes), solids.everywhere[None],
+                         CIRCLE, CIRCLE_WIDTH, 1.0)
+    return solids.draw(parts, view, np.ones(3), [circles], translucent=[(sphere, SPHERE, SPHERE_OPACITY)],
+                       meshes=[(*path, PATH_OPACITY)])
+
+
+def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> list[np.ndarray]:
+    """The motion and its mirror side by side, at each of the moments."""
+    paths, tangents = coordinates(positions), coordinates(velocities)         # [times, cases, masses, 3] each
+    view, tubes = scene(paths)
+    return [np.concatenate([case_image(view, tubes[case], paths[time, case], tangents[time, case], masses)
+                            for case in range(paths.shape[1])], axis=1) for time in moments]
 
 
 def draw_motion(positions: Point, velocities: Point, masses: np.ndarray) -> plt.Figure:
-    paths = positions.cast(ga.subspace("yz zx xy")).kernel
-    tangents = velocities.cast(ga.subspace("yz zx xy")).kernel
-    figure, axes = _scene(paths)
-    _markers(axes, paths[0], tangents[0], masses)
-    return figure
+    """The motion and its mirror at the first moment."""
+    return image_figure(frames(positions, velocities, masses, range(1))[0])
 
 
 def animate_motion(positions: Point, velocities: Point, masses: np.ndarray) -> list[np.ndarray]:
-    paths = positions.cast(ga.subspace("yz zx xy")).kernel
-    tangents = velocities.cast(ga.subspace("yz zx xy")).kernel
-    figure, axes = _scene(paths)
-    frames = []
-    for position, velocity in zip(paths, tangents):
-        artists = _markers(axes, position, velocity, masses)
-        frames.append(capture(figure))
-        for artist in artists:
-            artist.remove()
-    plt.close(figure)
-    return frames
+    """The motion and its mirror at every moment."""
+    return frames(positions, velocities, masses, range(positions.shape[0]))

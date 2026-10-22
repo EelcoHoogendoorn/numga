@@ -9,22 +9,13 @@ dist/
 # Generated renders; retain only the figures and animations linked by README.md and docs/extensors.md.
 /plots/*
 !/plots/curvature.gif
-!/plots/curvature.png
-!/plots/scenegraph.png
 !/plots/scenegraph.gif
-!/plots/modes.png
-!/plots/multiview_reconstruction.png
-!/plots/constitutive.png
 !/plots/constitutive.gif
 !/plots/modes.gif
 !/plots/cyclides_linked_vortex.gif
 !/plots/multiview_convergence.gif
-!/plots/spherical_quadric_physics.gif
 !/plots/resonance_echo.gif
-!/plots/hopf_sweep.gif
 !/plots/odometry.gif
-!/plots/kane_mele_helical.gif
-!/plots/modal_xpbd_buckle.gif
 !/plots/wing.gif
 !/plots/radiating_charge_fast.gif
 !/plots/area_transport.gif

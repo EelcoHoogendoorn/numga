@@ -34,7 +34,8 @@ def draw(outer: core.Conic, inner: core.Envelope, vertices: core.Point) -> plt.F
         ax.plot(*corners[:, index].T, color="#c0392b", linewidth=1.4)
         ax.scatter(*corners[0, index], color="#e67e22", s=50, zorder=3)
         ax.scatter(*corners[-1, index], facecolors="none", edgecolors="#c0392b", s=110, linewidths=1.5, zorder=3)
-        ax.set(xlim=BOX[:, 0], ylim=BOX[:, 1], aspect="equal", xticks=[], yticks=[])
+        ax.set(xlim=BOX[:, 0], ylim=BOX[:, 1], aspect="equal")
+        ax.set_axis_off()
     figure.tight_layout()
     return figure
 

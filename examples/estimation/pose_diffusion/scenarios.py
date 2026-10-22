@@ -72,7 +72,7 @@ def main() -> None:
     from examples.estimation.pose_diffusion import render
 
     runs = {name: list(diffuse(rate, GUSTS, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in RATES.items()}
-    save_animation(render.animate_clouds(runs, DT * N_STEPS_PER_FRAME, EXTENT), "pose_diffusion", DURATION_MS)
+    save_animation(render.animate_clouds(runs, EXTENT), "pose_diffusion", DURATION_MS)
     save_figure(render.draw_settled({name: states[-1] for name, states in runs.items()}, EXTENT), "pose_diffusion")
 
     # checks

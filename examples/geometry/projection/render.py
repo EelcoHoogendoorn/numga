@@ -2,7 +2,9 @@
 
 This module consumes the geometry that `core` produces and turns it into a figure.
 It constructs viewport geometry only, never scene geometry, and the mathematics
-never imports it.
+never imports it. The shadow scene is ray traced on the GPU: edges as rods, the
+shadow trail as a row of beads, the point light a ball and the sun's direction an
+arrow; the two camera images are drawn flat.
 """
 
 from __future__ import annotations
@@ -10,11 +12,28 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from matplotlib.colors import to_rgb
+
 from numga import stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
+from examples.wgsl import show, solids
 
 # The image panels' margin around both images, as a fraction of their larger side.
 MARGIN = 0.08
+# The shadow scene: the colours of the body, of its shadows under the point light and the sun, and of the sun's
+# direction, drawn as an arrow of unit length from a place above the scene.
+BODY_COLOUR, LIGHT_COLOUR, SUN_COLOUR = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#fbbf24", "#a855f7"))
+SUN_ARROW_START = np.array([-2.0, 2.0, 4.0])
+background = np.ones(3)
+# The shadow scene's view, elevation and azimuth in radians, azimuth zero looking along +y; its margin as a share of
+# the larger side, and its pixels across.
+elevation, azimuth = np.radians([30.0, -60.0 + 90.0])
+scene_margin = 0.1
+n_pixels = 640
+# Radii in pixels: of the body's edges, of the shadows' edges, of the beads along the trail, of the point light, and
+# of the arrow's shaft and head, with its head's length.
+body_radius, shadow_radius, bead_radius, light_radius = 2.0, 1.5, 3.0, 8.0
+shaft_radius, head_radius, head_length = 3.0, 8.0, 24.0
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -41,27 +60,29 @@ def render_shadow_scene(
     point_light: Point,
     sun: Point,
 ) -> None:
-    """Draw the body, blue, its shadows under the point light, yellow, and the sun, dashed purple, the point
-    light, the sun's direction, and one corner's shadow trail as the light moves, dotted."""
+    """Draw the body, blue, its shadows under the point light, yellow, and the sun, purple, the point light, the
+    sun's direction, and one corner's shadow trail as the light moves, beaded."""
     point_shadow, sun_shadow, shadow_trail = shadows
-    draw_edges(ax, euclidean(body), edges, "#38bdf8", linewidth=2.0)
-    draw_edges(ax, euclidean(point_shadow), edges, "#fbbf24", linewidth=1.5)
-    draw_edges(ax, euclidean(sun_shadow), edges, "#a855f7", linewidth=1.5, linestyle="--")
-    trail = euclidean(shadow_trail)
-    light, sun_start = euclidean(point_light), np.array([-2.0, 2.0, 4.0])
-    ax.plot(trail[:, 0], trail[:, 1], trail[:, 2], color="#fbbf24", linewidth=1.0, linestyle=":")
-    ax.scatter(*light, color="#fbbf24", s=60)
+    ends = np.array(edges)                                                     # [edges, 2]
     # The sun's direction, its pairings with the planes x, y and z.
     sun_dir = (stack((mv.x, mv.y, mv.z)) & sun).to_array()
-    sun_dir = sun_dir / np.linalg.norm(sun_dir)
-    ax.quiver(*sun_start, *sun_dir, length=1.0, color="#a855f7")
-    # Framed by everything drawn, at equal aspect.
-    drawn = np.concatenate([euclidean(body), euclidean(point_shadow), euclidean(sun_shadow), trail, light[None],
-                            sun_start[None], (sun_start + sun_dir)[None]])
-    low, high = drawn.min(axis=0), drawn.max(axis=0)
-    ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
-    ax.set_box_aspect(high - low, zoom=1.05)
-    ax.set_axis_off()
+    sun_end = SUN_ARROW_START + sun_dir / np.linalg.norm(sun_dir)
+    corners, light_corners, sun_corners, trail, light = (
+        solids.mv.point(euclidean(points)) for points in (body, point_shadow, sun_shadow, shadow_trail, point_light))
+    arrow_start, arrow_end = solids.mv.point(SUN_ARROW_START), solids.mv.point(sun_end)
+    # Framed by everything drawn.
+    view = solids.view([corners, light_corners, sun_corners, trail, light, arrow_start, arrow_end], 0.0, elevation,
+                       azimuth, scene_margin, n_pixels)
+    pixel = view.pixel
+    shaft, head = solids.arrows(arrow_start, arrow_end, shaft_radius * pixel, head_length * pixel, head_radius * pixel)
+    rods, joints = solids.edges(corners[ends[:, 0]], corners[ends[:, 1]], body_radius * pixel)
+    parts = [(rods, BODY_COLOUR), (joints, BODY_COLOUR),
+             (solids.rods(light_corners[ends[:, 0]], light_corners[ends[:, 1]], shadow_radius * pixel), LIGHT_COLOUR),
+             (solids.rods(sun_corners[ends[:, 0]], sun_corners[ends[:, 1]], shadow_radius * pixel), SUN_COLOUR),
+             (solids.ball(trail, bead_radius * pixel)[:, None], LIGHT_COLOUR),
+             (solids.ball(light, light_radius * pixel)[None, None], LIGHT_COLOUR),
+             (shaft[None], SUN_COLOUR), (head[None], SUN_COLOUR)]
+    show(ax, solids.draw(parts, view, background), view)
 
 
 def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndarray:
@@ -108,7 +129,7 @@ def draw_projection(
 ) -> plt.Figure:
     """Lay out the shadow scene and both camera views."""
     fig = plt.figure(figsize=(16, 5), dpi=120)
-    render_shadow_scene(fig.add_subplot(1, 3, 1, projection="3d"), body, edges, shadows, point_light, sun)
+    render_shadow_scene(fig.add_subplot(1, 3, 1), body, edges, shadows, point_light, sun)
     render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), edges, stereo, rig_1, rig_2, MARGIN)
     fig.tight_layout()
     return fig

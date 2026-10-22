@@ -8,7 +8,7 @@ from itertools import islice
 
 import numpy as np
 
-from examples.relativity.terrell import core, render, scenarios
+from examples.relativity.terrell import core, scenarios
 
 mv, time = core.mv, core.time
 travel, line_of_sight, up = core.space
@@ -53,4 +53,4 @@ def test_outline_of_a_sphere_stays_a_circle():
 
 
 def test_scene_draws():
-    assert len(render.animate_photographs(islice(scenarios.frames(), 2))) == 2
+    assert len(scenarios.photographs(islice(scenarios.cameras(), 2))) == 2

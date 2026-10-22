@@ -37,6 +37,6 @@ def test_the_oval_has_a_constant_focal_sum_and_its_tangents_lie_on_the_dual():
 
 
 def test_scenario_renders():
-    curve, foci, arcs, sample, _, tangents, touching, circles, surface, grid, potential, _, _ = scenarios.spherical_conic()
-    figure = render.draw_spherical_conic(curve, foci, arcs, sample, tangents, touching, circles, surface, grid, potential)
+    curve, foci, arcs, sample, _, tangents, touching, circles, surface, grid, potential, conic, _ = scenarios.spherical_conic()
+    figure = render.draw_spherical_conic(curve, foci, arcs, sample, tangents, touching, circles, surface, grid, potential, conic)
     assert isinstance(figure, plt.Figure)

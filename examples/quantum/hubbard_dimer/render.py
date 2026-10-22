@@ -26,14 +26,19 @@ def draw_spectrum(repulsion: np.ndarray, hopping: float, energies: core.Scalar, 
     ground_line, = levels.plot(ratios, energy_values[:, 0], color=COLOURS[0])
     triplet_lines = levels.plot(ratios, energy_values[:, 1:4], color=COLOURS[1])
     charge_lines = levels.plot(ratios, energy_values[:, 4:], color=COLOURS[2])
-    levels.set(xlabel=r"repulsion / hopping, $U/t$", ylabel=r"energy / hopping, $E/t$", xlim=(ratios[0], ratios[-1]))
+    # The energy's zero, where the triplets stay.
+    levels.axhline(0, color="black", linewidth=0.8, zorder=0)
+    levels.set(xlabel=r"repulsion / hopping, $U/t$", ylabel=r"energy / hopping, $E/t$", xlim=(ratios[0], ratios[-1]),
+               xticks=[], yticks=[])
+    levels.spines[["top", "right"]].set_visible(False)
     levels.legend((ground_line, triplet_lines[0], charge_lines[0]),
                   ("singlet ground state", "three triplets", "two excited singlets"), loc="upper left", frameon=False)
 
     gap.plot(ratios, exchange / hopping, color=COLOURS[0], label="from the singlet block")
     gap.plot(strong_repulsion / hopping, perturbative / hopping, "--", color="0.5", label=r"$4t^2/U$")
     gap.set(xlabel=r"repulsion / hopping, $U/t$", ylabel=r"singlet-triplet gap / hopping, $J/t$",
-            xlim=(ratios[0], ratios[-1]), ylim=(0, exchange[0] / hopping * 1.05))
+            xlim=(ratios[0], ratios[-1]), ylim=(0, exchange[0] / hopping * 1.05), xticks=[], yticks=[])
+    gap.spines[["top", "right"]].set_visible(False)
     gap.legend(loc="upper right", frameon=False)
     return figure
 
@@ -47,7 +52,7 @@ def draw_ground_states(names: tuple[str, ...], repulsion_ratios: np.ndarray, pro
            yticklabels=[f"{name}\n$U/t = {ratio:g}$" for name, ratio in zip(names, repulsion_ratios)],
            xlabel="electron configuration")
     ax.tick_params(length=0)
-    figure.colorbar(heatmap, ax=ax, label="probability", shrink=0.85, pad=0.02)
+    figure.colorbar(heatmap, ax=ax, label="probability", shrink=0.85, pad=0.02, ticks=[0, 0.25, 0.5])
     return figure
 
 
@@ -60,7 +65,10 @@ def draw_exchange(phase: np.ndarray, probabilities: core.Scalar, spin_only: np.n
         swapped, = ax.plot(phase / np.pi, case[:, 3], color=COLOURS[0])
         approximation, = ax.plot(phase / np.pi, spin_only, "--", color="0.5")
         charge, = ax.plot(phase / np.pi, case[:, 0] + case[:, 5], color=COLOURS[2])
-        ax.set(xlabel=r"exchange phase, $J\tau/(\pi\hbar)$", xlim=(phase[0] / np.pi, phase[-1] / np.pi), ylim=(-0.02, 1.05))
+        # Probabilities read off at none, a half and certainty, along one cycle of the exchange.
+        ax.set(xlabel=r"exchange phase, $J\tau/(\pi\hbar)$", xlim=(phase[0] / np.pi, phase[-1] / np.pi), ylim=(0, 1.05),
+               xticks=[], yticks=[0, 0.5, 1])
+        ax.spines[["top", "right"]].set_visible(False)
     axes[0].set_ylabel("probability")
     figure.legend((swapped, approximation, charge),
                   ("spins swapped", "spin-only prediction", "both electrons on one site"),
@@ -74,8 +82,10 @@ def draw_transfer(asymmetries: np.ndarray, transferred: core.Scalar, names: tupl
     figure, ax = plt.subplots(figsize=(8, 3.4), layout="constrained")
     for curve, name, ratio, colour in zip(transferred.to_array(), names, repulsion_ratios, COLOURS):
         ax.plot(asymmetries, curve, color=colour, linewidth=1.5, label=f"{name}, $U/t = {ratio:g}$")
-    ax.set(xlim=(asymmetries[0], asymmetries[-1]), ylim=(-0.05, 2.05), xlabel=r"site asymmetry / hopping, $\Delta v/t$",
-           ylabel=r"occupation difference, $n_L - n_R$")
+    # The charge moves over where the asymmetry matches each case's repulsion, ticked; from none to both electrons.
+    ax.set(xlim=(asymmetries[0], asymmetries[-1]), ylim=(0, 2.05), xlabel=r"site asymmetry / hopping, $\Delta v/t$",
+           ylabel=r"occupation difference, $n_L - n_R$", xticks=repulsion_ratios, yticks=[0, 1, 2])
+    ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False, loc="lower right")
     return figure
 

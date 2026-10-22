@@ -1,37 +1,79 @@
-"""Drawing for the symmetry example, ray traced: heat-flow ellipsoids, the cubic lattice and its responses, and
-rotary powers on the sphere of directions."""
+"""Drawing for the symmetry example, on the GPU: heat-flow ellipsoids, the cubic lattice and its responses, and
+rotary powers on the sphere of directions.
+
+The ellipsoids and the arrows within them, the lattice's sites and bonds are solids traced by `solids`, the
+stiffness surface a mesh drawn by `meshes`; the sphere of directions has a shader of its own, which evaluates the
+rotary power on each pixel's direction, `rotary(direction, direction)`, and colours the sphere by it.
+"""
 
 from __future__ import annotations
 
+from functools import cache
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples import raytrace as rt
-from examples.raster import rasterise, screen, view_frame
-from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, mv, pga_mv
+from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
+from examples.wgsl import Shader, meshes, show, solids, supersampled
 
-DRIVING_COLOUR, FLOW_COLOUR = "#262b32", "#d44e1a"
-SURFACE_COLOUR = np.array([0.36, 0.60, 0.80])
-STIFFNESS_COLOUR = np.array([0.88, 0.52, 0.30])
-SITE_COLOURS = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
-BACKGROUND = np.array([1.0, 1.0, 1.0])
-# The view's angles, the pixels across a panel, the margin around what it shows as a fraction of its larger
-# side, and the surface samples it is framed by.
-VIEW = (23, -55)
-PIXELS = 360
-MARGIN = 0.08
-N_FRAMING = 400
+driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
+surface_colour = np.array([0.36, 0.60, 0.80])
+# The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
+# widths, head lengths and head widths in pixels, the driving field's and the flow's.
+surface_opacity = 0.45
+driving_arrow, flow_arrow = (3.0, 14.0, 9.0), (4.0, 16.0, 11.0)
+stiffness_colour = np.array([0.88, 0.52, 0.30])
+site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
+background = np.array([1.0, 1.0, 1.0])
+# The view's elevation and azimuth, the pixels across a panel, the margin around what it shows as a fraction of
+# its larger side, and the directions an ellipsoid is framed by.
+elevation, azimuth = np.radians(23.0), np.radians(35.0)
+pixels = 360
+margin = 0.08
+n_framing = 400
 # The lattice's site and bond radii, in lattice spacings.
-SITE_RADIUS, BOND_RADIUS = 0.13, 0.035
+site_radius, bond_radius = 0.13, 0.035
+
+sphere_source = supersampled() + """
+// A unit sphere of directions, seen along parallel rays by a camera turned by `turn`, coloured by the rotary
+// power along each direction against the largest, through a colour table, and lit by the lamp.
+var<uniform> rotary: Rotary;
+var<uniform> limit: f32;
+var<uniform> turn: Rotor;
+var<uniform> half_height: f32;
+var<uniform> lamp: Field;
+var<uniform> background: vec3<f32>;
+var<uniform> ambient: f32;
+var<uniform> gloss: f32;
+var<uniform> shininess: f32;
+var colours: texture_2d<f32>;
+var filtered: sampler;
+
+alias Sample = vec3<f32>;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_height;
+    let squared = dot(across, across);
+    if (squared > 1) {
+        return background;
+    }
+    // The direction under the pixel: the sphere's point in the camera's frame, turned out.
+    let direction = turn >> (mv.x.dual() * across.x + mv.y.dual() * across.y + mv.z.dual() * sqrt(1 - squared));
+    let power = rotary(direction, direction) / limit;
+    let entries = f32(textureDimensions(colours).x);
+    let colour = textureSampleLevel(colours, filtered, vec2<f32>(((power + 1) / 2 * (entries - 1) + 0.5) / entries, 0.5), 0.0).rgb;
+    // The sphere's normal is the direction itself; the glint where it bisects the lamp and the viewer.
+    let light = max(direction & lamp, 0.0);
+    let halfway = (lamp + (turn >> mv.z)) / ((lamp + (turn >> mv.z)) | (lamp + (turn >> mv.z))).square_root();
+    let glint = pow(max(direction & halfway, 0.0), shininess);
+    return colour * (ambient + (1 - ambient) * light) + gloss * glint;
+}
+"""
 
 
 # --- plumbing -------------------------------------------------------------------------
-def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
-    return ((stack((pga_mv.x, pga_mv.y, pga_mv.z)) & points[..., None]) / (pga_mv.w & points)[..., None]).to_array()
-
-
 def along(directions: Direction) -> np.ndarray:
     """The components of directions along x, y and z: their pairings with the planes x, y and z."""
     return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
@@ -47,18 +89,19 @@ def matrices(conductivities: Conductivity) -> np.ndarray:
     return np.swapaxes(along(conductivities[..., None](stack((mv.x, mv.y, mv.z)))), -1, -2)
 
 
-def image_of_sphere(matrix: np.ndarray) -> rt.Quadric:
-    """The solid ellipsoid a map with these matrices makes of the unit ball: its points x satisfy
-    `x @ inv(matrix @ matrix.T) @ x <= 1`."""
-    return rt.quadric(np.linalg.inv(matrix @ np.swapaxes(matrix, -1, -2)), np.zeros(matrix.shape[:-2] + (3,)))
+def unit_directions(count: int) -> np.ndarray:
+    """Directions spread evenly over the sphere, `[count, 3]`, on a golden spiral."""
+    height = 1 - 2 * (np.arange(count) + 0.5) / count
+    angle = np.pi * (3 - np.sqrt(5)) * np.arange(count)
+    ring = np.sqrt(1 - height**2)
+    return np.stack([ring * np.cos(angle), ring * np.sin(angle), height], axis=-1)
 
 
-def panel(ax: plt.Axes, rgb: np.ndarray, middle: np.ndarray, half: np.ndarray) -> None:
-    """An image on screen coordinates, framed about the middle with the given half width and height, without
-    axes."""
-    x, y = on_screen(middle)
-    ax.imshow(np.clip(rt.downsample(rgb, rt.SUPERSAMPLE), 0, 1), extent=(x - half[0], x + half[0], y - half[1], y + half[1]), interpolation="bilinear")
-    ax.set_axis_off()
+def image_of_sphere(matrix: np.ndarray) -> tuple[solids.Quadric, Point]:
+    """The solid ellipsoid a map with these matrices makes of the unit ball, `x @ inv(matrix @ matrix.T) @ x <= 1`,
+    and points on its surface to frame it by: the unit directions, mapped."""
+    quadric = solids.quadric(np.linalg.inv(matrix @ np.swapaxes(matrix, -1, -2)), pga_mv.point(np.zeros(3)))
+    return quadric, pga_mv.point(unit_directions(n_framing) @ np.swapaxes(matrix, -1, -2).reshape(-1, 3, 3)[0])
 
 
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -70,108 +113,95 @@ def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[pl
     return fig, [fig.add_subplot(cell) for cell in grid]
 
 
-def on_screen(points: np.ndarray) -> np.ndarray:
-    """Points `[..., 3]` in screen coordinates about the view's centre at the origin."""
-    return points @ rt.view_axes(*VIEW)[:2].T
-
-
-def mesh_image(vertices: np.ndarray, colour: np.ndarray, middle: np.ndarray, extent: float) -> np.ndarray:
-    """A square RGB image, of half width extent about the middle, of a closed surface sampled on a
-    latitude-longitude grid `[latitudes, longitudes, 3]`, smooth shaded by normals interpolated from the corners, each the mean of its triangles' normals."""
-    rows, cols = vertices.shape[:2]
-    index = np.arange(rows * cols).reshape(rows, cols)
-    corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
-    faces = np.concatenate([np.stack([corner[0], corner[1], corner[2]], -1), np.stack([corner[0], corner[2], corner[3]], -1)])
-    flat = vertices.reshape(-1, 3)
-    normal = np.cross(flat[faces[:, 1]] - flat[faces[:, 0]], flat[faces[:, 2]] - flat[faces[:, 0]])
-    # Outward: away from the centre.
-    normal *= np.sign(np.sum(normal * flat[faces].mean(axis=1), axis=-1, keepdims=True))
-    corner_normal = np.zeros_like(flat)
-    np.add.at(corner_normal, faces.ravel(), np.repeat(normal, 3, axis=0))
-    corner_normal /= np.linalg.norm(corner_normal, axis=-1, keepdims=True) + 1e-12
-    frame = view_frame(*VIEW)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        pixel, owner, weight, _ = rasterise(screen(flat, frame, middle, extent, PIXELS * rt.SUPERSAMPLE), faces, PIXELS * rt.SUPERSAMPLE)
-    smooth = np.einsum("pk,pkc->pc", weight, corner_normal[faces[owner]])
-    smooth /= np.linalg.norm(smooth, axis=-1, keepdims=True)
-    size = PIXELS * rt.SUPERSAMPLE
-    rgb = np.ones((size * size, 3)) * BACKGROUND
-    rgb[pixel] = rt.shade(colour, smooth, rt.lamp(*VIEW), frame[2], 1.0)
-    return rgb.reshape(size, size, 3)[::-1]
-
-
 def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direction) -> plt.Figure:
     """For the candidate and each group's average, the image of the unit ball of driving fields, a heat-flow
     ellipsoid, with one driving field, dark, and the heat flow it drives, orange."""
     matrix = matrices(conductivities)                                         # [panels, 3, 3]
-    flow_matrix = matrix @ np.swapaxes(matrix, -1, -2)
-    largest = np.sqrt(np.linalg.eigvalsh(flow_matrix).max())
+    largest = np.sqrt(np.linalg.eigvalsh(matrix @ np.swapaxes(matrix, -1, -2)).max())
     # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
-    driving_tip, flows = across(driving) * largest, along(fluxes)
-    surfaces = rt.ellipsoid_points(np.linalg.inv(flow_matrix), np.zeros(3), N_FRAMING)
-    middle, half = rt.framing(np.concatenate([surfaces.reshape(-1, 3), driving_tip[None], flows]), *VIEW, MARGIN)
-    fig, axes = figure([half] * len(matrix), 3.6)
-    for ax, panel_matrix, flow in zip(axes, matrix, flows):
-        rgb, _ = rt.scene(image_of_sphere(panel_matrix)[None], SURFACE_COLOUR[None], (*VIEW, middle, half, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
-        panel(ax, rgb, middle, half)
-        for vector, colour, width in ((driving_tip, DRIVING_COLOUR, 1.8), (flow, FLOW_COLOUR, 2.6)):
-            ax.annotate("", xy=on_screen(vector), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color=colour, lw=width))
+    driving_tip, flows = pga_mv.point(across(driving) * largest), pga_mv.point(along(fluxes))
+    ellipsoids = [image_of_sphere(panel_matrix) for panel_matrix in matrix]
+    view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin,
+                       pixels)
+    fig, axes = figure([view.half] * len(matrix), 3.6)
+    for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
+        # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface.
+        arrows = [(part[None], colour) for tip, colour, (width, head_length, head_width) in
+                  ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))
+                  for part in solids.arrows(solids.origin, tip, width / 2 * view.pixel, head_length * view.pixel,
+                                            head_width / 2 * view.pixel)]
+        show(ax, solids.draw(arrows, view, background, translucent=[(ellipsoid[None, None], surface_colour,
+                                                                     surface_opacity)]), view)
     return fig
 
 
-def lattice_scene(sites: Point, axial: Point, diagonal: Point) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """The lattice's sites as spheres, the centre dark, its axial neighbours orange, its diagonal ones blue,
-    and the bonds from the centre to them as thin ellipsoids: their matrices, centres and colours."""
-    positions, axial_ends, diagonal_ends = euclidean(sites), euclidean(axial), euclidean(diagonal)
-    kind = np.where(np.linalg.norm(positions, axis=-1) < 1e-9, "centre", "other").astype(object)
-    for ends, name in ((axial_ends, "axial"), (diagonal_ends, "diagonal")):
-        kind[np.isclose(positions[:, None], ends[None]).all(axis=-1).any(axis=1)] = name
-    ends = np.concatenate([axial_ends, diagonal_ends])
-    length = np.linalg.norm(ends, axis=-1, keepdims=True)
-    unit = ends / length
-    # A bond: a cigar from the centre to its end, long along the bond and thin across it.
-    across_bond = (np.eye(3) - unit[:, :, None] * unit[:, None, :]) / BOND_RADIUS**2
-    bond_matrix = unit[:, :, None] * unit[:, None, :] / (length[..., None] / 2) ** 2 + across_bond
-    matrix = np.concatenate([np.broadcast_to(np.eye(3) / SITE_RADIUS**2, (len(positions), 3, 3)), bond_matrix])
-    centre = np.concatenate([positions, ends / 2])
-    colours = np.array([SITE_COLOURS[name] for name in kind] + [SITE_COLOURS["axial"]] * len(axial_ends)
-                       + [SITE_COLOURS["diagonal"]] * len(diagonal_ends))
-    return matrix, centre, colours
+def lattice(sites: Point, axial: Point, diagonal: Point) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The lattice's sites as balls, the centre dark, its axial neighbours orange, its diagonal ones blue, and
+    the bonds from the centre to them as rods."""
+    def among(points: Point) -> np.ndarray:
+        """Which of the sites are among the points, by their coordinates."""
+        return np.isclose(places(sites)[:, None], places(points)[None]).all(axis=-1).any(axis=1)
+    centre = np.linalg.norm(places(sites), axis=-1) < 1e-9
+    names = np.where(centre, "centre", np.where(among(axial), "axial", np.where(among(diagonal), "diagonal", "other")))
+    colours = np.array([site_colours[name] for name in names])
+    origin = sites[np.flatnonzero(centre)[:1]]
+    return [(solids.ball(sites, site_radius)[:, None], colours),
+            (solids.rods(origin.broadcast_to(axial.shape), axial, bond_radius), site_colours["axial"]),
+            (solids.rods(origin.broadcast_to(diagonal.shape), diagonal, bond_radius), site_colours["diagonal"])]
+
+
+def places(points: Point) -> np.ndarray:
+    """Points' coordinates, `[..., 3]`, to tell them apart."""
+    return np.stack([((plane & points) / (pga_mv.w & points)).to_array() for plane in (pga_mv.x, pga_mv.y, pga_mv.z)], axis=-1)
+
+
+def stiffness_mesh(stiffness: Direction) -> tuple[Point, np.ndarray]:
+    """The stiffness along every direction as a radius, sampled on a latitude-longitude grid, as a mesh."""
+    vertices = along(stiffness)                                               # [latitudes, longitudes, 3]
+    rows, columns = vertices.shape[:2]
+    index = np.arange(rows * columns).reshape(rows, columns)
+    corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
+    faces = np.concatenate([np.stack([corner[0], corner[1], corner[2]], -1), np.stack([corner[0], corner[2], corner[3]], -1)])
+    return pga_mv.point(vertices.reshape(-1, 3)), faces
 
 
 def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Conductivity, stiffness: Direction) -> plt.Figure:
     """The lattice with its bonds; the lattice's conduction, the image of the unit ball of fields, a sphere;
     and its stiffness along every direction as a radius, a cube with rounded faces."""
-    lattice_matrix, lattice_centre, colours = lattice_scene(sites, axial, diagonal)
-    lattice_view = rt.framing(rt.ellipsoid_points(lattice_matrix, lattice_centre, N_FRAMING), *VIEW, MARGIN)
-    matrix = matrices(conductivity)
-    conduction_view = rt.framing(rt.ellipsoid_points(np.linalg.inv(matrix @ matrix.T), np.zeros(3), N_FRAMING), *VIEW, MARGIN)
-    vertices = along(stiffness)
-    stiffness_middle, stiffness_half = rt.framing(vertices, *VIEW, MARGIN)
-    stiffness_half = np.full(2, stiffness_half.max())
-    fig, axes = figure([lattice_view[1], conduction_view[1], stiffness_half], 4.0)
-    lattice, _ = rt.scene(rt.quadric(lattice_matrix, lattice_centre), colours, (*VIEW, *lattice_view, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
-    panel(axes[0], lattice, *lattice_view)
-    conduction, _ = rt.scene(image_of_sphere(matrix)[None], SURFACE_COLOUR[None], (*VIEW, *conduction_view, PIXELS * rt.SUPERSAMPLE), BACKGROUND)
-    panel(axes[1], conduction, *conduction_view)
-    panel(axes[2], mesh_image(vertices, STIFFNESS_COLOUR, stiffness_middle, stiffness_half[0]), stiffness_middle, stiffness_half)
+    parts = lattice(sites, axial, diagonal)
+    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, pixels)
+    ellipsoid, framed = image_of_sphere(matrices(conductivity))
+    conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, pixels)
+    points, faces = stiffness_mesh(stiffness)
+    stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
+    fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 4.0)
+    show(axes[0], solids.draw(parts, lattice_view, background), lattice_view)
+    show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background), conduction_view)
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background),
+         stiffness_view)
     return fig
+
+
+@cache
+def sphere_shader(rotary: object) -> Shader:
+    """The sphere's shader, for rotary powers of a type: a scalar of two directions."""
+    return Shader(sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction))
 
 
 def draw_optical_activity(rotary: Scalar) -> plt.Figure:
     """For the candidate and each group's average, the sphere of light directions coloured by the rotary
     power along each, red for one sense and blue for the other, shaded by the lamp."""
-    middle, half = rt.framing(rt.ellipsoid_points(np.eye(3), np.zeros(3), N_FRAMING), *VIEW, MARGIN)
-    origins, heading, lamp = rt.camera(*VIEW, middle, half, PIXELS * rt.SUPERSAMPLE)
-    distance, hit = rt.hits(rt.ellipsoid(np.ones(3)), origins, heading)
-    normal = rt.normals(rt.ellipsoid(np.ones(3)), hit)                         # [pixels, pixels, 3]
-    directions = mv.vector(normal).dual()                                     # [pixels, pixels] Direction
-    powers = rotary[:, None, None](directions[None], directions[None]).to_array()   # [panels, pixels, pixels]
-    limit = np.abs(powers).max()
-    colours = plt.get_cmap("RdBu_r")((powers / limit + 1) / 2)[..., :3]
-    toward_viewer = rt.view_axes(*VIEW)[2]
-    fig, axes = figure([half] * len(powers), 2.6)
-    for ax, colour in zip(axes, colours):
-        rgb = np.where(np.isfinite(distance)[..., None], rt.shade(colour, normal, lamp, toward_viewer, 1.0), BACKGROUND)
-        panel(ax, rgb, middle, half)
+    turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
+    toward_lamp = turn >> (mv.x * 0.4 + mv.y * 0.7 + mv.z * 0.6)
+    directions = mv.antivector(unit_directions(n_framing))                    # [directions] Direction
+    limit = np.abs(rotary[:, None](directions, directions).to_array()).max()
+    # The sphere about the origin, seen as the other views see it.
+    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), pixels)
+    colours = plt.get_cmap("RdBu_r")(np.linspace(0, 1, 256))[None, :, :3]
+    fig, axes = figure([view.half] * rotary.shape[0], 2.6)
+    for ax, response in zip(axes, rotary):
+        image = sphere_shader(rotary.gatype)(view.shape, rotary=response, limit=limit, turn=turn, half_height=view.half[1],
+                                lamp=toward_lamp / (toward_lamp | toward_lamp).square_root(), background=background,
+                                ambient=solids.ambient, gloss=solids.gloss, shininess=solids.shininess, colours=colours)["image"]
+        show(ax, np.clip(image, 0, 1), view)
     return fig

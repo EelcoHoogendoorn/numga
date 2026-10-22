@@ -6,26 +6,33 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.mechanics.elastica import core
+from examples.wgsl import image_figure, meshes, solids
 
 ga = core.ga
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
 # the drawn rods, the panels of Euler's plate per row, the spacing of the helices as a share of the widest,
-# and their view as (elevation, azimuth).
+# and their view as (elevation, azimuth), in radians, azimuth zero looking along +y.
 ROD_MAP = "viridis"
-ROD, THRUST, RIBBON = "#1f6f99", "0.55", "#7cc4e4"
+ROD, THRUST, RIBBON = np.array(to_rgb("#1f6f99")), "0.55", np.array(to_rgb("#7cc4e4"))
 MARGIN = 0.08
 COLUMNS = 4
 SPACING = 1.4
-VIEW = (12, -80)
+VIEW = np.radians([12.0, 10.0])
 # The uncoiling wire's view: its elevation, and the azimuths the camera turns through over the frames.
-UNCOIL_ELEVATION = 16
-UNCOIL_AZIMUTHS = (-120, 60)
+UNCOIL_ELEVATION = np.radians(16.0)
+UNCOIL_AZIMUTHS = np.radians([-30.0, 150.0])
 # The telephone cord's view as (elevation, azimuth), and the colour of its clamps.
-CORD_VIEW = (20, -64)
-CLAMP = "0.2"
+CORD_VIEW = np.radians([20.0, 26.0])
+CLAMP = np.full(3, 0.2)
+# The pixels across the helices, the uncoiling wire and the cord; the width of a rod in pixels, the radius of a
+# clamp, and the background.
+N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 660, 460, 900
+ROD_WIDTH, CLAMP_RADIUS = 3.0, 5.0
+BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -108,66 +115,51 @@ def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
     spacing = SPACING * np.ptp(ribbons[..., :2], axis=(1, 2)).max()
     across = spacing * np.arange(len(curves))[:, None, None] * [1, 0, 0]       # [tilts, 1, 3]
     curves, ribbons = curves + across, ribbons + across[:, :, None]
-    figure = plt.figure(figsize=(6, 6.5), dpi=110)
-    ax = figure.add_subplot(projection="3d")
-    for curve, ribbon in zip(curves, ribbons):
-        ax.plot_surface(*np.moveaxis(np.moveaxis(ribbon, 1, 0), -1, 0), color=RIBBON, edgecolor="none", shade=True)
-        ax.plot(*curve.T, color=ROD, lw=1.0)
-    low, high = ribbons.reshape(-1, 3).min(axis=0), ribbons.reshape(-1, 3).max(axis=0)
-    ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
-    ax.set_box_aspect(high - low, zoom=1.05)
-    ax.view_init(*VIEW)
-    ax.set_axis_off()
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    return figure
+    view = solids.view([solids.mv.point(ribbons)], 0.0, *VIEW, MARGIN, N_HELIX_PIXELS)
+    return image_figure(scene(curves, ribbons, view))
 
 
 def animate_uncoiling(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
     """The wire through the sweep of its tilt `[frames, pieces + 1]`, with its ribbon `[frames, pieces + 1, 2]`,
     the camera turning slowly around it, all to one scale."""
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, pieces + 1, 3], [..., 2, 3]
-    low, high = ribbons.reshape(-1, 3).min(axis=0), ribbons.reshape(-1, 3).max(axis=0)
-    # A square footprint about the coil's axis, so that the turning camera sees the same extent.
-    middle, reach = (low + high) / 2, (high - low)[:2].max() / 2
+    points = ribbons.reshape(-1, 3)
+    low, high = points.min(axis=0), points.max(axis=0)
+    # The upright cylinder about the coil's axis holding every frame, seen alike from every azimuth: its radius
+    # across, and up its height foreshortened by the elevation plus its round top and bottom tilted into view.
+    middle = (low + high) / 2
+    radius = np.linalg.norm(points[:, :2] - middle[:2], axis=-1).max()
+    half = np.array([radius, (high[2] - low[2]) / 2 * np.cos(UNCOIL_ELEVATION) + radius * np.sin(UNCOIL_ELEVATION)])
+    half = half + MARGIN * half.max()
     azimuths = np.linspace(*UNCOIL_AZIMUTHS, len(curves), endpoint=False)
-    images = []
-    for curve, ribbon, azimuth in zip(curves, ribbons, azimuths):
-        figure = plt.figure(figsize=(4.6, 6.4), dpi=100)
-        ax = figure.add_subplot(projection="3d")
-        ax.plot_surface(*np.moveaxis(np.moveaxis(ribbon, 1, 0), -1, 0), color=RIBBON, edgecolor="none", shade=True)
-        ax.plot(*curve.T, color=ROD, lw=1.0)
-        ax.set(xlim=(middle[0] - reach, middle[0] + reach), ylim=(middle[1] - reach, middle[1] + reach),
-               zlim=(low[2], high[2]))
-        ax.set_box_aspect((2 * reach, 2 * reach, high[2] - low[2]), zoom=1.1)
-        ax.view_init(UNCOIL_ELEVATION, azimuth)
-        ax.set_axis_off()
-        figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    return [scene(curve[None], ribbon[None], solids.View(solids.aim(solids.mv.point(middle), UNCOIL_ELEVATION, azimuth),
+                                                        half, N_UNCOIL_PIXELS))
+            for curve, ribbon, azimuth in zip(curves, ribbons, azimuths)]
 
 
 def animate_cord(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
     """The telephone cord at each frame `[frames, drawn]`, as a ribbon `[frames, drawn, 2]` with its base and its
     handset, all from one fixed view and to one scale."""
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, drawn, 3], [..., 2, 3]
-    low, high = ribbons.reshape(-1, 3).min(axis=0), ribbons.reshape(-1, 3).max(axis=0)
-    images = []
-    for curve, ribbon in zip(curves, ribbons):
-        figure = plt.figure(figsize=(9, 3.4), dpi=100)
-        ax = figure.add_subplot(projection="3d")
-        drawn = [ax.plot_surface(*np.moveaxis(np.moveaxis(ribbon, 1, 0), -1, 0), color=RIBBON, edgecolor="none",
-                                 shade=True),
-                 *ax.plot(*curve.T, color=ROD, lw=0.8),
-                 ax.scatter(*curve[[0, -1]].T, color=CLAMP, s=60, depthshade=False)]
-        # The view is a square the height of the figure; the long cord reaches past it, across the figure.
-        for artist in drawn:
-            artist.set_clip_on(False)
-        ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), zlim=(low[2], high[2]))
-        ax.set_box_aspect(high - low, zoom=2.3)
-        ax.view_init(*CORD_VIEW)
-        ax.set_axis_off()
-        figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, N_CORD_PIXELS)
+    # The clamps at the base and the handset: small balls at the cord's two ends.
+    clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
+    return [solids.draw([(ends, CLAMP)], view, BACKGROUND, meshes=wires(curve[None], ribbon[None], view))
+            for curve, ribbon, ends in zip(curves, ribbons, clamps)]
+
+
+def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    """Rods along curves `[rods, n, 3]` as thin tubes, through their ribbons `[rods, n, 2, 3]`: strips between the
+    edges, two triangles to each piece of rod; each an opaque mesh, sample by sample."""
+    index = np.arange(ribbons.size // 3).reshape(ribbons.shape[:3])         # [rods, n, 2]
+    corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
+    faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
+    edges = solids.mv.point(ribbons.reshape(-1, 3))
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
+    rods = meshes.tube_samples([(curve, ROD) for curve in curves], ROD_WIDTH, view)
+    return [(*strips, 1.0), (*rods, 1.0)]
+
+
+def scene(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> np.ndarray:
+    """Rods and their ribbons, as `wires`, on the background, `[rows, columns, 3]` bytes."""
+    return solids.draw([], view, BACKGROUND, meshes=wires(curves, ribbons, view))

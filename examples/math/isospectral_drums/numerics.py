@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from numga.sparse import SparseExtensor
-from examples.math.isospectral_drums.core import Scalar, Vector, mv
+from examples.math.isospectral_drums.core import Point, Scalar, mv
 
 
 def _samples(n_subdivisions: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -28,15 +28,15 @@ def _samples(n_subdivisions: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return column, row, np.concatenate((lower_faces, upper_faces))
 
 
-def triangle(n_subdivisions: int) -> tuple[Vector, np.ndarray]:
+def triangle(n_subdivisions: int) -> tuple[Point, np.ndarray]:
     """The reference triangle in the sample order used by restriction maps."""
     column, row, faces = _samples(n_subdivisions)
-    vertices = (mv.x * (column / n_subdivisions)
-                + mv.y * (row / n_subdivisions)).field()                  # Vector[samples]
+    vertices = (mv.x.dual() * (column / n_subdivisions)
+                + mv.y.dual() * (row / n_subdivisions)).field()           # Point[samples]
     return vertices, faces
 
 
-def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tuple[Vector, np.ndarray, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
+def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tuple[Point, np.ndarray, SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
     """A drum welded from a lattice of triangles, each tile three indices into the row-major square
     lattice: its vertices and faces, its interior stencil, the maps reading and assembling its tiles, and
     the map that puts its fixed boundary back."""
@@ -52,8 +52,8 @@ def drum(tile_vertices: np.ndarray, n_lattice: int, n_subdivisions: int) -> tupl
     nodes, tile_nodes = np.unique(locations.reshape(-1, 2), axis=0, return_inverse=True)
     tile_nodes = tile_nodes.reshape(n_tiles, n_samples)
     n_vertices = len(nodes)
-    vertices = (mv.x * (nodes[:, 0] / n_subdivisions)
-                + mv.y * (nodes[:, 1] / n_subdivisions)).field()            # Vector[vertices]
+    vertices = (mv.x.dual() * (nodes[:, 0] / n_subdivisions)
+                + mv.y.dual() * (nodes[:, 1] / n_subdivisions)).field()     # Point[vertices]
 
     faces = tile_nodes[:, local_faces]
     frame = corners[:, 1:] - corners[:, :1]

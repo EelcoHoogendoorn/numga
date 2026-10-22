@@ -24,7 +24,7 @@ Scalar = ga.gatype.scalar()
 # --- math -----------------------------------------------------------------------------
 def energies(points: Point, masses: np.ndarray, rate: Rate, mirror: Plane) -> Scalar:
     """Energy before reflection, after reflection, after rebuilding, and without orientation."""
-    # Leaving the rate open builds the map from motion to momentum.
+    # Inertia maps the body's rate of motion to its momentum.
     inertia: Inertia = (points & points.commutator(Rate) * masses).sum(axis=0)
     energy: Scalar = (inertia(rate) & rate) / 2
 

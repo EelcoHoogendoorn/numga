@@ -1,117 +1,163 @@
-"""Orthographic views of a population and its carried circles on the unit sphere."""
+"""Orthographic views of a population and its carried circles on the see-through unit sphere, on the GPU, in the
+sphere's own algebra.
+
+A ray along the view crosses the sphere at two points, one on its near side and one on its far side, each a null
+ray `direction + time`. A circle is inked at either where its cut nearly pairs to nothing with the point,
+`cut & point`, the shortfall measured across the view by how fast the pairing changes there. The population are
+dots about their places on the screen. The far side shows faintly through the near one.
+"""
 
 from __future__ import annotations
 
+from functools import cache
+
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection, PathCollection
 import numpy as np
 
 from numga import stack
-from examples.animation import capture
-from examples.raster import view_frame
-from examples.math.spherical_synchronization.core import Cut, Point
+from examples.wgsl import Shader, image_figure, supersampled
+from examples.math.spherical_synchronization.core import Cut, Point, Rotor, ga, mv
 
 size = 500
-view = view_frame(20, 45)
-margin = 1.07
-n_circle_samples = 192
-particle_colors = np.array([
+# The view, elevation and azimuth in radians, azimuth zero looking along +y, facing the side the population
+# gathers on; and the half width it shows.
+elevation, azimuth = np.radians([20.0, -45.0])
+half_width = 1.07
+particle_colours = np.array([
     [0.90, 0.36, 0.20], [0.91, 0.59, 0.16], [0.24, 0.55, 0.61],
     [0.32, 0.43, 0.68], [0.62, 0.39, 0.61],
 ])
-circle_color = np.array([0.12, 0.42, 0.46])
+# The circles' width, the dots' radius on the near side and their white rim, and the sphere's outline, in pixels.
+line_width = 1.45
+dot_radius = 3.2
+rim_width = 0.5
+outline_width = 1.0
+
+source = supersampled() + """
+// A camera turned to look along its own -z at the sphere's centre; the image half as high as this.
+var<uniform> camera: Rotor;
+var<uniform> half_height: f32;
+var<storage, read> particles: array<Particle>;
+var<storage, read> cuts: array<Cut>;
+// Widths across the view, in the sphere's radii.
+var<uniform> line_half_width: f32;
+var<uniform> dot_radius: f32;
+var<uniform> rim_width: f32;
+var<uniform> outline_half_width: f32;
+
+alias Sample = vec3<f32>;
+
+struct Particle {
+    place: Point,
+    colour: vec3<f32>,
+}
+
+const time = -mv.t.dual();
+const circle_colour = vec3<f32>(0.12, 0.42, 0.46);
+const outline_colour = vec3<f32>(0.76, 0.78, 0.78);
+const white = vec3<f32>(1.0);
+// How deep a point must lie toward the viewer to show at full strength, and the strength of the far side.
+const fade_depth = 1.0 / 12;
+const far_circles = 0.18;
+const far_particles = 0.25;
+
+// How strongly a point at a depth toward the viewer shows, from a floor on the far side to one on the near.
+fn showing(depth: f32, floor: f32) -> f32 {
+    return floor + (1 - floor) * clamp(depth / fade_depth + 0.5, 0.0, 1.0);
+}
+
+// A colour seen with a strength, washed toward white.
+fn faded(colour: vec3<f32>, strength: f32) -> vec3<f32> {
+    return white - (white - colour) * strength;
+}
+
+// The colour of the circles at a point of the sphere, a place across the view and a depth toward the viewer,
+// over a colour beneath: a cut's pairing with the point, over how fast it changes across the view, is how far
+// across the view the point lies from that cut's circle.
+fn circles(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
+    let right = camera >> mv.x.dual();
+    let up = camera >> mv.y.dual();
+    let toward = camera >> mv.z.dual();
+    let point = right * across.x + up * across.y + toward * depth + time;
+    // Moving across the view, the point keeps to the sphere by moving along the view as well.
+    let rightward = right - toward * (across.x / depth);
+    let upward = up - toward * (across.y / depth);
+    var colour = beneath;
+    for (var index = 0u; index < arrayLength(&cuts); index++) {
+        let cut = cuts[index];
+        let change = vec2<f32>(cut & rightward, cut & upward);
+        if (abs(cut & point) < line_half_width * length(change)) {
+            colour = faded(circle_colour, showing(depth, far_circles));
+        }
+    }
+    return colour;
+}
+
+// The nearest dot covering a place across the view, among those on one side of the sphere, over a colour beneath.
+fn dots(beneath: vec3<f32>, across: vec2<f32>, near_side: bool) -> vec3<f32> {
+    var colour = beneath;
+    var nearest = -2.0;
+    for (var index = 0u; index < arrayLength(&particles); index++) {
+        let particle = particles[index];
+        let depth = (camera >> mv.z) & particle.place;
+        let strength = showing(depth, far_particles);
+        let radius = dot_radius * (0.75 + 0.25 * strength);
+        let distance = length(across - vec2<f32>((camera >> mv.x) & particle.place, (camera >> mv.y) & particle.place));
+        if (distance < radius && depth > nearest && (depth >= 0) == near_side) {
+            nearest = depth;
+            colour = select(white, faded(particle.colour, strength), distance < radius - rim_width);
+        }
+    }
+    return colour;
+}
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_height;
+    let reach = length(across);
+    let depth = sqrt(max(1 - reach * reach, 0.0));
+    // The sphere, softly lit from up and to the left, white beyond it, its outline drawn.
+    let shade = 0.92 + 0.07 * clamp(-0.25 * across.x + 0.35 * across.y + 0.9 * depth, 0.0, 1.0);
+    var colour = select(white, shade * vec3<f32>(1.0, 1.005, 1.01), reach <= 1);
+    colour = select(colour, outline_colour, abs(reach - 1) < outline_half_width);
+    colour = dots(colour, across, false);
+    if (reach < 1) {
+        colour = circles(circles(colour, across, -depth), across, depth);
+    }
+    return dots(colour, across, true);
+}
+"""
 
 
-def circle_vertices(circles: np.ndarray) -> np.ndarray:
-    """Uniformly sample each plane's intersection with the unit sphere."""
-    normals = circles[..., :3]
-    lengths = np.linalg.norm(normals, axis=-1)
-    normals = normals / lengths[..., None]
-    distances = circles[..., 3] / lengths
-    # A transverse frame samples the geometric circle, independently of how its
-    # parameterisation crowds together during the motion.
-    reference = np.eye(3)[np.argmin(np.abs(normals), axis=-1)]
-    first = np.cross(normals, reference)
-    first /= np.linalg.norm(first, axis=-1)[..., None]
-    second = np.cross(normals, first)
-    angles = np.linspace(0, 2 * np.pi, n_circle_samples + 1)
-    radius = np.sqrt(np.maximum(0, 1 - distances ** 2))
-    return (normals * distances[..., None])[..., None, :] + radius[..., None, None] * (
-        first[..., None, :] * np.cos(angles)[..., None]
-        + second[..., None, :] * np.sin(angles)[..., None]
-    )
+# --- plumbing -------------------------------------------------------------------------
+@cache
+def shader() -> Shader:
+    return Shader(source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor))
 
 
-def canvas() -> tuple[plt.Figure, LineCollection, tuple[PathCollection, PathCollection]]:
-    """A fixed, softly shaded sphere and its two dynamic drawing layers."""
-    fig, ax = plt.subplots(figsize=(size / 100, size / 100), dpi=100)
-    fig.subplots_adjust(0, 0, 1, 1)
-    ax.set(xlim=(-margin, margin), ylim=(-margin, margin), aspect="equal")
-    ax.axis("off")
-
-    coordinates = np.linspace(-margin, margin, size)
-    right, up = np.meshgrid(coordinates, coordinates)
-    depth = np.sqrt(np.maximum(0, 1 - right ** 2 - up ** 2))
-    light = np.clip(-0.25 * right + 0.35 * up + 0.90 * depth, 0, 1)
-    shade = 0.92 + 0.07 * light
-    surface = np.stack((shade, shade * 1.005, shade * 1.01), axis=-1)
-    surface[right ** 2 + up ** 2 > 1] = 1
-    ax.imshow(np.clip(surface, 0, 1), extent=(-margin, margin, -margin, margin), origin="lower")
-    ax.add_patch(plt.Circle((0, 0), 1, fill=False, color="#c2c7c8", linewidth=0.7))
-    lines = LineCollection([], linewidths=1.05, zorder=2)
-    ax.add_collection(lines)
-    back = ax.scatter([], [], s=19, linewidths=0.35, edgecolors="white", zorder=1.5)
-    front = ax.scatter([], [], s=19, linewidths=0.35, edgecolors="white", zorder=3)
-    return fig, lines, (back, front)
-
-
-def update(lines: LineCollection, particles: tuple[PathCollection, PathCollection],
-           population: np.ndarray, circles: np.ndarray) -> None:
-    """Project the surface geometry, fading its far side."""
-    viewed_circles = circle_vertices(circles) @ view.T
-    segments = np.stack((viewed_circles[:, :-1], viewed_circles[:, 1:]), axis=-2).reshape(-1, 2, 3)
-    depths = segments[..., 2].mean(axis=-1)
-    order = np.argsort(depths)
-    visibility = 0.18 + 0.82 * np.clip(depths * 12 + 0.5, 0, 1)
-    colors = 1 - visibility[:, None] * (1 - circle_color)
-    lines.set_segments(segments[order, :, :2])
-    lines.set_colors(colors[order])
-
-    viewed = population @ view.T
-    order = np.argsort(viewed[:, 2])
-    colors = particle_colors[np.arange(len(population)) % len(particle_colors)]
-    visibility = 0.25 + 0.75 * np.clip(viewed[:, 2] * 12 + 0.5, 0, 1)
-    colors = 1 - visibility[:, None] * (1 - colors)
-    for layer, visible in zip(particles, (viewed[:, 2] < 0, viewed[:, 2] >= 0)):
-        indices = order[visible[order]]
-        layer.set_offsets(viewed[indices, :2])
-        layer.set_facecolors(colors[indices])
-        layer.set_sizes(12 + 10 * visibility[indices])
+camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Rotor
 
 
 def coordinates(points: Point) -> np.ndarray:
     """Positions of directions on the last axis: each paired with the planes across x, y and z."""
-    planes = points.context.multivector
-    return (stack((planes.x, planes.y, planes.z), axis=-1) & points[..., None]).to_array()
+    return (stack((mv.x, mv.y, mv.z), axis=-1) & points[..., None]).to_array()
+
+
+def picture(population: Point, circles: Cut) -> np.ndarray:
+    """One population and its circles, `[size, size, 3]` bytes."""
+    pixel = 2 * half_width / size
+    colours = particle_colours[np.arange(population.shape[-1]) % len(particle_colours)]
+    traced = shader()((size, size), camera=camera, half_height=half_width,
+                      particles=dict(place=population, colour=colours), cuts=circles,
+                      line_half_width=line_width / 2 * pixel, dot_radius=dot_radius * pixel,
+                      rim_width=rim_width * pixel, outline_half_width=outline_width / 2 * pixel)["image"]
+    return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
 def draw(population: Point, circles: Cut) -> plt.Figure:
     """Draw one population and the circles carried alongside it."""
-    positions = coordinates(population)
-    cuts = circles.cast(circles.algebra.subspace("x y z t")).kernel
-    fig, lines, particles = canvas()
-    update(lines, particles, positions, cuts)
-    return fig
+    return image_figure(picture(population, circles))
 
 
 def frames(population: Point, circles: Cut) -> list[np.ndarray]:
     """Animate a fixed camera while the common motion gathers the population."""
-    positions = coordinates(population)
-    cuts = circles.cast(circles.algebra.subspace("x y z t")).kernel
-    fig, lines, particles = canvas()
-    images = []
-    for frame_positions, frame_cuts in zip(positions, cuts):
-        update(lines, particles, frame_positions, frame_cuts)
-        images.append(capture(fig))
-    plt.close(fig)
-    return images
+    return [picture(frame_population, frame_circles) for frame_population, frame_circles in zip(population, circles)]

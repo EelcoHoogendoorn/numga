@@ -11,14 +11,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 
 from examples.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
+from examples.wgsl import labels, show, solids
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -27,9 +28,36 @@ polarization_names = ("Plus", "Cross", "Circular")
 # The animated ring: the circular packet, alone, at the dots per inch its detail needs.
 animated_polarization = polarization_names.index("Circular")
 animation_dpi = 64
+# The spacetime diagrams, drawn on the GPU with t up: the view's elevation and azimuth in radians, azimuth zero
+# looking along +z, the margin as a share of the larger side, and the pixels across; the share of the figure's
+# width each diagram takes.
+ELEVATION, AZIMUTH = np.radians([15.0, 22.0])
+MARGIN = 0.08
+N_MAP_PIXELS = 500
+PANEL_WIDTH = 0.44
+BLUE_RGB, ORANGE_RGB, LIGHT, PATCH = (np.array(to_rgb(colour)) for colour in (BLUE, ORANGE, light_colour, BLUE))
+# How much each of a patch's two faces hides.
+PATCH_OPACITY = 0.15
+# The axes' arrows and their names, in extents of the diagram; widths in pixels, of the axes' arrows and of the
+# patches' outlines, and an arrowhead's length and width in widths of its shaft.
+AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
+AXIS_WIDTH, OUTLINE_WIDTH = 3.0, 3.5
+HEAD_LENGTH, HEAD_WIDTH = 4.5, 3.0
+# The colour of the names of the lines of the faint cross through a ring's centre.
+CROSS_LABEL_COLOUR = "#7b8794"
 
 
 # --- coordinate readout ---------------------------------------------------------------
+def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
+    """Axes named by what runs along them, the quantity's zero as the horizontal one, without numbers."""
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.set(xticks=[], yticks=[], xlabel=across, ylabel=up)
+    # The horizontal axis's name below the plot, wherever its zero lies.
+    ax.xaxis.set_label_coords(0.5, -0.03)
+    ax.xaxis.label.set_va("top")
+
+
 def transverse(value: Antivector) -> np.ndarray:
     """(..., 2) x and y of separations in the plane transverse to the wave: their pairings with the
     slices x and y."""
@@ -41,11 +69,6 @@ def spacetime(value: Antivector) -> np.ndarray:
     return (stack((mv.x, mv.z, mv.t)) & value[..., None]).to_array()
 
 
-def arrow(value: Antivector) -> np.ndarray:
-    """(2, 3) segment from the origin to the tip of a direction, in x, z, t."""
-    return np.stack([np.zeros(3), spacetime(value)])
-
-
 # --- the curvature map at one event ---------------------------------------------------
 def patch(first: Antivector, second: Antivector) -> np.ndarray:
     """(4, 3) corners of the area element spanned by two directions, in x, z, t."""
@@ -54,28 +77,28 @@ def patch(first: Antivector, second: Antivector) -> np.ndarray:
                      for sign_first, sign_second in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
 
 
-def _arrow(ax, points: np.ndarray, colour: str, width: float = 2.0) -> None:
-    start, end = points
-    ax.quiver(*start, *(end - start), color=colour, linewidth=width,
-              arrow_length_ratio=0.15, normalize=False)
+def arrows(ends: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """Arrows from the origin to ends `[arrows, 3]` in x, z, t, drawn with t up, `width` pixels across: their
+    shafts and heads, in one colour."""
+    shafts, heads = solids.arrows(solids.mv.point(np.zeros_like(ends)), solids.mv.point(ends), width / 2 * view.pixel,
+                                  HEAD_LENGTH * width * view.pixel, HEAD_WIDTH * width / 2 * view.pixel)
+    return [(shafts, colour), (heads, colour)]
 
 
-def _spacetime_axes(ax, extent: float) -> None:
-    """One consistent view: horizontal x, depth z, and vertical ct."""
-    ax.set_proj_type("ortho")
-    ax.view_init(elev=15, azim=-68)
-    ax.set(xlim=(-extent, extent), ylim=(-extent, extent),
-           zlim=(-extent, extent), box_aspect=(1, 1, 1))
-    ax.set_axis_off()
-    for end in np.eye(3) * extent * 0.88:
-        _arrow(ax, np.array([np.zeros(3), end]), light_colour, 0.9)
-
-
-def _patch(ax, vertices: np.ndarray, colour: str) -> None:
-    ax.add_collection3d(Poly3DCollection(
-        [vertices], facecolors=colour, edgecolors=colour, linewidths=1.7, alpha=0.28))
-    closed = np.vstack((vertices, vertices[0]))
-    ax.plot(*closed.T, color=colour, lw=1.8)
+def panel(ax: plt.Axes, corners: np.ndarray, ends: list[tuple[np.ndarray, np.ndarray, float]], extent: float,
+          view: solids.View) -> None:
+    """One spacetime diagram in its axes: horizontal x, depth z and vertical t as light arrows named at their tips,
+    the area element `[4, 3]` as a translucent plate a pixel thick with its outline, rods joined round at the
+    corners, and arrows `[arrows, 3]` each with its colour and width in pixels."""
+    axis_ends = np.eye(3) * extent * AXIS_LENGTH
+    places = solids.mv.point(corners)                                          # [4] Point
+    rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
+    parts = (arrows(axis_ends, LIGHT, AXIS_WIDTH, view) + [(rims, PATCH), (joints, PATCH)]
+             + [part for points, colour, width in ends for part in arrows(points, colour, width, view)])
+    area = [(solids.plates(corners[None], view.pixel), PATCH, PATCH_OPACITY)]
+    show(ax, solids.draw(parts, view, np.ones(3), translucent=area), view)
+    labels(ax, view, solids.mv.point(np.eye(3) * extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center", va="center",
+           fontsize=12, color=INK)
 
 
 def draw_curvature_map(
@@ -88,42 +111,42 @@ def draw_curvature_map(
     into an acceleration. The image is drawn as the plane of the wave's direction and that acceleration.
     """
     readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector
-    across = readout / np.sqrt(-readout.squared().to_array())            # [] Antivector
+    across = readout / np.sqrt(readout.squared().to_array())             # [] Antivector
     patches = (patch(observer, edge), patch(wave, across))
-    observer_arrow, wave_arrow, readout_arrow = arrow(observer), arrow(wave), arrow(readout)
-    extent = max(1.0, float(np.abs(np.concatenate(
-        (*patches, observer_arrow, wave_arrow, readout_arrow))).max())) * 1.22
-
-    fig = plt.figure(figsize=(9.5, 4.8), dpi=120, facecolor="white")
-    axes = []
-    for column in range(2):
-        ax = fig.add_subplot(1, 2, column + 1, projection="3d")
-        _spacetime_axes(ax, extent)
-        axes.append(ax)
-    _patch(axes[0], patches[0], BLUE)
-    _arrow(axes[0], observer_arrow, ORANGE)
-    _patch(axes[1], patches[1], BLUE)
-    _arrow(axes[1], wave_arrow, BLUE, 2.3)
-    _arrow(axes[1], observer_arrow, ORANGE)
-    _arrow(axes[1], readout_arrow, ORANGE, 2.7)
-    for left_ax, right_ax in zip(axes[:-1], axes[1:]):
-        left, right = left_ax.get_position().x1 - 0.01, right_ax.get_position().x0 + 0.01
-        axes[0].annotate("", xy=(right, 0.5), xytext=(left, 0.5),
-                         xycoords=fig.transFigure, textcoords=fig.transFigure,
-                         arrowprops={"arrowstyle": "->", "lw": 1.8, "color": INK})
+    observer_end, wave_end, readout_end = spacetime(observer)[None], spacetime(wave)[None], spacetime(readout)[None]
+    extent = max(1.0, float(np.abs(np.concatenate((*patches, observer_end, wave_end, readout_end))).max())) * 1.22
+    # One view for both diagrams, framing the axes and everything drawn on them.
+    view = solids.view([solids.mv.point(np.concatenate((*patches, observer_end, wave_end, readout_end,
+                                                        np.eye(3) * extent * LABEL_DISTANCE)))], 0.0,
+                       ELEVATION, AZIMUTH, MARGIN, N_MAP_PIXELS)
+    rows, columns = view.shape
+    fig = plt.figure(figsize=(9.5, 9.5 * PANEL_WIDTH * rows / columns), dpi=120, facecolor="white")
+    before, after = fig.add_axes((0, 0, PANEL_WIDTH, 1)), fig.add_axes((1 - PANEL_WIDTH, 0, PANEL_WIDTH, 1))
+    panel(before, patches[0], [(observer_end, ORANGE_RGB, 4.0)], extent, view)
+    panel(after, patches[1], [(wave_end, BLUE_RGB, 4.5), (observer_end, ORANGE_RGB, 4.0), (readout_end, ORANGE_RGB, 5.0)],
+          extent, view)
+    # The map from the ribbon to its image, an arrow across the gap between the diagrams.
+    before.annotate("", xy=(1 - PANEL_WIDTH + 0.01, 0.5), xytext=(PANEL_WIDTH - 0.01, 0.5),
+                    xycoords=fig.transFigure, textcoords=fig.transFigure,
+                    arrowprops={"arrowstyle": "->", "lw": 1.8, "color": INK})
     return fig
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
-def draw_packet(time: np.ndarray, profiles: np.ndarray, second: np.ndarray) -> plt.Figure:
-    """The plus and cross strain profiles and their second derivatives `[times, 2]`, the weights of
-    the curvature batch."""
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
-    for ax, values in ((top, profiles), (bottom, second)):
-        # Plus in blue, cross in orange.
+def draw_packet(time: np.ndarray, strains: np.ndarray, curvatures: np.ndarray) -> plt.Figure:
+    """The plus and cross strain profiles and the curvature's weights `[times, 2]`, plus in blue and cross in orange,
+    each named beside its highest crest."""
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white",
+                                      layout="constrained")
+    for ax, values, name, across in ((top, strains, "strain", ""), (bottom, curvatures, "curvature", "time")):
         ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
         ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
-        ax.spines[["top", "right"]].set_visible(False)
+        plain_axes(ax, across, name)
+    crests = strains.argmax(axis=0)                                            # [2]
+    for crest, values, name, colour, side in ((crests[0], strains[:, 0], "plus", BLUE, -1),
+                                              (crests[1], strains[:, 1], "cross", ORANGE, 1)):
+        top.annotate(name, (time[crest], values[crest]), xytext=(side * 10, 0), textcoords="offset points",
+                     ha="right" if side < 0 else "left", va="center", color=colour, fontsize=10)
     return fig
 
 
@@ -131,12 +154,14 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     """Tidal amplitude measured by observers boosted along the wave, against `np.exp(-2 * rapidities)`."""
     measured = amplitudes.kernel[..., 0]                                 # [n] float
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
-    fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white")
+    fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white", layout="constrained")
     # The Doppler factor squared as a line, the tidal map's largest singular value as dots.
     ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)
     ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)
-    ax.set_yscale("log")
-    ax.spines[["top", "right"]].set_visible(False)
+    # The observer at rest, faint.
+    ax.axvline(0, color=light_colour, lw=0.8, zorder=0)
+    ax.set(ylim=(0, None))
+    plain_axes(ax, "rapidity", "tidal amplitude")
     return fig
 
 
@@ -184,8 +209,14 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     radius = np.linalg.norm(reference, axis=-1).mean()
     ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":", lw=1.5)
     ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
-    ax.plot([-radius * 1.08, radius * 1.08], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
-    ax.plot([0, 0], [-radius * 1.08, radius * 1.08], color="#edf0f3", lw=0.8, zorder=0)
+    # The cross through the centre, across the whole view but for room for its names at its ends.
+    reach = 0.9 * ax.get_xlim()[1]
+    ax.plot([-reach, reach], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
+    ax.plot([0, 0], [-reach, reach], color="#edf0f3", lw=0.8, zorder=0)
+    ax.annotate("x", (reach, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
+                color=CROSS_LABEL_COLOUR)
+    ax.annotate("y", (0, reach), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
+                color=CROSS_LABEL_COLOUR)
     outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
     beads = ax.scatter([], [], s=19, color=BLUE, edgecolors="white", linewidths=0.4, zorder=5)
     markers = ax.scatter(*reference[selected].T, s=47, c=tracking_colours[:len(selected)],

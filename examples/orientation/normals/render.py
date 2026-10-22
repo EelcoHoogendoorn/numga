@@ -1,24 +1,71 @@
-"""Plane sides and triangle winding under reflection."""
+"""Plane sides and triangle winding under reflection, ray traced on the GPU: the mirror, the planes and the triangles
+translucent plates with their rims, lines rods, points balls and orientations arrows."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.colors import to_rgb
 
 from examples.orientation.normals.core import Axis, Plane, Point, Spear, Surface, ga
+from examples.wgsl import show, solids
 
-SIDE = "#218c9d"
-WINDING = "#ce713f"
-FACE = "#b8c1c8"
-MIRROR = "#8095aa"
-LINE = "#3b4a57"
-FIRST = "#c8553d"
-SECOND = "#2f6690"
+sm = solids.mv
+SIDE = np.array(to_rgb("#218c9d"))
+WINDING = np.array(to_rgb("#ce713f"))
+FACE = np.array(to_rgb("#b8c1c8"))
+FACE_EDGE = np.array(to_rgb("#59626a"))
+MIRROR = np.array(to_rgb("#8095aa"))
+LINE = np.array(to_rgb("#3b4a57"))
+FIRST = np.array(to_rgb("#c8553d"))
+SECOND = np.array(to_rgb("#2f6690"))
+background = np.ones(3)
+# The margin around each scene as a share of the larger side, and the pixels across a panel, fewer for the tall
+# panels of the crossing planes.
+MARGIN, N_PIXELS, N_PAIR_PIXELS = 0.25, 460, 340
+# How much of what lies behind them each surface of the mirror, the triangles and the crossing planes hides, and how
+# strongly the mirror's rim shows over the white page.
+MIRROR_OPACITY, FACE_OPACITY, PLANE_OPACITY, MIRROR_RIM_OPACITY = 0.06, 0.55, 0.23, 0.6
+MIRROR_RIM = MIRROR_RIM_OPACITY * MIRROR + (1 - MIRROR_RIM_OPACITY)
+# The widths of rims, lines, normal arrows and edge arrows, the arrowheads' widths, and the points' radius, in pixels.
+RIM_WIDTH, LINE_WIDTH, NORMAL_WIDTH, EDGE_ARROW_WIDTH, HEAD_WIDTH = 3.0, 3.5, 5.0, 4.0, 14.0
+DOT_RADIUS = 7.0
 
 
 # --- plumbing -------------------------------------------------------------------------
+def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head_share: float, view: solids.View
+           ) -> tuple[solids.Quadric, solids.Quadric]:
+    """Arrows between places `[arrows, 3]`, their shafts `width` pixels across and their heads a share of each
+    arrow's length."""
+    lengths = np.linalg.norm(ends - starts, axis=-1)
+    return solids.arrows(sm.point(starts), sm.point(ends), width / 2 * view.pixel, head_share * lengths,
+                         HEAD_WIDTH / 2 * view.pixel)
+
+
+def polygons(corners: np.ndarray, view: solids.View) -> tuple[solids.Quadric, solids.Quadric, solids.Quadric]:
+    """Flat polygons of corners `[polygons, corners, 3]`: plates a pixel thick `[polygons, corners + 2]`, and their
+    rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2, 1]`."""
+    places = sm.point(corners)                                                 # [polygons, corners] Point
+    following = places[:, np.roll(np.arange(corners.shape[1]), -1)]
+    rims, joints = solids.edges(places.reshape(-1), following.reshape(-1), RIM_WIDTH / 2 * view.pixel)
+    return solids.plates(corners, view.pixel), rims, joints
+
+
+def panels(figure: plt.Figure, images: list[np.ndarray], view: solids.View, n_columns: int) -> None:
+    """Images of one view in a grid of `n_columns`, filling the figure."""
+    n_rows = -(-len(images) // n_columns)
+    for index, image in enumerate(images):
+        row, column = divmod(index, n_columns)
+        show(figure.add_axes((column / n_columns, 1 - (row + 1) / n_rows, 1 / n_columns, 1 / n_rows)), image, view)
+
+
+def grid_figure(view: solids.View, n_rows: int, n_columns: int) -> plt.Figure:
+    return plt.figure(figsize=(n_columns * view.shape[1] / 100, n_rows * view.shape[0] / 100), dpi=100)
+
+
 def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) -> plt.Figure:
+    """Left, the plane's positive side over both triangles; right, the winding of both, its normal and the
+    vertex order along their edges."""
     values = vertices.cast(ga.subspace("wzy wxz wyx xyz")).kernel
     points = values[..., :3] / values[..., 3:]
     centres = points.mean(axis=1)
@@ -31,33 +78,30 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
     upper = points.max(axis=(0, 1))
     centre = (lower + upper) / 2
     span = np.max(upper - lower)
-    radius = span * 0.62
     arrow_length = span * 0.22
+    corners = mirror_sheet(mirror, centre, span * 0.32)
+    tips = centres + normals * arrow_length                                   # [panels, triangles, 3]
 
-    sheet = mirror_sheet(mirror, centre, span * 0.32)
-
-    figure = plt.figure(figsize=(10, 4.2), layout="constrained")
-    for index, colour in enumerate((SIDE, WINDING)):
-        ax = figure.add_subplot(1, 2, index + 1, projection="3d", computed_zorder=False)
-        ax.set(xlim=(centre[0] - radius, centre[0] + radius),
-               ylim=(centre[1] - radius, centre[1] + radius),
-               zlim=(centre[2] - radius, centre[2] + radius))
-        ax.set_box_aspect((1, 1, 1), zoom=1.3)
-        ax.view_init(elev=38, azim=-68)
-        ax.set_axis_off()
-        ax.add_collection3d(Poly3DCollection([sheet], facecolors=MIRROR, edgecolors=MIRROR,
-                                            alpha=0.12, linewidths=1, zorder=1))
-        ax.add_collection3d(Poly3DCollection(points, facecolors=FACE, edgecolors="#59626a",
-                                            alpha=0.75, linewidths=1.5, zorder=2))
-        ax.quiver(*centres.T, *normals[index].T, length=arrow_length,
-                  color=colour, linewidth=3, arrow_length_ratio=0.25, zorder=3)
+    view = solids.view([sm.point(corners), sm.point(points), sm.point(tips)], 0.0, np.radians(38.0),
+                       np.radians(22.0), MARGIN, N_PIXELS)
+    triangles, rims, joints = polygons(points, view)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
+    common = [(rims, FACE_EDGE), (joints, FACE_EDGE), (mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM)]
+    sheets = [(mirror, MIRROR, MIRROR_OPACITY), (triangles, FACE, FACE_OPACITY)]
 
     # Follow the supplied vertex order, so reflection visibly reverses the winding.
     edges = np.roll(points, -1, axis=1) - points
-    starts = (points + edges * 0.25).reshape(-1, 3)
-    arrows = (edges * 0.5).reshape(-1, 3)
-    ax.quiver(*starts.T, *arrows.T, color=WINDING, linewidth=2.5,
-              arrow_length_ratio=0.4, zorder=4)
+    edge_arrows = arrows((points + edges * 0.25).reshape(-1, 3), (points + edges * 0.75).reshape(-1, 3),
+                         EDGE_ARROW_WIDTH, 0.4, view)
+    side_arrows = arrows(centres, tips[0], NORMAL_WIDTH, 0.25, view)
+    winding_arrows = arrows(centres, tips[1], NORMAL_WIDTH, 0.25, view)
+    side_panel = [(side_arrows[0], SIDE), (side_arrows[1], SIDE)]
+    winding_panel = [(winding_arrows[0], WINDING), (winding_arrows[1], WINDING), (edge_arrows[0], WINDING),
+                     (edge_arrows[1], WINDING)]
+
+    figure = grid_figure(view, 1, 2)
+    panels(figure, [solids.draw(common + side_panel, view, background, translucent=sheets),
+                    solids.draw(common + winding_panel, view, background, translucent=sheets)], view, 2)
     return figure
 
 
@@ -70,24 +114,21 @@ def draw_line_in_mirror(ends: Point, lines: Spear, mirror: Plane) -> plt.Figure:
     directions /= np.linalg.norm(directions, axis=-1, keepdims=True)
 
     span = np.linalg.norm(points[1] - points[0])
-    radius = span * 0.75
-    sheet = mirror_sheet(mirror, middle, span * 0.7)
+    corners = mirror_sheet(mirror, middle, span * 0.7)
+    view = solids.view([sm.point(corners)], 0.0, np.radians(24.0), np.radians(62.0), MARGIN, N_PIXELS)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
+    line = solids.rods(sm.point(points[0]), sm.point(points[1]), LINE_WIDTH / 2 * view.pixel)[None]
+    dots = solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None]
+    common = [(mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM), (line, LINE), (dots, LINE)]
 
-    figure = plt.figure(figsize=(14, 4.2), layout="constrained")
-    for index, direction in enumerate(directions):
-        ax = figure.add_subplot(1, len(directions), index + 1, projection="3d", computed_zorder=False)
-        ax.set(xlim=(middle[0] - radius, middle[0] + radius),
-               ylim=(middle[1] - radius, middle[1] + radius),
-               zlim=(middle[2] - radius, middle[2] + radius))
-        ax.set_box_aspect((1, 1, 1), zoom=1.3)
-        ax.view_init(elev=24, azim=-28)
-        ax.set_axis_off()
-        ax.add_collection3d(Poly3DCollection([sheet], facecolors=MIRROR, edgecolors=MIRROR,
-                                            alpha=0.12, linewidths=1, zorder=1))
-        ax.plot(*points.T, color=LINE, linewidth=2, zorder=2)
-        ax.scatter(*points.T, color=LINE, s=40, depthshade=False, zorder=3)
-        ax.quiver(*(middle - direction * span * 0.2), *direction, length=span * 0.4,
-                  color=WINDING, linewidth=3, arrow_length_ratio=0.3, zorder=4)
+    images = []
+    for direction in directions:
+        shaft, head = arrows(middle[None] - direction * span * 0.2, middle[None] + direction * span * 0.2,
+                             NORMAL_WIDTH, 0.3, view)
+        images.append(solids.draw(common + [(shaft, WINDING), (head, WINDING)], view, background,
+                                  translucent=[(mirror, MIRROR, MIRROR_OPACITY)]))
+    figure = grid_figure(view, 1, len(directions))
+    panels(figure, images, view, len(directions))
     return figure
 
 
@@ -101,34 +142,33 @@ def draw_pairs_in_mirror(planes: Plane, ends: Point, meets: Axis, joins: Spear, 
     along = points[0, 1] - points[0, 0]
     span = np.linalg.norm(along)
     along /= span
-    radius = span * 1.1
-    sheet = mirror_sheet(mirror, middle, span * 0.95)
-    colours = (FIRST, SECOND)
+    corners = mirror_sheet(mirror, middle, span * 0.95)
+    colours = np.stack([FIRST, SECOND])
 
-    figure = plt.figure(figsize=(9, 8.4), layout="constrained")
-    for row in range(2):
-        for panel in range(len(points)):
-            ax = figure.add_subplot(2, len(points), row * len(points) + panel + 1, projection="3d",
-                                    computed_zorder=False)
-            ax.set(xlim=(middle[0] - radius, middle[0] + radius),
-                   ylim=(middle[1] - radius, middle[1] + radius),
-                   zlim=(middle[2] - radius, middle[2] + radius))
-            ax.set_box_aspect((1, 1, 1), zoom=1.3)
-            ax.view_init(elev=22, azim=-62)
-            ax.set_axis_off()
-            ax.add_collection3d(Poly3DCollection([sheet], facecolors=MIRROR, edgecolors=MIRROR,
-                                                alpha=0.12, linewidths=1, zorder=1))
-            ax.plot(*points[panel].T, color=LINE, linewidth=2.5, zorder=3)
-            if row == 0:
-                ax.scatter(*points[panel].T, color=colours, s=70, depthshade=False, zorder=4)
-                continue
-            for normal, colour in zip(normals[panel], colours):
-                across = np.cross(normal, along)
-                across /= np.linalg.norm(across)
-                corners = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
-                patch = middle + span * 0.6 * (corners[:, :1] * across + corners[:, 1:] * along)
-                ax.add_collection3d(Poly3DCollection([patch], facecolors=colour, edgecolors=colour,
-                                                    alpha=0.35, linewidths=1.5, zorder=2))
+    # Each plane's patch: a square about the middle, along the line and across it within the plane.
+    across = np.cross(normals, along)
+    across /= np.linalg.norm(across, axis=-1, keepdims=True)
+    square = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])
+    patches = middle + span * 0.6 * (square[:, :1] * across[..., None, :] + square[:, 1:] * along)   # [panels, 2, 4, 3]
+
+    view = solids.view([sm.point(corners), sm.point(patches)], 0.0, np.radians(22.0), np.radians(28.0), MARGIN,
+                       N_PAIR_PIXELS)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
+    mirror_plate = (mirror, MIRROR, MIRROR_OPACITY)
+    top, bottom = [], []
+    for panel in range(len(points)):
+        line = solids.rods(sm.point(points[panel, 0]), sm.point(points[panel, 1]), LINE_WIDTH / 2 * view.pixel)[None]
+        marks = [(mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM), (line, LINE)]
+        dots = solids.ball(sm.point(points[panel]), DOT_RADIUS * view.pixel)[:, None]
+        top.append(solids.draw(marks + [(dots, colours)], view, background, translucent=[mirror_plate]))
+        # Each plane's patch and its rim in its own colour, rim by rim and joint by joint.
+        sheets, rims, joints = polygons(patches[panel], view)
+        n_corners = patches.shape[2]
+        crossing = [(rims, np.repeat(colours, n_corners, axis=0)), (joints, np.repeat(colours, 2 * n_corners, axis=0))]
+        bottom.append(solids.draw(marks + crossing, view, background,
+                                  translucent=[mirror_plate, (sheets, colours, PLANE_OPACITY)]))
+    figure = grid_figure(view, 2, len(points))
+    panels(figure, top + bottom, view, len(points))
     return figure
 
 

@@ -93,42 +93,13 @@ def test_point_and_line_coincidence_crease_constructions():
     np.testing.assert_allclose((matched + target).kernel, 0, atol=1e-12)
 
 
-def test_depth_test_hides_covered_creases_and_resolves_intersecting_planes():
-    from examples.geometry.origami import render
-
-    square = np.array([[8, 8], [56, 8], [56, 56], [8, 56]])
-    triangle = np.array([[16, 16], [48, 16], [32, 48]])
-    xy = np.concatenate([square, triangle])
-    screen = np.column_stack([xy, xy @ [0.2, 0.1]])
-    # The square lies a little above the triangle.
-    screen[:4, 2] += 1e-3
-    faces = (np.arange(4), np.arange(4, 7))
-    colours = np.array([[0.9, 0.3, 0.1], [0.1, 0.4, 0.9]])
-    image = render.rasterize(screen, faces, colours, 64)
-    reversed_image = render.rasterize(screen, faces[::-1], colours[::-1], 64)
-
-    # checks: a buried triangular crease leaves no mark, irrespective of drawing order.
-    np.testing.assert_allclose(image[16:48, 16:48] - colours[0], 0, atol=1e-12)
-    np.testing.assert_allclose(image - reversed_image, 0, atol=1e-12)
-
-    xy = np.concatenate([square, square])
-    screen = np.column_stack([xy, xy @ [0.2, 0.1]])
-    screen[4:, 2] += (square[:, 0] - 32) * 0.1
-    faces = (np.arange(4), np.arange(4, 8))
-    image = render.rasterize(screen, faces, colours, 64)
-    # The nearest plane changes across the image; one polygon-level order cannot draw this.
-    np.testing.assert_allclose(image[20:40, 16:28] - colours[0], 0, atol=1e-12)
-    np.testing.assert_allclose(image[20:40, 36:48] - colours[1], 0, atol=1e-12)
-
-
 @pytest.mark.parametrize("elevation,azimuth", [(35, 135), (-35, 135), (45, 45), (-45, 225)])
 def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevation, azimuth):
     from examples.geometry.origami import render
 
-    monkeypatch.setattr(render, "PIXELS", 120)
-    monkeypatch.setattr(render, "SUPERSAMPLE", 1)
-    monkeypatch.setattr(render, "ELEVATION", elevation)
-    monkeypatch.setattr(render, "AZIMUTH", azimuth)
+    monkeypatch.setattr(render, "pixels", 120)
+    monkeypatch.setattr(render, "elevation", np.radians(elevation))
+    monkeypatch.setattr(render, "azimuth", np.radians(azimuth + 90))
     paper, planes = scenarios.kabuto()
     # Resolve a visible displacement beyond the infinitesimal layer gaps.
     angle_step = 1e-3
@@ -136,9 +107,9 @@ def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevat
         split, turning, _ = paper.split(plane, selected, scenarios.CREASE_TOLERANCE)
         hinge = plane ^ paper.sheet
         starting = split.folded(hinge, turning, np.copysign(angle_step, peak))
-        centre, scale = render.viewport(render.coordinates(split.points))
-        before = render.picture(split, centre, scale).astype(float)
-        after = render.picture(starting, centre, scale).astype(float)
+        view = render.viewport(split.points)
+        before = render.picture(split, view).astype(float)
+        after = render.picture(starting, view).astype(float)
         changed = np.max(np.abs(after - before), axis=-1) > 5
 
         # An infinitesimal motion may change edge coverage, but cannot recolour a flap.
@@ -149,8 +120,8 @@ def test_paper_shading_has_no_colour_jump_at_fold_boundaries(monkeypatch, elevat
         approaching = split.folded(hinge, turning, end - np.copysign(angle_step, peak)
                                    if end else np.copysign(angle_step, peak))
         paper = split.folded(hinge, turning, end)
-        before = render.picture(approaching, centre, scale).astype(float)
-        after = render.picture(paper, centre, scale).astype(float)
+        before = render.picture(approaching, view).astype(float)
+        after = render.picture(paper, view).astype(float)
         changed = np.max(np.abs(after - before), axis=-1) > 5
         assert changed.mean() < 0.02
 

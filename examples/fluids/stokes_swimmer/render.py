@@ -16,6 +16,10 @@ SCALLOP_COLOUR = "#c84b31"
 TRAIL_COLOUR = "#e63946"
 FLOW_COLOUR = "#94a3b8"
 FORCE_COLOUR = "#2a9d8f"
+CROSS_COLOUR, LABEL_COLOUR = "#cbd5e1", "0.4"
+# The margin around the strokes in hinge-angle space, as a share of their extent, across and up: up, the room for the
+# name running down the line.
+HINGE_MARGIN, HINGE_ROOM = 0.12, 0.5
 
 
 def point_coords(points: core.Point | core.Direction) -> np.ndarray:
@@ -26,6 +30,30 @@ def point_coords(points: core.Point | core.Direction) -> np.ndarray:
 def force_coords(forces: core.Force) -> np.ndarray:
     """The `(x, y)` components of planar forces."""
     return forces.cast(core.ga.subspace("x y")).kernel
+
+
+def _cross(ax, across: str, up: str) -> None:
+    """A plane without scales: a faint cross through the origin, its lines named at their ends, each along itself,
+    the line across named just past its end."""
+    ax.axhline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)
+    ax.axvline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)
+    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=9,
+            color=LABEL_COLOUR)
+    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR,
+            rotation=90, rotation_mode="anchor")
+    ax.set_axis_off()
+
+
+def _zero_axes(ax, across: str, up: str) -> None:
+    """Axes of a quantity through its zero and the parameter's, named at their ends, each along itself, without tick
+    marks or numbers, the axis across named just past its end."""
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines[["left", "bottom"]].set_position(("data", 0))
+    ax.set(xticks=[], yticks=[])
+    ax.text(1, 0, f" {across}", transform=ax.get_yaxis_transform(), ha="left", va="center", fontsize=9,
+            color=LABEL_COLOUR)
+    ax.text(0, 1, f"{up} ", transform=ax.get_xaxis_transform(), ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR,
+            rotation=90, rotation_mode="anchor")
 
 
 def _draw_swimmer(ax, beads_xy: np.ndarray, colour: str, alpha: float) -> None:
@@ -86,13 +114,14 @@ def draw_summary(
     t = np.linspace(0.0, 1.0, len(pos_xy))
     ax_path.plot(t, pos_xy[:, 0, 0], color=PURCELL_COLOUR, linewidth=2.2)
     ax_path.plot(t, pos_xy[:, 1, 0], color=SCALLOP_COLOUR, linewidth=2.0, linestyle="--")
-    ax_path.axhline(0.0, color="#cbd5e1", linewidth=0.8, zorder=0)
-    ax_path.set_axis_off()
+    _zero_axes(ax_path, "time", "$x$")
 
     ax_hinge.plot(angles[:, 0, 0], angles[:, 0, 1], color=PURCELL_COLOUR, linewidth=2.2)
     ax_hinge.plot(angles[:, 1, 0], angles[:, 1, 1], color=SCALLOP_COLOUR, linewidth=2.0, linestyle="--")
     ax_hinge.set_aspect("equal")
-    ax_hinge.set_axis_off()
+    # Room above the loop for the name of the line up.
+    ax_hinge.margins(x=HINGE_MARGIN, y=HINGE_ROOM)
+    _cross(ax_hinge, "left hinge", "right hinge")
 
     figure.tight_layout()
     return figure

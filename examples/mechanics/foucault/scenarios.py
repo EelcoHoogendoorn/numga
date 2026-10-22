@@ -10,10 +10,7 @@ from examples.mechanics.foucault import core
 # and the north pole.
 LATITUDES = np.radians(np.array([0.0, 30.0, 48.85, 90.0]))
 PARIS = 2
-# The swings drawn in a day, far fewer than the thousands a real pendulum makes, so that each stays apart;
-# the samples of a day; and the steps a direction is carried around a latitude circle in.
-N_SWINGS = 40
-N_SAMPLES = 4000
+# The steps a direction is carried around a latitude circle in.
 N_STEPS = 720
 # The frames of the day in Paris, and the duration of each.
 N_FRAMES = 72
@@ -21,32 +18,20 @@ DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
-def rosettes() -> tuple[core.Point, core.Point, core.Point]:
-    """Where each pendulum's bob is on its floor through the day `[latitudes, samples]`, swinging to and
-    fro along its turning line, and the floor's north and east."""
-    turns = np.linspace(0, 2 * np.pi, N_SAMPLES)                                 # [samples]
-    lines = core.swing(LATITUDES[:, None], turns[None, :])                     # [latitudes, samples] Point
-    _, north, east = core.compass(LATITUDES)
-    return lines * np.sin(N_SWINGS * turns), north, east                         # [latitudes, samples] Point
-
-
-def day() -> tuple[np.ndarray, core.Rotor, core.Point, core.Point, core.Point, core.Point]:
-    """For the pendulum in Paris at every frame of a day: the earth's turn so far, the rotor of that turn,
-    and the line the pendulum swings along on its floor; with the site's vertical, north and east at the
-    start of the day."""
+def day() -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
+    """For the pendulum in Paris at every frame of a day: the rotor of the earth's turn so far, and the line
+    the pendulum swings along on its floor; with the site's vertical, north and east at the start of the day."""
     turns = np.linspace(0, 2 * np.pi, N_FRAMES + 1)                              # [frames + 1]
     vertical, north, east = core.compass(LATITUDES[PARIS])
-    return turns, core.turn(core.equator, turns), core.swing(LATITUDES[PARIS], turns), vertical, north, east
+    return core.turn(core.equator, turns), core.swing(LATITUDES[PARIS], turns), vertical, north, east
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.animation import save_animation
     from examples.mechanics.foucault import render
 
-    save_figure(render.draw_rosettes(*rosettes()), "foucault")
-    tracks, _, _ = rosettes()
-    save_animation(render.animate_day(*day(), tracks[PARIS]), "foucault_day", DURATION_MS)
+    save_animation(render.animate_day(*day()), "foucault_day", DURATION_MS)
 
     # checks
     _, north, east = core.compass(LATITUDES)

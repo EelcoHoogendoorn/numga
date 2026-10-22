@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from functools import cache
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,11 +11,11 @@ from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.colors import LinearSegmentedColormap
 from PIL import Image, ImageDraw
 
-from examples.math.isospectral_drums.core import Scalar, Vector, ga
-from examples.raster import rasterise
+from numga import stack
+from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
+from examples.wgsl import Shader
 
 PIXELS = 380
-SUPERSAMPLE = 2
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.
 COLOURS = LinearSegmentedColormap.from_list(
     "membrane", ["#277daf", "#f1efe9", "#e79a47"],
@@ -28,9 +29,9 @@ TILE_COLOURS = np.array([
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(points: Vector) -> np.ndarray:
-    """Cartesian positions with field sites exposed for drawing."""
-    return np.asarray(points.batch().cast(ga.subspace("x y")).kernel)
+def coordinates(points: Point) -> np.ndarray:
+    """Cartesian positions with field sites exposed for drawing: their pairings with the lines x and y."""
+    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
 
 
 def amplitudes(field: Scalar) -> np.ndarray:
@@ -47,17 +48,7 @@ def boundary_corners(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
     return (counts[inverse] == 1).reshape(-1, 3)
 
 
-def image_figure(picture: np.ndarray) -> plt.Figure:
-    """An image at its pixel size without margins or axes."""
-    figure, ax = plt.subplots(figsize=(picture.shape[1] / 100, picture.shape[0] / 100), dpi=100)
-    ax.imshow(picture)
-    ax.set_axis_off()
-    figure.subplots_adjust(0, 0, 1, 1)
-    plt.close(figure)
-    return figure
-
-
-def draw_tiles(tiles: Vector) -> plt.Figure:
+def draw_tiles(tiles: Point) -> plt.Figure:
     """The two polygonal drums, with matching colours for their seven constituent triangles."""
     points = coordinates(tiles)
     figure, axes = plt.subplots(1, len(points), figsize=(8, 3.7), facecolor="white")
@@ -78,54 +69,79 @@ def draw_tiles(tiles: Vector) -> plt.Figure:
     return figure
 
 
-class MembraneRaster:
-    """Fixed pixel interpolation and boundary outlines for a flat triangular mesh."""
+membrane_source = """
+var<storage, read> points: array<Point>;
+var<storage, read> faces: array<vec3<u32>>;
+var<storage, read> values: array<f32>;
+// Per face: one where the edge opposite each corner lies on the drum's perimeter.
+var<storage, read> rims: array<vec3<f32>>;
+// The drum's middle, and how far across the image a unit length reaches.
+var<uniform> centre: Point;
+var<uniform> scale: f32;
+var<uniform> exposure: f32;
+var colours: texture_2d<f32>;
+var filtered: sampler;
 
-    def __init__(self, points: np.ndarray, triangles: np.ndarray, scale: float):
-        size = PIXELS * SUPERSAMPLE
-        centre = (points.min(axis=0) + points.max(axis=0)) / 2
-        self.centre, self.scale = centre, scale
-        screen = (points - centre) * scale + size / 2
-        self.pixel, self.face, self.weights, _ = rasterise(
-            np.pad(screen, ((0, 0), (0, 1))), triangles, size)
-        self.triangles = triangles
+// Interpolated at every sample of a pixel, so the colour and the inked lines are supersampled with the edges.
+struct Corner {
+    @builtin(position) position: vec4<f32>,
+    @location(0) @interpolate(perspective, sample) value: f32,
+    @location(1) @interpolate(perspective, sample) corner: vec3<f32>,
+    @location(2) @interpolate(flat) rim: vec3<f32>,
+}
 
-        corners = screen[triangles]
-        across = corners[:, 1:] - corners[:, :1]
-        area = across[:, 0, 0] * across[:, 1, 1] - across[:, 0, 1] * across[:, 1, 0]
-        opposite = np.roll(corners, -1, axis=1) - np.roll(corners, 1, axis=1)
-        self.gradients = np.stack([opposite[..., 1], -opposite[..., 0]], axis=-1) / area[:, None, None]
-        altitudes = np.abs(area[:, None]) / np.linalg.norm(opposite, axis=-1)
-        edge_distance = self.weights * altitudes[self.face]
-        perimeter = boundary_corners(points, triangles)
-        self.rim = np.max(np.clip(1 - edge_distance / (1.3 * SUPERSAMPLE), 0, 1)
-                          * perimeter[self.face], axis=-1)
+@vertex
+fn place(@builtin(vertex_index) index: u32) -> Corner {
+    let face = faces[index / 3];
+    let which = index % 3;
+    let offset = points[face[which]] - centre;
+    let corner = vec3<f32>(f32(which == 0), f32(which == 1), f32(which == 2));
+    return Corner(vec4<f32>((mv.x & offset) * scale, (mv.y & offset) * scale, 0.5, 1.0), values[face[which]], corner, rims[index / 3]);
+}
+
+// The displacement through the colour table, inked where it crosses zero and along the perimeter: a line a
+// pixel or so wide wherever a quantity lies within that many of its own changes across a pixel of zero.
+@fragment
+fn shade(corner: Corner) -> @location(0) vec4<f32> {
+    let entries = f32(textureDimensions(colours).x);
+    let place = clamp(0.5 + corner.value / (2 * exposure), 0.0, 1.0) * (entries - 1) + 0.5;
+    let colour = textureSampleLevel(colours, filtered, vec2<f32>(place / entries, 0.5), 0.0).rgb;
+    let change = fwidth(corner.value);
+    let nodal = clamp(1 - abs(corner.value) / (0.65 * change), 0.0, 1.0) * select(0.0, 1.0, change > 1e-12);
+    let edges = clamp(1 - corner.corner / (1.3 * fwidth(corner.corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * corner.rim;
+    let ink = max(0.4 * nodal, 0.78 * max(edges.x, max(edges.y, edges.z)));
+    return vec4<f32>(colour * (1 - ink), 1.0);
+}
+"""
+
+
+@cache
+def membrane_shader() -> Shader:
+    return Shader(membrane_source, ga, dict(Point=Point), targets=("rgba32float",))
+
+
+class Membrane:
+    """A flat triangular mesh drawn on the GPU at a fixed place and scale, `pixels` across."""
+
+    def __init__(self, vertices: Point, points: np.ndarray, triangles: np.ndarray, scale: float):
+        self.vertices, self.triangles = vertices.batch(), triangles
+        self.centre_point = (points.min(axis=0) + points.max(axis=0)) / 2
+        self.centre = mv.x.dual() * self.centre_point[0] + mv.y.dual() * self.centre_point[1]
+        self.scale = scale
+        self.rims = boundary_corners(points, triangles).astype(float)
 
     def draw(self, field: np.ndarray, exposure: float) -> np.ndarray:
-        """Signed displacement with dark zero curves and a visible grey resting membrane."""
-        corner_values = field[self.triangles]
-        values = np.einsum("pk,pk->p", self.weights, corner_values[self.face])
-        colours = COLOURS(np.clip(0.5 + values / (2 * exposure), 0, 1))[:, :3]
-
-        # The scalar's slope gives a contour width measured in pixels, independent of amplitude.
-        gradient = np.einsum("fkd,fk->fd", self.gradients, corner_values)
-        slope = np.linalg.norm(gradient, axis=-1)[self.face]
-        distance = np.abs(values) / np.maximum(slope, 1e-14)
-        nodal_ink = np.clip(1 - distance / (0.65 * SUPERSAMPLE), 0, 1) * (slope > 1e-10)
-        ink = np.maximum(0.4 * nodal_ink, 0.78 * self.rim)
-        colours *= 1 - ink[:, None]
-
-        size = PIXELS * SUPERSAMPLE
-        picture = np.ones((size * size, 3))
-        picture[self.pixel] = colours
-        picture = picture.reshape(size, size, 3)[::-1]
-        picture = picture.reshape(PIXELS, SUPERSAMPLE, PIXELS, SUPERSAMPLE, 3).mean(axis=(1, 3))
-        return np.rint(255 * picture).astype(np.uint8)
+        """Signed displacement with dark zero curves, on white."""
+        drawn, = membrane_shader().draw((PIXELS, PIXELS), 3 * len(self.triangles), points=self.vertices,
+                                       faces=self.triangles, values=field, rims=self.rims, centre=self.centre,
+                                       scale=2 * self.scale / PIXELS, exposure=exposure,
+                                       colours=COLOURS(np.linspace(0, 1, 256))[None, :, :3])
+        shown = drawn[..., :3] + (1 - drawn[..., 3:])
+        return np.rint(255 * np.clip(shown, 0, 1)).astype(np.uint8)
 
     def outline(self, picture: np.ndarray, corners: np.ndarray) -> np.ndarray:
         """The picture with the outlines of triangles `[tiles, 3, 2]` drawn over it."""
-        size = PIXELS * SUPERSAMPLE
-        screen = ((corners - self.centre) * self.scale + size / 2) / SUPERSAMPLE
+        screen = (corners - self.centre_point) * self.scale + PIXELS / 2
         screen[..., 1] = PIXELS - screen[..., 1]
         image = Image.fromarray(picture)
         draw = ImageDraw.Draw(image)
@@ -135,21 +151,21 @@ class MembraneRaster:
 
 
 def frames(
-    vertices: tuple[Vector, Vector], triangles: tuple[np.ndarray, np.ndarray], tiles: Vector,
+    vertices: tuple[Point, Point], triangles: tuple[np.ndarray, np.ndarray], tiles: Point,
     fields: Iterable[tuple[Scalar, Scalar]], exposure: float,
 ) -> list[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
     seven triangles `tiles [2, tiles, 3]`."""
     points = tuple(coordinates(value) for value in vertices)
     corners = coordinates(tiles)                                             # [2, tiles, 3, 2]
-    scale = 0.91 * PIXELS * SUPERSAMPLE / max(np.ptp(value, axis=0).max() for value in points)
-    membranes = tuple(MembraneRaster(value, faces, scale) for value, faces in zip(points, triangles))
+    scale = 0.91 * PIXELS / max(np.ptp(value, axis=0).max() for value in points)
+    membranes = tuple(Membrane(value, places, faces, scale) for value, places, faces in zip(vertices, points, triangles))
     return [np.concatenate([membrane.outline(membrane.draw(amplitudes(field), exposure), drum)
                             for membrane, field, drum in zip(membranes, pair, corners)], axis=1)
             for pair in fields]
 
 
-def draw_pieces(vertices: Vector, triangles: np.ndarray, pieces: Scalar, exposure: float) -> plt.Figure:
+def draw_pieces(vertices: Point, triangles: np.ndarray, pieces: Scalar, exposure: float) -> plt.Figure:
     """Signed source contributions and their sum on the same reference triangle."""
     points = coordinates(vertices)
     values = amplitudes(pieces)

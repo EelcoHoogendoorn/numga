@@ -34,13 +34,11 @@ N_S2_FRAMES = 160
 N_TUMBLING_FRAMES = 240
 N_S3_FRAMES = 120
 S3_TIME_STEP = 0.04
-# Pixels across the front hemisphere of S², and the supersampling of each.
+# Pixels across the front hemisphere of S².
 HEMISPHERE_RESOLUTION = 240
-HEMISPHERE_SUPERSAMPLE = 2
 S2_DURATION_MS = 15
-# Pixels of the image traced on S³, and the supersampling of each.
-S3_SHAPE = (120, 160)
-S3_SUPERSAMPLE = 2
+# Pixels of the image traced on S³.
+S3_SHAPE = (360, 480)
 S3_DURATION_MS = 50
 
 
@@ -244,25 +242,24 @@ def main() -> None:
     from functools import partial
     from examples.animation import save_animation, save_figure
 
-    def on_s2(scene, name: str, frames: int, diagnostics) -> tuple[S2.Trajectory, np.ndarray]:
-        """Simulate a scene on S², save its diagnostic figure and its hemisphere animation."""
+    def on_s2(scene, name: str, frames: int) -> tuple[S2.Trajectory, np.ndarray]:
+        """Simulate a scene on S², save its hemisphere animation."""
         trajectory, colors = scene(frames)
-        save_figure(diagnostics(trajectory, colors, S2_TIME_STEP), name)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, HEMISPHERE_RESOLUTION, HEMISPHERE_SUPERSAMPLE), name, S2_DURATION_MS)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, HEMISPHERE_RESOLUTION), name, S2_DURATION_MS)
         return trajectory, colors
 
     def on_s3(scene, name: str, frames: int) -> tuple:
         """Simulate a scene on S³, trace it from its eye, save the last frame and the animation."""
         trajectory, colors, eye, light, *_ = geometry = scene(frames)
-        images = render.s3_frames(trajectory, colors, eye, light, S3_SHAPE, S3_SUPERSAMPLE)
-        save_figure(render.draw_last_frame(images, colors.shape[0]), name)
+        images = render.s3_frames(trajectory, colors, eye, light, S3_SHAPE)
+        save_figure(render.draw_last_frame(images), name)
         save_animation(images, name, S3_DURATION_MS)
         return geometry
 
     SCENES = {
-        "crowded": partial(on_s2, crowded, "spherical_quadric_physics", N_S2_FRAMES, render.draw_collisions),
-        "tumbling": partial(on_s2, tumbling, "spherical_tumbling_oval", N_TUMBLING_FRAMES, render.draw_tumbling),
-        "hyperbolic": partial(on_s2, hyperbolic, "spherical_hyperbolic_arena", N_S2_FRAMES, render.draw_collisions),
+        "crowded": partial(on_s2, crowded, "spherical_quadric_physics", N_S2_FRAMES),
+        "tumbling": partial(on_s2, tumbling, "spherical_tumbling_oval", N_TUMBLING_FRAMES),
+        "hyperbolic": partial(on_s2, hyperbolic, "spherical_hyperbolic_arena", N_S2_FRAMES),
         "crowd": partial(on_s3, crowd, "s3_quadric_physics", N_S3_FRAMES),
         "gap": partial(on_s3, gap, "s3_gap", N_S3_FRAMES),
         "needle": partial(on_s3, needle, "s3_needle", N_S3_FRAMES),
@@ -270,6 +267,14 @@ def main() -> None:
     }
 
     results = {scene: run() for scene, run in SCENES.items()}
+    save_figure(render.draw_tumbling(results["tumbling"][0], S2_TIME_STEP), "spherical_tumbling_oval")
+
+    # readout
+    # How far the kinetic energy and the total momentum stray from their starting values on S², relative to them.
+    for scene in ("crowded", "tumbling", "hyperbolic"):
+        trajectory = results[scene][0]
+        energy, momentum = trajectory.energy.to_array(), trajectory.momentum.norm().to_array()
+        print(f"{scene}: energy drift {np.ptp(energy) / abs(energy[0]):.1e}, momentum drift {np.ptp(momentum) / momentum[0]:.1e}")
 
     # checks
     # On S², kinetic energy within each scene's drift, total momentum exactly; the oval flips over and back

@@ -31,6 +31,24 @@ def capture(fig: plt.Figure) -> np.ndarray:
     return np.asarray(image.reduce(SUPERSAMPLE))
 
 
+def indexed(image: Image.Image, entries: np.ndarray, palette: Image.Image) -> Image.Image:
+    """An RGB image in a palette `[entries, 3]`: Pillow's own mapping, which looks entries up at reduced precision,
+    with every colour that is an entry exactly put on that entry, so that a white background stays white."""
+    shown = image.quantize(palette=palette, dither=Image.Dither.NONE)
+    # Each colour as one number, red, green and blue a byte each, looked up among the entries'.
+    weights = np.array([1 << 16, 1 << 8, 1])
+    codes = np.asarray(image).reshape(-1, 3).astype(np.int64) @ weights
+    order = np.argsort(entries.astype(np.int64) @ weights)
+    sorted_codes = (entries.astype(np.int64) @ weights)[order]
+    found = np.clip(np.searchsorted(sorted_codes, codes), 0, len(sorted_codes) - 1)
+    exact = sorted_codes[found] == codes
+    index = np.asarray(shown).reshape(-1).copy()
+    index[exact] = order[found[exact]]
+    fixed = Image.fromarray(index.astype(np.uint8).reshape(image.height, image.width), "P")
+    fixed.putpalette(palette.getpalette())
+    return fixed
+
+
 def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:
     """Write RGB frames as a looping palette GIF, box-filtered by scale."""
     images = [Image.fromarray(frame) for frame in frames]
@@ -41,8 +59,17 @@ def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float
     indices = np.linspace(0, len(images) - 1, min(len(images), PALETTE_FRAMES), dtype=int)
     samples = [images[index].resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
                for index in indices]
-    palette = Image.fromarray(np.concatenate([np.asarray(sample) for sample in samples], axis=0)).quantize(colors=colors)
-    images = [image.quantize(palette=palette, dither=Image.Dither.NONE) for image in images]
+    sampled = np.concatenate([np.asarray(sample) for sample in samples], axis=0)
+    palette = Image.fromarray(sampled).quantize(colors=colors)
+    # Each entry snapped to the commonest colour among the pixels it stands for, rather than their mean, so that flat
+    # colours, a white background above all, stay exact.
+    entries = np.array(palette.getpalette(), dtype=np.uint8).reshape(-1, 3)
+    pixels, chosen = sampled.reshape(-1, 3), np.asarray(palette).reshape(-1)
+    for entry in np.unique(chosen):
+        members, counts = np.unique(pixels[chosen == entry], axis=0, return_counts=True)
+        entries[entry] = members[counts.argmax()]
+    palette.putpalette(entries.reshape(-1).tolist())
+    images = [indexed(image, entries, palette) for image in images]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     images[0].save(
         path, save_all=True, append_images=images[1:], palette=palette.getpalette(),

@@ -1,26 +1,36 @@
-"""The hull and its polar dual in space, and both projected onto the sphere."""
+"""The hull and its polar dual in space, and both projected onto the sphere, ray traced on the GPU: the hull the
+translucent solid inside the planes of its faces, edges tubes, and the arcs on the sphere inked on its surface."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 import numpy as np
+from matplotlib.colors import to_rgb
 
-from examples.animation import capture
 from examples.surfaces.weighted_dual import core
+from examples.wgsl import image_figure, meshes, solids
 
-PRIMAL_COLOUR = "#287fa0"
-DUAL_COLOUR = "#d06c36"
-SPHERE_MESH = 48
-ARC_SAMPLES = 16
-REACH = 1.3
-ZOOM = 1.7
+sm = solids.mv
+PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
+DUAL_COLOUR = np.array(to_rgb("#d06c36"))
+HULL_COLOUR = np.array(to_rgb("#b4d4e0"))
+RAY_COLOUR = np.full(3, 0.55)
+SPHERE_COLOUR = np.full(3, 0.97)
+background = np.ones(3)
+# How much of what lies behind them each surface of the sphere and of the hull hides in space: the sphere is a faint
+# shell and the hull, pale, all but hides the far side.
+SPHERE_OPACITY, HULL_OPACITY = 0.08, 0.8
 # The colours of a vertex's distance from the sphere, and the distance at either end of them.
 DISTANCE_MAP = "coolwarm"
 DISTANCE_RANGE = 0.1
 # How far each ray is drawn either side of the sphere.
 RAY_SPAN = 0.15
-ELEVATION, AZIMUTH = 20.0, -60.0
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; half the width of the square view
+# about the centre, one framing for both panels so the sphere is the same size in each, and the pixels across each.
+ELEVATION, AZIMUTH = np.radians(20.0), np.radians(30.0)
+HALF, N_PIXELS = 1.3, 500
+# The widths of the edges, the rays and the arcs, and the vertices' radius, in pixels.
+EDGE_WIDTH, RAY_WIDTH, ARC_WIDTH, VERTEX_RADIUS = 2.2, 1.6, 2.4, 5.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -33,79 +43,55 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def arcs(ends: np.ndarray) -> np.ndarray:
-    """Great arcs on the unit sphere between the directions of pairs of points, [pairs, 2, 3]."""
-    share = np.linspace(0, 1, ARC_SAMPLES)[:, None]
-    chords = ends[:, None, 0] * (1 - share) + ends[:, None, 1] * share         # [pairs, samples, 3]
-    return chords / np.linalg.norm(chords, axis=-1, keepdims=True)
-
-
-def sphere(ax: plt.Axes) -> None:
-    longitude, latitude = np.meshgrid(np.linspace(0, 2 * np.pi, SPHERE_MESH), np.linspace(-np.pi / 2, np.pi / 2, SPHERE_MESH))
-    ax.plot_surface(np.cos(latitude) * np.cos(longitude), np.cos(latitude) * np.sin(longitude), np.sin(latitude),
-                    color="0.85", alpha=0.15, linewidth=0, shade=False)
-
-
-def frame_axes(ax: plt.Axes) -> None:
-    """One framing for both panels, so the sphere is the same size in each."""
-    ax.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), zlim=(-REACH, REACH))
-    ax.set_box_aspect((1, 1, 1), zoom=ZOOM)
-    ax.set_proj_type("ortho")
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
-
-
-def facing() -> np.ndarray:
-    """The direction towards the viewer."""
-    elevation, turn = np.radians(ELEVATION), np.radians(AZIMUTH)
-    return np.array([np.cos(elevation) * np.cos(turn), np.cos(elevation) * np.sin(turn), np.sin(elevation)])
-
-
-def front(paths: np.ndarray) -> np.ndarray:
-    """Paths on the sphere with the parts behind it, seen from the viewer, removed."""
-    return np.where((paths @ facing() > 0)[..., None], paths, np.nan)
+def arcs(ends: np.ndarray) -> tuple[solids.Quadric, solids.Quadric]:
+    """The great arcs on the unit sphere between pairs of points on it `[pairs, 2, 3]`, as lines to ink: the plane
+    through the centre and both ends, and, to bound it, the side of the plane across the chord away from the centre,
+    `[pairs]` each."""
+    start, end = ends[:, 0], ends[:, 1]
+    middle = start + end
+    across = solids.plane(-middle, -np.sum(middle * start, axis=-1))
+    return solids.half_space(solids.plane(np.cross(start, end), np.zeros(len(ends)))), solids.half_space(across)
 
 
 def draw_complex(points: core.Point, faces: np.ndarray, duals: core.Point) -> plt.Figure:
-    """In space, the polyhedron of the points and its polar dual, the parts facing away from the viewer
-    culled; on the sphere, the half facing the viewer of both projected from the centre."""
+    """In space, the polyhedron of the points and its polar dual; on the sphere, both projected from the
+    centre."""
+    return image_figure(picture(points, faces, duals))
+
+
+def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndarray:
+    """The two panels side by side: in space, the hull, translucent, with its edges, the dual's edges between
+    the poles, and each vertex on a stretch of its ray from the centre; on the sphere, the arcs of both."""
+    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF), N_PIXELS)
+    pixel = view.pixel
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
     edges, beside = core.adjacency(faces)                                      # [edges, 2] each
-    corners = xyz[faces]                                                       # [faces, 3, 3]
-    visible = corners.mean(axis=1) @ facing() > 0                             # [faces]
-    # A dual face is the polar plane of a hull vertex, facing along it; a dual edge is in front where
-    # either of its two dual faces is.
-    dual_visible = (xyz[edges] @ facing() > 0).any(axis=-1)                   # [edges]
-    figure = plt.figure(figsize=(10.0, 5.0))
-    space = figure.add_axes((0.0, 0.0, 0.5, 1.0), projection="3d")
-    sphere(space)
-    space.add_collection3d(Poly3DCollection(corners[visible], facecolor=PRIMAL_COLOUR, alpha=0.15, edgecolor=PRIMAL_COLOUR, linewidth=0.8))
-    space.add_collection3d(Line3DCollection(poles[beside[dual_visible]], colors=DUAL_COLOUR, linewidths=0.9))
-    # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a
-    # stretch of the ray from the centre it moves along.
-    shown = xyz[xyz @ facing() > 0]
-    rays = shown / np.linalg.norm(shown, axis=-1, keepdims=True)
-    space.add_collection3d(Line3DCollection(np.stack([rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN)], axis=1), colors="0.55", linewidths=0.6))
-    space.scatter(*shown.T, c=np.linalg.norm(shown, axis=-1) - 1, cmap=DISTANCE_MAP, vmin=-DISTANCE_RANGE, vmax=DISTANCE_RANGE,
-                  s=22, depthshade=False, edgecolors="none")
-    frame_axes(space)
-
-    image = figure.add_axes((0.5, 0.0, 0.5, 1.0), projection="3d")
-    sphere(image)
-    on_sphere = xyz / np.linalg.norm(xyz, axis=-1, keepdims=True)
-    duals_on_sphere = poles / np.linalg.norm(poles, axis=-1, keepdims=True)
-    image.add_collection3d(Line3DCollection(front(arcs(on_sphere[edges])), colors=PRIMAL_COLOUR, linewidths=0.9))
-    image.add_collection3d(Line3DCollection(front(arcs(duals_on_sphere[beside])), colors=DUAL_COLOUR, linewidths=0.9))
-    frame_axes(image)
-    return figure
+    vertices = sm.point(xyz)                                                   # [points] Point
+    sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Quadric
+    # The hull: inside the plane of every face, the plane that pairs to one with the face's points, whose dual is the
+    # face's pole.
+    hull = solids.half_space(solids.plane(poles, np.ones(len(poles))))[None]  # [1, faces] Quadric
+    # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
+    # the ray from the centre it moves along.
+    distance = np.linalg.norm(xyz, axis=-1)
+    rays = xyz / distance[:, None]
+    colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
+    # The edges and the rays are strokes, rasterized as tubes; the shells and the vertices are traced.
+    strokes = [meshes.segment_samples(xyz[edges[:, 0]], xyz[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
+               meshes.segment_samples(poles[beside[:, 0]], poles[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
+               meshes.segment_samples(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
+    space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
+                        translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
+                        meshes=[(*stroke, 1.0) for stroke in strokes])
+    # On the sphere, the arcs of both, each coloured by its kind.
+    on_sphere, duals_on_sphere = rays, poles / np.linalg.norm(poles, axis=-1, keepdims=True)
+    primal_arcs, dual_arcs = arcs(on_sphere[edges]), arcs(duals_on_sphere[beside])
+    inks = [solids.Ink(0, *primal_arcs, PRIMAL_COLOUR, ARC_WIDTH, 1.0),
+            solids.Ink(0, *dual_arcs, DUAL_COLOUR, ARC_WIDTH, 1.0)]
+    image = solids.draw([(sphere, SPHERE_COLOUR)], view, background, inks)
+    return np.concatenate([space, image], axis=1)
 
 
 def animate(frames: list[tuple[core.Point, np.ndarray, core.Point]]) -> list[np.ndarray]:
     """The complex at every frame, from one view."""
-
-    def picture(geometry: tuple) -> np.ndarray:
-        figure = draw_complex(*geometry)
-        pixels = capture(figure)
-        plt.close(figure)
-        return pixels
-    return [picture(geometry) for geometry in frames]
+    return [picture(*geometry) for geometry in frames]

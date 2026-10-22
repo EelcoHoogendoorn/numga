@@ -4,11 +4,9 @@ the three-sphere."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
 import numpy as np
 
-from examples.animation import capture
+from examples.wgsl import meshes, solids
 
 BACKGROUND = np.array([0.06, 0.07, 0.09])
 # The two tiles of a reflection: one colour for an even number of reflections, one for an odd number.
@@ -27,6 +25,11 @@ PALETTE = np.array([
     [0.20, 0.47, 0.85], [0.95, 0.55, 0.65], [0.99, 0.97, 0.90],
 ])
 BEAD_COLOURS = PALETTE[np.arange(len(BEADS)) % len(PALETTE)]
+# The 600-cell: its vertices' colour; its edges' width and its vertices' radius in pixels; the pixels across its
+# picture, and half the picture's width about the middle, in the projected space.
+VERTEX = ODD
+EDGE_WIDTH, VERTEX_RADIUS = 1.2, 2.6
+N_PIXELS, HALF = 500, 0.6
 
 
 def disk(resolution: int) -> tuple[np.ndarray, np.ndarray]:
@@ -124,39 +127,26 @@ def distinct(points: np.ndarray) -> np.ndarray:
     return points[np.sort(first)]
 
 
-def polytope(spinors, tilt: float = 0.45) -> plt.Figure:
+def polytope(spinors, tilt: float = 0.45) -> np.ndarray:
     """The distinct unit spinors as points of the three-sphere, in perspective from beyond the scalar
-    axis into three dimensions and from there seen from slightly above; edges join nearest neighbours,
-    drawn lighter the nearer they are."""
+    axis into three dimensions and from there seen from slightly above, `[pixels, pixels, 3]` bytes:
+    the points traced as balls, and edges joining nearest neighbours rasterized as tubes, lit on the GPU."""
     points = distinct(coordinates(spinors, "1 yz zx xy"))                      # [vertices, 4]
     gaps = np.linalg.norm(points[:, None] - points[None], axis=-1)
     nearest = gaps[gaps > 1e-9].min()
     first, second = np.nonzero(np.triu(np.abs(gaps - nearest) < 1e-6))
+    # From beyond the scalar axis, each chord of the three-sphere projects to a straight segment.
     space = points[:, 1:] / (2.4 - points[:, :1])                              # [vertices, 3]
-    turn = np.array([[1, 0, 0], [0, np.cos(tilt), -np.sin(tilt)], [0, np.sin(tilt), np.cos(tilt)]])
-    seen = space @ turn.T
-    depth = (seen[first, 2] + seen[second, 2]) / 2
-    shade = (depth - depth.min()) / np.ptp(depth)
-    order = np.argsort(depth)
-    shade = shade[order, None]                                                 # [edges, 1]
-    colours = np.concatenate([EVEN + (1 - shade) * (ODD - EVEN), 0.35 + 0.65 * shade], axis=-1)   # [edges, 4]
-    segments = np.stack([seen[first[order], :2], seen[second[order], :2]], axis=1)   # [edges, 2, 2]
-    figure, ax = plt.subplots(figsize=(5, 5), facecolor=BACKGROUND)
-    ax.add_collection(LineCollection(segments, colors=colours, linewidths=0.6 + 1.2 * shade[:, 0], capstyle="projecting"))
-    ax.set(xlim=(-0.75, 0.75), ylim=(-0.75, 0.75), aspect="equal")
-    ax.axis("off")
-    figure.subplots_adjust(0, 0, 1, 1)
-    return figure
+    # Seen from slightly above: the camera turned about x by the tilt, looking along its own -z.
+    view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, HALF), N_PIXELS)
+    edges = meshes.segment_samples(space[first], space[second], EVEN, EDGE_WIDTH, view)
+    vertices = solids.ball(solids.mv.point(space), VERTEX_RADIUS * view.pixel)[:, None]   # [vertices, 1] Quadric
+    return solids.draw([(vertices, VERTEX)], view, BACKGROUND, meshes=[(*edges, 1.0)])
 
 
 def animate_polytope(turning) -> list[np.ndarray]:
     """One frame per batch of turned spinors."""
-    frames = []
-    for spinors in turning:
-        figure = polytope(spinors)
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+    return [polytope(spinors) for spinors in turning]
 
 
 def animate_tilings(moving) -> list[np.ndarray]:

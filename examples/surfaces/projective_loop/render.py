@@ -1,22 +1,27 @@
-"""Shaded surfaces over their control meshes, and the gap between two refinements."""
+"""Shaded surfaces over their control meshes, and the gap between two refinements, drawn on the GPU: each surface a
+smooth-shaded mesh, its control mesh a dotted line of beads along every edge."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from itertools import chain
 
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d.art3d import Line3DCollection, Poly3DCollection
 import numpy as np
 
-from examples.animation import capture
 from examples.surfaces.projective_loop import core
+from examples.wgsl import image_figure, meshes, solids
 
+sm = solids.mv
 SURFACE_COLOUR = np.array([0.16, 0.5, 0.63])
 GAP_COLOUR = np.array([0.82, 0.42, 0.21])
-CONTROL_COLOUR = "0.45"
-LIGHT = np.array([0.4, -0.5, 0.8])
-ELEVATION, AZIMUTH = 18.0, -60.0
+CONTROL_COLOUR = np.full(3, 0.45)
+background = np.ones(3)
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the control mesh as
+# a share of its larger side, and the pixels across each panel.
+ELEVATION, AZIMUTH = np.radians(18.0), np.radians(30.0)
+MARGIN, N_PIXELS = 0.25, 360
+# The beads along each edge of the control mesh, and their radius in pixels.
+N_DOTS, DOT_RADIUS = 28, 1.4
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -36,36 +41,32 @@ def edges(faces: np.ndarray) -> np.ndarray:
     return np.unique(np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2), axis=0)
 
 
-def draw_surface(ax: plt.Axes, xyz: np.ndarray, faces: np.ndarray, colours: np.ndarray) -> None:
-    """A surface in the given face colours, shaded by how its faces turn to the light."""
-    triangles = xyz[faces]                                                     # [faces, 3, 3]
-    normals = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
-    lit = np.clip(normals @ (LIGHT / np.linalg.norm(LIGHT)) / np.linalg.norm(normals, axis=-1), 0, 1)
-    shaded = np.clip(colours * (0.45 + 0.75 * lit[:, None]), 0, 1)
-    ax.add_collection3d(Poly3DCollection(triangles, facecolors=shaded, edgecolors="none"))
+def view(control: np.ndarray) -> solids.View:
+    """A view framing a control mesh `[vertices, 3]`."""
+    return solids.view([sm.point(control)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
-def draw_mesh(ax: plt.Axes, xyz: np.ndarray, faces: np.ndarray, colour: str, style: str, width: float) -> None:
-    ax.add_collection3d(Line3DCollection(xyz[edges(faces)], colors=colour, linestyles=style, linewidths=width))
-
-
-def frame_axes(ax: plt.Axes, xyz: np.ndarray) -> None:
-    centre, half = (xyz.max(axis=0) + xyz.min(axis=0)) / 2, np.ptp(xyz, axis=0).max() / 2
-    ax.set(xlim=(centre[0] - half, centre[0] + half), ylim=(centre[1] - half, centre[1] + half), zlim=(centre[2] - half, centre[2] + half))
-    ax.set_box_aspect((1, 1, 1), zoom=1.2)
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
+def picture(control: np.ndarray, control_faces: np.ndarray, surface: np.ndarray, faces: np.ndarray, colours: np.ndarray,
+            frame: solids.View) -> np.ndarray:
+    """A surface `[refined, 3]` in the given face colours `[faces, 3]`, smooth shaded, over its control mesh
+    `[vertices, 3]`, dotted."""
+    places = sm.point(surface)
+    sheet = meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), frame, face_values=colours,
+                           colour=meshes.by_face)
+    ends = control[edges(control_faces)]                                       # [edges, 2, 3]
+    share = np.linspace(0, 1, N_DOTS)[:, None]                                 # [dots, 1]
+    dots = ends[:, None, 0] * (1 - share) + ends[:, None, 1] * share           # [edges, dots, 3]
+    beads = [(solids.ball(sm.point(dots.reshape(-1, 3)), DOT_RADIUS * frame.pixel)[:, None], CONTROL_COLOUR)]
+    return solids.draw(beads, frame, background, meshes=[(*sheet, 1.0)])
 
 
 def draw_weights(controls: core.Point, control_faces: np.ndarray, surfaces: core.Point, faces: np.ndarray) -> plt.Figure:
-    """Each case's control mesh, dotted, and the surface it refines to."""
-    figure = plt.figure(figsize=(10.5, 3.8), layout="constrained")
-    for index, (control, surface) in enumerate(zip(coordinates(controls), coordinates(surfaces))):
-        ax = figure.add_subplot(1, controls.shape[0], index + 1, projection="3d")
-        draw_surface(ax, surface, faces, np.broadcast_to(SURFACE_COLOUR, (len(faces), 3)))
-        draw_mesh(ax, control, control_faces, CONTROL_COLOUR, ":", 0.8)
-        frame_axes(ax, control)
-    return figure
+    """Each case's control mesh, dotted, and the surface it refines to, one camera framing every control mesh."""
+    controls, surfaces = coordinates(controls), coordinates(surfaces)         # [cases, vertices, 3], [cases, refined, 3]
+    frame = view(controls.reshape(-1, 3))
+    colours = np.broadcast_to(SURFACE_COLOUR, (len(faces), 3))
+    return image_figure(np.concatenate([picture(control, control_faces, surface, faces, colours, frame)
+                                        for control, surface in zip(controls, surfaces)], axis=1))
 
 
 def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders: core.Point, positional_orders: core.Point,
@@ -73,33 +74,21 @@ def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders:
     """For points with their weights and for positions: the surface refined after the perspective, each
     face coloured by how far the surface refined before it lies, on one scale for both, from blue where
     they agree to orange at the largest gap."""
-    figure = plt.figure(figsize=(8.0, 4.0), layout="constrained")
     xyz = coordinates(control)
+    frame = view(xyz)
     gaps = [np.linalg.norm(np.subtract(*coordinates(orders)), axis=-1)[faces].mean(axis=-1)
             for orders in (weighted_orders, positional_orders)]                # [faces] each
     largest = max(gap.max() for gap in gaps)
-    for index, (orders, gap) in enumerate(zip((weighted_orders, positional_orders), gaps)):
-        ax = figure.add_subplot(1, 2, index + 1, projection="3d")
-        share = (gap / largest)[:, None]
-        draw_surface(ax, coordinates(orders)[0], faces, SURFACE_COLOUR * (1 - share) + GAP_COLOUR * share)
-        draw_mesh(ax, xyz, control_faces, CONTROL_COLOUR, ":", 0.8)
-        frame_axes(ax, xyz)
-    return figure
+    return image_figure(np.concatenate([picture(xyz, control_faces, coordinates(orders)[0], faces,
+                                                SURFACE_COLOUR * (1 - share) + GAP_COLOUR * share, frame)
+                                        for orders, share in zip((weighted_orders, positional_orders),
+                                                                 (gap[:, None] / largest for gap in gaps))], axis=1))
 
 
 def animate_weights(frames: Iterable[tuple[core.Point, core.Point]], control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
     """One frame per weighting: the control mesh `Point[vertices]`, dotted, and the surface it refines to
     `Point[refined]`, all framed on the first control mesh."""
-    frames = iter(frames)
-    first = next(frames)
-    framing = coordinates(first[0])                                            # [vertices, 3]
-    images = []
-    for controls, surface in chain([first], frames):
-        figure = plt.figure(figsize=(4.0, 4.0), layout="constrained")
-        ax = figure.add_subplot(projection="3d")
-        draw_surface(ax, coordinates(surface), faces, np.broadcast_to(SURFACE_COLOUR, (len(faces), 3)))
-        draw_mesh(ax, coordinates(controls), control_faces, CONTROL_COLOUR, ":", 0.8)
-        frame_axes(ax, framing)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    frames = [(coordinates(controls), coordinates(surface)) for controls, surface in frames]
+    frame = view(frames[0][0])
+    colours = np.broadcast_to(SURFACE_COLOUR, (len(faces), 3))
+    return [picture(control, control_faces, surface, faces, colours, frame) for control, surface in frames]

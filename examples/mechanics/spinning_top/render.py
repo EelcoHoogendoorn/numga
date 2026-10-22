@@ -1,87 +1,109 @@
-"""Implicit renders of the top on its ground: every pixel's ray meets the nearest quadric."""
+"""Renders of the top on its ground, ray traced on the GPU: every ray meets the nearest of the quadrics.
+
+Each shape is one solid quadric, `quadric(point) & point` negative inside. Along a ray the pairing is a
+quadratic in the distance, and the ray enters the solid at the root where it falls through zero; the quadric's
+plane there is the tangent plane. The ground carries a checkerboard, and each part alternating sectors about the
+top's axis, read in the top's own frame, `motor << point`.
+"""
+
+from __future__ import annotations
+
+from functools import cache
 
 import numpy as np
+
+from numga import concatenate
 from examples.mechanics.spinning_top import core
+from examples.wgsl import Shader, solids, supersampled
 
-mv, w, Point = core.mv, core.w, core.Point
-Scalar, Direction, Quadric, Motor = core.Scalar, core.Direction, core.Quadric, core.Motor
-# Colours of the disc, the stem and the tip; alternating sectors, drawn on the disc, show its spin.
-PART_COLOURS = np.array([[0.85, 0.30, 0.25], [0.35, 0.35, 0.40], [0.80, 0.70, 0.35]])
-SECTOR_CONTRAST = np.array([0.25, 0.0, 0.0])
+mv = core.mv
+# Colours of the disc, the stem and the tip, and the contrast of the sectors drawn on each to show its spin.
+part_colours = np.array([[0.85, 0.30, 0.25], [0.35, 0.35, 0.40], [0.80, 0.70, 0.35]])
+sector_contrast = np.array([0.25, 0.0, 0.0])
+
+source = supersampled() + """
+// The ground, then the top's parts, placed; each part's colour and the contrast of its sectors.
+struct Paint {
+    colour: vec3<f32>,
+    contrast: f32,
+}
+
+var<storage, read> quadrics: array<Quadric>;
+var<storage, read> paints: array<Paint>;
+var<uniform> motor: Motor;
+// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the image
+// half as high as this; the lamp, toward it.
+var<uniform> camera: Motor;
+var<uniform> back: f32;
+var<uniform> half_height: f32;
+var<uniform> lamp: Point;
+
+alias Sample = vec3<f32>;
+
+const origin = mv.w.dual();
+const far = 1e30;
+const ground_colour = vec3<f32>(0.95, 0.93, 0.88);
+const square = 0.15;
+const sector_angle = 0.7853982;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_height;
+    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
+    let direction = camera >> -mv.z.dual();
+    var nearest = far;
+    var shape = 0u;
+    for (var index = 0u; index < arrayLength(&quadrics); index++) {
+        let quadric = quadrics[index];
+        // Along the ray the quadric is a t^2 + 2 b t + c; it enters the solid where the pairing falls through
+        // zero, the root c / (sqrt(b^2 - a c) - b), which holds where the square term vanishes as well.
+        let a = quadric(direction) & direction;
+        let b = quadric(direction) & start;
+        let c = quadric(start) & start;
+        let discriminant = b * b - a * c;
+        let distance = c / (sqrt(max(discriminant, 0.0)) - b);
+        if (discriminant >= 0 && distance > 0 && distance < nearest) {
+            nearest = distance;
+            shape = index;
+        }
+    }
+    if (nearest >= far) {
+        return vec3<f32>(1.0);
+    }
+    let point = start + direction * nearest;
+    // The quadric's plane at its surface is the tangent plane; lit on either side.
+    let tangent = quadrics[shape](point);
+    let facing = abs(tangent & lamp) / (tangent | tangent).square_root();
+    if (shape == 0) {
+        let spot = floor(vec2<f32>(mv.x & point, mv.y & point) / square);
+        let checker = spot.x + spot.y - 2 * floor((spot.x + spot.y) / 2);
+        return (0.62 + 0.18 * checker) * ground_colour * (0.45 + 0.55 * facing);
+    }
+    // Alternating sectors about the top's axis, in its own frame.
+    let local = motor << point;
+    let turns = floor(atan2(mv.y & local, mv.x & local) / sector_angle);
+    let sector = turns - 2 * floor(turns / 2);
+    let paint = paints[shape - 1];
+    return paint.colour * (1 - paint.contrast * (1 - sector)) * (0.35 + 0.65 * facing);
+}
+"""
 
 
-def camera(elevation: float, azimuth: float, centre: np.ndarray, extent: float,
-           pixels: int) -> tuple[Point, Direction, np.ndarray]:
-    """Parallel rays for a square image of half-width extent about the centre, seen from the given
-    elevation and azimuth in degrees: one origin per pixel on a screen far behind the scene, one
-    shared heading, and the unit direction toward a lamp above the viewer's left shoulder."""
-    tilt, turn = np.radians(elevation), np.radians(azimuth)
-    # Toward the viewer.
-    back = np.array([np.cos(tilt) * np.cos(turn), np.cos(tilt) * np.sin(turn), np.sin(tilt)])
-    right = np.array([-np.sin(turn), np.cos(turn), 0.0])
-    up = np.cross(back, right)
-    offsets = np.linspace(-extent, extent, pixels)
-    screen = centre + offsets[None, :, None] * right + offsets[::-1, None, None] * up + 20 * extent * back
-    lamp = back - 0.3 * right + 0.8 * up
-    return core.mv.point(screen), mv(Direction, -back), lamp / np.linalg.norm(lamp)
+# --- plumbing -------------------------------------------------------------------------
+@cache
+def shader() -> Shader:
+    return Shader(source, core.ga, dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric))
 
 
-def hits(surface: Quadric, origins: Point, heading: Direction) -> tuple[np.ndarray, Point]:
-    """The distance along each ray's line to where it enters the solid quadric, infinite where it
-    misses, and the points hit. Bound to a ray in both slots, the form is a quadratic in the distance;
-    at the entering root it falls through zero, so the root is the one with
-    `a * distance + b == -np.sqrt(discriminant)`, wherever along the line the ray starts."""
-    a = (surface(heading) & heading).to_array()
-    b = (surface(heading) & origins).to_array()
-    c = (surface(origins) & origins).to_array()
-    discriminant = b * b - a * c
-    with np.errstate(divide="ignore", invalid="ignore"):
-        distance = np.where(discriminant >= 0, (-b - np.sqrt(np.clip(discriminant, 0, None))) / a, np.inf)
-    return distance, origins + heading * mv.scalar(np.where(np.isfinite(distance), distance, 0.0)[..., None])
-
-
-def components(directions: Direction) -> np.ndarray:
-    """Euclidean components of directions: their inner products with the axis directions."""
-    return (directions[..., None].dual() | mv(Direction, np.eye(3)).dual()).to_array()
-
-
-def normals(surface: Quadric, points: Point) -> np.ndarray:
-    """Unit normals of the quadric at points on it: the normals of their polar planes."""
-    normal = components(surface(points).dual().cast(Direction))
-    return normal / (np.linalg.norm(normal, axis=-1, keepdims=True) + 1e-12)
-
-
-def coordinates(points: Point) -> np.ndarray:
-    """Euclidean coordinates of points: their pairings with the coordinate planes, at unit weight."""
-    return np.stack([((plane & points) / (w & points)).to_array() for plane in core.axes], axis=-1)
-
-
-def frame(motor: Motor, parts: Quadric, ground: Quadric, view: tuple[float, float], centre: np.ndarray,
+def frame(motor: core.Motor, parts: core.Quadric, ground: core.Quadric, view: tuple[float, float], centre: np.ndarray,
           extent: float, pixels: int) -> np.ndarray:
-    """One RGB image of the top placed by the motor on the ground. Each pixel keeps the nearest hit
-    over the ground and the parts, shaded by how squarely its surface faces the lamp; the ground
-    carries a checkerboard, and each part alternating sectors about the top's axis, with its own
-    contrast."""
-    origins, heading, lamp = camera(*view, centre, extent, pixels)
-    # The parts in the world.
-    placed = motor >> parts(motor << Point)                         # [parts] Plane <- Point
-    depth = np.full((pixels, pixels), np.inf)
-    rgb = np.ones((pixels, pixels, 3))
-    distance, hit = hits(ground, origins, heading)
-    xy = coordinates(hit)[..., :2]
-    checker = (np.floor(xy[..., 0] / 0.15) + np.floor(xy[..., 1] / 0.15)) % 2
-    shade = 0.45 + 0.55 * np.abs(normals(ground, hit) @ lamp)
-    ground_rgb = (0.62 + 0.18 * checker)[..., None] * np.array([0.95, 0.93, 0.88]) * shade[..., None]
-    rgb = np.where(np.isfinite(distance)[..., None], ground_rgb, rgb)
-    depth = np.where(np.isfinite(distance), distance, depth)
-    for part, colour, contrast in zip(placed, PART_COLOURS, SECTOR_CONTRAST):
-        distance, hit = hits(part, origins, heading)
-        nearer = distance < depth
-        # The hit in the top's own frame.
-        local = coordinates(motor << hit)
-        sector = (np.floor(np.arctan2(local[..., 1], local[..., 0]) / (np.pi / 4)) % 2)[..., None]
-        tint = colour * (1 - contrast * (1 - sector))
-        shade = 0.35 + 0.65 * np.abs(normals(part, hit) @ lamp)
-        rgb = np.where(nearer[..., None], tint * shade[..., None], rgb)
-        depth = np.where(nearer, distance, depth)
-    return (np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+    """One RGB image of the top placed by the motor on the ground, square, of half-width extent about the centre,
+    seen from an elevation and azimuth in degrees, the azimuth measured from x."""
+    camera = solids.aim(mv.point(centre), np.radians(view[0]), np.radians(view[1] + 90))         # [] Motor
+    # The lamp above the viewer's left shoulder.
+    lamp = camera >> mv.direction([-0.3, 0.8, 1.0])
+    lamp = lamp / (-(lamp.dual() & lamp)).square_root()
+    placed = motor >> parts(motor << core.Point)                                                # [parts] Quadric
+    traced = shader()((pixels, pixels), quadrics=concatenate([ground[None], placed]),
+                      paints=dict(colour=part_colours, contrast=sector_contrast), motor=motor, camera=camera,
+                      back=20 * extent, half_height=extent, lamp=lamp)["image"]
+    return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)

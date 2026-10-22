@@ -1,10 +1,11 @@
-"""Drawing for the fractals notebook: escape counts coloured smoothly, the points that stayed bounded
-black, as still images and as an animation of slices."""
+"""Colouring for the fractals notebook, as WGSL constants for its shaders: escape counts coloured smoothly through
+repeating bands, the starts that stayed bounded dark; and the shaders' images as pictures."""
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
+
+from examples.wgsl import vec3
 
 BACKGROUND = np.array([0.02, 0.02, 0.04])
 # The colours escaping points run through as they take longer to escape, repeating.
@@ -16,38 +17,18 @@ BANDS = np.array([
 PERIOD = 24
 
 
-def grid(lower: tuple[float, float], upper: tuple[float, float], rows: int, columns: int) -> tuple[np.ndarray, np.ndarray]:
-    """Pixel centres of a view: the horizontal and vertical coordinates, each [rows, columns], the top
-    row first."""
-    across = lower[0] + (np.arange(columns) + 0.5) / columns * (upper[0] - lower[0])
-    down = upper[1] - (np.arange(rows) + 0.5) / rows * (upper[1] - lower[1])
-    return np.meshgrid(across, down)
+def palette() -> str:
+    """WGSL constants for the colouring: the bands escaping starts run through, how many steps between the first and
+    the last, the escape counts per pass through them, and the colour of the starts that stay bounded."""
+    entries = ", ".join(vec3(colour) for colour in BANDS)
+    return f"""
+const bands = array<vec3<f32>, {len(BANDS)}>({entries});
+const n_bands = {len(BANDS) - 1}u;
+const period = {float(PERIOD)};
+const bounded = {vec3(BACKGROUND)};
+"""
 
 
-def escape_image(points, count, iterations: int) -> np.ndarray:
-    """Pixels coloured by how long their points took to escape, smoothed by how far past the circle of
-    radius two the last step took them; black where they never escaped."""
-    steps = count.to_array()
-    size = np.sqrt(np.maximum(points.scalar_norm_squared().to_array(), 4.0))
-    smooth = steps + 1 - np.log2(np.log2(size))
-    position = (smooth / PERIOD) % 1 * (len(BANDS) - 1)
-    lower = np.floor(position).astype(int)
-    fraction = (position - lower)[..., None]
-    colours = BANDS[lower] + fraction * (BANDS[lower + 1] - BANDS[lower])
-    bounded = steps > iterations - 0.5
-    return (np.clip(np.where(bounded[..., None], BACKGROUND, colours), 0, 1) * 255).round().astype(np.uint8)
-
-
-def show(image: np.ndarray, lower: tuple[float, float], upper: tuple[float, float]) -> plt.Figure:
-    """An image over its view, without axes."""
-    height, width = image.shape[:2]
-    figure, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
-    ax.imshow(image, extent=(lower[0], upper[0], lower[1], upper[1]), interpolation="nearest")
-    ax.axis("off")
-    figure.subplots_adjust(0, 0, 1, 1)
-    return figure
-
-
-def animate(slices, iterations: int) -> list[np.ndarray]:
-    """One frame per slice of points and escape counts."""
-    return [escape_image(points, count, iterations) for points, count in slices]
+def picture(image: np.ndarray) -> np.ndarray:
+    """A shader's image `[rows, columns, 3]` as bytes."""
+    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)

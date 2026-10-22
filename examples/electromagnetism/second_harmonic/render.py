@@ -6,19 +6,34 @@ from collections.abc import Iterable
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 from matplotlib.ticker import MaxNLocator
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 from numga import stack
 
 from examples.animation import capture
 from examples.electromagnetism.second_harmonic import core
+from examples.wgsl import labels, show, solids
 
 PUMP_COLOUR = "#3275a8"
 GENERATED_COLOUR = "#d16a30"
 CASE_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
 # The crystals of the phase-matching scene, in its order.
 CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
+sm = solids.mv
+BOND_COLOUR, CENTRE_COLOUR, AXIS_COLOUR = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
+LABEL_COLOUR = np.array([0.4, 0.42, 0.47])
+# The crystal's view: elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square
+# view about the bonds' centre, and the pixels across it.
+ELEVATION, AZIMUTH = np.radians(23.0), np.radians(34.0)
+HALF_WIDTH, N_PIXELS = 1.35, 400
+# The widths of the bonds and the axes' arrows, the arrowheads' length and width, the radii of the bonds' ends and
+# their centre, in pixels; how far the axes reach and their names lie, in bond lengths.
+BOND_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, END_RADIUS, CENTRE_RADIUS = 5.0, 3.0, 12.0, 7.0, 7.0, 5.0
+AXIS_LENGTH, LABEL_DISTANCE = 1.15, 1.27
+# The beam along the crystal's face diagonal, x + y, coming towards the screen's viewer, across which the screen's
+# directions are y - x, to the right, and z, up; how far the beam reaches either side of the crystal, in bond lengths.
+BEAM, BEAM_REACH = np.array([1.0, 1.0, 0.0]) / np.sqrt(2), 1.25
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -41,13 +56,37 @@ def coordinates(directions: core.Direction) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()   # [..., 3]
 
 
-def screen_axes(axes: plt.Axes, limit: float) -> None:
-    """A fixed scale on both transverse directions."""
+def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
+    """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: a faint cross through the
+    origin, its lines named at their ends, each along itself."""
     axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal",
-             xlabel="Horizontal", ylabel="Vertical")
-    axes.spines[["top", "right"]].set_visible(False)
+    axes.text(extents[0, 1], 0, across, ha="right", va="top", fontsize=9, color=LABEL_COLOUR)
+    axes.text(0, extents[1, 1], f"{up} ", ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR, rotation=90,
+              rotation_mode="anchor")
+    axes.set(xlim=extents[0], ylim=extents[1], aspect="equal")
+    axes.set_axis_off()
+
+
+def screen_axes(axes: plt.Axes, limit: float) -> None:
+    """The plane across the beam, one extent on both directions, named by the directions of space along it."""
+    cross(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
+
+
+def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
+    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, in the frame of
+    space, with the beam through them."""
+    ends = sm.point(bonds)                                                   # [bonds] Point
+    shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
+                                 HEAD_WIDTH / 2 * view.pixel)
+    beam_shaft, beam_head = solids.arrows(sm.point(-BEAM_REACH * BEAM), sm.point(BEAM_REACH * BEAM),
+                                          ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    beam_colour = np.array(to_rgb(PUMP_COLOUR))
+    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
+             (solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
+             (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR))),
+             (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
+    return solids.draw(parts, view, np.ones(3))
 
 
 class ResponseView:
@@ -60,22 +99,15 @@ class ResponseView:
         self.selected_angle = np.arctan2(pump[1], pump[0])
 
         self.figure = plt.figure(figsize=(12.5, 4.1), layout="constrained")
-        crystal_axes = self.figure.add_subplot(1, 3, 1, projection="3d")
+        crystal_axes = self.figure.add_subplot(1, 3, 1)
         response_axes = self.figure.add_subplot(1, 3, 2)
         self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
 
-        # The four segments share a centre; their endpoints show the tetrahedral geometry.
-        self.bond_lines = Line3DCollection([], colors="0.45", linewidths=2)
-        crystal_axes.add_collection3d(self.bond_lines, autolim=False)
-        self.bond_ends = crystal_axes.scatter([], [], [], s=45, color=GENERATED_COLOUR, depthshade=False)
-        crystal_axes.scatter(0, 0, 0, s=30, color="0.3", depthshade=False)
-        crystal_axes.set(xlim=(-1, 1), ylim=(-1, 1), zlim=(-1, 1),
-                         xlabel="x", ylabel="y", zlabel="z")
-        crystal_axes.set_box_aspect((1, 1, 1))
-        crystal_axes.view_init(elev=23, azim=-56)
-        crystal_axes.set_xticks([-1, 0, 1])
-        crystal_axes.set_yticks([-1, 0, 1])
-        crystal_axes.set_zticks([-1, 0, 1])
+        # The crystal's image, blank until the bonds are drawn, with each axis named just past its arrow's tip.
+        self.view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), N_PIXELS)
+        self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
+        labels(crystal_axes, self.view, sm.point(np.concatenate([LABEL_DISTANCE * np.eye(3), [BEAM_REACH * 1.12 * BEAM]])),
+               ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=LABEL_COLOUR)
 
         response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
                            linewidth=1, alpha=0.3)
@@ -88,12 +120,13 @@ class ResponseView:
                                                     angles="xy", scale_units="xy", scale=1, width=0.012,
                                                     label="Second harmonic")
         screen_axes(response_axes, 1.15)
-        response_axes.legend(loc="upper right", fontsize=8, frameon=False)
+        response_axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, fontsize=8, frameon=False)
 
         self.intensity_curve, = self.intensity_axes.plot([], [], color=GENERATED_COLOUR, linewidth=2)
         self.intensity_fill, = self.intensity_axes.fill([], [], color=GENERATED_COLOUR, alpha=0.08)
         self.selected_power, = self.intensity_axes.plot([], [], "o", color=PUMP_COLOUR, markersize=7)
         self.intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
+        self.intensity_axes.set_yticklabels([])
         self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
         self.intensity_axes.set_rlabel_position(22.5)
         self.intensity_axes.tick_params(labelsize=8)
@@ -102,9 +135,7 @@ class ResponseView:
         bonds = coordinates(bonds)                                           # [bonds, 3]
         harmonic = transverse_polarization(harmonic)                         # [angles, 2]
         intensity = (harmonic ** 2).sum(axis=-1)                             # [angles]
-        self.bond_lines.set_segments(np.stack((np.zeros_like(bonds), bonds), axis=1))   # [bonds, 2, 3]
-        self.bond_ends.set_offsets(bonds[:, :2])
-        self.bond_ends.set_3d_properties(bonds[:, 2], "z")
+        self.crystal.set_data(crystal_image(bonds, self.view))
         self.harmonic_curve.set_data(harmonic[:, 0], harmonic[:, 1])
         self.generated_arrow.set_UVC(*harmonic[0])
         self.intensity_curve.set_data(self.angles, intensity)
@@ -130,7 +161,7 @@ def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarizati
     axes.plot(cycles, pump_field, color=PUMP_COLOUR, linewidth=2, label="Pump field")
     axes.plot(cycles, harmonic_field, color=GENERATED_COLOUR, linewidth=2,
               label="Second-harmonic polarization")
-    axes.set(xlabel="Pump periods", ylabel="Field component", xlim=(0, 2))
+    axes.set(xlabel="Pump periods", ylabel="Field component", xlim=(0, 2), yticks=[])
     axes.spines[["top", "right"]].set_visible(False)
     axes.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=2,
                 fontsize=9, frameon=False)
@@ -171,12 +202,13 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
         phasor_axes.plot(path[:, 0], path[:, 1], color=colour, linewidth=2, label=label)
         phasor_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour, markersize=5)
         power_axes.plot(depths, intensity, color=colour, linewidth=2, label=label)
-    phasor_axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
-    phasor_axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    phasor_axes.set(aspect="equal", xlabel="in phase", ylabel="in quadrature")
-    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1))
-    for panel in axes:
-        panel.spines[["top", "right"]].set_visible(False)
+    # The plane about the paths and the origin they start from, with a margin.
+    lowest = np.minimum(amplitude.min(axis=(0, 1)), 0)                       # [2]
+    highest = np.maximum(amplitude.max(axis=(0, 1)), 0)
+    margin = 0.1 * (highest - lowest).max()
+    cross(phasor_axes, np.stack([lowest - margin, highest + margin], axis=-1), "in phase", "in quadrature")
+    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])
+    power_axes.spines[["top", "right"]].set_visible(False)
     power_axes.legend(loc="upper left", frameon=False, fontsize=9)
     return figure
 

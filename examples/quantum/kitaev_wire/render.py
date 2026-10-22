@@ -37,14 +37,15 @@ def draw_formation(chemical_potentials: np.ndarray, energies: core.Scalar,
     # Each excitation has two real quadratures with the same frequency.
     spectrum.plot(chemical_potentials / hopping, values[:, ::2], color=INK, linewidth=1)
     spectrum.axvline(2, color="0.65", linestyle=":", linewidth=1)
-    spectrum.set(xlim=(chemical_potentials[0] / hopping, chemical_potentials[-1] / hopping),
+    # Read off: the threshold at twice the hopping, and zero energy.
+    spectrum.set(xlim=(chemical_potentials[0] / hopping, chemical_potentials[-1] / hopping), ylim=(0, None), xticks=[2], yticks=[0],
                  xlabel=r"chemical potential inside / hopping, $\mu/t$", ylabel=r"excitation energy, $E/t$")
     modes.imshow(weights, aspect="auto", origin="upper", interpolation="bilinear",
                  extent=(-0.5, weights.shape[-1] - 0.5, chemical_potentials[-1] / hopping,
                          chemical_potentials[0] / hopping),
                  cmap="magma", norm=PowerNorm(0.55, vmin=0, vmax=weights.max()))
     modes.axhline(2, color="white", linestyle=":", linewidth=0.8, alpha=0.6)
-    modes.set(xlabel="site", ylabel=r"$\mu/t$")
+    modes.set(xlabel="site", ylabel=r"$\mu/t$", xticks=[], yticks=[2])
     plain_axes(spectrum)
     return figure
 
@@ -75,12 +76,13 @@ def animate_transport(
         fills.append(axis.fill_between(sites, weights[0, case], color=colour, alpha=0.25))
         lines.append(line)
         references.append(reference)
-        axis.set(xlim=(sites[0], sites[-1]), ylim=(0, maximum), xlabel="site", ylabel="mode weight")
+        axis.set(xlim=(sites[0], sites[-1]), ylim=(0, maximum), xticks=[], yticks=[], xlabel="site", ylabel="mode weight")
         plain_axes(axis)
-    axes[0].legend(frameon=False, loc="upper right", fontsize=8, ncol=2)
+    axes[0].legend(frameon=False, loc="lower right", bbox_to_anchor=(1.0, 1.0), fontsize=8, ncol=2)
     traces = [axes[2].plot([], [], color=colour, linewidth=2)[0] for colour in (SLOW, FAST)]
     cursor = axes[2].axvline(0, color="0.7", linewidth=0.8)
-    axes[2].set(xlim=(0, 1), ylim=(-0.02, 1.02), xlabel="fraction of gate motion", ylabel="bulk weight")
+    # The bulk weight from none to all of the mode, along the gate's motion.
+    axes[2].set(xlim=(0, 1), ylim=(0, 1.02), xticks=[], yticks=[0, 1], xlabel="fraction of gate motion", ylabel="bulk weight")
     plain_axes(axes[2])
 
     frames = []
@@ -109,7 +111,7 @@ def draw_transport(progress: np.ndarray, history: core.Majorana, potentials: cor
                      extent=(sites[0], sites[-1], 0, 1), norm=PowerNorm(0.5, vmin=0, vmax=weights.max()))
         axis.contour(sites, progress, chemical, levels=[2 * hopping], colors="white",
                       linewidths=0.7, linestyles="--", alpha=0.7)
-        axis.set(xlabel="site")
+        axis.set(xlabel="site", xticks=[], yticks=[])
     axes[0].set_ylabel("fraction of gate motion")
     return figure
 
@@ -126,7 +128,8 @@ def draw_overlap(separations: np.ndarray, profile_separations: np.ndarray,
     grid = figure.add_gridspec(len(profile_separations), 2, width_ratios=[1, 1.1])
     spectrum = figure.add_subplot(grid[:, 0])
     spectrum.semilogy(separations, energies, color=INK, linewidth=2)
-    spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation energy, $E/t$")
+    # The separations the profiles beside it are drawn at; the energy's decades show the exponential.
+    spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation energy, $E/t$", xticks=profile_separations)
     plain_axes(spectrum)
     for row, separation in enumerate(profile_separations):
         axis = figure.add_subplot(grid[row, 1])
@@ -137,7 +140,7 @@ def draw_overlap(separations: np.ndarray, profile_separations: np.ndarray,
             axis.fill_between(sites, density, color=colour, alpha=0.35)
             axis.plot(sites, density, color=colour, linewidth=1.5)
         axis.set(xlim=(sites[-1] - separations[-1] - 20, sites[-1]), ylim=(0, weights.max() * 1.1),
-                  ylabel=f"{separation:g} sites", yticks=[])
+                  ylabel=f"{separation:g} sites", xticks=[], yticks=[])
         plain_axes(axis)
     axis.set_xlabel("site")
     return figure

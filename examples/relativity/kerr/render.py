@@ -48,18 +48,19 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     tracks = coordinates(paths, (core.mv.x, core.mv.y)).transpose(1, 2, 0, 3)
     outlines = coordinates(horizons, (core.mv.x, core.mv.y))
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[1]))
-    ticks = [-extent / 2, 0, extent / 2]
 
     figure, ax = plt.subplots(figsize=(5, 5), dpi=sweep_dpi, layout="constrained")
     rays = LineCollection(tracks[0], colors=colours, linewidths=1.0, alpha=0.9)
     horizon = Polygon(outlines[0], facecolor="#161b22", edgecolor="none", zorder=3)
     ax.add_collection(rays)
     ax.add_patch(horizon)
-    ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal",
-           xticks=ticks, yticks=ticks, xlabel="$x/M$", ylabel="$y/M$")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.spines[["bottom", "left"]].set_color("#cbd5e1")
-    ax.tick_params(color="#cbd5e1")
+    ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+    # No scales: a faint cross through the hole's centre, its lines named at their ends.
+    ax.axhline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
+    ax.axvline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
+    ax.annotate("x", (extent, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center", color="#64748b")
+    ax.annotate("y", (0, extent), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom", color="#64748b")
+    ax.set_axis_off()
     figure.canvas.draw()
     figure.set_layout_engine("none")
 
@@ -137,12 +138,43 @@ def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
     angle = np.arctan2(horizontal_y, horizontal_x)
+    turns, wavenumbers, phases = np.moveaxis(wave_modes(), -1, 0)
+    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
+    return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
+
+
+def wave_modes() -> np.ndarray:
+    """The disk's random waves, `[modes, 3]`: each one's whole turns around the disk, waves per unit
+    radius across it, and phase."""
     modes = np.random.default_rng(clump_seed)
     turns = modes.integers(3, 18, clump_modes)
     wavenumbers = modes.uniform(0.8, 4.0, clump_modes)
     phases = modes.uniform(0, 2 * np.pi, clump_modes)
-    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
-    return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
+    return np.stack([turns, wavenumbers, phases], axis=-1)
+
+
+def blackbody_table(hottest: float, n_entries: int) -> np.ndarray:
+    """White-balanced blackbody light from zero to the `hottest` temperature, K, as a one-row image
+    `[1, entries, 3]`."""
+    white = blackbody(np.array(white_temperature))
+    temperatures = np.linspace(0, hottest, n_entries)
+    return (blackbody(temperatures) * (white @ luminance_weights) / white)[None]
+
+
+def draw_frame(frame: np.ndarray) -> plt.Figure:
+    """A display image `[rows, columns, 3]`, edge to edge on black."""
+    figure = plt.figure(figsize=(9, 9 * frame.shape[0] / frame.shape[1]), facecolor="black")
+    ax = figure.add_axes((0, 0, 1, 1))
+    ax.imshow(frame)
+    ax.set_axis_off()
+    return figure
+
+
+def develop(disk: np.ndarray, sky: np.ndarray, reference: float) -> np.ndarray:
+    """A display image from each pixel's linear disk light and sky colour, `[rows, columns, 3]` each: the
+    disk light exposed so a blackbody at the `reference` temperature shows mid-grey."""
+    shown = exposed(disk, reference) + sky
+    return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
 def disk_emissivity(radius: core.Scalar, waves: np.ndarray) -> np.ndarray:

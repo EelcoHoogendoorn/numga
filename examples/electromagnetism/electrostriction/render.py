@@ -16,6 +16,7 @@ bond_colour = "#286580"
 dipole_colour = "#df6435"
 applied_colour = "#bd9224"
 transverse_colour = "#8271a6"
+label_colour = "0.4"
 margin = 0.55
 field_gap = 0.8
 
@@ -101,9 +102,14 @@ def draw_loading(strengths: np.ndarray, parallel: Scalar, transverse: Scalar) ->
     across = np.asarray(transverse.to_array()) * 100
     ax.plot(strengths, along, color=bond_colour, linewidth=2.3, label="along the field")
     ax.plot(strengths, across, color=transverse_colour, linewidth=2.3, label="across the field")
-    ax.axhline(0, color=rest_colour, linewidth=0.8)
-    ax.set(xlabel="Applied field strength", ylabel="Change in rms extent (%)")
+    # Axes through no field and no change, without tick marks or numbers, each named along itself: the field's above
+    # its line, where the curves are not.
     ax.spines[["top", "right"]].set_visible(False)
-    ax.legend(frameon=False)
+    ax.spines[["left", "bottom"]].set_position(("data", 0))
+    ax.set(xticks=[], yticks=[])
+    ax.set_ylabel("change in rms extent", color=label_colour)
+    ax.text(0.5, 0, "applied field strength", transform=ax.get_yaxis_transform(), ha="center", va="bottom",
+            color=label_colour)
+    ax.legend(loc="lower center", frameon=False)
     figure.tight_layout()
     return figure

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import cache
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -9,7 +11,8 @@ from matplotlib.colors import to_rgb
 from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
-from examples.quadrics.s3_raytracer.render import render as trace
+from examples.quadrics.s3_raytracer.render import picture as trace
+from examples.wgsl import Shader, image_figure, supersampled
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
@@ -63,88 +66,71 @@ def hues(fractions: np.ndarray) -> np.ndarray:
 
 
 # --- S² -------------------------------------------------------------------------------
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int, supersample: int) -> list[np.ndarray]:
-    """One frame per row of world forms: a pixel of the front hemisphere is a point of S², and it
-    belongs to a body where the body's primal form is negative. The spherical quadric is a cone
-    through the origin, so the front hemisphere already shows both halves."""
-    coordinates, inside, rim = hemisphere(resolution * supersample)
-    pixels = S2.mv.antivector(coordinates)
-    return [paint((pixels & bodies[:, None](pixels)) < 0.0, colors, inside, rim, supersample) for bodies in surfaces]
+source = """
+var<storage, read> quadrics: array<Quadric>;
+var<storage, read> colours: array<vec3<f32>>;
+var<uniform> disk: vec3<f32>;
+var<uniform> rim: vec3<f32>;
+var<uniform> background: vec3<f32>;
+
+alias Sample = vec3<f32>;
+
+// The share of the disk's radius inside its rim.
+const rim_start = 0.985;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place);
+    let squared = dot(across, across);
+    if (squared > 1) {
+        return background;
+    }
+    if (squared > rim_start) {
+        return rim;
+    }
+    // The point of S² under the sample, on the front hemisphere.
+    let point = (mv.x * across.x + mv.y * across.y + mv.z * sqrt(1 - squared)).dual();
+    var colour = disk;
+    for (var body = 0u; body < arrayLength(&quadrics); body++) {
+        if ((quadrics[body](point) & point) < 0) {
+            colour = colours[body];
+        }
+    }
+    return colour;
+}
+"""
 
 
-def show_hemisphere(ax, frame: np.ndarray, title: str) -> None:
-    ax.set_facecolor(BACKGROUND)
-    ax.imshow(frame, extent=(-1.0, 1.0, -1.0, 1.0), interpolation="none")
-    ax.set_xlim(-1.12, 1.12)
-    ax.set_ylim(-1.12, 1.12)
-    ax.set_aspect("equal")
-    ax.axis("off")
-    ax.set_title(title, color="white", fontsize=12, fontweight="bold", pad=10)
+@cache
+def shader() -> Shader:
+    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric))
 
 
-def style_invariants(ax, title: str, ylabel: str, legend: str) -> None:
-    ax.set_facecolor(DISK)
-    ax.set_title(title, color="white", fontsize=12, fontweight="bold")
-    ax.set_ylabel(ylabel, color="#cbd5e1", fontsize=9)
-    ax.set_xlabel("Simulation Time (seconds)", color="#cbd5e1", fontsize=9)
-    ax.tick_params(colors="#94a3b8")
-    for spine in ax.spines.values():
-        spine.set_color(RIM)
-    ax.grid(True, color="#1e293b", linestyle=":", alpha=0.6)
-    ax.legend(loc=legend, facecolor="#1e293b", edgecolor="#475569", labelcolor="white", fontsize=8.5)
+def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> list[np.ndarray]:
+    """One frame per row of world forms, painted on the GPU, `resolution` pixels across: a sample of the front
+    hemisphere is a point of S², and it belongs to the last body whose primal form is negative there, as `paint`
+    paints on the CPU. The spherical quadric is a cone through the origin, so the front hemisphere already shows both
+    halves."""
+    painter = shader()
+    return [np.round(np.clip(painter((resolution, resolution), quadrics=bodies, colours=colors, disk=to_rgb(DISK),
+                                     rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)
+            for bodies in surfaces]
 
 
-def normalized_invariants(trajectory: S2.Trajectory) -> tuple[np.ndarray, np.ndarray]:
-    energy, momentum = trajectory.energy.to_array(), trajectory.momentum.norm().to_array()
-    return energy / energy[0], momentum / momentum[0]
-
-
-def draw_tumbling(trajectory: S2.Trajectory, colors: np.ndarray, dt: float) -> plt.Figure:
-    """The start and the first two flips of the tumbling oval, and its body rates with the invariants."""
-    rate = trajectory.rate[:, 0].cast(S2.ga.subspace("yz zx xy")).kernel
-    flips = np.nonzero(np.diff(np.sign(rate[:, 0])))[0]
-    keys = [0, int(flips[0]), int(flips[1])]
-    titles = [f"Frame {keys[0]}: Initial State (Intermediate Spin)",
-              f"Frame {keys[1]}: First Inversion (180° Dzhanibekov Flip)",
-              f"Frame {keys[2]}: Second Inversion (Return Flip)"]
-    fig = plt.figure(figsize=(14, 11), dpi=110)
-    fig.patch.set_facecolor(BACKGROUND)
-    for index, (frame, title) in enumerate(zip(hemisphere_frames(trajectory.surfaces[keys], colors, 240, 4), titles)):
-        show_hemisphere(fig.add_subplot(2, 2, index + 1), frame, title)
-
-    ax = fig.add_subplot(2, 2, 4)
+def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:
+    """The tumbling oval's rate in each of its body's planes against time: the spin in the intermediate plane flips
+    over and back, periodically, while the others swing through zero."""
+    rate = trajectory.rate[:, 0].cast(S2.ga.subspace("yz zx xy")).kernel     # [steps, 3]
     time = np.arange(rate.shape[0]) * dt
-    energy, momentum = normalized_invariants(trajectory)
-    ax.plot(time, rate[:, 0], color="#38bdf8", linewidth=2.0, label="ω_yz (Intermediate Axis)")
-    ax.plot(time, rate[:, 1], color="#f43f5e", linewidth=1.5, linestyle="--", label="ω_zx (Major Axis)")
-    ax.plot(time, rate[:, 2], color="#fbbf24", linewidth=1.5, linestyle=":", label="ω_xy (Polar Axis)")
-    ax.plot(time, energy, color="#34d399", linewidth=2.0, alpha=0.8, label="Energy (norm)")
-    ax.plot(time, momentum, color="#a855f7", linewidth=2.0, linestyle="-.", alpha=0.8, label="Momentum (norm)")
-    style_invariants(ax, "Periodic Dzhanibekov Flips & Conservation", "Body Angular Velocity & Normalized Invariants", "upper right")
-    fig.tight_layout()
-    return fig
-
-
-def draw_collisions(trajectory: S2.Trajectory, colors: np.ndarray, dt: float) -> plt.Figure:
-    """Three moments of a colliding population, and its conserved energy and momentum."""
-    frames = trajectory.energy.shape[0]
-    keys = [0, frames // 3, frames - 1]
-    titles = [f"Frame {keys[0]}: Initial State", f"Frame {keys[1]}: Mid-Orbit Trajectories",
-              f"Frame {keys[2]}: Post-Impact Ricochets / Rebounds"]
-    fig = plt.figure(figsize=(14, 11), dpi=110)
-    fig.patch.set_facecolor(BACKGROUND)
-    for index, (frame, title) in enumerate(zip(hemisphere_frames(trajectory.surfaces[keys], colors, 240, 4), titles)):
-        show_hemisphere(fig.add_subplot(2, 2, index + 1), frame, title)
-
-    ax = fig.add_subplot(2, 2, 4)
-    time = np.arange(frames) * dt
-    energy, momentum = normalized_invariants(trajectory)
-    ax.plot(time, energy, color="#38bdf8", linewidth=2.0, label="Total Kinetic Energy (normalized)")
-    ax.plot(time, momentum, color="#34d399", linewidth=2.0, linestyle="--", label="Total Angular Momentum (normalized)")
-    ax.set_ylim(0.95, 1.05)
-    style_invariants(ax, "Physical Invariants & Conservation on S²", "Normalized Invariant Value", "lower left")
-    fig.tight_layout()
-    return fig
+    figure, ax = plt.subplots(figsize=(9, 3.6), layout="constrained")
+    for spin, colour, name in zip(rate.T, ("#0284c7", "#e11d48", "#d97706"),
+                                  ("in yz, the intermediate plane", "in zx", "in xy")):
+        ax.plot(time, spin, color=colour, linewidth=1.8, label=name)
+    # The rates against their zero, without numbers; the legend above, clear of the curves.
+    ax.axhline(0, color="0.3", linewidth=0.8)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set(xlim=(time[0], time[-1]), xticks=[], yticks=[], xlabel="time", ylabel="body rate")
+    ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False)
+    return figure
 
 
 # --- S³ -------------------------------------------------------------------------------
@@ -153,16 +139,11 @@ FOV = np.radians(120.0)                            # rad
 
 
 def s3_frames(trajectory: S3.Trajectory, colors: np.ndarray, eye: S3.Motor, light: S3.Point,
-              shape: tuple[int, int], supersample: int) -> list[np.ndarray]:
-    """Every frame traced from the eye: each ellipsoid projected onto the image sphere, lit by the light."""
-    chart = raytracer.pixel_chart(FOV, (shape[0] * supersample, shape[1] * supersample))
-    return [(trace(eye, surfaces, colors, light, chart, shape, supersample) * 255).astype(np.uint8)
-            for surfaces in trajectory.surfaces]
+              shape: tuple[int, int]) -> list[np.ndarray]:
+    """Every frame traced from the eye along great circles, each ellipsoid lit by the light."""
+    return [trace(eye, surfaces, colors, light, FOV, shape) for surfaces in trajectory.surfaces]
 
 
-def draw_last_frame(frames: list[np.ndarray], bodies: int) -> plt.Figure:
-    fig, ax = plt.subplots(figsize=(8, 6), dpi=100)
-    ax.imshow(frames[-1], interpolation="nearest")
-    ax.axis("off")
-    ax.set_title(f"{bodies} ellipsoids on the 3-sphere after {len(frames)} frames")
-    return fig
+def draw_last_frame(frames: list[np.ndarray]) -> plt.Figure:
+    """The last frame, as it was traced."""
+    return image_figure(frames[-1])

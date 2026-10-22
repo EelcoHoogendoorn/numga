@@ -73,12 +73,6 @@ def rays(camera: Antivector, points: Antivector) -> Antivector:
     return offsets + time * offsets.squared().square_root()                     # [...] Antivector
 
 
-def facing(camera: Antivector, points: Antivector, normals: Antivector) -> Scalar:
-    """How far the camera is out along the outward normal at each point of a body: the point is seen
-    where this is positive."""
-    return normals | (camera - points)                                          # [...] Scalar
-
-
 def outline(camera: Antivector, centre: Antivector, radius: float, angles: np.ndarray) -> Antivector:
     """The outline of a sphere as the camera sees it, at each angle around it `[..., angles]`: where the
     rays from the camera graze the sphere, a circle on the sphere square to the camera's direction."""

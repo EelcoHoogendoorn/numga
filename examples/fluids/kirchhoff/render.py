@@ -40,9 +40,12 @@ def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
         ax.plot(aspects, values[:, column], color=colour, linewidth=1.8)
     ax.axvline(1, color="#cbd5e1", linewidth=0.8, zorder=0)
     ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_ylim(1e-2, 10)
+    # The ratios from their zero, read off at the ticks; the aspect without numbers: discs on the left, rods on the
+    # right, the sphere at the grey line.
+    ax.set_ylim(bottom=0)
+    ax.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
     ax.set_xlabel("axis of symmetry over the other semi-axes")
+    ax.set_ylabel("kinetic energy, fluid over solid")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     figure.tight_layout()

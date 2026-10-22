@@ -1,19 +1,24 @@
-"""Drawing for as rigid as possible: the bar's two deformations side by side, checkered by where each
+"""Drawing for as rigid as possible, on the GPU: the bar's deformations side by side, checkered by where each
 triangle sat at rest."""
 
 from __future__ import annotations
 
+import itertools
+
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-from examples.animation import capture
 from examples.surfaces.arap import core
+from examples.wgsl import meshes, solids
 
-# The checkerboard's two colours, the view, and the box it shows.
-LIGHT, DARK = np.array([0.98, 0.84, 0.62]), np.array([0.90, 0.45, 0.18])
-ELEVATION, AZIMUTH = 18.0, -64.0
-LIMITS = np.array([[-3.3, 3.5], [-1.5, 1.5], [-1.1, 4.0]])
+# The checkerboard's two colours, the view, elevation and azimuth in radians, azimuth zero looking along +y, the box
+# it shows and the margin around it, as a share of its larger side, and the pixels across a picture.
+light, dark = np.array([0.98, 0.84, 0.62]), np.array([0.90, 0.45, 0.18])
+elevation, azimuth = np.radians([18.0, 26.0])
+limits = np.array([[-3.3, 3.5], [-1.5, 1.5], [-1.1, 4.0]])
+margin = 0.06
+n_pixels = 400
+background = np.ones(3)
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -25,36 +30,30 @@ def checker(rest: core.Point, faces: np.ndarray, cell: np.ndarray) -> np.ndarray
     """Each triangle's colour: the parity of the cell of the given size its centroid sat in at rest."""
     centroids = coordinates(rest)[faces].mean(axis=1)                          # [F, 3]
     parity = np.floor(centroids / cell).astype(int).sum(axis=-1) % 2
-    return np.where(parity[:, None] == 1, DARK, LIGHT)
+    return np.where(parity[:, None] == 1, dark, light)
 
 
-def draw(ax, vertices: core.Point, faces: np.ndarray, colours: np.ndarray, title: str) -> None:
-    """The bar's triangles, shaded, in the fixed box."""
-    ax.add_collection3d(Poly3DCollection(coordinates(vertices)[faces], facecolors=colours, shade=True, linewidths=0))
-    for set_limit, limit in zip((ax.set_xlim, ax.set_ylim, ax.set_zlim), LIMITS):
-        set_limit(*limit)
-    ax.set_box_aspect(LIMITS[:, 1] - LIMITS[:, 0])
-    ax.view_init(elev=ELEVATION, azim=AZIMUTH)
-    ax.set_axis_off()
-    ax.set_title(title)
+def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray) -> np.ndarray:
+    """The bar's triangles, each its own colour, flat, framed on the fixed box."""
+    places = solids.mv.point(coordinates(vertices))
+    corners = solids.mv.point(np.array(list(itertools.product(*limits))))      # [8] Point
+    view = solids.view([corners], 0.0, elevation, azimuth, margin, n_pixels)
+    return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
+                       colour=meshes.by_face)
 
 
 def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndarray) -> plt.Figure:
     """The bar in each of the given shapes, side by side, checkered by where each triangle sat at rest."""
     colours = checker(bar.vertices, bar.faces, cell)
-    figure = plt.figure(figsize=(4 * len(shapes), 4), dpi=80)
-    for i, (shape, title) in enumerate(zip(shapes, titles)):
-        draw(figure.add_subplot(1, len(shapes), i + 1, projection="3d"), shape, bar.faces, colours, title)
+    figure, axes = plt.subplots(1, len(shapes), figsize=(4 * len(shapes), 4), dpi=100, squeeze=False)
+    for ax, shape, title in zip(axes[0], shapes, titles):
+        ax.imshow(picture(shape, bar.faces, colours))
+        ax.set_axis_off()
+        ax.set_title(title)
     return figure
 
 
 def animate(bar, shapes: core.Point, cell: np.ndarray) -> list[np.ndarray]:
     """The bar in each of the given shapes, one frame each."""
-    images = []
     colours = checker(bar.vertices, bar.faces, cell)
-    for shape in shapes:
-        figure = plt.figure(figsize=(4, 4), dpi=80)
-        draw(figure.add_axes((0, 0, 1, 1), projection="3d"), shape, bar.faces, colours, "")
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    return [picture(shape, bar.faces, colours) for shape in shapes]

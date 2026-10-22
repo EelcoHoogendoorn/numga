@@ -47,6 +47,16 @@ def draw_plane(ax, plane: Plane, half_height: float) -> None:
     ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")
 
 
+def cross(ax) -> None:
+    """A faint cross through the origin, its lines named x and y at their ends, in place of axes and ticks."""
+    ax.axhline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
+    ax.axvline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
+    # Each name sits at its line's end of the panel, whatever the panel's limits.
+    ax.text(1, 0, "$x$", transform=ax.get_yaxis_transform(), ha="right", va="bottom", color="#94a3b8", fontsize=11)
+    ax.text(0, 1, " $y$", transform=ax.get_xaxis_transform(), ha="left", va="top", color="#94a3b8", fontsize=11)
+    ax.set_axis_off()
+
+
 def draw_lenses(one_lens: list, one_planes: list[Plane], two_lenses: list, two_planes: list[Plane]) -> plt.Figure:
     """One lens imaging a point, and two lenses focusing parallel rays."""
     fig, axes = plt.subplots(2, 1, figsize=(8, 6), dpi=120, sharex=True)
@@ -57,6 +67,7 @@ def draw_lenses(one_lens: list, one_planes: list[Plane], two_lenses: list, two_p
             draw_rays(ax, rays, start, stop, color)
         for plane in planes:
             draw_plane(ax, plane, 1.0)
+        cross(ax)
         ax.set_aspect("equal")
     return fig
 
@@ -80,6 +91,7 @@ def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap, pi
     handedness = heading * np.sign(train.det().to_array())
     segments(ax, start, start + 2.5 * travel(legs[-1], handedness), f"C{count}")
     ax.scatter(*xy(subject), color="C0", zorder=3); ax.scatter(*xy(picture), color=f"C{count}", zorder=3)
+    cross(ax)
     ax.set_xlim(-1.3, 4.7); ax.set_ylim(-1.5, 3.2); ax.set_aspect("equal")
 
 

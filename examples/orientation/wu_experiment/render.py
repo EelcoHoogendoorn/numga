@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Ellipse, FancyArrowPatch
 
 from numga import stack
 from examples.orientation.wu_experiment.core import Direction, Scalar, Spin, mv
 
 COIL_RADIUS = 0.55
-# The coil seen slightly from above: its near half drawn below its centre.
-COIL_TILT = 0.22
+# The coil where the plane of the panels cuts it, a wire at each side: the wire's size in points, and the shares of it
+# the cross and the dot take that mark its current going into and coming out of the page.
+WIRE_SIZE = 15
+CROSS_SHARE, DOT_SHARE = 0.5, 0.3
+COIL_COLOUR = "#262b32"
 
 
 def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Figure:
     """One panel per case `[cases]`: the emission rate along each direction `[cases, directions]` as a
-    polar curve in the xz plane, and the coil with the sense of its current."""
+    polar curve in the xz plane, and the coil cut by that plane, with the sense of its current."""
     # The sense of each coil's current, and each direction read by pairing it with the planes across x and z.
     senses = spins.dot(mv.xy).to_array()                                          # [cases]
     coordinates = (stack((mv.x, mv.z), axis=-1) & directions[..., None]).to_array()   # [directions, 2]
@@ -29,12 +31,13 @@ def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Fi
         ax.fill(*curve.T, color="#df7246", alpha=0.25, linewidth=0)
         ax.plot(*curve.T, color="#df7246", linewidth=2)
         ax.plot([0, 0], [-limit, limit], color="#aab4bf", linestyle="--", linewidth=0.8)
-        ax.add_patch(Ellipse((0, 0), 2 * COIL_RADIUS, 2 * COIL_RADIUS * COIL_TILT, fill=False,
-                             edgecolor="#262b32", linewidth=2))
-        # Seen from the side the near half of the loop moves along x for a counterclockwise current.
-        heading = np.sign(sense) * 0.25
-        ax.add_patch(FancyArrowPatch((-heading, -COIL_RADIUS * COIL_TILT), (heading, -COIL_RADIUS * COIL_TILT),
-                                     arrowstyle="-|>", mutation_scale=18, color="#262b32", linewidth=2))
+        # With x to the right and z up, +y runs into the page: a current counterclockwise seen from above goes
+        # into the page at +x and comes out of it at -x.
+        inward = np.sign(sense) * COIL_RADIUS
+        ax.plot([inward, -inward], [0, 0], linestyle="none", marker="o", markersize=WIRE_SIZE, markerfacecolor="white",
+                markeredgecolor=COIL_COLOUR, markeredgewidth=2)
+        ax.plot(inward, 0, marker="x", markersize=CROSS_SHARE * WIRE_SIZE, markeredgecolor=COIL_COLOUR, markeredgewidth=2)
+        ax.plot(-inward, 0, marker="o", markersize=DOT_SHARE * WIRE_SIZE, color=COIL_COLOUR)
         ax.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
         ax.set_axis_off()
     return figure

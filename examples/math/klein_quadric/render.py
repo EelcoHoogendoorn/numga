@@ -6,17 +6,26 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.mplot3d.art3d import Line3DCollection
+from matplotlib.colors import to_rgb
 
 from numga import Extensor
-from examples.animation import capture
 from examples.math.klein_quadric import core
+from examples.wgsl import image_figure, solids
 
 mv = core.mv
-# Lines are drawn inside this ball, seen from this height and, at first, this azimuth, in degrees.
+# Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in
+# radians, azimuth zero looking along +y; the margin around the ball, as a share of its radius; the pixels across.
 RADIUS = 3.0
-ELEVATION = 18.0
-AZIMUTH = -60.0
+ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
+MARGIN = 0.06
+N_PIXELS = 650
+# Radii in pixels: of the lines on the hyperboloid, of the four lines and the transversals, and of the crossings;
+# and how much of what lies behind them each surface of the lines on the hyperboloid hides, so that they stay faint.
+RULING_RADIUS, LINE_RADIUS, CROSSING_RADIUS = 1.1, 2.4, 6.0
+RULING_OPACITY = 0.3
+RULING_COLOURS = [np.array(to_rgb(colour)) for colour in ("#9ecae1", "#c7c7c7")]
+LINE_COLOUR, FOURTH_COLOUR, TRANSVERSAL_COLOUR = (np.array(to_rgb(colour)) for colour in ("#08306b", "#e67e22", "#c0392b"))
+BACKGROUND = np.ones(3)
 AXES = mv(core.Plane.derive.nondegenerate, np.eye(3))                          # [3] Plane
 
 
@@ -44,36 +53,34 @@ def chords(lines: core.Bivector) -> np.ndarray:
     return np.stack([nearest - half * heading, nearest + half * heading], axis=-2)
 
 
-def draw_on(ax: plt.Axes, lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point) -> None:
-    ax.add_collection(Line3DCollection(chords(rulings[0]), colors="#9ecae1", linewidths=0.7), autolim=False)
-    ax.add_collection(Line3DCollection(chords(rulings[1]), colors="#c7c7c7", linewidths=0.7), autolim=False)
-    ax.add_collection(Line3DCollection(chords(lines[:3]), colors="#08306b", linewidths=2.2), autolim=False)
-    ax.add_collection(Line3DCollection(chords(lines[3:]), colors="#e67e22", linewidths=2.2), autolim=False)
-    visible = real(across)
-    ax.add_collection(Line3DCollection(chords(across)[visible], colors="#c0392b", linewidths=2.4), autolim=False)
-    points = coordinates(crossing)[real(crossing)]
-    ax.scatter(*points.T, color="#c0392b", s=45, depthshade=False)
-    ax.set(xlim=(-RADIUS, RADIUS), ylim=(-RADIUS, RADIUS), zlim=(-RADIUS, RADIUS))
-    ax.set_box_aspect((1, 1, 1), zoom=1.7)
-    ax.set_axis_off()
+def rods(ends: np.ndarray, radius: float) -> solids.Quadric:
+    """Chords, `[..., 2, 3]`, as rods of a radius, `[chords, 3]`, the chords of lines that miss the ball left out."""
+    ends = ends.reshape(-1, 2, 3)
+    ends = ends[np.isfinite(ends).all(axis=(-1, -2))]
+    return solids.rods(solids.mv.point(ends[:, 0]), solids.mv.point(ends[:, 1]), radius)
+
+
+def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,
+            azimuth: float) -> np.ndarray:
+    """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
+    view = solids.View(solids.aim(solids.origin, ELEVATION, azimuth), np.full(2, RADIUS * (1 + MARGIN)), N_PIXELS)
+    points = solids.mv.point(coordinates(crossing)[real(crossing)])            # [crossings] Point
+    hyperboloid = [(rods(chords(rulings[0]), RULING_RADIUS * view.pixel), RULING_COLOURS[0], RULING_OPACITY),
+                   (rods(chords(rulings[1]), RULING_RADIUS * view.pixel), RULING_COLOURS[1], RULING_OPACITY)]
+    four = [(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
+            (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
+            (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),
+            (solids.ball(points, CROSSING_RADIUS * view.pixel)[:, None], TRANSVERSAL_COLOUR)]
+    return solids.draw(four, view, BACKGROUND, translucent=hyperboloid)
 
 
 def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,
          azimuth: float) -> plt.Figure:
     """The four lines, the hyperboloid of the first three as its two families of lines, and the
     transversals through the points where the fourth line crosses it."""
-    figure = plt.figure(figsize=(6.5, 6.5))
-    ax = figure.add_subplot(projection="3d")
-    draw_on(ax, lines, rulings, across, crossing)
-    ax.view_init(elev=ELEVATION, azim=azimuth)
-    return figure
+    return image_figure(picture(lines, rulings, across, crossing, azimuth))
 
 
 def animate(scenes: list[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]) -> list[np.ndarray]:
     """One frame per scene, the view turning once around the hyperboloid over the loop."""
-    frames = []
-    for index, scene in enumerate(scenes):
-        figure = draw(*scene, azimuth=AZIMUTH + 360.0 * index / len(scenes))
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+    return [picture(*scene, azimuth=AZIMUTH + 2 * np.pi * index / len(scenes)) for index, scene in enumerate(scenes)]

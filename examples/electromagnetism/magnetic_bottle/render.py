@@ -1,54 +1,77 @@
-"""Drawing for the magnetic bottle: the particles' tracks seen from the side, over the field's strength in
-the plane through the axis, with the coils' wire where it crosses that plane."""
+"""Drawing for the magnetic bottle, on the GPU: the particles' tracks in space, trailing behind them, through a sheet
+of the field's strength in the plane through the axis, between the coils' wire."""
 
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgb
 
-from examples.animation import capture
 from examples.electromagnetism.magnetic_bottle import core
+from examples.wgsl import meshes, solids
 
 mv = core.mv
-# The colours of the background, the field's strength, the coils' wire, and the particles by their angle
-# to the axis.
-background_colour = "#0b1020"
-strength_colours = "Blues_r"
+# The colours of the field's strength, the coils' wire, and the particles by their angle to the axis.
+strength_colours = plt.get_cmap("Blues")
 wire_colour = "#f59e0b"
 particle_colours = plt.get_cmap("plasma")
 # The steps of each track drawn behind its particle.
 n_trail = 60
+# The view, elevation and azimuth in radians, azimuth zero looking along +y, with the bottle's axis along x; its margin
+# as a share of its larger side and its pixels across; how much of what lies behind it the sheet of the field's
+# strength hides; in pixels, the widths of the tracks and of the wire and the radius of the particles; and the points
+# around a coil.
+elevation, azimuth = np.radians([22.0, -28.0])
+margin, n_pixels = 0.03, 760
+sheet_opacity = 0.55
+track_width, wire_width, particle_radius = 2.5, 6.0, 4.5
+n_around_coil = 96
 
 
 # --- plumbing -------------------------------------------------------------------------
-def side(points: core.Antivector) -> np.ndarray:
-    """Points seen from the side, on the last axis: along the bottle's axis, and across it."""
-    return np.stack([(mv.z & points).to_array(), (mv.x & points).to_array()], axis=-1)
+def space(points: core.Antivector) -> np.ndarray:
+    """Points in the view's space, on the last axis: along the bottle's axis, then across it twice, turned on from z,
+    x and y, so that the tracks keep the sense they turn in."""
+    return np.stack([(mv.z & points).to_array(), (mv.x & points).to_array(), (mv.y & points).to_array()], axis=-1)
+
+
+def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
+    as a mesh of the grid's squares, as `meshes.samples`."""
+    grid = space(points)                                                      # [across, along, 3]
+    logarithm = np.log(strength.to_array())
+    shades = strength_colours(0.15 + 0.75 * (logarithm - logarithm.min()) / np.ptp(logarithm))[..., :3]
+    index = np.arange(grid[..., 0].size).reshape(grid.shape[:2])
+    quads = np.stack([index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]], axis=-1)
+    triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
+    places = solids.mv.point(grid.reshape(-1, 3))
+    return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view)
 
 
 def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.Antivector, strength: core.Scalar,
                     radius: float, heights: np.ndarray, n_steps_per_frame: int) -> list[np.ndarray]:
-    """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, over the field's
-    strength at the points of a grid in the plane through the axis `[across, along]`."""
-    tracks = side(events)                                                     # [steps, particles, 2]
-    grid = side(points)                                                       # [across, along, 2]
-    extent = (grid[0, 0, 0], grid[0, -1, 0], grid[0, 0, 1], grid[-1, 0, 1])
-    colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))
+    """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
+    particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
+    between the coils of a radius at their heights."""
+    tracks = space(events)                                                    # [steps, particles, 3]
+    grid = space(points)                                                      # [across, along, 3]
+    colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
+    # The box of the grid, as deep across the axis as it is wide.
+    reach = np.abs(grid).max(axis=(0, 1))
+    box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * [reach[0], reach[1], reach[1]]
+    view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
+    # What stays put, drawn once: the sheet and the coils' wire, each coil a ring about the axis.
+    field = sheet(points, strength, view)
+    centres = np.stack([heights, np.zeros_like(heights), np.zeros_like(heights)], axis=-1)    # [coils, 3]
+    rings = meshes.circles(centres, np.full(len(heights), radius), np.broadcast_to([1.0, 0.0, 0.0], centres.shape),
+                           n_around_coil)                                     # [coils, around + 1, 3]
+    wire = meshes.tube_samples([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
     images = []
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
-        figure = plt.figure(figsize=(8.0, 8.0 * (extent[3] - extent[2]) / (extent[1] - extent[0])), dpi=100,
-                            facecolor=background_colour)
-        ax = figure.add_axes((0, 0, 1, 1))
-        ax.imshow(np.log(strength.to_array()), origin="lower", extent=extent, cmap=strength_colours, alpha=0.5,
-                  aspect="auto")
-        trail = np.moveaxis(tracks[max(0, end - n_trail):end], 0, 1)          # [particles, trail, 2]
-        ax.add_collection(LineCollection(trail, colors=colours, linewidths=1.2))
-        ax.scatter(*tracks[end - 1].T, color=colours, s=18, zorder=3)
-        ax.scatter(np.repeat(heights, 2), np.tile([-radius, radius], len(heights)), color=wire_colour, s=60, zorder=4)
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
-        ax.set_axis_off()
-        images.append(capture(figure))
-        plt.close(figure)
+        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles, 3]
+        trails = meshes.tube_samples([(trail[:, particle], colour) for particle, colour in enumerate(colours)],
+                                     track_width, view)
+        particles = solids.ball(solids.mv.point(tracks[end - 1]), particle_radius * view.pixel)[:, None]
+        images.append(solids.draw([(particles, colours)], view, np.ones(3),
+                                  meshes=[(*field, sheet_opacity), (*wire, 1.0), (*trails, 1.0)]))
     return images
