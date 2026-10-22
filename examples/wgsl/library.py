@@ -23,6 +23,12 @@ samples_per_side = 2 if software() else 4
 pixel_share = 0.5 if software() else 1.0
 
 
+def drawn(pixels: int) -> int:
+    """The pixels a traced picture draws across where `pixels` are asked for: all of them on a GPU, `pixel_share` of
+    them where the CPU draws."""
+    return round(pixels * pixel_share)
+
+
 def supersampled() -> str:
     """WGSL for an image of `samples_per_side` squared samples a pixel, on a grid turned so that no two
     share a row or a column, which resolves near-horizontal and near-vertical edges as finely as a grid
