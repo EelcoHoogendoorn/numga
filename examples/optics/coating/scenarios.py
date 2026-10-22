@@ -82,10 +82,10 @@ def antireflection() -> tuple[core.Scalar, core.Scalar]:
     return result.powers(core.mv.xt, incident, substrate)
 
 
-def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
-    """The twisted reflector at normal incidence: its slices' centres and optic axes, and the reflected and
-    transmitted power of both circular polarizations through both helices, over the wavelengths."""
-    directors, chi = helix(slice_depths)
+def twisted() -> tuple[core.Scalar, core.Scalar]:
+    """The twisted reflector at normal incidence: the reflected and transmitted power of both circular polarizations
+    through both helices, over the wavelengths."""
+    _, chi = helix(slice_depths)
     medium = core.Medium.from_chi(chi, core.mv.t)
     distance = 2 * np.pi * slice_thickness / spectrum
     layers = core.propagate(medium.generator[..., None], distance)
@@ -93,8 +93,7 @@ def twisted() -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
     ports = core.Ports.isotropic(surrounding_index, core.mv.t)
     result = core.scatter(propagation(ports.outgoing), ports)
     reflected, transmitted = result.powers(circular()[:, None, None], ports, ports)   # [polarizations, helices, wavelengths] Scalar
-    centres = core.mv.z * slice_depths                              # [layers] Vector
-    return centres, directors, reflected, transmitted
+    return reflected, transmitted
 
 
 def axion() -> core.Scalar:
@@ -197,12 +196,11 @@ def main() -> None:
     from examples.optics.coating import render
 
     reflection, transmission = antireflection()
-    centres, directors, twisted_reflection, twisted_transmission = twisted()
+    twisted_reflection, twisted_transmission = twisted()
     axion_reflection = axion()
     angle_reflection = angular()
     depths, fields = penetration()
     save_figure(render.spectra(spectrum, reflection, coating_names), "coating_chi_matching")
-    save_figure(render.twist(centres, directors[:, 0]), "coating_twist")
     save_figure(render.handedness(spectrum, twisted_reflection, polarization_names), "coating_handedness")
     save_figure(render.axion(axion_jumps, axion_reflection, axion_names), "coating_axion")
     save_figure(render.angular(map_wavelengths, incidence_angles, angle_reflection), "coating_polarization_map")

@@ -56,21 +56,21 @@ def coordinates(directions: core.Direction) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()   # [..., 3]
 
 
-def cross(axes: plt.Axes, limit: float, across: str, up: str) -> None:
-    """One extent on both directions of a plane, without scales: a faint cross through the origin, its lines named at
-    their ends, each along itself."""
+def cross(axes: plt.Axes, extents: np.ndarray, across: str, up: str) -> None:
+    """A plane within extents `[2, 2]`, lowest and highest across and up, without scales: a faint cross through the
+    origin, its lines named at their ends, each along itself."""
     axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.text(limit, 0, across, ha="right", va="top", fontsize=9, color=LABEL_COLOUR)
-    axes.text(0, limit, f"{up} ", ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR, rotation=90,
+    axes.text(extents[0, 1], 0, across, ha="right", va="top", fontsize=9, color=LABEL_COLOUR)
+    axes.text(0, extents[1, 1], f"{up} ", ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR, rotation=90,
               rotation_mode="anchor")
-    axes.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+    axes.set(xlim=extents[0], ylim=extents[1], aspect="equal")
     axes.set_axis_off()
 
 
 def screen_axes(axes: plt.Axes, limit: float) -> None:
     """The plane across the beam, one extent on both directions, named by the directions of space along it."""
-    cross(axes, limit, "$y - x$", "$z$")
+    cross(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
 
 
 def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
@@ -202,7 +202,11 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
         phasor_axes.plot(path[:, 0], path[:, 1], color=colour, linewidth=2, label=label)
         phasor_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour, markersize=5)
         power_axes.plot(depths, intensity, color=colour, linewidth=2, label=label)
-    cross(phasor_axes, 1.1 * float(np.max(np.abs(amplitude))), "in phase", "in quadrature")
+    # The plane about the paths and the origin they start from, with a margin.
+    lowest = np.minimum(amplitude.min(axis=(0, 1)), 0)                       # [2]
+    highest = np.maximum(amplitude.max(axis=(0, 1)), 0)
+    margin = 0.1 * (highest - lowest).max()
+    cross(phasor_axes, np.stack([lowest - margin, highest + margin], axis=-1), "in phase", "in quadrature")
     power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])
     power_axes.spines[["top", "right"]].set_visible(False)
     power_axes.legend(loc="upper left", frameon=False, fontsize=9)

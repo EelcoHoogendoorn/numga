@@ -28,7 +28,7 @@ BEAD_COLOURS = PALETTE[np.arange(len(BEADS)) % len(PALETTE)]
 # The 600-cell: its vertices' colour; its edges' width and its vertices' radius in pixels; the pixels across its
 # picture, and half the picture's width about the middle, in the projected space.
 VERTEX = ODD
-EDGE_WIDTH, VERTEX_RADIUS = 2.0, 3.6
+EDGE_WIDTH, VERTEX_RADIUS = 1.2, 2.6
 N_PIXELS, HALF = 500, 0.6
 
 

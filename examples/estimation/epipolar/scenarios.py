@@ -10,18 +10,20 @@ import numpy as np
 from numga import Extensor, stack
 from examples.estimation.epipolar.core import Camera, Line, Motor, Point, mv, reconstruction, triangulate
 
-# The house, in camera 1's frame: the corners of its walls, its roof ridge and apexes, and a grid of ground
-# markers in front of it, by its half extents and depth.
-WALLS = [[-0.5, -0.4, 3.0], [0.5, -0.4, 3.0], [0.5, 0.4, 3.0], [-0.5, 0.4, 3.0],
-         [-0.5, -0.4, 4.0], [0.5, -0.4, 4.0], [0.5, 0.4, 4.0], [-0.5, 0.4, 4.0]]
-ROOF = [[0.0, -0.4, 4.6], [0.0, 0.4, 4.6], [-0.25, 0.0, 4.3], [0.25, 0.0, 4.3]]
-# The house's edges, by the landmarks they join: the walls' two rings and the four edges between them, and the
-# roof's ridge and the rafters from its ends.
+# The house, in camera 1's frame, x to the right, y down and z ahead: the corners of its walls, from the ground up to
+# the eaves, front then back, and its roof's ridge over the front and the back; and a grid of markers on the ground in
+# front of it, by their counts across and ahead, half their width, their depths and the ground's level below the camera.
+WALLS = [[-0.5, 0.6, 3.0], [0.5, 0.6, 3.0], [0.5, 0.0, 3.0], [-0.5, 0.0, 3.0],
+         [-0.5, 0.6, 4.0], [0.5, 0.6, 4.0], [0.5, 0.0, 4.0], [-0.5, 0.0, 4.0]]
+ROOF = [[0.0, -0.4, 3.0], [0.0, -0.4, 4.0]]
+# The house's edges, by the landmarks they join: the front and back walls' rings and the four edges between them, and
+# the roof's ridge and the rafters from its ends down to the eaves.
 HOUSE_EDGES = [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7],
-               [8, 9], [8, 4], [8, 5], [9, 6], [9, 7]]
+               [8, 9], [8, 2], [8, 3], [9, 6], [9, 7]]
 N_GROUND = (4, 3)
-GROUND_EXTENT = (0.8, 0.6)
-GROUND_DEPTH = 2.5
+GROUND_HALF_WIDTH = 0.8
+GROUND_DEPTHS = (2.0, 2.8)
+GROUND_LEVEL = 0.6
 # Camera 2's true pose: turned about y, then shifted.
 TURN = np.radians(14.0)
 SHIFT = np.array([0.65, 0.08, 0.18])
@@ -38,9 +40,10 @@ FRAME_DURATION = 50
 # --- plumbing --------------------------------------------------------------
 def house() -> Point:
     """The landmarks: the house's corners and the ground markers."""
-    across, up = (np.linspace(-extent, extent, count) for extent, count in zip(GROUND_EXTENT, N_GROUND))
-    grid_x, grid_y = np.meshgrid(across, up)
-    ground = np.stack([grid_x.ravel(), grid_y.ravel(), np.full(grid_x.size, GROUND_DEPTH)], axis=-1)
+    across = np.linspace(-GROUND_HALF_WIDTH, GROUND_HALF_WIDTH, N_GROUND[0])
+    ahead = np.linspace(*GROUND_DEPTHS, N_GROUND[1])
+    grid_x, grid_z = np.meshgrid(across, ahead)
+    ground = np.stack([grid_x.ravel(), np.full(grid_x.size, GROUND_LEVEL), grid_z.ravel()], axis=-1)
     return mv.point(np.concatenate([WALLS, ROOF, ground]))                    # [landmarks] Point
 
 

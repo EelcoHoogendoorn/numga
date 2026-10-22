@@ -109,7 +109,8 @@ def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
 
 
 def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> list[np.ndarray]:
-    """The ray figure for each conic of a batch, viewed from turning once around, at one framing."""
-    seen = views([curves, complements, controls], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
+    """The ray figure for each conic of a batch, viewed from turning once around, at one framing: the curves and the
+    sphere's, which the weighted control points of the most hyperbolic conics run out of."""
+    seen = views([curves, complements], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
     return [draw_rays(controls[index], curves[index], complements[index], shapes[index], seen[index])
             for index in range(curves.shape[0])]

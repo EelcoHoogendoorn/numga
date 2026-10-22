@@ -1,5 +1,5 @@
-"""Scenes for the spinning top: a disc, a stem and a tip, spun on a shallow bowl, in four variations of
-its tip, its disc, and the friction of the ground."""
+"""Scenes for the spinning top: a disc, a stem and a tip, spun on flat ground, in four variations of its tip,
+its disc, and the friction of the ground."""
 
 from __future__ import annotations
 
@@ -38,17 +38,17 @@ FRAME_DURATION = 33
 @dataclass(frozen=True)
 class Setup:
     """A top and its ground: the spin it starts with, its tip's radius, its disc's height above the
-    tip and mass, the bowl's curvature, the dynamic friction, and the air's drag rate."""
+    tip and mass, the ground's curvature, the dynamic friction, and the air's drag rate."""
     spin_rate: float
     tip_radius: float
     disc_height: float
     disc_mass: float
-    bowl_curvature: float
+    ground_curvature: float
     dynamic_friction: float
     drag: float
 
 
-BASE = Setup(18.0, 0.05, 0.10, 1.0, 0.15, 0.3, 0.13)
+BASE = Setup(18.0, 0.05, 0.10, 1.0, 0.0, 0.3, 0.13)
 VARIATIONS = {
     "base": BASE,
     "sharp_tip": replace(BASE, tip_radius=0.02),
@@ -76,7 +76,7 @@ def top(tip_radius: float, disc_height: float, disc_mass: float):
 def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Iterator[tuple]:
     """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps."""
     parts, inertia, inverse_inertia, mass, height = top(setup.tip_radius, setup.disc_height, setup.disc_mass)
-    ground = core.bowl(setup.bowl_curvature)
+    ground = core.bowl(setup.ground_curvature)
     origin = core.mv.point(np.zeros(3))
     # `(mv.zw * a).exp()` translates up by `2 * a`, `(mv.zx * a).exp()` turns by `2 * a`: lift the
     # centre of mass so the tip clears, then tilt.

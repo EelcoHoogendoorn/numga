@@ -37,6 +37,8 @@ torch = [
 examples = [
     "matplotlib>=3.7",
     "pillow>=10",
+    "scipy>=1.10",
+    "wgpu>=0.32",
 ]
 test = [
     "pytest>=7",
@@ -47,7 +49,10 @@ Homepage = "https://github.com/EelcoHoogendoorn/numga"
 Repository = "https://github.com/EelcoHoogendoorn/numga"
 
 [tool.setuptools.packages.find]
-include = ["numga*"]
+include = ["numga*", "examples*"]
+
+[tool.setuptools.package-data]
+examples = ["models/*.obj"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

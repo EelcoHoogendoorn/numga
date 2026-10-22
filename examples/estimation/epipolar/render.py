@@ -44,16 +44,24 @@ def camera_edges(pose: Motor) -> tuple[Point, Point]:
     return concatenate([eye.broadcast_to(ring.shape), ring]), concatenate([ring, ring[np.roll(np.arange(4), -1)]])
 
 
+def at_scale(points: Point, scale) -> Point:
+    """Points scaled about camera 1's eye, at the origin."""
+    origin = mv.w.dual()
+    return points / (mv.w & points) * scale + origin * (1.0 - scale)
+
+
 def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Motor,
                            states: Iterator[tuple[Motor, Point]]) -> list[np.ndarray]:
     """One frame per state of the search: camera 1, blue, camera 2 where it is, grey, and where the search
     puts it, green; the true landmarks, grey, with the house's edges between them by index pairs
     `[edges, 2]`; and the landmarks the pose triangulates, coloured, with the sight rays of a few from both
-    cameras, which cross at them."""
+    cameras, which cross at them. The baseline's length is not observable, so what the search finds is drawn scaled
+    about camera 1 to the true baseline."""
     n_landmarks = landmarks.shape[0]
     colours = plt.colormaps["turbo"].resampled(n_landmarks)(np.arange(n_landmarks))[:, :3]
     truth = display >> landmarks                                             # [landmarks] Point
     eye_1 = display >> mv.w.dual()                                           # [] Point
+    true_baseline = (mv.w.dual() & (true_motor >> mv.w.dual())).norm()       # [] Scalar
     edges_1, edges_2 = camera_edges(mv.rotor()), camera_edges(true_motor)
     fixed = [(solids.ball(truth, landmark_radius)[:, None], landmark),
              (solids.rods(*edges_1, edge_radius), camera_1), (solids.rods(*edges_2, edge_radius), camera_2_true),
@@ -62,11 +70,12 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
 
     frames = []
     for motor, points in states:
-        found = display >> points                                           # [landmarks] Point
-        eye = display >> (motor >> mv.w.dual())                              # [] Point
+        scale = true_baseline / (mv.w.dual() & (motor >> mv.w.dual())).norm()   # [] Scalar
+        found = at_scale(display >> points, scale)                           # [landmarks] Point
+        eye = at_scale(display >> (motor >> mv.w.dual()), scale)             # [] Point
         shown = found[::ray_every]
         moving = [(solids.ball(found, landmark_radius)[:, None], colours),
-                  (solids.rods(*camera_edges(motor), edge_radius), camera_2_found),
+                  (solids.rods(*(at_scale(ends, scale) for ends in camera_edges(motor)), edge_radius), camera_2_found),
                   (solids.rods(eye_1.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every]),
                   (solids.rods(eye.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every])]
         frames.append(solids.draw(fixed + moving, view, background))

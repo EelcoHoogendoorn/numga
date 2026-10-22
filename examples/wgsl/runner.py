@@ -8,6 +8,9 @@ batches of that type, other arrays as arrays of the image's shape.
 
 from __future__ import annotations
 
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
@@ -21,12 +24,20 @@ from examples.wgsl.dialect import Binding, Program, compile, template
 _device = None
 
 
+def software_driver() -> None:
+    """In a Colab runtime, Mesa's software Vulkan driver, installed once: the GPU of a runtime without one, and
+    harmless beside a real one, which the adapter request prefers."""
+    if "google.colab" in sys.modules and not any(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json")):
+        subprocess.run("apt-get -qq update && apt-get -qq install -y mesa-vulkan-drivers", shell=True, check=True)
+
+
 def device() -> Any:
     """The default GPU, opened once, with filtering of float textures where the adapter has it, and buffers as large
     as the adapter allows: a picture's samples, sixteen to a pixel, outgrow the default limits."""
     global _device
     if _device is None:
         import wgpu
+        software_driver()
         adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
         wanted = [feature for feature in ("float32-filterable",) if feature in adapter.features]
         largest = {name: adapter.limits[name] for name in ("max-buffer-size", "max-storage-buffer-binding-size")}
@@ -213,10 +224,6 @@ class Shader:
         declares them, with one invocation per pixel of an image of `shape`, rows first; the shader reads
         its pixel as `id.xy`, column then row, and the image's size, columns then rows, from a uniform
         `pixels` where it declares one. Written arrays start at zero."""
-        import wgpu
-
-        import wgpu
-
         group, outputs = self.bind(shape, values)
         encoder = self.device.create_command_encoder()
         for pipeline, size in self.pipelines:

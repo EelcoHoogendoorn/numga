@@ -60,14 +60,6 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
 """
 
 
-def behind(layer: tuple[np.ndarray, np.ndarray], distance: float) -> tuple[np.ndarray, np.ndarray]:
-    """A layer, its colour `[rows, columns, 4]` and its depth `[rows, columns]` weighted by coverage, pushed a distance
-    back along the view: for a surface that lines are drawn on, so that the lines stay in front of it where their
-    depths all but meet, while what lies truly behind it stays hidden."""
-    colour, depth = layer
-    return colour, depth + distance * colour[..., 3]
-
-
 def compose(layers: list[tuple[np.ndarray, np.ndarray, float]], background: np.ndarray) -> np.ndarray:
     """Layers blended over a background, nearest first at each pixel, `[rows, columns, 3]` bytes: each layer its
     colour and its depth along the view, `[rows, columns, 4]` and `[rows, columns]`, both weighted by how much of

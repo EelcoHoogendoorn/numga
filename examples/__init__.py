@@ -17,8 +17,12 @@ if TYPE_CHECKING:
     from numga import Algebra
     from numga.backend.context import Context
 
-PLOT_DIR = Path(__file__).resolve().parents[1] / "plots"
+# Pictures go to the repository's plots, or, where the examples are installed rather than checked out, as in Colab,
+# to plots beside the notebook; the meshes the examples load ship with them.
+ROOT = Path(__file__).resolve().parents[1]
+PLOT_DIR = (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
+MODEL_DIR = Path(__file__).resolve().parent / "models"
 
 
 def auto_increment_path(path: Path | str) -> Path:

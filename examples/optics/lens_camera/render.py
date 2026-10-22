@@ -27,6 +27,8 @@ SENSOR = (0.225, 0.175)
 # are drawn with in the side view.
 REFERENCE_APERTURE = 0.45
 LENS_HALF_HEIGHTS = [0.6, 0.35]
+# The colour each depth layer of the scene lights on the sensor, red, green and blue, in the order of the layers.
+LAYER_COLOURS = np.eye(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -70,8 +72,9 @@ def draw_side(ax, planes: Plane, heights: list[float], legs: Point, scene: Point
     for plane, height in zip(planes, heights):
         top, bottom = xyz(plane ^ mv.z ^ (mv.y - mv.w * height)), xyz(plane ^ mv.z ^ (mv.y + mv.w * height))
         ax.plot([top[0], bottom[0]], [top[1], bottom[1]], color="gray", linewidth=2)
-    xy = xyz(scene)[..., :2].reshape(-1, 2)
-    ax.scatter(xy[:, 0], xy[:, 1], s=4, color="tab:gray")
+    xy = xyz(scene)[..., :2]                                              # [depth, height, width, 2]
+    colours = np.broadcast_to(LAYER_COLOURS.reshape((3,) + (1,) * (xy.ndim - 2) + (3,)), xy.shape[:-1] + (3,))
+    ax.scatter(xy[..., 0].ravel(), xy[..., 1].ravel(), s=6, color=colours.reshape(-1, 3))
     fan = xyz(legs)                                                       # [plane + 1, ray, 3]
     ax.plot(fan[..., 0], fan[..., 1], color="tab:orange", linewidth=0.7)
     ax.set_xlim(-3.6, 2.6); ax.set_ylim(-1.2, 1.2); ax.set_aspect("equal"); ax.axis("off")
