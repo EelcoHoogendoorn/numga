@@ -22,13 +22,15 @@ _device = None
 
 
 def device() -> Any:
-    """The default GPU, opened once, with filtering of float textures where the adapter has it."""
+    """The default GPU, opened once, with filtering of float textures where the adapter has it, and buffers as large
+    as the adapter allows: a picture's samples, sixteen to a pixel, outgrow the default limits."""
     global _device
     if _device is None:
         import wgpu
         adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
         wanted = [feature for feature in ("float32-filterable",) if feature in adapter.features]
-        _device = adapter.request_device_sync(required_features=wanted)
+        largest = {name: adapter.limits[name] for name in ("max-buffer-size", "max-storage-buffer-binding-size")}
+        _device = adapter.request_device_sync(required_features=wanted, required_limits=largest)
     return _device
 
 
@@ -156,10 +158,16 @@ def coefficients(value: Extensor, kind: GAType) -> bytes:
     return kernel.reshape(kernel.shape[:kernel.ndim - structural] + (-1,)).tobytes()
 
 
-class Shader:
-    """A compiled shader in the numga dialect, ready to run over images."""
+# The texture formats the raster stage may draw into: their bytes and channels a pixel, and how their numbers are kept.
+FORMATS = {"rgba32float": (16, 4, np.float32), "r32float": (4, 1, np.float32), "rgba8unorm": (4, 4, np.uint8)}
 
-    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType]) -> None:
+
+class Shader:
+    """A compiled shader in the numga dialect, ready to run over images; where it draws, the formats of the targets its
+    fragment stage writes, one per target."""
+
+    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], targets: tuple[str, ...] = ()) -> None:
+        self.targets = targets
         self.program = compile(source, algebra, types)
         self.context = NumpyContext(algebra)
         self.layout = Layout(self.program, algebra.gatype.scalar())
@@ -171,13 +179,13 @@ class Shader:
         pipeline_layout = self.device.create_pipeline_layout(bind_group_layouts=[self.bind_layout])
         self.pipelines = [(self.device.create_compute_pipeline(layout=pipeline_layout, compute={"module": module, "entry_point": name}), size)
                           for name, size in self.program.entry_points]
-        # Triangles drawn with depth, one sample a pixel, at full precision.
+        # Triangles drawn with depth, one sample a pixel, into the targets' formats.
         if self.program.vertex is not None:
             self.raster = self.device.create_render_pipeline(
                 layout=pipeline_layout,
                 vertex={"module": module, "entry_point": self.program.vertex, "buffers": []},
                 fragment={"module": module, "entry_point": self.program.fragment,
-                          "targets": [{"format": "rgba32float"}] * self.program.targets},
+                          "targets": [{"format": target} for target in targets]},
                 primitive={"topology": "triangle-list", "cull_mode": "none"},
                 depth_stencil={"format": "depth32float", "depth_write_enabled": True, "depth_compare": "less"})
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
@@ -221,18 +229,18 @@ class Shader:
 
     def draw(self, shape: tuple[int, int], n_vertices: int, **values: Any) -> list[np.ndarray]:
         """The images the shader's vertex and fragment stages draw, one per target the fragment stage writes,
-        `[rows, columns, 4]` each, zero where no triangle covers a pixel: `n_vertices` invocations of the vertex
-        stage, three to a triangle, which read the vertices they place from storage, with the nearest surface kept
-        by depth, one sample at each pixel's centre."""
+        `[rows, columns, channels]` each in its format's numbers, zero where no triangle covers a pixel: `n_vertices`
+        invocations of the vertex stage, three to a triangle, which read the vertices they place from storage, with the
+        nearest surface kept by depth, one sample at each pixel's centre."""
         import wgpu
 
         group, _ = self.bind(shape, values)
         rows, columns = shape
         depth = self.device.create_texture(size=(columns, rows, 1), format="depth32float",
                                            usage=wgpu.TextureUsage.RENDER_ATTACHMENT)
-        targets = [self.device.create_texture(size=(columns, rows, 1), format="rgba32float",
+        targets = [self.device.create_texture(size=(columns, rows, 1), format=target,
                                               usage=wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC)
-                   for _ in range(self.program.targets)]
+                   for target in self.targets]
         encoder = self.device.create_command_encoder()
         drawing = encoder.begin_render_pass(
             color_attachments=[{"view": target.create_view(), "clear_value": (0, 0, 0, 0), "load_op": "clear",
@@ -243,20 +251,21 @@ class Shader:
         drawing.set_bind_group(0, group)
         drawing.draw(n_vertices)
         drawing.end()
-        # Rows of a texture copy start at multiples of 256 bytes.
-        row_bytes = -(-columns * 16 // 256) * 256
         readbacks = []
-        for target in targets:
+        for target, format in zip(targets, self.targets):
+            # Rows of a texture copy start at multiples of 256 bytes.
+            row_bytes = -(-columns * FORMATS[format][0] // 256) * 256
             readback = self.device.create_buffer(size=row_bytes * rows, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
             encoder.copy_texture_to_buffer({"texture": target}, {"buffer": readback, "bytes_per_row": row_bytes, "rows_per_image": rows},
                                            (columns, rows, 1))
-            readbacks.append(readback)
+            readbacks.append((readback, row_bytes))
         self.device.queue.submit([encoder.finish()])
         images = []
-        for readback in readbacks:
+        for (readback, row_bytes), format in zip(readbacks, self.targets):
+            size, channels, kind = FORMATS[format]
             readback.map_sync(wgpu.MapMode.READ)
-            data = np.frombuffer(readback.read_mapped(), dtype=np.float32).reshape(rows, row_bytes // 4)
-            images.append(data[:, :columns * 4].reshape(rows, columns, 4).copy())
+            data = np.frombuffer(readback.read_mapped(), dtype=np.uint8).reshape(rows, row_bytes)[:, :columns * size]
+            images.append(data.copy().view(kind).reshape(rows, columns, channels))
             readback.unmap()
         return images
 

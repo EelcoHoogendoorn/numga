@@ -1140,7 +1140,7 @@ class Compiler:
             kind = self.resolve(name)
         elif normalized_type(name) != name:
             kind = normalized_type(name)
-        elif name in ("textureSampleLevel", "textureSample", "textureLoad"):
+        elif name in ("textureSampleLevel", "textureSample", "textureLoad", "unpack4x8unorm"):
             kind = "vec4<f32>"
         elif name == "textureDimensions":
             kind = "vec2<u32>"

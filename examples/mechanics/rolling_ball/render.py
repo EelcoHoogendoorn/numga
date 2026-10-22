@@ -1,8 +1,10 @@
 """Drawing for the rolling ball: the table seen from above, with the loop and the ball on it; the ball
 painted on the GPU with a pattern fixed to it, and with the trail its contact point has left on it.
 
-Each sample of the ball's picture, seen from above, is a point of the ball's upper half; carried back into the ball's
-own frame by its turn, `turn << point`, it is the point of the ball that is there, whose coordinates pick its colour.
+Each sample of the picture is a point of the table seen from above; under the ball it is a point of the ball's upper
+half, and carried back into the ball's own frame by its turn, `turn << point`, the point of the ball that is there,
+whose coordinates pick its colour. The table and the loop do not move: they are drawn once, and every frame lays the
+ball over them.
 """
 
 from __future__ import annotations
@@ -24,20 +26,35 @@ LIGHT = np.array([0.96, 0.80, 0.30])
 DARK = np.array([0.25, 0.45, 0.70])
 CIRCLE = np.array([0.15, 0.15, 0.18])
 TRAIL = np.array([0.85, 0.20, 0.20])
-# At most this many trail points are painted, evenly spaced along it; the pixels across the ball's picture.
-TRAIL_POINTS = 240
-N_PIXELS = 300
+# At most this many segments of the trail are painted, evenly spaced along it; the pixels across the picture, and the
+# margin around the loop and the ball, as a share of the ball's radius.
+TRAIL_SEGMENTS = 64
+N_PIXELS = 500
+MARGIN = 1.3
 
 source = supersampled() + """
-// The ball's turn, and the points of the ball its contact point has met, in the ball's own frame.
+// The ball's turn, its centre on the table and its radius; half the width of the table seen; and the points of the
+// ball its contact point has met, in the ball's own frame, a segment between each and the next.
 var<uniform> turn: Rotor;
+var<uniform> centre: vec2<f32>;
+var<uniform> radius: f32;
+var<uniform> half_width: f32;
 var<storage, read> marks: array<Vector>;
 
 // The colour, and its coverage.
 alias Sample = vec4<f32>;
 
+// How far a point is from the segment between two others.
+fn from_segment(point: Vector, start: Vector, end: Vector) -> f32 {
+    let along = end - start;
+    let share = clamp((point - start).dot(along) / max(along.dot(along), 1e-12), 0.0, 1.0);
+    let offset = point - start - along * share;
+    return sqrt(offset.dot(offset));
+}
+
 fn sample(place: vec2<f32>) -> Sample {
-    let across = screen(place);
+    // Across the ball from its centre, in radii.
+    let across = (screen(place) * half_width - centre) / radius;
     let squared = dot(across, across);
     if (squared > 1) {
         return vec4<f32>(0.0);
@@ -51,13 +68,12 @@ fn sample(place: vec2<f32>) -> Sample {
     var colour = select(DARK, LIGHT, x * y * z > 0);
     // The great circles where a coordinate vanishes, a little wide.
     colour = mix(colour, CIRCLE, clamp(1 - min(abs(x), min(abs(y), abs(z))) / 0.04, 0.0, 1.0));
-    // The trail: the nearest mark, within its width.
-    var nearest = 4.0;
-    for (var index = 0u; index < arrayLength(&marks); index++) {
-        let offset = body - marks[index];
-        nearest = min(nearest, offset.dot(offset));
+    // The trail: the nearest of its segments, within its width.
+    var nearest = 2.0;
+    for (var index = 1u; index < arrayLength(&marks); index++) {
+        nearest = min(nearest, from_segment(body, marks[index - 1], marks[index]));
     }
-    colour = mix(colour, TRAIL, clamp(1 - sqrt(nearest) / 0.05, 0.0, 1.0));
+    colour = mix(colour, TRAIL, clamp(1 - nearest / 0.05, 0.0, 1.0));
     // Lit from the upper left, and a share of the light everywhere.
     let lit = 0.4 + 0.6 * clamp(point.dot(mv.x * -0.4 + mv.y * 0.4 + mv.z * 0.82), 0.0, 1.0);
     return vec4<f32>(colour * lit, 1.0);
@@ -77,36 +93,35 @@ def coordinates(points) -> np.ndarray:
     return points.cast(points.algebra.subspace("x y z")).kernel
 
 
-def ball(turn, trail) -> np.ndarray:
-    """The visible half of the ball as RGBA pixels: each pixel coloured by the point of the ball under it, in the
-    ball's own frame, and the trail `[points]` of its contact point; transparent outside the ball."""
-    marks = trail[np.linspace(0, len(trail) - 1, min(len(trail), TRAIL_POINTS)).astype(int)]
-    image = shader()((N_PIXELS, N_PIXELS), turn=turn, marks=marks)["image"]
-    alpha = image[..., 3:]
-    return np.concatenate([image[..., :3] / np.maximum(alpha, 1e-12), alpha], axis=-1)
-
-
-def scene(path, position, image: np.ndarray, radius: float) -> plt.Figure:
-    """The table from above: the loop, and the ball's image at its position."""
+def table(path, reach: float) -> np.ndarray:
+    """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `reach` of its middle: drawn
+    once, for every frame to lay the ball over."""
     xy = coordinates(path)[:, :2]
-    centre = coordinates(position)[:2]
-    reach = np.abs(xy).max() + 1.3 * radius
-    figure, ax = plt.subplots(figsize=(5, 5), facecolor=TABLE)
+    figure, ax = plt.subplots(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100, facecolor=TABLE)
     ax.set_facecolor(TABLE)
     ax.plot(*xy.T, color=LOOP, linewidth=1.0)
-    ax.imshow(image, extent=(centre[0] - radius, centre[0] + radius, centre[1] - radius, centre[1] + radius),
-              interpolation="bilinear", zorder=3)
     ax.set(xlim=(-reach, reach), ylim=(-reach, reach), aspect="equal")
     ax.axis("off")
     figure.subplots_adjust(0, 0, 1, 1)
-    return figure
+    image = capture(figure) / 255
+    plt.close(figure)
+    return image
+
+
+def frame(background: np.ndarray, reach: float, position, turn, trail, radius: float) -> np.ndarray:
+    """One frame: the ball, painted where it stands on the table, over the table and the loop, `[pixels, pixels, 3]`
+    bytes."""
+    marks = trail[np.linspace(0, len(trail) - 1, min(len(trail), TRAIL_SEGMENTS + 1)).astype(int)]
+    ball = shader()((N_PIXELS, N_PIXELS), turn=turn, centre=coordinates(position)[:2], radius=radius, half_width=reach,
+                    marks=marks)["image"]
+    # The ball's colour already weighted by its coverage, over what the table shows where it does not cover.
+    shown = ball[..., :3] + (1 - ball[..., 3:]) * background
+    return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
 def animate(path, rolling, radius: float) -> list[np.ndarray]:
-    """One frame per state of the ball: its position, its turn and its contact point's trail."""
-    frames = []
-    for position, turn, trail in rolling:
-        figure = scene(path, position, ball(turn, trail), radius)
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+    """One frame per state of the ball: its position, its turn and its contact point's trail, all over one view of the
+    table, the loop drawn once."""
+    reach = np.abs(coordinates(path)[:, :2]).max() + MARGIN * radius
+    background = table(path, reach)
+    return [frame(background, reach, position, turn, trail, radius) for position, turn, trail in rolling]

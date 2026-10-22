@@ -1,5 +1,5 @@
 """The hull and its polar dual in space, and both projected onto the sphere, ray traced on the GPU: the hull the
-translucent solid inside the planes of its faces, edges rods, and the arcs on the sphere inked on its surface."""
+translucent solid inside the planes of its faces, edges tubes, and the arcs on the sphere inked on its surface."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.weighted_dual import core
-from examples.wgsl import image_figure, solids
+from examples.wgsl import image_figure, meshes, solids
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
@@ -66,7 +66,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     pixel = view.pixel
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
     edges, beside = core.adjacency(faces)                                      # [edges, 2] each
-    vertices, centres = sm.point(xyz), sm.point(poles)                         # [points] Point, [faces] Point
+    vertices = sm.point(xyz)                                                   # [points] Point
     sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Quadric
     # The hull: inside the plane of every face, the plane that pairs to one with the face's points, whose dual is the
     # face's pole.
@@ -76,13 +76,13 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     distance = np.linalg.norm(xyz, axis=-1)
     rays = xyz / distance[:, None]
     colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
-    marks = [(solids.rods(vertices[edges[:, 0]], vertices[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
-             (solids.rods(centres[beside[:, 0]], centres[beside[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
-             (solids.rods(sm.point(rays * (1 - RAY_SPAN)), sm.point(rays * (1 + RAY_SPAN)), RAY_WIDTH / 2 * pixel),
-              RAY_COLOUR),
-             (solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)]
-    space = solids.draw(marks, view, background,
-                        translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)])
+    # The edges and the rays are strokes, rasterized as tubes; the shells and the vertices are traced.
+    strokes = [meshes.segment_samples(xyz[edges[:, 0]], xyz[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
+               meshes.segment_samples(poles[beside[:, 0]], poles[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
+               meshes.segment_samples(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
+    space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
+                        translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
+                        meshes=[(*stroke, 1.0) for stroke in strokes])
     # On the sphere, the arcs of both, each coloured by its kind.
     on_sphere, duals_on_sphere = rays, poles / np.linalg.norm(poles, axis=-1, keepdims=True)
     primal_arcs, dual_arcs = arcs(on_sphere[edges]), arcs(duals_on_sphere[beside])

@@ -30,8 +30,8 @@ SHOWN = 2
 N_PERIODS = 2
 N_STEPS_PER_PERIOD = 120
 N_STEPS_PER_FRAME = 3
-# The heights at which the flow is drawn, and the duration of a frame.
-HEIGHTS = np.linspace(-3.0, 3.0, 7)
+# The heights at which the flow is drawn, all where it moves, and the duration of a frame.
+HEIGHTS = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
 DURATION_MS = 60
 
 

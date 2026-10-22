@@ -14,6 +14,7 @@ import numpy as np
 
 from examples.surfaces.developability import core
 from examples.wgsl import Shader
+from examples.wgsl.library import samples_per_side
 
 # The surface's colour, the light's direction and the share of light that falls everywhere; the camera's
 # elevation and azimuth, its distance and half its view; the frames' size and background.
@@ -73,7 +74,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()))
+    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()), targets=("rgba32float",))
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -91,10 +92,13 @@ def camera() -> tuple[core.Extensor, core.Point]:
 def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
     """One surface on the background, every face shaded flat by the light falling on it, `[rows, columns, 3]`."""
     turn, eye = camera()
-    drawn, = shader().draw(frame_shape, 3 * len(mesh.faces), points=vertices.batch(), faces=mesh.faces,
-                          turn=turn, eye=eye, lamp=light_direction.normalized(), half_view=half_view,
-                          colour=surface_colour, ambient=ambient)
-    # The colour is premultiplied by each pixel's coverage; the background shows through the rest.
+    # Drawn at every sample of each pixel, as many to a side as the traced pictures take, and averaged: the colour
+    # premultiplied by each pixel's coverage, the background showing through the rest.
+    rows, columns = frame_shape
+    drawn, = shader().draw((samples_per_side * rows, samples_per_side * columns), 3 * len(mesh.faces),
+                           points=vertices.batch(), faces=mesh.faces, turn=turn, eye=eye,
+                           lamp=light_direction.normalized(), half_view=half_view, colour=surface_colour, ambient=ambient)
+    drawn = drawn.reshape(rows, samples_per_side, columns, samples_per_side, 4).mean(axis=(1, 3))
     shown = drawn[..., :3] + (1 - drawn[..., 3:]) * background
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 

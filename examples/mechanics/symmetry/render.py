@@ -1,9 +1,9 @@
 """Drawing for the symmetry example, on the GPU: heat-flow ellipsoids, the cubic lattice and its responses, and
 rotary powers on the sphere of directions.
 
-The ellipsoids, the lattice's sites and bonds are solids traced by `solids`, the stiffness surface a mesh drawn by
-`meshes`; the sphere of directions has a shader of its own, which evaluates the rotary power on each pixel's
-direction, `rotary(direction, direction)`, and colours the sphere by it.
+The ellipsoids and the arrows within them, the lattice's sites and bonds are solids traced by `solids`, the
+stiffness surface a mesh drawn by `meshes`; the sphere of directions has a shader of its own, which evaluates the
+rotary power on each pixel's direction, `rotary(direction, direction)`, and colours the sphere by it.
 """
 
 from __future__ import annotations
@@ -12,13 +12,18 @@ from functools import cache
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
 from examples.wgsl import Shader, meshes, show, solids, supersampled
 
-driving_colour, flow_colour = "#262b32", "#d44e1a"
+driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
 surface_colour = np.array([0.36, 0.60, 0.80])
+# The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
+# widths, head lengths and head widths in pixels, the driving field's and the flow's.
+surface_opacity = 0.45
+driving_arrow, flow_arrow = (3.0, 14.0, 9.0), (4.0, 16.0, 11.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
 site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
@@ -120,10 +125,13 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
                        pixels)
     fig, axes = figure([view.half] * len(matrix), 3.6)
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
-        show(ax, solids.draw([(ellipsoid[None, None], surface_colour)], view, background), view)
-        for tip, colour, width in ((driving_tip, driving_colour, 1.8), (flow, flow_colour, 2.6)):
-            ax.annotate("", xy=view.across(tip), xytext=view.across(solids.origin),
-                        arrowprops=dict(arrowstyle="-|>", color=colour, lw=width))
+        # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface.
+        arrows = [(part[None], colour) for tip, colour, (width, head_length, head_width) in
+                  ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))
+                  for part in solids.arrows(solids.origin, tip, width / 2 * view.pixel, head_length * view.pixel,
+                                            head_width / 2 * view.pixel)]
+        show(ax, solids.draw(arrows, view, background, translucent=[(ellipsoid[None, None], surface_colour,
+                                                                     surface_opacity)]), view)
     return fig
 
 

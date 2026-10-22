@@ -88,14 +88,14 @@ def facing(view_degrees: np.ndarray) -> np.ndarray:
     return np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
 
 
-def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, length: float, radius: float) -> solids.Quadric:
+def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, length: float) -> tuple[np.ndarray, np.ndarray]:
     """Arrows along the directions, with their heads in each point's tangent plane: a shaft and two strokes to the
-    tip, as rods, `[arrows * 3, 3]` quadrics."""
+    tip, as segments, their starts and ends `[arrows * 3, 3]`."""
     tips = origins + directions * length
     side = np.cross(normals, directions)
     base = origins + directions * (0.62 * length)
     starts = np.concatenate([origins, base + side * (0.25 * length), base - side * (0.25 * length)])
-    return solids.rods(solids.mv.point(starts), solids.mv.point(np.concatenate([tips, tips, tips])), radius)
+    return starts, np.concatenate([tips, tips, tips])
 
 
 def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
@@ -113,22 +113,25 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
     on them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and where
     they are. The sphere is the traced unit ball, the circles' far halves showing through its near surface."""
     frame = square_view(transport_view, sphere, holonomy_needle)
-    width = line_width * frame.pixel
     ring_places = coordinates(rings)                                            # [steps + 1, rings, 3]
+    colours = np.array([to_rgb(colour) for colour in ring_colours])             # [rings, 3]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], surface_colour, sphere_opacity)]
-    circles = [(solids.rods(solids.mv.point(ring_places[:-1, ring]), solids.mv.point(ring_places[1:, ring]), 2 * width),
-                to_rgb(colour)) for ring, colour in enumerate(ring_colours)]
+    # The circles and the needles are strokes, rasterized as tubes; the sphere alone is traced.
+    circles = meshes.tube_samples(list(zip(np.moveaxis(ring_places, 1, 0), colours)), 4 * line_width, frame)
     points, carried = [], []
     frames = []
     for point, vector in states:
         points.append(coordinates(point))                                       # [rings, 3]
         carried.append(coordinates(vector))                                     # [rings, 3]
         past, along = np.array(points)[::holonomy_stride], np.array(carried)[::holonomy_stride]   # [trail, rings, 3]
-        trail = [(needles(past[:, ring], along[:, ring], past[:, ring], holonomy_needle, width), to_rgb(colour),
-                  trail_opacity) for ring, colour in enumerate(ring_colours)]
-        now = [(needles(points[-1][ring:ring + 1], carried[-1][ring:ring + 1], points[-1][ring:ring + 1],
-                        holonomy_needle * 1.15, 2.5 * width), to_rgb(colour)) for ring, colour in enumerate(ring_colours)]
-        frames.append(solids.draw(circles + now, frame, background, translucent=ball + trail))
+        # Each needle of the trail in its ring's colour: a needle's three strokes, a run per stroke.
+        trail = meshes.segment_samples(*needles(past.reshape(-1, 3), along.reshape(-1, 3), past.reshape(-1, 3),
+                                                holonomy_needle), np.tile(np.tile(colours, (len(past), 1)), (3, 1)),
+                                       2 * line_width, frame)
+        now = meshes.segment_samples(*needles(points[-1], carried[-1], points[-1], holonomy_needle * 1.15),
+                                     np.tile(colours, (3, 1)), 5 * line_width, frame)
+        frames.append(solids.draw([], frame, background, translucent=ball,
+                                  meshes=[(*circles, 1.0), (*now, 1.0), (*trail, trail_opacity)]))
     return frames
 
 
@@ -142,10 +145,11 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, fr
     face_colours = (1.0 - 0.58 * face_weight) * surface_colour + (0.58 * face_weight) * warm_colour
     visible = normals @ facing(transport_view) > 0.05
     scale = (0.25 + 0.75 * np.clip(amplitudes[visible], 0.0, 1.0))[:, None]
-    arrows = needles(places[visible] + normals[visible] * 0.03, units[visible] * scale, normals[visible], transport_needle,
-                     line_width * frame.pixel)
-    return solids.draw([(arrows, needle_colour)], frame, background,
-                       meshes=[(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0)])
+    arrows = meshes.segment_samples(*needles(places[visible] + normals[visible] * 0.03, units[visible] * scale,
+                                             normals[visible], transport_needle), needle_colour, 2 * line_width, frame)
+    return solids.draw([], frame, background,
+                       meshes=[(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
+                               (*arrows, 1.0)])
 
 
 def draw_torus_fields(torus: core.Mesh, fields: list[core.Vector]) -> plt.Figure:
@@ -175,13 +179,12 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
     `[S]`, larger for larger indices."""
     places, normals, directions = positions(mesh.vertices), coordinates(mesh.vertex_normals), coordinates(field)
     seen = normals @ facing(view) > 0.1
-    arrows = needles(places[seen] + 0.01 * normals[seen], directions[seen], normals[seen], needle,
-                     line_width * frame.pixel)
+    arrows = meshes.segment_samples(*needles(places[seen] + 0.01 * normals[seen], directions[seen], normals[seen], needle),
+                                    needle_colour, 2 * line_width, frame)
     centres = solids.mv.point(positions(mesh.face_centers)[singular])          # [S] Point
     marks = [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
               positive if value > 0 else negative) for index, value in enumerate(indices)]
-    return solids.draw([(arrows, needle_colour)] + marks, frame, background,
-                       meshes=[(*surface(mesh, surface_colour, frame), 1.0)])
+    return solids.draw(marks, frame, background, meshes=[(*surface(mesh, surface_colour, frame), 1.0), (*arrows, 1.0)])
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]], limits: np.ndarray,
@@ -309,8 +312,8 @@ def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
-    lines = solids.rods(solids.mv.point(drawn[:, 0]), solids.mv.point(drawn[:, 1]), line_width / 2 * frame.pixel)
-    show(axis, solids.draw([(lines, dark)], frame, background, meshes=[(*surface(mesh, light, frame), 1.0)]), frame)
+    lines = meshes.segment_samples(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
+    show(axis, solids.draw([], frame, background, meshes=[(*surface(mesh, light, frame), 1.0), (*lines, 1.0)]), frame)
 
 
 def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]], draw, reach: float,

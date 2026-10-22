@@ -11,8 +11,14 @@ from __future__ import annotations
 import numpy as np
 
 
-# The samples a side of every pixel, for every picture: sixteen to a pixel.
-samples_per_side = 4
+def sampling() -> int:
+    """The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, four where the adapter is the
+    CPU itself, a software driver as in a notebook's runtime without a GPU, where sixteen cost too much."""
+    from examples.wgsl.runner import device
+    return 2 if device().adapter.info["adapter_type"] == "CPU" else 4
+
+
+samples_per_side = sampling()
 
 
 def supersampled() -> str:

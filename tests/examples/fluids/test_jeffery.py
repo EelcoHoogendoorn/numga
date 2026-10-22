@@ -47,5 +47,5 @@ def test_scenes_draw():
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
     heights = y.dual() * scenarios.HEIGHTS
-    first = islice(scenarios.frames(rotors), 1)
-    assert len(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow()(heights), first)) == 1
+    first = islice(scenarios.frames(rotors), 2)
+    assert len(render.animate_tumbling(core.stretch(scenarios.SEMI_AXES), heights, scenarios.flow()(heights), first)) == 2

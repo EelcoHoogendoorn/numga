@@ -107,7 +107,7 @@ fn shade(corner: Corner) -> Shade {
         discard;
     }
     let lit = surface.rgb * (fill + (1 - ambient - headlight) * light) + gloss * glint;
-    return Shade(vec4<f32>(lit * surface.a, surface.a), vec4<f32>(corner.depth * surface.a, 0.0, 0.0, 1.0));
+    return Shade(vec4<f32>(lit * surface.a, surface.a), vec4<f32>(corner.depth, 0.0, 0.0, 1.0));
 }
 """
 
@@ -131,7 +131,9 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader(colour: str) -> Shader:
-    return Shader(source(colour).replace("OVERSAMPLING", f"{oversampling:.1f}"), ga, dict(Point=Point, Plane=Plane, Motor=Motor))
+    # The colour a byte a channel, premultiplied by how much it hides, and the depth alone at full precision.
+    return Shader(source(colour).replace("OVERSAMPLING", f"{oversampling:.1f}"), ga, dict(Point=Point, Plane=Plane, Motor=Motor),
+                  targets=("rgba8unorm", "r32float"))
 
 
 def flat(points: Point, faces: np.ndarray) -> dict:
@@ -200,9 +202,9 @@ def tube(points: np.ndarray, radius: float, n_around: int) -> tuple[Point, np.nd
 
 def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
             face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
-    """The mesh at every sample of the view's pixels, `oversampling` to a side: its colour, `[rows, columns, 4]`
-    premultiplied by how much it hides, and its depth along the view, `[rows, columns]`, weighted alike, the rows and
-    columns `oversampling` times the view's; from up to four values at each corner of each face, `[faces, 3, values]`
+    """The mesh at every sample of the view's pixels, `oversampling` to a side: its colour, `[rows, columns, 4]` bytes
+    premultiplied by how much it hides, and its depth along the view, `[rows, columns]`, both zero where it shows
+    nothing, the rows and columns `oversampling` times the view's; from up to four values at each corner of each face, `[faces, 3, values]`
     or one row for all, and at each face, coloured by `colour`, with a glint of `gloss`."""
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
@@ -225,10 +227,12 @@ def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, v
 
 
 def averaged(colours: np.ndarray, depths: np.ndarray, view: View) -> tuple[np.ndarray, np.ndarray]:
-    """Samples' colour and depth, as `samples` draws them, averaged over each of the view's pixels."""
+    """Samples' colour and depth, as `samples` draws them, averaged over each of the view's pixels: the colour in
+    [0, 1], and the depth weighted, as the colour is, by how much the samples hide."""
     rows, columns = view.shape
     blocks = (rows, oversampling, columns, oversampling)
-    return colours.reshape(*blocks, 4).mean(axis=(1, 3)), depths.reshape(blocks).mean(axis=(1, 3))
+    shades = colours.reshape(*blocks, 4) / 255
+    return shades.mean(axis=(1, 3)), (depths.reshape(blocks) * shades[..., 3]).mean(axis=(1, 3))
 
 
 def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View, n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
@@ -252,6 +256,17 @@ def tube_samples(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view
         count += around.shape[0]
     places, faces = concatenate(rings), np.concatenate(faces)
     return samples(places, faces, np.concatenate(colours)[:, None], smooth(places, faces), view)
+
+
+def segment_samples(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float, view: View,
+                    n_around: int = 6) -> tuple[np.ndarray, np.ndarray]:
+    """Straight segments from starts to ends `[segments, 3]`, coloured `[segments, 3]` or one for all, as tubes `width`
+    pixels across, at every sample, as `samples`: many thin strokes rasterized together, where tracing each as a solid
+    would cost every ray a test against every one."""
+    rings, faces = tube(np.stack([starts, ends], axis=1), width / 2 * view.pixel, n_around)
+    # Each segment's faces in a run of their own, in the order of the segments.
+    shades = np.repeat(np.broadcast_to(colours, starts.shape), len(faces) // len(starts), axis=0)   # [faces, 3]
+    return samples(rings, faces, shades[:, None], smooth(rings, faces), view)
 
 
 def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_points: int) -> np.ndarray:

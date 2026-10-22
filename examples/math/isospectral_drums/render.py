@@ -117,7 +117,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 
 @cache
 def membrane_shader() -> Shader:
-    return Shader(membrane_source, ga, dict(Point=Point))
+    return Shader(membrane_source, ga, dict(Point=Point), targets=("rgba32float",))
 
 
 class Membrane:
