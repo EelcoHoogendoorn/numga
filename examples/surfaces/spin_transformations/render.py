@@ -76,6 +76,11 @@ def render_surface(mesh: Mesh, reference: Mesh, view: solids.View) -> np.ndarray
                        colour=checkerboard)
 
 
+def largest(values: Scalar) -> float:
+    """The largest magnitude of a field: the colour range that shows all of it."""
+    return float(np.abs(values.to_array()).max())
+
+
 def draw_surface(mesh: Mesh, values: Scalar, limit: float) -> plt.Figure:
     """The mesh, its faces coloured by a field in [-limit, limit]."""
     view = square_view(mesh, pixels)
