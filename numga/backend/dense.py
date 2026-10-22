@@ -169,13 +169,6 @@ def _contractor(
     if xp is not np:
         return partial(xp.einsum, expression, optimize=True)
 
-    # NumPy searches for a contraction path on every call; the path depends on shapes only.
-    paths: dict[tuple, list] = {}
-
-    def contract(target: Any, operand: Any) -> Any:
-        key = (target.shape, operand.shape)
-        path = paths.get(key)
-        if path is None:
-            path = paths[key] = np.einsum_path(expression, target, operand, optimize="optimal")[0]
-        return np.einsum(expression, target, operand, optimize=path)
-    return contract
+    # Two operands have one contraction order: NumPy's direct einsum skips the path machinery, which costs more than
+    # the contraction on the small arrays most calls see.
+    return partial(np.einsum, expression)
