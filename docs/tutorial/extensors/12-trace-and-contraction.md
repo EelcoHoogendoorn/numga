@@ -1,8 +1,8 @@
 # 12. Trace and contraction
 
-The trace pairs the output of a map with one of its slots and drops both. It needs no metric: an output and an input of the same type pair through the complement.
+The trace pairs the output of a map with one of its axes and drops both. It needs no metric: an output and an input of the same type pair through the complement.
 
-A contraction pairs two input slots with each other. Two inputs of the same type pair only through the inner product of their slot, the metric, so a contraction is a separate operation from the trace.
+A contraction pairs two inputs with each other. Two inputs of the same type pair only through the inner product of their axis, the metric, so a contraction is a separate operation from the trace.
 
 For example, the trace of the second moment of three vectors is the sum of its eigenvalues:
 
@@ -18,7 +18,7 @@ moment.trace()
 304
 ```
 
-For a map with several slots, the trace can pair the output with any matching input slot. Pairing the output of `Vector * (Vector | Vector)` with its first input slot sums over the three basis directions and leaves three times the inner product of the other two; pairing it with its second input slot leaves the inner product of the first and the third:
+For a map with several axes, the trace can pair the output with any matching input. Pairing the output of `Vector * (Vector | Vector)` with its first input sums over the three basis directions and leaves three times the inner product of the other two; pairing it with its second input leaves the inner product of the first and the third:
 
 ```python
 (Vector * (Vector | Vector)).trace(0, 1)(a, b)
@@ -36,7 +36,7 @@ For a map with several slots, the trace can pair the output with any matching in
 32
 ```
 
-The form `Vector | moment` has two input slots of the same type, and its contraction pairs them through the inner product:
+The form `Vector | moment` has two inputs of the same type, and its contraction pairs them through the inner product:
 
 ```python
 (Vector | moment).contract()

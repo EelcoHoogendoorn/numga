@@ -1,5 +1,5 @@
 """The derivative of a function of extensors is an extensor: the linear map from a step to the change,
-typed with the step's slot after the result's own slots."""
+typed with the step's axis after the result's own axes."""
 
 from contextlib import contextmanager
 

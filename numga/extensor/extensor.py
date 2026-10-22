@@ -65,8 +65,8 @@ class Extensor:
     inverse_shirokov = ExtensionMethod("inverse_shirokov", takes="a value")
     inverse_factor = ExtensionMethod("inverse_factor", takes="a value")
     inverse_hitzer = ExtensionMethod("inverse_hitzer", takes="a value whose product with its reverse, times its Clifford conjugate, is a scalar")
-    trace = ExtensionMethod("trace", takes="an extensor with two slots that carry an index, or the two slots to pair", operand_counts=(1, 3))
-    contract = ExtensionMethod("contract", takes="an extensor with two inputs of one space, or the two slots to pair", operand_counts=(1, 3))
+    trace = ExtensionMethod("trace", takes="an extensor with two axes that carry an index, or the two axes to pair", operand_counts=(1, 3))
+    contract = ExtensionMethod("contract", takes="an extensor with two inputs of one space, or the two axes to pair", operand_counts=(1, 3))
     outermorphism = ExtensionMethod("outermorphism", takes="a map from vectors to vectors, or from antivectors to antivectors")
     det = ExtensionMethod("det", takes="a map from a space to itself, or a square form, with an optional metric form on the same space", operand_counts=(1, 2))
     real = ExtensionMethod("real", takes="an extensor")
@@ -194,7 +194,7 @@ class Extensor:
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """The batch axes, in front of the site axes of any field slots and the coefficient axes."""
+        """The batch axes, in front of the site axes of any field axes and the coefficient axes."""
         return self._kernel.shape[: -len(self.gatype.structural_shape)]
 
     @property
@@ -342,26 +342,26 @@ class Extensor:
         )
         return cls._from_prepared_kernel(first.context, gatype, kernel)
 
-    def field(self, *slots: int) -> Extensor:
-        """The last batch axes read as the sites of slots, the output 0 and the inputs from 1, one axis
-        per slot in slot order: `values.field()` is a field over the last batch axis, and
+    def field(self, *axes: int) -> Extensor:
+        """The last batch axes read as the sites of axes, the output 0 and the inputs from 1, one axis
+        per axis in axis order: `values.field()` is a field over the last batch axis, and
         `pair_maps.field(0, 1)` a field map from a batch of maps over pairs of an output and an input
         site. A field is a collection whose elements are coupled, where a batch holds independent
-        copies. The coefficients are untouched, so slots that already range over sites must come after
+        copies. The coefficients are untouched, so axes that already range over sites must come after
         these."""
-        slots = slots or (0,)
-        if self.context.is_exact or self.ndim < len(slots):
+        axes = axes or (0,)
+        if self.context.is_exact or self.ndim < len(axes):
             raise TypeError("a field takes its sites from the last batch axes of a backend value")
-        if list(slots) != sorted(set(slots)) or any(field <= slots[-1] for field, _ in self.gatype.fields):
-            raise GATypeError(f"slots {slots} of {self.gatype.signature} are not in order before its field slots")
+        if list(axes) != sorted(set(axes)) or any(field <= axes[-1] for field, _ in self.gatype.fields):
+            raise GATypeError(f"axes {axes} of {self.gatype.signature} are not in order before its field axes")
         # Their site axes come first among the site axes, where the last batch axes already sit.
-        fields = tuple(zip(slots, self.shape[self.ndim - len(slots):])) + self.gatype.fields
+        fields = tuple(zip(axes, self.shape[self.ndim - len(axes):])) + self.gatype.fields
         return type(self)._from_prepared_kernel(self.context, self.gatype.derive.with_fields(fields), self._kernel)
 
     def on_diagonal(self) -> Extensor:
         """A field of maps placed on the site diagonal: from `X[n] <- Y` the field map `X[n] <- Y[n]`
         that acts on the element at each site by the map at that site, and on no other."""
-        if self.arity < 1 or [slot for slot, _ in self.gatype.fields] != [0]:
+        if self.arity < 1 or [axis for axis, _ in self.gatype.fields] != [0]:
             raise GATypeError(f"on_diagonal places a field of maps, X[n] <- Y, on its sites; {self.gatype.signature} is not one")
         xp, sites = self.context.xp, self.gatype.site_shape[0]
         identity = xp.reshape(xp.eye(sites, dtype=self._kernel.dtype), (sites, sites) + (1,) * len(self.axes))
@@ -384,7 +384,7 @@ class Extensor:
         operands: dict[int, Extensor] = {}
         prepared_operands: dict[int, Extensor] = {}
         context = binding_context(
-            self.context, tuple(raw_operands[slot].context for slot in plan.slots),
+            self.context, tuple(raw_operands[axis].context for axis in plan.axes),
         )
         target = self
         output = plan.result_subspaces[0]
@@ -398,7 +398,7 @@ class Extensor:
                 )
             )
             target = type(self)._from_prepared_kernel(self.context, plan.execution_gatype, kernel)
-        for slot, operand in raw_operands.items():
+        for axis, operand in raw_operands.items():
             identity = id(operand)
             concrete = prepared_operands.get(identity)
             if concrete is None:
@@ -406,26 +406,26 @@ class Extensor:
                 # Lower each distinct argument once per atomic bind. Besides
                 # avoiding duplicate work, this retains same-object evidence.
                 prepared_operands[identity] = concrete
-            operands[slot] = concrete
+            operands[axis] = concrete
 
         result_gatype = TypeRules.bind(plan)
         result = context.execute_bind(target, operands, plan)
         return type(self)._from_prepared_kernel(context, result_gatype, result)
 
     def __call__(self, *operands: Extensor | GAType) -> Extensor:
-        """Apply to operands in slot order. Fewer operands than slots bind the leading slots. A bare
-        type is its identity map: the slot's own type leaves that slot open, form(Vector, v) binds
-        only the second, and a type inside the slot narrows it to that type. A subspace, which has no
+        """Apply to operands in axis order. Fewer operands than axes bind the leading axes. A bare
+        type is its identity map: the axis's own type leaves that axis open, form(Vector, v) binds
+        only the second, and a type inside the axis narrows it to that type. A subspace, which has no
         orientation, is refused."""
         if any(isinstance(operand, SubSpace) for operand in operands):
             raise UnorientedSubspace()
         if any(isinstance(operand, GAType) for operand in operands):
             bound = {}
-            for slot, operand in enumerate(operands):
+            for axis, operand in enumerate(operands):
                 if not isinstance(operand, GAType):
-                    bound[slot] = operand
-                elif (narrowed := self._gatype.slots.narrowing(slot, operand)) is not None:
-                    bound[slot] = narrowed
+                    bound[axis] = operand
+                elif (narrowed := self._gatype.axis_roles.narrowing(axis, operand)) is not None:
+                    bound[axis] = narrowed
             return self.bind(bound)
         if len(operands) < self.arity:
             return self.bind(*operands)

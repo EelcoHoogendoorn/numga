@@ -60,7 +60,7 @@ def geometric_product_laws(operands: tuple[GAType, ...], axes: tuple["SubSpace",
     return TraitSet((
         ProductRelation(ReverseProduct, ProductResult.ONE, (0, 1)),
         ProductRelation(CliffordConjugateProduct, ProductResult.ONE, (0, 1)),
-        VersorProduct(slots=(0, 1)),
+        VersorProduct(axes=(0, 1)),
     ))
 
 
@@ -135,7 +135,7 @@ def conjugation_laws(family: SelfProduct):
         inferred.extend(fact for fact in (Versor, Blade) if operand.entails(fact))
         relation = operand.self_products.relation(family)
         if relation is not None and relation.factor in (ProductResult.ONE, ProductResult.NONZERO):
-            inferred.append(ProductRelation(family, relation.factor, relation.slots, nonzero_inputs=True))
+            inferred.append(ProductRelation(family, relation.factor, relation.axes, nonzero_inputs=True))
         inferred.extend(
             relation for relation in (operand.self_products.closure(kind) for kind in _CLOSURES)
             if relation is not None
@@ -165,14 +165,14 @@ def _transform_versor(plan: "BindingPlan") -> GAType | None:
         return None
     if not any(0 in group and 2 in group for group in plan.equality_groups):
         return None
-    operand = next(binding.operand_gatype for binding in plan.bindings if binding.slot == 0)
+    operand = next(binding.operand_gatype for binding in plan.bindings if binding.axis == 0)
     # The inferred self-product relations divide by the versor's reverse product.
     return operand if operand.entails(Versor) and operand.entails(ReverseProductNonzero) else None
 
 
 def _transform_passenger(plan: "BindingPlan") -> SubSpace:
     return next(
-        (binding.operand_gatype.output_subspace for binding in plan.bindings if binding.slot == 1),
+        (binding.operand_gatype.output_subspace for binding in plan.bindings if binding.axis == 1),
         plan.target_gatype.input_subspaces[1],
     )
 
@@ -186,7 +186,7 @@ def bind_subspaces(plan: "BindingPlan") -> tuple[SubSpace, ...]:
     if not any(0 in group and 2 in group for group in plan.equality_groups):
         return plan.result_subspaces
 
-    versor = next(binding.operand_gatype for binding in plan.bindings if binding.slot == 0)
+    versor = next(binding.operand_gatype for binding in plan.bindings if binding.axis == 0)
     passenger = _transform_passenger(plan)
     algebra = plan.target_gatype.algebra
 
@@ -255,7 +255,7 @@ def bind_traits(plan: "BindingPlan") -> TraitSet:
             and axes[0].same_support(passenger)
             and axes[1].same_support(passenger)
             and all(square == 1 for square in versor.algebra.signature)
-            and not any(binding.slot == 1 for binding in plan.bindings)
+            and not any(binding.axis == 1 for binding in plan.bindings)
         ):
             # In a Euclidean algebra the reverse scalar product is exactly
             # the coefficient dot product. This is not true of PGA/Lorentz.
@@ -277,16 +277,16 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
 
     factor = relation.factor
     nonzero_inputs = relation.nonzero_inputs
-    result_slots: list[int] = []
-    bindings = {binding.slot: binding for binding in plan.bindings}
+    output_axes: list[int] = []
+    bindings = {binding.axis: binding for binding in plan.bindings}
     splices = plan.result_input_splices
 
     # A zero factor does not remove the scalar guard on other inputs. Every
     # referenced input still needs a scalar self-product in THIS family.
-    for slot in relation.slots:
-        binding = bindings.get(slot)
+    for axis in relation.axes:
+        binding = bindings.get(axis)
         if binding is None:
-            result_slots.append(splices[slot][0])
+            output_axes.append(splices[axis][0])
             continue
 
         operand = binding.operand_gatype
@@ -306,12 +306,12 @@ def _bind_self_product(plan: "BindingPlan", relation: ProductRelation) -> Trait 
             return None
         nonzero_inputs = nonzero_inputs or inner.nonzero_inputs
         factor = multiply_product_results(factor, inner.factor)
-        result_slots.extend(splices[slot][inner_slot] for inner_slot in inner.slots)
+        output_axes.extend(splices[axis][inner_axis] for inner_axis in inner.axes)
 
-    if result_slots:
-        return ProductRelation(relation.self_product, factor, result_slots, nonzero_inputs)
+    if output_axes:
+        return ProductRelation(relation.self_product, factor, output_axes, nonzero_inputs)
     if len(plan.result_subspaces) != 1:
-        # No current law becomes independent of remaining input slots.
+        # No current law becomes independent of remaining inputs.
         return None
     return ProductFact(relation.self_product, factor)
 
@@ -320,13 +320,13 @@ def _bind_closure(plan: "BindingPlan", relation: ClosureRelation, fact: Trait) -
     """Substitute a family closed under the operation, versors or blades: the result has the family's
     fact when every referenced input does, a value of the family or a map that carries it on."""
 
-    result_slots: list[int] = []
-    bindings = {binding.slot: binding for binding in plan.bindings}
+    output_axes: list[int] = []
+    bindings = {binding.axis: binding for binding in plan.bindings}
     splices = plan.result_input_splices
-    for slot in relation.slots:
-        binding = bindings.get(slot)
+    for axis in relation.axes:
+        binding = bindings.get(axis)
         if binding is None:
-            result_slots.append(splices[slot][0])
+            output_axes.append(splices[axis][0])
             continue
         operand = binding.operand_gatype
         if operand.arity == 0:
@@ -336,10 +336,10 @@ def _bind_closure(plan: "BindingPlan", relation: ClosureRelation, fact: Trait) -
         inner = operand.self_products.closure(type(relation))
         if inner is None:
             return None
-        result_slots.extend(splices[slot][inner_slot] for inner_slot in inner.slots)
+        output_axes.extend(splices[axis][inner_axis] for inner_axis in inner.axes)
 
-    if result_slots:
-        return type(relation)(result_slots)
+    if output_axes:
+        return type(relation)(output_axes)
     if len(plan.result_subspaces) == 1:
         return fact
     return None

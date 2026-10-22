@@ -15,8 +15,8 @@ from numga.extensions._linalg import _result, _scalars
 
 @Extensor.solve.register(lambda value, rhs: value.over_sites.is_map_system(rhs), fields=True)
 def solve_field_map(value: Extensor, rhs: Extensor) -> Extensor:
-    """Solve A(x) == rhs for x, coupled over the sites of A's slots: A.solve(A(y)) == y. The open
-    slots of rhs are kept as open slots of the solution."""
+    """Solve A(x) == rhs for x, coupled over the sites of A's axes: A.solve(A(y)) == y. The open
+    axes of rhs are kept as open axes of the solution."""
     return _solve(value, 0, 1, _on_output_sites(value, rhs), 0, _exactly(value))
 
 
@@ -41,8 +41,8 @@ def pinv_field_map(value: Extensor, *, rcond: float = 1e-15) -> Extensor:
 
 @Extensor.solve.register(lambda value, rhs: value.over_sites.is_form_system(rhs), fields=True)
 def solve_field_form(value: Extensor, rhs: Extensor) -> Extensor:
-    """Solve F(x, y) == rhs(..., y) for all y, x in the form's first slot, coupled over the sites of
-    both slots: F.solve(F(x)) == x. For a Hessian and a gradient, the Newton step up to sign."""
+    """Solve F(x, y) == rhs(..., y) for all y, x in the form's first axis, coupled over the sites of
+    both axes: F.solve(F(x)) == x. For a Hessian and a gradient, the Newton step up to sign."""
     return _solve(value, 2, 1, rhs, rhs.arity, _exactly(value))
 
 
@@ -77,31 +77,31 @@ def _on_output_sites(value: Extensor, rhs: Extensor) -> Extensor:
 
 
 def _solve(value: Extensor, equations: int, unknowns: int, rhs: Extensor, given: int, solver) -> Extensor:
-    """Solve for the unknown slot of value, pairing its equation slot with the given slot of rhs, by a
-    solver of the blocks read as one matrix. The solution has the unknown slot as its output and the
-    other slots of rhs as inputs."""
+    """Solve for the unknown axis of value, pairing its equation axis with the given axis of rhs, by a
+    solver of the blocks read as one matrix. The solution has the unknown axis as its output and the
+    other axes of rhs as inputs."""
     xp = value.context.xp
     batch = np.broadcast_shapes(value.shape, rhs.shape)
     value, rhs = value.broadcast_to(batch), rhs.broadcast_to(batch)
-    rows = _slot_axes(value, equations)
-    columns = _slot_axes(value, unknowns)
+    rows = _kernel_axes(value, equations)
+    columns = _kernel_axes(value, unknowns)
     # A form's scalar output is one blade long and folds into the matrix.
-    rest = tuple(axis for axis in range(len(batch), value.kernel.ndim) if axis not in rows + columns)
+    rest = tuple(dimension for dimension in range(len(batch), value.kernel.ndim) if dimension not in rows + columns)
     matrix = xp.transpose(value.kernel, _batch_axes(batch) + rows + columns + rest)
-    height = prod(value.kernel.shape[axis] for axis in rows)
-    width = prod(value.kernel.shape[axis] for axis in columns)
+    height = prod(value.kernel.shape[dimension] for dimension in rows)
+    width = prod(value.kernel.shape[dimension] for dimension in columns)
     matrix = xp.reshape(matrix, batch + (height, width))
 
-    # The other slots of rhs: its scalar output for a form, its open inputs either way.
-    kept = [slot for slot in range(rhs.arity + 1) if slot != given]
-    sites = [axis for slot in kept for axis in _slot_axes(rhs, slot)[:-1]]
-    blades = [_slot_axes(rhs, slot)[-1] for slot in kept]
-    given_axes = _slot_axes(rhs, given)
+    # The other axes of rhs: its scalar output for a form, its open inputs either way.
+    kept = [axis for axis in range(rhs.arity + 1) if axis != given]
+    sites = [dimension for axis in kept for dimension in _kernel_axes(rhs, axis)[:-1]]
+    blades = [_kernel_axes(rhs, axis)[-1] for axis in kept]
+    given_axes = _kernel_axes(rhs, given)
     columns_kernel = xp.transpose(rhs.kernel, _batch_axes(batch) + given_axes + tuple(sites) + tuple(blades))
-    other_shape = tuple(rhs.kernel.shape[axis] for axis in sites + blades)
+    other_shape = tuple(rhs.kernel.shape[dimension] for dimension in sites + blades)
     solution = solver(matrix, xp.reshape(columns_kernel, batch + (height, prod(other_shape))))
 
-    unknown_shape = tuple(value.kernel.shape[axis] for axis in columns)
+    unknown_shape = tuple(value.kernel.shape[dimension] for dimension in columns)
     solution = xp.reshape(solution, batch + unknown_shape + other_shape)
     # Back to the layout of the solution: its sites and the other sites, then its blades and the others'.
     b, u, s = len(batch), len(unknown_shape), len(sites)
@@ -109,14 +109,14 @@ def _solve(value: Extensor, equations: int, unknowns: int, rhs: Extensor, given:
         + (b + u - 1,) + tuple(range(b + u + s, b + u + s + len(blades)))
     solution = xp.transpose(solution, order)
 
-    input_slots = [slot for slot in kept if slot]
+    input_axes = [axis for axis in kept if axis]
     unknown_sites = dict(value.gatype.fields).get(unknowns)
     rhs_sites = dict(rhs.gatype.fields)
     fields = ((0, unknown_sites),) * (unknown_sites is not None) + tuple(
-        (index + 1, rhs_sites[slot]) for index, slot in enumerate(input_slots) if slot in rhs_sites
+        (index + 1, rhs_sites[axis]) for index, axis in enumerate(input_axes) if axis in rhs_sites
     )
-    subspaces = (value.axes[unknowns],) + tuple(rhs.axes[slot] for slot in input_slots)
-    orientations = (value.gatype.orientations[unknowns],) + tuple(rhs.gatype.orientations[slot] for slot in input_slots)
+    subspaces = (value.axes[unknowns],) + tuple(rhs.axes[axis] for axis in input_axes)
+    orientations = (value.gatype.orientations[unknowns],) + tuple(rhs.gatype.orientations[axis] for axis in input_axes)
     gatype = value.algebra.gatype.oriented(subspaces, orientations, fields=fields)
     # A form's right-hand side leaves its scalar output over, one blade long.
     return _result(value, gatype, xp.reshape(solution, batch + gatype.structural_shape))
@@ -126,11 +126,11 @@ def _batch_axes(batch: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(range(len(batch)))
 
 
-def _slot_axes(value: Extensor, slot: int) -> tuple[int, ...]:
-    """The kernel axes of one slot: its site axis, if it ranges over sites, then its blade axis."""
-    field_slots = [field for field, _ in value.gatype.fields]
-    sites = (value.ndim + field_slots.index(slot),) if slot in field_slots else ()
-    return sites + (value.ndim + len(field_slots) + slot,)
+def _kernel_axes(value: Extensor, axis: int) -> tuple[int, ...]:
+    """The kernel axes of one axis: its site axis, if it ranges over sites, then its blade axis."""
+    field_axes = [field for field, _ in value.gatype.fields]
+    sites = (value.ndim + field_axes.index(axis),) if axis in field_axes else ()
+    return sites + (value.ndim + len(field_axes) + axis,)
 
 
 @Extensor.adjoint.register(lambda value: value.arity == 1, fields=True)
@@ -163,7 +163,7 @@ def _exchanged(value: Extensor, blocks: Extensor) -> Extensor:
 
 
 # --- spectra and factors of the blocks read as one matrix -----------------------------------
-def _square_slots(value: Extensor) -> tuple[int, int]:
+def _square_axes(value: Extensor) -> tuple[int, int]:
     return (0, 1) if value.arity == 1 else (1, 2)
 
 
@@ -191,7 +191,7 @@ def inverse_field_map(value: Extensor) -> Extensor:
 def cholesky_field(value: Extensor) -> Extensor:
     """The lower factor L of the blocks read as one Hermitian positive-definite matrix, `A = L L^H`, in
     the same layout."""
-    first, second = _square_slots(value)
+    first, second = _square_axes(value)
     matrix, rows, columns = _flattened(value, first, second)
     return _from_matrix(value, value.context.xp.linalg.cholesky(matrix), rows, columns, value.gatype.derive.structural)
 
@@ -200,7 +200,7 @@ def cholesky_field(value: Extensor) -> Extensor:
 def eigh_field(value: Extensor) -> tuple[Extensor, Extensor]:
     """Ascending eigenvalues `[..., modes] Scalar` and coefficient-orthonormal modes, a batch of fields
     `[..., modes] X[n]`, of a Hermitian map or form over a field."""
-    first, second = _square_slots(value)
+    first, second = _square_axes(value)
     matrix, _, columns = _flattened(value, first, second)
     values, vectors = value.context.xp.linalg.eigh(matrix, UPLO="L")
     return _scalars(value, values), _modes(value, second, columns, vectors)
@@ -208,16 +208,16 @@ def eigh_field(value: Extensor) -> tuple[Extensor, Extensor]:
 
 @Extensor.eigvalsh.register(lambda value: value.over_sites.is_square, fields=True)
 def eigvalsh_field(value: Extensor) -> Extensor:
-    first, second = _square_slots(value)
+    first, second = _square_axes(value)
     return _scalars(value, value.context.xp.linalg.eigvalsh(_flattened(value, first, second)[0], UPLO="L"))
 
 
-@Extensor.eigh.register(lambda value, metric: value.over_sites.is_square and value.slots.same_as(metric), fields=True)
+@Extensor.eigh.register(lambda value, metric: value.over_sites.is_square and value.axis_roles.same_as(metric), fields=True)
 def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """The modes of `value(x) == eigenvalue * metric(x)`, for a Hermitian value and a positive-definite
     metric over the same field: ascending eigenvalues, and modes orthonormal in the metric."""
     xp = value.context.xp
-    first, second = _square_slots(value)
+    first, second = _square_axes(value)
     matrix, _, columns = _flattened(value, first, second)
     lower = xp.linalg.cholesky(_flattened(metric, first, second)[0])
     reduced = xp.linalg.solve(lower, _conjugate_transpose(xp, xp.linalg.solve(lower, matrix)))
@@ -225,7 +225,7 @@ def eigh_field_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Exte
     return _scalars(value, values), _modes(value, second, columns, xp.linalg.solve(_conjugate_transpose(xp, lower), vectors))
 
 
-@Extensor.eigvalsh.register(lambda value, metric: value.over_sites.is_square and value.slots.same_as(metric), fields=True)
+@Extensor.eigvalsh.register(lambda value, metric: value.over_sites.is_square and value.axis_roles.same_as(metric), fields=True)
 def eigvalsh_field_metric(value: Extensor, metric: Extensor) -> Extensor:
     return eigh_field_metric(value, metric)[0]
 
@@ -243,13 +243,13 @@ def eigvals_field_map(value: Extensor) -> Extensor:
     return _scalars(value, value.context.xp.linalg.eigvals(_flattened(value, 0, 1)[0]))
 
 
-@Extensor.eig.register(lambda value, metric: value.over_sites.is_endomorphism and value.slots.same_as(metric), fields=True)
+@Extensor.eig.register(lambda value, metric: value.over_sites.is_endomorphism and value.axis_roles.same_as(metric), fields=True)
 def eig_field_map_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
     """The modes of `value(x) == eigenvalue * metric(x)`: those of `metric.solve(value)`."""
     return eig_field_map(metric.solve(value))
 
 
-@Extensor.eigvals.register(lambda value, metric: value.over_sites.is_endomorphism and value.slots.same_as(metric), fields=True)
+@Extensor.eigvals.register(lambda value, metric: value.over_sites.is_endomorphism and value.axis_roles.same_as(metric), fields=True)
 def eigvals_field_map_metric(value: Extensor, metric: Extensor) -> Extensor:
     return eigvals_field_map(metric.solve(value))
 
@@ -270,11 +270,11 @@ def svdvals_field_map(value: Extensor) -> Extensor:
 
 
 def _flattened(value: Extensor, rows: int, columns: int):
-    """The blocks of value as one matrix, its rows the sites and blades of one slot and its columns those
+    """The blocks of value as one matrix, its rows the sites and blades of one axis and its columns those
     of another, with the shapes of both."""
     xp = value.context.xp
     batch = value.shape
-    row_axes, column_axes = _slot_axes(value, rows), _slot_axes(value, columns)
+    row_axes, column_axes = _kernel_axes(value, rows), _kernel_axes(value, columns)
     # A form's scalar output is one blade long and folds into the matrix.
     rest = tuple(axis for axis in range(len(batch), value.kernel.ndim) if axis not in row_axes + column_axes)
     matrix = xp.transpose(value.kernel, _batch_axes(batch) + row_axes + column_axes + rest)
@@ -284,7 +284,7 @@ def _flattened(value: Extensor, rows: int, columns: int):
 
 
 def _from_matrix(value: Extensor, matrix, rows: tuple[int, ...], columns: tuple[int, ...], gatype: GAType) -> Extensor:
-    """A matrix whose rows are the sites and blades of the first slot of gatype and whose columns those of
+    """A matrix whose rows are the sites and blades of the first axis of gatype and whose columns those of
     the second, laid out as gatype's kernel: its sites, then its blades. A form keeps its scalar output."""
     xp = value.context.xp
     batch = matrix.shape[:-2]
@@ -295,19 +295,19 @@ def _from_matrix(value: Extensor, matrix, rows: tuple[int, ...], columns: tuple[
     return _result(value, gatype, xp.reshape(xp.transpose(kernel, order), batch + gatype.structural_shape))
 
 
-def _modes(value: Extensor, slot: int, shape: tuple[int, ...], vectors) -> Extensor:
-    """The columns of a matrix over the sites and blades of a slot, as a batch of fields over them."""
+def _modes(value: Extensor, axis: int, shape: tuple[int, ...], vectors) -> Extensor:
+    """The columns of a matrix over the sites and blades of a axis, as a batch of fields over them."""
     xp = value.context.xp
     batch = vectors.shape[:-2]
     modes = xp.reshape(xp.swapaxes(vectors, -1, -2), batch + (vectors.shape[-1],) + shape)
-    sites = dict(value.gatype.fields).get(slot)
-    gatype = value.gatype.derive.axis(slot).derive.with_fields(((0, sites),) * (sites is not None))
+    sites = dict(value.gatype.fields).get(axis)
+    gatype = value.gatype.derive.axis(axis).derive.with_fields(((0, sites),) * (sites is not None))
     return _result(value, gatype, modes)
 
 
 def _exchanged_fields(gatype: GAType) -> tuple[tuple[int, int], ...]:
     sites = dict(gatype.fields)
-    return tuple((1 - slot, count) for slot, count in sorted(sites.items(), reverse=True))
+    return tuple((1 - axis, count) for axis, count in sorted(sites.items(), reverse=True))
 
 
 def _conjugate_transpose(xp, matrix):

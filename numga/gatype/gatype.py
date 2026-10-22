@@ -16,7 +16,7 @@ from numga.subspace import SubSpace
 
 from .metric import Metric
 from .orientation import Orientation
-from .queries import Form, OverSites, SelfProducts, Slots
+from .queries import Form, OverSites, SelfProducts, AxisRoles
 from .traits import (
     EMPTY_TRAITS,
     ProductFact,
@@ -56,9 +56,9 @@ class GAType:
     carrier, including nullary extensors.  All axes must be owned by the exact
     same algebra object.
 
-    A slot is a field slot when it ranges over sites as well as blades: ``fields``
-    pairs each such slot with its number of sites. The kernel holds one site axis
-    per field slot, in slot order, between the batch axes and the coefficient axes.
+    A axis is a field axis when it ranges over sites as well as blades: ``fields``
+    pairs each such axis with its number of sites. The kernel holds one site axis
+    per field axis, in axis order, between the batch axes and the coefficient axes.
 
     Every axis has an orientation, intrinsic or extrinsic (see ``numga.gatype.orientation``): two
     types over the same blades with different orientations are different types.
@@ -142,12 +142,12 @@ class GAType:
 
     @cached_property
     def structural_shape(self) -> tuple[int, ...]:
-        """The trailing kernel axes: the site axes of the field slots, then one coefficient axis per slot."""
+        """The trailing kernel axes: the site axes of the field axes, then one coefficient axis per axis."""
         return self.site_shape + tuple(len(axis) for axis in self.subspaces)
 
     @property
     def fields(self) -> tuple[tuple[int, int], ...]:
-        """Each field slot, output 0 and inputs from 1, with its number of sites."""
+        """Each field axis, output 0 and inputs from 1, with its number of sites."""
         return self._fields
 
     @cached_property
@@ -160,8 +160,8 @@ class GAType:
 
     @cached_property
     def has_input_fields(self) -> bool:
-        """Whether an input slot ranges over sites, so that binding it sums over them."""
-        return any(slot for slot, _ in self._fields)
+        """Whether an input ranges over sites, so that binding it sums over them."""
+        return any(axis for axis, _ in self._fields)
 
     @property
     def traits(self) -> TraitSet:
@@ -209,9 +209,9 @@ class GAType:
         return Derivations(self)
 
     @cached_property
-    def slots(self) -> Slots:
-        """Its slots: which carry an index, which pair, and what an operand given for one binds."""
-        return Slots(self)
+    def axis_roles(self) -> AxisRoles:
+        """Its axes: which carry an index, which pair, and what an operand given for one binds."""
+        return AxisRoles(self)
 
     @cached_property
     def form(self) -> Form:
@@ -225,7 +225,7 @@ class GAType:
 
     @cached_property
     def metric(self) -> Metric:
-        """The type read as a slot: its default metric, and what that metric is like."""
+        """The type read as a axis: its default metric, and what that metric is like."""
         return Metric(self)
 
     @cached_property
@@ -282,7 +282,7 @@ class GAType:
 
     @cached_property
     def is_form(self) -> bool:
-        """A scalar-valued map of two slots."""
+        """A scalar-valued map of two axes."""
         return self.arity == 2 and self.output_subspace.same_support(self.algebra.subspace.scalar())
 
     @cached_property
@@ -522,7 +522,7 @@ class GAType:
     def __truediv__(self, other: object) -> Extensor:
         return self._identity() / other
 
-    # In a product, a type is an open slot; a number scales its identity map.
+    # In a product, a type is an open axis; a number scales its identity map.
     def __mul__(self, other: object) -> Extensor | NotImplementedType:
         if isinstance(other, Number):
             return self._identity() * other
@@ -538,7 +538,7 @@ class GAType:
         return numga.expression.geometric_product(other, self)
 
     def dual(self) -> Extensor:
-        """The right-Hodge dual as a map with this space in its open slot."""
+        """The right-Hodge dual as a map with this space in its open axis."""
         return self.algebra.operator.dual(self)
 
     def dual_inverse(self) -> Extensor:
@@ -601,8 +601,8 @@ class GAType:
         sites = dict(self.fields)
         output, *inputs = (
             f"{orientation.value} {space.type_name}"
-            + (f"[{sites[slot]}]" if slot in sites else "")
-            for slot, (space, orientation) in enumerate(zip(self.subspaces, self.orientations))
+            + (f"[{sites[axis]}]" if axis in sites else "")
+            for axis, (space, orientation) in enumerate(zip(self.subspaces, self.orientations))
         )
         text = f"{output} <- {', '.join(inputs)}" if inputs else output
         return f"{text} | {', '.join(trait.name for trait in self.traits)}" if self.traits else text
@@ -633,12 +633,12 @@ def _comparison_gatype(value: object, like: GAType) -> GAType | None:
     return None
 
 
-def _normalize_fields(fields: Iterable[tuple[int, int]], slots: int) -> tuple[tuple[int, int], ...]:
-    normalized = tuple(sorted((int(slot), int(sites)) for slot, sites in fields))
-    if any(slot < 0 or slot >= slots or sites < 1 for slot, sites in normalized):
-        raise ValueError(f"field slots must lie in [0, {slots}) and hold at least one site; got {normalized}")
-    if len({slot for slot, _ in normalized}) != len(normalized):
-        raise ValueError(f"a slot holds one site axis; got {normalized}")
+def _normalize_fields(fields: Iterable[tuple[int, int]], axes: int) -> tuple[tuple[int, int], ...]:
+    normalized = tuple(sorted((int(axis), int(sites)) for axis, sites in fields))
+    if any(axis < 0 or axis >= axes or sites < 1 for axis, sites in normalized):
+        raise ValueError(f"field axes must lie in [0, {axes}) and hold at least one site; got {normalized}")
+    if len({axis for axis, _ in normalized}) != len(normalized):
+        raise ValueError(f"a axis holds one site axis; got {normalized}")
     return normalized
 
 
@@ -664,7 +664,7 @@ class Derivations:
 
     @cached_property
     def plain(self) -> GAType:
-        """The same slots and traits over blades alone: a field's sites read as batch axes."""
+        """The same axes and traits over blades alone: a field's sites read as batch axes."""
 
         gatype = self._gatype
         return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits) if gatype.fields else gatype
@@ -675,18 +675,18 @@ class Derivations:
         return gatype.algebra.gatype.oriented(gatype.subspaces, gatype.orientations, gatype.traits, fields)
 
     @lru_cache(maxsize=None)
-    def traced(self, slot: int) -> GAType:
+    def traced(self, axis: int) -> GAType:
         """The type of the trace of the output against one input of the same space: a scalar, with
         the remaining inputs. Equal orientations pair to an ordinary number, as on an endomorphism;
         opposite ones to a chirality."""
         gatype = self._gatype
         inputs = gatype.input_subspaces
-        if not inputs[slot].same_support(gatype.output_subspace):
+        if not inputs[axis].same_support(gatype.output_subspace):
             raise TypeError("trace pairs an output with an input of the same space")
         orientations = gatype.input_orientations
         return gatype.algebra.gatype.oriented(
-            (gatype.algebra.subspace.scalar(),) + inputs[:slot] + inputs[slot + 1:],
-            (gatype.orientation * orientations[slot],) + orientations[:slot] + orientations[slot + 1:],
+            (gatype.algebra.subspace.scalar(),) + inputs[:axis] + inputs[axis + 1:],
+            (gatype.orientation * orientations[axis],) + orientations[:axis] + orientations[axis + 1:],
         )
 
     @lru_cache(maxsize=None)

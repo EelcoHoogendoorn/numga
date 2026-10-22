@@ -95,11 +95,11 @@ class ExactContext(Context):
     ) -> SymbolicKernel:
         kernel = target.kernel
         for binding in reversed(plan.bindings):
-            operand = operands[binding.slot]
+            operand = operands[binding.axis]
             transformed = _transform_output(operand.kernel, binding.transform)
             kernel = _contract(
                 kernel,
-                target_axis=binding.slot + 1,
+                target_axis=binding.axis + 1,
                 operand=transformed,
             )
         return kernel

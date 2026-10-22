@@ -61,7 +61,7 @@ def test_sparse_binding_splices_open_inputs_and_preserves_empty_batches(backend)
     for execution in ("dense", "sparse"):
         context = context_type(PGA3D, execution=execution)
         maps = context.extensor(PGA3D.gatype((vector, vector)), [np.eye(4), 2 * np.eye(4)])
-        # Replace one slot by a unary map, leaving the other slot open.
+        # Replace one axis by a unary map, leaving the other axis open.
         bound = compile(lambda m: outer.bind({1: m}))(maps)
         assert bound.arity == 2
         outputs.append(bound)

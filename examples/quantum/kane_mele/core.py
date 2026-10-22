@@ -171,5 +171,5 @@ def _degrees(i: np.ndarray, j: np.ndarray, s: np.ndarray, size: int) -> np.ndarr
 
 def _pairs(partners: np.ndarray) -> np.ndarray:
     """The pairs (atom, partner) `[pairs, 2]` where a partner exists, from partners `[atoms, k]`."""
-    atoms, slots = np.nonzero(partners >= 0)
-    return np.stack([atoms, partners[atoms, slots]], axis=-1)
+    atoms, neighbours = np.nonzero(partners >= 0)
+    return np.stack([atoms, partners[atoms, neighbours]], axis=-1)

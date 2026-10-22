@@ -78,7 +78,7 @@ def quadric(weights: np.ndarray) -> Quadric:
 def hit(surface: Quadric, origins: Point, heading: Direction) -> tuple[Point, Scalar]:
     """Where each ray first meets the surface, and the discriminant, negative where it misses.
 
-    The surface's form, bound to a ray in both slots, is a quadratic in the distance along it.
+    The surface's form, bound to a ray in both inputs, is a quadratic in the distance along it.
     """
     form = Point & surface(Point)                                   # [] Scalar <- (Point, Point)
     a, b, c = form(heading, heading), form(heading, origins), form(origins, origins)
@@ -89,7 +89,7 @@ def hit(surface: Quadric, origins: Point, heading: Direction) -> tuple[Point, Sc
 def principal(surface: Quadric, points: Point) -> Scalar:
     """The two principal curvatures at points on the surface, in order; convex surfaces curve positively.
 
-    The Hessian form `Point & surface(Point)` takes the projector onto the tangent plane in both slots: the
+    The Hessian form `Point & surface(Point)` takes the projector onto the tangent plane in both inputs: the
     second fundamental form, up to the length of the gradient. Against the metric, the first
     fundamental form, its eigenvalues on directions are the principal curvatures and the normal's,
     zero.

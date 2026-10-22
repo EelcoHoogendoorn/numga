@@ -50,7 +50,7 @@ def crystal_lattice():
     sites, axial, diagonal = core.lattice_samples()
     sphere = core.directions()                                                 # [latitudes, longitudes] Direction
     conductivity, elasticity = core.lattice_responses(seeds, core.cube_rotations())
-    # A unit direction in every slot probes imposed uniaxial strain; the stiffness becomes a radius.
+    # A unit direction in every input probes imposed uniaxial strain; the stiffness becomes a radius.
     stiffness_surface = sphere * elasticity(sphere, sphere, sphere, sphere)    # [latitudes, longitudes] Direction
     return sites, axial, diagonal, stiffness_surface, conductivity, elasticity
 

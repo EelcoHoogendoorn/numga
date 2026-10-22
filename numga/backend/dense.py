@@ -27,35 +27,35 @@ def execute_dense_bind(
 ) -> Any:
     """Execute one deterministic atomic bind with left batch broadcasting."""
 
-    kernels = {slot: operand._kernel for slot, operand in operands.items()}
+    kernels = {axis: operand._kernel for axis, operand in operands.items()}
     return ordered_binding(context.xp, plan)(context.lower(target)._kernel, kernels)
 
 
 @lru_cache(maxsize=None)
 def ordered_binding(xp: Any, plan: BindingPlan) -> Callable[[Any, Mapping[int, Any]], Any]:
-    """Contract the operands, given by slot, smallest batch first.
+    """Contract the operands, given by axis, smallest batch first.
 
     The order of pairwise contractions is chosen per call from the operands' batch sizes: an
     operand with a small batch, such as a motor per camera sandwiching a map per point and
     camera, contracts into the kernel before the large one does, so the large contraction
-    meets a kernel that no longer carries the small operand's slots. Equal batches keep the
-    order of the slots from last to first.
+    meets a kernel that no longer carries the small operand's axes. Equal batches keep the
+    order of the axes from last to first.
     """
 
-    structural = {binding.slot: len(binding.operand_gatype.subspaces) for binding in plan.bindings}
-    last_first = tuple(binding.slot for binding in reversed(plan.bindings))
+    structural = {binding.axis: len(binding.operand_gatype.subspaces) for binding in plan.bindings}
+    last_first = tuple(binding.axis for binding in reversed(plan.bindings))
     orders: dict[tuple[int, ...], tuple] = {}
 
-    def batch(kernel: Any, slot: int) -> int:
-        return prod(kernel.shape[:kernel.ndim - structural[slot]])
+    def batch(kernel: Any, axis: int) -> int:
+        return prod(kernel.shape[:kernel.ndim - structural[axis]])
 
     def contract(target: Any, kernels: Mapping[int, Any]) -> Any:
-        order = tuple(sorted(last_first, key=lambda slot: batch(kernels[slot], slot)))
+        order = tuple(sorted(last_first, key=lambda axis: batch(kernels[axis], axis)))
         steps = orders.get(order)
         if steps is None:
             steps = orders[order] = binding_steps(xp, plan, order)
-        for slot, apply in steps:
-            target = apply(target, kernels[slot])
+        for axis, apply in steps:
+            target = apply(target, kernels[axis])
         return target
     return contract
 
@@ -64,15 +64,15 @@ def ordered_binding(xp: Any, plan: BindingPlan) -> Callable[[Any, Mapping[int, A
 def binding_steps(
     xp: Any, plan: BindingPlan, order: tuple[int, ...],
 ) -> tuple[tuple[int, Callable[[Any, Any], Any]], ...]:
-    """Resolve contractions and necessary coordinate conversions once, binding slots in order."""
+    """Resolve contractions and necessary coordinate conversions once, binding axes in order."""
 
-    bound = {binding.slot: binding for binding in plan.bindings}
-    widths = [1] * plan.target_gatype.arity                 # kernel axes each target slot spans so far
+    bound = {binding.axis: binding for binding in plan.bindings}
+    widths = [1] * plan.target_gatype.arity                 # kernel axes each target axis spans so far
     current_axes = (plan.result_subspaces[0],) + plan.target_gatype.input_subspaces
     steps = []
-    for slot in order:
-        binding = bound[slot]
-        target_axis = 1 + sum(widths[:slot])
+    for axis in order:
+        binding = bound[axis]
+        target_axis = 1 + sum(widths[:axis])
         operand_type = binding.operand_gatype
         apply = _contractor(
             xp,
@@ -82,13 +82,13 @@ def binding_steps(
         )
         if binding.transform.kind is not AxisTransformKind.EXACT:
             apply = _with_output_transform(xp, apply, operand_type, binding.transform)
-        steps.append((slot, apply))
+        steps.append((axis, apply))
         current_axes = (
             current_axes[:target_axis]
             + operand_type.input_subspaces
             + current_axes[target_axis + 1 :]
         )
-        widths[slot] = len(operand_type.input_subspaces)
+        widths[axis] = len(operand_type.input_subspaces)
     return tuple(steps)
 
 

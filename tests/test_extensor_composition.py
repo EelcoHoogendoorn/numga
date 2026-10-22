@@ -78,7 +78,7 @@ def test_geometric_product_expression_stages_by_operand_kind() -> None:
     )
 
 
-def test_a_call_with_fewer_operands_binds_the_leading_slots():
+def test_a_call_with_fewer_operands_binds_the_leading_axes():
     import numpy as np
     from numga import NumpyContext
     from numga.algebras import PGA3D

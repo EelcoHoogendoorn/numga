@@ -49,7 +49,7 @@ class SitesNamespace:
         """The sum over the sites of the output."""
         extensor = self.extensor
         kernel = extensor.context.xp.sum(extensor.kernel, axis=extensor.ndim)
-        fields = tuple((slot, count) for slot, count in extensor.gatype.fields if slot)
+        fields = tuple((axis, count) for axis, count in extensor.gatype.fields if axis)
         gatype = extensor.gatype.derive.structural.derive.with_fields(fields)
         return type(extensor)._from_prepared_kernel(extensor.context, gatype, kernel)
 

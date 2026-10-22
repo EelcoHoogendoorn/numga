@@ -23,12 +23,12 @@ def make_map(context, output, domain, coefficients):
 
 def test_cholesky_aligns_layout_and_preserves_batches(context):
     ga = context.algebra
-    slot = ga.gatype.vector()
+    axis = ga.gatype.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
-    operator = make_map(context, slot, slot, np.broadcast_to(matrix, (2, 1, 3, 3)))
+    operator = make_map(context, axis, axis, np.broadcast_to(matrix, (2, 1, 3, 3)))
     factor = operator.cast(ga.subspace("z -x y")).cholesky()
     assert factor.shape == (2, 1)
-    assert factor.axes == (slot.output_subspace, slot.output_subspace)
+    assert factor.axes == (axis.output_subspace, axis.output_subspace)
     product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
     np.testing.assert_allclose(product, operator.kernel, atol=0.0002)
     np.testing.assert_allclose(np.triu(factor.kernel, 1), 0)
@@ -37,8 +37,8 @@ def test_cholesky_aligns_layout_and_preserves_batches(context):
 def test_complex_cholesky_reconstructs_hermitian_map():
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga, dtype=np.complex128)
-    slot = ga.gatype.vector()
-    operator = make_map(ctx, slot, slot, [[3, 1j], [-1j, 2]])
+    axis = ga.gatype.vector()
+    operator = make_map(ctx, axis, axis, [[3, 1j], [-1j, 2]])
     factor = operator.cholesky()
     np.testing.assert_allclose(factor.kernel @ factor.kernel.conj().T, operator.kernel, atol=1e-12)
 
@@ -108,7 +108,7 @@ def test_rectangular_svd_reconstruction_and_pseudoinverse(context, rows, cols):
     np.testing.assert_allclose(operator(inverse(operator)).kernel, matrix, atol=0.0003)
 
 
-def test_solve_broadcasts_rhs_and_preserves_map_slots(context):
+def test_solve_broadcasts_rhs_and_preserves_map_axes(context):
     ga = context.algebra
     output, domain = ga.gatype.vector(), ga.gatype.bivector()
     matrix = np.array([[3, 1, 0], [0, 2, 1], [0, 0, 4]])
@@ -283,7 +283,7 @@ def test_nullary_lstsq_subspace_projection(context):
     np.testing.assert_allclose(solution.kernel.squeeze(-1), expected, atol=2e-6)
 
 
-def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(context):
+def test_grouped_lstsq_preserves_axis_order_layouts_batches_and_minimum_norm(context):
     ga = context.algebra
     output, first, retained, last = (
         ga.gatype.vector(), ga.gatype(ga.subspace("x y"), orientation=Orientation.extrinsic), ga.gatype.bivector(),
@@ -308,7 +308,7 @@ def test_grouped_lstsq_preserves_slot_order_layouts_batches_and_minimum_norm(con
 @pytest.mark.parametrize("selected", [(2,), (1, 2, 3)])
 def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     ga = context.algebra
-    axes = (ga.gatype.vector(),) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in ("x y", "-z y", "xy xz"))
+    axes = (ga.gatype.vector(),) + tuple(ga.gatype(ga.subspace(blades), orientation=Orientation.extrinsic) for blades in ("x y", "-z y", "xy xz"))
     rng = np.random.default_rng(9)
     coefficients = rng.normal(size=(3, 2, 2, 2))
     operator = context.extensor(ga.gatype(axes), coefficients)
@@ -323,7 +323,7 @@ def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     np.testing.assert_allclose(solution.kernel, expected.reshape((2,) * len(selected)), atol=2e-5)
 
 
-@pytest.mark.parametrize("input_slots,rhs_slots", [
+@pytest.mark.parametrize("input_axes,rhs_axes", [
     (("x y", "x y", "xy xz"), ("x y",)),    # Repeated-type ambiguity.
     (("x y", "-y x", "xy xz"), ("x",)),    # Ambiguous lossless embedding.
     (("x y", "xy xz"), ("1 z",)),           # Same size, incompatible support.
@@ -331,13 +331,13 @@ def test_grouped_lstsq_infers_nullary_and_binary_results(context, selected):
     (("x y", "z", "xy xz"), ("xy xz", "x y")),  # Wrong relative order.
     (("x y", "xy xz"), ("x y", "xy xz", "1")),
 ])
-def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_slots, rhs_slots):
+def test_grouped_lstsq_rejects_ambiguous_or_incompatible_signatures(input_axes, rhs_axes):
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga)
     scalar = ga.gatype.scalar()
-    operator_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in input_slots))
+    operator_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(axis), orientation=Orientation.extrinsic) for axis in input_axes))
     operator = context.extensor(operator_type, np.ones(operator_type.structural_shape))
-    rhs_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(slot), orientation=Orientation.extrinsic) for slot in rhs_slots))
+    rhs_type = ga.gatype((scalar,) + tuple(ga.gatype(ga.subspace(axis), orientation=Orientation.extrinsic) for axis in rhs_axes))
     rhs = context.extensor(rhs_type, np.ones(rhs_type.structural_shape))
     with pytest.raises(TypeError):
         operator.lstsq(rhs)
@@ -388,16 +388,16 @@ def test_symbolic_generalized_eigenproblem_uses_metric_context(method):
 
 @pytest.mark.parametrize("arity", [0, 1, 2, 3])
 @pytest.mark.parametrize("method", ["solve", "lstsq"])
-def test_solutions_preserve_all_rhs_slots_and_broadcast_batches(context, arity, method):
+def test_solutions_preserve_all_rhs_axes_and_broadcast_batches(context, arity, method):
     ga = context.algebra
     output, domain = ga.gatype.vector(), ga.gatype.bivector()
     matrix = np.array([[3, 1, 0], [0, 2, 1], [0, 0, 4]])
     operator = make_map(context, output, domain, matrix[None, None] * np.array([1, 2])[:, None, None, None])
-    slots = (ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("z"), orientation=Orientation.extrinsic), ga.gatype.vector())[:arity]
-    rhs_type = ga.gatype((ga.gatype(ga.subspace("y -x"), orientation=Orientation.extrinsic),) + slots)
+    axes = (ga.gatype(ga.subspace("xy xz"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("z"), orientation=Orientation.extrinsic), ga.gatype.vector())[:arity]
+    rhs_type = ga.gatype((ga.gatype(ga.subspace("y -x"), orientation=Orientation.extrinsic),) + axes)
     rhs = context.extensor(rhs_type, np.random.default_rng(0).normal(size=(1, 4) + rhs_type.structural_shape))
     solution = getattr(operator, method)(rhs)
-    assert solution.axes == (domain.output_subspace,) + tuple(slot.output_subspace for slot in slots)
+    assert solution.axes == (domain.output_subspace,) + tuple(axis.output_subspace for axis in axes)
     assert solution.shape == (2, 4)
     assert solution.arity == arity
     expected = np.broadcast_to(rhs.cast(output.output_subspace).kernel, (2, 4) + (len(output.output_subspace),) + rhs.structural_shape[1:])

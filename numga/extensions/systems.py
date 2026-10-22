@@ -48,7 +48,7 @@ Extensor.lstsq.register(lambda t, r: t.arity <= 1 and r.orientation is not t.ori
 def solve(value: Extensor, rhs: Extensor) -> Extensor:
     """Solve A(x) == rhs for x: the inverse of composing into A's input, so A.solve(A(y)) == y.
 
-    Every input slot of rhs is kept as an input of the solution, so A.solve(A(Y)) == Y for a
+    Every input of rhs is kept as an input of the solution, so A.solve(A(Y)) == Y for a
     map Y too; both batches broadcast. An exact A is solved by binding its exact inverse, cached
     on its kernel, into rhs: one contraction with a constant.
     """
@@ -123,8 +123,8 @@ def _adjoint_pairing(gatype: GAType) -> tuple[Extensor, Extensor]:
 def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
     """Rewrite value(x, y) = rhs(..., y) as a coefficient system over y.
 
-    The matrix maps the unknown x to the coefficients of value(x, .) over the last slot;
-    the right-hand side is rhs read out over that same slot, with its leading slots kept
+    The matrix maps the unknown x to the coefficients of value(x, .) over the last axis;
+    the right-hand side is rhs read out over that same axis, with its leading axes kept
     as inputs of the solution. Each stays in its own context, so an exact form gives an
     exact matrix.
     """
@@ -145,12 +145,12 @@ def _form_system(value: Extensor, rhs: Extensor) -> tuple[Extensor, Extensor]:
 
 @Extensor.solve.register(lambda value, rhs: value.form.is_system(rhs), position=0)
 def solve_form(value: Extensor, rhs: Extensor) -> Extensor:
-    """Solve value(x, y) == rhs(..., y) for all y, with x in the form's first slot: the inverse
-    of binding that slot, so F.solve(F(x)) == x.
+    """Solve value(x, y) == rhs(..., y) for all y, with x in the form's first axis: the inverse
+    of binding that axis, so F.solve(F(x)) == x.
 
-    Leading input slots of rhs are kept as input slots of the solution, so a bilinear
+    Leading inputs of rhs are kept as inputs of the solution, so a bilinear
     right-hand side yields a map. The last input of rhs must match the form's last input.
-    Only the first slot is solved for.
+    Only the first axis is solved for.
     """
     matrix, covector = _form_system(value, rhs)
     return matrix.solve(covector)
@@ -170,10 +170,10 @@ def lstsq_form_metric(value: Extensor, rhs: Extensor, metric: Extensor, *, rcond
 
     The form is diagonalized against the metric, and each mode is solved on its own. Modes whose
     curvature per unit metric is at most rcond times the largest are dropped, so the cutoff is a
-    ratio of curvatures, independent of basis and units. Leading slots of rhs are kept as input
-    slots of the solution.
+    ratio of curvatures, independent of basis and units. Leading axes of rhs are kept as input
+    axes of the solution.
     """
-    values, modes = value.eigh(metric)                       # [..., modes] Scalar, [..., modes] Slot
+    values, modes = value.eigh(metric)                       # [..., modes] Scalar, [..., modes] Axis
     xp = values.context.xp
     curvatures = values._kernel[..., 0]
     kept = xp.abs(curvatures) > rcond * xp.max(xp.abs(curvatures), axis=-1, keepdims=True)
@@ -222,7 +222,7 @@ def lstsq(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Extensor:
 @lru_cache(maxsize=None)
 def _grouped_lstsq_plan(value: GAType, rhs: GAType):
     if rhs.arity >= value.arity:
-        raise TypeError("lstsq RHS must leave at least one input slot to solve")
+        raise TypeError("lstsq RHS must leave at least one input to solve")
     axes, matches = value.subspaces, []
     for inputs in combinations(range(1, value.arity + 1), rhs.arity):
         retained = (0,) + inputs
@@ -230,7 +230,7 @@ def _grouped_lstsq_plan(value: GAType, rhs: GAType):
         if all(transform.is_implicit_bind_compatible for transform in alignment):
             matches.append((retained, alignment))
     if len(matches) != 1:
-        raise TypeError("lstsq RHS must match exactly one ordered sequence of input slots without projection")
+        raise TypeError("lstsq RHS must match exactly one ordered sequence of inputs without projection")
     retained, alignment = matches[0]
     selected = tuple(axis for axis in range(1, value.arity + 1) if axis not in retained)
     transforms = tuple((axis, transform) for axis, transform in enumerate(alignment)
@@ -253,7 +253,7 @@ def lstsq_tensor(value: Extensor, rhs: Extensor, *, rcond: float = 1e-15) -> Ext
     The unmatched inputs form the solution's output-first signature in their
     original order. The operator output and matched inputs form the equations.
     This is a linear solve over a tensor product, not a nonlinear factor solve;
-    the unknown need not separate into one multivector per unmatched slot.
+    the unknown need not separate into one multivector per unmatched axis.
     """
     permutation, (rows, columns), gatype, transforms = _grouped_lstsq_plan(value.gatype, rhs.gatype)
     context = binding_context(value.context, (rhs.context,))

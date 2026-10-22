@@ -1,21 +1,21 @@
 # Extensors, advanced
 
-An extensor carries no metric in its coefficients. The metric is in the products of the algebra, and duality between spaces is given by the regressive product. Several operations that are one operation in matrix algebra are therefore several different operations here. Some are a product with an open slot. Some require a metric to be named. The transpose is not an operation on extensors at all. A map does have an adjugate, which the regressive product defines and coefficient index does not, and, given a metric, an adjoint.
+An extensor carries no metric in its coefficients. The metric is in the products of the algebra, and duality between spaces is given by the regressive product. Several operations that are one operation in matrix algebra are therefore several different operations here. Some are a product with an open axis. Some require a metric to be named. The transpose is not an operation on extensors at all. A map does have an adjugate, which the regressive product defines and coefficient index does not, and, given a metric, an adjoint.
 
 In matrix algebra one would say that the transpose, the trace, the squared norm of a residual and the reciprocal of a basis all identify a vector space with its dual through the coefficients, and that in an orthonormal basis the identification is invisible.
 
-The sections below treat these in order: composition; pullbacks, pairings and the adjugate; the metric and the complement; the relation between maps and forms; quadrics; inverses; least squares; the conversion between second moments and inertia; traces, with the Ricci contraction as the example; homogeneous unknowns; covariance and information; batch axes and slots; outermorphisms. The expressions are taken from the [examples](../examples/README.md).
+The sections below treat these in order: composition; pullbacks, pairings and the adjugate; the metric and the complement; the relation between maps and forms; quadrics; inverses; least squares; the conversion between second moments and inertia; traces, with the Ricci contraction as the example; homogeneous unknowns; covariance and information; batch axes and axes; outermorphisms. The expressions are taken from the [examples](../examples/README.md).
 
 ## 1. Composition
 
-Extensors compose. A call fills an input slot with anything of that slot's type, a value or another map, and a map's output feeds the next map's input when the types agree:
+Extensors compose. A call fills an input with anything of its type, a value or another map, and a map's output feeds the next map's input when the types agree:
 
 ```python
 world = motor >> inertia(motor << Bivector)              # AntiBivector <- Bivector: the inertia of a placed body
 cone = projection.adjugate()(disc(projection))           # Plane <- Point: a pixel's disc pulled back into the scene
 ```
 
-There is no operator like `a @ b`, which contracts two arrays by index position whatever the indices stand for. Composition only joins an output to an input of the same type. Every other pairing of two slots, the ones matrix code writes as `x.T @ y`, `A.T @ A` or a sum of squares, is a product of the algebra, and the product says which pairing it is:
+There is no operator like `a @ b`, which contracts two arrays by index position whatever the indices stand for. Composition only joins an output to an input of the same type. Every other pairing of two axes, the ones matrix code writes as `x.T @ y`, `A.T @ A` or a sum of squares, is a product of the algebra, and the product says which pairing it is:
 
 ```python
 incidence = Plane & Point                                # Scalar <- (Plane, Point): no metric involved
@@ -23,7 +23,7 @@ metric = Vector | Vector                                 # Scalar <- (Vector, Ve
 misfit = residual.reverse().scalar_product(residual)     # a squared norm, in the metric it is measured by
 ```
 
-There is no separate tensor product, and none is needed. A tensor is a multilinear function whose slots take vectors or covectors; an extensor is a multilinear function whose slots take any subspace of the algebra, and a covector slot is a slot of the dual space, which the algebra names in two ways, section 3. Every tensor is therefore an extensor. The tensor product of two functions takes both their arguments and multiplies their values, `(S ⊗ T)(u, v) = S(u) T(v)`, and multiplying two extensors with their slots left open does exactly that, each open slot a separate argument. Contraction pairs two arguments: `trace` through the incidence, `contract` through the metric. This holds for tensors written as functions returning a scalar or a single vector; two vector outputs multiplied give the geometric product, not `⊗`.
+There is no separate tensor product, and none is needed. A tensor is a multilinear function whose axes take vectors or covectors; an extensor is a multilinear function whose axes take any subspace of the algebra, and a covector axis is an axis of the dual space, which the algebra names in two ways, section 3. Every tensor is therefore an extensor. The tensor product of two functions takes both their arguments and multiplies their values, `(S ⊗ T)(u, v) = S(u) T(v)`, and multiplying two extensors with their axes left open does exactly that, each open axis a separate argument. Contraction pairs two arguments: `trace` through the incidence, `contract` through the metric. This holds for tensors written as functions returning a scalar or a single vector; two vector outputs multiplied give the geometric product, not `⊗`.
 
 The second moment of a set of points, `C = Σ x ⊗ x`, the covariance of statistics and the inertia of mechanics, as a form and as a map:
 
@@ -49,7 +49,7 @@ on_planes = projection.adjugate()                         # Plane <- Plane: on_p
 cone = on_planes(disc(projection))                        # Plane <- Point: the pixel's disc as a cone in the scene
 ```
 
-A quadric kept as a form needs no adjugate: the camera goes into both slots, `form(projection, projection)`.
+A quadric kept as a form needs no adjugate: the camera goes into both inputs, `form(projection, projection)`.
 
 **The adjugate.** A map `T` from one subspace to another has an adjugate, `T.adjugate()`, from the complement of its output to the complement of its input, with `T.adjugate()(c) & a == c & T(a)` for every `c` and `a`. The complement is on the left, plane first as in section 5. The adjugate is the solve of the pairing on the map's input against the pairing on its output, which is how it is computed. In the [odometry example](../examples/estimation/odometry/render.py) a pose uncertainty moves a point by `shift: Point <- Twist`, and reading that motion with a plane is reading the twist with a line:
 
@@ -72,7 +72,7 @@ Applied twice, the adjugate returns the map up to the symmetry of its two pairin
 
 A map into the complement of its own input, such as a covariance `Twist <- Line`, an inertia `Forque <- Twist` or a polarity `Plane <- Point`, has an adjugate of its own type, and it is symmetric when it equals its adjugate up to the swap sign of its pairing. A symmetric covariance or inertia is its own adjugate; in PGA3D a symmetric polarity is the negative of its own, since planes and points anticommute. Symmetry is then a statement about the map, not about a coefficient array, and `(A + A.adjugate()) / 2` is the symmetric part of `A`. A map within one space, `Point <- Point`, has its adjugate on planes, and there symmetry is a property of the form, section 4.
 
-**Incidence and metric.** A map can be carried across through either pairing of section 3: the adjugate through incidence, the adjoint through the metric. Both are one solve: the pairing on the map's input, solved against the pairing on its output with the map in its second slot. The solve asks which map, placed in the input pairing's first slot, reproduces the output pairing with `T` inside, for every argument. The two differ only in the pairing. For `T: Bivector <- Vector` in Euclidean 3D, where vectors and bivectors are each other's complements, both exist:
+**Incidence and metric.** A map can be carried across through either pairing of section 3: the adjugate through incidence, the adjoint through the metric. Both are one solve: the pairing on the map's input, solved against the pairing on its output with the map in its second axis. The solve asks which map, placed in the input pairing's first input, reproduces the output pairing with `T` inside, for every argument. The two differ only in the pairing. For `T: Bivector <- Vector` in Euclidean 3D, where vectors and bivectors are each other's complements, both exist:
 
 ```python
 incidence = (Bivector & Vector).solve(Vector & T)   # Bivector <- Vector, T.adjugate(): incidence(c) & a == c & T(a)
@@ -98,7 +98,7 @@ on_planes = (Plane & Point).solve(Plane & T)        # Plane <- Plane, T.adjugate
 
 In matrix notation either reads as $G_A^{-1} T^\top G_B$, with $G_A$ and $G_B$ the matrices of the pairings on the input and the output. For the regressive product each is a signed permutation of the basis blades. On vectors in an orthonormal Euclidean basis, with the metric pairing, both are the identity, leaving the bare transpose $T^\top$.
 
-**The curvature and gradient of a cost.** The same example then aligns the cameras. The cost is the value of each cone at the reconstructed point, `cones(local_points) & local_points`, and a small change of a camera's pose moves its points by `motion`, a map from twists to points. A quadric cost is its own square, so its curvature over the pose is the quadric with the motion in both slots, and its gradient is the point's polar joined with the motion. When the residual is a scalar to begin with, as in the [epipolar example](../examples/estimation/epipolar/core.py) where it is the regressive product of two lines, a number that vanishes when they meet, the curvature is the product of its Jacobian form `j` with itself.
+**The curvature and gradient of a cost.** The same example then aligns the cameras. The cost is the value of each cone at the reconstructed point, `cones(local_points) & local_points`, and a small change of a camera's pose moves its points by `motion`, a map from twists to points. A quadric cost is its own square, so its curvature over the pose is the quadric with the motion in both axes, and its gradient is the point's polar joined with the motion. When the residual is a scalar to begin with, as in the [epipolar example](../examples/estimation/epipolar/core.py) where it is the regressive product of two lines, a number that vanishes when they meet, the curvature is the product of its Jacobian form `j` with itself.
 
 ```python
 curvature = (cones(motion) & motion).sum(axis=0)          # Scalar <- (Twist, Twist)
@@ -144,7 +144,7 @@ up = screen.inverse()(mv.z)
 
 A map whosetype carries the trait `CoefficientOrthogonal`, such as a rotor sandwich in a Euclidean algebra, dispatches `inverse()` to a transposition of its coefficients, because for such a map the two coincide. The type system tracks this trait; a Lorentz boost does not carry it, and its inverse is computed as an inverse.
 
-**Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/estimation/multiview/core.py) is built in its camera's frame and is summed with the other cameras' cones in the world's. As a map it moves by pulling its input back through the pose and pushing its output forward; as a form it has no output to push, and the pose goes into both slots.
+**Moving a map or a form to another frame.** A sight cone in the [multiview example](../examples/estimation/multiview/core.py) is built in its camera's frame and is summed with the other cameras' cones in the world's. As a map it moves by pulling its input back through the pose and pushing its output forward; as a form it has no output to push, and the pose goes into both axes.
 
 ```python
 world_map = motor >> local_map(motor << Point)              # Plane <- Point
@@ -153,7 +153,7 @@ world_form = local_form(motor << Point, motor << Point)     # Scalar <- (Point, 
 
 The pushed output is a plane, and the sandwich moves a plane as it moves a point: the adjugate of the pose, `(motor << Point).adjugate()`, is `motor >> Plane`.
 
-In matrix algebra one would store the quadric as a symmetric matrix $Q$ and the pose as a matrix $P$ on point coordinates, and move the quadric by congruence, $P^{-\top} Q P^{-1}$. The transpose there is the pullback of the form's second slot, and the inverse transpose is how a matrix on points is made to act on planes. The sandwich is both.
+In matrix algebra one would store the quadric as a symmetric matrix $Q$ and the pose as a matrix $P$ on point coordinates, and move the quadric by congruence, $P^{-\top} Q P^{-1}$. The transpose there is the pullback of the form's second input, and the inverse transpose is how a matrix on points is made to act on planes. The sandwich is both.
 
 In coordinates each of these is a permutation of the same numbers, with signs. The permutation and the signs come from the structure constants of the product, which blades meet to a scalar and with what sign, and not from index labels.
 
@@ -178,7 +178,7 @@ a & b.dual() == a.dot(b)                    # a, b: Vector
 
 In a projective algebra the dual is the bare complement. The metric enters a calculation where a dual is taken, and nowhere else. In spacetime with space positive, `x+y+z+t-`, an observer's slice of space is the vector `mv.t` and its direction in time is `time = -mv.t.dual()`: the two pair to one, `mv.t & time == 1`, the minus the square of t, which the dual carries.
 
-The metric is in the products and not in the coefficients, and it is available as an object when one is wanted: the inner product with two open slots is the metric as a form. With it, moving between a vector and the covector it defines is an ordinary solve.
+The metric is in the products and not in the coefficients, and it is available as an object when one is wanted: the inner product with two open axes is the metric as a form. With it, moving between a vector and the covector it defines is an ordinary solve.
 
 ```python
 metric = Vector | Vector                    # Scalar <- (Vector, Vector): the metric as a form
@@ -189,13 +189,13 @@ polar = (Plane & Point).solve(form)         # Plane <- Point: the same form, pai
 
 The last line differs from the one before it only in the pairing. Solving against the metric keeps the type; solving against the regressive pairing identifies a space with its complement and changes the type. Contractions split the same way. `trace` pairs through the regressive product: two inputs of complementary spaces, or the output with an input of its own space, as if met with its complement first. `contract` pairs through the inner product: two inputs of one space, or the output with an input of its own space, as if lifted by the inner product first. Lifting a map to a form and pairing the form's inputs is the same operation, spelled out: `f.trace() == (Antivector & f).trace()` and `f.contract() == (Vector | f).contract()`.
 
-A slot is typed by its subspace, and the dual of a subspace is either the subspace itself, under `|`, or its complement, under `&`. In a Euclidean orthonormal algebra the two coincide up to signs. In spacetime the signs differ. In a projective algebra the metric identification does not exist for the null direction, and only the complement remains. The metric is in the product, `(a * b + b * a) / 2 == a | b`, so a vector acts on another through `|` with no conversion, and numga keeps both pairings, `|` with the metric and `&` without it, by product rather than by index.
+An axis is typed by its subspace, and the dual of a subspace is either the subspace itself, under `|`, or its complement, under `&`. In a Euclidean orthonormal algebra the two coincide up to signs. In spacetime the signs differ. In a projective algebra the metric identification does not exist for the null direction, and only the complement remains. The metric is in the product, `(a * b + b * a) / 2 == a | b`, so a vector acts on another through `|` with no conversion, and numga keeps both pairings, `|` with the metric and `&` without it, by product rather than by index.
 
-A covector slot can be written with either pairing. The regressive product `&` pairs a subspace with its complement and needs no metric, so the complement can always stand in for the dual. The inner product `|` pairs a subspace with itself, so where the metric is not degenerate the subspace can stand in for its own dual. Any tensor can be written either way, and the product shows which pairing it uses. The second moment of section 1, with none, one and both of its slots paired through the metric:
+A covector axis can be written with either pairing. The regressive product `&` pairs a subspace with its complement and needs no metric, so the complement can always stand in for the dual. The inner product `|` pairs a subspace with itself, so where the metric is not degenerate the subspace can stand in for its own dual. Any tensor can be written either way, and the product shows which pairing it uses. The second moment of section 1, with none, one and both of its axes paired through the metric:
 
 ```python
 moment = (points * (points & Antivector)).sum(axis=0)       # Vector <- Antivector: no metric
-spread = (points * (points | Vector)).sum(axis=0)           # Vector <- Vector: one slot through the metric
+spread = (points * (points | Vector)).sum(axis=0)           # Vector <- Vector: one input through the metric
 form = ((points | Vector) * (points | Vector)).sum(axis=0)  # Scalar <- (Vector, Vector): both
 ```
 
@@ -211,19 +211,19 @@ polarity = (Plane & Point).solve(form)      # Plane <- Point: a quadric's polari
 
 What is lost are the metric's own measurements of the null direction: the norm of `w`, and angles and orthogonality that involve it. A projective algebra measures a value in two parts: the part the metric sees with `|`, and the rest through its complement, where `|` sees it.
 
-In tensor notation the same distinctions are carried by index position: a slot is typed as vector or covector by whether its index is up or down, the metric is a separate symmetric form with two lower indices that raising and lowering apply explicitly, and a contraction pairs one upper index with one lower; `moment`, `spread` and `form` are $C^{ij}$, $C^i{}_j$ and $C_{ij}$. A degenerate metric there only forbids raising an index, and the volume form builds covectors from vectors without one: the plane through three points is $p_i = \varepsilon_{ijkl}\, a^j b^k c^l$, and incidence is $p_i d^i = 0$. In exterior algebra the metric is dropped altogether, and the wedge, the complement and the regressive product are defined without it.
+In tensor notation the same distinctions are carried by index position: an axis is typed as vector or covector by whether its index is up or down, the metric is a separate symmetric form with two lower indices that raising and lowering apply explicitly, and a contraction pairs one upper index with one lower; `moment`, `spread` and `form` are $C^{ij}$, $C^i{}_j$ and $C_{ij}$. A degenerate metric there only forbids raising an index, and the volume form builds covectors from vectors without one: the plane through three points is $p_i = \varepsilon_{ijkl}\, a^j b^k c^l$, and incidence is $p_i d^i = 0$. In exterior algebra the metric is dropped altogether, and the wedge, the complement and the regressive product are defined without it.
 
 ## 4. Maps and forms
 
-A map `B <- A` and a form `Scalar <- (A*, A)` hold the same numbers with one slot on the other side of the arrow. The two directions of conversion are not symmetric.
+A map `B <- A` and a form `Scalar <- (A*, A)` hold the same numbers with one axis on the other side of the arrow. The two directions of conversion are not symmetric.
 
-Map to form is a pairing. Join the output with an open slot of the dual type and the map becomes a bilinear form, as the [modes example](../examples/mechanics/modes/core.py) does with its stiffness:
+Map to form is a pairing. Join the output with an open axis of the dual type and the map becomes a bilinear form, as the [modes example](../examples/mechanics/modes/core.py) does with its stiffness:
 
 ```python
 energy = Twist & stiffness                  # Scalar <- (Twist, Twist), from Forque <- Twist
 ```
 
-Form to map inverts that pairing, by two routes: the whole map at once, solving the pairing form against the given form with the unknown in its first slot, or one point at a time, through the adjugate of section 2:
+Form to map inverts that pairing, by two routes: the whole map at once, solving the pairing form against the given form with the unknown in its first input, or one point at a time, through the adjugate of section 2:
 
 ```python
 polarity = (Plane & Point).solve(form)              # Plane <- Point, from Scalar <- (Point, Point)
@@ -240,19 +240,19 @@ Two pairings are available, and they differ in whether the metric is involved. T
 ricci_map = (Vector | Vector).solve(ricci_form)   # Vector <- Vector, the form with one index raised
 ```
 
-Numga does not track index placement; it tracks slot types, and the pairing that is solved determines the type of the output.
+Numga does not track index placement; it tracks axis types, and the pairing that is solved determines the type of the output.
 
-Which to use follows from the operations each supports without conversion. Maps compose, invert, and transport by sandwich. Forms add, are differentiated as costs, are solved against linear forms, and are the object of eigenproblems, including the generalized eigenproblem between two forms, `potential.eigh(kinetic)`, which uses no metric because both sides are forms. A form's eigenproblem on its own is relative to its slot's metric, the inner product of `S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eigh()` measures a motor by its rotor part alone, choosing for each mode the translation that minimizes the misfit.
+Which to use follows from the operations each supports without conversion. Maps compose, invert, and transport by sandwich. Forms add, are differentiated as costs, are solved against linear forms, and are the object of eigenproblems, including the generalized eigenproblem between two forms, `potential.eigh(kinetic)`, which uses no metric because both sides are forms. A form's eigenproblem on its own is relative to its axis's metric, the inner product of `S` with its reverse: `alignment.eigh()` measures rotors, and `misfit.eigh()` measures a motor by its rotor part alone, choosing for each mode the translation that minimizes the misfit.
 
 In tensor notation a map reads as a (1,1) tensor and a form as a (0,2) tensor; the difference is one pairing.
 
 In coordinates a map and a form are the same square array, and nothing in the array says which one it is. Here the type says it, and the eigenproblems follow the type. A map has eigenvalues only when its output is the same kind of thing as its input: a twist that maps to a multiple of itself means nothing when twists come out as forques. A form has none on its own terms; its eigenproblem is posed against a second form, `potential.eigh(kinetic)`, and has real eigenvalues because both forms are symmetric.
 
-Treating a map as a form causes a common problem. A rigid body's stiffness assembled as a map from twists to forques comes out almost symmetric: symmetric in one basis and not quite in another. Averaging it with its transpose discards information, and the normal equations are exactly symmetric but square the condition number. The fix is one regressive product, pairing the returned forque with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`, which is symmetric in `a` and `b` by construction. The asymmetry came from using a map where a form was meant, and with typed slots the two cannot be confused. Whether the map itself is symmetric does not depend on the basis: a stiffness is symmetric when it is its own adjugate, `stiffness.adjugate() == stiffness`, section 2.
+Treating a map as a form causes a common problem. A rigid body's stiffness assembled as a map from twists to forques comes out almost symmetric: symmetric in one basis and not quite in another. Averaging it with its transpose discards information, and the normal equations are exactly symmetric but square the condition number. The fix is one regressive product, pairing the returned forque with a twist. Each spring's dyad then contributes `(a & line) * (b & line)`, which is symmetric in `a` and `b` by construction. The asymmetry came from using a map where a form was meant, and with typed axes the two cannot be confused. Whether the map itself is symmetric does not depend on the basis: a stiffness is symmetric when it is its own adjugate, `stiffness.adjugate() == stiffness`, section 2.
 
 ## 5. Quadrics
 
-The [multiview example](../examples/estimation/multiview/core.py) holds a pixel's precision disc and its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. Either one paired with an open slot is the form, `Scalar <- (Point, Point)`, which is what a cost or an eigenproblem takes. The conversions are those of section 4:
+The [multiview example](../examples/estimation/multiview/core.py) holds a pixel's precision disc and its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. Either one paired with an open axis is the form, `Scalar <- (Point, Point)`, which is what a cost or an eigenproblem takes. The conversions are those of section 4:
 
 ```python
 form = quadric & Point                      # Scalar <- (Point, Point)
@@ -290,7 +290,7 @@ basis = mv.vector(np.eye(4))                # [4] Vector: the coordinate vectors
 inverses = basis.inverse()                  # [4] Vector: each vector inverted on its own
 ```
 
-The second line equals the reciprocal frame for an orthonormal basis and not otherwise. A reciprocal frame is the inverse of the frame as a map from coefficients to vectors, and the library has no coefficient-space slot to hold that map. Where a reciprocal is required it comes from solving the pairing; in most cases a frame summed against its reciprocal is the coordinate spelling of a trace or of an identity map, which have frame-free forms.
+The second line equals the reciprocal frame for an orthonormal basis and not otherwise. A reciprocal frame is the inverse of the frame as a map from coefficients to vectors, and the library has no coefficient-space axis to hold that map. Where a reciprocal is required it comes from solving the pairing; in most cases a frame summed against its reciprocal is the coordinate spelling of a trace or of an identity map, which have frame-free forms.
 
 ## 7. Least squares
 
@@ -302,20 +302,20 @@ Nullary: both sides are multivectors, and the value has a trailing batch axis. T
 coefficients = vectors.lstsq(target)         # [n] Scalar: sum(coefficients * vectors) ≈ target
 ```
 
-Unary: a map against a right-hand side, solved exactly or with the pseudoinverse's cutoff. Input slots of the right-hand side are kept as input slots of the solution. Triangulation in the [multiview example](../examples/estimation/multiview/core.py) is this case, a polarity map solved against the plane at infinity:
+Unary: a map against a right-hand side, solved exactly or with the pseudoinverse's cutoff. Inputs of the right-hand side are kept as inputs of the solution. Triangulation in the [multiview example](../examples/estimation/multiview/core.py) is this case, a polarity map solved against the plane at infinity:
 
 ```python
 points = (fused + w * (w & Point)).solve(w)                # Point, the vertex of a fused cone
 ```
 
-Forms: `form(x, ·) = linear(·)`, with `x` in the form's first slot. A right-hand side with leading slots yields a map on them. A Schur complement and an induced map are both written this way:
+Forms: `form(x, ·) = linear(·)`, with `x` in the form's first input. A right-hand side with leading axes yields a map on them. A Schur complement and an induced map are both written this way:
 
 ```python
 step = curvature.solve(-gradient)                          # Twist, from Scalar <- (Twist, Twist) and Scalar <- Twist
 response = h_pt[:, None].solve(h_cross)                    # Direction <- Twist, from Scalar <- (Twist, Direction)
 ```
 
-A singular curvature, one with a gauge, has a family of solutions, and choosing one means choosing the smallest, which needs a size on the slot. Given as a metric form, it makes the choice and the cutoff geometric: of all solutions, `lstsq` returns the one smallest in the metric, and it drops the modes whose curvature per unit metric is at most `rcond` times the largest. On twists a natural metric is a kinetic energy, so the step is the one of least motion:
+A singular curvature, one with a gauge, has a family of solutions, and choosing one means choosing the smallest, which needs a size on its space. Given as a metric form, it makes the choice and the cutoff geometric: of all solutions, `lstsq` returns the one smallest in the metric, and it drops the modes whose curvature per unit metric is at most `rcond` times the largest. On twists a natural metric is a kinetic energy, so the step is the one of least motion:
 
 ```python
 step = curvature.lstsq(-gradient, Twist & inertia, rcond=1e-6)   # Twist with no component along the gauge, in the metric
@@ -325,7 +325,7 @@ Without a metric, `lstsq` measures the solution and the cutoff by the sum of squ
 
 In matrix notation this is the pseudoinverse in a weighted norm, $x = L^{-\top} (L^{-1} H L^{-\top})^{+} L^{-1} g$ with $M = L L^\top$ the metric's Cholesky factorization.
 
-Tensor: a construction with several open slots, solved for an unknown multilinear part. The right-hand side's inputs must match one subsequence of the construction's inputs, and the unmatched slots become the solution's signature: several slots are unbound at once, where the other cases unbind one. Such a system is rarely square, so this case is `lstsq`'s; when the right-hand side is one the construction can produce, it solves it exactly. Recovering a point cloud's second moment from its inertia is this case; section 8 shows it.
+Tensor: a construction with several open axes, solved for an unknown multilinear part. The right-hand side's inputs must match one subsequence of the construction's inputs, and the unmatched axes become the solution's signature: several axes are unbound at once, where the other cases unbind one. Such a system is rarely square, so this case is `lstsq`'s; when the right-hand side is one the construction can produce, it solves it exactly. Recovering a point cloud's second moment from its inertia is this case; section 8 shows it.
 
 ## 8. Second moments and inertia
 
@@ -344,7 +344,7 @@ principal = moment(planes)                                              # [4] Po
 inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Forque <- Twist
 ```
 
-Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor solve of section 7. Write the construction that turns a second moment into an inertia with every slot open, and solve it for the unknown map:
+Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor solve of section 7. Write the construction that turns a second moment into an inertia with every axis open, and solve it for the unknown map:
 
 ```python
 construction = Point & Plane.dual().commutator(Bivector)                # Forque <- (Point, Plane, Twist)
@@ -363,17 +363,17 @@ Its kinetic energy form, `Twist & inertia`, has a trace only against a metric on
 
 ## 9. Traces
 
-`trace(0, slot)` pairs a map's output with one of its inputs and drops both. It does not use the metric: meeting the output with its complement lifts the map to a form, the regressive product pairs that form's inputs, and the complement and its inverse cancel. The output is slot 0, and the inputs are numbered from 1 in order of appearance in the expression. When only two slots carry an index, as on `Space <- Space`, the slots may be left unnamed; a scalar output carries none.
+`trace(0, input)` pairs a map's output with one of its inputs and drops both. It does not use the metric: meeting the output with its complement lifts the map to a form, the regressive product pairs that form's inputs, and the complement and its inverse cancel. The output is axis 0, and the inputs are numbered from 1 in order of appearance in the expression. When only two axes carry an index, as on `Space <- Space`, the axes may be left unnamed; a scalar output carries none.
 
-A contraction between two inputs is different: either a metric pairs them or the complement does, and one of the two has to be written. The Ricci contraction shows both. The curvature of a plane gravitational wave in the [curvature example](../examples/relativity/curvature/core.py) is `plus`, a map on bivectors. Wedge an open vector into it, contract with another open vector, and trace the output against the wedge slot:
+A contraction between two inputs is different: either a metric pairs them or the complement does, and one of the two has to be written. The Ricci contraction shows both. The curvature of a plane gravitational wave in the [curvature example](../examples/relativity/curvature/core.py) is `plus`, a map on bivectors. Wedge an open vector into it, contract with another open vector, and trace the output against the wedge axis:
 
 ```python
 ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)     # Scalar <- (Vector, Vector)
 ```
 
-The inner product with the open vector is the one place the metric enters. The trace pairs the output with the wedge slot through the regressive product. No frame and no reciprocal basis appear, and the result is a form, which is what Ricci is. The first Bianchi identity reads the same way, with the third vector left open so that the cyclic sum is a map that must vanish. A sum over a basis against its reciprocal is the coordinate spelling of this trace.
+The inner product with the open vector is the one place the metric enters. The trace pairs the output with the wedge axis through the regressive product. No frame and no reciprocal basis appear, and the result is a form, which is what Ricci is. The first Bianchi identity reads the same way, with the third vector left open so that the cyclic sum is a map that must vanish. A sum over a basis against its reciprocal is the coordinate spelling of this trace.
 
-A form's own `trace()` pairs its two slots through the slot's metric: it is the trace of the form with one slot raised, `(S | S).solve(form)` on vectors, and it exists only where that metric is invertible.
+A form's own `trace()` pairs its two inputs through the metric of their space: it is the trace of the form with one input raised, `(S | S).solve(form)` on vectors, and it exists only where that metric is invertible.
 
 ## 10. Homogeneous unknowns
 
@@ -426,26 +426,26 @@ position = readout & sigma(readout)                         # Scalar <- (Line, L
 
 Sampling diagonalizes the readout form: each eigen-readout's twist, scaled by its standard deviation, carries one unit normal draw. A Schur complement, as in the [multiview example](../examples/estimation/multiview/core.py), is marginalization: the reduced curvature over the cameras is the information on their poses with the points integrated out.
 
-## 12. Batch axes and slots
+## 12. Batch axes and the axes of a type
 
-A batch axis indexes independent copies of an expression; a slot is an argument. The two look alike in a coefficient array, and frames are where they are most often mixed up: a basis stored as a batch, with a reciprocal basis stored as another, is a slot that has been evaluated on each basis vector and summed. The Ricci contraction of the [curvature example](../examples/relativity/curvature/core.py) shows both spellings.
+A batch axis indexes independent copies of an expression; an axis of a type is an argument or the output. The two look alike in a coefficient array, and frames are where they are most often mixed up: a basis stored as a batch, with a reciprocal basis stored as another, is an axis that has been evaluated on each basis vector and summed. The Ricci contraction of the [curvature example](../examples/relativity/curvature/core.py) shows both spellings.
 
 ```python
 basis = mv.vector(np.eye(4))                            # [4] Vector: four copies, one per coordinate vector
-ribbons = basis.wedge(Vector)                           # [4] Bivector <- Vector: a batch of maps, one slot each
-sheets = Vector.wedge(Vector)                           # [] Bivector <- (Vector, Vector): one map, two slots
+ribbons = basis.wedge(Vector)                           # [4] Bivector <- Vector: a batch of maps, one input each
+sheets = Vector.wedge(Vector)                           # [] Bivector <- (Vector, Vector): one map, two inputs
 
-# the frame spelling: evaluate one slot on the basis, pair with the reciprocal, sum the batch
+# the frame spelling: evaluate one input on the basis, pair with the reciprocal, sum the batch
 ricci_frame = plus(basis.wedge(Vector)).commutator(basis.inverse()).sum(axis=0)     # Vector <- Vector
 
-# the slot spelling: keep both slots open, contract them with a trace, raise with the metric
+# the axis spelling: keep both axes open, contract them with a trace, raise with the metric
 ricci_form = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)            # Scalar <- (Vector, Vector)
 ricci = (Vector | Vector).solve(ricci_form)                                         # Vector <- Vector, equal to ricci_frame
 ```
 
-The batch in the first spelling stands in for the slot that the trace contracts in the second, and the reciprocal basis stands in for the metric that the solve applies. The frame spelling also relies on `basis.inverse()` being the reciprocal frame, which holds for an orthonormal basis and not otherwise. Anything summed over a basis should be checked for a frame-free spelling first: a trace, a bare type standing for the identity, or a solve of the pairing.
+The batch in the first spelling stands in for the input that the trace contracts in the second, and the reciprocal basis stands in for the metric that the solve applies. The frame spelling also relies on `basis.inverse()` being the reciprocal frame, which holds for an orthonormal basis and not otherwise. Anything summed over a basis should be checked for a frame-free spelling first: a trace, a bare type standing for the identity, or a solve of the pairing.
 
-numga's default dense backend evaluates slot contractions over dense coefficient arrays, much like a matrix product. That is an implementation detail. The semantics are contractions of typed subspaces, and other backends, such as sparse contraction or symbolic unrolling, follow the same rules through the same interface.
+numga's default dense backend evaluates axis contractions over dense coefficient arrays, much like a matrix product. That is an implementation detail. The semantics are contractions of typed subspaces, and other backends, such as sparse contraction or symbolic unrolling, follow the same rules through the same interface.
 
 ## 13. Outermorphisms
 

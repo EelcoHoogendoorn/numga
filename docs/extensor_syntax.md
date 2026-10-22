@@ -3,13 +3,13 @@
 In numga, the `Extensor` abstraction unifies multivectors and linear/multilinear maps under a single value class:
 * **Arity 0**: Multivectors (concrete geometric elements).
 * **Arity 1**: Unary linear maps (`Output <- Input`).
-* **Arity n**: Multilinear maps (bilinear forms, energy functionals, and maps with more slots).
+* **Arity n**: Multilinear maps (bilinear forms, energy functionals, and maps of more inputs).
 
 ---
 
 ## 1. The Core Viewpoint: Multivectors Waiting for Arguments
 
-A GA expression with open slots reads as an operation on its **output type**. An extensor behaves as a multivector of its output type with one or more arguments still to be supplied.
+A GA expression with open axes reads as an operation on its **output type**. An extensor behaves as a multivector of its output type with one or more arguments still to be supplied.
 
 When constructing a projection:
 ```python
@@ -37,11 +37,11 @@ Each step reads as geometric algebra on the output type, and numga composes the 
 
 ---
 
-## 2. Construction via Open Slots & GATypes
+## 2. Construction via Open Axes & GATypes
 
-Passing an unbound GAType (`Vector`, `Point`, `Twist`, `Plane`, etc.) to any GA operation constructs a compiled extensor with open input slots.
+Passing an unbound GAType (`Vector`, `Point`, `Twist`, `Plane`, etc.) to any GA operation constructs a compiled extensor with open inputs.
 
-### Open Slot Expressions
+### Open Axis Expressions
 ```python
 # Unary linear map (Arity 1): Forque <- Point
 line_map = mv.x & Point
@@ -87,7 +87,7 @@ For an arity-1 extensor, the trailing kernel axes correspond directly to output 
 ## 3. Binding & Composition Syntax
 
 ### Concrete Binding (`__call__`)
-Calling an extensor with concrete multivector operands (arity 0) binds its logical input slots:
+Calling an extensor with concrete multivector operands (arity 0) binds its logical inputs:
 
 ```python
 # 1. Unary linear map:
@@ -109,15 +109,15 @@ line = join_map(origin, target)                      # Line
 ray_from_origin = join_map(origin)                   # Line <- Point
 ray = ray_from_origin(target)                        # Line
 
-# The slot's own type in place of an argument leaves that slot open:
+# The axis's own type in place of an argument leaves that axis open:
 ray_to_target = join_map(Point, target)              # Line <- Point
 
-# A type inside the slot's space narrows the slot to it:
+# A type inside the axis's space narrows the axis to it:
 electric_response = chi(Electric)                    # Antibivector <- Electric
 ```
 
-### Argument Lifting (Binding Maps into Slots)
-Lifting is binding a map, an extensor with open slots of its own, into an open argument slot. Instead of eliminating the slot, numga contracts the intermediate GAType and inherits the argument's input axes: with `M` a `C <- B` and `T` a `B <- A`, `M(T)` is a `C <- A`, feeding the output of `T` into the input of `M`.
+### Argument Lifting (Binding Maps into Axes)
+Lifting is binding a map, an extensor with open axes of its own, into an open argument axis. Instead of eliminating the axis, numga contracts the intermediate GAType and inherits the argument's input axes: with `M` a `C <- B` and `T` a `B <- A`, `M(T)` is a `C <- A`, feeding the output of `T` into the input of `M`.
 
 In matrix notation this reads as the product $C = AB$, which feeds the output of $B$ into the input of $A$.
 
@@ -144,7 +144,7 @@ spacetime_d = permittivity(electric_extractor)          # Vector <- Bivector
 # world_to_pixel : Point <- Point,  bodies_to_world : [5] Point <- Point
 local_to_pixel = world_to_pixel(bodies_to_world)        # [5] Point <- Point
 
-# 4. Multilinear Slot Lifting:
+# 4. Composing into one input of a multilinear map:
 # join_map expects (Point, Point); trajectory is an arity-1 extensor (Point <- Time)
 join_map = Point & Point                                # Line <- (Point, Point)
 moving_ray = join_map(trajectory)                       # Line <- (Time, Point)
@@ -172,7 +172,7 @@ world_T = motor >> local_T(motor << In)              # WorldOut <- WorldIn
 
 # A quadric as a polarity map (Plane <- Point) moves like any map:
 world_cone = pose >> local_cone(pose << Point)       # Plane <- Point
-# The same quadric as a form (Scalar <- (Point, Point)) moves by feeding the frame change into both slots:
+# The same quadric as a form (Scalar <- (Point, Point)) moves by feeding the frame change into both inputs:
 world_form = local_form(pose << Point, pose << Point)
 ```
 Incidence of a plane with a point is written plane first, `plane & point`, and a quadric's value is `quadric(p) & p`. The order is a convention: the regressive product of a plane and a point changes sign with the dimension, so keep the plane on the left, in dyads too (`normal * (normal & Point)`). A polarity map becomes a form by `quadric & Point`, and a form becomes a polarity map by solving the pairing, `(Plane & Point).solve(form)`.
@@ -184,7 +184,7 @@ cone = on_planes(disc(projection))                     # Plane <- Point
 ```
 
 ### Batching and Broadcasting
-Batch axes lead the structural axes and are not slots: they index independent copies of an expression. `stack` creates a batch axis, `.sum(axis)` removes one, and indexing follows NumPy:
+Batch axes lead the structural axes and are not axes of the type: they index independent copies of an expression. `stack` creates a batch axis, `.sum(axis)` removes one, and indexing follows NumPy:
 ```python
 waves = stack((plus_wave, cross_wave, plus_wave + cross_wave), axis=1)   # [n_time, 3] Bivector <- Bivector
 stiffness = spring_stiffness.sum(axis=0)                                  # [] Forque <- Twist
@@ -193,7 +193,7 @@ Calling a batched map on a batched argument broadcasts the batch axes against ea
 ```python
 acceleration = response[:, :, None](reference)      # [n_time, 3, n_beads] Vector
 ```
-A field is one object over sites, where a batch holds independent copies: `positions.field()` reads the last batch axis as the sites of the output, typed `vector[4]`, and `.batch()` reads them back. Operations act on a field site by site. A slot of a map can range over sites as well, and a field map such as `stiffness: vector[4] <- vector[4]` couples them: binding a field into it sums over the paired sites, composition sums over the sites between, and `solve` solves the coupled system. A field map whose couplings are mostly zero is stored as a sparse extensor, which multiplies by the product an expression names, `S * field`, and runs its couplings back under an operation that reverses products, `~(S * field) == ~field * ~S`. See [Fields and field maps](fields.md).
+A field is one object over sites, where a batch holds independent copies: `positions.field()` reads the last batch axis as the sites of the output, typed `vector[4]`, and `.batch()` reads them back. Operations act on a field site by site. An axis of a map can range over sites as well, and a field map such as `stiffness: vector[4] <- vector[4]` couples them: binding a field into it sums over the paired sites, composition sums over the sites between, and `solve` solves the coupled system. A field map whose couplings are mostly zero is stored as a sparse extensor, which multiplies by the product an expression names, `S * field`, and runs its couplings back under an operation that reverses products, `~(S * field) == ~field * ~S`. See [Fields and field maps](fields.md).
 
 A frame summed against its reciprocal is the coordinate spelling of a trace or a contraction; write those instead (see `.trace()` and `.contract()` below).
 
@@ -208,11 +208,11 @@ Operate directly on linear transformations while preserving input/output GATypes
   ```python
   step = stiffness.solve(force)                      # Twist: the displacement the force causes
   ```
-* **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems. On a construction with several input slots it unbinds every slot the right-hand side does not match, all at once, and returns the unknown map on them:
+* **`.lstsq(rhs)`**: Least-squares solve for over- or under-determined linear systems. On a construction with several inputs it unbinds every input the right-hand side does not match, all at once, and returns the unknown map on them:
   ```python
   moment = (Point & Plane.dual().commutator(Bivector)).lstsq(inertia)   # Point <- Plane, from Forque <- (Point, Plane, Twist)
   ```
-* **`.lstsq(rhs, metric)`**: On a symmetric form, least squares in a metric form on its slot: of all solutions it returns the one smallest in the metric, and `rcond` cuts modes by their curvature per unit metric. Without a metric, sizes are sums of squared coefficients.
+* **`.lstsq(rhs, metric)`**: On a symmetric form, least squares in a metric form on its space: of all solutions it returns the one smallest in the metric, and `rcond` cuts modes by their curvature per unit metric. Without a metric, sizes are sums of squared coefficients.
   ```python
   step = curvature.lstsq(-gradient, Twist & inertia, rcond=1e-6)   # Twist: the least-motion step
   ```
@@ -230,14 +230,14 @@ Operate directly on linear transformations while preserving input/output GATypes
   undo = (rotor >> Vector).adjoint()                 # Vector <- Vector, rotor << Vector
   ```
 * **`.det()`**: Determinant of a square endomorphism (`Space <- Space`).
-* **`.trace()`** / **`.trace(first, second)`**: Pairs two slots through the regressive product and drops both. The output is slot 0 and the inputs are slots 1 to n, in order of appearance in the expression. A slot carries an index unless it is a scalar output, and the slots may be left unnamed exactly when two carry one: a map `Space <- Space`, or a form on two inputs. Two inputs pair when their spaces are complementary, through `&`. The output pairs with an input of its own space, as if met with its complement first; on `Space <- Space` this is the matrix trace. Lifting the map to a form and tracing the form is the same thing, spelled out:
+* **`.trace()`** / **`.trace(first, second)`**: Pairs two axes through the regressive product and drops both. The output is axis 0 and the inputs are axes 1 to n, in order of appearance in the expression. An axis carries an index unless it is a scalar output, and the axes may be left unnamed exactly when two carry one: a map `Space <- Space`, or a form on two inputs. Two inputs pair when their spaces are complementary, through `&`. The output pairs with an input of its own space, as if met with its complement first; on `Space <- Space` this is the matrix trace. Lifting the map to a form and tracing the form is the same thing, spelled out:
   ```python
   trace = f.trace()                                                # [] Scalar
   lifted = (Antivector & f).trace()                                # [] Scalar: the same, f lifted to a form
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(0, 2)   # [] Scalar <- (Vector, Vector)
   incidence_trace = (Plane & f(Point)).trace()                     # [] Scalar: f.trace(), in PGA
   ```
-* **`.contract()`** / **`.contract(first, second)`**: Pairs two slots through the inner product and drops both, keeping the other slots open, with the slots numbered and left unnamed as for `.trace()`. Two inputs of one space pair through the slot's metric: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either; the metric must be invertible. The output pairs with an input of its own space, as if lifted by `Space | f` first; the metric and its inverse cancel, so on `Space <- Space` this is the trace again, for any metric. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
+* **`.contract()`** / **`.contract(first, second)`**: Pairs two axes through the inner product and drops both, keeping the other axes open, with the axes numbered and left unnamed as for `.trace()`. Two inputs of one space pair through the axis's metric: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either; the metric must be invertible. The output pairs with an input of its own space, as if lifted by `Space | f` first; the metric and its inverse cancel, so on `Space <- Space` this is the trace again, for any metric. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
   ```python
   divergence = (Vector | f(Vector)).contract()                      # [] Scalar: the trace of f, f.contract() lifted to a form
   curl = (Vector ^ f(Vector)).contract(1, 2)                        # [] Bivector: f - f.adjoint() == Vector | curl
@@ -264,15 +264,15 @@ Operate directly on linear transformations while preserving input/output GATypes
 ### Bilinear & Quadratic Forms (`Scalar <- (Space, Space)`)
 Represent metrics, potential/kinetic energy functionals, quadrics, and alignment objectives:
 
-A form has two covector slots, so its eigenvalues, determinant and trace exist relative to a metric form. Without one, the metric is the slot's own: the inner product of `S` with its reverse, which is `V | V` on vectors and positive on bivectors and Euclidean points. Its kind follows from the slot type: an identity metric (Euclidean points, rotors) keeps the plain solver, other metrics use the generalized pencil.
+A form has two covector inputs, so its eigenvalues, determinant and trace exist relative to a metric form. Without one, the metric is its space's own: the inner product of `S` with its reverse, which is `V | V` on vectors and positive on bivectors and Euclidean points. Its kind follows from the axis type: an identity metric (Euclidean points, rotors) keeps the plain solver, other metrics use the generalized pencil.
 
-* **`.eigh()`**: Symmetric/Hermitian eigensolve against the slot's metric. A positive-definite metric gives one mode per blade. A semidefinite one, blind to some blades as PGA's metric is to the ideal ones, gives one finite mode per blade it measures, with the blind components of each chosen to make the form stationary: for a motor, the best translation for each rotation. An indefinite or otherwise singular slot metric (spacetime vectors) is refused with a `TypeError`. Returns eigenvalues `[modes] Scalar` and eigenvectors `[modes] Space`, orthonormal in the metric.
+* **`.eigh()`**: Symmetric/Hermitian eigensolve against its space's metric. A positive-definite metric gives one mode per blade. A semidefinite one, blind to some blades as PGA's metric is to the ideal ones, gives one finite mode per blade it measures, with the blind components of each chosen to make the form stationary: for a motor, the best translation for each rotation. An indefinite or otherwise singular axis metric (spacetime vectors) is refused with a `TypeError`. Returns eigenvalues `[modes] Scalar` and eigenvectors `[modes] Space`, orthonormal in the metric.
   ```python
   values, rotors = alignment.eigh()                  # Scalar <- (Rotor, Rotor): the rotor metric is the identity
   values, motors = misfit.eigh()                     # Scalar <- (Motor, Motor): one mode per rotor blade
   motor = motors[values.argmin()].normalized()
   ```
-* **`.eig()` / `.eigvals()`**: General eigensolve against the slot's metric. A singular metric sends the modes it does not measure to infinity.
+* **`.eig()` / `.eigvals()`**: General eigensolve against its space's metric. A singular metric sends the modes it does not measure to infinity.
 * **`.eigh(metric)`**: **Generalized Hermitian eigensolve**, one form against another.
   Solves the generalized eigenvalue problem directly between two bilinear energy forms, without inverting the inertia:
   ```python
@@ -282,13 +282,13 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
   ```
 
   In matrix notation it reads as $K v = \lambda M v$, solved without forming the asymmetric product $M^{-1}K$.
-* **`.eigvalsh()`** / **`.eigvalsh(metric)`**: Only the eigenvalues, against the slot's metric or a given one.
-* **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric; the slot's metric must be invertible.
+* **`.eigvalsh()`** / **`.eigvalsh(metric)`**: Only the eigenvalues, against its space's metric or a given one.
+* **`.det()`** / **`.det(metric)`**: Determinant of the form relative to the metric; its space's metric must be invertible.
 
   In matrix notation it reads as $\det(G^{-1} A)$, with $G$ the metric and $A$ the form.
-* **`.contract()`**: Trace of the form with one slot raised by the slot's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible. `.trace()` pairs the two slots through the regressive product instead, which needs their spaces to be complementary.
+* **`.contract()`**: Trace of the form with one input raised by its space's metric, `(S | S).solve(form).trace()` for vectors; the metric must be invertible. `.trace()` pairs the two inputs through the regressive product instead, which needs their spaces to be complementary.
 * A form has no singular values: its coefficient matrix changes with the basis. To see that a form vanishes, evaluate it: `ricci(a, b)`.
-* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first slot, where `linear` is `Scalar <- Space`: the inverse of binding that slot, so `form.solve(form(x)) == x`. Only the first slot is solved for. A right-hand side with leading slots yields a map on them, which is how a Schur complement or an induced map is written:
+* **`.solve(linear)`** / **`.lstsq(linear, rcond)`**: Solve `form(x, ·) == linear(·)` for `x` in the form's first input, where `linear` is `Scalar <- Space`: the inverse of binding that input, so `form.solve(form(x)) == x`. Only the first input is solved for. A right-hand side with leading axes yields a map on them, which is how a Schur complement or an induced map is written:
   ```python
   points = (splats + (w & Point) * (w & Point)).solve(w & Point)   # [n] Point: the fused cone's vertex
   response = h_pt.lstsq(h_cross, rcond=1e-4)                      # Point <- Twist, from Scalar <- (Twist, Point)
@@ -298,17 +298,17 @@ A form has two covector slots, so its eigenvalues, determinant and trace exist r
 ---
 
 ### Multilinear Maps (`Output <- (In1, ..., Inn)`)
-Arity is not limited to forms; any output type is allowed and slots are numbered in order of appearance:
+Arity is not limited to forms; any output type is allowed and axes are numbered in order of appearance:
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill slots in order, the slot's own type in place of an argument leaves it open and a type inside the slot narrows it, `.trace()` and `.contract()` drop the two slots they pair, and batch axes broadcast as for unary maps.
+Partial calls fill axes in order, the axis's own type in place of an argument leaves it open and a type inside the axis narrows it, `.trace()` and `.contract()` drop the two axes they pair, and batch axes broadcast as for unary maps.
 
 ---
 
 ### Nullary Extensors (Arity 0: Multivectors & Scalars)
 
-Nullary extensors represent concrete multivectors and scalars (carrying no open input slots). Methods on nullary extensors transform or inspect concrete geometric values rather than contracting slots:
+Nullary extensors represent concrete multivectors and scalars (carrying no open inputs). Methods on nullary extensors transform or inspect concrete geometric values rather than contracting axes:
 
 * **Scalars (`Scalar`)**: Eigensolvers (`.eigh()`), singular values of maps (`.svdvals()`), and quadratic forms return scalar extensors. Mathematical operations, reductions, and conversions chain directly as methods without unwrapping:
   ```python

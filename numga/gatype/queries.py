@@ -1,5 +1,5 @@
-"""What a type says about its slots, its forms, its sites and its self-products, each a namespace on
-the type: `gatype.slots`, `gatype.form`, `gatype.over_sites` and `gatype.self_products`. Like the
+"""What a type says about its axes, its forms, its sites and its self-products, each a namespace on
+the type: `gatype.axis_roles`, `gatype.form`, `gatype.over_sites` and `gatype.self_products`. Like the
 derivations, each is computed once per type."""
 
 from __future__ import annotations
@@ -24,35 +24,35 @@ class _Queries:
         self._gatype = gatype
 
 
-class Slots(_Queries):
-    """The slots of a type, output 0 and inputs from 1: which carry an index, which pair, and what an
+class AxisRoles(_Queries):
+    """The axes of a type, output 0 and inputs from 1: which carry an index, which pair, and what an
     operand given for an input binds there."""
 
     @cached_property
     def indexed(self) -> tuple[int, ...]:
-        """The slots that carry an index: the output unless it is scalar, and every input."""
+        """The axes that carry an index: the output unless it is scalar, and every input."""
         gatype = self._gatype
         output = () if gatype.output_subspace.same_support(gatype.algebra.subspace.scalar()) else (0,)
         return output + tuple(range(1, len(gatype.input_subspaces) + 1))
 
     @property
     def pair(self) -> tuple[int, int]:
-        """The only two slots that carry an index."""
+        """The only two axes that carry an index."""
         if len(self.indexed) != 2:
-            raise TypeError(f"name the two slots to pair; {self._gatype} has {len(self.indexed)} slots that carry an index")
+            raise TypeError(f"name the two axes to pair; {self._gatype} has {len(self.indexed)} axes that carry an index")
         return self.indexed
 
     @lru_cache(maxsize=None)
     def paired(self, first: int, second: int) -> tuple[int, int]:
-        """Two slots to pair, in order, each one that carries an index."""
+        """Two axes to pair, in order, each one that carries an index."""
         first, second = sorted((first, second))
         if first not in self.indexed:
-            raise TypeError(f"slot {first} carries no index in {self._gatype}: a scalar output pairs with nothing")
+            raise TypeError(f"axis {first} carries no index in {self._gatype}: a scalar output pairs with nothing")
         return first, second
 
     @lru_cache(maxsize=None)
     def contracted(self, first: int, second: int) -> tuple[int, int]:
-        """Two slots to pair through the inner product: two inputs must share one space."""
+        """Two axes to pair through the inner product: two inputs must share one space."""
         first, second = self.paired(first, second)
         inputs = self._gatype.input_subspaces
         if first and not inputs[second - 1].same_support(inputs[first - 1]):
@@ -60,17 +60,17 @@ class Slots(_Queries):
         return first, second
 
     @lru_cache(maxsize=None)
-    def narrowing(self, slot: int, operand: GAType) -> Extensor | None:
-        """What a type given for an input slot binds there: nothing where it is the slot's own type,
-        which leaves the slot open, and otherwise the identity map on it, which narrows the slot."""
+    def narrowing(self, axis: int, operand: GAType) -> Extensor | None:
+        """What a type given for an input binds there: nothing where it is the axis's own type,
+        which leaves the axis open, and otherwise the identity map on it, which narrows the axis."""
         gatype = self._gatype
         space = operand.output_subspace
-        own = gatype.input_subspaces[slot]
-        if space.same_support(own) and operand.orientation is gatype.input_orientations[slot]:
+        own = gatype.input_subspaces[axis]
+        if space.same_support(own) and operand.orientation is gatype.input_orientations[axis]:
             return None
         if space not in own:
             raise TypeError(
-                f"slot {slot} takes {own}; {space} is not inside it, so a cast must say what is projected away"
+                f"axis {axis} takes {own}; {space} is not inside it, so a cast must say what is projected away"
             )
         return gatype.algebra.operator.identity(operand)
 
@@ -82,11 +82,11 @@ class Slots(_Queries):
 
 
 class Form(_Queries):
-    """A type read as a form, a scalar-valued map of two slots."""
+    """A type read as a form, a scalar-valued map of two axes."""
 
     @cached_property
     def is_square(self) -> bool:
-        """A form pairing one space with itself: the same blades and the same orientation in both slots."""
+        """A form pairing one space with itself: the same blades and the same orientation in both axes."""
         gatype = self._gatype
         return (gatype.is_form and gatype.subspaces[1].same_support(gatype.subspaces[2])
                 and gatype.orientations[1] is gatype.orientations[2])
@@ -109,11 +109,11 @@ class Form(_Queries):
 
 
 class OverSites(_Queries):
-    """A type with fields read as one map or form over the sites of its slots."""
+    """A type with fields read as one map or form over the sites of its axes."""
 
     @cached_property
     def is_square(self) -> bool:
-        """A map, or a scalar form of two slots, between one space over the same sites, either side
+        """A map, or a scalar form of two axes, between one space over the same sites, either side
         ranging over them."""
         gatype = self._gatype
         sites = dict(gatype.fields)
@@ -135,7 +135,7 @@ class OverSites(_Queries):
         return self._gatype.arity == 1 and rhs.output_subspace.support_is_subset_of(self._gatype.output_subspace)
 
     def is_form_system(self, rhs: GAType) -> bool:
-        """A scalar form of two slots against a scalar-valued extensor ending in the form's last slot."""
+        """A scalar form of two axes against a scalar-valued extensor ending in the form's last axis."""
         gatype = self._gatype
         scalar = gatype.algebra.subspace.scalar()
         return (

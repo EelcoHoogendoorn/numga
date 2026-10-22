@@ -41,14 +41,14 @@ def test_relation_factor_lattice_participates_in_refinement_and_dispatch():
     algebra = Algebra("x+y+")
     full = algebra.gatype.full()
     axes = (full, full, full)
-    one_relation = ProductRelation(ReverseProduct, ProductResult.ONE, slots=(0, 1))
+    one_relation = ProductRelation(ReverseProduct, ProductResult.ONE, axes=(0, 1))
     nonzero_relation = ProductRelation(
         ReverseProduct,
         ProductResult.NONZERO,
-        slots=(0, 1),
+        axes=(0, 1),
     )
-    scalar_relation = ProductRelation(ReverseProduct, ProductResult.SCALAR, slots=(0, 1))
-    zero_relation = ProductRelation(ReverseProduct, ProductResult.ZERO, slots=(0, 1))
+    scalar_relation = ProductRelation(ReverseProduct, ProductResult.SCALAR, axes=(0, 1))
+    zero_relation = ProductRelation(ReverseProduct, ProductResult.ZERO, axes=(0, 1))
 
     one = algebra.gatype(axes, (one_relation,))
     nonzero = algebra.gatype(axes, (nonzero_relation,))
@@ -88,7 +88,7 @@ def test_geometric_product_declares_conditional_reverse_product_relation():
     assert _relation(product.gatype) == ProductRelation(
         ReverseProduct,
         ProductResult.ONE,
-        slots=(0, 1),
+        axes=(0, 1),
     )
     # This is a relation, not an unconditional claim about every output.
     assert not product.gatype.entails(ReverseProductScalar)
@@ -108,7 +108,7 @@ def test_partial_binding_accumulates_known_reverse_product_factor():
     assert _relation(partial.gatype) == ProductRelation(
         ReverseProduct,
         ProductResult.NONZERO,
-        slots=(0,),
+        axes=(0,),
     )
 
 
@@ -172,7 +172,7 @@ def test_nested_product_substitutes_and_remaps_relations():
     assert _relation(ternary.gatype) == ProductRelation(
         ReverseProduct,
         ProductResult.ONE,
-        slots=(0, 1, 2),
+        axes=(0, 1, 2),
     )
 
     inner = full * full
@@ -181,7 +181,7 @@ def test_nested_product_substitutes_and_remaps_relations():
     assert _relation(repeated.gatype) == ProductRelation(
         ReverseProduct,
         ProductResult.ONE,
-        slots=(0, 1, 2, 3),
+        axes=(0, 1, 2, 3),
     )
 
 

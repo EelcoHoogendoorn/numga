@@ -1,6 +1,6 @@
 # 4. Sums of extensors
 
-Extensors with the same slots add as multivectors do: the sum takes values in its slots to the sum of the outputs. For example:
+Extensors with the same axes add as multivectors do: the sum takes values in its axes to the sum of the outputs. For example:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -30,28 +30,28 @@ y  1   1  0
 z  0   0  1
 ```
 
-Outputs of different grades add into their joint space, as with multivectors. The inner and the outer product with both slots open add up to the geometric product with both slots open, `Vector * Vector`:
+Outputs of different grades add into their joint space, as with multivectors. The inner and the outer product with both axes open add up to the geometric product with both axes open, `Vector * Vector`:
 
 ```python
 (Vector | Vector) + (Vector ^ Vector)
 ```
 
 ```text
-first slot x:
+first input x:
     x  y   z
 1   1  0   0
 yz  0  0   0
 zx  0  0  -1
 xy  0  1   0
 
-first slot y:
+first input y:
      x  y  z
 1    0  1  0
 yz   0  0  1
 zx   0  0  0
 xy  -1  0  0
 
-first slot z:
+first input z:
     x   y  z
 1   0   0  1
 yz  0  -1  0

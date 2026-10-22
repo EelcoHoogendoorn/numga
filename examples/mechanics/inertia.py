@@ -38,10 +38,10 @@ def second_moment(inertia: Extensor) -> Extensor:
     Plane = ga.gatype.vector()
     Bivector = ga.gatype.bivector()
     # This construction has type (AntiBivector <- Point, Plane, Bivector).
-    # Duality turns the second input into a point while keeping its plane slot.
+    # Duality turns the second input into a point while keeping its plane input.
     construction = Point & Plane.dual().commutator(Bivector)
     # The supplied inertia matches AntiBivector <- Bivector, leaving Point <- Plane
-    # as the unknown second-moment map: lstsq unbinds both unmatched slots at once,
+    # as the unknown second-moment map: lstsq unbinds both unmatched inputs at once,
     # inferring them from the types. The inertia has more entries than the second
     # moment, but the construction loses none of it: the system is overdetermined yet
     # consistent, and lstsq solves it exactly rather than fitting it.

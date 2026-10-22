@@ -1,6 +1,6 @@
 # Orientation in numga
 
-Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input slot. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
+Every `GAType` carries an orientation, `Orientation.extrinsic` or `Orientation.intrinsic`, on its output and on each input. Constructors set it, operations propagate it, sums and bindings check it, and the transform `>>` uses it to pick the sign of a reflection. Type comments use `+` for extrinsic and `-` for intrinsic. This page lists the rules; [Why orientation](why_orientation.md) explains why they are needed.
 
 ```python
 from numga import NumpyContext, Orientation
@@ -53,7 +53,7 @@ Resultant = Antibivector.derive.within("x y w")               # Antibivector-
 Spatial = ga.gatype(ga.subspace("x y z"), orientation=Orientation.extrinsic)  # Vector+
 ```
 
-`ga.gatype((Output, Input))` builds a map type from types that carry their own orientations, and refuses an `orientation=` argument. A printed type names the orientation of every slot: `intrinsic bivector <- extrinsic bivector` maps extrinsic bivectors to intrinsic ones. On a map type, `.derive.flipped_orientation` flips only the output.
+`ga.gatype((Output, Input))` builds a map type from types that carry their own orientations, and refuses an `orientation=` argument. A printed type names the orientation of every axis: `intrinsic bivector <- extrinsic bivector` maps extrinsic bivectors to intrinsic ones. On a map type, `.derive.flipped_orientation` flips only the output.
 
 ## Propagation
 
@@ -116,7 +116,7 @@ The three operations line up. Multiplying by the intrinsic scalar one keeps ever
 
 ## Maps
 
-Each slot of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:
+Each axis of a map carries its own orientation. The inertia of three unit masses takes an extrinsic rate of motion to an intrinsic momentum:
 
 ```python
 Inertia = ga.gatype((Antibivector, Bivector))                   # Antibivector- <- Bivector+
@@ -137,14 +137,14 @@ momentum: Antibivector = inertia(spin)                        # Antibivector-
 
 | Operation | Orientations |
 | --- | --- |
-| `f.inverse()`, `f.adjoint()` | slots swapped, each keeping its orientation |
-| `f.adjugate()` | slots swapped and complemented, each orientation flipped |
+| `f.inverse()`, `f.adjoint()` | axes swapped, each keeping its orientation |
+| `f.adjugate()` | axes swapped and complemented, each orientation flipped |
 | `f.trace()`, `f.contract()` on a unary map | same input and output blade support required; scalar orientation is the product of their signs |
 | `f.trace(i, j)` pairing two inputs | complementary spaces required; output orientation multiplied by the regressive pairing's orientation |
 | `f.contract(i, j)` pairing two inputs | the same space with an invertible metric required; output orientation multiplied by the metric pairing's orientation |
 | `f.outermorphism(Type)` | `Type` must match products of the map's inputs; products of its outputs determine the result |
 
-Pairing two inputs leaves the other slots unchanged. The inertia above is a correlation between two orientations of the same blade space, so its unary trace is intrinsic. Its adjugate has the same type as the inertia: swapping and then complementing the slots and flipping their orientations gives `intrinsic bivector <- extrinsic bivector` again.
+Pairing two inputs leaves the other axes unchanged. The inertia above is a correlation between two orientations of the same blade space, so its unary trace is intrinsic. Its adjugate has the same type as the inertia: swapping and then complementing the axes and flipping their orientations gives `intrinsic bivector <- extrinsic bivector` again.
 
 `det`, `eig`, `eigh` and `cholesky` accept endomorphisms or square scalar-valued forms. Inertia is neither, but pairing its output with a second rate gives its energy form:
 
@@ -159,7 +159,7 @@ A form's eigenvalues are measured against a metric form. Omitted, that metric is
 
 ## What is refused
 
-Sums, differences, stacks and concatenations need matching orientations on every slot; binding needs the input slot's orientation, and `solve` needs the output's. Mismatches raise `GATypeError`, a subclass of `TypeError`, before any kernel runs:
+Sums, differences, stacks and concatenations need matching orientations on every axis; binding needs the input's orientation, and `solve` needs the output's. Mismatches raise `GATypeError`, a subclass of `TypeError`, before any kernel runs:
 
 ```python
 spin + momentum                  # GATypeError: orientations differ

@@ -20,7 +20,7 @@ input_vector = (c | a) * b
 
 The two scalar-valued maps agree for every input. Each vector $c$ on the output side has a corresponding vector on the input side that gives the same inner products. Adding dyads adds those corresponding vectors, so the construction extends to every linear map on vectors.
 
-The corresponding vector can also be found by solving. The inner product with both slots open, `Vector | Vector`, takes a vector in its first slot to that vector's inner-product map. Solving it against `c | A` finds the vector giving those scalars. For the dyad of the example:
+The corresponding vector can also be found by solving. The inner product with both axes open, `Vector | Vector`, takes a vector in its first input to that vector's inner-product map. Solving it against `c | A` finds the vector giving those scalars. For the dyad of the example:
 
 ```python
 (Vector | Vector).solve(c | A) - input_vector
