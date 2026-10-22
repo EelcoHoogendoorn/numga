@@ -16,15 +16,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import cached_property
 
-import jax
 import numpy as np
 
 from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
 
-jax.config.update("jax_enable_x64", True)
-mv = JaxContext(ga, np.float64).multivector
+mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 # Positions, displacements and dipoles are directions in the plane, antivectors; the electric field

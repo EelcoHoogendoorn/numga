@@ -198,6 +198,9 @@ class Context(ABC):
         if value.context.is_exact and not self.is_exact:
             numeric = self.materialize(value._kernel)
             return Extensor._from_prepared_kernel(self, value.gatype, numeric)
+        if not value.context.is_exact and not self.is_exact:
+            # Between numeric backends, NumPy and JAX, the coefficients pass through host memory.
+            return Extensor(self, value.gatype, np.asarray(value.kernel))
         raise ValueError("cannot lower an Extensor from an incompatible Context")
 
     def execute_bind(

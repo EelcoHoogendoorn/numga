@@ -21,7 +21,6 @@ from numga.backend.jax import JaxContext, derivative
 from examples import instantiate
 from examples.mechanics import lie_integrators as lie
 
-jax.config.update("jax_enable_x64", True)
 core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D, JaxContext)
 mv = core.mv
 Bodies, Constraints, Direction, Force, Forque, Motor, Scalar, Twist = (

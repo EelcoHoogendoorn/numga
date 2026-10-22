@@ -10,6 +10,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+# Double precision, as on every other backend: the examples run on CPUs, where single precision buys little and
+# costs checks their round-off.
+jax.config.update("jax_enable_x64", True)
+
 from numga.extensor import Extensor
 
 from .context import Context, context_from_key
@@ -34,7 +38,7 @@ class JaxContext(Context):
     __slots__ = ("_algebra", "_dtype")
 
     def __init__(
-        self, algebra: Algebra | str, dtype: object = np.float32,
+        self, algebra: Algebra | str, dtype: object = np.float64,
         *, execution: Literal["dense", "sparse"] = "dense",
     ) -> None:
         from numga.algebra import Algebra

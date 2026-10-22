@@ -14,7 +14,6 @@ import numpy as np
 from numga.algebras import PGA3D
 from numga.backend.jax import JaxContext
 
-jax.config.update("jax_enable_x64", True)
 
 ga = PGA3D
 ctx = JaxContext(ga)

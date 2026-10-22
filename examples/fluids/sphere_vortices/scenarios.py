@@ -6,6 +6,7 @@ steps compared on the leapfrogging pairs."""
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 
 import numpy as np
 
@@ -62,7 +63,14 @@ def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
 
 
 def stepped(vortices: core.Vortices) -> core.Pivot:
-    return history(vortices, lambda current: core.midpoint(current, DT, N_SWEEPS), N_STEPS)
+    """The vortices' pivots at every step, each midpoint step compiled by `jax.jit`: a handful of vortices takes a
+    few hundred small operations a step, the rotor exponentials above all, which one compiled call does at once."""
+    import jax
+    from numga.backend.jax import JaxContext
+
+    step = jax.jit(lambda pivots: core.midpoint(replace(vortices, pivots=pivots), DT, N_SWEEPS).pivots)
+    compiled = replace(vortices, pivots=vortices.pivots.materialize(JaxContext(core.ga)))
+    return history(compiled, lambda current: replace(current, pivots=step(current.pivots)), N_STEPS).materialize(core.mv.context)
 
 
 def rings() -> list[core.Pivot]:

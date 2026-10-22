@@ -88,7 +88,7 @@ def swinging_chain(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tu
 
 
 def swinging_chain_jax(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tuple[Motor, Scalar]:
-    """The same chain in single precision, each step compiled by jax.jit. Needs JAX installed."""
+    """The same chain, each step compiled by jax.jit. Needs JAX installed."""
     import jax
     from numga.backend.jax import JaxContext
 

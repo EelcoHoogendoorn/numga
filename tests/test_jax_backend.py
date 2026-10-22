@@ -56,9 +56,7 @@ def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
     right = context.extensor(even, [[3, 4], [5, 6]])
 
     assert type(left) is Extensor
-    assert context.dtype == np.dtype(
-        jax.dtypes.canonicalize_dtype(np.dtype(np.float32))
-    )
+    assert context.dtype == np.dtype(np.float64)
     leaves, tree = jax.tree_util.tree_flatten(left)
     rebuilt = jax.tree_util.tree_unflatten(tree, leaves)
     assert len(leaves) == 1
@@ -74,7 +72,7 @@ def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
     traced = jax.jit(product)(left, right)
     vmapped = jax.jit(jax.vmap(product))(left, right)
 
-    expected = np.asarray([[-5, 10], [-9, 38]], dtype=np.float32)
+    expected = np.asarray([[-5, 10], [-9, 38]], dtype=np.float64)
     for result in (eager, traced, vmapped):
         assert type(result) is Extensor
         assert result.gatype is eager.gatype
