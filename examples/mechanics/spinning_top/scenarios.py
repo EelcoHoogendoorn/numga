@@ -74,7 +74,11 @@ def top(tip_radius: float, disc_height: float, disc_mass: float):
 
 
 def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Iterator[tuple]:
-    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps."""
+    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps. A frame's steps
+    run under `jax.lax.scan`: each is a few hundred small operations on one top, which the compiled loop does at once."""
+    import jax
+    from numga.backend.jax import JaxContext
+
     parts, inertia, inverse_inertia, mass, height = top(setup.tip_radius, setup.disc_height, setup.disc_mass)
     ground = core.bowl(setup.ground_curvature)
     origin = core.mv.point(np.zeros(3))
@@ -89,14 +93,21 @@ def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Ite
         weight = motor << ((motor >> origin) & core.mv(core.Direction, np.array([0.0, 0.0, -GRAVITY * mass])))
         return weight - inertia(rate) * setup.drag
 
-    for step in range(int(seconds / dt)):
-        before = motor
+    def substep(state: tuple[core.Motor, core.Rate], _) -> tuple[tuple[core.Motor, core.Rate], None]:
+        before, rate = state
         # Predict with a free step, then correct against the ground.
-        motor, rate = lie.explicit_rk4(motor, rate, inertia, inverse_inertia, dt, forces)
-        motor, rate = core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
-                                            STATIC_FRICTION, setup.dynamic_friction, dt)
-        if step % n_steps_per_frame == 0:
-            yield motor, rate, parts, ground
+        motor, rate = lie.explicit_rk4(before, rate, inertia, inverse_inertia, dt, forces)
+        return core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
+                                     STATIC_FRICTION, setup.dynamic_friction, dt), None
+
+    # A frame's contact steps compiled into one loop. The first step runs eagerly: it settles the type the start was
+    # built with into the one every step returns, which the loop carries.
+    frame = jax.jit(lambda state: jax.lax.scan(substep, state, length=n_steps_per_frame)[0])
+    (motor, rate), _ = substep((motor, rate), None)
+    state = (motor.materialize(JaxContext(core.ga)), rate.materialize(JaxContext(core.ga)))
+    for _ in range(int(seconds / dt) // n_steps_per_frame):
+        state = frame(state)
+        yield state[0].materialize(core.mv.context), state[1].materialize(core.mv.context), parts, ground
 
 
 def lean(motor: core.Motor) -> core.Scalar:
