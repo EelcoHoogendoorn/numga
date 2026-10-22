@@ -5,7 +5,7 @@ import pytest
 
 from numga import NumpyContext
 
-from examples.math.extensor_representations.scenarios import main
+from examples.math.extensor_representations.scenarios import representation
 
 
 @pytest.mark.parametrize("positive, negative, size", [
@@ -19,7 +19,7 @@ from examples.math.extensor_representations.scenarios import main
 ])
 def test_smallest_faithful_real_representation(positive, negative, size):
     """main checks every blade product, the unit, and faithfulness, including both split blocks."""
-    representations = main(positive, negative)
+    ga, Spinor, representations = representation(positive, negative)
     algebra_slot, state_slot = representations.input_subspaces
     assert algebra_slot.same_support(representations.algebra.subspace.full())
     assert state_slot.same_support(representations.output_subspace)
@@ -30,7 +30,7 @@ def test_smallest_faithful_real_representation(positive, negative, size):
     (2, 0), (3, 0), (3, 1), (0, 3), (4, 0), (5, 0),
 ])
 def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negative):
-    representations = main(positive, negative)
+    ga, Spinor, representations = representation(positive, negative)
     ga = representations.algebra
     algebra_slot, state_slot = representations.input_subspaces
     Full, Spinor = representations.gatype.derive.axis(1), representations.gatype.derive.axis(2)
