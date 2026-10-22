@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.fluids.sphere_vortices import core
 
 # Rings of equal vortices around the pole: their numbers, the angle from the pole to the ring, and the
@@ -37,8 +37,8 @@ DT = 0.05
 N_SWEEPS = 3
 N_STEPS = 1200
 N_COMPARED_STEPS = 100
-N_STEPS_PER_FRAME = 4
-DURATION_MS = 60
+N_STEPS_PER_FRAME = 8
+DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
@@ -63,14 +63,19 @@ def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
 
 
 def stepped(vortices: core.Vortices) -> core.Pivot:
-    """The vortices' pivots at every step, each midpoint step compiled by `jax.jit`: a handful of vortices takes a
-    few hundred small operations a step, the rotor exponentials above all, which one compiled call does at once."""
+    """The vortices' pivots at every step `[steps + 1, vortices] Pivot`, the midpoint steps compiled into one loop by
+    `jax.lax.scan`: a handful of vortices takes a few hundred small operations a step, the rotor exponentials above all,
+    which the compiled loop does at once."""
     import jax
     from numga.backend.jax import JaxContext
 
-    step = jax.jit(lambda pivots: core.midpoint(replace(vortices, pivots=pivots), DT, N_SWEEPS).pivots)
-    compiled = replace(vortices, pivots=vortices.pivots.materialize(JaxContext(core.ga)))
-    return history(compiled, lambda current: replace(current, pivots=step(current.pivots)), N_STEPS).materialize(core.mv.context)
+    def step(pivots: core.Pivot, _) -> tuple[core.Pivot, core.Pivot]:
+        later = core.midpoint(replace(vortices, pivots=pivots), DT, N_SWEEPS).pivots
+        return later, later
+
+    start = vortices.pivots.materialize(JaxContext(core.ga))                         # [vortices] Pivot
+    _, later = jax.lax.scan(step, start, length=N_STEPS)                            # [steps, vortices] Pivot
+    return concatenate([start[None], later]).materialize(core.mv.context)
 
 
 def rings() -> list[core.Pivot]:
