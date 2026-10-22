@@ -1,30 +1,27 @@
 """Drawing for vortices on the sphere, in the projective picture: every vortex at both of its antipodal
-points, the pair its bivector stands for. Each sphere is seen orthographically,
-so that its outline is a circle; a shaded disc for the sphere, the points as dots with fading trails
-behind them. What lies on the far side is left out: its antipode on the near side shows it.
+points, the pair its bivector stands for. Each sphere is ray traced on the GPU, the points on it as dots with trails
+behind them that fade into the sphere's colour. What lies on the far side is hidden by the sphere: its antipode on the
+near side shows it.
 """
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.collections import LineCollection
-from matplotlib.colors import to_rgba_array
+from matplotlib.colors import to_rgb
 
-from examples.animation import capture
 from examples.fluids.sphere_vortices import core
+from examples.wgsl import meshes, solids
 
-# One colour per vortex, repeating; the sphere's colour, its light's direction on the screen and the share
-# of light that falls everywhere; the trail's length in
-# steps, the line width and dot size; the shading's
-# resolution in pixels, and each sphere's size in inches.
-STRANDS = np.array(["#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe", "#d17a9b", "#5fa8d3", "#7f6a4f"])
+sm = solids.mv
+# One colour per vortex, repeating, and the sphere's colour; the trail's length in steps; the trails' width and the
+# dots' radius in pixels, the points around a trail, the pixels across a sphere, and the margin around it as a share
+# of its radius.
+STRANDS = np.array([to_rgb(colour) for colour in
+                    ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe", "#d17a9b", "#5fa8d3", "#7f6a4f")])
 SPHERE_COLOUR = np.array([0.90, 0.91, 0.93])
-LIGHT, AMBIENT = np.array([-0.4, 0.5, 0.77]), 0.55
 TRAIL = 240
-WIDTH, DOT = 1.6, 28
-RESOLUTION = 300
-SIZE = 3.0
+TRAIL_WIDTH, DOT_RADIUS, N_AROUND = 3.0, 4.0, 6
+N_PIXELS, MARGIN = 300, 0.08
 
 
 def coordinates(pivots: core.Pivot) -> np.ndarray:
@@ -33,56 +30,45 @@ def coordinates(pivots: core.Pivot) -> np.ndarray:
     return parts / np.linalg.norm(parts, axis=-1, keepdims=True)
 
 
-def screen(view: tuple[float, float]) -> np.ndarray:
-    """The right, up and toward-the-viewer directions `[3, 3]` of a view from (elevation, azimuth) in
-    degrees."""
-    elevation, azimuth = np.radians(view[0]), np.radians(view[1])
-    toward = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
-    right = np.cross([0.0, 0.0, 1.0], toward)
-    right /= np.linalg.norm(right)
-    return np.stack([right, np.cross(toward, right), toward])
-
-
-def shading() -> np.ndarray:
-    """The sphere as an RGBA image, lit from `LIGHT`, transparent outside its outline."""
-    across = np.linspace(-1, 1, RESOLUTION)
-    right, up = np.meshgrid(across, across[::-1])
-    inside = right**2 + up**2 < 1
-    normals = np.stack([right, up, np.sqrt(np.clip(1 - right**2 - up**2, 0, 1))], axis=-1)
-    light = AMBIENT + (1 - AMBIENT) * np.clip(normals @ (LIGHT / np.linalg.norm(LIGHT)), 0, 1)
-    return np.concatenate([SPHERE_COLOUR * light[..., None], inside[..., None].astype(float)], axis=-1)
+def trails(places: np.ndarray, pixel: float) -> tuple[solids.Point, np.ndarray, dict]:
+    """Every point's path through every step `[steps, points, 3]` as a tube a trail's width across: its vertices, its
+    triangles `[points, steps - 1, triangles, 3]`, a run of them per step, and their normals, built once."""
+    rings, faces = meshes.tube(np.moveaxis(places, 1, 0), TRAIL_WIDTH / 2 * pixel, N_AROUND)
+    return rings, faces.reshape(places.shape[1], places.shape[0] - 1, -1, 3), meshes.smooth(rings, faces)
 
 
 def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) -> list[np.ndarray]:
     """Frames of vortices on spheres side by side, one sphere per history `[steps, vortices]`, all of one
-    length, seen from (elevation, azimuth) in degrees, every vortex at both its antipodal points: a frame
-    every `every` steps, its trails through every step."""
-    frame = screen(view)
-    seen = [coordinates(pivots) @ frame.T for pivots in histories]              # [times, vortices, 3] each
-    # Each vortex and its antipode, in one colour.
-    seen = [np.concatenate([places, -places], axis=1) for places in seen]       # [times, 2 vortices, 3] each
-    disc = shading()
-    images = []
-    for time in range(0, len(seen[0]), every):
-        figure = plt.figure(figsize=(SIZE * len(seen), SIZE), dpi=90)
-        for index, places in enumerate(seen):
-            ax = figure.add_axes((index / len(seen), 0, 1 / len(seen), 1))
-            ax.imshow(disc, extent=(-1, 1, -1, 1), zorder=0)
-            colours = np.tile(np.resize(STRANDS, places.shape[1] // 2), 2)       # [2 vortices]
-            # The trail of the last steps on the near side, older parts fainter.
-            first = max(time - TRAIL, 0)
-            trail = places[first:time + 1]                                      # [trail, 2 vortices, 3]
-            segments = np.stack([trail[:-1, :, :2], trail[1:, :, :2]], axis=-2).reshape(-1, 2, 2)
-            age = np.broadcast_to(np.linspace(0, 1, len(trail))[1:, None], (len(trail) - 1, places.shape[1])).reshape(-1)
-            near = (trail[1:, :, 2] > 0).reshape(-1)
-            tints = to_rgba_array(np.broadcast_to(colours, (len(trail) - 1, places.shape[1])).reshape(-1))
-            tints[:, 3] = age
-            ax.add_collection(LineCollection(segments[near], colors=tints[near], linewidths=WIDTH, capstyle="round", zorder=1))
-            front = places[time, :, 2] > 0                                      # [2 vortices]
-            ax.scatter(places[time, front, 0], places[time, front, 1], c=colours[front], s=DOT, linewidths=0, zorder=2)
-            ax.set(xlim=(-1.08, 1.08), ylim=(-1.08, 1.08))
-            ax.set_aspect("equal")
-            ax.set_axis_off()
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    length, seen from (elevation, azimuth) in degrees, the azimuth measured from x, every vortex at both its antipodal
+    points: a frame every `every` steps, its trails through the last `TRAIL` steps, at least one, older parts fading
+    into the sphere. The spheres stand in a row across the view, all traced in one pass."""
+    elevation, azimuth = np.radians(view[0]), np.radians(view[1])
+    toward = np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
+    across = np.cross([0.0, 0.0, 1.0], toward)
+    across /= np.linalg.norm(across)
+    count = len(histories)
+    # Each sphere's centre along the row, two radii and the margins apart, the row about the origin.
+    centres = (2 * (1 + MARGIN) * (np.arange(count) - (count - 1) / 2))[:, None] * across   # [spheres, 3]
+    seen = solids.View(solids.aim(solids.origin, elevation, azimuth + np.pi / 2),
+                       np.array([count, 1.0]) * (1 + MARGIN), count * N_PIXELS)
+    # Each vortex and its antipode, in one colour, on its sphere in the row.
+    places = np.concatenate([np.concatenate([coordinates(pivots), -coordinates(pivots)], axis=1) + centre
+                             for pivots, centre in zip(histories, centres)], axis=1)   # [steps, points, 3]
+    n_points = [2 * pivots.shape[1] for pivots in histories]
+    colours = np.concatenate([STRANDS[np.arange(n) % (n // 2) % len(STRANDS)] for n in n_points])   # [points, 3]
+    rings, faces, normals = trails(places, seen.pixel)
+    balls = [(solids.ball(sm.point(centres), 1.0)[:, None], SPHERE_COLOUR)]
+
+    def frame(time: int) -> np.ndarray:
+        first, last = max(time - TRAIL, 0), max(time, 1)
+        # Each trail's vertex its vortex's colour, mixed with the sphere's the older it is.
+        age = np.clip((np.arange(places.shape[0]) - first) / max(last - first, 1), 0, 1)[None, :, None]   # [1, steps, 1]
+        shades = SPHERE_COLOUR + (colours[:, None] - SPHERE_COLOUR) * age        # [points, steps, 3]
+        shown = faces[:, first:last].reshape(-1, 3)                               # [faces, 3]
+        corners = np.repeat(shades.reshape(-1, 3), N_AROUND, axis=0)[shown]       # [faces, 3, 3]
+        corner_normals = {name: corner.reshape(faces.shape[:-1])[:, first:last].reshape(-1) for name, corner in normals.items()}
+        drawn = meshes.samples(rings, shown, corners, corner_normals, seen)
+        dots = solids.ball(sm.point(places[time]), DOT_RADIUS * seen.pixel)[:, None]
+        return solids.draw(balls + [(dots, colours)], seen, np.ones(3), meshes=[(*drawn, 1.0)])
+
+    return [frame(time) for time in range(0, places.shape[0], every)]

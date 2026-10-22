@@ -32,16 +32,21 @@ def capture(fig: plt.Figure) -> np.ndarray:
 
 
 def indexed(image: Image.Image, entries: np.ndarray, palette: Image.Image) -> Image.Image:
-    """An RGB image in a palette `[entries, 3]`, each colour its nearest entry, exactly: Pillow's own mapping looks
-    entries up at reduced precision, and moves a white background onto a near-white entry."""
-    # Each colour as one number, red, green and blue a byte each, for a fast count of the distinct ones.
-    codes, where = np.unique(np.asarray(image).reshape(-1, 3).astype(np.int32) @ np.array([1 << 16, 1 << 8, 1]),
-                             return_inverse=True)
-    colours = np.stack([codes >> 16, (codes >> 8) & 255, codes & 255], axis=-1)            # [colours, 3]
-    distances = ((colours[:, None, :] - entries[None, :, :].astype(np.int32)) ** 2).sum(axis=-1)
-    shown = Image.fromarray(distances.argmin(axis=1).astype(np.uint8)[where.reshape(-1)].reshape(image.height, image.width), "P")
-    shown.putpalette(palette.getpalette())
-    return shown
+    """An RGB image in a palette `[entries, 3]`: Pillow's own mapping, which looks entries up at reduced precision,
+    with every colour that is an entry exactly put on that entry, so that a white background stays white."""
+    shown = image.quantize(palette=palette, dither=Image.Dither.NONE)
+    # Each colour as one number, red, green and blue a byte each, looked up among the entries'.
+    weights = np.array([1 << 16, 1 << 8, 1])
+    codes = np.asarray(image).reshape(-1, 3).astype(np.int64) @ weights
+    order = np.argsort(entries.astype(np.int64) @ weights)
+    sorted_codes = (entries.astype(np.int64) @ weights)[order]
+    found = np.clip(np.searchsorted(sorted_codes, codes), 0, len(sorted_codes) - 1)
+    exact = sorted_codes[found] == codes
+    index = np.asarray(shown).reshape(-1).copy()
+    index[exact] = order[found[exact]]
+    fixed = Image.fromarray(index.astype(np.uint8).reshape(image.height, image.width), "P")
+    fixed.putpalette(palette.getpalette())
+    return fixed
 
 
 def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:

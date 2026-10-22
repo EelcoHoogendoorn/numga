@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import cache
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -10,7 +12,7 @@ from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
 from examples.quadrics.s3_raytracer.render import picture as trace
-from examples.wgsl import image_figure
+from examples.wgsl import Shader, image_figure, supersampled
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
@@ -64,13 +66,54 @@ def hues(fractions: np.ndarray) -> np.ndarray:
 
 
 # --- S² -------------------------------------------------------------------------------
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int, supersample: int) -> list[np.ndarray]:
-    """One frame per row of world forms: a pixel of the front hemisphere is a point of S², and it
-    belongs to a body where the body's primal form is negative. The spherical quadric is a cone
-    through the origin, so the front hemisphere already shows both halves."""
-    coordinates, inside, rim = hemisphere(resolution * supersample)
-    pixels = S2.mv.antivector(coordinates)
-    return [paint((pixels & bodies[:, None](pixels)) < 0.0, colors, inside, rim, supersample) for bodies in surfaces]
+source = """
+var<storage, read> quadrics: array<Quadric>;
+var<storage, read> colours: array<vec3<f32>>;
+var<uniform> disk: vec3<f32>;
+var<uniform> rim: vec3<f32>;
+var<uniform> background: vec3<f32>;
+
+alias Sample = vec3<f32>;
+
+// The share of the disk's radius inside its rim.
+const rim_start = 0.985;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place);
+    let squared = dot(across, across);
+    if (squared > 1) {
+        return background;
+    }
+    if (squared > rim_start) {
+        return rim;
+    }
+    // The point of S² under the sample, on the front hemisphere.
+    let point = (mv.x * across.x + mv.y * across.y + mv.z * sqrt(1 - squared)).dual();
+    var colour = disk;
+    for (var body = 0u; body < arrayLength(&quadrics); body++) {
+        if ((quadrics[body](point) & point) < 0) {
+            colour = colours[body];
+        }
+    }
+    return colour;
+}
+"""
+
+
+@cache
+def shader() -> Shader:
+    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric))
+
+
+def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> list[np.ndarray]:
+    """One frame per row of world forms, painted on the GPU, `resolution` pixels across: a sample of the front
+    hemisphere is a point of S², and it belongs to the last body whose primal form is negative there, as `paint`
+    paints on the CPU. The spherical quadric is a cone through the origin, so the front hemisphere already shows both
+    halves."""
+    painter = shader()
+    return [np.round(np.clip(painter((resolution, resolution), quadrics=bodies, colours=colors, disk=to_rgb(DISK),
+                                     rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)
+            for bodies in surfaces]
 
 
 def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:
