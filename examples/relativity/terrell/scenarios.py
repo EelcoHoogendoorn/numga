@@ -8,7 +8,6 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import concatenate
 from examples.relativity.terrell import core
 
 mv = core.mv
@@ -24,67 +23,37 @@ sightings = np.linspace(3 * np.pi / 4, np.pi / 4, n_frames)
 sphere_radius = 1.0
 half_width = 1.0
 height = 1.6
-# The samples along each edge of the cube, along each line of the sphere's grid and around its outline;
-# the longitudes of the grid's meridians and the latitudes of its parallels; the duration of a frame.
-n_edge = 16
-n_grid = 64
+# The angles between the sphere's meridians and between its parallels, and how far its parallels reach from its
+# equator; the samples around its outline in the checks; the duration of a frame.
+meridian_spacing = np.pi / 4
+parallel_spacing = np.pi / 6
+parallel_reach = np.pi / 3
 n_outline = 96
-grid_longitudes = np.arange(8) * np.pi / 4
-grid_latitudes = np.array([-np.pi / 3, -np.pi / 6, 0, np.pi / 6, np.pi / 3])
 duration_ms = 60
 
 
 # --- math -----------------------------------------------------------------------------
-def cube() -> tuple[core.Antivector, core.Antivector]:
-    """The cube's faces at rest: the boundary of each face `[6, 4 * edge]`, and each face's outward
-    normal `[6]`."""
-    # One edge of the top face, turned by quarter turns about the vertical into the face's boundary.
-    edge = up + travel + line_of_sight * np.linspace(-1, 1, n_edge, endpoint=False)  # [edge] Antivector
-    square = (mv.xy * (-np.arange(4)[:, None] * np.pi / 4)).exp() >> edge     # [4, edge] Antivector
-    # The top face turned onto each face: itself, upside down, and by quarter turns towards the four sides.
-    turns = (mv.zx * (-np.array([0, 2, 1, -1, 0, 0]) * np.pi / 4)
-             + mv.yz * (-np.array([0, 0, 0, 0, 1, -1]) * np.pi / 4)).exp()     # [6] Rotor
-    boundary = turns[:, None] >> square.reshape(4 * n_edge)                    # [6, 4 * edge] Antivector
-    return -height * up + half_width * boundary, turns >> up
-
-
-def globe() -> core.Antivector:
-    """The sphere's grid at rest, its meridians and then its parallels `[lines, grid]`."""
-    latitudes = np.linspace(-np.pi / 2, np.pi / 2, n_grid)
-    longitudes = np.linspace(0, 2 * np.pi, n_grid)
-    # A direction at a latitude and a longitude: turned up out of the motion, then about the vertical.
-    meridians = (mv.xy * (-grid_longitudes[:, None] / 2)).exp() >> ((mv.zx * (latitudes / 2)).exp() >> travel)
-    parallels = (mv.xy * (-longitudes / 2)).exp() >> ((mv.zx * (grid_latitudes[:, None] / 2)).exp() >> travel)
-    return height * up + sphere_radius * concatenate([meridians, parallels])          # [lines, grid] Antivector
-
-
-def frames() -> Iterator[tuple[core.Antivector, core.Scalar, core.Antivector, core.Scalar, core.Antivector]]:
-    """Per frame, in every case `[cases]`: the rays from the boundary of each face of the cube and how far
-    the face turns towards the camera, the rays from the sphere's grid and how far each point of it
-    turns towards the camera, and the rays grazing the sphere."""
+def cameras() -> Iterator[core.Antivector]:
+    """Per frame, where the camera is in each body's frame `[cases]` when the centre of the pair is seen along that
+    frame's line of sight."""
     frame = core.boost(body_speeds)                                                 # [cases] Rotor
-    faces, normals = cube()                                                    # [6, 4 * edge], [6] Antivector
-    grid = globe()                                                             # [lines, grid] Antivector
-    face_centres = -height * up + half_width * normals                         # [6] Antivector
-    sphere = height * up                                                       # [] Antivector
-    angles = np.linspace(0, 2 * np.pi, n_outline + 1)
     for sighting in sightings:
-        # Where the camera is in each body's frame when the centre of the pair is seen along this line.
-        camera = core.rest_camera(frame, core.sighting(track_distance, sighting))    # [cases] Antivector
-        outline = core.outline(camera, sphere, sphere_radius, angles)                 # [cases, outline + 1] Antivector
-        yield (frame[:, None, None] >> core.rays(camera[:, None, None], faces),
-               core.facing(camera[:, None], face_centres, normals),
-               frame[:, None, None] >> core.rays(camera[:, None, None], grid),
-               core.facing(camera[:, None, None], grid, grid - sphere),
-               frame[:, None] >> core.rays(camera[:, None], outline))
+        yield core.rest_camera(frame, core.sighting(track_distance, sighting))     # [cases] Antivector
+
+
+def photographs(cameras: Iterator[core.Antivector]) -> list[np.ndarray]:
+    """The pair photographed from each of the cameras, one lane per speed."""
+    from examples.relativity.terrell import render
+
+    return render.animate_photographs(core.boost(body_speeds), cameras, height * up, sphere_radius, -height * up,
+                                      half_width, meridian_spacing, parallel_spacing, parallel_reach)
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.animation import save_animation
-    from examples.relativity.terrell import render
 
-    save_animation(render.animate_photographs(frames()), "terrell_rotation", duration_ms)
+    save_animation(photographs(cameras()), "terrell_rotation", duration_ms)
 
     # checks
     # Seen at right angles to its motion, the body is photographed from behind the perpendicular, by the
@@ -95,7 +64,10 @@ def main() -> None:
     np.testing.assert_allclose(leaning.to_array(), -body_speeds, atol=1e-12)
     # The sphere's outline is a circle on the sky in every frame: its rays lie in one hyperplane through
     # the camera, so the join of any four of them vanishes.
-    *_, outline = next(iter(frames()))                                         # [cases, outline + 1] Antivector
+    camera = core.rest_camera(frame, core.sighting(track_distance, sightings[0]))   # [cases] Antivector
+    angles = np.linspace(0, 2 * np.pi, n_outline + 1)
+    grazing = core.outline(camera, height * up, sphere_radius, angles)             # [cases, outline + 1] Antivector
+    outline = frame[:, None] >> core.rays(camera[:, None], grazing)              # [cases, outline + 1] Antivector
     # Each ray scaled to one unit of the camera's time.
     points = outline / (mv.t & outline)                                        # [cases, outline + 1] Antivector
     quarter = n_outline // 4

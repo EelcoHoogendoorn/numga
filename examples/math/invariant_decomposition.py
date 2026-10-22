@@ -11,7 +11,7 @@ and at each root `square` the plane is `(triple + square * bivector) * (pair + s
 That inverse is of a scalar plus a quadvector, whose powers stay scalar plus quadvector: it satisfies
 a quartic, so the inverse is a cubic in it.
 
-From the map `(Vector | bivector) | bivector`, with the vector left open: its eigenvalues are the same
+From the linear map `(Vector | bivector) | bivector`: its eigenvalues are the same
 squares, each twice, and each pair of eigenvectors spans one plane. For a unit direction `u` in a plane,
 `u | bivector` sees only that plane, so `u ^ (u | bivector)` is the plane itself.
 
@@ -38,11 +38,13 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 from numga import Algebra, NumpyContext, stack
 from numga.gatype import GAType
 from numga.gatype import ReverseProductOne, Versor
 from examples.animation import capture
+from examples.wgsl import compose, meshes, solids
 
 ga = Algebra("x+y+z+w+v+u+")
 mv = NumpyContext(ga).multivector
@@ -106,8 +108,8 @@ def placed(motion: ProjectiveBivector) -> tuple[ProjectiveBivector, ProjectiveBi
     """The commuting planes of a bivector of the projective algebra, placed in space, and the part left
     over. The planes' directions are the spectral planes of its Euclidean part. Each plane's placement
     is the null bivector that makes it commute with the motion and keeps it simple: both conditions are
-    linear in the placement, one a bivector and the other a quadvector, and a single least-squares
-    solve with the placement left open meets them together."""
+    linear in the placement, one a bivector and the other a quadvector. Their sum is a map from
+    placements to both conditions, whose least-squares solve satisfies them together."""
     euclidean = motion.cast(EuclideanBivector)                                 # [...] EuclideanBivector
     _, turning = from_spectrum(euclidean, EuclideanVector)                     # [..., 3] EuclideanBivector
     conditions = (NullBivector.commutator(motion[..., None]) + (turning ^ NullBivector)).cast(Conditions)   # [..., 3] Conditions <- NullBivector
@@ -169,6 +171,17 @@ def main(frames: int, seed: int) -> tuple[Bivector, Vector, Vector]:
 
 
 # --- plumbing -------------------------------------------------------------------------
+# The tangle's view, elevation and azimuth in radians, azimuth zero looking along +y; its margin, as a share of its
+# larger side; the pixels across it; the radii of the orbit's tube and of the moving point, in pixels, and the
+# tube's sides; the orbit's colour up to the moment and after it.
+tangle_elevation, tangle_azimuth = np.radians([30.0, 30.0])
+tangle_margin = 0.16
+n_tangle_pixels = 480
+tube_radius, marker_radius = 2.2, 5.5
+n_around = 8
+trail_colour, orbit_colour = np.array(to_rgb("#7d3c98")), np.array(to_rgb("0.8"))
+
+
 def half_turns(squares: Scalar, times: np.ndarray) -> tuple[Scalar, Scalar]:
     """For each time and plane: the cosine of half the plane's angle, and its sine over the plane's
     rate, the square root of minus its square."""
@@ -197,14 +210,25 @@ def plane_axes(circles: Vector, parts: Bivector) -> tuple[Vector, Vector]:
     return first, (first | parts).normalized()
 
 
+def tangle_image(path: np.ndarray, index: int) -> np.ndarray:
+    """The orbit through its first three directions, `[times, 3]`, as a tube, purple up to one moment and grey
+    after it, with the point at that moment as a ball, from a fixed view that frames the whole orbit."""
+    places = solids.mv.point(path)                                             # [times] Point
+    view = solids.view([places], 0.0, tangle_elevation, tangle_azimuth, tangle_margin, n_tangle_pixels)
+    rings, faces = meshes.tube(path[None], tube_radius * view.pixel, n_around)
+    # Each ring sits at one time of the orbit: its corners are purple up to the moment, grey after it.
+    passed = np.arange(len(path)).repeat(n_around)[faces] <= index             # [faces, 3]
+    colours = np.where(passed[..., None], trail_colour, orbit_colour)         # [faces, 3, 3]
+    orbit = meshes.layer(rings, faces, colours, meshes.smooth(rings, faces), view)
+    moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view)
+    return compose([(*orbit, 1.0), (*moment, 1.0)], np.ones(3))
+
+
 def draw(points: Vector, circles: Vector, parts: Bivector, index: int) -> plt.Figure:
     """The orbit in the first three directions, and in each of the three planes, up to one moment."""
     figure = plt.figure(figsize=(12, 4.6))
-    tangle = figure.add_axes((0.0, 0.0, 0.4, 1.0), projection="3d")
-    path = components(points, "x y z")                                         # [times, 3]
-    tangle.plot(*path.T, color="0.8", linewidth=0.8)
-    tangle.plot(*path[: index + 1].T, color="#7d3c98", linewidth=1.5)
-    tangle.scatter(*path[index], color="#7d3c98", s=30)
+    tangle = figure.add_axes((0.0, 0.0, 0.4, 1.0))
+    tangle.imshow(tangle_image(components(points, "x y z"), index))
     tangle.set_axis_off()
     figure.text(0.2, 0.9, "x, y and z", ha="center", fontsize=12)
     across, along = plane_axes(circles, parts)
