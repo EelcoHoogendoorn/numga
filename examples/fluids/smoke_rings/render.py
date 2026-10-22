@@ -10,7 +10,7 @@ import numpy as np
 
 from numga import stack
 from examples.fluids.smoke_rings import core
-from examples.wgsl import compose, image_figure, meshes, solids
+from examples.wgsl import image_figure, meshes, solids
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
 # curves' colours by speed, from blue at rest to green at the fastest, the stretch of the map light enough to show its
@@ -65,18 +65,19 @@ def framed(points: np.ndarray, pixels: int) -> tuple[solids.View, np.ndarray]:
 
 def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
           view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, as a layer."""
+    """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample
+    of the view."""
     corners = places(points)
-    return meshes.layer(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
+    return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
 
 
-def curves_layer(points: np.ndarray, speeds: np.ndarray, fastest: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Polylines `[curves, n, 3]` as tubes, coloured by the speed at each vertex `[curves, n]` against the fastest, as
-    a layer."""
+def curve_tubes(points: np.ndarray, speeds: np.ndarray, fastest: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """Polylines `[curves, n, 3]` as tubes, coloured by the speed at each vertex `[curves, n]` against the fastest, at
+    every sample of the view."""
     rings, faces = meshes.tube(points, tube_radius * view.pixel, n_around)
     shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * speeds / fastest)[..., :3]   # [curves, n, 3]
     corners = np.repeat(shades.reshape(-1, 3), n_around, axis=0)[faces]       # [faces, 3, 3]
-    return meshes.layer(rings, faces, corners, meshes.smooth(rings, faces), view, gloss=curve_gloss)
+    return meshes.samples(rings, faces, corners, meshes.smooth(rings, faces), view, gloss=curve_gloss)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
@@ -86,7 +87,8 @@ def draw_surface(curves: core.Point) -> plt.Figure:
     share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
     view, _ = framed(points, n_picture_pixels)
-    return image_figure(compose([(*sheet(points.reshape(-1, 3), faces, colours, view), 1.0)], background))
+    surface = sheet(points.reshape(-1, 3), faces, colours, view)
+    return image_figure(solids.draw([], view, background, meshes=[(*surface, 1.0)]))
 
 
 def draw_swept(curves: core.Point) -> plt.Figure:
@@ -101,8 +103,8 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     offsets = np.arange(len(rings))[:, None, None, None, None] * np.prod(rings.shape[1:3])
     faces = (strips(rings[0]) + offsets)[kept].reshape(-1, 3)                  # [faces, 3]
     colours = np.broadcast_to(tubes[:, None, None, None, None, :], kept.shape + (2, 3, 3))[kept].reshape(-1, 3, 3)
-    layer = sheet(rings.reshape(-1, 3), faces, colours, view)
-    return image_figure(compose([(*layer, 1.0)], background))
+    swept = sheet(rings.reshape(-1, 3), faces, colours, view)
+    return image_figure(solids.draw([], view, background, meshes=[(*swept, 1.0)]))
 
 
 def animate_curves(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
@@ -110,9 +112,9 @@ def animate_curves(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
     one scale."""
     points, rates = coordinates(curves), speeds.to_array()                     # [times, ..., n, 3], [times, ..., n]
     view, _ = framed(points, n_frame_pixels)
-    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), rate.reshape(-1, points.shape[-2]),
-                                    rates.max(), view), 1.0)], background)
-            for curve, rate in zip(points, rates)]
+    flowing = (curve_tubes(curve.reshape(-1, *points.shape[-2:]), rate.reshape(-1, points.shape[-2]), rates.max(), view)
+               for curve, rate in zip(points, rates))
+    return [solids.draw([], view, background, meshes=[(*frame, 1.0)]) for frame in flowing]
 
 
 def animate_trail(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
@@ -133,10 +135,10 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
     images = []
     for time in range(len(points)):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        layers = [(*curves_layer(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(), view), 1.0)]
+        shown = [(*curve_tubes(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(), view), 1.0)]
         if len(swept):
-            layers.append((*sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
-        images.append(compose(layers, background))
+            shown.append((*sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
+        images.append(solids.draw([], view, background, meshes=shown))
     return images
 
 

@@ -10,7 +10,7 @@ from matplotlib.figure import Figure
 
 from examples.animation import capture
 from examples.quantum.superconductivity import core
-from examples.wgsl import compose, labels, meshes, solids
+from examples.wgsl import labels, meshes, solids
 
 sm = solids.mv
 INK = "#263b51"
@@ -104,9 +104,8 @@ def animate_quench(
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
     view, axes, circles = chart(energies)
-    scenery = [(*solids.layer(axes, view), 1.0),
-               (*meshes.tubes([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
-                CIRCLE_OPACITY)]
+    rings = (*meshes.tube_samples([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
+             CIRCLE_OPACITY)
 
     def arrows(coherence: np.ndarray) -> np.ndarray:
         """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
@@ -114,11 +113,10 @@ def animate_quench(
         tips = origins + np.concatenate([np.zeros((len(coherence), 1)), coherence], axis=-1)
         shafts, heads = solids.arrows(sm.point(origins), sm.point(tips), STEM_WIDTH / 2 * view.pixel,
                                       STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
-        stems = solids.layer([(shafts, colours), (heads, colours),
-                              (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))],
-                             view)
-        path = meshes.tubes([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view, N_AROUND)
-        return compose([*scenery, (*stems, 1.0), (*path, PATH_OPACITY)], np.ones(3))
+        stems = [(shafts, colours), (heads, colours),
+                 (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
+        path = meshes.tube_samples([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view, N_AROUND)
+        return solids.draw(axes + stems, view, np.ones(3), meshes=[rings, (*path, PATH_OPACITY)])
 
     figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
     axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))

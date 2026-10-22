@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.graphene import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 sm = solids.mv
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
@@ -100,12 +100,11 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
                        MARGIN, N_PIXELS)
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(corner, (3, 3))), sm.point(tips), AXIS_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    axes = solids.layer([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view)
-    bands = [meshes.layer(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2)
+    bands = [(*meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2), 1.0)
              for places, shade in sheets]
     figure = plt.figure(figsize=(8, 8 * view.half[1] / view.half[0]))
     ax = figure.add_axes((0, 0, 1, 1))
-    show(ax, compose([(*axes, 1.0)] + [(*band, 1.0) for band in bands], np.ones(3)), view)
+    show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), meshes=bands), view)
     # Each arrow named just past its tip.
     for place, name, offset, align in zip(view.across(sm.point(tips)), ("momentum x", "momentum y", "energy"),
                                           ((8, 0), (0, 8), (0, 8)), ("left", "center", "center")):

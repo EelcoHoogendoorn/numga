@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.quantum.neutrino_isospin import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 mv, sm = core.mv, solids.mv
 # The flavors at the poles, the electron's and the muon's, and their colours.
@@ -21,17 +21,17 @@ FLAVORS = stack((core.flavor_e, core.flavor_mu))                             # [
 flavor_colours = np.array([to_rgb("#0284c7"), to_rgb("#e11d48")])
 path_colour, start_colour, end_colour = np.array(to_rgb("#6366f1")), np.array(to_rgb("#10b981")), np.array(to_rgb("#f59e0b"))
 plane_colour, axis_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
-sphere_colour, sphere_opacity = np.array(to_rgb("#cbd5e1")), 0.2
-grid_colour, grid_opacity = np.array(to_rgb("#94a3b8")), 0.35
+sphere_colour, sphere_opacity = np.array(to_rgb("#cbd5e1")), 0.1
+grid_colour, grid_opacity = np.array(to_rgb("#94a3b8")), 0.5
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view of
 # the sphere, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(35.0), np.radians(100.0)
 LIMIT, N_PIXELS = 1.3, 560
-# The points along each great circle drawn and around a tube; the widths of the grid's circles, the path and the
+# The points around a tube; the widths of the grid's circles, the path and the
 # plane's circle, and the radii of the axes' dots, the circle's dots, the flavors' markers and the path's ends, a
 # little larger to show over a flavor's, in pixels; the dots along each axis and around the dotted circle; how far
 # the axes and the flavors' names reach, in radii of the sphere.
-CIRCLE_POINTS, N_AROUND = 120, 8
+N_AROUND = 8
 GRID_WIDTH, PATH_WIDTH, PLANE_WIDTH = 2.0, 4.2, 3.6
 AXIS_DOT_RADIUS, CIRCLE_DOT_RADIUS, FLAVOR_RADIUS, END_RADIUS = 1.6, 2.2, 5.0, 6.5
 N_AXIS_DOTS, N_CIRCLE_DOTS = 41, 90
@@ -49,38 +49,40 @@ def electron_probability(trajectory: core.Vector) -> np.ndarray:
     return (1.0 + coordinates(trajectory)[..., 2]) * 0.5
 
 
-def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector) -> tuple[list[tuple], solids.View]:
-    """What stays put on the flavor sphere, as layers to compose: the sphere, translucent, with its equator and two
-    meridians, its axes dotted, its flavors at the poles, and the plane the vector turns in at the start, dotted,
-    and at the end; with the view."""
+def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector) -> tuple[list, list, list, solids.View]:
+    """What stays put on the flavor sphere: its axes dotted, its flavors at the poles, and the plane the vector turns
+    in at the start, dotted, as opaque parts; the sphere, translucent; its equator and two meridians, and the plane
+    the vector turns in at the end, as great circles to ink on it, each the planes cutting it, their colour, width and
+    opacity; and the view."""
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS)
-    # The equator and two meridians: the great circles square to x, y and z.
-    grid = [(circle, grid_colour) for circle in meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3), CIRCLE_POINTS)]
     along = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None, None] * np.eye(3)    # [dots, 3, 3]
-    # The great circles in the planes the vector turns in, square to their duals; the start's dotted, every point of
-    # it but the last, which closes it onto the first.
+    # The great circle in the plane the vector turns in at the start, square to its dual, every point of it but the
+    # last, which closes it onto the first.
     dotted = meshes.circles(np.zeros(3), np.array(1.0), coordinates(start_plane.dual()), N_CIRCLE_DOTS)[:-1]  # [dots, 3]
-    end_circle = meshes.circles(np.zeros(3), np.array(1.0), coordinates(end_plane.dual()), CIRCLE_POINTS)
-    dots = solids.layer([(solids.ball(sm.point(points), radius * view.pixel)[:, None], colour)
-                         for points, radius, colour in ((along.reshape(-1, 3), AXIS_DOT_RADIUS, axis_colour),
-                                                        (dotted, CIRCLE_DOT_RADIUS, plane_colour),
-                                                        (coordinates(FLAVORS), FLAVOR_RADIUS, flavor_colours))], view)
-    ball = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], sphere_colour)], view)
-    return [(*ball, sphere_opacity),
-            (*meshes.tubes(grid, GRID_WIDTH, view, N_AROUND), grid_opacity),
-            (*dots, 1.0),
-            (*meshes.tubes([(end_circle, plane_colour)], PLANE_WIDTH, view, N_AROUND), 1.0)], view
+    parts = [(solids.ball(sm.point(points), radius * view.pixel)[:, None], colour)
+             for points, radius, colour in ((along.reshape(-1, 3), AXIS_DOT_RADIUS, axis_colour),
+                                            (dotted, CIRCLE_DOT_RADIUS, plane_colour),
+                                            (coordinates(FLAVORS), FLAVOR_RADIUS, flavor_colours))]
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
+    # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the vector turns in at the
+    # end, through the centre square to its dual.
+    end_circle = solids.plane(coordinates(end_plane.dual())[None], np.zeros(1))  # [1] Plane
+    circles = [(solids.axes, grid_colour, GRID_WIDTH, grid_opacity), (end_circle, plane_colour, PLANE_WIDTH, 1.0)]
+    return parts, ball, circles, view
 
 
-def draw_sphere(ax, sphere: tuple[list[tuple], solids.View], trajectory: core.Vector) -> None:
+def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: core.Vector) -> None:
     """The flavor sphere and the isospin vector's path over it, from its start, green, to its end, orange, with
     the flavors named at the poles."""
-    backdrop, view = sphere
+    parts, ball, circles, view = sphere
     path = coordinates(trajectory)                                           # [steps, 3]
-    tube = meshes.tubes([(path, path_colour)], PATH_WIDTH, view, N_AROUND)
-    ends = solids.layer([(solids.ball(sm.point(path[[0, -1]]), END_RADIUS * view.pixel)[:, None],
-                          np.stack([start_colour, end_colour]))], view)
-    show(ax, compose(backdrop + [(*tube, 1.0), (*ends, 1.0)], np.ones(3)), view)
+    tube = meshes.tube_samples([(path, path_colour)], PATH_WIDTH, view, N_AROUND)
+    ends = (solids.ball(sm.point(path[[0, -1]]), END_RADIUS * view.pixel)[:, None], np.stack([start_colour, end_colour]))
+    opaque = parts + [ends]
+    # The great circles inked on the ball, the first part after the opaque ones.
+    inks = [solids.Ink(len(opaque), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
+                       colour, width, opacity) for planes, colour, width, opacity in circles]
+    show(ax, solids.draw(opaque, view, np.ones(3), inks, translucent=ball, meshes=[(*tube, 1.0)]), view)
     # The flavors named just past the poles, where the camera sees them.
     for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * coordinates(FLAVORS))),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):

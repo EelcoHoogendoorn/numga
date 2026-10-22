@@ -1,5 +1,5 @@
 """Light-ray incidence, the Robinson congruence, and linked electromagnetic field lines, drawn on the GPU: curves
-as tubes, events as balls, and the spacetime diagram's axes as labelled arrows."""
+as tubes, events as balls, rays as rods, and the spacetime diagram's axes as labelled arrows."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.animation import capture
 from examples.relativity.twistors import core
-from examples.wgsl import compose, image_figure, labels, meshes, show, solids
+from examples.wgsl import image_figure, labels, meshes, show, solids
 
 sm = solids.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
@@ -57,8 +57,8 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
     """Each spatial curve as a tube of a width in pixels, in its own colour."""
     points = spatial(curves)
     points = points.reshape((-1,) + points.shape[-2:])                        # [curves, samples, 3]
-    tubes = meshes.tubes(list(zip(points, colours(len(points)))), width, view, N_AROUND)
-    return compose([(*tubes, 1.0)], BACKGROUND)
+    tubes = meshes.tube_samples(list(zip(points, colours(len(points)))), width, view, N_AROUND)
+    return solids.draw([], view, BACKGROUND, meshes=[(*tubes, 1.0)])
 
 
 def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
@@ -73,12 +73,12 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     figure = plt.figure(figsize=(10, 5), facecolor="white")
     for column, (points, line) in enumerate(zip(positions, lines)):
-        ray = meshes.tubes([(line, to_rgb(BLUE))], RAY_WIDTH, view, N_AROUND)
-        marks = solids.layer([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
-                              (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))],
-                             view)
+        # The ray, straight, as a rod from its first sample to its last.
+        ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Quadric
+        marks = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ray, to_rgb(BLUE)),
+                 (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
         ax = figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))
-        show(ax, compose([(*ray, 1.0), (*marks, 1.0)], BACKGROUND), view)
+        show(ax, solids.draw(marks, view, BACKGROUND), view)
         # Each axis named just past its arrow's tip.
         labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=12, color=AXIS_COLOUR)
     return figure

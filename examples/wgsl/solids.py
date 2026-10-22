@@ -64,6 +64,12 @@ var<storage, read> ink_quadrics: array<Quadric>;
 // Where each ink shows: where its region's quadric pairs negatively with the point.
 var<storage, read> ink_regions: array<Quadric>;
 var<uniform> pixel: f32;
+// Meshes drawn at every sample of every pixel, mesh after mesh, each sample one cell of a grid `samples_per_side` to a
+// pixel's side, rows first: its colour, premultiplied by how much of what lies behind it it hides, and its depth along
+// the view, weighted alike, both zero where the mesh shows nothing.
+var<storage, read> mesh_colours: array<vec4<f32>>;
+var<storage, read> mesh_depths: array<f32>;
+var<uniform> n_meshes: u32;
 // A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the
 // image half as high as this.
 var<uniform> camera: Motor;
@@ -89,6 +95,9 @@ const tolerance = 1e-5;
 // The most surfaces a ray sees through, nearest first, and how little light may pass for it to stop looking.
 const n_layers = 8u;
 const opaque = 0.004;
+// Surfaces closer along a ray than this share of a pixel lie at one depth, and are taken in the order of their solids,
+// then their meshes: every surface is seen once, coincident ones included.
+const tie = 0.01;
 
 struct Hit {
     distance: f32,
@@ -107,9 +116,21 @@ fn inside_others(solid: Solid, own: u32, point: Point) -> bool {
     return true;
 }
 
-// The first point a ray meets on a solid's surface beyond a distance along it: on one of its quadrics, and inside
-// all the others.
-fn first_hit(start: Point, direction: Point, beyond: f32) -> Hit {
+// Whether a surface, by its distance along a ray and its place in the order of surfaces, comes after another.
+fn after(distance: f32, order: u32, last_distance: f32, last_order: u32) -> bool {
+    let close = tie * pixel;
+    return distance > last_distance + close || (abs(distance - last_distance) <= close && order > last_order);
+}
+
+// Whether a surface comes before another, among those after the last seen.
+fn before(distance: f32, order: u32, other_distance: f32, other_order: u32) -> bool {
+    let close = tie * pixel;
+    return distance < other_distance - close || (abs(distance - other_distance) <= close && order < other_order);
+}
+
+// The first point a ray meets on a solid's surface after the last surface seen, by distance and then by the solids'
+// order: on one of its quadrics, and inside all the others.
+fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32) -> Hit {
     var hit = Hit(far, mv.z, vec3<f32>(0.0), 0.0, 0u);
     for (var index = 0u; index < arrayLength(&solids); index++) {
         let solid = solids[index];
@@ -129,7 +150,8 @@ fn first_hit(start: Point, direction: Point, beyond: f32) -> Hit {
             for (var which = 0u; which < 2u; which++) {
                 let distance = roots[which];
                 let point = start + direction * distance;
-                if (distance > beyond && distance < hit.distance && inside_others(solid, own, point)) {
+                if (after(distance, index, last_distance, last_order) && before(distance, index, hit.distance, hit.solid)
+                    && inside_others(solid, own, point)) {
                     // The quadric's plane at a point of its surface is the tangent plane there.
                     hit = Hit(distance, quadric(point), solid.colour, solid.opacity, index);
                 }
@@ -139,11 +161,22 @@ fn first_hit(start: Point, direction: Point, beyond: f32) -> Hit {
     return hit;
 }
 
-// A hit's colour and opacity with the lines inked on its solid: the distance along the surface to an ink's zero set
-// is its pairing with the point over the part of its gradient along the surface, the quadric's plane there less its
-// part along the normal.
-fn inked(hit: Hit, point: Point, normal: Plane) -> vec4<f32> {
+// A hit's colour and opacity with the lines inked on its solid, and whether one covers it: the distance along the
+// surface to an ink's zero set is its pairing with the point over the part of its gradient along the surface, the
+// quadric's plane there less its part along the normal.
+// A surface's colour and opacity, and whether an ink covers it there.
+struct Painted {
+    colour: vec4<f32>,
+    inked: bool,
+}
+
+// The share of an ink's own colour it keeps whatever the light, so that a line on a surface turned from the lamp
+// still reads in its colour, while the rest takes the surface's shading.
+const ink_own = 0.5;
+
+fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
     var colour = vec4<f32>(hit.colour, hit.opacity);
+    var painted = false;
     for (var index = 0u; index < arrayLength(&inks); index++) {
         let ink = inks[index];
         let gradient = ink_quadrics[index](point) * 2;
@@ -152,8 +185,9 @@ fn inked(hit: Hit, point: Point, normal: Plane) -> vec4<f32> {
         let within = (ink_regions[index](point) & point) <= tolerance;
         let covers = hit.solid >= ink.first && hit.solid < ink.end && within && distance < ink.width / 2 * pixel;
         colour = select(colour, vec4<f32>(ink.colour, ink.opacity), covers);
+        painted = painted || covers;
     }
-    return colour;
+    return Painted(colour, painted);
 }
 
 // A hit's colour, lit by the lamp, the sky and the viewer, and its opacity.
@@ -166,30 +200,76 @@ fn shade(hit: Hit, start: Point, direction: Point) -> vec4<f32> {
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
     let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
     let surface = inked(hit, start + direction * hit.distance, normal);
-    return vec4<f32>(surface.rgb * (fill + (1 - ambient - headlight) * light) + gloss * glint, surface.a);
+    let lit = surface.colour.rgb * (fill + (1 - ambient - headlight) * light);
+    let own = select(0.0, ink_own, surface.inked);
+    return vec4<f32>(mix(lit, surface.colour.rgb, own) + gloss * glint, surface.colour.a);
 }
 
-// The surfaces along a ray, nearest first, each hiding its opacity's share of what lies behind it; the depth is the
-// nearest one's, weighted as the colour is by how much the surfaces hide.
+// A mesh's surface at a sample: its colour, premultiplied by how much it hides, and its distance along the ray.
+struct Seen {
+    colour: vec4<f32>,
+    distance: f32,
+    order: u32,
+}
+
+// The nearest surface of the meshes at a sample's cell after the last surface seen, at `far` where there is none;
+// the meshes come after the solids in the order of surfaces.
+fn mesh_after(cell: u32, last_distance: f32, last_order: u32) -> Seen {
+    let n_cells = pixels.x * pixels.y * n_samples;
+    var nearest = Seen(vec4<f32>(0.0), far, 0u);
+    for (var mesh = 0u; mesh < n_meshes; mesh++) {
+        let colour = mesh_colours[mesh * n_cells + cell];
+        let along = mesh_depths[mesh * n_cells + cell] / colour.a + back;
+        let order = arrayLength(&solids) + mesh;
+        if (colour.a > 0 && after(along, order, last_distance, last_order) && before(along, order, nearest.distance, nearest.order)) {
+            nearest = Seen(colour, along, order);
+        }
+    }
+    return nearest;
+}
+
+// The surfaces along a ray, solids' and meshes' alike, nearest first, each hiding its share of what lies behind it;
+// the depth is the nearest one's, weighted as the colour is by how much the surfaces hide.
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
     let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
     let direction = camera >> -mv.z.dual();
-    let nearest = first_hit(start, direction, 0.0);
-    if (nearest.distance >= far) {
-        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
-    }
-    var hit = nearest;
+    // The sample's cell in the meshes' grid.
+    let grid = vec2<u32>(floor(place * f32(samples_per_side)));
+    let cell = grid.y * pixels.x * samples_per_side + grid.x;
+    // Nothing seen yet: every surface ahead of the camera comes after.
+    var last_distance = 0.0;
+    var last_order = 0xffffffffu;
+    var hit = first_hit(start, direction, last_distance, last_order);
+    var nearest = far;
     var colour = vec3<f32>(0.0);
     var passing = 1.0;
-    for (var layer = 0u; layer < n_layers && hit.distance < far && passing > opaque; layer++) {
-        let surface = shade(hit, start, direction);
-        colour += passing * surface.a * surface.rgb;
-        passing *= 1 - surface.a;
-        // The next surface a hundredth of a pixel on, so that the one just seen is not found again.
-        hit = first_hit(start, direction, hit.distance + pixel / 100);
+    for (var layer = 0u; layer < n_layers && passing > opaque; layer++) {
+        let mesh = mesh_after(cell, last_distance, last_order);
+        if (min(mesh.distance, hit.distance) >= far) {
+            break;
+        }
+        // Each surface seen once, the next one after it in distance and then in order.
+        if (before(mesh.distance, mesh.order, hit.distance, hit.solid)) {
+            colour += passing * mesh.colour.rgb;
+            passing *= 1 - mesh.colour.a;
+            nearest = min(nearest, mesh.distance);
+            last_distance = mesh.distance;
+            last_order = mesh.order;
+        } else {
+            let surface = shade(hit, start, direction);
+            colour += passing * surface.a * surface.rgb;
+            passing *= 1 - surface.a;
+            nearest = min(nearest, hit.distance);
+            last_distance = hit.distance;
+            last_order = hit.solid;
+            hit = first_hit(start, direction, last_distance, last_order);
+        }
     }
-    return Sample(vec4<f32>(colour, 1 - passing), vec4<f32>((nearest.distance - back) * (1 - passing), 0.0, 0.0, 1.0));
+    if (nearest >= far) {
+        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
+    }
+    return Sample(vec4<f32>(colour, 1 - passing), vec4<f32>((nearest - back) * (1 - passing), 0.0, 0.0, 1.0));
 }
 """
 
@@ -354,6 +434,11 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
         counts.append(np.full(solids.shape[0], solids.shape[1]))
         colours.append(np.broadcast_to(colour, (solids.shape[0], 3)))
         opacities.append(np.full(solids.shape[0], opacity))
+    # A solid of no quadrics, which no ray meets, and a quadric no solid holds, so that the arrays are never empty.
+    quadrics.append(everywhere[None])
+    counts.append(np.zeros(1, dtype=int))
+    colours.append(np.zeros((1, 3)))
+    opacities.append(np.zeros(1))
     ends = np.cumsum(np.concatenate(counts))
     # The solids each part spans, part after part.
     part_ends = np.cumsum([solids.shape[0] for solids, _, _ in parts])
@@ -435,13 +520,19 @@ def lamp(camera: Motor) -> Point:
 
 
 def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = (),
-          translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
-    """The solids as the view sees them, with the lines inked on them, and the translucent solids over and among them,
-    each with its opacity: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`, each
-    weighted by coverage."""
+          translucent: list[tuple[Quadric, np.ndarray, float]] = (),
+          meshes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+    """The solids as the view sees them, with the lines inked on them, the translucent solids over and among them,
+    each with its opacity, and the meshes among them, each its samples, as `meshes.samples` draws them, and its
+    opacity, sample by sample: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`,
+    each weighted by coverage."""
     quadrics, solids, ink_quadrics, ink_regions, marked = scene(parts, translucent, inks)
+    # A mesh that shows nothing stands for none, so that the meshes' arrays are never empty.
+    shown = list(meshes) or [(np.zeros((1, 4)), np.zeros(1), 0.0)]
+    mesh_colours = np.concatenate([colour.reshape(-1, 4) * opacity for colour, _, opacity in shown])
+    mesh_depths = np.concatenate([depth.reshape(-1) * opacity for _, depth, opacity in shown])
     image = shader()(view.shape, quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics,
-                     ink_regions=ink_regions,
+                     ink_regions=ink_regions, mesh_colours=mesh_colours, mesh_depths=mesh_depths, n_meshes=len(meshes),
                      pixel=view.pixel, camera=view.camera, back=4 * view.half.max(),
                      half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt,
                      headlight=headlight, gloss=gloss, shininess=shininess)["image"]
@@ -449,7 +540,8 @@ def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] =
 
 
 def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = (),
-         translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> np.ndarray:
-    """The solids as the view sees them on the background, with the lines inked on them, and the translucent solids
-    over and among them, `[rows, columns, 3]`."""
-    return compose([(*layer(parts, view, inks, translucent), 1.0)], background)
+         translucent: list[tuple[Quadric, np.ndarray, float]] = (),
+         meshes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> np.ndarray:
+    """The solids as the view sees them on the background, with the lines inked on them, the translucent solids over
+    and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`."""
+    return compose([(*layer(parts, view, inks, translucent, meshes), 1.0)], background)

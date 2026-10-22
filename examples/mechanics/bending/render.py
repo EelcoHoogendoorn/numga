@@ -18,7 +18,7 @@ from matplotlib.colors import Normalize, to_rgb, to_rgba
 
 from examples.animation import capture
 from examples.mechanics.bending import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 ga, mv = core.ga, core.mv
 # Colours of the beam, of the straight beam, of the load, of the neutral axis, of the principal axes,
@@ -39,11 +39,12 @@ CLAMP = np.array([[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 1.0, 1.0], [0.0, -1
 # The colours of the line of shear centres and of the clamp.
 SHEAR_LINE, CLAMP_COLOUR = "#0f172a", "#475569"
 # The view of the beams, elevation and azimuth in radians, azimuth zero looking along +y; the margin around them
-# as a share of the larger side, the pixels across a picture, the straight beam's opacity and the strips' sheen.
+# as a share of the larger side, the pixels across a picture, how much each side of a straight beam's wall hides,
+# and the strips' sheen.
 ELEVATION, AZIMUTH = np.radians([22.0, -58.0 + 90.0])
 MARGIN = 0.1
 PIXELS = 520
-STRAIGHT_OPACITY = 0.35
+STRAIGHT_OPACITY = 0.19
 GLOSS = 0.1
 # The radii of the shear centres' dashes, of the clamp's rods and of the load's shaft, in pixels; the load's head,
 # its length a share of the arrow's, and its radius a share of its own length.
@@ -175,17 +176,20 @@ def view(bent: list[np.ndarray], tips: list[np.ndarray]) -> solids.View:
 
 def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: core.Point,
               view: solids.View) -> np.ndarray:
-    """One cantilever: each wall swept along the beam as lit strips; the straight beam a faint ghost; the line
-    of shear centres the beam twists about, dashed; the clamp; and the tip load where it acts."""
+    """One cantilever: each wall swept along the beam as lit strips; the straight beam a faint ghost, each wall a
+    translucent plate; the line of shear centres the beam twists about, dashed; the clamp; and the tip load where it
+    acts."""
     bent = space(walls)                                                      # [pieces + 1, walls, 2, 3]
     # Each wall between two cross-sections a quad, two triangles, by the indices of its corners.
     index = np.arange(bent[..., 0].size).reshape(bent.shape[:-1])            # [pieces + 1, walls, 2]
     quads = np.stack([index[:-1, :, 0], index[:-1, :, 1], index[1:, :, 1], index[1:, :, 0]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [pieces * walls * 2, 3]
-    strips = [meshes.layer(places, triangles, np.array(to_rgb(colour)), meshes.flat(places, triangles), view,
-                           gloss=GLOSS)
-              for places, colour in ((solids.mv.point(bent.reshape(-1, 3)), BEAM),
-                                     (solids.mv.point(straightened(bent).reshape(-1, 3)), STRAIGHT))]
+    places = solids.mv.point(bent.reshape(-1, 3))
+    strips = meshes.samples(places, triangles, np.array(to_rgb(BEAM)), meshes.flat(places, triangles), view, gloss=GLOSS)
+    # Each straight wall a plate a pixel thick, from its ends at the clamp to its ends at the tip.
+    straight = straightened(bent)                                            # [pieces + 1, walls, 2, 3]
+    ghost = solids.plates(np.stack([straight[0, :, 0], straight[0, :, 1], straight[-1, :, 1], straight[-1, :, 0]],
+                                   axis=-2), view.pixel)                     # [walls, 6] Quadric
     # The line of shear centres in dashes, every other piece of it.
     line = solids.mv.point(space(shears))                                    # [pieces + 1] Point
     dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Quadric
@@ -194,10 +198,10 @@ def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: 
     shaft, head = solids.arrows(solids.mv.point(space(through)), solids.mv.point(load_tip(through, load)),
                                 SHAFT_RADIUS * view.pixel, HEAD_SHARE * TIP_ARROW, HEAD_WIDTH * HEAD_SHARE * TIP_ARROW)
     load_colour, clamp_colour, line_colour = (np.array(to_rgb(colour)) for colour in (LOAD, CLAMP_COLOUR, SHEAR_LINE))
-    opaque = solids.layer([(dashes, line_colour), (clamp_rods, clamp_colour),
-                           (clamp_joints, clamp_colour), (shaft[None], load_colour),
-                           (head[None], load_colour)], view)
-    return compose([(*opaque, 1.0), (*strips[0], 1.0), (*strips[1], STRAIGHT_OPACITY)], np.ones(3))
+    opaque = [(dashes, line_colour), (clamp_rods, clamp_colour), (clamp_joints, clamp_colour), (shaft[None], load_colour),
+              (head[None], load_colour)]
+    return solids.draw(opaque, view, np.ones(3), translucent=[(ghost, np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
+                       meshes=[(*strips, 1.0)])
 
 
 def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],

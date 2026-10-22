@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.projective_loop import core
-from examples.wgsl import compose, image_figure, meshes, solids
+from examples.wgsl import image_figure, meshes, solids
 
 sm = solids.mv
 SURFACE_COLOUR = np.array([0.16, 0.5, 0.63])
@@ -51,14 +51,13 @@ def picture(control: np.ndarray, control_faces: np.ndarray, surface: np.ndarray,
     """A surface `[refined, 3]` in the given face colours `[faces, 3]`, smooth shaded, over its control mesh
     `[vertices, 3]`, dotted."""
     places = sm.point(surface)
-    sheet = meshes.layer(places, faces, np.zeros(3), meshes.smooth(places, faces), frame, face_values=colours,
-                         colour=meshes.by_face)
+    sheet = meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), frame, face_values=colours,
+                           colour=meshes.by_face)
     ends = control[edges(control_faces)]                                       # [edges, 2, 3]
     share = np.linspace(0, 1, N_DOTS)[:, None]                                 # [dots, 1]
     dots = ends[:, None, 0] * (1 - share) + ends[:, None, 1] * share           # [edges, dots, 3]
-    beads = solids.layer([(solids.ball(sm.point(dots.reshape(-1, 3)), DOT_RADIUS * frame.pixel)[:, None], CONTROL_COLOUR)],
-                         frame)
-    return compose([(*sheet, 1.0), (*beads, 1.0)], background)
+    beads = [(solids.ball(sm.point(dots.reshape(-1, 3)), DOT_RADIUS * frame.pixel)[:, None], CONTROL_COLOUR)]
+    return solids.draw(beads, frame, background, meshes=[(*sheet, 1.0)])
 
 
 def draw_weights(controls: core.Point, control_faces: np.ndarray, surfaces: core.Point, faces: np.ndarray) -> plt.Figure:

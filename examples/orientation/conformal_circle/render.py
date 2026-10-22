@@ -1,6 +1,6 @@
 """Ordered points and the chosen sides of a circle's two cutting surfaces. The circle, its plane and its sphere
-are drawn on the GPU: the plane a translucent sheet, the sphere a translucent ball under its sampled wireframe, the
-points balls and the sides arrows; the circle's motions are drawn by matplotlib."""
+are drawn on the GPU: the plane a translucent sheet, the sphere a translucent ball with the circles of its sampled
+wireframe inked on it, the points balls and the sides arrows; the circle's motions are drawn by matplotlib."""
 
 from __future__ import annotations
 
@@ -10,8 +10,9 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 
 from examples.animation import capture
+from numga import concatenate
 from examples.orientation.conformal_circle.core import Point, Sphere
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 sm = solids.mv
 PLANE = "#218c9d"
@@ -23,17 +24,22 @@ background = np.ones(3)
 # of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(26.0), np.radians(32.0)
 MARGIN, N_PIXELS = 0.25, 500
-# The plane's sheet, a square about the origin; the opacities of the sheet, its rim, the ball and the sphere's wireframe.
+# The plane's sheet, a square about the origin; the opacities of each face of the sheet, its rim, each face of the
+# ball and the sphere's wireframe, front and back alike.
 SHEET = 1.23 * np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]])
-SHEET_OPACITY, RIM_OPACITY, BALL_OPACITY, WIREFRAME_OPACITY = 0.14, 0.7, 0.12, 0.22
+SHEET_OPACITY, RIM_OPACITY, BALL_OPACITY, WIREFRAME_OPACITY = 0.073, 0.45, 0.062, 0.26
 # The widths of the circle, the sheet's rim, the wireframe and the chord arrows, the plane's and the sphere's
-# arrows, in pixels, the arrowheads' lengths and widths, and the points' radius, in pixels.
-CIRCLE_WIDTH, RIM_WIDTH, WIREFRAME_WIDTH = 4.0, 3.0, 3.0
+# arrows, in pixels, the arrowheads' lengths and widths, and the points' radius, in pixels; the sheet's thickness,
+# in pixels.
+CIRCLE_WIDTH, RIM_WIDTH, WIREFRAME_WIDTH, SHEET_THICKNESS = 4.0, 3.0, 3.0, 1.0
 CHORD_WIDTH, PLANE_ARROW_WIDTH, SPHERE_ARROW_WIDTH = 3.5, 5.0, 4.5
 CHORD_HEAD, ARROW_HEAD, HEAD_WIDTH = 22.0, 22.0, 16.0
 DOT_RADIUS = 8.0
 # The lengths of the plane's and the sphere's arrows per unit of their normals.
 PLANE_ARROW_LENGTH, SPHERE_ARROW_LENGTH = 0.85, 0.45
+# How small against the largest the plane a sampled circle's points span may be and still count as one: a circle
+# gathered into one point, as a parallel at a pole, spans none.
+SPANNED = 1e-12
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -49,23 +55,32 @@ def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head: float, view
                          HEAD_WIDTH / 2 * view.pixel)
 
 
+def circle_planes(lines: np.ndarray) -> solids.Plane:
+    """The planes of circles sampled along lines `[lines, n, 3]`, each through its first sample and those a third and
+    two thirds along it: the join of the three, made extrinsic by the intrinsic unit."""
+    count = lines.shape[1]
+    first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))
+    return (first & second & third) * meshes.unit
+
+
 def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np.ndarray, sphere: np.ndarray,
           view: solids.View) -> np.ndarray:
     """One side of the mirror: the circle through its ordered points, on the plane's sheet and in the sphere,
     with arrows into the positive sides of the plane and the sphere."""
     plane_colour, sphere_colour, curve_colour = (np.array(to_rgb(colour)) for colour in (PLANE, SPHERE, CURVE))
-    corners, quad = sm.point(SHEET), np.array([[0, 1, 2], [0, 2, 3]])
-    sheet = meshes.layer(corners, quad, plane_colour, meshes.flat(corners, quad), view, gloss=0.1)
-    rim = meshes.tubes([(np.concatenate([SHEET, SHEET[:1]]), plane_colour)], RIM_WIDTH, view)
-    # The sphere's sampled parallels and meridians, and the ball they lie on: its centre and radius from the
-    # sphere's coefficients, as the centre's coordinates and squared radius over its weight.
-    wireframe = meshes.tubes([(line, sphere_colour) for line in [*globe, *globe.transpose(1, 0, 2)]],
-                             WIREFRAME_WIDTH, view)
+    sheet = solids.plates(SHEET[None], SHEET_THICKNESS * view.pixel)        # [1, corners + 2] Quadric
+    # The sheet's rim: its edges, where the half-spaces along them pair to zero; only the inner half of each line lies
+    # on the sheet.
+    edges = sheet[0, 2:]                                                      # [corners] Quadric
+    # The ball the sphere's parallels and meridians lie on: its centre and radius from the sphere's coefficients, as
+    # the centre's coordinates and squared radius over its weight; the circles inked on it where their planes cut it.
     weight = sphere[4] - sphere[3]
     centre = sphere[:3] / weight
-    ball = solids.layer([(solids.ball(sm.point(centre), np.sqrt(centre @ centre - (sphere[3] + sphere[4]) / weight))
-                          [None, None], sphere_colour)], view)
-    curve = meshes.tubes([(circle, curve_colour)], CIRCLE_WIDTH, view)
+    ball = solids.ball(sm.point(centre), np.sqrt(centre @ centre - (sphere[3] + sphere[4]) / weight))[None, None]
+    planes = concatenate([circle_planes(globe), circle_planes(globe.transpose(1, 0, 2))])   # [circles] Plane
+    spans = (planes | planes).to_array()
+    planes = planes[spans > SPANNED * spans.max()]
+    curve = meshes.tube_samples([(circle, curve_colour)], CIRCLE_WIDTH, view)
 
     # Short arrows follow the point order around the circle in both views.
     count = len(circle) - 1
@@ -77,13 +92,19 @@ def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np
     sphere_direction = -sphere[:3] - (sphere[3] - sphere[4]) * sphere_anchor
     sphere_arrow = arrows(sphere_anchor, sphere_anchor + sphere_direction * SPHERE_ARROW_LENGTH, SPHERE_ARROW_WIDTH,
                           ARROW_HEAD, view)
-    marks = solids.layer([(chords[0], curve_colour), (chords[1], curve_colour),
-                          (plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
-                          (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
-                          (solids.ball(sm.point(vertices), DOT_RADIUS * view.pixel)[:, None],
-                           np.array([to_rgb(colour) for colour in MARKERS]))], view)
-    return compose([(*sheet, SHEET_OPACITY), (*rim, RIM_OPACITY), (*ball, BALL_OPACITY),
-                    (*wireframe, WIREFRAME_OPACITY), (*curve, 1.0), (*marks, 1.0)], background)
+    marks = [(chords[0], curve_colour), (chords[1], curve_colour),
+             (plane_arrow[0], plane_colour), (plane_arrow[1], plane_colour),
+             (sphere_arrow[0], sphere_colour), (sphere_arrow[1], sphere_colour),
+             (solids.ball(sm.point(vertices), DOT_RADIUS * view.pixel)[:, None],
+              np.array([to_rgb(colour) for colour in MARKERS]))]
+    # The sheet and the ball are the first and the second translucent parts, after the opaque marks.
+    rim = solids.Ink(len(marks), edges, solids.everywhere[None].broadcast_to(edges.shape),
+                     plane_colour, 2 * RIM_WIDTH, RIM_OPACITY)
+    wireframe = solids.Ink(len(marks) + 1, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
+                           sphere_colour, WIREFRAME_WIDTH, WIREFRAME_OPACITY)
+    return solids.draw(marks, view, background, [rim, wireframe],
+                       translucent=[(sheet, plane_colour, SHEET_OPACITY), (ball, sphere_colour, BALL_OPACITY)],
+                       meshes=[(*curve, 1.0)])
 
 
 def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,

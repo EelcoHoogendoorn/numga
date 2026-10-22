@@ -2,8 +2,8 @@
 
 A surface is a mesh drawn by `meshes`, its grid lines inked by its colour function from each face's edges and
 how near a pixel lies to them; a pair of partners are two translucent sheets, with the segments between
-corresponding points as rods traced by `solids`, all blended by depth. The segments' hidden parts show faintly
-through the sheets.
+corresponding points as rods traced by `solids`, all composited by depth sample by sample. The segments' hidden
+parts show faintly through the sheets.
 """
 
 from __future__ import annotations
@@ -94,13 +94,13 @@ def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float) -> 
 
 
 def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """One sheet, lit on both sides, as a layer."""
+    """One sheet, lit on both sides, at every sample, as `meshes.samples`."""
     places = projective(points)
-    return meshes.layer(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink, colour=colour)
+    return meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink, colour=colour)
 
 
 def picture(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
-    return compose([(*sheet(points, faces, ink, grid_colour(front_colour, back_colour), view), 1.0)], background)
+    return solids.draw([], view, background, meshes=[(*sheet(points, faces, ink, grid_colour(front_colour, back_colour), view), 1.0)])
 
 
 def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
@@ -114,12 +114,13 @@ def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, 
     connectors = [(solids.rods(starts, ends, connector_width / 2 * view.pixel), connector_colour),
                   (solids.ball(starts, endpoint_radius * view.pixel)[:, None], connector_colour),
                   (solids.ball(ends, endpoint_radius * view.pixel)[:, None], connector_colour)]
-    segments, segment_depth = solids.layer(connectors, view)
-    # Their hidden parts show faintly: a copy in front of everything.
+    sheets = [(*sheet(source, faces, ink * pair_grid_ink, grid_colour(source_colour, source_colour), view), surface_opacity),
+              (*sheet(partner, faces, ink * pair_grid_ink, grid_colour(partner_colour, partner_colour), view), surface_opacity)]
+    scene = solids.layer(connectors, view, meshes=sheets)
+    # The segments' hidden parts show faintly: a copy of the segments alone, in front of everything.
+    segments, _ = solids.layer(connectors, view)
     ghost_depth = np.where(segments[..., 3] > 0, -np.inf, 0.0)
-    return compose([(*sheet(source, faces, ink * pair_grid_ink, grid_colour(source_colour, source_colour), view), surface_opacity),
-                    (*sheet(partner, faces, ink * pair_grid_ink, grid_colour(partner_colour, partner_colour), view), surface_opacity),
-                    (segments, segment_depth, 1.0), (segments, ghost_depth, hidden_opacity)], background)
+    return compose([(*scene, 1.0), (segments, ghost_depth, hidden_opacity)], background)
 
 
 def frames(states: Iterable[core.Point], reference: core.Point) -> list[np.ndarray]:

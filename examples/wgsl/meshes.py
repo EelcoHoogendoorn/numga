@@ -14,11 +14,12 @@ import numpy as np
 
 from numga import concatenate, stack
 from examples.wgsl import Shader
-from examples.wgsl.library import compose
+from examples.wgsl.library import compose, samples_per_side
 from examples.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, origin, shininess
 
-# How many times finer than the image a mesh is drawn, across and up, before it is averaged back.
-oversampling = 2
+# How many times finer than the image a mesh is drawn, across and up: one sample of a pixel to a drawn pixel, as many
+# as the traced solids take.
+oversampling = samples_per_side
 # The intrinsic unit: the volume four points span, from the origin along each axis.
 unit = origin & mv.point([1, 0, 0]) & mv.point([0, 1, 0]) & mv.point([0, 0, 1])
 
@@ -197,16 +198,15 @@ def tube(points: np.ndarray, radius: float, n_around: int) -> tuple[Point, np.nd
     return rings.reshape(-1), corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
 
 
-def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
-          face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
-    """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
-    each weighted by coverage; from up to four values at each corner of each face, `[faces, 3, values]` or one row for
-    all, and at each face, coloured by `colour`, with a glint of `gloss`."""
+def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
+            face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
+    """The mesh at every sample of the view's pixels, `oversampling` to a side: its colour, `[rows, columns, 4]`
+    premultiplied by how much it hides, and its depth along the view, `[rows, columns]`, weighted alike, the rows and
+    columns `oversampling` times the view's; from up to four values at each corner of each face, `[faces, 3, values]`
+    or one row for all, and at each face, coloured by `colour`, with a glint of `gloss`."""
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
-    # Drawn at `oversampling` times the view's pixels across and up, each with its 4 samples, and averaged back: thin
-    # strokes as smooth as the traced solids'.
     rows, columns = view.shape
     colours, depths = shader(colour).draw((oversampling * rows, oversampling * columns), 3 * len(faces), points=points, faces=faces,
                                           values=padded(values, (len(faces), 3)).reshape(-1, 4),
@@ -214,13 +214,32 @@ def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, v
                                           camera=view.camera, half_size=view.half, depth=8 * view.half.max(),
                                           lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt,
                                           headlight=headlight, gloss=gloss, shininess=shininess)
+    return colours, depths[..., 0]
+
+
+def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
+          face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
+    """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
+    each weighted by coverage; its samples, as `samples`, averaged over each pixel."""
+    return averaged(*samples(points, faces, values, normals, view, face_values, colour, gloss), view)
+
+
+def averaged(colours: np.ndarray, depths: np.ndarray, view: View) -> tuple[np.ndarray, np.ndarray]:
+    """Samples' colour and depth, as `samples` draws them, averaged over each of the view's pixels."""
+    rows, columns = view.shape
     blocks = (rows, oversampling, columns, oversampling)
-    return colours.reshape(*blocks, 4).mean(axis=(1, 3)), depths[..., 0].reshape(blocks).mean(axis=(1, 3))
+    return colours.reshape(*blocks, 4).mean(axis=(1, 3)), depths.reshape(blocks).mean(axis=(1, 3))
 
 
 def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View, n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
-    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, one layer, as `layer`: the
-    curves of each length built together."""
+    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, one layer, as `layer`."""
+    return averaged(*tube_samples(curves, width, view, n_around), view)
+
+
+def tube_samples(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View,
+                 n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
+    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, at every sample, as `samples`:
+    the curves of each length built together."""
     rings, faces, colours = [], [], []
     count = 0
     for length in sorted({len(points) for points, _ in curves}):
@@ -232,7 +251,7 @@ def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View,
         colours.append(np.repeat(np.stack([colour for _, colour in alike]), len(triangles) // len(alike), axis=0))
         count += around.shape[0]
     places, faces = concatenate(rings), np.concatenate(faces)
-    return layer(places, faces, np.concatenate(colours)[:, None], smooth(places, faces), view)
+    return samples(places, faces, np.concatenate(colours)[:, None], smooth(places, faces), view)
 
 
 def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_points: int) -> np.ndarray:

@@ -1,6 +1,6 @@
-"""The cube's faces, oriented patches and volume: the deformed cube on the GPU, each face a translucent layer of its
-own so that every face shows through the others, its edges rods, and each patch an arrow from its face's centre, as
-long as its area; beside it, the areas and the volume as bars."""
+"""The cube's faces, oriented patches and volume: the deformed cube traced on the GPU, each face a translucent plate
+of its own colour so that every face shows through the others, its edges rods, and each patch an arrow from its face's
+centre, as long as its area; beside it, the areas and the volume as bars."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.mechanics.area_transport import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import show, solids
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
@@ -29,9 +29,9 @@ background = np.ones(3)
 elevation, azimuth = np.radians([23.0, -57.0 + 90.0])
 margin = 0.16
 n_pixels = 520
-# The faces' opacity; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
+# How much of what lies behind each of a face's two sides hides; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
 # arrow's, and its radius a share of its own length.
-face_opacity = 0.2
+face_opacity = 0.1
 edge_radius = 1.5
 shaft_radius = 2.5
 head_share = 0.25
@@ -69,13 +69,10 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
                                   shaft_radius * view.pixel, head_share * lengths[shown], head_width * head_share * lengths[shown])
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
     edge_colour = np.array(to_rgb(EDGE_COLOUR))
-    opaque = solids.layer([(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour),
-                          (joints, edge_colour)], view)
-    # Each face its own layer, two triangles of its quad.
-    triangles = FACES[:, [[0, 1, 2], [0, 2, 3]]]                               # [faces, 2, 3]
-    faces = [meshes.layer(places, face, colour, meshes.flat(places, face), view, gloss=0.1)
-             for face, colour in zip(triangles[shown], colours[shown])]
-    return compose([(*opaque, 1.0)] + [(*face, face_opacity) for face in faces], background)
+    opaque = [(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour), (joints, edge_colour)]
+    # Each face a plate a pixel thick, in its own colour.
+    faces = solids.plates(corners[FACES[shown]], view.pixel)                 # [faces, 6] Quadric
+    return solids.draw(opaque, view, background, translucent=[(faces, colours[shown], face_opacity)])
 
 
 def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
@@ -83,8 +80,10 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
     values = np.concatenate([areas, volume.kernel])
     ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
-    # The unit cube's measures, the one value read off.
-    ax.set(xticks=[], yticks=[1], ylim=(0, 1.35))
+    # The unit cube's measures, the one value read off; each column named by what it measures.
+    ax.set(xticks=np.arange(len(values)), xticklabels=["face $x$", "face $y$", "face $z$", "volume"], yticks=[1],
+           ylim=(0, 1.35))
+    ax.tick_params(axis="x", length=0)
     ax.spines[["top", "right"]].set_visible(False)
 
 

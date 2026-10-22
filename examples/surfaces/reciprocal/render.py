@@ -11,7 +11,7 @@ import numpy as np
 
 from examples.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import show, solids
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -23,14 +23,14 @@ COMPRESSION, TENSION = -0.3, 1.5
 BAR_WIDTH = 2.2
 REACH = 1.25
 # The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
-# share of its larger side, and the pixels across its picture; the terrain's opacity, so the creases behind it show
-# through, and the widths of the creases and of the boundary as tubes, in pixels.
+# share of its larger side, and the pixels across its picture; how much each surface of the terrain hides, so the
+# creases behind it show through, and its thickness and the widths of the creases and of the boundary as rods, in
+# pixels.
 ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
 MARGIN = 0.08
 N_PIXELS = 1000
-TERRAIN_OPACITY = 0.3
-CREASE_WIDTH, BOUNDARY_WIDTH = 7.0, 3.5
-N_AROUND = 8
+TERRAIN_OPACITY = 0.16
+TERRAIN_THICKNESS, CREASE_WIDTH, BOUNDARY_WIDTH = 0.5, 7.0, 3.5
 BACKGROUND = np.ones(3)
 
 
@@ -75,17 +75,19 @@ def view(mesh: core.Mesh, heights: np.ndarray) -> solids.View:
 
 
 def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: solids.View) -> np.ndarray:
-    """The terrain the heights lift the mesh to, translucent and flat over its faces, its creases tubes coloured
+    """The terrain the heights lift the mesh to, translucent and flat over its faces, its creases rods coloured
     by their shades `[inner, 3]`, and its boundary grey."""
     inner, _, _ = core.beside(mesh)
     xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
     lifted = np.concatenate([xy, heights[:, None]], axis=-1)                   # [vertices, 3]
     places = solids.mv.point(lifted)
-    surface = meshes.layer(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing)
-    creases = meshes.tubes(list(zip(lifted[mesh.edges[inner]], shades)), CREASE_WIDTH, framing, N_AROUND)
-    boundary = meshes.tubes([(ends, BOUNDARY_COLOUR) for ends in lifted[mesh.edges[mesh.boundary_edges]]], BOUNDARY_WIDTH,
-                            framing, N_AROUND)
-    return compose([(*surface, TERRAIN_OPACITY), (*creases, 1.0), (*boundary, 1.0)], BACKGROUND)
+    pixel = framing.pixel
+    surface = solids.plates(lifted[mesh.faces], TERRAIN_THICKNESS * pixel)
+    creases = solids.rods(places[mesh.edges[inner, 0]], places[mesh.edges[inner, 1]], CREASE_WIDTH / 2 * pixel)
+    boundary = solids.rods(places[mesh.edges[mesh.boundary_edges, 0]], places[mesh.edges[mesh.boundary_edges, 1]],
+                           BOUNDARY_WIDTH / 2 * pixel)
+    return solids.draw([(creases, shades), (boundary, BOUNDARY_COLOUR)], framing, BACKGROUND,
+                       translucent=[(surface, TERRAIN_COLOUR, TERRAIN_OPACITY)])
 
 
 def panels(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector,

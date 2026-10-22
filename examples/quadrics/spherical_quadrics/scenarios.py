@@ -62,8 +62,8 @@ def main() -> None:
     from examples.quadrics.spherical_quadrics import render
 
     curve, foci, arcs, sample, semi_major, tangents, touching, circles, surface, grid, potential, conic, dual = spherical_conic()
-    save_figure(render.draw_spherical_conic(curve, foci, arcs, sample, tangents, touching, circles, surface, grid, potential),
-                "spherical_quadrics")
+    save_figure(render.draw_spherical_conic(curve, foci, arcs, sample, tangents, touching, circles, surface, grid,
+                                            potential, conic), "spherical_quadrics")
 
     # checks
     # Every point of the oval lies on its own polar. The distance between unit points on the sphere is

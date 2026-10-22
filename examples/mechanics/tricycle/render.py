@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import NumpyContext, concatenate
 from examples.animation import capture
-from examples.wgsl import compose, image_figure, meshes, solids
+from examples.wgsl import image_figure, meshes, solids
 
 sm = solids.mv
 
@@ -97,16 +97,15 @@ def space(contacts, forward, centre, middle) -> plt.Figure:
     if np.isfinite(foot).all():
         post = solids.rods(at_height(foot, 0.0), at_height(foot, 4 * WHEEL_RADIUS), POST_WIDTH / 2 * view.pixel)
         parts.append((post[None], to_rgb(CENTRE)))
-    rods = solids.layer(parts, view)
     # Each rim: a circle about its hub, square to the axle, across the way the wheel rolls.
     heading = (ahead - wheels) / np.linalg.norm(ahead - wheels, axis=-1, keepdims=True)
     sideways = np.stack([-heading[:, 1], heading[:, 0], np.zeros(len(wheels))], axis=-1)
     rims = meshes.circles(np.concatenate([wheels, np.full((len(wheels), 1), WHEEL_RADIUS)], axis=-1),
                           np.full(len(wheels), WHEEL_RADIUS), sideways, N_RIM)          # [wheels, rim + 1, 3]
-    tyres = meshes.tubes([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view, N_AROUND)
-    trail = meshes.tubes([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))], TRAIL_WIDTH,
-                         view, N_AROUND)
-    return image_figure(compose([(*rods, 1.0), (*tyres, 1.0), (*trail, 1.0)], BACKGROUND))
+    tyres = meshes.tube_samples([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view, N_AROUND)
+    trail = meshes.tube_samples([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))],
+                                TRAIL_WIDTH, view, N_AROUND)
+    return image_figure(solids.draw(parts, view, BACKGROUND, meshes=[(*tyres, 1.0), (*trail, 1.0)]))
 
 
 def at_height(places: np.ndarray, height: float) -> solids.Point:

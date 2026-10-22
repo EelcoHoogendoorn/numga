@@ -29,7 +29,8 @@ def supersampled() -> str:
 var<uniform> pixels: vec2<u32>;
 var<storage, read_write> image: array<Sample>;
 
-// Where a pixel's samples lie, in pixel widths from its centre.
+// Where a pixel's samples lie, in pixel widths from its centre: one in each cell of a grid `samples_per_side` across.
+const samples_per_side = {samples_per_side}u;
 const n_samples = {count}u;
 const samples = array<vec2<f32>, {count}>({entries});
 

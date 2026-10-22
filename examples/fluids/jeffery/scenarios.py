@@ -13,9 +13,12 @@ from examples.fluids.jeffery import core
 Point = core.Point
 # The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
 x, y, z = core.axes
-# The bodies, a sphere, a rod and an ellipsoid with three different axes: their semi-axes, and the rod's long
-# semi-axis over its short ones.
-SEMI_AXES = np.array([[1.0, 1.0, 1.0], [4.0, 1.0, 1.0], [4.0, 2.0, 1.0]])
+# The bodies, a sphere, a rod and an ellipsoid with three different axes: their shapes, their semi-axes in proportion,
+# and their size, the radius of the ball of the same volume, alike for all so that none crowds out the flow around
+# it; their semi-axes; and the rod's long semi-axis over its short ones.
+SHAPES = np.array([[1.0, 1.0, 1.0], [4.0, 1.0, 1.0], [4.0, 2.0, 1.0]])
+RADIUS = 1.3
+SEMI_AXES = RADIUS * SHAPES / np.prod(SHAPES, axis=-1, keepdims=True) ** (1 / 3)
 ASPECT = 4.0
 # The flow: its velocity along the first axis, per offset along the second.
 SHEAR_RATE = 1.0

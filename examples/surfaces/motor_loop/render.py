@@ -7,7 +7,7 @@ import numpy as np
 
 from examples.surfaces.motor_loop import core
 from examples.surfaces.projective_loop.render import SURFACE_COLOUR, edges
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import meshes, solids
 
 sm = solids.mv
 AXIS_COLOURS = np.array([[0.85, 0.15, 0.15], [0.2, 0.65, 0.2], [0.15, 0.3, 0.85]])
@@ -47,7 +47,7 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     vertices, 3]`, their origins first: each axis an arrow from the origin, x red, y green, z blue."""
     pixel = view.pixel
     places = sm.point(surface)
-    sheet = meshes.layer(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view)
+    sheet = meshes.samples(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view)
     # Each edge of the net cut into equal pieces, one fewer than twice the dashes, every other piece a dash.
     ends = frames[0][edges(control_faces)]                                     # [edges, 2, 3]
     share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)[..., None]    # [dashes, 2, 1]
@@ -55,10 +55,9 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(frames[0], frames[1:].shape)), sm.point(frames[1:]),
                                   AXIS_WIDTH / 2 * pixel, HEAD_LENGTH * pixel, HEAD_WIDTH / 2 * pixel)   # [axes, vertices, 3] each
     colours = np.repeat(AXIS_COLOURS, frames.shape[1], axis=0)                 # [axes * vertices, 3]
-    marks = solids.layer([(solids.rods(sm.point(dashes[..., 0, :]), sm.point(dashes[..., 1, :]),
-                                       NET_WIDTH / 2 * pixel).reshape(-1, 3), CONTROL_COLOUR),
-                          (shafts.reshape(-1, 3), colours), (heads.reshape(-1, 3), colours)], view)
-    return compose([(*sheet, 1.0), (*marks, 1.0)], background)
+    marks = [(solids.rods(sm.point(dashes[..., 0, :]), sm.point(dashes[..., 1, :]), NET_WIDTH / 2 * pixel).reshape(-1, 3),
+              CONTROL_COLOUR), (shafts.reshape(-1, 3), colours), (heads.reshape(-1, 3), colours)]
+    return solids.draw(marks, view, background, meshes=[(*sheet, 1.0)])
 
 
 def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:

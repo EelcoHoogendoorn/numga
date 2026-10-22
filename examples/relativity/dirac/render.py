@@ -10,7 +10,7 @@ from matplotlib.lines import Line2D
 from numga import stack
 from examples.animation import capture
 from examples.relativity.dirac import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 sm = solids.mv
 colours = ("#2e86c1", "#7d3c98", "#c0392b")
@@ -50,11 +50,10 @@ def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int, view:
     traced = [spatial(trace)[:upto] for trace in paths]                         # [times, 3] each
     here = np.stack([xyz[-1] for xyz in traced])                                # [mixtures, 3]
     spins = unit(np.stack([spatial(core.spin(psi[upto - 1])) for psi in spinors]))   # [mixtures, 3]
-    tubes = meshes.tubes(list(zip(traced, rgb)), PATH_WIDTH, view, N_AROUND)
+    tubes = meshes.tube_samples(list(zip(traced, rgb)), PATH_WIDTH, view, N_AROUND)
     shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    arrows = solids.layer([(shafts, rgb), (heads, rgb)], view)
-    show(ax, compose([(*tubes, 1.0), (*arrows, 1.0)], BACKGROUND), view)
+    show(ax, solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, meshes=[(*tubes, 1.0)]), view)
     # The tall image in the middle of the figure, the legend in the space beside it.
     figure_width, figure_height = ax.figure.get_size_inches()
     ax.set_xlim(-view.half[1] * figure_width / figure_height, view.half[1] * figure_width / figure_height)

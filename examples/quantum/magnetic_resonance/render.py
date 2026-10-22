@@ -13,21 +13,21 @@ from numga import stack
 from numga.algebras import STA
 from examples.animation import capture
 from examples.quantum.magnetic_resonance import core
-from examples.wgsl import compose, labels, meshes, show, solids
+from examples.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
-SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.18
+SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
 AXIS_COLOUR = np.array([0.45, 0.47, 0.52])
-CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.4
+CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.55
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
 REACH, N_PIXELS = 1.3, 700
-# The points along a great circle and around a tube; the widths of the great circles, the paths and the arrows, the
+# The points around a tube; the widths of the great circles, the paths and the arrows, the
 # arrowheads' length and the dots' radius, in pixels; how far the axes' arrows and their names reach, in radii of the
 # ball.
-N_CIRCLE, N_AROUND = 120, 8
+N_AROUND = 8
 CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 2.4, 3.0, 2.0, 16.0, 9.0, 6.0
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
 # Where the spin lives in each algebra: the vectors of space, or in spacetime the planes the spin
@@ -53,19 +53,19 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
     paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    # The sphere's equator and two meridians: the great circles square to x, y and z.
-    great_circles = meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3), N_CIRCLE)  # [3, circle + 1, 3]
-    circles = meshes.tubes([(circle, CIRCLE_COLOUR) for circle in great_circles], CIRCLE_WIDTH, view, N_AROUND)
-    tubes = meshes.tubes(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view, N_AROUND)
+    tubes = meshes.tube_samples(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view, N_AROUND)
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
-    marks = solids.layer([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
-                          (solids.ball(sm.point(ends), DOT_RADIUS * view.pixel)[:, None], colours)], view)
-    ball = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
+    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
+             (solids.ball(sm.point(ends), DOT_RADIUS * view.pixel)[:, None], colours)]
+    # The ball, translucent, the first part after the opaque ones; its equator and two meridians inked where the
+    # planes x, y and z cut it.
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
+    great_circles = solids.Ink(len(parts), solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
+                               CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
     figure = plt.figure(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    show(ax, compose([(*ball, SPHERE_OPACITY), (*circles, CIRCLE_OPACITY), (*tubes, 1.0), (*marks, 1.0)], np.ones(3)),
-         view)
+    show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(*tubes, 1.0)]), view)
     # Each axis named just past its arrow's tip, where the camera sees it.
     labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=13,
            color=AXIS_COLOUR)

@@ -1,5 +1,5 @@
-"""Drawing and coordinate read-out for Garland–Heckbert QEM, on the GPU: translucent triangles with their edges as
-rods, and the region where a quadric's error stays small traced as the translucent ellipsoid it is.
+"""Drawing and coordinate read-out for Garland–Heckbert QEM, on the GPU: translucent triangles as thin plates with
+their edges as rods, and the region where a quadric's error stays small traced as the translucent ellipsoid it is.
 
 This module consumes the geometry that `core` produces and turns it into a figure.
 It constructs viewport geometry only, never scene geometry, and the mathematics
@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.surfaces.qem.core import Point, Quadric, mv
-from examples.wgsl import compose, image_figure, meshes, solids
+from examples.wgsl import image_figure, solids
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
 # Red/Rose: steep corner triangles at vertex a (faces 2, 3)
@@ -23,8 +23,9 @@ FACE_COLORS = np.array([to_rgb(colour) for colour in ("#0ea5e9", "#0284c7", "#f4
 A_COLOUR, B_COLOUR, OPTIMUM_COLOUR = (np.array(to_rgb(colour)) for colour in ("#f43f5e", "#8b5cf6", "#10b981"))
 EDGE_COLOUR, FAINT_EDGE_COLOUR = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
 VERTEX_COLOUR, ENDPOINT_COLOUR, COLLAPSE_COLOUR = (np.array(to_rgb(colour)) for colour in ("#0f172a", "#475569", "#ef4444"))
-# How opaque the triangles are, the faint original mesh and its edges behind the collapsed one, and the ellipsoids.
-MESH_OPACITY, FAINT_OPACITY, FAINT_EDGE_OPACITY, ELLIPSOID_OPACITY = 0.5, 0.12, 0.5, 0.4
+# How much each surface hides, a ray passing through two of each: of the triangles, of the faint original mesh and
+# its edges behind the collapsed one, and of the ellipsoids.
+MESH_OPACITY, FAINT_OPACITY, FAINT_EDGE_OPACITY, ELLIPSOID_OPACITY = 0.29, 0.06, 0.29, 0.23
 # The drawn region: where the error exceeds its least by less than this distance squared.
 EPSILON = 0.12
 background = np.ones(3)
@@ -32,10 +33,11 @@ background = np.ones(3)
 # vertices, the margin as a share of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(138.0)
 REACH, MARGIN, N_PIXELS = 0.1, 0.1, 600
-# Widths of the edges and of the collapsing edge, the dashes along it, and the radii of the vertices and the
-# optimum, in pixels.
+# Widths of the edges and of the collapsing edge, the dashes along it, the radii of the vertices and the
+# optimum, and the triangles' thickness, in pixels.
 EDGE_WIDTH, COLLAPSE_WIDTH, N_DASHES = 2.6, 4.0, 5
 VERTEX_RADIUS, OPTIMUM_RADIUS = 6.0, 9.0
+TRIANGLE_THICKNESS = 0.5
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -52,10 +54,9 @@ def error_region(quadric: Quadric, centre: Point) -> Quadric:
     return quadric - mv.w * (mv.w & Point) * level
 
 
-def triangles(vertices: Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Triangles in their own colours, flat, as a layer."""
-    return meshes.layer(vertices, faces, np.zeros(3), meshes.flat(vertices, faces), view, face_values=colours,
-                        colour=meshes.by_face)
+def triangles(vertices: Point, faces: np.ndarray, thickness: float) -> solids.Quadric:
+    """Triangles as thin plates of a thickness, `[faces, 5]` quadrics each."""
+    return solids.plates(euclidean(vertices)[faces], thickness)
 
 
 def edges(vertices: Point, faces: np.ndarray, width: float) -> Quadric:
@@ -67,11 +68,12 @@ def edges(vertices: Point, faces: np.ndarray, width: float) -> Quadric:
 def vertex_panel(vertices: Point, faces: np.ndarray, vertex: Point, quadric: Quadric, colours: np.ndarray,
                  ellipsoid_colour: np.ndarray, view: solids.View) -> np.ndarray:
     """A vertex with its incident triangles and the ellipsoid where its error stays small."""
-    marks = solids.layer([(edges(vertices, faces, EDGE_WIDTH * view.pixel), EDGE_COLOUR),
-                          (solids.ball(vertex, VERTEX_RADIUS * view.pixel)[None, None], VERTEX_COLOUR)], view)
-    ellipsoid = solids.layer([(error_region(quadric, vertex)[None, None], ellipsoid_colour)], view)
-    return compose([(*triangles(vertices, faces, colours, view), MESH_OPACITY), (*marks, 1.0),
-                    (*ellipsoid, ELLIPSOID_OPACITY)], background)
+    pixel = view.pixel
+    marks = [(edges(vertices, faces, EDGE_WIDTH * pixel), EDGE_COLOUR),
+             (solids.ball(vertex, VERTEX_RADIUS * pixel)[None, None], VERTEX_COLOUR)]
+    translucent = [(triangles(vertices, faces, TRIANGLE_THICKNESS * pixel), colours, MESH_OPACITY),
+                   (error_region(quadric, vertex)[None, None], ellipsoid_colour, ELLIPSOID_OPACITY)]
+    return solids.draw(marks, view, background, translucent=translucent)
 
 
 def collapse_panel(vertices: Point, faces: np.ndarray, collapsed: Point, surviving: np.ndarray, quadric: Quadric,
@@ -82,15 +84,16 @@ def collapse_panel(vertices: Point, faces: np.ndarray, collapsed: Point, survivi
     # The edge between the endpoints cut into equal pieces, one fewer than twice the dashes, every other a dash.
     share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)                # [dashes, 2]
     dashes = vertices[0] * (1 - share) + vertices[1] * share                    # [dashes, 2] Point
-    faint = solids.layer([(edges(vertices, faces, EDGE_WIDTH * pixel), FAINT_EDGE_COLOUR)], view)
-    marks = solids.layer([(edges(collapsed, faces[surviving], EDGE_WIDTH * pixel), EDGE_COLOUR),
-                          (solids.rods(dashes[:, 0], dashes[:, 1], COLLAPSE_WIDTH / 2 * pixel), COLLAPSE_COLOUR),
-                          (solids.ball(vertices[:2], VERTEX_RADIUS * pixel)[:, None], ENDPOINT_COLOUR),
-                          (solids.ball(optimum, OPTIMUM_RADIUS * pixel)[None, None], OPTIMUM_COLOUR)], view)
-    ellipsoid = solids.layer([(error_region(quadric, optimum)[None, None], OPTIMUM_COLOUR)], view)
-    return compose([(*triangles(vertices, faces, FACE_COLORS, view), FAINT_OPACITY), (*faint, FAINT_EDGE_OPACITY),
-                    (*triangles(collapsed, faces[surviving], FACE_COLORS[surviving], view), MESH_OPACITY),
-                    (*marks, 1.0), (*ellipsoid, ELLIPSOID_OPACITY)], background)
+    marks = [(edges(collapsed, faces[surviving], EDGE_WIDTH * pixel), EDGE_COLOUR),
+             (solids.rods(dashes[:, 0], dashes[:, 1], COLLAPSE_WIDTH / 2 * pixel), COLLAPSE_COLOUR),
+             (solids.ball(vertices[:2], VERTEX_RADIUS * pixel)[:, None], ENDPOINT_COLOUR),
+             (solids.ball(optimum, OPTIMUM_RADIUS * pixel)[None, None], OPTIMUM_COLOUR)]
+    translucent = [(triangles(vertices, faces, TRIANGLE_THICKNESS * pixel), FACE_COLORS, FAINT_OPACITY),
+                   (edges(vertices, faces, EDGE_WIDTH * pixel), FAINT_EDGE_COLOUR, FAINT_EDGE_OPACITY),
+                   (triangles(collapsed, faces[surviving], TRIANGLE_THICKNESS * pixel), FACE_COLORS[surviving],
+                    MESH_OPACITY),
+                   (error_region(quadric, optimum)[None, None], OPTIMUM_COLOUR, ELLIPSOID_OPACITY)]
+    return solids.draw(marks, view, background, translucent=translucent)
 
 
 def draw_qem(

@@ -1,9 +1,10 @@
 """Three views of the spherical conic: its foci, its tangent great circles, its cone and polhodes, drawn on the GPU.
 
-The sphere is a mesh on the sampled grid: coloured by the polarity's form in the first view, a faint ball in the
-second, and in the third a pale sheet on which the polhodes, the level sets of the form, are inked by its colour
-function from the form at each corner, how fast it changes across a pixel deciding how wide the ink lies. Curves are
-tubes, points balls and poles arrows.
+The sphere is traced: clear in the first view, where a mesh on the sampled grid colours it by the polarity's form, a
+faint ball in the second, and in the third a pale sheet. The curves on it are inked where a quadric cuts it: a great
+circle where a plane through the centre does, the oval where the cone of the form does, and the polhodes where the
+form's level quadrics do; the geodesics are tubes. The cone itself is traced, clear, its sheet painted on it as far
+as it was sampled. Points are balls and poles arrows.
 """
 
 from __future__ import annotations
@@ -14,8 +15,8 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from numga import stack
-from examples.quadrics.spherical_quadrics.core import Plane, Point, Scalar, ga, mv
-from examples.wgsl import compose, meshes, show, solids, vec3
+from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, points
+from examples.wgsl import meshes, show, solids
 
 sm = solids.mv
 OVAL, FOCUS, SAMPLE = np.array(to_rgb("gold")), np.array(to_rgb("red")), np.ones(3)
@@ -28,10 +29,10 @@ background = np.ones(3)
 # of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(30.0), np.radians(30.0)
 MARGIN, N_PIXELS = 0.25, 600
-# Opacities: the sphere coloured by the form, the faint sphere and its great circles, the antipodal loop, the
-# tangent circles, the pale sheet of the polhodes, and the cone.
-FORM_OPACITY, BALL_OPACITY, MERIDIAN_OPACITY, ANTIPODE_OPACITY = 0.7, 0.1, 0.35, 0.7
-CIRCLE_OPACITY, SHEET_OPACITY, CONE_OPACITY = 0.6, 0.7, 0.4
+# Opacities: the sphere coloured by the form, each surface of the faint sphere and its great circles, the antipodal
+# loop, the tangent circles, each surface of the pale sheet of the polhodes, and each of the cone.
+FORM_OPACITY, BALL_OPACITY, MERIDIAN_OPACITY, ANTIPODE_OPACITY = 0.7, 0.05, 0.35, 0.7
+CIRCLE_OPACITY, SHEET_OPACITY, CONE_OPACITY = 0.6, 0.55, 0.23
 # Widths in pixels: the oval, the antipodal loop, the geodesics, the tangent circles, the sphere's great circles, the
 # poles' shafts and heads, and the polhodes' ink; the samples along a dash of the antipodal loop.
 OVAL_WIDTH, ANTIPODE_WIDTH, GEODESIC_WIDTH, CIRCLE_WIDTH, MERIDIAN_WIDTH = 5.0, 3.5, 3.5, 3.0, 3.0
@@ -39,8 +40,8 @@ POLE_WIDTH, HEAD_WIDTH, POLHODE_WIDTH = 3.0, 10.0, 3.0
 N_DASH = 8
 # Radii in pixels: the foci, the sample point and the dots of the dual conic; every how many samples a dot.
 FOCUS_RADIUS, SAMPLE_RADIUS, DOT_RADIUS, DOT_EVERY = 7.0, 8.0, 2.5, 3
-# The poles' length, and their heads' share of it; the samples around the faint sphere's great circles.
-POLE_LENGTH, HEAD_SHARE, N_MERIDIAN = 0.35, 0.3, 120
+# The poles' length, and their heads' share of it.
+POLE_LENGTH, HEAD_SHARE = 0.35, 0.3
 # The polhodes: the levels drawn, as fractions of the form's least and greatest values on the sphere.
 FRACTIONS = np.linspace(0.0, 0.7, 4)[1:]
 
@@ -72,21 +73,6 @@ def sphere_mesh(sphere: np.ndarray) -> tuple[solids.Point, np.ndarray, dict]:
     return places, faces, dict(a=radial[faces[:, 0]], b=radial[faces[:, 1]], c=radial[faces[:, 2]])
 
 
-def polhode_colour(levels: np.ndarray, inks: np.ndarray) -> str:
-    """WGSL colouring the sphere pale, inked where the form, interpolated across each face from its corners, crosses
-    one of the levels: by how many pixels away the level lies, the form's change across a pixel the measure."""
-    lines = "\n".join(f"    shade = mix(shade, {vec3(ink)}, clamp({POLHODE_WIDTH / 2 + 0.5} - abs(values.x - {level:.6f}) / "
-                      f"step, 0.0, 1.0));" for level, ink in zip(levels, inks))
-    return f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
-    let step = oversampling * fwidth(values.x);
-    var shade = {vec3(POLHODE_SHEET)};
-{lines}
-    return vec4<f32>(shade, 1.0);
-}}
-"""
-
-
 def dashes(curve: np.ndarray) -> np.ndarray:
     """Every other run of `N_DASH` samples of a curve `[n, 3]`, each run one sample longer to meet the next gap,
     `[dashes, N_DASH + 1, 3]`."""
@@ -94,9 +80,29 @@ def dashes(curve: np.ndarray) -> np.ndarray:
     return curve[starts[:, None] + np.arange(N_DASH + 1)]
 
 
+def form(conic: Polarity) -> solids.Quadric:
+    """The polarity's form, `P & conic(P)`, as a quadric of the traced scene: the cone through the centre where it
+    vanishes, and on the unit sphere the form itself."""
+    # The form's matrix: each basis point's polar plane, read on the basis planes.
+    matrix = normals(conic(points(np.eye(3))))                                  # [3, 3]
+    return (solids.axes[:, None] * (solids.axes & solids.Point)[None, :] * matrix).sum(axis=(-1, -2))
+
+
+def through_centre(normals: np.ndarray) -> solids.Plane:
+    """The planes through the centre square to normals `[..., 3]`."""
+    return solids.plane(normals, np.zeros(normals.shape[:-1]))
+
+
+def chord_balls(starts: np.ndarray, ends: np.ndarray) -> solids.Quadric:
+    """The balls on the chords from starts to ends `[..., 3]`: of a circle through both ends, each holds the shorter
+    arc between them and no more of it, and of a short run of a smooth curve, the run."""
+    radii = np.linalg.norm(ends - starts, axis=-1) / 2
+    return solids.quadric(np.eye(3) / radii[..., None, None] ** 2, sm.point((starts + ends) / 2))
+
+
 def draw_spherical_conic(
     curve: Point, foci: Point, arcs: Point, sample: Point, tangents: Plane,
-    touching: Plane, circles: Point, surface: Point, grid: Point, potential: Scalar,
+    touching: Plane, circles: Point, surface: Point, grid: Point, potential: Scalar, conic: Polarity,
 ) -> plt.Figure:
     """The oval with its foci and the geodesics from them to one point, over the polarity's form; the oval
     as the envelope of its tangent great circles, with their poles; and the cone through it, with the
@@ -108,43 +114,63 @@ def draw_spherical_conic(
     poles = ck[:, 0] + POLE_LENGTH * normals(touching)
     view = solids.view([sm.point(sphere), sm.point(cone), sm.point(poles)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     places, faces, radial = sphere_mesh(sphere)
-    oval = (*meshes.tubes([(pk, OVAL)], OVAL_WIDTH, view), 1.0)
+    unit_ball = solids.ball(solids.origin, 1.0)[None, None]
+    # The form's cone cuts the sphere in the oval and in its antipodal loop; the oval is its part on the side of the
+    # centre the oval lies on.
+    cone_form = form(conic)                                                    # [] Quadric
+    nappe = solids.half_space(through_centre(-pk.mean(axis=0)))                # [] Quadric
+
+    def oval(part: int) -> solids.Ink:
+        """The oval inked on a part's surfaces."""
+        return solids.Ink(part, cone_form[None], nappe[None], OVAL, OVAL_WIDTH, 1.0)
 
     # Primal spherical oval, its antipodal loop, the foci and geodesics to one point, over the form on the sphere.
     shades = cm.coolwarm((level - level.min()) / (level.max() - level.min()))[..., :3].reshape(-1, 3)
-    form = meshes.layer(places, faces, shades[faces], radial, view, gloss=0.1)
-    antipode = meshes.tubes([(dash, OVAL) for dash in dashes(-pk)], ANTIPODE_WIDTH, view)
-    geodesics = meshes.tubes(list(zip(ak, GEODESICS)), GEODESIC_WIDTH, view)
-    marks = solids.layer([(solids.ball(sm.point(fk), FOCUS_RADIUS * view.pixel)[:, None], FOCUS),
-                          (solids.ball(sm.point(sk), SAMPLE_RADIUS * view.pixel)[None, None], SAMPLE)], view)
-    primal = compose([(*form, FORM_OPACITY), oval, (*antipode, ANTIPODE_OPACITY), (*geodesics, 1.0), (*marks, 1.0)],
-                     background)
+    shown_form = meshes.samples(places, faces, shades[faces], radial, view, gloss=0.1)
+    marks = [(solids.ball(sm.point(fk), FOCUS_RADIUS * view.pixel)[:, None], FOCUS),
+             (solids.ball(sm.point(sk), SAMPLE_RADIUS * view.pixel)[None, None], SAMPLE)]
+    geodesics = meshes.tube_samples(list(zip(ak, GEODESICS)), GEODESIC_WIDTH, view)
+    # The sphere itself, clear, is the first part after the opaque ones and carries the oval and its antipodal loop,
+    # dashed: each dash the loop within the ball on its chord.
+    runs = dashes(-pk)                                                         # [dashes, N_DASH + 1, 3]
+    antipode = solids.Ink(len(marks), cone_form[None].broadcast_to(runs.shape[:1]), chord_balls(runs[:, 0], runs[:, -1]),
+                          OVAL, ANTIPODE_WIDTH, ANTIPODE_OPACITY)
+    primal = solids.draw(marks, view, background, [antipode, oval(len(marks))], translucent=[(unit_ball, SPHERE, 0.0)],
+                         meshes=[(*shown_form, FORM_OPACITY), (*geodesics, 1.0)])
 
     # Plane-based dual view: the oval as the envelope of its tangent great circles, each with its pole, and the dual
     # conic the poles trace, dotted.
-    ball = (*solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE)], view), BALL_OPACITY)
-    meridians = meshes.tubes([(circle, SPHERE) for circle in meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3),
-                                                                            N_MERIDIAN)], MERIDIAN_WIDTH, view)
     colours = cm.plasma(np.linspace(0.1, 0.9, len(ck)))[:, :3]
-    tangent_circles = meshes.tubes(list(zip(ck, colours)), CIRCLE_WIDTH, view)
     shafts, heads = solids.arrows(sm.point(ck[:, 0]), sm.point(poles), POLE_WIDTH / 2 * view.pixel,
                                   HEAD_SHARE * POLE_LENGTH, HEAD_WIDTH / 2 * view.pixel)
     dual_conic = solids.ball(sm.point(normals(tangents)[::DOT_EVERY]), DOT_RADIUS * view.pixel)[:, None]
-    pointers = solids.layer([(shafts, colours), (heads, colours), (dual_conic, DUAL)], view)
-    envelope = compose([ball, (*meridians, MERIDIAN_OPACITY), oval, (*tangent_circles, CIRCLE_OPACITY),
-                        (*pointers, 1.0)], background)
+    pointers = [(shafts, colours), (heads, colours), (dual_conic, DUAL)]
+    # The faint sphere is the first part after the opaque ones: its great circles square to x, y and z, and the
+    # tangent great circles, inked where their planes cut it.
+    meridians = solids.Ink(len(pointers), solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
+                           SPHERE, MERIDIAN_WIDTH, MERIDIAN_OPACITY)
+    tangent_planes = through_centre(normals(touching))                         # [touching] Plane
+    tangent_circles = solids.Ink(len(pointers), solids.half_space(tangent_planes),
+                                 solids.everywhere[None].broadcast_to(tangent_planes.shape), colours, CIRCLE_WIDTH,
+                                 CIRCLE_OPACITY)
+    envelope = solids.draw(pointers, view, background, [meridians, tangent_circles, oval(len(pointers))],
+                           translucent=[(unit_ball, SPHERE, BALL_OPACITY)])
 
-    # The quadratic cone through the oval, and the polhodes: level sets of P & C(P), below zero and above.
+    # The quadratic cone through the oval, and the polhodes: level sets of P & C(P), below zero and above, where the
+    # form less each level cuts the pale sheet. The cone is clear, its sheet painted on it as far from the centre as
+    # it was sampled, by a fill through a plane across the cone, which cuts it nowhere but the apex.
     levels = np.concatenate([level.min() * FRACTIONS[::-1], level.max() * FRACTIONS])
     inks = np.repeat(np.stack([BELOW, ABOVE]), len(FRACTIONS), axis=0)
-    sheet = meshes.layer(places, faces, level.reshape(-1)[faces][..., None], radial, view,
-                         colour=polhode_colour(levels, inks), gloss=0.1)
-    cone_places = sm.point(cone.reshape(-1, 3))
-    cone_faces = grid_faces(*cone.shape[:2])
-    cone_layer = meshes.layer(cone_places, cone_faces, CONE, meshes.smooth(cone_places, cone_faces), view)
-    polhodes = compose([(*sheet, SHEET_OPACITY), (*cone_layer, CONE_OPACITY), oval], background)
+    polhodes = solids.Ink(0, cone_form + solids.everywhere * levels, solids.everywhere[None].broadcast_to(levels.shape),
+                          inks, POLHODE_WIDTH, 1.0)
+    reach = np.linalg.norm(cone, axis=-1).max()
+    sheet = solids.Ink(1, solids.half_space(through_centre(pk.mean(axis=0)))[None],
+                       solids.ball(solids.origin, reach)[None], CONE, np.inf, CONE_OPACITY)
+    solid_cone = stack([cone_form, nappe])[None]                               # [1, 2] Quadric
+    polhode_view = solids.draw([], view, background, [polhodes, oval(0), sheet],
+                               translucent=[(unit_ball, POLHODE_SHEET, SHEET_OPACITY), (solid_cone, CONE, 0.0)])
 
     fig = plt.figure(figsize=(3 * N_PIXELS / 100, view.shape[0] / 100), dpi=100)
-    for index, image in enumerate((primal, envelope, polhodes)):
+    for index, image in enumerate((primal, envelope, polhode_view)):
         show(fig.add_axes((index / 3, 0.0, 1 / 3, 1.0)), image, view)
     return fig

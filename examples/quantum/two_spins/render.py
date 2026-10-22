@@ -11,24 +11,23 @@ from matplotlib.colors import to_rgb
 from numga import Extensor
 from examples.animation import capture
 from examples.quantum.two_spins import core
-from examples.wgsl import compose, labels, meshes, show, solids
+from examples.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 FIRST, SECOND, TOGETHER = "#c0392b", "#2e86c1", "#7d3c98"
 FOUR_NAMES = ("singlet", "triplet, zero spin", "triplet, both up", "triplet, both down")
-# The sphere a spin's Bloch vector reaches, faint, and its equator and two meridians over it; the names of the
-# qubit's poles and the dot where its paths start.
-SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.18
-CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.6), 0.5
+# The sphere a spin's Bloch vector reaches, faint, how much each of its surfaces hides, and its equator and two
+# meridians inked on it; the names of the qubit's poles and the dot where its paths start.
+SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
+CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.6), 0.6
 LABEL_COLOUR, START_COLOUR = "0.35", np.full(3, 0.1)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
 REACH, N_PIXELS = 1.3, 700
-# The points along a great circle and around a tube; the widths of the great circles, the paths and the arrows'
-# shafts, the arrowheads' length and width, and the radii of the dots, the largest landing dot and the start, in
-# pixels.
-N_CIRCLE, N_AROUND = 120, 8
+# The points around a tube; the widths of the great circles, the paths and the arrows' shafts, the arrowheads'
+# length and width, and the radii of the dots, the largest landing dot and the start, in pixels.
+N_AROUND = 8
 CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.4, 7.0, 6.0, 30.0, 18.0
 DOT_RADIUS, LANDING_RADIUS, START_RADIUS = 5.0, 9.0, 7.0
 
@@ -58,14 +57,20 @@ def bell_bounds(ax: plt.Axes, angles: np.ndarray) -> None:
     ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", r"$2\sqrt{2}$"])
 
 
-def ball() -> tuple[solids.View, list[tuple[np.ndarray, np.ndarray, float]]]:
-    """The view of the unit sphere, and the sphere, lightly: a faint ball and its equator and two meridians, the
-    great circles square to x, y and z, as translucent layers."""
-    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    shell = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
-    great_circles = meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3), N_CIRCLE)  # [3, circle + 1, 3]
-    circles = meshes.tubes([(circle, CIRCLE_COLOUR) for circle in great_circles], CIRCLE_WIDTH, view, N_AROUND)
-    return view, [(*shell, SPHERE_OPACITY), (*circles, CIRCLE_OPACITY)]
+def ball() -> solids.View:
+    """The view of the unit sphere: square about its centre."""
+    return solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
+
+
+def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
+              tubes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> np.ndarray:
+    """Solids and tubes among the unit sphere, lightly: a faint translucent ball with its equator and two meridians,
+    the great circles where the planes x, y and z cut it, inked on it."""
+    sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
+    # The ball is the first translucent part, after the opaque ones.
+    circles = solids.Ink(len(parts), solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
+                         CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
+    return solids.draw(parts, view, np.ones(3), [circles], translucent=sphere, meshes=tubes)
 
 
 def arrow(tip: np.ndarray, colour: str, pixel: float) -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -83,12 +88,11 @@ def dots(centres: np.ndarray, radii: np.ndarray) -> solids.Quadric:
 
 def draw_pair(tips: list[tuple[np.ndarray, str]]) -> plt.Figure:
     """Each spin's arrow `[3]` on its sphere, in its colour, side by side."""
-    view, sphere = ball()
+    view = ball()
     figure = plt.figure(figsize=(7, 3.4))
     for column, (tip, colour) in enumerate(tips):
         ax = figure.add_axes((column / 2, 0.0, 0.5, 1.0))
-        solid = solids.layer(arrow(tip, colour, view.pixel), view)
-        show(ax, compose([*sphere, (*solid, 1.0)], np.ones(3)), view)
+        show(ax, on_sphere(arrow(tip, colour, view.pixel), view), view)
     return figure
 
 
@@ -114,15 +118,14 @@ def steering_frames(points: np.ndarray, targets: np.ndarray, weights: np.ndarray
     where each lands `[frames, measured, 3]`, its dot's area in proportion to its weight `[frames, measured]`; one
     frame per entry of the leading axis."""
     colours = np.clip((points + 1) / 2, 0.0, 1.0)
-    view, sphere = ball()
+    view = ball()
     figure = plt.figure(figsize=(8, 4.2), dpi=80)
     measured_ax, landed_ax = (figure.add_axes((column / 2, 0.0, 0.5, 1.0)) for column in range(2))
-    measured = solids.layer([(solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None], colours)], view)
-    show(measured_ax, compose([*sphere, (*measured, 1.0)], np.ones(3)), view)
+    show(measured_ax, on_sphere([(solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None], colours)], view),
+         view)
 
     def landed(target: np.ndarray, weight: np.ndarray) -> np.ndarray:
-        layer = solids.layer([(dots(target, LANDING_RADIUS * view.pixel * np.sqrt(weight)), colours)], view)
-        return compose([*sphere, (*layer, 1.0)], np.ones(3))
+        return on_sphere([(dots(target, LANDING_RADIUS * view.pixel * np.sqrt(weight)), colours)], view)
 
     image = landed_ax.imshow(landed(targets[0], weights[0]), extent=view.extent, interpolation="bilinear")
     landed_ax.set_axis_off()
@@ -182,14 +185,13 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     the front. Beside it, how likely the pair is found back in the singlet."""
     paths = np.stack([across.to_array(), turned.to_array(), balance.to_array()], axis=-1)   # [rates, times, 3]
     shades = (TOGETHER, FIRST, SECOND)
-    view, sphere = ball()
-    tubes = meshes.tubes([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)], PATH_WIDTH, view,
-                         N_AROUND)
-    start = solids.layer([(solids.ball(sm.point(paths[0, 0]), START_RADIUS * view.pixel)[None, None], START_COLOUR)],
-                         view)
+    view = ball()
+    tubes = meshes.tube_samples([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)], PATH_WIDTH,
+                                view, N_AROUND)
+    start = [(solids.ball(sm.point(paths[0, 0]), START_RADIUS * view.pixel)[None, None], START_COLOUR)]
     figure = plt.figure(figsize=(11, 4.2))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
-    show(ax, compose([*sphere, (*tubes, 1.0), (*start, 1.0)], np.ones(3)), view)
+    show(ax, on_sphere(start, view, [(*tubes, 1.0)]), view)
     # Each pole named just past the sphere, where the camera sees it.
     places = np.array([(0, 0, 1.15), (0, 0, -1.2), (1.25, 0, 0), (-1.25, 0, 0)])
     labels(ax, view, sm.point(places), ["singlet", "triplet", "down-up", "up-down"], ha="center", va="center",

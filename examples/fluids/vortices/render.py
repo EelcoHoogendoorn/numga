@@ -15,7 +15,7 @@ from numga import stack
 
 from examples.animation import capture
 from examples.fluids.vortices import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 # Worldlines: one colour per vortex, the strands' width in pixels and the sides of their tubes, the view as
 # elevation and azimuth in radians, azimuth zero looking along +y, the margin around a braid as a share of its
@@ -121,5 +121,6 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         # The braid's larger side spans the panel's pixels.
         view = solids.View(camera, half, round(PANEL_PIXELS * half[0] / half.max()))
         strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
-        show(ax, compose([(*meshes.tubes(strands, STRAND_WIDTH, view, N_AROUND), 1.0)], BACKGROUND), view)
+        tubes = meshes.tube_samples(strands, STRAND_WIDTH, view, N_AROUND)
+        show(ax, solids.draw([], view, BACKGROUND, meshes=[(*tubes, 1.0)]), view)
     return result

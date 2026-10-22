@@ -1,6 +1,6 @@
 """A Koebe polyhedron and its dual about the sphere they both touch, and their circles on the sphere, drawn on the
-GPU: the sphere traced, the edges rods, the circles tubes lying on its surface. The sphere all but hides what lies
-behind it."""
+GPU: the sphere traced, the edges rods, the circles inked on its surface where their planes cut it. The sphere all but
+hides what lies behind it."""
 
 from __future__ import annotations
 
@@ -8,22 +8,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.surfaces.koebe import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import show, solids
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
 DUAL_COLOUR = np.array(to_rgb("#d06c36"))
-SPHERE_COLOUR, SPHERE_OPACITY, TOUCH_COLOUR = np.full(3, 0.97), 0.9, np.full(3, 0.25)
+# The sphere's colour and how much each of its surfaces hides; the touching points'
+# colour.
+SPHERE_COLOUR, SPHERE_OPACITY, TOUCH_COLOUR = np.full(3, 0.97), 0.75, np.full(3, 0.25)
 background = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the polyhedra as a
 # share of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(20.0), np.radians(30.0)
 MARGIN, N_PIXELS = 0.25, 500
-# The points around each circle and around a tube; the widths of the edges and the circles and the touching points'
-# radius, in pixels.
-CIRCLE_SAMPLES, N_AROUND = 64, 8
+# The widths of the edges and the circles and the touching points' radius, in pixels.
 EDGE_WIDTH, CIRCLE_WIDTH, TOUCH_RADIUS = 2.6, 2.4, 3.5
 
 
@@ -49,17 +49,14 @@ def beside(faces: np.ndarray, edges: np.ndarray) -> np.ndarray:
     return (order // 3).reshape(-1, 2)[np.argsort(np.lexsort(edges.T[::-1]))]
 
 
-def circles_on_sphere(circles: core.Vector, radius: float) -> np.ndarray:
-    """Points around each circle on the sphere of a radius about the centre, [..., samples + 1, 3], closed: the
-    plane `n | x == s` of a circle `n + s * w` cuts the unit sphere at the distance `s / |n|` along `n`."""
+def circle_planes(circles: core.Vector) -> solids.Plane:
+    """The plane of each circle on the unit sphere: a circle `n + s * w` lies where the plane `n | x == s` cuts it."""
     mv = core.mv
     # A circle's normal part, its inner products with x, y and z, which square to one, and its part along w,
     # which squares to minus one.
     along = (circles[..., None] | stack((mv.x, mv.y, mv.z))).to_array()      # [..., 3]
     offset = -(circles | mv.w).to_array()                                      # [...]
-    normal = along / np.linalg.norm(along, axis=-1, keepdims=True)
-    height = offset / np.linalg.norm(along, axis=-1)
-    return meshes.circles(radius * height[..., None] * normal, radius * np.sqrt(1 - height**2), normal, CIRCLE_SAMPLES)
+    return solids.plane(along, offset)
 
 
 def view(apexes: core.Point) -> solids.View:
@@ -75,19 +72,18 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     duals = core.face_circles(circles, faces)                                  # [faces] Vector
     apexes, dual_apexes = sm.point(coordinates(core.apexes(circles))), sm.point(coordinates(core.apexes(duals)))
     sides = beside(faces, edges)                                               # [edges, 2]
-    sphere = (*solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], frame), SPHERE_OPACITY)
-    rods = solids.layer([(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
-                         (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel),
-                          DUAL_COLOUR),
-                         (solids.ball(sm.point(coordinates(core.touching(circles, edges).dual())),
-                                      TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)], frame)
-    # The circles drawn a tube's radius out, so that the tubes lie on the sphere rather than in it, each coloured by
-    # its kind.
-    lifted = 1 + CIRCLE_WIDTH / 2 * pixel
-    loops = np.concatenate([circles_on_sphere(circles, lifted), circles_on_sphere(duals, lifted)])   # [circles, samples + 1, 3]
+    sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
+    marks = [(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
+             (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
+             (solids.ball(sm.point(coordinates(core.touching(circles, edges).dual())),
+                          TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)]
+    # The circles inked on the sphere, the only part of the second image, each coloured by its kind.
+    planes = concatenate([circle_planes(circles), circle_planes(duals)])      # [circles] Plane
     kinds = np.repeat(np.stack([PRIMAL_COLOUR, DUAL_COLOUR]), [circles.shape[-1], duals.shape[-1]], axis=0)   # [circles, 3]
-    tubes = meshes.tubes(list(zip(loops, kinds)), CIRCLE_WIDTH, frame, N_AROUND)
-    return compose([sphere, (*rods, 1.0)], background), compose([sphere, (*tubes, 1.0)], background)
+    loops = solids.Ink(0, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), kinds,
+                       CIRCLE_WIDTH, 1.0)
+    return (solids.draw(marks, frame, background, translucent=sphere),
+            solids.draw([], frame, background, [loops], translucent=sphere))
 
 
 def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figure:

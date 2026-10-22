@@ -10,11 +10,12 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.geometry.three_point_pose import core
-from examples.wgsl import compose, image_figure, meshes, show, solids
+from examples.wgsl import image_figure, show, solids
 
 COLOUR = np.array(to_rgb("#218c9d"))
 TARGET = np.array(to_rgb("#ce713f"))
-TRIANGLE_OPACITY = 0.45
+# How much of what lies behind each of the triangle's two faces hides.
+TRIANGLE_OPACITY = 0.26
 ORDER = [0, 1, 2, 0]
 # The view's elevation and azimuth, in radians, azimuth zero looking along +y; the margin as a share of the larger
 # side, and the pixels across a view.
@@ -51,12 +52,12 @@ def scene(target: core.Point, placed: core.Point, view: solids.View) -> np.ndarr
     `[rows, columns, 3]`."""
     starts, ends = dashes(coordinates(target)[ORDER], DASH_PERIOD * view.pixel)
     rods, joints = solids.edges(placed[ORDER[:-1]], placed[ORDER[1:]], EDGE_WIDTH / 2 * view.pixel)
-    marks = solids.layer([(solids.ball(target, MARKER_RADIUS * view.pixel)[:, None], TARGET),
-                          (solids.rods(solids.mv.point(starts), solids.mv.point(ends), DASH_WIDTH / 2 * view.pixel), TARGET),
-                          (rods, COLOUR), (joints, COLOUR)], view)
-    face = np.array([[0, 1, 2]])
-    triangle = meshes.layer(placed, face, COLOUR, meshes.flat(placed, face), view)
-    return compose([(*triangle, TRIANGLE_OPACITY), (*marks, 1.0)], np.ones(3))
+    marks = [(solids.ball(target, MARKER_RADIUS * view.pixel)[:, None], TARGET),
+             (solids.rods(solids.mv.point(starts), solids.mv.point(ends), DASH_WIDTH / 2 * view.pixel), TARGET),
+             (rods, COLOUR), (joints, COLOUR)]
+    # The triangle as a plate a pixel thick.
+    triangle = solids.plates(coordinates(placed)[None], view.pixel)          # [1, 5] Quadric
+    return solids.draw(marks, view, np.ones(3), translucent=[(triangle, COLOUR, TRIANGLE_OPACITY)])
 
 
 def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt.Figure:

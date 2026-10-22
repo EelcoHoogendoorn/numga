@@ -16,7 +16,7 @@ import numpy as np
 from numga import stack
 from examples.animation import capture
 from examples.geometry.scenegraph.core import Motor, Point, mv, unit_box_topology
-from examples.wgsl import compose, image_figure, meshes, show, solids
+from examples.wgsl import image_figure, meshes, show, solids
 
 
 # Colors for the robot arm bodies:
@@ -35,12 +35,11 @@ RAY_COLORS = [
 ]
 
 FLOOR_COLOR, FRONT_LENS_COLOR, REAR_LENS_COLOR = "#E2E8F0", "#319795", "#805AD5"
-SENSOR_COLOR, SENSOR_EDGE_COLOR, SENSOR_OPACITY = "#F6AD55", "#C05621", 0.55
+# The sensor chip's colours, and how much of what lies behind each of its two faces hides.
+SENSOR_COLOR, SENSOR_EDGE_COLOR, SENSOR_OPACITY = "#F6AD55", "#C05621", 0.33
 # The floor grid's lines in the plane z == 0, and the points along a lens rim.
 FLOOR_LINES = np.linspace(-1.2, 1.2, 7)
 N_RIM = 72
-# A square's corners in order, split in two triangles.
-HALVES = np.array([[0, 1, 2], [0, 2, 3]])
 # The view's elevation and azimuth, in radians, azimuth zero looking along +y; the margin as a share of the larger
 # side, and the pixels across the scene.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
@@ -85,27 +84,31 @@ def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
 def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
     """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
     _, faces = unit_box_topology()
-    # Every body's faces, each square split in two triangles, indexing all bodies' vertices in one list.
-    corners = np.arange(world_vertices.shape[0])[:, None, None, None] * world_vertices.shape[1] + faces[:, HALVES]
-    triangles = corners.reshape(-1, 3)                                         # [bodies * faces * 2, 3]
-    vertices = world_vertices.reshape(-1)
-    colours = np.repeat([mcolors.to_rgb(color) for color in BODY_COLORS], 2 * len(faces), axis=0)
-    arm = meshes.layer(vertices, triangles, colours[:, None], meshes.flat(vertices, triangles), view)
+    # Every body a box, the half-spaces inside its faces.
+    arm = solids.polyhedra(euclidean(world_vertices), faces)                  # [bodies, faces] Quadric
+    body_colours = np.array([mcolors.to_rgb(color) for color in BODY_COLORS])
 
     rims, sensor = optics(camera_pose)
-    chip = meshes.layer(mv.point(sensor), HALVES, np.array(mcolors.to_rgb(SENSOR_COLOR)), meshes.flat(mv.point(sensor), HALVES),
-                        view)
-    # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor, each one polyline.
+    # The sensor chip as a plate a pixel thick, with its edge.
+    chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Quadric
+    corners = mv.point(sensor)                                                # [4] Point
+    edge, edge_joints = solids.edges(corners, corners[[1, 2, 3, 0]], RAY_WIDTH / 2 * view.pixel)
+    # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor, each a run of segments.
     paths = np.stack([euclidean(stage) for stage in rays], axis=-2)           # [rays, stages, 3]
+    segments = paths.shape[1] - 1
     ray_colours = np.array([mcolors.to_rgb(color) for color in RAY_COLORS[:len(paths)]])
-    grid = meshes.tubes([(line, mcolors.to_rgb(FLOOR_COLOR)) for line in floor()], FLOOR_WIDTH, view)
-    lenses = meshes.tubes([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
-                          RIM_WIDTH, view)
-    lines = meshes.tubes([(sensor[[0, 1, 2, 3, 0]], mcolors.to_rgb(SENSOR_EDGE_COLOR))] + list(zip(paths, ray_colours)),
-                         RAY_WIDTH, view)
-    hits = solids.layer([(solids.ball(rays[3], HIT_RADIUS * view.pixel)[:, None], ray_colours)], view)
-    return compose([(*arm, 1.0), (*grid, 1.0), (*chip, SENSOR_OPACITY), (*lenses, 1.0), (*lines, 1.0), (*hits, 1.0)],
-                   np.ones(3))
+    beams, beam_joints = solids.edges(mv.point(paths[:, :-1].reshape(-1, 3)), mv.point(paths[:, 1:].reshape(-1, 3)),
+                                      RAY_WIDTH / 2 * view.pixel)
+    grid = solids.rods(mv.point(floor()[:, 0]), mv.point(floor()[:, 1]), FLOOR_WIDTH / 2 * view.pixel)
+    hits = solids.ball(rays[3], HIT_RADIUS * view.pixel)[:, None]             # [rays, 1] Quadric
+    lenses = meshes.tube_samples([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
+                                 RIM_WIDTH, view)
+    parts = [(arm, body_colours), (grid, np.array(mcolors.to_rgb(FLOOR_COLOR))),
+             (edge, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR))), (edge_joints, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR))),
+             (beams, np.repeat(ray_colours, segments, axis=0)), (beam_joints, np.repeat(ray_colours, 2 * segments, axis=0)),
+             (hits, ray_colours)]
+    return solids.draw(parts, view, np.ones(3), translucent=[(chip, np.array(mcolors.to_rgb(SENSOR_COLOR)), SENSOR_OPACITY)],
+                       meshes=[(*lenses, 1.0)])
 
 
 # --- sensor photograph ------------------------------------------------------------------

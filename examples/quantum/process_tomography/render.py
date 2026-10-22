@@ -10,20 +10,21 @@ import numpy as np
 from matplotlib.colors import LogNorm, to_rgb
 from matplotlib.lines import Line2D
 
+from numga import concatenate
 from examples.animation import capture
 from examples.quantum.process_tomography import core
-from examples.wgsl import compose, labels, meshes, show, solids
+from examples.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
 PROBE_COLOURS = ("#3275a8", "#d16a30", "#438e65", "#7b62a3")
 PROBE_NAMES = ("A", "B", "C", "D")
 # The sphere of pure inputs, faint, and its grid; the edges joining the probes, and the axes.
-SPHERE_COLOUR, SPHERE_OPACITY = np.full(3, 0.85), 0.12
-GRID_COLOUR, GRID_OPACITY = np.full(3, 0.6), 0.45
+SPHERE_COLOUR, SPHERE_OPACITY = np.full(3, 0.85), 0.06
+GRID_COLOUR, GRID_OPACITY = np.full(3, 0.6), 0.6
 EDGE_COLOUR, AXIS_COLOUR = np.full(3, 0.75), np.full(3, 0.55)
 # The opacities of a channel's image of the sphere and of the probes as prepared.
-IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.35
+IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.2
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
@@ -55,9 +56,9 @@ def bloch_axes(pixel: float) -> list[tuple[solids.Quadric, np.ndarray]]:
     return [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)]
 
 
-def show_ball(axes, layers: list[tuple[np.ndarray, np.ndarray, float]], view: solids.View, title: str) -> None:
-    """Traced layers in an axes, with the axes named past their tips."""
-    show(axes, compose(layers, np.ones(3)), view)
+def show_ball(axes, image: np.ndarray, view: solids.View, title: str) -> None:
+    """A traced picture in an axes, with the axes named past their tips."""
+    show(axes, image, view)
     labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=11,
            color=AXIS_COLOUR)
     axes.set_title(title)
@@ -73,11 +74,29 @@ def surface_faces(rows: int, columns: int) -> np.ndarray:
                            np.stack([a, c, d], axis=-1)[1:].reshape(-1, 3)])
 
 
+def grid_lines(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Every few latitudes, but the poles, `[lines, longitudes + 1, 3]`, and every few longitudes, `[lines,
+    latitudes + 1, 3]`, of a grid of points `[latitudes + 1, longitudes + 1, 3]`."""
+    return points[LATITUDE_STEP:-1:LATITUDE_STEP], np.moveaxis(points[:, :-1:LONGITUDE_STEP], 1, 0)
+
+
 def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Every few latitudes, but the poles, and every few longitudes of a grid of points `[latitudes + 1, longitudes
-    + 1, 3]`, as tubes `width` pixels across in a colour, one layer."""
-    lines = [*points[LATITUDE_STEP:-1:LATITUDE_STEP], *np.moveaxis(points[:, :-1:LONGITUDE_STEP], 1, 0)]
-    return meshes.tubes([(line, colour) for line in lines], width, view, N_AROUND)
+    """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as tubes `width` pixels across in a
+    colour, at every sample."""
+    lines = [line for batch in grid_lines(points) for line in batch]
+    return meshes.tube_samples([(line, colour) for line in lines], width, view, N_AROUND)
+
+
+def grid_planes(points: np.ndarray) -> solids.Plane:
+    """The planes of the grid lines of a grid of points on a sphere `[latitudes + 1, longitudes + 1, 3]`, each
+    through its line's first point and those a third and two thirds along it."""
+    planes = []
+    for lines in grid_lines(points):
+        count = lines.shape[1]
+        first, second, third = (lines[:, index] for index in (0, count // 3, 2 * count // 3))   # [lines, 3] each
+        normals = np.cross(second - first, third - first)
+        planes.append(solids.plane(normals, np.sum(normals * first, axis=-1)))
+    return concatenate(planes)
 
 
 def draw_experiment(prepared: core.State, probabilities: core.Scalar,
@@ -93,9 +112,9 @@ def draw_experiment(prepared: core.State, probabilities: core.Scalar,
     # Joining the four probes makes their coverage of space visible.
     first, second = np.triu_indices(len(probes), k=1)
     edges = solids.rods(sm.point(probes[first]), sm.point(probes[second]), EDGE_WIDTH / 2 * view.pixel)
-    scene = solids.layer([*bloch_axes(view.pixel), (edges, EDGE_COLOUR),
-                          (solids.ball(sm.point(probes), PROBE_RADIUS * view.pixel)[:, None], colours)], view)
-    show_ball(probe_axes, [(*scene, 1.0)], view, "Prepared states")
+    scene = solids.draw([*bloch_axes(view.pixel), (edges, EDGE_COLOUR),
+                         (solids.ball(sm.point(probes), PROBE_RADIUS * view.pixel)[:, None], colours)], view, np.ones(3))
+    show_ball(probe_axes, scene, view, "Prepared states")
     for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
         probe_axes.text(x, y, name, color=colour, fontsize=10)
 
@@ -124,23 +143,28 @@ def draw_channels(surface: core.State, outputs: core.State, prepared: core.State
     view = bloch_view()
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
-    ball = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
-    reference = grid(sphere, GRID_COLOUR, GRID_WIDTH, view)
-    before = solids.layer([(solids.ball(sm.point(probes), PREPARED_RADIUS * view.pixel)[:, None], colours)], view)
+    # The sphere of pure inputs and the probes as prepared, translucent; the planes of the sphere's grid lines.
+    translucent = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY),
+                   (solids.ball(sm.point(probes), PREPARED_RADIUS * view.pixel)[:, None], colours, PREPARED_OPACITY)]
+    planes = grid_planes(sphere)                                               # [lines] Plane
     figure = plt.figure(figsize=(4.1 * len(labels), 4.3), layout="constrained")
     for index, (label, image, points, colour) in enumerate(zip(labels, images, mapped, CHANNEL_COLOURS)):
         axes = figure.add_subplot(1, len(labels), index + 1)
         # The reference grid and the channel's image use the same sampled directions.
         places = sm.point(image[:, :-1].reshape(-1, 3))                      # [(latitudes + 1) * longitudes] Point
-        shell = meshes.layer(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view, gloss=0.1)
+        shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view, gloss=0.1)
         lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
-        # The axes, and the probes after the channel.
+        # The axes, and the probes after the channel; the sphere's grid inked where the planes of its lines cut it, the
+        # sphere the first part after the opaque ones.
         after = solids.ball(sm.point(points), AFTER_RADIUS * view.pixel)[:, None]
-        solid = solids.layer([*bloch_axes(view.pixel), (after, colours)], view)
-        show_ball(axes, [(*ball, SPHERE_OPACITY), (*reference, GRID_OPACITY), (*shell, IMAGE_OPACITY), (*lines, 1.0),
-                         (*before, PREPARED_OPACITY), (*solid, 1.0)], view, label)
+        opaque = [*bloch_axes(view.pixel), (after, colours)]
+        reference = solids.Ink(len(opaque), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
+                               GRID_COLOUR, GRID_WIDTH, GRID_OPACITY)
+        show_ball(axes, solids.draw(opaque, view, np.ones(3), [reference], translucent,
+                                    [(*shell, IMAGE_OPACITY), (*lines, 1.0)]), view, label)
+    # A prepared probe shows through both its surfaces.
     markers = (
-        Line2D([], [], linestyle="none", marker="o", markersize=10, color="0.4", alpha=PREPARED_OPACITY,
+        Line2D([], [], linestyle="none", marker="o", markersize=10, color="0.4", alpha=1 - (1 - PREPARED_OPACITY) ** 2,
                label="Prepared"),
         Line2D([], [], linestyle="none", marker="o", color="0.4", label="After channel"),
     )

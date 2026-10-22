@@ -12,7 +12,7 @@ from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.wgsl import compose, labels, meshes, show, solids, vec3
+from examples.wgsl import labels, meshes, show, solids, vec3
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.05
@@ -45,7 +45,7 @@ def gridded(colour: np.ndarray, n_latitudes: int, near: bool) -> str:
     """WGSL colouring one side of a sheet, the side the camera sees the front of or the far side, translucent, inked
     more opaquely along every few parallels short of the poles and every few meridians: by how many pixels the
     corners' grid indices, `values.x` and `values.y`, lie from the nearest line, their change across a pixel the
-    measure. The other side hides nothing, and is left for the other layer."""
+    measure. The other side hides nothing, and is left for the other mesh."""
     return f"""
 fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let strides = vec2<f32>({latitude_stride:.1f}, {longitude_stride:.1f});
@@ -60,11 +60,11 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """
 
 
-def k_axes(view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """The frame of k-space."""
+def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The frame of k-space, its shafts and its heads."""
     shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
                                  head_width / 2 * view.pixel)
-    return solids.layer([(shafts, axis_colour), (heads, axis_colour)], view)
+    return [(shafts, axis_colour), (heads, axis_colour)]
 
 
 def surface(ax: Axes, sheets: core.Vector) -> None:
@@ -77,14 +77,14 @@ def surface(ax: Axes, sheets: core.Vector) -> None:
     # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
     indices = np.stack(np.meshgrid(np.arange(n_latitudes), np.arange(n_longitudes), indexing="ij"), axis=-1)
     grid = indices.reshape(-1, 2)[faces]                                         # [faces, 3, 2]
-    # Each sheet's near side and far side a layer of its own, so that the far side shows through the near.
-    layers = []
+    # Each sheet's near side and far side a mesh of its own, so that the far side shows through the near.
+    sides = []
     for sheet, colour in zip(np.moveaxis(points, 2, 0), map(to_rgb, sheet_colours)):
         places = sm.point(sheet.reshape(-1, 3))
         normals = meshes.smooth(places, faces)
-        layers += [(*meshes.layer(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
-                                  gloss=0.2), 1.0) for near in (True, False)]
-    show(ax, compose([*layers, (*k_axes(view), 1.0)], np.ones(3)), view)
+        sides += [(*meshes.samples(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
+                                   gloss=0.2), 1.0) for near in (True, False)]
+    show(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sides), view)
     labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
            fontsize=11, color=axis_colour)
 

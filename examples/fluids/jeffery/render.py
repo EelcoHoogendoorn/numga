@@ -18,31 +18,32 @@ import numpy as np
 from matplotlib import cm
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import concatenate, stack
 from examples.animation import capture
 from examples.fluids.jeffery import core
-from examples.wgsl import Shader, behind, compose, labels, meshes, show, solids, supersampled, vec3
+from examples.wgsl import Shader, labels, meshes, show, solids, supersampled, vec3
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()
 # The colours of the starts, of the bodies, of the flow and of the frame's names. The view as (elevation, azimuth) in
 # degrees: raised from the normal of the vortex plane towards the gradient, then turned towards the flow. The lamp
 # over the viewer's left shoulder, by its parts towards the viewer, to the right and up, and the share
-# of a body's colour lit even where it faces away. The half width of the tumbling view, and its pixels
-# across.
+# of a body's colour lit even where it faces away. How far the marks on the long axis reach past its tips, as a share
+# of the axis; the margin around the farthest reach, as a share of it, and the pixels across a panel.
 STARTS = cm.viridis(np.linspace(0.1, 0.9, 5))
 BODY, BODY_DARK, TIP, FLOW, NAMES = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8", "#475569"
 VIEW = (18, 28)
 LAMP = (1.0, -0.4, 0.7)
 AMBIENT = 0.4
-LIMIT = 4.2
-PIXELS = 200
-# The sphere of directions, drawn on the GPU: its colour and opacity, and its grid's width in pixels, opacity and
-# points along a circle; the frame's arrows' length in radii of the sphere, and their width and heads in pixels, and
+TIP_REACH = 1.15
+FRAME_MARGIN = 0.08
+PIXELS = 360
+# The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
+# width in pixels and opacity; the frame's arrows' length in radii of the sphere, and their width and heads in pixels, and
 # how far their names reach; the orbits' width in pixels, the margin around the names' reach, and the pixels across a
 # sphere.
 SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
-GRID_WIDTH, GRID_OPACITY, N_CIRCLE = 3.0, 0.3, 120
+GRID_WIDTH, GRID_OPACITY = 3.0, 0.3
 FLOW_RGB = np.array(to_rgb(FLOW))
 ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, LABEL_DISTANCE = 1.35, 3.0, 16.0, 10.0, 1.47
 ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 3.0, 0.05, 520
@@ -54,39 +55,39 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("xy yz zx")).kernel
 
 
-def sphere(view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
-    """The faint unit sphere as layers: a translucent ball pushed back behind what lies on it, its parallels and
-    meridians as faint tubes, and the frame of the normal of the vortex plane, the flow and the gradient as arrows."""
-    ball = behind(solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE)], view), 2 * GRID_WIDTH * view.pixel)
-    polar = np.radians(np.arange(30, 180, 30))
-    parallels = meshes.circles(np.cos(polar)[:, None] * [0, 0, 1], np.sin(polar), np.broadcast_to([0, 0, 1], (len(polar), 3)),
-                               N_CIRCLE)
-    # The meridians: great circles square to the plane x turned about the vertical by each azimuth.
-    meridians = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp() >> solids.mv.x   # [meridians] Plane
-    greats = meshes.circles(np.zeros((meridians.shape[0], 3)), np.ones(meridians.shape[0]),
-                            (solids.axes | meridians[:, None]).to_array(), N_CIRCLE)
-    grid = meshes.tubes([(circle, SPHERE) for circle in np.concatenate([parallels, greats])], GRID_WIDTH, view)
+def sphere(view: solids.View) -> tuple[list, list, list]:
+    """The faint unit sphere, traced: the frame of the normal of the vortex plane, the flow and the gradient as arrows,
+    the ball translucent among them, and its parallels and meridians inked on it, where their planes cut it."""
     # The frame: along the normal of the vortex plane, along the flow and along the gradient.
     shafts, heads = solids.frame(ARROW_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
-    arrows = solids.layer([(shafts, FLOW_RGB), (heads, FLOW_RGB)], view)
-    return [(*ball, SPHERE_OPACITY), (*grid, GRID_OPACITY), (*arrows, 1.0)]
+    parts = [(shafts, FLOW_RGB), (heads, FLOW_RGB)]
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE, SPHERE_OPACITY)]
+    # The parallels: the planes across the vertical at the height of each polar angle; the meridians: the plane x
+    # turned about the vertical by each azimuth.
+    heights = np.cos(np.radians(np.arange(30, 180, 30)))
+    meridians = (solids.mv.xy * (-np.radians(np.arange(0, 180, 30)) / 2)).exp() >> solids.mv.x   # [meridians] Plane
+    planes = concatenate([solids.mv.z - solids.mv.w * heights, meridians])          # [circles] Plane
+    # The ball is the first translucent part, after the opaque ones.
+    grid = solids.Ink(len(parts), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), SPHERE,
+                      GRID_WIDTH, GRID_OPACITY)
+    return parts, ball, [grid]
 
 
 def draw_orbits(trails: core.Point) -> plt.Figure:
     """The path of each body's long axis from each start `[steps + 1, bodies, starts]`, on the sphere of
-    directions, both ends of the axis drawn."""
+    directions, both ends of the axis drawn, among the sphere's own surfaces sample by sample."""
     paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
     count = paths.shape[1]
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
                        np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
-    shown = sphere(view)
+    parts, ball, inks = sphere(view)
     for body in range(count):
-        orbits = meshes.tubes([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
-                               for end in (1, -1)], ORBIT_WIDTH, view)
+        orbits = meshes.tube_samples([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
+                                      for end in (1, -1)], ORBIT_WIDTH, view)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
-        show(ax, compose([*shown, (*orbits, 1.0)], np.ones(3)), view)
+        show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(*orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
         labels(ax, view, solids.mv.point(LABEL_DISTANCE * np.eye(3)), ["$z$", "$x$", "$y$"], ha="center",
                va="center", fontsize=13, color=NAMES)
@@ -107,14 +108,14 @@ def screen(points: core.Point, right: core.Point, up: core.Point) -> np.ndarray:
     return np.stack([points.dot(right).to_array(), points.dot(up).to_array()], axis=-1)
 
 
-def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up: core.Point,
+def pictures(stretches: core.Stretch, rotors: core.Rotor, limit: float, right: core.Point, up: core.Point,
              back: core.Point) -> np.ndarray:
-    """Each body, ray cast, as an RGBA picture `[bodies, pixels, pixels, 4]`, transparent where the
-    rays miss it."""
+    """Each body, ray cast, as an RGBA picture `[bodies, pixels, pixels, 4]` of half-width `limit`, transparent
+    where the rays miss it."""
     lamp = right * LAMP[1] + up * LAMP[2] + back * LAMP[0]
     unstretches = stretches.inverse()                                        # [bodies] Point <- Point
     shown = [shader()((PIXELS, PIXELS), turn=turn, unstretch=unstretch, right=right, up=up, back=back, lamp=lamp,
-                      half_width=LIMIT)["image"] for turn, unstretch in zip(rotors, unstretches)]
+                      half_width=limit)["image"] for turn, unstretch in zip(rotors, unstretches)]
     pictures = np.stack(shown)                                               # [bodies, pixels, pixels, 4]
     alpha = pictures[..., 3:]
     return np.concatenate([pictures[..., :3] / np.maximum(alpha, 1e-12), alpha], axis=-1)
@@ -179,20 +180,20 @@ def draw_split(ax, points: core.Point, view: tuple, **style) -> None:
         ax.plot(*np.where(side[:, None], positions, np.nan).T, zorder=zorder, **style)
 
 
-def draw_body(ax, picture: np.ndarray, tip: core.Point, tips: core.Point, heights: core.Point,
+def draw_body(ax, picture: np.ndarray, limit: float, tip: core.Point, tips: core.Point, heights: core.Point,
               velocities: core.Point, view: tuple) -> None:
     """One body at one frame, its picture, the ends of its long axis, the paths of the axis's tips
-    `[frames so far]` from the start, and the shear flow's velocity behind it."""
+    `[frames so far]` from the start, and the shear flow's velocity behind it, within `limit` of the centre."""
     right, up, back = view
     for end in (1, -1):
-        draw_split(ax, tip * (end * np.array([1.0, 1.15])), view, color=TIP, linewidth=1.4)
+        draw_split(ax, tip * (end * np.array([1.0, TIP_REACH])), view, color=TIP, linewidth=1.4)
         draw_split(ax, tips * end, view, color=TIP, linewidth=1.0, alpha=0.9)
     bases = screen(heights - velocities / 2, right, up)                       # [heights, 2]
     arrows = screen(velocities, right, up)                                    # [heights, 2]
     ax.quiver(*bases.T, *arrows.T, angles="xy", scale_units="xy", scale=1, color=FLOW, width=0.005, zorder=0)
-    ax.imshow(picture, extent=(-LIMIT, LIMIT, -LIMIT, LIMIT), interpolation="bilinear", zorder=2)
-    ax.set_xlim(-LIMIT, LIMIT)
-    ax.set_ylim(-LIMIT, LIMIT)
+    ax.imshow(picture, extent=(-limit, limit, -limit, limit), interpolation="bilinear", zorder=2)
+    ax.set_xlim(-limit, limit)
+    ax.set_ylim(-limit, limit)
     ax.set_aspect("equal")
     ax.set_axis_off()
 
@@ -207,10 +208,13 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     for rotors, tip in frames:
         tips.append(tip)
         path = stack(tips)                                                    # [frames so far, bodies] Point
-        shown = pictures(stretches, rotors, *view)                            # [bodies, pixels, pixels, 4]
-        figure = plt.figure(figsize=(3.6 * count, 3.6), dpi=100)
+        # One frame for every panel, so that the bodies' sizes compare: the farthest marks past a long axis's tips,
+        # and the margin.
+        limit = TIP_REACH * (1 + FRAME_MARGIN) * tip.norm().to_array().max()
+        shown = pictures(stretches, rotors, limit, *view)                     # [bodies, pixels, pixels, 4]
+        figure = plt.figure(figsize=(count * PIXELS / 100, PIXELS / 100), dpi=100)
         for body in range(count):
-            draw_body(figure.add_subplot(1, count, body + 1), shown[body], tip[body], path[:, body], heights,
+            draw_body(figure.add_subplot(1, count, body + 1), shown[body], limit, tip[body], path[:, body], heights,
                       velocities, view)
         figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
         images.append(capture(figure))

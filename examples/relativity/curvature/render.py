@@ -19,7 +19,7 @@ from numga import stack
 from examples.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
-from examples.wgsl import compose, labels, meshes, show, solids
+from examples.wgsl import labels, show, solids
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"
@@ -36,7 +36,8 @@ MARGIN = 0.08
 N_MAP_PIXELS = 500
 PANEL_WIDTH = 0.44
 BLUE_RGB, ORANGE_RGB, LIGHT, PATCH = (np.array(to_rgb(colour)) for colour in (BLUE, ORANGE, light_colour, BLUE))
-PATCH_OPACITY = 0.28
+# How much each of a patch's two faces hides.
+PATCH_OPACITY = 0.15
 # The axes' arrows and their names, in extents of the diagram; widths in pixels, of the axes' arrows and of the
 # patches' outlines, and an arrowhead's length and width in widths of its shaft.
 AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
@@ -87,16 +88,15 @@ def arrows(ends: np.ndarray, colour: np.ndarray, width: float, view: solids.View
 def panel(ax: plt.Axes, corners: np.ndarray, ends: list[tuple[np.ndarray, np.ndarray, float]], extent: float,
           view: solids.View) -> None:
     """One spacetime diagram in its axes: horizontal x, depth z and vertical t as light arrows named at their tips,
-    the area element `[4, 3]` as a translucent patch with its outline, and arrows `[arrows, 3]` each with its
-    colour and width in pixels."""
+    the area element `[4, 3]` as a translucent plate a pixel thick with its outline, rods joined round at the
+    corners, and arrows `[arrows, 3]` each with its colour and width in pixels."""
     axis_ends = np.eye(3) * extent * AXIS_LENGTH
-    solid = solids.layer(arrows(axis_ends, LIGHT, AXIS_WIDTH, view)
-                         + [part for points, colour, width in ends for part in arrows(points, colour, width, view)], view)
-    places = solids.mv.point(corners)
-    faces = np.array([[0, 1, 2], [0, 2, 3]])
-    area = meshes.layer(places, faces, PATCH, meshes.flat(places, faces), view)
-    outline = meshes.tubes([(np.vstack((corners, corners[:1])), PATCH)], OUTLINE_WIDTH, view)
-    show(ax, compose([(*solid, 1.0), (*area, PATCH_OPACITY), (*outline, 1.0)], np.ones(3)), view)
+    places = solids.mv.point(corners)                                          # [4] Point
+    rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
+    parts = (arrows(axis_ends, LIGHT, AXIS_WIDTH, view) + [(rims, PATCH), (joints, PATCH)]
+             + [part for points, colour, width in ends for part in arrows(points, colour, width, view)])
+    area = [(solids.plates(corners[None], view.pixel), PATCH, PATCH_OPACITY)]
+    show(ax, solids.draw(parts, view, np.ones(3), translucent=area), view)
     labels(ax, view, solids.mv.point(np.eye(3) * extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center", va="center",
            fontsize=12, color=INK)
 

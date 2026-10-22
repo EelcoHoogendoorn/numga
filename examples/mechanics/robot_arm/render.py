@@ -10,12 +10,13 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.robot_arm.core import Point, mv
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import meshes, solids
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))
-# The links translucent, so that the target and the trail show through them.
-LINK_OPACITY, TRAIL_OPACITY = 0.6, 0.8
+# The links translucent, so that the target and the trail show through them: the opacity of each of a link's faces,
+# front and back alike, and of the trail.
+LINK_OPACITY, TRAIL_OPACITY = 0.37, 0.8
 BACKGROUND = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin as a share of the larger
 # side, and the pixels across.
@@ -59,9 +60,10 @@ def animate_tracking(states: Iterable) -> list[np.ndarray]:
     frames = []
     for index in range(boxes.shape[0]):
         drawn = slice(faces_per_step * max(index, 1))
-        trail = meshes.layer(rings, faces[drawn], TARGET_COLOUR, {side: normal[drawn] for side, normal in normals.items()},
-                             view)
-        arm = solids.layer([(solid_boxes(boxes[index]), LINK_COLOURS)], view)
-        target = solids.layer([(solids.ball(targets[index], TARGET_RADIUS * view.pixel)[None, None], TARGET_COLOUR)], view)
-        frames.append(compose([(*arm, LINK_OPACITY), (*target, 1.0), (*trail, TRAIL_OPACITY)], BACKGROUND))
+        trail = meshes.samples(rings, faces[drawn], TARGET_COLOUR, {side: normal[drawn] for side, normal in normals.items()},
+                               view)
+        target = solids.ball(targets[index], TARGET_RADIUS * view.pixel)[None, None]     # [1, 1] Quadric
+        frames.append(solids.draw([(target, TARGET_COLOUR)], view, BACKGROUND,
+                                  translucent=[(solid_boxes(boxes[index]), LINK_COLOURS, LINK_OPACITY)],
+                                  meshes=[(*trail, TRAIL_OPACITY)]))
     return frames

@@ -3,8 +3,8 @@ fields and vector heat diffusion on the torus; unit tangent fields as needles ov
 singular faces marked by balls, warm for positive indices and cool for negative, larger for larger indices; and
 stripe patterns.
 
-Surfaces are meshes drawn by `meshes`; needles, rings and stripe middles are rods traced by `solids`, all blended
-by depth. Stripe patterns are drawn in the surface's own shader: every pixel interpolates the phase from the
+The holonomy sphere is a translucent ball traced by `solids`; the other surfaces are meshes drawn by `meshes`;
+needles, rings and stripe middles are rods traced by `solids`, all composited by depth sample by sample. Stripe patterns are drawn in the surface's own shader: every pixel interpolates the phase from the
 corners of the triangle it falls in, with the whole turns a fork winds spread around the triangle, and the
 stripes are the cosine of that phase, sharp at any resolution. The phase at a triangle's corners is read as the
 angle from the stripe field to its line of the direction field, each corner's lines matched to the first
@@ -20,7 +20,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.connections import core
-from examples.wgsl import compose, meshes, show, solids, vec3
+from examples.wgsl import meshes, show, solids, vec3
 
 # Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
 # balls' radius per unit index, in pixels, and the views as (elevation, azimuth) in degrees, the azimuth measured
@@ -42,10 +42,9 @@ sphere_limits = np.array([[-1.1, 1.1], [-1.1, 1.1], [-1.1, 1.1]])
 torus_limits = np.array([[-2.75, 2.75], [-2.75, 2.75], [-1.0, 1.0]])
 sphere_needle = 0.09
 torus_needle = 0.2
-# The holonomy sphere's opacity, that of the rings' hidden parts, and that of the trail of carried vectors.
-sphere_opacity = 0.22
-hidden_opacity = 0.35
-trail_opacity = 0.5
+# How much each surface of the holonomy sphere hides, and each surface of the trail of carried vectors.
+sphere_opacity = 0.12
+trail_opacity = 0.3
 # The colours of the dark and the light stripes, the share of a stripe that is dark, and how sharply one turns
 # into the other; the width of drawn lines and needles in pixels, and how far lines stand off the surface, as a
 # share of its reach; the image's side in pixels, how far around the centre the views of the sphere reach, and the
@@ -101,10 +100,10 @@ def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, le
 
 def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
             colour: str = meshes.plain) -> tuple[np.ndarray, np.ndarray]:
-    """A mesh, smooth shaded, as a layer."""
+    """A mesh, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.mv.point(positions(mesh.vertices))
-    return meshes.layer(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
-                        colour=colour)
+    return meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
+                          colour=colour)
 
 
 # --- parallel transport ---------------------------------------------------------------
@@ -112,28 +111,24 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
                      ) -> list[np.ndarray]:
     """The unit sphere, translucent, and the three latitude circles `[steps + 1, rings]`, and each frame's points
     on them with the tangent vectors carried there `[rings]`: a trail of where the vectors have been, and where
-    they are. The circles' far halves show faintly through the sphere."""
+    they are. The sphere is the traced unit ball, the circles' far halves showing through its near surface."""
     frame = square_view(transport_view, sphere, holonomy_needle)
     width = line_width * frame.pixel
     ring_places = coordinates(rings)                                            # [steps + 1, rings, 3]
-    sphere_layer = surface(sphere, surface_colour, frame)
+    ball = [(solids.ball(solids.origin, 1.0)[None, None], surface_colour, sphere_opacity)]
     circles = [(solids.rods(solids.mv.point(ring_places[:-1, ring]), solids.mv.point(ring_places[1:, ring]), 2 * width),
                 to_rgb(colour)) for ring, colour in enumerate(ring_colours)]
-    circle_layer = solids.layer(circles, frame)
     points, carried = [], []
     frames = []
     for point, vector in states:
         points.append(coordinates(point))                                       # [rings, 3]
         carried.append(coordinates(vector))                                     # [rings, 3]
         past, along = np.array(points)[::holonomy_stride], np.array(carried)[::holonomy_stride]   # [trail, rings, 3]
-        trail = solids.layer([(needles(past[:, ring], along[:, ring], past[:, ring], holonomy_needle, width), to_rgb(colour))
-                              for ring, colour in enumerate(ring_colours)], frame)
-        now = solids.layer([(needles(points[-1][ring:ring + 1], carried[-1][ring:ring + 1], points[-1][ring:ring + 1],
-                                     holonomy_needle * 1.15, 2.5 * width), to_rgb(colour))
-                            for ring, colour in enumerate(ring_colours)], frame)
-        ghost = np.where(circle_layer[0][..., 3] > 0, -np.inf, 0.0)
-        frames.append(compose([(*sphere_layer, sphere_opacity), (*circle_layer, 1.0), (circle_layer[0], ghost, hidden_opacity),
-                               (*trail, trail_opacity), (*now, 1.0)], background))
+        trail = [(needles(past[:, ring], along[:, ring], past[:, ring], holonomy_needle, width), to_rgb(colour),
+                  trail_opacity) for ring, colour in enumerate(ring_colours)]
+        now = [(needles(points[-1][ring:ring + 1], carried[-1][ring:ring + 1], points[-1][ring:ring + 1],
+                        holonomy_needle * 1.15, 2.5 * width), to_rgb(colour)) for ring, colour in enumerate(ring_colours)]
+        frames.append(solids.draw(circles + now, frame, background, translucent=ball + trail))
     return frames
 
 
@@ -149,8 +144,8 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, fr
     scale = (0.25 + 0.75 * np.clip(amplitudes[visible], 0.0, 1.0))[:, None]
     arrows = needles(places[visible] + normals[visible] * 0.03, units[visible] * scale, normals[visible], transport_needle,
                      line_width * frame.pixel)
-    return compose([(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
-                    (*solids.layer([(arrows, needle_colour)], frame), 1.0)], background)
+    return solids.draw([(arrows, needle_colour)], frame, background,
+                       meshes=[(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0)])
 
 
 def draw_torus_fields(torus: core.Mesh, fields: list[core.Vector]) -> plt.Figure:
@@ -185,8 +180,8 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
     centres = solids.mv.point(positions(mesh.face_centers)[singular])          # [S] Point
     marks = [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
               positive if value > 0 else negative) for index, value in enumerate(indices)]
-    return compose([(*surface(mesh, surface_colour, frame), 1.0),
-                    (*solids.layer([(arrows, needle_colour)] + marks, frame), 1.0)], background)
+    return solids.draw([(arrows, needle_colour)] + marks, frame, background,
+                       meshes=[(*surface(mesh, surface_colour, frame), 1.0)])
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]], limits: np.ndarray,
@@ -298,8 +293,8 @@ def draw_bands(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
 
 def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
-    return compose([(*surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)],
-                   background)
+    return solids.draw([], frame, background,
+                       meshes=[(*surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
 
 
 def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], view_degrees: np.ndarray,
@@ -315,8 +310,7 @@ def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
     lines = solids.rods(solids.mv.point(drawn[:, 0]), solids.mv.point(drawn[:, 1]), line_width / 2 * frame.pixel)
-    show(axis, compose([(*surface(mesh, light, frame), 1.0), (*solids.layer([(lines, dark)], frame), 1.0)], background),
-         frame)
+    show(axis, solids.draw([(lines, dark)], frame, background, meshes=[(*surface(mesh, light, frame), 1.0)]), frame)
 
 
 def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]], draw, reach: float,

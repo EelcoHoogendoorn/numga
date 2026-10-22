@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.quadrics.quadrics.core import DualQuadric, Plane, Point, ga, mv, support_plane
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import show, solids
 
 ELLIPSOID = np.array(to_rgb("#0284c7"))
 CONTACT = np.array(to_rgb("#e11d48"))
@@ -18,9 +18,10 @@ background = np.ones(3)
 # share of the larger side, and the pixels across each panel.
 ELEVATION, AZIMUTH = np.radians(23.0), np.radians(128.0)
 MARGIN, N_PIXELS = 0.25, 700
-# The opacities of the ellipsoid and the tangent patch; the radii of the centre and the contact point, in pixels.
-ELLIPSOID_OPACITY, PATCH_OPACITY = 0.35, 0.4
-CENTRE_RADIUS, CONTACT_RADIUS = 6.0, 8.0
+# The opacities of each surface of the ellipsoid and the tangent patch, front and back alike; the thickness of the
+# patch, and the radii of the centre and the contact point, in pixels.
+ELLIPSOID_OPACITY, PATCH_OPACITY = 0.19, 0.22
+PATCH_THICKNESS, CENTRE_RADIUS, CONTACT_RADIUS = 1.0, 6.0, 8.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -62,14 +63,13 @@ def draw_panels(panels: list) -> plt.Figure:
     for index, ((quadric, _, contact), patch, view) in enumerate(zip(panels, patches, views)):
         view = view._replace(half=half)
         # The ellipsoid's point quadric, which pairs each point with its polar plane: the inverse of the dual quadric.
-        body = solids.layer([(quadric.inverse()[None, None], ELLIPSOID)], view)
-        marks = solids.layer([(solids.ball(solids.mv.point(euclidean(quadric(mv.w))), CENTRE_RADIUS * view.pixel)
-                               [None, None], ELLIPSOID),
-                              (solids.ball(solids.mv.point(euclidean(contact)), CONTACT_RADIUS * view.pixel)
-                               [None, None], CONTACT)], view)
-        corners, quad = solids.mv.point(patch), np.array([[0, 1, 2], [0, 2, 3]])
-        plane = meshes.layer(corners, quad, CONTACT, meshes.flat(corners, quad), view, gloss=0.1)
-        image = compose([(*body, ELLIPSOID_OPACITY), (*plane, PATCH_OPACITY), (*marks, 1.0)], background)
+        body = quadric.inverse()[None, None]                                  # [1, 1] Quadric
+        plate = solids.plates(patch[None], PATCH_THICKNESS * view.pixel)       # [1, 6] Quadric
+        marks = [(solids.ball(solids.mv.point(euclidean(quadric(mv.w))), CENTRE_RADIUS * view.pixel)[None, None],
+                  ELLIPSOID),
+                 (solids.ball(solids.mv.point(euclidean(contact)), CONTACT_RADIUS * view.pixel)[None, None], CONTACT)]
+        image = solids.draw(marks, view, background,
+                            translucent=[(body, ELLIPSOID, ELLIPSOID_OPACITY), (plate, CONTACT, PATCH_OPACITY)])
         show(figure.add_axes((index / len(panels), 0.0, 1 / len(panels), 1.0)), image, view)
     return figure
 

@@ -10,14 +10,15 @@ from matplotlib.image import AxesImage
 
 from examples.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 Modes = tuple[np.ndarray, core.Bivector]
 sm = solids.mv
 # The drawing's frame: the wave's z across it, x into it and y up; a cyclic order of the axes, so turned, not mirrored.
 DRAWN = core.STA.subspace("z x y")
 ELECTRIC, MAGNETIC, AXIS_COLOUR = np.array(to_rgb("crimson")), np.array(to_rgb("dodgerblue")), np.full(3, 0.5)
-AXIS_OPACITY = 0.6
+# How much of what lies behind it each surface of the axis hides, its near side and its far side.
+AXIS_OPACITY = 0.37
 # The plots' faint cross through the origin, and the names of its lines and axes.
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 # The reach of the cross on polar axes, as a share of the fastest wave's.
@@ -73,8 +74,8 @@ def wave_image(modes: Modes, tau: float, z_max: float, omega: float) -> tuple[np
     view = solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     electric, magnetic = field_arrows(modes, np.array(tau), distance, omega)
 
-    curves = meshes.tubes([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], CURVE_WIDTH, view)
-    line = meshes.tubes([(axis[[0, -1]], AXIS_COLOUR)], AXIS_WIDTH, view)
+    curves = meshes.tube_samples([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], CURVE_WIDTH, view)
+    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), AXIS_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
     # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
     station_idx = np.linspace(0, N_SAMPLES - 1, N_STATIONS, dtype=int)
     stations = axis[station_idx]
@@ -85,8 +86,8 @@ def wave_image(modes: Modes, tau: float, z_max: float, omega: float) -> tuple[np
         shafts, heads = solids.arrows(sm.point(stations), sm.point(stations + tips), ARROW_WIDTH / 2 * view.pixel,
                                       head_lengths, HEAD_SPREAD * head_lengths)
         parts += [(shafts, colour), (heads, colour)]
-    quivers = solids.layer(parts, view)
-    return compose([(*line, AXIS_OPACITY), (*curves, 1.0), (*quivers, 1.0)], np.ones(3)), view
+    return solids.draw(parts, view, np.ones(3), translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)],
+                       meshes=[(*curves, 1.0)]), view
 
 
 def draw_wave_propagation(

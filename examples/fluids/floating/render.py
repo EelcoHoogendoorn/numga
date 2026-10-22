@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.fluids.floating import core
-from examples.wgsl import compose, meshes, solids
+from examples.wgsl import meshes, solids
 
 ga, mv = core.ga, core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
@@ -25,11 +25,12 @@ SEA = (3.0, 1.8)
 FORCE = 0.9
 TANGENT = 25.0
 # The view in space, elevation and azimuth in radians, azimuth zero looking along +y, its margin as a share of
-# its larger side, the pixels across its picture, and the water's opacity, so the wet hull shows through it.
+# its larger side, the pixels across its picture, and how much of what lies behind it each face of the water hides,
+# so the wet hull shows through it.
 ELEVATION, AZIMUTH = np.radians([18.0, 35.0])
 MARGIN = 0.04
 N_PIXELS = 1400
-WATER_OPACITY = 0.25
+WATER_OPACITY = 0.13
 # The glint on the hull, faint, so its facets do not glitter.
 HULL_GLOSS = 0.1
 BACKGROUND = np.ones(3)
@@ -77,21 +78,22 @@ def forces_end_on(ax: plt.Axes, placed: core.Motor, push: core.Forque, centre: c
 
 def in_water(triangles: np.ndarray) -> np.ndarray:
     """The hull's triangles `[triangles, 3, 3]` in space, flat, the dry ones pale and the wet ones darker with
-    depth, under a translucent patch of the water's surface, framed on the patch."""
+    depth, under a translucent plate of the water's surface, framed on the plate."""
     depth = np.clip(-triangles[..., 2].mean(axis=-1) / DEEPEST, 0, 1)        # [triangles]
     wet = plt.get_cmap(WET_MAP)(0.35 + 0.6 * depth)[:, :3]
     colours = np.where((depth > 0)[:, None], wet, to_rgb(HULL))              # [triangles, 3]
     reach, breadth = SEA
-    sea = solids.mv.point([[-reach, -breadth, 0], [reach, -breadth, 0], [reach, breadth, 0], [-reach, breadth, 0]])
+    sea = np.array([[-reach, -breadth, 0], [reach, -breadth, 0], [reach, breadth, 0], [-reach, breadth, 0]])
     corners = solids.mv.point(triangles.reshape(-1, 3))
     faces = np.arange(len(corners)).reshape(-1, 3)
-    patch = np.array([[0, 1, 2], [0, 2, 3]])
-    view = solids.view([sea, corners], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    view = solids.view([solids.mv.point(sea), corners], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     normals = meshes.flat(corners, faces)
-    hull = meshes.layer(corners, faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
-                        gloss=HULL_GLOSS)
-    water = meshes.layer(sea, patch, np.array(to_rgb(WATER)), meshes.flat(sea, patch), view)
-    return compose([(*hull, 1.0), (*water, WATER_OPACITY)], BACKGROUND)
+    hull = meshes.samples(corners, faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
+                          gloss=HULL_GLOSS)
+    # The water's surface, a plate a pixel thick.
+    water = solids.plates(sea[None], view.pixel)                              # [1, 6] Quadric
+    return solids.draw([], view, BACKGROUND, translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
+                       meshes=[(*hull, 1.0)])
 
 
 def draw_ship(hull: core.Point, placed: core.Motor, push: core.Forque, centre: core.Point) -> plt.Figure:

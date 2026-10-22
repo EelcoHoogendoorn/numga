@@ -10,7 +10,7 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 sm = solids.mv
 BACKGROUND = np.ones(3)
@@ -66,16 +66,16 @@ def view(pixels: int, *drawn: np.ndarray) -> solids.View:
     return solids.view([sm.point(points) for points in drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
-def orbit_layer(orbits: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start."""
+def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start, at
+    every sample."""
     curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
-    return meshes.tubes(list(curves), width, view, N_AROUND)
+    return meshes.tube_samples(list(curves), width, view, N_AROUND)
 
 
-def rider_layer(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """A dot at each position `[n, 3]`, in its colour `[n, 3]`."""
-    balls = solids.ball(sm.point(positions), RIDER_RADIUS * view.pixel)[:, None]
-    return solids.layer([(balls, rgb)], view)
+def dots(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
+    """A dot at each position `[n, 3]`, in its colour `[n, 3]`, as an opaque part."""
+    return solids.ball(sm.point(positions), RIDER_RADIUS * view.pixel)[:, None], rgb
 
 
 def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor) -> plt.Figure:
@@ -87,7 +87,7 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     figure = plt.figure(figsize=(16, 5.5))
     for index, (orbits, width) in enumerate(zip(drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH))):
         ax = figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0))
-        show(ax, compose([(*orbit_layer(orbits, width, panel), 1.0)], BACKGROUND), panel)
+        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(*orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 
 
@@ -96,7 +96,7 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
     six points ride along each knot. The three panels side by side, seen by one camera."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
     frame = view(FRAME_PIXELS, *drawn)
-    faint = [(*orbit_layer(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
+    faint = [(*orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
     riders = np.arange(6) * length // 6
@@ -107,6 +107,6 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
         riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
         riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
                        np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
-        images.append(np.concatenate([compose([orbits, (*rider_layer(*points, frame), 1.0)], BACKGROUND)
+        images.append(np.concatenate([solids.draw([dots(*points, frame)], frame, BACKGROUND, meshes=[orbits])
                                       for orbits, points in zip(faint, riding)], axis=1))
     return images

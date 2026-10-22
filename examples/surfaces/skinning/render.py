@@ -7,7 +7,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.skinning.core import Point, mv
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import meshes, show, solids
 
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around the skins as a
 # share of their larger side, and the pixels across a picture; the stripes' colour map around the cylinder.
@@ -54,8 +54,8 @@ def surface(points: Point, n_rings: int, n_around: int, view: solids.View) -> np
     stripes = plt.get_cmap(stripe_map)(np.linspace(0.0, 1.0, n_around + 1)[:n_around])[:, :3]   # [around, 3]
     colours = np.broadcast_to(stripes[None, :, None, None], faces.shape + (3,))                 # [rings - 1, around, 2, 3, 3]
     faces = faces.reshape(-1, 3)
-    return compose([(*meshes.layer(places, faces, colours.reshape(-1, 3, 3), meshes.smooth(places, faces), view,
-                                   face_values=ink.reshape(-1, 3), colour=inked), 1.0)], background)
+    return meshes.draw(places, faces, colours.reshape(-1, 3, 3), meshes.smooth(places, faces), view, background,
+                       face_values=ink.reshape(-1, 3), colour=inked)
 
 
 def draw_skinning(motor_skin: Point, slerp_skin: Point, matrix_skin: Point, n_rings: int, n_around: int) -> plt.Figure:

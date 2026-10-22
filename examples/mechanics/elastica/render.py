@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.mechanics.elastica import core
-from examples.wgsl import compose, image_figure, meshes, solids
+from examples.wgsl import image_figure, meshes, solids
 
 ga = core.ga
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
@@ -144,22 +144,22 @@ def animate_cord(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
     view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, N_CORD_PIXELS)
     # The clamps at the base and the handset: small balls at the cord's two ends.
     clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
-    return [compose([*layers(curve[None], ribbon[None], view), (*solids.layer([(ends, CLAMP)], view), 1.0)], BACKGROUND)
+    return [solids.draw([(ends, CLAMP)], view, BACKGROUND, meshes=wires(curve[None], ribbon[None], view))
             for curve, ribbon, ends in zip(curves, ribbons, clamps)]
 
 
-def layers(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
+def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
     """Rods along curves `[rods, n, 3]` as thin tubes, through their ribbons `[rods, n, 2, 3]`: strips between the
-    edges, two triangles to each piece of rod; each an opaque layer."""
+    edges, two triangles to each piece of rod; each an opaque mesh, sample by sample."""
     index = np.arange(ribbons.size // 3).reshape(ribbons.shape[:3])         # [rods, n, 2]
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = solids.mv.point(ribbons.reshape(-1, 3))
-    strips = meshes.layer(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
-    rods = meshes.tubes([(curve, ROD) for curve in curves], ROD_WIDTH, view)
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
+    rods = meshes.tube_samples([(curve, ROD) for curve in curves], ROD_WIDTH, view)
     return [(*strips, 1.0), (*rods, 1.0)]
 
 
 def scene(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> np.ndarray:
-    """Rods and their ribbons, as `layers`, on the background, `[rows, columns, 3]` bytes."""
-    return compose(layers(curves, ribbons, view), BACKGROUND)
+    """Rods and their ribbons, as `wires`, on the background, `[rows, columns, 3]` bytes."""
+    return solids.draw([], view, BACKGROUND, meshes=wires(curves, ribbons, view))
