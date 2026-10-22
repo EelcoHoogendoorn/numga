@@ -1,8 +1,7 @@
 """Matplotlib views of planar rigid-body normal modes and spring suspensions.
 
 The mechanics supplies infinitesimal mode displacements. Outlines and springs
-are displaced linearly and exaggerated for readability; spring colour records
-the linear change in length, rather than the length of the exaggerated drawing.
+are displaced linearly and exaggerated for readability.
 """
 
 from __future__ import annotations
@@ -16,8 +15,7 @@ from examples.mechanics.modes.core import ModeCase, Point
 from numga.algebras import PGA2D
 
 
-BODY, GHOST, SUPPORT = "#254e70", "#929ba7", "#3a414b"
-STRETCH, COMPRESS, UNCHANGED = "#d67721", "#2783b7", "#87909a"
+BODY, GHOST, SUPPORT, SPRING = "#254e70", "#929ba7", "#3a414b", "#5b6470"
 
 
 def coordinates(points: Point) -> np.ndarray:
@@ -34,26 +32,13 @@ def spring_path(start: Point, end: Point) -> np.ndarray:
     turns = 15
     along = np.r_[0.0, 0.16, np.linspace(0.20, 0.80, turns), 0.84, 1.0]
     across = np.zeros_like(along)
-    across[2:-2] = 0.048 * (-1.0) ** np.arange(turns)
+    across[2:-2] = 0.035 * (-1.0) ** np.arange(turns)
     return p0 + along[:, None] * axis + across[:, None] * normal
 
 
-def spring_colour(extension: float) -> str:
-    return STRETCH if extension > 1e-9 else COMPRESS if extension < -1e-9 else UNCHANGED
-
-
-def fixed_support(ax: plt.Axes, anchor: Point, attachment: Point) -> None:
-    """Draw a wall hatch fixture at an anchor point perpendicular to the spring axis."""
-    anc = coordinates(anchor)
-    att = coordinates(attachment)
-    direction = (anc - att) / np.linalg.norm(anc - att)
-    tangent = np.array([-direction[1], direction[0]])
-    ends = anc + np.array([-0.14, 0.14])[:, None] * tangent
-    ax.plot(*ends.T, color=SUPPORT, lw=2, zorder=4)
-    for offset in np.linspace(-0.12, 0.12, 5):
-        start = anc + offset * tangent
-        end = start + 0.075 * (direction + tangent)
-        ax.plot(*np.array([start, end]).T, color=SUPPORT, lw=1)
+def fixed_support(ax: plt.Axes, anchor: Point) -> None:
+    """A fixed anchor, as a dot."""
+    ax.scatter(*coordinates(anchor), s=22, color=SUPPORT, zorder=4)
 
 
 def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float) -> tuple[plt.Figure, list[list[plt.Axes]]]:
@@ -79,8 +64,8 @@ def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float)
 
 def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
     """Draw one mode panel and return its phase-update function."""
-    reference = Polygon(coordinates(case.body), closed=True, facecolor="#eef2f6", edgecolor=GHOST,
-                        lw=1.2, linestyle=":", zorder=1)
+    reference = Polygon(coordinates(case.body), closed=True, facecolor="none", edgecolor=GHOST,
+                        lw=1.0, linestyle=":", zorder=1)
     ax.add_patch(reference)
 
     offsets = coordinates(case.body_offsets[mode])
@@ -88,30 +73,24 @@ def _draw_mode(ax: plt.Axes, case: ModeCase, mode: int):
 
     displaced_body = case.body + case.body_offsets[mode] * scale
     body = Polygon(coordinates(displaced_body), closed=True,
-                   facecolor="#d4e3ed", edgecolor=BODY, lw=2, alpha=0.9, zorder=3)
+                   facecolor="#d4e3ed", edgecolor=BODY, lw=1.6, zorder=3)
     ax.add_patch(body)
     springs = []
-    for anchor, attachment in zip(case.anchors, case.attachments):
-        fixed_support(ax, anchor, attachment)
-        spring, = ax.plot([], [], lw=2.2, zorder=5)
+    for anchor in case.anchors:
+        fixed_support(ax, anchor)
+        spring, = ax.plot([], [], lw=1.3, color=SPRING, zorder=5)
         springs.append(spring)
-    markers = ax.scatter([], [], s=25, facecolor="white", edgecolor=BODY,
-                         linewidth=1.2, zorder=6)
+    markers = ax.scatter([], [], s=14, color=BODY, zorder=6)
 
     def update(phase: float):
         s = phase * scale
         current_body = case.body + case.body_offsets[mode] * s
         current_attachments = case.attachments + case.attachment_offsets[mode] * s
-        current_extensions = case.extensions[mode] * s
 
         body.set_xy(coordinates(current_body))
         markers.set_offsets(coordinates(current_attachments))
-        for spring, anchor, attachment, ext in zip(
-            springs, case.anchors, current_attachments, current_extensions
-        ):
+        for spring, anchor, attachment in zip(springs, case.anchors, current_attachments):
             spring.set_data(*spring_path(anchor, attachment).T)
-            ext_val = float(ext.kernel[0])
-            spring.set_color(spring_colour(ext_val))
         return [body, markers, *springs]
 
     update(1.0)
@@ -153,16 +132,15 @@ def render_setup(
     """Render the physical suspension layout at equilibrium."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
 
-    plate = Polygon(coordinates(body), closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=2, zorder=3)
+    plate = Polygon(coordinates(body), closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=1.6, zorder=3)
     ax.add_patch(plate)
 
     for anchor, attachment in zip(anchors, attachments):
-        fixed_support(ax, anchor, attachment)
-        path = spring_path(anchor, attachment)
-        ax.plot(*path.T, lw=2.2, color=UNCHANGED, zorder=5)
+        fixed_support(ax, anchor)
+        ax.plot(*spring_path(anchor, attachment).T, lw=1.3, color=SPRING, zorder=5)
 
     att_coords = coordinates(attachments)
-    ax.scatter(att_coords[:, 0], att_coords[:, 1], s=30, facecolor="white", edgecolor=BODY, linewidth=1.2, zorder=6)
+    ax.scatter(att_coords[:, 0], att_coords[:, 1], s=14, color=BODY, zorder=6)
 
     all_pts = np.concatenate([coordinates(body), coordinates(anchors)])
     lo, hi = all_pts.min(axis=0) - [0.35, 0.35], all_pts.max(axis=0) + [0.35, 0.35]
