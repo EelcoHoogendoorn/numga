@@ -21,7 +21,7 @@ A selection of examples follows, covering a range of extensor concepts. In the c
 
 ---
 
-## 1. Scenegraph, Forward Kinematics & Camera Optics (PGA3D)
+## 1. Scenegraph, Forward Kinematics & Camera Optics
 
 **Notebook**: [`examples/geometry/scenegraph/scenegraph.ipynb`](../examples/geometry/scenegraph/scenegraph.ipynb)
 
@@ -41,7 +41,7 @@ local_to_pixel = viewport(camera(camera_pose << Point))(bodies_to_world)   # [bo
 
 ---
 
-## 2. Rigid-Body Normal Modes & Vibration (PGA2D)
+## 2. Rigid-Body Normal Modes & Vibration
 
 **Notebook**: [`examples/mechanics/modes/modes.ipynb`](../examples/mechanics/modes/modes.ipynb)
 
@@ -60,7 +60,7 @@ values, modes = (Twist & stiffness).eigh(Twist & inertia)        # [modes] Scala
 
 ---
 
-## 3. As Rigid As Possible (VGA3D)
+## 3. As Rigid As Possible
 
 **Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
@@ -79,7 +79,7 @@ vertices = held.solve(~T10 * H1 * turned + P * targets)      # Point[V]
 
 ---
 
-## 4. Lift without Vorticity (VGA2D)
+## 4. Lift without Vorticity
 
 **Notebook**: [`examples/fluids/wing/wing.ipynb`](../examples/fluids/wing/wing.ipynb)
 
@@ -102,7 +102,7 @@ loops = (velocity * steps).sum(axis=-1)                                    # [ri
 
 ---
 
-## 5. Moving Charges & Maxwell's Equations (STA)
+## 5. Moving Charges & Maxwell's Equations
 
 **Notebook**: [`examples/electromagnetism/moving_charge/moving_charge.ipynb`](../examples/electromagnetism/moving_charge/moving_charge.ipynb)
 
@@ -123,7 +123,7 @@ current = (Vector ^ vacuum(field_gradients(Antivector))).trace(1, 2)   # [...] A
 
 ---
 
-## 6. Multi-View Scene Reconstruction & Camera Alignment (PGA2D)
+## 6. Multi-View Scene Reconstruction & Camera Alignment
 
 **Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
@@ -146,7 +146,7 @@ slope = (cones(seen) & motion).sum(axis=0)                # [cameras] Scalar <- 
 
 ---
 
-## 7. Odometry: The Most Likely Trajectory (PGA2D)
+## 7. Odometry: The Most Likely Trajectory
 
 **Notebook**: [`examples/estimation/odometry/odometry.ipynb`](../examples/estimation/odometry/odometry.ipynb)
 
@@ -166,7 +166,7 @@ preconditioned = alone.solve(residual)                 # [poses] Twist: each pos
 
 ---
 
-## 8. Area Transport through a Collapse (VGA3D)
+## 8. Area Transport through a Collapse
 
 **Notebook**: [`examples/mechanics/area_transport/area_transport.ipynb`](../examples/mechanics/area_transport/area_transport.ipynb)
 
@@ -186,7 +186,7 @@ plane_map = placement.adjugate()               # [] ProjectivePlane <- Projectiv
 
 ---
 
-## 9. Spacetime Constitutive Relations, Dispersion & Relativistic Fresnel Drag (STA)
+## 9. Spacetime Constitutive Relations, Dispersion & Relativistic Fresnel Drag
 
 **Notebook**: [`examples/electromagnetism/constitutive/constitutive.ipynb`](../examples/electromagnetism/constitutive/constitutive.ipynb)
 
@@ -209,7 +209,7 @@ stress_map = negative_lagrangian * Antivector - ((Antivector & field) ^ excitati
 
 ---
 
-## 10. Gravitational Wave Curvature & Tidal Forces (STA)
+## 10. Gravitational Wave Curvature & Tidal Forces
 
 **Notebook**: [`examples/relativity/curvature/curvature.ipynb`](../examples/relativity/curvature/curvature.ipynb)
 
@@ -229,7 +229,7 @@ accelerations = -tidal.dual()                                    # [] Antivector
 
 ---
 
-## 11. Twistors & Linked Light (Conformal Spacetime)
+## 11. Twistors & Linked Light
 
 **Notebook**: [`examples/relativity/twistors/twistors.ipynb`](../examples/relativity/twistors/twistors.ipynb)
 
@@ -248,7 +248,7 @@ selected = representations(point(event), fixed_twistor)    # [...] Twistor: one 
 
 ---
 
-## 12. Magnetic Resonance & Spin Echoes (VGA3D)
+## 12. Magnetic Resonance & Spin Echoes
 
 **Notebook**: [`examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb`](../examples/quantum/magnetic_resonance/magnetic_resonance_space.ipynb)
 
@@ -267,7 +267,7 @@ echo = waiting(turn(waiting(tip))).mean(axis=-1)              # [delays] State <
 
 ---
 
-## 13. Dupin Cyclides on the 3-Sphere (Conformal Model)
+## 13. Dupin Cyclides on the 3-Sphere
 
 **Notebook**: [`examples/quadrics/cyclides/cyclides.ipynb`](../examples/quadrics/cyclides/cyclides.ipynb)
 
