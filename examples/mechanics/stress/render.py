@@ -1,8 +1,7 @@
 """Drawing for the stressed cube: the cube seen from each frame with its face tractions, on the GPU, and Mohr's
 circles.
 
-The deformed cube is a translucent mesh, its edges dark rods, and the undeformed cube a ghost of thin rods behind
-it; the normal traction on each face is a blue arrow from the face's centre, the shear a red one, and the principal
+The deformed cube is a translucent solid, its edges dark rods, and the undeformed cube a ghost of thin pale rods; the normal traction on each face is a blue arrow from the face's centre, the shear a red one, and the principal
 directions are thin green rods through the centre."""
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.mechanics.stress import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.wgsl import show, solids
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
 # k-th of -0.5 and 0.5 along x, y and z.
@@ -36,10 +35,13 @@ background = np.ones(3)
 elevation, azimuth = np.radians([22.0, 25.0 + 90.0])
 margin = 0.14
 n_pixels = 540
-# The opacities of the cube's faces, of the undeformed cube and of the principal directions; the radii of the
+# How much of what lies behind them each of the cube's faces hides, and how strongly the undeformed cube and the
+# principal directions show over the white page; the radii of the
 # edges, the undeformed cube's edges, the principal directions and the arrows' shafts, in pixels; an arrow's
 # head, its length a share of the arrow's, and its radius a share of its own length.
-face_opacity, ghost_opacity, principal_opacity = 0.25, 0.7, 0.8
+face_opacity, ghost_opacity, principal_opacity = 0.14, 0.7, 0.8
+ghost_tint, principal_tint = (opacity * colour + (1 - opacity) for opacity, colour in
+                              ((ghost_opacity, ghost_colour), (principal_opacity, principal_colour)))
 edge_radius, ghost_radius, principal_radius, shaft_radius = 1.6, 1.0, 1.0, 2.0
 head_share = 0.28
 head_width = 0.4
@@ -79,19 +81,15 @@ def draw_cube(corners: core.Point, centres: core.Point, normal: core.Point, shea
     normal_shafts, normal_heads = arrows(centres, coordinates(normal) * NORMAL_SCALE, view.pixel)
     shear_shafts, shear_heads = arrows(centres, coordinates(shear) * SHEAR_SCALE, view.pixel)
     edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
-    opaque = solids.layer([(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour),
-                           (normal_heads, normal_colour), (shear_shafts, shear_colour), (shear_heads, shear_colour)],
-                          view)
     ghost_edges, ghost_joints = solids.edges(ghost[EDGES[:, 0]], ghost[EDGES[:, 1]], ghost_radius * view.pixel)
-    undeformed = solids.layer([(ghost_edges, ghost_colour), (ghost_joints, ghost_colour)], view)
     # Each principal direction a rod through the centre, both ways.
     principal_rods = solids.rods(solids.mv.point(-directions), solids.mv.point(directions),
                                  principal_radius * view.pixel)
-    principal_layer = solids.layer([(principal_rods, principal_colour)], view)
-    triangles = FACES[:, [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)               # [12, 3]
-    faces = meshes.layer(places, triangles, cube_colour, meshes.flat(places, triangles), view, gloss=0.1)
-    return compose([(*opaque, 1.0), (*undeformed, ghost_opacity), (*principal_layer, principal_opacity),
-                    (*faces, face_opacity)], background)
+    parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
+             (shear_shafts, shear_colour), (shear_heads, shear_colour), (ghost_edges, ghost_tint),
+             (ghost_joints, ghost_tint), (principal_rods, principal_tint)]
+    cube = solids.polyhedra(coordinates(corners), FACES)[None]                # [1, 6] Quadric
+    return solids.draw(parts, view, background, translucent=[(cube, cube_colour, face_opacity)])
 
 
 def draw_mohr(ax, values: core.Scalar, normal: core.Point, shear: core.Point) -> None:

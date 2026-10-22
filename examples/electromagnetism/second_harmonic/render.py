@@ -13,7 +13,7 @@ from numga import stack
 
 from examples.animation import capture
 from examples.electromagnetism.second_harmonic import core
-from examples.wgsl import compose, labels, show, solids
+from examples.wgsl import labels, show, solids
 
 PUMP_COLOUR = "#3275a8"
 GENERATED_COLOUR = "#d16a30"
@@ -72,7 +72,7 @@ def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
              (solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
              (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR))),
              (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
-    return compose([(*solids.layer(parts, view), 1.0)], np.ones(3))
+    return solids.draw(parts, view, np.ones(3))
 
 
 class ResponseView:

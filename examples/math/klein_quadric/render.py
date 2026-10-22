@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor
 from examples.math.klein_quadric import core
-from examples.wgsl import compose, image_figure, solids
+from examples.wgsl import image_figure, solids
 
 mv = core.mv
 # Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in
@@ -20,9 +20,9 @@ ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
 MARGIN = 0.06
 N_PIXELS = 650
 # Radii in pixels: of the lines on the hyperboloid, of the four lines and the transversals, and of the crossings;
-# and how much of what lies behind the lines on the hyperboloid they hide, so that they stay faint.
+# and how much of what lies behind them each surface of the lines on the hyperboloid hides, so that they stay faint.
 RULING_RADIUS, LINE_RADIUS, CROSSING_RADIUS = 1.1, 2.4, 6.0
-RULING_OPACITY = 0.5
+RULING_OPACITY = 0.3
 RULING_COLOURS = [np.array(to_rgb(colour)) for colour in ("#9ecae1", "#c7c7c7")]
 LINE_COLOUR, FOURTH_COLOUR, TRANSVERSAL_COLOUR = (np.array(to_rgb(colour)) for colour in ("#08306b", "#e67e22", "#c0392b"))
 BACKGROUND = np.ones(3)
@@ -65,13 +65,13 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
     """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
     view = solids.View(solids.aim(solids.origin, ELEVATION, azimuth), np.full(2, RADIUS * (1 + MARGIN)), N_PIXELS)
     points = solids.mv.point(coordinates(crossing)[real(crossing)])            # [crossings] Point
-    hyperboloid = solids.layer([(rods(chords(rulings[0]), RULING_RADIUS * view.pixel), RULING_COLOURS[0]),
-                                (rods(chords(rulings[1]), RULING_RADIUS * view.pixel), RULING_COLOURS[1])], view)
-    four = solids.layer([(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
-                         (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
-                         (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),
-                         (solids.ball(points, CROSSING_RADIUS * view.pixel)[:, None], TRANSVERSAL_COLOUR)], view)
-    return compose([(*hyperboloid, RULING_OPACITY), (*four, 1.0)], BACKGROUND)
+    hyperboloid = [(rods(chords(rulings[0]), RULING_RADIUS * view.pixel), RULING_COLOURS[0], RULING_OPACITY),
+                   (rods(chords(rulings[1]), RULING_RADIUS * view.pixel), RULING_COLOURS[1], RULING_OPACITY)]
+    four = [(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
+            (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
+            (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),
+            (solids.ball(points, CROSSING_RADIUS * view.pixel)[:, None], TRANSVERSAL_COLOUR)]
+    return solids.draw(four, view, BACKGROUND, translucent=hyperboloid)
 
 
 def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,

@@ -10,7 +10,7 @@ import numpy as np
 
 from examples.animation import capture
 from examples.geometry.sundial import core
-from numga import concatenate, stack
+from numga import concatenate
 from examples.wgsl import show, solids
 
 # The part of the dial drawn, east and north of the point below the nodus.
@@ -112,24 +112,10 @@ def sky_view(nodus: core.Point, rays: core.Point) -> solids.View:
     return solids.view([solids.mv.point(DIAL), solids.mv.point(sunward)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
-def plane(normal: np.ndarray, through: np.ndarray) -> solids.Plane:
-    """The plane square to a direction `[3]` through a place `[3]`, positive on the side the direction points to."""
-    return (solids.axes * normal).sum(axis=0) - solids.mv.w * float(normal @ through)
-
-
-def prism(corners: np.ndarray, thickness: float) -> solids.Quadric:
-    """A triangle `[3, 3]` of a thickness, as the solid inside its five faces `[5]`: the two across its plane, and one
-    along each edge, facing away from the corner opposite."""
-    normal = np.cross(corners[1] - corners[0], corners[2] - corners[0])
-    normal /= np.linalg.norm(normal)
-    edges = np.roll(corners, -1, axis=0) - corners                             # [3, 3]
-    outwards = np.cross(edges, normal)                                         # [3, 3]
-    # Each edge's face turned away from the corner opposite it.
-    opposite = np.roll(corners, 1, axis=0) - corners
-    outwards *= -np.sign(np.sum(outwards * opposite, axis=-1))[:, None]
-    faces = [plane(normal, corners[0] + normal * thickness / 2), plane(-normal, corners[0] - normal * thickness / 2)]
-    faces += [plane(outward, corner) for outward, corner in zip(outwards, corners)]
-    return solids.half_space(stack(faces))
+def plane(normals: np.ndarray, through: np.ndarray) -> solids.Plane:
+    """The planes square to directions `[..., 3]` through places `[..., 3]`, positive on the side the direction points
+    to."""
+    return solids.plane(normals, np.sum(normals * through, axis=-1))
 
 
 def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
@@ -142,13 +128,13 @@ def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
     height = float(pole @ suns[0]) / np.linalg.norm(suns[0])                   # the sine of the declination
     apex = coordinates(nodus)
     axial = plane(pole, apex)                                                  # Plane through the nodus, square to the pole
-    across = stack([plane(axis, apex) for axis in np.eye(3)])           # [3] Plane through the nodus
+    across = plane(np.eye(3), apex)                                            # [3] Plane through the nodus
     # Zero on a ray from the nodus at the sun's angle to the pole: its part along the pole squared, less the sine of the
     # declination squared of its length squared.
     cone = axial * (axial & solids.Point) - height**2 * (across * (across & solids.Point)).sum(axis=0)
     # The shadow lies away from the sun: along the pole, opposite to the sun.
     shadow_side = solids.half_space(axial * height)
-    return solids.Ink(0, cone[None], shadow_side[None], np.array(to_rgb(DAY_COLOUR)), PATH_WIDTH)
+    return solids.Ink(0, cone[None], shadow_side[None], np.array(to_rgb(DAY_COLOUR)), PATH_WIDTH, 1.0)
 
 
 def draw_sky(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Point, view: solids.View) -> np.ndarray:
@@ -159,12 +145,11 @@ def draw_sky(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Po
     halves = np.array([np.ptp(EAST) / 2, np.ptp(NORTH) / 2, PLATE_THICKNESS / 2])
     slab = solids.boxes(solids.translator(solids.mv.point(middle) - solids.origin), halves)[None]   # [1, 6] Quadric
     tip = coordinates(nodus)
-    gnomon = prism(np.stack([coordinates(foot), tip, tip * [1, 1, 0]]), GNOMON_THICKNESS)[None]   # [1, 5] Quadric
+    gnomon = solids.plates(np.stack([coordinates(foot), tip, tip * [1, 1, 0]])[None], GNOMON_THICKNESS)   # [1, 5] Quadric
     sunward, ends = daylight(nodus, rays)
     # Each ray cut where it leaves the space above the dial, at the walls standing on its edges, so that a ray whose
     # shadow moves off the dial shortens at its edge rather than vanishing.
-    walls = solids.half_space(stack([plane(normal, corner) for normal, corner in
-                                     zip(np.array([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]]), DIAL[[0, 2, 0, 2]])]))
+    walls = solids.half_space(plane(np.array([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]]), DIAL[[0, 2, 0, 2]]))
     rods = solids.rods(solids.mv.point(sunward), solids.mv.point(ends), RAY_WIDTH / 2 * view.pixel)   # [rays, 3]
     beams = concatenate([rods, walls[None].broadcast_to((len(sunward), 4))], axis=-1)               # [rays, 7]
     # The rays as lightly as they show over the white page.

@@ -1,5 +1,5 @@
 """Renders of the arm and its ellipsoids, ray traced on the GPU: the arm's boxes opaque, an ellipsoid translucent
-over them.
+among them.
 
 A box is the unit cube carried by its body map, six half-spaces. A plane carried by the map pairs with each carried
 point as the cube's plane did with the point, so the box's quadrics in the world are the cube's, read through the
@@ -13,12 +13,13 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.manipulability import core
-from examples.wgsl import compose, solids
+from examples.wgsl import solids
 
 mv, w = core.mv, core.w
 box_colours = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
 velocity_colour, force_colour = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.55, 0.20])
-quadric_opacity = 0.55
+# How much each of an ellipsoid's surfaces, front and back, hides of what lies behind it.
+quadric_opacity = 0.33
 background = np.ones(3)
 # The unit cube's six half-spaces, within half a unit of the planes across the axes.
 cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Quadric
@@ -39,9 +40,7 @@ def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, 
     elevation, azimuth = np.radians(view[0]), np.radians(view[1] + 90)
     seen = solids.View(solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent), pixels)
     boxes = bodies[:, None].adjugate().solve(cube(bodies[:, None].solve(core.Point)))   # [boxes, 6] Quadric
-    arm = solids.layer([(boxes, box_colours)], seen)
-    ellipsoid = solids.layer([(surface[None, None], colour)], seen)
-    return compose([(*arm, 1.0), (*ellipsoid, quadric_opacity)], background)
+    return solids.draw([(boxes, box_colours)], seen, background, translucent=[(surface[None, None], colour, quadric_opacity)])
 
 
 def frame(pose, view, centre: np.ndarray, extent: float, pixels: int) -> np.ndarray:

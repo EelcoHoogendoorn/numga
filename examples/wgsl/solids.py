@@ -38,22 +38,25 @@ fill_tilt = 0.5
 headlight = 0.25
 
 source = supersampled(3) + """
-// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and its colour.
+// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, its colour, and how much of
+// what lies behind it it hides.
 struct Solid {
     first: u32,
     end: u32,
     colour: vec3<f32>,
+    opacity: f32,
 }
 
 var<storage, read> solids: array<Solid>;
 var<storage, read> quadrics: array<Quadric>;
 // Lines inked on the surfaces of the solids `first` up to `end`, where the ink's quadric pairs to zero with the point,
-// `width` pixels across, each pixel `pixel` across in the scene.
+// `width` pixels across, each pixel `pixel` across in the scene, hiding `opacity` of what lies behind them.
 struct Ink {
     first: u32,
     end: u32,
     colour: vec3<f32>,
     width: f32,
+    opacity: f32,
 }
 
 var<storage, read> inks: array<Ink>;
@@ -83,11 +86,15 @@ const origin = mv.w.dual();
 const far = 1e30;
 // How far a point may lie outside a quadric and still count as inside, for points on two surfaces.
 const tolerance = 1e-5;
+// The most surfaces a ray sees through, nearest first, and how little light may pass for it to stop looking.
+const n_layers = 8u;
+const opaque = 0.004;
 
 struct Hit {
     distance: f32,
     tangent: Plane,
     colour: vec3<f32>,
+    opacity: f32,
     solid: u32,
 }
 
@@ -100,9 +107,10 @@ fn inside_others(solid: Solid, own: u32, point: Point) -> bool {
     return true;
 }
 
-// The first point a ray meets on a solid's surface: on one of its quadrics, and inside all the others.
-fn first_hit(start: Point, direction: Point) -> Hit {
-    var hit = Hit(far, mv.z, vec3<f32>(0.0), 0u);
+// The first point a ray meets on a solid's surface beyond a distance along it: on one of its quadrics, and inside
+// all the others.
+fn first_hit(start: Point, direction: Point, beyond: f32) -> Hit {
+    var hit = Hit(far, mv.z, vec3<f32>(0.0), 0.0, 0u);
     for (var index = 0u; index < arrayLength(&solids); index++) {
         let solid = solids[index];
         for (var own = solid.first; own < solid.end; own++) {
@@ -121,9 +129,9 @@ fn first_hit(start: Point, direction: Point) -> Hit {
             for (var which = 0u; which < 2u; which++) {
                 let distance = roots[which];
                 let point = start + direction * distance;
-                if (distance < hit.distance && inside_others(solid, own, point)) {
+                if (distance > beyond && distance < hit.distance && inside_others(solid, own, point)) {
                     // The quadric's plane at a point of its surface is the tangent plane there.
-                    hit = Hit(distance, quadric(point), solid.colour, index);
+                    hit = Hit(distance, quadric(point), solid.colour, solid.opacity, index);
                 }
             }
         }
@@ -131,11 +139,11 @@ fn first_hit(start: Point, direction: Point) -> Hit {
     return hit;
 }
 
-// A hit's colour with the lines inked on its solid: the distance along the surface to an ink's zero set is its
-// pairing with the point over the part of its gradient along the surface, the quadric's plane there less its part
-// along the normal.
-fn inked(hit: Hit, point: Point, normal: Plane) -> vec3<f32> {
-    var colour = hit.colour;
+// A hit's colour and opacity with the lines inked on its solid: the distance along the surface to an ink's zero set
+// is its pairing with the point over the part of its gradient along the surface, the quadric's plane there less its
+// part along the normal.
+fn inked(hit: Hit, point: Point, normal: Plane) -> vec4<f32> {
+    var colour = vec4<f32>(hit.colour, hit.opacity);
     for (var index = 0u; index < arrayLength(&inks); index++) {
         let ink = inks[index];
         let gradient = ink_quadrics[index](point) * 2;
@@ -143,19 +151,13 @@ fn inked(hit: Hit, point: Point, normal: Plane) -> vec3<f32> {
         let distance = abs(ink_quadrics[index](point) & point) / (along | along).square_root();
         let within = (ink_regions[index](point) & point) <= tolerance;
         let covers = hit.solid >= ink.first && hit.solid < ink.end && within && distance < ink.width / 2 * pixel;
-        colour = select(colour, ink.colour, covers);
+        colour = select(colour, vec4<f32>(ink.colour, ink.opacity), covers);
     }
     return colour;
 }
 
-fn sample(place: vec2<f32>) -> Sample {
-    let across = screen(place) * half_height;
-    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
-    let direction = camera >> -mv.z.dual();
-    let hit = first_hit(start, direction);
-    if (hit.distance >= far) {
-        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
-    }
+// A hit's colour, lit by the lamp, the sky and the viewer, and its opacity.
+fn shade(hit: Hit, start: Point, direction: Point) -> vec4<f32> {
     // Facing the viewer: a tangent plane is lit on the side the ray comes from.
     let tangent = hit.tangent * select(1.0, -1.0, (hit.tangent & direction) > 0);
     let normal = tangent / (tangent | tangent).square_root();
@@ -163,8 +165,31 @@ fn sample(place: vec2<f32>) -> Sample {
     // The view ray reflected in the tangent plane, against the lamp: `-d.dual()` is the plane square to d.
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
     let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
-    let colour = inked(hit, start + direction * hit.distance, normal) * (fill + (1 - ambient - headlight) * light) + gloss * glint;
-    return Sample(vec4<f32>(colour, 1.0), vec4<f32>(hit.distance - back, 0.0, 0.0, 1.0));
+    let surface = inked(hit, start + direction * hit.distance, normal);
+    return vec4<f32>(surface.rgb * (fill + (1 - ambient - headlight) * light) + gloss * glint, surface.a);
+}
+
+// The surfaces along a ray, nearest first, each hiding its opacity's share of what lies behind it; the depth is the
+// nearest one's, weighted as the colour is by how much the surfaces hide.
+fn sample(place: vec2<f32>) -> Sample {
+    let across = screen(place) * half_height;
+    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
+    let direction = camera >> -mv.z.dual();
+    let nearest = first_hit(start, direction, 0.0);
+    if (nearest.distance >= far) {
+        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
+    }
+    var hit = nearest;
+    var colour = vec3<f32>(0.0);
+    var passing = 1.0;
+    for (var layer = 0u; layer < n_layers && hit.distance < far && passing > opaque; layer++) {
+        let surface = shade(hit, start, direction);
+        colour += passing * surface.a * surface.rgb;
+        passing *= 1 - surface.a;
+        // The next surface a hundredth of a pixel on, so that the one just seen is not found again.
+        hit = first_hit(start, direction, hit.distance + pixel / 100);
+    }
+    return Sample(vec4<f32>(colour, 1 - passing), vec4<f32>((nearest.distance - back) * (1 - passing), 0.0, 0.0, 1.0));
 }
 """
 
@@ -194,6 +219,12 @@ def quadric(matrix: np.ndarray, centre: Point) -> Quadric:
 def ball(centres: Point, radius: float) -> Quadric:
     """Solid balls about points, of any weight."""
     return placed(ellipsoid(np.full(3, radius)), translator(centres / (mv.w & centres) - origin))
+
+
+def plane(normals: np.ndarray, offsets: np.ndarray) -> Plane:
+    """The planes `normal @ x == offset`, normals `[..., 3]` and offsets `[...]`, positive on the side the normal
+    points to."""
+    return (axes * normals).sum(axis=-1) - mv.w * offsets
 
 
 # All of space: the quadric pairing every point of unit weight to minus one.
@@ -253,6 +284,32 @@ def boxes(motors: Motor, half_extents: np.ndarray) -> Quadric:
     return placed(half_space(faces), motors[..., None])
 
 
+def plates(corners: np.ndarray, thickness: float) -> Quadric:
+    """Flat convex polygons of a thickness, their corners `[..., corners, 3]` in order around each, `[..., corners + 2]`
+    quadrics each: the half-spaces within half the thickness either side of the polygon's plane, and one along each
+    edge, facing away from the polygon's middle."""
+    normal = np.cross(corners[..., 1, :] - corners[..., 0, :], corners[..., 2, :] - corners[..., 0, :])
+    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)                  # [..., 3]
+    middle = corners.mean(axis=-2)                                            # [..., 3]
+    outwards = np.cross(np.roll(corners, -1, axis=-2) - corners, normal[..., None, :])   # [..., corners, 3]
+    outwards *= np.sign(np.sum(outwards * (corners - middle[..., None, :]), axis=-1, keepdims=True))
+    across = np.stack([normal, -normal], axis=-2)                              # [..., 2, 3]
+    normals = np.concatenate([across, outwards], axis=-2)
+    offsets = np.concatenate([np.sum(across * middle[..., None, :], axis=-1) + thickness / 2,
+                              np.sum(outwards * corners, axis=-1)], axis=-1)
+    return half_space(plane(normals, offsets))
+
+
+def polyhedra(corners: np.ndarray, faces: np.ndarray) -> Quadric:
+    """Convex polyhedra, their corners `[..., corners, 3]` and three or more corners of each face `[faces, corners]`,
+    `[..., faces]` quadrics each: the half-spaces inside the planes of the faces, facing away from the middle."""
+    a, b, c = (corners[..., faces[:, index], :] for index in range(3))       # [..., faces, 3] each
+    normals = np.cross(b - a, c - a)
+    middle = corners.mean(axis=-2)                                            # [..., 3]
+    normals *= np.sign(np.sum(normals * (a - middle[..., None, :]), axis=-1, keepdims=True))
+    return half_space(plane(normals, np.sum(normals * a, axis=-1)))
+
+
 def edges(starts: Point, ends: Point, radius: float) -> tuple[Quadric, Quadric]:
     """Edges between points: rods `[..., 3]` and balls of the same radius at both ends `[ends, 1]`, so that edges
     meeting at a point join round."""
@@ -268,37 +325,44 @@ def shader() -> Shader:
 class Ink(NamedTuple):
     """Lines inked on the surfaces of a part's solids, where each quadric `[lines]` pairs to zero with the point,
     within where each region `[lines]` pairs negatively with it (`everywhere` for no bound): their colours,
-    `[lines, 3]` or one for all, and their width in pixels."""
+    `[lines, 3]` or one for all, their width in pixels, `np.inf` to fill the region, and how much of what lies
+    behind them they hide. The parts count the opaque ones first, then the translucent."""
     part: int
     quadrics: Quadric
     regions: Quadric
     colours: np.ndarray
     width: float
+    opacity: float
 
 
-def scene(parts: list[tuple[Quadric, np.ndarray]], inks: list[Ink]) -> tuple[Quadric, dict, Quadric, Quadric, dict]:
-    """Every solid's quadrics, solid after solid, and each solid's range of them and colour, from parts: each a
-    batch of solids, `[solids, quadrics]` Quadric, all of one kind, and their colours, `[solids, 3]` or one
-    for all; and every ink's quadric, with its part's range of solids, colour and width."""
-    quadrics, counts, colours = [], [], []
-    for solids, colour in parts:
+def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
+          inks: list[Ink]) -> tuple[Quadric, dict, Quadric, Quadric, dict]:
+    """Every solid's quadrics, solid after solid, and each solid's range of them, colour and opacity, from parts: each
+    a batch of solids, `[solids, quadrics]` Quadric, all of one kind, their colours, `[solids, 3]` or one for all,
+    and for the translucent parts their opacity; and every ink's quadric, with its part's range of solids, colour and
+    width."""
+    parts = [(solids, colour, 1.0) for solids, colour in parts] + list(translucent)
+    quadrics, counts, colours, opacities = [], [], [], []
+    for solids, colour, opacity in parts:
         quadrics.append(solids.reshape(-1))
         counts.append(np.full(solids.shape[0], solids.shape[1]))
         colours.append(np.broadcast_to(colour, (solids.shape[0], 3)))
+        opacities.append(np.full(solids.shape[0], opacity))
     ends = np.cumsum(np.concatenate(counts))
     # The solids each part spans, part after part.
-    part_ends = np.cumsum([solids.shape[0] for solids, _ in parts])
-    part_starts = part_ends - [solids.shape[0] for solids, _ in parts]
+    part_ends = np.cumsum([solids.shape[0] for solids, _, _ in parts])
+    part_starts = part_ends - [solids.shape[0] for solids, _, _ in parts]
     # An ink over no solids stands for none, so that the inks' arrays are never empty.
-    inks = list(inks) + [Ink(0, everywhere[None], everywhere[None], np.zeros(3), 0.0)]
+    inks = list(inks) + [Ink(0, everywhere[None], everywhere[None], np.zeros(3), 0.0, 0.0)]
     ink_quadrics = concatenate([ink.quadrics.reshape(-1) for ink in inks])
     ink_regions = concatenate([ink.regions.reshape(-1) for ink in inks])
     sizes = [int(np.prod(ink.quadrics.shape)) for ink in inks]
     marked = dict(first=np.repeat([part_starts[ink.part] for ink in inks[:-1]] + [0], sizes),
                   end=np.repeat([part_ends[ink.part] for ink in inks[:-1]] + [0], sizes),
                   colour=np.concatenate([np.broadcast_to(ink.colours, (size, 3)) for ink, size in zip(inks, sizes)]),
-                  width=np.repeat([ink.width for ink in inks], sizes))
-    return (concatenate(quadrics), dict(first=ends - np.concatenate(counts), end=ends, colour=np.concatenate(colours)),
+                  width=np.repeat([ink.width for ink in inks], sizes), opacity=np.repeat([ink.opacity for ink in inks], sizes))
+    return (concatenate(quadrics), dict(first=ends - np.concatenate(counts), end=ends, colour=np.concatenate(colours),
+                                        opacity=np.concatenate(opacities)),
             ink_quadrics, ink_regions, marked)
 
 
@@ -364,10 +428,12 @@ def lamp(camera: Motor) -> Point:
     return toward / (-(toward.dual() & toward)).square_root()
 
 
-def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = ()) -> tuple[np.ndarray, np.ndarray]:
-    """The solids as the view sees them, with the lines inked on them: their colour, `[rows, columns, 4]`, and their
-    depth along the view, `[rows, columns]`, each weighted by coverage."""
-    quadrics, solids, ink_quadrics, ink_regions, marked = scene(parts, inks)
+def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = (),
+          translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+    """The solids as the view sees them, with the lines inked on them, and the translucent solids over and among them,
+    each with its opacity: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`, each
+    weighted by coverage."""
+    quadrics, solids, ink_quadrics, ink_regions, marked = scene(parts, translucent, inks)
     image = shader()(view.shape, quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics,
                      ink_regions=ink_regions,
                      pixel=view.pixel, camera=view.camera, back=4 * view.half.max(),
@@ -376,6 +442,8 @@ def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] =
     return image["colour"], image["depth"][..., 0]
 
 
-def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = ()) -> np.ndarray:
-    """The solids as the view sees them on the background, with the lines inked on them, `[rows, columns, 3]`."""
-    return compose([(*layer(parts, view, inks), 1.0)], background)
+def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = (),
+         translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> np.ndarray:
+    """The solids as the view sees them on the background, with the lines inked on them, and the translucent solids
+    over and among them, `[rows, columns, 3]`."""
+    return compose([(*layer(parts, view, inks, translucent), 1.0)], background)

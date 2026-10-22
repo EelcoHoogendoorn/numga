@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.geometry.registration.core import Point, mv
-from examples.wgsl import compose, image_figure, solids
+from examples.wgsl import image_figure, solids
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
 background = np.ones(3)
@@ -19,9 +19,9 @@ elevation, azimuth = np.radians([30.0, 30.0])
 margin = 0.12
 n_pixels = 900
 # Radii in pixels: of a point, of the shell around a target, and of the tie from an aligned point to its target;
-# and how much of what lies behind a shell shows through it.
+# and how much of what lies behind them each surface of a shell hides.
 point_radius, target_radius, tie_radius = 5.0, 8.5, 1.5
-target_opacity = 0.3
+target_opacity = 0.16
 
 
 def coordinates(points: Point) -> np.ndarray:
@@ -34,8 +34,8 @@ def draw_registration(source: Point, target: Point, aligned: Point) -> plt.Figur
     its target."""
     view = solids.view([source, target, aligned], 0.0, elevation, azimuth, margin, n_pixels)
     pixel = view.pixel
-    opaque = solids.layer([(solids.ball(source, point_radius * pixel)[:, None], source_colour),
-                           (solids.ball(aligned, point_radius * pixel)[:, None], aligned_colour),
-                           (solids.rods(aligned, target, tie_radius * pixel), aligned_colour)], view)
-    shells = solids.layer([(solids.ball(target, target_radius * pixel)[:, None], target_colour)], view)
-    return image_figure(compose([(*opaque, 1.0), (*shells, target_opacity)], background))
+    opaque = [(solids.ball(source, point_radius * pixel)[:, None], source_colour),
+              (solids.ball(aligned, point_radius * pixel)[:, None], aligned_colour),
+              (solids.rods(aligned, target, tie_radius * pixel), aligned_colour)]
+    shells = [(solids.ball(target, target_radius * pixel)[:, None], target_colour, target_opacity)]
+    return image_figure(solids.draw(opaque, view, background, translucent=shells))
