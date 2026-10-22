@@ -31,12 +31,12 @@ edge_width = 1.8
 
 
 colour = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     // Ink where the pixel lies within the crease width of an edge of its polygon, by how many pixels away it lies.
     let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
     let paper = select({vec3(back_colour)}, {vec3(front_colour)}, front);
-    return mix(paper, {vec3(edge_colour)}, ink);
+    return vec4<f32>(mix(paper, {vec3(edge_colour)}, ink), 1.0);
 }}
 """
 

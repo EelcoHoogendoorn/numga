@@ -46,10 +46,10 @@ def grid_colour(front: np.ndarray, back: np.ndarray) -> str:
     """WGSL colouring a sheet by the side the camera sees, darkened along the grid's edges: each face's ink at
     the edge opposite each corner, by how many pixels away that edge lies."""
     return f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
-    return select({vec3(back)}, {vec3(front)}, front) * (1 - ink);
+    return vec4<f32>(select({vec3(back)}, {vec3(front)}, front) * (1 - ink), 1.0);
 }}
 """
 

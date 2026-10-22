@@ -26,9 +26,9 @@ EDGE_DARKNESS = 0.9
 # Each face's colour, darkened toward the edges of its square that lie within `EDGE_WIDTH` pixels: the ink of
 # the edge opposite each corner in its face values, by how near the pixel lies to that edge.
 INKED = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let edges = clamp(1 - corner / ({EDGE_WIDTH} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
-    return values.rgb * (1 - max(edges.x, max(edges.y, edges.z)));
+    return vec4<f32>(values.rgb * (1 - max(edges.x, max(edges.y, edges.z))), 1.0);
 }}
 """
 

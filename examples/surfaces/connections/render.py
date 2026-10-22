@@ -276,14 +276,14 @@ fn winding(near: vec3<f32>) -> f32 {{
     return (3.14159265 / 3) * (start + along / max(1 - 3 * least, 1e-6));
 }}
 
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let phases = values + winding(corner) * face_values;
     let shares = 0.5 - 0.5 * tanh({sharpness} * (cos(phases) - cos(3.14159265 * {bands})));
     var share = 1.0;
     for (var family = 0u; family < {n_families}u; family++) {{
         share *= shares[family];
     }}
-    return mix({vec3(dark)}, {vec3(light)}, share);
+    return vec4<f32>(mix({vec3(dark)}, {vec3(light)}, share), 1.0);
 }}
 """
 

@@ -24,10 +24,11 @@ unit = origin & mv.point([1, 0, 0]) & mv.point([0, 1, 0]) & mv.point([0, 0, 1])
 
 def source(colour: str) -> str:
     """WGSL drawing a mesh, coloured by `colour`, WGSL defining `fn colour(values: vec4<f32>, face_values:
-    vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32>`: from each pixel's values, the corners' blended
-    across the face, the face's own, how near the pixel lies to each corner, and whether the camera sees the side
-    the face's normal points to. It writes the colour and the depth, each weighted by how much of a pixel the
-    mesh covers."""
+    vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32>`, the colour and how much of what lies behind it it
+    hides: from each pixel's values, the corners' blended across the face, the face's own, how near the pixel lies
+    to each corner, and whether the camera sees the side the face's normal points to. It writes the colour and the
+    depth, each weighted by how much of a pixel the mesh covers and by how much it hides; a pixel that hides nothing
+    is not drawn, and leaves what lies behind it to be seen."""
     return colour + """
 var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
@@ -100,24 +101,28 @@ fn shade(corner: Corner) -> Shade {
     let light = max(normal & lamp, 0.0);
     let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
     let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
-    let lit = colour(corner.values, corner.face_values, corner.corner, front) * (fill + (1 - ambient - headlight) * light) + gloss * glint;
-    return Shade(vec4<f32>(lit, 1.0), vec4<f32>(corner.depth, 0.0, 0.0, 1.0));
+    let surface = colour(corner.values, corner.face_values, corner.corner, front);
+    if (surface.a <= 0) {
+        discard;
+    }
+    let lit = surface.rgb * (fill + (1 - ambient - headlight) * light) + gloss * glint;
+    return Shade(vec4<f32>(lit * surface.a, surface.a), vec4<f32>(corner.depth * surface.a, 0.0, 0.0, 1.0));
 }
 """
 
 
 # The vertices' own colours, blended across each face.
 plain = """
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {
-    return values.rgb;
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
+    return vec4<f32>(values.rgb, 1.0);
 }
 """
 
 
 # Each face's own colour.
 by_face = """
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {
-    return face_values.rgb;
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
+    return vec4<f32>(face_values.rgb, 1.0);
 }
 """
 

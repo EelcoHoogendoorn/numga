@@ -27,12 +27,12 @@ inside = np.array([[0.70, 0.82, 0.96], [0.22, 0.42, 0.72]])
 # A solid checkerboard of cubes, in the place each pixel had on the reference surface, scaled so the cubes
 # are unit; light and dark squares, warm outside and cool inside.
 checkerboard = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let cells = round(values.xyz);
     let dark = abs(cells.x + cells.y + cells.z) % 2.0 > 0.5;
     let outside = select({vec3(outside[0])}, {vec3(outside[1])}, dark);
     let inside = select({vec3(inside[0])}, {vec3(inside[1])}, dark);
-    return select(inside, outside, front);
+    return vec4<f32>(select(inside, outside, front), 1.0);
 }}
 """
 

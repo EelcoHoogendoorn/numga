@@ -22,8 +22,8 @@ background = np.zeros(3)
 
 # A pixel's colour: the surface's grey, and the vertices' field blended across the face joined with the face's own.
 colour = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
-    return {base} + sqrt(values.rgb * values.rgb + face_values.rgb * face_values.rgb);
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
+    return vec4<f32>({base} + sqrt(values.rgb * values.rgb + face_values.rgb * face_values.rgb), 1.0);
 }}
 """
 

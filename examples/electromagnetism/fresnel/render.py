@@ -12,24 +12,24 @@ from matplotlib.colors import to_rgb
 
 from examples.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.wgsl import behind, compose, labels, meshes, show, solids
+from examples.wgsl import compose, labels, meshes, show, solids, vec3
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.05
 latitude_stride = 4
 longitude_stride = 8
 sm = solids.mv
-# The sheets' opacity and their grid lines', and the axes' colour.
-sheet_opacity, grid_opacity = 0.2, 0.55
+# How much of what lies behind them each side of a sheet and its grid lines hide, and the axes' colour.
+sheet_opacity, grid_opacity = 0.12, 0.4
 axis_colour = np.array([0.45, 0.47, 0.52])
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view about
 # the origin, the same for every medium so their sizes compare; and the pixels across it.
 elevation, azimuth = np.radians(22.0), np.radians(37.0)
 half_width, n_pixels = 2.3, 400
-# The widths of the grid lines and the axes' arrows, the arrowheads' length and width and the ticks' radius, in pixels;
-# how far the axes reach and their names lie, and the ticks, in units of k.
-grid_width, arrow_width, head_length, head_width, tick_radius = 3.0, 3.0, 12.0, 7.0, 3.5
-axis_length, label_distance, ticks = 1.95, 2.12, np.array([-1.0, 1.0])
+# The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far each
+# axis's tip reaches out of the outer sheet, and its name beyond the tip, in units of k.
+grid_width, arrow_width, head_length, head_width = 2.0, 2.0, 10.0, 7.0
+axis_length, label_distance = 0.3, 0.15
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -41,32 +41,53 @@ def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
     return np.concatenate([corners[:-1, :, [0, 1, 2]].reshape(-1, 3), corners[1:, :, [0, 2, 3]].reshape(-1, 3)])
 
 
-def k_axes(view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """The axes of k-space as arrows through the origin, with ticks at -1 and 1."""
-    shafts, heads = solids.arrows(sm.point(-axis_length * np.eye(3)), sm.point(axis_length * np.eye(3)),
+def gridded(colour: np.ndarray, n_latitudes: int, near: bool) -> str:
+    """WGSL colouring one side of a sheet, the side the camera sees the front of or the far side, translucent, inked
+    more opaquely along every few parallels short of the poles and every few meridians: by how many pixels the
+    corners' grid indices, `values.x` and `values.y`, lie from the nearest line, their change across a pixel the
+    measure. The other side hides nothing, and is left for the other layer."""
+    return f"""
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
+    let strides = vec2<f32>({latitude_stride:.1f}, {longitude_stride:.1f});
+    let nearest = round(values.xy / strides) * strides;
+    let steps = oversampling * fwidth(values.xy);
+    var ink = clamp({grid_width / 2 + 0.5} - abs(values.xy - nearest) / steps, vec2<f32>(0.0), vec2<f32>(1.0));
+    // No parallel on the poles, where they shrink to points.
+    ink.x *= select(0.0, 1.0, nearest.x > 0 && nearest.x < {n_latitudes - 1:.1f});
+    let shown = select(0.0, 1.0, front == {str(near).lower()});
+    return vec4<f32>({vec3(colour)}, shown * mix({sheet_opacity}, {grid_opacity}, max(ink.x, ink.y)));
+}}
+"""
+
+
+def k_axes(reach: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """The tips of the axes of k-space: arrows out of the outer sheet, from where it crosses each axis `[3]`."""
+    shafts, heads = solids.arrows(sm.point(reach[:, None] * np.eye(3)), sm.point((reach + axis_length)[:, None] * np.eye(3)),
                                   arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
-    marks = solids.ball(sm.point((ticks[:, None, None] * np.eye(3)).reshape(-1, 3)), tick_radius * view.pixel)
-    return solids.layer([(shafts, axis_colour), (heads, axis_colour), (marks[:, None], axis_colour)], view)
+    return solids.layer([(shafts, axis_colour), (heads, axis_colour)], view)
 
 
 def surface(ax: Axes, sheets: core.Vector) -> None:
-    """Both sheets, translucent, with grid lines along every few latitudes and longitudes, about the axes of k-space,
-    named at their tips."""
+    """Both sheets, translucent, with grid lines along every few latitudes and longitudes, and the axes of k-space
+    reaching out of them, named at their tips."""
     points = sheets.cast(core.ga.subspace("x y z")).kernel                       # [latitudes, longitudes, 2, 3]
     view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
-    faces = sheet_faces(*points.shape[:2])
-    layers, lines = [], []
+    n_latitudes, n_longitudes = points.shape[:2]
+    faces = sheet_faces(n_latitudes, n_longitudes)
+    # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
+    indices = np.stack(np.meshgrid(np.arange(n_latitudes), np.arange(n_longitudes), indexing="ij"), axis=-1)
+    grid = indices.reshape(-1, 2)[faces]                                         # [faces, 3, 2]
+    # Each sheet's near side and far side a layer of its own, so that the far side shows through the near.
+    layers = []
     for sheet, colour in zip(np.moveaxis(points, 2, 0), map(to_rgb, sheet_colours)):
         places = sm.point(sheet.reshape(-1, 3))
-        # Pushed back a little, so the grid lines drawn on the sheet stay in front of it.
-        layer = meshes.layer(places, faces, np.array(colour), meshes.smooth(places, faces), view, gloss=0.2)
-        layers.append((*behind(layer, 2 * view.pixel), sheet_opacity))
-        # Parallels short of the poles, where they shrink to points, and meridians short of the closing one.
-        lines += [(line, colour) for line in sheet[latitude_stride:-1:latitude_stride]]
-        lines += [(line, colour) for line in np.moveaxis(sheet[:, :-1:longitude_stride], 1, 0)]
-    grid = meshes.tubes(lines, grid_width, view)
-    show(ax, compose([*layers, (*grid, grid_opacity), (*k_axes(view), 1.0)], np.ones(3)), view)
-    labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
+        normals = meshes.smooth(places, faces)
+        layers += [(*meshes.layer(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
+                                  gloss=0.2), 1.0) for near in (True, False)]
+    # Where the outer sheet crosses each axis: the farthest either sheet reaches along it.
+    reach = points.max(axis=(0, 1, 2))                                           # [3]
+    show(ax, compose([*layers, (*k_axes(reach, view), 1.0)], np.ones(3)), view)
+    labels(ax, view, sm.point((reach + axis_length + label_distance)[:, None] * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
            fontsize=11, color=axis_colour)
 
 
@@ -76,9 +97,12 @@ def section(ax: Axes, sections: core.Vector) -> None:
         ax.plot(points[:, mode, 0], points[:, mode, 2], color=colour, linestyle=style, linewidth=2, label=label)
     ax.axhline(0, color="#cbd5e1", linewidth=0.7)
     ax.axvline(0, color="#cbd5e1", linewidth=0.7)
-    ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit), xlabel="$k_x$", ylabel="$k_z$")
+    # The axes named at their ends, without scales: the sheets' shapes against each other are the point.
+    ax.text(view_limit, 0, "$k_x$", ha="right", va="bottom", fontsize=11, color=axis_colour)
+    ax.text(0, view_limit, "$k_z$", ha="left", va="top", fontsize=11, color=axis_colour)
+    ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
-    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_axis_off()
 
 
 def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...]) -> plt.Figure:

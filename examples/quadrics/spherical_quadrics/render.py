@@ -78,11 +78,11 @@ def polhode_colour(levels: np.ndarray, inks: np.ndarray) -> str:
     lines = "\n".join(f"    shade = mix(shade, {vec3(ink)}, clamp({POLHODE_WIDTH / 2 + 0.5} - abs(values.x - {level:.6f}) / "
                       f"step, 0.0, 1.0));" for level, ink in zip(levels, inks))
     return f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec3<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
     let step = oversampling * fwidth(values.x);
     var shade = {vec3(POLHODE_SHEET)};
 {lines}
-    return shade;
+    return vec4<f32>(shade, 1.0);
 }}
 """
 
