@@ -281,7 +281,11 @@ def binding_context(
     if not concrete:
         return target
 
-    context = concrete[0]
-    if any(not other.is_compatible_with(context) for other in concrete[1:]):
+    # A NumPy operand meeting another backend's is a constant to it, as a NumPy array is to JAX: the operation runs in
+    # the other backend, and the NumPy operands are carried into it.
+    hosted = [context for context in concrete if context.key[0] != "numpy"]
+    context = hosted[0] if hosted else concrete[0]
+    if any(not other.is_compatible_with(context)
+           and not (other.key[0] == "numpy" and other.algebra is context.algebra) for other in concrete):
         raise ValueError("all concrete operands must use compatible Contexts")
     return context

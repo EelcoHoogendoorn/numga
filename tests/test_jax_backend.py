@@ -146,3 +146,21 @@ def test_exp_derivative_carries_a_change_of_the_generator_as_autodiff_of_exp_doe
         carried = b.exp() * b.exp_derivative()(mv.bivector(changes))      # [sizes] Even
         error = np.abs(np.asarray(carried.select_subspace(b.exp().output_subspace).kernel) - np.asarray(tangent))
         np.testing.assert_array_less(error / np.abs(np.asarray(tangent)).max(axis=-1, keepdims=True), 1e-11)
+
+
+def test_numpy_extensors_are_constants_to_jax_ones():
+    """A NumPy extensor meeting a JAX one is carried into JAX, as a NumPy array is, eagerly and under jit."""
+    from numga import NumpyContext
+    from numga.algebras import PGA3D
+
+    mv = NumpyContext(PGA3D).multivector
+    point = JaxContext(PGA3D).multivector.point(np.array([0.5, -1.0, 2.0]))
+
+    def joined(value):
+        return mv.point(np.zeros(3)) & value
+
+    eager, traced = joined(point), jax.jit(joined)(point)
+    expected = joined(point.materialize(NumpyContext(PGA3D)))
+    for result in (eager, traced):
+        assert result.context.key[0] == "jax"
+        np.testing.assert_allclose(np.asarray(result.kernel), expected.kernel, atol=1e-12)

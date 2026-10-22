@@ -38,14 +38,12 @@ def application(
     signature: tuple[tuple[Context, GAType], ...],
     equality_groups: tuple[tuple[int, ...], ...] = (),
 ) -> Callable[..., Extensor]:
-    context = next((c for c in (target_context,) + tuple(c for c, _ in signature)
-                    if not c.is_exact), target_context)
+    context = binding_context(target_context, tuple(c for c, _ in signature))
     key = (cls, target_type, target_context.key,
            tuple((c.key, t) for c, t in signature), equality_groups)
     try:
         return context._applications[key]
     except KeyError:
-        binding_context(target_context, tuple(c for c, _ in signature))
         execute = compile_application(cls, context, target_context, target_type, signature, equality_groups)
         context._applications[key] = execute
         return execute
