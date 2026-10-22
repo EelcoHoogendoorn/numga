@@ -66,12 +66,11 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     spacetime diagram, x, z and t drawn along the scene's x, y and z, its axes arrows named at their tips."""
     positions, lines = spacetime(events), spacetime(rays)
     extent = AXIS_REACH * max(np.max(np.abs(positions)), np.max(np.abs(lines)))
-    tips, names = sm.point(extent * np.eye(3)), sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))   # [3] Point
+    names = sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))      # [3] Point
     # One view for both panels, framing the axes, their names and every ray.
-    view = solids.view([sm.point(-extent * np.eye(3)), names, sm.point(lines)], 0.0, DIAGRAM_ELEVATION,
-                       DIAGRAM_AZIMUTH, DIAGRAM_MARGIN, DIAGRAM_PIXELS)
-    shafts, heads = solids.arrows(sm.point(-extent * np.eye(3)), tips, AXIS_WIDTH / 2 * view.pixel,
-                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    view = solids.view([solids.origin[None], names, sm.point(lines)], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
+                       DIAGRAM_MARGIN, DIAGRAM_PIXELS)
+    shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     figure = plt.figure(figsize=(10, 5), facecolor="white")
     for column, (points, line) in enumerate(zip(positions, lines)):
         ray = meshes.tubes([(line, to_rgb(BLUE))], RAY_WIDTH, view, N_AROUND)

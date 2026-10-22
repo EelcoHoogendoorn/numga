@@ -21,7 +21,7 @@ mv = core.mv
 part_colours = np.array([[0.85, 0.30, 0.25], [0.35, 0.35, 0.40], [0.80, 0.70, 0.35]])
 sector_contrast = np.array([0.25, 0.0, 0.0])
 
-source = supersampled(2) + """
+source = supersampled() + """
 // The ground, then the top's parts, placed; each part's colour and the contrast of its sectors.
 struct Paint {
     colour: vec3<f32>,

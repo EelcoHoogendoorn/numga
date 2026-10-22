@@ -20,11 +20,10 @@ COLOURS = np.array([[0.9, 0.3, 0.3], [0.3, 0.8, 0.4], [0.3, 0.5, 0.95], [0.95, 0
 LIGHT = np.array([-0.4, 0.6, 0.7])
 FIELD_OF_VIEW = np.radians(80.0)
 WALK = 1.2
-# The frames of the walk, the image's pixels and their supersampling, and the duration of a frame in
+# The frames of the walk, the image's pixels, and the duration of a frame in
 # milliseconds; the coarser chart the checks run on, and every how many covered pixels a hit is checked.
 N_FRAMES = 48
 SHAPE = (360, 480)
-SUPERSAMPLE = 3
 FRAME_DURATION = 80
 CHECK_SHAPE = (90, 120)
 CHECK_STRIDE = 10
@@ -53,8 +52,8 @@ def main() -> None:
     from examples.quadrics.s3_raytracer import render
 
     scene = walk(N_FRAMES)
-    save_figure(render.draw_walk(*scene, SHAPE, SUPERSAMPLE), "s3_raytracer")
-    save_animation(render.frames(*scene, SHAPE, SUPERSAMPLE), "s3_raytracer", FRAME_DURATION)
+    save_figure(render.draw_walk(*scene, SHAPE), "s3_raytracer")
+    save_animation(render.frames(*scene, SHAPE), "s3_raytracer", FRAME_DURATION)
 
     # checks
     # A ray is inside a body's outline cone exactly when its great circle `origin + chart * t` meets the

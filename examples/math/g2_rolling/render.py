@@ -24,7 +24,7 @@ line_width = 3
 dot_radius = 4
 margin = 0.07
 
-source = supersampled(2) + """
+source = supersampled() + """
 // A camera turned to look along its own -z at the middle of the view, its rays parallel, starting `back` behind
 // it; the image half as high as this; the lamp, toward it.
 var<uniform> camera: Rotor;

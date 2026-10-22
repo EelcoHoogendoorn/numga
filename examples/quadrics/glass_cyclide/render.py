@@ -19,7 +19,7 @@ from examples.wgsl import Shader, supersampled
 
 types = dict(Sphere=core.Sphere, Euclidean=core.Euclidean, Point=core.Point, Rotation=core.Rotation, Quadric=core.Quadric)
 
-source = supersampled(2) + """
+source = supersampled() + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, each negative
 // inside it, within a bounding sphere about `centre`. Its colour, the tint glass takes on per unit
 // length; the share of light it lets through, and its refractive index; two directions whose unit steps

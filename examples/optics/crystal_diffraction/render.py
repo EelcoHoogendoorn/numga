@@ -19,14 +19,21 @@ INTENSITY_FLOOR = 1e-4
 
 
 # --- plumbing -------------------------------------------------------------------------
-def atoms(ax: Axes, positions: core.Point) -> None:
-    points = positions.cast(core.ga.subspace("yz zx xy")).kernel
-    ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
+def cross(ax: Axes) -> None:
+    """A faint cross through the origin, its lines named x and y at their ends, framing the atoms."""
     ax.axhline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
     ax.axvline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
+    ax.text(POSITION_LIMIT, 0, "$x$", ha="right", va="bottom", color="#94a3b8", fontsize=11)
+    ax.text(0, POSITION_LIMIT, " $y$", ha="left", va="top", color="#94a3b8", fontsize=11)
     ax.set(xlim=(-POSITION_LIMIT, POSITION_LIMIT), ylim=(-POSITION_LIMIT, POSITION_LIMIT), xticks=[], yticks=[])
     ax.set_aspect("equal")
     ax.spines[:].set_visible(False)
+
+
+def atoms(ax: Axes, positions: core.Point) -> None:
+    points = positions.cast(core.ga.subspace("yz zx xy")).kernel
+    ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
+    cross(ax)
 
 
 def diffraction(ax: Axes, reciprocal: core.Plane, grid: core.Plane, intensity: core.Scalar) -> None:
@@ -79,11 +86,7 @@ OBSERVER_SPACE = STA.subspace("x y z")
 
 def _draw_atoms(ax: Axes, points: np.ndarray) -> None:
     ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
-    ax.axhline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
-    ax.axvline(0, color="#cbd5e1", linewidth=0.7, zorder=0)
-    ax.set(xlim=(-POSITION_LIMIT, POSITION_LIMIT), ylim=(-POSITION_LIMIT, POSITION_LIMIT), xticks=[], yticks=[])
-    ax.set_aspect("equal")
-    ax.spines[:].set_visible(False)
+    cross(ax)
 
 
 def _draw_intensity(ax: Axes, peaks: np.ndarray, samples: np.ndarray, values: np.ndarray) -> None:

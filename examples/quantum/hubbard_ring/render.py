@@ -20,8 +20,10 @@ def draw_levels(ratios: np.ndarray, excitations: core.Scalar, heisenberg: np.nda
     ax.plot(ratios, excitations.to_array(), color=LEVELS, linewidth=1.0)
     for level in heisenberg:
         ax.axhline(level, color="0.5", linestyle="--", linewidth=0.8)
-    ax.set(xlim=(ratios[0], ratios[-1]), ylim=(-0.1, heisenberg[-1] + 0.6),
+    # The levels read off where the Heisenberg ring puts them, in units of the exchange.
+    ax.set(xlim=(ratios[0], ratios[-1]), ylim=(0, heisenberg[-1] + 0.6), xticks=[], yticks=np.arange(heisenberg[-1] + 1),
            xlabel=r"repulsion / hopping, $U/t$", ylabel=r"above the ground state, $\Delta E\,U/4t^2$")
+    ax.spines[["top", "right"]].set_visible(False)
     return figure
 
 

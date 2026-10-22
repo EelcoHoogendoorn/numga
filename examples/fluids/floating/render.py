@@ -125,6 +125,7 @@ def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, st
         ax.plot(near, slope * np.radians(near), color=colour, lw=1, linestyle=(0, (4, 3)))
     ax.set_xticks([0, 45, 90, 135, 180])
     ax.set_xlim(heels[0], heels[-1])
+    ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     figure.tight_layout()
@@ -164,7 +165,8 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
                    linewidths=width)
     ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1", markersize=7)
     ax.set(xlim=(densities[0], densities[-1]), ylim=(-3, 93), yticks=[0, 45, 90])
-    figure.subplots_adjust(left=0.08, right=0.98, bottom=0.06, top=0.98)
+    ax.set(xlabel="density over the water's", ylabel="heel (degrees)")
+    figure.subplots_adjust(left=0.1, right=0.98, bottom=0.09, top=0.98)
     return figure
 
 
@@ -182,7 +184,7 @@ def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[co
     images = []
     for index, (_, placed, push, weighing) in enumerate(frames):
         figure = plt.figure(figsize=(11, 3.8), dpi=90)
-        grid = figure.add_gridspec(1, 3, width_ratios=(1, 1, 1.4), wspace=0.12)
+        grid = figure.add_gridspec(1, 3, width_ratios=(1, 1, 1.4), wspace=0.22)
         for case, colour in enumerate(colours):
             ax = figure.add_subplot(grid[0, case])
             end_view(ax, coordinates(placed[case] >> hull))
@@ -197,9 +199,10 @@ def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[co
             ax.plot(*states[index, :, case], "o", color=colour, markersize=7)
         ax.set_xticks([0, 90, 180])
         ax.set_xlim(-30, 215)
+        ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-        figure.subplots_adjust(left=0.01, right=0.98, bottom=0.1, top=0.97)
+        figure.subplots_adjust(left=0.01, right=0.98, bottom=0.15, top=0.97)
         images.append(capture(figure))
         plt.close(figure)
     return images

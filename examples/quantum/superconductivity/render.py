@@ -23,26 +23,31 @@ DISPLAY_CUTOFF = 3.0
 AXIS_COLOUR, CIRCLE_COLOUR, CIRCLE_OPACITY, PATH_OPACITY = np.full(3, 0.55), np.full(3, 0.75), 0.4, 0.3
 CIRCLE_RADIUS, CIRCLE_EVERY = 0.5, 8
 # The chart's scene: the length of one unit of energy along x, where the energy axis starts and ends, in units of
-# energy, how far the axes of pair coherence reach either way, and the energies and coherences ticked.
+# energy, and how far the axes of pair coherence reach from the start of the energy axis.
 ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
-ENERGY_TICKS, COHERENCE_TICKS = np.arange(-3.0, 4.0), np.array([-0.5, 0.5])
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
 # of the larger side, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
 MARGIN, N_PIXELS = 0.08, 700
 # The points around a circle and a tube; the widths of the axes' shafts, the circles, the path and the arrows'
-# shafts, the arrowheads' lengths and widths, and the radii of the ticks and the tips, in pixels.
+# shafts, the arrowheads' lengths and widths, and the radius of the tips, in pixels.
 N_CIRCLE, N_AROUND = 100, 8
 AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 2.0, 1.6, 2.0, 3.6
 AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 14.0, 8.0, 13.0, 10.0
-TICK_RADIUS, TIP_RADIUS = 2.6, 4.0
+TIP_RADIUS = 4.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def plain_axes(axis: plt.Axes) -> None:
+def plain_axes(axis: plt.Axes, across: str, up: str) -> None:
+    """Light axes named by what runs along them, the quantity's zero as the horizontal one, without numbers: every
+    value is in units of the energy scale, and the shapes are the point."""
     axis.spines[["top", "right"]].set_visible(False)
     axis.spines[["left", "bottom"]].set_color("0.8")
-    axis.tick_params(color="0.8")
+    axis.spines["bottom"].set_position(("data", 0))
+    axis.set(xticks=[], yticks=[], xlabel=across, ylabel=up)
+    # The horizontal axis's name below the plot, wherever its zero lies.
+    axis.xaxis.set_label_coords(0.5, -0.03)
+    axis.xaxis.label.set_va("top")
 
 
 def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
@@ -50,29 +55,22 @@ def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
     coherence = spins.cast(core.ga.subspace("yz zx xy")).kernel
     figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
-    axes[0].set(ylabel="occupation per electron state", ylim=(-0.04, 1.04))
+    axes[0].set(ylim=(0, 1.04))
     axes[1].plot(energies, coherence[:, 0], color=PAIR, linewidth=2)
-    axes[1].set(ylabel="pair coherence in yz", ylim=(-0.02, 0.54))
-    for axis in axes:
-        axis.set(xlabel=r"energy from chemical potential, $\xi/E_0$", xlim=(energies[0], energies[-1]))
+    axes[1].set(ylim=(0, 0.54))
+    for axis, up in zip(axes, ("occupation per electron state", r"pair coherence in yz, $s_{yz}$")):
+        axis.set(xlim=(energies[0], energies[-1]))
         axis.axvline(0, color="0.85", linewidth=0.8, zorder=0)
-        plain_axes(axis)
+        plain_axes(axis, r"energy from chemical potential, $\xi$", up)
     return figure
 
 
-def tick_places() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Where the ticks sit: on the energy axis, and on the axes of pair coherence in yz and in zx."""
-    start = ENERGY_SCALE * ENERGY_START * np.array([1, 0, 0])
-    return (np.outer(ENERGY_SCALE * ENERGY_TICKS, [1, 0, 0]), start + np.outer(COHERENCE_TICKS, [0, 1, 0]),
-            start + np.outer(COHERENCE_TICKS, [0, 0, 1]))
-
-
 def chart(energies: np.ndarray) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], np.ndarray]:
-    """The view of the chart, its axes as arrows with ticks, the energy along x and the pair coherence in yz and zx
-    along y and z through the start of the energy axis, and the circles of the largest coherence about the energy
-    axis at every few levels `[circles, circle + 1, 3]`."""
+    """The view of the chart, its axes as arrows from the start of the energy axis, the energy along +x and the pair
+    coherence in yz and zx along +y and +z, and the circles of the largest coherence about the energy axis at every few
+    levels `[circles, circle + 1, 3]`."""
     start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
-    starts = np.array([[start, 0, 0], [start, -COHERENCE_REACH, 0], [start, 0, -COHERENCE_REACH]])
+    starts = np.full((3, 3), [start, 0, 0])
     ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
     # The circles about the energy axis, square to x, through every few levels.
     centres = np.outer(ENERGY_SCALE * energies[::CIRCLE_EVERY], [1, 0, 0])               # [circles, 3]
@@ -81,24 +79,15 @@ def chart(energies: np.ndarray) -> tuple[solids.View, list[tuple[solids.Quadric,
     view = solids.view([sm.point(circles), sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,
                                   AXIS_HEAD_LENGTH * view.pixel, AXIS_HEAD_WIDTH / 2 * view.pixel)
-    ticks = solids.ball(sm.point(np.concatenate(tick_places())), TICK_RADIUS * view.pixel)[:, None]
-    return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ticks, AXIS_COLOUR)], circles
+    return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], circles
 
 
 def label_chart(axis: plt.Axes, view: solids.View) -> None:
-    """The chart's axes named past their tips, and their ticks numbered beside them."""
+    """The chart's axes named past their tips."""
     start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
     names = np.array([[end + 0.12, 0, 0], [start, COHERENCE_REACH + 0.1, 0], [start, 0, COHERENCE_REACH + 0.1]])
-    labels(axis, view, sm.point(names), [r"$\xi/E_0$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center", fontsize=11,
+    labels(axis, view, sm.point(names), [r"$\xi$", r"$s_{yz}$", r"$s_{zx}$"], ha="center", va="center", fontsize=11,
            color=AXIS_COLOUR)
-    on_energy, on_yz, on_zx = tick_places()
-    for place, energy in zip(view.across(sm.point(on_energy)), ENERGY_TICKS):
-        axis.annotate(f"{energy:g}", place, xytext=(0, -7), textcoords="offset points", ha="center", va="top",
-                      fontsize=8, color=AXIS_COLOUR)
-    for ticks in (on_yz, on_zx):
-        for place, value in zip(view.across(sm.point(ticks)), COHERENCE_TICKS):
-            axis.annotate(f"{value:g}", place, xytext=(-6, 0), textcoords="offset points", ha="right", va="center",
-                          fontsize=8, color=AXIS_COLOUR)
 
 
 def animate_quench(
@@ -139,9 +128,8 @@ def animate_quench(
     label_chart(axis, view)
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
     gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)
-    curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.12),
-              xlabel=r"$t E_0/\hbar$", ylabel=r"$|\Delta|/E_0$")
-    plain_axes(curve)
+    curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.12))
+    plain_axes(curve, "time", r"$|\Delta|$")
 
     frames = []
     for index, coherence in enumerate(transverse):
@@ -159,9 +147,9 @@ def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> 
     figure, axis = plt.subplots(figsize=(7.5, 2.8), layout="constrained")
     axis.plot(times, amplitudes, color=PAIR, linewidth=2, label="isolated condensate")
     axis.axhline(equilibrium, color=INK, linestyle="--", linewidth=1, label="final ground-state gap")
-    axis.set(xlim=(times[0], times[-1]), xlabel=r"$t E_0/\hbar$", ylabel=r"$|\Delta|/E_0$")
-    axis.legend(frameon=False, ncol=2)
-    plain_axes(axis)
+    axis.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.05))
+    axis.legend(frameon=False, ncol=2, loc="lower center")
+    plain_axes(axis, "time", r"$|\Delta|$")
     return figure
 
 
@@ -174,8 +162,7 @@ def draw_response(
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
         axis.plot(times, values, color=colour, linewidth=1.5, linestyle="--", label=name)
-    axis.axhline(0, color="0.85", linewidth=0.8, zorder=0)
-    axis.set(xlim=(times[0], times[-1]), xlabel=r"$t E_0/\hbar$", ylabel=r"$\delta\Delta_{yz}/E_0$")
-    axis.legend(frameon=False, ncol=3, loc="upper center", fontsize=9)
-    plain_axes(axis)
+    axis.set(xlim=(times[0], times[-1]))
+    axis.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 1), fontsize=9)
+    plain_axes(axis, "time", r"$\delta\Delta_{yz}$")
     return figure

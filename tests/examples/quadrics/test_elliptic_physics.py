@@ -82,18 +82,23 @@ def test_filled_points_lie_inside_with_the_given_mass():
 
 
 def test_s2_scenarios_render():
-    """Each S² scene conserves its invariants and renders a figure and an animation."""
-    for scene, steps, draw, impulses, drift in (
-        (scenarios.crowded, 41, render.draw_collisions, 6, 1e-2),
-        (scenarios.hyperbolic, 41, render.draw_collisions, 15, 2e-2),
-        (scenarios.tumbling, 100, render.draw_tumbling, 0, 2e-2),
+    """Each S² scene conserves its invariants and renders an animation; the tumbling oval its rates."""
+    for scene, steps, impulses, drift in (
+        (scenarios.crowded, 41, 6, 1e-2),
+        (scenarios.hyperbolic, 41, 15, 2e-2),
+        (scenarios.tumbling, 100, 0, 2e-2),
     ):
         trajectory, colors = scene(steps)
         assert trajectory.impulses == impulses
         scenarios.conserved(trajectory, drift)
-        assert isinstance(draw(trajectory, colors, 0.015), plt.Figure)
         frames = render.hemisphere_frames(trajectory.surfaces[::10], colors, 80, 1)
         assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
+
+
+def test_tumbling_rates_render():
+    """The tumbling oval's rates draw as one figure."""
+    trajectory, _ = scenarios.tumbling(100)
+    assert isinstance(render.draw_tumbling(trajectory, 0.015), plt.Figure)
 
 
 def test_s3_scenarios_render():
@@ -101,6 +106,6 @@ def test_s3_scenarios_render():
     for scene in (scenarios.crowd, scenarios.gap, scenarios.needle, scenarios.tunnel):
         trajectory, colors, eye, light, *_ = scene(12)
         scenarios.collisions_conserve_energy(trajectory)
-        frames = render.s3_frames(trajectory, colors, eye, light, (45, 60), 1)
-        assert isinstance(render.draw_last_frame(frames, colors.shape[0]), plt.Figure)
+        frames = render.s3_frames(trajectory, colors, eye, light, (45, 60))
+        assert isinstance(render.draw_last_frame(frames), plt.Figure)
         assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

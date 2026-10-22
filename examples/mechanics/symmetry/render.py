@@ -31,7 +31,7 @@ n_framing = 400
 # The lattice's site and bond radii, in lattice spacings.
 site_radius, bond_radius = 0.13, 0.035
 
-sphere_source = supersampled(2) + """
+sphere_source = supersampled() + """
 // A unit sphere of directions, seen along parallel rays by a camera turned by `turn`, coloured by the rotary
 // power along each direction against the largest, through a colour table, and lit by the lamp.
 var<uniform> rotary: Rotary;

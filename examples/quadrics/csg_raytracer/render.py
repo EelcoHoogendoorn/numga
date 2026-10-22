@@ -16,7 +16,7 @@ from examples.wgsl import Shader, supersampled
 
 types = dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric)
 
-source = supersampled(2) + """
+source = supersampled() + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, each negative
 // inside it; its colour, the share of light it reflects as a mirror, and two planes whose unit steps
 // lay a checker over it.

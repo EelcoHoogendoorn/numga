@@ -34,7 +34,8 @@ def draw_noise(rates: np.ndarray, kept: core.Scalar, encoded_errors: core.Scalar
     ax.plot(rates, scalars(kept), color=KEPT_COLOUR, linestyle="--", label="runs kept")
     ax.plot(rates, scalars(bare_errors), color=BARE_COLOUR, label="bare infidelity")
     ax.plot(rates, scalars(encoded_errors), color=ENCODED_COLOUR, label="conditional infidelity")
-    ax.set(xlim=(rates[0], rates[-1]), ylim=(0, 1), xlabel="chance of an error on each qubit")
+    ax.set(xlim=(rates[0], rates[-1]), ylim=(0, 1), xticks=[], yticks=[], xlabel="chance of an error on each qubit",
+           ylabel="probability")
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3)
     return figure

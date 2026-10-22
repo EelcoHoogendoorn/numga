@@ -11,7 +11,11 @@ from __future__ import annotations
 import numpy as np
 
 
-def supersampled(samples_per_side: int) -> str:
+# The samples a side of every pixel, for every picture: sixteen to a pixel.
+samples_per_side = 4
+
+
+def supersampled() -> str:
     """WGSL for an image of `samples_per_side` squared samples a pixel, on a grid turned so that no two
     share a row or a column, which resolves near-horizontal and near-vertical edges as finely as a grid
     of that many to a side."""

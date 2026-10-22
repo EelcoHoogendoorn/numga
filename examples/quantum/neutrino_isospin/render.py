@@ -91,11 +91,11 @@ def draw_probabilities(ax, distances: np.ndarray, electron: np.ndarray) -> None:
     """The electron and muon flavors' probabilities along the distance, against zero, a half and one."""
     ax.plot(distances, electron, color="#0284c7", linewidth=2.0, label=r"$P(\nu_e)$")
     ax.plot(distances, 1 - electron, color="#e11d48", linewidth=1.8, linestyle="--", label=r"$P(\nu_\mu)$")
-    for level, style in ((0.0, "-"), (0.5, ":"), (1.0, "-")):
+    for level, style in ((0.5, ":"), (1.0, "-")):
         ax.axhline(level, color="#cbd5e1", linestyle=style, linewidth=0.8)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    ax.set(xticks=[], yticks=[], ylim=(-0.05, 1.05), xlim=(distances[0], distances[-1]))
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set(xticks=[], yticks=[], ylim=(0, 1.05), xlim=(distances[0], distances[-1]), xlabel="distance",
+           ylabel="probability")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.0, 1.0), frameon=False)
 
 

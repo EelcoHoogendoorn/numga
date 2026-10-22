@@ -107,28 +107,28 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 @cache
-def shader(samples_per_side: int) -> Shader:
-    return Shader(supersampled(samples_per_side) + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
+def shader() -> Shader:
+    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
 
 
 def picture(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-            shape: tuple[int, int], supersample: int) -> np.ndarray:
+            shape: tuple[int, int]) -> np.ndarray:
     """One RGB image, `[rows, columns, 3]` bytes, through a pinhole of the given field of view looking along the
     eye frame's x."""
     ahead, right, up = eye_frame >> mv(ScreenPoint, np.eye(3))                 # [3] Point
-    traced = shader(supersample)(shape, quadrics=surfaces, colours=colors, eye=eye_frame >> origin, ahead=ahead,
+    traced = shader()(shape, quadrics=surfaces, colours=colors, eye=eye_frame >> origin, ahead=ahead,
                                  right=right, up=up, half_height=np.tan(fov / 2) * shape[0] / shape[1],
                                  light=light)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
 def frames(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-           shape: tuple[int, int], supersample: int) -> list[np.ndarray]:
+           shape: tuple[int, int]) -> list[np.ndarray]:
     """One RGB frame per eye frame."""
-    return [picture(eye, surfaces, colors, light, fov, shape, supersample) for eye in eye_frames]
+    return [picture(eye, surfaces, colors, light, fov, shape) for eye in eye_frames]
 
 
 def draw_walk(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-              shape: tuple[int, int], supersample: int) -> plt.Figure:
+              shape: tuple[int, int]) -> plt.Figure:
     """The view from the eye's first frame."""
-    return image_figure(picture(eye_frames[0], surfaces, colors, light, fov, shape, supersample))
+    return image_figure(picture(eye_frames[0], surfaces, colors, light, fov, shape))

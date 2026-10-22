@@ -33,7 +33,7 @@ dot_radius = 3.2
 rim_width = 0.5
 outline_width = 1.0
 
-source = supersampled(2) + """
+source = supersampled() + """
 // A camera turned to look along its own -z at the sphere's centre; the image half as high as this.
 var<uniform> camera: Rotor;
 var<uniform> half_height: f32;

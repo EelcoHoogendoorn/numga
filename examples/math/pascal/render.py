@@ -34,7 +34,8 @@ def draw_on(ax: plt.Axes, shape: core.Conic, hexagon: core.Point, crossing: core
     ax.scatter(*xy(hexagon).T, color="0.15", s=28, zorder=3)
     ax.scatter(*xy(hexagon[-1:]).T, color="#e67e22", s=60, zorder=4)
     ax.scatter(*xy(crossing).T, color=PAIRS, s=55, edgecolors="#c0392b", linewidths=1.5, zorder=4)
-    ax.set(xlim=BOX[:, 0], ylim=BOX[:, 1], aspect="equal", xticks=[], yticks=[])
+    ax.set(xlim=BOX[:, 0], ylim=BOX[:, 1], aspect="equal")
+    ax.set_axis_off()
 
 
 def draw(shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> plt.Figure:

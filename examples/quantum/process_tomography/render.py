@@ -30,11 +30,11 @@ ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
 REACH, N_PIXELS = 1.45, 700
 # The grid lines drawn, every few of the sampled latitudes and longitudes, and the points around a tube; the
 # widths of the sphere's grid lines and an image's, the edges and the axes' shafts, the arrowheads' length and
-# width, and the radii of the ticks, the probes alone, after a channel and as prepared, in pixels; how far the axes
-# reach and where they are named.
+# width, and the radii of the probes alone, after a channel and as prepared, in pixels; how far the axes reach and
+# where they are named.
 LATITUDE_STEP, LONGITUDE_STEP, N_AROUND = 2, 3, 8
 GRID_WIDTH, IMAGE_WIDTH, EDGE_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.0, 3.4, 4.0, 2.4, 18.0, 10.0
-TICK_RADIUS, PROBE_RADIUS, AFTER_RADIUS, PREPARED_RADIUS = 3.5, 12.0, 7.0, 11.0
+PROBE_RADIUS, AFTER_RADIUS, PREPARED_RADIUS = 12.0, 7.0, 11.0
 AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
 
 
@@ -50,23 +50,16 @@ def bloch_view() -> solids.View:
 
 
 def bloch_axes(pixel: float) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The x, y and z axes as arrows through the ball, with ticks where they cross it, at -1 and 1."""
-    shafts, heads = solids.arrows(sm.point(-np.eye(3)), sm.point(AXIS_LENGTH * np.eye(3)), AXIS_WIDTH / 2 * pixel,
-                                  HEAD_LENGTH * pixel, HEAD_WIDTH / 2 * pixel)
-    ticks = solids.ball(sm.point(np.concatenate([-np.eye(3), np.eye(3)])), TICK_RADIUS * pixel)[:, None]
-    return [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ticks, AXIS_COLOUR)]
+    """The frame of the x, y and z axes."""
+    shafts, heads = solids.frame(AXIS_LENGTH, AXIS_WIDTH / 2 * pixel, HEAD_LENGTH * pixel, HEAD_WIDTH / 2 * pixel)
+    return [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)]
 
 
 def show_ball(axes, layers: list[tuple[np.ndarray, np.ndarray, float]], view: solids.View, title: str) -> None:
-    """Traced layers in an axes, with the axes named past their tips and their ticks numbered."""
+    """Traced layers in an axes, with the axes named past their tips."""
     show(axes, compose(layers, np.ones(3)), view)
     labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=11,
            color=AXIS_COLOUR)
-    # Each tick numbered just below and to the left of it.
-    for number, places in ((-1, -np.eye(3)), (1, np.eye(3))):
-        for place in view.across(sm.point(places)):
-            axes.annotate(f"{number:d}", place, xytext=(-4, -4), textcoords="offset points", ha="right", va="top",
-                          fontsize=8, color=AXIS_COLOUR)
     axes.set_title(title)
 
 
@@ -106,8 +99,8 @@ def draw_experiment(prepared: core.State, probabilities: core.Scalar,
     for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
         probe_axes.text(x, y, name, color=colour, fontsize=10)
 
-    table_axes = []
     probability_scale = LogNorm(vmin=measured[measured > 0].min(), vmax=0.5)
+    table_axes = []
     for index, (label, table) in enumerate(zip(labels, measured)):
         axes = figure.add_subplot(1, len(labels) + 1, index + 2)
         table_axes.append(axes)
@@ -166,7 +159,7 @@ def draw_predictions(observed: core.Scalar, predicted: core.Scalar,
     for label, actual, estimate, colour in zip(labels, measured, inferred, CHANNEL_COLOURS):
         axes.scatter(actual, estimate, s=22, color=colour, alpha=0.75,
                      linewidths=0, label=label)
-    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal",
+    axes.set(xlim=(0, limit), ylim=(0, limit), aspect="equal", xticks=[], yticks=[],
              xlabel="Observed probability", ylabel="Predicted probability",
              title="Unseen preparations")
     axes.spines[["top", "right"]].set_visible(False)

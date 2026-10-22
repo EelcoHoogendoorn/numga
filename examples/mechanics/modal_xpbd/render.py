@@ -15,6 +15,7 @@ Point = ga.gatype.antivector()
 
 
 COLOURS = ("#2563eb", "#0d9488", "#d97706", "#9333ea")
+CROSS_COLOUR, LABEL_COLOUR, CRITICAL_COLOUR = "0.85", "0.4", "#dc2626"
 
 
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
@@ -153,8 +154,16 @@ def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt
     deflection = np.abs(midspans[:, 0].dual().cast(ga.subspace("x y")).kernel[:, 1])
     figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
     axes.plot(displacements, deflection, color="#0f172a")
-    axes.axvline(critical, linestyle=":", color="#dc2626", label="critical")
-    axes.set(xlabel="end displacement", ylabel="midspan deflection")
-    axes.spines[["top", "right"]].set_visible(False)
-    axes.legend(frameon=False)
+    # A faint cross through the origin, without scales, its lines named at their ends, each along itself; the
+    # critical value named at the top of its line.
+    axes.axhline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
+    axes.axvline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
+    axes.text(1, 0, "end displacement", transform=axes.get_yaxis_transform(), ha="right", va="top", fontsize=9,
+              color=LABEL_COLOUR)
+    axes.text(0, 1, "midspan deflection ", transform=axes.get_xaxis_transform(), ha="right", va="bottom", fontsize=9,
+              color=LABEL_COLOUR, rotation=90, rotation_mode="anchor")
+    axes.axvline(critical, linestyle=":", color=CRITICAL_COLOUR)
+    axes.text(critical, 1, " critical", transform=axes.get_xaxis_transform(), ha="left", va="top", fontsize=9,
+              color=CRITICAL_COLOUR)
+    axes.set_axis_off()
     return figure

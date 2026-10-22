@@ -1,6 +1,6 @@
 """Drawing for the smoke ring flow, on the GPU: the Hashimoto surface swept by a curve, as shaded strips between the
 curve at successive times; the tubes swept by several rings, cut open to show how they pass through each other;
-curves flowing, as thin tubes shaded from far to near; and the turning angle along a curve through time.
+curves flowing, as tubes; and the turning angle along a curve through time.
 Curves are polylines; a closed one repeats its first vertex at the end."""
 
 from __future__ import annotations
@@ -12,10 +12,10 @@ from numga import stack
 from examples.fluids.smoke_rings import core
 from examples.wgsl import compose, image_figure, meshes, solids
 
-# The surface's colour from the first time to the last, the curve's colour from far to near, and the colours of
-# the rings' swept tubes, one per ring.
+# The surface's colour from the first time to the last, the curve's colour, and the colours of the rings' swept
+# tubes, one per ring.
 early, late = np.array([0.93, 0.88, 0.78]), np.array([0.55, 0.69, 0.80])
-far, near = np.array([0.75, 0.80, 0.86]), np.array([0.11, 0.21, 0.34])
+curve_colour = np.array([0.16, 0.42, 0.78])
 tubes = np.array([[0.85, 0.52, 0.32], [0.38, 0.58, 0.78]])
 background = np.ones(3)
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the subject as
@@ -26,7 +26,7 @@ n_picture_pixels = 660
 n_frame_pixels = 500
 surface_gloss = 0.1
 # A curve's tube: its radius in pixels, and the vertices around it.
-tube_radius = 2.2
+tube_radius = 6.0
 n_around = 10
 # The share of the largest motion above which a vertex counts as moving, for framing a curve's trail, and
 # the trail's opacity, so that the curve shows through it.
@@ -69,13 +69,10 @@ def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
     return meshes.layer(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
 
 
-def curves_layer(points: np.ndarray, toward: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """Polylines `[curves, n, 3]` as thin tubes, coloured from far to near by their depth `[curves, n]`, as a
-    layer."""
+def curves_layer(points: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """Polylines `[curves, n, 3]` as tubes, as a layer."""
     rings, faces = meshes.tube(points, tube_radius * view.pixel, n_around)
-    depth = points @ toward                                                    # [curves, n]
-    share = np.repeat(((depth - depth.min()) / np.ptp(depth)).reshape(-1), n_around)[faces][..., None]
-    return meshes.layer(rings, faces, (1 - share) * far + share * near, meshes.smooth(rings, faces), view)
+    return meshes.layer(rings, faces, curve_colour, meshes.smooth(rings, faces), view)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
@@ -107,8 +104,8 @@ def draw_swept(curves: core.Point) -> plt.Figure:
 def animate_curves(curves: core.Point) -> list[np.ndarray]:
     """Frames of curves flowing `[times, ..., n]`, all from one view and to one scale."""
     points = coordinates(curves)                                               # [times, ..., n, 3]
-    view, toward = framed(points, n_frame_pixels)
-    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), toward, view), 1.0)], background)
+    view, _ = framed(points, n_frame_pixels)
+    return [compose([(*curves_layer(curve.reshape(-1, *points.shape[-2:]), view), 1.0)], background)
             for curve in points]
 
 
@@ -121,7 +118,7 @@ def animate_trail(curves: core.Point) -> list[np.ndarray]:
     moving = points[:, travel > moving_share * travel.max()]                   # [times, moving, 3]
     low, high = moving.reshape(-1, 3).min(axis=0), moving.reshape(-1, 3).max(axis=0)
     inside = np.all((points >= low - margin * (high - low)) & (points <= high + margin * (high - low)), axis=-1)
-    view, toward = framed(moving, n_frame_pixels)
+    view, _ = framed(moving, n_frame_pixels)
     faces = strips(points)                                                     # [times - 1, n - 1, 2, 3]
     flat = inside.reshape(-1)
     kept = flat[faces].all(axis=-1)                                            # [times - 1, n - 1, 2]
@@ -130,7 +127,7 @@ def animate_trail(curves: core.Point) -> list[np.ndarray]:
     images = []
     for time in range(len(points)):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        layers = [(*curves_layer(points[time][inside[time]][None], toward, view), 1.0)]
+        layers = [(*curves_layer(points[time][inside[time]][None], view), 1.0)]
         if len(swept):
             layers.append((*sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
         images.append(compose(layers, background))
@@ -146,5 +143,6 @@ def draw_turns(turns: core.Rotor) -> plt.Figure:
     ax = figure.add_axes((0.1, 0.12, 0.86, 0.84))
     ax.imshow(angles, cmap="Greys", origin="upper", aspect="auto", interpolation="nearest",
               extent=(0.5, angles.shape[1] + 0.5, angles.shape[0] - 0.5, -0.5))
-    ax.set(xlabel="vertex", ylabel="step")
+    ax.set(xlabel="vertex", ylabel="time", xticks=[], yticks=[])
+    ax.spines[:].set_visible(False)
     return figure

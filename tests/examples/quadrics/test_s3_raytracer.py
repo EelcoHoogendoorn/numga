@@ -27,6 +27,6 @@ def test_reprojected_hits_lie_on_the_ellipsoid():
 def test_walk_renders():
     """The walk's figure and animation render."""
     scene = scenarios.walk(6)
-    assert isinstance(render.draw_walk(*scene, (45, 60), 1), plt.Figure)
-    frames = render.frames(*scene, (45, 60), 1)
+    assert isinstance(render.draw_walk(*scene, (45, 60)), plt.Figure)
+    frames = render.frames(*scene, (45, 60))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

@@ -10,7 +10,7 @@ from examples.quadrics.quadric_collision.core import (
     Line, Point, Polarity, Quadric, Scalar, ga, infinity, mv, tangent_line,
 )
 
-XLIM, YLIM = (-3.8, 3.8), (-3.0, 3.0)
+XLIM, YLIM = (-3.8, 4.2), (-3.0, 3.0)
 # The grid the separating hyperbola is evaluated on, per side, and the tangent normals an outline is swept over.
 RESOLUTION = 250
 N_OUTLINE = 150
@@ -44,7 +44,8 @@ def draw_ellipses(ax, fixed: Quadric, moved: Quadric) -> None:
         ax.fill(points[:, 0], points[:, 1], color=fill, alpha=0.35)
         ax.plot(points[:, 0], points[:, 1], color=edge, linewidth=2.2)
         ax.scatter(*xy(dual(infinity)), color=edge, s=40, zorder=5)
-    ax.set(xlim=XLIM, ylim=YLIM, aspect="equal", xticks=[], yticks=[])
+    ax.set(xlim=XLIM, ylim=YLIM, aspect="equal")
+    ax.set_axis_off()
 
 
 def draw_witnesses(ax, fixed: Quadric, moved: Quadric, first: Line, second: Line, midline: Line, midline_colour: str) -> None:
@@ -93,7 +94,8 @@ def draw_collision(
         ax_det.plot(shares.to_array(), determinants.to_array()[:, index], color=colour, linewidth=2.4)
         ax_det.scatter([share[index]], [peak[index]], color=colour, s=70, zorder=6)
     ax_det.axhline(0.0, color="black", linestyle="--", linewidth=1.2, alpha=0.8)
-    ax_det.set(xlim=(0.0, 1.0), xlabel="share of the blend", ylabel="determinant")
-    ax_det.grid(True, alpha=0.3)
+    # Only the sign matters: the determinant's zero across.
+    ax_det.set(xlim=(0.0, 1.0), xticks=[], yticks=[], xlabel="share of the blend", ylabel="determinant")
+    ax_det.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
     return fig

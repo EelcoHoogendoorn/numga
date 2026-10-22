@@ -22,8 +22,6 @@ types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivec
              Rotor=core.Rotor, Screen=core.Screen, ScreenFrame=core.ScreenFrame, Coherency=core.Coherency,
              GaugeField=core.GaugeField)
 mv = core.mv
-# Each pixel averages the light of this many samples a side, before exposure.
-supersampling = 2
 n_table_entries = 256
 # The colour table's hottest temperature, past any the camera sees.
 hottest = 3 * scenarios.disk_temperature_scale                                  # K
@@ -325,7 +323,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 def shader() -> Shader:
     """The camera's shader, compiled."""
-    return Shader(geometry + rays + disk + camera + supersampled(supersampling), core.ga, types)
+    return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types)
 
 
 def scene() -> dict:

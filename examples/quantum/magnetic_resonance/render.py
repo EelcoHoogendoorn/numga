@@ -49,7 +49,7 @@ def timelike_components(rho: core.State) -> np.ndarray:
 def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figure:
     """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
     steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is
-    translucent, with its equator and two meridians, and its axes are arrows named at their tips."""
+    translucent, with its equator and two meridians, in the frame of its axes, named at their tips."""
     paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
@@ -57,8 +57,8 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
     great_circles = meshes.circles(np.zeros((3, 3)), np.ones(3), np.eye(3), N_CIRCLE)  # [3, circle + 1, 3]
     circles = meshes.tubes([(circle, CIRCLE_COLOUR) for circle in great_circles], CIRCLE_WIDTH, view, N_AROUND)
     tubes = meshes.tubes(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view, N_AROUND)
-    shafts, heads = solids.arrows(sm.point(-np.eye(3)), sm.point(AXIS_LENGTH * np.eye(3)), ARROW_WIDTH / 2 * view.pixel,
-                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
+                                 HEAD_WIDTH / 2 * view.pixel)
     marks = solids.layer([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
                           (solids.ball(sm.point(ends), DOT_RADIUS * view.pixel)[:, None], colours)], view)
     ball = solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR)], view)
@@ -80,11 +80,15 @@ def draw_lines(detunings: np.ndarray, drives: np.ndarray, settled: core.State) -
     for index, (drive, colour) in enumerate(zip(drives, COLOURS)):
         absorbing.plot(detunings, -r[:, index, 1] / drive, color=colour, label=f"drive {drive:g} rad/µs")
         dispersing.plot(detunings, r[:, index, 0] / drive, color=colour)
-    absorbing.set_title("absorption, per unit drive")
-    dispersing.set_title("dispersion, per unit drive")
+    absorbing.set_ylabel("absorption, per unit drive")
+    dispersing.set_ylabel("dispersion, per unit drive")
+    # Each line against its zero, with resonance marked faintly.
+    absorbing.set_ylim(bottom=0)
     for ax in (absorbing, dispersing):
-        ax.set_xlabel("detuning (rad/µs)")
-        ax.axhline(0, color="0.8", linewidth=0.6)
+        ax.axhline(0, color="black", linewidth=0.8, zorder=0)
+        ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
+        ax.set(xticks=[], yticks=[], xlabel="detuning")
+        ax.spines[["top", "right"]].set_visible(False)
     absorbing.legend()
     figure.tight_layout()
     return figure
@@ -108,8 +112,9 @@ def draw_echo(states: Iterable[core.State], dt: float, delay: float, t2: float) 
     for when, name in ((delay, "π pulse"), (2 * delay, "echo")):
         ax.axvline(when, color="0.7", linewidth=0.8)
         ax.annotate(name, (when, 0.95), textcoords="offset points", xytext=(4, 0))
-    ax.set_xlabel("time (µs)")
-    ax.set_ylim(0, 1.05)
+    ax.set(xlabel="time", ylabel="mean transverse spin", xlim=(times[0], times[-1]), ylim=(0, 1.05), xticks=[],
+           yticks=[])
+    ax.spines[["top", "right"]].set_visible(False)
     ax.legend(loc="upper right")
     figure.tight_layout()
     return figure
@@ -130,8 +135,8 @@ def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: fl
     ax.semilogx(times, transverse(echoed), "o-", color="#2e86c1", label="echo")
     ax.semilogx(times, transverse(faded), "o-", color="#c0392b", label="free decay")
     ax.semilogx(fine, np.exp(-fine / t2), "--", color="0.5", label="exp(-t / T2)")
-    ax.set_xlabel("time after the first pulse (µs)")
-    ax.set_ylim(0, 1.05)
+    ax.set(xlabel="time after the first pulse (µs)", ylabel="transverse spin", ylim=(0, 1.05), yticks=[])
+    ax.spines[["top", "right"]].set_visible(False)
     ax.legend(loc="lower left")
     figure.tight_layout()
     return figure
@@ -156,10 +161,10 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
     so_far, = trace.plot(times[:1], strength[:1], color="#2e86c1")
     trace.plot(times, np.exp(-times / t2), "--", color="0.8")
     trace.axvline(delay, color="0.85", linewidth=0.8)
+    trace.annotate("π pulse", (delay, 0.95), textcoords="offset points", xytext=(4, 0))
     trace.set_xlim(times[0], times[-1])
-    trace.set_ylim(0, 1.05)
-    trace.set_xlabel("time (µs)")
-    trace.set_title("mean transverse spin")
+    trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
+    trace.spines[["top", "right"]].set_visible(False)
     figure.tight_layout()
     frames = []
     for index in range(0, len(times), every):

@@ -31,6 +31,9 @@ HALF_WIDTH, N_PIXELS = 1.35, 400
 # their centre, in pixels; how far the axes reach and their names lie, in bond lengths.
 BOND_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, END_RADIUS, CENTRE_RADIUS = 5.0, 3.0, 12.0, 7.0, 7.0, 5.0
 AXIS_LENGTH, LABEL_DISTANCE = 1.15, 1.27
+# The beam along the crystal's face diagonal, x + y, coming towards the screen's viewer, across which the screen's
+# directions are y - x, to the right, and z, up; how far the beam reaches either side of the crystal, in bond lengths.
+BEAM, BEAM_REACH = np.array([1.0, 1.0, 0.0]) / np.sqrt(2), 1.25
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -53,22 +56,33 @@ def coordinates(directions: core.Direction) -> np.ndarray:
     return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()   # [..., 3]
 
 
-def screen_axes(axes: plt.Axes, limit: float) -> None:
-    """A fixed scale on both transverse directions."""
+def cross(axes: plt.Axes, limit: float, across: str, up: str) -> None:
+    """One extent on both directions of a plane, without scales: a faint cross through the origin, its lines named at
+    their ends, each along itself."""
     axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    axes.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal",
-             xlabel="Horizontal", ylabel="Vertical")
-    axes.spines[["top", "right"]].set_visible(False)
+    axes.text(limit, 0, across, ha="right", va="top", fontsize=9, color=LABEL_COLOUR)
+    axes.text(0, limit, f"{up} ", ha="right", va="bottom", fontsize=9, color=LABEL_COLOUR, rotation=90,
+              rotation_mode="anchor")
+    axes.set(xlim=(-limit, limit), ylim=(-limit, limit), aspect="equal")
+    axes.set_axis_off()
+
+
+def screen_axes(axes: plt.Axes, limit: float) -> None:
+    """The plane across the beam, one extent on both directions, named by the directions of space along it."""
+    cross(axes, limit, "$y - x$", "$z$")
 
 
 def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
-    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, among the axes
-    of space."""
+    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, in the frame of
+    space, with the beam through them."""
     ends = sm.point(bonds)                                                   # [bonds] Point
-    shafts, heads = solids.arrows(sm.point(-np.eye(3)), sm.point(AXIS_LENGTH * np.eye(3)), ARROW_WIDTH / 2 * view.pixel,
-                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
+    shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
+                                 HEAD_WIDTH / 2 * view.pixel)
+    beam_shaft, beam_head = solids.arrows(sm.point(-BEAM_REACH * BEAM), sm.point(BEAM_REACH * BEAM),
+                                          ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    beam_colour = np.array(to_rgb(PUMP_COLOUR))
+    parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
              (solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
              (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR))),
              (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
@@ -92,8 +106,8 @@ class ResponseView:
         # The crystal's image, blank until the bonds are drawn, with each axis named just past its arrow's tip.
         self.view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), N_PIXELS)
         self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
-        labels(crystal_axes, self.view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center",
-               fontsize=11, color=LABEL_COLOUR)
+        labels(crystal_axes, self.view, sm.point(np.concatenate([LABEL_DISTANCE * np.eye(3), [BEAM_REACH * 1.12 * BEAM]])),
+               ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=LABEL_COLOUR)
 
         response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
                            linewidth=1, alpha=0.3)
@@ -106,12 +120,13 @@ class ResponseView:
                                                     angles="xy", scale_units="xy", scale=1, width=0.012,
                                                     label="Second harmonic")
         screen_axes(response_axes, 1.15)
-        response_axes.legend(loc="upper right", fontsize=8, frameon=False)
+        response_axes.legend(loc="upper center", bbox_to_anchor=(0.5, 0.02), ncol=2, fontsize=8, frameon=False)
 
         self.intensity_curve, = self.intensity_axes.plot([], [], color=GENERATED_COLOUR, linewidth=2)
         self.intensity_fill, = self.intensity_axes.fill([], [], color=GENERATED_COLOUR, alpha=0.08)
         self.selected_power, = self.intensity_axes.plot([], [], "o", color=PUMP_COLOUR, markersize=7)
         self.intensity_axes.yaxis.set_major_locator(MaxNLocator(4))
+        self.intensity_axes.set_yticklabels([])
         self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
         self.intensity_axes.set_rlabel_position(22.5)
         self.intensity_axes.tick_params(labelsize=8)
@@ -146,7 +161,7 @@ def draw_waveform(phase: np.ndarray, pump: core.Field, harmonic: core.Polarizati
     axes.plot(cycles, pump_field, color=PUMP_COLOUR, linewidth=2, label="Pump field")
     axes.plot(cycles, harmonic_field, color=GENERATED_COLOUR, linewidth=2,
               label="Second-harmonic polarization")
-    axes.set(xlabel="Pump periods", ylabel="Field component", xlim=(0, 2))
+    axes.set(xlabel="Pump periods", ylabel="Field component", xlim=(0, 2), yticks=[])
     axes.spines[["top", "right"]].set_visible(False)
     axes.legend(loc="lower center", bbox_to_anchor=(0.5, 1.02), ncol=2,
                 fontsize=9, frameon=False)
@@ -187,12 +202,9 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
         phasor_axes.plot(path[:, 0], path[:, 1], color=colour, linewidth=2, label=label)
         phasor_axes.plot(path[-1, 0], path[-1, 1], "o", color=colour, markersize=5)
         power_axes.plot(depths, intensity, color=colour, linewidth=2, label=label)
-    phasor_axes.axhline(0, color="0.85", linewidth=0.7, zorder=0)
-    phasor_axes.axvline(0, color="0.85", linewidth=0.7, zorder=0)
-    phasor_axes.set(aspect="equal", xlabel="in phase", ylabel="in quadrature")
-    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1))
-    for panel in axes:
-        panel.spines[["top", "right"]].set_visible(False)
+    cross(phasor_axes, 1.1 * float(np.max(np.abs(amplitude))), "in phase", "in quadrature")
+    power_axes.set(xlabel="depth in the crystal", ylabel="generated power", xlim=(0, 1), xticks=[], yticks=[])
+    power_axes.spines[["top", "right"]].set_visible(False)
     power_axes.legend(loc="upper left", frameon=False, fontsize=9)
     return figure
 

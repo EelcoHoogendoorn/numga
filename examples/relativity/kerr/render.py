@@ -48,18 +48,19 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     tracks = coordinates(paths, (core.mv.x, core.mv.y)).transpose(1, 2, 0, 3)
     outlines = coordinates(horizons, (core.mv.x, core.mv.y))
     colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[1]))
-    ticks = [-extent / 2, 0, extent / 2]
 
     figure, ax = plt.subplots(figsize=(5, 5), dpi=sweep_dpi, layout="constrained")
     rays = LineCollection(tracks[0], colors=colours, linewidths=1.0, alpha=0.9)
     horizon = Polygon(outlines[0], facecolor="#161b22", edgecolor="none", zorder=3)
     ax.add_collection(rays)
     ax.add_patch(horizon)
-    ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal",
-           xticks=ticks, yticks=ticks, xlabel="$x/M$", ylabel="$y/M$")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.spines[["bottom", "left"]].set_color("#cbd5e1")
-    ax.tick_params(color="#cbd5e1")
+    ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+    # No scales: a faint cross through the hole's centre, its lines named at their ends.
+    ax.axhline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
+    ax.axvline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
+    ax.annotate("x", (extent, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center", color="#64748b")
+    ax.annotate("y", (0, extent), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom", color="#64748b")
+    ax.set_axis_off()
     figure.canvas.draw()
     figure.set_layout_engine("none")
 

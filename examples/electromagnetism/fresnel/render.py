@@ -26,10 +26,10 @@ axis_colour = np.array([0.45, 0.47, 0.52])
 # the origin, the same for every medium so their sizes compare; and the pixels across it.
 elevation, azimuth = np.radians(22.0), np.radians(37.0)
 half_width, n_pixels = 2.3, 400
-# The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far each
-# axis's tip reaches out of the outer sheet, and its name beyond the tip, in units of k.
+# The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far the
+# axes reach and their names lie, in units of k.
 grid_width, arrow_width, head_length, head_width = 2.0, 2.0, 10.0, 7.0
-axis_length, label_distance = 0.3, 0.15
+axis_length, label_distance = 1.95, 2.12
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -60,16 +60,16 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """
 
 
-def k_axes(reach: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
-    """The tips of the axes of k-space: arrows out of the outer sheet, from where it crosses each axis `[3]`."""
-    shafts, heads = solids.arrows(sm.point(reach[:, None] * np.eye(3)), sm.point((reach + axis_length)[:, None] * np.eye(3)),
-                                  arrow_width / 2 * view.pixel, head_length * view.pixel, head_width / 2 * view.pixel)
+def k_axes(view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+    """The frame of k-space."""
+    shafts, heads = solids.frame(axis_length, arrow_width / 2 * view.pixel, head_length * view.pixel,
+                                 head_width / 2 * view.pixel)
     return solids.layer([(shafts, axis_colour), (heads, axis_colour)], view)
 
 
 def surface(ax: Axes, sheets: core.Vector) -> None:
-    """Both sheets, translucent, with grid lines along every few latitudes and longitudes, and the axes of k-space
-    reaching out of them, named at their tips."""
+    """Both sheets, translucent, with grid lines along every few latitudes and longitudes, in the frame of k-space,
+    its axes named at their tips."""
     points = sheets.cast(core.ga.subspace("x y z")).kernel                       # [latitudes, longitudes, 2, 3]
     view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
     n_latitudes, n_longitudes = points.shape[:2]
@@ -84,10 +84,8 @@ def surface(ax: Axes, sheets: core.Vector) -> None:
         normals = meshes.smooth(places, faces)
         layers += [(*meshes.layer(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
                                   gloss=0.2), 1.0) for near in (True, False)]
-    # Where the outer sheet crosses each axis: the farthest either sheet reaches along it.
-    reach = points.max(axis=(0, 1, 2))                                           # [3]
-    show(ax, compose([*layers, (*k_axes(reach, view), 1.0)], np.ones(3)), view)
-    labels(ax, view, sm.point((reach + axis_length + label_distance)[:, None] * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
+    show(ax, compose([*layers, (*k_axes(view), 1.0)], np.ones(3)), view)
+    labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
            fontsize=11, color=axis_colour)
 
 

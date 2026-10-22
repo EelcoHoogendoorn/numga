@@ -41,37 +41,32 @@ def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Co
     for covariance, style in ((limit, "--"), (predicted, "-")):
         ring = ellipse(core.position_spread(covariance))
         ax.plot(ring[0], ring[1], style, color="#c0392b", linewidth=1.4)
+    # A faint cross through the set point, its lines named at their ends, without scales.
+    ax.axhline(0, color="0.85", linewidth=0.7, zorder=0)
+    ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
+    ax.text(extent, 0, "forward", ha="right", va="top", fontsize=9, color="0.4")
+    ax.text(0, extent, "sideways ", ha="right", va="bottom", fontsize=9, color="0.4", rotation=90, rotation_mode="anchor")
     ax.set_xlim(-extent, extent)
     ax.set_ylim(-extent, extent)
     ax.set_aspect("equal")
+    ax.set_axis_off()
     ax.set_title(title)
-    ax.set_xlabel("forward (m)")
-    ax.set_ylabel("sideways (m)")
-
-
-def draw_clouds(states: dict, seconds: float, extent: float) -> plt.Figure:
-    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5))
-    for ax, (name, (poses, predicted, limit)) in zip(np.atleast_1d(row), states.items()):
-        draw_cloud(ax, poses, predicted, limit, f"{name}, t = {seconds:.1f} s", extent)
-    figure.tight_layout()
-    return figure
 
 
 def draw_settled(states: dict, extent: float) -> plt.Figure:
-    """The clouds at the end of the run, over the settled ellipses."""
-    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5))
+    """The clouds of each named run, over its predicted and settled ellipses."""
+    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5), layout="constrained")
     for ax, (name, (poses, predicted, limit)) in zip(np.atleast_1d(row), states.items()):
         draw_cloud(ax, poses, predicted, limit, name, extent)
-    figure.tight_layout()
     return figure
 
 
-def animate_clouds(runs: dict, dt: float, extent: float) -> list[np.ndarray]:
+def animate_clouds(runs: dict, extent: float) -> list[np.ndarray]:
     """One frame per yielded state: the clouds spreading while the predicted ellipse grows to the
     dashed settled one."""
     frames = []
-    for index, states in enumerate(zip(*runs.values())):
-        figure = draw_clouds(dict(zip(runs, states)), index * dt, extent)
+    for states in zip(*runs.values()):
+        figure = draw_settled(dict(zip(runs, states)), extent)
         frames.append(capture(figure))
         plt.close(figure)
     return frames
@@ -92,6 +87,7 @@ def draw_envelope(gains: np.ndarray, spreads: core.Spread, tolerance: float) -> 
     ax.annotate(f"gain {least:.3f} /s", (least, tolerance), textcoords="offset points", xytext=(6, 8))
     ax.set_xlabel("controller gain (1/s)")
     ax.set_ylabel("2σ half-width (m)")
+    ax.set_ylim(bottom=0)
     ax.legend()
     figure.tight_layout()
     return figure

@@ -42,7 +42,7 @@ steel_mirroring = 1.0
 # The points of the body the framing follows.
 n_framing = 400
 
-source = supersampled(2) + """
+source = supersampled() + """
 // A part: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`; each quadric's finish, the
 // colour of the surface it bounds and how much that mirrors.
 struct Part {

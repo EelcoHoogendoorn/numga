@@ -33,13 +33,17 @@ def draw_levels(masses: np.ndarray, energies: core.Scalar, shares: core.Scalar, 
     """The levels nearest zero against the mass, shaded by how much of each lies on the rim, with the
     mass where the bulk gap closes."""
     values, rims = energies.to_array(), shares.to_array()       # [masses, levels]
-    figure, ax = plt.subplots(figsize=(7, 5))
-    dots = ax.scatter(np.repeat(masses, values.shape[1]), values.ravel(), c=rims.ravel(), cmap="plasma",
-                      vmin=0, vmax=1, s=8)
+    figure, ax = plt.subplots(figsize=(6, 5), layout="constrained")
+    dots = ax.scatter(np.repeat(masses, values.shape[1]), values.ravel(), c=rims.ravel(), cmap="plasma", vmin=0, vmax=1,
+                      s=8, clip_on=False)
     ax.axvline(transition, color="0.4", linestyle="--", linewidth=1)
-    ax.set_xlabel("mass / hop")
-    ax.set_ylabel("energy / hop")
-    figure.colorbar(dots, ax=ax, label="share on the rim")
+    # The energy's zero, which the levels on the rim cross until the gap reopens.
+    ax.axhline(0, color="black", linewidth=0.8, zorder=0)
+    ax.set(xlim=(masses[0], masses[-1]), xticks=[], yticks=[], xlabel="mass / hop", ylabel="energy / hop")
+    ax.spines[["top", "right"]].set_visible(False)
+    # Where each level lives, named at the colours' ends.
+    shares = figure.colorbar(dots, ax=ax, ticks=[0, 1])
+    shares.ax.set_yticklabels(["bulk", "rim"])
     return figure
 
 

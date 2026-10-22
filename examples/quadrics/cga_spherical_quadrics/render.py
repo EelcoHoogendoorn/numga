@@ -52,15 +52,15 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 @cache
-def shader(supersample: int) -> Shader:
-    return Shader(supersampled(supersample) + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
+def shader() -> Shader:
+    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
 
 
-def vortex_frames(world: Quadric, colors: list[str], resolution: int, supersample: int) -> list[np.ndarray]:
+def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> list[np.ndarray]:
     """One frame per row of world quadrics: a pixel takes the colour of the last quadric whose form is
-    negative there, averaged over `supersample` samples a side."""
+    negative there, averaged over its samples."""
     rgb = np.array([to_rgb(color) for color in colors])
-    painter = shader(supersample)
+    painter = shader()
     return [np.round(np.clip(painter((resolution, resolution), quadrics=quadrics, colours=rgb, disk=to_rgb(DISK),
                                      rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)
             for quadrics in world]

@@ -38,6 +38,26 @@ def components(vectors: core.First | core.Second, names: str) -> np.ndarray:
     return vectors.cast(vectors.algebra.subspace(names)).kernel
 
 
+def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
+    """Axes named by what runs along them, the quantity's zero as the horizontal one, without numbers."""
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.set(xticks=[], yticks=[], xlabel=across, ylabel=up)
+    # The horizontal axis's name below the plot, wherever its zero lies.
+    ax.xaxis.set_label_coords(0.5, -0.03)
+    ax.xaxis.label.set_va("top")
+
+
+def bell_bounds(ax: plt.Axes, angles: np.ndarray) -> None:
+    """The largest Bell combination over the exchange against its two bounds, the only values marked: 2 for spins
+    that carry their own answers, dashed, and 2 sqrt 2 for any pair, dotted."""
+    ax.axhline(2.0, color="0.5", linestyle="--", linewidth=0.8)
+    ax.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=0.8)
+    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 3.0))
+    plain_axes(ax, "exchange angle", "largest Bell combination")
+    ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", r"$2\sqrt{2}$"])
+
+
 def ball() -> tuple[solids.View, list[tuple[np.ndarray, np.ndarray, float]]]:
     """The view of the unit sphere, and the sphere, lightly: a faint ball and its equator and two meridians, the
     great circles square to x, y and z, as translucent layers."""
@@ -82,11 +102,10 @@ def draw_exchange(angles: np.ndarray, bells: core.Scalar, first: core.First) -> 
     for spins that carry their own answers and the bound for any pair."""
     figure, (length, bell) = plt.subplots(1, 2, figsize=(11, 3.0), layout="constrained")
     length.plot(angles, np.sqrt((first | first).to_array()), color=FIRST, linewidth=1.5)
-    length.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)", ylabel="each Bloch vector's length")
+    length.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
+    plain_axes(length, "exchange angle", "each Bloch vector's length")
     bell.plot(angles, bells.to_array(), color=TOGETHER, linewidth=1.5)
-    bell.axhline(2.0, color="0.5", linestyle="--", linewidth=0.8)
-    bell.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=0.8)
-    bell.set(xlim=(angles[0], angles[-1]), ylim=(1.9, 2.95), xlabel="exchange angle (rad)", ylabel="largest Bell combination")
+    bell_bounds(bell, angles)
     return figure
 
 
@@ -132,8 +151,9 @@ def draw_entanglement(angles: np.ndarray, singular_values: core.Scalar, first: c
     ax.plot(angles, values[:, 0], color=TOGETHER, linewidth=1.5, label="largest singular value")
     ax.plot(angles, values[:, 1], color=TOGETHER, linewidth=1.5, linestyle="--", label="the other two: the concurrence")
     ax.plot(angles, np.sqrt((first | first).to_array()), color=FIRST, linewidth=1.5, label="each Bloch vector's length")
-    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)")
-    ax.legend(frameon=False, loc="center right")
+    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
+    ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=3)
+    plain_axes(ax, "exchange angle", "")
     return figure
 
 
@@ -146,10 +166,12 @@ def draw_levels(fields: np.ndarray, energies: core.Scalar, spins: core.Scalar) -
     for column, (name, colour) in enumerate(zip(FOUR_NAMES, (TOGETHER, "0.55", FIRST, SECOND))):
         levels.plot(fields, values[:, column], color=colour, linewidth=1.5, label=name)
     levels.plot(fields, values.min(axis=-1), color="0.1", linewidth=4.0, alpha=0.25)
-    levels.set(xlabel="field along z", ylabel="energy", xlim=(fields[0], fields[-1]))
-    levels.legend(frameon=False, fontsize=8)
+    levels.set(xlim=(fields[0], fields[-1]))
+    levels.legend(frameon=False, fontsize=8, loc="upper left")
+    plain_axes(levels, "field along z", "energy")
     spin.plot(fields, spins.to_array()[lowest], color="0.2", linewidth=1.5)
-    spin.set(xlabel="field along z", ylabel="total spin along z, lowest state", xlim=(fields[0], fields[-1]), ylim=(-0.1, 2.1))
+    spin.set(xlim=(fields[0], fields[-1]), ylim=(-0.1, 2.1))
+    plain_axes(spin, "field along z", "total spin along z, lowest state")
     return figure
 
 
@@ -175,8 +197,9 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     curves = figure.add_axes((0.53, 0.18, 0.44, 0.7))
     for rate, curve, colour in zip(exchange_rates, back_in_singlet.to_array(), shades):
         curves.plot(times, curve, color=colour, linewidth=1.5, label=f"exchange rate {rate:g}")
-    curves.set(xlim=(times[0], times[-1]), ylim=(-0.05, 1.05), xlabel="time, in units of the field difference", ylabel="back in the singlet")
-    curves.legend(frameon=False, fontsize=8, loc="lower left")
+    curves.set(xlim=(times[0], times[-1]), ylim=(-0.05, 1.05))
+    curves.legend(frameon=False, fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=3)
+    plain_axes(curves, "time", "back in the singlet")
     return figure
 
 
@@ -201,11 +224,10 @@ def draw_exchange_planes(angles: np.ndarray, bells: Extensor, first: Extensor) -
     bound for spins that carry their own answers and the bound for any pair."""
     figure, (size, bell) = plt.subplots(1, 2, figsize=(11, 3.0), layout="constrained")
     size.plot(angles, plane_sizes(first, FIRST_PLANES), color=FIRST, linewidth=1.5)
-    size.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)", ylabel="size of each spin's plane")
+    size.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
+    plain_axes(size, "exchange angle", "size of each spin's plane")
     bell.plot(angles, bells.to_array(), color=TOGETHER, linewidth=1.5)
-    bell.axhline(2.0, color="0.5", linestyle="--", linewidth=0.8)
-    bell.axhline(2 * np.sqrt(2), color="0.5", linestyle=":", linewidth=0.8)
-    bell.set(xlim=(angles[0], angles[-1]), ylim=(1.9, 2.95), xlabel="exchange angle (rad)", ylabel="largest Bell combination")
+    bell_bounds(bell, angles)
     return figure
 
 
@@ -227,6 +249,7 @@ def draw_entanglement_planes(angles: np.ndarray, singular_values: Extensor, firs
     ax.plot(angles, values[:, 0], color=TOGETHER, linewidth=1.5, label="largest singular value")
     ax.plot(angles, values[:, 1], color=TOGETHER, linewidth=1.5, linestyle="--", label="the other two: the concurrence")
     ax.plot(angles, plane_sizes(first, FIRST_PLANES), color=FIRST, linewidth=1.5, label="size of each spin's plane")
-    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05), xlabel="exchange angle (rad)")
-    ax.legend(frameon=False, loc="center right")
+    ax.set(xlim=(angles[0], angles[-1]), ylim=(0.0, 1.05))
+    ax.legend(frameon=False, loc="lower center", bbox_to_anchor=(0.5, 1), ncol=3)
+    plain_axes(ax, "exchange angle", "")
     return figure

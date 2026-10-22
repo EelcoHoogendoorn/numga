@@ -70,11 +70,11 @@ def field(depths: np.ndarray, fields: core.Bivector) -> plt.Figure:
     figure, panels = plt.subplots(1, 2, figsize=(10, 4.2), sharex=True, sharey=True,
                                  layout="constrained")
     for ax, wave in zip(panels, waves):
-        image = ax.pcolormesh(depths, times, wave, shading="nearest", cmap="RdBu_r",
-                              vmin=-limit, vmax=limit, rasterized=True)
+        ax.pcolormesh(depths, times, wave, shading="nearest", cmap="RdBu_r", vmin=-limit, vmax=limit,
+                      rasterized=True)
         ax.set(xlabel="depth (nm)")
-    panels[0].set_ylabel("optical cycles")
-    figure.colorbar(image, ax=panels, label="electric x")
+    # Whole optical cycles only; the colour is the field's sign and relative strength.
+    panels[0].set(ylabel="optical cycles", yticks=np.arange(cycles + 1))
     return figure
 
 
@@ -136,7 +136,8 @@ def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -
     values = reflectance.real().cast(reflectance.algebra.subspace.scalar()).kernel[..., 0]
     for channel, name in zip(values, names):
         ax.plot(jumps, channel * 100, linewidth=1.8, label=name)
-    ax.set(xlim=(jumps[0], jumps[-1]), ylim=(0, None),
+    # The jump is marked only where it vanishes, and with it the reflection.
+    ax.set(xlim=(jumps[0], jumps[-1]), ylim=(0, None), xticks=[0],
            xlabel="axion jump", ylabel="reflectance (%)")
     ax.spines[["top", "right"]].set_visible(False)
     ax.legend(fontsize=9, frameon=False)

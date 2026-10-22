@@ -83,7 +83,8 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
     values = np.concatenate([areas, volume.kernel])
     ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
-    ax.set(xticks=[], ylim=(0, 1.35))
+    # The unit cube's measures, the one value read off.
+    ax.set(xticks=[], yticks=[1], ylim=(0, 1.35))
     ax.spines[["top", "right"]].set_visible(False)
 
 

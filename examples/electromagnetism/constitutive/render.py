@@ -18,6 +18,10 @@ sm = solids.mv
 DRAWN = core.STA.subspace("z x y")
 ELECTRIC, MAGNETIC, AXIS_COLOUR = np.array(to_rgb("crimson")), np.array(to_rgb("dodgerblue")), np.full(3, 0.5)
 AXIS_OPACITY = 0.6
+# The plots' faint cross through the origin, and the names of its lines and axes.
+CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
+# The reach of the cross on polar axes, as a share of the fastest wave's.
+CROSS_REACH = 1.1
 # The samples along the axis, the stations with arrows, and the times of a period that the camera frames.
 N_SAMPLES, N_STATIONS, N_FRAMING = 200, 21, 16
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin, a share of the larger side;
@@ -30,10 +34,24 @@ CURVE_WIDTH, AXIS_WIDTH, ARROW_WIDTH = 4.0, 3.0, 3.0
 HEAD_SHARE, HEAD_SPREAD = 0.18, 0.35
 
 
-def _no_ticks(ax: plt.Axes) -> None:
-    """No tick marks or tick labels."""
+def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
+    """Axes of a quantity without tick marks or numbers: the quantity from its zero, the axis across at that zero,
+    both named by what runs along them."""
+    ax.set_ylim(bottom=0)
     ax.set_xticks([])
     ax.set_yticks([])
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_xlabel(across, color=LABEL_COLOUR)
+    ax.set_ylabel(up, color=LABEL_COLOUR)
+
+
+def _cross(ax: plt.Axes, across: str, up: str) -> None:
+    """A plane without scales: a faint cross through the origin, its lines named at their ends."""
+    ax.axhline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
+    ax.axvline(0, color=CROSS_COLOUR, linewidth=0.7, zorder=0)
+    ax.text(1, 0, across, transform=ax.get_yaxis_transform(), ha="right", va="top", fontsize=11, color=LABEL_COLOUR)
+    ax.text(0, 1, f" {up}", transform=ax.get_xaxis_transform(), ha="left", va="top", fontsize=11, color=LABEL_COLOUR)
+    ax.set_axis_off()
 
 
 def field_arrows(modes: Modes, taus: np.ndarray, distance: np.ndarray, omega: float) -> tuple[np.ndarray, np.ndarray]:
@@ -138,14 +156,14 @@ def animate_wave_comparison(
 
 
 def draw_dispersion(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:
-    """Each medium's residual against the trial speeds on a log scale `[speeds, media]`, its expected
-    speeds `[media, 2]` marked in its colour."""
-    lines = ax.semilogy(speeds, residual.to_array(), linewidth=1.5)
+    """Each medium's residual against the trial speeds `[speeds, media]`, falling to zero at its expected
+    speeds `[media, 2]`, marked in its colour."""
+    lines = ax.plot(speeds, residual.to_array(), linewidth=1.5)
     for line, marks in zip(lines, expected):
         for speed in marks:
             ax.axvline(speed, color=line.get_color(), linestyle=":", linewidth=1.2, alpha=0.8)
 
-    _no_ticks(ax)
+    _zero_axes(ax, "speed along $z$", "residual")
 
 
 def draw_polarizations(
@@ -153,9 +171,6 @@ def draw_polarizations(
     modes: Modes,
 ) -> None:
     """Draw 2D transverse polarization arrows in the xy plane for the slow and fast birefringent modes."""
-    ax.axhline(0, color="gray", linestyle="--", alpha=0.3)
-    ax.axvline(0, color="gray", linestyle="--", alpha=0.3)
-
     _, fields = modes
     electric = fields | core.t
     electric = electric / electric.squared().square_root()
@@ -169,7 +184,7 @@ def draw_polarizations(
     ax.set_xlim([-1.3, 1.3])
     ax.set_ylim([-1.3, 1.3])
     ax.set_aspect("equal")
-    _no_ticks(ax)
+    _cross(ax, "$x$", "$y$")
 
 
 def draw_fresnel_surface_polar(
@@ -192,7 +207,17 @@ def draw_fresnel_surface_polar(
     # Zero radians along +z (North), angles clockwise: +x along East.
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
-    _no_ticks(ax)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines["polar"].set_visible(False)
+    # A faint cross through the origin, past the fastest wave, its lines named at their ends by the directions
+    # they run along.
+    reach = CROSS_REACH * ax.get_rmax()
+    for heading in np.arange(4) * np.pi / 2:
+        ax.plot([heading, heading], [0, reach], color=CROSS_COLOUR, linewidth=0.7, zorder=0)
+    ax.set_rmax(reach)
+    ax.text(0, reach, "$z$", ha="left", va="top", fontsize=11, color=LABEL_COLOUR)
+    ax.text(np.pi / 2, reach, "$x$", ha="right", va="bottom", fontsize=11, color=LABEL_COLOUR)
 
 
 def draw_fresnel_drag_curves(
@@ -210,7 +235,7 @@ def draw_fresnel_drag_curves(
         ax.plot(curve, exact, color=color, linewidth=1.5)
         ax.plot(curve, approximate, color=color, linestyle="--", linewidth=1.1, alpha=0.7)
 
-    _no_ticks(ax)
+    _zero_axes(ax, "speed of the glass", "speed of light")
 
 
 def draw_dispersion_figure(speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> plt.Figure:

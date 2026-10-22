@@ -158,6 +158,8 @@ def draw_magic(electric: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     for values, colour in zip(ratios.cast(core.ga.subspace.scalar()).kernel[..., 0], line_colours):
         ax.plot(electric, values, "o-", color=colour, linewidth=2, markersize=4)
     ax.axhline(1.0, color=FAINT, linewidth=1.0, zorder=0)
-    ax.set(xlabel="electric field over magnetic field", ylabel="anomalous rate over anomaly × field")
+    # The rate from zero, and one, where the magic Lorentz factor holds it, the only value marked.
+    ax.set(ylim=(0, None), xticks=[], yticks=[1.0], xlabel="electric field over magnetic field",
+           ylabel="anomalous rate over anomaly × field")
     ax.spines[["top", "right"]].set_visible(False)
     return figure

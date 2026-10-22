@@ -33,7 +33,7 @@ pixels = 360
 lamp = mv.direction([0.35, -0.45, 0.82])
 lamp = lamp / (-(lamp.dual() & lamp)).square_root()
 
-source = supersampled(2) + """
+source = supersampled() + """
 // Each link's motor and colour; a link's solid about its own origin; the pin, placed.
 var<storage, read> motors: array<Motor>;
 var<storage, read> colours: array<vec3<f32>>;

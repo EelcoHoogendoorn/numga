@@ -20,7 +20,6 @@ SECOND_TILT, SECOND_RADIUS = 0.40, np.radians(52.0)
 shape_names = ["trio"]
 n_animation_frames = 60
 resolution = 300
-supersample = 2
 frame_duration = 33
 
 
@@ -82,7 +81,7 @@ def main() -> None:
     from examples.quadrics.cga_spherical_quadrics import render
 
     world, colors = vortex(shape_names, n_animation_frames)
-    save_animation(render.vortex_frames(world, colors, resolution, supersample), f"cga_{'_'.join(shape_names)}_vortex", frame_duration)
+    save_animation(render.vortex_frames(world, colors, resolution), f"cga_{'_'.join(shape_names)}_vortex", frame_duration)
 
     # checks
     # The flow is conformal, so points of S² stay null; and a full turn brings every quadric back.

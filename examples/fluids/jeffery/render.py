@@ -21,30 +21,30 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.animation import capture
 from examples.fluids.jeffery import core
-from examples.wgsl import Shader, behind, compose, meshes, show, solids, supersampled, vec3
+from examples.wgsl import Shader, behind, compose, labels, meshes, show, solids, supersampled, vec3
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()
-# The colours of the starts, of the bodies and of the flow. The view as (elevation, azimuth) in
+# The colours of the starts, of the bodies, of the flow and of the frame's names. The view as (elevation, azimuth) in
 # degrees: raised from the normal of the vortex plane towards the gradient, then turned towards the flow. The lamp
 # over the viewer's left shoulder, by its parts towards the viewer, to the right and up, and the share
-# of a body's colour lit even where it faces away. The half width of the tumbling view, its pixels
-# across, and the rays per pixel along each side.
+# of a body's colour lit even where it faces away. The half width of the tumbling view, and its pixels
+# across.
 STARTS = cm.viridis(np.linspace(0.1, 0.9, 5))
-BODY, BODY_DARK, TIP, FLOW = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8"
+BODY, BODY_DARK, TIP, FLOW, NAMES = "#7dd3fc", "#0369a1", "#f97316", "#94a3b8", "#475569"
 VIEW = (18, 28)
 LAMP = (1.0, -0.4, 0.7)
 AMBIENT = 0.4
 LIMIT = 4.2
 PIXELS = 200
-SUPERSAMPLE = 2
 # The sphere of directions, drawn on the GPU: its colour and opacity, and its grid's width in pixels, opacity and
-# points along a circle; the arrows' length in radii of the sphere, and their width and heads in pixels; the
-# orbits' width in pixels, the margin around the arrows' reach, and the pixels across a sphere.
+# points along a circle; the frame's arrows' length in radii of the sphere, and their width and heads in pixels, and
+# how far their names reach; the orbits' width in pixels, the margin around the names' reach, and the pixels across a
+# sphere.
 SPHERE, SPHERE_OPACITY = np.array(to_rgb("#cbd5e1")), 0.15
 GRID_WIDTH, GRID_OPACITY, N_CIRCLE = 3.0, 0.3, 120
 FLOW_RGB = np.array(to_rgb(FLOW))
-ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.35, 3.0, 16.0, 10.0
+ARROW_LENGTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, LABEL_DISTANCE = 1.35, 3.0, 16.0, 10.0, 1.47
 ORBIT_WIDTH, ORBIT_MARGIN, ORBIT_PIXELS = 3.0, 0.05, 520
 
 
@@ -56,7 +56,7 @@ def coordinates(points: core.Point) -> np.ndarray:
 
 def sphere(view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
     """The faint unit sphere as layers: a translucent ball pushed back behind what lies on it, its parallels and
-    meridians as faint tubes, and the flow's direction and the normal of the vortex plane as arrows."""
+    meridians as faint tubes, and the frame of the normal of the vortex plane, the flow and the gradient as arrows."""
     ball = behind(solids.layer([(solids.ball(solids.origin, 1.0)[None, None], SPHERE)], view), 2 * GRID_WIDTH * view.pixel)
     polar = np.radians(np.arange(30, 180, 30))
     parallels = meshes.circles(np.cos(polar)[:, None] * [0, 0, 1], np.sin(polar), np.broadcast_to([0, 0, 1], (len(polar), 3)),
@@ -66,10 +66,9 @@ def sphere(view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
     greats = meshes.circles(np.zeros((meridians.shape[0], 3)), np.ones(meridians.shape[0]),
                             (solids.axes | meridians[:, None]).to_array(), N_CIRCLE)
     grid = meshes.tubes([(circle, SPHERE) for circle in np.concatenate([parallels, greats])], GRID_WIDTH, view)
-    # The arrows' tips: along the normal of the vortex plane and along the flow.
-    ends = solids.mv.point(ARROW_LENGTH * np.eye(3)[:2])                     # [2] Point
-    shafts, heads = solids.arrows(solids.mv.point(np.zeros((2, 3))), ends, ARROW_WIDTH / 2 * view.pixel,
-                                  HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    # The frame: along the normal of the vortex plane, along the flow and along the gradient.
+    shafts, heads = solids.frame(ARROW_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
+                                 HEAD_WIDTH / 2 * view.pixel)
     arrows = solids.layer([(shafts, FLOW_RGB), (heads, FLOW_RGB)], view)
     return [(*ball, SPHERE_OPACITY), (*grid, GRID_OPACITY), (*arrows, 1.0)]
 
@@ -80,13 +79,17 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     paths = coordinates(trails)                                              # [steps + 1, bodies, starts, 3]
     count = paths.shape[1]
     view = solids.View(solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90)),
-                       np.full(2, ARROW_LENGTH * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
+                       np.full(2, LABEL_DISTANCE * (1 + ORBIT_MARGIN)), ORBIT_PIXELS)
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
     shown = sphere(view)
     for body in range(count):
         orbits = meshes.tubes([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
                                for end in (1, -1)], ORBIT_WIDTH, view)
-        show(figure.add_axes((body / count, 0, 1 / count, 1)), compose([*shown, (*orbits, 1.0)], np.ones(3)), view)
+        ax = figure.add_axes((body / count, 0, 1 / count, 1))
+        show(ax, compose([*shown, (*orbits, 1.0)], np.ones(3)), view)
+        # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
+        labels(ax, view, solids.mv.point(LABEL_DISTANCE * np.eye(3)), ["$z$", "$x$", "$y$"], ha="center",
+               va="center", fontsize=13, color=NAMES)
     return figure
 
 
@@ -117,7 +120,7 @@ def pictures(stretches: core.Stretch, rotors: core.Rotor, right: core.Point, up:
     return np.concatenate([pictures[..., :3] / np.maximum(alpha, 1e-12), alpha], axis=-1)
 
 
-source = supersampled(SUPERSAMPLE) + """
+source = supersampled() + """
 // A body's turn and the map from it back onto the unit sphere it was stretched from; the camera's right, up and
 // back directions, the lamp, and the half width of the view.
 var<uniform> turn: Rotor;

@@ -37,7 +37,7 @@ fill_tilt = 0.5
 # squarely it is turned to the viewer; the lamp gives the rest.
 headlight = 0.25
 
-source = supersampled(3) + """
+source = supersampled() + """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, its colour, and how much of
 // what lies behind it it hides.
 struct Solid {
@@ -274,6 +274,12 @@ def arrows(starts: Point, ends: Point, radius: float, head_length: float, head_r
     cone = (mv.x * (mv.x & Point) + mv.y * (mv.y & Point)) / head_radius**2 - remaining * (remaining & Point)
     head = stack([cone, half_space(-mv.z * sense), half_space(mv.z * sense - mv.w * head_length)], axis=-1)
     return rods(starts, bases, radius), placed(head, (translator(bases - origin) * turn)[..., None])
+
+
+def frame(length: float, radius: float, head_length: float, head_radius: float) -> tuple[Quadric, Quadric]:
+    """The coordinate frame: arrows along x, y and z from the shared origin, a length long; their shafts and heads
+    `[3, 3]` each."""
+    return arrows(mv.point(np.zeros((3, 3))), mv.point(length * np.eye(3)), radius, head_length, head_radius)
 
 
 def boxes(motors: Motor, half_extents: np.ndarray) -> Quadric:

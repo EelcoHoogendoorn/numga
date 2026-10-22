@@ -42,9 +42,21 @@ PATCH_OPACITY = 0.28
 AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
 AXIS_WIDTH, OUTLINE_WIDTH = 3.0, 3.5
 HEAD_LENGTH, HEAD_WIDTH = 4.5, 3.0
+# The colour of the names of the lines of the faint cross through a ring's centre.
+CROSS_LABEL_COLOUR = "#7b8794"
 
 
 # --- coordinate readout ---------------------------------------------------------------
+def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
+    """Axes named by what runs along them, the quantity's zero as the horizontal one, without numbers."""
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.set(xticks=[], yticks=[], xlabel=across, ylabel=up)
+    # The horizontal axis's name below the plot, wherever its zero lies.
+    ax.xaxis.set_label_coords(0.5, -0.03)
+    ax.xaxis.label.set_va("top")
+
+
 def transverse(value: Antivector) -> np.ndarray:
     """(..., 2) x and y of separations in the plane transverse to the wave: their pairings with the
     slices x and y."""
@@ -121,15 +133,20 @@ def draw_curvature_map(
 
 
 # --- the strain packet and the Doppler check ------------------------------------------
-def draw_packet(time: np.ndarray, profiles: np.ndarray, second: np.ndarray) -> plt.Figure:
-    """The plus and cross strain profiles and their second derivatives `[times, 2]`, the weights of
-    the curvature batch."""
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white")
-    for ax, values in ((top, profiles), (bottom, second)):
-        # Plus in blue, cross in orange.
+def draw_packet(time: np.ndarray, strains: np.ndarray, curvatures: np.ndarray) -> plt.Figure:
+    """The plus and cross strain profiles and the curvature's weights `[times, 2]`, plus in blue and cross in orange,
+    each named beside its highest crest."""
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white",
+                                      layout="constrained")
+    for ax, values, name, across in ((top, strains, "strain", ""), (bottom, curvatures, "curvature", "time")):
         ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
         ax.plot(time, values[:, 1], color=ORANGE, lw=1.6)
-        ax.spines[["top", "right"]].set_visible(False)
+        plain_axes(ax, across, name)
+    crests = strains.argmax(axis=0)                                            # [2]
+    for crest, values, name, colour, side in ((crests[0], strains[:, 0], "plus", BLUE, -1),
+                                              (crests[1], strains[:, 1], "cross", ORANGE, 1)):
+        top.annotate(name, (time[crest], values[crest]), xytext=(side * 10, 0), textcoords="offset points",
+                     ha="right" if side < 0 else "left", va="center", color=colour, fontsize=10)
     return fig
 
 
@@ -137,12 +154,14 @@ def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     """Tidal amplitude measured by observers boosted along the wave, against `np.exp(-2 * rapidities)`."""
     measured = amplitudes.kernel[..., 0]                                 # [n] float
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
-    fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white")
+    fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white", layout="constrained")
     # The Doppler factor squared as a line, the tidal map's largest singular value as dots.
     ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)
     ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)
-    ax.set_yscale("log")
-    ax.spines[["top", "right"]].set_visible(False)
+    # The observer at rest, faint.
+    ax.axvline(0, color=light_colour, lw=0.8, zorder=0)
+    ax.set(ylim=(0, None))
+    plain_axes(ax, "rapidity", "tidal amplitude")
     return fig
 
 
@@ -190,8 +209,14 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     radius = np.linalg.norm(reference, axis=-1).mean()
     ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":", lw=1.5)
     ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
-    ax.plot([-radius * 1.08, radius * 1.08], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
-    ax.plot([0, 0], [-radius * 1.08, radius * 1.08], color="#edf0f3", lw=0.8, zorder=0)
+    # The cross through the centre, across the whole view but for room for its names at its ends.
+    reach = 0.9 * ax.get_xlim()[1]
+    ax.plot([-reach, reach], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
+    ax.plot([0, 0], [-reach, reach], color="#edf0f3", lw=0.8, zorder=0)
+    ax.annotate("x", (reach, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
+                color=CROSS_LABEL_COLOUR)
+    ax.annotate("y", (0, reach), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
+                color=CROSS_LABEL_COLOUR)
     outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
     beads = ax.scatter([], [], s=19, color=BLUE, edgecolors="white", linewidths=0.4, zorder=5)
     markers = ax.scatter(*reference[selected].T, s=47, c=tracking_colours[:len(selected)],
