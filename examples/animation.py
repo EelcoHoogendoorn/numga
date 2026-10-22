@@ -6,6 +6,7 @@ overwrites an earlier result. Each save prints the path it wrote and returns it.
 
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -23,6 +24,9 @@ PALETTE_SIZE = 96
 def capture(fig: plt.Figure) -> np.ndarray:
     """Render a figure at SUPERSAMPLE times its resolution and return its RGB pixels, each the average of
     its block: antialiasing that holds for every artist."""
+    # A closed figure holds its pixels in reference cycles until the collector runs, which a frame's few objects and
+    # large buffers rarely trigger: collected here, an animation keeps one frame's figure alive at a time.
+    gc.collect()
     dpi = fig.dpi
     fig.set_dpi(dpi * SUPERSAMPLE)
     fig.canvas.draw()

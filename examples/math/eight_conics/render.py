@@ -35,8 +35,8 @@ def curves(shapes: core.Conic) -> list[list[np.ndarray]]:
     samples = np.linspace(-REACH, REACH, N_SAMPLES)
     grid_x, grid_y = np.meshgrid(samples, samples)
     grid = core.mv.point(np.stack((grid_x, grid_y), axis=-1))
-    values = (shapes[:, None, None](grid) & grid).to_array()
-    return [contourpy.contour_generator(samples, samples, value).lines(0) for value in values]
+    # One conic at a time: every frame's conics on the grid at once would hold gigabytes.
+    return [contourpy.contour_generator(samples, samples, (shape(grid) & grid).to_array()).lines(0) for shape in shapes]
 
 
 def line_segments(lines: core.Plane, bounds: np.ndarray) -> list[list[np.ndarray]]:

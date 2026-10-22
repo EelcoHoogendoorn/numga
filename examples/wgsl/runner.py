@@ -3,7 +3,9 @@
 A `Shader` compiles once. Calling it with an image shape and the values its declarations name binds
 each one where the compiled shader expects it, runs one invocation per pixel, and returns every
 storage array the shader writes and was not given, by name: arrays of the algebra's types come back as
-batches of that type, other arrays as arrays of the image's shape.
+batches of that type, other arrays as arrays of the image's shape. A shader keeps the buffers and textures it
+runs with from one call to the next, each made again only when a call needs it larger, so that a frame of an
+animation only writes its values into them.
 """
 
 from __future__ import annotations
@@ -201,6 +203,8 @@ class Shader:
                 depth_stencil={"format": "depth32float", "depth_write_enabled": True, "depth_compare": "less"})
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
                                                   address_mode_u="repeat", address_mode_v="clamp-to-edge")
+        # The buffers and textures kept between calls, by their role.
+        self.kept: dict[tuple, Any] = {}
 
     def layout_entry(self, binding: Binding) -> dict:
         """How the shader sees a binding, for every entry point alike."""
@@ -226,6 +230,9 @@ class Shader:
         `pixels` where it declares one. Written arrays start at zero."""
         group, outputs = self.bind(shape, values)
         encoder = self.device.create_command_encoder()
+        # The written arrays start at zero, whatever the last call left in them.
+        for buffer, _, element_size in outputs.values():
+            encoder.clear_buffer(buffer, 0, int(np.prod(shape)) * element_size)
         for pipeline, size in self.pipelines:
             compute = encoder.begin_compute_pass()
             compute.set_pipeline(pipeline)
@@ -243,11 +250,10 @@ class Shader:
 
         group, _ = self.bind(shape, values)
         rows, columns = shape
-        depth = self.device.create_texture(size=(columns, rows, 1), format="depth32float",
-                                           usage=wgpu.TextureUsage.RENDER_ATTACHMENT)
-        targets = [self.device.create_texture(size=(columns, rows, 1), format=target,
-                                              usage=wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC)
-                   for target in self.targets]
+        depth = self.surface(("depth", shape), shape, "depth32float", wgpu.TextureUsage.RENDER_ATTACHMENT)
+        targets = [self.surface(("target", index, shape), shape, target,
+                                wgpu.TextureUsage.RENDER_ATTACHMENT | wgpu.TextureUsage.COPY_SRC)
+                   for index, target in enumerate(self.targets)]
         encoder = self.device.create_command_encoder()
         drawing = encoder.begin_render_pass(
             color_attachments=[{"view": target.create_view(), "clear_value": (0, 0, 0, 0), "load_op": "clear",
@@ -259,10 +265,10 @@ class Shader:
         drawing.draw(n_vertices)
         drawing.end()
         readbacks = []
-        for target, format in zip(targets, self.targets):
+        for index, (target, format) in enumerate(zip(targets, self.targets)):
             # Rows of a texture copy start at multiples of 256 bytes.
             row_bytes = -(-columns * FORMATS[format][0] // 256) * 256
-            readback = self.device.create_buffer(size=row_bytes * rows, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
+            readback = self.buffer_kept(("readback", index), row_bytes * rows, wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
             encoder.copy_texture_to_buffer({"texture": target}, {"buffer": readback, "bytes_per_row": row_bytes, "rows_per_image": rows},
                                            (columns, rows, 1))
             readbacks.append((readback, row_bytes))
@@ -270,15 +276,15 @@ class Shader:
         images = []
         for (readback, row_bytes), format in zip(readbacks, self.targets):
             size, channels, kind = FORMATS[format]
-            readback.map_sync(wgpu.MapMode.READ)
-            data = np.frombuffer(readback.read_mapped(), dtype=np.uint8).reshape(rows, row_bytes)[:, :columns * size]
+            readback.map_sync(wgpu.MapMode.READ, 0, row_bytes * rows)
+            data = np.frombuffer(readback.read_mapped(0, row_bytes * rows), dtype=np.uint8).reshape(rows, row_bytes)[:, :columns * size]
             images.append(data.copy().view(kind).reshape(rows, columns, channels))
             readback.unmap()
         return images
 
     def bind(self, shape: tuple[int, int], values: dict) -> tuple[Any, dict]:
-        """The bind group of the values the shader declares, and the arrays it writes, one element per
-        pixel, made for the purpose and zeroed."""
+        """The bind group of the values the shader declares, each written into the buffer kept for it, and the arrays
+        it writes, one element per pixel, in the buffers kept for them."""
         import wgpu
 
         count = int(np.prod(shape))
@@ -297,15 +303,16 @@ class Shader:
                     alignment, _ = self.layout.size(kind)
                     data += bytes(-len(data) % alignment) + self.layout.pack(kind, values[name])
                     unused.discard(name)
-                resource = self.buffer(bytes(data) + bytes(-len(data) % 16), wgpu.BufferUsage.STORAGE)
+                resource = self.buffer(("uniforms",), bytes(data) + bytes(-len(data) % 16))
             elif binding.kind == "storage" and binding.name in values:
                 element = self.layout.resolve(template(binding.type)[1][0])
-                resource = self.buffer(self.layout.array(element, values[binding.name]), wgpu.BufferUsage.STORAGE)
+                resource = self.buffer(("storage", binding.name), self.layout.array(element, values[binding.name]))
                 unused.discard(binding.name)
             elif binding.kind == "storage":
                 element = self.layout.resolve(template(binding.type)[1][0])
                 size = self.layout.stride(element)
-                buffer = self.device.create_buffer(size=count * size, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC)
+                buffer = self.buffer_kept(("output", binding.name), count * size,
+                                          wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC | wgpu.BufferUsage.COPY_DST)
                 outputs[binding.name] = (buffer, element, size)
                 resource = {"buffer": buffer, "offset": 0, "size": count * size}
             elif binding.kind == "texture":
@@ -327,7 +334,7 @@ class Shader:
         count = int(np.prod(shape))
         readbacks = {}
         for name, (buffer, _, element_size) in outputs.items():
-            readback = self.device.create_buffer(size=count * element_size, usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
+            readback = self.buffer_kept(("readback", name), count * element_size, wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ)
             encoder.copy_buffer_to_buffer(buffer, 0, readback, 0, count * element_size)
             readbacks[name] = readback
         self.device.queue.submit([encoder.finish()])
@@ -335,8 +342,8 @@ class Shader:
         results = {}
         for name, readback in readbacks.items():
             _, element, element_size = outputs[name]
-            readback.map_sync(wgpu.MapMode.READ)
-            raw = np.frombuffer(readback.read_mapped(), dtype=np.uint8).reshape(count, element_size).copy()
+            readback.map_sync(wgpu.MapMode.READ, 0, count * element_size)
+            raw = np.frombuffer(readback.read_mapped(0, count * element_size), dtype=np.uint8).reshape(count, element_size).copy()
             readback.unmap()
             results[name] = self.unpack(element, raw, tuple(shape))
         return results
@@ -355,10 +362,28 @@ class Shader:
             return self.context.extensor(kind, data.astype(np.float64).reshape(shape + structural))
         return data.reshape(shape + (size // 4,))
 
-    def buffer(self, data: bytes, usage: int) -> dict:
+    def buffer_kept(self, role: tuple, size: int, usage: int) -> Any:
+        """The buffer kept for a role, at least `size` bytes: made on the first call that needs it, and again only when
+        a call needs it larger."""
+        buffer = self.kept.get(role)
+        if buffer is None or buffer.size < size:
+            buffer = self.device.create_buffer(size=max(size, 16), usage=usage)
+            self.kept[role] = buffer
+        return buffer
+
+    def buffer(self, role: tuple, data: bytes) -> dict:
+        """The storage buffer kept for a role, holding data, bound to just its length."""
         import wgpu
-        buffer = self.device.create_buffer_with_data(data=data, usage=usage | wgpu.BufferUsage.COPY_DST)
+        buffer = self.buffer_kept(role, len(data), wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST)
+        self.device.queue.write_buffer(buffer, 0, data)
         return {"buffer": buffer, "offset": 0, "size": len(data)}
+
+    def surface(self, role: tuple, shape: tuple[int, int], format: str, usage: int) -> Any:
+        """The texture kept for a role and an image's shape, rows and columns, made on the first call that needs it."""
+        if role not in self.kept:
+            rows, columns = shape
+            self.kept[role] = self.device.create_texture(size=(columns, rows, 1), format=format, usage=usage)
+        return self.kept[role]
 
     def texture(self, binding: Binding, image: np.ndarray) -> Any:
         """A float texture holding an image, `[rows, columns, channels]`; channels pad to four, the last
@@ -368,9 +393,9 @@ class Shader:
         padded = np.ones(image.shape[:2] + (4,), dtype=np.float32 if self.filterable else np.float16)
         padded[..., :image.shape[2]] = image
         height, width = padded.shape[:2]
-        texture = self.device.create_texture(
-            size=(width, height, 1), format="rgba32float" if self.filterable else "rgba16float",
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST)
+        texture = self.surface(("texture", binding.name, (height, width)), (height, width),
+                               "rgba32float" if self.filterable else "rgba16float",
+                               wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST)
         self.device.queue.write_texture({"texture": texture}, padded.tobytes(),
                                         {"bytes_per_row": width * padded.itemsize * 4, "rows_per_image": height}, (width, height, 1))
         return texture
