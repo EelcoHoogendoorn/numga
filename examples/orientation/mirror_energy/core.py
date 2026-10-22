@@ -25,28 +25,28 @@ Scalar = ga.gatype.scalar()
 def energies(points: Point, masses: np.ndarray, rate: Rate, mirror: Plane) -> Scalar:
     """Energy before reflection, after reflection, after rebuilding, and without orientation."""
     # Inertia maps the body's rate of motion to its momentum.
-    inertia: Inertia = (points & points.commutator(Rate) * masses).sum(axis=0)
-    energy: Scalar = (inertia(rate) & rate) / 2
+    inertia = (points & points.commutator(Rate) * masses).sum(axis=0)           # Inertia
+    energy = (inertia(rate) & rate) / 2                                         # Scalar
 
     # Reflect the map on its input and its output, along with the actual motion rate.
-    reflected_rate: Rate = mirror >> rate
-    reflected_inertia: Inertia = mirror >> inertia(mirror << Rate)
-    reflected_energy: Scalar = (reflected_inertia(reflected_rate) & reflected_rate) / 2
+    reflected_rate = mirror >> rate                                             # Rate
+    reflected_inertia = mirror >> inertia(mirror << Rate)                       # Inertia
+    reflected_energy = (reflected_inertia(reflected_rate) & reflected_rate) / 2  # Scalar
 
     # Constructing from reflected masses gives the same inertia and energy.
-    reflected_points: Point = mirror >> points
-    rebuilt: Inertia = (reflected_points & reflected_points.commutator(Rate) * masses).sum(axis=0)
-    rebuilt_energy: Scalar = (rebuilt(reflected_rate) & reflected_rate) / 2
+    reflected_points = mirror >> points                                         # Point
+    rebuilt = (reflected_points & reflected_points.commutator(Rate) * masses).sum(axis=0)  # Inertia
+    rebuilt_energy = (rebuilt(reflected_rate) & reflected_rate) / 2             # Scalar
 
     # Uniform grade-involuted conjugation gives momentum the wrong sign.
-    untyped_momentum: Momentum = mirror * inertia(rate).involute() * mirror.inverse()
-    untyped_rate: Rate = mirror * rate.involute() * mirror.inverse()
-    untyped_energy: Scalar = (untyped_momentum & untyped_rate) / 2
+    untyped_momentum = mirror * inertia(rate).involute() * mirror.inverse()     # Momentum
+    untyped_rate = mirror * rate.involute() * mirror.inverse()                  # Rate
+    untyped_energy = (untyped_momentum & untyped_rate) / 2                      # Scalar
     return stack([energy, reflected_energy, rebuilt_energy, untyped_energy])
 
 
 def motion(points: Point, rate: Rate, mirror: Plane, times: np.ndarray) -> tuple[Point, Point]:
     """Sample a prescribed rotation and its mirror, with the tangent velocities."""
-    positions: Point = (-rate * times[:, None] / 2).exp() >> points
-    velocities: Point = positions.commutator(rate)
+    positions = (-rate * times[:, None] / 2).exp() >> points                    # Point
+    velocities = positions.commutator(rate)                                     # Point
     return stack([positions, mirror >> positions], axis=1), stack([velocities, mirror >> velocities], axis=1)

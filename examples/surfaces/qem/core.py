@@ -63,10 +63,10 @@ def edge_collapse(
     # A unit plane measures a point's signed distance from it as `plane & point`; its dyad,
     # `plane * (plane & Point)`, a map from points to planes, gives the squared distance.
     # Summing the incident planes' dyads at each vertex gives its error quadric.
-    quadric_a: Quadric = (planes_a * (planes_a & Point)).sum(axis=0)
-    quadric_b: Quadric = (planes_b * (planes_b & Point)).sum(axis=0)
+    quadric_a = (planes_a * (planes_a & Point)).sum(axis=0)                     # Quadric
+    quadric_b = (planes_b * (planes_b & Point)).sum(axis=0)                     # Quadric
     # Contracting the edge adds the endpoints' quadrics.
-    edge_quadric: Quadric = quadric_a + quadric_b
+    edge_quadric = quadric_a + quadric_b                                        # Quadric
     # The optimal vertex has vanishing spatial gradient, so its polar plane is the plane at infinity.
-    optimum: Point = edge_quadric.lstsq(mv.w).normalized()
+    optimum = edge_quadric.lstsq(mv.w).normalized()                             # Point
     return quadric_a, quadric_b, edge_quadric, optimum

@@ -26,11 +26,11 @@ def experiment() -> tuple[Spin, Direction, Scalar, core.Asymmetry, Mirror]:
     """
     # Measured against the lab's handedness, the basis volume x ^ y ^ z.
     asymmetry = mv(core.Asymmetry, [ASYMMETRY])                                   # [] Asymmetry
-    spin: Spin = mv.xy                                                            # [] Spin, the coil's current in the xy plane
-    mirror: Mirror = mv.x                                                         # the plane x = 0, holding the coil's axis
+    spin = mv.xy                                                                  # [] Spin, the coil's current in the xy plane
+    mirror = mv.x                                                                 # the plane x = 0, holding the coil's axis
     angles = np.linspace(0, 2 * np.pi, SAMPLES)
     # Directions turned from z toward x, around the plane that holds the spin's axis.
-    directions: Direction = ((mv.z ^ mv.x) * (-angles / 2)).exp() >> mv.z.dual() # [directions] Direction
+    directions = ((mv.z ^ mv.x) * (-angles / 2)).exp() >> mv.z.dual()            # [directions] Direction
 
     original = core.emission(spin, directions, asymmetry)                         # [directions] Scalar
     # The mirror image: what the mirror shows along each direction is what the apparatus sends along its image.

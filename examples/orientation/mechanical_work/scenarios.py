@@ -22,16 +22,16 @@ def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
     force_strength = 1.5
     steps = 36
     times = np.linspace(0, 2 * np.pi / speed, steps, endpoint=False)
-    mirror: Plane = mv.x
-    pivot: Point = mv.point([-separation, 0])
-    handle: Point = mv.point([-separation + radius, 0])
-    force: Point = mv.direction([0, force_strength])
-    rate: Rate = ((mv.x + separation * mv.w) ^ mv.y) * speed
+    mirror = mv.x                                                               # Plane
+    pivot = mv.point([-separation, 0])                                          # Point
+    handle = mv.point([-separation + radius, 0])                                # Point
+    force = mv.direction([0, force_strength])                                   # Point
+    rate = ((mv.x + separation * mv.w) ^ mv.y) * speed                          # Rate
 
-    pivots: Point = stack([pivot, mirror >> pivot])
-    handles: Point = stack([handle, mirror >> handle])
-    forces: Point = stack([force, mirror >> force])
-    rates: Rate = stack([rate, mirror >> rate])
+    pivots = stack([pivot, mirror >> pivot])                                    # Point
+    handles = stack([handle, mirror >> handle])                                 # Point
+    forces = stack([force, mirror >> force])                                    # Point
+    rates = stack([rate, mirror >> rate])                                       # Rate
     return pivots, *core.turn(handles, forces, rates, times)
 
 

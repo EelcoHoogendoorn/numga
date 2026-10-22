@@ -59,10 +59,10 @@ def epipolar(noise: float):
     # sight ray through it, its join with the eye, meets the screen.
     origin = mv.w.dual()
     screen = mv.z - mv.w
-    camera: Camera = (origin & Point) ^ screen                                # [] Point <- Point
+    camera = (origin & Point) ^ screen                                        # [] Point <- Point
 
     true_shift = (stack((mv.xw, mv.yw, mv.zw)) * SHIFT).sum(axis=0) / 2       # [] Twist
-    true_motor: Motor = (true_shift.exp() * (mv.zx * (TURN / 2)).exp()).normalized()
+    true_motor = (true_shift.exp() * (mv.zx * (TURN / 2)).exp()).normalized()   # Motor
 
     # Each camera images the landmarks in its own frame, onto its own screen. Dividing by the weight, the
     # pairing with the plane at infinity, gives the image points unit weight.
@@ -76,7 +76,7 @@ def epipolar(noise: float):
 
     # Measured sight rays, each in its own camera's frame. Jointly solve for the relative pose and the
     # world points, starting from the right baseline without any rotation.
-    rays: Line = (origin & measured).normalized()                             # [views, landmarks] Line
+    rays = (origin & measured).normalized()                                   # [views, landmarks] Line
     iterates = islice(reconstruction(rays[0], rays[1], true_shift.exp().normalized()), N_ITERATIONS + 1)
     est_motors, reconstructed = (Extensor.stack(path) for path in zip(*iterates))   # [iterations] Motor, [iterations, landmarks] Point
 

@@ -24,7 +24,7 @@ def hyperbolic_plane():
     # A line paired with a point is a rank-one map from points to lines. Summing the three coordinate lines
     # with signs gives the polarity of the conic x**2 + y**2 - w**2 == 0, the unit circle. The pole map is
     # the inverse polarity.
-    absolute: Polarity = mv.x * (mv.x & Point) + mv.y * (mv.y & Point) - mv.w * (mv.w & Point)
+    absolute = mv.x * (mv.x & Point) + mv.y * (mv.y & Point) - mv.w * (mv.w & Point)  # Polarity
 
     vertices = mv.point(VERTICES)                                              # [3] Point
     sides, angles, lengths, area = triangle(absolute, vertices)

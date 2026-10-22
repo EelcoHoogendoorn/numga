@@ -234,7 +234,7 @@ class Shader:
         self.sampler = self.device.create_sampler(mag_filter="linear", min_filter="linear",
                                                   address_mode_u="repeat", address_mode_v="clamp-to-edge")
         # The buffers and textures kept between calls, by their role.
-        self.kept: dict[tuple, Any] = {}
+        self.kept = {}                                                          # dict[tuple, Any]
 
     def layout_entry(self, binding: Binding) -> dict:
         """How the shader sees a binding, for every entry point alike."""

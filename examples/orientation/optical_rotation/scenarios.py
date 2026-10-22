@@ -29,7 +29,7 @@ def isolator() -> tuple[Polarization, np.ndarray]:
     # Measured against the lab's handedness, the basis volume x ^ y ^ z.
     rotary_power = mv(core.RotaryPower, [quartz_rotary_power])                           # [] RotaryPower
     field = mv.xy * field_strength                                                         # [] Field, along z
-    mirror: Mirror = mv.x                                                         # the plane x = 0, holding the path
+    mirror = mv.x                                                                 # the plane x = 0, holding the path
     depths = np.linspace(0, length, n_samples)
 
     original = core.through_media(direction, rotary_power, field, verdet, start, depths)

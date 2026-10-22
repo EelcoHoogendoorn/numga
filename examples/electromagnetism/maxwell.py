@@ -105,7 +105,7 @@ def main() -> None:
     # A plane wave along +z, its electric field along x and its magnetic field along y, and its
     # stress-energy: for the observer at rest, the energy density and the Poynting flux.
     wave = electric_strength * electric(along_x) + magnetic_strength * magnetic(along_y)   # [] Bivector
-    wave_stress: StressEnergy = 0.5 * (wave >> Antivector)                     # [] Antivector <- Antivector
+    wave_stress = 0.5 * (wave >> Antivector)                                   # [] Antivector <- Antivector
     current = wave_stress(time)                                                # [] Antivector
     energy = mv.t & current                                                    # [] Scalar
     poynting = current - time * energy                                         # [] Antivector
@@ -120,19 +120,19 @@ def main() -> None:
 
     # Dust at rest, and the same dust moving: the dyad of its velocity, the rest observer boosted.
     density = mv.scalar([dust_density])
-    dust: StressEnergy = density * flow(time)                                  # [] Antivector <- Antivector
+    dust = density * flow(time)                                                # [] Antivector <- Antivector
     rapidity = np.arctanh(dust_speed)
     boost = (mv.zt * (rapidity / 2.0)).exp()                                   # [] Rotor
     velocity = boost >> time                                                   # [] Antivector
     gamma, beta = np.cosh(rapidity), np.tanh(rapidity)
-    moving_dust: StressEnergy = density * flow(velocity)                       # [] Antivector <- Antivector
+    moving_dust = density * flow(velocity)                                     # [] Antivector <- Antivector
 
     # Each particle contributes its own dyad; summed over a cloud moving every way at one speed, the
     # stress-energy is an ideal fluid at rest, its pressure `energy * speed ** 2 / 3`, its trace the
     # summed rest mass, exactly.
     velocities = isotropic_cloud(n_particles, cloud_speed, rng)                # [particles] Antivector
     mass = mv.scalar(np.full((n_particles, 1), 1.0 / n_particles))             # [particles] Scalar
-    cloud: StressEnergy = (flow(velocities) * mass).sum()                      # [] Antivector <- Antivector
+    cloud = (flow(velocities) * mass).sum()                                    # [] Antivector <- Antivector
     spectrum = real_sorted(cloud.eigvals())
     stresses, cloud_energy = spectrum[:-1], spectrum[-1]
     pressure = -stresses.mean()
@@ -140,14 +140,14 @@ def main() -> None:
     # A cloud of light rays is the massless limit. Each ray is null, so every dyad is traceless and the
     # trace vanishes to round-off rather than statistically: the pressure is exactly a third of the energy.
     rays = null_cloud(n_particles, rng)                                        # [rays] Antivector
-    light: StressEnergy = (flow(rays) * mass).sum()                            # [] Antivector <- Antivector
+    light = (flow(rays) * mass).sum()                                          # [] Antivector <- Antivector
     light_spectrum = real_sorted(light.eigvals())
     light_stresses, light_energy = light_spectrum[:-1], light_spectrum[-1]
 
     # The ideal fluid of the cloud's energy and pressure, and the radiation fluid of pressure a third of
     # its density.
-    fluid: StressEnergy = (cloud_energy + pressure) * flow(time) - pressure * Antivector
-    radiation: StressEnergy = (density + density / 3.0) * flow(time) - (density / 3.0) * Antivector
+    fluid = (cloud_energy + pressure) * flow(time) - pressure * Antivector      # StressEnergy
+    radiation = (density + density / 3.0) * flow(time) - (density / 3.0) * Antivector  # StressEnergy
 
     # The Lorentz force density on the current the moving dust carries, a form on directions: the field
     # read on the plane each direction sweeps along the current, as charges at rest read it on the plane

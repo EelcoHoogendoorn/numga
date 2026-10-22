@@ -15,10 +15,10 @@ DURATION_MS = 70
 
 def circle() -> tuple[Point, Point, Point, Sphere, Sphere]:
     """Ordered circle points stay fixed while one cutting surface changes side."""
-    points: Point = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])
-    plane: Sphere = mv.z
-    sphere: Sphere = mv.w
-    mirror: Sphere = plane
+    points = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])  # Point
+    plane = mv.z                                                                # Sphere
+    sphere = mv.w                                                               # Sphere
+    mirror = plane                                                              # Sphere
     samples = 96
     meridians = 16
     parallels = 9
@@ -33,10 +33,10 @@ def circle() -> tuple[Point, Point, Point, Sphere, Sphere]:
 
 def circle_motions() -> tuple[Point, Point]:
     """Rigid circulation and a hyperbolic glide reflection preserving the same circle."""
-    points: Point = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])
-    infinity: Sphere = mv.e + mv.w
-    origin: Sphere = (mv.e - mv.w) / 2
-    reflector: Sphere = mv.x
+    points = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])  # Point
+    infinity = mv.e + mv.w                                                      # Sphere
+    origin = (mv.e - mv.w) / 2                                                  # Sphere
+    reflector = mv.x                                                            # Sphere
     frames = 64
     radial_samples = 40
     angular_samples = 96
@@ -45,18 +45,18 @@ def circle_motions() -> tuple[Point, Point]:
     radii = np.linspace(0, 1, radial_samples + 1)
     angles = np.linspace(0, 2 * np.pi, angular_samples + 1)
 
-    circle: Path = (points[0] & points[1] & points[2]).normalized()
+    circle = (points[0] & points[1] & points[2]).normalized()                   # Path
     # Infinity selects the Euclidean rotation about the circle's axis.
-    axis: Circle = (circle.dual() | infinity).normalized()
+    axis = (circle.dual() | infinity).normalized()                              # Circle
     rotations = (axis * (-phase / 2)).exp()
     # The reflection commutes with this boost; its two fixed circle points are at ±y.
-    boost: Circle = reflector | circle.dual()
+    boost = reflector | circle.dual()                                           # Circle
     glides = reflector * (boost * (glide_amplitude * np.sin(phase))).exp()
 
-    grid: Point = core.disk_samples(mv.x, origin, infinity, axis, radii, angles)
-    moving_grid: Point = stack([rotations[:, None, None] >> grid,
+    grid = core.disk_samples(mv.x, origin, infinity, axis, radii, angles)       # Point
+    moving_grid = stack([rotations[:, None, None] >> grid,                      # Point
                                glides[:, None, None] >> grid], axis=1)
-    fixed_points: Point = stack([(mv.y + mv.e).dual(), (-mv.y + mv.e).dual()])
+    fixed_points = stack([(mv.y + mv.e).dual(), (-mv.y + mv.e).dual()])         # Point
     return moving_grid, fixed_points
 
 

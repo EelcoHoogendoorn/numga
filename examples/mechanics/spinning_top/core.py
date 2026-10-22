@@ -27,6 +27,7 @@ Plane = ga.gatype.vector()
 # A rate of motion, and a force line, the load along it.
 Rate = ga.gatype.bivector()
 Forque = ga.gatype.antibivector()
+Inertia = ga.gatype((Forque, Rate))                       # Forque <- Rate
 InverseInertia = ga.gatype((Rate, Forque))                # Rate <- Forque
 Motor = ga.gatype.rotor()
 Direction = Point.derive.degenerate
@@ -56,14 +57,14 @@ def bowl(curvature: float) -> Quadric:
     return 0.5 * (mv.z * (w & Point) + w * (mv.z & Point)) - curvature * (axes[:2] * (axes[:2] & Point)).sum()
 
 
-def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray):
+def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray) -> tuple[Point, np.ndarray]:
     """Six mass points per solid ellipsoid with its mass, centroid and second moments."""
     offsets = np.eye(3)[None] * semi[:, None, :] * np.sqrt(3 / 5)             # [parts, 3, 3]
     coords = np.concatenate([centre[:, None] + offsets, centre[:, None] - offsets], axis=1)   # [parts, sigma_points, 3]
     return mv.point(coords.reshape(-1, 3)), np.repeat(mass / 6, 6)
 
 
-def inertia(points: Point, masses: np.ndarray):
+def inertia(points: Point, masses: np.ndarray) -> Inertia:
     """The inertia, a map from rates to forques: each mass point joined with its own motion under the
     rate, its momentum, summed over the points."""
     return (points & points.commutator(Rate) * masses).sum()

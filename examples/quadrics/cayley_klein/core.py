@@ -39,7 +39,7 @@ def invariant(pairing: Extensor, a: Extensor, b: Extensor) -> Scalar:
 # --- math -----------------------------------------------------------------------------
 def triangle(absolute: Polarity, vertices: Point):
     """The sides, angles, side lengths and area of a triangle, all from the absolute."""
-    dual_absolute: Pole = absolute.inverse()
+    dual_absolute = absolute.inverse()                                          # Pole
 
     # The invariant of two points is (a & absolute(b)) / ((a & absolute(a)) * (b & absolute(b))).square_root(),
     # and Cayley's distance is its arccosh. The invariant of two lines is the same with the dual absolute,
