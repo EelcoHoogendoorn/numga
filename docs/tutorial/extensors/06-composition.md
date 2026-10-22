@@ -24,7 +24,7 @@ a ^ (b ^ Vector)
 xyz  -3  6  -3
 ```
 
-The two steps can also be written as maps. The first, `b ^ Vector`, produces a bivector. Its output fits the slot of the second, `a ^ Bivector`. Putting the first map in that slot gives:
+The two steps can also be written as maps. The first, `b ^ Vector`, produces a bivector. Its output fits the axis of the second, `a ^ Bivector`. Putting the first map in that axis gives:
 
 ```python
 composition = (a ^ Bivector)(b ^ Vector)

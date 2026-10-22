@@ -67,7 +67,7 @@ def compile_application(
         return lambda target, *operands: target.bind(*operands)
 
     plan = BindingPlan.from_types(
-        target_type, tuple((slot, t) for slot, (_, t) in enumerate(signature)),
+        target_type, tuple((axis, t) for axis, (_, t) in enumerate(signature)),
         equality_groups,
     )
     result_type = TypeRules.bind(plan)
@@ -85,12 +85,12 @@ def compile_application(
                 kernel = kernel.take(indices, axis=0)
             return compile_sparse_bind(xp, dtype, kernel, plan)
 
-        exact_slots = tuple(i for i, (c, _) in enumerate(signature) if c.is_exact)
-        if exact_slots:
+        exact_axes = tuple(i for i, (c, _) in enumerate(signature) if c.is_exact)
+        if exact_axes:
             def execute(target: Extensor, *operands: Extensor) -> Extensor:
                 prepared = list(operands)
-                for slot in exact_slots:
-                    prepared[slot] = context.lower(operands[slot])
+                for axis in exact_axes:
+                    prepared[axis] = context.lower(operands[axis])
                 return wrap(context, result_type, sparse_executor(target._kernel)(tuple(prepared)))
         else:
             def execute(target: Extensor, *operands: Extensor) -> Extensor:
@@ -112,20 +112,20 @@ def compile_application(
     else:
         prepare_target = None
 
-    exact_slots = tuple(slot for slot, (c, _) in enumerate(signature) if c.is_exact)
+    exact_axes = tuple(axis for axis, (c, _) in enumerate(signature) if c.is_exact)
     if len(signature) > 1:
         contract_all = ordered_binding(xp, plan)
 
         def execute(target: Extensor, *operands: Extensor) -> Extensor:
             kernel = target._kernel if prepare_target is None else prepare_target(target._kernel)
-            kernels = {slot: operand._kernel for slot, operand in enumerate(operands)}
-            for slot in exact_slots:
-                kernels[slot] = context.materialize(kernels[slot])
+            kernels = {axis: operand._kernel for axis, operand in enumerate(operands)}
+            for axis in exact_axes:
+                kernels[axis] = context.materialize(kernels[axis])
             return wrap(context, result_type, contract_all(kernel, kernels))
         return execute
 
     ((_, contract),) = binding_steps(xp, plan, (0,))
-    if exact_slots:
+    if exact_axes:
         def lowered(left: Any, right: SymbolicKernel, contract: Callable[[Any, Any], Any] = contract) -> Any:
             return contract(left, context.materialize(right))
         contract = lowered

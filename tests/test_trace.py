@@ -1,4 +1,4 @@
-"""A map's trace pairs its output with an input slot of the same space; forms need a metric."""
+"""A map's trace pairs its output with an input of the same space; forms need a metric."""
 
 import numpy as np
 import pytest
@@ -38,7 +38,7 @@ def test_trace_is_invariant_under_any_change_of_basis():
     np.testing.assert_allclose(change(f(change.inverse())).trace().kernel, f.trace().kernel, atol=1e-10)
 
 
-def test_trace_rejects_a_slot_spanning_part_of_the_output():
+def test_trace_rejects_a_axis_spanning_part_of_the_output():
     ga = Algebra("x+y+z+p+n-")
     mv = NumpyContext(ga).multivector
     direction = ga.gatype.from_blades("x y z")
@@ -88,9 +88,9 @@ def test_contracting_the_output_is_the_inner_product_lift(signature):
     np.testing.assert_allclose((vector | f).contract().kernel, f.contract().kernel, atol=1e-12)
 
 
-def test_slots_are_named_unless_only_two_carry_an_index():
+def test_axes_are_named_unless_only_two_carry_an_index():
     """A scalar output carries no index: a form's two inputs need no names, a map with an open
-    vector multiplied in has three slots that do, and a scalar output pairs with nothing."""
+    vector multiplied in has three axes that do, and a scalar output pairs with nothing."""
     ga = Algebra("x+y+z+")
     mv = NumpyContext(ga).multivector
     vector = ga.gatype.vector()

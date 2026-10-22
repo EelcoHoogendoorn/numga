@@ -15,7 +15,7 @@ def expressions(value, component):
             coefficient = kernel[(output,) + indices].item()
             if not coefficient:
                 continue
-            factors = [component(slot, index) for slot, index in enumerate(indices)]
+            factors = [component(axis, index) for axis, index in enumerate(indices)]
             magnitude = abs(coefficient)
             if magnitude != 1 or not factors:
                 factors.insert(0, str(int(magnitude)) if int(magnitude) == magnitude else str(magnitude))
@@ -30,7 +30,7 @@ def formula(value) -> str:
     def blade(space, index):
         return ("-" if space.signs[index] < 0 else "") + value.algebra.blade_name(space.masks[index])
 
-    terms = expressions(value, lambda slot, index: f"a{slot}[{blade(value.input_subspaces[slot], index)}]")
+    terms = expressions(value, lambda axis, index: f"a{axis}[{blade(value.input_subspaces[axis], index)}]")
     return "\n".join(f"out[{blade(value.output_subspace, index)}] = {term}"
                      for index, term in enumerate(terms))
 
@@ -84,8 +84,8 @@ def coefficient_table(value) -> str:
 
 def python_code(value, name: str = "apply") -> str:
     """Generate a function taking coefficient sequences and returning a list."""
-    terms = expressions(value, lambda slot, index: f"a{slot}[{index}]")
-    arguments = ", ".join(f"a{slot}" for slot in range(value.arity))
+    terms = expressions(value, lambda axis, index: f"a{axis}[{index}]")
+    arguments = ", ".join(f"a{axis}" for axis in range(value.arity))
     return (f"def {name}({arguments}):\n"
             + "    return [\n"
             + "".join(f"        {term},\n" for term in terms)

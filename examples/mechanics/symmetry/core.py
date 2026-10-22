@@ -141,7 +141,7 @@ def lattice_responses(seeds: Direction, cube: Rotor) -> tuple[Conductivity, Exte
     A unit bond n reads a driving field f through their pairing, `f & n`. For an imposed
     strain of size s along a unit direction d, its fractional extension is `s * n.dot(d) ** 2`,
     measured by the metric between the two directions. Squaring to get spring energy gives
-    four factors of `n.dot(d)`, hence a scalar form with four direction slots. Its value
+    four factors of `n.dot(d)`, hence a scalar form with four direction inputs. Its value
     `elasticity(d, d, d, d)` is the stiffness, with energy density
     `s ** 2 * elasticity(d, d, d, d) / 2`. It holds transverse strain fixed; it is not
     the relaxed Young's modulus.
@@ -158,7 +158,7 @@ def lattice_responses(seeds: Direction, cube: Rotor) -> tuple[Conductivity, Exte
     conductivity = (bonds * (Field & bonds)).mean(axis=0).sum(axis=0)            # Direction <- Field
     projection = bonds.dot(Direction)                                            # [rotations, families] Scalar <- Direction
 
-    # Four independent slots encode the spring stiffness. The same group average
+    # Four independent inputs encode the spring stiffness. The same group average
     # leaves cubic structure here, although it made the conduction isotropic.
     elasticity = (projection * projection * projection * projection).mean(axis=0).sum(axis=0)
     return conductivity, elasticity

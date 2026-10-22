@@ -148,7 +148,7 @@ class GATypeDispatch:
         always tried before declarative ones; ``position`` controls order only
         within that low-level tier.
 
-        Types with field slots dispatch only to predicates registered with
+        Types with field axes dispatch only to predicates registered with
         ``fields``. Without one, fields of values run the implementation over
         blades at every site.
         """

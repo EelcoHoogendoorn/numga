@@ -45,7 +45,7 @@ stretch.eigh()[0]
 [1  1  3]
 ```
 
-A form has a scalar output and two input slots. Pairing a map's output with another vector gives such a form. Solving through the pairing recovers the map:
+A form has a scalar output and two inputs. Pairing a map's output with another vector gives such a form. Solving through the pairing recovers the map:
 
 ```python
 form = Vector | stretch
@@ -71,7 +71,7 @@ form.eigh(weight)[0]
 [1  1  1.5]
 ```
 
-The second form weights the $z$ direction by two, so the relative scale there is three divided by two. These are generalized eigenvalues: the scales of one form relative to another. Without an explicit second form, `eigh` uses the Euclidean inner product of the slot.
+The second form weights the $z$ direction by two, so the relative scale there is three divided by two. These are generalized eigenvalues: the scales of one form relative to another. Without an explicit second form, `eigh` uses the Euclidean inner product of the axis.
 
 In matrix notation, eigenvalues of a map satisfy $M v = \lambda v$, singular values compare orthonormal input and output directions, and eigenvalues relative to a second form satisfy $M v = \lambda W v$.
 

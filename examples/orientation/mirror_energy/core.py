@@ -28,7 +28,7 @@ def energies(points: Point, masses: np.ndarray, rate: Rate, mirror: Plane) -> Sc
     inertia: Inertia = (points & points.commutator(Rate) * masses).sum(axis=0)
     energy: Scalar = (inertia(rate) & rate) / 2
 
-    # Reflect the map on both slots, along with the actual motion rate.
+    # Reflect the map on its input and its output, along with the actual motion rate.
     reflected_rate: Rate = mirror >> rate
     reflected_inertia: Inertia = mirror >> inertia(mirror << Rate)
     reflected_energy: Scalar = (reflected_inertia(reflected_rate) & reflected_rate) / 2

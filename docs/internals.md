@@ -31,7 +31,7 @@ stage to fuse the arithmetic.
 
 ## 2. Example code
 
-The following works out how the rotor-vector sandwich, an operation with three slots, is
+The following works out how the rotor-vector sandwich, an operation with three inputs, is
 built, in the smallest algebra that has one.
 
 ```python
@@ -50,7 +50,7 @@ Vector = ga.gatype.vector()
 # The Cl2 rotor-vector sandwich:
 #  output = r * v * r.reverse()
 sandwich = Rotor >> Vector
-# the two rotor slots are distinct inputs; only supplying the same value to both makes a rotation
+# the two rotor inputs are distinct inputs; only supplying the same value to both makes a rotation
 assert sandwich.arity == 3
 assert sandwich.axes == (V, Q, V, Q)
 # the kernel is exact: a table of integers, output axis first
@@ -95,9 +95,9 @@ print(left.kernel.to_object_array().astype(int))
 right = Vector * Rotor
 assert right.axes == (V, V, Q)
 
-# binding the reverse into the right side's Rotor slot, and the left side into its Vector slot,
+# binding the reverse into the right side's Rotor input, and the left side into its Vector input,
 # gives the combined extensor
-# Slots are numbered over inputs, and a bound map splices its own inputs in place of the slot.
+# Inputs are numbered in order, and a bound map splices its own inputs in place of the one it fills.
 composed = right.bind({0: left, 1: reverse})
 assert composed.axes == (V, Q, V, Q)
 # these are the steps numga takes when binding, so the result is the same table
@@ -108,7 +108,7 @@ right_reverse = np.einsum('ijk,kl->ijl', right.kernel.materialize(), reverse.ker
 table = np.einsum('ijk,klm->ijlm', left.kernel.materialize(), right_reverse)
 assert np.array_equal(table, sandwich.kernel.materialize())
 
-# binding a specific rotor into both rotor slots at once leaves the rotation as a map on vectors:
+# binding a specific rotor into both rotor inputs at once leaves the rotation as a map on vectors:
 # the rotor sandwich in matrix form
 mv = NumpyContext(ga).multivector
 r = mv.rotor([np.cos(0.3), np.sin(0.3)])
@@ -155,7 +155,7 @@ def apply(a0, a1, a2):
     ]
 
 def rotation_matrix(r):
-    # after the term rewriting XLA performs, binding r into both rotor slots becomes code like this
+    # after the term rewriting XLA performs, binding r into both rotor inputs becomes code like this
     d = r[0] * r[0] - r[1] * r[1]
     od = 2 * r[0] * r[1]
     return [[d, od], [-od, d]]
@@ -188,8 +188,8 @@ structural axis, with the batch axes broadcasting:
 ```
 
 That string is how the NumPy backend evaluates the map. The map itself is the geometric
-expression with a slot left open; the kernel is that expression's coefficient table
-in the blade bases of its slots; the einsum, a matmul, or an XLA dot are ways of evaluating the
+expression with an axis left open; the kernel is that expression's coefficient table
+in the blade bases of its axes; the einsum, a matmul, or an XLA dot are ways of evaluating the
 table, chosen by the backend. The dense executor uses matmul for a unary map applied to a
 value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or
 an index position, for the reasons given in [`extensor_advanced.md`](extensor_advanced.md).
@@ -244,9 +244,9 @@ need a QZ solver and so run only in NumPy with SciPy.
 
 ## 5. Binding plans and types
 
-`bind` is the one primitive. A call binds its operands to the leading slots, the slot's own type in
-place of an operand leaves it open, a type inside the slot binds its identity map and so narrows the
-slot, and a full call runs on the compiled path. The operators on types
+`bind` is the one primitive. A call binds its operands to the leading axes, the axis's own type in
+place of an operand leaves it open, a type inside the axis binds its identity map and so narrows the
+axis, and a full call runs on the compiled path. The operators on types
 and values are binds of operation tables:
 
 ```python
@@ -256,21 +256,21 @@ Rotor * v                                   # ga.operator.geometric_product(Roto
 ```
 
 Everything about a bind except the arithmetic is decided from types alone, once, and cached.
-The `BindingPlan` for a target type and its operand types records, per bound slot, how the
-operand's output axis maps onto the slot's axis. Three relations are lossless and are applied
+The `BindingPlan` for a target type and its operand types records, per bound input, how the
+operand's output maps onto that input. Three relations are lossless and are applied
 implicitly: the same subspace, the same blades in another layout, or a subset of the blades,
 which embeds with structural zeros. A projection onto fewer blades, or a partial overlap, is
 refused and has to be written as `cast`. The plan can also narrow the output before anything
-is contracted: when a certified versor is bound into both slots of a sandwich, the output keeps
+is contracted: when a certified versor is bound into both versor inputs of a sandwich, the output keeps
 only the passenger's grades. Zeros in a floating-point array never narrow anything; only types
 do.
 
 The result's type comes from the same plan. Its subspaces are the spliced axes. Its traits are
 what the operation's relations and the operands' certified traits prove: the geometric product
 carries the relation that a product of two unit-reverse values has unit reverse, so `r * r` is
-again a certified rotor, and one certified rotor in both slots of the sandwich yields a
+again a certified rotor, and one certified rotor in both rotor inputs of the sandwich yields a
 `CoefficientOrthogonal` map, which is what lets `rotation.inverse()` transpose instead of
-invert. Supplying the same object to two slots is recorded as an equality group; two rotors
+invert. Supplying the same object to two inputs is recorded as an equality group; two rotors
 that merely happen to be equal are not identified. Traits on a constructed value, as in
 `mv.rotor(...)`, are trusted assertions, and construction never tests coefficients against
 them. Methods then act on the trait, not on the numbers: `mv.rotor(values).inverse()` is the
@@ -298,7 +298,7 @@ innermost jit operation, and is thus a compile-time constant. Fetching it from R
 fraction of a microsecond, and dense contractions over it are fast enough. In algebras of
 higher dimension, dense tables can make compilation times grow large.
 
-That sandwich has 1600 nonzero terms, after the symmetrization over its two versor slots that
+That sandwich has 1600 nonzero terms, after the symmetrization over its two versor inputs that
 the sandwich construction performs. The array contexts accept `execution="sparse"`, which
 unrolls those terms instead of contracting the table; the [benchmarks](../benchmarks/motor_map.py)
 show it winning for small expressions under JAX and losing for this one. In NumPy it loses by

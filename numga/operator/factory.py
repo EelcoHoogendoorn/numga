@@ -443,7 +443,7 @@ class OperatorFactory:
         times, and cancel for an even versor. The operator uses the versor's reverse in place of its
         inverse, which is the same for a unit versor.
 
-        The two versor slots remain distinct. Passing the same nullary Extensor into slots 0 and 2 is
+        The two versor axes remain distinct. Passing the same nullary Extensor into axes 0 and 2 is
         an atomic diagonal bind at runtime. Exact symmetrization removes terms that cancel for
         repeated versors.
         """
@@ -454,7 +454,7 @@ class OperatorFactory:
     def _transform(self, versor: GAType, passenger: GAType) -> Extensor:
         result = self.full_sandwich(versor.derive.structural, passenger.derive.structural)
         kernel = result.kernel
-        # The two versor slots hold the same versor: symmetrize them. For basis blades the two
+        # The two versor axes hold the same versor: symmetrize them. For basis blades the two
         # orders are equal or opposite, so the average is exact.
         kernel = (kernel + kernel.transpose((0, 3, 2, 1))).halved()
         result = self.build(result.axes, result.gatype.orientations, kernel).squeeze_output()
@@ -475,7 +475,7 @@ class OperatorFactory:
 
     def reverse_transform(self, versor: GAType, passenger: GAType) -> Extensor:
         """The action of the versor's reverse as one operator: the transform with the carrier's
-        reverse folded into both versor slots; for a unit versor, the inverse transform."""
+        reverse folded into both versor axes; for a unit versor, the inverse transform."""
 
         return self._reverse_transform(self._operand_gatype(versor), self._operand_gatype(passenger))
 
@@ -483,7 +483,7 @@ class OperatorFactory:
     def _reverse_transform(self, versor: GAType, passenger: GAType) -> Extensor:
         forward = self._transform(versor, passenger)
         reverse = self.reverse(versor.derive.structural)
-        # The reverse is diagonal on the carrier: folding it into both slots keeps every axis, the
+        # The reverse is diagonal on the carrier: folding it into both axes keeps every axis, the
         # grade cancellations and the transform's type. A versor's reverse is a versor, so the
         # transform's laws hold for it too.
         folded = forward.bind({0: reverse, 2: reverse})

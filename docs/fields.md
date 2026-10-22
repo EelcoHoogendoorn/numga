@@ -46,7 +46,7 @@ Indexing, `len`, `.sum()` and `.mean()` address batch axes, the copies. A field'
 
 ## Field maps couple sites
 
-A slot of a map can range over sites too. A map from a field over four sites to a field over four sites, `vector[4] <- vector[4]`, holds a `Vector <- Vector` for every pair of an output site and an input site. A batch of maps over the pairs becomes one, `.field(0, 1)` reading its last two batch axes as the sites of the output and of the input:
+An axis of a map can range over sites too. A map from a field over four sites to a field over four sites, `vector[4] <- vector[4]`, holds a `Vector <- Vector` for every pair of an output site and an input site. A batch of maps over the pairs becomes one, `.field(0, 1)` reading its last two batch axes as the sites of the output and of the input:
 
 ```python
 # Each bead tied to its neighbours and, more weakly, to its rest position:
@@ -66,11 +66,11 @@ Extensor(vector[4], shape=())
 Extensor(vector[4] <- vector[4], shape=())
 ```
 
-Binding a field into a field slot sums over the paired sites: each output site receives every input site's contribution. Composition sums along every path through the shared sites, and `solve` solves the coupled system over every pair of a site and a blade at once, which no batch of independent solves can. A solve keeps the open slots of its right-hand side, as on any map, so `stiffness.solve(stiffness)` is the identity on `vector[4]`.
+Binding a field into a field axis sums over the paired sites: each output site receives every input site's contribution. Composition sums along every path through the shared sites, and `solve` solves the coupled system over every pair of a site and a blade at once, which no batch of independent solves can. A solve keeps the open axes of its right-hand side, as on any map, so `stiffness.solve(stiffness)` is the identity on `vector[4]`.
 
-`stiffness.adjoint()` takes each block's adjoint and exchanges the sites of output and input, so that the scalar product summed over the sites carries over, and `.adjugate()` does the same with the pairing `&`. A map with sites in a slot is one map into or out of a field, not a map per site: the adjoint of a `vector[4] <- vector`, which spreads one vector over four sites, is a `vector <- vector[4]`, which gathers them back, summed. Maps acting independently at each site, each with its own inverse or eigenvectors, are a batch of maps, `.batch()`; placed on the site diagonal, `maps.on_diagonal()` turns a field of maps `vector[4] <- vector` into the field map `vector[4] <- vector[4]` that acts on each site's element by that site's map and on no other. A value without sites is the same at every site in a solve as anywhere: `stiffness.solve(-mv.z)` is the sag under the same load on every bead. A map without sites is likewise the same map at every site, added as it applies: `stiffness + Vector` is the stiffness with the identity on its site diagonal, so that `(stiffness + Vector)(loads) == stiffness(loads) + loads`.
+`stiffness.adjoint()` takes each block's adjoint and exchanges the sites of output and input, so that the scalar product summed over the sites carries over, and `.adjugate()` does the same with the pairing `&`. A map with sites in an axis is one map into or out of a field, not a map per site: the adjoint of a `vector[4] <- vector`, which spreads one vector over four sites, is a `vector <- vector[4]`, which gathers them back, summed. Maps acting independently at each site, each with its own inverse or eigenvectors, are a batch of maps, `.batch()`; placed on the site diagonal, `maps.on_diagonal()` turns a field of maps `vector[4] <- vector` into the field map `vector[4] <- vector[4]` that acts on each site's element by that site's map and on no other. A value without sites is the same at every site in a solve as anywhere: `stiffness.solve(-mv.z)` is the sag under the same load on every bead. A map without sites is likewise the same map at every site, added as it applies: `stiffness + Vector` is the stiffness with the identity on its site diagonal, so that `(stiffness + Vector)(loads) == stiffness(loads) + loads`.
 
-A map without sites in a slot acts at every site of a field bound into it, whatever it is bound into: `(turn >> Vector)(stiffness)` turns every block of the stiffness, and `turn >> stiffness(turn << Vector)` moves the whole stiffness into the turned frame, as for a map on one element.
+A map without sites in an axis acts at every site of a field bound into it, whatever it is bound into: `(turn >> Vector)(stiffness)` turns every block of the stiffness, and `turn >> stiffness(turn << Vector)` moves the whole stiffness into the turned frame, as for a map on one element.
 
 The linear algebra of a field map is that of all its blocks at once: `lstsq` and `pinv` over every pair of a site and a blade, leaving a singular system's gauge at zero; `inverse`, `det` and `trace`; `cholesky`; `eigh` and `eig`, also against a metric over the same field, with their modes a batch of fields; and `svd`. A Hermitian form over a field has `eigh` and `cholesky` too.
 
@@ -78,7 +78,7 @@ In block-matrix notation a field map is a matrix of blocks, one block per pair o
 
 ## Derivatives with respect to a field
 
-The derivative with respect to a field keeps its sites inside the step's slot, so every site is coupled to every other. The second derivative of a scalar function of `vector[4]` is the bilinear form `scalar <- vector[4], vector[4]`, and solving it against the gradient is the Newton step of the whole string:
+The derivative with respect to a field keeps its sites inside the step's axis, so every site is coupled to every other. The second derivative of a scalar function of `vector[4]` is the bilinear form `scalar <- vector[4], vector[4]`, and solving it against the gradient is the Newton step of the whole string:
 
 ```python
 import jax
@@ -134,7 +134,7 @@ True
 
 The stored cells have a batch axis of couplings, with leading axes for separate maps sharing one pattern, indexed as a batch is, `S[..., None]`; `shape` is `(output sites, input sites)`, and `gatype` is the type of the cells, by which the sparse operations dispatch. The fields it takes and returns are typed as fields. A map or value without sites adds on the diagonal, as it applies: `(Vector - S)(f) == f - S(f)`.
 
-A sparse extensor of multivector cells has no action of its own: it is a matrix over the algebra, waiting for a product. `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` take each cell's product with the element at its column and sum at the rows. A field on the left pairs with the rows instead: `stretches * ends` is a field over the beads. Two sparse extensors multiply their cells along the paths through shared sites. With an open type the product leaves its slot open and the cells become maps, `(~ends * ends) * Vector`; map cells are applied, `sparse_stiffness(positions)`, and compose.
+A sparse extensor of multivector cells has no action of its own: it is a matrix over the algebra, waiting for a product. `ends * positions`, `ends ^ positions`, `ends | positions` and `ends & positions` take each cell's product with the element at its column and sum at the rows. A field on the left pairs with the rows instead: `stretches * ends` is a field over the beads. Two sparse extensors multiply their cells along the paths through shared sites. With an open type the product leaves its axis open and the cells become maps, `(~ends * ends) * Vector`; map cells are applied, `sparse_stiffness(positions)`, and compose.
 
 An operation that reverses the order of the cells' products runs every coupling the other way, from its row to its column; any other acts cell by cell.
 

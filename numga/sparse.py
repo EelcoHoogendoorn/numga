@@ -1,17 +1,17 @@
 """Field maps stored sparsely: couplings between the sites of fields.
 
 A field is an Extensor whose output ranges over sites, `Vector[vertices]`, read from a batch axis
-with `.field()`; its elements may be multivectors or maps with open slots of their own. Leading
+with `.field()`; its elements may be multivectors or maps with open axes of their own. Leading
 batch axes hold separate fields.
 
 A SparseExtensor holds cells, each coupling an input site (a column) to an output site (a row).
 It has no action of its own: an operation on it is its cells' operation, lifted to the couplings.
 A product with a field takes each cell's product with the element at its input site, by whichever
 product the expression names, `S * f`, `S ^ f`, `S | f` or `S & f`, and sums the contributions at
-each output site; with an open type, `S * Even`, the slot stays open and the cells become maps. A
+each output site; with an open type, `S * Even`, the axis stays open and the cells become maps. A
 field on the left pairs with the output sites instead, `f * S`. A product of two sparse extensors
 multiplies their cells along the paths through shared sites. A map cell is applied, `S(field)`, and
-composes, `S(T)`. Field elements keep their own open slots throughout.
+composes, `S(T)`. Field elements keep their own open axes throughout.
 
 An operation that reverses the order of the cells' products runs the couplings the other way: the
 reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f * ~S`, and the
@@ -57,8 +57,8 @@ class SparseExtensor:
     def __init__(self, cells: Extensor, rows: np.ndarray, columns: np.ndarray, shape: tuple[int, int]) -> None:
         if cells.ndim == 0 or not cells.shape[-1] == len(rows) == len(columns):
             raise ValueError("a sparse extensor needs one row and one column per cell")
-        pairs, slots = np.unique(np.asarray(rows) * shape[1] + np.asarray(columns), return_inverse=True)
-        self.cells = _scatter(cells, slots, len(pairs))
+        pairs, axes = np.unique(np.asarray(rows) * shape[1] + np.asarray(columns), return_inverse=True)
+        self.cells = _scatter(cells, axes, len(pairs))
         self.rows, self.columns = np.divmod(pairs, shape[1])
         self.shape = tuple(shape)
 
@@ -227,7 +227,7 @@ spdiag = SparseExtensor.from_diagonal
 
 # --- products and applications, by cells and by operand ----------------------------------------
 def _operand(value: SparseExtensor, other: object) -> object:
-    """A type stays an open slot; an array is a batch of scalars, as in any product with a value."""
+    """A type stays an open axis; an array is a batch of scalars, as in any product with a value."""
     return operands.batch(value.cells.context, other) if operands.kind(other) is operands.Kind.ARRAY else other
 
 
@@ -238,7 +238,7 @@ def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
 @singledispatch
 def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
     """An open type, or an array read as a batch of scalars: each cell's product with it, a map cell
-    with the type's slot."""
+    with the type's axis."""
     return _cellwise(value, product(value.cells, _operand(value, other)))
 
 
@@ -461,6 +461,6 @@ def _scatter(cells: Extensor, index: np.ndarray, size: int) -> Extensor:
 
 def _sites(field: Extensor) -> Extensor:
     """A field's elements along its last batch axis, where the couplings index them."""
-    if [slot for slot, _ in field.gatype.fields] != [0]:
+    if [axis for axis, _ in field.gatype.fields] != [0]:
         raise TypeError(f"a sparse field map acts on fields over its output's sites; {field.gatype.signature} is not one")
     return field.batch()

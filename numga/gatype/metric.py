@@ -1,4 +1,4 @@
-"""What a slot's own metric is like, which decides how forms on that slot can be solved."""
+"""What a axis's own metric is like, which decides how forms on that axis can be solved."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class MetricKind(Enum):
-    """The default metric of a slot, classified from its exact coefficients.
+    """The default metric of a axis, classified from its exact coefficients.
 
     An identity metric solves as a plain eigenproblem; a positive one needs the generalized pencil;
     a semidefinite one, positive but blind to some blades as PGA's ideal ones, admits a Hermitian
@@ -31,7 +31,7 @@ class MetricKind(Enum):
 
 
 class Metric:
-    """The metric of a nullary type, read as a slot: `slot.metric.default` and `slot.metric.kind`."""
+    """The metric of a nullary type, read as a axis: `axis.metric.default` and `axis.metric.kind`."""
 
     __slots__ = ("_gatype", "__dict__")
 
@@ -40,7 +40,7 @@ class Metric:
 
     @cached_property
     def default(self) -> Extensor:
-        """This slot's metric as a symbolic form: the inner product of S with its reverse.
+        """This axis's metric as a symbolic form: the inner product of S with its reverse.
 
         On vectors this is V | V. On other grades the reverse removes the sign of the blade's
         square, so bivectors and Euclidean points get a positive metric where S | S is negative.
@@ -50,7 +50,7 @@ class Metric:
 
     @cached_property
     def kind(self) -> MetricKind:
-        """What this slot's default metric is like, from its exact coefficients."""
+        """What this axis's default metric is like, from its exact coefficients."""
         matrix = self.default._kernel.materialize(np.float64)[0]
         if np.array_equal(matrix, np.eye(len(self._gatype.output_subspace))):
             return MetricKind.IDENTITY

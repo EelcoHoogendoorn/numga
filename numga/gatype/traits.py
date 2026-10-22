@@ -226,7 +226,7 @@ class ProductRelation(Trait):
     """Conditional self-product monomial for a positive-arity Extensor.
 
     If every referenced input has a scalar self-product in this family, the
-    output's category is ``factor`` times their categories. Repeated slots
+    output's category is ``factor`` times their categories. Repeated axes
     are powers, not redundant requirements. Different families coexist.
     ``nonzero_inputs`` strengthens the premise to nonzero self-products.
     """
@@ -237,7 +237,7 @@ class ProductRelation(Trait):
         self,
         self_product: SelfProduct,
         factor: ProductResult,
-        slots: Iterable[int],
+        axes: Iterable[int],
         nonzero_inputs: bool = False,
     ) -> None:
         if not isinstance(self_product, SelfProduct):
@@ -245,22 +245,22 @@ class ProductRelation(Trait):
         if not isinstance(factor, ProductResult):
             raise TypeError("ProductRelation factor must be a ProductResult")
         try:
-            normalized_slots = tuple(slots)
+            normalized_axes = tuple(axes)
         except TypeError as error:
-            raise TypeError("ProductRelation slots must be iterable") from error
-        if not normalized_slots:
-            raise ValueError("ProductRelation requires at least one input slot")
+            raise TypeError("ProductRelation axes must be iterable") from error
+        if not normalized_axes:
+            raise ValueError("ProductRelation requires at least one input")
         if any(
-            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
-            for slot in normalized_slots
+            isinstance(axis, bool) or not isinstance(axis, int) or axis < 0
+            for axis in normalized_axes
         ):
             raise TypeError(
-                "ProductRelation slots must be non-negative integers"
+                "ProductRelation axes must be non-negative integers"
             )
 
         super().__init__(
             "ProductRelation", valid_arities=None,
-            parameters=(self_product, factor, tuple(sorted(normalized_slots)), nonzero_inputs),
+            parameters=(self_product, factor, tuple(sorted(normalized_axes)), nonzero_inputs),
         )
 
     @property
@@ -272,7 +272,7 @@ class ProductRelation(Trait):
         return self._parameters[1]
 
     @property
-    def slots(self) -> tuple[int, ...]:
+    def axes(self) -> tuple[int, ...]:
         return self._parameters[2]
 
     @property
@@ -284,16 +284,16 @@ class ProductRelation(Trait):
             raise ValueError(
                 "ProductRelation is valid only for positive-arity GATypes"
             )
-        invalid = tuple(slot for slot in self.slots if slot >= arity)
+        invalid = tuple(axis for axis in self.axes if axis >= arity)
         if invalid:
             raise ValueError(
-                "ProductRelation references input slots outside arity "
+                "ProductRelation references inputs outside arity "
                 f"{arity}: {invalid!r}"
             )
 
     def implied_traits(self) -> tuple[Trait, ...]:
         return tuple(
-            ProductRelation(self.self_product, factor, self.slots, self.nonzero_inputs)
+            ProductRelation(self.self_product, factor, self.axes, self.nonzero_inputs)
             for factor in ProductResult
             if factor is not self.factor and _result_entails(self.factor, factor)
         )
@@ -304,9 +304,9 @@ class ProductRelation(Trait):
                 continue
             if other.self_product != self.self_product:
                 continue
-            if other.slots != self.slots:
+            if other.axes != self.axes:
                 raise ValueError(
-                    "at most one ProductRelation slot signature per self-product"
+                    "at most one ProductRelation axis signature per self-product"
                 )
             if _results_conflict(self.factor, other.factor):
                 raise ValueError(f"{self!r} contradicts {other!r}")
@@ -314,60 +314,60 @@ class ProductRelation(Trait):
     def __reduce__(
         self,
     ) -> tuple[type[ProductRelation], tuple[SelfProduct, ProductResult, tuple[int, ...], bool]]:
-        return type(self), (self.self_product, self.factor, self.slots, self.nonzero_inputs)
+        return type(self), (self.self_product, self.factor, self.axes, self.nonzero_inputs)
 
     def __repr__(self) -> str:
         return (
             f"ProductRelation({self.self_product!r}, "
-            f"factor=ProductResult.{self.factor.name}, slots={self.slots!r}"
+            f"factor=ProductResult.{self.factor.name}, axes={self.axes!r}"
             f"{', nonzero_inputs=True' if self.nonzero_inputs else ''})"
         )
 
 
 class ClosureRelation(Trait):
-    """The output has a fact whenever every referenced input slot has it: a family of values closed
+    """The output has a fact whenever every referenced input has it: a family of values closed
     under the operation. Subclasses name the family."""
 
     __slots__ = ()
 
-    def __init__(self, slots: Iterable[int]) -> None:
+    def __init__(self, axes: Iterable[int]) -> None:
         name = type(self).__name__
         try:
-            normalized_slots = tuple(slots)
+            normalized_axes = tuple(axes)
         except TypeError as error:
-            raise TypeError(f"{name} slots must be iterable") from error
-        if not normalized_slots:
-            raise ValueError(f"{name} requires at least one input slot")
+            raise TypeError(f"{name} axes must be iterable") from error
+        if not normalized_axes:
+            raise ValueError(f"{name} requires at least one input")
         if any(
-            isinstance(slot, bool) or not isinstance(slot, int) or slot < 0
-            for slot in normalized_slots
+            isinstance(axis, bool) or not isinstance(axis, int) or axis < 0
+            for axis in normalized_axes
         ):
-            raise TypeError(f"{name} slots must be non-negative integers")
+            raise TypeError(f"{name} axes must be non-negative integers")
 
         # Unlike product powers, requiring the same input fact twice adds no
-        # information. Distinct residual variables retain distinct slot ids.
-        super().__init__(name, valid_arities=None, parameters=(tuple(sorted(set(normalized_slots))),))
+        # information. Distinct residual variables retain distinct axis ids.
+        super().__init__(name, valid_arities=None, parameters=(tuple(sorted(set(normalized_axes))),))
 
     @property
-    def slots(self) -> tuple[int, ...]:
+    def axes(self) -> tuple[int, ...]:
         return self._parameters[0]
 
     def validate_arity(self, arity: int) -> None:
         if isinstance(arity, bool) or not isinstance(arity, int) or arity < 1:
             raise ValueError(f"{self.name} is valid only for positive-arity GATypes")
-        invalid = tuple(slot for slot in self.slots if slot >= arity)
+        invalid = tuple(axis for axis in self.axes if axis >= arity)
         if invalid:
-            raise ValueError(f"{self.name} references input slots outside arity {arity}: {invalid!r}")
+            raise ValueError(f"{self.name} references inputs outside arity {arity}: {invalid!r}")
 
     def validate_peers(self, traits: frozenset[Trait]) -> None:
         if any(isinstance(t, type(self)) and t != self for t in traits):
             raise ValueError(f"a TraitSet may carry at most one {self.name} relation")
 
     def __reduce__(self) -> tuple[type[ClosureRelation], tuple[tuple[int, ...]]]:
-        return type(self), (self.slots,)
+        return type(self), (self.axes,)
 
     def __repr__(self) -> str:
-        return f"{self.name}(slots={self.slots!r})"
+        return f"{self.name}(axes={self.axes!r})"
 
 
 class VersorProduct(ClosureRelation):
@@ -399,7 +399,7 @@ CliffordConjugateProductNonzero = ProductFact(CliffordConjugateProduct, ProductR
 CliffordConjugateProductOne = ProductFact(CliffordConjugateProduct, ProductResult.ONE)
 CoefficientOrthogonal = Trait("CoefficientOrthogonal", valid_arities=(1,))
 # The unrestricted trilinear expression L * P * reverse(R). Equal bound
-# versors in slots 0 and 2 permit the sandwich law during specialization.
+# versors in axes 0 and 2 permit the sandwich law during specialization.
 Sandwich = Trait("Sandwich", valid_arities=(3,))
 Identity = Trait("Identity", valid_arities=(1,))
 

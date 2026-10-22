@@ -22,15 +22,15 @@ def form(context, first, second, matrix):
     return context.extensor(gatype, np.asarray(matrix)[..., None, :, :])
 
 
-def test_forms_without_a_metric_use_the_slot_metric(context):
+def test_forms_without_a_metric_use_the_axis_metric(context):
     """x+y+z0 vectors have a semidefinite metric, blind to z. eig gives an infinite mode; eigh
     gives the finite modes, the blind component of each chosen to make the form stationary, so
     their values are those of the Schur complement; det and trace need an invertible metric and
-    say so; SVD pairs two covector slots, never."""
+    say so; SVD pairs two covector axes, never."""
     ga = context.algebra
-    slot = ga.gatype.vector()
-    value = form(context, slot, slot, [[3.0, 1.0, 1.0], [1.0, 2.0, 0.0], [1.0, 0.0, 4.0]])
-    metric = form(context, slot, slot, np.diag([1.0, 1.0, 0.0]))
+    axis = ga.gatype.vector()
+    value = form(context, axis, axis, [[3.0, 1.0, 1.0], [1.0, 2.0, 0.0], [1.0, 0.0, 4.0]])
+    metric = form(context, axis, axis, np.diag([1.0, 1.0, 0.0]))
     reduced = np.linalg.eigvalsh([[3.0 - 1.0 / 4.0, 1.0], [1.0, 2.0]])
     if isinstance(context, NumpyContext):
         pytest.importorskip("scipy")
@@ -51,12 +51,12 @@ def test_forms_without_a_metric_use_the_slot_metric(context):
             getattr(value, method)()
 
 
-def test_forms_on_a_euclidean_slot_keep_the_plain_solver():
+def test_forms_on_a_euclidean_axis_keep_the_plain_solver():
     ga = Algebra("x+y+z+")
     context = NumpyContext(ga)
-    slot = ga.gatype.vector()
+    axis = ga.gatype.vector()
     matrix = np.array([[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
-    value = form(context, slot, slot, matrix)
+    value = form(context, axis, axis, matrix)
     np.testing.assert_allclose(value.eigvalsh().kernel[..., 0], np.linalg.eigvalsh(matrix), atol=1e-12)
     np.testing.assert_allclose(value.det().kernel, np.linalg.det(matrix), atol=1e-12)
     np.testing.assert_allclose(value.contract().kernel, np.trace(matrix), atol=1e-12)
@@ -64,7 +64,7 @@ def test_forms_on_a_euclidean_slot_keep_the_plain_solver():
 
 @pytest.mark.parametrize("execution", ["dense", "sparse"])
 @pytest.mark.parametrize("method", ["eig", "eigh"])
-def test_form_eigenpairs_against_a_metric_align_slots_and_keep_singleton_batches(execution, method):
+def test_form_eigenpairs_against_a_metric_align_axes_and_keep_singleton_batches(execution, method):
     pytest.importorskip("scipy")
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga, execution=execution)
@@ -91,19 +91,19 @@ def test_signed_scalar_output_is_not_treated_as_positive():
     pytest.importorskip("scipy")
     ga = Algebra("x+y+z0")
     context = NumpyContext(ga)
-    slot = ga.gatype(ga.subspace("x"), orientation=Orientation.extrinsic)
-    value = context.extensor(ga.gatype((ga.gatype(ga.subspace("-1"), orientation=Orientation.extrinsic), slot, slot)), [[[[-3.0]]]])
-    metric = form(context, slot, slot, [[1.0]])
+    axis = ga.gatype(ga.subspace("x"), orientation=Orientation.extrinsic)
+    value = context.extensor(ga.gatype((ga.gatype(ga.subspace("-1"), orientation=Orientation.extrinsic), axis, axis)), [[[[-3.0]]]])
+    metric = form(context, axis, axis, [[1.0]])
     values, vectors = value.eigh(metric)
     assert values.shape == vectors.shape == (1, 1)
     np.testing.assert_allclose(values.kernel, [[[3.0]]])
 
 
-def test_form_cholesky_aligns_slots_and_preserves_batches(context):
+def test_form_cholesky_aligns_axes_and_preserves_batches(context):
     ga = context.algebra
-    slot = ga.gatype.vector()
+    axis = ga.gatype.vector()
     matrix = np.array([[3, 1, 0], [1, 2, 0], [0, 0, 4]])
-    value = form(context, slot, slot, np.broadcast_to(matrix, (2, 1, 3, 3)))
+    value = form(context, axis, axis, np.broadcast_to(matrix, (2, 1, 3, 3)))
     first, second = ga.gatype(ga.subspace("z -x y"), orientation=Orientation.extrinsic), ga.gatype(ga.subspace("-y z x"), orientation=Orientation.extrinsic)
     changed = value.bind({0: ga.operator.identity(first), 1: ga.operator.identity(second)})
     factor = changed.cholesky()
@@ -111,13 +111,13 @@ def test_form_cholesky_aligns_slots_and_preserves_batches(context):
     assert factor.axes == (second.output_subspace, second.output_subspace)
     product = np.einsum("...ik,...jk->...ij", factor.kernel, factor.kernel)
     rebuilt = context.extensor(ga.gatype((second, second)), product)
-    rebuilt = rebuilt(ga.operator.identity(slot)).cast(slot)
+    rebuilt = rebuilt(ga.operator.identity(axis)).cast(axis)
     np.testing.assert_allclose(rebuilt.kernel, np.broadcast_to(matrix, (2, 1, 3, 3)), atol=2e-5)
     np.testing.assert_allclose(np.triu(factor.kernel, 1), 0)
 
 
-def test_form_solve_fills_the_first_slot(context):
-    """value(x, y) == rhs(y) for every y; x lives in the form's first slot."""
+def test_form_solve_fills_the_first_axis(context):
+    """value(x, y) == rhs(y) for every y; x lives in the form's first axis."""
     ga = context.algebra
     first, second = ga.gatype.vector(), ga.gatype(ga.subspace("xy yz"), orientation=Orientation.extrinsic)
     matrix = np.array([[2.0, 1.0], [0.5, 3.0], [1.0, -1.0]])
@@ -135,39 +135,39 @@ def test_form_solve_fills_the_first_slot(context):
     np.testing.assert_allclose(square(exact, probe).kernel, np.broadcast_to(target(probe).kernel, (2, 1, 1)), atol=2e-5)
 
 
-def test_form_solve_keeps_leading_rhs_slots_as_a_map(context):
-    """Solving against a bilinear right-hand side yields a map on its leading slot."""
+def test_form_solve_keeps_leading_rhs_axes_as_a_map(context):
+    """Solving against a bilinear right-hand side yields a map on its leading axis."""
     ga = context.algebra
-    slot, extra = ga.gatype.vector(), ga.gatype(ga.subspace("xy yz"), orientation=Orientation.extrinsic)
-    value = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    axis, extra = ga.gatype.vector(), ga.gatype(ga.subspace("xy yz"), orientation=Orientation.extrinsic)
+    value = form(context, axis, axis, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
     rhs_matrix = np.random.default_rng(5).normal(size=(2, 3))
-    rhs = context.extensor(ga.gatype((ga.gatype.scalar(), extra, slot)), rhs_matrix[None])
+    rhs = context.extensor(ga.gatype((ga.gatype.scalar(), extra, axis)), rhs_matrix[None])
     solution = value.solve(rhs)
-    assert solution.axes == (slot.output_subspace, extra.output_subspace)
+    assert solution.axes == (axis.output_subspace, extra.output_subspace)
     e = context.extensor(extra, [1.0, -2.0])
-    y = context.extensor(slot, [0.2, 0.4, -0.6])
+    y = context.extensor(axis, [0.2, 0.4, -0.6])
     np.testing.assert_allclose(value(solution(e), y).kernel, rhs(e, y).kernel, atol=2e-5)
 
 
 def test_form_lstsq_in_a_metric_leaves_no_gauge_component(context):
     """A singular curvature has a family of solutions; the metric picks the one with no component
-    along the gauge direction, measured in that metric. Batches broadcast, and leading slots of the
+    along the gauge direction, measured in that metric. Batches broadcast, and leading axes of the
     right-hand side stay open."""
     pytest.importorskip("scipy")
     ga = context.algebra
-    slot = ga.gatype.vector()
-    curvature = form(context, slot, slot, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 0.0]])
-    metric = form(context, slot, slot, [[2.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 2.0]])
+    axis = ga.gatype.vector()
+    curvature = form(context, axis, axis, [[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 0.0]])
+    metric = form(context, axis, axis, [[2.0, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 2.0]])
     gauge = context.multivector.vector([0.0, 0.0, 1.0])
     rhs = curvature(context.multivector.vector([[1.0, 2.0, 3.0], [0.0, 1.0, -1.0]]))
     step = curvature.lstsq(rhs, metric, rcond=1e-5)
-    assert step.axes == (slot.output_subspace,) and step.shape == (2,)
+    assert step.axes == (axis.output_subspace,) and step.shape == (2,)
     np.testing.assert_allclose(curvature(step).kernel, rhs.kernel, atol=3e-4)
     np.testing.assert_allclose(metric(step, gauge).kernel, 0.0, atol=3e-4)
     bivector = ga.gatype.bivector()
-    response = context.extensor(ga.gatype((slot, bivector)), [[1.0, 0.0, 2.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
+    response = context.extensor(ga.gatype((axis, bivector)), [[1.0, 0.0, 2.0], [0.0, 1.0, 0.0], [1.0, 1.0, 1.0]])
     solved = curvature.lstsq(curvature(response), metric, rcond=1e-5)
-    assert solved.axes == (slot.output_subspace, bivector.output_subspace)
+    assert solved.axes == (axis.output_subspace, bivector.output_subspace)
     np.testing.assert_allclose(curvature(solved).kernel, curvature(response).kernel, atol=3e-4)
     np.testing.assert_allclose(metric(solved, gauge).kernel, 0.0, atol=3e-4)
 
@@ -194,18 +194,18 @@ def test_generalized_hermitian_forms_broadcast_and_mass_normalize(dtype):
     pytest.importorskip("scipy")
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga, dtype=dtype)
-    slot = ga.gatype.vector()
+    axis = ga.gatype.vector()
     a = np.array([[4, 1], [1, 2]], dtype=dtype)
     if np.dtype(dtype).kind == "c":
         a[0, 1], a[1, 0] = 1j, -1j
     b = np.diag([2, 3])
-    elastic = form(ctx, slot, slot, a[None, None] * np.array([1, 2])[:, None, None, None])
-    metric = form(ctx, slot, slot, b[None, None] * np.array([1, 2, 3])[None, :, None, None])
+    elastic = form(ctx, axis, axis, a[None, None] * np.array([1, 2])[:, None, None, None])
+    metric = form(ctx, axis, axis, b[None, None] * np.array([1, 2, 3])[None, :, None, None])
     elastic = elastic.bind({0: ga.operator.identity(ga.gatype(ga.subspace("y -x"), orientation=Orientation.extrinsic))})
     metric = metric.bind({1: ga.operator.identity(ga.gatype(ga.subspace("-x y"), orientation=Orientation.extrinsic))})
     values, vectors = elastic.eigh(metric)
     assert values.shape == vectors.shape == (2, 3, 2)
-    assert vectors.axes == (slot.output_subspace,)
+    assert vectors.axes == (axis.output_subspace,)
     v = vectors.kernel
     norm = np.einsum("...ki,ij,...lj->...kl", v.conj(), b, v) * np.array([1, 2, 3])[None, :, None, None]
     np.testing.assert_allclose(norm, np.broadcast_to(np.eye(2), (2, 3, 2, 2)), atol=1e-12)
@@ -219,12 +219,12 @@ def test_generalized_form_eig_leaves_infinite_modes_to_caller():
     pytest.importorskip("scipy")
     ga = Algebra("x+y+")
     ctx = NumpyContext(ga)
-    slot = ga.gatype.vector()
-    value = form(ctx, slot, slot, np.diag([2, 3])[None, None])
-    metric = form(ctx, slot, slot, np.diag([1, 0]))
+    axis = ga.gatype.vector()
+    value = form(ctx, axis, axis, np.diag([2, 3])[None, None])
+    metric = form(ctx, axis, axis, np.diag([1, 0]))
     values, vectors = value.eig(metric)
     assert values.shape == vectors.shape == (1, 1, 2)
-    assert vectors.axes == (slot.output_subspace,)
+    assert vectors.axes == (axis.output_subspace,)
     assert np.isinf(values.kernel).sum() == 1
     finite = np.isfinite(values.kernel[..., 0])
     np.testing.assert_allclose(values.kernel[..., 0][finite], [2])

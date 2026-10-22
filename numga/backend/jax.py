@@ -123,22 +123,22 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
     """The derivative of a function of a value: at each value, the linear map from a step to the change.
 
     At a value of type `T`, the derivative of a function whose result has type `S <- (I...)` is an
-    extensor of type `S <- (I..., T)`: the result's own slots, then one more for the step. Binding a
+    extensor of type `S <- (I..., T)`: the result's own axes, then one more for the step. Binding a
     step into it gives the first-order change of the result; for a scalar result it is the linear form
     `Scalar <- T`, the gradient as the form it is, never as an element of `T`. Derivatives nest: the
-    derivative of a derivative takes one more slot again, so the second derivative of a scalar
+    derivative of a derivative takes one more axis again, so the second derivative of a scalar
     function is the bilinear form `Scalar <- (T, T)`.
 
     Leading batch axes hold independent cases. The result's leading batch axes, as far as they match the
     value's in size, are copies: each element of the result is differentiated with respect to the
-    matching element of the value alone, and the axis appears once. The value's remaining batch axes are
+    matching element of the value alone, and the dimension appears once. The value's remaining batch axes are
     coupled: each element of the result is differentiated with respect to every element along them, and
-    they appear after the result's batch axes, so a function summing over a trailing axis of its value
+    they appear after the result's batch axes, so a function summing over a trailing dimension of its value
     has a derivative for every element along it. Copies are taken to be independent; a function that
     couples them has its cross terms summed into the diagonal.
 
-    A field's sites lie inside its slot, not in its batch: they are always coupled, and the step's
-    slot ranges over the same sites. The second derivative of a scalar function of a field `T[n]` is
+    A field's sites lie inside its axis, not in its batch: they are always coupled, and the step's
+    axis ranges over the same sites. The second derivative of a scalar function of a field `T[n]` is
     the coupled bilinear form `Scalar <- (T[n], T[n])`, every site against every other, and solving it
     against the gradient gives the coupled Newton step.
 
@@ -167,30 +167,30 @@ def derivative(function: Callable[[Any], Extensor]) -> Callable[[Any], Any]:
 
         image = function(value)
         value_batch, result_batch = value.shape, image.shape
-        # The value's slot: its sites, if it is a field, and its blades.
-        slot = value.gatype.structural_shape
-        sites = len(slot) - 1
+        # The value's axis: its sites, if it is a field, and its blades.
+        axis = value.gatype.structural_shape
+        sites = len(axis) - 1
         image_sites, image_blades = len(image.gatype.site_shape), len(image.gatype.subspaces)
         # The leading axes the two share, as far as they match:
         shared_value = set()
-        for axis, (value_size, result_size) in enumerate(zip(value_batch, result_batch)):
+        for dimension, (value_size, result_size) in enumerate(zip(value_batch, result_batch)):
             if value_size != result_size:
                 break
-            shared_value.add(axis)
-        coupled = [axis for axis in range(len(value_batch)) if axis not in shared_value]
-        coupled_shape = tuple(value_batch[axis] for axis in coupled)
+            shared_value.add(dimension)
+        coupled = [dimension for dimension in range(len(value_batch)) if dimension not in shared_value]
+        coupled_shape = tuple(value_batch[dimension] for dimension in coupled)
 
         # One tangent per coupled element and coefficient of the value, spread over every element of
         # the shared axes at once, which is valid because those elements are independent:
-        count = int(np.prod(coupled_shape + slot, dtype=int))
-        basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + slot)
-        for axis in sorted(shared_value):
-            basis = jnp.expand_dims(basis, 1 + axis)
-        tangents = jnp.broadcast_to(basis, (count,) + value_batch + slot)
+        count = int(np.prod(coupled_shape + axis, dtype=int))
+        basis = jnp.eye(count, dtype=value.kernel.dtype).reshape((count,) + coupled_shape + axis)
+        for dimension in sorted(shared_value):
+            basis = jnp.expand_dims(basis, 1 + dimension)
+        tangents = jnp.broadcast_to(basis, (count,) + value_batch + axis)
         changes = jax.vmap(lambda tangent: jax.jvp(result, (value.kernel,), (tangent,))[1])(tangents)
         # [coupled..., value sites, value blades, result batch..., result sites..., result blades...] to
         # [result batch..., coupled..., result sites..., value sites, result blades..., value blades]
-        changes = changes.reshape(coupled_shape + slot + image.kernel.shape)
+        changes = changes.reshape(coupled_shape + axis + image.kernel.shape)
         c, r = len(coupled_shape), len(result_batch)
         start = c + sites + 1 + r
         order = (

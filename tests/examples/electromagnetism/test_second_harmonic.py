@@ -13,7 +13,7 @@ mv = core.mv
 FIELDS = stack((core.HORIZONTAL_FIELD, core.VERTICAL_FIELD))
 
 
-def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_slot_at_a_time():
+def test_response_has_the_tetrahedral_component_law_bound_at_once_or_one_axis_at_a_time():
     crystal = core.bond_response(core.BONDS)
     rng = np.random.default_rng(814)
     first, second = rng.normal(size=(19, 3)), rng.normal(size=(19, 3))

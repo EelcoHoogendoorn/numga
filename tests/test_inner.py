@@ -35,7 +35,7 @@ def test_inner_operator_works_on_gatypes_and_open_extensors():
     Vector = ga.gatype.vector()
     x = mv.vector(np.array([1.0, 2.0, 3.0, 4.0]))
 
-    open_map = x | Vector                         # vector with an open vector slot
+    open_map = x | Vector                         # vector with an open vector axis
     assert open_map.arity == 1
     np.testing.assert_allclose(open_map.kernel, x.scalar_product(Vector).kernel)
     np.testing.assert_allclose((Vector | x).kernel, (x | Vector).kernel)

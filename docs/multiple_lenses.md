@@ -35,7 +35,7 @@ Composition supplies the output of one map to the input of another. The intersec
 intersection = Line ^ ground                                 # Point <- Line
 ```
 
-`intersection` accepts a line, and `ray` produces one. Supplying `ray` in that slot composes the two maps:
+`intersection` accepts a line, and `ray` produces one. Supplying `ray` as that input composes the two maps:
 
 ```python
 shadow = intersection(ray)                                   # Point <- Point
@@ -47,7 +47,7 @@ Evaluation is all `ray_fn` offers: a Python function hides the arithmetic it per
 
 ## 2. The geometric lens: meaning from construction
 
-A tensor is considered a geometric object when it obeys the tensor transformation law, `T' = R T Rᵀ`: one factor of the rotation on each of its slots. This criterion cannot be applied to extensors, however, because the rotation map is itself an extensor: a motor is a product of planes, and its action on points, `motor >> Point`, is a map like any other. Extensors cannot be certified by a test that is itself phrased in extensors.
+A tensor is considered a geometric object when it obeys the tensor transformation law, `T' = R T Rᵀ`: one factor of the rotation on each of its axes. This criterion cannot be applied to extensors, however, because the rotation map is itself an extensor: a motor is a product of planes, and its action on points, `motor >> Point`, is a map like any other. Extensors cannot be certified by a test that is itself phrased in extensors.
 
 Nor do they need to be. The motor already has a geometric meaning, and it has it because of what it is made of: two planes, a reflection in the first followed by a reflection in the second. Any extensor built from geometric elements by the algebra's products has a geometric meaning in the same way. The inertia of a mass point is the point joined with its velocity, and its velocity under a rate of motion is its commutator with that rate:
 
@@ -72,7 +72,7 @@ What is gained is a single account. The tensor transformation law divides the wo
 
 An extensor is a map between multivector spaces, linear in each of its arguments separately. The input and output spaces may contain any grades, including mixtures of grades. Its arity is the number of arguments: a linear map has one, a bilinear map has two, and a multivector itself has none.
 
-The products of geometric algebra are bilinear. Fixing some factors and writing types for the others therefore gives a multilinear map, one argument per type; adding expressions with the same input and output spaces gives another such map. Partial application fills some slots, composition substitutes maps into slots, and filling every slot leaves a multivector. These are operations on the same family of objects.
+The products of geometric algebra are bilinear. Fixing some factors and writing types for the others therefore gives a multilinear map, one argument per type; adding expressions with the same input and output spaces gives another such map. Partial application fills some axes, composition substitutes maps into axes, and filling every axis leaves a multivector. These are operations on the same family of objects.
 
 The converse matters just as much: **every multilinear map between finite-dimensional multivector spaces can be written as a sum of expressions built from the algebra's products.** A linear map is completely determined by its outputs on a basis. Pairing the input with a suitable multivector reads one basis coefficient; multiplying that scalar by a chosen output gives a dyad.
 
@@ -106,11 +106,11 @@ The multilinear-map definition and the sum-of-products construction describe the
 
 ## How the lenses fit together
 
-The three lenses describe one set of operations. Writing a type in place of a value in a product builds a map from geometry, filling a slot evaluates it, and filling a slot with another map composes the two. Moving a map is composition with the extensors of a transformation, and the transformation law is what that composition gives when the transformation preserves the products the map was built from. Sums of products reach every multilinear map, so nothing outside these operations is needed to build any extensor, apply it, or move it.
+The three lenses describe one set of operations. Writing a type in place of a value in a product builds a map from geometry, filling an input evaluates it, and filling an input with another map composes the two. Moving a map is composition with the extensors of a transformation, and the transformation law is what that composition gives when the transformation preserves the products the map was built from. Sums of products reach every multilinear map, so nothing outside these operations is needed to build any extensor, apply it, or move it.
 
 ## Further reading
 
 * [Extensor overview](extensors.md): applications across mechanics, optics, estimation, electromagnetism, relativity, and spin.
-* [Extensor tutorial](tutorial/extensors/00-introduction.md): the mathematics developed step by step from a single open slot.
+* [Extensor tutorial](tutorial/extensors/00-introduction.md): the mathematics developed step by step from a single open axis.
 * [The adjoint](tutorial/extensors/09-the-adjoint.md) and [the adjugate](tutorial/extensors/10-the-adjugate.md): moving a map from one side of a pairing to the other.
 * [Extensors, linear algebra, tensors and forms](frameworks.md) and [Extensors and common practice](common_practice.md): relationships to other mathematical frameworks and their use in applied fields.

@@ -2,7 +2,7 @@
 
 The regressive product of a bivector and a vector in three dimensions is a scalar: their signed volume. Pairing a fixed bivector with the output of a map therefore gives a scalar-valued map on its inputs. A bivector on the input side can give those same volumes directly.
 
-The pairing `Bivector & Vector` takes a bivector in its first slot to its regressive-product map. Solving it against `plane & A` finds the corresponding input bivector. For example:
+The pairing `Bivector & Vector` takes a bivector in its first input to its regressive-product map. Solving it against `plane & A` finds the corresponding input bivector. For example:
 
 ```python
 a = 1 * x + 2 * y + 3 * z

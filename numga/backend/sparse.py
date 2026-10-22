@@ -31,19 +31,19 @@ def execute_sparse_bind(
     if not target.context.is_exact:
         return execute_dense_bind(context, target, operands, plan)
     execute = compile_sparse_bind(context.xp, context.dtype, target._kernel, plan)
-    return execute(tuple(operands[slot] for slot in plan.slots))
+    return execute(tuple(operands[axis] for axis in plan.axes))
 
 
 @lru_cache(maxsize=None)
 def compile_sparse_bind(
     xp: Any, dtype: np.dtype, kernel: SymbolicKernel, plan: BindingPlan,
 ) -> Callable[[tuple[Extensor, ...]], Any]:
-    """Group sparse terms and resolve axis/sign bookkeeping once."""
+    """Group sparse terms and resolve dimension/sign bookkeeping once."""
 
     retained = (0,) + tuple(
-        slot + 1 for slot in range(plan.target_gatype.arity) if slot not in plan.slots
+        axis + 1 for axis in range(plan.target_gatype.arity) if axis not in plan.axes
     )
-    retained_shape = tuple(kernel.shape[axis] for axis in retained)
+    retained_shape = tuple(kernel.shape[dimension] for dimension in retained)
     groups = defaultdict(list)
     for coordinate, coefficient in np.ndenumerate(kernel.values):
         if not coefficient:
@@ -51,7 +51,7 @@ def compile_sparse_bind(
         coefficient = int(coefficient)
         rows = []
         for binding in plan.bindings:
-            required_row = coordinate[binding.slot + 1]
+            required_row = coordinate[binding.axis + 1]
             row = binding.transform.target_from_source[required_row]
             if row is None:
                 break
@@ -61,20 +61,20 @@ def compile_sparse_bind(
             )
             rows.append(row)
         else:
-            groups[tuple(coordinate[axis] for axis in retained)].append(
+            groups[tuple(coordinate[dimension] for dimension in retained)].append(
                 (dtype.type(float(coefficient)), tuple(rows))
             )
     terms_by_output = tuple(groups.items())
 
     free_shape = tuple(
-        len(axis) for binding in plan.bindings
-        for axis in binding.operand_gatype.input_subspaces
+        len(dimension) for binding in plan.bindings
+        for dimension in binding.operand_gatype.input_subspaces
     )
     reshapes, labels, permutation = [], [], [len(free_shape)]
     cursor, retained_cursor = 0, len(free_shape) + 1
-    bindings = {binding.slot: binding for binding in plan.bindings}
-    for slot in range(plan.target_gatype.arity):
-        binding = bindings.get(slot)
+    bindings = {binding.axis: binding for binding in plan.bindings}
+    for axis in range(plan.target_gatype.arity):
+        binding = bindings.get(axis)
         if binding is None:
             permutation.append(retained_cursor)
             retained_cursor += 1
@@ -133,7 +133,7 @@ def compile_sparse_bind(
         result = assemble(operands, shapes, batch_shape + free_shape)
         offset = len(batch_shape)
         return xp.transpose(
-            result, tuple(range(offset)) + tuple(offset + axis for axis in permutation),
+            result, tuple(range(offset)) + tuple(offset + dimension for dimension in permutation),
         )
 
     return execute

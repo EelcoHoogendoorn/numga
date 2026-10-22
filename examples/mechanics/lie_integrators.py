@@ -124,7 +124,7 @@ def explicit_rkmk4(
 
     The motor step is `motor * h.exp()`, with the bivector h integrated in the Lie algebra by
     classical RK4. The vector field for h is the body rate corrected by dexpinv, a polynomial in
-    the adjoint `h.commutator(bivector) * 2`, the commutator with an open bivector slot. Nothing
+    the adjoint `h.commutator(bivector) * 2`, the commutator with the bivector type as its input. Nothing
     here depends on the dimension: the same lines integrate rotors in any dimension.
     """
     def dr(m: Extensor, r: Extensor) -> Extensor:

@@ -81,7 +81,7 @@ def test_exact_commutator_and_regressive_sign_conventions():
         algebra.gatype(xw, orientation=Orientation.intrinsic).regressive(yw)
 
 
-def test_positive_arity_operand_inputs_are_spliced_at_the_bound_slot():
+def test_positive_arity_operand_inputs_are_spliced_at_the_bound_axis():
     algebra = Algebra("x+y+z+")
     spaces = algebra.subspace
     factory = algebra.operator

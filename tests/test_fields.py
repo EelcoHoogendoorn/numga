@@ -1,5 +1,5 @@
-"""Fields and field maps: a slot that ranges over sites as well as blades. Binding a field into a
-field slot sums over the sites, binding it into a slot over blades acts site by site, and the solve
+"""Fields and field maps: a axis that ranges over sites as well as blades. Binding a field into a
+field axis sums over the sites, binding it into a axis over blades acts site by site, and the solve
 of a field map is the coupled system over every pair of a site and a blade."""
 
 import numpy as np

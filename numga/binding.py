@@ -107,10 +107,10 @@ def _axis_transform_coordinate_matrix(
 
 
 @dataclass(frozen=True, slots=True)
-class BoundSlot:
+class BoundAxis:
     """One value-free binding entry, indexed in the original target."""
 
-    slot: int
+    axis: int
     operand_gatype: GAType
     transform: AxisTransform
 
@@ -120,7 +120,7 @@ class BindingPlan:
     """Deterministic, value-free metadata for an atomic bind."""
 
     target_gatype: GAType
-    bindings: tuple[BoundSlot, ...]
+    bindings: tuple[BoundAxis, ...]
     result_subspaces: tuple[SubSpace, ...]
     result_orientations: tuple[Orientation, ...]
     equality_groups: tuple[tuple[int, ...], ...]
@@ -129,12 +129,12 @@ class BindingPlan:
     def build(
         cls,
         target_gatype: GAType,
-        operands_by_slot: Mapping[int, HasGAType],
+        operands_by_axis: Mapping[int, HasGAType],
     ) -> "BindingPlan":
-        normalized = tuple(sorted(operands_by_slot.items()))
+        normalized = tuple(sorted(operands_by_axis.items()))
         return cls.from_types(
             target_gatype,
-            tuple((slot, operand.gatype) for slot, operand in normalized),
+            tuple((axis, operand.gatype) for axis, operand in normalized),
             nullary_identity_groups(normalized),
         )
 
@@ -142,10 +142,10 @@ class BindingPlan:
     def from_types(
         cls,
         target_gatype: GAType,
-        operands_by_slot: tuple[tuple[int, GAType], ...],
+        operands_by_axis: tuple[tuple[int, GAType], ...],
         equality_groups: tuple[tuple[int, ...], ...] = (),
     ) -> "BindingPlan":
-        return _binding_plan_from_types(target_gatype, operands_by_slot, equality_groups)
+        return _binding_plan_from_types(target_gatype, operands_by_axis, equality_groups)
 
     @property
     def execution_gatype(self) -> GAType:
@@ -166,8 +166,8 @@ class BindingPlan:
         return tuple(indices[mask] for mask in self.result_subspaces[0].masks)
 
     @property
-    def slots(self) -> tuple[int, ...]:
-        return tuple(binding.slot for binding in self.bindings)
+    def axes(self) -> tuple[int, ...]:
+        return tuple(binding.axis for binding in self.bindings)
 
     @property
     def operand_gatypes(self) -> tuple[GAType, ...]:
@@ -175,25 +175,25 @@ class BindingPlan:
 
     @property
     def result_input_splices(self) -> tuple[tuple[int, ...], ...]:
-        """Result slots contributed by each original target input slot.
+        """Result axes contributed by each original target input.
 
-        An unbound slot contributes one slot, a nullary operand contributes
+        An unbound axis contributes one axis, a nullary operand contributes
         none, and a positive-arity operand contributes its inputs in place.
         The mapping is computed in structural order, independently of the
         backend's contraction order.
         """
 
-        bindings = {binding.slot: binding for binding in self.bindings}
+        bindings = {binding.axis: binding for binding in self.bindings}
         splices: list[tuple[int, ...]] = []
-        next_result_slot = 0
-        for slot in range(self.target_gatype.arity):
-            binding = bindings.get(slot)
+        next_output_axis = 0
+        for axis in range(self.target_gatype.arity):
+            binding = bindings.get(axis)
             width = 1 if binding is None else binding.operand_gatype.arity
             splice = tuple(
-                range(next_result_slot, next_result_slot + width)
+                range(next_output_axis, next_output_axis + width)
             )
             splices.append(splice)
-            next_result_slot += width
+            next_output_axis += width
         return tuple(splices)
 
     @property
@@ -203,7 +203,7 @@ class BindingPlan:
         return (
             self.target_gatype,
             tuple(
-                (binding.slot, binding.operand_gatype, binding.transform)
+                (binding.axis, binding.operand_gatype, binding.transform)
                 for binding in self.bindings
             ),
             self.result_subspaces,
@@ -215,39 +215,39 @@ class BindingPlan:
 @lru_cache(maxsize=None)
 def _binding_plan_from_types(
     target_gatype: GAType,
-    operands_by_slot: tuple[tuple[int, GAType], ...],
+    operands_by_axis: tuple[tuple[int, GAType], ...],
     equality_groups: tuple[tuple[int, ...], ...] = (),
 ) -> BindingPlan:
     """Plan once per static signature, never retaining coefficient arrays."""
 
-    entries: list[BoundSlot] = []
+    entries: list[BoundAxis] = []
 
-    for slot, operand in operands_by_slot:
-        if slot < 0 or slot >= target_gatype.arity:
-            raise IndexError(f"input slot {slot} is out of range for arity {target_gatype.arity}")
-        required = target_gatype.input_subspaces[slot]
+    for axis, operand in operands_by_axis:
+        if axis < 0 or axis >= target_gatype.arity:
+            raise IndexError(f"input {axis} is out of range for arity {target_gatype.arity}")
+        required = target_gatype.input_subspaces[axis]
         actual = operand.output_subspace
         transform = AxisTransform.plan(actual, required)
         if not transform.is_implicit_bind_compatible:
             raise GATypeError(
                 "cannot bind output axis "
-                f"{actual!r} into input slot {slot} requiring {required!r}: "
+                f"{actual!r} into input {axis} requiring {required!r}: "
                 f"conversion is {transform.kind.value!r}"
             )
-        if operand.orientation is not target_gatype.input_orientations[slot]:
+        if operand.orientation is not target_gatype.input_orientations[axis]:
             raise GATypeError(
-                f"cannot bind an {operand.orientation.value} {actual.type_name} into input slot {slot}, "
-                f"which takes an {target_gatype.input_orientations[slot].value} orientation"
+                f"cannot bind an {operand.orientation.value} {actual.type_name} into input {axis}, "
+                f"which takes an {target_gatype.input_orientations[axis].value} orientation"
             )
-        entries.append(BoundSlot(slot, operand, transform))
+        entries.append(BoundAxis(axis, operand, transform))
 
-    by_slot = dict(operands_by_slot)
+    by_axis = dict(operands_by_axis)
     result_axes: list[SubSpace] = [target_gatype.output_subspace]
     result_orientations: list[Orientation] = [target_gatype.orientation]
-    for slot, (target_axis, target_orientation) in enumerate(
+    for axis, (target_axis, target_orientation) in enumerate(
         zip(target_gatype.input_subspaces, target_gatype.input_orientations)
     ):
-        operand = by_slot.get(slot)
+        operand = by_axis.get(axis)
         if operand is None:
             result_axes.append(target_axis)
             result_orientations.append(target_orientation)
@@ -302,12 +302,12 @@ def normalize_bind_arguments(
 def nullary_identity_groups(
     normalized: tuple[tuple[int, HasGAType], ...],
 ) -> tuple[tuple[int, ...], ...]:
-    slots_by_identity: dict[int, list[int]] = {}
-    for slot, operand in normalized:
+    axes_by_identity: dict[int, list[int]] = {}
+    for axis, operand in normalized:
         if operand.gatype.arity == 0:
-            slots_by_identity.setdefault(id(operand), []).append(slot)
+            axes_by_identity.setdefault(id(operand), []).append(axis)
     return tuple(
-        tuple(slots)
-        for slots in slots_by_identity.values()
-        if len(slots) > 1
+        tuple(axes)
+        for axes in axes_by_identity.values()
+        if len(axes) > 1
     )

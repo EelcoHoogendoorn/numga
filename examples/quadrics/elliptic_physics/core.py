@@ -188,7 +188,7 @@ def overlap(A: Quadric, B: Quadric, iterations: int = 12) -> tuple[Scalar, Point
         c, d = hi - golden * (hi - lo), lo + golden * (hi - lo)
         # Evaluate only the other.
         fresh = least(np.where(left, c, d))
-        # The survivor's value moves to its slot.
+        # The survivor's value moves to its place.
         fc, fd = pick(left, fresh, fd), pick(left, fc, fresh)
     values, points = (Point & (A + B * np.tan((lo + hi) / 2))(Point)).eigh()
     return values[..., 0], points[..., 0]

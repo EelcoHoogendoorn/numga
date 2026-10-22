@@ -1,8 +1,8 @@
-"""Binding over field slots.
+"""Binding over field axes.
 
-A field slot ranges over sites as well as blades. Binding treats every site axis as a batch axis
-with a label: a field bound into a field slot pairs its sites with the slot's and sums over them,
-a field bound into a slot over blades alone is acted on site by site, and the open slots of a bound
+A field axis ranges over sites as well as blades. Binding treats every site axis as a batch axis
+with a label: a field bound into a field axis pairs its sites with the axis's and sums over them,
+a field bound into a axis over blades alone is acted on site by site, and the open axes of a bound
 map keep their sites in the result. The labels are aligned as trailing batch axes, the ordinary
 bind runs over them, and the summed ones are reduced.
 """
@@ -21,22 +21,22 @@ if TYPE_CHECKING:
 
 
 def bind_fields(target: Extensor, operands: dict[int, Extensor]) -> Extensor:
-    """Bind operands, by input slot from 0, into a target where either side has field slots."""
-    slots = tuple(sorted(operands))
-    plan = _plan(target.gatype, tuple((slot, operands[slot].gatype) for slot in slots))
+    """Bind operands, by input from 0, into a target where either side has field axes."""
+    axes = tuple(sorted(operands))
+    plan = _plan(target.gatype, tuple((axis, operands[axis].gatype) for axis in axes))
     lowered: dict[tuple[int, tuple[int, ...]], Extensor] = {}
 
     def lower(value: Extensor, positions: tuple[int, ...]) -> Extensor:
-        # One lowered view per value and placement keeps the evidence that two slots hold one value.
+        # One lowered view per value and placement keeps the evidence that two axes hold one value.
         key = (id(value), positions)
         if key not in lowered:
             lowered[key] = _aligned(value, positions, plan.sizes)
         return lowered[key]
 
     plain_target = lower(target, plan.target)
-    plain_operands = {slot: lower(operands[slot], positions) for slot, positions in zip(slots, plan.operands)}
+    plain_operands = {axis: lower(operands[axis], positions) for axis, positions in zip(axes, plan.operands)}
     if len(plain_operands) == target.arity:
-        result = plain_target(*(plain_operands[slot] for slot in range(target.arity)))
+        result = plain_target(*(plain_operands[axis] for axis in range(target.arity)))
     else:
         result = plain_target.bind(plain_operands)
 
@@ -67,23 +67,23 @@ def _plan(target: GAType, operands: tuple[tuple[int, GAType], ...]) -> _Plan:
     # The sites of the output, and of every field acted on site by site, are one set of sites.
     output = [target_sites[0]] if 0 in target_sites else []
     inputs: list[int | None] = []
-    for slot in range(1, target.arity + 1):
-        operand = bound.get(slot - 1)
+    for axis in range(1, target.arity + 1):
+        operand = bound.get(axis - 1)
         if operand is None:
-            inputs.append(target_sites.get(slot))
+            inputs.append(target_sites.get(axis))
             continue
         sites = labels.of(operand)
         operand_sites.append(sites)
         own_inputs = [sites.get(inner) for inner in range(1, operand.arity + 1)]
-        if slot in target_sites:
+        if axis in target_sites:
             if 0 in sites:
-                labels.join(target_sites[slot], sites[0])
+                labels.join(target_sites[axis], sites[0])
             elif operand.arity == 1 and own_inputs[0] is None:
-                # A map on blades alone acts site by site: the slot's sites pass on to its input.
-                own_inputs = [target_sites[slot]]
+                # A map on blades alone acts site by site: the axis's sites pass on to its input.
+                own_inputs = [target_sites[axis]]
             else:
                 raise TypeError(
-                    f"slot {slot - 1} ranges over {labels.sizes[target_sites[slot]]} sites; "
+                    f"axis {axis - 1} ranges over {labels.sizes[target_sites[axis]]} sites; "
                     f"a {operand.signature} does not"
                 )
         elif 0 in sites:
@@ -94,19 +94,19 @@ def _plan(target: GAType, operands: tuple[tuple[int, GAType], ...]) -> _Plan:
 
     kept = [labels.find(label) for label in output[:1]] + [labels.find(label) for label in inputs if label is not None]
     if len(set(kept)) != len(kept):
-        raise TypeError("a binding that gives two result slots the same sites needs their diagonal")
+        raise TypeError("a binding that gives two output axes the same sites needs their diagonal")
     every = [*target_sites.values()] + [label for sites in operand_sites for label in sites.values()]
     summed = sorted({labels.find(label) for label in every} - set(kept))
     frame = {label: position for position, label in enumerate(kept + summed)}
 
     def positions(sites: dict[int, int]) -> tuple[int, ...]:
-        return tuple(frame[labels.find(sites[slot])] for slot in sorted(sites))
+        return tuple(frame[labels.find(sites[axis])] for axis in sorted(sites))
 
-    result_slots = ([0] if output else []) + [slot + 1 for slot, label in enumerate(inputs) if label is not None]
+    output_axes = ([0] if output else []) + [axis + 1 for axis, label in enumerate(inputs) if label is not None]
     return _Plan(
         positions(target_sites), tuple(positions(sites) for sites in operand_sites),
         tuple(labels.sizes[label] for label in kept + summed), len(summed),
-        tuple((slot, labels.sizes[label]) for slot, label in zip(result_slots, kept)),
+        tuple((axis, labels.sizes[label]) for axis, label in zip(output_axes, kept)),
     )
 
 
@@ -142,10 +142,10 @@ class _Labels:
         self.sizes: list[int] = []
 
     def of(self, gatype: GAType) -> dict[int, int]:
-        """A fresh label for every field slot of a type."""
+        """A fresh label for every field axis of a type."""
         sites = {}
-        for slot, count in gatype.fields:
-            sites[slot] = len(self.parent)
+        for axis, count in gatype.fields:
+            sites[axis] = len(self.parent)
             self.parent.append(len(self.parent))
             self.sizes.append(count)
         return sites
@@ -163,20 +163,20 @@ class _Labels:
 
 
 def add_fields(left: Extensor, right: Extensor) -> Extensor:
-    """The sum where either side has field slots. A value or map without sites is the same at every
+    """The sum where either side has field axes. A value or map without sites is the same at every
     site, as it is under application: added to a map from a field to a field over the same sites, a map
     acting at every site is that map on the site diagonal, so that `(A + B)(f) == A(f) + B(f)`."""
     left, right = _on_diagonal_of(left, right), _on_diagonal_of(right, left)
     sites = dict(left.gatype.fields)
-    for slot, count in right.gatype.fields:
-        if sites.setdefault(slot, count) != count:
-            raise ValueError(f"cannot add {sites[slot]} sites to {count} in slot {slot}")
+    for axis, count in right.gatype.fields:
+        if sites.setdefault(axis, count) != count:
+            raise ValueError(f"cannot add {sites[axis]} sites to {count} in axis {axis}")
     fields = tuple(sorted(sites.items()))
-    position = {slot: index for index, (slot, _) in enumerate(fields)}
+    position = {axis: index for index, (axis, _) in enumerate(fields)}
     sizes = tuple(count for _, count in fields)
     result = (
-        _aligned(left, tuple(position[slot] for slot, _ in left.gatype.fields), sizes)
-        + _aligned(right, tuple(position[slot] for slot, _ in right.gatype.fields), sizes)
+        _aligned(left, tuple(position[axis] for axis, _ in left.gatype.fields), sizes)
+        + _aligned(right, tuple(position[axis] for axis, _ in right.gatype.fields), sizes)
     )
     return type(result)._from_prepared_kernel(result.context, result.gatype.derive.with_fields(fields), result.kernel)
 
@@ -185,10 +185,10 @@ def _on_diagonal_of(value: Extensor, other: Extensor) -> Extensor:
     """A map acting at every site, read on the site diagonal where the other's input ranges over the
     sites of its output and the map's input does not."""
     sites, own = dict(other.gatype.fields), dict(value.gatype.fields)
-    missing = [slot for slot in sites if slot and slot not in own]
+    missing = [axis for axis in sites if axis and axis not in own]
     if not missing:
         return value
-    if missing != [1] or sites.get(0) != sites[1] or [slot for slot in own if slot] or value.arity < 1:
+    if missing != [1] or sites.get(0) != sites[1] or [axis for axis in own if axis] or value.arity < 1:
         raise TypeError(f"{value.gatype.signature} has no reading on the sites of {other.gatype.signature}")
     if 0 not in own:
         # The same map at every site.

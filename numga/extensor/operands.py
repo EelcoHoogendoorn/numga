@@ -76,7 +76,7 @@ def batch(context: Context, values: Any) -> Extensor:
 
 
 def identity(gatype: GAType) -> Extensor:
-    """A nullary type as its identity map: the same reading an open slot has in an expression."""
+    """A nullary type as its identity map: the same reading an open axis has in an expression."""
     return gatype._identity()
 
 

@@ -58,7 +58,7 @@ def fit_motor_alignment(source: Point, target: Point) -> Motor:
     source_mean, target_mean = source.mean(axis=0), target.mean(axis=0)
 
     # Point differences are ideal points. Their duals carry the Euclidean
-    # displacements; the spatial slot discards the homogeneous weight component.
+    # displacements; the spatial part discards the homogeneous weight component.
     source_vectors = (source - source_mean).dual().select_subspace(Vector.output_subspace)
     target_vectors = (target - target_mean).dual().select_subspace(Vector.output_subspace)
     rotation = fit_rotor(source_vectors, target_vectors)

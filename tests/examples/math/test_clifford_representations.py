@@ -20,9 +20,9 @@ from examples.math.extensor_representations.scenarios import representation
 def test_smallest_faithful_real_representation(positive, negative, size):
     """main checks every blade product, the unit, and faithfulness, including both split blocks."""
     ga, Spinor, representations = representation(positive, negative)
-    algebra_slot, state_slot = representations.input_subspaces
-    assert algebra_slot.same_support(representations.algebra.subspace.full())
-    assert state_slot.same_support(representations.output_subspace)
+    algebra_axis, state_axis = representations.input_subspaces
+    assert algebra_axis.same_support(representations.algebra.subspace.full())
+    assert state_axis.same_support(representations.output_subspace)
     assert len(representations.output_subspace) == size
 
 
@@ -32,9 +32,9 @@ def test_smallest_faithful_real_representation(positive, negative, size):
 def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negative):
     ga, Spinor, representations = representation(positive, negative)
     ga = representations.algebra
-    algebra_slot, state_slot = representations.input_subspaces
+    algebra_axis, state_axis = representations.input_subspaces
     Full, Spinor = representations.gatype.derive.axis(1), representations.gatype.derive.axis(2)
-    state_dimension = len(state_slot)
+    state_dimension = len(state_axis)
     context = NumpyContext(ga)
     basis = context.multivector.full(np.eye(ga.blade_count))
 
