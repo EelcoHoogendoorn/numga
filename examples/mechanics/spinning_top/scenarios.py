@@ -100,11 +100,10 @@ def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Ite
         return core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
                                      STATIC_FRICTION, setup.dynamic_friction, dt), None
 
-    # A frame's contact steps compiled into one loop. The first step runs eagerly: it settles the type the start was
-    # built with into the one every step returns, which the loop carries.
+    # A frame's contact steps compiled into one loop, which carries the motor and the rate as every step returns them:
+    # the start, a motor composed of two turns, is retyped to a plain motor.
     frame = jax.jit(lambda state: jax.lax.scan(substep, state, length=n_steps_per_frame)[0])
-    (motor, rate), _ = substep((motor, rate), None)
-    state = (motor.materialize(JaxContext(core.ga)), rate.materialize(JaxContext(core.ga)))
+    state = (motor.retyped(core.Motor).materialize(JaxContext(core.ga)), rate.retyped(core.Rate).materialize(JaxContext(core.ga)))
     for _ in range(int(seconds / dt) // n_steps_per_frame):
         state = frame(state)
         yield state[0].materialize(core.mv.context), state[1].materialize(core.mv.context), parts, ground

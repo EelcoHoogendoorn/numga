@@ -10,6 +10,7 @@ jnp = pytest.importorskip("jax.numpy")
 from numga import Algebra, Extensor, NumpyContext
 from numga.algebras import PGA3D, STA
 from numga.backend.jax import JaxContext
+from numga.gatype import GATypeError
 from tests.backend_surface import operations
 
 
@@ -164,3 +165,26 @@ def test_numpy_extensors_are_constants_to_jax_ones():
     for result in (eager, traced):
         assert result.context.key[0] == "jax"
         np.testing.assert_allclose(np.asarray(result.kernel), expected.kernel, atol=1e-12)
+
+
+def test_a_retyped_start_carries_through_a_scan():
+    """A motor composed of two turns has a narrower layout and more facts than a step returns; retyped to a plain motor,
+    with its coefficients kept, it starts a scan whose steps return that type."""
+    from numga.algebras import PGA3D
+
+    mv = JaxContext(PGA3D).multivector
+    Motor = PGA3D.gatype.rotor()
+    start = ((mv.zw * 0.3).exp() * (mv.zx * 0.2).exp()).normalized()
+    turn = (mv.xy * 0.01 + mv.xw * 0.02).exp()
+
+    def step(motor, _):
+        return (turn * motor).normalized(), None
+
+    retyped = start.retyped(Motor)
+    assert retyped.gatype is Motor
+    np.testing.assert_allclose(np.asarray((retyped - start).kernel), 0.0, atol=1e-15)
+    end, _ = jax.lax.scan(step, retyped, length=10)
+    assert end.gatype is Motor
+    # Retyping only forgets: a plain bivector cannot be retyped to a motor's facts.
+    with pytest.raises(GATypeError):
+        (mv.xy * 0.5).retyped(PGA3D.gatype.even().derive.with_traits(*Motor.traits))

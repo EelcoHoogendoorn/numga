@@ -519,6 +519,20 @@ class Extensor:
             return self
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel)
 
+    def retyped(self, gatype: GAType) -> Extensor:
+        """The same value under exactly the given type: its layout embedded into the type's, and of its facts only
+        those the type states, each of which the value must already carry. It only forgets, which is always sound: a
+        value built with more facts than a loop's steps keep, a motor composed of two turns, can start a loop that
+        carries the steps' type."""
+
+        if gatype.arity or self.gatype.arity:
+            raise TypeError(f"retyped takes values, not maps; got {self.gatype} and {gatype}")
+        embedded = self.cast(gatype)
+        unproven = [trait for trait in gatype.traits if trait not in embedded.gatype.traits]
+        if unproven:
+            raise GATypeError(f"{self.gatype} does not carry {unproven}, which {gatype} states; retyped only forgets facts")
+        return type(self)._from_prepared_kernel(self.context, gatype, embedded._kernel)
+
     def _symmetric_product(
         self, transform: str, *, scalar_only: bool = False,
     ) -> "Extensor":
