@@ -7,6 +7,7 @@ overwrites an earlier result. Each save prints the path it wrote and returns it.
 from __future__ import annotations
 
 import gc
+from collections.abc import Iterable
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -52,8 +53,9 @@ def indexed(image: Image.Image, lookup: np.ndarray, palette: Image.Image) -> Ima
     return fixed
 
 
-def save_gif(frames: list[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:
+def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:
     """Write RGB frames as a looping palette GIF, box-filtered by scale."""
+    frames = list(frames)
     height, width = frames[0].shape[:2]
     size = (round(width * scale), round(height * scale))
 
@@ -96,7 +98,7 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
     return path
 
 
-def save_animation(frames: list[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0) -> Path:
+def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0) -> Path:
     """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`,
     box-filtered to `scale` of their size."""
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
@@ -105,16 +107,16 @@ def save_animation(frames: list[np.ndarray], name: str, duration_ms: int, colors
     return path
 
 
-def show_animation(frames: list[np.ndarray], name: str, duration_ms: int, scale: float = 1.0):
+def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0):
     """Save RGB frames as PLOT_DIR/<name>.webp, or the next free <name>_NN.webp, box-filtered to `scale` of their
     size, and return the animation for a notebook to show: in full colour, without the palette that keeps the
     repository's GIFs small, quickly encoded and of bounded size whatever the frames hold."""
     import base64
     from IPython.display import HTML
 
-    height, width = frames[0].shape[:2]
-    size = (round(width * scale), round(height * scale))
-    images = [Image.fromarray(frame).resize(size, resample=Image.Resampling.BOX) for frame in frames]
+    images = [Image.fromarray(frame) for frame in frames]
+    size = (round(images[0].width * scale), round(images[0].height * scale))
+    images = [image.resize(size, resample=Image.Resampling.BOX) for image in images]
     path = auto_increment_path(PLOT_DIR / f"{name}.webp")
     path.parent.mkdir(parents=True, exist_ok=True)
     images[0].save(path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0, quality=80, method=0)
