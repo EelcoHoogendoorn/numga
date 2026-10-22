@@ -143,7 +143,7 @@ def main() -> None:
                    "eddy_brake_materials_heat", duration_ms)
     frames, centre = inductive_materials(mesh, conductivity)
     inductive = list(frames)
-    save_animation(render.animate_inductive(mesh, inductive, centre, field_width, fibres, shown),
+    save_animation(render.animate(mesh, inductive, centre, field_width, fibres, shown),
                    "eddy_brake_inductive_currents", duration_ms)
     save_animation(render.animate_heat(mesh, inductive, centre, field_width, fibres, shown),
                    "eddy_brake_inductive_heat", duration_ms)

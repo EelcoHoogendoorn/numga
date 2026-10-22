@@ -18,7 +18,7 @@ import numpy as np
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import samples_per_side
+from examples.wgsl.library import pixel_share, samples_per_side
 from examples.wgsl.runner import Resident
 
 if TYPE_CHECKING:
@@ -632,14 +632,19 @@ class View(NamedTuple):
     pixels: int
 
     @property
+    def columns(self) -> int:
+        """The pixels drawn across: all of them on a GPU, `pixel_share` of them where the CPU draws."""
+        return round(self.pixels * pixel_share)
+
+    @property
     def pixel(self) -> float:
         """A pixel's size in the scene."""
-        return 2 * self.half[0] / self.pixels
+        return 2 * self.half[0] / self.columns
 
     @property
     def shape(self) -> tuple[int, int]:
         """The image's rows and columns."""
-        return round(self.pixels * self.half[1] / self.half[0]), self.pixels
+        return round(self.columns * self.half[1] / self.half[0]), self.columns
 
     @property
     def extent(self) -> tuple[float, float, float, float]:

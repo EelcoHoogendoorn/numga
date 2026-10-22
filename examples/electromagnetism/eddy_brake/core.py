@@ -74,13 +74,13 @@ class Motion:
     vertices: Point                      # [cases] Point[V], world positions
     heat: Scalar                         # [cases] Scalar[F], joules per material face
     current: Current                     # [cases] Current[F], body-frame sheet current
+    streamfunction: Scalar               # [cases] Scalar[V], whose contours are the current's paths
 
 
 @dataclass
 class InductiveMotion(Motion):
     """Material heat and current, including the energy stored in the current's magnetic field."""
 
-    streamfunction: Scalar               # [cases] Scalar[V]
     magnetic_energy: Scalar              # [cases] Scalar, joules
     thermal_energy: Scalar               # [cases] Scalar, accumulated modal dissipation
     motor_work: Scalar                   # [cases] Scalar, energy supplied by the motor
@@ -176,6 +176,32 @@ def closed_currents(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor]:
     edges = mesh.triangle_edges.cast(Current)                              # [3] Current[F]
     current = mesh.at_corners(edges / (2 * mesh.triangle_areas) * Scalar)(embedder)   # [F] Current <- [interior] Scalar
     return embedder, current
+
+
+@dataclass
+class Streamlines:
+    """The streamfunction of the closed current nearest a face current, nearest in the heat their difference makes in
+    the material: the current runs along its contours."""
+
+    embedder: SparseExtensor             # [V] Scalar <- [interior] Scalar
+    pairing: SparseExtensor              # [cases, interior] Amount <- [F] Current, each closed current's heat with a face current
+    resistance: SparseExtensor           # [cases, interior] Amount <- [interior] Scalar
+
+    def __call__(self, current: Current) -> Scalar:
+        """The streamfunction nearest a face current `[cases] Current[F]`, `[cases] Scalar[V]`."""
+        return self.embedder(self.resistance.solve(self.pairing(current)))
+
+
+def streamlines(mesh: Mesh, conductivity: Conductivity) -> Streamlines:
+    """The streamfunctions of a material's face currents, from the closed currents of streamfunctions zero on the rim."""
+    embedder, current = closed_currents(mesh)
+    # Each face's conductance, its area times the material's map there, a field whether or not the material varies
+    # over the faces, inverted face by face.
+    inverse_conductance = (mesh.triangle_areas * conductivity).batch().inverse().field()   # [cases] Resistivity[F]
+    # The heat each closed current makes with a face current: the closed current swept through time, paired with
+    # the field the face current takes in the material, over each face's area.
+    pairing = sweep(mesh, Current & time)(current).adjugate()(spdiag(mesh.triangle_areas ** 2 * inverse_conductance))
+    return Streamlines(embedder, pairing, pairing(current))
 
 
 def current_modes(mesh: Mesh, conductivity: Conductivity,
@@ -332,7 +358,10 @@ def braking(mesh: Mesh, centre: Point, plane: Bivector,
 
     def state(orientation: Rotor, spin: Bivector, heat: Scalar) -> Motion:
         vertices = orientation >> mesh.vertices                            # [cases] Point[V]
-        return Motion(orientation, spin, vertices, heat, response(orientation, spin).current)
+        current = response(orientation, spin).current                     # [cases] Current[F]
+        return Motion(orientation, spin, vertices, heat, current, paths(current))
+
+    paths = streamlines(mesh, conductivity)
 
     yield state(orientation, spin, heat)
     for _ in range(n_steps):
