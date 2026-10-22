@@ -22,6 +22,7 @@ import examples.electromagnetism.moving_charge.scenarios
 import examples.electromagnetism.second_harmonic.core
 import examples.electromagnetism.second_harmonic.scenarios
 import examples.estimation.odometry.scenarios
+import examples.quadrics.cyclides.core
 import examples.estimation.epipolar.core
 import examples.geometry.fitting.core
 import examples.geometry.fitting.scenarios
