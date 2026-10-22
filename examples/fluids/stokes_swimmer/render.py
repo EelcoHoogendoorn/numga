@@ -17,8 +17,9 @@ TRAIL_COLOUR = "#e63946"
 FLOW_COLOUR = "#94a3b8"
 FORCE_COLOUR = "#2a9d8f"
 CROSS_COLOUR, LABEL_COLOUR = "#cbd5e1", "0.4"
-# The margin around the strokes in hinge-angle space, as a share of their extent.
-HINGE_MARGIN = 0.12
+# The margin around the strokes in hinge-angle space, as a share of their extent, across and up: up, the room for the
+# name running down the line.
+HINGE_MARGIN, HINGE_ROOM = 0.12, 0.5
 
 
 def point_coords(points: core.Point | core.Direction) -> np.ndarray:
@@ -119,7 +120,7 @@ def draw_summary(
     ax_hinge.plot(angles[:, 1, 0], angles[:, 1, 1], color=SCALLOP_COLOUR, linewidth=2.0, linestyle="--")
     ax_hinge.set_aspect("equal")
     # Room above the loop for the name of the line up.
-    ax_hinge.margins(HINGE_MARGIN)
+    ax_hinge.margins(x=HINGE_MARGIN, y=HINGE_ROOM)
     _cross(ax_hinge, "left hinge", "right hinge")
 
     figure.tight_layout()
