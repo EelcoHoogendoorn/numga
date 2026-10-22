@@ -131,7 +131,7 @@ def scene(places: np.ndarray) -> np.ndarray:
 
 
 def strokes(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float,
-            view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+            view: solids.View) -> meshes.Samples:
     """Segments between places in the scene `[segments, 3]` as tubes `width` pixels across, each its colour and how
     much of what lies behind it it hides `[segments, 4]`, at every sample, as `meshes.samples`."""
     rings, faces = meshes.tube(np.stack([starts, ends], axis=1), width / 2 * view.pixel, n_around)
@@ -140,7 +140,7 @@ def strokes(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: fl
     return meshes.samples(rings, faces, values, meshes.smooth(rings, faces), view, colour=translucent)
 
 
-def tube(rings: solids.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def tube(rings: solids.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> meshes.Samples:
     """A polyline's tube, its rings of vertices and its triangles as `meshes.tube` builds them, its colour and how much
     it hides given at each vertex of the polyline `[n, 4]` and blended between, at every sample, as `meshes.samples`."""
     # The tube's vertices run ring after ring, one ring about each vertex of the polyline.
@@ -193,5 +193,5 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector, electri
                          np.column_stack([colours, spoke_opacity * strength])[spoked], spoke_width, view)
         path = tube(rings[index * per_frame:(index + 1) * per_frame], faces, np.column_stack([colours, strength]), view)
         frames.append(solids.draw([(line, line_colour), (optics, optic_colour)], view, np.ones(3),
-                                  translucent=[(box, slab_colour, slab_opacity)], meshes=[(*spokes, 1.0), (*path, 1.0)]))
+                                  translucent=[(box, slab_colour, slab_opacity)], meshes=[(spokes, 1.0), (path, 1.0)]))
     return frames

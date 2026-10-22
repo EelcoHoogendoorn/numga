@@ -93,14 +93,14 @@ def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float) -> 
     return view._replace(half=landscape(view.half))
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
     """One sheet, lit on both sides, at every sample, as `meshes.samples`."""
     places = projective(points)
     return meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink, colour=colour)
 
 
 def picture(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
-    return solids.draw([], view, background, meshes=[(*sheet(points, faces, ink, grid_colour(front_colour, back_colour), view), 1.0)])
+    return solids.draw([], view, background, meshes=[(sheet(points, faces, ink, grid_colour(front_colour, back_colour), view), 1.0)])
 
 
 def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, ink: np.ndarray, view: solids.View) -> np.ndarray:
@@ -114,8 +114,8 @@ def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, 
     connectors = [(solids.rods(starts, ends, connector_width / 2 * view.pixel), connector_colour),
                   (solids.ball(starts, endpoint_radius * view.pixel)[:, None], connector_colour),
                   (solids.ball(ends, endpoint_radius * view.pixel)[:, None], connector_colour)]
-    sheets = [(*sheet(source, faces, ink * pair_grid_ink, grid_colour(source_colour, source_colour), view), surface_opacity),
-              (*sheet(partner, faces, ink * pair_grid_ink, grid_colour(partner_colour, partner_colour), view), surface_opacity)]
+    sheets = [(sheet(source, faces, ink * pair_grid_ink, grid_colour(source_colour, source_colour), view), surface_opacity),
+              (sheet(partner, faces, ink * pair_grid_ink, grid_colour(partner_colour, partner_colour), view), surface_opacity)]
     scene = solids.layer(connectors, view, meshes=sheets)
     # The segments' hidden parts show faintly: a copy of the segments alone, in front of everything.
     segments, _ = solids.layer(connectors, view)

@@ -11,14 +11,18 @@ one solid's quadric that lies inside all its others.
 from __future__ import annotations
 
 from functools import cache
-from typing import NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import compose
+from examples.wgsl.library import samples_per_side
+from examples.wgsl.runner import Resident
+
+if TYPE_CHECKING:
+    from examples.wgsl.meshes import Samples
 
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
@@ -72,10 +76,12 @@ var<storage, read> ink_quadrics: array<Quadric>;
 var<storage, read> ink_regions: array<Quadric>;
 var<uniform> pixel: f32;
 // Meshes drawn at every sample of every pixel, mesh after mesh, each sample one cell of a grid `samples_per_side` to a
-// pixel's side, rows first: its colour, premultiplied by how much of what lies behind it it hides, a byte a channel
-// packed in a word, red first, and its depth along the view, both zero where the mesh shows nothing.
+// pixel's side, rows first, each row `mesh_row` cells long: its colour, premultiplied by how much of what lies behind
+// it it hides, a byte a channel packed in a word, red first, and its depth along the view, both zero where the mesh
+// shows nothing.
 var<storage, read> mesh_colours: array<u32>;
 var<storage, read> mesh_depths: array<f32>;
+var<uniform> mesh_row: u32;
 // How much of what each mesh covers it hides, a share of its colour's own.
 var<storage, read> mesh_opacities: array<f32>;
 var<uniform> n_meshes: u32;
@@ -90,6 +96,8 @@ var<uniform> fill_tilt: f32;
 var<uniform> headlight: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
+// What shows through where the surfaces let light pass: black, nothing, for a layer to compose with others.
+var<uniform> background: vec3<f32>;
 
 // A sample's colour and its depth along the view, in the first channel, each with its coverage.
 struct Sample {
@@ -283,7 +291,7 @@ struct Seen {
 // The nearest surface of the meshes at a sample's cell after the last surface seen, at `far` where there is none;
 // the meshes come after the solids in the order of surfaces.
 fn mesh_after(cell: u32, last_distance: f32, last_order: u32) -> Seen {
-    let n_cells = pixels.x * pixels.y * n_samples;
+    let n_cells = mesh_row * pixels.y * samples_per_side;
     var nearest = Seen(vec4<f32>(0.0), far, 0u);
     for (var mesh = 0u; mesh < n_meshes; mesh++) {
         let colour = unpack4x8unorm(mesh_colours[mesh * n_cells + cell]) * mesh_opacities[mesh];
@@ -304,7 +312,7 @@ fn sample(place: vec2<f32>) -> Sample {
     let direction = camera >> -mv.z.dual();
     // The sample's cell in the meshes' grid, and its tile of the picture.
     let grid = vec2<u32>(floor(place * f32(samples_per_side)));
-    let cell = grid.y * pixels.x * samples_per_side + grid.x;
+    let cell = grid.y * mesh_row + grid.x;
     let corner = vec2<u32>(floor(place / tile));
     let seen = corner.y * tiles_across + corner.x;
     // Nothing seen yet: every surface ahead of the camera comes after.
@@ -337,9 +345,10 @@ fn sample(place: vec2<f32>) -> Sample {
         }
     }
     if (nearest >= far) {
-        return Sample(vec4<f32>(0.0), vec4<f32>(0.0));
+        return Sample(vec4<f32>(background, 0.0), vec4<f32>(0.0));
     }
-    return Sample(vec4<f32>(colour, 1 - passing), vec4<f32>((nearest - back) * (1 - passing), 0.0, 0.0, 1.0));
+    return Sample(vec4<f32>(colour + passing * background, 1 - passing),
+                  vec4<f32>((nearest - back) * (1 - passing), 0.0, 0.0, 1.0));
 }
 """
 
@@ -679,31 +688,64 @@ def lamp(camera: Motor) -> Point:
 
 def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = (),
           translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-          meshes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+          meshes: list[tuple[Samples, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
     """The solids as the view sees them, with the lines inked on them, the translucent solids over and among them,
-    each with its opacity, and the meshes among them, each its samples, as `meshes.samples` draws them, and its
+    each with its opacity, and the meshes among them, each its samples, as `meshes.samples` gives them, and its
     opacity, sample by sample: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`,
-    each weighted by coverage."""
+    each weighted by coverage. The meshes are drawn, traced among the solids and averaged over each pixel in one pass
+    of the GPU's work, and only the picture's pixels come back."""
+    return traced(parts, view, inks, translucent, meshes, np.zeros(3))
+
+
+def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
+           translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]],
+           background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The picture `layer` makes, over a background, which shows through each sample as much as its surfaces let
+    light pass: over black, the layer itself."""
     quadrics, solids, ink_quadrics, ink_regions, marked, holding = scene(parts, translucent, inks)
-    # A mesh that shows nothing stands for none, so that the meshes' arrays are never empty.
-    shown = list(meshes) or [(np.zeros((1, 4), dtype=np.uint8), np.zeros(1), 0.0)]
-    # Each sample's colour as drawn, a byte a channel, four to a word, red first, and its depth.
-    mesh_colours = np.concatenate([colour.reshape(-1, 4) for colour, _, _ in shown]).view(np.uint32).reshape(-1)
-    mesh_depths = np.concatenate([depth.reshape(-1) for _, depth, _ in shown]).astype(np.float32)
-    mesh_opacities = np.array([opacity for _, _, opacity in shown], dtype=np.float32)
-    image = shader()(view.shape, quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics,
-                     ink_regions=ink_regions, mesh_colours=mesh_colours, mesh_depths=mesh_depths,
-                     mesh_opacities=mesh_opacities, n_meshes=len(meshes),
-                     **tiles(*holding, view),
-                     pixel=view.pixel, camera=view.camera, back=4 * view.half.max(),
-                     half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt,
-                     headlight=headlight, gloss=gloss, shininess=shininess)["image"]
+    tracer = shader()
+    encoder = tracer.device.create_command_encoder()
+    # A mesh that shows nothing stands for none, so that the opacities are never empty.
+    mesh_opacities = np.array([opacity for _, opacity in meshes] or [0.0], dtype=np.float32)
+    outputs = tracer.encode(encoder, view.shape, (), dict(
+        quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
+        **sampled(tracer, encoder, [drawn for drawn, _ in meshes], view), mesh_opacities=mesh_opacities,
+        n_meshes=len(meshes), **tiles(*holding, view), pixel=view.pixel, camera=view.camera, back=4 * view.half.max(),
+        half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt, headlight=headlight,
+        gloss=gloss, shininess=shininess, background=background))
+    image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]
+
+
+def sampled(tracer: Shader, encoder: Any, drawings: list[Samples], view: View) -> dict:
+    """The meshes drawn at every sample of the view's pixels, recorded on an encoder, and copied there, on the GPU,
+    mesh after mesh, into the buffers the tracer keeps for them: their colours and depths, and the cells a row of
+    samples takes, padded as a copy pads it."""
+    import wgpu
+
+    rows, columns = view.shape
+    shape = (samples_per_side * rows, samples_per_side * columns)
+    # A copy's rows start at multiples of 256 bytes; a sample's colour and its depth are four bytes each.
+    row_bytes = -(-shape[1] * 4 // 256) * 256
+    size = max(len(drawings) * shape[0] * row_bytes, 16)
+    usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
+    colours, depths = (tracer.buffer_kept(("meshes", name), size, usage) for name in ("colours", "depths"))
+    for index, drawing in enumerate(drawings):
+        # Each mesh's values in buffers of its own: all are written before the encoder runs.
+        targets = drawing.shader.encode_draw(encoder, shape, drawing.n_vertices, ("mesh", index), drawing.values)
+        for target, buffer in zip(targets, (colours, depths)):
+            encoder.copy_texture_to_buffer(
+                {"texture": target},
+                {"buffer": buffer, "offset": index * shape[0] * row_bytes, "bytes_per_row": row_bytes, "rows_per_image": shape[0]},
+                (shape[1], shape[0], 1))
+    return dict(mesh_colours=Resident(colours, size), mesh_depths=Resident(depths, size), mesh_row=row_bytes // 4)
 
 
 def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = (),
          translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-         meshes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> np.ndarray:
+         meshes: list[tuple[Samples, float]] = ()) -> np.ndarray:
     """The solids as the view sees them on the background, with the lines inked on them, the translucent solids over
-    and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`."""
-    return compose([(*layer(parts, view, inks, translucent, meshes), 1.0)], background)
+    and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`: the background blended in on the GPU,
+    sample by sample."""
+    colour, _ = traced(parts, view, inks, translucent, meshes, np.asarray(background, dtype=float))
+    return np.round(np.clip(colour[..., :3], 0, 1) * 255).astype(np.uint8)

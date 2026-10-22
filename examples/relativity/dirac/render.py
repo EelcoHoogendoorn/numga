@@ -53,7 +53,7 @@ def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int, view:
     tubes = meshes.tube_samples(list(zip(traced, rgb)), PATH_WIDTH, view, N_AROUND)
     shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    show(ax, solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, meshes=[(*tubes, 1.0)]), view)
+    show(ax, solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, meshes=[(tubes, 1.0)]), view)
     # The tall image in the middle of the figure, the legend in the space beside it.
     figure_width, figure_height = ax.figure.get_size_inches()
     ax.set_xlim(-view.half[1] * figure_width / figure_height, view.half[1] * figure_width / figure_height)

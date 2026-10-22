@@ -64,6 +64,6 @@ def animate_strips(rest: core.Vector, frames: core.Vector, across_fibres: core.S
         threads = [np.stack([map_coordinates(grids[case][..., axis], line.T, order=1, mode="nearest") for axis in range(3)], axis=-1)
                    for case, line in lines]                            # [lines] of [vertices, 3]
         fibres = meshes.tube_samples([(thread, FIBRE) for thread in threads], FIBRE_WIDTH, view)
-        return solids.draw([], view, background, meshes=[(*strips, 1.0), (*fibres, 1.0)])
+        return solids.draw([], view, background, meshes=[(strips, 1.0), (fibres, 1.0)])
 
     return [frame(grids) for grids in deformed]

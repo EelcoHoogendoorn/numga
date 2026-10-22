@@ -136,7 +136,7 @@ def end_on(triangles: np.ndarray, view: solids.View, parts: list[tuple[solids.Qu
     waterline = solids.rods(on_end(np.array([centre[0] - across, 0.0]), front),
                             on_end(np.array([centre[0] + across, 0.0]), front), WATERLINE_RADIUS * view.pixel)
     return solids.draw(parts + [(waterline[None], to_rgb(WATER))], view, BACKGROUND,
-                       translucent=[(water[None], np.array(to_rgb(WATER)), END_WATER_OPACITY)], meshes=[(*body, 1.0)])
+                       translucent=[(water[None], np.array(to_rgb(WATER)), END_WATER_OPACITY)], meshes=[(body, 1.0)])
 
 
 def side_by_side(images: list[np.ndarray]) -> np.ndarray:
@@ -163,7 +163,7 @@ def in_water(triangles: np.ndarray) -> np.ndarray:
     # The water's surface, a plate a pixel thick.
     water = solids.plates(sea[None], view.pixel)                              # [1, 6] Quadric
     return solids.draw([], view, BACKGROUND, translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
-                       meshes=[(*hull, 1.0)])
+                       meshes=[(hull, 1.0)])
 
 
 def draw_ship(hull: core.Point, placed: core.Motor, push: core.Forque, centre: core.Point) -> plt.Figure:

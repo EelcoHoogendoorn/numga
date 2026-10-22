@@ -94,7 +94,7 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     face_colours = np.concatenate([np.broadcast_to(colour, (len(xyw) - 1, 3)) for xyw, colour in zip(arcs, colours)])
     fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view)
     return solids.draw(parts, view, np.ones(3), inks, translucent=sphere,
-                       meshes=[(*fans, FAN_OPACITY), (*arc_tubes, 1.0), (*on_sphere, 1.0)])
+                       meshes=[(fans, FAN_OPACITY), (arc_tubes, 1.0), (on_sphere, 1.0)])
 
 
 def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:

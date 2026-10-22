@@ -89,7 +89,7 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
         orbits = meshes.tube_samples([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
                                       for end in (1, -1)], ORBIT_WIDTH, view)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
-        show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(*orbits, 1.0)]), view)
+        show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
         labels(ax, view, solids.mv.point(LABEL_DISTANCE * np.eye(3)), ["$z$", "$x$", "$y$"], ha="center",
                va="center", fontsize=13, color=NAMES)
@@ -154,6 +154,6 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
         tubes = meshes.samples(rings, faces[shown], TIP_RGB, {name: corner[shown] for name, corner in normals.items()},
                                view)
         return solids.draw([(placed_bodies[index].reshape(-1, 4), colours)] + flow, view, np.ones(3),
-                           meshes=[(*tubes, 1.0)])
+                           meshes=[(tubes, 1.0)])
 
     return [frame(index) for index in range(len(tips))]

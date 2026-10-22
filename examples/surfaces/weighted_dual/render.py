@@ -82,7 +82,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
                meshes.segment_samples(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
     space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
                         translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
-                        meshes=[(*stroke, 1.0) for stroke in strokes])
+                        meshes=[(stroke, 1.0) for stroke in strokes])
     # On the sphere, the arcs of both, each coloured by its kind.
     on_sphere, duals_on_sphere = rays, poles / np.linalg.norm(poles, axis=-1, keepdims=True)
     primal_arcs, dual_arcs = arcs(on_sphere[edges]), arcs(duals_on_sphere[beside])

@@ -66,7 +66,7 @@ def view(pixels: int, *drawn: np.ndarray) -> solids.View:
     return solids.view([sm.point(points) for points in drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
-def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start, at
     every sample."""
     curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
@@ -87,7 +87,7 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     figure = plt.figure(figsize=(16, 5.5))
     for index, (orbits, width) in enumerate(zip(drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH))):
         ax = figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0))
-        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(*orbit_samples(orbits, width, panel), 1.0)]), panel)
+        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 
 
@@ -96,7 +96,7 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
     six points ride along each knot. The three panels side by side, seen by one camera."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
     frame = view(FRAME_PIXELS, *drawn)
-    faint = [(*orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
+    faint = [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
     riders = np.arange(6) * length // 6

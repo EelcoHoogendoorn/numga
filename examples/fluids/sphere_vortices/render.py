@@ -69,6 +69,6 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
         corner_normals = {name: corner.reshape(faces.shape[:-1])[:, first:last].reshape(-1) for name, corner in normals.items()}
         drawn = meshes.samples(rings, shown, corners, corner_normals, seen)
         dots = solids.ball(sm.point(places[time]), DOT_RADIUS * seen.pixel)[:, None]
-        return solids.draw(balls + [(dots, colours)], seen, np.ones(3), meshes=[(*drawn, 1.0)])
+        return solids.draw(balls + [(dots, colours)], seen, np.ones(3), meshes=[(drawn, 1.0)])
 
     return [frame(time) for time in range(0, places.shape[0], every)]

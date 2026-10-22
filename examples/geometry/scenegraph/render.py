@@ -108,7 +108,7 @@ def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solid
              (beams, np.repeat(ray_colours, segments, axis=0)), (beam_joints, np.repeat(ray_colours, 2 * segments, axis=0)),
              (hits, ray_colours)]
     return solids.draw(parts, view, np.ones(3), translucent=[(chip, np.array(mcolors.to_rgb(SENSOR_COLOR)), SENSOR_OPACITY)],
-                       meshes=[(*lenses, 1.0)])
+                       meshes=[(lenses, 1.0)])
 
 
 # --- sensor photograph ------------------------------------------------------------------

@@ -65,5 +65,5 @@ def animate_tracking(states: Iterable) -> list[np.ndarray]:
         target = solids.ball(targets[index], TARGET_RADIUS * view.pixel)[None, None]     # [1, 1] Quadric
         frames.append(solids.draw([(target, TARGET_COLOUR)], view, BACKGROUND,
                                   translucent=[(solid_boxes(boxes[index]), LINK_COLOURS, LINK_OPACITY)],
-                                  meshes=[(*trail, TRAIL_OPACITY)]))
+                                  meshes=[(trail, TRAIL_OPACITY)]))
     return frames

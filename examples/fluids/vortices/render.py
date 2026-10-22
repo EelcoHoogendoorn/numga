@@ -122,5 +122,5 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         view = solids.View(camera, half, round(PANEL_PIXELS * half[0] / half.max()))
         strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
         tubes = meshes.tube_samples(strands, STRAND_WIDTH, view, N_AROUND)
-        show(ax, solids.draw([], view, BACKGROUND, meshes=[(*tubes, 1.0)]), view)
+        show(ax, solids.draw([], view, BACKGROUND, meshes=[(tubes, 1.0)]), view)
     return result

@@ -100,7 +100,7 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
                        MARGIN, N_PIXELS)
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(corner, (3, 3))), sm.point(tips), AXIS_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    bands = [(*meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2), 1.0)
+    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2), 1.0)
              for places, shade in sheets]
     figure = plt.figure(figsize=(8, 8 * view.half[1] / view.half[0]))
     ax = figure.add_axes((0, 0, 1, 1))

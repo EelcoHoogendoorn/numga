@@ -136,7 +136,7 @@ def draw_spherical_conic(
     antipode = solids.Ink(len(marks), cone_form[None].broadcast_to(runs.shape[:1]), chord_balls(runs[:, 0], runs[:, -1]),
                           OVAL, ANTIPODE_WIDTH, ANTIPODE_OPACITY)
     primal = solids.draw(marks, view, background, [antipode, oval(len(marks))], translucent=[(unit_ball, SPHERE, 0.0)],
-                         meshes=[(*shown_form, FORM_OPACITY), (*geodesics, 1.0)])
+                         meshes=[(shown_form, FORM_OPACITY), (geodesics, 1.0)])
 
     # Plane-based dual view: the oval as the envelope of its tangent great circles, each with its pole, and the dual
     # conic the poles trace, dotted.

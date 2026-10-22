@@ -57,7 +57,7 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     colours = np.repeat(AXIS_COLOURS, frames.shape[1], axis=0)                 # [axes * vertices, 3]
     marks = [(solids.rods(sm.point(dashes[..., 0, :]), sm.point(dashes[..., 1, :]), NET_WIDTH / 2 * pixel).reshape(-1, 3),
               CONTROL_COLOUR), (shafts.reshape(-1, 3), colours), (heads.reshape(-1, 3), colours)]
-    return solids.draw(marks, view, background, meshes=[(*sheet, 1.0)])
+    return solids.draw(marks, view, background, meshes=[(sheet, 1.0)])
 
 
 def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:

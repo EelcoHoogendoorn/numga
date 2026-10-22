@@ -176,7 +176,7 @@ def view(bent: list[np.ndarray], tips: list[np.ndarray], elevation: float, azimu
     return solids.view([solids.mv.point(batch) for batch in points], 0.0, elevation, azimuth, MARGIN, PIXELS)
 
 
-def swept(bent: np.ndarray, colour: str, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def swept(bent: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
     """Each wall of a bent beam `[pieces + 1, walls, 2, 3]` swept along it as lit strips, as `meshes.samples`."""
     # Each wall between two cross-sections a quad, two triangles, by the indices of its corners.
     index = np.arange(bent[..., 0].size).reshape(bent.shape[:-1])            # [pieces + 1, walls, 2]
@@ -215,7 +215,7 @@ def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: 
     dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Quadric
     opaque = [(dashes, np.array(to_rgb(SHEAR_LINE)))] + clamped(through, load, TIP_ARROW, view)
     return solids.draw(opaque, view, np.ones(3), translucent=[(ghost(bent, view), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
-                       meshes=[(*swept(bent, BEAM, view), 1.0)])
+                       meshes=[(swept(bent, BEAM, view), 1.0)])
 
 
 def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
@@ -249,7 +249,7 @@ def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list
     seen = view(bent, [load_tip(through, load, ARROW)], STUBBY_ELEVATION, STUBBY_AZIMUTH)
     return image_figure(solids.draw(clamped(through, load, ARROW, seen), seen, np.ones(3),
                                     translucent=[(ghost(bent[0], seen), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
-                                    meshes=[(*swept(bent[0], BEAM, seen), 1.0), (*swept(bent[1], PRINCIPAL, seen), RIGID_OPACITY)]))
+                                    meshes=[(swept(bent[0], BEAM, seen), 1.0), (swept(bent[1], PRINCIPAL, seen), RIGID_OPACITY)]))
 
 
 def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,

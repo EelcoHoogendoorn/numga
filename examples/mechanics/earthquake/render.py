@@ -132,7 +132,7 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     rim = solids.Ink(0, solids.rods(faces[0], faces[1], PATCH)[:1], solids.everywhere[None], np.array(to_rgb(RIM)),
                      RIM_WIDTH, 1.0)
     fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), PATCH_OPACITY)],
-                         meshes=[(*lobe_samples, 1.0)])
+                         meshes=[(lobe_samples, 1.0)])
     starts, ends = slip_arrows(normal, slip)
     shafts, heads = solids.arrows(solids.mv.point(starts), solids.mv.point(ends), SHAFT_RADIUS * view.pixel,
                                   HEAD_SHARE * SLIP_LENGTH, HEAD_WIDTH * HEAD_SHARE * SLIP_LENGTH)
