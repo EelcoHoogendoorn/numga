@@ -4,6 +4,8 @@ on the sky."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 
 from examples.relativity.gravitational_lensing import core
@@ -11,7 +13,7 @@ from examples.relativity.gravitational_lensing import core
 # Two equal masses on the x axis, 1.1 Einstein angles apart: one caustic with six cusps.
 POSITIONS = core.mv.x.dual() * np.array([-0.55, 0.55])                        # [masses] Point
 MASSES = np.array([0.5, 0.5])
-# The pixels along each side of the sky.
+# The pixels along each side of the sky the critical curve is traced on.
 N_PIXELS = 480
 # The source's path, across the caustic 0.12 Einstein angles off the masses' axis, the step the still
 # shows, the source's width, and the duration of a frame in milliseconds.
@@ -28,30 +30,29 @@ def deflected(observed: core.Point) -> core.Point:
     return core.deflected(observed, POSITIONS, MASSES)                         # [...] Point
 
 
-def lens(resolution: int) -> tuple[core.Point, core.Point, core.Scalar, core.LocalMap]:
-    """The sky's directions, the source direction each reaches, the local map's area ratio on the
-    sky, zero on the critical curve, and the local map."""
+def lens(resolution: int) -> tuple[core.Point, core.Scalar, core.LocalMap]:
+    """The sky's directions, the local map's area ratio on the sky, zero on the critical curve, and
+    the local map."""
     directions = core.sky(1.9, resolution)                                     # [rows, columns] Point
-    reached = core.deflected(directions, POSITIONS, MASSES)                    # [rows, columns] Point
     local = core.local_map(directions, POSITIONS, MASSES)                      # [rows, columns] Point <- Vector
     area = local.det()                                                         # [rows, columns] Scalar
-    return directions, reached, area, local
+    return directions, area, local
 
 
-def light(directions: core.Point, reached: core.Point, centre: core.Point, width: float
-          ) -> tuple[core.Scalar, core.Scalar]:
-    """The source about a centre unlensed, and the light each sky pixel shows: the source's
-    brightness where its sightline arrives."""
-    return core.brightness(directions, centre, width), core.brightness(reached, centre, width)
+def light(centre: core.Point, width: float
+          ) -> tuple[Callable[[core.Point], core.Scalar], Callable[[core.Point], core.Scalar]]:
+    """The source about a centre unlensed, and the light the sky shows in each direction: the
+    source's brightness where its sightline arrives."""
+    return (lambda at: core.brightness(at, centre, width)), (lambda at: core.brightness(deflected(at), centre, width))
 
 
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.relativity.gravitational_lensing import render
 
-    directions, reached, area, local = lens(N_PIXELS)
-    save_figure(render.draw(directions, area, deflected, POSITIONS, light(directions, reached, PATH[SHOWN_STEP], SOURCE_WIDTH)), "gravitational_lensing")
-    steps = (light(directions, reached, centre, SOURCE_WIDTH) for centre in PATH)
+    directions, area, local = lens(N_PIXELS)
+    save_figure(render.draw(directions, area, deflected, POSITIONS, light(PATH[SHOWN_STEP], SOURCE_WIDTH)), "gravitational_lensing")
+    steps = (light(centre, SOURCE_WIDTH) for centre in PATH)
     save_animation(render.animate(directions, area, deflected, POSITIONS, steps), "gravitational_lensing", DURATION_MS)
 
     # checks

@@ -3,13 +3,14 @@ axis takes through the crystal."""
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
 
 from examples.util.animation import capture
+from examples.util.wgsl import pinned, room
 from examples.mechanics.slip_systems import core
 
 SYSTEM_MAP = "tab20"
@@ -29,6 +30,8 @@ PATH_SHADE = 0.55
 # How far each corner's name sits above its corner, in points: [001] below, the others above.
 LIFTS = (-10, 8, 8)
 EDGE_SAMPLES = 60
+# The windows of the stereographic disk the whole disk and the close-up show, left to right and bottom to top alike.
+DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
 # The animation's side in inches, and in pixels.
 SIDE = 4.6
@@ -64,6 +67,16 @@ def projected(xyz: np.ndarray) -> np.ndarray:
     return upper[..., :2] / (1 + upper[..., 2:])
 
 
+def lifted(window: tuple[float, float], pixels: int) -> core.Direction:
+    """Pull directions on the middles of the pixels of a square window of the stereographic disk, rows down from
+    the top `[rows, columns]`: each point of the plane across [001] lifts to the direction that projects onto it,
+    [001] reflected in the mirror through [001] plus the point."""
+    edges = np.linspace(*window, pixels + 1)
+    across = (edges[:-1] + edges[1:]) / 2
+    offsets = core.mv.x * across + core.mv.y * across[::-1, None]             # [rows, columns] Vector
+    return (core.mv.z + offsets).normalized() >> core.mv.z.dual()            # [rows, columns] Direction
+
+
 def system_colours(count: int) -> np.ndarray:
     """The colour of each slip system, `[systems, 3]`."""
     return plt.get_cmap(SYSTEM_MAP)(np.arange(count) % 20)[:, :3]
@@ -71,14 +84,17 @@ def system_colours(count: int) -> np.ndarray:
 
 def shades(factors: core.Scalar) -> np.ndarray:
     """A colour per pull direction: the hue of the system that yields first, lightened where its Schmid factor
-    is small; and white outside the disk."""
+    is small."""
     values = np.abs(scalars(factors)).reshape(factors.shape[:2] + (-1,))      # [rows, columns, systems]
     hue = system_colours(values.shape[-1])[values.argmax(axis=-1)]
     strength = np.clip((values.max(axis=-1) - FAINT) / (FULL - FAINT), 0, 1)[..., None]
-    colour = 1 - strength * (1 - hue)
-    across = np.linspace(-1, 1, factors.shape[0])
-    inside = (across[None, :] ** 2 + across[:, None] ** 2 <= 1)[..., None]
-    return np.where(inside, colour, 1.0)
+    return 1 - strength * (1 - hue)
+
+
+def picture(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], window: tuple[float, float]):
+    """The colours of the systems over a square window of the disk, one pull direction per pixel of the room the
+    axes get, held pixel for pixel; the image."""
+    return pinned(ax, shades(factors(lifted(window, min(room(ax))))), (*window, *window))
 
 
 def draw_triangle(ax: plt.Axes) -> None:
@@ -88,21 +104,21 @@ def draw_triangle(ax: plt.Axes) -> None:
         ax.plot(*projected(start * (1 - share) + end * share).T, color=EDGE_COLOUR, linewidth=0.9)
 
 
-def draw_disk(ax: plt.Axes, factors: core.Scalar, planes: core.Plane, slips: core.Line) -> None:
-    """The whole disk: each region in the colour of its first system, the slip planes' normals as triangles and
-    the slip directions as dots, and the standard triangle."""
-    ax.imshow(shades(factors), extent=(-1, 1, -1, 1), origin="lower", interpolation="bilinear")
-    ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR, linewidth=0.9))
+def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], planes: core.Plane,
+              slips: core.Line) -> None:
+    """The whole disk: each region in the colour of its first system, white outside the rim, the slip planes'
+    normals as triangles and the slip directions as dots, and the standard triangle."""
+    image = picture(ax, factors, DISK)
+    image.set_clip_path(ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR, linewidth=0.9)))
     ax.scatter(*projected(normals(planes)).T, marker="^", s=40, color=NORMAL_COLOUR, zorder=3)
     ax.scatter(*projected(along(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
     draw_triangle(ax)
-    ax.set(xlim=(-1.02, 1.02), ylim=(-1.02, 1.02), aspect="equal")
-    ax.set_axis_off()
+    ax.set(xlim=DISK, ylim=DISK)
 
 
-def draw_close(ax: plt.Axes, factors: core.Scalar) -> None:
+def draw_close(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar]) -> None:
     """The standard triangle close up, in the colours of its systems, with the directions the axes head for."""
-    ax.imshow(shades(factors), extent=(-1, 1, -1, 1), origin="lower", interpolation="bilinear")
+    picture(ax, factors, WINDOW)
     draw_triangle(ax)
     for corner, name, lift in zip(projected(CORNERS), NAMES, LIFTS):
         ax.annotate(name, corner, xytext=(0, lift), textcoords="offset points", ha="center", va="center",
@@ -111,8 +127,7 @@ def draw_close(ax: plt.Axes, factors: core.Scalar) -> None:
         ax.scatter(*goal, marker="D", s=22, color=EDGE_COLOUR, zorder=3)
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center", fontsize=9,
                     color=EDGE_COLOUR)
-    ax.set(xlim=WINDOW, ylim=WINDOW, aspect="equal")
-    ax.set_axis_off()
+    ax.set(xlim=WINDOW, ylim=WINDOW)
 
 
 def steps(axes: core.Direction, amounts: core.Scalar) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -126,7 +141,8 @@ def steps(axes: core.Direction, amounts: core.Scalar) -> tuple[np.ndarray, np.nd
     return tracks, np.moveaxis(segments, 1, 0), np.moveaxis(mixed, 1, 0) * PATH_SHADE
 
 
-def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar) -> None:
+def draw_paths(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], axes: core.Direction,
+               amounts: core.Scalar) -> None:
     """The standard triangle close up, in the colours of its systems, with each pull's axis's path so far and
     its current place, each step in the colours of the systems that slipped in it, mixed by how much, and the
     directions the axes head for."""
@@ -137,29 +153,34 @@ def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts
     ax.scatter(*tracks[-1].T, s=14, color=PATH_COLOUR, zorder=3)
 
 
-def draw_chart(directions: core.Direction, factors: core.Scalar, planes: core.Plane, slips: core.Line,
+def draw_chart(factors: Callable[[core.Direction], core.Scalar], planes: core.Plane, slips: core.Line,
                axes: core.Direction, amounts: core.Scalar) -> plt.Figure:
-    """The whole disk, and the standard triangle with the paths."""
+    """The whole disk, and the standard triangle with the paths, coloured by each system's Schmid factors for a
+    pull direction, `factors`."""
     figure, (disk, close) = plt.subplots(1, 2, figsize=(9.0, 4.5), layout="constrained")
+    # Both panels without axes before either takes its room.
+    disk.set_axis_off()
+    close.set_axis_off()
     draw_disk(disk, factors, planes, slips)
     draw_paths(close, factors, axes, amounts)
     return figure
 
 
-def animate_paths(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
+def animate_paths(factors: Callable[[core.Direction], core.Scalar], axes: core.Direction, amounts: core.Scalar,
                   frames: int) -> Iterator[np.ndarray]:
     """The paths through the standard triangle growing, over so many frames, the triangle drawn once."""
-    return animate_paths_sized(directions, factors, axes, amounts, frames, PIXELS)
+    return animate_paths_sized(factors, axes, amounts, frames, PIXELS)
 
 
-def animate_paths_sized(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
-                        frames: int, pixels: int) -> Iterator[np.ndarray]:
+def animate_paths_sized(factors: Callable[[core.Direction], core.Scalar], axes: core.Direction,
+                        amounts: core.Scalar, frames: int, pixels: int) -> Iterator[np.ndarray]:
     """The paths through the standard triangle growing, over so many frames, the triangle drawn once, the figure
     so many pixels across."""
     reached = np.linspace(2, axes.shape[0], frames).round().astype(int)
     tracks, segments, colours = steps(axes, amounts)
     figure, ax = plt.subplots(figsize=(SIDE, SIDE), layout="constrained")
     figure.set_dpi(pixels / SIDE)
+    ax.set_axis_off()
     draw_close(ax, factors)
     paths = [ax.add_collection(LineCollection([], linewidths=1.6)) for _ in segments]
     places = ax.scatter(*tracks[0].T, s=14, color=PATH_COLOUR, zorder=3)

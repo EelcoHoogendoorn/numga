@@ -13,7 +13,7 @@ from examples.mechanics.slip_systems import core
 # The normals of the four slip planes, the {111} planes.
 NORMALS = [[1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
 # The samples across the stereographic disk of pull directions.
-N_PIXELS = 1000
+N_SAMPLES = 1000
 # The axes the pulls start along, spread over the standard triangle between [001], [011] and [111] away from
 # [001], where eight systems nearly tie; the slip of a step on the leading system, and how steeply a system's
 # slip falls off below the leading factor, so steeply that the leading system takes almost all of it and two
@@ -36,7 +36,7 @@ def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Line]:
     directions."""
     # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
     # reflected in the mirror through [001] plus the point.
-    across = np.linspace(-1, 1, N_PIXELS)
+    across = np.linspace(-1, 1, N_SAMPLES)
     offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector
     directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction
     planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane
@@ -79,11 +79,12 @@ def main() -> None:
 
     directions, factors, planes, slips = chart()
     axes, amounts = paths()
-    save_figure(render.draw_chart(directions, factors, planes, slips, axes, amounts), "slip_systems")
-    save_animation(render.animate_paths(directions, factors, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
+    schmid = lambda direction: core.schmid(direction, planes, slips)          # [..., planes, directions] Scalar
+    save_figure(render.draw_chart(schmid, planes, slips, axes, amounts), "slip_systems")
+    save_animation(render.animate_paths(schmid, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
     # Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_paths_sized(directions, factors, axes, amounts, N_FRAMES, GALLERY_PIXELS),
-                   "slip_systems", DURATION_MS)
+    save_animation(render.animate_paths_sized(schmid, axes, amounts, N_FRAMES, GALLERY_PIXELS), "slip_systems",
+                   DURATION_MS)
 
     # checks
     values = factors.to_array()                                          # [rows, columns, planes, directions]
