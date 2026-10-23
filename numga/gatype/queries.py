@@ -61,8 +61,8 @@ class AxisRoles(_Queries):
 
     @lru_cache(maxsize=None)
     def narrowing(self, axis: int, operand: GAType) -> Extensor | None:
-        """What a type given for an input binds there: nothing where it is the axis's own type,
-        which leaves the axis open, and otherwise the identity map on it, which narrows the axis."""
+        """The identity map restricting an argument's domain to the given subtype, or None when
+        the type already matches and no restriction is needed."""
         gatype = self._gatype
         space = operand.output_subspace
         own = gatype.input_subspaces[axis]

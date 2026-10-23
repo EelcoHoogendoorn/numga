@@ -1,6 +1,6 @@
 # 3. Operating on extensors
 
-A map has the type of its output, so the operations of the algebra apply to the map itself, carrying its open axis along. A product of two maps has the axes of both.
+A map has the type of its output, so the operations of the algebra act on that output. A product of two maps takes their arguments independently and multiplies their outputs.
 
 For example, taking the dual of the map `a ^ Vector` takes the dual of its output, the bivector $a \wedge v$, and gives a map from vectors to vectors:
 
@@ -47,7 +47,7 @@ a ^ c ^ b
 3 xyz
 ```
 
-The product of the map `a ^ Vector` with itself has two axes, one for each occurrence. Binding $c$ into both gives the square of $a \wedge c$:
+The product of the map `a ^ Vector` with itself takes two vector arguments. Evaluating it on $c$ twice gives the square of $a \wedge c$:
 
 ```python
 ((a ^ Vector) * (a ^ Vector))(c, c)
@@ -65,6 +65,6 @@ The product of the map `a ^ Vector` with itself has two axes, one for each occur
 -173
 ```
 
-In matrix notation, a linear operation on the output of a map follows the same rule. For an operation $D$ and a map $A$, it reads as the product $D A$: the output of $A$ feeds the input of $D$, and the input of $A$ stays open as the input of the result.
+In matrix notation, a linear operation $D$ on the output of a map $A$ reads as the product $D A$, taking $v$ to $D(A v)$.
 
-Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where an outer product and a dual act on the output of a material map, `(wavevector ^ medium(field)).dual()`, and leave its field axis open.
+Example: [light's wave surface in a crystal](../../../examples/electromagnetism/fresnel/fresnel.ipynb), where `(wavevector ^ medium(field)).dual()` is the wave condition as a function of the field.

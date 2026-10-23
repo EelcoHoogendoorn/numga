@@ -1,6 +1,6 @@
 # 2. Binding
 
-Putting a value into an open axis binds that axis and evaluates the product there. For example, binding $b$ into `a | Vector` gives the inner product `a | b`:
+Applying a map evaluates it on its argument. For example, applying `a | Vector` to $b$ gives the inner product `a | b`:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -12,7 +12,7 @@ b = 4 * x + 5 * y + 6 * z
 32
 ```
 
-With two open axes, binding one factor leaves a map with one axis. Binding $a$ into the first input of `Vector | Vector` leaves the second axis open and gives `a | Vector`:
+Binding the first argument of a bilinear map gives a linear map. For the inner product, binding $a$ gives `a | Vector`:
 
 ```python
 (Vector | Vector)(a)
@@ -23,7 +23,7 @@ With two open axes, binding one factor leaves a map with one axis. Binding $a$ i
 1  1  2  3
 ```
 
-Binding both $a$ and $b$ leaves no open axes, and the result is a plain multivector:
+Evaluating the form on $a$ and $b$ gives their scalar inner product:
 
 ```python
 (Vector | Vector)(a, b)
@@ -33,7 +33,7 @@ Binding both $a$ and $b$ leaves no open axes, and the result is a plain multivec
 32
 ```
 
-Either axis of a two-axis map can be bound while the other stays open. Leaving `Vector` in the first input of `Vector ^ Vector` and binding $b$ into the second gives the map that takes $v$ to $v \wedge b$:
+Either argument of a bilinear map can be bound independently. Binding $b$ as the second argument of `Vector ^ Vector` gives the map taking $v$ to $v \wedge b$. `Vector` is the identity map on its first argument:
 
 ```python
 (Vector ^ Vector)(Vector, b)
@@ -46,6 +46,6 @@ zx  -6   0   4
 xy   5  -4   0
 ```
 
-Maps with several axes, maps with one axis and plain multivectors are the same kind of object with two, one and zero open axes.
+Bilinear maps, linear maps and multivectors are extensors taking two, one and zero arguments respectively.
 
 Example: [stress in an elastic cube](../../../examples/mechanics/stress/stress.ipynb), where binding a face's normal into the stress map gives the traction on that face.

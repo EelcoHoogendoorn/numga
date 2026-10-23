@@ -324,7 +324,7 @@ class GAType:
     def reduces_to_scalar(self, steps: int) -> bool:
         """Whether self-products reach a scalar extensor in these steps.
 
-        Scalar output support alone does not eliminate open input axes.
+        Scalar output support alone does not eliminate input axes.
         """
 
         if self.arity:
@@ -522,7 +522,7 @@ class GAType:
     def __truediv__(self, other: object) -> Extensor:
         return self._identity() / other
 
-    # In a product, a type is an open axis; a number scales its identity map.
+    # A type is its identity map; a number scales that map.
     def __mul__(self, other: object) -> Extensor | NotImplementedType:
         if isinstance(other, Number):
             return self._identity() * other
@@ -538,7 +538,7 @@ class GAType:
         return numga.expression.geometric_product(other, self)
 
     def dual(self) -> Extensor:
-        """The right-Hodge dual as a map with this space in its open axis."""
+        """The right-Hodge dual as a map on elements of this space."""
         return self.algebra.operator.dual(self)
 
     def dual_inverse(self) -> Extensor:
@@ -724,7 +724,7 @@ class Derivations:
 
     @cached_property
     def nonscalar(self) -> GAType:
-        """Nonscalar output support, retaining every open input axis."""
+        """Nonscalar output support, retaining every input axis."""
 
         gatype = self._gatype
         space = gatype.output_subspace.restrict(
@@ -735,7 +735,7 @@ class Derivations:
     @cached_property
     def degenerate(self) -> GAType:
         """The output's blades that contain a degenerate direction, with its orientation, retaining every
-        open input axis: in PGA the ideal elements, such as directions and translations."""
+        input axis: in PGA the ideal elements, such as directions and translations."""
 
         gatype = self._gatype
         space = gatype.output_subspace.degenerate()
@@ -743,8 +743,7 @@ class Derivations:
 
     @cached_property
     def nondegenerate(self) -> GAType:
-        """The output's blades free of degenerate directions, with its orientation, retaining every open
-        input axis: in PGA the elements through the origin, such as planes and rotation axes."""
+        """The output's blades free of degenerate directions, with its orientation, retaining every input axis: in PGA the elements through the origin, such as planes and rotation axes."""
 
         gatype = self._gatype
         space = gatype.output_subspace.nondegenerate()
@@ -753,7 +752,7 @@ class Derivations:
     @lru_cache(maxsize=None)
     def within(self, generators: str) -> GAType:
         """The output's blades built from these basis vectors alone, such as `"x y z"`, with its
-        orientation, retaining every open input axis."""
+        orientation, retaining every input axis."""
 
         gatype = self._gatype
         span = _generator_mask(gatype.algebra, generators)
@@ -763,7 +762,7 @@ class Derivations:
     @lru_cache(maxsize=None)
     def containing(self, generators: str) -> GAType:
         """The output's blades that contain every one of these basis vectors, such as `"z"`, with its
-        orientation, retaining every open input axis."""
+        orientation, retaining every input axis."""
 
         gatype = self._gatype
         span = _generator_mask(gatype.algebra, generators)
@@ -791,7 +790,7 @@ class Derivations:
 
     @lru_cache(maxsize=None)
     def self_product(self, transform: str) -> GAType:
-        """Symmetric self-product type, retaining both operands' open inputs."""
+        """Symmetric self-product type, retaining both operands' inputs."""
 
         gatype = self._gatype
         fact = ProductFact(SelfProduct(transform), ProductResult.SCALAR)

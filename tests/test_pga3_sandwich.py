@@ -150,7 +150,7 @@ def test_sandwich_shift_operators_are_the_sandwich_from_either_side():
     assert recovered.gatype == (motor.reverse().transform(moved)).gatype
     np.testing.assert_allclose(recovered.kernel, points.kernel, atol=1e-12)
 
-    # An open type works with >> and <<
+    # The sandwich acts on the vector identity map.
     pullback = motor << Line
     assert pullback.axes == (Line.output_subspace, Line.output_subspace)
     np.testing.assert_allclose(pullback.kernel, motor.reverse().transform(Line).kernel)

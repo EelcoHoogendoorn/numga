@@ -37,3 +37,5 @@ dist/
 .ipynb_checkpoints/
 /AGENTS.md
 /notes/
+/examples/geometry/lie_cyclides/
+/tests/examples/geometry/test_lie_cyclides.py

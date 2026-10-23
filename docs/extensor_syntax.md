@@ -9,11 +9,11 @@ In numga, the `Extensor` abstraction unifies multivectors and linear/multilinear
 
 ## 1. The Core Viewpoint: Multivectors Waiting for Arguments
 
-A GA expression with open axes reads as an operation on its **output type**. An extensor behaves as a multivector of its output type with one or more arguments still to be supplied.
+An extensor's **output type** determines how the operations of the algebra act on it. Each operation acts on the map's output, producing a map of the same arguments.
 
 When constructing a projection:
 ```python
-# Reads: join light with an open point (Line), meet with ground plane (Point):
+# The shadow map sends each point along its light ray to the ground plane.
 shadow = (light & Point) ^ ground                     # [] Point <- Point
 
 # The result behaves as a Point, waiting for an object vertex to be supplied:
@@ -21,7 +21,7 @@ vertex = mv.point([1.0, 0.0, 2.0])                   # [] Point
 projected_vertex = shadow(vertex)                    # [] Point
 ```
 
-Because every GA operation treats an open extensor by its output type, several stages chain without index bookkeeping:
+Because every GA operation treats an extensor by its output type, several stages chain without index bookkeeping:
 
 ```python
 # 1. Wedge with k produces a field Bivector (waiting for a spatial polarization a):
@@ -37,11 +37,11 @@ Each step reads as geometric algebra on the output type, and numga composes the 
 
 ---
 
-## 2. Construction via Open Axes & GATypes
+## 2. Maps from products and GATypes
 
-Passing an unbound GAType (`Vector`, `Point`, `Twist`, `Plane`, etc.) to any GA operation constructs a compiled extensor with open inputs.
+A GAType (`Vector`, `Point`, `Twist`, `Plane`, etc.) is the identity map on its space. Products with these maps construct extensors.
 
-### Open Axis Expressions
+### Products as maps
 ```python
 # Unary linear map (Arity 1): Forque <- Point
 line_map = mv.x & Point
@@ -109,15 +109,15 @@ line = join_map(origin, target)                      # Line
 ray_from_origin = join_map(origin)                   # Line <- Point
 ray = ray_from_origin(target)                        # Line
 
-# The axis's own type in place of an argument leaves that axis open:
+# Point is the identity map; binding target gives the map from points to rays through it.
 ray_to_target = join_map(Point, target)              # Line <- Point
 
-# A type inside the axis's space narrows the axis to it:
+# Restrict the response to electric fields.
 electric_response = chi(Electric)                    # Antibivector <- Electric
 ```
 
-### Argument Lifting (Binding Maps into Axes)
-Lifting is binding a map, an extensor with open axes of its own, into an open argument axis. Instead of eliminating the axis, numga contracts the intermediate GAType and inherits the argument's input axes: with `M` a `C <- B` and `T` a `B <- A`, `M(T)` is a `C <- A`, feeding the output of `T` into the input of `M`.
+### Composition
+Composition feeds the output of one map into another. With `M` a `C <- B` and `T` a `B <- A`, `M(T)` is a `C <- A`: it maps each input of `T` to `M` applied to `T`'s output.
 
 In matrix notation this reads as the product $C = AB$, which feeds the output of $B$ into the input of $A$.
 
@@ -237,7 +237,7 @@ Operate directly on linear transformations while preserving input/output GATypes
   ricci = Vector.commutator(R(Vector.wedge(Vector))).trace(0, 2)   # [] Scalar <- (Vector, Vector)
   incidence_trace = (Plane & f(Point)).trace()                     # [] Scalar: f.trace(), in PGA
   ```
-* **`.contract()`** / **`.contract(first, second)`**: Pairs two axes through the inner product and drops both, keeping the other axes open, with the axes numbered and left unnamed as for `.trace()`. Two inputs of one space pair through the axis's metric: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either; the metric must be invertible. The output pairs with an input of its own space, as if lifted by `Space | f` first; the metric and its inverse cancel, so on `Space <- Space` this is the trace again, for any metric. Contracting a product with an open vector differentiates a linear map, and the product picks the part:
+* **`.contract()`** / **`.contract(first, second)`**: Pairs two arguments through the inner product, producing a map of the remaining arguments. The numbering and rules for omitting the numbers are the same as for `.trace()`. Two inputs of one space pair through that space's metric: the sum of `value(e_k, e^k)` over a basis and its reciprocal, without writing either; the metric must be invertible. The output pairs with an input of its own space, as if lifted by `Space | f` first; the metric and its inverse cancel, so on `Space <- Space` this is the trace again, for any metric. Products of `Vector` with a linear map, contracted over their vector arguments, give its divergence or curl:
   ```python
   divergence = (Vector | f(Vector)).contract()                      # [] Scalar: the trace of f, f.contract() lifted to a form
   curl = (Vector ^ f(Vector)).contract(1, 2)                        # [] Bivector: f - f.adjoint() == Vector | curl
@@ -302,13 +302,13 @@ Arity is not limited to forms; any output type is allowed and axes are numbered 
 ```python
 A = Vector.commutator(R(Vector.wedge(Vector)))       # [] Vector <- (Vector, Vector, Vector)
 ```
-Partial calls fill axes in order, the axis's own type in place of an argument leaves it open and a type inside the axis narrows it, `.trace()` and `.contract()` drop the two axes they pair, and batch axes broadcast as for unary maps.
+Partial calls bind arguments in order. A GAType is its identity map; a subtype restricts the corresponding argument's domain. `.trace()` and `.contract()` pair two arguments, and batch axes broadcast as for unary maps.
 
 ---
 
 ### Nullary Extensors (Arity 0: Multivectors & Scalars)
 
-Nullary extensors represent concrete multivectors and scalars (carrying no open inputs). Methods on nullary extensors transform or inspect concrete geometric values rather than contracting axes:
+Nullary extensors are multivectors and scalars: extensors taking no arguments. Their methods transform or inspect geometric values:
 
 * **Scalars (`Scalar`)**: Eigensolvers (`.eigh()`), singular values of maps (`.svdvals()`), and quadratic forms return scalar extensors. Mathematical operations, reductions, and conversions chain directly as methods without unwrapping:
   ```python

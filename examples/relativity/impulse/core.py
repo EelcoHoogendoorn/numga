@@ -81,7 +81,7 @@ ENDS: Scalar = mv.scalar([[0.0], [1.0]])  # [end] Scalar
 
 
 def boost(rapidity: np.ndarray) -> PointMap:
-    """The Lorentz boost adding `rapidity` to every velocity, as an open sandwich on events and directions.
+    """The Lorentz boost adding `rapidity` to every velocity, as a map on events and directions.
 
     Normalizing removes exp's tiny scale error before the map is reused.
     """

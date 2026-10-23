@@ -177,7 +177,7 @@ class Extensor:
     @property
     def output_gatype(self) -> GAType:
         """The nullary type of what this extensor produces, with its orientation: for an expression in
-        open types, the type its construction gives the result."""
+        GATypes, the type its construction gives the result."""
         return self.gatype.derive.output
 
     @property
@@ -413,10 +413,9 @@ class Extensor:
         return type(self)._from_prepared_kernel(context, result_gatype, result)
 
     def __call__(self, *operands: Extensor | GAType) -> Extensor:
-        """Apply to operands in axis order. Fewer operands than axes bind the leading axes. A bare
-        type is its identity map: the axis's own type leaves that axis open, form(Vector, v) binds
-        only the second, and a type inside the axis narrows it to that type. A subspace, which has no
-        orientation, is refused."""
+        """Apply to operands in argument order. A partial call binds the leading arguments. A GAType
+        is its identity map: form(Vector, v) is the linear form with second argument v, and a subtype
+        restricts the corresponding argument's domain. A subspace, which has no orientation, is refused."""
         if any(isinstance(operand, SubSpace) for operand in operands):
             raise UnorientedSubspace()
         if any(isinstance(operand, GAType) for operand in operands):

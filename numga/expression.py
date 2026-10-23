@@ -1,10 +1,10 @@
-"""The products of the algebra, and the versor actions, over values and open type axes.
+"""The products of the algebra, and the versor actions, on values and maps.
 
 Each product is one record: the operator factory method that builds it from its operands' types, and
 an extension method that evaluates it on values. On two values the method dispatches on their types,
 and its staged case builds the operator once per pair of types; each call applies the compiled
-operator. An operand that is a type is an open axis: the operator is built from the types and the
-values bound into it, leaving a map, and the product's laws stay attached to it.
+operator. A GAType operand is its identity map. Products with these maps produce extensors,
+and the product's laws stay attached to them.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def is_expression_operand(value: object) -> bool:
 
 
 class Product:
-    """A product of two operands: values, open type axes, or one of each."""
+    """A product of two operands: values, GATypes or maps."""
 
     def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
         self.name = name
@@ -59,12 +59,12 @@ class Product:
 
 
 class VersorAction:
-    """The action of a versor on a passenger: values, open type axes, or one of each.
+    """The action of a versor on a passenger: values, GATypes or maps.
 
-    A typed versor declares distinct left and right inputs over one carrier. A nullary Extensor
-    binds the same value into both axes atomically. An Extensor with open inputs is bound into both
-    axes too: its inputs appear twice, those of the left copy first, then the passenger's, then those
-    of the right copy, and the result keeps the carrier's symmetrized type.
+    A typed versor declares distinct left and right arguments over one carrier. A nullary Extensor
+    binds the same value as both arguments atomically. A map composes with both arguments:
+    the result takes the left copy's inputs, then the passenger's, then the right copy's,
+    and retains the carrier's symmetrized type.
     """
 
     def __init__(self, name: str, build: Callable[[OperatorFactory, GAType, GAType], "Extensor"], doc: str) -> None:
@@ -106,7 +106,7 @@ class VersorAction:
 
 geometric_product = Product(
     "geometric_product", OperatorFactory.geometric_product,
-    "The geometric product. A nullary GAType is a typed open axis; value Extensors bind their axes, "
+    "The geometric product. A nullary GAType is its identity map; Extensor operands compose with the product, "
     "and the first backend value promotes the whole expression out of the algebra's exact context.",
 )
 wedge = Product("wedge", OperatorFactory.wedge, "The exterior product.")

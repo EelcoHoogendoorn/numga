@@ -35,7 +35,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-The rotation itself is a map when written with an open axis, `rotor >> Vector`. Moving $A$ is therefore a composition of three maps:
+The map `rotor >> Vector` rotates vectors. Moving $A$ is therefore a composition of three maps:
 
 ```python
 rotation = rotor >> Vector
@@ -49,7 +49,7 @@ y  0  0  0
 z  0  0  0
 ```
 
-Each rotation acts on the grade of the axis it occupies. For a map from vectors to bivectors, the input rotates as a vector and the output as a bivector:
+Each rotation acts on the grade of its argument. For a map from vectors to bivectors, the input rotates as a vector and the output as a bivector:
 
 ```python
 area = a ^ Vector

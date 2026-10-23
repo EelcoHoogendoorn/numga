@@ -2,8 +2,8 @@
 
 A field axis ranges over sites as well as blades. Binding treats every site axis as a batch axis
 with a label: a field bound into a field axis pairs its sites with the axis's and sums over them,
-a field bound into a axis over blades alone is acted on site by site, and the open axes of a bound
-map keep their sites in the result. The labels are aligned as trailing batch axes, the ordinary
+a field bound into a axis over blades alone is acted on site by site, and composition preserves
+the sites of the argument map's inputs. The labels are aligned as trailing batch axes, the ordinary
 bind runs over them, and the summed ones are reduced.
 """
 

@@ -118,7 +118,7 @@ def exp_derivative(b: Extensor, *, n: int = 8) -> Extensor:
     It is the mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1. Halving `b`
     splits that mean in two, the second half the first turned by `(b / 2).exp()`, so the mean at
     `b` is `((b / 2).exp() << Bivector + Bivector)(mean at b / 2) / 2`. n halvings bring `b` down
-    to where the mean is its series in the commutator with the open type, `ad`,
+    to where the mean is its series in the commutator map `ad`,
     `Bivector - ad / 2 + ad(ad) / 6 - ...` to the order of exp's step; the turns of the halved
     generators are the squarings of its exponential, as in exp itself. A boost's turns grow like
     the exponential of twice its size, and the round-off with them."""

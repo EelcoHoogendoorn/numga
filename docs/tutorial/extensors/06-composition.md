@@ -13,7 +13,7 @@ a ^ (b ^ c)
 -3 xyz
 ```
 
-Leaving $c$ open gives the whole calculation as a map from vectors to trivectors:
+The map `a ^ (b ^ Vector)` takes vectors to trivectors:
 
 ```python
 a ^ (b ^ Vector)
@@ -24,7 +24,7 @@ a ^ (b ^ Vector)
 xyz  -3  6  -3
 ```
 
-The two steps can also be written as maps. The first, `b ^ Vector`, produces a bivector. Its output fits the axis of the second, `a ^ Bivector`. Putting the first map in that axis gives:
+The map `b ^ Vector` produces bivectors, which `a ^ Bivector` maps to trivectors. Their composition gives the same result:
 
 ```python
 composition = (a ^ Bivector)(b ^ Vector)
@@ -35,7 +35,7 @@ composition(c)
 -3 xyz
 ```
 
-This is composition: the output of one map supplies the input of another, and the first map's input remains open. The intermediate types must match; the result carries the input type of the first map and the output type of the second.
+Composition supplies the output of one map as the input of another. The intermediate types must match; the result carries the input type of the first map and the output type of the second.
 
 When two maps can be composed in either order, the results may differ. For example:
 

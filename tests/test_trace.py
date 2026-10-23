@@ -89,8 +89,8 @@ def test_contracting_the_output_is_the_inner_product_lift(signature):
 
 
 def test_axes_are_named_unless_only_two_carry_an_index():
-    """A scalar output carries no index: a form's two inputs need no names, a map with an open
-    vector multiplied in has three axes that do, and a scalar output pairs with nothing."""
+    """A scalar output carries no index: a form's two inputs need no numbers, while the product of
+    a linear map with Vector has an output and two inputs requiring an explicit pair."""
     ga = Algebra("x+y+z+")
     mv = NumpyContext(ga).multivector
     vector = ga.gatype.vector()

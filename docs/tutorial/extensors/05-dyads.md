@@ -41,7 +41,7 @@ A(2 * x - y + z) - (2 * a - b + c)
   0  0  0
 ```
 
-The outputs $a$, $b$ and $c$ can be chosen freely, so this construction can give any linear map on vectors. They can also have any grade: opening axes, multiplying scalar outputs by multivectors and adding maps are enough to build every linear map from vectors to multivectors.
+The outputs $a$, $b$ and $c$ can be chosen freely, so this construction can give any linear map on vectors. They can also have any grade: multiplying linear scalar measurements by multivectors and adding the resulting maps builds every linear map from vectors to multivectors.
 
 Each term in the sum has one fixed output, scaled by a scalar product with the input. Such a one-direction map is a dyad: every output lies along its fixed output element, and sums of dyads build any linear map. The scalar factor can come from the inner product or from the regressive product `&` with a complementary grade.
 
