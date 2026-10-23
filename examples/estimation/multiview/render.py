@@ -58,12 +58,6 @@ def pose_covariance(information: Information) -> np.ndarray:
     return covariance[np.arange(cams), :, np.arange(cams), :]
 
 
-def pose_sigmas(information: Information) -> np.ndarray:
-    """One-sigma pose uncertainties [cams, 3] over twist coefficients, from the information form."""
-    covariance = pose_covariance(information)
-    return np.sqrt(np.maximum(np.diagonal(covariance, axis1=-2, axis2=-1), 0.0))
-
-
 # --- rasterized quadrics ------------------------------------------------------------------
 def plane_grid() -> tuple[Point, float]:
     """The viewport as a grid of plane points, and the width of one pixel."""

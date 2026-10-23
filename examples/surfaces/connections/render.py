@@ -69,11 +69,6 @@ def positions(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def print_scalars(label: str, values: core.Scalar) -> None:
-    """A label and the values of a batch of scalars."""
-    print(label, values.cast(core.ga.subspace.scalar()).kernel[..., 0])
-
-
 # --- views and parts ------------------------------------------------------------------
 def square_view(view_degrees: np.ndarray, mesh: core.Mesh, reach: float) -> solids.View:
     """A square view framing a mesh, with `reach` to spare, from a view in degrees, the azimuth measured from x."""
@@ -99,7 +94,7 @@ def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, le
 
 
 def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
-            colour: str = meshes.plain) -> tuple[np.ndarray, np.ndarray]:
+            colour: str = meshes.plain) -> meshes.Samples:
     """A mesh, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.mv.point(positions(mesh.vertices))
     return meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
@@ -131,7 +126,7 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
         now = meshes.segment_samples(*needles(points[-1], carried[-1], points[-1], holonomy_needle * 1.15),
                                      np.tile(colours, (3, 1)), 5 * line_width, frame)
         frames.append(solids.draw([], frame, background, translucent=ball,
-                                  meshes=[(*circles, 1.0), (*now, 1.0), (*trail, trail_opacity)]))
+                                  meshes=[(circles, 1.0), (now, 1.0), (trail, trail_opacity)]))
     return frames
 
 
@@ -148,8 +143,8 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, fr
     arrows = meshes.segment_samples(*needles(places[visible] + normals[visible] * 0.03, units[visible] * scale,
                                              normals[visible], transport_needle), needle_colour, 2 * line_width, frame)
     return solids.draw([], frame, background,
-                       meshes=[(*surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
-                               (*arrows, 1.0)])
+                       meshes=[(surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
+                               (arrows, 1.0)])
 
 
 def draw_torus_fields(torus: core.Mesh, fields: list[core.Vector]) -> plt.Figure:
@@ -184,7 +179,7 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
     centres = solids.mv.point(positions(mesh.face_centers)[singular])          # [S] Point
     marks = [(solids.ball(centres[index:index + 1], singular_radius * abs(value) * frame.pixel)[:, None],
               positive if value > 0 else negative) for index, value in enumerate(indices)]
-    return solids.draw(marks, frame, background, meshes=[(*surface(mesh, surface_colour, frame), 1.0), (*arrows, 1.0)])
+    return solids.draw(marks, frame, background, meshes=[(surface(mesh, surface_colour, frame), 1.0), (arrows, 1.0)])
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]], limits: np.ndarray,
@@ -297,7 +292,7 @@ def draw_bands(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
 def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
     return solids.draw([], frame, background,
-                       meshes=[(*surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
+                       meshes=[(surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
 
 
 def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], view_degrees: np.ndarray,
@@ -313,7 +308,7 @@ def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
     lines = meshes.segment_samples(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
-    show(axis, solids.draw([], frame, background, meshes=[(*surface(mesh, light, frame), 1.0), (*lines, 1.0)]), frame)
+    show(axis, solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)]), frame)
 
 
 def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]], draw, reach: float,

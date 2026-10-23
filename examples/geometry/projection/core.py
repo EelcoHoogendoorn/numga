@@ -56,13 +56,13 @@ def shadows(body: Point, ground: Plane, point_light: Point, sun: Point,
     # the point this is linear, Point <- Point. Nothing in the expression cares whether the
     # light is a finite point or a direction at infinity, so the sun's orthographic shadow is
     # the same line of code.
-    spotlight: Camera = (point_light & Point) ^ ground
-    sunlight: Camera = (sun & Point) ^ ground
+    spotlight = (point_light & Point) ^ ground                                  # Camera
+    sunlight = (sun & Point) ^ ground                                           # Camera
 
     # The same expression as a map on the light asks a different question: with the corner
     # fixed, its shadow is a linear map of the light's position, so a whole path of light
     # positions is cast in one call.
-    shadow_of_corner: ShadowTrail = (Point & corner) ^ ground
+    shadow_of_corner = (Point & corner) ^ ground                                # ShadowTrail
 
     return spotlight(body), sunlight(body), shadow_of_corner(light_path)
 
@@ -74,8 +74,8 @@ def stereo(subject: Point, centre: Point, screen: Plane,
            rig_1: Motor, rig_2: Motor):
     """Move the supplied centre and screen into two poses and relate their images."""
     # The same join then meet, as a map on lines, is the camera for lines.
-    camera: Camera = (centre & Point) ^ screen
-    line_camera: LineCamera = (centre & Line) ^ screen
+    camera = (centre & Point) ^ screen                                          # Camera
+    line_camera = (centre & Line) ^ screen                                      # LineCamera
 
     # The camera moves as a map: pull world points back into the rig frame, push image
     # points forward. The line camera moves the same way and stays consistent with the
@@ -96,6 +96,6 @@ def stereo(subject: Point, centre: Point, screen: Plane,
 
     # Two image points correspond iff their rays meet, and two lines meet iff their wedge
     # vanishes. As a map on both image points, that sentence is a bilinear form.
-    correspondence: Correspondence = (centre_1 & Point) ^ (centre_2 & Point)
+    correspondence = (centre_1 & Point) ^ (centre_2 & Point)                    # Correspondence
 
     return image_1, image_2, epipole_2, epipolar_lines_2, correspondence

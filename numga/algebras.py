@@ -101,3 +101,15 @@ VGA3D = Algebra(
     ),
 )
 
+
+
+# The plane's vectors and rotations, without points of their own.
+VGA2D = Algebra("x+y+")
+
+# The conformal model of space: points as null vectors, spheres and planes as vectors, x y z and w and e squaring to one
+# and minus one.
+CGA3D = Algebra("x+y+z+w+e-")
+
+# The spacetime of a plane, space positive and time negative: electromagnetism in a sheet, its fields bivectors
+# through time.
+STA2D = Algebra("x+y+t-")

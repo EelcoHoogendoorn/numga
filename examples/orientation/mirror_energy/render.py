@@ -31,7 +31,7 @@ def coordinates(points: Point) -> np.ndarray:
     return points.cast(ga.subspace("yz zx xy")).kernel
 
 
-def scene(paths: np.ndarray) -> tuple[solids.View, list[tuple[np.ndarray, np.ndarray]]]:
+def scene(paths: np.ndarray) -> tuple[solids.View, list[meshes.Samples]]:
     """The view of the unit sphere, and each case's paths of its masses `[times, cases, masses, 3]`, closed, as faint tubes
     sampled for it."""
     corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
@@ -60,7 +60,7 @@ def case_image(view: solids.View, path: tuple[np.ndarray, np.ndarray], positions
     circles = solids.Ink(len(parts), solids.half_space(solids.axes), solids.everywhere[None],
                          CIRCLE, CIRCLE_WIDTH, 1.0)
     return solids.draw(parts, view, np.ones(3), [circles], translucent=[(sphere, SPHERE, SPHERE_OPACITY)],
-                       meshes=[(*path, PATH_OPACITY)])
+                       meshes=[(path, PATH_OPACITY)])
 
 
 def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> list[np.ndarray]:

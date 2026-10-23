@@ -19,7 +19,7 @@ sm = solids.mv
 STRANDS = np.array([to_rgb(colour) for colour in
                     ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe", "#d17a9b", "#5fa8d3", "#7f6a4f")])
 SPHERE_COLOUR = np.array([0.90, 0.91, 0.93])
-TRAIL = 240
+TRAIL = 60
 TRAIL_WIDTH, DOT_RADIUS, N_AROUND = 3.0, 4.0, 6
 N_PIXELS, MARGIN = 300, 0.08
 
@@ -69,6 +69,6 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
         corner_normals = {name: corner.reshape(faces.shape[:-1])[:, first:last].reshape(-1) for name, corner in normals.items()}
         drawn = meshes.samples(rings, shown, corners, corner_normals, seen)
         dots = solids.ball(sm.point(places[time]), DOT_RADIUS * seen.pixel)[:, None]
-        return solids.draw(balls + [(dots, colours)], seen, np.ones(3), meshes=[(*drawn, 1.0)])
+        return solids.draw(balls + [(dots, colours)], seen, np.ones(3), meshes=[(drawn, 1.0)])
 
     return [frame(time) for time in range(0, places.shape[0], every)]

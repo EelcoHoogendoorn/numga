@@ -11,7 +11,7 @@ import numpy as np
 
 from examples.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.wgsl import show, solids
+from examples.wgsl import meshes, show, solids
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -24,13 +24,12 @@ BAR_WIDTH = 2.2
 REACH = 1.25
 # The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
 # share of its larger side, and the pixels across its picture; how much each surface of the terrain hides, so the
-# creases behind it show through, and its thickness and the widths of the creases and of the boundary as rods, in
-# pixels.
+# creases behind it show through, and the widths of the creases and of the boundary as rods, in pixels.
 ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
 MARGIN = 0.08
 N_PIXELS = 1000
 TERRAIN_OPACITY = 0.16
-TERRAIN_THICKNESS, CREASE_WIDTH, BOUNDARY_WIDTH = 0.5, 7.0, 3.5
+CREASE_WIDTH, BOUNDARY_WIDTH = 7.0, 3.5
 BACKGROUND = np.ones(3)
 
 
@@ -82,12 +81,14 @@ def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: s
     lifted = np.concatenate([xy, heights[:, None]], axis=-1)                   # [vertices, 3]
     places = solids.mv.point(lifted)
     pixel = framing.pixel
-    surface = solids.plates(lifted[mesh.faces], TERRAIN_THICKNESS * pixel)
+    # The faces as a mesh, which the tracer composites sample by sample, where thin plates would each be searched
+    # through every translucent layer; a plate is crossed twice, a face once, so a face hides what both would.
+    surface = meshes.samples(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing)
     creases = solids.rods(places[mesh.edges[inner, 0]], places[mesh.edges[inner, 1]], CREASE_WIDTH / 2 * pixel)
     boundary = solids.rods(places[mesh.edges[mesh.boundary_edges, 0]], places[mesh.edges[mesh.boundary_edges, 1]],
                            BOUNDARY_WIDTH / 2 * pixel)
     return solids.draw([(creases, shades), (boundary, BOUNDARY_COLOUR)], framing, BACKGROUND,
-                       translucent=[(surface, TERRAIN_COLOUR, TERRAIN_OPACITY)])
+                       meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 
 
 def panels(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector,

@@ -104,7 +104,7 @@ def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np
                            sphere_colour, WIREFRAME_WIDTH, WIREFRAME_OPACITY)
     return solids.draw(marks, view, background, [rim, wireframe],
                        translucent=[(sheet, plane_colour, SHEET_OPACITY), (ball, sphere_colour, BALL_OPACITY)],
-                       meshes=[(*curve, 1.0)])
+                       meshes=[(curve, 1.0)])
 
 
 def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,

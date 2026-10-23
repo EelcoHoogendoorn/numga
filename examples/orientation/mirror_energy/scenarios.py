@@ -13,10 +13,10 @@ DURATION_MS = 90
 
 def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
     """A prescribed turn and its mirror have the same kinetic energy."""
-    points: Point = mv.antivector([[1, 0, 0], [0, 0.8, 0.6], [-0.6, 0, -0.8]])
+    points = mv.antivector([[1, 0, 0], [0, 0.8, 0.6], [-0.6, 0, -0.8]])         # Point
     masses = np.array([1, 1.5, 0.5])
-    rate: Rate = mv.xy
-    mirror: Plane = mv.x
+    rate = mv.xy                                                                # Rate
+    mirror = mv.x                                                               # Plane
     frames = 36
     times = np.linspace(0, 2 * np.pi, frames, endpoint=False)
     positions, velocities = core.motion(points, rate, mirror, times)

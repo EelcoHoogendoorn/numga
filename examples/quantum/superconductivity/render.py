@@ -104,7 +104,7 @@ def animate_quench(
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
     view, axes, circles = chart(energies)
-    rings = (*meshes.tube_samples([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
+    rings = (meshes.tube_samples([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
              CIRCLE_OPACITY)
 
     def arrows(coherence: np.ndarray) -> np.ndarray:
@@ -116,7 +116,7 @@ def animate_quench(
         stems = [(shafts, colours), (heads, colours),
                  (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
         path = meshes.tube_samples([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view, N_AROUND)
-        return solids.draw(axes + stems, view, np.ones(3), meshes=[rings, (*path, PATH_OPACITY)])
+        return solids.draw(axes + stems, view, np.ones(3), meshes=[rings, (path, PATH_OPACITY)])
 
     figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
     axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))

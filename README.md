@@ -6,11 +6,11 @@ Extensors generalize matrices and tensors from vectors to multivectors, and from
 
 | [**Scenegraph and camera optics**](examples/geometry/scenegraph/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/geometry/scenegraph/scenegraph.ipynb) | [**Vanishing geometric derivative**](examples/fluids/wing/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/fluids/wing/wing.ipynb) |
 | :---: | :---: |
-| <img src="plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="420" /> | <img src="plots/wing.gif" alt="A wing pitching in a steady stream, its pressure, streamlines and lift" width="352" /> |
+| <img src="plots/scenegraph.gif" alt="A robot arm in 3D, and its picture on a camera sensor" width="400" /> | <img src="plots/wing.gif" alt="A wing pitching in a steady stream, its pressure, streamlines and lift" width="400" /> |
 
 | [**Summing cones into splats**](examples/estimation/multiview/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/estimation/multiview/multiview_reconstruction.ipynb) | [**Twistors and linked light**](examples/relativity/twistors/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/twistors/twistors.ipynb) |
 | :---: | :---: |
-| <img src="plots/multiview_convergence.gif" alt="Cameras aligning on a scene" width="320" /> | <img src="plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="320" /> |
+| <img src="plots/multiview_convergence.gif" alt="Cameras aligning on a scene" width="400" /> | <img src="plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="400" /> |
 
 * [extensors](docs/extensors.md): An introduction to extensors in numga
 * [examples](examples/README.md): An index of runnable example code.

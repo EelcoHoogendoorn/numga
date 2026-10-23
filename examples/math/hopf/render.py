@@ -45,11 +45,6 @@ def components(bivectors: core.Bivector) -> np.ndarray:
     return bivectors.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def spinor_components(spinors: core.Even) -> np.ndarray:
-    """The scalar, yz, zx and xy components of spinors."""
-    return spinors.cast(core.ga.subspace("1 yz zx xy")).kernel
-
-
 def colour(spins: core.Bivector) -> np.ndarray:
     """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole."""
     x, y, z = np.moveaxis(components(spins), -1, 0)
@@ -79,7 +74,7 @@ def sphere_view() -> solids.View:
     return solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, SPHERE_REACH), SPHERE_PIXELS)
 
 
-def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], tubes: list[tuple[np.ndarray, np.ndarray, float]],
+def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], tubes: list[tuple[meshes.Samples, float]],
                  view: solids.View) -> np.ndarray:
     """The sphere of spins, a translucent ball with its parallels and meridians inked on it where their planes cut
     it, among opaque parts and tubes, each its samples and opacity, `[rows, columns, 3]`."""
@@ -115,7 +110,7 @@ def tube_mesh(groups: list[list[tuple[np.ndarray, np.ndarray]]], radius: float) 
 
 
 def mesh_samples(mesh: tuple[solids.Point, np.ndarray, np.ndarray, dict, np.ndarray], lower: int, upper: int,
-                 view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+                 view: solids.View) -> meshes.Samples:
     """The faces of a mesh of tubes from `lower` up to `upper`, as the view sees them in space, at every sample."""
     rings, faces, colours, normals, _ = mesh
     return meshes.samples(rings, faces[lower:upper], colours[lower:upper],
@@ -139,7 +134,7 @@ def draw_tori(spins: core.Bivector, projected: core.Bivector) -> plt.Figure:
     fibres = meshes.tube_samples(runs, TORUS_WIDTH, space, N_AROUND)
     figure = plt.figure(figsize=(11, 6))
     panels(figure, sphere_image([dots(points, colours, sphere)], [], sphere),
-           solids.draw([], space, BACKGROUND, meshes=[(*fibres, 1.0)]), space)
+           solids.draw([], space, BACKGROUND, meshes=[(fibres, 1.0)]), space)
     return figure
 
 
@@ -149,13 +144,13 @@ def draw_lift(loop: core.Bivector, path: core.Bivector, fibre: core.Bivector) ->
     track, circle = components(path), components(fibre)
     tracks, circles = visible(track[None], LOOP_COLOUR[None]), visible(circle[None], FIBRE_COLOUR[None])
     space, sphere = space_view(tracks + circles), sphere_view()
-    lines = [(*meshes.tube_samples(runs, width, space, N_AROUND), 1.0)
+    lines = [(meshes.tube_samples(runs, width, space, N_AROUND), 1.0)
              for runs, width in ((circles, LIFT_FIBRE_WIDTH), (tracks, TRACK_WIDTH))]
     # The track's start in blue, its end in its own colour.
     ends = (solids.ball(sm.point(track[[0, -1]]), END_RADIUS * space.pixel)[:, None], np.stack([START_COLOUR, LOOP_COLOUR]))
     on_sphere = meshes.tube_samples([(components(loop), LOOP_COLOUR)], TRACK_WIDTH, sphere, N_AROUND)
     figure = plt.figure(figsize=(11, 6))
-    panels(figure, sphere_image([], [(*on_sphere, 1.0)], sphere), solids.draw([ends], space, BACKGROUND, meshes=lines),
+    panels(figure, sphere_image([], [(on_sphere, 1.0)], sphere), solids.draw([ends], space, BACKGROUND, meshes=lines),
            space)
     return figure
 
@@ -179,7 +174,7 @@ def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> list
         thick = mesh_samples(newest, starts[count - 1], ends[count - 1], space)
         figure = plt.figure(figsize=(9, 5.5))
         panels(figure, sphere_image([dots(points[:count], colours[:count], sphere)], [], sphere),
-               solids.draw([], space, BACKGROUND, meshes=[(*thin, 1.0), (*thick, 1.0)]), space)
+               solids.draw([], space, BACKGROUND, meshes=[(thin, 1.0), (thick, 1.0)]), space)
         frames.append(capture(figure))
         plt.close(figure)
     return frames

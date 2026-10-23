@@ -28,9 +28,9 @@ def turn(handles: Point, forces: Point, rates: Rate, times: np.ndarray) -> tuple
     forces = poses >> forces
 
     # The handle's velocity follows directly from its rotation rate.
-    velocities: Point = handles.commutator(rates)
+    velocities = handles.commutator(rates)                                      # Point
 
     # The force's point of application determines its load on the crank.
-    loads: Load = handles & forces
-    powers: Scalar = loads & rates
+    loads = handles & forces                                                    # Load
+    powers = loads & rates                                                      # Scalar
     return handles, velocities, forces, powers

@@ -3,8 +3,6 @@ the three-sphere, seen through the stereographic projection: tubes and dots draw
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
@@ -31,29 +29,6 @@ def components(points: core.Extensor) -> np.ndarray:
     return points.cast(points.algebra.subspace("x y z")).kernel
 
 
-def blades(value: core.Extensor) -> str:
-    """A multivector as the sum of its nonzero blades, for printing."""
-    return " + ".join(f"{coefficient:g} {name}" for coefficient, name in zip(value.kernel, value.subspace.blade_names)
-                      if abs(coefficient) > 1e-12)
-
-
-def table(rows: Iterable[tuple], centres: Iterable[tuple]) -> str:
-    """The signatures as text: generators, rotations and boosts, the invariant form as a multiple of
-    the inner product, and the pseudoscalar's square. In even dimensions the pseudoscalar is a spinor
-    and either splits the spinors in two or acts on them as the complex unit; in odd dimensions it is
-    not, and the spinors are one piece."""
-    spinors = {}
-    for p, q, action in centres:
-        values = action.to_array()
-        spinors[p, q] = "two halves" if np.all(np.abs(values.imag) < 1e-9) else "complex"
-    lines = [f"{'(p, q)':8s}{'planes':>8s}{'rotations':>11s}{'boosts':>8s}{'form / inner':>14s}{'I * I':>7s}  spinors"]
-    for p, q, factor, signs, square in rows:
-        values = np.real(signs.to_array())
-        lines.append(f"{str((p, q)):8s}{len(values):8d}{int((values > 0).sum()):11d}{int((values < 0).sum()):8d}"
-                     f"{float(factor.to_array()):14.1f}{float(square.to_array()):+7.0f}  {spinors[p, q] if (p + q) % 2 == 0 else 'one piece'}")
-    return "\n".join(lines)
-
-
 def colours(shape: tuple[int, int]) -> np.ndarray:
     """A colour per orbit: the start's position around the xy plane as the hue, its height as the value."""
     hue = np.broadcast_to(np.linspace(0.0, 1.0, shape[1], endpoint=False), shape)
@@ -66,7 +41,7 @@ def view(pixels: int, *drawn: np.ndarray) -> solids.View:
     return solids.view([sm.point(points) for points in drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
 
 
-def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start, at
     every sample."""
     curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
@@ -87,7 +62,7 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     figure = plt.figure(figsize=(16, 5.5))
     for index, (orbits, width) in enumerate(zip(drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH))):
         ax = figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0))
-        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(*orbit_samples(orbits, width, panel), 1.0)]), panel)
+        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 
 
@@ -96,7 +71,7 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
     six points ride along each knot. The three panels side by side, seen by one camera."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
     frame = view(FRAME_PIXELS, *drawn)
-    faint = [(*orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
+    faint = [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
     riders = np.arange(6) * length // 6

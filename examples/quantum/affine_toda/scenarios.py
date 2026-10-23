@@ -69,10 +69,13 @@ def main() -> None:
     couplings = cubic(modes[species[:, 0]], modes[species[:, 1]],
                       modes[species[:, 2]])                                   # [cases] Scalar
     paths = concatenate((0 * triangles[:, :1], triangles.cumsum(axis=1)), axis=1) # [cases, corners] Root
+    print("masses over the lightest:", (masses / masses[0]).to_array())
+    print("radii over the smallest:", (radii / radii[0]).to_array())
 
-    print(render.mass_table(masses, radii))
     save_figure(render.draw_roots(roots, horizontal, vertical), "affine_toda_masses")
-    print(render.coupling_table(species, couplings, closure))
+    print("species:", species + 1)
+    print("|coupling|:", couplings.abs().to_array())
+    print("root closure:", closure.square_root().to_array())
     save_figure(render.draw_triangles(paths, roots, species, horizontal, vertical), "affine_toda_triangles")
 
     # checks

@@ -87,7 +87,7 @@ def wave_image(modes: Modes, tau: float, z_max: float, omega: float) -> tuple[np
                                       head_lengths, HEAD_SPREAD * head_lengths)
         parts += [(shafts, colour), (heads, colour)]
     return solids.draw(parts, view, np.ones(3), translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)],
-                       meshes=[(*curves, 1.0)]), view
+                       meshes=[(curves, 1.0)]), view
 
 
 def draw_wave_propagation(

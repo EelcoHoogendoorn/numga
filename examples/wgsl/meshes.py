@@ -9,12 +9,14 @@ faces around each vertex averaged, as the caller builds them.
 from __future__ import annotations
 
 from functools import cache
+from typing import NamedTuple
 
 import numpy as np
 
 from numga import concatenate, stack
 from examples.wgsl import Shader
-from examples.wgsl.library import compose, samples_per_side
+from examples.wgsl import solids
+from examples.wgsl.library import samples_per_side
 from examples.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, origin, shininess
 
 # How many times finer than the image a mesh is drawn, across and up: one sample of a pixel to a drawn pixel, as many
@@ -200,48 +202,45 @@ def tube(points: np.ndarray, radius: float, n_around: int) -> tuple[Point, np.nd
     return rings.reshape(-1), corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
 
 
+class Samples(NamedTuple):
+    """A mesh at every sample of a view's pixels, `oversampling` to a side, drawn on the GPU by the picture that
+    composes it, where its samples stay: the shader drawing it, the vertices of its triangles, three to a face, and the
+    values the shader reads."""
+    shader: Shader
+    n_vertices: int
+    values: dict
+
+
 def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
-            face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
-    """The mesh at every sample of the view's pixels, `oversampling` to a side: its colour, `[rows, columns, 4]` bytes
-    premultiplied by how much it hides, and its depth along the view, `[rows, columns]`, both zero where it shows
-    nothing, the rows and columns `oversampling` times the view's; from up to four values at each corner of each face, `[faces, 3, values]`
-    or one row for all, and at each face, coloured by `colour`, with a glint of `gloss`."""
+            face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> Samples:
+    """The mesh at every sample of the view's pixels, for `solids.layer` to compose: its colour, premultiplied by how
+    much it hides, and its depth along the view, both zero where it shows nothing; from up to four values at each
+    corner of each face, `[faces, 3, values]` or one row for all, and at each face, coloured by `colour`, with a glint
+    of `gloss`."""
     def padded(entries: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
         entries = np.broadcast_to(entries, shape + (np.shape(entries)[-1],))
         return np.concatenate([entries, np.zeros(shape + (4 - entries.shape[-1],))], axis=-1)
-    rows, columns = view.shape
-    colours, depths = shader(colour).draw((oversampling * rows, oversampling * columns), 3 * len(faces), points=points, faces=faces,
-                                          values=padded(values, (len(faces), 3)).reshape(-1, 4),
-                                          face_values=padded(face_values, (len(faces),)), normals=normals,
-                                          camera=view.camera, half_size=view.half, depth=8 * view.half.max(),
-                                          lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt,
-                                          headlight=headlight, gloss=gloss, shininess=shininess)
-    return colours, depths[..., 0]
+    return Samples(shader(colour), 3 * len(faces),
+                   dict(points=points, faces=faces, values=padded(values, (len(faces), 3)).reshape(-1, 4),
+                        face_values=padded(face_values, (len(faces),)), normals=normals, camera=view.camera,
+                        half_size=view.half, depth=8 * view.half.max(), lamp=lamp(view.camera), ambient=ambient,
+                        fill_tilt=fill_tilt, headlight=headlight, gloss=gloss, shininess=shininess))
 
 
 def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
           face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
     """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
-    each weighted by coverage; its samples, as `samples`, averaged over each pixel."""
-    return averaged(*samples(points, faces, values, normals, view, face_values, colour, gloss), view)
-
-
-def averaged(colours: np.ndarray, depths: np.ndarray, view: View) -> tuple[np.ndarray, np.ndarray]:
-    """Samples' colour and depth, as `samples` draws them, averaged over each of the view's pixels: the colour in
-    [0, 1], and the depth weighted, as the colour is, by how much the samples hide."""
-    rows, columns = view.shape
-    blocks = (rows, oversampling, columns, oversampling)
-    shades = colours.reshape(*blocks, 4) / 255
-    return shades.mean(axis=(1, 3)), (depths.reshape(blocks) * shades[..., 3]).mean(axis=(1, 3))
+    each weighted by coverage; its samples, as `samples`, averaged over each pixel on the GPU."""
+    return solids.layer([], view, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
 
 
 def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View, n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
     """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, one layer, as `layer`."""
-    return averaged(*tube_samples(curves, width, view, n_around), view)
+    return solids.layer([], view, meshes=[(tube_samples(curves, width, view, n_around), 1.0)])
 
 
 def tube_samples(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View,
-                 n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
+                 n_around: int = 8) -> Samples:
     """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, at every sample, as `samples`:
     the curves of each length built together."""
     rings, faces, colours = [], [], []
@@ -259,7 +258,7 @@ def tube_samples(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view
 
 
 def segment_samples(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float, view: View,
-                    n_around: int = 6) -> tuple[np.ndarray, np.ndarray]:
+                    n_around: int = 6) -> Samples:
     """Straight segments from starts to ends `[segments, 3]`, coloured `[segments, 3]` or one for all, as tubes `width`
     pixels across, at every sample, as `samples`: many thin strokes rasterized together, where tracing each as a solid
     would cost every ray a test against every one."""
@@ -284,4 +283,4 @@ def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_point
 def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View, background: np.ndarray,
          face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> np.ndarray:
     """The mesh as the view sees it on the background, `[rows, columns, 3]`; as `layer`."""
-    return compose([(*layer(points, faces, values, normals, view, face_values, colour, gloss), 1.0)], background)
+    return solids.draw([], view, background, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])

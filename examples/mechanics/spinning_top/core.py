@@ -5,8 +5,7 @@ own frame; the ground is the solid below a shallow paraboloid, a concave quadric
 point against the ground is the pole of its tangent plane facing the ground; how far that point
 lies below the ground is its depth, zero for a part in the air. Contact is position based: after a
 free step each part is pressed out along the ground's normal by its depth, then held against
-sliding up to the friction cone, each a single constraint along one line. The parts are corrected
-in sequence so each contact sees the motion caused by the preceding contacts.
+sliding up to the friction cone, each a single constraint along one line, batched over the parts.
 The rate is read back from the motor's step.
 
 The contact point is found in one pass: the ground's normal is taken at the part's centre, and
@@ -28,6 +27,7 @@ Plane = ga.gatype.vector()
 # A rate of motion, and a force line, the load along it.
 Rate = ga.gatype.bivector()
 Forque = ga.gatype.antibivector()
+Inertia = ga.gatype((Forque, Rate))                       # Forque <- Rate
 InverseInertia = ga.gatype((Rate, Forque))                # Rate <- Forque
 Motor = ga.gatype.rotor()
 Direction = Point.derive.degenerate
@@ -57,14 +57,14 @@ def bowl(curvature: float) -> Quadric:
     return 0.5 * (mv.z * (w & Point) + w * (mv.z & Point)) - curvature * (axes[:2] * (axes[:2] & Point)).sum()
 
 
-def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray):
+def sigma_points(centre: np.ndarray, semi: np.ndarray, mass: np.ndarray) -> tuple[Point, np.ndarray]:
     """Six mass points per solid ellipsoid with its mass, centroid and second moments."""
     offsets = np.eye(3)[None] * semi[:, None, :] * np.sqrt(3 / 5)             # [parts, 3, 3]
     coords = np.concatenate([centre[:, None] + offsets, centre[:, None] - offsets], axis=1)   # [parts, sigma_points, 3]
     return mv.point(coords.reshape(-1, 3)), np.repeat(mass / 6, 6)
 
 
-def inertia(points: Point, masses: np.ndarray):
+def inertia(points: Point, masses: np.ndarray) -> Inertia:
     """The inertia, a map from rates to forques: each mass point joined with its own motion under the
     rate, its momentum, summed over the points."""
     return (points & points.commutator(Rate) * masses).sum()
@@ -120,40 +120,31 @@ def project_contacts(before: Motor, motor: Motor, inverse_inertia: InverseInerti
                      static: float, dynamic: float, dt: float) -> tuple[Motor, Rate]:
     """Correct the predicted pose: press each part out by its depth, then hold it against sliding
     within the friction cone."""
-    pressures = mv.scalar([0]).broadcast_to(np.broadcast_shapes(parts.shape, motor.shape))
-    # Contacts on one body are coupled: recompute each after the preceding correction.
-    for index in range(parts.shape[0]):
-        part = parts[index:index + 1]
-        placed = motor >> part(motor << Point)
-        centre = placed.solve(w)
-        contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
-        normal = ground_normal(ground, contact)
-        depth = (-(ground(contact) & contact) / (2 * ground(contact).norm())).clip(0, np.inf)
+    # The parts in the world, and their centres: the poles of the plane at infinity.
+    placed = motor >> parts(motor << Point)                                 # [parts] Plane <- Point
+    centre = placed.solve(w)                                                # [parts] Point
+    # Each part's lowest point against the ground's normal at its centre is its contact point.
+    contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
+    normal = ground_normal(ground, contact)
+    # The ground's form at the contact over its gradient's length: how far the point lies below the
+    # ground, to first order in the depth; a part in the air has none.
+    depth = (-(ground(contact) & contact) / (2 * ground(contact).norm())).clip(0, np.inf)
 
-        # Press out along the normal line through the contact, by its depth.
-        step, give = compliance(motor, inverse_inertia, contact & normal)
-        pressed = depth / give
-        pressures = pressures.at[index:index + 1].set(pressed)
-        motor = move(motor, step, pressed)
+    # Press out along the normal line through each contact, by its depth.
+    step, give = compliance(motor, inverse_inertia, contact & normal)
+    pressed = depth / give
+    motor = move(motor, step, pressed)
 
-        # Sticking is possible only when its full correction fits the static friction limit.
-        slid = along_ground(contact - (before >> (motor << contact)), normal)
-        back = slid.dual().norm()
-        step, give = compliance(motor, inverse_inertia, contact & (-slid / (back + 1e-12)))
-        sticking = back / (give + 1e-12)
-        motor = move(motor, step, sticking * (sticking <= pressed * static))
+    # Hold against sliding: back toward where the contact's material point was, in the ground's plane.
+    slid = along_ground(contact - (before >> (motor << contact)), normal)
+    back = slid.dual().norm()
+    step, give = compliance(motor, inverse_inertia, contact & (-slid / (back + 1e-12)))
+    motor = move(motor, step, clamp(back / give, pressed * static))
 
-    rate = (before.inverse() * motor).normalized().log() * (-2.0 / dt)
-    # Velocity corrections also act in sequence, each using the remaining slip.
-    for index in range(parts.shape[0]):
-        part = parts[index:index + 1]
-        placed = motor >> part(motor << Point)
-        centre = placed.solve(w)
-        contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
-        normal = ground_normal(ground, contact)
-        sliding = along_ground(contact.commutator(motor >> rate), normal)
-        speed = sliding.dual().norm()
-        step, give = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
-        limit = pressures[index:index + 1] * (dynamic / dt)
-        rate = rate + (step * clamp(speed / (give + 1e-12), limit)).sum(axis=0)
-    return motor, rate
+    # Dynamic friction: the rate the corrected step implies, less the contacts' sliding velocity, with
+    # at most the dynamic coefficient times the normal impulse, the pressing forque over the step.
+    rate = (~before * motor).log() * (-2.0 / dt)
+    sliding = along_ground(contact.commutator(motor >> rate), normal)
+    speed = sliding.dual().norm()
+    step, give = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
+    return motor, rate + (step * clamp(speed / give, pressed * dynamic / dt)).sum(axis=0)

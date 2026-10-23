@@ -23,10 +23,10 @@ FRONT_AT = 1.0
 DEPTHS = np.array([-3.2, -2.2, -1.6])
 N_HEIGHTS, N_WIDTHS = 5, 4
 HALF_HEIGHT, HALF_WIDTH = 0.8, 0.5
-SCENE: Point = point(np.stack(np.meshgrid(
+SCENE = point(np.stack(np.meshgrid(                                             # Point
     DEPTHS, np.linspace(-HALF_HEIGHT, HALF_HEIGHT, N_HEIGHTS), np.linspace(-HALF_WIDTH, HALF_WIDTH, N_WIDTHS), indexing="ij",
 ), axis=-1))                                                                   # [depth, height, width] Point
-SUBJECT: Point = point(np.array([-3.2, 0.0, -1.0 / 6.0]))
+SUBJECT = point(np.array([-3.2, 0.0, -1.0 / 6.0]))                              # Point
 # The stills: the rear lens wide and tele, the focus distance, the aperture radius, and the sensor's tilt.
 WIDE, TELE = 1.4, 1.8
 FOCUS = 2.2
@@ -47,10 +47,10 @@ N_SECTION = 48
 def setting(rear_at: float, focus_at: float, tilt: float, radius: float):
     """Expose the scene with the rear lens at rear_at, focused on the axis at focus_at, the
     sensor tilted by tilt radians, and an aperture of the given radius."""
-    placements: Motor = (mv.xw * (np.array([FRONT_AT, rear_at]) / 2)).exp()
-    focus: Point = point(np.array([focus_at, 0.0, 0.0]))
-    turn: Motor = (mv.xy * (tilt / 2)).exp()
-    rim: Point = point(np.array([[0.0, radius, 0.0], [0.0, 0.0, 0.0], [0.0, -radius, 0.0]]))
+    placements = (mv.xw * (np.array([FRONT_AT, rear_at]) / 2)).exp()            # Motor
+    focus = point(np.array([focus_at, 0.0, 0.0]))                               # Point
+    turn = (mv.xy * (tilt / 2)).exp()                                           # Motor
+    rim = point(np.array([[0.0, radius, 0.0], [0.0, 0.0, 0.0], [0.0, -radius, 0.0]]))  # Point
     return expose(SCENE, SUBJECT, FOCAL, placements, focus, turn, radius, rim)
 
 
@@ -90,7 +90,7 @@ def main() -> None:
     # dual quadric, pushed through the pupil-to-sensor collineation of the same point. A point at the focus
     # depth images to a point: its section collapses onto the chief-ray hit.
     collineation, camera, frame, cones, planes, _ = tilted
-    place_front: Motor = (mv.xw * (FRONT_AT / 2)).exp()
+    place_front = (mv.xw * (FRONT_AT / 2)).exp()                                # Motor
     sensor, centre = frame >> home, place_front >> origin
     across_y, across_z = mv.y.dual(), mv.z.dual()
     unit_disc = across_y * (across_y & Plane) + across_z * (across_z & Plane) - origin * (origin & Plane)

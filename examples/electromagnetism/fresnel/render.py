@@ -82,7 +82,7 @@ def surface(ax: Axes, sheets: core.Vector) -> None:
     for sheet, colour in zip(np.moveaxis(points, 2, 0), map(to_rgb, sheet_colours)):
         places = sm.point(sheet.reshape(-1, 3))
         normals = meshes.smooth(places, faces)
-        sides += [(*meshes.samples(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
+        sides += [(meshes.samples(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
     show(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sides), view)
     labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",

@@ -58,7 +58,7 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
     points = spatial(curves)
     points = points.reshape((-1,) + points.shape[-2:])                        # [curves, samples, 3]
     tubes = meshes.tube_samples(list(zip(points, colours(len(points)))), width, view, N_AROUND)
-    return solids.draw([], view, BACKGROUND, meshes=[(*tubes, 1.0)])
+    return solids.draw([], view, BACKGROUND, meshes=[(tubes, 1.0)])
 
 
 def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:

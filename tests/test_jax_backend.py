@@ -10,6 +10,7 @@ jnp = pytest.importorskip("jax.numpy")
 from numga import Algebra, Extensor, NumpyContext
 from numga.algebras import PGA3D, STA
 from numga.backend.jax import JaxContext
+from numga.gatype import GATypeError
 from tests.backend_surface import operations
 
 
@@ -56,9 +57,7 @@ def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
     right = context.extensor(even, [[3, 4], [5, 6]])
 
     assert type(left) is Extensor
-    assert context.dtype == np.dtype(
-        jax.dtypes.canonicalize_dtype(np.dtype(np.float32))
-    )
+    assert context.dtype == np.dtype(np.float64)
     leaves, tree = jax.tree_util.tree_flatten(left)
     rebuilt = jax.tree_util.tree_unflatten(tree, leaves)
     assert len(leaves) == 1
@@ -74,7 +73,7 @@ def test_jax_extensor_is_a_stable_pytree_and_traces_product_expressions():
     traced = jax.jit(product)(left, right)
     vmapped = jax.jit(jax.vmap(product))(left, right)
 
-    expected = np.asarray([[-5, 10], [-9, 38]], dtype=np.float32)
+    expected = np.asarray([[-5, 10], [-9, 38]], dtype=np.float64)
     for result in (eager, traced, vmapped):
         assert type(result) is Extensor
         assert result.gatype is eager.gatype
@@ -148,3 +147,48 @@ def test_exp_derivative_carries_a_change_of_the_generator_as_autodiff_of_exp_doe
         carried = b.exp() * b.exp_derivative()(mv.bivector(changes))      # [sizes] Even
         error = np.abs(np.asarray(carried.select_subspace(b.exp().output_subspace).kernel) - np.asarray(tangent))
         np.testing.assert_array_less(error / np.abs(np.asarray(tangent)).max(axis=-1, keepdims=True), 1e-11)
+
+
+def test_numpy_extensors_are_constants_to_jax_ones():
+    """A NumPy extensor meeting a JAX one is carried into JAX, as a NumPy array is, eagerly and under jit."""
+    from numga import NumpyContext
+    from numga.algebras import PGA3D
+
+    mv = NumpyContext(PGA3D).multivector
+    point = JaxContext(PGA3D).multivector.point(np.array([0.5, -1.0, 2.0]))
+
+    def joined(value):
+        return mv.point(np.zeros(3)) & value
+
+    eager, traced = joined(point), jax.jit(joined)(point)
+    expected = joined(point.materialize(NumpyContext(PGA3D)))
+    for result in (eager, traced):
+        assert result.context.key[0] == "jax"
+        np.testing.assert_allclose(np.asarray(result.kernel), expected.kernel, atol=1e-12)
+    # A JAX number scaling a NumPy extensor is a JAX scalar, traced or not.
+    scaled = jax.jit(lambda amount: mv.x * amount)(jnp.asarray(2.0))
+    assert scaled.context.key[0] == "jax"
+    np.testing.assert_allclose(np.asarray(scaled.kernel), (mv.x * 2.0).kernel)
+
+
+def test_a_retyped_start_carries_through_a_scan():
+    """A motor composed of two turns has a narrower layout and more facts than a step returns; retyped to a plain motor,
+    with its coefficients kept, it starts a scan whose steps return that type."""
+    from numga.algebras import PGA3D
+
+    mv = JaxContext(PGA3D).multivector
+    Motor = PGA3D.gatype.rotor()
+    start = ((mv.zw * 0.3).exp() * (mv.zx * 0.2).exp()).normalized()
+    turn = (mv.xy * 0.01 + mv.xw * 0.02).exp()
+
+    def step(motor, _):
+        return (turn * motor).normalized(), None
+
+    retyped = start.retyped(Motor)
+    assert retyped.gatype is Motor
+    np.testing.assert_allclose(np.asarray((retyped - start).kernel), 0.0, atol=1e-15)
+    end, _ = jax.lax.scan(step, retyped, length=10)
+    assert end.gatype is Motor
+    # Retyping only forgets: a plain bivector cannot be retyped to a motor's facts.
+    with pytest.raises(GATypeError):
+        (mv.xy * 0.5).retyped(PGA3D.gatype.even().derive.with_traits(*Motor.traits))

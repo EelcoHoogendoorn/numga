@@ -99,20 +99,20 @@ def mode_case(
 def normal_modes(system: Suspension) -> ModeCase:
     """Stiffness and inertia of one suspension, and its three modes."""
     # Each spring's line, from its anchor to its attachment.
-    lines: Forque = (system.anchors & system.attachments).normalized()           # [n_springs] Forque
+    lines = (system.anchors & system.attachments).normalized()                   # [n_springs] Forque
 
     # How far a twist stretches each spring: the twist paired with the spring's line.
-    extension: SpringExtension = Twist & lines                                   # [n_springs] Scalar <- Twist
+    extension = Twist & lines                                                    # [n_springs] Scalar <- Twist
 
     # Each spring pulls back along its line by its stretch times its constant, Hooke's law.
-    spring_stiffness: Stiffness = lines * extension * system.spring_constants    # [n_springs] Forque <- Twist
-    stiffness: Stiffness = spring_stiffness.sum(axis=0)                          # [] Forque <- Twist
+    spring_stiffness = lines * extension * system.spring_constants               # [n_springs] Forque <- Twist
+    stiffness = spring_stiffness.sum(axis=0)                                     # [] Forque <- Twist
 
     # Each mass point's velocity as a map of the twist, and its momentum, the line through it along that
     # velocity; the inertia is their sum.
-    velocities: Point = system.mass_points.commutator(Twist)                     # [mass_points] Point <- Twist
-    point_momenta: Inertia = (system.mass_points & velocities) * system.masses   # [mass_points] Forque <- Twist
-    inertia: Inertia = point_momenta.sum(axis=0)                                 # [] Forque <- Twist
+    velocities = system.mass_points.commutator(Twist)                            # [mass_points] Point <- Twist
+    point_momenta = (system.mass_points & velocities) * system.masses            # [mass_points] Forque <- Twist
+    inertia = point_momenta.sum(axis=0)                                          # [] Forque <- Twist
 
     # Each map paired with a second twist is an energy, a form on two twists.
     pe_form = Twist & stiffness                                                  # [] Scalar <- (Twist, Twist)
@@ -122,9 +122,9 @@ def normal_modes(system: Suspension) -> ModeCase:
     values, modes = pe_form.eigh(ke_form)                                        # values: [modes] Scalar, modes: [modes] Twist
 
     # How each mode moves the corners and the attachments, and stretches the springs.
-    body_offsets: Point = system.body[None, :].commutator(modes[:, None])        # [modes, corners] Point
-    attachment_offsets: Point = system.attachments[None, :].commutator(modes[:, None])  # [modes, n_springs] Point
-    extensions: Scalar = extension(modes[:, None])                               # [modes, n_springs] Scalar
+    body_offsets = system.body[None, :].commutator(modes[:, None])               # [modes, corners] Point
+    attachment_offsets = system.attachments[None, :].commutator(modes[:, None])         # [modes, n_springs] Point
+    extensions = extension(modes[:, None])                                       # [modes, n_springs] Scalar
 
     return mode_case(
         body=system.body,

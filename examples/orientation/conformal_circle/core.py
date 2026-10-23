@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import NumpyContext, stack
+from numga.algebras import CGA3D
 
-ga = Algebra("x+y+z+w+e-")
+ga = CGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
 Sphere = ga.gatype.vector()
@@ -37,15 +38,15 @@ def disk_samples(direction: Sphere, origin: Sphere, infinity: Sphere, rotation: 
                  radii: np.ndarray, angles: np.ndarray) -> Point:
     """A polar grid lifted to conformal points, with radius and angle axes."""
     positions = direction * radii
-    seeds: Point = (origin + positions + positions.squared() * infinity / 2).dual()
+    seeds = (origin + positions + positions.squared() * infinity / 2).dual()    # Point
     return circle_samples(seeds[:, None], rotation, angles[None, :])
 
 
 # --- math -----------------------------------------------------------------------------
 def constructions(points: Point, plane: Sphere, sphere: Sphere) -> tuple[Path, Circle]:
     """The circle built from its ordered points and its ordered cutting surfaces."""
-    through_points: Path = (points[0] & points[1] & points[2]).normalized()
-    from_surfaces: Circle = (plane ^ sphere).normalized()
+    through_points = (points[0] & points[1] & points[2]).normalized()           # Path
+    from_surfaces = (plane ^ sphere).normalized()                               # Circle
     return through_points, from_surfaces
 
 

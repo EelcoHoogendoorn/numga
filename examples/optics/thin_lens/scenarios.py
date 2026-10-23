@@ -50,23 +50,23 @@ def lenses():
     #    passes through one point: the image, the meet of any two of them. The pupil starts where the
     #    lens plane meets the optical axis, the join of the origin and the ideal point along x, and
     #    steps along the ideal point along y.
-    subject: Point = mv.point(OBJECT)
-    axis: Line = origin & mv.direction([1, 0])
-    pupil: Point = (first_plane ^ axis) + mv.direction([0, 1]) * np.linspace(-PUPIL, PUPIL, N_RAYS)
-    rays: Line = subject & pupil
-    out: Line = first_lens(rays)
-    image: Crossing = out[0] ^ out[1]
+    subject = mv.point(OBJECT)                                                  # Point
+    axis = origin & mv.direction([1, 0])                                        # Line
+    pupil = (first_plane ^ axis) + mv.direction([0, 1]) * np.linspace(-PUPIL, PUPIL, N_RAYS)  # Point
+    rays = subject & pupil                                                      # Line
+    out = first_lens(rays)                                                      # Line
+    image = out[0] ^ out[1]                                                     # Crossing
 
     # 2. Two lenses. The system is a composition of maps. Parallel rays are joins with the ideal point
     #    along x; where they meet after the system is the back focal point.
-    system: LineMap = second_lens(first_lens)
-    parallel: Line = mv.direction([1, 0]) & pupil
-    focused: Line = system(parallel)
-    focus: Crossing = focused[0] ^ focused[1]
+    system = second_lens(first_lens)                                            # LineMap
+    parallel = mv.direction([1, 0]) & pupil                                     # Line
+    focused = system(parallel)                                                  # Line
+    focus = focused[0] ^ focused[1]                                             # Crossing
 
     # Draw each bundle between planes: from a vertical through its start, to a little past its end.
-    beyond: Motor = (mv.wx * (-PAST / 2)).exp()
-    vertical: Point = mv.direction([0, 1])
+    beyond = (mv.wx * (-PAST / 2)).exp()                                        # Motor
+    vertical = mv.direction([0, 1])                                             # Point
     one_lens = [(rays, subject & vertical, first_plane), (out, first_plane, beyond >> (image & vertical))]
     two_lenses = [
         (parallel, (mv.wx * (LEAD / 2)).exp() >> first_plane, first_plane),
@@ -86,8 +86,8 @@ def train(n_frames: int) -> Iterator[tuple]:
     Yields per frame the subject, the element planes, the bundle before and after each
     element, the composed train, and the image.
     """
-    subject: Point = mv.point(SUBJECT)
-    fan: Line = subject & (mv.point(AIM) + mv.direction([0, 1]) * np.linspace(-FAN, FAN, N_FAN_RAYS))
+    subject = mv.point(SUBJECT)                                                 # Point
+    fan = subject & (mv.point(AIM) + mv.direction([0, 1]) * np.linspace(-FAN, FAN, N_FAN_RAYS))  # Line
     for t in np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False):
         motors = (
             # The first lens slides and tilts.
@@ -99,7 +99,7 @@ def train(n_frames: int) -> Iterator[tuple]:
             (mv.wx * (-STATIONS[3] / 2)).exp() * (mv.xy * ((MIRROR_TILT + ROCK * np.cos(t)) / 2)).exp(),
         )
         planes, legs, composed = trace(fan, motors, ELEMENTS)
-        back: Line = composed(fan)
+        back = composed(fan)                                                    # Line
         yield subject, planes, legs, composed, back[0] ^ back[-1]
 
 

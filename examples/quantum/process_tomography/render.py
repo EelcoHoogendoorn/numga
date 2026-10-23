@@ -80,7 +80,7 @@ def grid_lines(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return points[LATITUDE_STEP:-1:LATITUDE_STEP], np.moveaxis(points[:, :-1:LONGITUDE_STEP], 1, 0)
 
 
-def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as tubes `width` pixels across in a
     colour, at every sample."""
     lines = [line for batch in grid_lines(points) for line in batch]
@@ -161,7 +161,7 @@ def draw_channels(surface: core.State, outputs: core.State, prepared: core.State
         reference = solids.Ink(len(opaque), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
                                GRID_COLOUR, GRID_WIDTH, GRID_OPACITY)
         show_ball(axes, solids.draw(opaque, view, np.ones(3), [reference], translucent,
-                                    [(*shell, IMAGE_OPACITY), (*lines, 1.0)]), view, label)
+                                    [(shell, IMAGE_OPACITY), (lines, 1.0)]), view, label)
     # A prepared probe shows through both its surfaces.
     markers = (
         Line2D([], [], linestyle="none", marker="o", markersize=10, color="0.4", alpha=1 - (1 - PREPARED_OPACITY) ** 2,

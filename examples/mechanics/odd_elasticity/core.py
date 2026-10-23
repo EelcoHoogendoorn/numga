@@ -14,10 +14,11 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import NumpyContext, stack
+from numga.algebras import VGA2D
 from numga.sparse import SparseExtensor, spdiag
 
-ga = Algebra("x+y+")
+ga = VGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Scalar = ga.gatype.scalar()

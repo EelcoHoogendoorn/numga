@@ -5,11 +5,14 @@ steps compared on the leapfrogging pairs."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
+from dataclasses import replace
 
+import jax
 import numpy as np
 
-from numga import stack
+from numga import concatenate
+from numga.backend.jax import JaxContext
 from examples.fluids.sphere_vortices import core
 
 # Rings of equal vortices around the pole: their numbers, the angle from the pole to the ring, and the
@@ -34,23 +37,25 @@ SEED = 0
 # time steps, the steps between frames, and the duration of a frame.
 DT = 0.05
 N_SWEEPS = 3
-N_STEPS = 1200
+N_STEPS = 160
 N_COMPARED_STEPS = 100
-N_STEPS_PER_FRAME = 4
-DURATION_MS = 60
+N_STEPS_PER_FRAME = 1
+DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
 def history(vortices: core.Vortices, step: Callable[[core.Vortices], core.Vortices], n_steps: int) -> core.Pivot:
-    """The vortices' pivots at every step `[steps + 1, vortices] Pivot`."""
-    def stepped() -> Iterator[core.Pivot]:
-        current = vortices
-        yield current.pivots
-        for _ in range(n_steps):
-            current = step(current)
-            yield current.pivots
+    """The vortices' pivots at every step `[steps + 1, vortices] Pivot`, the steps compiled into one loop by
+    `jax.lax.scan`: a handful of vortices takes a few hundred small operations a step, the rotor exponentials above all,
+    which the compiled loop does at once."""
+    def advance(pivots: core.Pivot, _: None) -> tuple[core.Pivot, core.Pivot]:
+        later = step(replace(vortices, pivots=pivots)).pivots
+        return later, later
 
-    return stack(list(stepped()))
+    # The pivots carried into JAX for the loop, and the history back.
+    start = vortices.pivots.materialize(JaxContext(core.ga))                       # [vortices] Pivot
+    _, later = jax.lax.scan(advance, start, length=n_steps)                         # [steps, vortices] Pivot
+    return concatenate([start[None], later]).materialize(core.mv.context)
 
 
 def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
@@ -61,10 +66,6 @@ def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
     return (pole * (-longitudes / 2)).exp() >> tilted                               # [vortices] Pivot
 
 
-def stepped(vortices: core.Vortices) -> core.Pivot:
-    return history(vortices, lambda current: core.midpoint(current, DT, N_SWEEPS), N_STEPS)
-
-
 def rings() -> list[core.Pivot]:
     """Rings of five, six and seven equal vortices around the pole, each place slightly disturbed: the
     pivots `[steps + 1, vortices] Pivot` of each ring."""
@@ -73,7 +74,7 @@ def rings() -> list[core.Pivot]:
     def ring(size: int) -> core.Pivot:
         places = turned(np.full(size, RING_ANGLE), 2 * np.pi * np.arange(size) / size)   # [vortices] Pivot
         nudges = (core.pivot(rng.normal(size=(size, 3))) * DISTURBANCE).exp()       # [vortices] Rotor
-        return stepped(core.Vortices(nudges >> places, np.ones(size), RING_CORE))
+        return history(core.Vortices(nudges >> places, np.ones(size), RING_CORE), midpoint, N_STEPS)
 
     return [ring(size) for size in RING_COUNTS]
 
@@ -81,8 +82,13 @@ def rings() -> list[core.Pivot]:
 def travelling() -> list[core.Pivot]:
     """A dipole and two leapfrogging pairs travelling around the equator: their pivots
     `[steps + 1, vortices] Pivot`."""
-    return [stepped(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE))
+    return [history(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE), midpoint, N_STEPS)
             for angles, circulations in ((DIPOLE_ANGLES, DIPOLE_CIRCULATIONS), (LEAPFROG_ANGLES, LEAPFROG_CIRCULATIONS))]
+
+
+def midpoint(vortices: core.Vortices) -> core.Vortices:
+    """One midpoint step of the scenes' size."""
+    return core.midpoint(vortices, DT, N_SWEEPS)
 
 
 def chord_change(pivots: core.Pivot) -> float:
@@ -96,7 +102,7 @@ def compared() -> tuple[core.Pivot, core.Pivot]:
     impulse kept exactly by the one and closely by the other."""
     frogs = core.Vortices(turned(np.pi / 2 - LEAPFROG_ANGLES, np.zeros(len(LEAPFROG_ANGLES))), LEAPFROG_CIRCULATIONS, PAIR_CORE)
     by_pairs = history(frogs, lambda current: core.paired(current, core.schedule(len(frogs.circulations)), DT), N_COMPARED_STEPS)
-    by_midpoints = history(frogs, lambda current: core.midpoint(current, DT, N_SWEEPS), N_COMPARED_STEPS)
+    by_midpoints = history(frogs, midpoint, N_COMPARED_STEPS)
     return by_pairs, by_midpoints
 
 

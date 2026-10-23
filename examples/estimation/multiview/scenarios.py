@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from numga import stack
 from numga.algebras import PGA2D
 
 from examples import instantiate
@@ -28,6 +29,10 @@ N_STEPS = 10
 N_FREE_STEPS = 30
 FRAME_DURATION = 333
 FREE_FRAME_DURATION = 120
+# The three cameras' alignment shown at an even pace: its frames, the frames the aligned rig is held, and the depth
+# at which a camera's turn counts as much as its move, about where the landmarks are.
+N_EVEN_FRAMES, N_HOLD = 36, 6
+LEVER = 1.5
 
 
 # --- math -----------------------------------------------------------------------------
@@ -102,11 +107,30 @@ def two_cameras():
 def three_cameras():
     """Every camera misplaced, and every camera moving with none held still."""
     # Each camera's offset scaled and shifted along x, and its turn scaled and added to, in radians.
-    stretches, shifts = [0.85, 1.0, 1.0], [0.0, 0.0, -0.25]
-    overturns, added_turns = [1.15, 1.65, 1.0], [0.0, 0.0, 0.15]
+    stretches, shifts = [0.7, 1.2, 1.0], [0.0, 0.0, -0.45]
+    overturns, added_turns = [1.6, 2.2, 1.0], [0.0, 0.0, 0.35]
     damping, moving = 0.1, np.ones(3)
     guess = rig(OFFSETS * stretches + shifts, TURNS * overturns + added_turns)  # [cameras] Motor
     return alignment(rig(OFFSETS, TURNS), guess, damping, moving)
+
+
+def evenly(states: list, n_frames: int, n_hold: int):
+    """A converging alignment `[steps]` at an even pace: frames at equal shares of how far the cameras move and turn
+    in all, each rig eased along the screw from the step before to the step after, with its cones, splats and
+    landmarks; then the aligned rig held."""
+    _, _, cones = observe(rig(OFFSETS, TURNS))
+    poses = stack([guess for guess, _, _, _ in states])                   # [steps, cameras] Motor
+    screws = (poses[1:] * poses[:-1].inverse()).log()                           # [steps - 1, cameras] Twist
+    # How far each step moves the pinholes, and turns the cameras, counted at the depth of the landmarks.
+    pinholes = poses >> mv.point([0.0, 0.0])                                    # [steps, cameras] Point
+    moved = (pinholes[1:] - pinholes[:-1]).dual().norm()                        # [steps - 1, cameras] Scalar
+    pace = np.cumsum([0.0] + list((moved + 2 * LEVER * screws.norm()).sum(axis=-1).to_array()))   # [steps]
+    for share in np.linspace(0.0, pace[-1], n_frames):
+        step = min(np.searchsorted(pace, share, side="right") - 1, len(screws) - 1)
+        eased = ((screws[step] * ((share - pace[step]) / (pace[step + 1] - pace[step]))).exp() * poses[step])   # [cameras] Motor
+        centres, splats = core.triangulate(eased, cones)
+        yield eased, eased >> cones(eased << Point), splats, centres
+    yield from [states[-1]] * n_hold
 
 
 def jointly():
@@ -127,8 +151,8 @@ def main() -> None:
     save_figure(render.draw_reconstruction(*pair), "multiview_aligned_pair")
     save_animation(render.animate_convergence(islice(one_camera(), N_STEPS + 1)), "multiview_one_camera", FRAME_DURATION)
     save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION)
-    save_animation(render.animate_convergence(islice(three_cameras(), N_FREE_STEPS + 1)), "multiview_three_cameras",
-                   FREE_FRAME_DURATION)
+    save_animation(render.animate_convergence(evenly(list(islice(three_cameras(), N_FREE_STEPS + 1)), N_EVEN_FRAMES, N_HOLD)),
+                   "multiview_three_cameras", FREE_FRAME_DURATION)
     save_animation(render.animate_convergence_with_covariance(islice(jointly(), N_STEPS + 1)), "multiview_jointly",
                    FRAME_DURATION)
 

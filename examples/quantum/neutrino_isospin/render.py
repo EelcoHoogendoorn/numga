@@ -82,7 +82,7 @@ def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: co
     # The great circles inked on the ball, the first part after the opaque ones.
     inks = [solids.Ink(len(opaque), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
                        colour, width, opacity) for planes, colour, width, opacity in circles]
-    show(ax, solids.draw(opaque, view, np.ones(3), inks, translucent=ball, meshes=[(*tube, 1.0)]), view)
+    show(ax, solids.draw(opaque, view, np.ones(3), inks, translucent=ball, meshes=[(tube, 1.0)]), view)
     # The flavors named just past the poles, where the camera sees them.
     for (x, y), name, colour in zip(view.across(sm.point(LABEL_DISTANCE * coordinates(FLAVORS))),
                                     (r"$\nu_e$", r"$\nu_\mu$"), flavor_colours):

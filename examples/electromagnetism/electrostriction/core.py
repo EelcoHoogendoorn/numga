@@ -14,7 +14,6 @@ The energy at fixed applied field includes the work exchanged with the source of
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import cached_property
 
 import jax
 import numpy as np
@@ -23,8 +22,7 @@ from numga.algebras import STA as ga
 from numga.backend.jax import JaxContext, derivative
 from numga.sparse import SparseExtensor
 
-jax.config.update("jax_enable_x64", True)
-mv = JaxContext(ga, np.float64).multivector
+mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 # Positions, displacements and dipoles are directions in the plane, antivectors; the electric field
@@ -47,7 +45,7 @@ class Lattice:
     stiffness: float
     tether: float
 
-    @cached_property
+    @property
     def bond_ends(self) -> SparseExtensor:
         """Each bond's second particle less its first, from the particles to the bonds."""
         n_particles = self.rest.gatype.site_shape[0]
@@ -58,7 +56,7 @@ class Lattice:
         """Each elastic bond, directed from its first particle to its second."""
         return self.bond_ends * positions                                      # Point[bonds]
 
-    @cached_property
+    @property
     def lengths(self) -> Scalar:
         return self.links(self.rest).squared().square_root()
 
@@ -97,13 +95,17 @@ class Lattice:
         def energy(positions: Point) -> Scalar:
             return self.energy(positions, applied)
 
-        positions = self.rest.broadcast_to(applied.shape)
-        for _ in range(n_steps):
+        @jax.jit
+        def newton(positions: Point) -> Point:
             gradient = derivative(energy)(positions)                   # Scalar <- Point[particles]
             curvature = derivative(derivative(energy))(positions)      # Scalar <- (Point[particles], Point[particles])
             # The polarization solve is inside the energy: its response to motion contributes
             # to the mechanical curvature as well as the first derivative.
-            positions = positions - curvature.solve(gradient)
+            return positions - curvature.solve(gradient)
+
+        positions = self.rest.broadcast_to(applied.shape)
+        for _ in range(n_steps):
+            positions = newton(positions)
         return positions
 
 

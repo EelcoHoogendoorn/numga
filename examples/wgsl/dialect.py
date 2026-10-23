@@ -65,7 +65,7 @@ class Polynomial:
         return Polynomial.lift(other) - self
 
     def __mul__(self, other: object) -> Polynomial:
-        terms: dict[tuple[str, ...], float] = {}
+        terms = {}                                                              # dict[tuple[str, ...], float]
         for left, a in self.terms.items():
             for right, b in Polynomial.lift(other).terms.items():
                 monomial = tuple(sorted(left + right))
@@ -671,7 +671,7 @@ _ELEMENTWISE = {"abs", "sqrt", "exp", "exp2", "log", "log2", "sin", "cos", "tan"
                 "fma", "saturate", "cross", "reflect", "degrees", "radians",
                 "fwidth", "dpdx", "dpdy", "fwidthFine", "dpdxFine", "dpdyFine", "fwidthCoarse", "dpdxCoarse", "dpdyCoarse"}
 _REDUCING = {"length", "distance", "dot", "determinant"}
-_OPERATORS: dict[str, Callable] = {"+": operator.add, "-": operator.sub, "*": operator.mul,
+_OPERATORS = {"+": operator.add, "-": operator.sub, "*": operator.mul,          # dict[str, Callable]
                                    "&": operator.and_, "|": operator.or_, "^": operator.xor,
                                    ">>": operator.rshift, "<<": operator.lshift}
 
@@ -707,10 +707,10 @@ class Compiler:
         self.algebra = algebra
         self.context = SymbolicContext(algebra)
         self.scalar = algebra.gatype.scalar()
-        self.names: dict[GAType, str] = {}
-        self.types: dict[str, GAType] = {"f32": self.scalar}
-        self.aliases: list[str] = []
-        self.native_aliases: dict[str, str] = {}
+        self.names = {}                                                         # dict[GAType, str]
+        self.types = {"f32": self.scalar}                                       # dict[str, GAType]
+        self.aliases = []                                                       # list[str]
+        self.native_aliases = {}                                                # dict[str, str]
         for name, gatype in types.items():
             self.types[name] = gatype
             if gatype == self.scalar:
@@ -719,16 +719,16 @@ class Compiler:
                 self.aliases.append(f"alias {name} = {self.names[gatype]};")
             else:
                 self.names[gatype] = name
-        self.helpers: dict[tuple, tuple[str, str, Any]] = {}
-        self.structs: dict[str, list[tuple[str, Any]]] = {}
-        self.functions: dict[str, tuple[list, Any]] = {}
-        self.globals: dict[str, Value] = {}
-        self.bindings: list[Binding] = []
-        self.uniforms: list[tuple[str, Any]] = []
-        self.entry_points: list[tuple[str, tuple[int, int, int]]] = []
-        self.stages: dict[str, str] = {}
+        self.helpers = {}                                                       # dict[tuple, tuple[str, str, Any]]
+        self.structs = {}                                                       # dict[str, list[tuple[str, Any]]]
+        self.functions = {}                                                     # dict[str, tuple[list, Any]]
+        self.globals = {}                                                       # dict[str, Value]
+        self.bindings = []                                                      # list[Binding]
+        self.uniforms = []                                                      # list[tuple[str, Any]]
+        self.entry_points = []                                                  # list[tuple[str, tuple[int, int, int]]]
+        self.stages = {}                                                        # dict[str, str]
         self.targets = 0
-        self.member_attributes: dict[str, list[list[str]]] = {}
+        self.member_attributes = {}                                             # dict[str, list[list[str]]]
 
     def error(self, line: int, message: str) -> SyntaxError:
         return SyntaxError(f"line {line}: {message}")

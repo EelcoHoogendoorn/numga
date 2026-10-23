@@ -86,7 +86,10 @@ def main() -> None:
 
     rows = list(zoo(SIGNATURES, SEED))
     actions = list(centres(tuple(s for s in SIGNATURES if sum(s) % 2 == 0)))
-    print(render.table(rows, actions))
+    for p, q, ratio, signs, square in rows:
+        print((p, q), "form / inner:", ratio.to_array(), " involution's eigenvalues:", signs.to_array(), " I * I:", square.to_array())
+    for p, q, action in actions:
+        print((p, q), "the pseudoscalar's eigenvalues on the spinors:", action.to_array())
     rotor, left_factor, right_factor, along_generator, against_generator = split(SEED)
     left, right, knotted, along, against = flows(N_AZIMUTHS, HEIGHTS, N_STEPS)
     save_figure(render.draw_flows(left, right, knotted), "spin_groups_isoclinic")

@@ -65,7 +65,7 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
                                CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
     figure = plt.figure(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(*tubes, 1.0)]), view)
+    show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tubes, 1.0)]), view)
     # Each axis named just past its arrow's tip, where the camera sees it.
     labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=13,
            color=AXIS_COLOUR)

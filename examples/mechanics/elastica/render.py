@@ -36,11 +36,6 @@ BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for checks."""
-    return values.cast(ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of points, on the last axis."""
     kernel = points.cast(ga.subspace("ywz wxz xwy xyz")).kernel
@@ -148,7 +143,7 @@ def animate_cord(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
             for curve, ribbon, ends in zip(curves, ribbons, clamps)]
 
 
-def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[np.ndarray, np.ndarray, float]]:
+def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[meshes.Samples, float]]:
     """Rods along curves `[rods, n, 3]` as thin tubes, through their ribbons `[rods, n, 2, 3]`: strips between the
     edges, two triangles to each piece of rod; each an opaque mesh, sample by sample."""
     index = np.arange(ribbons.size // 3).reshape(ribbons.shape[:3])         # [rods, n, 2]
@@ -157,7 +152,7 @@ def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tu
     edges = solids.mv.point(ribbons.reshape(-1, 3))
     strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
     rods = meshes.tube_samples([(curve, ROD) for curve in curves], ROD_WIDTH, view)
-    return [(*strips, 1.0), (*rods, 1.0)]
+    return [(strips, 1.0), (rods, 1.0)]
 
 
 def scene(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> np.ndarray:

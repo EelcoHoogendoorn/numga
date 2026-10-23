@@ -518,6 +518,20 @@ class Extensor:
             return self
         return type(self)._from_prepared_kernel(self.context, gatype, self._kernel)
 
+    def retyped(self, gatype: GAType) -> Extensor:
+        """The same value under exactly the given type: its layout embedded into the type's, and of its facts only
+        those the type states, each of which the value must already carry. It only forgets, which is always sound: a
+        value built with more facts than a loop's steps keep, a motor composed of two turns, can start a loop that
+        carries the steps' type."""
+
+        if gatype.arity or self.gatype.arity:
+            raise TypeError(f"retyped takes values, not maps; got {self.gatype} and {gatype}")
+        embedded = self.cast(gatype)
+        unproven = [trait for trait in gatype.traits if trait not in embedded.gatype.traits]
+        if unproven:
+            raise GATypeError(f"{self.gatype} does not carry {unproven}, which {gatype} states; retyped only forgets facts")
+        return type(self)._from_prepared_kernel(self.context, gatype, embedded._kernel)
+
     def _symmetric_product(
         self, transform: str, *, scalar_only: bool = False,
     ) -> "Extensor":
@@ -879,3 +893,16 @@ def stack(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
 
 def concatenate(extensors: Iterable[Extensor], axis: int = 0) -> Extensor:
     return Extensor.concatenate(extensors, axis=axis)
+
+
+def where(condition: Any, if_true: Extensor, if_false: Extensor) -> Extensor:
+    """Each element of `if_true` where the condition, an array over the batch axes, holds, and of `if_false` where it
+    does not, as `np.where`: a value not chosen never reaches the result, as it would through a blend by a mask, so
+    an element may hold anything, a 0/0 included, where it is not chosen."""
+    context = binding_context(if_true.context, (if_false.context,))
+    values = (context.lower(if_true), context.lower(if_false))
+    gatype = _stacked_type(values)
+    kernels = tuple(_embed_kernel(context, value, gatype.subspaces) for value in values)
+    mask = context.xp.asarray(condition)
+    mask = context.xp.reshape(mask, mask.shape + (1,) * len(gatype.structural_shape))
+    return Extensor._from_prepared_kernel(context, gatype, context.xp.where(mask, *kernels))

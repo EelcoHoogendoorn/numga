@@ -130,13 +130,22 @@ def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: in
     """The sheet moving under its own forces from the given points `Point[V]`, from rest, losing a share
     `damping` of its velocity every step of the given size until it settles: the points at every frame,
     so many steps apart, and at the end."""
-    velocity = points - points                                                   # Direction[V]
+    import jax
+    from numga.backend.jax import JaxContext
+
+    def substep(state: tuple[Point, Direction], _) -> tuple[tuple[Point, Direction], None]:
+        points, velocity = state
+        velocity = (velocity + forces(sheet, points) * (step / sheet.masses)) * (1 - damping)
+        return (points + velocity * step, velocity), None
+
+    # The steps between two frames, compiled once into one loop.
+    frame = jax.jit(lambda state: jax.lax.scan(substep, state, length=n_steps_per_frame)[0])
+    context = JaxContext(ga)
+    state = (points.materialize(context), (points - points).materialize(context))   # Point[V], Direction[V]
     for _ in range(n_frames):
-        yield points
-        for _ in range(n_steps_per_frame):
-            velocity = (velocity + forces(sheet, points) * (step / sheet.masses)) * (1 - damping)
-            points = points + velocity * step
-    yield points
+        yield state[0].materialize(mv.context)
+        state = frame(state)
+    yield state[0].materialize(mv.context)
 
 
 def sheet(mesh: Mesh, lengths: Scalar, curvature: Curvature, top: Plane, thickness: float) -> Sheet:

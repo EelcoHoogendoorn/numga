@@ -59,7 +59,8 @@ VIEW, CENTRE, EXTENT = (30, -60), np.array([0.0, 0.0, 0.15]), 0.55
 
 
 # --- math -----------------------------------------------------------------------------
-def top(tip_radius: float, disc_height: float, disc_mass: float):
+def top(tip_radius: float, disc_height: float, disc_mass: float
+        ) -> tuple[core.Quadric, core.Inertia, core.InverseInertia, float, float]:
     """A disc, a stem and a tip, each a solid ellipsoid, in the frame of their centre of mass: the parts,
     the inertia and its inverse, the total mass, and the height of the centre of mass above the tip."""
     centres = np.array([[0, 0, disc_height], [0, 0, disc_height + STEM_ABOVE_DISC], [0, 0, TIP_HEIGHT]])
@@ -73,8 +74,13 @@ def top(tip_radius: float, disc_height: float, disc_mass: float):
     return parts, inertia, inertia.inverse(), mass.sum(), com[2]
 
 
-def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Iterator[tuple]:
-    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps."""
+def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int
+         ) -> Iterator[tuple[core.Motor, core.Rate, core.Quadric, core.Quadric]]:
+    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps. A frame's steps
+    run under `jax.lax.scan`: each is a few hundred small operations on one top, which the compiled loop does at once."""
+    import jax
+    from numga.backend.jax import JaxContext
+
     parts, inertia, inverse_inertia, mass, height = top(setup.tip_radius, setup.disc_height, setup.disc_mass)
     ground = core.bowl(setup.ground_curvature)
     origin = core.mv.point(np.zeros(3))
@@ -83,20 +89,26 @@ def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int) -> Ite
     motor = ((mv.zw * ((height * np.cos(TILT) + CLEARANCE) / 2)).exp() * (mv.zx * (TILT / 2)).exp()).normalized()
     rate = mv.xy * setup.spin_rate
 
-    def forces(motor, rate):
+    def forces(motor: core.Motor, rate: core.Rate) -> core.Forque:
         """The weight, a force line down through the centre of mass, and the air's drag, opposing
         the momentum; in the body frame."""
         weight = motor << ((motor >> origin) & core.mv(core.Direction, np.array([0.0, 0.0, -GRAVITY * mass])))
         return weight - inertia(rate) * setup.drag
 
-    for step in range(int(seconds / dt)):
-        before = motor
+    def substep(state: tuple[core.Motor, core.Rate], _: None) -> tuple[tuple[core.Motor, core.Rate], None]:
+        before, rate = state
         # Predict with a free step, then correct against the ground.
-        motor, rate = lie.explicit_rk4(motor, rate, inertia, inverse_inertia, dt, forces)
-        motor, rate = core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
-                                            STATIC_FRICTION, setup.dynamic_friction, dt)
-        if step % n_steps_per_frame == 0:
-            yield motor, rate, parts, ground
+        motor, rate = lie.explicit_rk4(before, rate, inertia, inverse_inertia, dt, forces)
+        return core.project_contacts(before, motor.normalized(), inverse_inertia, parts, ground,
+                                     STATIC_FRICTION, setup.dynamic_friction, dt), None
+
+    # A frame's contact steps compiled into one loop, which carries the motor and the rate as every step returns them:
+    # the start, a motor composed of two turns, is retyped to a plain motor.
+    frame = jax.jit(lambda state: jax.lax.scan(substep, state, length=n_steps_per_frame)[0])
+    state = (motor.retyped(core.Motor).materialize(JaxContext(core.ga)), rate.retyped(core.Rate).materialize(JaxContext(core.ga)))
+    for _ in range(int(seconds / dt) // n_steps_per_frame):
+        state = frame(state)
+        yield state[0].materialize(core.mv.context), state[1].materialize(core.mv.context), parts, ground
 
 
 def lean(motor: core.Motor) -> core.Scalar:

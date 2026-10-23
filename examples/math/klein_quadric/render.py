@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor
 from examples.math.klein_quadric import core
-from examples.wgsl import image_figure, solids
+from examples.wgsl import image_figure, meshes, solids
 
 mv = core.mv
 # Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in
@@ -53,10 +53,15 @@ def chords(lines: core.Bivector) -> np.ndarray:
     return np.stack([nearest - half * heading, nearest + half * heading], axis=-2)
 
 
+def finite(ends: np.ndarray) -> np.ndarray:
+    """Chords, `[..., 2, 3]`, flattened to `[chords, 2, 3]`, the chords of lines that miss the ball left out."""
+    ends = ends.reshape(-1, 2, 3)
+    return ends[np.isfinite(ends).all(axis=(-1, -2))]
+
+
 def rods(ends: np.ndarray, radius: float) -> solids.Quadric:
     """Chords, `[..., 2, 3]`, as rods of a radius, `[chords, 3]`, the chords of lines that miss the ball left out."""
-    ends = ends.reshape(-1, 2, 3)
-    ends = ends[np.isfinite(ends).all(axis=(-1, -2))]
+    ends = finite(ends)
     return solids.rods(solids.mv.point(ends[:, 0]), solids.mv.point(ends[:, 1]), radius)
 
 
@@ -65,13 +70,16 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
     """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
     view = solids.View(solids.aim(solids.origin, ELEVATION, azimuth), np.full(2, RADIUS * (1 + MARGIN)), N_PIXELS)
     points = solids.mv.point(coordinates(crossing)[real(crossing)])            # [crossings] Point
-    hyperboloid = [(rods(chords(rulings[0]), RULING_RADIUS * view.pixel), RULING_COLOURS[0], RULING_OPACITY),
-                   (rods(chords(rulings[1]), RULING_RADIUS * view.pixel), RULING_COLOURS[1], RULING_OPACITY)]
+    # The hyperboloid's two families of lines, faint: tubes drawn as meshes, which the tracer composites sample by
+    # sample, where traced rods would each be searched through every layer of the translucent crowd.
+    hyperboloid = [(meshes.tube_samples([(ends, colour) for ends in finite(chords(family))], 2 * RULING_RADIUS, view),
+                    # A traced rod is crossed twice, a tube's mesh once: its nearest surface hides what both would.
+                    1 - (1 - RULING_OPACITY) ** 2) for family, colour in zip(rulings, RULING_COLOURS)]
     four = [(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
             (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
             (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),
             (solids.ball(points, CROSSING_RADIUS * view.pixel)[:, None], TRANSVERSAL_COLOUR)]
-    return solids.draw(four, view, BACKGROUND, translucent=hyperboloid)
+    return solids.draw(four, view, BACKGROUND, meshes=hyperboloid)
 
 
 def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,

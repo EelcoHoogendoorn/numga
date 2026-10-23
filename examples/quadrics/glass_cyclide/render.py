@@ -16,6 +16,7 @@ import numpy as np
 
 from examples.quadrics.glass_cyclide import core
 from examples.wgsl import Shader, supersampled
+from examples.wgsl.library import drawn
 
 types = dict(Sphere=core.Sphere, Euclidean=core.Euclidean, Point=core.Point, Rotation=core.Rotation, Quadric=core.Quadric)
 
@@ -231,7 +232,9 @@ def shader() -> Shader:
 
 def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, turns: core.Rotation, eyes: core.Euclidean,
            lamp: core.Euclidean, half_view: float, shape: tuple[int, int]) -> Iterator[np.ndarray]:
-    """The scene from each camera, its turn and its eye, `[rows, columns, 3]` per camera."""
+    """The scene from each camera, its turn and its eye, `[rows, columns, 3]` per camera, with as many pixels as
+    `drawn` gives where the CPU draws."""
+    shape = (drawn(shape[0]), drawn(shape[1]))
     for turn, eye in zip(turns, eyes):
         traced = tracer(shape, quadrics=quadrics, solids=solids, turn=turn, eye=eye, lamp=lamp, half_view=half_view)["image"]
         yield np.round(np.clip(traced, 0, 1) ** (1 / 1.2) * 255).astype(np.uint8)

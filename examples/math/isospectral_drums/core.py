@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import NumpyContext
+from numga.algebras import VGA2D
 from numga.sparse import SparseExtensor
 
-ga = Algebra("x+y+")
+ga = VGA2D
 context = NumpyContext(ga)
 mv = context.multivector
 Scalar = ga.gatype.scalar()

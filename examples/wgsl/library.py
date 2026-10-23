@@ -11,14 +11,22 @@ from __future__ import annotations
 import numpy as np
 
 
-def sampling() -> int:
-    """The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, four where the adapter is the
-    CPU itself, a software driver as in a notebook's runtime without a GPU, where sixteen cost too much."""
+def software() -> bool:
+    """Whether the adapter is the CPU itself, a software driver as in a notebook's runtime without a GPU."""
     from examples.wgsl.runner import device
-    return 2 if device().adapter.info["adapter_type"] == "CPU" else 4
+    return device().adapter.info["adapter_type"] == "CPU"
 
 
-samples_per_side = sampling()
+# The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, four on the CPU, where sixteen
+# cost too much; and the share of a traced picture's pixels drawn across, all of them on a GPU, half on the CPU.
+samples_per_side = 2 if software() else 4
+pixel_share = 0.5 if software() else 1.0
+
+
+def drawn(pixels: int) -> int:
+    """The pixels a traced picture draws across where `pixels` are asked for: all of them on a GPU, `pixel_share` of
+    them where the CPU draws."""
+    return round(pixels * pixel_share)
 
 
 def supersampled() -> str:

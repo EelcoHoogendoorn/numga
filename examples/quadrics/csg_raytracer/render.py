@@ -13,6 +13,7 @@ import numpy as np
 
 from examples.quadrics.csg_raytracer import core
 from examples.wgsl import Shader, supersampled
+from examples.wgsl.library import drawn
 
 types = dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric)
 
@@ -147,7 +148,9 @@ def shader() -> Shader:
 
 def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, cameras: core.Motor, lamp: core.Point,
            half_view: float, shape: tuple[int, int]) -> Iterator[np.ndarray]:
-    """The scene as each camera sees it, `[rows, columns, 3]` per camera."""
+    """The scene as each camera sees it, `[rows, columns, 3]` per camera, with as many pixels as `drawn` gives
+    where the CPU draws."""
+    shape = (drawn(shape[0]), drawn(shape[1]))
     for camera in cameras:
         traced = tracer(shape, quadrics=quadrics, solids=solids, camera=camera, eye=camera >> core.origin,
                         lamp=lamp, half_view=half_view)["image"]

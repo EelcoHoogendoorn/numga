@@ -51,8 +51,8 @@ def unit(points: Point) -> Point:
 
 
 # Every element is built in its home frame: centred on the origin, in the plane x == 0.
-origin: Point = unit(mv.w.dual())
-home: Plane = mv.x
+origin = unit(mv.w.dual())                                                      # Point
+home = mv.x                                                                     # Plane
 
 
 def point(coords: np.ndarray) -> Point:
@@ -64,8 +64,8 @@ def point(coords: np.ndarray) -> Point:
 def thin_lens(focal: np.ndarray) -> tuple[PointMap, LineMap]:
     """Thin lenses of the given focal lengths in the home plane, as collineations of points and
     as the induced maps on lines."""
-    points: PointMap = Point + origin * (home & Point) / focal
-    lines: LineMap = Line - (origin & (Line ^ home)) / focal
+    points = Point + origin * (home & Point) / focal                            # PointMap
+    lines = Line - (origin & (Line ^ home)) / focal                             # LineMap
     return points, lines
 
 
@@ -89,25 +89,25 @@ def expose(
     lines = placements >> lens_lines(placements << Line)
     front, rear = lines[0], lines[1]
     front_plane, rear_plane = placements[0] >> home, placements[1] >> home
-    collineation: PointMap = points[1](points[0])
+    collineation = points[1](points[0])                                         # PointMap
     train = rear(front)
-    pupil_ball: Quadric = placements[0] >> ball(radius)(placements[0] << Point)
+    pupil_ball = placements[0] >> ball(radius)(placements[0] << Point)          # Quadric
 
     # The focus point's image places the sensor; tilt turns it about that image.
-    image: Point = unit(collineation(focus))
-    frame: Motor = (image / origin).square_root() * tilt
-    sensor: Plane = frame >> home
-    camera: Camera = train(Point & Point) ^ sensor
+    image = unit(collineation(focus))                                           # Point
+    frame = (image / origin).square_root() * tilt                               # Motor
+    sensor = frame >> home                                                      # Plane
+    camera = train(Point & Point) ^ sensor                                      # Camera
 
     # Project through each subject onto the pupil, then pull back its quadric.
     # Pull back once more through the inverse lens train to get the image cones.
     project = (scene & Point) ^ front_plane
-    cone: Quadric = project.adjugate()(pupil_ball(project))
-    back: PointMap = collineation.inverse()
-    cones: Quadric = back.adjugate()(cone(back))
+    cone = project.adjugate()(pupil_ball(project))                              # Quadric
+    back = collineation.inverse()                                               # PointMap
+    cones = back.adjugate()(cone(back))                                         # Quadric
 
-    rays: Line = subject & (placements[0] >> rim)
-    legs: Point = stack([subject.broadcast_to(rays.shape), rays ^ front_plane,
+    rays = subject & (placements[0] >> rim)                                     # Line
+    legs = stack([subject.broadcast_to(rays.shape), rays ^ front_plane,         # Point
                          front(rays) ^ rear_plane, rear(front(rays)) ^ sensor])
     return collineation, camera, frame, cones, stack([front_plane, rear_plane, sensor]), legs
 

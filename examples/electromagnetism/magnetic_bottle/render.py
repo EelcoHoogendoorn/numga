@@ -35,7 +35,7 @@ def space(points: core.Antivector) -> np.ndarray:
     return np.stack([(mv.z & points).to_array(), (mv.x & points).to_array(), (mv.y & points).to_array()], axis=-1)
 
 
-def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> tuple[np.ndarray, np.ndarray]:
+def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> meshes.Samples:
     """The field's strength over its grid in the plane through the axis `[across, along]`, coloured by its logarithm,
     as a mesh of the grid's squares, as `meshes.samples`."""
     grid = space(points)                                                      # [across, along, 3]
@@ -73,5 +73,5 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
                                      track_width, view)
         particles = solids.ball(solids.mv.point(tracks[end - 1]), particle_radius * view.pixel)[:, None]
         images.append(solids.draw([(particles, colours)], view, np.ones(3),
-                                  meshes=[(*field, sheet_opacity), (*wire, 1.0), (*trails, 1.0)]))
+                                  meshes=[(field, sheet_opacity), (wire, 1.0), (trails, 1.0)]))
     return images

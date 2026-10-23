@@ -121,7 +121,7 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     tyres = meshes.tube_samples([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view, N_AROUND)
     trail = meshes.tube_samples([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))],
                                 TRAIL_WIDTH, view, N_AROUND)
-    return solids.draw(parts, view, BACKGROUND, meshes=[(*tyres, 1.0), (*trail, 1.0)])
+    return solids.draw(parts, view, BACKGROUND, meshes=[(tyres, 1.0), (trail, 1.0)])
 
 
 def at_height(places: np.ndarray, height: float) -> solids.Point:

@@ -73,9 +73,9 @@ class Paper:
         # Only crossing edges are evaluated, so parallel edges never require division.
         cuts = (self.points[crossing] & self.points[following[crossing]]) ^ plane
         cuts = cuts / (mv.w & cuts)
-        candidates = stack([self.points, self.points.at[crossing].set(cuts)], axis=-1)  # [corners, 2] Point
+        corners_and_cuts = stack([self.points, self.points.at[crossing].set(cuts)], axis=-1)   # [corners, 2] Point
         inserted = np.stack([np.ones_like(crossing), crossing], axis=-1)
-        negative, positive = Paper.sides(plane, candidates, tolerance)
+        negative, positive = Paper.sides(plane, corners_and_cuts, tolerance)
         corners_only = np.array([True, False])
 
         # Face indices encode the folding recipe. Splitting duplicates crease vertices:
@@ -90,11 +90,11 @@ class Paper:
 
         kept, turning, parents = zip(*pieces())
         parents = np.array(parents)
-        # Kept candidates in boundary order, piece after piece.
-        corner, candidate = np.nonzero(np.concatenate(kept))
+        # The kept corners and cuts in boundary order, piece after piece.
+        corner, at_cut = np.nonzero(np.concatenate(kept))
         corners = np.concatenate([faces[parent] for parent in parents])
         counts = np.array([piece.sum() for piece in kept])
-        paper = Paper(candidates[corners[corner], candidate], counts, self.offsets[parents], self.sheet)
+        paper = Paper(corners_and_cuts[corners[corner], at_cut], counts, self.offsets[parents], self.sheet)
         return paper, np.array(turning), parents
 
     def folded(self, hinge: Line, turning: np.ndarray, angle: float) -> Paper:

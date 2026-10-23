@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from numga.backend.context import binding_context
 from numga.binding import AxisTransform
 from numga.extensor import Extensor
 from numga.extensor.fields import add_fields
@@ -75,13 +76,9 @@ def _embedding(source: tuple[SubSpace, ...], target: tuple[SubSpace, ...]) -> Ca
 
 
 def _common_context(left: Extensor, right: Extensor) -> Any:
-    if left.context.is_compatible_with(right.context):
-        return left.context
-    if left.context.is_exact:
-        return right.context
-    if right.context.is_exact:
-        return left.context
-    raise ValueError("Extensor contexts are incompatible")
+    # The context any binding of the two would run in: an exact operand takes the other's, and a NumPy one is
+    # carried into JAX.
+    return binding_context(left.context, (right.context,))
 
 
 # --- quotients -------------------------------------------------------------------------

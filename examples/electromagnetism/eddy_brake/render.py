@@ -20,7 +20,7 @@ from examples.electromagnetism.eddy_brake import core
 Mesh, as_ga_sparse, as_scalar = core.Mesh, core.mesh_module.as_ga_sparse, core.as_scalar
 
 image_samples = 256
-animation_dpi = 120
+animation_dpi = 90
 fibre_reach = 0.94
 fibre_colour = (0.16, 0.43, 0.56, 0.8)
 fibre_width = 1.35
@@ -160,7 +160,7 @@ def current_contours(ax: plt.Axes, triangles: Triangulation, streamfunction: np.
             inside = np.flatnonzero((offsets > 0) & (offsets < 2 * half_length))
             inside = inside[np.argsort(offsets[inside])]
             points = np.concatenate((points[:1], curve[inside], points[1:]))
-            ax.add_patch(FancyArrowPatch(path=Path(points), arrowstyle="-|>", mutation_scale=7,
+            ax.add_artist(FancyArrowPatch(path=Path(points), arrowstyle="-|>", mutation_scale=7,
                                          shrinkA=0, shrinkB=0, linewidth=0.8, color=colour, zorder=3))
         paths.append(Path.make_compound_path(*display_paths))
     contours.set_paths(paths)
@@ -226,101 +226,9 @@ def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
 
 def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
             fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
-    """Batched rotating materials and currents, with `[curves, samples]` body-fixed guide families
-    drawn on the panels that show them, `[cases, families]`."""
-    states = list(frames)
-    # The current belongs to material faces; turn its direction into the laboratory frame.
-    field = stack([state.orientation >> state.current for state in states])     # [frames, cases] Vector[F]
-    current = planar(at_vertices(mesh, field).batch())     # [frames, cases, V, 2]
-    magnitude = np.linalg.norm(current, axis=-1)
-    peak = magnitude.max()
-    current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
-    reference = planar(mesh.vertices.batch())
-    extent = np.linalg.norm(reference, axis=-1).max()
-    sample_axis = np.linspace(-extent, extent, image_samples)
-    horizontal, vertical = np.meshgrid(sample_axis, sample_axis)
-    field_centre = planar(centre)
-    boundary = mesh.edges[mesh.boundary_edges]
-    guides = concatenate(fibres)                                              # [curves, samples] Vector
-
-    # Fibre curves and one rim mark are fixed to each body. The magnetic patches stay still.
-    marks = rotation_marks(stack([state.orientation for state in states]), extent)
-
-    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
-              for i, colours in enumerate(fibre_colours(fibres, shown))]
-    fixed_patches = len(panels[0][0].patches)
-    images = []
-    for state, vectors, speed, frame_marks in zip(states, current, magnitude, marks):
-        positions = planar(state.vertices.batch())
-        threads_at = planar(state.orientation[:, None, None] >> guides)
-        paths, surfaces = [], []
-        for i, (ax, threads, marker, outline) in enumerate(panels):
-            # The display mesh moves with the material; vertex colours interpolate face currents.
-            triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
-            surfaces.append(ax.tripcolor(triangles, speed[i], shading="gouraud", cmap=current_colours,
-                                         norm=current_scale, rasterized=True, zorder=1))
-            outline.set_segments(positions[i, boundary])
-            threads.set_segments(threads_at[i])
-            marker.set_offsets(frame_marks[i:i + 1])
-            along = LinearTriInterpolator(triangles, vectors[i, :, 0])(horizontal, vertical)
-            across = LinearTriInterpolator(triangles, vectors[i, :, 1])(horizontal, vertical)
-            # A shared power scale keeps weak currents visible while still fading to zero.
-            paths.append(ax.streamplot(sample_axis, sample_axis, along, across,
-                                       color=(0.29, 0.24, 0.20, (speed[i].max() / peak) ** streamline_gamma),
-                                       density=1.2, linewidth=0.8, arrowsize=0.8, zorder=3))
-        images.append(capture(figure))
-        for surface in surfaces:
-            surface.remove()
-        for path, (ax, threads, marker, outline) in zip(paths, panels):
-            path.lines.remove()
-            for arrow in tuple(ax.patches)[fixed_patches:]:
-                arrow.remove()
-    plt.close(figure)
-    return images
-
-
-def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
-                 fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
-    """Accumulated heat per area, carried by the moving material faces on one common scale."""
-    states = list(frames)
-    # Face heat is energy. Dividing by each material face's area gives the density to colour.
-    density = stack([state.heat for state in states]) / mesh.triangle_areas  # [frames, cases] Scalar[F]
-    heat_scale = PowerNorm(heat_gamma, vmin=0, vmax=density.cast(core.ga.subspace.scalar()).kernel.max())
-    values = at_vertices(mesh, density).cast(core.ga.subspace.scalar()).kernel[..., 0]  # [frames, cases, V]
-    reference = planar(mesh.vertices.batch())
-    extent = np.linalg.norm(reference, axis=-1).max()
-    field_centre = planar(centre)
-    boundary = mesh.edges[mesh.boundary_edges]
-    guides = concatenate(fibres)                                              # [curves, samples] Vector
-    marks = rotation_marks(stack([state.orientation for state in states]), extent)
-
-    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
-    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
-              for i, colours in enumerate(fibre_colours(fibres, shown))]
-    images = []
-    for state, densities, frame_marks in zip(states, values, marks):
-        positions = planar(state.vertices.batch())
-        threads_at = planar(state.orientation[:, None, None] >> guides)
-        surfaces = []
-        for i, (ax, threads, marker, outline) in enumerate(panels):
-            # The display mesh moves with the material; vertex colours interpolate face heat.
-            triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
-            surfaces.append(ax.tripcolor(triangles, densities[i], shading="gouraud",
-                                          cmap=heat_colours, norm=heat_scale, rasterized=True, zorder=1))
-            outline.set_segments(positions[i, boundary])
-            threads.set_segments(threads_at[i])
-            marker.set_offsets(frame_marks[i:i + 1])
-        images.append(capture(figure))
-        for surface in surfaces:
-            surface.remove()
-    plt.close(figure)
-    return images
-
-
-def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre: core.Point, width: float,
-                      fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
-    """Current build-up and decay on a moving material mesh, on one scale across cases and time."""
+    """Batched rotating materials and their currents, on one scale across cases and time, the currents' paths the
+    contours of their streamfunctions, with `[curves, samples]` body-fixed guide families drawn on the panels that show
+    them, `[cases, families]`."""
     states = list(frames)
     reference = planar(mesh.vertices.batch())
     # The current belongs to material faces; turn its direction into the laboratory frame.
@@ -374,13 +282,39 @@ def animate_inductive(mesh: Mesh, frames: Iterable[core.InductiveMotion], centre
     return images
 
 
-def readout(response: core.Response, labels: tuple[str, ...]) -> str:
-    """Material, signed torque in the disc's plane, and total dissipated power."""
-    # The moment paired with the disc's plane: the torque in its sense.
-    torque = (core.mv.xy & response.torque).cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
-    heating = response.heating.sites.sum().cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
-    label_width = max(len("material"), *(len(label) for label in labels))
-    header = f"{'material':<{label_width}}  {'torque (mN m)':>14}  {'heating (mW)':>14}"
-    rows = (f"{label:<{label_width}}  {moment:14.2f}  {power:14.2f}"
-            for label, moment, power in zip(labels, torque, heating))
-    return "\n".join((header, *rows))
+def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
+                 fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
+    """Accumulated heat per area, carried by the moving material faces on one common scale."""
+    states = list(frames)
+    # Face heat is energy. Dividing by each material face's area gives the density to colour.
+    density = stack([state.heat for state in states]) / mesh.triangle_areas  # [frames, cases] Scalar[F]
+    heat_scale = PowerNorm(heat_gamma, vmin=0, vmax=density.cast(core.ga.subspace.scalar()).kernel.max())
+    values = at_vertices(mesh, density).cast(core.ga.subspace.scalar()).kernel[..., 0]  # [frames, cases, V]
+    reference = planar(mesh.vertices.batch())
+    extent = np.linalg.norm(reference, axis=-1).max()
+    field_centre = planar(centre)
+    boundary = mesh.edges[mesh.boundary_edges]
+    guides = concatenate(fibres)                                              # [curves, samples] Vector
+    marks = rotation_marks(stack([state.orientation for state in states]), extent)
+
+    figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
+    panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
+              for i, colours in enumerate(fibre_colours(fibres, shown))]
+    images = []
+    for state, densities, frame_marks in zip(states, values, marks):
+        positions = planar(state.vertices.batch())
+        threads_at = planar(state.orientation[:, None, None] >> guides)
+        surfaces = []
+        for i, (ax, threads, marker, outline) in enumerate(panels):
+            # The display mesh moves with the material; vertex colours interpolate face heat.
+            triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
+            surfaces.append(ax.tripcolor(triangles, densities[i], shading="gouraud",
+                                          cmap=heat_colours, norm=heat_scale, rasterized=True, zorder=1))
+            outline.set_segments(positions[i, boundary])
+            threads.set_segments(threads_at[i])
+            marker.set_offsets(frame_marks[i:i + 1])
+        images.append(capture(figure))
+        for surface in surfaces:
+            surface.remove()
+    plt.close(figure)
+    return images

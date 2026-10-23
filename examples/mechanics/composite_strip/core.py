@@ -23,9 +23,9 @@ State = ga.gatype.from_blades("1 yz")
 Measurement = ga.gatype((Scalar, State))                      # Scalar <- State
 Energy = ga.gatype((Scalar, State, State))                    # Scalar <- (State, State)
 Strain = ga.gatype((Vector, Vector, State))                   # Vector <- (Vector, State)
-extension: Measurement = mv.scalar([1]).scalar_product(State)  # []
+extension = mv.scalar([1]).scalar_product(State)               # []
 # The minus sign compensates for the negative square of the yz blade.
-twist: Measurement = (-mv.yz).scalar_product(State)            # []
+twist = (-mv.yz).scalar_product(State)                         # []
 
 
 # --- math -----------------------------------------------------------------------------
@@ -42,7 +42,7 @@ def strain(height: Scalar, thickness: float) -> Strain:
 def read(strain: Extensor, fibres: Vector) -> Extensor:
     """A strain map's readings along a ply's fibres, across them, and as their shear, stacked on a
     leading axis; each reading is a map of the strain's further arguments."""
-    transverse: Vector = mv.xy | fibres
+    transverse = mv.xy | fibres                                                 # Vector
     return stack([fibres | strain(fibres), transverse | strain(transverse), 2 * (fibres | strain(transverse))])
 
 
@@ -66,7 +66,7 @@ def response(fibres: Vector, heights: Vector, weights: np.ndarray, thickness: fl
     """
     moduli = (longitudinal_modulus, transverse_modulus, poisson, shear_modulus)
     # Each ply reads the strain along its fibres, across them, and as their shear.
-    strain_at_heights: Strain = strain(heights | mv.z, thickness)                      # [plies, samples]
+    strain_at_heights = strain(heights | mv.z, thickness)                              # [plies, samples]
     readings = read(strain_at_heights, fibres)                                                     # [3, cases, plies, samples] Measurement
     # A unit width strain, read the same ways.
     widening = mv.y * (mv.y | Vector)                                                  # [] Vector <- Vector
@@ -76,23 +76,23 @@ def response(fibres: Vector, heights: Vector, weights: np.ndarray, thickness: fl
     # Strain read against stress, summed over the three readings and through the thickness. Each
     # product of two readings is a form on pairs of states: half energy(state, state) is the stored
     # energy per midsurface area.
-    energy: Energy = (readings * stresses * weights).sum(axis=(0, -2, -1))             # [cases]
+    energy = (readings * stresses * weights).sum(axis=(0, -2, -1))                     # [cases]
     # With the width held fixed, coupling(state) is the transverse force per unit length.
-    coupling: Measurement = (width_readings * stresses * weights).sum(axis=(0, -2, -1))   # [cases]
-    width_stiffness: Scalar = (width_readings * width_stresses * weights).sum(axis=(0, -2, -1))  # [cases]
+    coupling = (width_readings * stresses * weights).sum(axis=(0, -2, -1))                # [cases]
+    width_stiffness = (width_readings * width_stresses * weights).sum(axis=(0, -2, -1))          # [cases]
     # Free edges let the width contract until its force vanishes, reducing the state's stiffness.
-    free_width_energy: Energy = energy - coupling * coupling / width_stiffness          # [cases]
+    free_width_energy = energy - coupling * coupling / width_stiffness                  # [cases]
     # Apply only axial force; the twist is free to settle through the coupling in the energy.
-    state: State = free_width_energy.solve(tension * extension)                        # [cases]
-    width_strain: Scalar = -coupling(state) / width_stiffness                          # [cases]
+    state = free_width_energy.solve(tension * extension)                               # [cases]
+    width_strain = -coupling(state) / width_stiffness                                  # [cases]
     return state, width_strain
 
 
 def deform(points: Vector, state: State, width_strain: Scalar, thickness: float) -> Vector:
     """The midsurface's uniform stretch and width contraction, with each cross-section turned about
     the strip's axis by the twist accumulated along the strip."""
-    along: Scalar = points | mv.x                            # [length_samples, width_samples]
-    across: Scalar = points | mv.y                           # [length_samples, width_samples]
+    along = points | mv.x                                    # [length_samples, width_samples]
+    across = points | mv.y                                   # [length_samples, width_samples]
     # Each state acts on the whole grid; the two trailing axes sample the midsurface.
     state, width_strain = state[..., None, None], width_strain[..., None, None]  # [..., 1, 1] State, Scalar
     # Twist turns each cross-section in the yz plane, by an angle growing along the strip.

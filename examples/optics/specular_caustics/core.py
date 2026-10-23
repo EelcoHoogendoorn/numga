@@ -9,14 +9,12 @@ water and on the receiver, are the antivectors that contain `z`.
 
 from __future__ import annotations
 
-import jax
 import numpy as np
 
 from numga.algebras import VGA3D as ga
 from numga.backend.jax import JaxContext
 
-jax.config.update("jax_enable_x64", True)
-mv = JaxContext(ga, dtype=np.float64).multivector
+mv = JaxContext(ga).multivector
 Scalar = ga.gatype.scalar()
 # Positions and directions are antivectors; wavevectors and planes are covectors, vectors.
 Direction = ga.gatype.antivector()

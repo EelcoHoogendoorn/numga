@@ -20,9 +20,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import NumpyContext
+from numga.algebras import CGA3D
 
-ga = Algebra("x+y+z+w+e-")
+ga = CGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 

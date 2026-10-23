@@ -4,7 +4,6 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import stack
 from examples.relativity.kerr import core
 
 mass = 1.0
@@ -55,8 +54,7 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     position = -x * extent + y * offsets                        # [rays] Antivector
     momentum = core.initial_momentum(position, x, spin, mass)
     position = position.broadcast_to(momentum.shape)
-    paths = stack(tuple(position for position, _ in core.trace(
-        position, momentum, spin, mass, step_size, n_steps, stop_fraction, core.rates)))
+    paths, _ = core.trace(position, momentum, spin, mass, step_size, n_steps, stop_fraction, core.rates)
 
     # A constant oblate radius cuts the equatorial plane in this circle.
     horizon = mass + np.sqrt(mass**2 - spins**2)
@@ -79,13 +77,12 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     position, momentum = core.camera_rays(eye, orientation, image_width, image_height,
                                          half_view, spin, mass)
     screen = core.camera_screen(position, momentum, orientation, spin, mass)
-    steps = core.camera_trace((position, momentum, screen), spin, mass,
-                              camera_step_fraction, n_camera_steps, core.polarized_rates)
     def opacity(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         depth = core.disk_depth(radius, inner_radius, disk_outer_radius, inner_depth)
         return core.disk_opacity(event, momentum, depth, core.mv.z, core.mv.xy, spin, mass)
-    image = core.resolve(steps, image_width * image_height, core.mv.z, inner_radius, disk_outer_radius, opacity,
-                         escape_radius, capture_radius, spin, mass)
+    image, _ = core.resolve((position, momentum, screen), spin, mass, camera_step_fraction, n_camera_steps,
+                            core.polarized_rates, core.mv.z, inner_radius, disk_outer_radius, opacity, escape_radius,
+                            capture_radius)
     points, momenta, screens = image.disk
     # The gas orbits with the hole, in its equatorial plane.
     shift = core.frequency_ratio(points, momenta, eye, core.mv.xy, spin, mass)

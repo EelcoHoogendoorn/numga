@@ -63,7 +63,7 @@ def ball() -> solids.View:
 
 
 def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
-              tubes: list[tuple[np.ndarray, np.ndarray, float]] = ()) -> np.ndarray:
+              tubes: list[tuple[meshes.Samples, float]] = ()) -> np.ndarray:
     """Solids and tubes among the unit sphere, lightly: a faint translucent ball with its equator and two meridians,
     the great circles where the planes x, y and z cut it, inked on it."""
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
@@ -191,7 +191,7 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     start = [(solids.ball(sm.point(paths[0, 0]), START_RADIUS * view.pixel)[None, None], START_COLOUR)]
     figure = plt.figure(figsize=(11, 4.2))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
-    show(ax, on_sphere(start, view, [(*tubes, 1.0)]), view)
+    show(ax, on_sphere(start, view, [(tubes, 1.0)]), view)
     # Each pole named just past the sphere, where the camera sees it.
     places = np.array([(0, 0, 1.15), (0, 0, -1.2), (1.25, 0, 0), (-1.25, 0, 0)])
     labels(ax, view, sm.point(places), ["singlet", "triplet", "down-up", "up-down"], ha="center", va="center",

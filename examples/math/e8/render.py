@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.patches import Arc, Circle
 
 from examples.animation import capture
-from examples.math.e8.core import Scalar, Vector
+from examples.math.e8.core import Vector
 
 BACKGROUND = "#101219"
 COLOURS = np.array([
@@ -21,11 +21,6 @@ COLOURS = np.array([
     [0.35, 0.82, 0.59],
     [0.76, 0.84, 0.40],
 ])
-
-
-def winding_rates(rates: Scalar) -> str:
-    """The number of turns in each plane over one complete root orbit."""
-    return np.array2string(rates.to_array(), precision=6, suppress_small=True)
 
 
 def coordinates(points: Vector, horizontal: Vector, vertical: Vector) -> np.ndarray:

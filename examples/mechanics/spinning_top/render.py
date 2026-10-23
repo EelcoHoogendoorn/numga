@@ -107,3 +107,11 @@ def frame(motor: core.Motor, parts: core.Quadric, ground: core.Quadric, view: tu
                       paints=dict(colour=part_colours, contrast=sector_contrast), motor=motor, camera=camera,
                       back=20 * extent, half_height=extent, lamp=lamp)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
+
+
+def row(motors: core.Motor, parts: core.Quadric, ground: core.Quadric, view: tuple[float, float], centre: np.ndarray,
+        extent: float, pixels: int) -> np.ndarray:
+    """Tops side by side in one image, each placed by its motor `[cases]` with its parts `[cases, parts]`, as `frame`
+    draws one."""
+    return np.concatenate([frame(motor, case_parts, ground, view, centre, extent, pixels)
+                           for motor, case_parts in zip(motors, parts)], axis=1)
