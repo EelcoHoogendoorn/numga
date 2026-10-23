@@ -67,7 +67,7 @@ def on_ellipse(angles: np.ndarray, scale: float) -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.poncelet import render
 
     scenes = list(turn(N_FRAMES))

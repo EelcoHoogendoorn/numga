@@ -7,6 +7,7 @@ overwrites an earlier result. Each save prints the path it wrote and returns it.
 from __future__ import annotations
 
 import gc
+import time
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from examples import PLOT_DIR, auto_increment_path
 SUPERSAMPLE = 2
 PALETTE_FRAMES = 128
 PALETTE_SIZE = 96
+# The shortest time in seconds between the frames an animation shows as they come.
+UPDATE_INTERVAL = 0.1
 
 
 def capture(fig: plt.Figure) -> np.ndarray:
@@ -128,9 +131,14 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
 
     shown = display(HTML(""), display_id=True)
     images = []
+    updated = -np.inf
     for frame in frames:
         image = Image.fromarray(frame)
         images.append(image.resize((round(image.width * scale), round(image.height * scale)), resample=Image.Resampling.BOX))
+        # Frames that come faster than the front end redraws smoothly are kept but not shown.
+        if time.monotonic() - updated < UPDATE_INTERVAL:
+            continue
+        updated = time.monotonic()
         count = f"frame {len(images)} of {n_frames}" if n_frames else f"frame {len(images)}"
         shown.update(embedded(images[-1], "JPEG", count, quality=85))
     path = auto_increment_path(PLOT_DIR / f"{name}.webp")

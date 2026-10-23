@@ -11,9 +11,9 @@ from matplotlib.ticker import MaxNLocator
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
-from examples.wgsl import labels, show, solids
+from examples.util.wgsl import labels, show, solids
 
 PUMP_COLOUR = "#3275a8"
 GENERATED_COLOUR = "#d16a30"

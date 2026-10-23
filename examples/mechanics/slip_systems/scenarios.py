@@ -72,7 +72,7 @@ def power_law(factors: core.Scalar) -> core.Scalar:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.slip_systems import render
 
     directions, factors, planes, slips = chart()

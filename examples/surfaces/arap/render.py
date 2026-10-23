@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.arap import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 # The checkerboard's two colours, the view, elevation and azimuth in radians, azimuth zero looking along +y, the box
 # it shows and the margin around it, as a share of its larger side, and the pixels across a picture.

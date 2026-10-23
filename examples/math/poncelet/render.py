@@ -7,7 +7,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.math.poncelet import core
 
 # The view: x from -1.8 to 2.6, y from -1.9 to 1.5.

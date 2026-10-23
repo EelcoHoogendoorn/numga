@@ -83,7 +83,7 @@ def frames(motors: core.Motor) -> Iterator[tuple[core.Point, core.Point, core.Po
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.fluids.kirchhoff import render
 
     ratios = coefficients()                                                   # [aspects, 3] Scalar

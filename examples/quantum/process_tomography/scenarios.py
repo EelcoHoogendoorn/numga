@@ -54,7 +54,7 @@ def completeness() -> core.Scalar:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.process_tomography import render
 
     prepared, measured, learned = tomography()

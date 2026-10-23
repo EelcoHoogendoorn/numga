@@ -32,7 +32,7 @@ def gaussian():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quadrics.gaussian import render
 
     points, pixels, density, level = gaussian()

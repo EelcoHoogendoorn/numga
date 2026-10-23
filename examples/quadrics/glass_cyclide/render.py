@@ -15,8 +15,8 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.quadrics.glass_cyclide import core
-from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import drawn
+from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl.library import drawn
 
 types = dict(Sphere=core.Sphere, Euclidean=core.Euclidean, Point=core.Point, Rotation=core.Rotation, Quadric=core.Quadric)
 

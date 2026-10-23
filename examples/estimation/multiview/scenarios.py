@@ -144,7 +144,7 @@ def jointly():
 def main() -> None:
     from itertools import islice
 
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.estimation.multiview import render
 
     pair = aligned_pair()

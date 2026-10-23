@@ -135,7 +135,7 @@ import examples.fluids.stokes_swimmer.core
 import examples.fluids.stokes_swimmer.scenarios
 import examples.surfaces.connections.core
 import examples.surfaces.connections.scenarios
-instantiate('examples.mesh', VGA3D)
+instantiate('examples.util.mesh', VGA3D)
 instantiate('examples.estimation.odometry.core', PGA2D)
 instantiate('examples.estimation.multiview.core', PGA2D)
 instantiate('examples.mechanics.tricycle.core', PGA2D)

@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import Extensor
 from examples.math.klein_quadric import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 mv = core.mv
 # Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in

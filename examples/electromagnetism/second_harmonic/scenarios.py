@@ -77,7 +77,7 @@ def phase_matching(n_slices: int) -> tuple[np.ndarray, core.Polarization]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.second_harmonic import render
 
     save_figure(render.draw_waveform(*waveform(N_WAVEFORM_SAMPLES)), "second_harmonic_waveform")

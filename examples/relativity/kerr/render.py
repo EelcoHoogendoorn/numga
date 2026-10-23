@@ -11,7 +11,7 @@ from matplotlib.patches import Polygon
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.kerr import core
 
 # The spin sweep's resolution: its thin rays need no more.

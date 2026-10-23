@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.fluids.floating import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 ga, mv = core.ga, core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;

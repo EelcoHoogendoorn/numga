@@ -61,7 +61,7 @@ def perspective() -> tuple[core.Point, core.Point, core.Point, np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.surfaces.projective_loop import render
 
     controls, surfaces, faces = weighted()

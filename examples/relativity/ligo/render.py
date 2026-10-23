@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patheffects
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.ligo import core
 
 ga = core.ga

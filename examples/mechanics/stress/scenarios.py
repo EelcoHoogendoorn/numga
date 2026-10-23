@@ -55,7 +55,7 @@ def turning() -> Iterator[tuple[core.Point, core.Point, core.Point, core.Point, 
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.stress import render
 
     seen, values = frames()

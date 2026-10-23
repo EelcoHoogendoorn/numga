@@ -8,7 +8,7 @@ from collections.abc import Iterable
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
 PURCELL_COLOUR = "#1d3557"

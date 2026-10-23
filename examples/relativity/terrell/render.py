@@ -11,7 +11,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.relativity.terrell import core
-from examples.wgsl import Shader, supersampled, vec3
+from examples.util.wgsl import Shader, supersampled, vec3
 
 mv = core.mv
 # The colours of the cube's faces: the top, the bottom, the face ahead, the face behind, and the faces towards and

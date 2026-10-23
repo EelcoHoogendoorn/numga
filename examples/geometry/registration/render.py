@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.geometry.registration.core import Point, mv
-from examples.wgsl import image_figure, solids
+from examples.util.wgsl import image_figure, solids
 
 source_colour, target_colour, aligned_colour = (np.array(to_rgb(colour)) for colour in ("#94a3b8", "#0284c7", "#f43f5e"))
 background = np.ones(3)

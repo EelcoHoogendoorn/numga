@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import NullLocator
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.kepler import core
 
 EXACT_COLOUR = "#626c76"

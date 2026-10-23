@@ -12,8 +12,8 @@ from collections.abc import Iterable, Iterator
 import numpy as np
 
 from examples.quadrics.csg_raytracer import core
-from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import drawn
+from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl.library import drawn
 
 types = dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric)
 

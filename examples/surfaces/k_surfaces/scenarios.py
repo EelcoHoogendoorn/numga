@@ -50,7 +50,7 @@ def backlund_family(normals: core.Normal, points: core.Point,
 # --- plumbing
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.surfaces.k_surfaces import render
 
     n_half = 12

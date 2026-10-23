@@ -64,7 +64,7 @@ def sphere(polar: np.ndarray, azimuth: np.ndarray) -> core.Bivector:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.hopf import render
 
     spins, projected = tori(POLARS, N_PER_CIRCLE, N_SAMPLES)

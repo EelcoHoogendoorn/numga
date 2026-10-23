@@ -37,7 +37,7 @@ def cube() -> tuple[core.Conic, core.Plane, core.Point, np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.math.eight_conics import render
 
     duration_ms = 90

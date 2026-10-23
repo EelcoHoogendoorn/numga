@@ -13,7 +13,7 @@ import numpy as np
 
 def software() -> bool:
     """Whether the adapter is the CPU itself, a software driver as in a notebook's runtime without a GPU."""
-    from examples.wgsl.runner import device
+    from examples.util.wgsl.runner import device
     return device().adapter.info["adapter_type"] == "CPU"
 
 

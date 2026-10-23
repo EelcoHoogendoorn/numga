@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.quadrics.quadrics.core import DualQuadric, Plane, Point, ga, mv, support_plane
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 ELLIPSOID = np.array(to_rgb("#0284c7"))
 CONTACT = np.array(to_rgb("#e11d48"))

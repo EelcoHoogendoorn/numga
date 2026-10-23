@@ -51,7 +51,7 @@ def photographs(cameras: Iterator[core.Antivector]) -> list[np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
 
     save_animation(photographs(cameras()), "terrell_rotation", duration_ms)
 

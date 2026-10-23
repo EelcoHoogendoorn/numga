@@ -75,7 +75,7 @@ def flips(shifts: core.Antivector, centres: core.Antivector, frames: core.Plane)
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.penrose import render
 
     along, across, plane = cut()

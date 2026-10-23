@@ -116,7 +116,7 @@ def drag() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.constitutive import render
 
     glass_modes, crystal_modes = modes()

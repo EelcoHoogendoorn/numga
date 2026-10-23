@@ -50,7 +50,7 @@ def moments(contacts, forward, centres, middle, n_frames: int) -> Iterator[tuple
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.tricycle import render
 
     drives = {name: run(core) for name, core in SCENES.items()}

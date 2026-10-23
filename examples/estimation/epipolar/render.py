@@ -13,7 +13,7 @@ import numpy as np
 
 from numga import concatenate, stack
 from examples.estimation.epipolar.core import Motor, Point, mv
-from examples.wgsl import solids
+from examples.util.wgsl import solids
 
 # Camera 1, blue, camera 2 where it is, grey, and where the search puts it, green; the true landmarks, grey.
 camera_1, camera_2_true, camera_2_found, landmark = [0.15, 0.45, 0.75], [0.62, 0.64, 0.68], [0.15, 0.65, 0.45], [0.70, 0.71, 0.74]

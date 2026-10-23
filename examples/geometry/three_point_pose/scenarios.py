@@ -20,7 +20,7 @@ def markers() -> tuple[core.Point, core.Point, core.Motor]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.geometry.three_point_pose import render
 
     source, target, increments = markers()

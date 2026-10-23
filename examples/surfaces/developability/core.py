@@ -42,7 +42,7 @@ import numpy as np
 from numga.algebras import VGA3D as ga
 from examples import instantiate
 
-mesh_module = instantiate("examples.mesh", ga)
+mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, as_scalar = mesh_module.Mesh, mesh_module.as_scalar
 mv = mesh_module.ctx.multivector
 

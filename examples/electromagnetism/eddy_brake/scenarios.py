@@ -120,7 +120,7 @@ def inductive_materials(mesh: Mesh, conductivity: core.Conductivity) -> tuple[It
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.eddy_brake import render
 
     mesh, conductivity = materials()

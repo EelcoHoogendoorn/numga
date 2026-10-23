@@ -12,9 +12,9 @@ from matplotlib.axes import Axes
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.area_transport import core
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])

@@ -9,9 +9,9 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import TwoSlopeNorm, to_rgb
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)

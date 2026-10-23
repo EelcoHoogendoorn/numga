@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.math.eight_conics import core
 
 # The eighth conic, its three neighbours, and the other four; the contact points of a single pair.

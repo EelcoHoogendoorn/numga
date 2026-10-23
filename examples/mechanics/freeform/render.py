@@ -9,7 +9,7 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.freeform.geometry import Antivector
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 n_pixels = 460
 elevation, azimuth = np.radians(24.0), np.radians(54.0)

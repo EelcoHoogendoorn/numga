@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.geometry.rubiks_cube import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 # The faces' colours, by side and axis: +x red, +y blue, +z white, -x orange, -y green, -z yellow; the colour
 # of the cut, and of the background.

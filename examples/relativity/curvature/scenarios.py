@@ -67,7 +67,7 @@ def doppler() -> tuple[np.ndarray, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.curvature import render
 
     plus, observer, wave, edge = curvature_map()

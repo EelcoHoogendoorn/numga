@@ -11,7 +11,7 @@ from matplotlib.colors import LogNorm
 
 from numga import NumpyContext, stack
 from numga.algebras import STA
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.optics.crystal_diffraction import core
 
 POSITION_LIMIT = 7.8

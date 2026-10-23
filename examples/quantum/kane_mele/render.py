@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.kane_mele import core
 
 # The bonds' shade, and the largest dot, in points squared, at the densest atom.

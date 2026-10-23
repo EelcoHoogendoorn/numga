@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
-from examples.wgsl import Shader
+from examples.util.wgsl import Shader
 
 PIXELS = 380
 # Displacement one way blue, the other orange, and rest a light neutral; the tiles' outlines.

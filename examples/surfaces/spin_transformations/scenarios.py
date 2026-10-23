@@ -57,7 +57,7 @@ def roundness(mesh: core.Mesh) -> float:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.surfaces.spin_transformations import render
 
     mesh, curvature_change, deformed = dipole()

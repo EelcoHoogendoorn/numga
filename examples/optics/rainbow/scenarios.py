@@ -61,7 +61,7 @@ def sweep(offsets: core.Direction) -> tuple[core.Direction, core.Direction, core
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.rainbow import render
 
     # Offsets at the middle of equal steps across the drop's radius.

@@ -7,7 +7,7 @@ from numga.algebras import VGA3D
 from numga.sparse import SparseExtensor
 from examples import instantiate
 
-mesh_module = instantiate("examples.mesh", VGA3D)
+mesh_module = instantiate("examples.util.mesh", VGA3D)
 Mesh, as_scalar, context, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.ctx, mesh_module.mv
 
 

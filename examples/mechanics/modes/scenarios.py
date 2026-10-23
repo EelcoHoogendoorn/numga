@@ -16,7 +16,7 @@ def suspensions() -> list[ModeCase]:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.modes import render
 
     coupled = suspensions()[1:]

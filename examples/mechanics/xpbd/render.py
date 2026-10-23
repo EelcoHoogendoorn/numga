@@ -14,8 +14,8 @@ from functools import cache
 import numpy as np
 
 from examples.mechanics.xpbd.core import Motor
-from examples.wgsl import Shader, solids, supersampled
-from examples.wgsl.solids import Plane, Point, Quadric, ga, mv, origin
+from examples.util.wgsl import Shader, solids, supersampled
+from examples.util.wgsl.solids import Plane, Point, Quadric, ga, mv, origin
 
 # Two alternating link colours, the pin's colour, the floor's two tiles and the background.
 link_colours = np.array([[0.86, 0.42, 0.20], [0.20, 0.52, 0.66]])

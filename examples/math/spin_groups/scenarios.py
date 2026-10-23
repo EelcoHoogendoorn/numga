@@ -81,7 +81,7 @@ def flows(azimuths: int, heights: np.ndarray, count: int
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.spin_groups import render
 
     rows = list(zoo(SIGNATURES, SEED))

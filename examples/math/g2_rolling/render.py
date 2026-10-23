@@ -13,8 +13,8 @@ from functools import cache
 
 import numpy as np
 
-from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import drawn
+from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl.library import drawn
 from numga import concatenate
 
 from .core import Rotor, Vector, ga, mv

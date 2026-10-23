@@ -64,7 +64,7 @@ def circling(orbit: core.Orbit) -> Iterator[tuple[core.Antivector, core.Bivector
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.electromagnetism.moving_charge import render
 
     speeding_up = render.animate(speed_up())

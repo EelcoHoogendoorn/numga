@@ -54,7 +54,7 @@ def loading(stress: core.Stress) -> Iterator[core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.photoelasticity import render
 
     positions, stress, difference = stress_field()

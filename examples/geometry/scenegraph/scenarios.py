@@ -77,7 +77,7 @@ def robot_sweep(n_frames: int) -> Iterator[tuple]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.geometry.scenegraph import render
 
     world_vertices, projected_pixels, camera_pose, rays = scenegraph()

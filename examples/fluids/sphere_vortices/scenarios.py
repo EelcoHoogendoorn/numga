@@ -108,7 +108,7 @@ def compared() -> tuple[core.Pivot, core.Pivot]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.fluids.sphere_vortices import render
 
     histories = rings()

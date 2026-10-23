@@ -18,12 +18,12 @@ from PIL import Image
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
-from examples.wgsl import Shader, supersampled
-from examples.wgsl.library import drawn, samples_per_side
-from examples.wgsl.runner import Resident
+from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl.library import drawn, samples_per_side
+from examples.util.wgsl.runner import Resident
 
 if TYPE_CHECKING:
-    from examples.wgsl.meshes import Samples
+    from examples.util.wgsl.meshes import Samples
 
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()

@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga.algebras import VGA3D
-from examples.animation import capture
-from examples.wgsl import Shader, supersampled, vec3
+from examples.util.animation import capture
+from examples.util.wgsl import Shader, supersampled, vec3
 
 TABLE = np.array([0.93, 0.91, 0.86])
 LOOP = np.array([0.55, 0.53, 0.50])

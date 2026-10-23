@@ -290,7 +290,7 @@ def spaceships():
 
 
 if __name__ == "__main__":
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.relativity.impulse import render
 
     save_figure(render.draw_impulse(*impulse()), "relativistic_rod_impulse")

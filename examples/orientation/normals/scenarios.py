@@ -39,7 +39,7 @@ def pairs_in_mirror() -> tuple[Plane, Point, Axis, Spear, Plane]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.orientation.normals import render
 
     save_figure(render.draw_normals(*normals()), "normal_orientation")

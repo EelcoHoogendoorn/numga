@@ -28,7 +28,7 @@ def day() -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.foucault import render
 
     save_animation(render.animate_day(*day()), "foucault_day", DURATION_MS)

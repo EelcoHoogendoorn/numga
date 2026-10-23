@@ -36,7 +36,7 @@ def sweep() -> tuple[core.Point, core.Point, core.Point, core.Conic]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.geometry.bezier import render
 
     weighted, curves, complements, shapes = sweep()

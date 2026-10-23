@@ -9,7 +9,7 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 from numga.algebras import PGA2D as ga
-from examples.animation import capture, save_animation
+from examples.util.animation import capture, save_animation
 
 Point = ga.gatype.antivector()
 

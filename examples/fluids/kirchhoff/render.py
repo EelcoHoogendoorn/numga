@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.fluids.kirchhoff import core
 
 mv = core.mv

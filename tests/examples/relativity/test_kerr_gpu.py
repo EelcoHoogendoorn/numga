@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("wgpu")
 
 from examples.relativity.kerr import core, gpu, scenarios
-from examples.wgsl import Shader
+from examples.util.wgsl import Shader
 
 mv = core.mv
 # Single precision against double, relative to each rate's size.

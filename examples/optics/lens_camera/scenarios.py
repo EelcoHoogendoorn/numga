@@ -76,7 +76,7 @@ def motion(n_frames: int) -> Iterator[tuple]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.lens_camera import render
 
     wide, tele, tilted = stills()

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.math.penrose import core
 
 # The colours of thick and thin tiles, and of their edges.

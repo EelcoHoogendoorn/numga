@@ -46,7 +46,7 @@ def light(directions: core.Point, reached: core.Point, centre: core.Point, width
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.gravitational_lensing import render
 
     directions, reached, area, local = lens(N_PIXELS)

@@ -36,7 +36,7 @@ def mirrored_cranks() -> tuple[Point, Point, Point, Point, Scalar]:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.orientation.mechanical_work import render
 
     pivots, handles, velocities, forces, powers = mirrored_cranks()

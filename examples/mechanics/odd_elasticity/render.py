@@ -11,7 +11,7 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.patches import Polygon
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.odd_elasticity import core
 
 BACKGROUND = "#fbfaf7"

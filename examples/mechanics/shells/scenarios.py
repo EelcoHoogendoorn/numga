@@ -72,7 +72,7 @@ def roughened(flat: np.ndarray) -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.shells import render
 
     disc_sheet, disc_frames = disc()

@@ -12,7 +12,7 @@ from matplotlib.image import AxesImage
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.moving_charge import core
 
 electric_range = (0.05, 50.0)

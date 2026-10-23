@@ -72,7 +72,7 @@ def sample_grid() -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.fluids.stokes_swimmer import render
 
     angles, sites, _, forces, motors, positions, world_sites, world_forces = strokes()

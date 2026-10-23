@@ -122,7 +122,7 @@ def scalars(values: core.Scalar) -> np.ndarray:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.surfaces.weighted_dual import render
 
     frames = list(breath())

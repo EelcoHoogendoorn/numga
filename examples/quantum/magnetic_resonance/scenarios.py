@@ -81,7 +81,7 @@ def echo_decay(spins: int, spread: float, dt: float, count: int, seed: int):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.magnetic_resonance import render
 
     history, settled, last = nutation(NUTATION_DETUNINGS, NUTATION_DRIVE, NUTATION_SECONDS, NUTATION_DT, NUTATION_EVERY)

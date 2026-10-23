@@ -67,7 +67,7 @@ def rolling(stops: State, fractions: np.ndarray, n_hold_frames: int) -> Iterator
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.math.g2_rolling import render
 
     fractions = np.linspace(0, 1, N_STEPS)

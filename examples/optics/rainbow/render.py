@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.optics.rainbow import core
 
 mv = core.mv

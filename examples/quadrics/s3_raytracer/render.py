@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ScreenPoint, ga, mv, origin
-from examples.wgsl import Shader, image_figure, supersampled
+from examples.util.wgsl import Shader, image_figure, supersampled
 
 background = 0.02
 

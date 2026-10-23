@@ -31,7 +31,7 @@ from numga.algebras import VGA3D as ga
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
-mesh_module = instantiate("examples.mesh", ga)
+mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, context = mesh_module.Mesh, mesh_module.ctx
 mv = context.multivector
 Scalar = ga.gatype.scalar()

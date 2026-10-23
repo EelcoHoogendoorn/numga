@@ -8,9 +8,9 @@ from matplotlib.colors import to_rgb
 from matplotlib.lines import Line2D
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.dirac import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 colours = ("#2e86c1", "#7d3c98", "#c0392b")

@@ -79,7 +79,7 @@ def optical_activity():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.mechanics.symmetry import render
 
     responses, surfaces, driving, fluxes = heat_conduction()

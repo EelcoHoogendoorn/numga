@@ -68,7 +68,7 @@ def solar_adiabatic(theta_degrees: float, omega: float, distance: float, n_steps
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.neutrino_isospin import render
 
     states, plane, distances = vacuum_oscillations(THETA_DEGREES, OMEGA, N_STEPS)

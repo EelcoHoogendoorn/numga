@@ -64,7 +64,7 @@ def frames(rotors: core.Rotor) -> Iterator[tuple[core.Rotor, core.Point]]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.fluids.jeffery import render
 
     rotors = tumbling()                                                      # [steps + 1, bodies, starts] Rotor

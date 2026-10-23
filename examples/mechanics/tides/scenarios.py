@@ -67,7 +67,7 @@ def field() -> tuple[core.Point, core.Even, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.tides import render
 
     points, derivative, density = field()

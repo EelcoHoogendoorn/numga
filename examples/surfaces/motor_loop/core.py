@@ -22,7 +22,7 @@ from examples import instantiate
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Mesh = instantiate("examples.mesh", ga).Mesh
+Mesh = instantiate("examples.util.mesh", ga).Mesh
 Plane = ga.gatype.vector()
 Line = ga.gatype.bivector()
 Point = ga.gatype.antivector()

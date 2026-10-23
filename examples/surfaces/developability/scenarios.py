@@ -38,7 +38,7 @@ def bunny() -> core.Mesh:
 
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.surfaces.developability import render
 
     mesh, states = flowed()

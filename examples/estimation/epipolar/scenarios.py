@@ -115,7 +115,7 @@ def errors(landmarks: Point, reconstructed: Point, true_motor: Motor, est_motor:
 
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.estimation.epipolar import render
 
     landmarks, images, measured, rays, reconstructed, true_motor, est_motors = epipolar(NOISE)

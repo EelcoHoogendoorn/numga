@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.patches import Circle
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.spinors import core
 
 RIGHT_COLOUR, LEFT_COLOUR, INK = "#267fa9", "#d17c24", "#263b51"

@@ -62,7 +62,7 @@ def bump(sphere, centre: core.Point) -> core.Scalar:
 
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.surfaces.dirac_waves import render
 
     sphere, states = pulse()

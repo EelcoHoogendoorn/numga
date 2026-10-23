@@ -79,9 +79,9 @@ def cameras(n_cameras: int) -> tuple[core.Rotation, core.Euclidean]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quadrics.glass_cyclide import render
-    from examples.wgsl import image_figure
+    from examples.util.wgsl import image_figure
 
     tracer = render.shader()
     quadrics, solid_values = solids()

@@ -17,7 +17,7 @@ import numpy as np
 from numga import concatenate
 from numga.algebras import PGA3D
 from examples import instantiate
-from examples.wgsl import Shader, image_figure, solids, supersampled
+from examples.util.wgsl import Shader, image_figure, solids, supersampled
 
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv

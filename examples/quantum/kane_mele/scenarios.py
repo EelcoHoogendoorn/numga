@@ -63,7 +63,7 @@ def helical(flake: core.Flake):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.kane_mele import render
 
     flake = core.flake(SIZE, RIM)

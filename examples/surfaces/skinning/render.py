@@ -7,7 +7,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.skinning.core import Point, mv
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around the skins as a
 # share of their larger side, and the pixels across a picture; the stripes' colour map around the cylinder.

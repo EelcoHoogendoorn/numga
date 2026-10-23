@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.surfaces.qem.core import Point, Quadric, mv
-from examples.wgsl import image_figure, solids
+from examples.util.wgsl import image_figure, solids
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
 # Red/Rose: steep corner triangles at vertex a (faces 2, 3)

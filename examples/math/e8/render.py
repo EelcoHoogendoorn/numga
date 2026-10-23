@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Arc, Circle
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.math.e8.core import Vector
 
 BACKGROUND = "#101219"

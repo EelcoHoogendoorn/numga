@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.shells import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 # The sheet's colour and its slight sheen, the view, elevation and azimuth in radians, azimuth zero looking along
 # +y, the margin around a sheet, the pixels across a picture, and the duration of a frame.

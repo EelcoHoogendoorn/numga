@@ -60,7 +60,7 @@ def convergence() -> tuple[core.Scalar, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.kepler import render
 
     positions, spinors = lift(N_LIFT_SAMPLES, 1)

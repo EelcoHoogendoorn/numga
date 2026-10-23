@@ -49,7 +49,7 @@ def scrambled_and_solved():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.geometry.rubiks_cube import render
 
     moves, solution, scrambled = scrambled_and_solved()

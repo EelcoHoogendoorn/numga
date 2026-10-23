@@ -10,7 +10,7 @@ import numpy as np
 
 from numga import stack
 from examples.fluids.smoke_rings import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
 # curves' colours by speed, from blue at rest to green at the fastest, the stretch of the map light enough to show its

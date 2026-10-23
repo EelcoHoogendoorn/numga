@@ -8,7 +8,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.orientation.optical_rotation.core import Polarization, mv
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 sm = solids.mv
 leg_colours = np.array([to_rgb("#df7246"), to_rgb("#238c9b")])

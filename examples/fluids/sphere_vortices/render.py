@@ -10,7 +10,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.fluids.sphere_vortices import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 sm = solids.mv
 # One colour per vortex, repeating, and the sphere's colour; the trail's length in steps; the trails' width and the

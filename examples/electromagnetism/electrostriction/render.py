@@ -8,7 +8,7 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.electrostriction.core import Field, Point, Scalar, mv, time
 
 rest_colour = "#c4cbd0"

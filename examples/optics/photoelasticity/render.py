@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.patches import Circle
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.optics.photoelasticity import core
 
 animation_dpi = 85

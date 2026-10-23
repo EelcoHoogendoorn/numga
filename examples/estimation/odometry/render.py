@@ -6,7 +6,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from numga.algebras import PGA2D
 from examples import instantiate
 

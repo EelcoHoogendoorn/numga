@@ -11,9 +11,9 @@ from matplotlib.colors import LogNorm, to_rgb
 from matplotlib.lines import Line2D
 
 from numga import concatenate
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.process_tomography import core
-from examples.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")

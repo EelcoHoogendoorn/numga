@@ -3,7 +3,7 @@
 Quantities on the mesh are fields over its vertices, edges or faces, `Point[V]` or `Scalar[F]`;
 a quantity per corner of each face is a `[3]` batch of face fields, one per corner.
 
-The algebra is not fixed here. `ga` is supplied per instance, by `examples.instantiate("examples.mesh", VGA3D)`
+The algebra is not fixed here. `ga` is supplied per instance, by `examples.instantiate("examples.util.mesh", VGA3D)`
 or any other algebra. The incidence operators and the Loop step hold scalar cells and act on fields of
 any type. The vertices are points, antivectors, intrinsic like all geometry, and so are the edges between
 them; the geometric quantities pair them with the meet `&` and the inner product `|`: two edges meet in

@@ -58,7 +58,7 @@ def section(pieces: core.Antivector, midpoints: core.Antivector) -> tuple[core.A
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.electromagnetism.magnetic_bottle import render
 
     pieces, midpoints = core.coils(coil_radius, coil_heights, n_pieces)

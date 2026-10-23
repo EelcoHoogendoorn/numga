@@ -53,7 +53,7 @@ def ellipse_points(angles: np.ndarray) -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.pascal import render
 
     scenes = list(turn(N_FRAMES))

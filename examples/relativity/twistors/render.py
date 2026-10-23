@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.twistors import core
-from examples.wgsl import image_figure, labels, meshes, show, solids
+from examples.util.wgsl import image_figure, labels, meshes, show, solids
 
 sm = solids.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"

@@ -58,7 +58,7 @@ def interactions() -> tuple[np.ndarray, Root, Scalar, Scalar, Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.affine_toda import render
 
     species = np.array([[0, 0, 1], [0, 1, 2], [1, 2, 4]])

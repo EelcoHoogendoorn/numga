@@ -42,7 +42,7 @@ def experiment() -> tuple[Spin, Direction, Scalar, core.Asymmetry, Mirror]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.orientation.wu_experiment import render
 
     spins, directions, rates, asymmetry, mirror = experiment()

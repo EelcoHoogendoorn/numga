@@ -77,7 +77,7 @@ def vortex(names: list[str], n_frames: int) -> tuple[Quadric, list[str]]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.quadrics.cga_spherical_quadrics import render
 
     world, colors = vortex(shape_names, n_animation_frames)

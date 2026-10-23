@@ -16,9 +16,9 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize, to_rgb, to_rgba
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.bending import core
-from examples.wgsl import image_figure, meshes, show, solids
+from examples.util.wgsl import image_figure, meshes, show, solids
 
 ga, mv = core.ga, core.mv
 # Colours of the beam, of the straight beam, of the load, of the neutral axis, of the principal axes,

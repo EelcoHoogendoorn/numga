@@ -48,7 +48,7 @@ def integrator_comparison(dimensions: tuple[int, ...], dt: float, runtime: float
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.mechanics.tennis_racket import render
 
     rates, energies = spinning_racket(DIMENSION, STEP, RUNTIME, SEED)

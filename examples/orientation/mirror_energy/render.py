@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.orientation.mirror_energy.core import Point, ga
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 COLOURS = np.array([to_rgb(colour) for colour in ("#df7246", "#238c9b", "#7662a1")])
 SPHERE, CIRCLE, SHAPE = np.array(to_rgb("#e6ebf0")), np.array(to_rgb("#aab4bf")), np.array(to_rgb("#75808a"))

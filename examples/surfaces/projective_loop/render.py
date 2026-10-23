@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.projective_loop import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 sm = solids.mv
 SURFACE_COLOUR = np.array([0.16, 0.5, 0.63])

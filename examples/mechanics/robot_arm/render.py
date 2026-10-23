@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.robot_arm.core import Point, mv
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))

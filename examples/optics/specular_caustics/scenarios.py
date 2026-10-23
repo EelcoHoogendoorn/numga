@@ -96,7 +96,7 @@ def three_paths() -> tuple[Direction, Direction, Direction, Direction, Direction
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.specular_caustics import render
 
     n_pixels = 440

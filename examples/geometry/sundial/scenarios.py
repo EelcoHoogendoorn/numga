@@ -56,7 +56,7 @@ def hour_angle(hours: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.geometry.sundial import render
 
     nodus, seasons, days, suns, hours = dial()

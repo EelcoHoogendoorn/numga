@@ -240,7 +240,7 @@ def tunnel(frames: int):
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from functools import partial
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
 
     def on_s2(scene, name: str, frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         """Simulate a scene on S², save its hemisphere animation."""

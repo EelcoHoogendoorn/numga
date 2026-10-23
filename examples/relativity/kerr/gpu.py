@@ -16,7 +16,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.relativity.kerr import core, render, scenarios
-from examples.wgsl import Shader, supersampled
+from examples.util.wgsl import Shader, supersampled
 
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
              Rotor=core.Rotor, Screen=core.Screen, ScreenFrame=core.ScreenFrame, Coherency=core.Coherency,
@@ -368,7 +368,7 @@ def polarizer(tracer: Shader, values: dict) -> Iterator[dict]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
 
     tracer = shader()
     values = scene()

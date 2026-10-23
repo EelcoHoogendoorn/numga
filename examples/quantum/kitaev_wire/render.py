@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 from matplotlib.figure import Figure
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.kitaev_wire import core
 
 INK = "#263b51"

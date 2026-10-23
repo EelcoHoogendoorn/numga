@@ -13,8 +13,8 @@ from functools import cache
 import numpy as np
 
 from examples.surfaces.developability import core
-from examples.wgsl import Shader
-from examples.wgsl.library import samples_per_side
+from examples.util.wgsl import Shader
+from examples.util.wgsl.library import samples_per_side
 
 # The surface's colour, the light's direction and the share of light that falls everywhere; the camera's
 # elevation and azimuth, its distance and half its view; the frames' size and background.

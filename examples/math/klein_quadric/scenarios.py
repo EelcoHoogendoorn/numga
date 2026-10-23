@@ -73,7 +73,7 @@ def steep(offsets: np.ndarray) -> core.Bivector:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.klein_quadric import render
 
     scenes = list(swing(N_FRAMES, N_RULINGS))

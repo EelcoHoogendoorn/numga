@@ -34,7 +34,7 @@ def noisy(state: core.State) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.stabilizer import render
 
     state, checks, logical = stored()

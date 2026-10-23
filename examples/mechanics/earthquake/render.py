@@ -11,9 +11,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.earthquake import core
-from examples.wgsl import compose, meshes, show, solids
+from examples.util.wgsl import compose, meshes, show, solids
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"

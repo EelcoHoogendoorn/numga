@@ -9,7 +9,7 @@ from examples.quadrics.conformal_elliptical.core import mv, planes_across_axes
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quadrics.conformal_elliptical import render
 
     planes = planes_across_axes()                                                      # [planes] Vector

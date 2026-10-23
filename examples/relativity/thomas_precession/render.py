@@ -11,7 +11,7 @@ import numpy as np
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.thomas_precession import core
 
 INK, FAINT, FILL, SPIN = "#1e293b", "#cbd5e1", "#dbeafe", "#ea580c"

@@ -85,7 +85,7 @@ def bunny() -> tuple[Iterator[Antivector], np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.freeform import render
 
     duration_ms = round(TIME_STEP * 1000)

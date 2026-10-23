@@ -23,7 +23,7 @@ def skinning():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.surfaces.skinning import render
 
     motor_skin, slerp_skin, matrix_skin = skinning()

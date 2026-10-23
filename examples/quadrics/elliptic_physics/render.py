@@ -12,7 +12,7 @@ from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
 from examples.quadrics.s3_raytracer.render import picture as trace
-from examples.wgsl import Shader, image_figure, supersampled
+from examples.util.wgsl import Shader, image_figure, supersampled
 
 S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)

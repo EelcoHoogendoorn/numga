@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.estimation.kalman.core import Line, Motor, Point, Scalar, mv
 
 TRUE_COLOUR, DEAD_COLOUR, FILTER_COLOUR, READING_COLOUR = "#1f2329", "#d0482b", "#2c6fb4", "#3a9a5b"

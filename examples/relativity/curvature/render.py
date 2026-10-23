@@ -16,10 +16,10 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.curvature import core
 from examples.relativity.curvature.core import Antivector, Curvature, Scalar, mv
-from examples.wgsl import labels, show, solids
+from examples.util.wgsl import labels, show, solids
 
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
 light_colour = "#c3ccd4"

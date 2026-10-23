@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.geometry.bezier import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 sm = solids.mv
 CURVE_COLOUR = np.array(to_rgb("#287fa0"))

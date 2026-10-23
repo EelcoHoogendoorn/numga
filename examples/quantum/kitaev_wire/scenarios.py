@@ -67,7 +67,7 @@ def overlap() -> tuple[core.Scalar, core.Scalar, core.Majorana]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.kitaev_wire import render
 
     save_figure(render.draw_formation(*formation(), HOPPING), "kitaev_formation")

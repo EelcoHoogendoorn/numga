@@ -73,7 +73,7 @@ def grid() -> tuple[np.ndarray, np.ndarray]:
 
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.surfaces.motor_loop import render
 
     wound = winding()

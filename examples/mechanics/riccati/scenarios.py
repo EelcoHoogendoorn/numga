@@ -67,7 +67,7 @@ def docking() -> tuple[core.StateCost, core.Feedback, core.Twist, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.riccati import render
 
     values, feedbacks, errors, commands = docking()

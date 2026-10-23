@@ -94,7 +94,7 @@ def push_section(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, poi
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.bending import render
 
     sections = section_walls()

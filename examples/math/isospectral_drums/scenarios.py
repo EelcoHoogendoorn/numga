@@ -86,7 +86,7 @@ def vibration(modes: Scalar, eigenvalues: Scalar, transplant: SparseExtensor, so
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.isospectral_drums import render
 
     (tiles, vertices, faces, modes, eigenvalues, source_laplacian, target_laplacian, transplant, source_restriction,

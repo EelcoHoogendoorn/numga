@@ -74,7 +74,7 @@ def interactions(projectors: StateMap) -> tuple[StateMap, StateMap, StateMap, Sc
 
 # --- plumbing
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.particle_charges import render
 
     occupations, projectors, charge, hypercharge, left_isospin, right_isospin, _, colour_weights = sectors()

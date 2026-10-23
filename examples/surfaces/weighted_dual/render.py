@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.weighted_dual import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))

@@ -167,7 +167,7 @@ def gas() -> Scene:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.fluids.vortices import render
 
     last_states = []

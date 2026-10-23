@@ -81,7 +81,7 @@ def dials(parts: list[core.Pair]) -> list[core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.hubbard_dimer import render
 
     energies, gap = spectrum(SWEEP)

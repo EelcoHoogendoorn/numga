@@ -16,7 +16,7 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, points
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 OVAL, FOCUS, SAMPLE = np.array(to_rgb("gold")), np.array(to_rgb("red")), np.ones(3)

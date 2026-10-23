@@ -37,7 +37,7 @@ def collapse(n_frames: int) -> Iterator[tuple[core.Point, core.Point, core.Patch
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.area_transport import render
 
     vertices, centres, patches, volume = scene(THICKNESSES, SHEARS)

@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.slip_systems import core
 
 SYSTEM_MAP = "tab20"

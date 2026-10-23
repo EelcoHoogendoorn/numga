@@ -19,7 +19,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
-from examples.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, meshes, show, solids
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()

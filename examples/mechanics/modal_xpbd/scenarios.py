@@ -130,7 +130,7 @@ def critical(height: float, span: float) -> float:
 
 
 def main():
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from . import render
 
     core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)

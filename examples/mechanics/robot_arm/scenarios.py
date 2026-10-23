@@ -82,7 +82,7 @@ def tracking() -> Iterator[tuple]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.robot_arm import render
 
     save_animation(render.animate_tracking(tracking()), "robot_arm", FRAME_DURATION)

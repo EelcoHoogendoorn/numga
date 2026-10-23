@@ -42,7 +42,7 @@ def walk(repulsion: np.ndarray, phase: np.ndarray) -> core.Scalar:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.hubbard_ring import render
 
     excitations = levels(SWEEP)

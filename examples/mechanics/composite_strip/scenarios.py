@@ -60,7 +60,7 @@ def scene() -> tuple[core.Vector, core.Vector, core.Scalar]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.composite_strip import render
 
     placed, frames, across_fibres = scene()

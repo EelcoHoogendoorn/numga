@@ -143,7 +143,7 @@ def anomalous_rates(gammas: np.ndarray, magnetic: float, electric: np.ndarray, a
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.thomas_precession import render
 
     swell = (1 - np.cos(np.linspace(0, 2 * np.pi, n_boost_frames, endpoint=False))) / 2

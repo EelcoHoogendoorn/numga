@@ -94,7 +94,7 @@ def sphere(around: int, down: int) -> core.First:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.two_spins import render
 
     state, reached = singlet()

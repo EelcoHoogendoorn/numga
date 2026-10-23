@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.colors import LogNorm
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.tides import core
 
 STARS = "#0f172a"

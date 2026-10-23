@@ -10,9 +10,9 @@ from matplotlib.axes import Axes
 
 from matplotlib.colors import to_rgb
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.wgsl import labels, meshes, show, solids, vec3
+from examples.util.wgsl import labels, meshes, show, solids, vec3
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.05

@@ -20,7 +20,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.connections import core
-from examples.wgsl import meshes, show, solids, vec3
+from examples.util.wgsl import meshes, show, solids, vec3
 
 # Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
 # balls' radius per unit index, in pixels, and the views as (elevation, azimuth) in degrees, the azimuth measured

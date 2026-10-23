@@ -105,7 +105,7 @@ def train(n_frames: int) -> Iterator[tuple]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.thin_lens import render
 
     one_lens, one_planes, two_lenses, two_planes, image, focus = lenses()

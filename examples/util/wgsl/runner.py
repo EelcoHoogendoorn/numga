@@ -21,7 +21,7 @@ from numga import NumpyContext
 from numga.extensor import Extensor
 from numga.gatype import GAType
 
-from examples.wgsl.dialect import Binding, Program, compile, template
+from examples.util.wgsl.dialect import Binding, Program, compile, template
 
 _device = None
 

@@ -16,7 +16,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
-from examples.wgsl import Shader, meshes, show, solids, supersampled
+from examples.util.wgsl import Shader, meshes, show, solids, supersampled
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
 surface_colour = np.array([0.36, 0.60, 0.80])

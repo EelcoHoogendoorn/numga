@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.orientation.normals.core import Axis, Plane, Point, Spear, Surface, ga
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 sm = solids.mv
 SIDE = np.array(to_rgb("#218c9d"))

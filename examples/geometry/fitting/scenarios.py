@@ -78,7 +78,7 @@ def distance(point: Point, primitive):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.geometry.fitting import render
 
     cloud_fit, line_fit, plane_fit, bundle_fit = point_to_points(), line_to_points(), plane_to_points(), point_to_lines()

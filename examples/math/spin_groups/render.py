@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 BACKGROUND = np.ones(3)

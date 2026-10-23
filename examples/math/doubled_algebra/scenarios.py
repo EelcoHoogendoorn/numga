@@ -23,7 +23,7 @@ def sheared_square(amount: np.ndarray, extent: float, lines: int) -> tuple[
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.math.doubled_algebra import render
 
     sheared = sheared_square(AMOUNT, EXTENT, N_LINES)

@@ -14,7 +14,7 @@ import numpy as np
 
 from numga import concatenate
 from examples.mechanics.spinning_top import core
-from examples.wgsl import Shader, solids, supersampled
+from examples.util.wgsl import Shader, solids, supersampled
 
 mv = core.mv
 # Colours of the disc, the stem and the tip, and the contrast of the sectors drawn on each to show its spin.

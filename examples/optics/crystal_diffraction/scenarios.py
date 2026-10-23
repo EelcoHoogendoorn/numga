@@ -46,7 +46,7 @@ def deformation(grid: core.Plane) -> Iterator[tuple[core.Point, core.Plane, core
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.crystal_diffraction import render
 
     reference, crystals, grid, intensity = comparison()

@@ -15,7 +15,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.k_surfaces import core
-from examples.wgsl import compose, image_figure, meshes, solids, vec3
+from examples.util.wgsl import compose, image_figure, meshes, solids, vec3
 
 n_width = 640
 n_height = 480

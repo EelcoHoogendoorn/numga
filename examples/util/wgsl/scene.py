@@ -7,9 +7,9 @@ from typing import Any
 
 import numpy as np
 
-from examples.wgsl.library import drawn
-from examples.wgsl.meshes import Samples
-from examples.wgsl.solids import Ink, Quadric, View, mesh_buffers, sampled, scene, shader, trace
+from examples.util.wgsl.library import drawn
+from examples.util.wgsl.meshes import Samples
+from examples.util.wgsl.solids import Ink, Quadric, View, mesh_buffers, sampled, scene, shader, trace
 
 
 class Scene:

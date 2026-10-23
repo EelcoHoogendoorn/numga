@@ -12,7 +12,7 @@ import numpy as np
 from numga import stack
 
 from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, mv, point
-from examples.wgsl import solids
+from examples.util.wgsl import solids
 
 # Sensor pixels, rows by columns, and their subdivision for antialiasing; the edges are smooth already.
 RESOLUTION = (210, 270)

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.spin_transformations.core import Mesh, Scalar, ga
-from examples.wgsl import meshes, show, solids, vec3
+from examples.util.wgsl import meshes, show, solids, vec3
 
 # The camera's elevation and azimuth, its margin as a share of the larger side, and the image's side in pixels,
 # alone and as a tile of a gallery.

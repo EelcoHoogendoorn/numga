@@ -192,7 +192,7 @@ def time_domain() -> tuple[core.Vector, core.Vector, core.Vector, core.Bivector,
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.optics.coating import render
 
     reflection, transmission = antireflection()

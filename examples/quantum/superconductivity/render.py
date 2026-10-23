@@ -8,9 +8,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.figure import Figure
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.superconductivity import core
-from examples.wgsl import labels, meshes, solids
+from examples.util.wgsl import labels, meshes, solids
 
 sm = solids.mv
 INK = "#263b51"

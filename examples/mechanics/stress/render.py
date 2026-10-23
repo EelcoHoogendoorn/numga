@@ -13,9 +13,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.stress import core
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
 # k-th of -0.5 and 0.5 along x, y and z.

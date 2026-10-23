@@ -53,7 +53,7 @@ def turning(model: core.Lattice) -> tuple[core.Field, core.Point, core.Point]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.electrostriction import render
 
     model = lattice()

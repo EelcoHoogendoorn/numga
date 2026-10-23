@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.relativity.gravitational_lensing import core
 
 CRITICAL = "#55cbd3"

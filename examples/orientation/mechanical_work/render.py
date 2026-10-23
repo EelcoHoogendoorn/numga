@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.orientation.mechanical_work.core import Point, ga
 
 VELOCITY = "#218c9d"

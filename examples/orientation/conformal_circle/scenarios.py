@@ -61,7 +61,7 @@ def circle_motions() -> tuple[Point, Point]:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.orientation.conformal_circle import render
 
     save_figure(render.draw_circle(*circle()), "orientation_conformal_circle")

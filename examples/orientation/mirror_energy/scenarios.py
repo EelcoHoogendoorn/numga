@@ -24,7 +24,7 @@ def rotating_masses() -> tuple[Point, Point, np.ndarray, Scalar]:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.orientation.mirror_energy import render
 
     positions, velocities, masses, energies = rotating_masses()

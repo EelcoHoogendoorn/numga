@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.geometry.three_point_pose import core
-from examples.wgsl import image_figure, show, solids
+from examples.util.wgsl import image_figure, show, solids
 
 COLOUR = np.array(to_rgb("#218c9d"))
 TARGET = np.array(to_rgb("#ce713f"))

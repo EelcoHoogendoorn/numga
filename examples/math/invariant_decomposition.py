@@ -43,8 +43,8 @@ from matplotlib.colors import to_rgb
 from numga import Algebra, NumpyContext, stack
 from numga.gatype import GAType
 from numga.gatype import ReverseProductOne, Versor
-from examples.animation import capture
-from examples.wgsl import compose, meshes, solids
+from examples.util.animation import capture
+from examples.util.wgsl import compose, meshes, solids
 
 ga = Algebra("x+y+z+w+v+u+")
 mv = NumpyContext(ga).multivector
@@ -254,7 +254,7 @@ def animate(points: Vector, circles: Vector, parts: Bivector, frames: int) -> li
 
 
 if __name__ == "__main__":
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
 
     parts, points, circles = main(600, 0)
     save_figure(draw(points, circles, parts, len(points) - 1), "invariant_decomposition")

@@ -283,7 +283,7 @@ def spindles() -> tuple[Scalar, np.ndarray]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quadrics.cyclides import render
 
     save_figure(render.draw_facing(*tori(), SHAPE), "cyclides_tori")

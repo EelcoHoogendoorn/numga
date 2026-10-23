@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.optics.coating import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
 sm = solids.mv

@@ -246,7 +246,7 @@ def stripe_mismatch(mesh: core.Mesh, lines: core.Vector, stripes: core.Vector, a
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.surfaces.connections import render
 
     sphere, rings, starts = holonomy()

@@ -29,7 +29,7 @@ def qem():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.surfaces.qem import render
 
     scene = qem()

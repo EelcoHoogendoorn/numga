@@ -105,7 +105,7 @@ def lattice_wave(n_frames: int, dt: float) -> tuple[Antivector, np.ndarray, Iter
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.odd_elasticity import render
 
     duration_ms = 70

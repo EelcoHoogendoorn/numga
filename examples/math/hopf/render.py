@@ -11,9 +11,9 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from numga import concatenate
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.math.hopf import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 # Projected fibres are drawn out to this distance from the origin; the fibres near the projection

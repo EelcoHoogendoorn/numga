@@ -9,8 +9,8 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import NumpyContext, concatenate
-from examples.animation import capture
-from examples.wgsl import meshes, solids
+from examples.util.animation import capture
+from examples.util.wgsl import meshes, solids
 
 sm = solids.mv
 

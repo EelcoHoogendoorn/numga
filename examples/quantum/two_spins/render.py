@@ -9,9 +9,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.two_spins import core
-from examples.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 FIRST, SECOND, TOGETHER = "#c0392b", "#2e86c1", "#7d3c98"

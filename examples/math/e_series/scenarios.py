@@ -27,7 +27,7 @@ def family() -> tuple[tuple[VectorMap, Vector, Vector, Vector, Scalar], ...]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.math.e_series import render
 
     cases = family()

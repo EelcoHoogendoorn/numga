@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.graphene import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")

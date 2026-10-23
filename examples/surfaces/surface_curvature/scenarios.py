@@ -48,7 +48,7 @@ def umbilics() -> core.Point:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.surfaces.surface_curvature import render
 
     save_figure(render.draw_curvature_lines(*curvature_lines(N_PIXELS), HEIGHTS, CURVATURE_SCALE), "surface_curvature")

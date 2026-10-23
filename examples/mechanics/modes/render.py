@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.modes.core import ModeCase, Point
 from numga.algebras import PGA2D
 

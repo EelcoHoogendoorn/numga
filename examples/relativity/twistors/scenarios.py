@@ -63,7 +63,7 @@ def propagation(times: np.ndarray) -> Iterator[core.Event]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.twistors import render
 
     frames, frame_ms = 48, 80

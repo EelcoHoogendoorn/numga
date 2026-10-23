@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.dirac_waves import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 Mesh = core.Mesh
 

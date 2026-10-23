@@ -8,10 +8,10 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 # The part of the dial drawn, east and north of the point below the nodus.
 EAST = (-4.5, 4.5)

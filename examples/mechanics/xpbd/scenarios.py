@@ -116,7 +116,7 @@ def trajectory(history: list[Chain], partitions: list[Joints]) -> tuple[Motor, S
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.xpbd import render
 
     motors, gaps = swinging_chain(N_LINKS, N_STEPS, N_SUBSTEPS, STEP)

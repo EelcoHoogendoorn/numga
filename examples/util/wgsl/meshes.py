@@ -14,10 +14,10 @@ from typing import NamedTuple
 import numpy as np
 
 from numga import concatenate, stack
-from examples.wgsl import Shader
-from examples.wgsl import solids
-from examples.wgsl.library import samples_per_side
-from examples.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, origin, shininess
+from examples.util.wgsl import Shader
+from examples.util.wgsl import solids
+from examples.util.wgsl.library import samples_per_side
+from examples.util.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, origin, shininess
 
 # How many times finer than the image a mesh is drawn, across and up: one sample of a pixel to a drawn pixel, as many
 # as the traced solids take.

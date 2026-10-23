@@ -11,9 +11,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.neutrino_isospin import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 mv, sm = core.mv, solids.mv
 # The flavors at the poles, the electron's and the muon's, and their colours.

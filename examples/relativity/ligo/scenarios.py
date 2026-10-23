@@ -60,7 +60,7 @@ def polarization(site: core.Rotor, arms: core.Point, frames: core.Rotor, angles:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.ligo import render
 
     sites, arms = detectors()

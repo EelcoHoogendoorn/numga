@@ -9,10 +9,10 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
 
-from examples.animation import capture
+from examples.util.animation import capture
 from numga import concatenate
 from examples.orientation.conformal_circle.core import Point, Sphere
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 sm = solids.mv
 PLANE = "#218c9d"

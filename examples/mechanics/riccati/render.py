@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Polygon
 import numpy as np
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.riccati import core
 
 BODY_COLOUR = "#3275a8"

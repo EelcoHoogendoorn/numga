@@ -11,7 +11,7 @@ import numpy as np
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.optics.thin_lens.core import Line, LineMap, Plane, Point, ga, mv
 
 LINE_LAYOUT = ga.subspace("x y w")

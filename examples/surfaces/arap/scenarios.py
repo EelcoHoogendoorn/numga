@@ -50,7 +50,7 @@ def bent(vertices: core.Point, angle: float) -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.surfaces.arap import render
 
     bar, rigid, laplacian, handles, target, last_energies = bending()

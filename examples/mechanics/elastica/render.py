@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.mechanics.elastica import core
-from examples.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 ga = core.ga
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around

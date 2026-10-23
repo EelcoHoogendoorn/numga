@@ -69,7 +69,7 @@ def sphere() -> core.Point:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.earthquake import render
 
     normals, slips, moment = faults(np.deg2rad(STRIKES), np.deg2rad(DIPS), np.deg2rad(RAKES))   # [faults]

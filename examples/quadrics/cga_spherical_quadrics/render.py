@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 
 from examples.quadrics.cga_spherical_quadrics.core import Plane, Point, Quadric, ga
 from examples.quadrics.elliptic_physics.render import BACKGROUND, DISK, RIM
-from examples.wgsl import Shader, supersampled
+from examples.util.wgsl import Shader, supersampled
 
 source = """
 var<storage, read> quadrics: array<Quadric>;

@@ -70,7 +70,7 @@ def errors(truth: Motor, dead: Motor, estimates: Motor):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.estimation.kalman import render
 
     truth, dead, estimates, covariances, readings = tracking()

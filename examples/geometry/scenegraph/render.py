@@ -14,9 +14,9 @@ from matplotlib.patches import Rectangle
 import numpy as np
 
 from numga import stack
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.geometry.scenegraph.core import Motor, Point, mv, unit_box_topology
-from examples.wgsl import image_figure, meshes, show, solids
+from examples.util.wgsl import image_figure, meshes, show, solids
 
 
 # Colors for the robot arm bodies:

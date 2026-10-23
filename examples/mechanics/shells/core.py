@@ -40,7 +40,7 @@ from numga.algebras import PGA3D as ga
 from numga.sparse import SparseExtensor
 from examples import instantiate
 
-mesh_module = instantiate("examples.mesh", ga)
+mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, as_scalar = mesh_module.Mesh, mesh_module.as_scalar
 mv = mesh_module.ctx.multivector
 Scalar = ga.gatype.scalar()

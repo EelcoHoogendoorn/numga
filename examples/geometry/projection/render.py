@@ -16,7 +16,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 # The image panels' margin around both images, as a fraction of their larger side.
 MARGIN = 0.08

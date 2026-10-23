@@ -138,7 +138,7 @@ def ball(centre: core.Point, radius: float) -> core.Quadric:
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.mechanics.rattleback import render
 
     duration_ms = round(TIME_STEP * FRAME_STRIDE * 1000)

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 BACKGROUND = np.array([0.06, 0.07, 0.09])
 # The two tiles of a reflection: one colour for an even number of reflections, one for an odd number.

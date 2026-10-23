@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.wgsl import vec3
+from examples.util.wgsl import vec3
 
 BACKGROUND = np.array([0.02, 0.02, 0.04])
 # The colours escaping points run through as they take longer to escape, repeating.

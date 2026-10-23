@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgb
 from scipy.ndimage import map_coordinates
 
 from examples.mechanics.composite_strip import core
-from examples.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids
 
 sm = solids.mv
 # The pixels across the frames; the view's elevation and azimuth in radians, azimuth zero looking along +y, and

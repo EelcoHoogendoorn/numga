@@ -10,8 +10,8 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.electromagnetism.magnetic_bottle import core
-from examples.wgsl import meshes, solids, strokes
-from examples.wgsl.scene import Scene
+from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 mv = core.mv
 # The colours of the field's strength, the coils' wire, and the particles by their angle to the axis.

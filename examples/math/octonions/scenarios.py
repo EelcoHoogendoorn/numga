@@ -12,7 +12,7 @@ ANGLE = 0.8
 
 # --- math -----------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.math.octonions import render
 
     save_figure(render.draw_fano(core.cycles), "octonions")

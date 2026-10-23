@@ -63,7 +63,7 @@ def berry(radii: np.ndarray, gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quantum.graphene import render
 
     momenta, field, values = bands(ZONE_EXTENT, N_ZONE_SAMPLES, GAPLESS)

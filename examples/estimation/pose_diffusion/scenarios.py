@@ -68,7 +68,7 @@ def diffuse(rate: core.Twist, gusts: core.Gusts, seconds: float, dt: float, n_bo
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.estimation.pose_diffusion import render
 
     runs = {name: list(diffuse(rate, GUSTS, SECONDS, DT, N_BODIES, N_STEPS_PER_FRAME, SEED)) for name, rate in RATES.items()}

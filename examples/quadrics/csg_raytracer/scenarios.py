@@ -75,9 +75,9 @@ def orbit(n_cameras: int) -> core.Motor:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quadrics.csg_raytracer import render
-    from examples.wgsl import image_figure
+    from examples.util.wgsl import image_figure
 
     tracer = render.shader()
     quadrics, solid_values = solids()

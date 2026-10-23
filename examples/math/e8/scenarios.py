@@ -40,7 +40,7 @@ def root_system() -> tuple[Vector, Vector, Vector, Bivector, Scalar, Rotor, Vect
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.math.e8 import render
 
     n_substeps = 6

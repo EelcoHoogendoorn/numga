@@ -10,7 +10,7 @@ from matplotlib.colors import TwoSlopeNorm
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.fluids.wing import core
 
 WINDOW = (-3.2, 3.2, -1.8, 1.8)

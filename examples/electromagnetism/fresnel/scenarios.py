@@ -51,7 +51,7 @@ def birefringence() -> Iterator[tuple[core.Vector, core.Vector]]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.electromagnetism.fresnel import render
 
     media, directions, sheets, sections = comparison()

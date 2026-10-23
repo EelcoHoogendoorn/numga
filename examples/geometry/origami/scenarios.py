@@ -55,7 +55,7 @@ def kabuto() -> tuple[core.Paper, core.Plane]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.geometry.origami import render
 
     paper, planes = kabuto()

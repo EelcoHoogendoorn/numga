@@ -118,7 +118,7 @@ def lean(motor: core.Motor) -> core.Scalar:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.mechanics.spinning_top import render
 
     runs = {}

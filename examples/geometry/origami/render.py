@@ -14,7 +14,7 @@ import numpy as np
 
 from numga import concatenate
 from examples.geometry.origami import core
-from examples.wgsl import meshes, show, solids, vec3
+from examples.util.wgsl import meshes, show, solids, vec3
 
 front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])

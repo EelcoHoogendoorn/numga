@@ -128,7 +128,7 @@ def swing(bodies: Bodies, constraints: Constraints, gravity: Direction, dt: floa
 
 
 def main():
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from . import render, scenarios
 
     shape = core.girder(scenarios.N_CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.N_MODES)

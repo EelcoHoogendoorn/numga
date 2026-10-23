@@ -52,7 +52,7 @@ def response(
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quantum.superconductivity import render
 
     model, initial, equilibrium, times, history = quench(QUENCH_RATIO)

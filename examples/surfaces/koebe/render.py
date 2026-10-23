@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.surfaces.koebe import core
-from examples.wgsl import show, solids
+from examples.util.wgsl import show, solids
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))

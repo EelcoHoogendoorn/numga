@@ -54,7 +54,7 @@ def motor_transport() -> tuple[DualQuadric, Plane, Point, DualQuadric, Plane, Po
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quadrics.quadrics import render
 
     reciprocity = polar_reciprocity()

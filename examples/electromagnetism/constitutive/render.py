@@ -8,9 +8,9 @@ import numpy as np
 from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 Modes = tuple[np.ndarray, core.Bivector]
 sm = solids.mv

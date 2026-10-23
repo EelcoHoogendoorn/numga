@@ -31,7 +31,7 @@ def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap
 
 # --- plumbing
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.optics.black_sandwich import render
 
     duration_ms = 90

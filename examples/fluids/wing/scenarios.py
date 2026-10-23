@@ -75,7 +75,7 @@ def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point]
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation
+    from examples.util.animation import save_animation
     from examples.fluids.wing import render
 
     save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS)

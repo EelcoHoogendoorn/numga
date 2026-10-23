@@ -11,9 +11,9 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from numga.algebras import STA
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
-from examples.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, meshes, show, solids
 
 sm = solids.mv
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")

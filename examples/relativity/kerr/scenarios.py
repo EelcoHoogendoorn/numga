@@ -105,7 +105,7 @@ def disk_flow(image: core.Image) -> Iterator[core.Antivector]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.kerr import render
 
     paths, horizons = scene()

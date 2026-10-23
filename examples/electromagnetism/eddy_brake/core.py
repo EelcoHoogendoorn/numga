@@ -26,7 +26,7 @@ from examples import instantiate
 
 # The spacetime of the disc's plane, space positive.
 ga = STA2D
-mesh_module = instantiate("examples.mesh", ga)
+mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, Scalar, Vector, Bivector, Point = (mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector,
                                          mesh_module.Bivector, mesh_module.Point)
 as_scalar, context = mesh_module.as_scalar, mesh_module.ctx

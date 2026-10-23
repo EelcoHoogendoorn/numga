@@ -14,7 +14,7 @@ from matplotlib.tri import LinearTriInterpolator, Triangulation, TriContourSet
 
 from numga import concatenate, stack
 from numga.extensor import Extensor
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.electromagnetism.eddy_brake import core
 
 Mesh, as_ga_sparse, as_scalar = core.Mesh, core.mesh_module.as_ga_sparse, core.as_scalar

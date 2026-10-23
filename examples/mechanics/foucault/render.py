@@ -9,7 +9,7 @@ import numpy as np
 
 from numga import stack
 from examples.mechanics.foucault import core
-from examples.wgsl import solids
+from examples.util.wgsl import solids
 
 SWING_COLOUR = "#d06c36"
 GLOBE_COLOUR = "0.85"

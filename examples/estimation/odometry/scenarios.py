@@ -122,7 +122,7 @@ def lap_in_space():
 
 
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.estimation.odometry import render
 
     # Dead reckoning drifts half a metre over the lap.

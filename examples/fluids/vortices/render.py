@@ -13,9 +13,9 @@ from matplotlib.image import AxesImage
 
 from numga import stack
 
-from examples.animation import capture
+from examples.util.animation import capture
 from examples.fluids.vortices import core
-from examples.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids
 
 # Worldlines: one colour per vortex, the strands' width in pixels and the sides of their tubes, the view as
 # elevation and azimuth in radians, azimuth zero looking along +y, the margin around a braid as a share of its

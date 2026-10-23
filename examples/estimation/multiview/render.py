@@ -16,7 +16,7 @@ import numpy as np
 from numga.algebras import PGA2D
 
 from examples import instantiate
-from examples.animation import capture
+from examples.util.animation import capture
 
 # The figures are top-down views of the plane: they draw PGA2D geometry.
 core = instantiate("examples.estimation.multiview.core", PGA2D)

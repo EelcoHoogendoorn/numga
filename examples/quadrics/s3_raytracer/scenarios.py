@@ -48,7 +48,7 @@ def walk(n_frames: int):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.quadrics.s3_raytracer import render
 
     scene = walk(N_FRAMES)

@@ -45,7 +45,7 @@ def trembling(momentum: core.Vector, seconds: float, n_times: int):
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_animation, save_figure
+    from examples.util.animation import save_animation, save_figure
     from examples.relativity.dirac import render
 
     times, spinors, paths, hamiltonian = trembling(mv(core.Spatial, momentum), seconds, n_times)

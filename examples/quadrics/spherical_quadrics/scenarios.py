@@ -58,7 +58,7 @@ def spherical_conic():
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.animation import save_figure
+    from examples.util.animation import save_figure
     from examples.quadrics.spherical_quadrics import render
 
     curve, foci, arcs, sample, semi_major, tangents, touching, circles, surface, grid, potential, conic, dual = spherical_conic()
