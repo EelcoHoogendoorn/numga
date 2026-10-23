@@ -34,6 +34,7 @@ dist/
 !/plots/ligo.gif
 !/plots/kane_mele.gif
 !/plots/tomography.gif
+!/plots/sandwich.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

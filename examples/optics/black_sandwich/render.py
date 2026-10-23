@@ -44,8 +44,8 @@ def _segments(centres: np.ndarray, directions: np.ndarray, length: float) -> np.
     return np.stack((centres - length * directions, centres + length * directions), axis=-2)
 
 
-def _scene(input_axis: np.ndarray, output_axis: np.ndarray) -> tuple[plt.Figure, LineCollection, LineCollection, LineCollection]:
-    figure = plt.figure(figsize=(9.2, 2.2), dpi=100, facecolor=background_colour)
+def _scene(input_axis: np.ndarray, output_axis: np.ndarray, dpi: float) -> tuple[plt.Figure, LineCollection, LineCollection, LineCollection]:
+    figure = plt.figure(figsize=(9.2, 2.2), dpi=dpi, facecolor=background_colour)
     ax = figure.add_axes((0, 0, 1, 1), facecolor=background_colour)
     ax.set(xlim=(-0.5, 14.3), ylim=(-0.75, 1.85), aspect="equal")
     ax.set_axis_off()
@@ -88,7 +88,13 @@ def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Dire
            output_axis: core.Direction) -> Iterator[np.ndarray]:
     """The plates' axes turn together while the second stack's outgoing beam stays dark; above the beam,
     the field between components."""
-    figure, beam, field_lines, plate_lines = _scene(_coordinates(input_axis), _coordinates(output_axis))
+    return sized_frames(fields, plate_axes, input_axis, output_axis, 100)
+
+
+def sized_frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,
+                 output_axis: core.Direction, dpi: float) -> Iterator[np.ndarray]:
+    """As `frames`, the figure drawn at `dpi` dots per inch."""
+    figure, beam, field_lines, plate_lines = _scene(_coordinates(input_axis), _coordinates(output_axis), dpi)
     field_values = _components(fields)                                           # [frames, stages, 2]
     axis_values = _coordinates(plate_axes)                                       # [frames, 2]
     for field, plate_axis in zip(field_values, axis_values):

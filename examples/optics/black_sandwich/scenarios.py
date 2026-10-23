@@ -8,6 +8,9 @@ from examples.optics.black_sandwich.core import (
     Direction, Field, OpticalMap, field_along, half_wave, mv, polarizer, through_pair, time,
 )
 
+# Gallery picture: this makes plots/sandwich.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_DPI = 720 / 9.2
+
 
 # --- math
 def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap]:
@@ -39,6 +42,9 @@ def main() -> None:
     fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
     save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms,
                    forward_then_back=True)
+    # Gallery picture: this makes plots/sandwich.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.sized_frames(fields, plate_axes, input_axis, output_axis, GALLERY_DPI), "sandwich",
+                   duration_ms, forward_then_back=True)
 
     # checks
     # One stack passes the whole field at some plate angle, yet two in succession pass none.
