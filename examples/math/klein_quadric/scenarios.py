@@ -21,8 +21,10 @@ FOURTH_DIRECTION = [0.3, -0.2, 1.0]
 SWING = 1.5
 # The lines drawn of each family on the hyperboloid.
 N_RULINGS = 36
-# The frames of the swing, the frame shown as a still, and the duration of a frame in milliseconds.
+# The frames of the swing; the points it is sampled at to pace it, and the share of the line's own motion in the
+# pace; the frame shown as a still, and the duration of a frame in milliseconds.
 N_FRAMES = 96
+N_PATH, LINE_SHARE = 960, 0.6
 STILL = 8
 FRAME_DURATION = 70
 
@@ -46,15 +48,34 @@ def scene(three: core.Bivector, fourth: core.Bivector, n_rulings: int) -> tuple[
 
 
 def swing(n_frames: int, n_rulings: int) -> Iterator[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]:
-    """The fourth line swung once across the hyperboloid and back: per frame the four lines, both
-    families of lines on the hyperboloid, the transversals and the crossings."""
-    offsets = SWING * np.cos(np.linspace(0.0, 2 * np.pi, n_frames, endpoint=False))
+    """The fourth line swung once across the hyperboloid and back, slowing where its crossings merge: per frame the
+    four lines, both families of lines on the hyperboloid, the transversals and the crossings."""
+    offsets = paced(SWING * np.cos(np.linspace(0.0, 2 * np.pi, N_PATH, endpoint=False)), n_frames)
     lines, rulings, across, crossing = scene(waist_lines(WAIST_ANGLES), steep(offsets), n_rulings)
     for frame in range(n_frames):
         yield lines[frame], rulings, across[frame], crossing[frame]
 
 
 # --- plumbing -------------------------------------------------------------------------
+def gap(points: core.Point) -> np.ndarray:
+    """How far apart a line's two crossings are `[...]`: their distance while they are real, and minus it once they
+    are a complex pair, so that it passes through zero where they merge."""
+    apart = points[..., 0].kernel - points[..., 1].kernel                      # [..., coefficients] complex
+    real = np.abs(apart.imag).max(axis=-1) < 1e-9
+    return np.where(real, np.linalg.norm(apart.real, axis=-1), -np.linalg.norm(apart.imag, axis=-1))
+
+
+def paced(path: np.ndarray, n_frames: int) -> np.ndarray:
+    """Offsets along a closed swing, at equal steps of the gap between the fourth line's crossings and of a share of
+    the line's own motion: slow where the crossings merge, so the transversals are seen to close."""
+    three = waist_lines(WAIST_ANGLES)
+    surface = core.ruled_quadric(three[0], three[1], three[2])
+    closed = np.append(path, path[0])
+    gaps = gap(core.crossings(surface, steep(closed)))
+    pace = np.concatenate([[0.0], np.cumsum(np.abs(np.diff(gaps)) + LINE_SHARE * np.abs(np.diff(closed)))])
+    return np.interp(np.linspace(0.0, pace[-1], n_frames, endpoint=False), pace, closed)
+
+
 def waist_lines(angles: np.ndarray) -> core.Bivector:
     """Lines of the hyperboloid x² + y² = 1 + z² through the points of its waist at the given angles,
     all leaning the same way."""
