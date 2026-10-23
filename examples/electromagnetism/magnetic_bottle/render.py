@@ -28,6 +28,10 @@ track_width, wire_width, particle_radius = 2.5, 6.0, 4.5
 n_around_coil = 96
 
 
+# The tallest moment drawn, relative to its start: the escaping particles' moments run off far past it.
+moment_ceiling = 2.0
+
+
 # --- plumbing -------------------------------------------------------------------------
 def space(points: core.Antivector) -> np.ndarray:
     """Points in the view's space, on the last axis: along the bottle's axis, then across it twice, turned on from z,
@@ -75,3 +79,19 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
         images.append(solids.draw([(particles, colours)], view, np.ones(3),
                                   meshes=[(field, sheet_opacity), (wire, 1.0), (trails, 1.0)]))
     return images
+
+
+def draw_moments(moments: core.Scalar, pitches: np.ndarray, proper_step: float, n_turn: int) -> plt.Figure:
+    """Each particle's magnetic moment `[steps, particles]`, averaged over a turn of `n_turn` steps and relative to
+    its first average, against proper time, coloured by the particle's angle to the axis as in the flights."""
+    values = moments.to_array()                                               # [steps, particles]
+    means = np.apply_along_axis(np.convolve, 0, values, np.ones(n_turn) / n_turn, "valid")
+    times = (np.arange(len(means)) + n_turn / 2) * proper_step
+    colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
+    figure, ax = plt.subplots(figsize=(7.0, 3.2), layout="constrained")
+    for mean, colour in zip(means.T, colours):
+        ax.plot(times, mean / mean[0], color=colour, lw=1.5)
+    ax.axhline(0.0, color="0.5", lw=0.8)
+    ax.set(xlabel="Proper time", ylabel="Moment / its start", ylim=(0.0, moment_ceiling), xlim=(0.0, times[-1]))
+    ax.spines[["top", "right"]].set_visible(False)
+    return figure
