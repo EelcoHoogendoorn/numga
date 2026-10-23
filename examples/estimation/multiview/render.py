@@ -1,7 +1,8 @@
-"""Top-down drawing and convergence animation for multi-camera reconstruction in PGA2D.
+"""Top-down drawing and convergence animation for multi-camera reconstruction in PGA2D, drawn on the GPU by `planar`.
 
-Sight cones and fused splats are rasterized by evaluating each quadric on a grid of plane
-points, `quadric(grid) & grid`, one point per pixel the figure shows them at.
+Every sample of a pixel is a point of the plane: a sight cone or a fused splat covers it where its quadric's value
+there, `quadric(p) & p`, lies under the level it is drawn at, and the cameras' wedges, sight lines, sensors and axes,
+and the poses' covariances, cover it by the pairings of their lines with it.
 """
 
 from __future__ import annotations
@@ -11,33 +12,43 @@ from itertools import chain
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
-from matplotlib.patches import Arc, Ellipse
 import numpy as np
 
 from numga.algebras import PGA2D
 
 from examples import instantiate
-from examples.util.animation import capture
-from examples.util.wgsl import pinned, room
+from examples.util.wgsl import image_figure
+from examples.util.wgsl.planar import Cap, Conics, Regions, Strokes, Triangles, draw, window
 
 # The figures are top-down views of the plane: they draw PGA2D geometry.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
-Motor, Point, Quadric, Information = core.Motor, core.Point, core.Quadric, core.Information
+Motor, Point, Quadric, Scalar = core.Motor, core.Point, core.Quadric, core.Scalar
 mv = core.mv
 
 CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
 X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
-# README picture: the figures' height in inches and their dots per inch set plots/multiview_convergence.gif, about 300
-# pixels a side, tuned as a visual for the README; to experiment, copy them.
-FIGURE_HEIGHT, FIGURE_DPI = 5.0, 60
-# The room an animation leaves around its first state's cameras, in metres, where they lie outside the scene drawn;
-# and the standard deviations a pose covariance is drawn at.
+# README picture: the rows of pixels down the scene set plots/multiview_convergence.gif, about 300 pixels a side, tuned as
+# a visual for the README; to experiment, copy them.
+PIXELS = 300
+# The room an animation leaves around its first state's cameras, in metres, where they lie outside the scene drawn.
 CAMERA_ROOM = 0.35
-SIGMAS = 3
 # Angular half-width of a pixel, the cone radius per unit depth.
 PIXEL_ANGLE = 0.035         # rad
+# The cameras' wedges, how far in front of the pinhole their sensors lie and how wide they open, and how far their axes
+# reach past the sensor.
+WEDGE_DEPTH, HALF_FIELD, AXIS_REACH = 0.28, np.radians(38.0), 1.15
+# Pixels a point, a stroke's width at 60 dots per inch. The widths of the strokes: the edge of a wedge, the sight lines
+# bounding it, the sensor, the dashed axis; a covariance's dashed outline, its dotted arc of headings and the dotted
+# lines out to the arc's ends; and the arc's radius.
+POINT = 60 / 72
+EDGE_WIDTH, RAY_WIDTH, SENSOR_WIDTH, AXIS_WIDTH = 1.0 * POINT, 1.1 * POINT, 2.0 * POINT, 1.2 * POINT
+OUTLINE_WIDTH, ARC_WIDTH, SPOKE_WIDTH = 1.6 * POINT, 1.3 * POINT, 1.1 * POINT
+ARC_RADIUS = 0.38
+# Dashes and dots, on and off, in widths of their stroke; and the segments a curve is drawn with.
+DASHED, DOTTED = (3.7, 1.6), (1.0, 1.65)
+N_CURVE_SEGMENTS = 96
 
 
 # --- read-out -----------------------------------------------------------------------------
@@ -47,207 +58,108 @@ def coordinates(points: Point) -> np.ndarray:
     return k[..., :2] / k[..., 2:]
 
 
-def optical_axes(motors: Motor) -> np.ndarray:
-    """Unit viewing directions (x, y): the normals of the cameras' focal lines."""
-    normals = (motors >> mv.y).cast(core.ga.subspace("x y")).kernel
-    return normals / np.linalg.norm(normals, axis=-1, keepdims=True)
+# --- layers -------------------------------------------------------------------------------
+def colours(motors: Motor) -> np.ndarray:
+    """The cameras' colours `[cameras, 3]`."""
+    return np.array([mcolors.to_rgb(colour) for colour in CAMERA_COLORS[:motors.shape[0]]])
 
 
-def pose_covariance(information: Information) -> np.ndarray:
-    """Each camera's pose covariance [cams, 3, 3] over twist coefficients (yw, wx, xy), from the
-    information on all poses together, `Scalar <- (Twist[cams], Twist[cams])`: the diagonal blocks of
-    its pseudoinverse, each camera's covariance with the others free to move with it."""
-    cams = information.gatype.site_shape[0]
-    basis = mv.bivector(np.eye(3))                                        # [3] Twist
-    # Each coefficient at each camera alone, zero at the others:
-    units = (basis[None, :, None] * np.eye(cams)[:, None, :]).field()       # [cams, 3] Twist[cams]
-    gram = information(units[:, :, None, None], units[None, None]).to_array()   # [cams, 3, cams, 3]
-    covariance = np.linalg.pinv(gram.reshape(3 * cams, 3 * cams), rcond=1e-4).reshape(cams, 3, cams, 3)
-    return covariance[np.arange(cams), :, np.arange(cams), :]
+def cones(motors: Motor, world_cones: Quadric) -> list[Conics]:
+    """Each camera's sight cones in its colour, as wide as a pixel at each depth: about the depth in front of the
+    camera's focal line times the pixel's angle, at least as wide as at 5 cm, and only from 2 cm in front of that line."""
+    focal = motors >> mv.y                                                       # [cameras] Plane
+    return [Conics(world_cones[:, camera], np.zeros(1), focal[camera] * PIXEL_ANGLE, np.full(1, PIXEL_ANGLE * 0.05),
+                   (focal[camera] - mv.w * 0.02)[None], colour, 0.30)
+            for camera, colour in enumerate(colours(motors))]
 
 
-# --- rasterized quadrics ------------------------------------------------------------------
-def plane_grid(x_range: tuple[float, float], columns: int, rows: int
-               ) -> tuple[Point, float, tuple[float, float, float, float]]:
-    """The scene across `x_range` and `Y_RANGE` as a grid of plane points, one at the middle of each of the square
-    pixels that fit in `columns` by `rows`; the width of one pixel; and the grid's extent, left, right, bottom, top."""
-    pixel_w = max((x_range[1] - x_range[0]) / columns, (Y_RANGE[1] - Y_RANGE[0]) / rows)
-    n_columns, n_rows = int((x_range[1] - x_range[0]) / pixel_w), int((Y_RANGE[1] - Y_RANGE[0]) / pixel_w)
-    middle = np.array([sum(x_range), sum(Y_RANGE)]) / 2
-    half = np.array([n_columns, n_rows]) * pixel_w / 2
-    xs = middle[0] - half[0] + pixel_w * (np.arange(n_columns) + 0.5)
-    ys = middle[1] - half[1] + pixel_w * (np.arange(n_rows) + 0.5)
-    xx, yy = np.meshgrid(xs, ys)
-    extent = (middle[0] - half[0], middle[0] + half[0], middle[1] - half[1], middle[1] + half[1])
-    return mv.point(np.stack([xx, yy], axis=-1)), pixel_w, extent
+def splats(motors: Motor, fused: Quadric, points: Point) -> list[Conics]:
+    """The fused quadrics around their points, less their value there, about the pixel's width at the points' depth
+    and that value, wherever some camera has the point in front of it."""
+    floor = np.maximum((fused(points) & points).to_array(), 0.0)                  # [points]
+    depth = ((motors >> mv.y)[None, :] & points[:, None]).to_array().mean(axis=1)  # [points]
+    radius = np.sqrt((PIXEL_ANGLE * np.maximum(depth, 0.2)) ** 2 + floor)          # [points]
+    in_front = ((motors >> mv.y) - mv.w * 0.02)[None]                              # [1, cameras] Plane
+    return [Conics(fused, floor, mv.w * radius, np.zeros(1), in_front, SPLAT_COLOR, 0.95)]
 
 
-def depths(motors: Motor, grid: Point) -> np.ndarray:
-    """[n_cams, h, w] depth of each grid point in front of each camera's focal line."""
-    return (((motors >> mv.y)[:, None, None]) & grid).to_array()
+def cameras(motors: Motor) -> list:
+    """Each camera's field-of-view wedge, with its edge, and the sight lines bounding it, then each camera's sensor line
+    and dashed optical axis: the pinhole, the ends of the sensor and the axis's tip, carried from the camera's frame by
+    its pose. Solid lines reach half their width past their ends; dashes end square."""
+    reach = WEDGE_DEPTH * np.tan(HALF_FIELD)
+    local = mv.point([[0.0, 0.0], [reach, WEDGE_DEPTH], [-reach, WEDGE_DEPTH], [0.0, WEDGE_DEPTH * AXIS_REACH]])
+    marks = motors[:, None] >> local                                             # [cameras, 4] Point
+    wedges = [[Triangles(marks[camera:camera + 1, :3], colour, 0.18),
+               Strokes(marks[camera:camera + 1, [0, 1, 2, 0]], EDGE_WIDTH, colour, 0.18, cap=Cap.PROJECTING),
+               Strokes(marks[camera][np.array([[0, 1], [0, 2]])], RAY_WIDTH, colour, 0.6, cap=Cap.PROJECTING)]
+              for camera, colour in enumerate(colours(motors))]
+    sensors = [[Strokes(marks[camera:camera + 1, [1, 2]], SENSOR_WIDTH, colour, 1.0, cap=Cap.PROJECTING),
+                Strokes(marks[camera:camera + 1, [0, 3]], AXIS_WIDTH, colour, 1.0, dashes(AXIS_WIDTH, DASHED))]
+               for camera, colour in enumerate(colours(motors))]
+    return [layer for camera in wedges + sensors for layer in camera]
 
 
-def coverage(quadric_val: np.ndarray, level_set: np.ndarray, pixel_w: float) -> np.ndarray:
-    """Anti-aliased inside-ness of the level set np.sqrt(quadric_val) <= level_set."""
-    dist = level_set - np.sqrt(np.maximum(quadric_val, 0.0))
-    return 1.0 / (1.0 + np.exp(np.clip(-dist / (0.75 * pixel_w), -30.0, 30.0)))
+def dashes(width: float, pattern: tuple[float, float]) -> tuple[float, float]:
+    """A pattern of dashes, in widths of their stroke, in pixels."""
+    return width * pattern[0], width * pattern[1]
 
 
-def blend(image: np.ndarray, coverages: np.ndarray, color: np.ndarray, alpha: float) -> np.ndarray:
-    """Composite a stack of same-coloured coverages over the image, one after another."""
-    keep = np.prod(1.0 - alpha * coverages, axis=0)
-    return image * keep[..., None] + color * (1.0 - keep)[..., None]
+def pose_covariances(motors: Motor, ellipses: Quadric, spreads: Scalar) -> list:
+    """Each camera's position uncertainty, the region where its ellipse `[cameras]` is negative, with a dashed outline;
+    and its heading's spread `[cameras]`, in radians either way of its optical axis, as a dotted arc and the dotted lines
+    out to its ends."""
+    # The outline: from each ellipse's centre, the pole of the line at infinity, out along each direction to where the
+    # ellipse vanishes.
+    centres = ellipses.solve(mv.w)                                              # [cameras] Point
+    centres = centres / (mv.w & centres)
+    turns = np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1)
+    headings = mv.direction(np.stack([np.cos(turns), np.sin(turns)], axis=-1))[:, None]   # [segments + 1, 1] Point
+    reach = (-(ellipses(centres) & centres) / (ellipses(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar
+    outlines = centres + headings * reach                                       # [segments + 1, cameras] Point
+    layers = []
+    for camera, colour in enumerate(colours(motors)):
+        # The fan in the camera's frame, about its pinhole from its axis, carried out by its pose.
+        spread = spreads[camera].to_array()
+        turns = np.linspace(-spread, spread, N_CURVE_SEGMENTS + 1)
+        around = ARC_RADIUS * np.stack([-np.sin(turns), np.cos(turns)], axis=-1)
+        fan = motors[camera] >> mv.point(around)                                # [segments + 1] Point
+        spokes = motors[camera] >> mv.point(np.stack([np.zeros((2, 2)), around[[0, -1]]], axis=1))   # [2, 2] Point
+        layers += [Regions(ellipses[camera:camera + 1], colour, 0.28),
+                   Strokes(outlines[:, camera][None], OUTLINE_WIDTH, colour, 0.28, dashes(OUTLINE_WIDTH, DASHED)),
+                   Strokes(fan[None], ARC_WIDTH, colour, 1.0, dashes(ARC_WIDTH, DOTTED)),
+                   Strokes(spokes, SPOKE_WIDTH, colour, 1.0, dashes(SPOKE_WIDTH, DOTTED))]
+    return layers
 
 
-def blend_cones(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, world_cones: Quadric) -> np.ndarray:
-    """Each camera's sight cones, as wide as a pixel at each depth, in the camera's colour."""
-    depth = depths(motors, grid)
-    for c, color in zip(range(motors.shape[0]), CAMERA_COLORS):
-        values = (world_cones[:, c][:, None, None](grid) & grid).to_array()      # [n_points, h, w]
-        covered = coverage(values, PIXEL_ANGLE * np.maximum(depth[c], 0.05), pixel_w) * (depth[c] > 0.02)
-        image = blend(image, covered, np.array(mcolors.to_rgb(color)), 0.30)
-    return image
-
-
-def blend_splats(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, fused: Quadric, points: Point) -> np.ndarray:
-    """The fused quadrics around their points, at least a pixel wide at the points' depth."""
-    in_front = np.any(depths(motors, grid) > 0.02, axis=0)
-    floor = np.maximum((fused(points) & points).to_array(), 0.0)                  # [n_points]
-    depth = ((motors >> mv.y)[None, :] & points[:, None]).to_array().mean(axis=1)  # [n_points]
-    radius = np.sqrt((PIXEL_ANGLE * np.maximum(depth, 0.2)) ** 2 + floor)
-    values = (fused[:, None, None](grid) & grid).to_array() - floor[:, None, None]
-    covered = coverage(values, radius[:, None, None], pixel_w) * in_front
-    return blend(image, covered, SPLAT_COLOR, 0.95)
-
-
-def show_image(ax: plt.Axes, image: np.ndarray, extent: tuple[float, float, float, float]) -> None:
-    """The picture, rows up from the bottom, held pixel for pixel over its extent."""
-    pinned(ax, np.clip(image, 0.0, 1.0)[::-1], extent)
-    ax.set_xlim(extent[0], extent[1])
-    ax.set_ylim(extent[2], extent[3])
-    ax.axis("off")
-
-
-def rasterized(ax: plt.Axes, x_range: tuple[float, float]) -> tuple[Point, float, tuple[float, float, float, float]]:
-    """The grid of plane points across `x_range`, one per pixel of the room the figure's layout gives the axes."""
-    return plane_grid(x_range, *room(ax))
-
-
-# --- overlays -----------------------------------------------------------------------------
-def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
-    """Each camera's field-of-view wedge, sensor line and optical axis."""
-    centers = coordinates(motors >> mv.point(np.zeros(2)))
-    axes = optical_axes(motors)
-    scale, half_fov = 0.28, np.radians(38.0)
-    for center, axis, color in zip(centers, axes, CAMERA_COLORS):
-        perp = np.array([-axis[1], axis[0]])
-        p_left = center + axis * scale - perp * (scale * np.tan(half_fov))
-        p_right = center + axis * scale + perp * (scale * np.tan(half_fov))
-        tip = center + axis * (scale * 1.15)
-
-        # Shaded FOV wedge, boundary rays, sensor line and dashed optical axis:
-        triangle = np.stack([center, p_left, p_right], axis=0)
-        ax.fill(triangle[:, 0], triangle[:, 1], color=color, alpha=0.18, zorder=3)
-        ax.plot([center[0], p_left[0]], [center[1], p_left[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
-        ax.plot([center[0], p_right[0]], [center[1], p_right[1]], color=color, linewidth=1.1, alpha=0.6, zorder=3)
-        ax.plot([p_left[0], p_right[0]], [p_left[1], p_right[1]], color=color, linewidth=2.0, zorder=4)
-        ax.plot([center[0], tip[0]], [center[1], tip[1]], color=color, linewidth=1.2, linestyle="--", zorder=4)
-
-
-def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) -> None:
-    """Each observed camera's position covariance ellipse and orientation fan, from its information form, at SIGMAS
-    standard deviations.
-
-    Anchored cameras carry no information and draw nothing.
-    """
-    covariance = pose_covariance(information)
-    observed = np.abs(covariance).max(axis=(-2, -1)) > 0
-    centers = coordinates(motors >> mv.point(np.zeros(2)))[observed]
-    axes = optical_axes(motors)[observed]
-    colors = np.array(CAMERA_COLORS[:len(observed)])[observed]
-    for center, axis, cov_twist, color in zip(centers, axes, covariance[observed], colors):
-        # Local translation covariance: a twist with coefficients (yw, wx, xy) displaces the camera
-        # by minus its wx coefficient along local x and by its yw coefficient along local y. Rotated
-        # into the world by the camera's frame:
-        cov_local = np.array([
-            [ cov_twist[1, 1], -cov_twist[1, 0]],
-            [-cov_twist[0, 1],  cov_twist[0, 0]],
-        ])
-        frame = np.column_stack([[axis[1], -axis[0]], axis])
-        evals, evecs = np.linalg.eigh(frame @ cov_local @ frame.T)
-        # The radii at SIGMAS standard deviations:
-        radii = SIGMAS * np.sqrt(np.maximum(evals, 0.0))
-        ax.add_patch(Ellipse(
-            xy=center, width=2 * radii[0], height=2 * radii[1],
-            angle=np.degrees(np.arctan2(evecs[1, 0], evecs[0, 0])),
-            edgecolor=color, facecolor=color, alpha=0.28, linewidth=1.6, linestyle="--", zorder=6,
-        ))
-
-        # The heading's spread at SIGMAS standard deviations, from the turn's variance:
-        rot_std_deg = SIGMAS * float(np.degrees(np.sqrt(max(cov_twist[2, 2], 0.0))))
-        arc_r = 0.38
-        heading = float(np.degrees(np.arctan2(axis[1], axis[0])))
-        ax.add_patch(Arc(
-            xy=center, width=2 * arc_r, height=2 * arc_r, angle=0,
-            theta1=heading - rot_std_deg, theta2=heading + rot_std_deg,
-            color=color, linewidth=1.3, linestyle=":", zorder=6,
-        ))
-        for sign in (-1, 1):
-            th = np.radians(heading + sign * rot_std_deg)
-            p_end = center + arc_r * np.array([np.cos(th), np.sin(th)])
-            ax.plot([center[0], p_end[0]], [center[1], p_end[1]], color=color, linestyle=":", linewidth=1.1, zorder=6)
-
-
-def frame_axes(ax: plt.Axes, x_range: tuple[float, float] = X_RANGE) -> None:
-    ax.set_aspect("equal")
-    ax.set_xlim(*x_range)
-    ax.set_ylim(*Y_RANGE)
-    ax.axis("off")
-
-
-def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point,
-                        raster: tuple[Point, float, tuple[float, float, float, float]]) -> None:
-    """Sight cones, fused splats, reconstructed points and cameras, on a raster from `rasterized`."""
-    ax.clear()
-    grid, pixel_w, extent = raster
-    image = blend_cones(np.ones(grid.shape + (3,)), grid, pixel_w, motors, world_cones)
-    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points), extent)
-    plot_cameras(ax, motors)
+def picture(layers: list, x_range: tuple[float, float] = X_RANGE) -> np.ndarray:
+    """The layers over white, across `x_range` and `Y_RANGE`, PIXELS rows down: RGB bytes."""
+    return draw(window(x_range, Y_RANGE, PIXELS), layers, np.ones(3))
 
 
 # --- figures ------------------------------------------------------------------------------
 def draw_rig(motors: Motor) -> plt.Figure:
     """The cameras."""
-    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
-    plot_cameras(ax, motors)
-    frame_axes(ax)
-    return fig
+    return image_figure(picture(cameras(motors)))
 
 
 def draw_cones(motors: Motor, world_cones: Quadric) -> plt.Figure:
     """The cameras and their sight cones through the scene points."""
-    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
-    grid, pixel_w, extent = rasterized(ax, X_RANGE)
-    show_image(ax, blend_cones(np.ones(grid.shape + (3,)), grid, pixel_w, motors, world_cones), extent)
-    plot_cameras(ax, motors)
-    return fig
+    return image_figure(picture(cones(motors, world_cones) + cameras(motors)))
 
 
 def draw_reconstruction(motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> plt.Figure:
     """Sight cones fused into splats around the reconstructed points."""
-    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
-    plot_reconstruction(ax, motors, world_cones, fused, points, rasterized(ax, X_RANGE))
-    return fig
+    return image_figure(picture(cones(motors, world_cones) + splats(motors, fused, points) + cameras(motors)))
 
 
 def draw_reconstruction_with_covariance(
-    motors: Motor, world_cones: Quadric, fused: Quadric, points: Point, information: Information,
+    motors: Motor, world_cones: Quadric, fused: Quadric, points: Point, ellipses: Quadric, spreads: Scalar,
 ) -> plt.Figure:
-    """The reconstruction with each camera's pose covariance."""
-    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
-    plot_reconstruction(ax, motors, world_cones, fused, points, rasterized(ax, X_RANGE))
-    plot_pose_covariance(ax, motors, information)
-    return fig
+    """The reconstruction with each camera's pose uncertainty: the ellipse of its position and the spread of its
+    heading."""
+    return image_figure(picture(cones(motors, world_cones) + splats(motors, fused, points) + cameras(motors)
+                                + pose_covariances(motors, ellipses, spreads)))
 
 
 # README picture: this also draws plots/multiview_convergence.gif, tuned as a visual for the README; a change here changes
@@ -259,13 +171,5 @@ def animate_convergence(states: Iterable, room: float = CAMERA_ROOM) -> Iterator
     first = next(states)
     centres = coordinates(first[0] >> mv.point(np.zeros(2)))[:, 0]               # [cameras]
     x_range = (min(X_RANGE[0], centres.min() - room), max(X_RANGE[1], centres.max() + room))
-    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT * (x_range[1] - x_range[0]) / (X_RANGE[1] - X_RANGE[0]), FIGURE_HEIGHT),
-                           dpi=FIGURE_DPI, layout="constrained")
-    # The layout settled once, so that every frame's raster has the same pixels in the same place.
-    fig.canvas.draw()
-    fig.set_layout_engine("none")
-    raster = rasterized(ax, x_range)
     for motors, world_cones, fused, points in chain([first], states):
-        plot_reconstruction(ax, motors, world_cones, fused, points, raster)
-        yield capture(fig)
-    plt.close(fig)
+        yield picture(cones(motors, world_cones) + splats(motors, fused, points) + cameras(motors), x_range)
