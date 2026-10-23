@@ -22,8 +22,8 @@ STRIDE = 6
 DURATION_MS = 80
 SPECTRAL_SAMPLES = 100
 ENERGIES = 8
-SEPARATIONS = np.linspace(4.0, 32.0, 100)
-PROFILE_SEPARATIONS = np.array([24.0, 12.0, 5.0])
+# The separations of the segment's two ends, closing from far apart to nearly touching.
+SEPARATIONS = np.linspace(32.0, 4.0, 100)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -59,10 +59,8 @@ def moving() -> tuple[np.ndarray, core.Scalar, core.Majorana, core.Majorana, cor
 def overlap() -> tuple[core.Scalar, core.Scalar, core.Majorana]:
     wire = core.Wire.chain(SITES, HOPPING, PAIRING)
     potentials = core.gate(np.arange(SITES), RIGHT - SEPARATIONS, RIGHT, INSIDE, OUTSIDE, WIDTH)
-    energies, _ = wire.modes(wire.generator(potentials), 2)
-    profile_potentials = core.gate(np.arange(SITES), RIGHT - PROFILE_SEPARATIONS, RIGHT, INSIDE, OUTSIDE, WIDTH)
-    _, modes = wire.modes(wire.generator(profile_potentials), 2)
-    return energies.mean(axis=-1), profile_potentials, wire.localized(modes)
+    energies, modes = wire.modes(wire.generator(potentials), 2)
+    return energies.mean(axis=-1), potentials, wire.localized(modes)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -75,8 +73,8 @@ def main() -> None:
     save_animation(render.animate_transport(progress, potentials, history, target, share, HOPPING),
                    "kitaev_transport", DURATION_MS)
     save_figure(render.draw_transport(progress, history, potentials, HOPPING), "kitaev_transport")
-    save_figure(render.draw_overlap(SEPARATIONS, PROFILE_SEPARATIONS, *overlap(), HOPPING),
-                "kitaev_overlap")
+    save_animation(render.animate_overlap(SEPARATIONS, *overlap(), HOPPING), "kitaev_overlap", DURATION_MS,
+                   forward_then_back=True)
 
 
 if __name__ == "__main__":

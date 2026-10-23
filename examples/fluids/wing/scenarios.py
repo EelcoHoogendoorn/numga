@@ -55,7 +55,8 @@ def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point,
     whose offset from where the critical points start shapes the wing."""
     pitched = wing(MORPH_ATTACK)
     plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, REACH)            # [rings, angles] Point
-    spread = (1 - np.cos(2 * np.pi * np.arange(N_MORPH_FRAMES) / N_MORPH_FRAMES)) / 2
+    # The way out alone; the animation plays it forward and back.
+    spread = (1 - np.cos(np.linspace(0, np.pi, N_MORPH_FRAMES // 2 + 1))) / 2
     for fraction in spread:
         critical = fraction * trailing_edge(pitched)                         # [] Point
         images = 2 * stack([critical, -critical])                            # [2] Point
@@ -64,8 +65,8 @@ def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point,
 
 
 def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point]]:
-    """The flow past the wing and its lift as the wing pitches up and back."""
-    phase = (1 - np.cos(2 * np.pi * np.arange(N_FRAMES) / N_FRAMES)) / 2
+    """The flow past the wing and its lift as the wing pitches up; the animation plays it forward and back."""
+    phase = (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2
     for attack in LOWEST_ATTACK + (HIGHEST_ATTACK - LOWEST_ATTACK) * phase:
         pitched = wing(attack)
         plane = core.rings(pitched, N_DRAWN_RINGS, N_DRAWN_ANGLES, REACH)        # [rings, angles] Point
@@ -78,8 +79,8 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.fluids.wing import render
 
-    save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS)
-    save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS)
+    save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS, forward_then_back=True)
+    save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS, forward_then_back=True)
 
     # checks
     pitched = wing(HIGHEST_ATTACK)

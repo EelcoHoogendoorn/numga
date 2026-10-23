@@ -10,7 +10,7 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from examples.geometry.three_point_pose import core
-from examples.util.wgsl import image_figure, show, solids
+from examples.util.wgsl import image_figure, solids
 
 COLOUR = np.array(to_rgb("#218c9d"))
 TARGET = np.array(to_rgb("#ce713f"))
@@ -77,16 +77,6 @@ def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt
     """The placed triangle over the measured markers, framed with the markers' places on the object too, so that
     every stage is seen alike."""
     return image_figure(scene(target, placed, framing([source, target, placed])))
-
-
-def draw_stages(target: core.Point, stages: Iterator[core.Point]) -> plt.Figure:
-    """The triangle after each alignment over the measured markers, side by side, framed alike."""
-    stages = tuple(stages)
-    view = framing([target, *stages])
-    figure, axes = plt.subplots(1, len(stages), figsize=(11, 3.4), dpi=160, layout="constrained")
-    for ax, placed in zip(axes, stages):
-        show(ax, scene(target, placed, view), view)
-    return figure
 
 
 def animate(states: Iterator[core.Point], source: core.Point, target: core.Point,

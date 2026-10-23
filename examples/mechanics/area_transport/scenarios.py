@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 import numpy as np
 
 from examples.mechanics.area_transport import core
 
 SIDE = 1.0
-# The deformations compared: the solid cube, compressed and sheared, and the flat sheet.
-MAX_SHEAR = 0.70
-THICKNESSES = np.array([1.0, 0.35, 0.0])
-SHEARS = np.array([0.0, 0.45, MAX_SHEAR])
-# The frames of one collapse and recovery, and the duration of each.
-N_FRAMES = 40
+# The crush's frames, from the unit cube to the flat sheet, played forward and back, and the duration of each; the
+# slide along x at the flat sheet.
+N_FRAMES = 21
 DURATION_MS = 70
+MAX_SHEAR = 0.70
+# The thickness eased from the unit cube's down to the flat sheet, each layer sliding along x as the cube thins.
+THICKNESSES = (1 + np.cos(np.linspace(0, np.pi, N_FRAMES))) / 2
+SHEARS = MAX_SHEAR * (1 - THICKNESSES)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -28,27 +27,20 @@ def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Point, core
     return deformation[..., None](corners), deformation[..., None](centres), areas[..., None](patches), volume
 
 
-def collapse(n_frames: int) -> Iterator[tuple[core.Point, core.Point, core.Patch, core.Scalar]]:
-    """Per frame of a collapse and recovery, the cube's corners, face centres, patches and volume."""
-    for phase in np.linspace(0, 2 * np.pi, n_frames, endpoint=False):
-        thickness = np.array((1 + np.cos(phase)) / 2)
-        yield scene(thickness, MAX_SHEAR * (1 - thickness))
-
-
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_animation
     from examples.mechanics.area_transport import render
 
     vertices, centres, patches, volume = scene(THICKNESSES, SHEARS)
-    save_figure(render.comparison(vertices, centres, patches, volume), "area_transport")
-    save_animation(render.animate(collapse(N_FRAMES)), "area_transport", DURATION_MS)
+    save_animation(render.animate(zip(vertices, centres, patches, volume)), "area_transport", DURATION_MS,
+                   forward_then_back=True)
 
     # checks
     # The deformation and its area map scale every volume by the determinant, at the flat sheet too.
-    deformation = core.deformation(THICKNESSES, SHEARS)                       # [cases] Point <- Point
+    deformation = core.deformation(THICKNESSES, SHEARS)                       # [frames] Point <- Point
     areas, _, _ = core.transport(deformation)
-    volumes = deformation(core.Point) & areas(core.Patch)                     # [cases] Scalar <- (Point, Patch)
+    volumes = deformation(core.Point) & areas(core.Patch)                     # [frames] Scalar <- (Point, Patch)
     np.testing.assert_allclose((volumes - volume * (core.Point & core.Patch)).kernel, 0, atol=1e-12)
 
 

@@ -1,11 +1,14 @@
-"""Two ellipses posed apart, touching and overlapping, classified by the blends of their dual quadrics."""
+"""Two ellipses posed apart, touching and overlapping, classified by the blends of their dual quadrics, and the second
+sliding along the normal through contact with the first."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 
 from examples.quadrics.quadric_collision.core import (
-    Line, blend, cubic_peak, ellipse, infinity, motor, mv, tangent_line,
+    Line, Polarity, Quadric, Scalar, blend, cubic_peak, ellipse, infinity, motor, mv, tangent_line,
 )
 
 # The first ellipse: its semi-axes, its centre and its turn.
@@ -18,16 +21,18 @@ SECOND_SEMI = (1.6, 0.9)
 SECOND_TURN = np.radians(-35)
 CONTACT_NORMAL = np.radians(22)
 OFFSETS = np.array([0.8, 0.0, -0.6])
-# The shares at which the blend's determinant, a cubic, is sampled to fix it; the shares it is drawn at;
-# and the share of the blended ellipse drawn between the touching pair.
+# The offsets the second ellipse slides through, from apart into the first, and the duration of a frame.
+SLIDE = np.linspace(0.8, -0.6, 57)
+DURATION_MS = 60
+# The shares at which the blend's determinant, a cubic, is sampled to fix it, and the shares it is drawn at.
 SAMPLES = [[0.0], [1.0], [2.0], [-1.0]]
 N_SHARES = 500
-DRAWN_SHARE = 0.45
 
 
 # --- math -----------------------------------------------------------------------------
-def collision():
-    """A second ellipse touching the first along a chosen normal, then moved apart and into it."""
+def pair():
+    """The first ellipse, the second at its own centre, the first's normal at the contact, and the motion that
+    lays the second against the first along that normal."""
     placement = motor(*FIRST_CENTRE, FIRST_TURN)
     fixed = placement >> ellipse(*FIRST_SEMI)(placement << Line)               # [] Point <- Line
 
@@ -42,6 +47,12 @@ def collision():
     # Their displacement is the difference of the two points taken at unit weight.
     displacement = target / (target & infinity) - start / (start & infinity)   # [] Point
     touch = (infinity.wedge(displacement.dual()) * -0.5).exp() * turn          # [] Motor
+    return fixed, shape, normal, touch
+
+
+def collision():
+    """A second ellipse touching the first along a chosen normal, then moved apart and into it."""
+    fixed, shape, normal, touch = pair()
     # The poses along the normal: apart, touching, and into the first.
     poses = (infinity.wedge(normal * OFFSETS) * -0.5).exp() * touch            # [poses] Motor
     moved = poses >> shape(poses << Line)                                      # [poses] Point <- Line
@@ -55,35 +66,43 @@ def collision():
     _, _, lines = blend(fixed, moved[1], parameter[1]).dual().svd()
     contact_line = lines[-1].normalized()                                      # [] Line
     contact_point = fixed(contact_line).normalized()                           # [] Point
+    return fixed, moved, parameter, maximum, contact_line, contact_point
 
-    # For the figure: the determinant along the blend, the tangent lines of both ellipses with the chosen
-    # normal and their midline, and the blends between them: a hyperbola between the pair apart, an
-    # ellipse between the pair touching, and one bridging the pair overlapping.
-    shares = mv.scalar(np.linspace(0.001, 0.999, N_SHARES)[:, None])           # [shares] Scalar
-    determinants = blend(fixed, moved, shares[:, None]).dual().det()           # [shares, poses] Scalar
+
+def slide(offsets: np.ndarray) -> tuple[Quadric, Line, Scalar, Iterator[tuple]]:
+    """The first ellipse, its tangent line with the chosen normal, the shares the determinant is drawn at, and the
+    second ellipse at each offset along the normal from touching, with what the figure draws of it."""
+    fixed, shape, normal, touch = pair()
     first = tangent_line(fixed, normal)                                        # [] Line
-    second = tangent_line(moved, -normal)                                      # [poses] Line
-    midline = ((first - second) * 0.5).normalized()                            # [poses] Line
-    separating = blend(fixed, moved[0], parameter[0]).inverse()                # [] Line <- Point
-    deforming = blend(fixed, moved[1], DRAWN_SHARE)                            # [] Point <- Line
-    bridging = blend(fixed, moved[2], parameter[2])                            # [] Point <- Line
-    return (fixed, moved, parameter, maximum, shares, determinants, first, second, midline,
-            separating, deforming, bridging, contact_line, contact_point)
+    shares = mv.scalar(np.linspace(0.001, 0.999, N_SHARES)[:, None])           # [shares] Scalar
+
+    def moments() -> Iterator[tuple[Quadric, Line, Line, Polarity, Scalar, Scalar, Scalar]]:
+        # Each moment: the second ellipse, its tangent line with the opposite normal and the midline of the two
+        # tangents, the blend at the determinant's peak as a map from points to their polar lines, and the
+        # determinant along the blends with its peak.
+        for offset in offsets:
+            pose = (infinity.wedge(normal * offset) * -0.5).exp() * touch      # [] Motor
+            moved = pose >> shape(pose << Line)                                # [] Point <- Line
+            parameter, maximum = cubic_peak(blend(fixed, moved, mv.scalar(SAMPLES)).dual().det())   # [] Scalar each
+            second = tangent_line(moved, -normal)                              # [] Line
+            midline = ((first - second) * 0.5).normalized()                    # [] Line
+            yield (moved, second, midline, blend(fixed, moved, parameter).inverse(),
+                   blend(fixed, moved, shares).dual().det(), parameter, maximum)
+
+    return fixed, first, shares, moments()
 
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_figure
+    from examples.util.animation import save_animation
     from examples.quadrics.quadric_collision import render
 
-    scene = collision()
-    save_figure(render.draw_collision(*scene), "quadric_collision_2d")
+    save_animation(render.animate_collision(*slide(SLIDE)), "quadric_collision", DURATION_MS, forward_then_back=True)
 
     # checks
     # The poses are apart, touching and overlapping, by the sign of the blend's peak determinant; the
     # contact line is a common tangent, and both ellipses map it to one contact point.
-    fixed, moved, _, maximum = scene[:4]
-    contact_line, contact_point = scene[-2:]
+    fixed, moved, _, maximum, contact_line, contact_point = collision()
     assert maximum[0].to_array() > 0 and maximum[2].to_array() < 0
     np.testing.assert_allclose(maximum[1].to_array(), 0, atol=1e-12)
     np.testing.assert_allclose((contact_line & fixed(contact_line)).to_array(), 0, atol=1e-12)

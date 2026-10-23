@@ -20,8 +20,8 @@ n_frames = 80
 duration_ms = 90
 # Fringes are bands, not shades: a few grey levels draw them.
 n_colors = 16
-# A smooth cycle from zero to the full tension and back, without duplicating the endpoint.
-loads = (1 - np.cos(np.linspace(0, 2 * np.pi, n_frames, endpoint=False))) / 2
+# A smooth rise from zero to the full tension; the animation plays it forward and back.
+loads = (1 - np.cos(np.linspace(0, np.pi, n_frames // 2 + 1))) / 2
 
 
 # --- math -----------------------------------------------------------------------------
@@ -48,7 +48,7 @@ def polariscopes(plate: core.OpticalMap) -> core.Scalar:
 
 
 def loading(stress: core.Stress) -> Iterator[core.Scalar]:
-    """The circular polariscope through the load cycle, `[rows, columns]` per frame: the fringes alone."""
+    """The circular polariscope as the load rises, `[rows, columns]` per frame: the fringes alone."""
     return (core.circular_polariscope(core.retarder(stress * load, stress_phase), core.mv.x.dual()) for load in loads)
 
 
@@ -61,7 +61,8 @@ def main() -> None:
     plate = core.retarder(stress, stress_phase)                                    # [rows, columns] Field <- Field
     save_figure(render.draw_stress(positions, difference, hole_radius, far_tension), "photoelastic_stress")
     save_figure(render.draw_polariscope(positions, polariscopes(plate), hole_radius), "photoelastic_polariscopes")
-    save_animation(render.animate_polariscope(positions, loading(stress), hole_radius), "photoelastic_loading", duration_ms, n_colors)
+    save_animation(render.animate_polariscope(positions, loading(stress), hole_radius), "photoelastic_loading", duration_ms, n_colors,
+                   forward_then_back=True)
 
 
 if __name__ == "__main__":

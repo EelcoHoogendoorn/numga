@@ -38,8 +38,9 @@ def comparison() -> tuple[core.Vector, core.Vector]:
 
 
 def birefringence() -> Iterator[tuple[core.Vector, core.Vector]]:
-    """The sheets and sections as the dielectric changes from vacuum to a biaxial crystal."""
-    phase = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    """The sheets and sections as the dielectric changes from vacuum to a biaxial crystal; the animation plays
+    the change forward and back."""
+    phase = np.linspace(0, np.pi, n_frames // 2 + 1)
     weight = (1 - np.cos(phase)) / 2
     permittivity = case_permittivities[0] + weight[:, None] * (case_permittivities[-1] - case_permittivities[0])
     media = core.dielectric(permittivity, case_reluctivities[-1])
@@ -56,7 +57,7 @@ def main() -> None:
 
     media, directions, sheets, sections = comparison()
     save_figure(render.comparison(sheets, sections, case_names), "fresnel_adjugate")
-    save_animation(render.animate(birefringence()), "fresnel_adjugate", frame_duration)
+    save_animation(render.animate(birefringence()), "fresnel_adjugate", frame_duration, forward_then_back=True)
 
     # checks
     # Every wavevector on the sheets solves the quartic, and lies in its potential map's kernel.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.quadric_collision import render, scenarios
@@ -48,5 +47,6 @@ def test_the_three_poses_are_apart_touching_and_overlapping():
 
 
 def test_scenario_renders():
-    figure = render.draw_collision(*scenarios.collision())
-    assert isinstance(figure, plt.Figure)
+    frames = list(render.animate_collision(*scenarios.slide(scenarios.SLIDE[::14])))
+    assert len(frames) == len(scenarios.SLIDE[::14])
+    assert np.any(frames[0] != frames[-1])

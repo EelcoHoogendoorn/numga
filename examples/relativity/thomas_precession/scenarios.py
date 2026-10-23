@@ -146,10 +146,12 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.relativity.thomas_precession import render
 
-    swell = (1 - np.cos(np.linspace(0, 2 * np.pi, n_boost_frames, endpoint=False))) / 2
+    # The swell alone; the animation plays it forward and back.
+    swell = (1 - np.cos(np.linspace(0, np.pi, n_boost_frames // 2 + 1))) / 2
     rapidities = MIN_RAPIDITY + (MAX_RAPIDITY - MIN_RAPIDITY) * swell
     fractions = np.linspace(0, 1, n_edge_samples)
-    save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", duration_ms)
+    save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", duration_ms,
+                   forward_then_back=True)
     velocities = orbit_velocities(orbit_gammas, n_orbit_steps)
     # A spin along x, the plane turning about it, in each orbit's first frame.
     start_spin = core.rest_boost(velocities[0]) >> core.about(mv.x.dual())

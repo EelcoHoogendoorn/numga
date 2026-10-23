@@ -20,8 +20,8 @@ FIBRE_SPACING = 5.0                                           # mm between drawn
 SEPARATION = 1.6 * WIDTH                                      # mm between the strips' centres
 N_FRAMES = 60
 DURATION_MS = 60
-# The pull grows from nothing to its full value and back, once per loop.
-LOADS = (1 - np.cos(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))) / 2
+# The pull grows from nothing to its full value; the animation plays it forward and back, once per loop.
+LOADS = (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2
 
 
 # --- math -----------------------------------------------------------------------------
@@ -64,7 +64,8 @@ def main() -> None:
     from examples.mechanics.composite_strip import render
 
     placed, frames, across_fibres = scene()
-    save_animation(render.animate_strips(placed, frames, across_fibres, FIBRE_SPACING), "composite_strip", DURATION_MS)
+    save_animation(render.animate_strips(placed, frames, across_fibres, FIBRE_SPACING), "composite_strip", DURATION_MS,
+                   forward_then_back=True)
 
 
 if __name__ == "__main__":

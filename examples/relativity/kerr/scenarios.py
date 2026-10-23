@@ -9,7 +9,8 @@ from examples.relativity.kerr import core
 mass = 1.0
 n_frames = 80
 max_spin = 0.8 * mass
-spins = -max_spin * np.cos(np.linspace(0, 2 * np.pi, n_frames, endpoint=False))
+# One sweep of the spin from one sense to the other; the animation plays it forward and back.
+spins = -max_spin * np.cos(np.linspace(0, np.pi, n_frames // 2 + 1))
 duration_ms = 80
 extent = 12.0 * mass
 n_rays = 31
@@ -109,7 +110,7 @@ def main() -> None:
     from examples.relativity.kerr import render
 
     paths, horizons = scene()
-    save_animation(render.animate_rays(paths, horizons, extent), "kerr_spin", duration_ms)
+    save_animation(render.animate_rays(paths, horizons, extent), "kerr_spin", duration_ms, forward_then_back=True)
     image, temperature, transmission = camera()
     sky = render.star_texture(sky_width, sky_height, sky_seed)
     shape = (image_height, image_width)

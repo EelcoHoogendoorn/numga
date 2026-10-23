@@ -5,6 +5,7 @@ centre, as long as its area; beside it, the areas and the volume as bars."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +13,6 @@ from matplotlib.axes import Axes
 from matplotlib.colors import to_rgb
 from matplotlib.container import BarContainer
 
-from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
 from examples.util.wgsl import show, solids
@@ -30,6 +30,9 @@ background = np.ones(3)
 elevation, azimuth = np.radians([23.0, -57.0 + 90.0])
 margin = 0.16
 n_pixels = 520
+# How many times over the first frame's view the animation's view takes, across and up, leaving room for the slide
+# along x and the arrows as the cube flattens.
+view_room = np.array([1.35, 1.04])
 # How much of what lies behind each of a face's two sides hides; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
 # arrow's, and its radius a share of its own length.
 face_opacity = 0.1
@@ -94,28 +97,19 @@ def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer
     return bars
 
 
-def comparison(vertices: core.Point, centres: core.Point, patches: core.Patch, volume: core.Scalar) -> plt.Figure:
-    """One column per deformation: the cube with its patches above, and below, the areas of the faces
-    normal to x, y and z and the volume, against the unit cube's."""
-    figure = plt.figure(figsize=(12, 6.5), layout="constrained")
-    count = vertices.shape[0]
-    seen = view(vertices, centres, patches)
-    for i in range(count):
-        show(figure.add_subplot(2, count, i + 1), picture(vertices[i], centres[i], patches[i], seen), seen)
-        measures(figure.add_subplot(2, count, count + i + 1), patches[i], volume[i])
-    return figure
-
-
-def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> Iterator[np.ndarray]:
-    """The frames, all from one camera framing every frame's cube, beside the bars of their measures."""
-    frames = list(frames)
-    vertices, centres, patches, _ = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...]
-    seen = view(vertices, centres, patches)
+def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]],
+            room: np.ndarray = view_room) -> Iterator[np.ndarray]:
+    """The cube with its patches, from one camera framing the first frame's cube and arrows, `room` times over, beside
+    the bars of the areas of the faces normal to x, y and z and the volume, against the unit cube's."""
+    states = iter(frames)
+    first = next(states)
+    framed = view(*first[:3])
+    seen = framed._replace(half=framed.half * room)
     figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
     image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
-    bars = measures(figure.add_subplot(1, 2, 2), *frames[0][2:])
+    bars = measures(figure.add_subplot(1, 2, 2), *first[2:])
     # The figure set up once; only the cube's picture and the bars' heights change between frames.
-    for vertices, centres, patches, volume in frames:
+    for vertices, centres, patches, volume in chain([first], states):
         image.set_data(picture(vertices, centres, patches, seen))
         for bar, height in zip(bars, heights(patches, volume)):
             bar.set_height(height)

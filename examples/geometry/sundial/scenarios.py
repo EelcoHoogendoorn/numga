@@ -39,10 +39,11 @@ def dial() -> tuple[core.Point, np.ndarray, core.Point, core.Point, np.ndarray]:
 
 
 def year() -> tuple[np.ndarray, core.Point, core.Point]:
-    """At every frame of a year: the sun's declination, the sun at each of the day's hours `[frames,
-    hours]`, and through the whole day `[frames, samples]`."""
+    """At every frame from solstice to solstice, which the animation plays forward and back: the sun's
+    declination, the sun at each of the day's hours `[frames, hours]`, and through the whole day `[frames,
+    samples]`."""
     pole, equator = core.sky(LATITUDE)
-    declinations = TILT * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))   # [frames]
+    declinations = TILT * np.sin(np.linspace(-np.pi / 2, np.pi / 2, N_FRAMES // 2 + 1))   # [frames]
     rays = core.sun(pole, equator, declinations[:, None], hour_angle(RAY_HOURS)[None, :])   # [frames, hours] Point
     days = core.sun(pole, equator, declinations[:, None], hour_angle(DAY_HOURS)[None, :])   # [frames, samples] Point
     return declinations, rays, days
@@ -69,7 +70,8 @@ def main() -> None:
     pole, _ = core.sky(LATITUDE)
     foot = core.shadow(nodus, pole)                                             # [] Point
     save_figure(render.draw_dial(nodus, foot, seasons, days, suns, hours), "sundial")
-    save_animation(render.animate_year(*year(), nodus, foot, seasons, days, suns, hours), "sundial_year", DURATION_MS)
+    save_animation(render.animate_year(*year(), nodus, foot, seasons, days, suns, hours), "sundial_year", DURATION_MS,
+                   forward_then_back=True)
 
     # checks
     # Every shadow of the nodus through each season's day lies on that season's cone of rays.

@@ -20,13 +20,12 @@ def markers() -> tuple[core.Point, core.Point, core.Motor]:
 
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
-    from examples.util.animation import save_animation, save_figure
+    from examples.util.animation import save_animation
     from examples.geometry.three_point_pose import render
 
     source, target, increments = markers()
     fractions = np.linspace(0, 1, N_STEPS + 1)[1:]
     fractions = fractions * fractions * (3 - 2 * fractions)
-    save_figure(render.draw_stages(target, core.placements(source, increments)), "three_point_pose")
     save_animation(render.animate(core.alignments(source, increments, fractions), source, target),
                    "three_point_pose", DURATION_MS)
 

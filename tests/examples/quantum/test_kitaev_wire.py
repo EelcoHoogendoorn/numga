@@ -102,9 +102,9 @@ def test_slow_transport_follows_the_boundary_and_fast_transport_leaks(moving):
 
 def test_overlap_lifts_the_lowest_excitation():
     energies, _, _ = scenarios.overlap()
-    assert energies.kernel[0, 0] > 0.1
-    assert energies.kernel[-1, 0] < 2e-7
-    assert np.all(np.diff(energies.kernel[:, 0]) < 0)
+    assert energies.kernel[-1, 0] > 0.1
+    assert energies.kernel[0, 0] < 2e-7
+    assert np.all(np.diff(energies.kernel[:, 0]) > 0)
 
 
 def test_scenes_draw(moving):
@@ -113,9 +113,7 @@ def test_scenes_draw(moving):
 
     progress, potentials, history, target, share = moving
     figures = [render.draw_formation(*scenarios.formation(), scenarios.HOPPING),
-               render.draw_transport(progress, history, potentials, scenarios.HOPPING),
-               render.draw_overlap(scenarios.SEPARATIONS, scenarios.PROFILE_SEPARATIONS,
-                                    *scenarios.overlap(), scenarios.HOPPING)]
+               render.draw_transport(progress, history, potentials, scenarios.HOPPING)]
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
@@ -123,3 +121,8 @@ def test_scenes_draw(moving):
                                             scenarios.HOPPING))
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])
+    splitting, closing, modes = scenarios.overlap()
+    frames = list(render.animate_overlap(scenarios.SEPARATIONS[::33], splitting[::33], closing[::33], modes[::33],
+                                         scenarios.HOPPING))
+    assert len(frames) == len(scenarios.SEPARATIONS[::33])
+    assert np.any(frames[0] != frames[-1])

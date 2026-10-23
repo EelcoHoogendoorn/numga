@@ -28,10 +28,10 @@ AXIS = 0.3
 
 # --- math -----------------------------------------------------------------------------
 def winding() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
-    """At every frame of the wind-up and release: the control frames, and the surfaces refined as points and
-    as motors."""
+    """At every frame of the wind-up, which the animation plays forward and back: the control frames, and the
+    surfaces refined as points and as motors."""
     along, across = grid()
-    wound = WOUND * (1 - np.cos(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False))) / 2   # [frames]
+    wound = WOUND * (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2   # [frames]
     held = ((along + LENGTH / 2) / LENGTH) ** 2                                # [vertices]
     return refined(core.ribbon(along, across, wound[:, None] * held).field())   # [frames] Motor[vertices]
 
@@ -78,7 +78,7 @@ def main() -> None:
 
     wound = winding()
     turned = turning()
-    save_animation(render.animate(*wound), "motor_loop_ribbon", DURATION_MS)
+    save_animation(render.animate(*wound), "motor_loop_ribbon", DURATION_MS, forward_then_back=True)
     save_animation(render.animate(*turned), "motor_loop_turning", DURATION_MS)
 
     # checks

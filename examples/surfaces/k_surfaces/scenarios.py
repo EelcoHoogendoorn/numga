@@ -66,17 +66,19 @@ def main() -> None:
     orbit_elevation = 26
     orbit_azimuth_centre = -70
     orbit_azimuth_amplitude = 50
-    phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    # The bend from one extreme to the other, and the orbit's swing one way; the animations play them forward and
+    # back.
+    phases = np.linspace(-np.pi / 2, np.pi / 2, n_frames // 2 + 1)
     corner_angles = neutral_angle + bend_amplitude * np.sin(phases)
     corner_extremes = neutral_angle + bend_amplitude * np.array([-1, 1])
-    orbit_phases = np.linspace(0, 2 * np.pi, n_orbit_frames, endpoint=False)
+    orbit_phases = np.linspace(0, np.pi, n_orbit_frames // 2 + 1)
     orbit_azimuths = orbit_azimuth_centre + orbit_azimuth_amplitude * np.cos(orbit_phases)
     frame_volume = mv.x ^ mv.y ^ mv.z                                   # Trivector
     radius = frame_volume.dual()                                        # Antipseudoscalar
 
     reference = stack(deforming_saddle(n_half, extent, corner_extremes, radius))
     states = deforming_saddle(n_half, extent, corner_angles, radius)
-    save_animation(render.frames(states, reference), "k_surfaces_saddle", duration_ms)
+    save_animation(render.frames(states, reference), "k_surfaces_saddle", duration_ms, forward_then_back=True)
 
     normals, points = saddle(n_half, extent, neutral_angle, radius)
     corner_normal = normals[0, 0]                                       # Vector
@@ -87,7 +89,7 @@ def main() -> None:
     partner_normals = core.partner(normals, starting_normal, core.complete)  # [vertices, vertices] Vector
     partner_points = points + radius * partner_normals.commutator(normals)  # [vertices, vertices] Antivector
     save_animation(render.partner_orbit(partner_points, points, orbit_azimuths, orbit_elevation),
-                   "k_surfaces_backlund", orbit_duration_ms)
+                   "k_surfaces_backlund", orbit_duration_ms, forward_then_back=True)
 
     # checks
     # Bending keeps every grid edge's length, and the segments to the partner all have one length and lie

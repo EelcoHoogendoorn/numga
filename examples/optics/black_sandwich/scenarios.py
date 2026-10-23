@@ -12,9 +12,10 @@ from examples.optics.black_sandwich.core import (
 # --- math
 def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap]:
     """The field through both stacks, the plates' fast axes, the crossed polarizers' axes, and one
-    stack's map, over a swing of the plates from the entrance axis to 90 degrees and back."""
+    stack's map, over a swing of the plates from the entrance axis to 90 degrees."""
     n_frames = 48
-    cycle = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
+    # The plates' swing out; the animation plays it forward and back.
+    cycle = np.linspace(0, np.pi, n_frames // 2 + 1)
     plate_angles = (1 - np.cos(cycle)) * np.pi / 4
     input_axis = mv.x.dual()                                                  # Direction
     output_axis = mv.y.dual()                                                 # Direction
@@ -24,7 +25,7 @@ def rotating_plate() -> tuple[Field, Direction, Direction, Direction, OpticalMap
     plate = half_wave(plate_axes)                                             # [frames] Field <- Field
     exit = polarizer(output_axis)                                             # [] Field <- Field
     sandwich = exit(plate(entrance))                                          # [frames] Field <- Field
-    incident = field_along(input_axis) * np.ones(n_frames)                    # [frames] Field
+    incident = field_along(input_axis) * np.ones(len(cycle))                  # [frames] Field
     fields = through_pair(entrance, plate, exit, incident)                    # [frames, stages] Field
     return fields, plate_axes, input_axis, output_axis, sandwich
 
@@ -36,7 +37,8 @@ def main() -> None:
 
     duration_ms = 90
     fields, plate_axes, input_axis, output_axis, sandwich = rotating_plate()
-    save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms)
+    save_animation(render.frames(fields, plate_axes, input_axis, output_axis), "black_sandwich", duration_ms,
+                   forward_then_back=True)
 
     # checks
     # One stack passes the whole field at some plate angle, yet two in succession pass none.

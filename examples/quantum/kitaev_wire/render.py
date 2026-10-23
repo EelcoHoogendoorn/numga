@@ -118,31 +118,42 @@ def draw_transport(progress: np.ndarray, history: core.Majorana, potentials: cor
     return figure
 
 
-def draw_overlap(separations: np.ndarray, profile_separations: np.ndarray,
-                 splitting: core.Scalar, potentials: core.Scalar, modes: core.Majorana,
-                 hopping: float) -> Figure:
+def animate_overlap(separations: np.ndarray, splitting: core.Scalar, potentials: core.Scalar,
+                    modes: core.Majorana, hopping: float) -> Iterator[np.ndarray]:
+    """The two end modes at each separation of the segment's ends, beside the lowest excitation energy against
+    the separation, marked at the separation of the moment."""
     energies = splitting.to_array() / hopping
     weights = modes.scalar_norm_squared().to_array()
-    chemical = potentials.to_array()
-    regime = shade(chemical, hopping)
+    regime = shade(potentials.to_array(), hopping)
     sites = np.arange(weights.shape[-1])
-    figure = plt.figure(figsize=(9, 3.8), layout="constrained")
-    grid = figure.add_gridspec(len(profile_separations), 2, width_ratios=[1, 1.1])
-    spectrum = figure.add_subplot(grid[:, 0])
+    top = weights.max() * 1.1
+    figure, (spectrum, profile) = plt.subplots(1, 2, figsize=(9, 3.8), dpi=90, width_ratios=[1, 1.1],
+                                               layout="constrained")
     spectrum.semilogy(separations, energies, color=INK, linewidth=2)
-    # The separations the profiles beside it are drawn at; the energy's decades show the exponential.
-    spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation energy, $E/t$", xticks=profile_separations)
+    marker = spectrum.scatter([], [], color=INK, edgecolors="white", s=60, zorder=3)
+    # The ends of the separations swept; the energy's decades show the exponential.
+    spectrum.set(xlabel="gate separation (sites)", ylabel=r"lowest excitation energy, $E/t$",
+                 xticks=[separations.min(), separations.max()])
     plain_axes(spectrum)
-    for row, separation in enumerate(profile_separations):
-        axis = figure.add_subplot(grid[row, 1])
-        axis.imshow(regime[row][None, :], aspect="auto", origin="lower", interpolation="bilinear",
-                     extent=(sites[0], sites[-1], 0, weights.max() * 1.1), cmap=GATE, vmin=0, vmax=1,
-                     zorder=0)
-        for density, colour in zip(weights[row], (SLOW, FAST)):
-            axis.fill_between(sites, density, color=colour, alpha=0.35)
-            axis.plot(sites, density, color=colour, linewidth=1.5)
-        axis.set(xlim=(sites[-1] - separations[-1] - 20, sites[-1]), ylim=(0, weights.max() * 1.1),
-                  ylabel=f"{separation:g} sites", xticks=[], yticks=[])
-        plain_axes(axis)
-    axis.set_xlabel("site")
-    return figure
+    shading = profile.imshow(regime[0][None, :], aspect="auto", origin="lower", interpolation="bilinear",
+                             extent=(sites[0], sites[-1], 0, top), cmap=GATE, vmin=0, vmax=1, zorder=0)
+    lines = [profile.plot(sites, density, color=colour, linewidth=1.5)[0]
+             for density, colour in zip(weights[0], (SLOW, FAST))]
+    fills = [profile.fill_between(sites, density, color=colour, alpha=0.35)
+             for density, colour in zip(weights[0], (SLOW, FAST))]
+    profile.set(xlim=(sites[-1] - separations.max() - 20, sites[-1]), ylim=(0, top),
+                xlabel="site", ylabel="mode weight", xticks=[], yticks=[])
+    plain_axes(profile)
+    # Lay the figure out once; only the marker, the gate and the modes change between frames.
+    figure.canvas.draw()
+    figure.set_layout_engine("none")
+
+    for frame, separation in enumerate(separations):
+        marker.set_offsets([[separation, energies[frame]]])
+        shading.set_data(regime[frame][None, :])
+        for end, colour in enumerate((SLOW, FAST)):
+            lines[end].set_ydata(weights[frame, end])
+            fills[end].remove()
+            fills[end] = profile.fill_between(sites, weights[frame, end], color=colour, alpha=0.35)
+        yield capture(figure)
+    plt.close(figure)

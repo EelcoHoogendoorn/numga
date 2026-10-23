@@ -36,9 +36,10 @@ def comparison() -> tuple[core.Crystal, core.Crystal, core.Plane, core.Scalar]:
 
 
 def deformation(grid: core.Plane) -> Iterator[tuple[core.Point, core.Plane, core.Scalar]]:
-    """Per frame of a stretch, shear and turn and back, the atoms, the reciprocal lattice and the intensity."""
+    """Per frame of a stretch, shear and turn, the atoms, the reciprocal lattice and the intensity; the animation
+    plays them forward and back."""
     reference = core.square(N_SHELLS, N_ORDERS, SPACING)
-    for phase in np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False):
+    for phase in np.linspace(0, np.pi, N_FRAMES // 2 + 1):
         weight = np.array((1 - np.cos(phase)) / 2)
         crystal = reference.carried(core.deformation(1 + (MAX_STRETCH - 1) * weight, MAX_SHEAR * weight, MAX_ANGLE * weight))
         yield crystal.positions, crystal.reciprocal, crystal.intensity(grid)
@@ -52,7 +53,8 @@ def main() -> None:
     reference, crystals, grid, intensity = comparison()
     movie_grid = core.transfer_grid(HALF_WIDTH, N_MOVIE_PIXELS)
     save_figure(render.comparison(crystals.positions, crystals.reciprocal, grid, intensity), "crystal_diffraction")
-    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", FRAME_DURATION)
+    save_animation(render.animate(deformation(movie_grid), movie_grid), "crystal_diffraction", FRAME_DURATION,
+                   forward_then_back=True)
 
     # checks
     # Every phase measured at every atom is kept.
