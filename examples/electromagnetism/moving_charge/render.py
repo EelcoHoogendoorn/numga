@@ -85,35 +85,39 @@ def density(current: core.Antivector) -> np.ndarray:
     return (core.mv.t & current).to_array()
 
 
-def fields(events: core.Antivector, field: core.Bivector) -> plt.Figure:
-    """Electric field strength and magnetic field, one row per case."""
+def fields(events: core.Antivector, field: core.Bivector, zoom: float = sweep_zoom,
+           aspect: float = sweep_aspect) -> plt.Figure:
+    """Electric field strength and magnetic field side by side for each case, the cases side by side, each panel an
+    upright window, `zoom` of the grid's height high and `aspect` of that wide."""
     strengths, magnetic = electric_strength(field), magnetic_across(field)       # [cases, rows, columns] each
-    width = 11
-    left, right, bottom, top = extent(events)
-    result = plt.figure(figsize=(width, len(strengths) * width / 2 * (top - bottom) / (right - left) + 0.3), layout="constrained")
-    for axes, strength, across in zip(result.subplots(len(strengths), 2, squeeze=False), strengths, magnetic):
-        panel(axes[0], events, strength, strength_colours, LogNorm(*electric_range))
-        panel(axes[1], events, across, "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit))
+    result = plt.figure(figsize=(7 * len(strengths), 7), layout="constrained")
+    axes = result.subplots(1, 2 * len(strengths))
+    for pair, strength, across in zip(axes.reshape(-1, 2), strengths, magnetic):
+        panel(pair[0], events, strength, strength_colours, LogNorm(*electric_range))
+        panel(pair[1], events, across, "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit))
+    windowed(list(axes), events, zoom, aspect)
     return result
 
 
-def densities(events: core.Antivector, current: core.Antivector) -> plt.Figure:
-    """The charge density, signed, one panel per case, on one colour scale."""
+def densities(events: core.Antivector, current: core.Antivector, zoom: float = sweep_zoom,
+              aspect: float = sweep_aspect) -> plt.Figure:
+    """The charge density, signed, one panel per case, on one colour scale, each panel an upright window, `zoom` of
+    the grid's height high and `aspect` of that wide."""
     values = density(current)                                                   # [cases, rows, columns]
     limit = np.abs(values).max()
-    width = 11
-    left, right, bottom, top = extent(events)
-    result = plt.figure(figsize=(width, width / len(values) * (top - bottom) / (right - left) + 0.3), layout="constrained")
-    for ax, value in zip(result.subplots(1, len(values), squeeze=False)[0], values):
+    result = plt.figure(figsize=(7 * len(values) / 2, 7), layout="constrained")
+    axes = result.subplots(1, len(values), squeeze=False)[0]
+    for ax, value in zip(axes, values):
         panel(ax, events, value, "RdBu_r", TwoSlopeNorm(0.0, -limit, limit))
+    windowed(list(axes), events, zoom, aspect)
     return result
 
 
 def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector,
           zoom: float = sweep_zoom, aspect: float = sweep_aspect) -> Iterator[np.ndarray]:
     """Electric field strength with the charge's outline, and magnetic field, one frame per case, each in an upright
-    window, `zoom` of the grid's height high and `aspect` of that wide, side by side in a square. One figure is updated in place and drawn once per frame, without
-    supersampling, to keep pace."""
+    window, `zoom` of the grid's height high and `aspect` of that wide, side by side in a square. One figure is
+    updated in place and drawn once per frame, without supersampling, to keep pace."""
     xy = coordinates(events)
     strengths, magnetic, charge_densities = electric_strength(field), magnetic_across(field), density(current)
     result = plt.figure(figsize=(7, 7), dpi=80, layout="constrained")
