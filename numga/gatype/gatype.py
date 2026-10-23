@@ -287,13 +287,15 @@ class GAType:
 
     @cached_property
     def is_exterior_map(self) -> bool:
-        """A map from vectors to vectors, or from antivectors to antivectors."""
+        """A map between generators, vectors or antivectors on each side: from vectors to vectors, from
+        antivectors to antivectors, or a correlation between the two."""
         if self.arity != 1:
             return False
         algebra = self.algebra
+        generators = ({1}, {algebra.dimension - 1})
         inputs = {algebra.grade(mask) for mask in self.input_subspaces[0].masks}
         outputs = {algebra.grade(mask) for mask in self.output_subspace.masks}
-        return inputs == outputs and inputs in ({1}, {algebra.dimension - 1})
+        return inputs in generators and outputs in generators
 
     @property
     def maps_equal_dimensions(self) -> bool:

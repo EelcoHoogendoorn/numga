@@ -99,9 +99,10 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
 def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
     """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
     takes into the unit ball, cut by its own planes into eight octants."""
-    # The inverse shape, the stretch undone twice, read along the scene's axes; it is symmetric.
-    unshaped = core.placed(stretches.inverse(), orientations)                 # [...] Shape
-    matrix = coordinates(unshaped[..., None](stack((z, x, y))))               # [..., 3, 3]
+    # The point quadric, the inverse of the dual quadric, read on the scene's axes; it is symmetric.
+    quadric = core.placed(stretches, orientations).inverse()                  # [...] Plane <- Point
+    scene_axes = stack((z, x, y))                                             # [3] Point
+    matrix = (quadric[..., None, None](scene_axes[:, None]) & scene_axes[None, :]).to_array()   # [..., 3, 3]
     ellipsoids = solids.quadric(matrix, solids.origin)                        # [...] Quadric
     # Each octant on the side of each of the body's own planes its signs pick: its normals are the body's axes.
     normals = coordinates(orientations[..., None] >> core.axes.dual())        # [..., 3, 3]

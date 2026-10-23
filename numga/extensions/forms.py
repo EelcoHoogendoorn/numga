@@ -64,7 +64,8 @@ def _partner_kind(value: Extensor, partner: Extensor) -> tuple[MetricKind, np.nd
         return MetricKind.POSITIVE, np.array([]), np.array([]), np.array([])
     # Exact coefficients carry no batch: one matrix, in the layout the pencil uses.
     lowered = binding_context(value.context, (partner.context,)).lower(partner)
-    coefficients = np.asarray(_on_second_axis(value, lowered)._kernel, dtype=np.float64)
+    # Exact coefficients are real, also when lowered into a complex context.
+    coefficients = np.real(np.asarray(_on_second_axis(value, lowered)._kernel)).astype(np.float64)
     matrix = np.ascontiguousarray(coefficients.reshape(coefficients.shape[-2:]))
     return _classified(matrix.shape, matrix.tobytes())
 

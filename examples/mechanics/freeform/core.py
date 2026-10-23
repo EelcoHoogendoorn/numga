@@ -6,8 +6,9 @@ of a scalar field and the force on a point are covectors, vectors, read by pairi
 Weight fields over the solid blend whole affine motions, each set by four control displacements, and the
 local deformation is the identity plus every control displacement paired with its feature's gradient,
 `Antivector + state * (gradients & Antivector)`, a map on directions. Its Neo-Hookean stress maps
-covectors to covectors: the metric part `F.adjoint().adjugate()`, and the cofactor, which carries the
-plane spanned by two directions to the plane spanned by their images, over the reference volume. The
+covectors to covectors: the metric part `F.adjoint().adjugate()`, and the cofactor, the deformation's
+outermorphism onto the planes two directions span, which carries the plane spanned by two directions to
+the plane spanned by their images, over the reference volume. The
 pairing transpose of the sampling map, its adjugate, collects every local force onto the controls.
 """
 
@@ -36,8 +37,8 @@ planes = stack((mv.x, mv.y, mv.z))                           # [3] Vector
 directions = planes.dual()                                   # [3] Antivector
 # The reference volume, the join of the three directions: an intrinsic scalar of value one.
 unit_volume = directions[0] & directions[1] & directions[2]
-# Each plane is spanned by the two directions after its own.
-CYCLIC = np.array([[0, 1, 2], [1, 2, 0], [2, 0, 1]])
+# Planes as the joins of the two directions that span them: vectors, oriented within themselves.
+Span = ga.gatype.vector().derive.flipped_orientation
 one = mv(Scalar.derive.flipped_orientation, [1.0])          # [] intrinsic Scalar
 
 
@@ -74,11 +75,10 @@ def deformation(state: Antivector, gradients: Vector) -> Deformation:
 
 def cofactor(local: Deformation) -> Stress:
     """The map on covectors that carries each plane, spanned by two directions, to the plane spanned by
-    their images, over the reference volume: the determinant times the inverse transpose, singular or
-    not."""
-    images = local[..., None](directions)                        # [..., 3] Antivector
-    spans = images[..., CYCLIC[:, 1]] & images[..., CYCLIC[:, 2]]  # [..., 3] intrinsic Vector
-    return (spans * (Vector & directions[CYCLIC[:, 0]])).sum(axis=-1) / unit_volume
+    their images, over the reference volume: the deformation's outermorphism onto those joins, the
+    determinant times the inverse transpose, singular or not."""
+    # A plane is the join of two directions that span it, in units of the reference volume.
+    return local.outermorphism(Span)(Vector * unit_volume) / unit_volume      # [...] Stress
 
 
 def constitutive(local: Deformation, lame_lambda: float, lame_mu: float) -> tuple[Scalar, Stress]:
@@ -87,7 +87,9 @@ def constitutive(local: Deformation, lame_lambda: float, lame_mu: float) -> tupl
     bulk = lame_lambda + lame_mu
     target = 1 + lame_mu / bulk
     rest_energy = bulk * (1 - target)**2 + 3 * lame_mu
-    stretch = local.adjoint()(local).trace()                     # [samples] Scalar
+    # The stretch: the deformed metric read on reference directions, the Cauchy-Green form, traced against
+    # the reference metric.
+    stretch = local(Antivector).dot(local(Antivector)).contract()  # [samples] Scalar
     energy = (bulk * (determinant - target).squared() + lame_mu * stretch - rest_energy) / 2
     # The stretch is metric, so its stress carries the deformation over to covectors through the metric.
     stress = lame_mu * local.adjoint().adjugate() + bulk * (determinant - target) * cofactor(local)   # [samples] Stress

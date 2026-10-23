@@ -30,10 +30,11 @@ def stress_field() -> tuple[core.Planar, core.Stress, core.Scalar]:
     the pixels inside the hole carry the formula's values and are covered when drawn."""
     centres = (np.arange(n_pixels) + 0.5) * (2 * extent / n_pixels) - extent
     positions = core.mv.x.dual() * centres[None, :] + core.mv.y.dual() * centres[:, None]   # [rows, columns] Planar
-    # Averaging identity and reflection in y keeps axial traction and cancels transverse traction.
-    remote = far_tension * (core.Planar + (core.mv.y >> core.Planar)) / 2             # [] Planar <- Planar
-    stress = core.kirsch(positions, hole_radius, remote)                               # [rows, columns] Planar <- Planar
-    principal, _ = stress.eigh()                                                  # [rows, columns, modes] Scalar, Planar
+    # Tension along x: the traction along x on each cut, by how far x crosses it.
+    along = core.mv.x.dual()                                                         # [] Planar
+    remote = far_tension * along * (core.Cut & along)                                # [] Traction <- Cut
+    stress = core.kirsch(positions, hole_radius, remote)                               # [rows, columns] Traction <- Cut
+    principal, _ = core.principal_stresses(stress)                                # [rows, columns, modes] Scalar, Planar
     difference = principal[..., 1] - principal[..., 0]                            # [rows, columns] Scalar
     return positions, stress, difference
 

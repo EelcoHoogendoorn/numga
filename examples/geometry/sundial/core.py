@@ -12,9 +12,9 @@ A dial reads the sun by the shadow of a gnomon whose edge, the style, points at 
 the style and the sun at a given hour holds the sun at that hour on every day of the year, so each hour
 casts its shadow along one line of the dial, whatever the season. The tip of the gnomon, the nodus, casts
 a point whose path over a day is the season's shadow path. The ray from the nodus to the sun keeps its angle
-to the pole all day, so the day's rays sweep a cone about the pole, a quadratic form on rays
-`pole * pole.dot(Point) - pole.dot(sun).squared() * Point`, and the dial cuts the cone in the shadow path: a
-conic. The cone's other nappe holds the rays at the opposite declination, so a summer day and the winter day
+to the pole all day, so the day's rays sweep a cone about the pole, a quadric of rays, each ray to the plane
+that reads it, `across * (across & Point) - (across & sun).squared() * Point.dual_inverse()` with `across` the
+plane across the pole, and the dial cuts the cone in the shadow path: a conic. The cone's other nappe holds the rays at the opposite declination, so a summer day and the winter day
 as far from the equinox are the two branches of one hyperbola; at the equinoxes the cone flattens into the
 plane of the equator, and the shadow runs along a straight line.
 
@@ -36,8 +36,8 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
-# A quadratic form on rays.
-Cone = ga.gatype((Point, Point))                           # Point <- Point
+# A quadric of rays: the planes that read them.
+Cone = ga.gatype((Plane, Point))                           # Plane <- Point
 
 east, north, up = mv.basis().dual()                        # [] Point each
 west = -east
@@ -74,8 +74,10 @@ def shadow(nodus: Point, suns: Point) -> Point:
 def cone(pole: Point, sun: Point) -> Cone:
     """The cone of rays about the pole through a direction to the sun: zero on a ray exactly when it meets
     the pole at the sun's angle, or at its supplement, the other nappe."""
-    # A unit sun's dot product with the pole is the sine of its declination.
-    return pole * pole.dot(Point) - pole.dot(sun).squared() * Point              # [...] Point <- Point
+    # The plane across the pole reads a ray's height along it: for a unit sun, the sine of its declination.
+    across = pole.dual_inverse()                                               # [...] Plane
+    # A ray is on the cone when its height squared is the sun's times its own length squared, the metric.
+    return across * (across & Point) - (across & sun).squared() * Point.dual_inverse()   # [...] Plane <- Point
 
 
 def hour_planes(pole: Point, equator: Point, hours: np.ndarray) -> Plane:
