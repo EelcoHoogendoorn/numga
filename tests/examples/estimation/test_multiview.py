@@ -295,5 +295,5 @@ def test_convergence_animations_render(name):
 
 def test_joint_animation_renders():
     """The joint alignment renders a short animation with pose covariances."""
-    frames = list(render.animate_convergence_with_covariance(islice(scenarios.jointly(), 2)))
+    frames = list(render.animate_convergence(state[:4] for state in islice(scenarios.jointly(), 2)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

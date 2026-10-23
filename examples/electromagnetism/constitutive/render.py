@@ -37,7 +37,7 @@ MARGIN, FIGURE_SIZE = 0.06, (14, 3.8)
 CURVE_WIDTH, AXIS_WIDTH, ARROW_WIDTH = 4.0, 3.0, 3.0
 HEAD_SHARE, HEAD_SPREAD = 0.18, 0.35
 # The animation's widths as a share of those above, its pictures that much narrower than the still's.
-ANIMATION_THICKNESS = 0.67
+ANIMATION_THICKNESS = 0.36
 
 
 def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
@@ -155,7 +155,7 @@ def animate_wave_comparison(
 ) -> Iterator[np.ndarray]:
     """Frames of the travelling E and B field vectors through one period, in isotropic glass beside
     the birefringent crystal."""
-    fig = plt.figure(figsize=FIGURE_SIZE, dpi=80)
+    fig = plt.figure(figsize=FIGURE_SIZE, dpi=43)
     glass_axes = fig.add_subplot(1, 2, 1)
     crystal_axes = fig.add_subplot(1, 2, 2)
     # One layout for every frame, so the axes stay put while the waves move.

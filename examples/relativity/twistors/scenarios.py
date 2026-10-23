@@ -51,6 +51,8 @@ def electric_lines() -> core.Spatial:
     return ELECTRIC_TURN >> congruence()
 
 
+# README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def propagation(times: np.ndarray) -> Iterator[core.Event]:
     """Electric field lines transported along straight null rays, one set per instant."""
     electric = electric_lines()                                               # [polars, per circle, fibre samples + 1] Spatial
@@ -71,6 +73,8 @@ def main() -> None:
     save_figure(render.draw_incidence(events, rays), "twistor_incidence")
     save_figure(render.draw_congruence(congruence()), "twistor_robinson")
     save_figure(render.draw_fields(electric_lines()), "twistor_hopfion")
+    # README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
+    # experiment, copy it.
     save_animation(render.animate_fields(propagation(np.linspace(-1.25, 1.25, frames))), "twistor_hopfion", frame_ms)
 
     # --- checks

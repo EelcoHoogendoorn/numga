@@ -21,10 +21,10 @@ SPHERE, CIRCLE, SHAPE = np.array(to_rgb("#e6ebf0")), np.array(to_rgb("#aab4bf"))
 # in pixels, the widths of the great circles and the paths, the radius of the shape's edges, a unit mass's radius,
 # and the arrows' shafts, heads' length and heads' radius; and the drawn length of a unit velocity.
 ELEVATION, AZIMUTH = np.radians([23.0, -63.0 + 90.0])
-MARGIN, N_PIXELS = 0.04, 360
+MARGIN, N_PIXELS = 0.04, 300
 SPHERE_OPACITY, PATH_OPACITY = 0.12, 0.5
-CIRCLE_WIDTH, PATH_WIDTH, SHAPE_RADIUS, MASS_RADIUS = 1.2, 2.0, 0.8, 6.0
-SHAFT_RADIUS, HEAD_LENGTH, HEAD_RADIUS = 1.4, 10.0, 4.0
+CIRCLE_WIDTH, PATH_WIDTH, SHAPE_RADIUS, MASS_RADIUS = 1.0, 1.67, 0.67, 5.0
+SHAFT_RADIUS, HEAD_LENGTH, HEAD_RADIUS = 1.17, 8.3, 3.3
 VELOCITY = 0.35
 
 

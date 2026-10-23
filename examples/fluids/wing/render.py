@@ -22,7 +22,7 @@ LIFT = "#16a34a"
 MARK = "#facc15"
 CENTRE = "#f8fafc"
 # The animations' dots per inch.
-FRAME_DPI = 36
+FRAME_DPI = 70
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -80,6 +80,8 @@ def animate_marked(frames: Iterable[tuple[core.Point, core.Point, core.Bivector,
         yield frame(points, velocity, stream, lift, speed, critical, centre)
 
 
+# README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def animate(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Point]], speed: float) -> Iterator[np.ndarray]:
     """Each frame of points, velocity, stream function and lift."""
     for points, velocity, stream, lift in frames:

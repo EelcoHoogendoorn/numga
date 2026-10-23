@@ -7,6 +7,7 @@ points, `quadric(grid) & grid`.
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -25,10 +26,13 @@ mv = core.mv
 
 CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
-# The square of the scene drawn, in metres: the landmarks, the rig, and the right camera where it is knocked to.
-X_RANGE = (-1.40, 1.85)
+X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
 RESOLUTION = (750, 750)
+# The room an animation leaves around its first state's cameras, in metres, where they lie outside the scene drawn;
+# and the standard deviations a pose covariance is drawn at.
+CAMERA_ROOM = 0.35
+SIGMAS = 3
 # Angular half-width of a pixel, the cone radius per unit depth.
 PIXEL_ANGLE = 0.035         # rad
 
@@ -60,12 +64,13 @@ def pose_covariance(information: Information) -> np.ndarray:
 
 
 # --- rasterized quadrics ------------------------------------------------------------------
-def plane_grid() -> tuple[Point, float]:
-    """The viewport as a grid of plane points, and the width of one pixel."""
-    xs = np.linspace(*X_RANGE, RESOLUTION[1])
+def plane_grid(x_range: tuple[float, float] = X_RANGE) -> tuple[Point, float]:
+    """The viewport across `x_range` as a grid of plane points, and the width of one pixel."""
+    pixel_w = (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
+    xs = np.linspace(*x_range, round((x_range[1] - x_range[0]) / pixel_w))
     ys = np.linspace(*Y_RANGE, RESOLUTION[0])
     xx, yy = np.meshgrid(xs, ys)
-    return mv.point(np.stack([xx, yy], axis=-1)), (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
+    return mv.point(np.stack([xx, yy], axis=-1)), pixel_w
 
 
 def depths(motors: Motor, grid: Point) -> np.ndarray:
@@ -106,8 +111,8 @@ def blend_splats(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, 
     return blend(image, covered, SPLAT_COLOR, 0.95)
 
 
-def show_image(ax: plt.Axes, image: np.ndarray) -> None:
-    ax.imshow(np.clip(image, 0.0, 1.0), extent=[*X_RANGE, *Y_RANGE], origin="lower")
+def show_image(ax: plt.Axes, image: np.ndarray, x_range: tuple[float, float] = X_RANGE) -> None:
+    ax.imshow(np.clip(image, 0.0, 1.0), extent=[*x_range, *Y_RANGE], origin="lower")
 
 
 # --- overlays -----------------------------------------------------------------------------
@@ -132,7 +137,8 @@ def plot_cameras(ax: plt.Axes, motors: Motor) -> None:
 
 
 def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) -> None:
-    """Each observed camera's position covariance ellipse and orientation fan, from its information form.
+    """Each observed camera's position covariance ellipse and orientation fan, from its information form, at SIGMAS
+    standard deviations.
 
     Anchored cameras carry no information and draw nothing.
     """
@@ -151,16 +157,16 @@ def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) 
         ])
         frame = np.column_stack([[axis[1], -axis[0]], axis])
         evals, evecs = np.linalg.eigh(frame @ cov_local @ frame.T)
-        # One-sigma radii, scaled for display and kept inside the axes:
-        radii = np.minimum(np.sqrt(np.maximum(evals, 1e-8)) * 0.08, 1.0)
+        # The radii at SIGMAS standard deviations:
+        radii = SIGMAS * np.sqrt(np.maximum(evals, 0.0))
         ax.add_patch(Ellipse(
             xy=center, width=2 * radii[0], height=2 * radii[1],
             angle=np.degrees(np.arctan2(evecs[1, 0], evecs[0, 0])),
             edgecolor=color, facecolor=color, alpha=0.28, linewidth=1.6, linestyle="--", zorder=6,
         ))
 
-        # Angular uncertainty fan (orientation standard deviation on xy generator):
-        rot_std_deg = min(float(np.degrees(np.sqrt(max(cov_twist[2, 2], 0.0))) * 0.35), 180.0)
+        # The heading's spread at SIGMAS standard deviations, from the turn's variance:
+        rot_std_deg = SIGMAS * float(np.degrees(np.sqrt(max(cov_twist[2, 2], 0.0))))
         arc_r = 0.38
         heading = float(np.degrees(np.arctan2(axis[1], axis[0])))
         ax.add_patch(Arc(
@@ -174,21 +180,22 @@ def plot_pose_covariance(ax: plt.Axes, motors: Motor, information: Information) 
             ax.plot([center[0], p_end[0]], [center[1], p_end[1]], color=color, linestyle=":", linewidth=1.1, zorder=6)
 
 
-def frame_axes(ax: plt.Axes) -> None:
+def frame_axes(ax: plt.Axes, x_range: tuple[float, float] = X_RANGE) -> None:
     ax.set_aspect("equal")
-    ax.set_xlim(*X_RANGE)
+    ax.set_xlim(*x_range)
     ax.set_ylim(*Y_RANGE)
     ax.axis("off")
 
 
-def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> None:
-    """Sight cones, fused splats, reconstructed points and cameras."""
+def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point,
+                        x_range: tuple[float, float] = X_RANGE) -> None:
+    """Sight cones, fused splats, reconstructed points and cameras, across `x_range`."""
     ax.clear()
-    grid, pixel_w = plane_grid()
-    image = blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones)
-    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points))
+    grid, pixel_w = plane_grid(x_range)
+    image = blend_cones(np.ones(grid.shape + (3,)), grid, pixel_w, motors, world_cones)
+    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points), x_range)
     plot_cameras(ax, motors)
-    frame_axes(ax)
+    frame_axes(ax, x_range)
 
 
 # --- figures ------------------------------------------------------------------------------
@@ -227,22 +234,18 @@ def draw_reconstruction_with_covariance(
     return fig
 
 
-def animate_convergence(states: Iterable) -> Iterator[np.ndarray]:
-    """RGB frames of the reconstruction, one per state."""
-    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
-    for motors, world_cones, fused, points in states:
-        plot_reconstruction(ax, motors, world_cones, fused, points)
-        yield capture(fig)
-    plt.close(fig)
-
-
-def animate_convergence_with_covariance(
-    states: Iterable,
-) -> Iterator[np.ndarray]:
-    """RGB frames of the reconstruction and pose covariances, one per state."""
-    fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
-    for motors, world_cones, fused, points, information in states:
-        plot_reconstruction(ax, motors, world_cones, fused, points)
-        plot_pose_covariance(ax, motors, information)
+# README picture: this also draws plots/multiview_convergence.gif, tuned as a visual for the README; a change here changes
+# that picture, so check it after any change, and to experiment, copy this instead.
+def animate_convergence(states: Iterable, room: float = CAMERA_ROOM) -> Iterator[np.ndarray]:
+    """RGB frames of the reconstruction, one per state, across the scene drawn, widened to hold the first state's
+    cameras with `room` around them where they lie outside it."""
+    states = iter(states)
+    first = next(states)
+    centres = coordinates(first[0] >> mv.point(np.zeros(2)))[:, 0]               # [cameras]
+    x_range = (min(X_RANGE[0], centres.min() - room), max(X_RANGE[1], centres.max() + room))
+    fig, ax = plt.subplots(figsize=(6.5 * (x_range[1] - x_range[0]) / (X_RANGE[1] - X_RANGE[0]), 6.5), dpi=60,
+                           layout="constrained")
+    for motors, world_cones, fused, points in chain([first], states):
+        plot_reconstruction(ax, motors, world_cones, fused, points, x_range)
         yield capture(fig)
     plt.close(fig)

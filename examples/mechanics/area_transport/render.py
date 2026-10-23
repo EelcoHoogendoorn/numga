@@ -35,8 +35,8 @@ view_room = np.array([1.35, 1.04])
 # How much of what lies behind each of a face's two sides hides; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
 # arrow's, and its radius a share of its own length.
 face_opacity = 0.1
-edge_radius = 1.1
-shaft_radius = 1.8
+edge_radius = 0.87
+shaft_radius = 1.42
 head_share = 0.25
 head_width = 0.4
 
@@ -103,7 +103,7 @@ def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scal
     states = iter(frames)
     first = next(states)
     framed = view(*first[:3])
-    figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
+    figure = plt.figure(figsize=(9, 4.3), dpi=67, layout="constrained")
     cube, measured = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     bars = measures(measured, *first[2:])
     # The view fitted to the room the layout gives the cube's axes bare, as its picture shows them.

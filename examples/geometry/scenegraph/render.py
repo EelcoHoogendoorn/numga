@@ -50,7 +50,7 @@ MARGIN, N_PIXELS = 0.1, 900
 # the sensor, in pixels.
 FLOOR_WIDTH, RIM_WIDTH, RAY_WIDTH, HIT_RADIUS = 3.0, 4.5, 3.5, 5.0
 # The animation's widths and radii as a share of those above, its scene that much narrower than the still's.
-ANIMATION_THICKNESS = 0.72
+ANIMATION_THICKNESS = 0.37
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -204,12 +204,14 @@ def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose:
     return fig
 
 
+# README picture: this makes plots/scenegraph.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
     """RGB frames of the two-panel figure, one per state, the scene seen by one view that frames them all. The camera
     stands still: its optics and the floor are set up once, from the first state, and the arm and the rays drawn among
     them."""
     frames = list(frames)
-    fig, ax_3d, ax_2d = scenegraph_axes(100)
+    fig, ax_3d, ax_2d = scenegraph_axes(52)
     view = fitted(framing([(world_vertices, camera_pose, rays) for world_vertices, _, camera_pose, rays in frames]),
                   ax_3d)
     sensor = sensor_view(ax_2d)

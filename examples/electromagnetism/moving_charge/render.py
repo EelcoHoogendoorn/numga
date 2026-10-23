@@ -31,7 +31,7 @@ wave_percentile = 99.0
 wave_power = 0.4
 charge_colour = "#facc15"
 # The radiating charge's frames' dots per inch.
-wave_dpi = 36
+wave_dpi = 75
 # The planes the lab's time sweeps along each spatial direction, whose pairings with the field are the lab's
 # electric field, and the patch spanned by x and y, whose pairing with the field is the magnetic flux across
 # the plane.

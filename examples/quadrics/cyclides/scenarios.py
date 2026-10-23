@@ -16,7 +16,8 @@ from examples.quadrics.cyclides.core import (
     trace,
 )
 
-SHAPE = (180, 240)
+# The image's rows and columns, and the linked vortex's, larger.
+SHAPE, LINKED_SHAPE = (180, 240), (315, 420)
 PIXELS = sensor(SHAPE, np.radians(90))
 # Frames in each turning animation.
 N_FRAMES = 36
@@ -199,17 +200,17 @@ def pinched_vortex():
 
 
 FLAT_SCENES = {
-    "cyclide": (cyclide, [0.2, -8.5, 5.8], [-0.8, 0, 0], 43),
-    "peanut": (peanut, [0.2, -7, 4.5], [0, 0, 0], 40),
-    "elliptic_ring": (elliptic_ring, [0.2, -7, 4.5], [0, 0, 0], 40),
-    "split_ring": (split_ring, [0.2, -7, 4.5], [0, 0, 0], 40),
-    "pinched": (pinched, [0.2, -7, 4.5], [0, 0, 0], 40),
-    "six_families": (six_families, [0.6, -9, 6.5], [0, 0, 0], 40),
-    "hyperboloid": (hyperboloid, [10, -2, 1.8], [0.6, 0, 0], 40),
-    "two_lobed": (two_lobed, [0.5, -12, 8], [0, 0, 0], 40),
-    "linked_vortex": (linked_vortex, [2.8, -9, 4.8], [1, 0, 0], 44),
-    "linked_tori": (linked_tori, [0.5, -7, 4.8], [0, 0, 0], 40),
-    "pinched_vortex": (pinched_vortex, [0.5, -10, 7], [0.5, 0, 0], 44),
+    "cyclide": (cyclide, [0.2, -8.5, 5.8], [-0.8, 0, 0], 43, SHAPE),
+    "peanut": (peanut, [0.2, -7, 4.5], [0, 0, 0], 40, SHAPE),
+    "elliptic_ring": (elliptic_ring, [0.2, -7, 4.5], [0, 0, 0], 40, SHAPE),
+    "split_ring": (split_ring, [0.2, -7, 4.5], [0, 0, 0], 40, SHAPE),
+    "pinched": (pinched, [0.2, -7, 4.5], [0, 0, 0], 40, SHAPE),
+    "six_families": (six_families, [0.6, -9, 6.5], [0, 0, 0], 40, SHAPE),
+    "hyperboloid": (hyperboloid, [10, -2, 1.8], [0.6, 0, 0], 40, SHAPE),
+    "two_lobed": (two_lobed, [0.5, -12, 8], [0, 0, 0], 40, SHAPE),
+    "linked_vortex": (linked_vortex, [2.8, -9, 4.8], [1, 0, 0], 44, LINKED_SHAPE),
+    "linked_tori": (linked_tori, [0.5, -7, 4.8], [0, 0, 0], 40, SHAPE),
+    "pinched_vortex": (pinched_vortex, [0.5, -10, 7], [0.5, 0, 0], 44, SHAPE),
 }
 
 
@@ -229,10 +230,10 @@ def flat_scene(name: str, frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
     """One of the flat tracer's scenes on S³: every turning part turned around its own vortex circle over the frames,
     all traced from the eye; the resting parts are traced once. Yields each frame's trace of the parts, the turning
     ones first; both sides are lit."""
-    build, position, target, degrees = FLAT_SCENES[name]
+    build, position, target, degrees, shape = FLAT_SCENES[name]
     turning, resting = build()
     camera = flat_camera(mv(Direction, position), mv(Direction, target))
-    pixels = sensor(SHAPE, np.radians(degrees))
+    pixels = sensor(shape, np.radians(degrees))
     rest = [trace((camera >> surface(camera << Point)).reshape(1), pixels) for surface in resting]
     for phase in np.linspace(0.0, 2 * np.pi, frames, endpoint=False):
         motions = [camera * (circle * (phase / 2)).exp() for _, circle in turning]
@@ -288,9 +289,9 @@ def main() -> None:
 
     save_figure(render.draw_facing(*tori(), SHAPE), "cyclides_tori")
     save_animation(render.facing_frames(vortex(N_FRAMES), SHAPE), "cyclides_vortex", DURATION_MS)
-    for name, (build, *_) in FLAT_SCENES.items():
+    for name, (build, *_, shape) in FLAT_SCENES.items():
         turning, _ = build()
-        save_animation(render.scene_frames(flat_scene(name, N_FRAMES if turning else 1), SHAPE), f"cyclides_{name}", DURATION_MS)
+        save_animation(render.scene_frames(flat_scene(name, N_FRAMES if turning else 1), shape), f"cyclides_{name}", DURATION_MS)
     save_figure(render.draw_facing(*dupin(), SHAPE), "cyclides_dupin")
     save_figure(render.draw_facing(*spindles(), SHAPE),
                 "cyclides_spindles")

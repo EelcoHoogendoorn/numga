@@ -20,34 +20,39 @@ LINE = np.array(to_rgb("#3b4a57"))
 FIRST = np.array(to_rgb("#c8553d"))
 SECOND = np.array(to_rgb("#2f6690"))
 background = np.ones(3)
-# The margin around each scene as a share of the larger side, and the pixels across a panel, fewer for the tall
-# panels of the crossing planes.
-MARGIN, N_PIXELS, N_PAIR_PIXELS = 0.25, 460, 340
+# The margin around each scene as a share of the larger side, and the pixels across a panel: the triangles', the line
+# in the mirror's, three side by side, and the crossing planes', whose panels are tall.
+MARGIN, N_PIXELS, N_LINE_PIXELS, N_PAIR_PIXELS = 0.25, 300, 200, 175
 # How much of what lies behind them each surface of the mirror, the triangles and the crossing planes hides, and how
 # strongly the mirror's rim shows over the white page.
 MIRROR_OPACITY, FACE_OPACITY, PLANE_OPACITY, MIRROR_RIM_OPACITY = 0.06, 0.55, 0.23, 0.6
 MIRROR_RIM = MIRROR_RIM_OPACITY * MIRROR + (1 - MIRROR_RIM_OPACITY)
-# The widths of rims, lines, normal arrows and edge arrows, the arrowheads' widths, and the points' radius, in pixels.
-RIM_WIDTH, LINE_WIDTH, NORMAL_WIDTH, EDGE_ARROW_WIDTH, HEAD_WIDTH = 3.0, 3.5, 5.0, 4.0, 14.0
-DOT_RADIUS = 7.0
+# The widths of rims, lines, normal arrows and edge arrows, the arrowheads' widths, and the points' radius, in pixels
+# of the triangles' panels.
+RIM_WIDTH, LINE_WIDTH, NORMAL_WIDTH, EDGE_ARROW_WIDTH, HEAD_WIDTH = 2.0, 2.3, 3.3, 2.6, 9.1
+DOT_RADIUS = 4.6
+# The line in the mirror's widths and the crossing planes' as a share of those above, their scenes that much smaller.
+LINE_THICKNESS, PAIR_THICKNESS = 0.67, 0.79
 
 
 # --- plumbing -------------------------------------------------------------------------
-def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head_share: float, view: solids.View
-           ) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows between places `[arrows, 3]`, their shafts `width` pixels across and their heads a share of each
-    arrow's length."""
+def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head_share: float, view: solids.View,
+           thickness: float) -> tuple[solids.Quadric, solids.Quadric]:
+    """Arrows between places `[arrows, 3]`, their shafts `thickness` times `width` pixels across, and their heads
+    `thickness` times the width set above and a share of each arrow's length."""
     lengths = np.linalg.norm(ends - starts, axis=-1)
-    return solids.arrows(sm.point(starts), sm.point(ends), width / 2 * view.pixel, head_share * lengths,
-                         HEAD_WIDTH / 2 * view.pixel)
+    return solids.arrows(sm.point(starts), sm.point(ends), thickness * width / 2 * view.pixel, head_share * lengths,
+                         thickness * HEAD_WIDTH / 2 * view.pixel)
 
 
-def polygons(corners: np.ndarray, view: solids.View) -> tuple[solids.Quadric, solids.Quadric, solids.Quadric]:
+def polygons(corners: np.ndarray, view: solids.View, thickness: float
+             ) -> tuple[solids.Quadric, solids.Quadric, solids.Quadric]:
     """Flat polygons of corners `[polygons, corners, 3]`: plates a pixel thick `[polygons, corners + 2]`, and their
-    rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2, 1]`."""
+    rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2, 1]`, the rims' width a
+    share `thickness` of the one set above."""
     places = sm.point(corners)                                                 # [polygons, corners] Point
     following = places[:, np.roll(np.arange(corners.shape[1]), -1)]
-    rims, joints = solids.edges(places.reshape(-1), following.reshape(-1), RIM_WIDTH / 2 * view.pixel)
+    rims, joints = solids.edges(places.reshape(-1), following.reshape(-1), thickness * RIM_WIDTH / 2 * view.pixel)
     return solids.plates(corners, view.pixel), rims, joints
 
 
@@ -84,17 +89,17 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
 
     view = solids.view([sm.point(corners), sm.point(points), sm.point(tips)], 0.0, np.radians(38.0),
                        np.radians(22.0), MARGIN, N_PIXELS)
-    triangles, rims, joints = polygons(points, view)
-    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
+    triangles, rims, joints = polygons(points, view, 1.0)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view, 1.0)
     common = [(rims, FACE_EDGE), (joints, FACE_EDGE), (mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM)]
     sheets = [(mirror, MIRROR, MIRROR_OPACITY), (triangles, FACE, FACE_OPACITY)]
 
     # Follow the supplied vertex order, so reflection visibly reverses the winding.
     edges = np.roll(points, -1, axis=1) - points
     edge_arrows = arrows((points + edges * 0.25).reshape(-1, 3), (points + edges * 0.75).reshape(-1, 3),
-                         EDGE_ARROW_WIDTH, 0.4, view)
-    side_arrows = arrows(centres, tips[0], NORMAL_WIDTH, 0.25, view)
-    winding_arrows = arrows(centres, tips[1], NORMAL_WIDTH, 0.25, view)
+                         EDGE_ARROW_WIDTH, 0.4, view, 1.0)
+    side_arrows = arrows(centres, tips[0], NORMAL_WIDTH, 0.25, view, 1.0)
+    winding_arrows = arrows(centres, tips[1], NORMAL_WIDTH, 0.25, view, 1.0)
     side_panel = [(side_arrows[0], SIDE), (side_arrows[1], SIDE)]
     winding_panel = [(winding_arrows[0], WINDING), (winding_arrows[1], WINDING), (edge_arrows[0], WINDING),
                      (edge_arrows[1], WINDING)]
@@ -115,16 +120,16 @@ def draw_line_in_mirror(ends: Point, lines: Spear, mirror: Plane) -> plt.Figure:
 
     span = np.linalg.norm(points[1] - points[0])
     corners = mirror_sheet(mirror, middle, span * 0.7)
-    view = solids.view([sm.point(corners)], 0.0, np.radians(24.0), np.radians(62.0), MARGIN, N_PIXELS)
-    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
-    line = solids.rods(sm.point(points[0]), sm.point(points[1]), LINE_WIDTH / 2 * view.pixel)[None]
-    dots = solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None]
+    view = solids.view([sm.point(corners)], 0.0, np.radians(24.0), np.radians(62.0), MARGIN, N_LINE_PIXELS)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view, LINE_THICKNESS)
+    line = solids.rods(sm.point(points[0]), sm.point(points[1]), LINE_THICKNESS * LINE_WIDTH / 2 * view.pixel)[None]
+    dots = solids.ball(sm.point(points), LINE_THICKNESS * DOT_RADIUS * view.pixel)[:, None]
     common = [(mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM), (line, LINE), (dots, LINE)]
 
     images = []
     for direction in directions:
         shaft, head = arrows(middle[None] - direction * span * 0.2, middle[None] + direction * span * 0.2,
-                             NORMAL_WIDTH, 0.3, view)
+                             NORMAL_WIDTH, 0.3, view, LINE_THICKNESS)
         images.append(solids.draw(common + [(shaft, WINDING), (head, WINDING)], view, background,
                                   translucent=[(mirror, MIRROR, MIRROR_OPACITY)]))
     figure = grid_figure(view, 1, len(directions))
@@ -153,16 +158,17 @@ def draw_pairs_in_mirror(planes: Plane, ends: Point, meets: Axis, joins: Spear, 
 
     view = solids.view([sm.point(corners), sm.point(patches)], 0.0, np.radians(22.0), np.radians(28.0), MARGIN,
                        N_PAIR_PIXELS)
-    mirror, mirror_rims, mirror_joints = polygons(corners[None], view)
+    mirror, mirror_rims, mirror_joints = polygons(corners[None], view, PAIR_THICKNESS)
     mirror_plate = (mirror, MIRROR, MIRROR_OPACITY)
     top, bottom = [], []
     for panel in range(len(points)):
-        line = solids.rods(sm.point(points[panel, 0]), sm.point(points[panel, 1]), LINE_WIDTH / 2 * view.pixel)[None]
+        line = solids.rods(sm.point(points[panel, 0]), sm.point(points[panel, 1]),
+                           PAIR_THICKNESS * LINE_WIDTH / 2 * view.pixel)[None]
         marks = [(mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM), (line, LINE)]
-        dots = solids.ball(sm.point(points[panel]), DOT_RADIUS * view.pixel)[:, None]
+        dots = solids.ball(sm.point(points[panel]), PAIR_THICKNESS * DOT_RADIUS * view.pixel)[:, None]
         top.append(solids.draw(marks + [(dots, colours)], view, background, translucent=[mirror_plate]))
         # Each plane's patch and its rim in its own colour, rim by rim and joint by joint.
-        sheets, rims, joints = polygons(patches[panel], view)
+        sheets, rims, joints = polygons(patches[panel], view, PAIR_THICKNESS)
         n_corners = patches.shape[2]
         crossing = [(rims, np.repeat(colours, n_corners, axis=0)), (joints, np.repeat(colours, 2 * n_corners, axis=0))]
         bottom.append(solids.draw(marks + crossing, view, background,

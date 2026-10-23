@@ -23,13 +23,13 @@ DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH = np.radians(15.0), np.radians(22.0)
 # The margins around what is drawn in space and in the diagram, as shares of the larger side; the pixels across the
 # congruence and across the field lines' frame.
 MARGIN, DIAGRAM_MARGIN = 0.1, 0.15
-CONGRUENCE_PIXELS, FIELD_PIXELS = 600, 288
+CONGRUENCE_PIXELS, FIELD_PIXELS = 600, 330
 # The view the field lines are carried through, as a multiple of the one framing them at the first instant, holding
 # them at every instant shown.
 FIELD_ROOM = 1.35
 # The widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length and width, and the events'
 # radius; how far the axes reach past what they hold, and their names past their tips.
-CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 2.4, 2.0, 3.4, 1.8, 14.0, 8.0, 5.0
+CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 2.4, 2.3, 3.4, 1.8, 14.0, 8.0, 5.0
 AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
 
@@ -97,6 +97,8 @@ def draw_fields(curves: core.Event) -> plt.Figure:
     return image_figure(draw_curves(curves, FIELD_WIDTH, space_view(FIELD_PIXELS, curves)))
 
 
+# README picture: this makes plots/twistor_hopfion.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def animate_fields(stream: Iterable[core.Event], room: float = FIELD_ROOM) -> Iterator[np.ndarray]:
     """Field lines carried through time, seen by one camera framing the first instant's lines, `room` times over."""
     stream = iter(stream)

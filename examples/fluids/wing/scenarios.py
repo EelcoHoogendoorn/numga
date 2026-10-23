@@ -64,6 +64,8 @@ def morph() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point,
         yield points, velocity, flux, core.lift(pitched, stream(), DENSITY), images, pitched.centre
 
 
+# README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def sweep() -> Iterator[tuple[core.Point, core.Point, core.Bivector, core.Point]]:
     """The flow past the wing and its lift as the wing pitches up; the animation plays it forward and back."""
     phase = (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2
@@ -79,6 +81,8 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.fluids.wing import render
 
+    # README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
+    # experiment, copy it.
     save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS, forward_then_back=True)
     save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS, forward_then_back=True)
 

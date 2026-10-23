@@ -111,7 +111,7 @@ def draw_modes(cases: list[ModeCase]) -> plt.Figure:
 def animate_modes(cases: list[ModeCase], frames: int) -> Iterator[np.ndarray]:
     """Release each isolated mode from rest in synchronized physical time."""
     fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
-    fig.set_dpi(80)
+    fig.set_dpi(67)
     updates = [_draw_mode(ax, case, mode)
                for case, row in zip(cases, axes) for mode, ax in enumerate(row)]
     frequencies = np.concatenate([case.frequencies.to_array() for case in cases])

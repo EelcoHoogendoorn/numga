@@ -66,6 +66,8 @@ def scenegraph():
     return photograph(POSE, TRACED_CORNERS)
 
 
+# README picture: this makes plots/scenegraph.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def robot_sweep(n_frames: int) -> Iterator[tuple]:
     """Frames of a looping joint trajectory, each photographed through the compound camera, with the ray
     from the gripper's tip."""
@@ -84,6 +86,8 @@ def main() -> None:
     save_figure(render.draw_scenegraph(world_vertices, projected_pixels, camera_pose, rays), "scenegraph")
     save_figure(render.draw_scene_3d(world_vertices, camera_pose, rays), "scenegraph_scene_3d")
     save_figure(render.draw_camera_image(world_vertices, projected_pixels, camera_pose), "scenegraph_camera_image")
+    # README picture: this makes plots/scenegraph.gif, tuned as a visual for the README. Don't change it; to
+    # experiment, copy it.
     save_animation(render.animate_scenegraph(robot_sweep(N_FRAMES)), "scenegraph", FRAME_DURATION)
 
     # checks

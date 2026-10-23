@@ -142,7 +142,7 @@ def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float,
     one frame for every few recorded states, each drawn as its state comes."""
     order = np.argsort(detunings)
     span = np.linspace(0.0, ECHO_SPAN)
-    figure, (top, trace) = plt.subplots(1, 2, figsize=(9, 4.2), gridspec_kw={"width_ratios": (1, 1.4)})
+    figure, (top, trace) = plt.subplots(1, 2, figsize=(9, 4.2), dpi=67, gridspec_kw={"width_ratios": (1, 1.4)})
     top.add_patch(plt.Circle((0, 0), 1.0, fill=False, color="0.8"))
     spins = top.scatter(np.zeros(len(order)), np.zeros(len(order)), c=detunings[order], cmap="coolwarm", s=6)
     top.set_xlim(-1.1, 1.1)

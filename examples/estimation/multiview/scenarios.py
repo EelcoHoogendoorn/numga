@@ -30,7 +30,10 @@ N_FREE_STEPS = 30
 FRAME_DURATION = 333
 FREE_FRAME_DURATION = 120
 # The three cameras' alignment shown at an even pace: its frames, the frames the aligned rig is held, and the depth
-# at which a camera's turn counts as much as its move, about where the landmarks are.
+# at which a camera's turn counts as much as its move, about where the landmarks are. This animation is the README's
+# (plots/multiview_convergence.gif): its misplacements in `three_cameras`, its damping and these frames are tuned as a
+# picture, a rig that visibly starts far off and settles near the end, not as a demonstration of the alignment's
+# speed; keep them, and check the picture after any change.
 N_EVEN_FRAMES, N_HOLD = 36, 6
 LEVER = 1.5
 
@@ -104,6 +107,8 @@ def two_cameras():
     return alignment(rig(OFFSETS, TURNS), guess, damping, moving)
 
 
+# README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def three_cameras():
     """Every camera misplaced, and every camera moving with none held still."""
     # Each camera's offset scaled and shifted along x, and its turn scaled and added to, in radians.
@@ -114,6 +119,8 @@ def three_cameras():
     return alignment(rig(OFFSETS, TURNS), guess, damping, moving)
 
 
+# README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
+# experiment, copy it.
 def evenly(states: list, n_frames: int, n_hold: int):
     """A converging alignment `[steps]` at an even pace: frames at equal shares of how far the cameras move and turn
     in all, each rig eased along the screw from the step before to the step after, with its cones, splats and
@@ -151,9 +158,11 @@ def main() -> None:
     save_figure(render.draw_reconstruction(*pair), "multiview_aligned_pair")
     save_animation(render.animate_convergence(islice(one_camera(), N_STEPS + 1)), "multiview_one_camera", FRAME_DURATION)
     save_animation(render.animate_convergence(islice(two_cameras(), N_STEPS + 1)), "multiview_two_cameras", FRAME_DURATION)
+    # README picture: this makes plots/multiview_convergence.gif, tuned as a visual for the README. Don't change it; to
+    # experiment, copy it.
     save_animation(render.animate_convergence(evenly(list(islice(three_cameras(), N_FREE_STEPS + 1)), N_EVEN_FRAMES, N_HOLD)),
                    "multiview_three_cameras", FREE_FRAME_DURATION)
-    save_animation(render.animate_convergence_with_covariance(islice(jointly(), N_STEPS + 1)), "multiview_jointly",
+    save_animation(render.animate_convergence(state[:4] for state in islice(jointly(), N_STEPS + 1)), "multiview_jointly",
                    FRAME_DURATION)
 
     # checks
