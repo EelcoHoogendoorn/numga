@@ -107,14 +107,14 @@ def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, co
     return path
 
 
-def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0) -> None:
+def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0, n_frames: int = 0) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping: in full colour, without the palette that keeps the repository's GIFs small, quickly
     encoded and of bounded size whatever the frames hold. Saved as PLOT_DIR/<name>.webp, or the next free
-    <name>_NN.webp, box-filtered to `scale` of their size."""
+    <name>_NN.webp, box-filtered to `scale` of their size. The count under each frame says how many are expected
+    where `n_frames` is given."""
     import base64
     import io
-    from operator import length_hint
 
     from IPython.display import HTML, display
 
@@ -126,8 +126,6 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
         source = base64.b64encode(encoded.getvalue()).decode()
         return HTML(f'<img src="data:image/{kind.lower()};base64,{source}"><div>{caption}</div>')
 
-    # How many frames are coming, where the frames know; zero where they do not.
-    n_frames = length_hint(frames)
     shown = display(HTML(""), display_id=True)
     images = []
     for frame in frames:
