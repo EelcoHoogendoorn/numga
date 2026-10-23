@@ -6,12 +6,15 @@ planes, a sum of two dyads of the null planes `k ^ x` and `k ^ y` that contain t
 each paired with an area by incidence. Every plane it gives contains the wave's direction, `k ^ curvature`
 is zero, which is what makes a wave in vacuum of type N. Binding an observer's velocity twice turns it into
 the tidal map, from a separation to the tidal force on it, `observer & curvature(observer & separation)`,
-read off as the Lorentz force reads a field. The metric turns that force into the relative acceleration,
-whose eigenvalues are the stretch and squeeze the observer measures.
+read off as the Lorentz force reads a field. Paired with a second separation, it is the tidal form, whose
+eigenvalues against the metric are the stretch and squeeze the observer measures; the metric also turns the
+force into the relative acceleration.
 
 The cross polarization is the plus pattern turned an eighth of a turn in the plane across the wave, and the
-circular wave the plus pattern turning with half the carrier's phase. The same wave is a strain map, from a
-bead's rest separation to its displacement, whose second derivative along the wave gives the curvature.
+circular wave the plus pattern turning with half the carrier's phase. The same wave is a strain map, the
+change it makes to the metric: from a bead's rest separation to the slice that reads its stretch, the type of
+the tidal map, which is minus the strain's second time derivative. The metric turns the strain's reading into
+the bead's displacement, and the strain's second derivative along the wave gives the curvature.
 
 In the tensor notation of general relativity the curvature map reads as the Riemann tensor and the strain map
 as half the metric perturbation.
@@ -37,7 +40,7 @@ Rotor = STA.gatype.rotor()
 
 Curvature = STA.gatype((Bivector, Antibivector))    # Bivector <- Antibivector
 Tidal = STA.gatype((Vector, Antivector))            # Vector <- Antivector
-Strain = STA.gatype((Antivector, Antivector))       # Antivector <- Antivector
+Strain = STA.gatype((Vector, Antivector))           # Vector <- Antivector
 
 t, x, y, z = mv.t, mv.x, mv.y, mv.z
 # One unit along the lab's time: the direction across the lab's slice of space `t`.
@@ -84,13 +87,14 @@ def boosted_observers(rapidities: np.ndarray, direction: Antivector) -> Antivect
 
 
 def strain_patterns() -> tuple[Strain, Strain]:
-    """Unit plus and cross strain maps for a wave travelling along +z.
+    """Unit plus and cross strain maps for a wave travelling along +z: the change the wave makes to the
+    metric, from a separation to the slice that reads its stretch.
 
-    The plus pattern stretches along x and squeezes along y, each separation read along x and y by its
-    pairing with the slices x and y; the cross pattern is the same map turned an eighth of a turn in the
-    plane across the wave, as the curvature's is.
+    The plus pattern stretches along x and squeezes along y, weighting the slices x and y by their readings
+    of the separation; the cross pattern is the same map turned an eighth of a turn in the plane across the
+    wave, as the curvature's is.
     """
-    plus = mv.x.dual() * (x & Antivector) - mv.y.dual() * (y & Antivector)   # [] Antivector <- Antivector
+    plus = x * (x & Antivector) - y * (y & Antivector)                       # [] Vector <- Antivector
     return plus, eighth_turn >> plus(eighth_turn << Antivector)
 
 
@@ -102,10 +106,10 @@ def polarized(plus: Extensor, cross: Extensor, profiles: np.ndarray) -> Extensor
 def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
     """Curvature as a map on pairs of directions, from the strain's second derivative along the wave.
 
-    Applied to edges `a` and `b` it gives `(k & a) * (second(b).dual() ^ k) - (second(a).dual() ^ k) * (k & b)`;
-    its two arguments are the plane's edges, in that order.
+    Applied to edges `a` and `b` it gives `(k & a) * (second(b) ^ k) - (second(a) ^ k) * (k & b)`; its two
+    arguments are the plane's edges, in that order.
     """
-    bent = second.dual() ^ k                                                 # [...] Bivector <- Antivector
+    bent = second ^ k                                                        # [...] Bivector <- Antivector
     return (k & Antivector) * bent - bent * (k & Antivector)                 # [...] Bivector <- (Antivector, Antivector)
 
 

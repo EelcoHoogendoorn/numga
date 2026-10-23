@@ -58,7 +58,7 @@ def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form
 
 
 def field() -> tuple[core.Point, core.Even, core.Scalar]:
-    """The derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
+    """The geometric derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
     masses, _, _ = setting()
     points = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)              # [rows, columns] Point
     derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even
@@ -76,7 +76,7 @@ def main() -> None:
     save_animation(render.animate(points, density, drawn), "tides_flyby", FRAME_DURATION)
 
     # checks
-    # The derivative of gravity is minus four pi times the Plummer density, and has no curl.
+    # The geometric derivative of gravity is minus four pi times the Plummer density, and has no curl.
     masses, _, _ = setting()
     towards = masses.centres - points[..., None]
     softened = towards.scalar_norm_squared() + MASS_CORE**2
@@ -85,10 +85,10 @@ def main() -> None:
     # Through the whole flyby the stars spread in the plane as the deformation predicts: a uniform
     # disc's moment is a quarter of its radius squared. Measured against the largest spread, the
     # sampling of the disc costs about a tenth, and the passage through the mass's core a quarter.
-    directions = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x.dual()   # [directions] Point
+    planes = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [planes] Plane
     for stars, shape in states:
-        measured = directions.dot(stars.moment()(directions)).to_array()     # [directions]
-        predicted = directions.dot((shape.spread(CLUSTER_RADIUS) / 4)(directions)).to_array()
+        measured = (planes & stars.moment()(planes)).to_array()              # [planes]
+        predicted = (planes & (shape.spread(CLUSTER_RADIUS) / 4)(planes)).to_array()
         np.testing.assert_allclose(measured, predicted, rtol=0, atol=0.3 * predicted.max())
 
 

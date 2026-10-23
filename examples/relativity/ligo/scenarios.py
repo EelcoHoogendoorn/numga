@@ -41,7 +41,7 @@ def sky() -> core.Rotor:
 
 def patterns(arms: core.Point, frames: core.Rotor) -> tuple[core.Scalar, core.Scalar]:
     """Each detector's responses to the plus and cross strains of waves from each frame's direction."""
-    plus, cross = core.strains(frames)                                       # [latitudes, longitudes] Point <- Point each
+    plus, cross = core.strains(frames)                                       # [latitudes, longitudes] Plane <- Point each
     return core.response(arms[:, None, None], plus), core.response(arms[:, None, None], cross)
 
 
@@ -49,13 +49,16 @@ def polarization(site: core.Rotor, arms: core.Point, frames: core.Rotor, angles:
                  ) -> tuple[core.Scalar, core.Point]:
     """One detector's response to the plus strain over the sky as the polarization turns by each angle,
     and a ring of free masses across a wave from straight overhead, stretched by that strain."""
-    turned, _ = core.strains(core.polarized(frames, angles[:, None, None]))  # [frames, latitudes, longitudes] Point <- Point
+    turned, _ = core.strains(core.polarized(frames, angles[:, None, None]))  # [frames, latitudes, longitudes] Plane <- Point
     # Straight overhead, the axes across the wave are the site's east and north.
     east, north = site >> core.mv.y, site >> core.mv.z                       # [] Plane each
     turns = np.linspace(0, 2 * np.pi, N_MASSES, endpoint=False)
     ring = ((east ^ north) * (-turns / 2)).exp() >> east.dual()              # [masses] Point
-    overhead, _ = core.strains(core.polarized(site, angles))                 # [frames] Point <- Point
-    return core.response(arms, turned), ring + STRAIN_SHOWN * overhead[:, None](ring)
+    overhead, _ = core.strains(core.polarized(site, angles))                 # [frames] Plane <- Point
+    # Each mass moves perpendicular to the plane its strain hands it: the metric turns that reading
+    # into a direction.
+    moved = ring + STRAIN_SHOWN * overhead[:, None](ring).dual()             # [frames, masses] Point
+    return core.response(arms, turned), moved
 
 
 # --- plumbing -------------------------------------------------------------------------

@@ -15,12 +15,12 @@ if TYPE_CHECKING:
 
 
 class MetricKind(Enum):
-    """The default metric of a axis, classified from its exact coefficients.
+    """A metric form, classified from its exact coefficients.
 
-    An identity metric solves as a plain eigenproblem; a positive one needs the generalized pencil;
-    a semidefinite one, positive but blind to some blades as PGA's ideal ones, admits a Hermitian
-    eigenproblem on the blades it measures; singular and indefinite ones admit only the general
-    eigenproblem.
+    Against an identity a form solves as a plain eigenproblem; against a positive one it needs the
+    generalized pencil; against a semidefinite one, positive but blind to some blades as PGA's ideal
+    ones, it admits a Hermitian eigenproblem on the blades the metric measures; against singular and
+    indefinite ones it admits only the general eigenproblem.
     """
 
     IDENTITY = "identity"
@@ -51,10 +51,14 @@ class Metric:
     @cached_property
     def kind(self) -> MetricKind:
         """What this axis's default metric is like, from its exact coefficients."""
-        matrix = self.default._kernel.materialize(np.float64)[0]
-        if np.array_equal(matrix, np.eye(len(self._gatype.output_subspace))):
-            return MetricKind.IDENTITY
-        spectrum = np.linalg.eigvalsh(matrix)
-        if np.any(np.abs(spectrum) < 1e-12):
-            return MetricKind.SEMIDEFINITE if np.all(spectrum > -1e-12) else MetricKind.SINGULAR
-        return MetricKind.POSITIVE if np.all(spectrum > 0) else MetricKind.INDEFINITE
+        return classify(self.default._kernel.materialize(np.float64)[0])
+
+
+def classify(matrix: np.ndarray) -> MetricKind:
+    """The kind of a metric form, from its exact coefficient matrix."""
+    if np.array_equal(matrix, np.eye(len(matrix))):
+        return MetricKind.IDENTITY
+    spectrum = np.linalg.eigvalsh(matrix)
+    if np.any(np.abs(spectrum) < 1e-12):
+        return MetricKind.SEMIDEFINITE if np.all(spectrum > -1e-12) else MetricKind.SINGULAR
+    return MetricKind.POSITIVE if np.all(spectrum > 0) else MetricKind.INDEFINITE

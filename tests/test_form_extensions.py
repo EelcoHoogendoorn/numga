@@ -22,6 +22,49 @@ def form(context, first, second, matrix):
     return context.extensor(gatype, np.asarray(matrix)[..., None, :, :])
 
 
+def test_forms_against_a_semidefinite_partner_solve_on_the_blades_it_measures(context):
+    """x+y+z0 vectors have a semidefinite metric, blind to z. Against it, eig gives an infinite mode;
+    eigh gives the finite modes, the blind component of each chosen to make the form stationary, so
+    their values are those of the Schur complement; det needs an invertible partner and says so; SVD
+    pairs two covector axes, never."""
+    ga = context.algebra
+    axis = ga.gatype.vector()
+    value = form(context, axis, axis, [[3.0, 1.0, 1.0], [1.0, 2.0, 0.0], [1.0, 0.0, 4.0]])
+    partner = axis | axis
+    metric = form(context, axis, axis, np.diag([1.0, 1.0, 0.0]))
+    reduced = np.linalg.eigvalsh([[3.0 - 1.0 / 4.0, 1.0], [1.0, 2.0]])
+    if isinstance(context, NumpyContext):
+        pytest.importorskip("scipy")
+        values = value.eigvals(partner).kernel[..., 0]
+        assert np.isinf(values).sum() == 1
+        np.testing.assert_allclose(np.sort(np.real(values[np.isfinite(values)])), reduced, atol=1e-12)
+    values, modes = value.eigh(partner)
+    assert modes.shape == values.shape == (2,)
+    np.testing.assert_allclose(values.kernel[..., 0], reduced, atol=3e-5)
+    np.testing.assert_allclose(value.eigvalsh(partner).kernel[..., 0], reduced, atol=3e-5)
+    np.testing.assert_allclose(value(modes).kernel, (values * metric(modes)).kernel, atol=3e-5)
+    np.testing.assert_allclose(metric(modes[:, None], modes[None, :]).kernel[..., 0], np.eye(2), atol=3e-5)
+    with pytest.raises(TypeError, match="metric"):
+        value.det(partner)
+    with pytest.raises(TypeError, match="metric"):
+        value.contract()
+    for method in ("svd", "svdvals"):
+        with pytest.raises((LookupError, TypeError)):
+            getattr(value, method)()
+
+
+def test_forms_against_an_identity_partner_keep_the_plain_solver():
+    ga = Algebra("x+y+z+")
+    context = NumpyContext(ga)
+    axis = ga.gatype.vector()
+    matrix = np.array([[3.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 4.0]])
+    value = form(context, axis, axis, matrix)
+    partner = axis | axis
+    np.testing.assert_allclose(value.eigvalsh(partner).kernel[..., 0], np.linalg.eigvalsh(matrix), atol=1e-12)
+    np.testing.assert_allclose(value.det(partner).kernel, np.linalg.det(matrix), atol=1e-12)
+    np.testing.assert_allclose(value.contract().kernel, np.trace(matrix), atol=1e-12)
+
+
 def test_forms_without_a_metric_use_the_axis_metric(context):
     """x+y+z0 vectors have a semidefinite metric, blind to z. eig gives an infinite mode; eigh
     gives the finite modes, the blind component of each chosen to make the form stationary, so
@@ -151,8 +194,8 @@ def test_form_solve_keeps_leading_rhs_axes_as_a_map(context):
 
 def test_form_lstsq_in_a_metric_leaves_no_gauge_component(context):
     """A singular curvature has a family of solutions; the metric picks the one with no component
-    along the gauge direction, measured in that metric. Batches broadcast, and leading axes of the
-    right-hand side stay open."""
+    along the gauge direction, measured in that metric. Batches broadcast, and solving against a map
+    produces a map of its leading arguments."""
     pytest.importorskip("scipy")
     ga = context.algebra
     axis = ga.gatype.vector()
