@@ -42,10 +42,9 @@ def loading(model: core.Lattice) -> tuple[np.ndarray, core.Field, core.Point, co
 
 def turning(model: core.Lattice) -> tuple[core.Field, core.Point, core.Point]:
     phases = np.linspace(0, 2 * np.pi, n_frames, endpoint=False)
-    # A smooth rise and fall closes the loop at the unloaded lattice. Every frame is an
-    # independent static equilibrium; the phase is a control setting rather than time.
-    strengths = field_strength * (1 - np.cos(phases)) / 2
-    applied = core.field_along((core.mv.xy * (-phases / 2)).exp() >> core.mv.x.dual()) * strengths
+    # The field at full strength turns once around at an even rate, so the loop runs at an even pace. Every frame is
+    # an independent static equilibrium; the phase is a control setting rather than time.
+    applied = core.field_along((core.mv.xy * (-phases / 2)).exp() >> core.mv.x.dual()) * field_strength
     positions = model.equilibrium(applied, n_newton_steps)
     dipoles = model.response(positions).solve(applied)
     return applied, positions, dipoles
