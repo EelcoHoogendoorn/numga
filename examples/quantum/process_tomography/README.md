@@ -13,6 +13,8 @@ map. An animation composes the learned channels to predict repeated use.
 Preparations and detector effects are calibrated, and probabilities are exact. The
 example isolates noise in the gate; it does not sample finite measurement counts.
 
+`process_tomography_projective.ipynb` computes the same experiment with the states of a qubit as the points of a ball in projective space: an effect is a plane, a probability is the pairing `effect & state`, and the reciprocal frames are the meets of the effects' planes and the joins of the preparations.
+
 Open `process_tomography.ipynb` in Jupyter. To generate the figures and animation
 headlessly from the repository root:
 

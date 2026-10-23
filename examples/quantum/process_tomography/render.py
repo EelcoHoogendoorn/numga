@@ -1,5 +1,6 @@
-"""Probe probabilities, reconstructed channels and predictions drawn from quantum states. The Bloch balls
-are drawn on the GPU, the rest by matplotlib."""
+"""Probe probabilities, reconstructed channels and predictions drawn from quantum states, given either as states
+of the Pauli algebra or as points of the projective Bloch ball. The Bloch balls are drawn on the GPU, the rest by
+matplotlib."""
 
 from __future__ import annotations
 
@@ -49,6 +50,13 @@ AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
 def bloch(states: core.State) -> np.ndarray:
     """The Bloch vectors of normalized states, in an explicit spatial blade layout."""
     return 2 * states.cast(core.ga.subspace("x y z")).kernel                  # [..., 3]
+
+
+def positions(points: solids.Point) -> np.ndarray:
+    """The Bloch vectors of points of the projective Bloch ball: their pairings with the planes x, y and z through
+    the centre, over their pairing with the plane at infinity, their weight."""
+    readings = (concatenate([sm.x[None], sm.y[None], sm.z[None]]) & points[..., None]).to_array()   # [..., 3]
+    return readings / (sm.w & points).to_array()[..., None]
 
 
 def bloch_view(axes) -> solids.View:
@@ -117,7 +125,17 @@ def grid_planes(points: np.ndarray) -> solids.Plane:
 def draw_experiment(prepared: core.State, probabilities: core.Scalar,
                     labels: tuple[str, ...]) -> plt.Figure:
     """Four tetrahedral preparations and each channel's measured outcome probabilities."""
-    probes = bloch(prepared)                                                   # [preparations, 3]
+    return experiment(bloch(prepared), probabilities, labels)
+
+
+def draw_projective_experiment(prepared: solids.Point, probabilities: core.Scalar,
+                               labels: tuple[str, ...]) -> plt.Figure:
+    """As `draw_experiment`, for preparations as points of the projective Bloch ball."""
+    return experiment(positions(prepared), probabilities, labels)
+
+
+def experiment(probes: np.ndarray, probabilities: core.Scalar, labels: tuple[str, ...]) -> plt.Figure:
+    """Preparations at their Bloch vectors `[preparations, 3]` and each channel's measured outcome probabilities."""
     measured = probabilities.to_array()                                      # [channels, preparations, outcomes]
     figure = plt.figure(figsize=(13, 3.7), layout="constrained")
     figure.get_layout_engine().set(wspace=0.12)
@@ -200,12 +218,23 @@ def draw_channels(surface: core.State, outputs: core.State, prepared: core.State
                   transformed: core.State, labels: tuple[str, ...]) -> plt.Figure:
     """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
     surface over the same grid as the sphere, the probes as prepared translucent and after the channel solid."""
-    sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
-    images = bloch(outputs)                                                    # [channels, latitudes + 1, longitudes + 1, 3]
-    mapped = bloch(transformed)                                                # [channels, preparations, 3]
+    return channels(bloch(surface), bloch(outputs), bloch(prepared), bloch(transformed), labels)
+
+
+def draw_projective_channels(surface: solids.Point, outputs: solids.Point, prepared: solids.Point,
+                             transformed: solids.Point, labels: tuple[str, ...]) -> plt.Figure:
+    """As `draw_channels`, for states as points of the projective Bloch ball."""
+    return channels(positions(surface), positions(outputs), positions(prepared), positions(transformed), labels)
+
+
+def channels(sphere: np.ndarray, images: np.ndarray, probes: np.ndarray, mapped: np.ndarray,
+             labels: tuple[str, ...]) -> plt.Figure:
+    """As `draw_channels`, from Bloch vectors: the sphere `[latitudes + 1, longitudes + 1, 3]`, its images
+    `[channels, latitudes + 1, longitudes + 1, 3]`, the probes `[preparations, 3]` and their images
+    `[channels, preparations, 3]`."""
     figure, axes = channels_figure(labels, PANEL)
     view = channel_view(sphere, axes[0])
-    scene = channel_scene(sphere, bloch(prepared), view)
+    scene = channel_scene(sphere, probes, view)
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
     for ax, image, points, colour in zip(axes, images, mapped, CHANNEL_COLOURS):
         show_ball(ax, channel_picture(scene, faces, image, points, colour), view)
@@ -241,14 +270,28 @@ def animate(surface: core.State, prepared: core.State,
 
 def animate_panels(surface: core.State, prepared: core.State, frames: Iterator[tuple[core.State, core.State]],
                    labels: tuple[str, ...], panel: tuple[float, float]) -> Iterator[np.ndarray]:
-    """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws
-    them, each channel a panel of a width and height in inches: the figure, the axes, the sphere, its grid and the
-    probes as prepared set up once, and each frame's images of the sphere and probes after the channels drawn among
-    them."""
-    sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
+    """As `animate`, each channel a panel of a width and height in inches."""
+    return film(bloch(surface), bloch(prepared), ((bloch(output), bloch(transformed)) for output, transformed in frames),
+                labels, panel)
+
+
+def animate_projective(surface: solids.Point, prepared: solids.Point,
+                       frames: Iterator[tuple[solids.Point, solids.Point]],
+                       labels: tuple[str, ...]) -> Iterator[np.ndarray]:
+    """As `animate`, for states as points of the projective Bloch ball."""
+    return film(positions(surface), positions(prepared),
+                ((positions(output), positions(transformed)) for output, transformed in frames), labels, PANEL)
+
+
+def film(sphere: np.ndarray, probes: np.ndarray, frames: Iterator[tuple[np.ndarray, np.ndarray]],
+         labels: tuple[str, ...], panel: tuple[float, float]) -> Iterator[np.ndarray]:
+    """Successive images of the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]` and of the probes
+    `[preparations, 3]`, as Bloch vectors, each frame's `[channels, latitudes + 1, longitudes + 1, 3]` and
+    `[channels, preparations, 3]`, each channel a panel of a width and height in inches: the figure, the axes, the
+    sphere, its grid and the probes as prepared set up once, and each frame's images drawn among them."""
     figure, axes = channels_figure(labels, panel)
     view = channel_view(sphere, axes[0])
-    scene = channel_scene(sphere, bloch(prepared), view)
+    scene = channel_scene(sphere, probes, view)
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
     blank = np.full((*view.shape, 3), 255, dtype=np.uint8)
     shown = [show_ball(ax, blank, view) for ax in axes]
@@ -256,7 +299,7 @@ def animate_panels(surface: core.State, prepared: core.State, frames: Iterator[t
     figure.canvas.draw()
     figure.set_layout_engine("none")
     for output, transformed in frames:
-        for image, picture, points, colour in zip(shown, bloch(output), bloch(transformed), CHANNEL_COLOURS):
+        for image, picture, points, colour in zip(shown, output, transformed, CHANNEL_COLOURS):
             image.set_data(channel_picture(scene, faces, picture, points, colour))
         yield capture(figure)
     plt.close(figure)
