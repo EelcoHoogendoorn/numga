@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.optics.coating import core
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import solids, strokes
 from examples.util.wgsl.scene import Scene
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
@@ -22,10 +22,8 @@ pulse_margin, n_pulse_pixels = 0.02, 600
 field_length = 3000.0
 framed_start, framed_end = 0.08, 0.12
 path_width, spoke_width, optic_width, line_width = 2.5, 1.0, 1.5, 1.5
-# The tube's sides around the path; the spokes' share of the path's opacity, and the least strength a spoke is drawn
-# at; the optic axes' half length, the slab's half width across the line, both in field units, and the slab's colour
+# The spokes' share of the path's strength, and the least strength a spoke is drawn at; the optic axes' half length, the slab's half width across the line, both in field units, and the slab's colour
 # and opacity; the line's colour and the optic axes'.
-n_around = 6
 spoke_opacity, spoke_floor = 0.5, 0.02
 optic_reach, slab_reach, slab_opacity = 0.6, 1.0, 0.22
 slab_colour = np.array(to_rgb("#b8c4d4"))
@@ -33,12 +31,6 @@ line_colour, optic_colour = np.array([0.75, 0.76, 0.78]), np.array([0.62, 0.63, 
 # The beam's frame turned into the scene's, whose z is up: a half turn about the line along x + z through the origin
 # carries the line, along z, onto x, across the picture, and the field's x onto z, up.
 upright = ((sm.yz + sm.xy) * (np.pi / (2 * np.sqrt(2)))).exp()
-# Each vertex's own colour and how much of what lies behind it it hides, blended across each face.
-translucent = """
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
-    return values;
-}
-"""
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -133,22 +125,9 @@ def scene(places: np.ndarray) -> np.ndarray:
     return (solids.axes & (upright >> sm.point(places))[..., None]).to_array()
 
 
-def strokes(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float,
-            view: solids.View) -> meshes.Samples:
-    """Segments between places in the scene `[segments, 3]` as tubes `width` pixels across, each its colour and how
-    much of what lies behind it it hides `[segments, 4]`, at every sample, as `meshes.samples`."""
-    rings, faces = meshes.tube(np.stack([starts, ends], axis=1), width / 2 * view.pixel, n_around)
-    # Each segment's faces in a run of their own, in the order of the segments.
-    values = np.repeat(colours, len(faces) // len(starts), axis=0)[:, None]
-    return meshes.samples(rings, faces, values, meshes.smooth(rings, faces), view, colour=translucent)
-
-
-def tube(rings: solids.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> meshes.Samples:
-    """A polyline's tube, its rings of vertices and its triangles as `meshes.tube` builds them, its colour and how much
-    it hides given at each vertex of the polyline `[n, 4]` and blended between, at every sample, as `meshes.samples`."""
-    # The tube's vertices run ring after ring, one ring about each vertex of the polyline.
-    return meshes.samples(rings, faces, colours[faces // n_around], meshes.smooth(rings, faces), view,
-                          colour=translucent)
+def faded(colours: np.ndarray, strength: np.ndarray) -> np.ndarray:
+    """Colours `[..., 3]` faded towards the white page as their strength `[...]` falls to zero."""
+    return 1 - strength[..., None] * (1 - colours)
 
 
 def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
@@ -188,10 +167,11 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
         strength = np.clip(np.hypot(*field.T) * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
-        # Every other node's spoke, where the field shows: a spoke of no length has no direction to build a tube about.
+        # Every other node's spoke, where the field shows.
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
-        spokes = strokes(scene(np.column_stack([np.zeros((len(spoked), 2)), depths[spoked]])), tips[spoked],
-                         np.column_stack([colours, spoke_opacity * strength])[spoked], spoke_width, view)
-        rings, faces = meshes.tube(tips[None], path_width / 2 * view.pixel, n_around)
-        path = tube(rings, faces, np.column_stack([colours, strength]), view)
+        spokes = strokes.segments(scene(np.column_stack([np.zeros((len(spoked), 2)), depths[spoked]])), tips[spoked],
+                                  faded(colours, spoke_opacity * strength)[spoked], spoke_width, view)
+        # Each piece of the path in the colour and strength halfway along it.
+        shades = faded(colours, strength)
+        path = strokes.segments(tips[:-1], tips[1:], (shades[:-1] + shades[1:]) / 2, path_width, view)
         yield picture.draw(meshes=[(spokes, 1.0), (path, 1.0)])

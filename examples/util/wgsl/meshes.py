@@ -13,7 +13,7 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import concatenate, stack
+from numga import stack
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
@@ -163,45 +163,6 @@ def face_normals(points: Point, faces: np.ndarray) -> Plane:
     return through_origin / (through_origin | through_origin).square_root()
 
 
-def frames_along(points: np.ndarray) -> np.ndarray:
-    """A normal at every vertex of polylines `[..., n, 3]` that turns as little as the curve allows: the previous
-    vertex's normal reflected twice, in the plane between the vertices and in the plane between their tangents."""
-    tangents = np.gradient(points, axis=-2)
-    tangents /= np.linalg.norm(tangents, axis=-1, keepdims=True)
-    # Any normal at the first vertex: its tangent crossed with the axis it leans on least.
-    least = np.eye(3)[np.argmin(np.abs(tangents[..., 0, :]), axis=-1)]
-    normals = [np.cross(tangents[..., 0, :], least)]
-    for index in range(1, points.shape[-2]):
-        step = points[..., index, :] - points[..., index - 1, :]
-        reflected = normals[-1] - step * (2 * np.sum(step * normals[-1], axis=-1, keepdims=True)
-                                          / np.sum(step * step, axis=-1, keepdims=True))
-        turned = tangents[..., index - 1, :] - step * (2 * np.sum(step * tangents[..., index - 1, :], axis=-1, keepdims=True)
-                                                        / np.sum(step * step, axis=-1, keepdims=True))
-        between = tangents[..., index, :] - turned
-        normals.append(reflected - between * (2 * np.sum(between * reflected, axis=-1, keepdims=True)
-                                              / np.maximum(np.sum(between * between, axis=-1, keepdims=True), 1e-30)))
-    normals = np.stack(normals, axis=-2)
-    return normals / np.linalg.norm(normals, axis=-1, keepdims=True)
-
-
-def tube(points: np.ndarray, radius: float, n_around: int) -> tuple[Point, np.ndarray]:
-    """A tube of a radius about polylines `[curves, n, 3]`: rings of points about each vertex, each its normal turned
-    about the line along the curve there, flattened from `[curves, n, around]`, and its triangles, indices into
-    them."""
-    centres = mv.point(points)                                                 # [curves, n] Point
-    rims = mv.point(points + radius * frames_along(points))                    # [curves, n] Point
-    # The line along the curve at each vertex: the join of two of its points, made extrinsic by the intrinsic unit.
-    axes = (centres & mv.point(points + np.gradient(points, axis=-2))) * unit     # [curves, n] Line
-    axes = axes / axes.norm()
-    turns = (axes[..., None] * (np.linspace(0, 2 * np.pi, n_around, endpoint=False) / 2)).exp()   # [curves, n, around] Motor
-    rings = turns >> rims[..., None]                                           # [curves, n, around] Point
-    # Closed around: each ring's first vertex again after its last.
-    index = np.arange(np.prod(rings.shape)).reshape(rings.shape)
-    index = np.concatenate([index, index[..., :1]], axis=-1)                   # [curves, n, around + 1]
-    corners = np.stack([index[:, :-1, :-1], index[:, 1:, :-1], index[:, 1:, 1:], index[:, :-1, 1:]], axis=-1)
-    return rings.reshape(-1), corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
-
-
 class Samples(NamedTuple):
     """A mesh at every sample of a view's pixels, `oversampling` to a side, drawn on the GPU by the picture that
     composes it, where its samples stay: the shader drawing it, the vertices of its triangles, three to a face, and the
@@ -232,40 +193,6 @@ def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, v
     """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
     each weighted by coverage; its samples, as `samples`, averaged over each pixel on the GPU."""
     return solids.layer([], view, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
-
-
-def tubes(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View, n_around: int = 8) -> tuple[np.ndarray, np.ndarray]:
-    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, one layer, as `layer`."""
-    return solids.layer([], view, meshes=[(tube_samples(curves, width, view, n_around), 1.0)])
-
-
-def tube_samples(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View,
-                 n_around: int = 8) -> Samples:
-    """Polylines `[n, 3]`, each with its colour `[3]`, as tubes `width` pixels across, at every sample, as `samples`:
-    the curves of each length built together."""
-    rings, faces, colours = [], [], []
-    count = 0
-    for length in sorted({len(points) for points, _ in curves}):
-        alike = [(points, colour) for points, colour in curves if len(points) == length]
-        around, triangles = tube(np.stack([points for points, _ in alike]), width / 2 * view.pixel, n_around)
-        rings.append(around)
-        faces.append(triangles + count)
-        # Each curve's faces in a run of their own, in the order the curves were stacked.
-        colours.append(np.repeat(np.stack([colour for _, colour in alike]), len(triangles) // len(alike), axis=0))
-        count += around.shape[0]
-    places, faces = concatenate(rings), np.concatenate(faces)
-    return samples(places, faces, np.concatenate(colours)[:, None], smooth(places, faces), view)
-
-
-def segment_samples(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float, view: View,
-                    n_around: int = 6) -> Samples:
-    """Straight segments from starts to ends `[segments, 3]`, coloured `[segments, 3]` or one for all, as tubes `width`
-    pixels across, at every sample, as `samples`: many thin strokes rasterized together, where tracing each as a solid
-    would cost every ray a test against every one."""
-    rings, faces = tube(np.stack([starts, ends], axis=1), width / 2 * view.pixel, n_around)
-    # Each segment's faces in a run of their own, in the order of the segments.
-    shades = np.repeat(np.broadcast_to(colours, starts.shape), len(faces) // len(starts), axis=0)   # [faces, 3]
-    return samples(rings, faces, shades[:, None], smooth(rings, faces), view)
 
 
 def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_points: int) -> np.ndarray:

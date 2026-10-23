@@ -4,6 +4,7 @@ as a stroke."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -18,10 +19,10 @@ TARGET_COLOUR = np.array(to_rgb("tab:red"))
 # front and back alike, and of the trail.
 LINK_OPACITY, TRAIL_OPACITY = 0.37, 0.8
 BACKGROUND = np.ones(3)
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the point it looks at, half its width
-# and height, holding the arm as its tip follows the loop, and the pixels across.
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; how many times the view framing the arm
+# as it starts the view holds, room for the arm as its tip follows the loop; and the pixels across.
 ELEVATION, AZIMUTH = np.radians([22.0, 40.0])
-VIEW_CENTRE, VIEW_HALF = np.array([0.43, 0.85, 0.93]), np.array([1.25, 1.25])
+VIEW_ROOM = 1.6
 N_PIXELS = 500
 # The target's radius and the trail's width, in pixels.
 TARGET_RADIUS, TRAIL_WIDTH = 6.0, 3.0
@@ -47,13 +48,15 @@ def solid_boxes(corners: Point) -> solids.Quadric:
     return solids.half_space(planes * -np.sign((planes & middles).to_array()))
 
 
-def animate_tracking(states: Iterable, centre: np.ndarray = VIEW_CENTRE,
-                     half: np.ndarray = VIEW_HALF) -> Iterator[np.ndarray]:
-    """One frame per solved state: the link boxes, the target, and the tip trail, all from one fixed view looking at
-    `centre`, `half` its width and height."""
-    view = solids.View(solids.aim(mv.point(centre), ELEVATION, AZIMUTH), half, N_PIXELS)
+def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.ndarray]:
+    """One frame per solved state: the link boxes, the target, and the tip trail, all from one fixed view framing the
+    arm as it starts, `room` times over."""
+    states = iter(states)
+    first = next(states)
+    framed = solids.view([first[0].reshape(-1)], 0.0, ELEVATION, AZIMUTH, 0.0, N_PIXELS)
+    view = framed._replace(half=framed.half * room)
     path = []
-    for boxes, target, tip in states:
+    for boxes, target, tip in chain([first], states):
         # The tip's path up to this frame's tip.
         path.append(euclidean(tip))
         trail = strokes.polylines([(np.array(path), TARGET_COLOUR)], TRAIL_WIDTH, view)

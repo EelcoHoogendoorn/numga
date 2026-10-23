@@ -24,9 +24,9 @@ DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH = np.radians(15.0), np.radians(22.0)
 # congruence, across the field lines' frame and across a panel of the diagram.
 MARGIN, DIAGRAM_MARGIN = 0.1, 0.15
 CONGRUENCE_PIXELS, FIELD_PIXELS, DIAGRAM_PIXELS = 600, 288, 480
-# Half the width and height, about the origin, of the view the field lines are carried through, holding them at
-# every instant shown.
-FIELD_HALF = np.array([3.3, 3.65])
+# The view the field lines are carried through, as a multiple of the one framing them at the first instant, holding
+# them at every instant shown.
+FIELD_ROOM = 1.35
 # The widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length and width, and the events'
 # radius; how far the axes reach past what they hold, and their names past their tips.
 CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 2.4, 2.0, 3.4, 1.8, 14.0, 8.0, 5.0
@@ -96,12 +96,14 @@ def draw_fields(curves: core.Event) -> plt.Figure:
     return image_figure(draw_curves(curves, FIELD_WIDTH, space_view(FIELD_PIXELS, curves)))
 
 
-def animate_fields(stream: Iterable[core.Event], half: np.ndarray = FIELD_HALF) -> Iterator[np.ndarray]:
-    """Field lines carried through time, seen by one camera about the origin, `half` its width and height."""
-    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), half, FIELD_PIXELS)
+def animate_fields(stream: Iterable[core.Event], room: float = FIELD_ROOM) -> Iterator[np.ndarray]:
+    """Field lines carried through time, seen by one camera framing the first instant's lines, `room` times over."""
     stream = iter(stream)
+    first = next(stream)
+    framed = space_view(FIELD_PIXELS, first)
+    view = framed._replace(half=framed.half * room)
     # The figure set up once, with the first instant; only its picture changes between frames.
-    figure = image_figure(draw_curves(next(stream), FIELD_WIDTH, view))
+    figure = image_figure(draw_curves(first, FIELD_WIDTH, view))
     shown = figure.axes[0].images[0]
     yield capture(figure)
     for curves in stream:
