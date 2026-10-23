@@ -23,6 +23,9 @@ density_colour = "#ea580c"
 # Magnitudes start at white, as the signed fields do at zero.
 strength_colours = "Purples"
 wave_zone = 4.0
+# The speeding-up animations' square window about the grid's middle, as a share of the grid's height: the charge runs
+# across, so its field gathers into an upright band.
+sweep_zoom = 0.85
 wave_percentile = 99.0
 wave_power = 0.4
 charge_colour = "#facc15"
@@ -55,6 +58,14 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: str, n
     ax.set(xlim=box[:2], ylim=box[2:], xticks=[], yticks=[])
     ax.set_aspect("equal")
     return image
+
+
+def squared(axes: list[Axes], events: core.Antivector, zoom: float) -> None:
+    """Each of the axes framed on a square about the middle of the grid's box, `zoom` of its height across."""
+    left, right, bottom, top = extent(events)
+    middle, half = np.array([left + right, bottom + top]) / 2, zoom * (top - bottom) / 2
+    for ax in axes:
+        ax.set(xlim=(middle[0] - half, middle[0] + half), ylim=(middle[1] - half, middle[1] + half))
 
 
 def electric_strength(field: core.Bivector) -> np.ndarray:
@@ -96,16 +107,18 @@ def densities(events: core.Antivector, current: core.Antivector) -> plt.Figure:
     return result
 
 
-def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector) -> Iterator[np.ndarray]:
-    """Electric field strength with the charge's outline, and magnetic field, one frame per case. One
-    figure is updated in place and drawn once per frame, without supersampling, to keep pace."""
+def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector,
+          zoom: float = sweep_zoom) -> Iterator[np.ndarray]:
+    """Electric field strength with the charge's outline, and magnetic field, one frame per case, each in a square
+    window `zoom` of the grid's height across. One figure is updated in place and drawn once per frame, without
+    supersampling, to keep pace."""
     xy = coordinates(events)
     strengths, magnetic, charge_densities = electric_strength(field), magnetic_across(field), density(current)
-    left, right, bottom, top = extent(events)
-    result = plt.figure(figsize=(11, 11 / 2 * (top - bottom) / (right - left) + 0.2), dpi=80, layout="constrained")
+    result = plt.figure(figsize=(11, 11 / 2 + 0.2), dpi=80, layout="constrained")
     axes = result.subplots(1, 2)
     images = (panel(axes[0], events, strengths[0], strength_colours, LogNorm(*electric_range)),
               panel(axes[1], events, magnetic[0], "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
+    squared(axes, events, zoom)
     for strength, across, value in zip(strengths, magnetic, charge_densities):
         images[0].set_data(strength)
         images[1].set_data(across)
@@ -117,16 +130,19 @@ def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivecto
     plt.close(result)
 
 
-def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]],
+            zoom: float = sweep_zoom) -> Iterator[np.ndarray]:
     """Electric field strength with the charge's outline, and magnetic field, a frame for each of the lab's views
-    over one grid of events: one figure set up for the first, its images' data set for each."""
+    over one grid of events, each in a square window `zoom` of the grid's height across: one figure set up for the
+    first, its images' data set for each."""
     states = iter(frames)
     events, field, current = next(states)
     xy = coordinates(events)
-    figure = plt.figure(figsize=(11, 3.7), dpi=80, layout="constrained")
+    figure = plt.figure(figsize=(11, 11 / 2 + 0.2), dpi=80, layout="constrained")
     left, right = figure.subplots(1, 2)
     images = (panel(left, events, electric_strength(field), strength_colours, LogNorm(*electric_range)),
               panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
+    squared([left, right], events, zoom)
     for _, field, current in chain([(events, field, current)], states):
         images[0].set_data(electric_strength(field))
         images[1].set_data(magnetic_across(field))

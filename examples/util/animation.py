@@ -120,10 +120,9 @@ def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, co
 def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0, n_frames: int = 0,
                    forward_then_back: bool = False) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
-    whole animation looping: in full colour, without the palette that keeps the repository's GIFs small, quickly
-    encoded and of bounded size whatever the frames hold. Saved as PLOT_DIR/<name>.webp, or the next free
-    <name>_NN.webp, box-filtered to `scale` of their size. The count under each frame says how many are expected
-    where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back."""
+    whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
+    `save_animation` writes it, box-filtered to `scale` of their size. The count under each frame says how many are
+    expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back."""
     import base64
     import io
 
@@ -151,8 +150,7 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
         shown.update(embedded(images[-1], "JPEG", count, quality=85))
     if forward_then_back:
         images = forward_and_back(images)
-    path = auto_increment_path(PLOT_DIR / f"{name}.webp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    images[0].save(path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0, quality=80, method=0)
-    shown.update(HTML(f'<img src="data:image/webp;base64,{base64.b64encode(path.read_bytes()).decode()}">'))
+    path = auto_increment_path(PLOT_DIR / f"{name}.gif")
+    save_gif([np.asarray(image) for image in images], str(path), duration_ms, 1.0, 256)
+    shown.update(HTML(f'<img src="data:image/gif;base64,{base64.b64encode(path.read_bytes()).decode()}">'))
     print(f"Saved {path}")
