@@ -99,4 +99,4 @@ Here the halves trade places: the outer product of a vector and a bivector is ha
 
 The literature defines several inner products: the left contraction, the right contraction, Hestenes' inner product and the scalar product among them. They differ in which grade they select, mostly when the left factor has the higher grade. All of them are grade selections of the geometric product.
 
-Example: [lift without vorticity](../../../examples/fluids/wing/wing.ipynb), where the divergence and the vorticity of a flow are the scalar and the bivector part of its geometric derivative, and both vanish around the wing.
+Example: [potential flow past a Joukowski wing](../../../examples/fluids/wing/wing.ipynb), where the divergence and the vorticity of a flow are the scalar and the bivector part of its geometric derivative, and both vanish around the wing.
