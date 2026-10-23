@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -53,10 +53,11 @@ def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: sol
     return meshes.draw(places, faces, values, normals, view, BACKGROUND, face_values=ink, colour=INKED)
 
 
-def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray) -> list[np.ndarray]:
+def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray) -> Iterator[np.ndarray]:
     """A frame of the cube for each state of its stickers' corners and its turning cut, all seen by one camera
     framing every state."""
     states = list(states)
     view = solids.view([solids.mv.point(coordinates(corners).reshape(-1, 3)) for corners, _ in states], 0.0,
                        ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    return [picture(corners, colours, cut, view) for corners, cut in states]
+    for corners, cut in states:
+        yield picture(corners, colours, cut, view)

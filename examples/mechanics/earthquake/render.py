@@ -4,11 +4,13 @@ translucent disk, and the slip arrows."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import PathCollection
 from matplotlib.colors import to_rgb
+from matplotlib.contour import ContourSet
 
 from numga import stack
 from examples.util.animation import capture
@@ -57,22 +59,32 @@ def upright(directions: core.Point) -> np.ndarray:
     return np.stack([ned[..., 1], ned[..., 0], -ned[..., 2]], axis=-1)
 
 
-def draw_ball(ax, directions: core.Point, push: core.Scalar, axes: core.Point) -> None:
-    """The beachball of one fault: the lower hemisphere `[rings, spokes]` with the pushes shaded, its
-    nodal lines, and its pressure and tension axes, north up."""
+def shade_ball(ax, directions: core.Point, push: core.Scalar) -> list[ContourSet]:
+    """The lower hemisphere `[rings, spokes]` with the pushes shaded, and its nodal lines, for an animation to
+    replace."""
     grid, push = lambert(directions), push.to_array()
     bound = 2 * np.abs(push).max()
-    ax.contourf(*np.moveaxis(grid, -1, 0), push, levels=[-bound, 0, bound], colors=[PULL, PUSH])
-    ax.contour(*np.moveaxis(grid, -1, 0), push, levels=[0], colors=NODAL, linewidths=1.4)
+    return [ax.contourf(*np.moveaxis(grid, -1, 0), push, levels=[-bound, 0, bound], colors=[PULL, PUSH]),
+            ax.contour(*np.moveaxis(grid, -1, 0), push, levels=[0], colors=NODAL, linewidths=1.4)]
+
+
+def draw_ball(ax, directions: core.Point, push: core.Scalar,
+              axes: core.Point) -> tuple[list[ContourSet], list[PathCollection]]:
+    """The beachball of one fault: the lower hemisphere `[rings, spokes]` with the pushes shaded, its
+    nodal lines, and its pressure and tension axes, north up. The shading and the axes' marks, for an animation to
+    replace and move."""
+    shading = shade_ball(ax, directions, push)
     angle = np.linspace(0, 2 * np.pi, 200)
-    ax.plot(np.cos(angle), np.sin(angle), color=NODAL, linewidth=1.6)
+    # The rim over the nodal lines, also over those an animation draws after it.
+    ax.plot(np.cos(angle), np.sin(angle), color=NODAL, linewidth=1.6, zorder=2.5)
     principal = lambert(axes)
-    for point, colour in [(principal[0], PRESSURE), (principal[2], TENSION)]:
-        ax.scatter(*point, s=110, color=colour, edgecolor="white", linewidth=1.2, zorder=5)
+    marks = [ax.scatter(*point, s=110, color=colour, edgecolor="white", linewidth=1.2, zorder=5)
+             for point, colour in [(principal[0], PRESSURE), (principal[2], TENSION)]]
     ax.set_xlim(-1.12, 1.12)
     ax.set_ylim(-1.12, 1.12)
     ax.set_aspect("equal")
     ax.set_axis_off()
+    return shading, marks
 
 
 def draw_mechanisms(directions: core.Point, push: core.Scalar, axes: core.Point) -> plt.Figure:
@@ -143,18 +155,26 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
 
 
 def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, core.Point, core.Point, core.Scalar,
-                                                                     core.Point, core.Scalar]]) -> list[np.ndarray]:
+                                                                     core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """Each frame of the rake's turn: the fault in space with its P lobes, and its beachball over the
     lower hemisphere; all from one camera framing every frame's lobes and arrows."""
     frames = list(frames)
     normals, slips, _, _, spheres, pushes = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...] each
     seen = view(lobes(spheres, pushes), np.concatenate(slip_arrows(normals[:, None], slips[:, None])))
-    images = []
+    # The figure and the beachball's rim set up once; the fault's picture, the shading and the axes' marks set for
+    # each frame.
+    figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
+    image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
+    ax = figure.add_subplot(1, 2, 2)
+    shading, marks = draw_ball(ax, hemisphere, frames[0][3], frames[0][2])
+    figure.tight_layout()
     for normal, slip, axes, ball, sphere, push in frames:
-        figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
-        show(figure.add_subplot(1, 2, 1), draw_fault(sphere, push, normal, slip, seen), seen)
-        draw_ball(figure.add_subplot(1, 2, 2), hemisphere, ball, axes)
-        figure.tight_layout()
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        image.set_data(draw_fault(sphere, push, normal, slip, seen))
+        for contours in shading:
+            contours.remove()
+        shading = shade_ball(ax, hemisphere, ball)
+        principal = lambert(axes)
+        for mark, point in zip(marks, principal[[0, 2]]):
+            mark.set_offsets(point[None])
+        yield capture(figure)
+    plt.close(figure)

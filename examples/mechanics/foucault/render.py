@@ -4,6 +4,8 @@ as rods."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from matplotlib.colors import to_rgb
 import numpy as np
 
@@ -98,6 +100,7 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
 
 
 def animate_day(earth: core.Rotor, swings: core.Point, vertical: core.Point, north: core.Point,
-                east: core.Point) -> list[np.ndarray]:
+                east: core.Point) -> Iterator[np.ndarray]:
     """Per frame of the day: the earth turned so far, with the pendulum's floor and the line it swings along."""
-    return [globe(earth[index], vertical, swings[index], north, east) for index in range(len(earth) - 1)]
+    for index in range(len(earth) - 1):
+        yield globe(earth[index], vertical, swings[index], north, east)

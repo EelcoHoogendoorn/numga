@@ -20,5 +20,5 @@ def test_search_animates():
     """The noisy scenario's search draws, one frame per state."""
     landmarks, _, _, rays, _, true_motor, est_motors = scenarios.epipolar(scenarios.NOISE)
     states = list(scenarios.easing(rays, est_motors, 1, 1))
-    frames = render.animate_reconstruction(landmarks, np.array(scenarios.HOUSE_EDGES), true_motor, iter(states[-2:]))
+    frames = list(render.animate_reconstruction(landmarks, np.array(scenarios.HOUSE_EDGES), true_motor, iter(states[-2:])))
     assert len(frames) == 2 and frames[0].shape == frames[1].shape

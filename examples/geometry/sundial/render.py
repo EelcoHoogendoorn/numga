@@ -3,6 +3,8 @@ its face by matplotlib."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb
@@ -137,15 +139,21 @@ def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
     return solids.Ink(0, cone[None], shadow_side[None], np.array(to_rgb(DAY_COLOUR)), PATH_WIDTH, 1.0)
 
 
-def draw_sky(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Point, view: solids.View) -> np.ndarray:
-    """The dial in space with its gnomon, and the day's rays of sunlight past the nodus onto the dial: the cone they
-    sweep about the pole, on both sides of the nodus, and its cut with the dial, the shadow path inked on it, all
-    traced, `[rows, columns, 3]`."""
+def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The dial's plate in space, the first part, which the day's shadow path is inked on, and its gnomon, as
+    solids."""
     middle = np.array([np.mean(EAST), np.mean(NORTH), -PLATE_THICKNESS / 2])
     halves = np.array([np.ptp(EAST) / 2, np.ptp(NORTH) / 2, PLATE_THICKNESS / 2])
     slab = solids.boxes(solids.translator(solids.mv.point(middle) - solids.origin), halves)[None]   # [1, 6] Quadric
     tip = coordinates(nodus)
     gnomon = solids.plates(np.stack([coordinates(foot), tip, tip * [1, 1, 0]])[None], GNOMON_THICKNESS)   # [1, 5] Quadric
+    return [(slab, np.array(to_rgb(DIAL_COLOUR))), (gnomon, np.array(to_rgb(GNOMON_COLOUR)))]
+
+
+def sunlight(nodus: core.Point, rays: core.Point, day: core.Point,
+             view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], list[solids.Ink]]:
+    """The day's rays of sunlight past the nodus onto the dial, as solids: the cone they sweep about the pole, on
+    both sides of the nodus; and its cut with the dial, the shadow path inked on the dial's plate."""
     sunward, ends = daylight(nodus, rays)
     # Each ray cut where it leaves the space above the dial, at the walls standing on its edges, so that a ray whose
     # shadow moves off the dial shortens at its edge rather than vanishing.
@@ -154,25 +162,24 @@ def draw_sky(nodus: core.Point, foot: core.Point, rays: core.Point, day: core.Po
     beams = concatenate([rods, walls[None].broadcast_to((len(sunward), 4))], axis=-1)               # [rays, 7]
     # The rays as lightly as they show over the white page.
     beam_colour = RAY_OPACITY * np.array(to_rgb(RAY_COLOUR)) + (1 - RAY_OPACITY)
-    parts = [(slab, np.array(to_rgb(DIAL_COLOUR))), (gnomon, np.array(to_rgb(GNOMON_COLOUR))), (beams, beam_colour)]
-    return solids.draw(parts, view, np.ones(3), [day_path(nodus, day)])
+    return [(beams, beam_colour)], [day_path(nodus, day)]
 
 
 def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, nodus: core.Point, foot: core.Point,
-                 seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> list[np.ndarray]:
-    """Per frame of the year: the day's rays past the nodus in space, and the day's shadow path over the
-    dial's face."""
-
+                 seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> Iterator[np.ndarray]:
+    """Per frame of the year: the day's rays past the nodus in space, traced among the dial and its gnomon, and the
+    day's shadow path over the dial's face."""
     view = sky_view(nodus, rays)
-
-    def frame(index: int) -> np.ndarray:
-        figure = plt.figure(figsize=(10.0, 4.6))
-        sky = figure.add_axes((0.0, 0.0, 0.5, 1.0))
-        show(sky, draw_sky(nodus, foot, rays[index], days[index], view), view)
-        face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
-        draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
-        face.add_collection(LineCollection(shadows(nodus, days[index])[None], colors=DAY_COLOUR, linewidths=2.2))
-        pixels = capture(figure)
-        plt.close(figure)
-        return pixels
-    return [frame(index) for index in range(len(declinations))]
+    dial = dial_in_space(nodus, foot)
+    # Lay the figure out once; only the sky and the day's shadow path change between frames.
+    figure = plt.figure(figsize=(10.0, 4.6))
+    sky = show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), np.ones((*view.shape, 3)), view)
+    face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
+    draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
+    path = face.add_collection(LineCollection([], colors=DAY_COLOUR, linewidths=2.2))
+    for index in range(len(declinations)):
+        beams, inks = sunlight(nodus, rays[index], days[index], view)
+        sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks))
+        path.set_segments(shadows(nodus, days[index])[None])
+        yield capture(figure)
+    plt.close(figure)

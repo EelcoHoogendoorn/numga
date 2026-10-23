@@ -4,6 +4,8 @@ notebook."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -28,19 +30,24 @@ def ellipse(spread: core.Spread) -> np.ndarray:
     return normals.T @ (2.0 * np.sqrt(variances)[:, None] * np.stack([np.cos(angle), np.sin(angle)]))
 
 
-def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Covariance, title: str,
-               extent: float) -> None:
-    """The bodies as short arrows through their positions along their headings, over the predicted
-    ellipse (solid) and the settled one (dashed), in a square of half-width extent."""
+def arrows(poses: core.Motor, extent: float) -> tuple[np.ndarray, np.ndarray]:
+    """The bodies' positions, and their arrows a short way along their headings, `[bodies, 2]` each."""
     # A point a short way ahead of the set point.
     heading = core.ORIGIN + core.mv.direction([0.08 * extent, 0.0])   # [] Point
     here = xy(poses >> core.ORIGIN)                                # [bodies, 2]
-    ahead = xy(poses >> heading) - here                            # [bodies, 2]
-    ax.quiver(here[:, 0], here[:, 1], ahead[:, 0], ahead[:, 1], angles="xy", scale_units="xy", scale=1,
-              pivot="mid", width=0.002, color="#4a6fa5", alpha=0.35)
-    for covariance, style in ((limit, "--"), (predicted, "-")):
-        ring = ellipse(core.position_spread(covariance))
-        ax.plot(ring[0], ring[1], style, color="#c0392b", linewidth=1.4)
+    return here, xy(poses >> heading) - here
+
+
+def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Covariance, title: str,
+               extent: float) -> tuple:
+    """The bodies as short arrows through their positions along their headings, over the predicted
+    ellipse (solid) and the settled one (dashed), in a square of half-width extent. Returns the arrows and
+    the predicted ellipse drawn."""
+    here, ahead = arrows(poses, extent)
+    quiver = ax.quiver(here[:, 0], here[:, 1], ahead[:, 0], ahead[:, 1], angles="xy", scale_units="xy", scale=1,
+                       pivot="mid", width=0.002, color="#4a6fa5", alpha=0.35)
+    ax.plot(*ellipse(core.position_spread(limit)), "--", color="#c0392b", linewidth=1.4)
+    spread, = ax.plot(*ellipse(core.position_spread(predicted)), "-", color="#c0392b", linewidth=1.4)
     # A faint cross through the set point, its lines named at their ends, without scales.
     ax.axhline(0, color="0.85", linewidth=0.7, zorder=0)
     ax.axvline(0, color="0.85", linewidth=0.7, zorder=0)
@@ -51,25 +58,40 @@ def draw_cloud(ax, poses: core.Motor, predicted: core.Covariance, limit: core.Co
     ax.set_aspect("equal")
     ax.set_axis_off()
     ax.set_title(title)
+    return quiver, spread
+
+
+def clouds(states: dict, extent: float) -> tuple[plt.Figure, list]:
+    """The clouds of each named run, over its predicted and settled ellipses, and each cloud's arrows and
+    predicted ellipse."""
+    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5), layout="constrained")
+    moving = [draw_cloud(ax, poses, predicted, limit, name, extent)
+              for ax, (name, (poses, predicted, limit)) in zip(np.atleast_1d(row), states.items())]
+    return figure, moving
 
 
 def draw_settled(states: dict, extent: float) -> plt.Figure:
     """The clouds of each named run, over its predicted and settled ellipses."""
-    figure, row = plt.subplots(1, len(states), figsize=(5.5 * len(states), 5.5), layout="constrained")
-    for ax, (name, (poses, predicted, limit)) in zip(np.atleast_1d(row), states.items()):
-        draw_cloud(ax, poses, predicted, limit, name, extent)
+    figure, _ = clouds(states, extent)
     return figure
 
 
-def animate_clouds(runs: dict, extent: float) -> list[np.ndarray]:
+def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
     """One frame per yielded state: the clouds spreading while the predicted ellipse grows to the
     dashed settled one."""
-    frames = []
-    for states in zip(*runs.values()):
-        figure = draw_settled(dict(zip(runs, states)), extent)
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+    steps = zip(*runs.values())
+    figure, moving = clouds(dict(zip(runs, next(steps))), extent)
+    yield capture(figure)
+    # The figure laid out once, by its first frame; only the arrows and the predicted ellipses move between frames.
+    figure.set_layout_engine("none")
+    for states in steps:
+        for (quiver, spread), (poses, predicted, _) in zip(moving, states):
+            here, ahead = arrows(poses, extent)
+            quiver.set_offsets(here)
+            quiver.set_UVC(ahead[:, 0], ahead[:, 1])
+            spread.set_data(*ellipse(core.position_spread(predicted)))
+        yield capture(figure)
+    plt.close(figure)
 
 
 def draw_envelope(gains: np.ndarray, spreads: core.Spread, tolerance: float) -> plt.Figure:

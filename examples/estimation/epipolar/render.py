@@ -51,7 +51,7 @@ def at_scale(points: Point, scale) -> Point:
 
 
 def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Motor,
-                           states: Iterator[tuple[Motor, Point]]) -> list[np.ndarray]:
+                           states: Iterator[tuple[Motor, Point]]) -> Iterator[np.ndarray]:
     """One frame per state of the search: camera 1, blue, camera 2 where it is, grey, and where the search
     puts it, green; the true landmarks, grey, with the house's edges between them by index pairs
     `[edges, 2]`; and the landmarks the pose triangulates, coloured, with the sight rays of a few from both
@@ -68,7 +68,6 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
              (solids.rods(truth[edges[:, 0]], truth[edges[:, 1]], edge_radius), house)]
     view = solids.view([truth, *edges_1, *edges_2], landmark_radius, elevation, azimuth, margin, pixels)
 
-    frames = []
     for motor, points in states:
         scale = true_baseline / (mv.w.dual() & (motor >> mv.w.dual())).norm()   # [] Scalar
         found = at_scale(display >> points, scale)                           # [landmarks] Point
@@ -78,5 +77,4 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
                   (solids.rods(*(at_scale(ends, scale) for ends in camera_edges(motor)), edge_radius), camera_2_found),
                   (solids.rods(eye_1.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every]),
                   (solids.rods(eye.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every])]
-        frames.append(solids.draw(fixed + moving, view, background))
-    return frames
+        yield solids.draw(fixed + moving, view, background)

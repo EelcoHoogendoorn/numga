@@ -3,6 +3,8 @@ paths, the readings so far, and the filter's 2σ position ellipse."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -44,7 +46,7 @@ def outlines(poses: Motor) -> np.ndarray:
 
 
 def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, here: Point, variances: Scalar, axes: Line,
-                     readings: Motor) -> list[np.ndarray]:
+                     readings: Motor) -> Iterator[np.ndarray]:
     """One frame per state of the drive: the trails so far of the true path, black, the dead-reckoned one,
     dashed red, and the filtered one, blue; the readings so far, green crosses; the filter's 2σ position
     ellipse; and the three vehicles at their current poses."""
@@ -62,20 +64,26 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, here: Point, v
 
     fig = plt.figure(figsize=(WIDTH, WIDTH * (high[1] - low[1]) / (high[0] - low[0])), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
-    frames = []
+    # Lay the figure out once; only the trails, the readings, the ellipse and the vehicles move between frames.
+    true_trail, = ax.plot([], [], color=TRUE_COLOUR, linewidth=1.6)
+    dead_trail, = ax.plot([], [], color=DEAD_COLOUR, linestyle="--", linewidth=1.2)
+    est_trail, = ax.plot([], [], color=FILTER_COLOUR, linewidth=1.2)
+    seen, = ax.plot([], [], marker="x", color=READING_COLOUR, linestyle="none", markersize=7, markeredgewidth=1.8)
+    spread, = ax.fill(*ellipse(est_xy[0], values[0], vectors[0]).T, color=FILTER_COLOUR, alpha=0.18, linewidth=0)
+    rim, = ax.plot([], [], color=FILTER_COLOUR, linewidth=1.0)
+    vehicles = {colour: ax.fill(*shape[0].T, color=colour, alpha=0.9, linewidth=0)[0]
+                for colour, shape in shapes.items()}
+    ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), aspect="equal")
+    ax.set_axis_off()
     for step in range(len(true_xy)):
-        ax.cla()
-        ax.plot(*true_xy[:step + 1].T, color=TRUE_COLOUR, linewidth=1.6)
-        ax.plot(*dead_xy[:step + 1].T, color=DEAD_COLOUR, linestyle="--", linewidth=1.2)
-        ax.plot(*est_xy[:step + 1].T, color=FILTER_COLOUR, linewidth=1.2)
-        seen = reading_xy[:step + 1][fresh[:step + 1]]
-        ax.plot(*seen.T, marker="x", color=READING_COLOUR, linestyle="none", markersize=7, markeredgewidth=1.8)
-        ax.fill(*ellipse(est_xy[step], values[step], vectors[step]).T, color=FILTER_COLOUR, alpha=0.18, linewidth=0)
-        ax.plot(*ellipse(est_xy[step], values[step], vectors[step]).T, color=FILTER_COLOUR, linewidth=1.0)
+        true_trail.set_data(*true_xy[:step + 1].T)
+        dead_trail.set_data(*dead_xy[:step + 1].T)
+        est_trail.set_data(*est_xy[:step + 1].T)
+        seen.set_data(*reading_xy[:step + 1][fresh[:step + 1]].T)
+        ring = ellipse(est_xy[step], values[step], vectors[step])
+        spread.set_xy(ring)
+        rim.set_data(*ring.T)
         for colour, shape in shapes.items():
-            ax.fill(*shape[step].T, color=colour, alpha=0.9, linewidth=0)
-        ax.set(xlim=(low[0], high[0]), ylim=(low[1], high[1]), aspect="equal")
-        ax.set_axis_off()
-        frames.append(capture(fig))
+            vehicles[colour].set_xy(shape[step])
+        yield capture(fig)
     plt.close(fig)
-    return frames

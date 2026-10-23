@@ -60,8 +60,8 @@ def test_figures_draw():
                    render.draw_plate(scenarios.euler(np.array(scenarios.END_ANGLES)) >> core.centre),
                    render.draw_helices(coiled >> core.centre, edges)):
         plt.close(figure)
-    assert len(render.animate_sweep(scenarios.euler(scenarios.SWEEP[:1]) >> core.centre)) == 1
+    assert len(list(render.animate_sweep(scenarios.euler(scenarios.SWEEP[:1]) >> core.centre))) == 1
     first = next(scenarios.pulled())[None]
-    assert len(render.animate_cord(first >> core.centre, scenarios.ribbon(first, scenarios.CORD_RIBBON))) == 1
+    assert len(list(render.animate_cord(first >> core.centre, scenarios.ribbon(first, scenarios.CORD_RIBBON)))) == 1
     uncoiled = scenarios.uncoiling()[:1]
-    assert len(render.animate_uncoiling(uncoiled >> core.centre, scenarios.ribbon(uncoiled, scenarios.UNCOIL_RIBBON))) == 1
+    assert len(list(render.animate_uncoiling(uncoiled >> core.centre, scenarios.ribbon(uncoiled, scenarios.UNCOIL_RIBBON)))) == 1

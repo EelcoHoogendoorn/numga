@@ -47,17 +47,27 @@ def dashes(corners: np.ndarray, period: float) -> tuple[np.ndarray, np.ndarray]:
     return np.concatenate([starts for starts, _ in pieces]), np.concatenate([ends for _, ends in pieces])
 
 
+def markers(target: core.Point, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The measured markers, joined by a dashed outline, as solids."""
+    starts, ends = dashes(coordinates(target)[ORDER], DASH_PERIOD * view.pixel)
+    return [(solids.ball(target, MARKER_RADIUS * view.pixel)[:, None], TARGET),
+            (solids.rods(solids.mv.point(starts), solids.mv.point(ends), DASH_WIDTH / 2 * view.pixel), TARGET)]
+
+
+def triangle(placed: core.Point, view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
+                                                             list[tuple[solids.Quadric, np.ndarray, float]]]:
+    """The placed triangle's solid edges, and the triangle itself, translucent."""
+    rods, joints = solids.edges(placed[ORDER[:-1]], placed[ORDER[1:]], EDGE_WIDTH / 2 * view.pixel)
+    # The triangle as a plate a pixel thick.
+    plate = solids.plates(coordinates(placed)[None], view.pixel)             # [1, 5] Quadric
+    return [(rods, COLOUR), (joints, COLOUR)], [(plate, COLOUR, TRIANGLE_OPACITY)]
+
+
 def scene(target: core.Point, placed: core.Point, view: solids.View) -> np.ndarray:
     """The measured markers, joined by a dashed outline, and the placed triangle, translucent with solid edges,
     `[rows, columns, 3]`."""
-    starts, ends = dashes(coordinates(target)[ORDER], DASH_PERIOD * view.pixel)
-    rods, joints = solids.edges(placed[ORDER[:-1]], placed[ORDER[1:]], EDGE_WIDTH / 2 * view.pixel)
-    marks = [(solids.ball(target, MARKER_RADIUS * view.pixel)[:, None], TARGET),
-             (solids.rods(solids.mv.point(starts), solids.mv.point(ends), DASH_WIDTH / 2 * view.pixel), TARGET),
-             (rods, COLOUR), (joints, COLOUR)]
-    # The triangle as a plate a pixel thick.
-    triangle = solids.plates(coordinates(placed)[None], view.pixel)          # [1, 5] Quadric
-    return solids.draw(marks, view, np.ones(3), translucent=[(triangle, COLOUR, TRIANGLE_OPACITY)])
+    edges, translucent = triangle(placed, view)
+    return solids.draw(markers(target, view) + edges, view, np.ones(3), translucent=translucent)
 
 
 def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt.Figure:
@@ -76,8 +86,12 @@ def draw_stages(target: core.Point, stages: Iterator[core.Point]) -> plt.Figure:
     return figure
 
 
-def animate(states: Iterator[core.Point], source: core.Point, target: core.Point) -> list[np.ndarray]:
-    """The triangle carried through each alignment over the measured markers, framed alike throughout."""
+def animate(states: Iterator[core.Point], source: core.Point, target: core.Point) -> Iterator[np.ndarray]:
+    """The triangle carried through each alignment over the measured markers, which are set up once, framed alike
+    throughout."""
     states = tuple(states)
     view = framing([source, target, *states])
-    return [scene(target, state, view) for state in states]
+    measured = markers(target, view)
+    for state in states:
+        edges, translucent = triangle(state, view)
+        yield solids.draw(measured + edges, view, np.ones(3), translucent=translucent)

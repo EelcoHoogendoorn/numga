@@ -33,4 +33,4 @@ def test_the_dial_and_a_day_of_the_year_draw():
     foot = core.shadow(nodus, pole)
     plt.close(render.draw_dial(nodus, foot, seasons, days, suns, hours))
     declinations, rays, year_days = scenarios.year()
-    assert len(render.animate_year(declinations[:1], rays[:1], year_days[:1], nodus, foot, seasons, days, suns, hours)) == 1
+    assert len(list(render.animate_year(declinations[:1], rays[:1], year_days[:1], nodus, foot, seasons, days, suns, hours))) == 1

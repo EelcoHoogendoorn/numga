@@ -48,5 +48,5 @@ def test_scenario_renders():
         render.draw_camera_image(world_vertices, projected_pixels, camera_pose),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
-    frames = render.animate_scenegraph(islice(scenarios.robot_sweep(36), 4))
+    frames = list(render.animate_scenegraph(islice(scenarios.robot_sweep(36), 4)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

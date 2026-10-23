@@ -1,14 +1,16 @@
 """The rays of a quadratic curve and its complement in the three dimensions of x, y and weight, the cone they
 sweep, and where both meet the unit sphere: drawn on the GPU, the sphere traced and translucent with the equator and
-the cone's loops inked on it, the control rays rods, the curves tubes, the swept rays a translucent mesh."""
+the cone's loops inked on it, the control rays rods, the curves strokes, the swept rays a translucent mesh."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.geometry.bezier import core
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids, strokes
 
 sm = solids.mv
 CURVE_COLOUR = np.array(to_rgb("#287fa0"))
@@ -74,9 +76,9 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     corners = polygons.reshape(-1, 3)
     reaches = corners * np.maximum(1.0, 1 / np.linalg.norm(corners, axis=-1, keepdims=True))
     rays = solids.rods(sm.point(np.zeros_like(reaches)), sm.point(reaches), LINE_WIDTH / 2 * view.pixel)   # [corners, 3] Quadric
-    arc_tubes = meshes.tube_samples([(xyw, colour) for xyw, colour in zip(arcs, colours)], LINE_WIDTH, view)
-    on_sphere = meshes.tube_samples([(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True), colour)
-                                     for xyw, colour in zip(arcs, colours)], SPHERE_CURVE_WIDTH, view)
+    arc_strokes = strokes.polylines([(xyw, colour) for xyw, colour in zip(arcs, colours)], LINE_WIDTH, view)
+    on_sphere = strokes.polylines([(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True), colour)
+                                   for xyw, colour in zip(arcs, colours)], SPHERE_CURVE_WIDTH, view)
     # The control polygons dotted, their corners and the origin as points.
     dots = sm.point(np.concatenate([dotted(polygon, DOT_SPACING * view.pixel) for polygon in polygons]))
     parts = [(rays, RAY_COLOUR),
@@ -94,7 +96,7 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     face_colours = np.concatenate([np.broadcast_to(colour, (len(xyw) - 1, 3)) for xyw, colour in zip(arcs, colours)])
     fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view)
     return solids.draw(parts, view, np.ones(3), inks, translucent=sphere,
-                       meshes=[(fans, FAN_OPACITY), (arc_tubes, 1.0), (on_sphere, 1.0)])
+                       meshes=[(fans, FAN_OPACITY), (arc_strokes, 1.0), (on_sphere, 1.0)])
 
 
 def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
@@ -108,9 +110,9 @@ def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
     return [solids.View(camera, half + MARGIN * half.max(), N_PIXELS) for camera in cameras]
 
 
-def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> list[np.ndarray]:
+def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> Iterator[np.ndarray]:
     """The ray figure for each conic of a batch, viewed from turning once around, at one framing: the curves and the
     sphere's, which the weighted control points of the most hyperbolic conics run out of."""
     seen = views([curves, complements], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
-    return [draw_rays(controls[index], curves[index], complements[index], shapes[index], seen[index])
-            for index in range(curves.shape[0])]
+    for index in range(curves.shape[0]):
+        yield draw_rays(controls[index], curves[index], complements[index], shapes[index], seen[index])

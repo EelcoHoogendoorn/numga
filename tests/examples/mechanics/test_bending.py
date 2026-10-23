@@ -169,7 +169,7 @@ def test_scenes_draw():
     tube = sections[-1]
     across = scenarios.across_points()[:1]
     moved = scenarios.cantilever(*tube, scenarios.tip(across, scenarios.LENGTH) & down, scenarios.LENGTH, scenarios.SHEAR_MODULUS)
-    assert len(render.animate_loads(tube, centres[-1], shears[-1], across, down, moved)) == 1
+    assert len(list(render.animate_loads(tube, centres[-1], shears[-1], across, down, moved))) == 1
     stubs = [scenarios.cantilever(*sections[0], scenarios.tip(centres[0], scenarios.STUBBY_LENGTH) & down,
                                   scenarios.STUBBY_LENGTH, shear)[1] for shear in (scenarios.SHEAR_MODULUS, scenarios.RIGID_SHEAR)]
     plt.close(render.draw_stubby(sections[0], stubs, centres[0], down))

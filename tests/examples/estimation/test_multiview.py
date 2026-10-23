@@ -289,11 +289,11 @@ def test_figure_renders():
 @pytest.mark.parametrize("name", ["one_camera", "two_cameras", "three_cameras"])
 def test_convergence_animations_render(name):
     """Each alternating convergence scenario renders a short animation."""
-    frames = render.animate_convergence(islice(getattr(scenarios, name)(), 2))
+    frames = list(render.animate_convergence(islice(getattr(scenarios, name)(), 2)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
 
 
 def test_joint_animation_renders():
     """The joint alignment renders a short animation with pose covariances."""
-    frames = render.animate_convergence_with_covariance(islice(scenarios.jointly(), 2))
+    frames = list(render.animate_convergence_with_covariance(islice(scenarios.jointly(), 2)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

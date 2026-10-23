@@ -41,7 +41,7 @@ class Scene:
         encoder = self.tracer.device.create_command_encoder()
         n_still, n_slots = len(self.meshes), len(self.meshes) + len(meshes)
         # Buffers too small for the frame's meshes are made again, and the still meshes drawn into them once.
-        if self.n_slots < n_slots:
+        if self.buffers is None or self.n_slots < n_slots:
             self.buffers, self.n_slots = mesh_buffers(self.seen, n_slots, self.made), n_slots
             sampled(encoder, [mesh for mesh, _ in self.meshes], self.seen, 0, self.buffers)
         sampled(encoder, [mesh for mesh, _ in meshes], self.seen, n_still, self.buffers)

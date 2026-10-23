@@ -19,4 +19,4 @@ def test_a_day_turns_each_swing_by_the_sine_of_its_latitude_clockwise_and_the_ho
 
 def test_a_frame_of_the_day_draws():
     earth, swings, vertical, north, east = scenarios.day()
-    assert len(render.animate_day(earth[:2], swings[:2], vertical, north, east)) == 1
+    assert len(list(render.animate_day(earth[:2], swings[:2], vertical, north, east))) == 1

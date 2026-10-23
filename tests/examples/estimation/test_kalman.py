@@ -15,7 +15,7 @@ def test_filter_beats_dead_reckoning_and_animates():
     assert filtered_error.mean(axis=0).to_array() < 0.25 * dead_error.mean(axis=0).to_array()
 
     here, variances, axes = core.position_ellipse(estimates[:3], covariances[:3], core.mv.w.dual())
-    frames = render.animate_tracking(truth[:3], dead[:3], estimates[:3], here, variances, axes, readings[:3])
+    frames = list(render.animate_tracking(truth[:3], dead[:3], estimates[:3], here, variances, axes, readings[:3]))
     assert len(frames) == 3 and all(frame.shape == frames[0].shape for frame in frames)
 
 

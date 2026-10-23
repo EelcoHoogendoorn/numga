@@ -4,13 +4,16 @@ the cross-sections."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
+from matplotlib.lines import Line2D
 
 from examples.util.animation import capture
 from examples.mechanics.elastica import core
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 ga = core.ga
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
@@ -67,12 +70,14 @@ def draw_curls(centres: core.Point) -> plt.Figure:
     return figure
 
 
-def draw_rod(ax: plt.Axes, curve: np.ndarray, low: np.ndarray, high: np.ndarray) -> None:
-    """One of Euler's elastica: the line of thrust, the rod, and its pins at its two ends."""
+def draw_rod(ax: plt.Axes, curve: np.ndarray, low: np.ndarray, high: np.ndarray) -> tuple[Line2D, Line2D]:
+    """One of Euler's elastica: the line of thrust, the rod, and its pins at its two ends. The rod and the pins,
+    for an animation to move."""
     ax.axhline(0, color=THRUST, lw=0.8)
-    ax.plot(*curve.T, color=ROD, lw=2.2)
-    ax.plot(*curve[[0, -1]].T, "^", color="0.2", markersize=6)
+    rod, = ax.plot(*curve.T, color=ROD, lw=2.2)
+    pins, = ax.plot(*curve[[0, -1]].T, "^", color="0.2", markersize=6)
     frame_plane(ax, low, high)
+    return rod, pins
 
 
 def draw_plate(centres: core.Point) -> plt.Figure:
@@ -87,19 +92,20 @@ def draw_plate(centres: core.Point) -> plt.Figure:
     return figure
 
 
-def animate_sweep(centres: core.Point) -> list[np.ndarray]:
-    """Euler's elastica as the end angle grows `[frames, pieces + 1]`, all to one scale."""
+def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
+    """Euler's elastica as the end angle grows `[frames, pieces + 1]`, all to one scale, in one figure whose rod and
+    pins move."""
     curves = plane(centres)                                                  # [frames, pieces + 1, 2]
     low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
-    images = []
+    figure, ax = plt.subplots(figsize=(5.0, 5.0 * (high[1] - low[1] + 2 * MARGIN) / (high[0] - low[0] + 2 * MARGIN)),
+                              dpi=100)
+    rod, pins = draw_rod(ax, curves[0], low, high)
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     for curve in curves:
-        figure, ax = plt.subplots(figsize=(5.0, 5.0 * (high[1] - low[1] + 2 * MARGIN) / (high[0] - low[0] + 2 * MARGIN)),
-                                  dpi=100)
-        draw_rod(ax, curve, low, high)
-        figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        rod.set_data(*curve.T)
+        pins.set_data(*curve[[0, -1]].T)
+        yield capture(figure)
+    plt.close(figure)
 
 
 def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
@@ -114,7 +120,7 @@ def draw_helices(centres: core.Point, edges: core.Point) -> plt.Figure:
     return image_figure(scene(curves, ribbons, view))
 
 
-def animate_uncoiling(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
+def animate_uncoiling(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
     """The wire through the sweep of its tilt `[frames, pieces + 1]`, with its ribbon `[frames, pieces + 1, 2]`,
     the camera turning slowly around it, all to one scale."""
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, pieces + 1, 3], [..., 2, 3]
@@ -127,31 +133,31 @@ def animate_uncoiling(centres: core.Point, edges: core.Point) -> list[np.ndarray
     half = np.array([radius, (high[2] - low[2]) / 2 * np.cos(UNCOIL_ELEVATION) + radius * np.sin(UNCOIL_ELEVATION)])
     half = half + MARGIN * half.max()
     azimuths = np.linspace(*UNCOIL_AZIMUTHS, len(curves), endpoint=False)
-    return [scene(curve[None], ribbon[None], solids.View(solids.aim(solids.mv.point(middle), UNCOIL_ELEVATION, azimuth),
-                                                        half, N_UNCOIL_PIXELS))
-            for curve, ribbon, azimuth in zip(curves, ribbons, azimuths)]
+    for curve, ribbon, azimuth in zip(curves, ribbons, azimuths):
+        yield scene(curve[None], ribbon[None], solids.View(solids.aim(solids.mv.point(middle), UNCOIL_ELEVATION, azimuth),
+                                                           half, N_UNCOIL_PIXELS))
 
 
-def animate_cord(centres: core.Point, edges: core.Point) -> list[np.ndarray]:
+def animate_cord(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
     """The telephone cord at each frame `[frames, drawn]`, as a ribbon `[frames, drawn, 2]` with its base and its
     handset, all from one fixed view and to one scale."""
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, drawn, 3], [..., 2, 3]
     view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, N_CORD_PIXELS)
     # The clamps at the base and the handset: small balls at the cord's two ends.
     clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
-    return [solids.draw([(ends, CLAMP)], view, BACKGROUND, meshes=wires(curve[None], ribbon[None], view))
-            for curve, ribbon, ends in zip(curves, ribbons, clamps)]
+    for curve, ribbon, ends in zip(curves, ribbons, clamps):
+        yield solids.draw([(ends, CLAMP)], view, BACKGROUND, meshes=wires(curve[None], ribbon[None], view))
 
 
 def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[meshes.Samples, float]]:
-    """Rods along curves `[rods, n, 3]` as thin tubes, through their ribbons `[rods, n, 2, 3]`: strips between the
-    edges, two triangles to each piece of rod; each an opaque mesh, sample by sample."""
+    """Rods along curves `[rods, n, 3]` as strokes, through their ribbons `[rods, n, 2, 3]`: strips between the
+    edges, two triangles to each piece of rod; each opaque, sample by sample."""
     index = np.arange(ribbons.size // 3).reshape(ribbons.shape[:3])         # [rods, n, 2]
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = solids.mv.point(ribbons.reshape(-1, 3))
     strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
-    rods = meshes.tube_samples([(curve, ROD) for curve in curves], ROD_WIDTH, view)
+    rods = strokes.polylines([(curve, ROD) for curve in curves], ROD_WIDTH, view)
     return [(strips, 1.0), (rods, 1.0)]
 
 

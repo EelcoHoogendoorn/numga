@@ -6,6 +6,8 @@ are displaced linearly and exaggerated for readability.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import numpy as np
@@ -106,7 +108,7 @@ def draw_modes(cases: list[ModeCase]) -> plt.Figure:
     return fig
 
 
-def animate_modes(cases: list[ModeCase], frames: int) -> list[np.ndarray]:
+def animate_modes(cases: list[ModeCase], frames: int) -> Iterator[np.ndarray]:
     """Release each isolated mode from rest in synchronized physical time."""
     fig, axes = _new_figure(cases, 0.0, 0.98, 0.04)
     fig.set_dpi(80)
@@ -115,13 +117,11 @@ def animate_modes(cases: list[ModeCase], frames: int) -> list[np.ndarray]:
     frequencies = np.concatenate([case.frequencies.to_array() for case in cases])
     duration = 2 / np.min(frequencies[frequencies > 0])
 
-    images = []
     for time in np.linspace(0, duration, frames):
         for update, phase in zip(updates, np.cos(2 * np.pi * frequencies * time)):
             update(phase)
-        images.append(capture(fig))
+        yield capture(fig)
     plt.close(fig)
-    return images
 
 
 def render_setup(

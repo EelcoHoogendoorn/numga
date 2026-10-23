@@ -6,17 +6,19 @@ the camera's sensor. The mathematics never imports this module.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+from matplotlib.image import AxesImage
 from matplotlib.patches import Rectangle
 import numpy as np
 
 from numga import stack
 from examples.util.animation import capture
 from examples.geometry.scenegraph.core import Motor, Point, mv, unit_box_topology
-from examples.util.wgsl import image_figure, meshes, show, solids
+from examples.util.wgsl import image_figure, meshes, show, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 
 # Colors for the robot arm bodies:
@@ -81,34 +83,45 @@ def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
     return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
-def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
-    """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
-    _, faces = unit_box_topology()
-    # Every body a box, the half-spaces inside its faces.
-    arm = solids.polyhedra(euclidean(world_vertices), faces)                  # [bodies, faces] Quadric
-    body_colours = np.array([mcolors.to_rgb(color) for color in BODY_COLORS])
-
+def camera_and_floor(camera_pose: Motor, view: solids.View) -> tuple[list, list, list]:
+    """What stands with the camera, and the floor: the floor grid and the sensor's edge as solids, the sensor chip as
+    a translucent solid, and the lens rims as strokes, for `solids.draw` and `Scene`."""
     rims, sensor = optics(camera_pose)
     # The sensor chip as a plate a pixel thick, with its edge.
     chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Quadric
     corners = mv.point(sensor)                                                # [4] Point
     edge, edge_joints = solids.edges(corners, corners[[1, 2, 3, 0]], RAY_WIDTH / 2 * view.pixel)
+    grid = solids.rods(mv.point(floor()[:, 0]), mv.point(floor()[:, 1]), FLOOR_WIDTH / 2 * view.pixel)
+    lenses = strokes.polylines([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
+                               RIM_WIDTH, view)
+    parts = [(grid, np.array(mcolors.to_rgb(FLOOR_COLOR))),
+             (edge, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR))), (edge_joints, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR)))]
+    return parts, [(chip, np.array(mcolors.to_rgb(SENSOR_COLOR)), SENSOR_OPACITY)], [(lenses, 1.0)]
+
+
+def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The articulated robot arm and the traced rays, with their hits on the sensor, as solids."""
+    _, faces = unit_box_topology()
+    # Every body a box, the half-spaces inside its faces.
+    arm = solids.polyhedra(euclidean(world_vertices), faces)                  # [bodies, faces] Quadric
+    body_colours = np.array([mcolors.to_rgb(color) for color in BODY_COLORS])
     # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor, each a run of segments.
     paths = np.stack([euclidean(stage) for stage in rays], axis=-2)           # [rays, stages, 3]
     segments = paths.shape[1] - 1
     ray_colours = np.array([mcolors.to_rgb(color) for color in RAY_COLORS[:len(paths)]])
     beams, beam_joints = solids.edges(mv.point(paths[:, :-1].reshape(-1, 3)), mv.point(paths[:, 1:].reshape(-1, 3)),
                                       RAY_WIDTH / 2 * view.pixel)
-    grid = solids.rods(mv.point(floor()[:, 0]), mv.point(floor()[:, 1]), FLOOR_WIDTH / 2 * view.pixel)
     hits = solids.ball(rays[3], HIT_RADIUS * view.pixel)[:, None]             # [rays, 1] Quadric
-    lenses = meshes.tube_samples([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
-                                 RIM_WIDTH, view)
-    parts = [(arm, body_colours), (grid, np.array(mcolors.to_rgb(FLOOR_COLOR))),
-             (edge, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR))), (edge_joints, np.array(mcolors.to_rgb(SENSOR_EDGE_COLOR))),
-             (beams, np.repeat(ray_colours, segments, axis=0)), (beam_joints, np.repeat(ray_colours, 2 * segments, axis=0)),
-             (hits, ray_colours)]
-    return solids.draw(parts, view, np.ones(3), translucent=[(chip, np.array(mcolors.to_rgb(SENSOR_COLOR)), SENSOR_OPACITY)],
-                       meshes=[(lenses, 1.0)])
+    return [(arm, body_colours),
+            (beams, np.repeat(ray_colours, segments, axis=0)), (beam_joints, np.repeat(ray_colours, 2 * segments, axis=0)),
+            (hits, ray_colours)]
+
+
+def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
+    """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
+    parts, translucent, lenses = camera_and_floor(camera_pose, view)
+    return solids.draw(parts + arm_and_rays(world_vertices, rays, view), view, np.ones(3), translucent=translucent,
+                       meshes=lenses)
 
 
 # --- sensor photograph ------------------------------------------------------------------
@@ -141,13 +154,13 @@ def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose
     return image, view
 
 
-def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> None:
-    """The photograph on the sensor, with the sensor's edge."""
-    ax.clear()
+def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> AxesImage:
+    """The photograph on the sensor, with the sensor's edge. The photograph shown, for an animation to set its data."""
     image, view = photograph_image(world_vertices, projected_pixels, camera_pose)
-    show(ax, image, view)
+    shown = show(ax, image, view)
     left, _, bottom, _ = view.extent
     ax.add_patch(Rectangle((left, bottom), *SENSOR_PIXELS, fill=False, edgecolor="#4A5568", linewidth=1.2))
+    return shown
 
 
 # --- figures ----------------------------------------------------------------------------
@@ -181,16 +194,22 @@ def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose:
     return fig
 
 
-def animate_scenegraph(frames: Iterable) -> list[np.ndarray]:
-    """RGB frames of the two-panel figure, one per state, the scene seen by one view that frames them all."""
+def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
+    """RGB frames of the two-panel figure, one per state, the scene seen by one view that frames them all. The camera
+    stands still: its optics and the floor are set up once, from the first state, and the arm and the rays drawn among
+    them."""
     frames = list(frames)
     view = framing([(world_vertices, camera_pose, rays) for world_vertices, _, camera_pose, rays in frames])
     fig, ax_3d, ax_2d = scenegraph_axes(100)
-    images = []
-    for world_vertices, projected_pixels, camera_pose, rays in frames:
-        ax_3d.clear()
-        show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view), view)
-        plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose)
-        images.append(capture(fig))
+    world_vertices, projected_pixels, camera_pose, rays = frames[0]
+    parts, translucent, lenses = camera_and_floor(camera_pose, view)
+    scene = Scene(view, np.ones(3), parts, lenses, translucent=translucent)
+    # Lay the figure out once; only the two pictures change between frames.
+    scene_image = show(ax_3d, scene.draw(arm_and_rays(world_vertices, rays, view)), view)
+    photograph = plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose)
+    yield capture(fig)
+    for world_vertices, projected_pixels, camera_pose, rays in frames[1:]:
+        scene_image.set_data(scene.draw(arm_and_rays(world_vertices, rays, view)))
+        photograph.set_data(photograph_image(world_vertices, projected_pixels, camera_pose)[0])
+        yield capture(fig)
     plt.close(fig)
-    return images

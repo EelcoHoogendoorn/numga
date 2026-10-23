@@ -11,10 +11,14 @@ them and their heading."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import Normalize, to_rgb, to_rgba
+from matplotlib.lines import Line2D
+from matplotlib.text import Annotation
 
 from examples.util.animation import capture
 from examples.mechanics.bending import core
@@ -82,30 +86,51 @@ def unit(directions: np.ndarray) -> np.ndarray:
     return directions / np.linalg.norm(directions, axis=-1, keepdims=True)
 
 
-def arrow(ax, start: np.ndarray, direction: np.ndarray, length: float, colour: str) -> None:
-    ax.annotate("", xy=start + length * unit(direction), xytext=start,
-                arrowprops=dict(arrowstyle="-|>", color=colour, lw=2, shrinkA=0, shrinkB=0))
+def arrow(ax, start: np.ndarray, direction: np.ndarray, length: float, colour: str) -> Annotation:
+    """An arrow from a start along a direction, a length long, for an animation to move with `aim`."""
+    pointer = ax.annotate("", xy=start, xytext=start,
+                          arrowprops=dict(arrowstyle="-|>", color=colour, lw=2, shrinkA=0, shrinkB=0))
+    aim(pointer, start, direction, length)
+    return pointer
 
 
-def line_through(ax, line: core.Strain, centre: core.Point, half: float, **style) -> None:
-    """A line of the section, drawn for `half` either side of the foot of `centre` on it."""
+def aim(pointer: Annotation, start: np.ndarray, direction: np.ndarray, length: float) -> None:
+    """An arrow moved to run from a start along a direction, a length long."""
+    pointer.xy = start + length * unit(direction)
+    pointer.set_position(start)
+
+
+def line_ends(line: core.Strain, centre: core.Point, half: float) -> np.ndarray:
+    """The ends `[2, 2]` of a line of the section drawn for `half` either side of the foot of `centre` on it."""
     foot = flat((centre | line) ^ line)
-    ax.plot(*(foot + np.outer([-half, half], unit(heading(line ^ mv.w)))).T, **style)
+    return foot + np.outer([-half, half], unit(heading(line ^ mv.w)))
 
 
-def draw_stress(ax, walls: core.Point, stress: core.Scalar, largest: float) -> None:
-    """The walls as thick lines coloured by the stress along the beam, linear along each wall between
-    its ends."""
-    ends = flat(walls)                                                       # [walls, 2, 2]
+def line_through(ax, line: core.Strain, centre: core.Point, half: float, **style) -> Line2D:
+    """A line of the section, drawn for `half` either side of the foot of `centre` on it."""
+    return ax.plot(*line_ends(line, centre, half).T, **style)[0]
+
+
+def wall_stress(stress: core.Scalar) -> np.ndarray:
+    """The stress along the beam at the middle of each piece of each wall `[walls * pieces]`, linear along each wall
+    between its ends."""
     values = stress.to_array()                                               # [walls, 2]
+    fractions = np.linspace(0, 1, WALL_PIECES + 1)
+    middles = (fractions[:-1] + fractions[1:]) / 2
+    return (values[:, None, 0] * (1 - middles) + values[:, None, 1] * middles).reshape(-1)
+
+
+def draw_stress(ax, walls: core.Point, stress: core.Scalar, largest: float) -> LineCollection:
+    """The walls as thick lines coloured by the stress along the beam, linear along each wall between
+    its ends, for an animation to set the stress of."""
+    ends = flat(walls)                                                       # [walls, 2, 2]
     fractions = np.linspace(0, 1, WALL_PIECES + 1)[:, None]                  # [pieces + 1, 1]
     along = ends[:, None, 0] * (1 - fractions) + ends[:, None, 1] * fractions   # [walls, pieces + 1, 2]
     pieces = np.stack([along[:, :-1], along[:, 1:]], axis=-2).reshape(-1, 2, 2)
-    middles = (fractions[:-1, 0] + fractions[1:, 0]) / 2
-    colours = (values[:, None, 0] * (1 - middles) + values[:, None, 1] * middles).reshape(-1)
-    lines = LineCollection(pieces, array=colours, cmap=STRESS, norm=Normalize(-largest, largest),
+    lines = LineCollection(pieces, array=wall_stress(stress), cmap=STRESS, norm=Normalize(-largest, largest),
                            linewidths=WALL_WIDTH, capstyle="round")
     ax.add_collection(lines)
+    return lines
 
 
 def frame_section(ax, limit: float) -> None:
@@ -141,18 +166,20 @@ def section_limit(tips: core.Point) -> float:
 
 def draw_section(ax, walls: core.Point, stress: core.Scalar, principal: core.Strain, centre: core.Point,
                  shear: core.Point, through: core.Point, load: core.Point, tip: core.Point, strain: core.Twist,
-                 largest: float, limit: float) -> None:
+                 largest: float, limit: float) -> tuple[LineCollection, LineCollection, Line2D, Annotation]:
     """One section: the stress along the beam over its walls at the clamp, the walls at the tip as the
     tip has moved, its principal axes dashed through the centroid, the neutral axis, and the load's
-    direction where it acts on the moved tip."""
-    draw_stress(ax, walls, stress, largest)
-    ax.add_collection(LineCollection(flat(tip), colors=BEAM, linewidths=WALL_WIDTH, capstyle="round"))
+    direction where it acts on the moved tip. The stress, the tip's walls, the neutral axis and the load's arrow,
+    for an animation to move."""
+    stresses = draw_stress(ax, walls, stress, largest)
+    tip_walls = ax.add_collection(LineCollection(flat(tip), colors=BEAM, linewidths=WALL_WIDTH, capstyle="round"))
     for axis in principal:
         line_through(ax, axis, centre, 2 * limit, color=PRINCIPAL, linestyle="--", linewidth=1.0)
-    line_through(ax, strain, centre, 2 * limit, color=NEUTRAL, linewidth=1.8)
-    arrow(ax, flat(through), heading(load), ARROW, LOAD)
+    neutral = line_through(ax, strain, centre, 2 * limit, color=NEUTRAL, linewidth=1.8)
+    pointer = arrow(ax, flat(through), heading(load), ARROW, LOAD)
     mark_centres(ax, centre, shear)
     frame_section(ax, limit)
+    return stresses, tip_walls, neutral, pointer
 
 
 def straightened(bent: np.ndarray) -> np.ndarray:
@@ -254,7 +281,7 @@ def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list
 
 def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
                   through: core.Point, loads: core.Point,
-                  beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> list[np.ndarray]:
+                  beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> Iterator[np.ndarray]:
     """Each frame of a changing tip load, through points `through` in directions `loads`, either batched
     over the frames: the bent beam, and its section's stress at the clamp with the tip's cross-section."""
     nodes, ends, _ = section
@@ -266,17 +293,23 @@ def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: co
     # One camera framing every frame's beam.
     seen = view([space(walls)], [load_tip(frames[:, -1] >> through, loads, TIP_ARROW)], ELEVATION, AZIMUTH)
     limit = section_limit(walls[:, -1])
-    images = []
+    moved = frames[:, -1] >> through                                         # [frames] Point
+    # The figure and the section's still parts drawn once; the beam's picture, the stress, the tip's walls, the
+    # neutral axis and the load's arrow set for each frame.
+    figure = plt.figure(figsize=(9.0, 4.6), dpi=100)
+    image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
+    stresses, tip_walls, neutral, pointer = draw_section(figure.add_subplot(1, 2, 2), nodes[ends], stress[0], principal,
+                                                         centre, shear, moved[0], loads[0], walls[0, -1],
+                                                         strains[0, 0], largest, limit)
+    figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.05)
     for frame in range(count):
-        figure = plt.figure(figsize=(9.0, 4.6), dpi=100)
-        show(figure.add_subplot(1, 2, 1), draw_beam(walls[frame], frames[frame] >> shear,
-                                                    frames[frame, -1] >> through[frame], loads[frame], seen), seen)
-        draw_section(figure.add_subplot(1, 2, 2), nodes[ends], stress[frame], principal, centre, shear,
-                     frames[frame, -1] >> through[frame], loads[frame], walls[frame, -1], strains[frame, 0], largest, limit)
-        figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.05)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        image.set_data(draw_beam(walls[frame], frames[frame] >> shear, moved[frame], loads[frame], seen))
+        stresses.set_array(wall_stress(stress[frame]))
+        tip_walls.set_segments(flat(walls[frame, -1]))
+        neutral.set_data(*line_ends(strains[frame, 0], centre, 2 * limit).T)
+        aim(pointer, flat(moved[frame]), heading(loads[frame]), ARROW)
+        yield capture(figure)
+    plt.close(figure)
 
 
 def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:

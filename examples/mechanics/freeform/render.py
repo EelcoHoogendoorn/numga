@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,11 +36,12 @@ def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.nd
     return meshes.draw(points, faces, surface, meshes.smooth(points, faces), view, background)
 
 
-def frames(vertices: Iterable[Antivector], faces: np.ndarray) -> list[np.ndarray]:
+def frames(vertices: Iterable[Antivector], faces: np.ndarray) -> Iterator[np.ndarray]:
     """Draw a sequence of surfaces with a camera fixed by the first frame."""
     states = [solids.mv.point(coordinates(state)) for state in vertices]
     view = viewport(states[0])
-    return [picture(state, faces, view) for state in states]
+    for state in states:
+        yield picture(state, faces, view)
 
 
 def draw(vertices: Antivector, faces: np.ndarray) -> plt.Figure:

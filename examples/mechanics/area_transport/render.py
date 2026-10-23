@@ -4,12 +4,13 @@ centre, as long as its area; beside it, the areas and the volume as bars."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.colors import to_rgb
+from matplotlib.container import BarContainer
 
 from numga import stack
 from examples.util.animation import capture
@@ -75,16 +76,22 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     return solids.draw(opaque, view, background, translucent=[(faces, colours[shown], face_opacity)])
 
 
-def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> None:
-    areas = patches[:3].norm().kernel[..., 0]
-    values = np.concatenate([areas, volume.kernel])
-    ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
+def heights(patches: core.Patch, volume: core.Scalar) -> np.ndarray:
+    """The areas of the faces normal to x, y and z, and the volume."""
+    return np.concatenate([patches[:3].norm().kernel[..., 0], volume.kernel])
+
+
+def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer:
+    """The bars of the areas and the volume, for an animation to set their heights."""
+    values = heights(patches, volume)
+    bars = ax.bar(np.arange(len(values)), values, color=(*COLOURS, EDGE_COLOUR), width=0.58)
     ax.axhline(1, color="#94a3b8", linestyle=":", linewidth=1)
     # The unit cube's measures, the one value read off; each column named by what it measures.
     ax.set(xticks=np.arange(len(values)), xticklabels=["face $x$", "face $y$", "face $z$", "volume"], yticks=[1],
            ylim=(0, 1.35))
     ax.tick_params(axis="x", length=0)
     ax.spines[["top", "right"]].set_visible(False)
+    return bars
 
 
 def comparison(vertices: core.Point, centres: core.Point, patches: core.Patch, volume: core.Scalar) -> plt.Figure:
@@ -99,19 +106,18 @@ def comparison(vertices: core.Point, centres: core.Point, patches: core.Patch, v
     return figure
 
 
-def frame(image: np.ndarray, view: solids.View, patches: core.Patch, volume: core.Scalar) -> np.ndarray:
-    figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
-    show(figure.add_subplot(1, 2, 1), image, view)
-    measures(figure.add_subplot(1, 2, 2), patches, volume)
-    pixels = capture(figure)
-    plt.close(figure)
-    return pixels
-
-
-def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> list[np.ndarray]:
-    """The frames, all from one camera framing every frame's cube."""
+def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scalar]]) -> Iterator[np.ndarray]:
+    """The frames, all from one camera framing every frame's cube, beside the bars of their measures."""
     frames = list(frames)
     vertices, centres, patches, _ = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...]
     seen = view(vertices, centres, patches)
-    return [frame(picture(vertices, centres, patches, seen), seen, patches, volume)
-            for vertices, centres, patches, volume in frames]
+    figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
+    image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
+    bars = measures(figure.add_subplot(1, 2, 2), *frames[0][2:])
+    # The figure set up once; only the cube's picture and the bars' heights change between frames.
+    for vertices, centres, patches, volume in frames:
+        image.set_data(picture(vertices, centres, patches, seen))
+        for bar, height in zip(bars, heights(patches, volume)):
+            bar.set_height(height)
+        yield capture(figure)
+    plt.close(figure)

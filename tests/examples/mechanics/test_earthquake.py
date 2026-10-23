@@ -39,4 +39,4 @@ def test_scenes_draw():
     figure = render.draw_mechanisms(scenarios.hemisphere(), *scenarios.beachballs(moment))
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(render.animate_sweep(scenarios.hemisphere(), scenarios.sweep(1))) == 1
+    assert len(list(render.animate_sweep(scenarios.hemisphere(), scenarios.sweep(1)))) == 1

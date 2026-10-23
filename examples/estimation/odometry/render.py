@@ -3,6 +3,8 @@ drawn as an ellipse, the zero level of a quadric on a grid of points. Lengths ar
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -113,19 +115,17 @@ def draw(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, poses: 
     return figure
 
 
-def animate(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, closing) -> list[np.ndarray]:
+def animate(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, closing) -> Iterator[np.ndarray]:
     """A frame for each iteration of the closing, from the poses and uncertainties it yields, over the
     true path and dead reckoning drawn once."""
     figure, ax = plt.subplots(figsize=(5, 5))
     box = extent(truth, dead)
     draw_paths(ax, truth, dead, reckoned, box)
     frame(ax, box)
-    frames = []
     for poses, uncertainty in closing:
         drawn = draw_likely(ax, poses, uncertainty, box)
         figure.tight_layout()
-        frames.append(capture(figure))
+        yield capture(figure)
         for artist in drawn:
             artist.remove()
     plt.close(figure)
-    return frames

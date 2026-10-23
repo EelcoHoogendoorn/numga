@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -54,7 +54,7 @@ def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: 
 def bond_frames(
     anchor: core.Antivector, reference: core.Antivector, path: core.Antivector,
     states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """An endpoint follows its closed path, the area it has swept about its rest position shaded, while
     the bond's force changes."""
     fixed = _coordinates(anchor)
@@ -79,7 +79,6 @@ def bond_frames(
     arrow = ax.quiver(*endpoints[0], 0, 0, angles="xy", scale_units="xy", scale=1,
                       color=FORCE, width=0.011, headwidth=4, headlength=5, zorder=5)
 
-    images = []
     for i, (position, force) in enumerate(zip(endpoints, forces)):
         swept.set_xy(np.concatenate((rest[None], endpoints[:i + 1])))
         bond.set_data(*np.stack((fixed, position)).T)
@@ -87,15 +86,14 @@ def bond_frames(
         trail.set_data(*endpoints[:i + 1].T)
         arrow.set_offsets(position)
         arrow.set_UVC(*(force_scale * force))
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images
 
 
 def patch_frames(
     reference: core.Antivector, edges: np.ndarray,
     states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """A deforming patch pushes on its boundary around its closed cycle."""
     rest = _coordinates(reference)
     boundary = np.bincount(edges.reshape(-1), minlength=len(rest)) < 6
@@ -114,22 +112,20 @@ def patch_frames(
                        angles="xy", scale_units="xy", scale=1, color=FORCE,
                        width=0.005, headwidth=3.8, headlength=4.8, zorder=4)
 
-    images = []
     for position, force in zip(positions, forces):
         bonds.set_segments(position[edges])
         nodes.set_offsets(position)
         arrows.set_offsets(position[boundary])
         arrows.set_UVC(*(force_scale * force[boundary]).T)
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images
 
 
 def wave_frames(
     reference: core.Antivector, edges: np.ndarray,
     states: Iterable[tuple[core.Antivector, core.Scalar]],
     displacement_scale: float, extension_scale: float, tracked_index: int,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
     rest = _coordinates(reference)
     figure = plt.figure(figsize=(6.5, 3.7), dpi=100, facecolor=BACKGROUND)
@@ -144,7 +140,6 @@ def wave_frames(
 
     n_trail_frames = 18
     history = []
-    images = []
     for positions, extensions in states:
         position = rest + displacement_scale * (_coordinates(positions) - rest)
         bonds.set_segments(position[edges])
@@ -154,6 +149,5 @@ def wave_frames(
         trajectory = np.stack(history[-n_trail_frames:])
         trail.set_data(*trajectory.T)
         tracked.set_data([position[tracked_index, 0]], [position[tracked_index, 1]])
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images

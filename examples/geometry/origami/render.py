@@ -79,7 +79,8 @@ def draw(paper: core.Paper) -> plt.Figure:
     return figure
 
 
-def animate(states: Iterator[core.Paper]) -> list[np.ndarray]:
+def animate(states: Iterator[core.Paper]) -> Iterator[np.ndarray]:
     states = tuple(states)
     view = viewport(concatenate([state.points for state in states]))
-    return [picture(state, view) for state in states]
+    for state in states:
+        yield picture(state, view)

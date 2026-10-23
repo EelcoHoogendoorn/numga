@@ -6,7 +6,7 @@ points, `quadric(grid) & grid`.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
@@ -226,26 +226,22 @@ def draw_reconstruction_with_covariance(
     return fig
 
 
-def animate_convergence(states: Iterable) -> list[np.ndarray]:
+def animate_convergence(states: Iterable) -> Iterator[np.ndarray]:
     """RGB frames of the reconstruction, one per state."""
     fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
-    frames = []
     for motors, world_cones, fused, points in states:
         plot_reconstruction(ax, motors, world_cones, fused, points)
-        frames.append(capture(fig))
+        yield capture(fig)
     plt.close(fig)
-    return frames
 
 
 def animate_convergence_with_covariance(
     states: Iterable,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """RGB frames of the reconstruction and pose covariances, one per state."""
     fig, ax = plt.subplots(figsize=(6.5, 6.5), dpi=60, layout="constrained")
-    frames = []
     for motors, world_cones, fused, points, information in states:
         plot_reconstruction(ax, motors, world_cones, fused, points)
         plot_pose_covariance(ax, motors, information)
-        frames.append(capture(fig))
+        yield capture(fig)
     plt.close(fig)
-    return frames

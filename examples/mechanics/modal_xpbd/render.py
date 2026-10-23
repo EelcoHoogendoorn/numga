@@ -1,6 +1,6 @@
 """Flexible girders and their tip motion."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -71,13 +71,11 @@ def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
     return figure
 
 
-def animate(frames: Iterable[Point], edges: np.ndarray, damping: np.ndarray, reference: Point) -> list[np.ndarray]:
-    images = []
+def animate(frames: Iterable[Point], edges: np.ndarray, damping: np.ndarray, reference: Point) -> Iterator[np.ndarray]:
     for points in frames:
         figure = draw(points, edges, damping, reference)
-        images.append(capture(figure))
+        yield capture(figure)
         plt.close(figure)
-    return images
 
 
 def chain_scene(edges: np.ndarray, reference: Point, trajectory: Point) -> tuple[plt.Figure, LineCollection]:
@@ -104,15 +102,13 @@ def update_chain(points: Point, edges: np.ndarray, bars: LineCollection) -> None
     bars.set_segments(positions[:, edges].reshape(-1, 2, 2))
 
 
-def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point) -> list[np.ndarray]:
+def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point) -> Iterator[np.ndarray]:
     frames = tuple(frames)
     figure, bars = chain_scene(edges, reference, stack(frames))
-    images = []
     for points in frames:
         update_chain(points, edges, bars)
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images
 
 
 def notebook_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point, duration_ms: int) -> Path:
@@ -127,7 +123,7 @@ def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     return figure
 
 
-def beam(frames: list[Point], edges: np.ndarray) -> list[np.ndarray]:
+def beam(frames: list[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     """Frames of the beam, the first case: moving girders coloured, fixed ones grey."""
     positions = stack(frames)[:, 0].dual().cast(ga.subspace("x y")).kernel   # [frames, bodies, vertices, 2]
     bodies = positions.shape[1]
@@ -141,12 +137,10 @@ def beam(frames: list[Point], edges: np.ndarray) -> list[np.ndarray]:
     axes.set(xlim=(lower[0], upper[0]), ylim=(-1.2 * reach, 1.2 * reach))
     axes.set_aspect("equal")
     axes.set_axis_off()
-    images = []
     for frame in positions:
         bars.set_segments(frame[:, edges].reshape(-1, 2, 2))
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images
 
 
 def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:

@@ -62,7 +62,7 @@ def main() -> None:
 
     poses = [ellipsoids(angles, VELOCITY_SCALE, FORCE_SCALE) for angles in (REACHING, NEARLY_STRAIGHT)]
     save_figure(render.draw_ellipsoids(poses, VIEW, CENTRE, EXTENT, FIGURE_PIXELS), "manipulability")
-    frames = [render.frame(pose, VIEW, CENTRE, EXTENT, FRAME_PIXELS) for pose in sweep(N_FRAMES)]
+    frames = (render.frame(pose, VIEW, CENTRE, EXTENT, FRAME_PIXELS) for pose in sweep(N_FRAMES))
     save_animation(frames, "manipulability_sweep", FRAME_DURATION)
 
     # checks

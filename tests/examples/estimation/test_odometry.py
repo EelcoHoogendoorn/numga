@@ -60,7 +60,7 @@ def test_the_lap_closes_in_the_plane_and_draws():
     np.testing.assert_allclose((quadric(here) & here).to_array(), -render.SIGMAS**2, atol=1e-6)
     # A frame for each damped iteration.
     *_, iterates = scenarios.damped(steps, 0.2, 2, 0)
-    assert len(render.animate(truth, dead, reckoned, iterates)) == 2
+    assert len(list(render.animate(truth, dead, reckoned, iterates))) == 2
 
 
 def test_the_same_core_in_space():
