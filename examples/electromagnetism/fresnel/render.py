@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.util.wgsl import labels, meshes, show, solids, vec3
+from examples.util.wgsl import fitted, labels, meshes, show, solids, vec3
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -25,10 +25,10 @@ sm = solids.mv
 # How much of what lies behind them each side of a sheet and its grid lines hide, and the axes' colour.
 sheet_opacity, grid_opacity = 0.12, 0.4
 axis_colour = np.array([0.45, 0.47, 0.52])
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view about
-# the origin, the same for every medium so their sizes compare; and the pixels across it.
+# The view's elevation and azimuth in radians, azimuth zero looking along +y, and the half width of the square view
+# about the origin, the same for every medium so their sizes compare.
 elevation, azimuth = np.radians(22.0), np.radians(37.0)
-half_width, n_pixels = 2.3, 400
+half_width = 2.3
 # The widths of the grid lines and the axes' arrows, and the arrowheads' length and width, in pixels; how far the
 # axes reach and their names lie, in units of k.
 grid_width, arrow_width, head_length, head_width = 2.0, 2.0, 10.0, 7.0
@@ -70,9 +70,10 @@ def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
     return [(shafts, axis_colour), (heads, axis_colour)]
 
 
-def k_space() -> solids.View:
-    """The square view of k-space about the origin, the same for every medium."""
-    return solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
+def k_space(ax: Axes) -> solids.View:
+    """The square view of k-space about the origin, the same for every medium, as many pixels across as the axes'
+    room holds."""
+    return fitted(solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), 1), ax)
 
 
 def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
@@ -126,24 +127,31 @@ def trace_sections(curves: list[Line2D], sections: core.Vector) -> None:
 def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...]) -> plt.Figure:
     figure = plt.figure(figsize=(12, 7.8), layout="constrained")
     count = len(names)
+    surface_axes = [figure.add_subplot(2, count, i + 1) for i in range(count)]
     for i, name in enumerate(names):
-        ax = figure.add_subplot(2, count, i + 1)
-        view = k_space()
-        surface(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sheet_sides(sheets[i], view)), view)
-        ax.set_title(name, fontsize=11)
+        surface_axes[i].set_title(name, fontsize=11)
+        surface_axes[i].set_axis_off()
         ax = figure.add_subplot(2, count, count + i + 1)
         trace_sections(section_axes(ax), sections[i])
     ax.legend(loc="lower right", fontsize=9, frameon=False)
+    # The sheets traced once every axes is laid out, the sheets' as bare as their pictures leave them, each at the
+    # size of its room.
+    for i, ax in enumerate(surface_axes):
+        view = k_space(ax)
+        surface(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sheet_sides(sheets[i], view)), view)
     return figure
 
 
 def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
     """The sheets beside their sections, frame by frame, the frame of k-space and the sections' axes set up once."""
     figure = plt.figure(figsize=(9, 4.5), dpi=85, layout="constrained")
-    view = k_space()
-    scene = Scene(view, np.ones(3), k_axes(view), [])
-    image = surface(figure.add_subplot(1, 2, 1), np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+    surface_axes = figure.add_subplot(1, 2, 1)
+    # The sheets' axes as bare as their picture leaves them, for the layout to give them their room.
+    surface_axes.set_axis_off()
     curves = section_axes(figure.add_subplot(1, 2, 2))
+    view = k_space(surface_axes)
+    scene = Scene(view, np.ones(3), k_axes(view), [])
+    image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
     for sheets, sections in frames:
         image.set_data(scene.draw(meshes=sheet_sides(sheets, view)))
         trace_sections(curves, sections)

@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
-from examples.util.wgsl import labels, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -29,15 +29,15 @@ CIRCLE_RADIUS, CIRCLE_EVERY = 0.5, 8
 # energy, and how far the axes of pair coherence reach from the start of the energy axis.
 ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
-# of the larger side, and the pixels across it.
+# of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
 MARGIN, N_PIXELS = 0.08, 700
 # The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, the
 # arrowheads' lengths and widths, and the radius of the tips, in pixels.
 N_CIRCLE = 100
-AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 2.0, 1.6, 2.0, 3.6
-AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 14.0, 8.0, 13.0, 10.0
-TIP_RADIUS = 4.0
+AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 1.2, 0.96, 1.2, 2.15
+AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 8.4, 4.8, 7.8, 6.0
+TIP_RADIUS = 2.4
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -68,10 +68,11 @@ def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
     return figure
 
 
-def chart(energies: np.ndarray) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], np.ndarray]:
-    """The view of the chart, its axes as arrows from the start of the energy axis, the energy along +x and the pair
-    coherence in yz and zx along +y and +z, and the circles of the largest coherence about the energy axis at every few
-    levels `[circles, circle + 1, 3]`."""
+def chart(energies: np.ndarray, axis: plt.Axes
+          ) -> tuple[solids.View, list[tuple[solids.Quadric, np.ndarray]], np.ndarray]:
+    """The view of the chart, fitted to the matplotlib axes it is shown in, its axes as arrows from the start of the
+    energy axis, the energy along +x and the pair coherence in yz and zx along +y and +z, and the circles of the
+    largest coherence about the energy axis at every few levels `[circles, circle + 1, 3]`."""
     start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
     starts = np.full((3, 3), [start, 0, 0])
     ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
@@ -79,7 +80,8 @@ def chart(energies: np.ndarray) -> tuple[solids.View, list[tuple[solids.Quadric,
     centres = np.outer(ENERGY_SCALE * energies[::CIRCLE_EVERY], [1, 0, 0])               # [circles, 3]
     circles = meshes.circles(centres, np.full(len(centres), CIRCLE_RADIUS), np.broadcast_to([1.0, 0, 0], centres.shape),
                              N_CIRCLE)                                                    # [circles, circle + 1, 3]
-    view = solids.view([sm.point(circles), sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    view = fitted(solids.view([sm.point(circles), sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN,
+                              N_PIXELS), axis)
     shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,
                                   AXIS_HEAD_LENGTH * view.pixel, AXIS_HEAD_WIDTH / 2 * view.pixel)
     return view, [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], circles
@@ -107,7 +109,10 @@ def animate_quench(
     origins = np.stack([ENERGY_SCALE * energies, np.zeros_like(energies), np.zeros_like(energies)], axis=-1)
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
-    view, axes, circles = chart(energies)
+    figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
+    axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
+    curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
+    view, axes, circles = chart(energies, axis)
     rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
     scene = Scene(view, np.ones(3), axes, [rings])
 
@@ -122,9 +127,6 @@ def animate_quench(
         path = strokes.polylines([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view)
         return scene.draw(stems, meshes=[(path, PATH_OPACITY)])
 
-    figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
-    axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
-    curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
     image = show(axis, arrows(transverse[0]), view)
     label_chart(axis, view)
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)

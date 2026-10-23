@@ -15,7 +15,7 @@ from matplotlib.container import BarContainer
 
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
-from examples.util.wgsl import show, solids
+from examples.util.wgsl import fitted, show, solids
 
 FACES = np.array([(4, 5, 7, 6), (2, 3, 7, 6), (1, 3, 7, 5),
                   (0, 2, 3, 1), (0, 1, 5, 4), (0, 4, 6, 2)])
@@ -26,18 +26,17 @@ EDGE_COLOUR = "#334155"
 ARROW_SCALE = 0.36
 background = np.ones(3)
 # The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the cubes as a share
-# of the larger side, and the pixels across a picture.
+# of the larger side.
 elevation, azimuth = np.radians([23.0, -57.0 + 90.0])
 margin = 0.16
-n_pixels = 520
 # How many times over the first frame's view the animation's view takes, across and up, leaving room for the slide
 # along x and the arrows as the cube flattens.
 view_room = np.array([1.35, 1.04])
 # How much of what lies behind each of a face's two sides hides; the edges' and the arrows' shafts' radii in pixels; an arrow's head, its length a share of the
 # arrow's, and its radius a share of its own length.
 face_opacity = 0.1
-edge_radius = 1.5
-shaft_radius = 2.5
+edge_radius = 1.1
+shaft_radius = 1.8
 head_share = 0.25
 head_width = 0.4
 
@@ -57,7 +56,7 @@ def arrow_ends(centres: core.Point, patches: core.Patch) -> np.ndarray:
 def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
     """A view framing every cube and arrow given."""
     points = [solids.mv.point(coordinates(vertices)), solids.mv.point(arrow_ends(centres, patches))]
-    return solids.view(points, 0.0, elevation, azimuth, margin, n_pixels)
+    return solids.view(points, 0.0, elevation, azimuth, margin, 1)
 
 
 def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view: solids.View) -> np.ndarray:
@@ -104,10 +103,13 @@ def animate(frames: Iterable[tuple[core.Point, core.Point, core.Patch, core.Scal
     states = iter(frames)
     first = next(states)
     framed = view(*first[:3])
-    seen = framed._replace(half=framed.half * room)
     figure = plt.figure(figsize=(9, 4.3), dpi=85, layout="constrained")
-    image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
-    bars = measures(figure.add_subplot(1, 2, 2), *first[2:])
+    cube, measured = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
+    bars = measures(measured, *first[2:])
+    # The view fitted to the room the layout gives the cube's axes bare, as its picture shows them.
+    cube.set_axis_off()
+    seen = fitted(framed._replace(half=framed.half * room), cube)
+    image = show(cube, np.ones((*seen.shape, 3)), seen)
     # The figure set up once; only the cube's picture and the bars' heights change between frames.
     for vertices, centres, patches, volume in chain([first], states):
         image.set_data(picture(vertices, centres, patches, seen))

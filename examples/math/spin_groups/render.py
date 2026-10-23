@@ -10,16 +10,16 @@ import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
-from examples.util.wgsl import meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 BACKGROUND = np.ones(3)
 # One view for all three families: the elevation and azimuth in radians, azimuth zero looking along +y, the margin
-# around the orbits as a share of the larger side, and the pixels across a panel of the still and of a frame.
+# around the orbits as a share of the larger side, and the pixels across a panel of a frame.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(35.0)
 MARGIN = 0.14
-PANEL_PIXELS, FRAME_PIXELS = 540, 440
+FRAME_PIXELS = 440
 # The widths in pixels of the circles and the knots in the still, and of the faint orbits in the animation, and their
 # opacity; the riders' radius in pixels.
 CIRCLE_WIDTH, KNOT_WIDTH, FAINT_WIDTH, FAINT_OPACITY = 2.0, 3.2, 1.6, 0.45
@@ -60,10 +60,11 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     in opposite senses, beside the orbits of a rotation combining them at different rates: trefoil
     knots, one on each torus."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
-    panel = view(PANEL_PIXELS, *drawn)
     figure = plt.figure(figsize=(16, 5.5))
-    for index, (orbits, width) in enumerate(zip(drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH))):
-        ax = figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0))
+    axes = [figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0)) for index in range(len(drawn))]
+    # The panels' rooms alike, one view fitted to the first holds them all.
+    panel = fitted(view(1, *drawn), axes[0])
+    for ax, orbits, width in zip(axes, drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH)):
         show(ax, solids.draw([], panel, BACKGROUND, meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 

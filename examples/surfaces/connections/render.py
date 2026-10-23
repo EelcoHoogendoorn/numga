@@ -13,14 +13,14 @@ middles, straight across each face, standing just off the surface."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.connections import core
-from examples.util.wgsl import meshes, show, solids, strokes, vec3
+from examples.util.wgsl import fitted, meshes, show, solids, strokes, vec3
 from examples.util.wgsl.scene import Scene
 
 # Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
@@ -47,8 +47,8 @@ sphere_opacity = 0.12
 trail_opacity = 0.3
 # The colours of the dark and the light stripes, the share of a stripe that is dark, and how sharply one turns
 # into the other; the width of drawn lines and needles in pixels, and how far lines stand off the surface, as a
-# share of its reach around the centre; the image's side in pixels, and the margin around a framed surface as a share
-# of its larger side.
+# share of its reach around the centre; the image's side in pixels, until a figure's view is fitted to its axes, and
+# the margin around a framed surface as a share of its larger side.
 dark, light = np.array([0.16, 0.24, 0.36]), np.array([0.93, 0.91, 0.86])
 bands = 0.5
 sharpness = 12.0
@@ -152,12 +152,13 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, fr
 
 def draw_torus_fields(torus: core.Mesh, fields: list[core.Vector]) -> plt.Figure:
     """The torus side by side for each tangent vector field in `fields`."""
-    frame = square_view(transport_view, torus, transport_needle)
     figure, axes = plt.subplots(1, len(fields), figsize=(3.8 * len(fields), 3.6), dpi=100)
-    for axis, field in zip(np.atleast_1d(axes), fields):
+    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
+    axes = np.atleast_1d(axes)
+    frame = fitted(square_view(transport_view, torus, transport_needle), axes[0])
+    for axis, field in zip(axes, fields):
         lengths = np.linalg.norm(coordinates(field), axis=-1)
         show(axis, torus_panel(torus, field, lengths / max(float(np.percentile(lengths, 95.0)), 1e-12), frame), frame)
-    figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return figure
 
 
@@ -204,11 +205,12 @@ def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, lis
     extent = np.ptp(positions(mesh.vertices), axis=0)                          # [3]
     width = min(extent[0] / extent[2], widest_panel)
     needle = needle_length(mesh)
-    frame = square_view(view, mesh, needle)
     figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * width, 3.6), dpi=110)
-    for axis, (field, singular, indices) in zip(np.atleast_1d(axes), scenes):
-        show(axis, field_panel(mesh, field, singular, indices, needle, frame), frame)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
+    axes = np.atleast_1d(axes)
+    frame = fitted(square_view(view, mesh, needle), axes[0])
+    for axis, (field, singular, indices) in zip(axes, scenes):
+        show(axis, field_panel(mesh, field, singular, indices, needle, frame), frame)
     return figure
 
 
@@ -329,27 +331,29 @@ def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
     return solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
 
 
-def pattern_figure(images: list[np.ndarray], frame: solids.View) -> plt.Figure:
-    """The images of the patterns side by side."""
-    figure, axes = plt.subplots(1, len(images), figsize=(4.2 * len(images), 4.2), dpi=110)
-    for axis, image in zip(np.atleast_1d(axes), images):
-        show(axis, image, frame)
+def pattern_figure(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]],
+                   image: Callable[[core.Mesh, tuple[core.Vector, core.Vector, core.Scalar], solids.View], np.ndarray]
+                   ) -> plt.Figure:
+    """The surface side by side for each pattern, as `image` draws it in the square view fitted to a panel."""
+    figure, axes = plt.subplots(1, len(patterns), figsize=(4.2 * len(patterns), 4.2), dpi=110)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
+    axes = np.atleast_1d(axes)
+    frame = fitted(square_view(view, mesh, 0.0), axes[0])
+    for axis, pattern in zip(axes, patterns):
+        show(axis, image(mesh, pattern, frame), frame)
     return figure
 
 
 def draw_bands(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]]) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, shaded with its
     stripes."""
-    frame = square_view(view, mesh, 0.0)
-    return pattern_figure([bands_image(mesh, pattern, frame) for pattern in patterns], frame)
+    return pattern_figure(mesh, patterns, bands_image)
 
 
 def draw_lines(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]]) -> plt.Figure:
     """The surface side by side for each pattern of lines, stripe fields and edge targets, with the middle lines
     of its stripes drawn on it."""
-    frame = square_view(view, mesh, 0.0)
-    return pattern_figure([lines_image(mesh, pattern, frame) for pattern in patterns], frame)
+    return pattern_figure(mesh, patterns, lines_image)
 
 
 def animate_flow(mesh: core.Mesh, lines: core.Vector, stripe_fields: Iterable[core.Vector], advance: core.Scalar

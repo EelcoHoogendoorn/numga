@@ -13,7 +13,7 @@ from numga import stack
 
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
-from examples.util.wgsl import labels, show, solids
+from examples.util.wgsl import fitted, labels, show, solids
 from examples.util.wgsl.scene import Scene
 
 PUMP_COLOUR = "#3275a8"
@@ -24,13 +24,13 @@ CASES = ("matched", "mismatched", "mismatched, flipped every half turn of slip")
 sm = solids.mv
 BOND_COLOUR, CENTRE_COLOUR, AXIS_COLOUR = np.full(3, 0.45), np.full(3, 0.3), np.array([0.68, 0.70, 0.75])
 LABEL_COLOUR = np.array([0.4, 0.42, 0.47])
-# The crystal's view: elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square
-# view about the bonds' centre, and the pixels across it.
+# The crystal's view: elevation and azimuth in radians, azimuth zero looking along +y, and the half width of the
+# square view about the bonds' centre.
 ELEVATION, AZIMUTH = np.radians(23.0), np.radians(34.0)
-HALF_WIDTH, N_PIXELS = 1.35, 400
+HALF_WIDTH = 1.35
 # The widths of the bonds and the axes' arrows, the arrowheads' length and width, the radii of the bonds' ends and
 # their centre, in pixels; how far the axes reach and their names lie, in bond lengths.
-BOND_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, END_RADIUS, CENTRE_RADIUS = 5.0, 3.0, 12.0, 7.0, 7.0, 5.0
+BOND_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, END_RADIUS, CENTRE_RADIUS = 4.4, 2.6, 10.5, 6.2, 6.2, 4.4
 AXIS_LENGTH, LABEL_DISTANCE = 1.15, 1.27
 # The beam along the crystal's face diagonal, x + y, coming towards the screen's viewer, across which the screen's
 # directions are y - x, to the right, and z, up; how far the beam reaches either side of the crystal, in bond lengths.
@@ -109,13 +109,6 @@ class ResponseView:
         response_axes = self.figure.add_subplot(1, 3, 2)
         self.intensity_axes = self.figure.add_subplot(1, 3, 3, projection="polar")
 
-        # The crystal's image, blank until the bonds are drawn, with each axis named just past its arrow's tip.
-        self.view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), N_PIXELS)
-        self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
-        self.scene = space_scene(self.view)
-        labels(crystal_axes, self.view, sm.point(np.concatenate([LABEL_DISTANCE * np.eye(3), [BEAM_REACH * 1.12 * BEAM]])),
-               ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=LABEL_COLOUR)
-
         response_axes.plot(pumps[:, 0], pumps[:, 1], color=PUMP_COLOUR,
                            linewidth=1, alpha=0.3)
         self.harmonic_curve, = response_axes.plot([], [], color=GENERATED_COLOUR,
@@ -137,6 +130,20 @@ class ResponseView:
         self.intensity_axes.set_thetagrids([0, 45, 90, 135, 180, 225, 270, 315])
         self.intensity_axes.set_rlabel_position(22.5)
         self.intensity_axes.tick_params(labelsize=8)
+
+        # The figure laid out once, the crystal's axes as bare as its image leaves them, and kept so: at every
+        # resolution it is drawn at, the panels stay put and the crystal's image fills its room.
+        crystal_axes.set_axis_off()
+        self.figure.get_layout_engine().execute(self.figure)
+        self.figure.set_layout_engine("none")
+        # The crystal's image, blank until the bonds are drawn, as many pixels across as its room holds, with each
+        # axis named just past its arrow's tip.
+        self.view = fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), 1),
+                           crystal_axes)
+        self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
+        self.scene = space_scene(self.view)
+        labels(crystal_axes, self.view, sm.point(np.concatenate([LABEL_DISTANCE * np.eye(3), [BEAM_REACH * 1.12 * BEAM]])),
+               ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=LABEL_COLOUR)
 
     def update(self, bonds: core.Direction, harmonic: core.Polarization) -> plt.Figure:
         bonds = coordinates(bonds)                                           # [bonds, 3]
@@ -225,6 +232,4 @@ def animate(pumps: core.Field, frames: Iterable[tuple[core.Direction, core.Polar
     view = ResponseView(pumps)
     for bonds, harmonic in frames:
         yield capture(view.update(bonds, harmonic))
-        # The first frame places the panels; the frames after it keep those places.
-        view.figure.set_layout_engine("none")
     plt.close(view.figure)

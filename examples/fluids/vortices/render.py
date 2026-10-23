@@ -16,17 +16,16 @@ from numga import stack
 
 from examples.util.animation import capture
 from examples.fluids.vortices import core
-from examples.util.wgsl import show, solids, strokes
+from examples.util.wgsl import fitted, show, solids, strokes
 
 # Worldlines: one colour per vortex, the strands' width in pixels, the view as elevation and azimuth in radians,
-# azimuth zero looking along +y, the margin around a braid as a share of its larger side, the size in inches of each
-# braid's square panel and the pixels along its larger side.
+# azimuth zero looking along +y, the margin around a braid as a share of its larger side, and the size in inches of
+# each braid's square panel.
 STRANDS = np.array([to_rgb(colour) for colour in ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe")])
-STRAND_WIDTH = 4.0
+STRAND_WIDTH = 3.1
 ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
 MARGIN = 0.1
 PANEL_SIZE = 6.0
-PANEL_PIXELS = 600
 BACKGROUND = np.ones(3)
 
 
@@ -120,9 +119,7 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         width = np.ptp(places.reshape(-1, 2), axis=0).max()
         times = np.broadcast_to(np.linspace(0, height * width, len(places))[:, None, None], places.shape[:2] + (1,))
         drawn = np.concatenate([places, times], axis=-1)                         # [times, vortices, 3]
-        camera, half, _ = solids.view([solids.mv.point(drawn)], 0.0, ELEVATION, AZIMUTH, MARGIN, PANEL_PIXELS)
-        # The braid's larger side spans the panel's pixels.
-        view = solids.View(camera, half, round(PANEL_PIXELS * half[0] / half.max()))
+        view = fitted(solids.view([solids.mv.point(drawn)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
         strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
         lines = strokes.polylines(strands, STRAND_WIDTH, view)
         show(ax, solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)]), view)

@@ -13,7 +13,7 @@ import numpy as np
 from examples.util.animation import capture
 from examples.geometry.sundial import core
 from numga import concatenate
-from examples.util.wgsl import show, solids
+from examples.util.wgsl import fitted, show, solids
 
 # The part of the dial drawn, east and north of the point below the nodus.
 EAST = (-4.5, 4.5)
@@ -30,12 +30,12 @@ RAY_COLOUR = "#e8a33d"
 RAY_OPACITY = 0.6
 # How far each ray is drawn beyond the nodus towards the sun.
 SUNWARD = 2.0
-# The view's elevation and azimuth, in radians, azimuth zero looking along +y, the north; the margin as a share of the
-# larger side, and the pixels across the dial in space.
+# The view's elevation and azimuth, in radians, azimuth zero looking along +y, the north, and the margin as a share of
+# the larger side.
 ELEVATION, AZIMUTH = np.radians(16.0), np.radians(-125.0 + 90.0)
-MARGIN, N_PIXELS = 0.04, 640
+MARGIN = 0.04
 # The widths of the rays and of the day's shadow path, in pixels; the thickness of the dial's plate and of the gnomon.
-RAY_WIDTH, PATH_WIDTH = 3.0, 5.0
+RAY_WIDTH, PATH_WIDTH = 2.3, 3.9
 PLATE_THICKNESS, GNOMON_THICKNESS = 0.25, 0.08
 # The dial's corners, east, north and up.
 DIAL = np.array([[EAST[0], NORTH[0], 0], [EAST[1], NORTH[0], 0], [EAST[1], NORTH[1], 0], [EAST[0], NORTH[1], 0]])
@@ -102,10 +102,11 @@ def daylight(nodus: core.Point, rays: core.Point) -> tuple[np.ndarray, np.ndarra
     return coordinates(nodus) + SUNWARD * coordinates(rays)[up], coordinates(core.shadow(nodus, rays))[up]
 
 
-def sky_view(nodus: core.Point, rays: core.Point) -> solids.View:
-    """One view of the dial, its gnomon, and the rays of every day while the sun is up."""
+def sky_view(ax: plt.Axes, nodus: core.Point, rays: core.Point) -> solids.View:
+    """One view of the dial, its gnomon, and the rays of every day while the sun is up, as many pixels across as the
+    axes' room holds."""
     sunward = np.concatenate([daylight(nodus, day)[0] for day in rays])
-    return solids.view([solids.mv.point(DIAL), solids.mv.point(sunward)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    return fitted(solids.view([solids.mv.point(DIAL), solids.mv.point(sunward)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
 
 
 def plane(normals: np.ndarray, through: np.ndarray) -> solids.Plane:
@@ -163,11 +164,12 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
                  seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> Iterator[np.ndarray]:
     """Per frame of the year: the day's rays past the nodus in space, traced among the dial and its gnomon, and the
     day's shadow path over the dial's face."""
-    view = sky_view(nodus, rays)
     dial = dial_in_space(nodus, foot)
     # Lay the figure out once; only the sky and the day's shadow path change between frames.
     figure = plt.figure(figsize=(10.0, 4.6))
-    sky = show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), np.ones((*view.shape, 3)), view)
+    sky_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
+    view = sky_view(sky_axes, nodus, rays)
+    sky = show(sky_axes, np.ones((*view.shape, 3)), view)
     face = figure.add_axes((0.52, 0.04, 0.46, 0.92))
     draw_face(face, nodus, foot, seasons, season_days, suns, hours, faint=True)
     path = face.add_collection(LineCollection([], colors=DAY_COLOUR, linewidths=2.2))

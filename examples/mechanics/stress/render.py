@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from examples.mechanics.stress import core
-from examples.util.wgsl import show, solids
+from examples.util.wgsl import fitted, show, solids
 from examples.util.wgsl.scene import Scene
 
 # The cube's edges and faces, by the corners' indices: corner 4 i + 2 j + k sits at the i-th, j-th and
@@ -33,11 +33,10 @@ TURNING_ROOM = 0.05
 cube_colour, edge_colour, ghost_colour = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#0f172a", "#94a3b8"))
 normal_colour, shear_colour, principal_colour = (np.array(to_rgb(colour)) for colour in ("#0284c7", "#e11d48", "#10b981"))
 background = np.ones(3)
-# The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the cubes as a share
-# of the larger side, and the pixels across a picture.
+# The view, elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the cubes as a
+# share of the larger side.
 elevation, azimuth = np.radians([22.0, 25.0 + 90.0])
 margin = 0.14
-n_pixels = 540
 # How much of what lies behind them each of the cube's faces hides, and how strongly the undeformed cube and the
 # principal directions show over the white page; the radii of the
 # edges, the undeformed cube's edges, the principal directions and the arrows' shafts, in pixels; an arrow's
@@ -46,6 +45,8 @@ face_opacity, ghost_opacity, principal_opacity = 0.14, 0.7, 0.8
 ghost_tint, principal_tint = (opacity * colour + (1 - opacity) for opacity, colour in
                               ((ghost_opacity, ghost_colour), (principal_opacity, principal_colour)))
 edge_radius, ghost_radius, principal_radius, shaft_radius = 1.6, 1.0, 1.0, 2.0
+# The turning animation's radii as a share of those above, its picture that much narrower than a frame's.
+turning_thickness = 0.62
 head_share = 0.28
 head_width = 0.4
 
@@ -61,39 +62,42 @@ def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     centres = coordinates(centres)
     points = [coordinates(core.corners), coordinates(corners), centres + coordinates(normal) * NORMAL_SCALE,
               centres + coordinates(shear) * SHEAR_SCALE, REACH * coordinates(principal)]
-    return solids.view([solids.mv.point(batch) for batch in points], room, elevation, azimuth, margin, n_pixels)
+    return solids.view([solids.mv.point(batch) for batch in points], room, elevation, azimuth, margin, 1)
 
 
-def arrows(starts: np.ndarray, offsets: np.ndarray, pixel: float) -> tuple[solids.Quadric, solids.Quadric]:
-    """Arrows from points along offsets `[arrows, 3]`, their heads in proportion to them; those shorter than a pixel,
-    a traction that vanishes, left out."""
+def arrows(starts: np.ndarray, offsets: np.ndarray, pixel: float,
+           thickness: float) -> tuple[solids.Quadric, solids.Quadric]:
+    """Arrows from points along offsets `[arrows, 3]`, their heads in proportion to them, their shafts' radius a
+    share `thickness` of the one set above; those shorter than a pixel, a traction that vanishes, left out."""
     lengths = np.linalg.norm(offsets, axis=-1)
     shown = lengths > pixel
     return solids.arrows(solids.mv.point(starts[shown]), solids.mv.point(starts[shown] + offsets[shown]),
-                         shaft_radius * pixel, head_share * lengths[shown], head_width * head_share * lengths[shown])
+                         thickness * shaft_radius * pixel, head_share * lengths[shown],
+                         head_width * head_share * lengths[shown])
 
 
-def ghost(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The undeformed cube, a ghost of thin pale rods."""
+def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The undeformed cube, a ghost of thin pale rods, their radius a share `thickness` of the one set above."""
     corners = solids.mv.point(coordinates(core.corners))                      # [8] Point
-    edges, joints = solids.edges(corners[EDGES[:, 0]], corners[EDGES[:, 1]], ghost_radius * view.pixel)
+    edges, joints = solids.edges(corners[EDGES[:, 0]], corners[EDGES[:, 1]], thickness * ghost_radius * view.pixel)
     return [(edges, ghost_tint), (joints, ghost_tint)]
 
 
 def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point, principal: core.Point,
-         view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
-                                     list[tuple[solids.Quadric, np.ndarray, float]]]:
+         view: solids.View, thickness: float) -> tuple[list[tuple[solids.Quadric, np.ndarray]],
+                                                       list[tuple[solids.Quadric, np.ndarray, float]]]:
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
-    face in blue and the shear in red, and the principal directions in green."""
+    face in blue and the shear in red, and the principal directions in green; the radii a share `thickness` of those
+    set above."""
     places = solids.mv.point(coordinates(corners))                             # [8] Point
     centres = coordinates(centres)                                             # [6, 3]
     directions = REACH * coordinates(principal)                                # [3, 3]
-    normal_shafts, normal_heads = arrows(centres, coordinates(normal) * NORMAL_SCALE, view.pixel)
-    shear_shafts, shear_heads = arrows(centres, coordinates(shear) * SHEAR_SCALE, view.pixel)
-    edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], edge_radius * view.pixel)
+    normal_shafts, normal_heads = arrows(centres, coordinates(normal) * NORMAL_SCALE, view.pixel, thickness)
+    shear_shafts, shear_heads = arrows(centres, coordinates(shear) * SHEAR_SCALE, view.pixel, thickness)
+    edges, joints = solids.edges(places[EDGES[:, 0]], places[EDGES[:, 1]], thickness * edge_radius * view.pixel)
     # Each principal direction a rod through the centre, both ways.
     principal_rods = solids.rods(solids.mv.point(-directions), solids.mv.point(directions),
-                                 principal_radius * view.pixel)
+                                 thickness * principal_radius * view.pixel)
     parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
              (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]
     body = solids.polyhedra(coordinates(corners), FACES)[None]                # [1, 6] Quadric
@@ -104,8 +108,8 @@ def draw_cube(corners: core.Point, centres: core.Point, normal: core.Point, shea
               view: solids.View) -> np.ndarray:
     """The cube seen from one frame: the undeformed cube a ghost, the deformed one translucent, the normal
     traction on each face in blue and the shear in red, and the principal directions in green."""
-    parts, translucent = cube(corners, centres, normal, shear, principal, view)
-    return solids.draw(ghost(view) + parts, view, background, translucent=translucent)
+    parts, translucent = cube(corners, centres, normal, shear, principal, view, 1.0)
+    return solids.draw(ghost(view, 1.0) + parts, view, background, translucent=translucent)
 
 
 def draw_circles(ax, values: core.Scalar) -> None:
@@ -167,13 +171,17 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
     diameter."""
     corners, centres, normal, shear, principal = views
     count = corners.shape[0]
-    seen = view(*views, 0.0)
     figure = plt.figure(figsize=(4.5 * (count + 1), 4.5), dpi=120)
-    for frame in range(count):
-        show(figure.add_subplot(1, count + 1, frame + 1),
-             draw_cube(corners[frame], centres[frame], normal[frame], shear[frame], principal[frame], seen), seen)
+    cubes = [figure.add_subplot(1, count + 1, frame + 1) for frame in range(count)]
     draw_mohr(figure.add_subplot(1, count + 1, count + 1), values, normal, shear)
+    # The figure laid out with the cubes' axes bare, as their pictures show them; their rooms alike, one view fitted
+    # to the first holds them all.
+    for ax in cubes:
+        ax.set_axis_off()
     figure.tight_layout()
+    seen = fitted(view(*views, 0.0), cubes[0])
+    for frame, ax in enumerate(cubes):
+        show(ax, draw_cube(corners[frame], centres[frame], normal[frame], shear[frame], principal[frame], seen), seen)
     return figure
 
 
@@ -183,15 +191,15 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     and its diameter on Mohr's circles; the undeformed cube and the circles set up once."""
     frames = iter(frames)
     first = next(frames)
-    seen = view(*first, TURNING_ROOM)
-    scene = Scene(seen, background, ghost(seen), [])
     figure = plt.figure(figsize=(9.5, 4.5), dpi=100)
-    picture = show(figure.add_subplot(1, 2, 1), np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
-    circles = figure.add_subplot(1, 2, 2)
+    cube_ax, circles = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
+    seen = fitted(view(*first, TURNING_ROOM), cube_ax)
+    scene = Scene(seen, background, ghost(seen, turning_thickness), [])
+    picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
     draw_circles(circles, values)
     line, filled, hollow = draw_diameter(circles, np.zeros((2, 2)), COLOURS[0])
     for corners, centres, normal, shear, principal in chain([first], frames):
-        parts, translucent = cube(corners, centres, normal, shear, principal, seen)
+        parts, translucent = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
         picture.set_data(scene.draw(parts, translucent=translucent))
         ends = diameter(coordinates(normal), coordinates(shear))
         line.set_data(*ends.T)

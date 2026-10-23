@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.origami import core
-from examples.util.wgsl import meshes, show, solids, vec3
+from examples.util.wgsl import fitted, meshes, show, solids, vec3
 
 front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])
@@ -76,7 +76,9 @@ def picture(paper: core.Paper, view: solids.View) -> np.ndarray:
 
 def draw(paper: core.Paper) -> plt.Figure:
     figure, ax = plt.subplots(figsize=(6, 6), layout="constrained")
-    view = viewport(paper.points)
+    # The axes as bare as the picture leaves them, for the layout to give them their room.
+    ax.set_axis_off()
+    view = fitted(viewport(paper.points), ax)
     show(ax, picture(paper, view), view)
     return figure
 

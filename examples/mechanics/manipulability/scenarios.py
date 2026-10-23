@@ -24,9 +24,7 @@ LOOP_FREQUENCIES = np.array([1, 1, 1, 2])
 LOOP_PHASES = np.array([0.0, 1.5, 0.3, 0.0])
 # A fixed view of the whole workspace: (elevation, azimuth) in degrees, the centre and half-width.
 VIEW, CENTRE, EXTENT = (18, -60), np.array([-0.9, 0.25, 1.3]), 2.2
-# Pixels across each panel of the figure and of the animation, the frames of the loop, and the duration
-# of a frame in milliseconds.
-FIGURE_PIXELS = 400
+# Pixels across each panel of the animation, the frames of the loop, and the duration of a frame in milliseconds.
 FRAME_PIXELS = 300
 N_FRAMES = 96
 FRAME_DURATION = 60
@@ -61,7 +59,7 @@ def main() -> None:
     from examples.mechanics.manipulability import render
 
     poses = [ellipsoids(angles, VELOCITY_SCALE, FORCE_SCALE) for angles in (REACHING, NEARLY_STRAIGHT)]
-    save_figure(render.draw_ellipsoids(poses, VIEW, CENTRE, EXTENT, FIGURE_PIXELS), "manipulability")
+    save_figure(render.draw_ellipsoids(poses, VIEW, CENTRE, EXTENT), "manipulability")
     frames = (render.frame(pose, VIEW, CENTRE, EXTENT, FRAME_PIXELS) for pose in sweep(N_FRAMES))
     save_animation(frames, "manipulability_sweep", FRAME_DURATION)
 

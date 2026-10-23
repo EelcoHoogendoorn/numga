@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quantum.graphene import core
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import fitted, meshes, show, solids
 
 sm = solids.mv
 COLOURS = ("#2e86c1", "#7d3c98", "#c0392b", "#d68910")
@@ -20,11 +20,11 @@ AXIS_COLOUR = np.full(3, 0.45)
 # The colour of the faint cross through the origin of the momentum plane, and of its names.
 CROSS_COLOUR = "0.6"
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the chart as a share
-# of the larger side, and the pixels across it.
+# of the larger side, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(22.0), np.radians(-15.0)
 MARGIN, N_PIXELS = 0.1, 1000
 # The widths of the frame's shafts, and their heads' length and width, in pixels.
-AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.4, 18.0, 10.0
+AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.92, 14.4, 8.0
 
 
 def components(vectors: core.Vector) -> np.ndarray:
@@ -98,12 +98,13 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
     tips = corner + np.diag([2 * reach, 2 * reach, ceiling - floor + 2 * reach * np.tan(ELEVATION)])   # [3, 3]
     view = solids.view([places for places, _ in sheets] + [sm.point(corner), sm.point(tips)], 0.0, ELEVATION, AZIMUTH,
                        MARGIN, N_PIXELS)
+    figure = plt.figure(figsize=(8, 8 * view.half[1] / view.half[0]))
+    ax = figure.add_axes((0, 0, 1, 1))
+    view = fitted(view, ax)
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(corner, (3, 3))), sm.point(tips), AXIS_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2), 1.0)
              for places, shade in sheets]
-    figure = plt.figure(figsize=(8, 8 * view.half[1] / view.half[0]))
-    ax = figure.add_axes((0, 0, 1, 1))
     show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), meshes=bands), view)
     # Each arrow named just past its tip.
     for place, name, offset, align in zip(view.across(sm.point(tips)), ("momentum x", "momentum y", "energy"),

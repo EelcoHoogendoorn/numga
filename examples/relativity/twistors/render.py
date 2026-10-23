@@ -11,7 +11,7 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.util.animation import capture
 from examples.relativity.twistors import core
-from examples.util.wgsl import image_figure, labels, show, solids, strokes
+from examples.util.wgsl import fitted, image_figure, labels, show, solids, strokes
 
 sm = solids.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
@@ -21,9 +21,9 @@ BACKGROUND = np.ones(3)
 ELEVATION, AZIMUTH = np.radians(22.0), np.radians(35.0)
 DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH = np.radians(15.0), np.radians(22.0)
 # The margins around what is drawn in space and in the diagram, as shares of the larger side; the pixels across the
-# congruence, across the field lines' frame and across a panel of the diagram.
+# congruence and across the field lines' frame.
 MARGIN, DIAGRAM_MARGIN = 0.1, 0.15
-CONGRUENCE_PIXELS, FIELD_PIXELS, DIAGRAM_PIXELS = 600, 288, 480
+CONGRUENCE_PIXELS, FIELD_PIXELS = 600, 288
 # The view the field lines are carried through, as a multiple of the one framing them at the first instant, holding
 # them at every instant shown.
 FIELD_ROOM = 1.35
@@ -69,17 +69,18 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     positions, lines = spacetime(events), spacetime(rays)
     extent = AXIS_REACH * max(np.max(np.abs(positions)), np.max(np.abs(lines)))
     names = sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))      # [3] Point
-    # One view for both panels, framing the axes, their names and every ray.
-    view = solids.view([solids.origin[None], names, sm.point(lines)], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
-                       DIAGRAM_MARGIN, DIAGRAM_PIXELS)
-    shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     figure = plt.figure(figsize=(10, 5), facecolor="white")
-    for column, (points, line) in enumerate(zip(positions, lines)):
+    panels = [figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))
+              for column in range(len(positions))]
+    # One view for both panels, framing the axes, their names and every ray, as many pixels across as a panel holds.
+    view = fitted(solids.view([solids.origin[None], names, sm.point(lines)], 0.0, DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH,
+                              DIAGRAM_MARGIN, 1), panels[0])
+    shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
+    for ax, points, line in zip(panels, positions, lines):
         # The ray, straight, as a rod from its first sample to its last.
         ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Quadric
         marks = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ray, to_rgb(BLUE)),
                  (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
-        ax = figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))
         show(ax, solids.draw(marks, view, BACKGROUND), view)
         # Each axis named just past its arrow's tip.
         labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=12, color=AXIS_COLOUR)

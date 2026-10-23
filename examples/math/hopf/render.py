@@ -14,7 +14,7 @@ from matplotlib.image import AxesImage
 from numga import concatenate
 from examples.util.animation import capture
 from examples.math.hopf import core
-from examples.util.wgsl import meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -27,10 +27,11 @@ CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.72), 0.5
 LOOP_COLOUR, FIBRE_COLOUR, START_COLOUR = (np.array(to_rgb(colour)) for colour in ("#c0392b", "#999999", "#2e86c1"))
 BACKGROUND = np.ones(3)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the sphere's square
-# view, the margin around the fibres as a share of the larger side, and the pixels across the sphere and across space.
+# view, and the margin around the fibres as a share of the larger side.
 ELEVATION, AZIMUTH = np.radians(22.0), np.radians(35.0)
 SPHERE_REACH, MARGIN = 1.12, 0.12
-SPHERE_PIXELS, SPACE_PIXELS = 320, 840
+# The places of space, on the right, and of the small sphere over its left edge, as shares of the figure.
+SPACE_PLACE, SPHERE_PLACE = (0.24, 0.0, 0.76, 1.0), (0.0, 0.2, 0.28, 0.6)
 # The view of the swept fibres: the point in space it is centred on, and its half width and height, holding every
 # fibre of the spiral from near the south pole to just above the equator.
 SWEEP_MIDDLE, SWEEP_HALF = np.array([0.15, 0.08, -0.06]), np.array([2.71, 1.71])
@@ -39,8 +40,10 @@ PARALLELS = np.pi * np.arange(1, 6) / 6
 MERIDIANS = np.pi * np.arange(6) / 6
 # Widths in pixels: the sphere's circles, the fibres of the tori, the swept fibres and the newest of them, the lifted
 # spinor's track and the fibre it starts on; and the radii of the spins' dots and of the track's ends.
-CIRCLE_WIDTH, TORUS_WIDTH, SWEPT_WIDTH, NEWEST_WIDTH, TRACK_WIDTH, LIFT_FIBRE_WIDTH = 1.6, 2.4, 1.8, 4.5, 3.4, 2.8
+CIRCLE_WIDTH, TORUS_WIDTH, SWEPT_WIDTH, NEWEST_WIDTH, TRACK_WIDTH, LIFT_FIBRE_WIDTH = 1.6, 2.4, 1.5, 3.7, 3.4, 2.8
 DOT_RADIUS, END_RADIUS = 3.0, 4.5
+# The sweep's smaller sphere: the width of its circles and the radius of its dots, in pixels.
+SWEEP_CIRCLE_WIDTH, SWEEP_DOT_RADIUS = 1.3, 2.4
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -69,23 +72,23 @@ def visible(curves: np.ndarray, colours: np.ndarray) -> list[tuple[np.ndarray, n
 
 def space_view(runs: list[tuple[np.ndarray, np.ndarray]]) -> solids.View:
     """A view framing every run drawn in space."""
-    return solids.view([sm.point(np.concatenate([run for run, _ in runs]))], 0.0, ELEVATION, AZIMUTH, MARGIN,
-                       SPACE_PIXELS)
+    return solids.view([sm.point(np.concatenate([run for run, _ in runs]))], 0.0, ELEVATION, AZIMUTH, MARGIN, 1)
 
 
 def sweep_view() -> solids.View:
     """The view of the swept fibres in space."""
-    return solids.View(solids.aim(sm.point(SWEEP_MIDDLE), ELEVATION, AZIMUTH), SWEEP_HALF, SPACE_PIXELS)
+    return solids.View(solids.aim(sm.point(SWEEP_MIDDLE), ELEVATION, AZIMUTH), SWEEP_HALF, 1)
 
 
 def sphere_view() -> solids.View:
     """A square view of the sphere of spins."""
-    return solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, SPHERE_REACH), SPHERE_PIXELS)
+    return solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, SPHERE_REACH), 1)
 
 
-def sphere_surface(n_parts: int) -> tuple[list[solids.Ink], list[tuple[solids.Quadric, np.ndarray, float]]]:
+def sphere_surface(n_parts: int,
+                   width: float) -> tuple[list[solids.Ink], list[tuple[solids.Quadric, np.ndarray, float]]]:
     """The sphere of spins, a translucent ball after `n_parts` opaque parts, with its parallels and meridians inked
-    on it where their planes cut it: its inks and its translucent part."""
+    on it where their planes cut it, a width in pixels: its inks and its translucent part."""
     ball = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
     # The parallels: the planes across z at the height of each polar angle; the meridians: the plane x turned about
     # z by each azimuth.
@@ -93,7 +96,7 @@ def sphere_surface(n_parts: int) -> tuple[list[solids.Ink], list[tuple[solids.Qu
     planes = concatenate([sm.z - sm.w * np.cos(PARALLELS), meridians])        # [circles] Plane
     # The ball is the first translucent part, after the opaque ones.
     circles = solids.Ink(n_parts, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
-                         CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
+                         CIRCLE_COLOUR, width, CIRCLE_OPACITY)
     return [circles], ball
 
 
@@ -101,13 +104,14 @@ def sphere_image(parts: list[tuple[solids.Quadric, np.ndarray]], lines: list[tup
                  view: solids.View) -> np.ndarray:
     """The sphere of spins, as `sphere_surface`, among opaque parts and lines, each its samples and opacity,
     `[rows, columns, 3]`."""
-    inks, ball = sphere_surface(len(parts))
+    inks, ball = sphere_surface(len(parts), CIRCLE_WIDTH)
     return solids.draw(parts, view, BACKGROUND, inks, translucent=ball, meshes=lines)
 
 
-def dots(points: np.ndarray, colours: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
-    """A dot at each spin on the sphere `[n, 3]`, in its colour `[n, 3]`, as an opaque part."""
-    return solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None], colours
+def dots(points: np.ndarray, colours: np.ndarray, radius: float,
+         view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
+    """A dot at each spin on the sphere `[n, 3]`, in its colour `[n, 3]`, of a radius in pixels, as an opaque part."""
+    return solids.ball(sm.point(points), radius * view.pixel)[:, None], colours
 
 
 def segments(runs: list[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -118,13 +122,19 @@ def segments(runs: list[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.
             np.concatenate(none + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
 
 
-def panels(figure: plt.Figure, sphere_image: np.ndarray, space_image: np.ndarray,
-           space: solids.View) -> list[AxesImage]:
-    """Space on the right and, over its left edge, a small sphere of spins: their images, for an animation to set
-    their data."""
-    return [show(figure.add_axes(place), image, view)
-            for place, image, view in (((0.24, 0.0, 0.76, 1.0), space_image, space),
-                                       ((0.0, 0.2, 0.28, 0.6), sphere_image, sphere_view()))]
+def panels(space: solids.View, size: tuple[float, float]) -> tuple[plt.Figure, list[plt.Axes], list[solids.View]]:
+    """A figure of a size in inches with space on the right and, over its left edge, a small sphere of spins: the
+    figure, the axes of space and of the sphere, and the views of space and of the sphere fitted to them."""
+    figure = plt.figure(figsize=size)
+    axes = [figure.add_axes(place) for place in (SPACE_PLACE, SPHERE_PLACE)]
+    return figure, axes, [fitted(view, ax) for view, ax in zip((space, sphere_view()), axes)]
+
+
+def shown(axes: list[plt.Axes], space_image: np.ndarray, sphere_image: np.ndarray,
+          views: list[solids.View]) -> list[AxesImage]:
+    """The images of space and of the sphere in the axes `panels` gives: their images, for an animation to set their
+    data."""
+    return [show(ax, image, view) for ax, image, view in zip(axes, (space_image, sphere_image), views)]
 
 
 def draw_tori(spins: core.Bivector, projected: core.Bivector) -> plt.Figure:
@@ -133,11 +143,10 @@ def draw_tori(spins: core.Bivector, projected: core.Bivector) -> plt.Figure:
     points, curves, colours = components(spins), components(projected), colour(spins)
     points, curves, colours = points.reshape(-1, 3), curves.reshape(-1, curves.shape[-2], 3), colours.reshape(-1, 3)
     runs = visible(curves, colours)
-    space, sphere = space_view(runs), sphere_view()
+    figure, axes, (space, sphere) = panels(space_view(runs), (11, 6))
     fibres = strokes.polylines(runs, TORUS_WIDTH, space)
-    figure = plt.figure(figsize=(11, 6))
-    panels(figure, sphere_image([dots(points, colours, sphere)], [], sphere),
-           solids.draw([], space, BACKGROUND, meshes=[(fibres, 1.0)]), space)
+    shown(axes, solids.draw([], space, BACKGROUND, meshes=[(fibres, 1.0)]),
+          sphere_image([dots(points, colours, DOT_RADIUS, sphere)], [], sphere), (space, sphere))
     return figure
 
 
@@ -146,29 +155,27 @@ def draw_lift(loop: core.Bivector, path: core.Bivector, fibre: core.Bivector) ->
     fibre, drawn grey, and comes back onto it further along."""
     track, circle = components(path), components(fibre)
     tracks, circles = visible(track[None], LOOP_COLOUR[None]), visible(circle[None], FIBRE_COLOUR[None])
-    space, sphere = space_view(tracks + circles), sphere_view()
+    figure, axes, (space, sphere) = panels(space_view(tracks + circles), (11, 6))
     lines = [(strokes.polylines(runs, width, space), 1.0)
              for runs, width in ((circles, LIFT_FIBRE_WIDTH), (tracks, TRACK_WIDTH))]
     # The track's start in blue, its end in its own colour.
     ends = (solids.ball(sm.point(track[[0, -1]]), END_RADIUS * space.pixel)[:, None], np.stack([START_COLOUR, LOOP_COLOUR]))
     on_sphere = strokes.polylines([(components(loop), LOOP_COLOUR)], TRACK_WIDTH, sphere)
-    figure = plt.figure(figsize=(11, 6))
-    panels(figure, sphere_image([], [(on_sphere, 1.0)], sphere), solids.draw([ends], space, BACKGROUND, meshes=lines),
-           space)
+    shown(axes, solids.draw([ends], space, BACKGROUND, meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
+          (space, sphere))
     return figure
 
 
 def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> Iterator[np.ndarray]:
     """Fibres added one by one as their spin spirals over the sphere, the newest drawn heavier; one frame
     per spin, in a fixed view that holds the fibres of the spiral."""
-    space, sphere = sweep_view(), sphere_view()
-    # The sphere and its circles set up once, among each frame's dots, and the figure laid out once, its panels blank
-    # until each frame sets their images.
-    inks, ball = sphere_surface(1)
+    # The figure laid out once, its panels blank until each frame sets their images, and the sphere and its circles
+    # set up once, among each frame's dots.
+    figure, axes, (space, sphere) = panels(sweep_view(), (9, 5.5))
+    space_shown, sphere_shown = shown(axes, np.ones((*space.shape, 3)), np.ones((*sphere.shape, 3)), (space, sphere))
+    inks, ball = sphere_surface(1, SWEEP_CIRCLE_WIDTH)
     sphere_scene = Scene(sphere, BACKGROUND, [], [], inks=inks, translucent=ball)
     space_scene = Scene(space, BACKGROUND, [], [])
-    figure = plt.figure(figsize=(9, 5.5))
-    space_shown, sphere_shown = panels(figure, np.ones((1, 1, 3)), np.ones((1, 1, 3)), space)
     # The spins so far, their colours, and each one's fibre as segments of its runs inside the drawing limit.
     points, colours, fibres = [], [], []
     for spin, projected in stream:
@@ -178,7 +185,7 @@ def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> Iter
         # Every fibre so far thin, and the newest thick around its thin self.
         thin = strokes.segments(*(np.concatenate(part) for part in zip(*fibres)), SWEPT_WIDTH, space)
         thick = strokes.segments(*fibres[-1], NEWEST_WIDTH, space)
-        sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), sphere)]))
+        sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), SWEEP_DOT_RADIUS, sphere)]))
         space_shown.set_data(space_scene.draw(meshes=[(thin, 1.0), (thick, 1.0)]))
         yield capture(figure)
     plt.close(figure)

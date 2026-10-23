@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.manipulability import core
-from examples.util.wgsl import show_pixels, solids
+from examples.util.wgsl import room, show_pixels, solids
 
 mv, w = core.mv, core.w
 box_colours = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
@@ -44,9 +44,14 @@ def frame(pose, view, centre: np.ndarray, extent: float, pixels: int) -> np.ndar
                            image(bodies, force, force_colour, view, centre, extent, pixels)], axis=1)
 
 
-def draw_ellipsoids(poses, view, centre: np.ndarray, extent: float, pixels: int) -> plt.Figure:
+def draw_ellipsoids(poses, view, centre: np.ndarray, extent: float) -> plt.Figure:
     """One row per pose: the velocity ellipsoid beside the force ellipsoid, at the gripper."""
     figure, axes = plt.subplots(len(poses), 1, figsize=(11, 5.5 * len(poses)))
-    for ax, pose in zip(np.atleast_1d(axes), poses):
+    axes = np.atleast_1d(axes)
+    # The rows' rooms alike: each panel as many pixels across as the two and the gap between them, a twentieth of a
+    # panel, fit in a row's room.
+    columns, rows = room(axes[0])
+    pixels = min(rows, columns * 20 // 41)
+    for ax, pose in zip(axes, poses):
         show_pixels(ax, frame(pose, view, centre, extent, pixels))
     return figure

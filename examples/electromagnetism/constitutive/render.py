@@ -12,7 +12,7 @@ from matplotlib.image import AxesImage
 
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.util.wgsl import show, solids, strokes
+from examples.util.wgsl import fitted, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
@@ -28,14 +28,16 @@ CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 CROSS_REACH = 1.1
 # The samples along the axis, the stations with arrows, and the times of a period that the camera frames.
 N_SAMPLES, N_STATIONS, N_FRAMING = 200, 21, 16
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin, a share of the larger side;
-# the pixels across each panel, and the figure's size in inches.
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin, a share of the larger side,
+# and the figure's size in inches.
 ELEVATION, AZIMUTH = np.radians(20.0), np.radians(-35.0)
-MARGIN, N_PIXELS, FIGURE_SIZE = 0.06, 840, (14, 3.8)
+MARGIN, FIGURE_SIZE = 0.06, (14, 3.8)
 # The widths of the field curves, the axis and the arrows' shafts, in pixels; the arrows' heads, as a share of the
 # arrow's length, and their radius, as a share of the head's length.
 CURVE_WIDTH, AXIS_WIDTH, ARROW_WIDTH = 4.0, 3.0, 3.0
 HEAD_SHARE, HEAD_SPREAD = 0.18, 0.35
+# The animation's widths as a share of those above, its pictures that much narrower than the still's.
+ANIMATION_THICKNESS = 0.67
 
 
 def _zero_axes(ax: plt.Axes, across: str, up: str) -> None:
@@ -68,26 +70,28 @@ def field_arrows(modes: Modes, taus: np.ndarray, distance: np.ndarray, omega: fl
     return (wave | core.t).cast(DRAWN).kernel, (wave.dual() | core.t).cast(DRAWN).kernel
 
 
-def wave_scene(modes: Modes, z_max: float, omega: float) -> Scene:
-    """The axis, seen by a camera that frames every time of a period alike, for the fields at any time to be drawn
-    along it."""
+def wave_scene(ax: plt.Axes, modes: Modes, z_max: float, omega: float, thickness: float) -> Scene:
+    """The axis, seen by a camera that frames every time of a period alike, as many pixels across as the axes' room
+    holds, for the fields at any time to be drawn along it; its width a share `thickness` of the one set above."""
     distance = np.linspace(0, z_max, N_SAMPLES)
     axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
     reached = field_arrows(modes, np.linspace(0, 2 * np.pi / omega, N_FRAMING, endpoint=False), distance, omega)
-    view = solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), AXIS_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
+    view = fitted(solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
+    radius = thickness * AXIS_WIDTH / 2 * view.pixel
+    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), radius)[None]   # [1, 3] Quadric
     return Scene(view, np.ones(3), [], [], translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)])
 
 
-def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: float) -> np.ndarray:
+def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: float, thickness: float) -> np.ndarray:
     """The travelling E and B fields at one time, along the scene's axis: the curves their arrows' tips trace, and
-    the arrows at stations along it."""
+    the arrows at stations along it, their widths a share `thickness` of those set above."""
     view = scene.view
     distance = np.linspace(0, z_max, N_SAMPLES)
     axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
     electric, magnetic = field_arrows(modes, np.array(tau), distance, omega)
 
-    curves = strokes.polylines([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], CURVE_WIDTH, view)
+    curves = strokes.polylines([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], thickness * CURVE_WIDTH,
+                                view)
     # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
     station_idx = np.linspace(0, N_SAMPLES - 1, N_STATIONS, dtype=int)
     stations = axis[station_idx]
@@ -95,8 +99,9 @@ def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: floa
     for arrows, colour in ((electric, ELECTRIC), (magnetic, MAGNETIC)):
         tips = arrows[station_idx]
         head_lengths = HEAD_SHARE * np.linalg.norm(tips, axis=-1)
-        shafts, heads = solids.arrows(sm.point(stations), sm.point(stations + tips), ARROW_WIDTH / 2 * view.pixel,
-                                      head_lengths, HEAD_SPREAD * head_lengths)
+        shafts, heads = solids.arrows(sm.point(stations), sm.point(stations + tips),
+                                      thickness * ARROW_WIDTH / 2 * view.pixel, head_lengths,
+                                      HEAD_SPREAD * head_lengths)
         parts += [(shafts, colour), (heads, colour)]
     return scene.draw(parts, meshes=[(curves, 1.0)])
 
@@ -110,8 +115,8 @@ def draw_wave_propagation(
 ) -> AxesImage:
     """Draw the travelling E and B field vectors in the medium along the propagation axis z, at one time; the
     image shown."""
-    scene = wave_scene(modes, z_max, omega)
-    return show(ax, wave_image(scene, modes, tau, z_max, omega), scene.view)
+    scene = wave_scene(ax, modes, z_max, omega, 1.0)
+    return show(ax, wave_image(scene, modes, tau, z_max, omega, 1.0), scene.view)
 
 
 def draw_wave_comparison_3d(
@@ -136,8 +141,8 @@ def draw_wave_comparison_figure(
 ) -> plt.Figure:
     """Render standalone figure with side-by-side views comparing isotropic vs birefringent medium."""
     fig = plt.figure(figsize=FIGURE_SIZE, dpi=120)
-    draw_wave_comparison_3d(fig, glass_modes, crystal_modes, z_max=z_max)
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0, wspace=0.0)
+    draw_wave_comparison_3d(fig, glass_modes, crystal_modes, z_max=z_max)
     return fig
 
 
@@ -158,12 +163,12 @@ def animate_wave_comparison(
     # Each medium's axis and camera set up once, and its image, for every frame to set.
     panels = []
     for ax, modes in ((glass_axes, glass_modes), (crystal_axes, crystal_modes)):
-        scene = wave_scene(modes, z_max, omega)
+        scene = wave_scene(ax, modes, z_max, omega, ANIMATION_THICKNESS)
         panels.append((show(ax, np.full((*scene.view.shape, 3), 255, dtype=np.uint8), scene.view), scene, modes))
 
     for tau in np.linspace(0, 2.0 * np.pi / omega, n_frames, endpoint=False):
         for shown, scene, modes in panels:
-            shown.set_data(wave_image(scene, modes, float(tau), z_max, omega))
+            shown.set_data(wave_image(scene, modes, float(tau), z_max, omega, ANIMATION_THICKNESS))
         yield capture(fig)
 
     plt.close(fig)

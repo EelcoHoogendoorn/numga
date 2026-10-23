@@ -16,21 +16,20 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
-from examples.util.wgsl import Shader, meshes, show, solids, supersampled
+from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
 surface_colour = np.array([0.36, 0.60, 0.80])
 # The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
 # widths, head lengths and head widths in pixels, the driving field's and the flow's.
 surface_opacity = 0.45
-driving_arrow, flow_arrow = (3.0, 14.0, 9.0), (4.0, 16.0, 11.0)
+driving_arrow, flow_arrow = (4.9, 23.0, 14.8), (6.6, 26.0, 18.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
 site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
-# The view's elevation and azimuth, the pixels across a panel, the margin around what it shows as a fraction of
-# its larger side, and the directions an ellipsoid is framed by.
+# The view's elevation and azimuth, the margin around what it shows as a fraction of its larger side, and the
+# directions an ellipsoid is framed by.
 elevation, azimuth = np.radians(23.0), np.radians(35.0)
-pixels = 360
 margin = 0.08
 n_framing = 400
 # The lattice's site and bond radii, in lattice spacings.
@@ -121,9 +120,10 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
     driving_tip, flows = pga_mv.point(across(driving) * largest), pga_mv.point(along(fluxes))
     ellipsoids = [image_of_sphere(panel_matrix) for panel_matrix in matrix]
-    view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin,
-                       pixels)
+    view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
     fig, axes = figure([view.half] * len(matrix), 3.6)
+    # The panels' rooms alike, one view fitted to the first holds them all.
+    view = fitted(view, axes[0])
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
         # Both arrows from the centre, the flow's within the ellipsoid, seen through its surface.
         arrows = [(part[None], colour) for tip, colour, (width, head_length, head_width) in
@@ -169,12 +169,14 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
     """The lattice with its bonds; the lattice's conduction, the image of the unit ball of fields, a sphere;
     and its stiffness along every direction as a radius, a cube with rounded faces."""
     parts = lattice(sites, axial, diagonal)
-    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, pixels)
+    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, 1)
     ellipsoid, framed = image_of_sphere(matrices(conductivity))
-    conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, pixels)
+    conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, 1)
     points, faces = stiffness_mesh(stiffness)
-    stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
+    stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, 1)
     fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 4.0)
+    lattice_view, conduction_view, stiffness_view = (fitted(view, ax) for view, ax in
+                                                     zip((lattice_view, conduction_view, stiffness_view), axes))
     show(axes[0], solids.draw(parts, lattice_view, background), lattice_view)
     show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background), conduction_view)
     show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background),
@@ -196,9 +198,10 @@ def draw_optical_activity(rotary: Scalar) -> plt.Figure:
     directions = mv.antivector(unit_directions(n_framing))                    # [directions] Direction
     limit = np.abs(rotary[:, None](directions, directions).to_array()).max()
     # The sphere about the origin, seen as the other views see it.
-    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), pixels)
+    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), 1)
     colours = plt.get_cmap("RdBu_r")(np.linspace(0, 1, 256))[None, :, :3]
     fig, axes = figure([view.half] * rotary.shape[0], 2.6)
+    view = fitted(view, axes[0])
     for ax, response in zip(axes, rotary):
         image = sphere_shader(rotary.gatype)(view.shape, rotary=response, limit=limit, turn=turn, half_height=view.half[1],
                                 lamp=toward_lamp / (toward_lamp | toward_lamp).square_root(), background=background,

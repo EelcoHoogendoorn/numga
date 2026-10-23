@@ -16,7 +16,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.geometry.projection.core import Line, Motor, Point, mv
-from examples.util.wgsl import show, solids
+from examples.util.wgsl import fitted, show, solids
 
 # The image panels' margin around both images, as a fraction of their larger side.
 MARGIN = 0.08
@@ -25,15 +25,14 @@ MARGIN = 0.08
 BODY_COLOUR, LIGHT_COLOUR, SUN_COLOUR = (np.array(to_rgb(colour)) for colour in ("#38bdf8", "#fbbf24", "#a855f7"))
 SUN_ARROW_START = np.array([-2.0, 2.0, 4.0])
 background = np.ones(3)
-# The shadow scene's view, elevation and azimuth in radians, azimuth zero looking along +y; its margin as a share of
-# the larger side, and its pixels across.
+# The shadow scene's view, elevation and azimuth in radians, azimuth zero looking along +y, and its margin as a share
+# of the larger side.
 elevation, azimuth = np.radians([30.0, -60.0 + 90.0])
 scene_margin = 0.1
-n_pixels = 640
 # Radii in pixels: of the body's edges, of the shadows' edges, of the beads along the trail, of the point light, and
 # of the arrow's shaft and head, with its head's length.
-body_radius, shadow_radius, bead_radius, light_radius = 2.0, 1.5, 3.0, 8.0
-shaft_radius, head_radius, head_length = 3.0, 8.0, 24.0
+body_radius, shadow_radius, bead_radius, light_radius = 1.6, 1.2, 2.4, 6.5
+shaft_radius, head_radius, head_length = 2.4, 6.5, 19.5
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -70,9 +69,9 @@ def render_shadow_scene(
     corners, light_corners, sun_corners, trail, light = (
         solids.mv.point(euclidean(points)) for points in (body, point_shadow, sun_shadow, shadow_trail, point_light))
     arrow_start, arrow_end = solids.mv.point(SUN_ARROW_START), solids.mv.point(sun_end)
-    # Framed by everything drawn.
-    view = solids.view([corners, light_corners, sun_corners, trail, light, arrow_start, arrow_end], 0.0, elevation,
-                       azimuth, scene_margin, n_pixels)
+    # Framed by everything drawn, as many pixels across as the axes' room holds.
+    view = fitted(solids.view([corners, light_corners, sun_corners, trail, light, arrow_start, arrow_end], 0.0,
+                              elevation, azimuth, scene_margin, 1), ax)
     pixel = view.pixel
     shaft, head = solids.arrows(arrow_start, arrow_end, shaft_radius * pixel, head_length * pixel, head_radius * pixel)
     rods, joints = solids.edges(corners[ends[:, 0]], corners[ends[:, 1]], body_radius * pixel)
@@ -129,7 +128,11 @@ def draw_projection(
 ) -> plt.Figure:
     """Lay out the shadow scene and both camera views."""
     fig = plt.figure(figsize=(16, 5), dpi=120)
-    render_shadow_scene(fig.add_subplot(1, 3, 1), body, edges, shadows, point_light, sun)
-    render_stereo_scene(fig.add_subplot(1, 3, 2), fig.add_subplot(1, 3, 3), edges, stereo, rig_1, rig_2, MARGIN)
+    scene_axes, camera_1_axes, camera_2_axes = (fig.add_subplot(1, 3, i + 1) for i in range(3))
+    render_stereo_scene(camera_1_axes, camera_2_axes, edges, stereo, rig_1, rig_2, MARGIN)
+    # The figure laid out, the scene's axes as bare as its picture leaves them, before the picture is traced at the
+    # size of their room.
+    scene_axes.set_axis_off()
     fig.tight_layout()
+    render_shadow_scene(scene_axes, body, edges, shadows, point_light, sun)
     return fig

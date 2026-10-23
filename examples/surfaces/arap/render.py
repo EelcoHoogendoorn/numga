@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.arap import core
-from examples.util.wgsl import meshes, show_pixels, solids
+from examples.util.wgsl import fitted, meshes, show_pixels, solids
 
 # The checkerboard's two colours, the view, elevation and azimuth in radians, azimuth zero looking along +y, the box
-# it shows and the margin around it, as a share of its larger side, and the pixels across a picture.
+# it shows and the margin around it, as a share of its larger side, and the pixels across an animation's frame.
 light, dark = np.array([0.98, 0.84, 0.62]), np.array([0.90, 0.45, 0.18])
 elevation, azimuth = np.radians([18.0, 26.0])
 limits = np.array([[-3.3, 3.5], [-1.5, 1.5], [-1.1, 4.0]])
@@ -34,11 +34,15 @@ def checker(rest: core.Point, faces: np.ndarray, cell: np.ndarray) -> np.ndarray
     return np.where(parity[:, None] == 1, dark, light)
 
 
-def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray) -> np.ndarray:
-    """The bar's triangles, each its own colour, flat, framed on the fixed box."""
-    places = solids.mv.point(coordinates(vertices))
+def box_view(pixels: int) -> solids.View:
+    """The view framing the fixed box, `pixels` across."""
     corners = solids.mv.point(np.array(list(itertools.product(*limits))))      # [8] Point
-    view = solids.view([corners], 0.0, elevation, azimuth, margin, n_pixels)
+    return solids.view([corners], 0.0, elevation, azimuth, margin, pixels)
+
+
+def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: solids.View) -> np.ndarray:
+    """The bar's triangles, each its own colour, flat, as a view of the fixed box sees them."""
+    places = solids.mv.point(coordinates(vertices))
     return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
                        colour=meshes.by_face)
 
@@ -48,7 +52,7 @@ def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndar
     colours = checker(bar.vertices, bar.faces, cell)
     figure, axes = plt.subplots(1, len(shapes), figsize=(4 * len(shapes), 4), dpi=100, squeeze=False)
     for ax, shape, title in zip(axes[0], shapes, titles):
-        show_pixels(ax, picture(shape, bar.faces, colours))
+        show_pixels(ax, picture(shape, bar.faces, colours, fitted(box_view(n_pixels), ax)))
         ax.set_title(title)
     return figure
 
@@ -56,5 +60,6 @@ def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndar
 def animate(bar, shapes: Iterable[core.Point], cell: np.ndarray) -> Iterator[np.ndarray]:
     """The bar in each of the given shapes, one frame each."""
     colours = checker(bar.vertices, bar.faces, cell)
+    view = box_view(n_pixels)
     for shape in shapes:
-        yield picture(shape, bar.faces, colours)
+        yield picture(shape, bar.faces, colours, view)

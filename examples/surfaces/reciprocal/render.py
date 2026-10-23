@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from examples.surfaces.reciprocal import core
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import fitted, meshes, show, solids
 
 TERRAIN_COLOUR = np.array(to_rgb("#9fb7c4"))
 BOUNDARY_COLOUR = np.full(3, 0.65)
@@ -24,13 +24,14 @@ COMPRESSION, TENSION = -0.3, 1.5
 BAR_WIDTH = 2.2
 REACH = 1.25
 # The terrain's view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around it as a
-# share of its larger side, and the pixels across its picture; how much each surface of the terrain hides, so the
-# creases behind it show through, and the widths of the creases and of the boundary as rods, in pixels.
+# share of its larger side, and the pixels across its picture, until the view is fitted to its axes; how much each
+# surface of the terrain hides, so the creases behind it show through, and the widths of the creases and of the
+# boundary as rods, in pixels.
 ELEVATION, AZIMUTH = np.radians([28.0, 30.0])
 MARGIN = 0.08
 N_PIXELS = 1000
 TERRAIN_OPACITY = 0.16
-CREASE_WIDTH, BOUNDARY_WIDTH = 7.0, 3.5
+CREASE_WIDTH, BOUNDARY_WIDTH = 3.5, 1.75
 # The room an animation's view leaves above and below the terrain of its first frame, for the heights to move in.
 SWING = 0.02
 BACKGROUND = np.ones(3)
@@ -85,12 +86,14 @@ def panels(mesh: core.Mesh, framing: solids.View
            ) -> tuple[plt.Figure, Callable[[np.ndarray, core.Scalar, core.Vector], None]]:
     """The figure, laid out once, and what draws heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
     vertices `[faces] Vector` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
-    seen by the framing camera; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
+    seen by the framing camera, fitted to its axes; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
     it, an edge across every bar."""
     inner, left, right = core.beside(mesh)
     xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
     figure = plt.figure(figsize=(10.0, 5.0))
-    picture = show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
+    terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
+    framing = fitted(framing, terrain_axes)
+    picture = show(terrain_axes, np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
     plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
     bars = plane.add_collection(LineCollection(xy[mesh.edges[inner]], linewidths=BAR_WIDTH))
     plane.add_collection(LineCollection(xy[mesh.edges[mesh.boundary_edges]], colors="0.5", linewidths=1.0))

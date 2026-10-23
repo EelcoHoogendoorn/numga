@@ -13,7 +13,7 @@ from matplotlib.colors import to_rgb
 from numga import Extensor
 from examples.util.animation import capture
 from examples.quantum.two_spins import core
-from examples.util.wgsl import labels, meshes, show, solids, strokes
+from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -25,13 +25,13 @@ SPHERE_COLOUR, SPHERE_OPACITY = np.array([0.70, 0.76, 0.86]), 0.09
 CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.6), 0.6
 LABEL_COLOUR, START_COLOUR = "0.35", np.full(3, 0.1)
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
-# about the centre, and the pixels across it.
+# about the centre, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(-55.0 + 90.0)
 REACH, N_PIXELS = 1.3, 700
 # The widths of the great circles, the paths and the arrows' shafts, the arrowheads' length and width, and the radii
-# of the dots, the largest landing dot and the start, in pixels.
-CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.4, 7.0, 6.0, 30.0, 18.0
-DOT_RADIUS, LANDING_RADIUS, START_RADIUS = 5.0, 9.0, 7.0
+# of the dots, the largest landing dot and the start, in radii of the sphere.
+CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 0.00891, 0.026, 0.0223, 0.111, 0.0669
+DOT_RADIUS, LANDING_RADIUS, START_RADIUS = 0.0186, 0.0334, 0.026
 
 
 def components(vectors: core.First | core.Second, names: str) -> np.ndarray:
@@ -59,9 +59,9 @@ def bell_bounds(ax: plt.Axes, angles: np.ndarray) -> None:
     ax.set(yticks=[2.0, 2 * np.sqrt(2)], yticklabels=["2", r"$2\sqrt{2}$"])
 
 
-def ball() -> solids.View:
-    """The view of the unit sphere: square about its centre."""
-    return solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
+def ball(ax: plt.Axes) -> solids.View:
+    """The view of the unit sphere: square about its centre, fitted to the matplotlib axes it is shown in."""
+    return fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS), ax)
 
 
 def sphere_scene(view: solids.View, n_parts: int) -> Scene:
@@ -70,7 +70,7 @@ def sphere_scene(view: solids.View, n_parts: int) -> Scene:
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
     # The ball is the first translucent part, after the opaque ones.
     circles = solids.Ink(n_parts, solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
-                         CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
+                         CIRCLE_COLOUR, CIRCLE_WIDTH / view.pixel, CIRCLE_OPACITY)
     return Scene(view, np.ones(3), [], [], inks=[circles], translucent=sphere)
 
 
@@ -80,10 +80,9 @@ def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
     return sphere_scene(view, len(parts)).draw(parts, meshes=lines)
 
 
-def arrow(tip: np.ndarray, colour: str, pixel: float) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """An arrow from the centre to a tip `[3]`, in a colour, its widths in pixels of a size."""
-    shaft, head = solids.arrows(solids.origin, sm.point(tip), ARROW_WIDTH / 2 * pixel, HEAD_LENGTH * pixel,
-                                HEAD_WIDTH / 2 * pixel)
+def arrow(tip: np.ndarray, colour: str) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """An arrow from the centre to a tip `[3]`, in a colour."""
+    shaft, head = solids.arrows(solids.origin, sm.point(tip), ARROW_WIDTH / 2, HEAD_LENGTH, HEAD_WIDTH / 2)
     return [(shaft[None], np.array(to_rgb(colour))), (head[None], np.array(to_rgb(colour)))]
 
 
@@ -95,11 +94,11 @@ def dots(centres: np.ndarray, radii: np.ndarray) -> solids.Quadric:
 
 def draw_pair(tips: list[tuple[np.ndarray, str]]) -> plt.Figure:
     """Each spin's arrow `[3]` on its sphere, in its colour, side by side."""
-    view = ball()
     figure = plt.figure(figsize=(7, 3.4))
     for column, (tip, colour) in enumerate(tips):
         ax = figure.add_axes((column / 2, 0.0, 0.5, 1.0))
-        show(ax, on_sphere(arrow(tip, colour, view.pixel), view), view)
+        view = ball(ax)
+        show(ax, on_sphere(arrow(tip, colour), view), view)
     return figure
 
 
@@ -125,17 +124,16 @@ def steering_frames(points: np.ndarray, targets: np.ndarray, weights: np.ndarray
     where each lands `[frames, measured, 3]`, its dot's area in proportion to its weight `[frames, measured]`; one
     frame per entry of the leading axis."""
     colours = np.clip((points + 1) / 2, 0.0, 1.0)
-    view = ball()
     figure = plt.figure(figsize=(8, 4.2), dpi=80)
     measured_ax, landed_ax = (figure.add_axes((column / 2, 0.0, 0.5, 1.0)) for column in range(2))
-    show(measured_ax, on_sphere([(solids.ball(sm.point(points), DOT_RADIUS * view.pixel)[:, None], colours)], view),
-         view)
+    view = ball(measured_ax)
+    show(measured_ax, on_sphere([(solids.ball(sm.point(points), DOT_RADIUS)[:, None], colours)], view), view)
 
     # The sphere the dots land on, set up once.
     landing = sphere_scene(view, 1)
 
     def landed(target: np.ndarray, weight: np.ndarray) -> np.ndarray:
-        return landing.draw([(dots(target, LANDING_RADIUS * view.pixel * np.sqrt(weight)), colours)])
+        return landing.draw([(dots(target, LANDING_RADIUS * np.sqrt(weight)), colours)])
 
     image = show(landed_ax, landed(targets[0], weights[0]), view)
     for target, weight in zip(targets, weights):
@@ -192,12 +190,12 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     the front. Beside it, how likely the pair is found back in the singlet."""
     paths = np.stack([across.to_array(), turned.to_array(), balance.to_array()], axis=-1)   # [rates, times, 3]
     shades = (TOGETHER, FIRST, SECOND)
-    view = ball()
-    tracks = strokes.polylines([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)], PATH_WIDTH,
-                               view)
-    start = [(solids.ball(sm.point(paths[0, 0]), START_RADIUS * view.pixel)[None, None], START_COLOUR)]
     figure = plt.figure(figsize=(11, 4.2))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
+    view = ball(ax)
+    tracks = strokes.polylines([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)],
+                               PATH_WIDTH / view.pixel, view)
+    start = [(solids.ball(sm.point(paths[0, 0]), START_RADIUS)[None, None], START_COLOUR)]
     show(ax, on_sphere(start, view, [(tracks, 1.0)]), view)
     # Each pole named just past the sphere, where the camera sees it.
     places = np.array([(0, 0, 1.15), (0, 0, -1.2), (1.25, 0, 0), (-1.25, 0, 0)])

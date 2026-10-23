@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 from numga import stack
 from examples.util.animation import capture
 from examples.quantum.neutrino_isospin import core
-from examples.util.wgsl import meshes, show, solids, strokes
+from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.scene import Scene
 
@@ -27,14 +27,14 @@ plane_colour, axis_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b
 sphere_colour, sphere_opacity = np.array(to_rgb("#cbd5e1")), 0.1
 grid_colour, grid_opacity = np.array(to_rgb("#94a3b8")), 0.5
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view of
-# the sphere, and the pixels across it.
+# the sphere, and the pixels across it, until the view is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(35.0), np.radians(100.0)
 LIMIT, N_PIXELS = 1.3, 560
 # The widths of the grid's circles, the path and the plane's circle, and the radii of the axes' dots, the circle's
-# dots, the flavors' markers and the path's ends, a little larger to show over a flavor's, in pixels; the dots along
-# each axis and around the dotted circle; how far the axes and the flavors' names reach, in radii of the sphere.
-GRID_WIDTH, PATH_WIDTH, PLANE_WIDTH = 2.0, 4.2, 3.6
-AXIS_DOT_RADIUS, CIRCLE_DOT_RADIUS, FLAVOR_RADIUS, END_RADIUS = 1.6, 2.2, 5.0, 6.5
+# dots, the flavors' markers and the path's ends, a little larger to show over a flavor's; the dots along each axis
+# and around the dotted circle; how far the axes and the flavors' names reach; lengths in radii of the sphere.
+GRID_WIDTH, PATH_WIDTH, PLANE_WIDTH = 0.0093, 0.0195, 0.0167
+AXIS_DOT_RADIUS, CIRCLE_DOT_RADIUS, FLAVOR_RADIUS, END_RADIUS = 0.0074, 0.0102, 0.0232, 0.0302
 N_AXIS_DOTS, N_CIRCLE_DOTS = 41, 90
 AXIS_REACH, LABEL_DISTANCE = 1.2, 1.3
 
@@ -50,17 +50,18 @@ def electron_probability(trajectory: core.Vector) -> np.ndarray:
     return (1.0 + coordinates(trajectory)[..., 2]) * 0.5
 
 
-def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector) -> tuple[list, list, list, solids.View]:
+def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.Axes
+                  ) -> tuple[list, list, list, solids.View]:
     """What stays put on the flavor sphere: its axes dotted, its flavors at the poles, and the plane the vector turns
     in at the start, dotted, as opaque parts; the sphere, translucent; its equator and two meridians, and the plane
     the vector turns in at the end, as great circles to ink on it, each the planes cutting it, their colour, width and
-    opacity; and the view."""
-    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS)
+    opacity; and the view, fitted to the matplotlib axes it is shown in."""
+    view = fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS), ax)
     along = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None, None] * np.eye(3)    # [dots, 3, 3]
     # The great circle in the plane the vector turns in at the start, square to its dual, every point of it but the
     # last, which closes it onto the first.
     dotted = meshes.circles(np.zeros(3), np.array(1.0), coordinates(start_plane.dual()), N_CIRCLE_DOTS)[:-1]  # [dots, 3]
-    parts = [(solids.ball(sm.point(points), radius * view.pixel)[:, None], colour)
+    parts = [(solids.ball(sm.point(points), radius)[:, None], colour)
              for points, radius, colour in ((along.reshape(-1, 3), AXIS_DOT_RADIUS, axis_colour),
                                             (dotted, CIRCLE_DOT_RADIUS, plane_colour),
                                             (coordinates(FLAVORS), FLAVOR_RADIUS, flavor_colours))]
@@ -68,7 +69,8 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector) -> tuple
     # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the vector turns in at the
     # end, through the centre square to its dual.
     end_circle = solids.plane(coordinates(end_plane.dual())[None], np.zeros(1))  # [1] Plane
-    circles = [(solids.axes, grid_colour, GRID_WIDTH, grid_opacity), (end_circle, plane_colour, PLANE_WIDTH, 1.0)]
+    circles = [(solids.axes, grid_colour, GRID_WIDTH / view.pixel, grid_opacity),
+               (end_circle, plane_colour, PLANE_WIDTH / view.pixel, 1.0)]
     return parts, ball, circles, view
 
 
@@ -80,8 +82,8 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
 
 def path_marks(path: np.ndarray, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
     """A path over the sphere `[steps, 3]` as a stroke, and its ends as balls, its start green and its end orange."""
-    stroke = strokes.polylines([(path, path_colour)], PATH_WIDTH, view)
-    ends = (solids.ball(sm.point(path[[0, -1]]), END_RADIUS * view.pixel)[:, None], np.stack([start_colour, end_colour]))
+    stroke = strokes.polylines([(path, path_colour)], PATH_WIDTH / view.pixel, view)
+    ends = (solids.ball(sm.point(path[[0, -1]]), END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
 
 
@@ -118,17 +120,20 @@ def draw_probabilities(ax, distances: np.ndarray, electron: np.ndarray) -> tuple
 
 
 def panels() -> tuple[plt.Figure, plt.Axes, plt.Axes]:
+    """The figure, the sphere's axes, bare, and the probabilities' axes."""
     figure = plt.figure(figsize=(10, 4.5), dpi=120)
-    return figure, figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
+    sphere = figure.add_subplot(1, 2, 1)
+    sphere.set_axis_off()
+    return figure, sphere, figure.add_subplot(1, 2, 2)
 
 
 def draw_precession(states: Iterable[core.Vector], plane: core.Bivector, distances: np.ndarray) -> plt.Figure:
     """The isospin vector turning in one plane, and the flavor probabilities oscillating."""
     trajectory = stack(list(states), axis=0)                                 # [steps] Vector
     figure, sphere, probabilities = panels()
-    draw_sphere(sphere, flavor_sphere(plane, plane), trajectory)
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     figure.tight_layout()
+    draw_sphere(sphere, flavor_sphere(plane, plane, sphere), trajectory)
     return figure
 
 
@@ -136,10 +141,10 @@ def draw_decoherence(states: Iterable[core.Vector], plane: core.Bivector, distan
     """The isospin vector spiralling inward, and the flavor probabilities settling where the dashed line says."""
     trajectory = stack(list(states), axis=0)                                 # [steps] Vector
     figure, sphere, probabilities = panels()
-    draw_sphere(sphere, flavor_sphere(plane, plane), trajectory)
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     probabilities.axhline(settled, color="#64748b", linestyle="--", linewidth=1.2)
     figure.tight_layout()
+    draw_sphere(sphere, flavor_sphere(plane, plane, sphere), trajectory)
     return figure
 
 
@@ -149,10 +154,10 @@ def draw_adiabatic(steps: Iterable[tuple[core.Vector, core.Bivector]], distances
     pairs = list(steps)
     trajectory = stack([state for state, _ in pairs], axis=0)               # [steps] Vector
     figure, sphere, probabilities = panels()
-    draw_sphere(sphere, flavor_sphere(pairs[0][1], pairs[-1][1]), trajectory)
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     probabilities.plot(distances, potentials / potentials.max(), color="#94a3b8", linestyle=":", linewidth=1.2)
     figure.tight_layout()
+    draw_sphere(sphere, flavor_sphere(pairs[0][1], pairs[-1][1], sphere), trajectory)
     return figure
 
 
@@ -161,7 +166,7 @@ def animate_precession(states: Iterable[core.Vector], plane: core.Bivector, dist
     as its states come: the sphere, the flavors' names and the probabilities' axes set up once, and each frame the
     path so far and its ends drawn among them."""
     figure, sphere, probabilities = panels()
-    parts, ball, circles, view = flavor_sphere(plane, plane)
+    parts, ball, circles, view = flavor_sphere(plane, plane, sphere)
     # The path's ends, the one moving part, come after the still opaque parts.
     scene = Scene(view, np.ones(3), parts, [], inks=inked(circles, len(parts) + 1), translucent=ball)
     image = show(sphere, np.full((*view.shape, 3), 255, dtype=np.uint8), view)

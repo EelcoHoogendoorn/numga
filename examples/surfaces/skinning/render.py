@@ -7,17 +7,18 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.skinning.core import Point, mv
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import fitted, meshes, show, solids
 
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, the margin around the skins as a
-# share of their larger side, and the pixels across a picture; the stripes' colour map around the cylinder.
+# share of their larger side, and the pixels across a picture, until the view is fitted to its axes; the stripes'
+# colour map around the cylinder.
 elevation, azimuth = np.radians([30.0, 30.0])
 margin = 0.08
 n_pixels = 900
 stripe_map = "viridis"
 background = np.ones(3)
 # The quads' edges: their width in pixels and how dark they are inked.
-edge_width = 0.9
+edge_width = 0.4
 edge_darkness = 0.7
 # Each face's colour, darkened toward the edges of its quad that lie within `edge_width` pixels: the ink of the
 # edge opposite each corner in its face values, by how near the pixel lies to that edge.
@@ -61,8 +62,9 @@ def surface(points: Point, n_rings: int, n_around: int, view: solids.View) -> np
 def draw_skinning(motor_skin: Point, slerp_skin: Point, matrix_skin: Point, n_rings: int, n_around: int) -> plt.Figure:
     """The three skins side by side, to one scale: blended motors normalised, slerped, and blended maps."""
     skins = (motor_skin, slerp_skin, matrix_skin)
-    view = solids.view([solids.mv.point(xyz(skin)) for skin in skins], 0.0, elevation, azimuth, margin, n_pixels)
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), dpi=120)
+    frame = solids.view([solids.mv.point(xyz(skin)) for skin in skins], 0.0, elevation, azimuth, margin, n_pixels)
+    view = fitted(frame, axes[0])
     for ax, skin in zip(axes, skins):
         show(ax, surface(skin, n_rings, n_around, view), view)
     return fig

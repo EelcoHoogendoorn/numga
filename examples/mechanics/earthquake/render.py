@@ -15,7 +15,7 @@ from matplotlib.contour import ContourSet
 from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.earthquake import core
-from examples.util.wgsl import compose, meshes, show, solids
+from examples.util.wgsl import compose, fitted, meshes, show, solids
 
 # Pushes shaded, pulls left white; the nodal lines, the pressure and tension axes, the slip.
 PUSH, PULL = "#1e293b", "#f8fafc"
@@ -28,14 +28,13 @@ FAULT, RIM = "#fde68a", "#b45309"
 PATCH = 0.55
 PATCH_OPACITY, PATCH_THICKNESS = 0.16, 1.0
 OFFSET, BEHIND, SLIP_LENGTH = 0.15, 0.45, 0.9
-# The view in space, elevation and azimuth in radians, azimuth zero looking along +y; the margin as a share of
-# the larger side, and the pixels across a picture.
+# The view in space, elevation and azimuth in radians, azimuth zero looking along +y, and the margin as a share of
+# the larger side.
 ELEVATION, AZIMUTH = np.radians([24.0, -60.0 + 90.0])
 MARGIN = 0.12
-PIXELS = 440
 # The width of the rim and the radius of the slip arrows' shafts, in pixels; an arrow's head, its length a share of
 # the arrow's, and its radius a share of its own length.
-RIM_WIDTH, SHAFT_RADIUS = 2.4, 2.2
+RIM_WIDTH, SHAFT_RADIUS = 2.2, 2.0
 HEAD_SHARE = 0.25
 HEAD_WIDTH = 0.4
 
@@ -112,7 +111,7 @@ def slip_arrows(normal: core.Point, slip: core.Point) -> tuple[np.ndarray, np.nd
 
 def view(surfaces: np.ndarray, ends: np.ndarray) -> solids.View:
     """A view framing lobes `[..., 3]` and arrows' ends `[..., 3]`."""
-    return solids.view([solids.mv.point(surfaces), solids.mv.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, PIXELS)
+    return solids.view([solids.mv.point(surfaces), solids.mv.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1)
 
 
 def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, slip: core.Point,
@@ -160,14 +159,16 @@ def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, cor
     lower hemisphere; all from one camera framing every frame's lobes and arrows."""
     frames = list(frames)
     normals, slips, _, _, spheres, pushes = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...] each
-    seen = view(lobes(spheres, pushes), np.concatenate(slip_arrows(normals[:, None], slips[:, None])))
     # The figure and the beachball's rim set up once; the fault's picture, the shading and the axes' marks set for
     # each frame.
     figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
-    image = show(figure.add_subplot(1, 2, 1), np.ones((*seen.shape, 3)), seen)
-    ax = figure.add_subplot(1, 2, 2)
+    fault_ax, ax = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     shading, marks = draw_ball(ax, hemisphere, frames[0][3], frames[0][2])
+    # The figure laid out with the fault's axes bare, as its picture shows them, and the view fitted to them.
+    fault_ax.set_axis_off()
     figure.tight_layout()
+    seen = fitted(view(lobes(spheres, pushes), np.concatenate(slip_arrows(normals[:, None], slips[:, None]))), fault_ax)
+    image = show(fault_ax, np.ones((*seen.shape, 3)), seen)
     for normal, slip, axes, ball, sphere, push in frames:
         image.set_data(draw_fault(sphere, push, normal, slip, seen))
         for contours in shading:
