@@ -19,7 +19,7 @@ sm = solids.mv
 STRANDS = np.array([to_rgb(colour) for colour in
                     ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe", "#d17a9b", "#5fa8d3", "#7f6a4f")])
 SPHERE_COLOUR = np.array([0.90, 0.91, 0.93])
-TRAIL = 240
+TRAIL = 60
 TRAIL_WIDTH, DOT_RADIUS, N_AROUND = 3.0, 4.0, 6
 N_PIXELS, MARGIN = 300, 0.08
 
