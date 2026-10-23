@@ -134,7 +134,7 @@ def main() -> None:
     # checks
     for points, faces, duals in frames:
         # Every face's plane, the dual of its pole, pairs to one with each of the face's vertices.
-        assert np.abs(render.scalars(duals.dual_inverse()[:, None] & points[faces]) - 1).max() < 1e-10
+        assert np.abs((duals.dual_inverse()[:, None] & points[faces]).to_array() - 1).max() < 1e-10
 
     # On the sphere some dual edges cross over, exactly where the polyhedron folds; along the straight line
     # to the rescue they only ever uncross, and at the rescue none is left.

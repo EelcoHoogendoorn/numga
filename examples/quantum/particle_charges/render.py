@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from fractions import Fraction
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -17,32 +15,6 @@ CONNECTION_COLOURS = ("#4a9ea3", "#8a6fc4", "#db663d")
 
 
 # --- plumbing
-def charge_table(
-    occupations: np.ndarray, charge: Scalar, hypercharge: Scalar, left_isospin: Scalar,
-) -> str:
-    """The charges and colour multiplicities of the eight particle multiplets."""
-    n_colour = occupations[:, :3].sum(axis=-1)
-    n_weak = occupations[:, 3:].sum(axis=-1)
-    up = occupations[:, 3] == 1
-    groups = (
-        ("neutrino L", (n_colour == 3) & up),
-        ("electron L", (n_colour == 3) & ~up),
-        ("up L", (n_colour == 1) & up),
-        ("down L", (n_colour == 1) & ~up),
-        ("neutrino R^c", (n_colour == 0) & (n_weak == 0)),
-        ("electron R^c", (n_colour == 0) & (n_weak == 2)),
-        ("up R^c", (n_colour == 2) & (n_weak == 0)),
-        ("down R^c", (n_colour == 2) & (n_weak == 2)),
-    )
-    readings = np.stack((charge.to_array(), hypercharge.to_array(), left_isospin.to_array()), axis=-1)
-    rows = [f"{'field':16s} {'states':>6s} {'Q':>7s} {'Y':>7s} {'T3_L':>7s}"]
-    for name, selected in groups:
-        values = readings[selected].mean(axis=0)
-        fractions = (str(Fraction(float(value)).limit_denominator(12)) for value in values)
-        rows.append(f"{name:16s} {selected.sum():6d}" + "".join(f"{value:>8s}" for value in fractions))
-    return "\n".join(rows)
-
-
 def draw_connections(
     occupations: np.ndarray,
     left_isospin: Scalar,

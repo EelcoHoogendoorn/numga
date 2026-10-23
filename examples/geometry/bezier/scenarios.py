@@ -44,8 +44,8 @@ def main() -> None:
 
     # checks
     # Both arcs of the curve lie on the cone of its conic, at every middle weight.
-    assert np.abs(render.scalars(shapes[:, None](curves) & curves)).max() < 1e-10
-    assert np.abs(render.scalars(shapes[:, None](complements) & complements)).max() < 1e-10
+    assert np.abs((shapes[:, None](curves) & curves).to_array()).max() < 1e-10
+    assert np.abs((shapes[:, None](complements) & complements).to_array()).max() < 1e-10
 
 
 if __name__ == "__main__":

@@ -318,15 +318,3 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, 
             surface.remove()
     plt.close(figure)
     return images
-
-
-def readout(response: core.Response, labels: tuple[str, ...]) -> str:
-    """Material, signed torque in the disc's plane, and total dissipated power."""
-    # The moment paired with the disc's plane: the torque in its sense.
-    torque = (core.mv.xy & response.torque).cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
-    heating = response.heating.sites.sum().cast(core.ga.subspace.scalar()).kernel[..., 0] * 1e3
-    label_width = max(len("material"), *(len(label) for label in labels))
-    header = f"{'material':<{label_width}}  {'torque (mN m)':>14}  {'heating (mW)':>14}"
-    rows = (f"{label:<{label_width}}  {moment:14.2f}  {power:14.2f}"
-            for label, moment, power in zip(labels, torque, heating))
-    return "\n".join((header, *rows))

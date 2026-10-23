@@ -25,8 +25,6 @@ def test_scenarios_pass_their_checks_and_draw():
     signatures = scenarios.SIGNATURES
     rows = list(scenarios.zoo(signatures, 0))
     actions = list(scenarios.centres(tuple(s for s in signatures if sum(s) % 2 == 0)))
-    text = render.table(rows, actions)
-    assert len(text.splitlines()) == len(signatures) + 1
     for p, q, _, signs, _ in rows:
         Bivector, _, _, _ = core.signature(p, q)
         inner = (Bivector | Bivector).materialize(core.context)

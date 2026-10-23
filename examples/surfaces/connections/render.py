@@ -69,11 +69,6 @@ def positions(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def print_scalars(label: str, values: core.Scalar) -> None:
-    """A label and the values of a batch of scalars."""
-    print(label, values.cast(core.ga.subspace.scalar()).kernel[..., 0])
-
-
 # --- views and parts ------------------------------------------------------------------
 def square_view(view_degrees: np.ndarray, mesh: core.Mesh, reach: float) -> solids.View:
     """A square view framing a mesh, with `reach` to spare, from a view in degrees, the azimuth measured from x."""

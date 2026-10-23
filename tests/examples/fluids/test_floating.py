@@ -20,8 +20,8 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms(
     length, beam, depth = SIZES
     surface = core.water - (DRAFT - depth / 2) * mv.w
     push, growth = core.buoyancy(box, surface, 1.0)
-    assert abs(render.scalars(push & core.heave) - length * beam * DRAFT) < 1e-12
-    assert abs(render.scalars(growth & core.heave) - length * beam) < 1e-12
+    assert abs((push & core.heave).to_array() - length * beam * DRAFT) < 1e-12
+    assert abs((growth & core.heave).to_array() - length * beam) < 1e-12
     weight = mv.scalar([length * beam * DRAFT])
     centre = mv.point([0, 0, GRAVITY_HEIGHT - depth / 2])
     # The metacentric heights: the centre of buoyancy's height, plus the waterplane's second moment over the
@@ -29,7 +29,7 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms(
     across = DRAFT / 2 + beam ** 2 / (12 * DRAFT) - GRAVITY_HEIGHT
     along = DRAFT / 2 + length ** 2 / (12 * DRAFT) - GRAVITY_HEIGHT
     stiffness = core.stiffness(box, mv.scalar([DRAFT - depth / 2]), weight, centre, 1.0)
-    assert np.abs(render.scalars(stiffness.eigvalsh() / weight) - [across, along]).max() < 1e-12
+    assert np.abs((stiffness.eigvalsh() / weight).to_array() - [across, along]).max() < 1e-12
     # Wall-sided, until the deck edge dips: the righting arm is sin(heel) * (GM + BM / 2 * tan(heel)**2).
     heels = np.radians([10.0, 20.0, 30.0])
     turns = (mv.yz * (-heels / 2)).exp()
@@ -46,7 +46,7 @@ def test_cube_floats_face_up_outside_the_band_of_densities():
     densities = (edges[:, None] + np.array([-1e-3, 1e-3])).reshape(-1)       # [densities]
     stiffness = core.stiffness(cube, mv.scalar((densities - 0.5)[:, None]), mv.scalar(densities[:, None]),
                                mv.w.dual(), 1.0)
-    upright = render.scalars(stiffness(mv.yz, mv.yz))
+    upright = stiffness(mv.yz, mv.yz).to_array()
     assert np.array_equal(upright > 0, [True, False, False, True])
 
 

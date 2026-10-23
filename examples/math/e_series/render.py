@@ -4,15 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
-from examples.math.e8.core import Scalar, Vector
+from examples.math.e8.core import Vector
 from examples.math.e8.render import BACKGROUND, COLOURS, coordinates
 
 FAMILY_COLOURS = COLOURS[[5, 0, 3]]
-
-
-def format_scalars(values: Scalar) -> str:
-    """A compact numeric readout for dimensions and winding rates."""
-    return np.array2string(values.to_array(), precision=6, suppress_small=True)
 
 
 def draw_diagram(simple_roots: Vector, ranks: np.ndarray, names: tuple[str, ...]) -> plt.Figure:

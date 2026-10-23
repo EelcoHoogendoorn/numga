@@ -11,7 +11,6 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import stack
 from examples.mechanics.manipulability import core
 from examples.wgsl import solids
 
@@ -26,12 +25,6 @@ cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Q
 
 
 # --- plumbing -------------------------------------------------------------------------
-def euclidean(points: core.Point) -> np.ndarray:
-    """Euclidean coordinates of points, `[..., 3]`: their pairings with the coordinate planes, over their
-    weights."""
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (w & points)[..., None]).to_array()
-
-
 def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, view: tuple[float, float],
           centre: np.ndarray, extent: float, pixels: int) -> np.ndarray:
     """One image of the arm's boxes, opaque, under a translucent quadric, square, of half-width extent about the

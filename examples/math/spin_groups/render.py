@@ -3,8 +3,6 @@ the three-sphere, seen through the stereographic projection: tubes and dots draw
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
@@ -29,29 +27,6 @@ RIDER_RADIUS = 3.2
 def components(points: core.Extensor) -> np.ndarray:
     """The x, y and z components of points in space."""
     return points.cast(points.algebra.subspace("x y z")).kernel
-
-
-def blades(value: core.Extensor) -> str:
-    """A multivector as the sum of its nonzero blades, for printing."""
-    return " + ".join(f"{coefficient:g} {name}" for coefficient, name in zip(value.kernel, value.subspace.blade_names)
-                      if abs(coefficient) > 1e-12)
-
-
-def table(rows: Iterable[tuple], centres: Iterable[tuple]) -> str:
-    """The signatures as text: generators, rotations and boosts, the invariant form as a multiple of
-    the inner product, and the pseudoscalar's square. In even dimensions the pseudoscalar is a spinor
-    and either splits the spinors in two or acts on them as the complex unit; in odd dimensions it is
-    not, and the spinors are one piece."""
-    spinors = {}
-    for p, q, action in centres:
-        values = action.to_array()
-        spinors[p, q] = "two halves" if np.all(np.abs(values.imag) < 1e-9) else "complex"
-    lines = [f"{'(p, q)':8s}{'planes':>8s}{'rotations':>11s}{'boosts':>8s}{'form / inner':>14s}{'I * I':>7s}  spinors"]
-    for p, q, factor, signs, square in rows:
-        values = np.real(signs.to_array())
-        lines.append(f"{str((p, q)):8s}{len(values):8d}{int((values > 0).sum()):11d}{int((values < 0).sum()):8d}"
-                     f"{float(factor.to_array()):14.1f}{float(square.to_array()):+7.0f}  {spinors[p, q] if (p + q) % 2 == 0 else 'one piece'}")
-    return "\n".join(lines)
 
 
 def colours(shape: tuple[int, int]) -> np.ndarray:

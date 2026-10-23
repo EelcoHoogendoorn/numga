@@ -11,7 +11,7 @@ def test_face_planes_pair_to_one_with_their_vertices_on_a_fixed_mesh():
     assert all(np.array_equal(faces, frames[0][1]) for _, faces, _ in frames)
     for points, faces, duals in frames:
         # A face's plane is the dual of its pole.
-        assert np.abs(render.scalars(duals.dual_inverse()[:, None] & points[faces]) - 1).max() < 1e-10
+        assert np.abs((duals.dual_inverse()[:, None] & points[faces]).to_array() - 1).max() < 1e-10
 
 
 def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres():

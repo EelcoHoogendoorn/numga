@@ -156,8 +156,8 @@ def main() -> None:
                    "floating_release", DURATION_MS)
 
     # checks
-    arms = render.scalars(-(couples & core.heel_axis) / weight)              # [heels, loads]
-    heights = render.scalars(stiffness(mv.yz, mv.yz) / weight)              # [loads]
+    arms = (-(couples & core.heel_axis) / weight).to_array()              # [heels, loads]
+    heights = (stiffness(mv.yz, mv.yz) / weight).to_array()              # [loads]
     # The slope of each righting arm curve at upright is the metacentric height in roll.
     assert np.abs(arms[1] / np.sin(np.radians(HEELS[1])) - heights).max() < 1e-2
     # A cube floats face up only below a density of (3 - sqrt(3)) / 6 or above (3 + sqrt(3)) / 6.

@@ -81,16 +81,16 @@ def main() -> None:
     save_animation(render.animate_paths(directions, factors, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
 
     # checks
-    values = render.scalars(factors)                                          # [rows, columns, planes, directions]
+    values = factors.to_array()                                          # [rows, columns, planes, directions]
     # No Schmid factor exceeds a half, and along [001] eight systems share the largest, one over the root of six.
     assert np.abs(values).max() <= 0.5 + 1e-12
-    along = np.abs(render.scalars(core.schmid(core.mv.z.dual(), planes, slips)))   # [planes, directions]
+    along = np.abs(core.schmid(core.mv.z.dual(), planes, slips).to_array())   # [planes, directions]
     assert np.isclose(along.max(), 1 / np.sqrt(6)) and np.isclose(along, along.max()).sum() == 8
     # Every pull's axis ends at [112], two systems carrying nearly all of its slip on the way.
     ends = render.coordinates(axes[-1])                                        # [starts, 3]
     target = np.array([1, 1, 2]) / np.sqrt(6)
     assert (np.sort(ends, axis=-1) @ target > 0.999).all()
-    carried = np.sort(np.abs(render.scalars(amounts)).sum(axis=0).reshape(len(STARTS), -1), axis=-1)   # [starts, systems]
+    carried = np.sort(np.abs(amounts.to_array()).sum(axis=0).reshape(len(STARTS), -1), axis=-1)   # [starts, systems]
     assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()
 
 

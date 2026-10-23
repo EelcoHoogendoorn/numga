@@ -79,7 +79,9 @@ def main() -> None:
 
     occupations, projectors, charge, hypercharge, left_isospin, right_isospin, _, colour_weights = sectors()
     _, _, _, colour_strength, weak_strength, mixing_strength = interactions(projectors)
-    print(render.charge_table(occupations, charge, hypercharge, left_isospin))
+    print("charges:", charge.to_array())
+    print("hypercharges:", hypercharge.to_array())
+    print("left isospins:", left_isospin.to_array())
     gauge_figure = render.draw_connections(
         occupations, left_isospin, right_isospin, colour_weights,
         stack((colour_strength, weak_strength)),

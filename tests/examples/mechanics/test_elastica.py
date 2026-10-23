@@ -43,7 +43,7 @@ def test_moving_cord_keeps_its_energy():
 
     def energy(frames, rates):
         deviations = (joint.reverse() * frames[:-1].reverse() * frames[1:]).log() * 2 / step
-        return render.scalars((inertia(rates) & rates).sum() + (stiff(deviations) & deviations).sum() * step) / 2
+        return ((inertia(rates) & rates).sum() + (stiff(deviations) & deviations).sum() * step).to_array() / 2
 
     start = energy(frames, rates)
     for _ in range(200):

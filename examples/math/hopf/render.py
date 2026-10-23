@@ -45,11 +45,6 @@ def components(bivectors: core.Bivector) -> np.ndarray:
     return bivectors.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def spinor_components(spinors: core.Even) -> np.ndarray:
-    """The scalar, yz, zx and xy components of spinors."""
-    return spinors.cast(core.ga.subspace("1 yz zx xy")).kernel
-
-
 def colour(spins: core.Bivector) -> np.ndarray:
     """An RGB colour for each spin: its azimuth as the hue, darker towards the south pole."""
     x, y, z = np.moveaxis(components(spins), -1, 0)

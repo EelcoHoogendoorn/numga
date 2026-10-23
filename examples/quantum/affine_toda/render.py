@@ -5,46 +5,7 @@ import numpy as np
 from matplotlib.patches import Circle, FancyArrowPatch
 
 from examples.math.e8.render import BACKGROUND, COLOURS, coordinates, draw_roots
-from examples.quantum.affine_toda.core import Root, Scalar
-
-
-def mass_table(masses: Scalar, radii: Scalar) -> str:
-    """Mass ratios beside independently measured Coxeter-ring radii."""
-    mass_ratios = (masses / masses[0]).to_array()
-    radius_ratios = (radii / radii[0]).to_array()
-    lines = ["species    mass / lightest    radius / smallest"]
-    lines.extend(f"{index + 1:7d}{mass:18.6f}{radius:21.6f}"
-                 for index, (mass, radius) in enumerate(zip(mass_ratios, radius_ratios)))
-    return "\n".join(lines)
-
-
-def measured_mass_table(predicted: Scalar, measurements: np.ndarray) -> str:
-    """Calculated excitation energies beside measured peak positions, in meV."""
-    predictions = predicted.to_array()
-    lines = ["mode    E8 prediction (meV)    measured peak (meV)"]
-    lines.extend(f"{index + 1:4d}{prediction:23.3f}{measurement:23.2f}"
-                 for index, (prediction, measurement) in enumerate(zip(predictions, measurements)))
-    return "\n".join(lines)
-
-
-def coupling_table(species: np.ndarray, couplings: Scalar, closure: Scalar) -> str:
-    """Three-mode coupling magnitudes and the shortest full-space root closure."""
-    strengths = couplings.abs().to_array()
-    gaps = closure.square_root().to_array()
-    lines = ["species       |coupling|    root closure"]
-    for triple, strength, gap in zip(species, strengths, gaps):
-        label = ",".join(str(index + 1) for index in triple)
-        lines.append(f"{label:12s}{strength:11.6f}{gap:16.6f}")
-    return "\n".join(lines)
-
-
-def area_table(couplings: Scalar, predicted: Scalar) -> str:
-    """The cubic form evaluated on modes beside the coupling predicted by triangle area."""
-    values = couplings.abs().to_array()
-    areas = predicted.to_array()
-    lines = ["from cubic form    from triangle area"]
-    lines.extend(f"{value:15.6f}{area:22.6f}" for value, area in zip(values, areas))
-    return "\n".join(lines)
+from examples.quantum.affine_toda.core import Root
 
 
 def draw_triangles(paths: Root, roots: Root, species: np.ndarray,

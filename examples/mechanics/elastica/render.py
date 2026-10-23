@@ -36,11 +36,6 @@ BACKGROUND = np.ones(3)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for checks."""
-    return values.cast(ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of points, on the last axis."""
     kernel = points.cast(ga.subspace("ywz wxz xwy xyz")).kernel

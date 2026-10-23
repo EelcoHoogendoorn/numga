@@ -34,16 +34,6 @@ def triples(cycles: core.Trivector) -> list[str]:
     return [names[k] if kernel[row, k] > 0 else names[k][0] + names[k][2] + names[k][1] for row, k in enumerate(blade)]
 
 
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for checks."""
-    return values.cast(values.algebra.subspace.scalar()).kernel[..., 0]
-
-
-def largest(values) -> float:
-    """The largest coefficient of a value or a map, for checks."""
-    return float(np.abs(np.asarray(values.kernel)).max())
-
-
 def arrow(ax: plt.Axes, start: np.ndarray, end: np.ndarray) -> None:
     """An arrowhead part of the way from start to end, pointing towards end."""
     place = start + ALONG * (end - start)
