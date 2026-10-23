@@ -1,8 +1,8 @@
 # 7. Solving
 
-Binding goes from the axis to the output, and solving goes the other way, finding the value in the axis that gives a known output.
+Applying a map gives the output for a known input. Solving finds the input that gives a known output.
 
-For example, binding a vector $b$ into the axis of a map `A` gives an output $w$:
+For example, applying `A` to a vector $b$ gives an output $w$:
 
 ```python
 b = 4 * x + 5 * y + 6 * z
@@ -23,7 +23,7 @@ A.solve(w) - b
 
 An output in the image of the map determines a unique input when no two inputs give the same output.
 
-Solving against the type `Vector`, in place of a given output, leaves the output open. The result is a map from outputs back to the axis, the solve for every output at once: the inverse of the map.
+The inverse maps each output back to its input. Solving `A` against the identity map `Vector` constructs this inverse.
 
 For the map `A` of the example, solving against `Vector` gives `A.inverse()`:
 
@@ -51,9 +51,9 @@ A.solve(Vector)(w) - b
 
 The inverse is the solve precomputed for every output: binding an output into it replaces solving for that output.
 
-Solving against a map in place of a value keeps the axis of that map open. The result takes the input of that map to the value in the axis of the solved map.
+The solve also accepts a map: `A.solve(B)` maps each argument of `B` to the input of `A` whose output equals `B` applied to that argument.
 
-For example, with a second map `B`, from bivectors to vectors, solving `A` against the composition `A(B)` gives back `B`, with its bivector axis open. Subtracting `B` leaves the zero map:
+For example, with a second map `B`, from bivectors to vectors, `A.solve(A(B))` recovers `B`:
 
 ```python
 B = b | Bivector
@@ -67,6 +67,6 @@ y   0   0   0
 z   0   0   0
 ```
 
-In matrix notation, solving reads as the linear system $A v = w$, solved for $v$. With $w$ left open, the solve is the inverse matrix $A^{-1}$; against a matrix $B$, it is $A^{-1} B$, with the input of $B$ left open as the input of the result.
+In matrix notation, solving reads as the linear system $A v = w$, solved for $v$. The inverse is $A^{-1}$, and solving against a matrix $B$ gives $A^{-1} B$.
 
 Example: [induced dipoles in a cluster of atoms](../../../examples/electromagnetism/induced_dipoles/induced_dipoles.ipynb), where the dipoles of all the atoms, each driven by the fields of the others, follow from one solve.

@@ -187,12 +187,7 @@ structural axis, with the batch axes broadcasting:
 "...oi,...i->...o"
 ```
 
-That string is how the NumPy backend evaluates the map. The map itself is the geometric
-expression with an axis left open; the kernel is that expression's coefficient table
-in the blade bases of its axes; the einsum, a matmul, or an XLA dot are ways of evaluating the
-table, chosen by the backend. The dense executor uses matmul for a unary map applied to a
-value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or
-an index position, for the reasons given in [`extensor_advanced.md`](extensor_advanced.md).
+That string is how the NumPy backend evaluates the map. The map is a linear function between geometric types; its kernel holds the coefficients in the blade bases of its input and output. The backend evaluates these coefficients through einsum, matmul or an XLA dot. The dense executor uses matmul for a unary map applied to a value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or an index position, for the reasons given in [`extensor_advanced.md`](extensor_advanced.md).
 
 ## 4. Stages and contexts
 
@@ -244,10 +239,7 @@ need a QZ solver and so run only in NumPy with SciPy.
 
 ## 5. Binding plans and types
 
-`bind` is the one primitive. A call binds its operands to the leading axes, the axis's own type in
-place of an operand leaves it open, a type inside the axis binds its identity map and so narrows the
-axis, and a full call runs on the compiled path. The operators on types
-and values are binds of operation tables:
+`bind` is the one primitive. A call binds its operands to the leading arguments. A GAType is its identity map; a subtype restricts the corresponding argument's domain. A full call runs on the compiled path. The operators on types and values are binds of operation tables:
 
 ```python
 transform.bind({0: r, 2: r})                # partial: Vector <- Vector, what r >> Vector does

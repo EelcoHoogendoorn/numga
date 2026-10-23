@@ -1,54 +1,58 @@
 # 14. Duality
 
-The trivector $I = xyz$ is the pseudoscalar of three-dimensional space. The product of each basis element with it:
-
-|           | $1$     | $x$    | $y$     | $z$    | $xy$   | $xz$   | $yz$   | $xyz$  |
-| --------- | ------- | ------ | ------- | ------ | ------ | ------ | ------ | ------ |
-| times $I$ | $xyz$   | $yz$   | $-xz$   | $xy$   | $-z$   | $y$    | $-x$   | $-1$   |
+Each basis blade has a complementary blade: the directions it lacks to fill the whole space. In three dimensions, a vector's complement is a bivector, a bivector's complement a vector. Numga's dual takes an element into that complementary space:
 
 ```python
-I = x * y * z
-x * I
+x.dual()
 ```
 
 ```text
 yz
 ```
 
-Each product consists of exactly the basis vectors the element lacks. Multiplying by the pseudoscalar pairs every basis element with its complement, up to sign, and takes grade $k$ to grade $3 - k$. This pairing is duality.
-
-The square of the pseudoscalar, and the difference of its products with $x$ in the two orders:
+The sign of a complement matters. In the Euclidean algebra of this tutorial, each unit basis blade followed by its dual in the outer product gives the positive unit volume:
 
 ```python
-I * I
+y.dual()
 ```
 
 ```text
--1
+zx
 ```
 
 ```python
-x * I - I * x
+y ^ y.dual()
+```
+
+```text
+xyz
+```
+
+The dual acts linearly on sums and takes grade $k$ to grade $n-k$ in an algebra of dimension $n$. The complementary blade of $xy$ is $z$, with its sign set by the order $x,y,z$:
+
+```python
+(x ^ y).dual()
+```
+
+```text
+z
+```
+
+There is also a change of orientation. The basis vector `x` is extrinsic; `x.dual()` is intrinsic. In three dimensions this intrinsic grade-two element is an antivector. Complementary grade and complementary orientation are both part of its type. [Why orientation](../../why_orientation.md) shows the geometric distinction through reflections.
+
+Use the inverse dual to return to the starting element:
+
+```python
+direction = x.dual()
+direction.dual_inverse() - x
 ```
 
 ```text
 0
 ```
 
-The pseudoscalar squares to $-1$, and it commutes with $x$; the same holds for every element of three-dimensional space.
+Complementarity tells us which spaces pair; a dual map chooses how a particular element is sent into the complementary space. In a nondegenerate algebra, numga's `.dual()` is the metric dual, carrying the metric's signs as well as the blade complement. With the positive Euclidean signature used here, it agrees with the volume complement. In the standard projective algebras, whose metric is degenerate, `.dual()` remains invertible as a blade complement; it does not invert the degenerate metric. The [signature chapter](16-signature.md) introduces these other algebras.
 
-The outer product of two vectors, taken to its dual:
+The [regressive product](15-the-regressive-product.md) uses volume complements to pair elements without needing a metric.
 
-```python
-a = 1 * x + 2 * y + 3 * z
-b = 4 * x + 5 * y + 6 * z
-(a ^ b) * I.inverse()
-```
-
-```text
--3 x + 6 y - 3 z
-```
-
-In vector algebra notation, $(a \wedge b)\, I^{-1}$ reads as the cross product $a \times b$.
-
-Example: [three mirrors on the sphere](../../../examples/math/reflections/icosahedron.ipynb), where each mirror's plane, a bivector, gives its normal vector by duality.
+Example: [a crystal's diffraction peaks under a deformation](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where positions are intrinsic antivectors and wavevectors are extrinsic vectors, paired into phases.

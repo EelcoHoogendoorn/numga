@@ -36,8 +36,7 @@ def impulse():
     before, after = directions
     bisector: Point = (before + after).normalized()
 
-    # Leave the passenger open to obtain the observer change as an extensor. Apply each
-    # observer map to both events and tangents, preserving incidence.
+    # Each observer map acts on both events and tangents, preserving incidence.
     # The symmetric frame, boosted by nothing, and the initial rest frame.
     views: PointMap = boost(np.array([0.0, half_rapidity]))
     view_kinks: Point = views[:, None](kinks)                          # [view, end]
@@ -232,7 +231,7 @@ def spaceships():
     The strain-preserving example prescribes distributed forcing. Bell's example
     prescribes ship trajectories; passive-rope stresses and any breaking threshold
     require a material model. The final panel shows the required rope extension,
-    computed by boosting both last-kink events with the same open sandwich.
+    computed by boosting both last-kink events with the same Lorentz map.
 
     The finite strain-preserving step has an algebraic counterpart in M. Fayngold,
     "The Dynamics of Relativistic Length Contraction and the Ehrenfest Paradox",

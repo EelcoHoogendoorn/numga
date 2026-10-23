@@ -1,6 +1,6 @@
 # 13. Higher-order extensors
 
-A map may have any number of axes, built from products as maps with one or two axes are. Binding some axes and leaving others open, with the type in place of a value, gives a map with fewer axes, and everything that applies to such a map applies to it.
+A multilinear map may take any number of arguments. Binding some of them gives a map of the remaining arguments, to which the same algebraic operations apply.
 
 For example, a map from three vectors to a vector:
 
@@ -8,7 +8,7 @@ For example, a map from three vectors to a vector:
 T = 2 * Vector * (Vector | Vector) + 2 * (Vector | Vector) * Vector - (Vector | (Vector ^ Vector))
 ```
 
-With $z$ bound into its first and third axes, it is a map from vectors to vectors:
+Binding $z$ as its first and third arguments gives a map from vectors to vectors:
 
 ```python
 T(z, Vector, z)
@@ -21,7 +21,7 @@ y  0  1  0
 z  0  0  4
 ```
 
-With $x + y$ in the same axes, it is another:
+Binding $x + y$ as the same two arguments gives another map:
 
 ```python
 T(x + y, Vector, x + y)
@@ -44,7 +44,7 @@ T(x + y, Vector, x + y).eigh()[0]
 [2  2  8]
 ```
 
-With values in the first two axes, the third stays open:
+`T(x, y, Vector)` is the linear map taking $v$ to `T(x, y, v)`:
 
 ```python
 T(x, y, Vector)
@@ -57,6 +57,6 @@ y  1  0  0
 z  0  0  0
 ```
 
-In index notation, a map with three vector axes reads as a tensor with four indices, $T^i{}_{jkl}$, and binding a vector into an axis as contracting it with that index.
+In index notation, a map taking three vector arguments reads as a tensor with four indices, $T^i{}_{jkl}$, and binding a vector as contracting it with the corresponding index.
 
-Examples: [elastic waves in crystals](../../../examples/mechanics/crystal_waves/crystal_waves.ipynb), where the stiffness, a map with three axes, is bound by a heading into the map whose eigenvalues give the speeds of the waves; [gravitational wave curvature](../../../examples/relativity/curvature/curvature.ipynb), where spacetime curvature is bound with an observer's velocity into the tidal stretching of a ring of beads; and [bending of a composite strip](../../../examples/mechanics/composite_strip/composite_strip.ipynb), where a laminate's strain keeps a state axis open.
+Examples: [elastic waves in crystals](../../../examples/mechanics/crystal_waves/crystal_waves.ipynb), where binding a heading to the stiffness gives the map whose eigenvalues determine wave speeds; [gravitational wave curvature](../../../examples/relativity/curvature/curvature.ipynb), where binding an observer's velocity to spacetime curvature gives the tidal stretching of a ring of beads; and [bending of a composite strip](../../../examples/mechanics/composite_strip/composite_strip.ipynb), where the laminate's strain is a function of its state.

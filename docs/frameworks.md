@@ -10,12 +10,12 @@ Extensors, linear algebra, tensor algebra and the exterior algebra of differenti
 
 **Exterior algebra**, the algebra of differential forms, is graded: its elements have parts of every grade from zero to the dimension, multiplied by the wedge product, which needs no metric. Forms are written on the dual space, as functions of vectors that change sign when two arguments swap, and differential forms are fields of them. The algebra allows sums of different grades, though practice rarely uses them. It has no geometric product: the wedge only raises grade, so a vector has no inverse and there are no rotors.
 
-**Extensors** are the multilinear maps of geometric algebra: functions whose axes take multivectors of any type, and whose outputs are multivectors. They are written with the products of the algebra, with an open axis where a factor is left out:
+**Extensors** are the multilinear maps of geometric algebra: functions of multivectors whose outputs are multivectors. Products of the algebra with identity maps construct them:
 
 ```python
 a ^ Vector                         # Bivector <- Vector
 Vector | Vector                    # Scalar <- (Vector, Vector), the metric
-(Vector | Vector) + (Vector ^ Vector) - Vector * Vector   # zero: the geometric product, both axes open
+(Vector | Vector) + (Vector ^ Vector) - Vector * Vector   # zero: the geometric product is the sum of the inner and outer products
 ```
 
 ## How they fit together
@@ -39,7 +39,7 @@ The reach is the same; the differences are in where things live and what each ma
 - A map has eigenvalues only where its output has the type of its input; a map between different spaces has singular values; a form has eigenvalues only against another form. A matrix does not record which of these applies, and a type does.
 - A map and a form with the same coefficients are different objects, and their conversion is a solve against a pairing: a signed permutation of the coefficients, with nothing computed.
 
-**Native ground.** Geometric algebra is native to antisymmetric objects, where index notation needs extra machinery: the geometric product of vectors, which matrix physics rebuilds as Pauli and Dirac matrices; areas and normals under a deformation, the outermorphism `F(a) ^ F(b)` in place of $\det(F)\, F^{-T}$; the electromagnetic field as one bivector; rigid motions as twists and forques with one commutator; curvature as a symmetric map on bivectors. Index notation encodes antisymmetric objects as vectors through the Levi-Civita symbol in three dimensions, and the encoding shows: the inertia tensor's subtracted trace, $r^2 \delta_{ij} - r_i r_j$, is the cost of writing a map on planes of rotation as a map on their normals, and has no counterpart in other dimensions. Index notation is native to symmetric objects. A symmetric product $a \odot b$ is not an element of the algebra; in extensors it is a form with open axes, `a * (b | Vector) + b * (a | Vector)`, and symmetry is a property of the coefficients rather than of the type. In practice the gap is small: forms built by pairing an expression with itself, such as second moments, covariances and the normal forms of least squares, are symmetric by construction.
+**Native ground.** Geometric algebra is native to antisymmetric objects, where index notation needs extra machinery: the geometric product of vectors, which matrix physics rebuilds as Pauli and Dirac matrices; areas and normals under a deformation, the outermorphism `F(a) ^ F(b)` in place of $\det(F)\, F^{-T}$; the electromagnetic field as one bivector; rigid motions as twists and forques with one commutator; curvature as a symmetric map on bivectors. Index notation encodes antisymmetric objects as vectors through the Levi-Civita symbol in three dimensions, and the encoding shows: the inertia tensor's subtracted trace, $r^2 \delta_{ij} - r_i r_j$, is the cost of writing a map on planes of rotation as a map on their normals, and has no counterpart in other dimensions. Index notation is native to symmetric objects. A symmetric product $a \odot b$ is not an element of the algebra; in extensors it is the symmetric map `a * (b | Vector) + b * (a | Vector)`, and symmetry is a property of the coefficients rather than of the type. In practice the gap is small: forms built by pairing an expression with itself, such as second moments, covariances and the normal forms of least squares, are symmetric by construction.
 
 ## What linear algebra does not see
 
@@ -52,7 +52,7 @@ Linear algebra is the theory of a vector space: it sees the space, and not the a
 | the determinant | the outermorphism on the pseudoscalar |
 | the cofactor matrix, as in transforming normals | the outermorphism on bivectors |
 | the swap matrix that pairs twists with wrenches | the regressive product `&` |
-| the Pauli and Dirac matrices | multiplication with an open axis, on spinors |
+| the Pauli and Dirac matrices | multiplication as a map on spinors |
 
 At the level of coefficients nothing is hidden. Every operation on extensors is a contraction of coefficient arrays against such a table, which is a Euclidean dot product on coefficients, and the reach of the two frameworks is the same. The difference is where the tables come from. In linear algebra they are inputs, supplied by hand. In extensors they follow from the products, and the right contraction is the one that writing the geometric expression gives. The coefficients cannot tell which table a contraction used, as a matrix cannot tell whether it is a map or a form; the products and the types can.
 
@@ -65,7 +65,7 @@ The reach is the same, and anything done this way can be done with matrices. Wha
 - Hybrid force and motion control took orthogonal complements of twists and wrenches under a dot product of six coordinates; Duffy showed in 1990 that this mixes units and depends on the frame. A twist and a forque are different types here, and the only pairing on offer between them is the meaningful one.
 - Graphics transforms normals by the inverse transpose, which fails for singular transforms and flips under reflections; the adjugate, which treats a normal as the bivector it is, is the default here.
 - Continuum mechanics converts between its stress measures by factors of $F$, $F^{-T}$ and $J$; with stress as a map from oriented areas to forces, they are compositions with the deformation's map on areas.
-- A stiffness from rates to momenta is not symmetric in coordinates, and the habit is to symmetrize it or form normal equations, squaring the condition number; joined with an open twist, it is the symmetric form it wants to be.
+- A stiffness from rates to momenta is not symmetric in coordinates, and the habit is to symmetrize it or form normal equations, squaring the condition number; paired with `Twist`, the space of rates, it gives a symmetric form on pairs of rates.
 - The standard rotation fit, Kabsch's SVD, needs a determinant correction because it can return a reflection; posed as an eigenproblem on rotors, the answer is a rotor by type.
 - The constitutive relations of a moving medium, and an inertia between body and space frames, are maps moved between frames; each is a composition with the rotation or boost on either side, with the type saying which side is which.
 
@@ -83,8 +83,8 @@ Each of the other frameworks keeps part of this and gives up the rest, and what 
 
 The matrix is where all of these imports meet. Once one part of a calculation has been recast in matrices, it is easiest to recast all of it, and that is what practice does: to compute an inertia, a stiffness or a covariance numerically, the problem is first rewritten in matrix form and then assembled. Numerical software written in tensor notation exists, in finite element mechanics and in the tensor networks of many-body physics, but it works within the restriction to vectors, and its geometric constructions are still supplied by hand.
 
-Closure is what lets one language carry all of numga's examples, from rigid bodies, cameras and estimation to materials, light, spacetime and spin, without leaving the algebra. Neither half achieves it alone. Geometric algebra without extensors closes the objects but not the maps, and a geometric algebra program falls back on a matrix at its first inertia or covariance. Maps built on the inner product alone, or on the outer product alone, lose part of the objects they act on. Together, the full geometric product and maps with open axes make a language in which nothing has to be brought in from outside. This is a claim about coherence, not about reach: every calculation here can also be done with matrices, but done that way it is a collection of separate constructions rather than one language.
+Closure is what lets one language carry all of numga's examples, from rigid bodies, cameras and estimation to materials, light, spacetime and spin, without leaving the algebra. Neither half achieves it alone. Geometric algebra without extensors closes the objects but not the maps, and a geometric algebra program falls back on a matrix at its first inertia or covariance. Maps built on the inner product alone, or on the outer product alone, lose part of the objects they act on. Together, the full geometric product and multilinear maps make a language in which nothing has to be brought in from outside. This is a claim about coherence, not about reach: every calculation here can also be done with matrices, but done that way it is a collection of separate constructions rather than one language.
 
 ## In numga
 
-numga implements extensors as typed coefficient arrays with the products of geometric algebra as their operations. The [extensor overview](extensors.md) shows what this buys in the examples, the [extensor tutorial](tutorial/extensors/01-products-as-maps.md) builds the ideas from a single open axis, and the [geometric algebra tutorial](tutorial/geometric-algebra/01-the-scalar-product.md) builds the algebra from a single product.
+numga implements extensors as typed coefficient arrays with the products of geometric algebra as their operations. The [extensor overview](extensors.md) shows what this buys in the examples, the [extensor tutorial](tutorial/extensors/01-products-as-maps.md) builds the ideas from a linear map, and the [geometric algebra tutorial](tutorial/geometric-algebra/01-the-scalar-product.md) builds the algebra from a single product.

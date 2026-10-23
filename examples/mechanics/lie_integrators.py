@@ -65,7 +65,7 @@ def inertia_from_points(points: Extensor) -> tuple[Extensor, Extensor]:
 
     Each point contributes the rate-to-momentum extensor:
         points & points.commutator(points.algebra.gatype.bivector())
-    the regressive product of the point with its commutator with an open bivector.
+    the map from motion rates to the point joined with its velocity.
     """
     inertia = (points & points.commutator(points.algebra.gatype.bivector())).sum(axis=-1)
     return inertia, inertia.inverse()
@@ -85,7 +85,7 @@ def free(motor: Extensor, rate: Extensor) -> Extensor:
 def _net_forque(forque: Callable, inertia: Extensor, motor: Extensor, rate: Extensor) -> Extensor:
     """External forque minus the gyroscopic term: `forque(motor, rate) - inertia(rate).commutator(rate)`."""
     gyro = inertia(rate).commutator(rate)
-    return forque(motor, rate).cast(gyro.gatype.output_subspace) - gyro
+    return forque(motor, rate) - gyro
 
 
 def explicit_verlet(
@@ -124,7 +124,7 @@ def explicit_rkmk4(
 
     The motor step is `motor * h.exp()`, with the bivector h integrated in the Lie algebra by
     classical RK4. The vector field for h is the body rate corrected by dexpinv, a polynomial in
-    the adjoint `h.commutator(bivector) * 2`, the commutator with the bivector type as its input. Nothing
+    the adjoint `h.commutator(bivector) * 2`, a linear map on bivectors. Nothing
     here depends on the dimension: the same lines integrate rotors in any dimension.
     """
     def dr(m: Extensor, r: Extensor) -> Extensor:

@@ -75,8 +75,7 @@ def test_typed_derivatives_predict_changes_of_energy_and_response(loading):
     np.testing.assert_allclose((curvature(displacement, other) - curvature(other, displacement)).kernel,
                                0, atol=ROUND_OFF, rtol=0)
 
-    # Differentiating a field map appends a field axis for the displacement. The dipole input
-    # stays open until it is bound, independently of that displacement axis.
+    # The response's derivative is a bilinear map on dipoles and displacements.
     dipoles = model.response(position).solve(field)
     change = derivative(model.response)(position)
     predicted = change(dipoles, displacement)

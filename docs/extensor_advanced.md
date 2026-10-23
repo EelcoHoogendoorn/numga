@@ -1,6 +1,6 @@
 # Extensors, advanced
 
-An extensor carries no metric in its coefficients. The metric is in the products of the algebra, and duality between spaces is given by the regressive product. Several operations that are one operation in matrix algebra are therefore several different operations here. Some are a product with an open axis. Some require a metric to be named. The transpose is not an operation on extensors at all. A map does have an adjugate, which the regressive product defines and coefficient index does not, and, given a metric, an adjoint.
+An extensor carries no metric in its coefficients. The metric is in the products of the algebra, and duality between spaces is given by the regressive product. Several operations that are one operation in matrix algebra are therefore several different operations here. Some are products with an identity map. Some require a metric to be named. The transpose is not an operation on extensors at all. A map does have an adjugate, which the regressive product defines and coefficient index does not, and, given a metric, an adjoint.
 
 In matrix algebra one would say that the transpose, the trace, the squared norm of a residual and the reciprocal of a basis all identify a vector space with its dual through the coefficients, and that in an orthonormal basis the identification is invisible.
 
@@ -23,7 +23,7 @@ metric = Vector | Vector                                 # Scalar <- (Vector, Ve
 misfit = residual.reverse().scalar_product(residual)     # a squared norm, in the metric it is measured by
 ```
 
-There is no separate tensor product, and none is needed. A tensor is a multilinear function whose axes take vectors or covectors; an extensor is a multilinear function whose axes take any subspace of the algebra, and a covector axis is an axis of the dual space, which the algebra names in two ways, section 3. Every tensor is therefore an extensor. The tensor product of two functions takes both their arguments and multiplies their values, `(S ⊗ T)(u, v) = S(u) T(v)`, and multiplying two extensors with their axes left open does exactly that, each open axis a separate argument. Contraction pairs two arguments: `trace` through the incidence, `contract` through the metric. This holds for tensors written as functions returning a scalar or a single vector; two vector outputs multiplied give the geometric product, not `⊗`.
+There is no separate tensor product, and none is needed. A tensor is a multilinear function of vectors or covectors; an extensor is a multilinear function of elements of any subspace of the algebra. The algebra names the dual space in two ways, described in section 3. Every tensor is therefore an extensor. The tensor product of two functions takes both their arguments and multiplies their values, `(S ⊗ T)(u, v) = S(u) T(v)`, and the product of two scalar-valued extensors takes their arguments independently and multiplies their values. Contraction pairs two arguments: `trace` through the incidence, `contract` through the metric. This holds for tensors written as functions returning a scalar or a single vector; two vector outputs multiplied give the geometric product, not `⊗`.
 
 The second moment of a set of points, `C = Σ x ⊗ x`, the covariance of statistics and the inertia of mechanics, as a form and as a map:
 
@@ -106,7 +106,7 @@ gradient = (cones(local_points) & motion).sum(axis=0)     # Scalar <- Twist
 curvature = (j * j).sum(axis=0)                           # Scalar <- (Twist, Twist), j a Scalar <- Twist
 ```
 
-Where a residual is a multivector and a norm on it is part of the problem, the norm is a choice and is written as a form on the open residual. The [registration example](../examples/geometry/registration/core.py) fits a motor to point correspondences through a residual that is linear in the motor, `target * Motor - Motor * source`, and scores it by the sum of its squared coefficients. In PGA that is the bulk norm plus the weight norm, the second taken through the complement, because the scalar product alone is blind to the translational part:
+Where a residual is a multivector and a norm on it is part of the problem, the norm is a choice and is written as a form on residuals. The [registration example](../examples/geometry/registration/core.py) fits a motor to point correspondences through a residual that is linear in the motor, `target * Motor - Motor * source`, and scores it by the sum of its squared coefficients. In PGA that is the bulk norm plus the weight norm, the second taken through the complement, because the scalar product alone is blind to the translational part:
 
 ```python
 bulk = residual.reverse().scalar_product(residual)                  # Scalar <- (Motor, Motor)
@@ -130,7 +130,7 @@ In the matrix notation of the extended Kalman filter this reads as $P' = F P F^\
 normal = (Direction | Direction).solve(derivative)          # Direction
 ```
 
-**Symmetrizing.** A form built from an open expression paired with itself is symmetric as it stands. The rotor fit in the registration example aligns source vectors to target vectors by the form `target.scalar_product(Rotor >> source)`, with the rotor open on both sides of the sandwich; that form is symmetric, and its top eigenvector is the fit.
+**Symmetrizing.** A bilinear form built by composing a symmetric pairing with the same map in both arguments is symmetric. The rotor fit in the registration example aligns source vectors to target vectors by the form `target.scalar_product(Rotor >> source)` on pairs of rotors; that form is symmetric, and its top eigenvector is the fit.
 
 ```python
 alignment = target.scalar_product(Rotor >> source).sum(axis=0)   # Scalar <- (Rotor, Rotor), symmetric
@@ -178,7 +178,7 @@ a & b.dual() == a.dot(b)                    # a, b: Vector
 
 In a projective algebra the dual is the bare complement. The metric enters a calculation where a dual is taken, and nowhere else. In spacetime with space positive, `x+y+z+t-`, an observer's slice of space is the vector `mv.t` and its direction in time is `time = -mv.t.dual()`: the two pair to one, `mv.t & time == 1`, the minus the square of t, which the dual carries.
 
-The metric is in the products and not in the coefficients, and it is available as an object when one is wanted: the inner product with two open axes is the metric as a form. With it, moving between a vector and the covector it defines is an ordinary solve.
+The metric is in the products and not in the coefficients, and it is available as an object when one is wanted: `Vector | Vector` is the metric as a bilinear form. With it, moving between a vector and the covector it defines is an ordinary solve.
 
 ```python
 metric = Vector | Vector                    # Scalar <- (Vector, Vector): the metric as a form
@@ -217,7 +217,7 @@ In tensor notation the same distinctions are carried by index position: an axis 
 
 A map `B <- A` and a form `Scalar <- (A*, A)` hold the same numbers with one axis on the other side of the arrow. The two directions of conversion are not symmetric.
 
-Map to form is a pairing. Join the output with an open axis of the dual type and the map becomes a bilinear form, as the [modes example](../examples/mechanics/modes/core.py) does with its stiffness:
+Map to form is a pairing. Pairing the output with the space of its complementary arguments gives a bilinear form, as the [modes example](../examples/mechanics/modes/core.py) does with its stiffness:
 
 ```python
 energy = Twist & stiffness                  # Scalar <- (Twist, Twist), from Forque <- Twist
@@ -252,7 +252,7 @@ Treating a map as a form causes a common problem. A rigid body's stiffness assem
 
 ## 5. Quadrics
 
-The [multiview example](../examples/estimation/multiview/core.py) holds a pixel's precision disc and its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. Either one paired with an open axis is the form, `Scalar <- (Point, Point)`, which is what a cost or an eigenproblem takes. The conversions are those of section 4:
+The [multiview example](../examples/estimation/multiview/core.py) holds a pixel's precision disc and its sight cone as polarity maps, `Plane <- Point`, the map that sends a point to its polar plane. Section 8 holds a mass cloud's second moment as a dual quadric, `Point <- Plane`, the pole of a plane, which is the inverse of the polarity when the quadric is nondegenerate. The polarity defines a form on pairs of points, and its inverse a form on pairs of planes. Costs and eigenproblems use these scalar-valued forms. The conversions are those of section 4:
 
 ```python
 form = quadric & Point                      # Scalar <- (Point, Point)
@@ -325,7 +325,7 @@ Without a metric, `lstsq` measures the solution and the cutoff by the sum of squ
 
 In matrix notation this is the pseudoinverse in a weighted norm, $x = L^{-\top} (L^{-1} H L^{-\top})^{+} L^{-1} g$ with $M = L L^\top$ the metric's Cholesky factorization.
 
-Tensor: a construction with several open axes, solved for an unknown multilinear part. The right-hand side's inputs must match one subsequence of the construction's inputs, and the unmatched axes become the solution's signature: several axes are unbound at once, where the other cases unbind one. Such a system is rarely square, so this case is `lstsq`'s; when the right-hand side is one the construction can produce, it solves it exactly. Recovering a point cloud's second moment from its inertia is this case; section 8 shows it.
+Tensor: a multilinear construction solved for an unknown map. The right-hand side's inputs must match one subsequence of the construction's inputs; the others determine the input and output types of the unknown map. Such a system is rarely square, so this case is `lstsq`'s; when the right-hand side is one the construction can produce, it solves it exactly. Recovering a point cloud's second moment from its inertia is this case; section 8 shows it.
 
 ## 8. Second moments and inertia
 
@@ -344,7 +344,7 @@ principal = moment(planes)                                              # [4] Po
 inertia = (principal & principal.commutator(Bivector)).sum(axis=0)      # Forque <- Twist
 ```
 
-Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor solve of section 7. Write the construction that turns a second moment into an inertia with every axis open, and solve it for the unknown map:
+Inertia to moment, as in the [inertia example](../examples/mechanics/inertia.py), is the tensor solve of section 7. The construction maps second moments to inertias; solving it recovers the second moment:
 
 ```python
 construction = Point & Plane.dual().commutator(Bivector)                # Forque <- (Point, Plane, Twist)
@@ -365,13 +365,13 @@ Its kinetic energy form, `Twist & inertia`, has a trace only against a metric on
 
 `trace(0, input)` pairs a map's output with one of its inputs and drops both. It does not use the metric: meeting the output with its complement lifts the map to a form, the regressive product pairs that form's inputs, and the complement and its inverse cancel. The output is axis 0, and the inputs are numbered from 1 in order of appearance in the expression. When only two axes carry an index, as on `Space <- Space`, the axes may be left unnamed; a scalar output carries none.
 
-A contraction between two inputs is different: either a metric pairs them or the complement does, and one of the two has to be written. The Ricci contraction shows both. The curvature of a plane gravitational wave in the [curvature example](../examples/relativity/curvature/core.py) is `plus`, a map on bivectors. Wedge an open vector into it, contract with another open vector, and trace the output against the wedge axis:
+A contraction between two inputs is different: either a metric pairs them or the complement does, and one of the two has to be written. The Ricci contraction shows both. The curvature of a plane gravitational wave in the [curvature example](../examples/relativity/curvature/core.py) is `plus`, a map on bivectors. The bilinear form for Ricci curvature pairs the output of `Vector.commutator(plus(Vector.wedge(Vector)))` with its second vector argument:
 
 ```python
 ricci = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)     # Scalar <- (Vector, Vector)
 ```
 
-The inner product with the open vector is the one place the metric enters. The trace pairs the output with the wedge axis through the regressive product. No frame and no reciprocal basis appear, and the result is a form, which is what Ricci is. The first Bianchi identity reads the same way, with the third vector left open so that the cyclic sum is a map that must vanish. A sum over a basis against its reciprocal is the coordinate spelling of this trace.
+The commutator uses the metric, while the trace pairs the output with the second vector argument through the regressive product. No frame and no reciprocal basis appear, and the result is the Ricci form. The first Bianchi identity likewise states that a cyclic sum of maps is zero for every vector argument. A sum over a basis against its reciprocal is the coordinate spelling of this trace.
 
 A form's own `trace()` pairs its two inputs through the metric of their space: it is the trace of the form with one input raised, `(S | S).solve(form)` on vectors, and it exists only where that metric is invertible.
 
@@ -385,7 +385,7 @@ For a motor the tangent space is the twists, and the update is an exponential:
 motors = motors * (step * 0.5).exp()                        # step: Twist, the Newton step of section 7
 ```
 
-How a change of the step moves the motor is itself a map. `b.exp_derivative()` is the derivative of `exp` at `b`, carried back to the identity: a map `Bivector <- Bivector` with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`. It is the mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1: at the identity it is the open type itself, and along a large step each change of the generator is turned back by the part of the step that follows it. Its solve is the derivative of the log: the change of generator that moves `b.exp()` by a tangent `t`, carried back, is `b.exp_derivative().solve(t)`.
+How a change of the step moves the motor is itself a map. `b.exp_derivative()` is the derivative of `exp` at `b`, carried back to the identity: a map `Bivector <- Bivector` with `(b + db * h).exp() == b.exp() * (1 + b.exp_derivative()(db) * h)` to first order in `h`. It is the mean of the turns `(b * s).exp() << Bivector` over `s` from 0 to 1: at the identity it is the identity map `Bivector`, and along a large step each change of the generator is turned back by the part of the step that follows it. Its solve is the derivative of the log: the change of generator that moves `b.exp()` by a tangent `t`, carried back, is `b.exp_derivative().solve(t)`.
 
 ```python
 motion = (step * 0.5).exp_derivative()                      # Twist <- Twist
@@ -438,7 +438,7 @@ sheets = Vector.wedge(Vector)                           # [] Bivector <- (Vector
 # the frame spelling: evaluate one input on the basis, pair with the reciprocal, sum the batch
 ricci_frame = plus(basis.wedge(Vector)).commutator(basis.inverse()).sum(axis=0)     # Vector <- Vector
 
-# the axis spelling: keep both axes open, contract them with a trace, raise with the metric
+# The trace gives the Ricci form; solving through the metric gives its map.
 ricci_form = Vector.commutator(plus(Vector.wedge(Vector))).trace(0, 2)            # Scalar <- (Vector, Vector)
 ricci = (Vector | Vector).solve(ricci_form)                                         # Vector <- Vector, equal to ricci_frame
 ```

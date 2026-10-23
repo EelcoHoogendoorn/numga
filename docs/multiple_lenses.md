@@ -111,6 +111,6 @@ The three lenses describe one set of operations. Writing a type in place of a va
 ## Further reading
 
 * [Extensor overview](extensors.md): applications across mechanics, optics, estimation, electromagnetism, relativity, and spin.
-* [Extensor tutorial](tutorial/extensors/00-introduction.md): the mathematics developed step by step from a single open axis.
+* [Extensor tutorial](tutorial/extensors/00-introduction.md): the mathematics developed from a linear map.
 * [The adjoint](tutorial/extensors/09-the-adjoint.md) and [the adjugate](tutorial/extensors/10-the-adjugate.md): moving a map from one side of a pairing to the other.
 * [Extensors, linear algebra, tensors and forms](frameworks.md) and [Extensors and common practice](common_practice.md): relationships to other mathematical frameworks and their use in applied fields.

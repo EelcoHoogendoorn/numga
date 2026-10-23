@@ -97,7 +97,7 @@ These transformations commute with every product, the geometric, outer, inner an
 
 ## The dual
 
-The dual complements the blade layout and flips orientation. `.dual_inverse()` reverses this operation, also flipping orientation. The regressive product is the outer product of the duals, taken back with the inverse dual:
+The dual complements the blade layout and flips orientation. `.dual_inverse()` reverses this operation, also flipping orientation. The regressive product uses volume complements, which agree with `.dual()` in the `PGA3D` algebra used here:
 
 ```python
 Join = ga.gatype((Line, Point, Point))                         # Antibivector- <- (Antivector-, Antivector-)
@@ -106,7 +106,7 @@ join: Join = Point & Point                                    # Antibivector- <-
 join_from_duals: Join = (Point.dual() ^ Point.dual()).dual_inverse()  # Antibivector- <- (Antivector-, Antivector-)
 ```
 
-These are the same map. The three orientation flips leave one net flip, which gives `&` its propagation rule.
+These are the same map. The three orientation flips leave one net flip, which gives `&` its propagation rule. In a nondegenerate signature, `.dual()` carries metric signs that the volume complement does not; the formula with `.dual()` is therefore not a signature-independent definition of `&`.
 
 In a non-degenerate algebra, normalized versor transformations commute with the dual: `m >> a.dual() == (m >> a).dual()`. In a degenerate algebra the complement remains defined, but this identity need not hold; in PGA, for example, the dual does not commute with translations.
 

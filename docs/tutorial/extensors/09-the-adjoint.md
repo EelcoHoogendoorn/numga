@@ -20,7 +20,7 @@ input_vector = (c | a) * b
 
 The two scalar-valued maps agree for every input. Each vector $c$ on the output side has a corresponding vector on the input side that gives the same inner products. Adding dyads adds those corresponding vectors, so the construction extends to every linear map on vectors.
 
-The corresponding vector can also be found by solving. The inner product with both axes open, `Vector | Vector`, takes a vector in its first input to that vector's inner-product map. Solving it against `c | A` finds the vector giving those scalars. For the dyad of the example:
+The corresponding vector can also be found by solving. The bilinear form `Vector | Vector` associates each vector with its inner-product map. Solving it against `c | A` finds the vector giving those scalars. For the dyad of the example:
 
 ```python
 (Vector | Vector).solve(c | A) - input_vector
@@ -31,7 +31,7 @@ The corresponding vector can also be found by solving. The inner product with bo
   0  0  0
 ```
 
-Leaving $c$ open makes this correspondence a map from the output space of $A$ to its input space. This map is the adjoint of $A$:
+The adjoint of $A$ maps each vector in its output space to the corresponding vector in its input space:
 
 ```python
 adjoint = (Vector | Vector).solve(Vector | A)
@@ -53,4 +53,4 @@ In the notation of Hestenes and Sobczyk, which writes the adjoint with an overba
 
 In matrix notation, in orthonormal Euclidean coordinates, the adjoint has coefficients $A^T$, and the identity reads as $(A^T c)\cdot v = c\cdot(A v)$.
 
-Example: [a crystal's diffraction peaks under a deformation](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb), where the positions move by the deformation and the wavevectors by its adjoint, so that every phase `k | x` is kept.
+The [crystal diffraction example](../../../examples/optics/crystal_diffraction/crystal_diffraction.ipynb) pairs wavevectors with positions through `wavevector & position`. Its deformation therefore carries phase measurements backward by the [adjugate](10-the-adjugate.md). To carry the crystal's wavevectors forward while preserving every phase, it solves through that adjugate, `deformation.adjugate().solve(wavevector)`.

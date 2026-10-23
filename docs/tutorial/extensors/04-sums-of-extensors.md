@@ -1,6 +1,6 @@
 # 4. Sums of extensors
 
-Extensors with the same axes add as multivectors do: the sum takes values in its axes to the sum of the outputs. For example:
+Extensors with matching argument types add as multivectors do: their sum evaluates to the sum of their outputs. For example:
 
 ```python
 a = 1 * x + 2 * y + 3 * z
@@ -30,7 +30,7 @@ y  1   1  0
 z  0   0  1
 ```
 
-Outputs of different grades add into their joint space, as with multivectors. The inner and the outer product with both axes open add up to the geometric product with both axes open, `Vector * Vector`:
+Outputs of different grades add into their joint space, as with multivectors. The bilinear maps `Vector | Vector` and `Vector ^ Vector` add up to the geometric product `Vector * Vector`:
 
 ```python
 (Vector | Vector) + (Vector ^ Vector)

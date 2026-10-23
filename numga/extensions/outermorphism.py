@@ -1,11 +1,12 @@
-"""The outermorphism: a map on vectors or on antivectors, extended to k-fold products.
+"""The outermorphism: a map between vectors and antivectors, extended to k-fold products.
 
 A map t on vectors extends to bivectors by t(a ^ b) = t(a) ^ t(b), and on to every grade;
-a map T on antivectors extends by the join, T(p & q) = T(p) & T(q). Both are the extension
-of a linear map along the exterior product of its own space, which is the product that
-multiplies that space's elements: `^` for vectors, `&` for antivectors. No metric enters.
-On the top grade the extension is the determinant, and composition carries over grade by
-grade. This is the extension operator of A. M. Moya, V. V. Fernández and W. A. Rodrigues Jr.,
+a map T on antivectors extends by the join, T(p & q) = T(p) & T(q). A correlation, from
+antivectors to vectors or back, extends through the product of each side: a polarity C from
+points to planes carries the join of two points to the meet of their planes,
+C(p & q) = C(p) ^ C(q). Each side multiplies by the exterior product of its own space, `^` for
+vectors and `&` for antivectors. No metric enters. On the top grade of an endomorphism the
+extension is the determinant, and composition carries over grade by grade. This is the extension operator of A. M. Moya, V. V. Fernández and W. A. Rodrigues Jr.,
 "Extensors in Geometric Algebras", arXiv:math/0501558.
 """
 
@@ -45,20 +46,40 @@ def _grades(space) -> set[int]:
     return {space.algebra.grade(mask) for mask in space.masks}
 
 
+@lru_cache(maxsize=None)
+def _image_product(space: SubSpace, images: SubSpace, product: Callable[[Any, Any], Any], correlation: bool
+                   ) -> tuple[Callable[[Any, Any], Any], GAType]:
+    """The exterior product the images multiply by, and its unit: the product of the images' own space,
+    `^` for vectors and `&` for antivectors. Where the two sides are of one grade, in two dimensions, the
+    orientations decide: the inputs' own product for a map within one kind, the other for a correlation,
+    whose extrinsic side meets and whose intrinsic side joins."""
+    algebra = space.algebra
+    wedge = (xor, algebra.gatype.scalar())
+    join = (and_, algebra.gatype.oriented((algebra.subspace.pseudoscalar(),), (Orientation.intrinsic,)))
+    if _grades(images) == _grades(space):
+        return wedge if (product is xor) != correlation else join
+    return wedge if _grades(images) == {1} else join
+
+
 @Extensor.outermorphism.register(lambda t: t.is_exterior_map)
 def outermorphism(value: Extensor, grade: GAType) -> Extensor:
     """The map on `grade` whose value on a product of input elements is the product of their images.
 
     A vector map extends through `^` and raises grade: t.outermorphism(Bivector)(a ^ b) ==
     t(a) ^ t(b). An antivector map extends through `&` and lowers it: in PGA3D
-    T.outermorphism(Line)(p & q) == T(p) & T(q). On the pseudoscalar of a vector map, or the
-    scalar of an antivector map, it multiplies by det(t). When a space is both vectors and
-    antivectors, in two dimensions, the product with more factors in `grade` is taken.
+    T.outermorphism(Line)(p & q) == T(p) & T(q). A correlation extends through each side's own
+    product: from points to planes, C.outermorphism(Line)(p & q) == C(p) ^ C(q). On the
+    pseudoscalar of a vector map, or the scalar of an antivector map, it multiplies by det(t). When
+    a space is both vectors and antivectors, in two dimensions, the product with more factors in
+    `grade` is taken, and the images multiply by the same.
     """
     space, target = value.axes[1], grade.output_subspace
     product, unit_type, count = _exterior(space, target)
+    correlation = value.gatype.orientation is not value.gatype.input_orientations[0]
+    image_product, image_unit_type = _image_product(space, value.axes[0], product, correlation)
     mv = value.context.multivector
     unit = mv(unit_type, [1.0])
+    image_unit = mv(image_unit_type, [1.0])
 
     basis = mv(value.gatype.derive.axis(1), np.eye(len(space.masks)))  # [m] the input basis
     images = value[..., None](basis)                                    # [..., m] its images
@@ -68,7 +89,7 @@ def outermorphism(value: Extensor, grade: GAType) -> Extensor:
         raise TypeError(f"products of {count} elements of {space} span {sources.output_subspace}, not {target}")
     if sources.gatype.orientation is not grade.orientation:
         raise TypeError(f"products of {count} elements of {space} are {sources.gatype.orientation.value}, not {grade.orientation.value}")
-    targets = stack([reduce(product, [images[..., i] for i in I], unit.broadcast_to(value.shape)) for I in tuples], axis=-1)
+    targets = stack([reduce(image_product, [images[..., i] for i in I], image_unit.broadcast_to(value.shape)) for I in tuples], axis=-1)
     # each source blade's coefficient in an element of the requested grade, read with its complement
     readings = (grade & sources.dual()) / (sources & sources.dual())    # [k] Scalar <- grade
     return (targets * readings).sum(axis=-1)

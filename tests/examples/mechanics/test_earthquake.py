@@ -28,8 +28,9 @@ def test_p_wave_is_twice_the_product_of_components():
     normal times its component along the slip."""
     frames = core.fault_frame(np.deg2rad(40.0), np.deg2rad(55.0), np.deg2rad(20.0))
     normal, slip = frames >> -core.down, frames >> core.north
+    fault, auxiliary = frames >> core.ground, frames >> core.prime_vertical
     grid = scenarios.sphere()
-    push, shear = core.radiation(core.double_couple(normal, slip, 1.0), grid)
+    push, shear = core.radiation(core.double_couple(fault, auxiliary, 1.0), grid)
     np.testing.assert_allclose(push.to_array(), 2 * (grid.dot(normal) * grid.dot(slip)).to_array(), atol=1e-13)
     np.testing.assert_allclose(shear.dot(grid).to_array(), 0.0, atol=1e-13)
 

@@ -15,8 +15,8 @@ from numga.extensions._linalg import _result, _scalars
 
 @Extensor.solve.register(lambda value, rhs: value.over_sites.is_map_system(rhs), fields=True)
 def solve_field_map(value: Extensor, rhs: Extensor) -> Extensor:
-    """Solve A(x) == rhs for x, coupled over the sites of A's axes: A.solve(A(y)) == y. The open
-    axes of rhs are kept as open axes of the solution."""
+    """Solve A(x) == rhs for x, coupled over A's sites: A.solve(A(y)) == y. When rhs is a map,
+    the solution is a map of the same arguments."""
     return _solve(value, 0, 1, _on_output_sites(value, rhs), 0, _exactly(value))
 
 
@@ -92,7 +92,7 @@ def _solve(value: Extensor, equations: int, unknowns: int, rhs: Extensor, given:
     width = prod(value.kernel.shape[dimension] for dimension in columns)
     matrix = xp.reshape(matrix, batch + (height, width))
 
-    # The other axes of rhs: its scalar output for a form, its open inputs either way.
+    # The other axes of rhs: its scalar output for a form, its inputs either way.
     kept = [axis for axis in range(rhs.arity + 1) if axis != given]
     sites = [dimension for axis in kept for dimension in _kernel_axes(rhs, axis)[:-1]]
     blades = [_kernel_axes(rhs, axis)[-1] for axis in kept]

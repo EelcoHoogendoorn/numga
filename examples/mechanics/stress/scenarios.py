@@ -26,7 +26,7 @@ DURATION_MS = 50
 # --- math -----------------------------------------------------------------------------
 def material():
     """The strain, the stress it causes, and the principal stresses, directions and frame."""
-    strain = (core.axes.dual() * STRETCHES * (core.axes & Point)).sum(axis=0) + SHEAR * (x.dual() * (y & Point) + y.dual() * (x & Point))   # [] Strain
+    strain = (core.axes * STRETCHES * (core.axes & Point)).sum(axis=0) + SHEAR * (x * (y & Point) + y * (x & Point))   # [] Strain
     stress = core.cauchy_stress(strain, LAME, SHEAR_MODULUS)                  # [] Stress
     return strain, stress, *core.principal_frame(stress)
 

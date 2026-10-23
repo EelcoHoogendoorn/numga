@@ -2,20 +2,22 @@
 a wave from each direction on the sky, in the geometric algebra of three-dimensional space.
 
 A gravitational wave passing through stretches space along one direction across its path and
-squeezes it along the other, by a strain: a map on offsets, `Strain = Point <- Point`, symmetric,
-without trace, and zero along the wave. For a wave from a given direction, two strains span them all:
-plus, stretching along one axis across the wave and squeezing along the other, each point moved by its
-height above the planes facing east and north, `east.dual() * (east & Point) - north.dual() * (north & Point)`,
-and cross, the same turned by an eighth of a turn, `east.dual() * (north & Point) + north.dual() * (east & Point)`. Turning the axes across the wave by an angle
-turns plus into cross after an eighth of a turn and back into itself after half a turn: the strain is
-a spin-two field.
+squeezes it along the other, by a strain: the change it makes to the metric, a map from offsets to
+the planes that read them, `Strain = Plane <- Point`, symmetric and zero along the wave. For a wave
+from a given direction, two strains span them all: plus, stretching along one axis across the wave as
+much as it squeezes along the other, each offset's height above the planes facing east and north
+weighting those planes, `east * (east & Point) - north * (north & Point)`, and cross, the same turned
+by an eighth of a turn, `east * (north & Point) + north * (east & Point)`. Turning the axes across the
+wave by an angle turns plus into cross after an eighth of a turn and back into itself after half a
+turn: the strain is a spin-two field.
 
-An arm along the unit direction `arm` lengthens by the fraction `arm.dot(strain(arm)) / 2`, and the
-interferometer reads the difference between its two arms. The responses to a direction's plus and
-cross strains are the detector's antenna patterns. Their root sum of squares does not depend on how
-the axes across the wave are turned: it is the detector's sensitivity to that direction, largest
-straight overhead or underfoot, and zero for waves arriving in the plane of the arms along the lines
-halfway between them.
+An arm along the unit direction `arm` lengthens by the fraction `(strain(arm) & arm) / 2`, the arm read
+against the plane the strain hands it, and the interferometer reads the difference between its two
+arms. The responses to a direction's plus and cross strains are the detector's antenna patterns. Their
+root sum of squares does not depend on how the axes across the wave are turned: it is the detector's
+sensitivity to that direction, largest straight overhead or underfoot, and zero for waves arriving in
+the plane of the arms along the lines halfway between them. Only the picture of free masses moving
+needs the metric: a mass moves perpendicular to the plane its strain hands it, `strain(mass).dual()`.
 
 Places on Earth and directions on the sky share one frame: the rotor that turns the first axis to the
 point at a latitude and longitude also turns the second axis to east and the third to north there. At
@@ -40,8 +42,8 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
-# Fractional stretch per offset.
-Strain = ga.gatype((Point, Point))                         # Point <- Point
+# The change of the metric a wave carries: the plane that reads each offset's stretch.
+Strain = ga.gatype((Plane, Point))                         # Plane <- Point
 
 
 # --- math -----------------------------------------------------------------------------
@@ -61,10 +63,10 @@ def polarized(frames: Rotor, angles: np.ndarray) -> Rotor:
 def strains(frames: Rotor) -> tuple[Strain, Strain]:
     """The plus and cross strains of waves from the direction each frame's first axis points to, with
     its second and third axes across the wave."""
-    # The planes facing east and north across the wave; each point's height above them.
+    # The planes facing east and north across the wave, each weighted by an offset's height above them.
     east, north = frames >> mv.y, frames >> mv.z                             # [...] Plane each
-    plus = east.dual() * (east & Point) - north.dual() * (north & Point)      # [...] Strain
-    cross = east.dual() * (north & Point) + north.dual() * (east & Point)     # [...] Strain
+    plus = east * (east & Point) - north * (north & Point)                   # [...] Strain
+    cross = east * (north & Point) + north * (east & Point)                  # [...] Strain
     return plus, cross
 
 
@@ -77,8 +79,9 @@ def arms(sites: Rotor, azimuths: np.ndarray) -> Point:
 
 def response(arms: Point, strain: Strain) -> Scalar:
     """The interferometer's reading: the difference between its two arms' stretches, each arm
-    lengthening by the fraction `arm.dot(strain(arm)) / 2`."""
-    stretches = arms.dot(strain[..., None](arms)) / 2                         # [..., 2] Scalar
+    lengthening by the fraction `(strain(arm) & arm) / 2`, the arm read against the plane the strain
+    hands it."""
+    stretches = (strain[..., None](arms) & arms) / 2                          # [..., 2] Scalar
     return stretches[..., 0] - stretches[..., 1]                             # [...] Scalar
 
 

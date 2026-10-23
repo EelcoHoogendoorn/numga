@@ -309,8 +309,7 @@ def test_sandwich_expression_repeats_sandwicher_and_broadcasts_unary_map():
         equal_nan=False,
     )
 
-    # The identity map on the carrier, as a sandwicher, leaves both copies of the carrier open:
-    # it is the typed sandwich itself.
+    # The sandwich action of the carrier's identity map is the typed sandwich map.
     identity_sandwich = factory.identity(sandwicher).transform(passenger)
     assert identity_sandwich.axes == sandwich.axes
     np.testing.assert_allclose(

@@ -1,4 +1,4 @@
-"""The Fresnel adjugate detects physical electromagnetic waves beyond the gauge null direction."""
+"""The potential map's action on volumes detects physical electromagnetic waves beyond the gauge null direction."""
 
 import numpy as np
 
@@ -43,7 +43,7 @@ def test_both_sheets_support_maxwell_fields_and_transform_with_the_medium():
     fields = wavevectors[..., None] ^ potentials[..., -2:]
     source = wavevectors[..., None] ^ media[..., None](fields)
     residual = core.polynomial(media, core.mv.xyz, wavevectors)
-    adjugate = wave.outermorphism(core.Trivector).adjugate()
+    volumes = wave.outermorphism(core.Trivector)
 
     rotor = (core.mv.tx * 0.19 + core.mv.yz * 0.13).exp()
     moved_media = rotor >> media(rotor << core.Bivector)
@@ -51,7 +51,7 @@ def test_both_sheets_support_maxwell_fields_and_transform_with_the_medium():
     moved_residual = core.polynomial(moved_media, rotor >> core.mv.xyz, moved_wavevectors)
 
     np.testing.assert_allclose(residual.kernel, 0, atol=1e-9)
-    np.testing.assert_allclose(adjugate.kernel, 0, atol=1e-9)
+    np.testing.assert_allclose(volumes.kernel, 0, atol=1e-9)
     # Repeated radial roots lose half the significant digits to the square root.
     np.testing.assert_allclose(source.kernel, 0, atol=1e-5)
     np.testing.assert_allclose((moved_residual - residual).kernel, 0, atol=1e-9)

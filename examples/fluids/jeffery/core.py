@@ -6,16 +6,19 @@ changes linearly across the flow: a map on offsets, `Gradient = Point <- Point`.
 fluid itself would both turn and stretch with it; a rigid particle can only turn, and the fluid
 presses on it until it turns at the one rate that leaves no torque on it, found by Jeffery in 1922.
 
-The particle is an ellipsoid, a stretch of the unit sphere along its own axes, and its shape is the
-stretch applied twice: a map `Shape = Point <- Point` whose surface is the offsets with
-`offset.dot(shape.solve(offset)) == 1`. Jeffery's spin, a bivector, satisfies one equation between maps:
+The particle is an ellipsoid, a stretch of the unit sphere along its own axes. Its shape is its dual
+quadric, a map from planes to offsets, `Shape = Point <- Plane`: the unit sphere's, `Plane.dual()`, carried
+by the stretch, the offsets forward and the planes back by its adjugate, `stretch(Plane.dual()(stretch.adjugate()))`.
+Roundness is where the metric enters, and the surface is the offsets with `shape.solve(offset) & offset == 1`.
+Jeffery's spin, a bivector, satisfies one equation between maps:
 
-    shape(turning) + turning(shape) == gradient(shape) - shape(gradient.adjoint())
+    Point.commutator(spin)(shape) + shape(Plane.commutator(spin)) == gradient(shape) - shape(gradient.adjugate())
 
-with `turning = Point.commutator(spin)`, the velocity each offset has under the spin. Both sides are
-antisymmetric maps, so their curls, `Point.reverse().commutator(map(Point)).contract(1, 2)`, carry them
-whole: a linear map from the spin's bivector to a bivector, and one solve. A sphere spins at the flow's own
-rate, half the curl of the gradient. A rod lingers along the flow, then flips end over end, and its
+On the left, the shape's rate of change as the body turns at the spin: its offsets turn, and so do the
+planes that read them. On the right, the gradient acting on the shape's offsets, less its pairing transpose
+acting on the planes. Both sides are antisymmetric, so their joins with a free offset,
+`(Point & map(Plane)).trace(1, 2)`, carry them whole, with no metric: a linear map from the spin to a join,
+and one solve. A sphere spins at the flow's own rate, half the curl of the gradient. A rod lingers along the flow, then flips end over end, and its
 axis comes back to where it started after a fixed time, on a closed path on the sphere of
 directions: a Jeffery orbit. An ellipsoid with three different axes never quite repeats.
 
@@ -39,8 +42,10 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
+# The planes that read offsets are vectors, with extrinsic orientation.
+Plane = ga.gatype.vector()
 Stretch = ga.gatype((Point, Point))                        # Point <- Point: the unit sphere onto the body
-Shape = ga.gatype((Point, Point))                          # Point <- Point: the body's quadric
+Shape = ga.gatype((Point, Plane))                          # Point <- Plane: the body's dual quadric
 Gradient = ga.gatype((Point, Point))                       # Point <- Point: velocity per offset
 
 # The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
@@ -65,17 +70,21 @@ def curl(gradient: Gradient) -> Bivector:
 def spin(shape: Shape, gradient: Gradient) -> Bivector:
     """The spin of a rigid ellipsoid of the given shape in a flow of the given gradient, free of
     torque: Jeffery's."""
-    turning = Point.commutator(Bivector)                                      # Point <- (Point, Bivector)
-    left = shape(turning) + turning(shape)                                    # [...] Point <- (Point, Bivector)
-    right = gradient(shape) - shape(gradient.adjoint())                       # [...] Point <- Point
-    # Both sides are antisymmetric, so their curls carry them whole: a map on spins, and a bivector.
-    return curl(left).solve(curl(right))                                      # [...] Bivector
+    # The shape's rate of change as the body turns at a spin: its offsets turn, and the planes that read them.
+    turning_rate = Point.commutator(Bivector)(shape) + shape(Plane.commutator(Bivector))   # [...] Point <- (Plane, Bivector)
+    # The gradient on the shape's offsets, less its pairing transpose on the planes.
+    flow_rate = gradient(shape) - shape(gradient.adjugate())                  # [...] Point <- Plane
+    # Both sides are antisymmetric: their joins with a free offset carry them whole, a map on spins and a join.
+    return (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)).trace(1, 2))   # [...] Bivector
 
 
 def placed(stretches: Stretch, rotors: Rotor) -> Shape:
-    """The shape of each body turned by its rotor."""
-    shape = stretches(stretches)                                              # [...] Shape: the stretch, twice
-    return rotors >> shape(rotors << Point)                                   # [...] Shape
+    """The shape of each body turned by its rotor: the unit sphere's dual quadric, carried by the turned
+    stretch."""
+    stretch = rotors >> stretches(rotors << Point)                            # [...] Stretch
+    # The unit sphere is where the metric enters: each plane to the direction across it.
+    sphere = Plane.dual()                                                     # [] Shape
+    return stretch(sphere(stretch.adjugate()))                                # [...] Shape
 
 
 def step(rotors: Rotor, stretches: Stretch, gradient: Gradient, dt: float) -> Rotor:

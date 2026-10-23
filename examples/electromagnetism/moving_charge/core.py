@@ -13,7 +13,10 @@ The derivative of a gradient pairs each step with its vector by incidence alone,
 vanishes, and of the excitation the vacuum makes of the field it is the current, an antivector, which
 the lab's time slice reads as the charge density, `mv.t & current`. The metric enters through the
 vacuum alone: in its map from fields to excitations, and in the distances of the charge's own
-potential.
+potential. Each derivative takes the half of the geometric derivative that carries anything: the full
+one, `(Vector * gradients(Antivector)).trace(1, 2)`, would add the potential's divergence, zero because
+the charges' potentials are in the Lorenz gauge, and the field's own derivative, zero because the field
+comes from a potential.
 
 A point charge circling at constant speed radiates. Its potential at an event is set by where the
 charge was when it sent the light that reaches the event, the retarded time, and the gradient of

@@ -1,14 +1,16 @@
-"""Spectra of forms: eigenproblems and determinant relative to a metric form.
+"""Spectra of forms: eigenproblems and determinant against a second form.
 
-A form has two covector axes and no spectrum of its own: its eigenvalues and
-determinant are relative to a metric form, as is pairing its two axes, which is
-`contract`; `trace` pairs axes without a metric and refuses a form. Given explicitly, the metric
-selects the generalized pencil. Left out, it is the axis's own metric, the inner
-product of S with its reverse, which is V | V on vectors. Its kind follows from
-the axis type, so dispatch picks the implementation once per type: an identity
-keeps the plain solver, other metrics use the pencil, and a metric that cannot
-support the operation is refused. Generalized form eigenproblems use SciPy on the
-NumPy backend (the optional linalg extra).
+A form has two covector axes and no spectrum of its own: its eigenvalues and determinant are
+relative to a second form on the same axes, the pencil's partner: a physical form such as a mass or
+an energy, or a metric form where the question is about lengths. Left out, the partner is the axis's
+own metric, the inner product of S with its reverse, which is V | V on vectors and, on a projective
+element, the condition that makes it a unit one. A partner built from types alone, the axis's own
+metric included, has exact coefficients, and its kind picks the solver: against an
+identity the plain solver, against a positive form the generalized pencil, against a semidefinite
+one, blind to some blades as PGA's ideal ones, the pencil on the blades it measures, and against an
+indefinite or singular one only the general eigenproblem. A numeric partner takes the generalized
+pencil. Pairing a form's two axes is `contract`; `trace` pairs axes without a metric and refuses a
+form. Generalized form eigenproblems use SciPy on the NumPy backend (the linalg extra).
 """
 
 from __future__ import annotations
@@ -20,8 +22,8 @@ import numpy as np
 
 from numga.backend.context import binding_context
 from numga.extensor import Extensor
-from numga.gatype import GAType, GATypeError, MetricKind
-from numga.subspace import SubSpace
+from numga.gatype import GATypeError, MetricKind
+from numga.gatype.metric import classify
 
 from numga.extensions._linalg import _eigenpairs, _scalars
 
@@ -34,118 +36,49 @@ def _form_map(value: Extensor) -> Extensor:
     )
 
 
-def _pencil(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
-    context = binding_context(value.context, (metric.context,))
-    left = _form_map(context.lower(value)).cast(value.axes[2])
-    right = _form_map(context.lower(metric))
-    right = right(value.algebra.operator.identity(value.gatype.derive.axis(2))).cast(value.axes[2])
-    return left, right
+def _on_second_axis(value: Extensor, partner: Extensor) -> Extensor:
+    """The partner as a map, in the layout of the form's second axis."""
+    identity = value.algebra.operator.identity(value.gatype.derive.axis(2))
+    return _form_map(partner)(identity).cast(value.axes[2])
 
 
-# --- the axis's own metric ---------------------------------------------------------------
+def _pencil(value: Extensor, partner: Extensor) -> tuple[Extensor, Extensor]:
+    context = binding_context(value.context, (partner.context,))
+    return _form_map(context.lower(value)).cast(value.axes[2]), _on_second_axis(value, context.lower(partner))
+
+
 @lru_cache(maxsize=None)
-def _measured_blades(axis: GAType) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Positions of the blades the axis's metric measures and of those it is blind to, and the
-    order that puts the two back into the axis's layout."""
-    matrix = axis.metric.default._kernel.materialize(np.float64)[0]
+def _classified(shape: tuple[int, int], coefficients: bytes) -> tuple[MetricKind, np.ndarray, np.ndarray, np.ndarray]:
+    """The kind of an exact partner, and the positions of the blades it measures, of those it is
+    blind to, and the order that puts the two back into the axis's layout."""
+    matrix = np.frombuffer(coefficients).reshape(shape)
     blind = ~matrix.any(axis=0)
     measured, unmeasured = np.flatnonzero(~blind), np.flatnonzero(blind)
-    return measured, unmeasured, np.argsort(np.concatenate([measured, unmeasured]))
+    return classify(matrix), measured, unmeasured, np.argsort(np.concatenate([measured, unmeasured]))
 
 
-def _metric_is(*kinds: MetricKind) -> Callable[[GAType], bool]:
-    """Dispatch predicate: a square form whose axis metric is of one of these kinds."""
-    return lambda gatype: gatype.form.is_square and gatype.derive.axis(2).metric.kind in kinds
+def _partner_kind(value: Extensor, partner: Extensor) -> tuple[MetricKind, np.ndarray, np.ndarray, np.ndarray]:
+    """What the partner is like: classified from exact coefficients, or positive for a numeric partner,
+    which takes the generalized pencil."""
+    if not partner.context.is_exact:
+        return MetricKind.POSITIVE, np.array([]), np.array([]), np.array([])
+    # Exact coefficients carry no batch: one matrix, in the layout the pencil uses.
+    lowered = binding_context(value.context, (partner.context,)).lower(partner)
+    # Exact coefficients are real, also when lowered into a complex context.
+    coefficients = np.real(np.asarray(_on_second_axis(value, lowered)._kernel)).astype(np.float64)
+    matrix = np.ascontiguousarray(coefficients.reshape(coefficients.shape[-2:]))
+    return _classified(matrix.shape, matrix.tobytes())
 
 
-def _plain(value: Extensor) -> Extensor:
-    """The form as a map, for a axis metric that is the identity."""
-    return _form_map(value).cast(value.axes[2])
-
-
-def _default_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
-    return _pencil(value, value.gatype.derive.axis(2).metric.default)
-
-
-def _refusal(method: str, needs: str) -> Callable[[Extensor], Extensor]:
-    def refuse(value: Extensor) -> Extensor:
-        raise GATypeError(
-            f"{method} of a form needs {needs} metric; the metric of {value.axes[2]} is "
-            f"{value.gatype.derive.axis(2).metric.kind.value}: pass an explicit metric form"
-        )
-    return refuse
-
-
-# --- against the axis's metric: identity -------------------------------------------------
-@Extensor.eig.register(_metric_is(MetricKind.IDENTITY))
-def eig_form_identity(value: Extensor) -> tuple[Extensor, Extensor]:
-    return _plain(value).eig()
-
-
-@Extensor.eigvals.register(_metric_is(MetricKind.IDENTITY))
-def eigvals_form_identity(value: Extensor) -> Extensor:
-    return _plain(value).eigvals()
-
-
-@Extensor.eigh.register(_metric_is(MetricKind.IDENTITY))
-def eigh_form_identity(value: Extensor) -> tuple[Extensor, Extensor]:
-    return _plain(value).eigh()
-
-
-@Extensor.eigvalsh.register(_metric_is(MetricKind.IDENTITY))
-def eigvalsh_form_identity(value: Extensor) -> Extensor:
-    return _plain(value).eigvalsh()
-
-
-@Extensor.det.register(_metric_is(MetricKind.IDENTITY))
-def det_form_identity(value: Extensor) -> Extensor:
-    return _plain(value).det()
-
-
-# --- against the axis's metric: the pencil -----------------------------------------------
-@Extensor.eig.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE, MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))
-def eig_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
-    """Eigenpairs against the axis's metric; a singular metric gives infinite modes."""
-    left, right = _default_pencil(value)
-    return _eigenpairs(left, *left.context.generalized_eig(left._kernel, right._kernel))
-
-
-@Extensor.eigvals.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE, MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))
-def eigvals_form_pencil(value: Extensor) -> Extensor:
-    left, right = _default_pencil(value)
-    return _scalars(left, left.context.generalized_eigvals(left._kernel, right._kernel))
-
-
-@Extensor.eigh.register(_metric_is(MetricKind.POSITIVE))
-def eigh_form_pencil(value: Extensor) -> tuple[Extensor, Extensor]:
-    """Hermitian eigenpairs, orthonormal in the axis's metric, which must be positive definite."""
-    left, right = _default_pencil(value)
-    return _eigenpairs(left, *left.context.generalized_eigh(left._kernel, right._kernel))
-
-
-@Extensor.eigvalsh.register(_metric_is(MetricKind.POSITIVE))
-def eigvalsh_form_pencil(value: Extensor) -> Extensor:
-    left, right = _default_pencil(value)
-    return _scalars(left, left.context.generalized_eigvalsh(left._kernel, right._kernel))
-
-
-@Extensor.det.register(_metric_is(MetricKind.POSITIVE, MetricKind.INDEFINITE))
-def det_form_pencil(value: Extensor) -> Extensor:
-    """Determinant relative to the axis's metric, which must be invertible."""
-    left, right = _default_pencil(value)
-    return left.det() / right.det()
-
-
-# --- against the axis's metric: semidefinite ---------------------------------------------
-def _reduced_pencil(value: Extensor):
-    """The pencil on the blades the metric measures, with the blind blades eliminated.
+def _reduced(value: Extensor, partner: Extensor):
+    """The pencil on the blades a semidefinite partner measures, with the blind blades eliminated.
 
     For each mode the blind components are those that make the form stationary, a Schur
     complement: in PGA, the best translation for each rotation. Returns the form as a map, the
-    reduced form and metric, the map from measured to blind components, and the blade order.
+    reduced form and partner, the map from measured to blind components, and the blade order.
     """
-    left, right = _default_pencil(value)
-    measured, unmeasured, order = _measured_blades(value.gatype.derive.axis(2))
+    left, right = _pencil(value, partner)
+    _, measured, unmeasured, order = _partner_kind(value, partner)
     xp = left.context.xp
 
     def block(matrix, rows, columns):
@@ -157,63 +90,85 @@ def _reduced_pencil(value: Extensor):
     return left, reduced, block(metric, measured, measured), coupling, order
 
 
-@Extensor.eigh.register(_metric_is(MetricKind.SEMIDEFINITE))
-def eigh_form_semidefinite(value: Extensor) -> tuple[Extensor, Extensor]:
-    """Hermitian eigenpairs against a semidefinite axis metric: one finite mode per blade the
-    metric measures, orthonormal in it, with the blind components chosen to make the form
-    stationary."""
-    left, reduced, metric, coupling, order = _reduced_pencil(value)
-    values, measured = left.context.generalized_eigh(reduced, metric)
-    vectors = left.context.xp.concatenate([measured, coupling @ measured], axis=-2)[..., order, :]
-    return _eigenpairs(left, values, vectors)
+def _refuse(method: str, needs: str, kind: MetricKind) -> GATypeError:
+    return GATypeError(f"{method} of a form needs {needs} metric form; the one it is measured against is {kind.value}")
 
 
-@Extensor.eigvalsh.register(_metric_is(MetricKind.SEMIDEFINITE))
-def eigvalsh_form_semidefinite(value: Extensor) -> Extensor:
-    left, reduced, metric, _, _ = _reduced_pencil(value)
-    return _scalars(left, left.context.generalized_eigvalsh(reduced, metric))
+# --- without a partner: the axis's own metric ---------------------------------------------
+def _against_own_metric(method: str) -> Callable[[Extensor], Extensor]:
+    def solve(value: Extensor) -> Extensor:
+        return getattr(Extensor, method)(value, value.gatype.derive.axis(2).metric.default)
+    return solve
 
 
-# --- against the axis's metric: refused --------------------------------------------------
-Extensor.eigh.register(_metric_is(MetricKind.INDEFINITE, MetricKind.SINGULAR))(_refusal("eigh", "a positive-semidefinite"))
-Extensor.eigvalsh.register(_metric_is(MetricKind.INDEFINITE, MetricKind.SINGULAR))(_refusal("eigvalsh", "a positive-semidefinite"))
-Extensor.det.register(_metric_is(MetricKind.SEMIDEFINITE, MetricKind.SINGULAR))(_refusal("det", "an invertible"))
+for _method in ("eig", "eigvals", "eigh", "eigvalsh", "det"):
+    getattr(Extensor, _method).register(lambda gatype: gatype.form.is_square)(_against_own_metric(_method))
 
 
-# --- against an explicit metric ----------------------------------------------------------
-@Extensor.eig.register(lambda value, metric: value.form.matches(metric))
-def eig_form_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
-    """Generalized form eigenpairs, including infinite eigenvalues for singular metrics.
+# --- against a partner -------------------------------------------------------------------
+@Extensor.eig.register(lambda value, partner: value.form.matches(partner))
+def eig_form(value: Extensor, partner: Extensor) -> tuple[Extensor, Extensor]:
+    """Generalized form eigenpairs, including infinite eigenvalues against a singular partner.
 
     The NumPy backend uses SciPy (the linalg extra); mode selection belongs to the caller.
     """
-    left, right = _pencil(value, metric)
+    left, right = _pencil(value, partner)
+    if _partner_kind(value, partner)[0] is MetricKind.IDENTITY:
+        return left.eig()
     return _eigenpairs(left, *left.context.generalized_eig(left._kernel, right._kernel))
 
 
-@Extensor.eigh.register(lambda value, metric: value.form.matches(metric))
-def eigh_form_metric(value: Extensor, metric: Extensor) -> tuple[Extensor, Extensor]:
-    """Generalized Hermitian form eigenpairs, normalized in a positive-definite metric."""
-    left, right = _pencil(value, metric)
-    return _eigenpairs(left, *left.context.generalized_eigh(left._kernel, right._kernel))
-
-
-@Extensor.eigvals.register(lambda value, metric: value.form.matches(metric))
-def eigvals_form_metric(value: Extensor, metric: Extensor) -> Extensor:
-    left, right = _pencil(value, metric)
+@Extensor.eigvals.register(lambda value, partner: value.form.matches(partner))
+def eigvals_form(value: Extensor, partner: Extensor) -> Extensor:
+    left, right = _pencil(value, partner)
+    if _partner_kind(value, partner)[0] is MetricKind.IDENTITY:
+        return left.eigvals()
     return _scalars(left, left.context.generalized_eigvals(left._kernel, right._kernel))
 
 
-@Extensor.eigvalsh.register(lambda value, metric: value.form.matches(metric))
-def eigvalsh_form_metric(value: Extensor, metric: Extensor) -> Extensor:
-    left, right = _pencil(value, metric)
+@Extensor.eigh.register(lambda value, partner: value.form.matches(partner))
+def eigh_form(value: Extensor, partner: Extensor) -> tuple[Extensor, Extensor]:
+    """Hermitian form eigenpairs, normalized in a positive or semidefinite partner; against a
+    semidefinite one, one finite mode per blade it measures, with the blind components chosen to make
+    the form stationary."""
+    kind = _partner_kind(value, partner)[0]
+    if kind in (MetricKind.INDEFINITE, MetricKind.SINGULAR):
+        raise _refuse("eigh", "a positive-semidefinite", kind)
+    if kind is MetricKind.SEMIDEFINITE:
+        left, reduced, metric, coupling, order = _reduced(value, partner)
+        values, measured = left.context.generalized_eigh(reduced, metric)
+        vectors = left.context.xp.concatenate([measured, coupling @ measured], axis=-2)[..., order, :]
+        return _eigenpairs(left, values, vectors)
+    left, right = _pencil(value, partner)
+    if kind is MetricKind.IDENTITY:
+        return left.eigh()
+    return _eigenpairs(left, *left.context.generalized_eigh(left._kernel, right._kernel))
+
+
+@Extensor.eigvalsh.register(lambda value, partner: value.form.matches(partner))
+def eigvalsh_form(value: Extensor, partner: Extensor) -> Extensor:
+    kind = _partner_kind(value, partner)[0]
+    if kind in (MetricKind.INDEFINITE, MetricKind.SINGULAR):
+        raise _refuse("eigvalsh", "a positive-semidefinite", kind)
+    if kind is MetricKind.SEMIDEFINITE:
+        left, reduced, metric, _, _ = _reduced(value, partner)
+        return _scalars(left, left.context.generalized_eigvalsh(reduced, metric))
+    left, right = _pencil(value, partner)
+    if kind is MetricKind.IDENTITY:
+        return left.eigvalsh()
     return _scalars(left, left.context.generalized_eigvalsh(left._kernel, right._kernel))
 
 
-@Extensor.det.register(lambda value, metric: value.form.matches(metric))
-def det_form_metric(value: Extensor, metric: Extensor) -> Extensor:
-    """Determinant of the form relative to a metric form: det(metric^-1 value), frame independent."""
-    left, right = _pencil(value, metric)
+@Extensor.det.register(lambda value, partner: value.form.matches(partner))
+def det_form(value: Extensor, partner: Extensor) -> Extensor:
+    """Determinant of the form relative to an invertible partner: det(partner^-1 value), frame
+    independent."""
+    kind = _partner_kind(value, partner)[0]
+    if kind in (MetricKind.SEMIDEFINITE, MetricKind.SINGULAR):
+        raise _refuse("det", "an invertible", kind)
+    left, right = _pencil(value, partner)
+    if kind is MetricKind.IDENTITY:
+        return left.det()
     return left.det() / right.det()
 
 

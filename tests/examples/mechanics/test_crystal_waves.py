@@ -14,8 +14,9 @@ def test_stiffness_reads_back_the_elastic_constants():
     their moduli: a stretch along x pulls on the x face with C11 and on the y face with C12, and a
     shear of the xy face pulls on it with C44."""
     x, y = core.axes[0], core.axes[1]
+    along_x, along_y = x.dual(), y.dual()
     stiffness, _ = scenarios.crystals()
-    read = [x | stiffness(x, x, x), y | stiffness(y, x, x), x | stiffness(y, x, y)]
+    read = [stiffness(x, along_x, x) & along_x, stiffness(y, along_x, x) & along_y, stiffness(y, along_x, y) & along_x]
     for value, constant in zip(read, (scenarios.C11, scenarios.C12, scenarios.C44)):
         np.testing.assert_allclose(value.to_array(), constant, rtol=1e-10)
 
@@ -27,8 +28,8 @@ def test_energy_follows_the_wave_only_when_isotropic():
     stiffness, density = scenarios.crystals()
     values, polarization = core.waves(stiffness[:, None], heading)
     velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])
-    along = (velocity | heading[:, None]).to_array()
-    speed = (velocity | velocity).square_root().to_array()
+    along = (heading[:, None] & velocity).to_array()
+    speed = velocity.dot(velocity).square_root().to_array()
     swing = np.arccos(np.clip(along / speed, -1, 1)).max(axis=(1, 2))         # the largest angle off the heading
     silica, silicon = scenarios.NAMES.index("fused silica"), scenarios.NAMES.index("silicon")
     assert swing[silica] < 1e-5 and swing[silicon] > 0.2
@@ -42,7 +43,7 @@ def test_figures_render():
     stiffness, density = scenarios.crystals()
     velocity, heading, values = scenarios.focusing(2000, 0)
     phase = (values / density[:, None, None]).square_root()
-    np.testing.assert_allclose((velocity | heading[:, None]).to_array(), phase.to_array(), rtol=1e-8)
+    np.testing.assert_allclose((heading[:, None] & velocity).to_array(), phase.to_array(), rtol=1e-8)
     edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]
     speeds = (edge_and_diagonal / density[:, None, None]).square_root().to_array()
     C11, C12, C44 = scenarios.C11, scenarios.C12, scenarios.C44

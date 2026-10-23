@@ -1,4 +1,4 @@
-"""Pair two axes of an extensor and sum over them, keeping its other axes open.
+"""Trace and contraction reduce an extensor to a map of its remaining arguments.
 
 Axes are numbered with the output as axis 0 and the inputs as axes 1 to n, in the order of the
 kernel's axes. A axis carries an index unless it is a scalar output: a form `Scalar <- (V, V)` has

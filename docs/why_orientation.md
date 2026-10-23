@@ -111,13 +111,43 @@ mirror >> side                                         # Vector+
 mirror >> winding                                      # Vector-
 ```
 
-A point, likewise, can be oriented by its weight, as a mass is, or by a turn around it, as a pivot is, and the [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example does the same for a circle in the conformal algebra of space.
+In a plane, a point can likewise be oriented by its weight, as a mass is, or by a turn around it, as a pivot is. The [circle constructed twice](../examples/orientation/conformal_circle/conformal_circle.ipynb) example does the same for a circle in the conformal algebra of space.
+
+## From the plane to space
+
+A mass at a point on a sheet of paper remains a mass at a point when we include the room around the sheet. A wheel turning in the sheet turns about a point in the sheet, but about an axis in the room. The weighted point stays a point; the pivot becomes an axis:
+
+```python
+from numga import NumpyContext
+from numga.algebras import PGA2D, PGA3D
+
+plane_mv = NumpyContext(PGA2D).multivector
+space_mv = NumpyContext(PGA3D).multivector
+
+point_2d = plane_mv.point([0, 0])                       # intrinsic point, grade two
+point_3d = space_mv.point([0, 0, 0])                    # intrinsic point, grade three
+pivot = plane_mv.x ^ plane_mv.y                        # extrinsic point, grade two
+axis = space_mv.x ^ space_mv.y                         # extrinsic line, grade two
+```
+
+The two crossing lines that locate the pivot extend to two crossing planes in the room. Their meeting point becomes their meeting line, with the same sense of turning around it. Looking only within the sheet takes us back to the pivot. The turn remains a bivector in either dimension, while the weighted point remains an antivector.
+
+We can also make an extrinsic point in the room, but that needs a third plane to cut the axis at a point. Its chosen side is part of the orientation:
+
+```python
+extrinsic_point = axis ^ space_mv.z                    # extrinsic point, grade three
+opposite_point = axis ^ (-space_mv.z)                  # same point, opposite orientation
+```
+
+The turn in the sheet does not choose which side of the sheet is positive. Choosing the other side reverses the extrinsic point's orientation, although its location and the turn stay the same. In space, an extrinsic point has a handedness of its surroundings; a sense of turning in one plane is not enough to specify it.
+
+The intrinsic point needs no choice about the added direction: its weight stays with it. The extrinsic point needs the added direction included in its orientation, because that orientation belongs to the space around the point.
 
 ## How orientation spreads
 
 Every element can carry either intrinsic or extrinsic orientation. Once the orientations of the inputs are chosen, the operation determines the orientation of the result.
 
-The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the duals and dualized back, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](orientation.md) lists the rule for every product.
+The dual exchanges the two kinds. It takes an element to its complement, and what lay within the element lies around the complement: an intrinsic element's dual is extrinsic, and the other way round. The regressive product is the outer product taken on the volume complements and taken back with the inverse complement, so it carries one exchange more than the outer product, which is why joining two intrinsic points gives an intrinsic line. [Orientation in numga](orientation.md) lists the rule for every product.
 
 In matrix notation a plane's side transforms with the inverse transpose of a linear map and a triangle's area normal with its cofactor matrix, which differs by the sign of the determinant, $-1$ for a mirror. In exterior calculus the two kinds are called outer and inner orientation (Tonti, Bossavit, Schouten), corresponding to untwisted and twisted differential forms.
 

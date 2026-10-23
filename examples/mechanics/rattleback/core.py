@@ -11,6 +11,10 @@ rate that turns it about the contact, the spin carried by the translation to the
 `contact * origin.inverse()`. The adjugate of that rolling map pulls forques back onto spins and does so
 without the contact's reaction, which does no work under any rolling motion, so one solve gives the
 body's angular acceleration with the reaction eliminated.
+
+As the body rocks, the contact moves across the shell. Differentiating the rolling map contributes to
+the acceleration even at a fixed spin; this contribution and the rotation of the body's momentum remain
+in the balance being solved.
 """
 
 from __future__ import annotations

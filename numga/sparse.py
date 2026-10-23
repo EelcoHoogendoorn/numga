@@ -1,17 +1,17 @@
 """Field maps stored sparsely: couplings between the sites of fields.
 
 A field is an Extensor whose output ranges over sites, `Vector[vertices]`, read from a batch axis
-with `.field()`; its elements may be multivectors or maps with open axes of their own. Leading
+with `.field()`; its elements may be multivectors or multilinear maps. Leading
 batch axes hold separate fields.
 
 A SparseExtensor holds cells, each coupling an input site (a column) to an output site (a row).
 It has no action of its own: an operation on it is its cells' operation, lifted to the couplings.
 A product with a field takes each cell's product with the element at its input site, by whichever
 product the expression names, `S * f`, `S ^ f`, `S | f` or `S & f`, and sums the contributions at
-each output site; with an open type, `S * Even`, the axis stays open and the cells become maps. A
+each output site. Multiplication by an identity map, `S * Even`, makes each cell a map on Even. A
 field on the left pairs with the output sites instead, `f * S`. A product of two sparse extensors
 multiplies their cells along the paths through shared sites. A map cell is applied, `S(field)`, and
-composes, `S(T)`. Field elements keep their own open axes throughout.
+composes, `S(T)`. These operations preserve the arguments of maps carried by the field.
 
 An operation that reverses the order of the cells' products runs the couplings the other way: the
 reverse and the Clifford conjugate of multivector cells, so that `~(S * f) == ~f * ~S`, and the
@@ -227,7 +227,7 @@ spdiag = SparseExtensor.from_diagonal
 
 # --- products and applications, by cells and by operand ----------------------------------------
 def _operand(value: SparseExtensor, other: object) -> object:
-    """A type stays an open axis; an array is a batch of scalars, as in any product with a value."""
+    """Convert arrays to scalar batches; types and extensors retain their algebraic meanings."""
     return operands.batch(value.cells.context, other) if operands.kind(other) is operands.Kind.ARRAY else other
 
 
@@ -237,7 +237,7 @@ def _scaled(value: SparseExtensor, number: Number) -> SparseExtensor:
 
 @singledispatch
 def _right(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
-    """An open type, or an array read as a batch of scalars: each cell's product with it, a map cell
+    """A GAType, or an array read as a batch of scalars: each cell's product with it, a map cell
     with the type's axis."""
     return _cellwise(value, product(value.cells, _operand(value, other)))
 
@@ -264,7 +264,7 @@ def _right_sparse(other: SparseExtensor, value: SparseExtensor, product) -> Spar
 
 @singledispatch
 def _left(other: GAType, value: SparseExtensor, product) -> SparseExtensor:
-    """An open type on the left: each cell's product with it, the couplings read from the output
+    """A GAType on the left: each cell's product with it, the couplings read from the output
     sites."""
     return _transposed(value, product(_operand(value, other), value.cells))
 
@@ -281,8 +281,8 @@ def _left_field(other: Extensor, value: SparseExtensor, product) -> Extensor:
 
 @SparseExtensor.apply.register(lambda cell_type: cell_type.arity == 1)
 def apply(value: SparseExtensor, operand: object):
-    """Unary coupling cells applied to field elements, summed by output site. A field element
-    with open inputs composes into its coupling cell and keeps those inputs; a sparse operand
+    """Unary coupling cells applied to field elements, summed by output site. A map-valued field element
+    composes into its coupling cell, producing a map of the same inputs; a sparse operand
     composes the field maps through their shared sites."""
     return _application(operand, value)
 

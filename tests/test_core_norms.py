@@ -150,7 +150,7 @@ def test_scalar_norm_squared_is_the_scalar_part_of_the_reverse_product_for_value
 
     assert squared.subspace is algebra.subspace.scalar()
     np.testing.assert_allclose(squared.kernel, product.select[0].kernel, atol=1e-13)
-    # With the value left open it is a form, which evaluated on the value gives the same norm.
+    # The bilinear form evaluated on a bivector twice gives its squared norm.
     form = (mv.rotor() >> Bivector).scalar_norm_squared()
     np.testing.assert_allclose(form(bivectors, bivectors).kernel, squared.kernel, atol=1e-13)
 

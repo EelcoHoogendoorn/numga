@@ -19,7 +19,7 @@ def test_shadows_lie_on_their_cones_and_hour_lines_on_the_gnomonic_angle():
     nodus, seasons, days, suns, hours = scenarios.dial()
     pole, _ = core.sky(scenarios.LATITUDE)
     rays = (nodus - core.shadow(nodus, days)).normalized()                      # [seasons, samples] Point
-    assert np.abs(rays.dot(core.cone(pole, days[:, 0])[:, None](rays)).to_array()).max() < 1e-10
+    assert np.abs((core.cone(pole, days[:, 0])[:, None](rays) & rays).to_array()).max() < 1e-10
     foot = core.shadow(nodus, pole)
     angles = scenarios.bearings(core.shadow(nodus, suns) - foot)                # [hours, samples]
     hour_angles = scenarios.hour_angle(hours)

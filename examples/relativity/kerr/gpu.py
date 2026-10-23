@@ -19,8 +19,8 @@ from examples.relativity.kerr import core, render, scenarios
 from examples.util.wgsl import Shader, supersampled
 
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
-             Rotor=core.Rotor, Screen=core.Screen, ScreenFrame=core.ScreenFrame, Coherency=core.Coherency,
-             GaugeField=core.GaugeField)
+             Rotor=core.Rotor, Screen=core.Screen, ScreenSlice=core.ScreenSlice, ScreenFrame=core.ScreenFrame,
+             Coherency=core.Coherency, GaugeField=core.GaugeField)
 mv = core.mv
 n_table_entries = 256
 # The colour table's hottest temperature, past any the camera sees.
@@ -217,7 +217,8 @@ fn disk_light(crossing: Ray, radius: f32) -> vec3<f32> {
     return colour * rings * exp(clump_contrast * clumps);
 }
 
-// The disk's emission on the screen: partly polarized square to the magnetic field circling the normal.
+// The disk's emission, a covariance from the camera's slices to screen directions: partly polarized square to the
+// magnetic field circling the normal.
 fn disk_coherency(crossing: Ray) -> Coherency {
     let heading = local(field(crossing.position), crossing.momentum);
     let direction = space(heading) / (mv.t & heading);
@@ -225,14 +226,16 @@ fn disk_coherency(crossing: Ray) -> Coherency {
     let polarization_axis = meridian.commutator(direction) / meridian.norm();
     let polarization = crossing.screen.adjoint()(polarization_axis);
     let polarized_fraction = polarization_degree * polarization.squared();
-    return (1 - polarized_fraction) / 2 * Screen + polarization_degree * polarization * (polarization | Screen);
+    // Unpolarized light is round, where the metric enters; the polarized part weights the polarization by each
+    // slice's reading of it.
+    return (1 - polarized_fraction) / 2 * ScreenSlice.dual() + polarization_degree * polarization * (ScreenSlice & polarization);
 }
 """
 
 camera = """
 var<uniform> eye: Antivector;
 var<uniform> orientation: Rotor;
-var<uniform> analyzer: Screen;
+var<uniform> analyzer: ScreenSlice;
 var<uniform> half_view: f32;
 var<uniform> step_fraction: f32;
 var<uniform> n_steps: u32;
@@ -301,7 +304,7 @@ fn sample(place: vec2<f32>) -> Sample {
                 let weight = remaining * disk_opacity(crossing, crossing_radius);
                 let emitted = weight * disk_light(crossing, crossing_radius);
                 disk += emitted;
-                through += emitted * (analyzer | disk_coherency(crossing)(analyzer));
+                through += emitted * (analyzer & disk_coherency(crossing)(analyzer));
                 remaining -= weight;
             }
         }
@@ -339,7 +342,7 @@ def scene() -> dict:
         spin=spin, mass=scenarios.mass, eye=eye, orientation=orientation, at_rest=at_rest,
         inner_radius=inner_radius, outer_radius=scenarios.disk_outer_radius, inner_depth=scenarios.inner_depth,
         polarization_degree=scenarios.polarization_degree, clump_contrast=render.clump_contrast,
-        elapsed=0.0, flow_time=scenarios.flow_time, fade=0.0, analyzer=mv.x.dual(),
+        elapsed=0.0, flow_time=scenarios.flow_time, fade=0.0, analyzer=mv.x,
         hottest=hottest, temperatures=core.disk_temperature(radii, mv.xy, spin, scenarios.mass, scenarios.disk_temperature_scale),
         blackbodies=render.blackbody_table(hottest, n_table_entries), modes=render.wave_modes(),
         half_view=scenarios.half_view,
@@ -362,7 +365,7 @@ def disk_flow(tracer: Shader, values: dict) -> Iterator[dict]:
 
 def polarizer(tracer: Shader, values: dict) -> Iterator[dict]:
     """The traced light through each analyzer of a polarizer turning in front of the camera."""
-    for analyzer in (mv.xy * (-scenarios.polarizer_angles / 2)).exp() >> mv.x.dual():
+    for analyzer in (mv.xy * (-scenarios.polarizer_angles / 2)).exp() >> mv.x:
         yield tracer(image_shape(), **values | dict(analyzer=analyzer))
 
 

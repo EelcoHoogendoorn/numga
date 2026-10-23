@@ -31,13 +31,13 @@ def crystals() -> tuple[core.Stiffness, np.ndarray]:
     return core.stiffness(C11, C12, C44), DENSITY                               # [materials] Stiffness
 
 
-def focusing(n_headings: int, seed: int) -> tuple[core.Vector, core.Vector, core.Scalar]:
+def focusing(n_headings: int, seed: int) -> tuple[core.Antivector, core.Vector, core.Scalar]:
     """Group velocities of the three waves in every material, for headings spread evenly over the
     sphere; then the headings, and the stiffness eigenvalues of the three waves along them."""
     stiffness, density = crystals()
     heading = core.mv.vector(np.random.default_rng(seed).normal(size=(n_headings, 3))).normalized()   # [headings] Vector
     values, polarization = core.waves(stiffness[:, None], heading)                # [materials, headings, 3] each
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector
     return velocity, heading, values
 
 
@@ -52,8 +52,8 @@ def wave_fronts(n_angles: int) -> core.Vector:
     angles = np.linspace(0.0, 2 * np.pi, n_angles, endpoint=False)
     # The x axis turned through every angle in the face z = 0.
     heading = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x                    # [headings] Vector
-    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Vector
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Vector
+    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Antivector
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector
     return velocity
 
 
@@ -67,9 +67,9 @@ def main() -> None:
 
     # checks
     stiffness, density = crystals()
-    # Along its heading, the group velocity has the phase speed.
+    # Read by its heading, the group velocity has the phase speed.
     phase = (values / density[:, None, None]).square_root()
-    np.testing.assert_allclose((velocity | heading[:, None]).to_array(), phase.to_array(), rtol=1e-8)
+    np.testing.assert_allclose((heading[:, None] & velocity).to_array(), phase.to_array(), rtol=1e-8)
     # The textbook speeds along a cube edge and a face diagonal.
     edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar
     speeds = (edge_and_diagonal / density[:, None, None]).square_root().to_array()      # [materials, 2, 3]

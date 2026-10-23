@@ -84,14 +84,15 @@ def main() -> None:
     # checks
     # Type N: every plane the curvature gives contains the wave's direction. Spin two: a quarter turn
     # across the wave reverses the pattern. A chasing observer sees the wave redshifted, and the tide
-    # scales with the square. The integrated ring lands on the strain map applied to the rest separations.
+    # scales with the square. The integrated ring lands on the displacements the strain map gives the rest
+    # separations, the metric turning each reading into a displacement.
     area = mv.vector([0.3, -1.1, 0.7, 0.2]).dual() & mv.vector([0.9, 0.4, -0.5, 1.3]).dual()
     np.testing.assert_allclose((wave_vector ^ plus(area)).kernel, 0.0, atol=1e-12)
     quarter_turn = (mv.xy * (np.pi / 4)).exp()
     np.testing.assert_allclose(((quarter_turn >> plus(quarter_turn << core.Antibivector)) + plus).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose(amplitudes.to_array(), np.exp(-2 * rapidities), atol=1e-12)
     plus_strain, cross_strain = core.strain_patterns()
-    predicted = core.polarized(plus_strain, cross_strain, 0.5 * profiles)[:, :, None](reference)
+    predicted = core.polarized(plus_strain, cross_strain, 0.5 * profiles)[:, :, None](reference).dual()
     np.testing.assert_allclose((displacement - predicted).kernel, 0.0, atol=1e-12)
 
 

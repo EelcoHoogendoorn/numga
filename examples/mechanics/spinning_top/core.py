@@ -5,7 +5,8 @@ own frame; the ground is the solid below a shallow paraboloid, a concave quadric
 point against the ground is the pole of its tangent plane facing the ground; how far that point
 lies below the ground is its depth, zero for a part in the air. Contact is position based: after a
 free step each part is pressed out along the ground's normal by its depth, then held against
-sliding up to the friction cone, each a single constraint along one line, batched over the parts.
+sliding up to the friction cone, each a single constraint along one line. The parts are corrected
+in sequence so each contact sees the motion caused by the preceding contacts.
 The rate is read back from the motor's step.
 
 The contact point is found in one pass: the ground's normal is taken at the part's centre, and
@@ -15,6 +16,7 @@ comparable curvature the exact contact lies on the pencil of the two, at the poi
 `(ground - m * part).inverse()(w)` for the parameter m where that point reaches the part's surface.
 """
 
+import jax
 import numpy as np
 
 from numga import NumpyContext
@@ -118,33 +120,46 @@ def move(motor: Motor, step: Rate, forque: Scalar) -> Motor:
 
 def project_contacts(before: Motor, motor: Motor, inverse_inertia: InverseInertia, parts: Quadric, ground: Quadric,
                      static: float, dynamic: float, dt: float) -> tuple[Motor, Rate]:
-    """Correct the predicted pose: press each part out by its depth, then hold it against sliding
-    within the friction cone."""
-    # The parts in the world, and their centres: the poles of the plane at infinity.
-    placed = motor >> parts(motor << Point)                                 # [parts] Plane <- Point
-    centre = placed.solve(w)                                                # [parts] Point
-    # Each part's lowest point against the ground's normal at its centre is its contact point.
-    contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
-    normal = ground_normal(ground, contact)
-    # The ground's form at the contact over its gradient's length: how far the point lies below the
-    # ground, to first order in the depth; a part in the air has none.
-    depth = (-(ground(contact) & contact) / (2 * ground(contact).norm())).clip(0, np.inf)
+    """Correct the predicted pose one part after another, so that each sees the corrections before it:
+    press it out by its depth, then hold it against sliding within the friction cone; then slow the rate
+    by each part's dynamic friction in turn. The parts are taken in a compiled loop, in the motor's
+    context."""
+    parts = parts.materialize(motor.context)                                # [parts] Plane <- Point
 
-    # Press out along the normal line through each contact, by its depth.
-    step, give = compliance(motor, inverse_inertia, contact & normal)
-    pressed = depth / give
-    motor = move(motor, step, pressed)
+    def touching(motor: Motor, part: Quadric) -> tuple[Point, Direction, Scalar]:
+        # One part, as a set of one, so that the contact helpers apply as they are.
+        placed = motor >> part[None](motor << Point)                         # [1] Plane <- Point
+        centre = placed.solve(w)                                             # [1] Point
+        contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
+        # The ground's form at the contact over its gradient's length: how far the point lies below the
+        # ground, to first order in the depth; a part in the air has none.
+        depth = (-(ground(contact) & contact) / (2 * ground(contact).norm())).clip(0, np.inf)
+        return contact, ground_normal(ground, contact), depth
 
-    # Hold against sliding: back toward where the contact's material point was, in the ground's plane.
-    slid = along_ground(contact - (before >> (motor << contact)), normal)
-    back = slid.dual().norm()
-    step, give = compliance(motor, inverse_inertia, contact & (-slid / (back + 1e-12)))
-    motor = move(motor, step, clamp(back / give, pressed * static))
+    def press(motor: Motor, part: Quadric) -> tuple[Motor, Scalar]:
+        contact, normal, depth = touching(motor, part)
+        # Press out along the normal line through the contact, by its depth.
+        step, give = compliance(motor, inverse_inertia, contact & normal)
+        pressed = depth / give
+        motor = move(motor, step, pressed)
+        # Sticking is possible only when its full correction fits the static friction limit.
+        slid = along_ground(contact - (before >> (motor << contact)), normal)
+        back = slid.dual().norm()
+        step, give = compliance(motor, inverse_inertia, contact & (-slid / (back + 1e-12)))
+        sticking = back / (give + 1e-12)
+        return move(motor, step, sticking * (sticking <= pressed * static)), pressed
 
-    # Dynamic friction: the rate the corrected step implies, less the contacts' sliding velocity, with
-    # at most the dynamic coefficient times the normal impulse, the pressing forque over the step.
-    rate = (~before * motor).log() * (-2.0 / dt)
-    sliding = along_ground(contact.commutator(motor >> rate), normal)
-    speed = sliding.dual().norm()
-    step, give = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
-    return motor, rate + (step * clamp(speed / give, pressed * dynamic / dt)).sum(axis=0)
+    motor, pressures = jax.lax.scan(press, motor, parts)                    # [] Motor, [parts, 1] Scalar
+    rate = (before.inverse() * motor).normalized().log() * (-2.0 / dt)
+
+    def slow(rate: Rate, part_and_pressure: tuple[Quadric, Scalar]) -> tuple[Rate, None]:
+        part, pressed = part_and_pressure
+        contact, normal, _ = touching(motor, part)
+        # The contact's remaining slip, held by at most the dynamic coefficient times its pressing impulse.
+        sliding = along_ground(contact.commutator(motor >> rate), normal)
+        speed = sliding.dual().norm()
+        step, give = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
+        return rate + (step * clamp(speed / (give + 1e-12), pressed * (dynamic / dt))).sum(axis=0), None
+
+    rate, _ = jax.lax.scan(slow, rate, (parts, pressures))
+    return motor, rate
