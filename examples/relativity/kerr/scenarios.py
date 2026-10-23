@@ -89,7 +89,7 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     # A blackbody shifted in frequency is a blackbody at the shifted temperature.
     temperature = shift * core.disk_temperature(image.disk_radii, core.mv.xy, spin, mass, disk_temperature_scale)
     coherency = core.disk_coherency(points, momenta, screens, core.mv.z, spin, mass, polarization_degree)
-    analyzers = (core.mv.xy * (-polarizer_angles / 2)).exp() >> core.mv.x.dual()   # [analyzers] Screen
+    analyzers = (core.mv.xy * (-polarizer_angles / 2)).exp() >> core.mv.x       # [analyzers] ScreenSlice
     return image, temperature, core.transmitted(coherency, analyzers[:, None])
 
 

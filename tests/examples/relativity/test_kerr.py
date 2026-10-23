@@ -287,15 +287,17 @@ def test_disk_coherency_through_a_rotating_polarizer():
     screen = core.camera_screen(position, momentum, orientation, spin, mass)
     coherency = core.disk_coherency(
         position, momentum, screen, mv.z, spin, mass, polarization_degrees[:, None])
-    analyzer = (mv.xy * (angles / 2)).exp() >> X
-    opposite = (mv.xy * ((angles + np.pi) / 2)).exp() >> X
+    analyzer = (mv.xy * (angles / 2)).exp() >> mv.x
+    opposite = (mv.xy * ((angles + np.pi) / 2)).exp() >> mv.x
     transmitted = core.transmitted(coherency, analyzer)
     repeated = core.transmitted(coherency, opposite)
     expected = ((1 - polarization_degrees[:, None]) / 2
                 + polarization_degrees[:, None] * np.sin(angles) ** 2)
 
     # Azimuthal magnetic field and a normal ray give maximal linear polarization.
-    np.testing.assert_allclose(coherency.trace().kernel, 1, atol=ROUND_OFF, rtol=0)
+    # The intensity: the coherency's form traced against the metric on the camera's slices.
+    intensity = (core.ScreenSlice & coherency(core.ScreenSlice)).contract()
+    np.testing.assert_allclose(intensity.kernel, 1, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose(transmitted.kernel[..., 0], expected, atol=ROUND_OFF, rtol=0)
     np.testing.assert_allclose((repeated - transmitted).kernel, 0, atol=ROUND_OFF, rtol=0)
 

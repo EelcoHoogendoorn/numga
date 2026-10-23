@@ -43,8 +43,11 @@ Spin = Bivector.derive.within("x y z")
 Rotor = ga.gatype.rotor()
 # Directions on the camera's screen, along its own x and y: the antivectors that hold both t and z.
 Screen = Antivector.derive.containing("t z")
+# The camera's slices x and y, which read screen directions: vectors, extrinsic.
+ScreenSlice = Vector.derive.within("x y")
 ScreenFrame = ga.gatype((Antivector, Screen))                # Antivector <- Screen
-Coherency = ga.gatype((Screen, Screen))                      # Screen <- Screen
+# The light's polarization covariance, from the slices that read the screen to screen directions.
+Coherency = ga.gatype((Screen, ScreenSlice))                 # Screen <- ScreenSlice
 DirectionGradient = ga.gatype((Antivector, Antivector))      # Antivector <- Antivector
 # The position gauge field: from a direction of the local frame to one of the Kerr geometry.
 GaugeField = ga.gatype((Antivector, Antivector))             # Antivector <- Antivector
@@ -185,13 +188,16 @@ def disk_coherency(position: Antivector, momentum: Vector, screen: ScreenFrame,
     polarization = screen.adjoint()(polarization_axis)                                      # [...] Screen
     # Polarization vanishes smoothly when looking along the magnetic direction.
     polarized_fraction = polarization_degree * polarization.squared()                       # [...] Scalar
-    return ((1 - polarized_fraction) / 2 * Screen
-            + polarization_degree * polarization * (polarization | Screen))                 # [...] Screen <- Screen
+    # Unpolarized light is round, where the metric enters; the polarized part weights the polarization by
+    # each slice's reading of it.
+    return ((1 - polarized_fraction) / 2 * ScreenSlice.dual()
+            + polarization_degree * polarization * (ScreenSlice & polarization))            # [...] Screen <- ScreenSlice
 
 
-def transmitted(coherency: Coherency, analyzers: Screen) -> Scalar:
-    """The power each unit analyzer passes: its quadratic readout of the coherency."""
-    return analyzers | coherency(analyzers)                                                 # [...] Scalar
+def transmitted(coherency: Coherency, analyzers: ScreenSlice) -> Scalar:
+    """The power each unit analyzer passes, an analyzer being the slice that reads the screen across its
+    axis's normal: its reading of the coherency's image of itself."""
+    return analyzers & coherency(analyzers)                                                 # [...] Scalar
 
 
 def frequency_ratio(position: Antivector, momentum: Vector, camera: Antivector, orbit: Bivector,
