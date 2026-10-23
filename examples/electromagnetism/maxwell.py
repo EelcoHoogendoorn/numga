@@ -1,13 +1,17 @@
 r"""Stress-energy in the spacetime algebra: of an electromagnetic field, of dust, of a cloud of particles, and
-of an ideal fluid, each a map from a direction in spacetime to the flow of energy and momentum along it.
+of an ideal fluid, each a map from a translation in spacetime, a direction, to the current of energy and
+momentum that goes with it.
 
-The stress-energy of a field is half its sandwich of a direction, `0.5 * (field >> Antivector)`: the
-observer's direction in time picks out the energy current, which the observer's slice of space reads as the
-energy density, `mv.t & stress(time)`; the rest of that current is the Poynting flux, and the map's trace
+The metric enters only through the laws that turn motion into momentum. A field's stress-energy is built
+from the field and its excitation alone, `stress_energy(field, vacuum(field))`, so the metric sits in the
+vacuum's constitutive law; it equals half the field's sandwich of a translation, `0.5 * (field >> Antivector)`.
+The observer's direction in time picks out the energy current, which the observer's slice of space reads as
+the energy density, `mv.t & stress(time)`; the rest of that current is the Poynting flux, and the map's trace
 vanishes. It is also the Lorentz force applied twice, less the field's Lagrangian as a pressure; and for a
 wave running one way it collapses to a single dyad along the ray, the stress-energy of light, massless dust.
-Dust moving at a velocity is the dyad of that velocity with its own slice of space, `-velocity.dual()`, the
-slice that reads it as one; its trace is the rest density. Summed over a cloud of particles moving every way
+Dust moving at a velocity is that velocity times its momentum's reading of the translation, where the
+momentum of a unit mass is the slice that reads the velocity as one, `-velocity.dual()`: dust's mass law, and
+its one use of the metric. Its trace is the rest density. Summed over a cloud of particles moving every way
 at one speed, the dyads become an ideal fluid: its timelike eigenvalue is the energy density, its spatial
 ones minus the pressure. A cloud of light rays is traceless, so its pressure is exactly a third of its energy
 density. Every one of these maps moves under a boost as any map does, `boost >> stress(boost << Antivector)`,
@@ -32,10 +36,14 @@ mv = ctx.multivector
 
 Scalar = STA.gatype.scalar()
 Bivector = STA.gatype.bivector()
-# Directions in spacetime: velocities, rays, the normals of faces, and the currents of energy and momentum.
+# Directions in spacetime: velocities, rays, translations, the normals of faces, and the currents of energy and
+# momentum.
 Antivector = STA.gatype.antivector()
-# A stress-energy map takes a direction to the current of energy and momentum along it.
+Antibivector = STA.gatype.antibivector()
+# A stress-energy map takes a translation to the current of energy and momentum that goes with it.
 StressEnergy = STA.gatype((Antivector, Antivector))  # Antivector <- Antivector
+# The vacuum's constitutive law, from a field to its excitation: the one place the field meets the metric.
+vacuum = Bivector.dual()                             # Antibivector <- Bivector
 
 # The observer at rest: its slice of space `mv.t` and its direction in time, which pairs to one with that
 # slice; the dual carries the minus of t's square. And the directions of space.
@@ -92,10 +100,23 @@ def null_cloud(n_rays: int, rng: np.random.Generator) -> Antivector:
     return time + sphere_directions(n_rays, rng)
 
 
+def stress_energy(field: Bivector, excitation: Antibivector) -> StressEnergy:
+    """Electromagnetic stress-energy from the field and its excitation, with no metric: from a translation to
+    the current of energy and momentum that goes with it."""
+    # The field paired with its excitation is minus twice the Lagrangian.
+    negative_lagrangian = (field & excitation) / 2
+    # Minus the Lagrangian along the translation, less the field read along the translation wedged with the
+    # excitation.
+    return negative_lagrangian * Antivector - ((Antivector & field) ^ excitation)
+
+
 def flow(velocities: Antivector) -> StressEnergy:
-    """The dyad of each velocity or ray with its own slice of space: the stress-energy of a unit of dust, its
-    output embedded among all directions."""
-    return (velocities * (-velocities.dual() & Antivector)).cast(StressEnergy)
+    """The stress-energy of a unit of dust at each velocity, or of light along each ray: the velocity, times its
+    momentum's reading of the translation, its output embedded among all directions."""
+    # Dust's mass law, and its one use of the metric: a unit mass's momentum is the slice that reads its
+    # velocity as one.
+    momentum = -velocities.dual()                                              # [...] Vector
+    return (velocities * (momentum & Antivector)).cast(StressEnergy)
 
 
 # --- math -----------------------------------------------------------------------------
@@ -105,7 +126,7 @@ def main() -> None:
     # A plane wave along +z, its electric field along x and its magnetic field along y, and its
     # stress-energy: for the observer at rest, the energy density and the Poynting flux.
     wave = electric_strength * electric(along_x) + magnetic_strength * magnetic(along_y)   # [] Bivector
-    wave_stress: StressEnergy = 0.5 * (wave >> Antivector)                     # [] Antivector <- Antivector
+    wave_stress: StressEnergy = stress_energy(wave, vacuum(wave))              # [] Antivector <- Antivector
     current = wave_stress(time)                                                # [] Antivector
     energy = mv.t & current                                                    # [] Scalar
     poynting = current - time * energy                                         # [] Antivector
@@ -163,8 +184,9 @@ def main() -> None:
     np.testing.assert_allclose([normal_stress(wave_stress, normal).to_array() for normal in (along_x, along_y)], 0.0, atol=1e-14)
     np.testing.assert_allclose(normal_stress(wave_stress, along_z).to_array(), -total, atol=1e-14)
     np.testing.assert_allclose(wave_stress.trace().kernel, 0.0, atol=1e-14)
+    np.testing.assert_allclose((wave_stress - 0.5 * (wave >> Antivector)).kernel, 0.0, atol=1e-14)
     np.testing.assert_allclose((wave_stress - electric_strength**2 * flow(ray)).kernel, 0.0, atol=1e-14)
-    np.testing.assert_allclose((0.5 * (field >> Antivector)).kernel, stress_from_force.kernel, atol=1e-14)
+    np.testing.assert_allclose(stress_energy(field, vacuum(field)).kernel, stress_from_force.kernel, atol=1e-14)
     np.testing.assert_allclose([normal_stress(dust, normal).to_array() for normal in (along_x, along_y, along_z)], 0.0, atol=1e-14)
     np.testing.assert_allclose(dust.trace().kernel, density.to_array(), atol=1e-14)
     np.testing.assert_allclose((mv.t & moving_dust(time)).to_array(), (density * gamma**2).to_array(), atol=1e-14)
@@ -179,7 +201,7 @@ def main() -> None:
     np.testing.assert_allclose(fluid.kernel, cloud.kernel, atol=0.02)
     np.testing.assert_allclose(radiation.trace().kernel, 0.0, atol=1e-13)
     np.testing.assert_allclose(force(along_x).to_array(), charge_density * gamma * (electric_strength - beta * magnetic_strength), atol=1e-14)
-    np.testing.assert_allclose(boosted_stress.kernel, (0.5 * ((boost >> wave) >> Antivector)).kernel, atol=1e-14)
+    np.testing.assert_allclose(boosted_stress.kernel, stress_energy(boost >> wave, vacuum(boost >> wave)).kernel, atol=1e-14)
     np.testing.assert_allclose((boost >> dust(boost << Antivector)).kernel, moving_dust.kernel, atol=1e-14)
 
 

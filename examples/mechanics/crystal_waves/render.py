@@ -14,9 +14,9 @@ CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 MARGIN = 0.2
 
 
-def components(vectors: core.Vector) -> np.ndarray:
-    """Euclidean components of vectors."""
-    return vectors.cast(core.ga.subspace("x y z")).kernel
+def components(directions: core.Antivector) -> np.ndarray:
+    """Euclidean components of directions, read by the planes across the axes, on the last axis."""
+    return (core.axes & directions[..., None]).to_array()
 
 
 def cross(ax: plt.Axes, limit: float, across: str, up: str) -> None:

@@ -76,9 +76,9 @@ def inertia(shape: Shape, density: np.ndarray, fluid_density: np.ndarray, n_wide
     """The inertia of a solid ellipsoid of each shape and the given density, together with the ideal
     fluid of the given density it moves through."""
     widenings, weights = quadrature(n_widenings)
-    # The mean squared semi-axis sets the scale of the widenings, and the body's volume is a square root of
-    # the shape's determinant.
-    scale = shape.trace() / 3                                                    # [...] Scalar
+    # The mean squared semi-axis, the trace over the axes, sets the scale of the widenings, and the body's
+    # volume is a square root of the shape's determinant.
+    scale = shape.trace() / len(axes)                                            # [...] Scalar
     volume = 4 / 3 * np.pi * shape.det().square_root()                           # [...] Scalar
     # The confocal ellipsoids, every squared semi-axis grown by the same widening, each weighed by the
     # body's volume over its own.
@@ -89,10 +89,11 @@ def inertia(shape: Shape, density: np.ndarray, fluid_density: np.ndarray, n_wide
     shifting = (confocal.inverse() * weight).sum(axis=-1)                        # [...] Direction <- Direction
     turning = (confocal.inverse().outermorphism(Couple) * weight).sum(axis=-1)   # [...] Couple <- Couple
     # On each couple, the outermorphism multiplies the squared semi-axes in its plane and `spread` adds them:
-    # the shape's trace less the squared semi-axis square to the plane. Their discriminant is the square of
-    # their difference, which vanishes for a turn about an axis of symmetry: such a turn moves no fluid.
+    # the mixed term of the outermorphism of the shape plus the identity, the shape acting on one direction of
+    # the couple at a time. Their discriminant is the square of their difference, which vanishes for a turn
+    # about an axis of symmetry: such a turn moves no fluid.
     areas = shape.outermorphism(Couple)                                          # [...] Couple <- Couple
-    spread = shape.trace() * Couple - shape.det() * areas.inverse()              # [...] Couple <- Couple
+    spread = (Direction + shape).outermorphism(Couple) - Couple - areas          # [...] Couple <- Couple
     discriminant = spread(spread) - 4 * areas                                    # [...] Couple <- Couple
     # The fluid's mass under a shift and its inertia under a turn, per unit of the displaced fluid's mass.
     shift_mass = (2 * Direction - shifting).solve(shifting)                      # [...] Direction <- Direction
