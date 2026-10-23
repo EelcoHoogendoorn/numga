@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.arap import core
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, show_pixels, solids
 
 # The checkerboard's two colours, the view, elevation and azimuth in radians, azimuth zero looking along +y, the box
 # it shows and the margin around it, as a share of its larger side, and the pixels across a picture.
@@ -48,8 +48,7 @@ def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndar
     colours = checker(bar.vertices, bar.faces, cell)
     figure, axes = plt.subplots(1, len(shapes), figsize=(4 * len(shapes), 4), dpi=100, squeeze=False)
     for ax, shape, title in zip(axes[0], shapes, titles):
-        ax.imshow(picture(shape, bar.faces, colours))
-        ax.set_axis_off()
+        show_pixels(ax, picture(shape, bar.faces, colours))
         ax.set_title(title)
     return figure
 

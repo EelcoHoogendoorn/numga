@@ -137,8 +137,7 @@ def steering_frames(points: np.ndarray, targets: np.ndarray, weights: np.ndarray
     def landed(target: np.ndarray, weight: np.ndarray) -> np.ndarray:
         return landing.draw([(dots(target, LANDING_RADIUS * view.pixel * np.sqrt(weight)), colours)])
 
-    image = landed_ax.imshow(landed(targets[0], weights[0]), extent=view.extent, interpolation="bilinear")
-    landed_ax.set_axis_off()
+    image = show(landed_ax, landed(targets[0], weights[0]), view)
     for target, weight in zip(targets, weights):
         image.set_data(landed(target, weight))
         yield capture(figure)

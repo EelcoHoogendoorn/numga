@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.dirac_waves import core
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, show_pixels, solids
 
 Mesh = core.Mesh
 
@@ -94,6 +94,5 @@ def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:
     """A vertex field `Even[V]` and a face field `Even[F]` on the surface, exposed together."""
     picture, = animate(mesh, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))
-    ax.imshow(picture)
-    ax.set_axis_off()
+    show_pixels(ax, picture)
     return figure

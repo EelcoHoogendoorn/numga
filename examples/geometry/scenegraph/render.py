@@ -171,9 +171,8 @@ def draw_scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple) -> plt
 
 def draw_camera_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> plt.Figure:
     """The sensor photograph on its own."""
-    fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=140)
+    fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=140, layout="constrained")
     plot_camera_image(ax, world_vertices, projected_pixels, camera_pose)
-    fig.tight_layout()
     return fig
 
 

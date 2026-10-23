@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.manipulability import core
-from examples.util.wgsl import solids
+from examples.util.wgsl import show_pixels, solids
 
 mv, w = core.mv, core.w
 box_colours = np.array([[0.45, 0.47, 0.52], [0.62, 0.64, 0.70], [0.78, 0.60, 0.30], [0.30, 0.55, 0.62], [0.55, 0.40, 0.60]])
@@ -48,7 +48,5 @@ def draw_ellipsoids(poses, view, centre: np.ndarray, extent: float, pixels: int)
     """One row per pose: the velocity ellipsoid beside the force ellipsoid, at the gripper."""
     figure, axes = plt.subplots(len(poses), 1, figsize=(11, 5.5 * len(poses)))
     for ax, pose in zip(np.atleast_1d(axes), poses):
-        ax.imshow(frame(pose, view, centre, extent, pixels), interpolation="bilinear")
-        ax.set_axis_off()
-    figure.tight_layout()
+        show_pixels(ax, frame(pose, view, centre, extent, pixels))
     return figure

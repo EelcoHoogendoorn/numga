@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.mechanics.shells import core
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, show_pixels, solids
 
 # The sheet's colour and its slight sheen, the view, elevation and azimuth in radians, azimuth zero looking along
 # +y, the margin around a sheet, the room an animation's view leaves around the sheet's first shape for it to spread
@@ -55,8 +55,7 @@ def draw_settled(sheets: list[tuple[np.ndarray, core.Point]]) -> plt.Figure:
     """Settled sheets of faces and points side by side."""
     figure, axes = plt.subplots(1, len(sheets), figsize=(n_pixels * len(sheets) / 100, n_pixels / 100), dpi=100)
     for ax, (faces, points) in zip(axes, sheets):
-        ax.imshow(picture(faces, points, extent(points)))
-        ax.set_axis_off()
+        show_pixels(ax, picture(faces, points, extent(points)))
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return figure
 

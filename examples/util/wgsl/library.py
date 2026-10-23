@@ -82,12 +82,53 @@ def vec3(rgb: np.ndarray) -> str:
     return f"vec3<f32>({', '.join(f'{value:.6f}' for value in rgb)})"
 
 
-def show(ax, image: np.ndarray, view):
-    """An image of a view in matplotlib axes, its middle at the origin, in the scene's units, so that places from
-    `view.across` land where they are seen; without axes. The image, for an animation to set its data."""
-    shown = ax.imshow(image, extent=view.extent, interpolation="nearest")
+def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
+    """An image in matplotlib axes over an extent, left, right, bottom and top, without axes; the image, for an
+    animation to set its data.
+
+    The axes hold the image pixel for pixel: whatever room the figure's layout gives them, they are drawn exactly as
+    many pixels across and up as the image, at the figure's own resolution, about the middle of that room and on whole
+    pixels, so that no pixel of the picture is resampled. Drawn finer, as `capture` draws, each pixel is a whole block
+    of them."""
+    resolution = ax.figure.dpi
+    rows, columns = image.shape[:2]
+
+    def exact(ax, renderer):
+        """The axes' place in the figure: the image's own pixels, about the middle of the room the layout gave them."""
+        from matplotlib.transforms import Bbox
+        figure = ax.figure
+        scale = figure.dpi / resolution
+        width, height = figure.bbox.width, figure.bbox.height
+        room = ax.get_position(original=True)
+        # The top left corner on a whole pixel of the figure's own resolution, and so of any multiple of it, counted
+        # from the top left of the canvas, as its rows of pixels are.
+        canvas_rows = int(renderer.height)
+        left = round(((room.x0 + room.x1) / 2 * width - columns * scale / 2) / scale) * scale
+        top = round((canvas_rows - (room.y0 + room.y1) / 2 * height - rows * scale / 2) / scale) * scale
+        bottom = canvas_rows - top - rows * scale
+        # A millionth of a pixel inwards, so that the round trip through the figure's fractions never lands short of
+        # the whole pixel the corner is on.
+        return Bbox.from_bounds((left + 1e-6) / width, (bottom + 1e-6) / height, columns * scale / width,
+                                rows * scale / height)
+
+    shown = ax.imshow(image, extent=extent, interpolation="nearest", aspect="auto")
+    ax.set_axes_locator(exact)
     ax.set_axis_off()
     return shown
+
+
+def show(ax, image: np.ndarray, view):
+    """An image of a view in matplotlib axes, its middle at the origin, in the scene's units, so that places from
+    `view.across` land where they are seen, held pixel for pixel as `pinned` holds it; the image, for an animation to
+    set its data."""
+    return pinned(ax, image, view.extent)
+
+
+def show_pixels(ax, image: np.ndarray):
+    """An image in matplotlib axes in its own pixels, rows down from the top, held pixel for pixel as `pinned` holds
+    it; the image, for an animation to set its data."""
+    rows, columns = image.shape[:2]
+    return pinned(ax, image, (-0.5, columns - 0.5, rows - 0.5, -0.5))
 
 
 def labels(ax, view, places, texts: list[str], **style) -> None:

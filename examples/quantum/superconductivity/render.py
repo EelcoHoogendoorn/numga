@@ -12,7 +12,7 @@ from matplotlib.figure import Figure
 
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
-from examples.util.wgsl import labels, meshes, solids, strokes
+from examples.util.wgsl import labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
@@ -125,8 +125,7 @@ def animate_quench(
     figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
     axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
     curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
-    image = axis.imshow(arrows(transverse[0]), extent=view.extent, interpolation="bilinear")
-    axis.set_axis_off()
+    image = show(axis, arrows(transverse[0]), view)
     label_chart(axis, view)
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
     gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)

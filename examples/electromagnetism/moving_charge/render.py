@@ -23,9 +23,10 @@ density_colour = "#ea580c"
 # Magnitudes start at white, as the signed fields do at zero.
 strength_colours = "Purples"
 wave_zone = 4.0
-# The speeding-up animations' square window about the grid's middle, as a share of the grid's height: the charge runs
-# across, so its field gathers into an upright band.
-sweep_zoom = 0.85
+# The speeding-up animations' window about the grid's middle: its height as a share of the grid's, and its width as a
+# share of its height. The charge runs across, so its field gathers into an upright band, and the two panels side by
+# side make a square.
+sweep_zoom, sweep_aspect = 0.85, 0.5
 wave_percentile = 99.0
 wave_power = 0.4
 charge_colour = "#facc15"
@@ -60,12 +61,13 @@ def panel(ax: Axes, events: core.Antivector, values: np.ndarray, colours: str, n
     return image
 
 
-def squared(axes: list[Axes], events: core.Antivector, zoom: float) -> None:
-    """Each of the axes framed on a square about the middle of the grid's box, `zoom` of its height across."""
+def windowed(axes: list[Axes], events: core.Antivector, zoom: float, aspect: float) -> None:
+    """Each of the axes framed on a window about the middle of the grid's box, `zoom` of its height high and `aspect`
+    of that wide."""
     left, right, bottom, top = extent(events)
     middle, half = np.array([left + right, bottom + top]) / 2, zoom * (top - bottom) / 2
     for ax in axes:
-        ax.set(xlim=(middle[0] - half, middle[0] + half), ylim=(middle[1] - half, middle[1] + half))
+        ax.set(xlim=(middle[0] - aspect * half, middle[0] + aspect * half), ylim=(middle[1] - half, middle[1] + half))
 
 
 def electric_strength(field: core.Bivector) -> np.ndarray:
@@ -108,17 +110,17 @@ def densities(events: core.Antivector, current: core.Antivector) -> plt.Figure:
 
 
 def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector,
-          zoom: float = sweep_zoom) -> Iterator[np.ndarray]:
-    """Electric field strength with the charge's outline, and magnetic field, one frame per case, each in a square
-    window `zoom` of the grid's height across. One figure is updated in place and drawn once per frame, without
+          zoom: float = sweep_zoom, aspect: float = sweep_aspect) -> Iterator[np.ndarray]:
+    """Electric field strength with the charge's outline, and magnetic field, one frame per case, each in an upright
+    window, `zoom` of the grid's height high and `aspect` of that wide, side by side in a square. One figure is updated in place and drawn once per frame, without
     supersampling, to keep pace."""
     xy = coordinates(events)
     strengths, magnetic, charge_densities = electric_strength(field), magnetic_across(field), density(current)
-    result = plt.figure(figsize=(11, 11 / 2 + 0.2), dpi=80, layout="constrained")
+    result = plt.figure(figsize=(7, 7), dpi=80, layout="constrained")
     axes = result.subplots(1, 2)
     images = (panel(axes[0], events, strengths[0], strength_colours, LogNorm(*electric_range)),
               panel(axes[1], events, magnetic[0], "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
-    squared(axes, events, zoom)
+    windowed(axes, events, zoom, aspect)
     for strength, across, value in zip(strengths, magnetic, charge_densities):
         images[0].set_data(strength)
         images[1].set_data(across)
@@ -131,18 +133,18 @@ def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivecto
 
 
 def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]],
-            zoom: float = sweep_zoom) -> Iterator[np.ndarray]:
+            zoom: float = sweep_zoom, aspect: float = sweep_aspect) -> Iterator[np.ndarray]:
     """Electric field strength with the charge's outline, and magnetic field, a frame for each of the lab's views
-    over one grid of events, each in a square window `zoom` of the grid's height across: one figure set up for the
-    first, its images' data set for each."""
+    over one grid of events, each in an upright window, `zoom` of the grid's height high and `aspect` of that wide,
+    side by side in a square: one figure set up for the first, its images' data set for each."""
     states = iter(frames)
     events, field, current = next(states)
     xy = coordinates(events)
-    figure = plt.figure(figsize=(11, 11 / 2 + 0.2), dpi=80, layout="constrained")
+    figure = plt.figure(figsize=(7, 7), dpi=80, layout="constrained")
     left, right = figure.subplots(1, 2)
     images = (panel(left, events, electric_strength(field), strength_colours, LogNorm(*electric_range)),
               panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
-    squared([left, right], events, zoom)
+    windowed([left, right], events, zoom, aspect)
     for _, field, current in chain([(events, field, current)], states):
         images[0].set_data(electric_strength(field))
         images[1].set_data(magnetic_across(field))
