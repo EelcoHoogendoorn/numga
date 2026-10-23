@@ -157,6 +157,6 @@ def test_figures_and_animation_draw():
         render.draw_packet(time, *wave_packet(time, scenarios.wave_duration, scenarios.n_cycles, scenarios.wave_amplitude)),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
-    frames = render.animate_detector(time[::100], reference, displacement[::100], acceleration[::100],
-                                     scenarios.amplification)
+    frames = list(render.animate_detector(time[::100], reference, displacement[::100], acceleration[::100],
+                                          scenarios.amplification))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

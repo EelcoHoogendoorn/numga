@@ -76,7 +76,7 @@ def test_scenes_pass_their_checks_and_draw():
     figure = render.draw(directions, area, scenarios.deflected, scenarios.POSITIONS, steps[0])
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(render.animate(directions, area, scenarios.deflected, scenarios.POSITIONS, steps)) == 3
+    assert len(list(render.animate(directions, area, scenarios.deflected, scenarios.POSITIONS, steps))) == 3
 
 
 def test_the_local_map_is_undone_by_its_trace_two_inverse():

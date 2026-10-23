@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -83,15 +85,13 @@ def _update(beam: LineCollection, field_lines: LineCollection, plate_lines: Line
 
 
 def frames(fields: core.Field, plate_axes: core.Direction, input_axis: core.Direction,
-           output_axis: core.Direction) -> list[np.ndarray]:
+           output_axis: core.Direction) -> Iterator[np.ndarray]:
     """The plates' axes turn together while the second stack's outgoing beam stays dark; above the beam,
     the field between components."""
     figure, beam, field_lines, plate_lines = _scene(_coordinates(input_axis), _coordinates(output_axis))
     field_values = _components(fields)                                           # [frames, stages, 2]
     axis_values = _coordinates(plate_axes)                                       # [frames, 2]
-    images = []
     for field, plate_axis in zip(field_values, axis_values):
         _update(beam, field_lines, plate_lines, field, plate_axis)
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images

@@ -198,4 +198,4 @@ def test_scenes_draw():
     for figure in (render.draw_incidence(events, rays), render.draw_congruence(curves),
                    render.draw_fields(curves)):
         plt.close(figure)
-    render.animate_fields(scenarios.propagation(TIMES))
+    list(render.animate_fields(scenarios.propagation(TIMES)))

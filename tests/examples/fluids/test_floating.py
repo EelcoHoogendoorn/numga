@@ -64,5 +64,5 @@ def test_figures_draw():
         plt.close(figure)
     frames = scenarios.released(hull, weight, centres[scenarios.RELEASED])
     first = [next(frames)]
-    assert len(render.animate_release(hull, centres[scenarios.RELEASED], first, scenarios.HEELS,
-                                      couples[:, scenarios.RELEASED], weight)) == 1
+    assert len(list(render.animate_release(hull, centres[scenarios.RELEASED], first, scenarios.HEELS,
+                                           couples[:, scenarios.RELEASED], weight))) == 1

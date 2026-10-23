@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Circle
@@ -47,7 +49,7 @@ def _read(directions: core.Antivector, *slices: str) -> np.ndarray:
 
 def animate_rotation(
     spin: core.Antivector, bright: core.Scalar, dark: core.Scalar,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """The spin direction beside two interference outputs against a fixed reference."""
     directions = _read(spin, "x", "z")
     figure, (axis, ports) = plt.subplots(1, 2, figsize=(6.8, 3.2), dpi=85, layout="constrained")
@@ -64,14 +66,12 @@ def animate_rotation(
     ports.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
     ports.set_axis_off()
     cross(axis, "x", "z")
-    frames = []
     for direction, first, second in zip(directions, bright.to_array(), dark.to_array()):
         arrow.set_UVC(*direction)
         for disk, intensity in zip(disks, (first, second)):
             disk.set_alpha(float(np.clip(intensity, 0, 1)))
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 
 
 def draw_chirality(

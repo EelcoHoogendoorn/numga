@@ -4,6 +4,8 @@ hides what lies behind it."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -95,7 +97,8 @@ def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figu
     return figure
 
 
-def animate(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> list[np.ndarray]:
+def animate(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> Iterator[np.ndarray]:
     """The two panels side by side at every frame of a batch of circles, seen by one camera framing them all."""
     frame = view(core.apexes(circles))
-    return [np.concatenate(panels(circles[index], faces, edges, frame), axis=1) for index in range(circles.shape[0])]
+    for index in range(circles.shape[0]):
+        yield np.concatenate(panels(circles[index], faces, edges, frame), axis=1)

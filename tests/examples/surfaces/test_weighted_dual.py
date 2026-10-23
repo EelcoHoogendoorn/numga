@@ -29,7 +29,7 @@ def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres
 def test_the_figure_and_two_frames_draw():
     frames = [frame for _, frame in zip(range(2), scenarios.breath())]
     plt.close(render.draw_complex(*frames[0]))
-    assert len(render.animate(frames)) == 2
+    assert len(list(render.animate(frames))) == 2
 
 
 def test_the_nearest_rescue_unfolds_the_mesh_steadily():

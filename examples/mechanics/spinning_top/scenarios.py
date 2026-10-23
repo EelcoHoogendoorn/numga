@@ -124,7 +124,7 @@ def main() -> None:
     runs = {}
     for name, setup in VARIATIONS.items():
         states = list(spin(setup, RUNTIME, STEP, N_STEPS_PER_FRAME))
-        frames = [render.frame(motor, parts, ground, VIEW, CENTRE, EXTENT, PIXELS) for motor, _, parts, ground in states]
+        frames = (render.frame(motor, parts, ground, VIEW, CENTRE, EXTENT, PIXELS) for motor, _, parts, ground in states)
         save_animation(frames, f"spinning_top_{name}", FRAME_DURATION)
         runs[name] = states
 

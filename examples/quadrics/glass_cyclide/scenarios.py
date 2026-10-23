@@ -89,7 +89,7 @@ def main() -> None:
     still, = render.frames(tracer, quadrics, solid_values, turns, eyes, lamp, half_view, image_shape)
     save_figure(image_figure(still), "glass_cyclide")
     turns, eyes = cameras(n_frames)
-    save_animation(list(render.frames(tracer, quadrics, solid_values, turns, eyes, lamp, half_view, animation_shape)),
+    save_animation(render.frames(tracer, quadrics, solid_values, turns, eyes, lamp, half_view, animation_shape),
                    "glass_cyclide", duration_ms)
 
     # --- checks

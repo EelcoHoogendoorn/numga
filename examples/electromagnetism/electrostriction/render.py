@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -89,11 +91,11 @@ def draw_lattice(rest: Point, bonds: np.ndarray, positions: Point, dipoles: Poin
 
 
 def animate_lattice(rest: Point, bonds: np.ndarray, positions: Point, dipoles: Point,
-                    applied: Field, dipole_scale: float, field_scale: float) -> list[np.ndarray]:
+                    applied: Field, dipole_scale: float, field_scale: float) -> Iterator[np.ndarray]:
     view = LatticeView(rest, bonds, dipole_scale, field_scale)
-    frames = [capture(view.update(*state)) for state in zip(positions, dipoles, applied)]
+    for state in zip(positions, dipoles, applied):
+        yield capture(view.update(*state))
     plt.close(view.figure)
-    return frames
 
 
 def draw_loading(strengths: np.ndarray, parallel: Scalar, transverse: Scalar) -> plt.Figure:

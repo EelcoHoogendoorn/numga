@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +14,7 @@ from numga import stack
 from examples.util.animation import capture
 from examples.electromagnetism.second_harmonic import core
 from examples.util.wgsl import labels, show, solids
+from examples.util.wgsl.scene import Scene
 
 PUMP_COLOUR = "#3275a8"
 GENERATED_COLOUR = "#d16a30"
@@ -73,20 +74,25 @@ def screen_axes(axes: plt.Axes, limit: float) -> None:
     cross(axes, np.array([[-limit, limit], [-limit, limit]]), "$y - x$", "$z$")
 
 
-def crystal_image(bonds: np.ndarray, view: solids.View) -> np.ndarray:
-    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, in the frame of
-    space, with the beam through them."""
-    ends = sm.point(bonds)                                                   # [bonds] Point
+def space_scene(view: solids.View) -> Scene:
+    """The frame of space, its centre and the beam through it, for the bonds to be drawn among."""
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
     beam_shaft, beam_head = solids.arrows(sm.point(-BEAM_REACH * BEAM), sm.point(BEAM_REACH * BEAM),
                                           ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     beam_colour = np.array(to_rgb(PUMP_COLOUR))
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
-             (solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
-             (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR))),
              (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
-    return solids.draw(parts, view, np.ones(3))
+    return Scene(view, np.ones(3), parts, [])
+
+
+def crystal_image(bonds: np.ndarray, scene: Scene) -> np.ndarray:
+    """The bonds `[bonds, 3]` as rods from their shared centre to their ends, the tetrahedral geometry, among the
+    scene's frame of space and beam."""
+    ends = sm.point(bonds)                                                   # [bonds] Point
+    view = scene.view
+    return scene.draw([(solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
+                       (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR)))])
 
 
 class ResponseView:
@@ -106,6 +112,7 @@ class ResponseView:
         # The crystal's image, blank until the bonds are drawn, with each axis named just past its arrow's tip.
         self.view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF_WIDTH), N_PIXELS)
         self.crystal = show(crystal_axes, np.full((*self.view.shape, 3), 255, dtype=np.uint8), self.view)
+        self.scene = space_scene(self.view)
         labels(crystal_axes, self.view, sm.point(np.concatenate([LABEL_DISTANCE * np.eye(3), [BEAM_REACH * 1.12 * BEAM]])),
                ["x", "y", "z", "beam"], ha="center", va="center", fontsize=11, color=LABEL_COLOUR)
 
@@ -135,7 +142,7 @@ class ResponseView:
         bonds = coordinates(bonds)                                           # [bonds, 3]
         harmonic = transverse_polarization(harmonic)                         # [angles, 2]
         intensity = (harmonic ** 2).sum(axis=-1)                             # [angles]
-        self.crystal.set_data(crystal_image(bonds, self.view))
+        self.crystal.set_data(crystal_image(bonds, self.scene))
         self.harmonic_curve.set_data(harmonic[:, 0], harmonic[:, 1])
         self.generated_arrow.set_UVC(*harmonic[0])
         self.intensity_curve.set_data(self.angles, intensity)
@@ -213,13 +220,11 @@ def draw_growth(depths: np.ndarray, amplitude: core.Polarization) -> plt.Figure:
     return figure
 
 
-def animate(pumps: core.Field, frames: Iterable[tuple[core.Direction, core.Polarization]]) -> list[np.ndarray]:
+def animate(pumps: core.Field, frames: Iterable[tuple[core.Direction, core.Polarization]]) -> Iterator[np.ndarray]:
     """The response while the crystal turns about the beam, one frame per turn."""
     view = ResponseView(pumps)
-    images = []
     for bonds, harmonic in frames:
-        images.append(capture(view.update(bonds, harmonic)))
+        yield capture(view.update(bonds, harmonic))
         # The first frame places the panels; the frames after it keep those places.
         view.figure.set_layout_engine("none")
     plt.close(view.figure)
-    return images

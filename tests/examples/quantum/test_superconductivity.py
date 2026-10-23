@@ -82,7 +82,7 @@ def test_figures_and_animation_draw(quench):
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
-    frames = render.animate_quench(model.dispersion, history[:2], model.gap(history[:2]), times[:2])
+    frames = list(render.animate_quench(model.dispersion, history[:2], model.gap(history[:2]), times[:2]))
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])
 

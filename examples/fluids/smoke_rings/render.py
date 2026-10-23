@@ -1,22 +1,24 @@
 """Drawing for the smoke ring flow, on the GPU: the Hashimoto surface swept by a curve, as shaded strips between the
 curve at successive times; the tubes swept by several rings, cut open to show how they pass through each other;
-curves flowing, as tubes coloured by how fast each part moves; and the turning angle along a curve through time.
+curves flowing, as strokes coloured by how fast each part moves; and the turning angle along a curve through time.
 Curves are polylines; a closed one repeats its first vertex at the end."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
 from examples.fluids.smoke_rings import core
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 # The surface's colour from the first time to the last, and the colours of the rings' swept tubes, one per ring; the
 # curves' colours by speed, from blue at rest to green at the fastest, the stretch of the map light enough to show its
-# shading and short of its pale end, and their glint.
+# shading and short of its pale end.
 early, late = np.array([0.93, 0.88, 0.78]), np.array([0.55, 0.69, 0.80])
-speed_map, rest_share, fastest_share, curve_gloss = "viridis", 0.3, 0.78, 0.7
+speed_map, rest_share, fastest_share = "viridis", 0.3, 0.78
 tubes = np.array([[0.85, 0.52, 0.32], [0.38, 0.58, 0.78]])
 background = np.ones(3)
 # The view, elevation and azimuth in radians, azimuth zero looking along +y, and the margin around the subject as
@@ -26,9 +28,8 @@ margin = 0.05
 n_picture_pixels = 660
 n_frame_pixels = 500
 surface_gloss = 0.1
-# A curve's tube: its radius in pixels, and the vertices around it.
-tube_radius = 6.0
-n_around = 10
+# A curve's width in pixels.
+curve_width = 12.0
 # The share of the largest motion above which a vertex counts as moving, for framing a curve's trail, and
 # the trail's opacity, so that the curve shows through it.
 moving_share = 0.01
@@ -71,13 +72,13 @@ def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
     return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
 
 
-def curve_tubes(points: np.ndarray, speeds: np.ndarray, fastest: float, view: solids.View) -> meshes.Samples:
-    """Polylines `[curves, n, 3]` as tubes, coloured by the speed at each vertex `[curves, n]` against the fastest, at
-    every sample of the view."""
-    rings, faces = meshes.tube(points, tube_radius * view.pixel, n_around)
-    shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * speeds / fastest)[..., :3]   # [curves, n, 3]
-    corners = np.repeat(shades.reshape(-1, 3), n_around, axis=0)[faces]       # [faces, 3, 3]
-    return meshes.samples(rings, faces, corners, meshes.smooth(rings, faces), view, gloss=curve_gloss)
+def curve_strokes(points: np.ndarray, speeds: np.ndarray, fastest: float, view: solids.View) -> meshes.Samples:
+    """Polylines `[curves, n, 3]` as strokes, each segment coloured by the mean speed at its ends, from the speeds at
+    the vertices `[curves, n]`, against the fastest, at every sample of the view."""
+    middles = (speeds[..., :-1] + speeds[..., 1:]) / 2                         # [curves, n - 1]
+    shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * middles / fastest)[..., :3]   # [curves, n - 1, 3]
+    return strokes.segments(points[:, :-1].reshape(-1, 3), points[:, 1:].reshape(-1, 3), shades.reshape(-1, 3),
+                            curve_width, view)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
@@ -107,17 +108,17 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     return image_figure(solids.draw([], view, background, meshes=[(swept, 1.0)]))
 
 
-def animate_curves(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
+def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
     """Frames of curves flowing `[times, ..., n]`, coloured by their speeds `[times, ..., n]`, all from one view and to
     one scale."""
     points, rates = coordinates(curves), speeds.to_array()                     # [times, ..., n, 3], [times, ..., n]
     view, _ = framed(points, n_frame_pixels)
-    flowing = (curve_tubes(curve.reshape(-1, *points.shape[-2:]), rate.reshape(-1, points.shape[-2]), rates.max(), view)
-               for curve, rate in zip(points, rates))
-    return [solids.draw([], view, background, meshes=[(frame, 1.0)]) for frame in flowing]
+    for curve, rate in zip(points, rates):
+        flowing = curve_strokes(curve.reshape(-1, *points.shape[-2:]), rate.reshape(-1, points.shape[-2]), rates.max(), view)
+        yield solids.draw([], view, background, meshes=[(flowing, 1.0)])
 
 
-def animate_trail(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
+def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
     """Frames of a curve flowing `[times, n]`, coloured by its speeds `[times, n]`, each over the surface the curve has
     swept so far, coloured from early to late, and framed on the part of space where the curve moves."""
     points, rates = coordinates(curves), speeds.to_array()                     # [times, n, 3], [times, n]
@@ -132,14 +133,12 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> list[np.ndarray]:
     kept = flat[faces].all(axis=-1)                                            # [times - 1, n - 1, 2]
     share = np.linspace(0, 1, len(points))[:, None, None] * np.ones(points.shape[:2] + (1,))
     colours = ((1 - share) * early + share * late).reshape(-1, 3)
-    images = []
     for time in range(len(points)):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        shown = [(curve_tubes(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(), view), 1.0)]
+        shown = [(curve_strokes(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(), view), 1.0)]
         if len(swept):
             shown.append((sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
-        images.append(solids.draw([], view, background, meshes=shown))
-    return images
+        yield solids.draw([], view, background, meshes=shown)
 
 
 def draw_turns(turns: core.Rotor) -> plt.Figure:

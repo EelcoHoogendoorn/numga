@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
@@ -30,6 +31,8 @@ MARGIN = 0.08
 N_PIXELS = 1000
 TERRAIN_OPACITY = 0.16
 CREASE_WIDTH, BOUNDARY_WIDTH = 7.0, 3.5
+# The room an animation's view leaves above and below the terrain of its first frame, for the heights to move in.
+SWING = 0.02
 BACKGROUND = np.ones(3)
 
 
@@ -91,40 +94,50 @@ def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: s
                        meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 
 
-def panels(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector,
-           framing: solids.View) -> plt.Figure:
-    """Left, the terrain the heights lift the mesh to, its creases coloured by stress, seen by the framing camera;
-    right, the planar truss, its bars coloured by stress, and the reciprocal diagram over it, an edge across every
-    bar."""
+def panels(mesh: core.Mesh, framing: solids.View
+           ) -> tuple[plt.Figure, Callable[[np.ndarray, core.Scalar, core.Vector], None]]:
+    """The figure, laid out once, and what draws heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
+    vertices `[faces] Vector` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
+    seen by the framing camera; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
+    it, an edge across every bar."""
     inner, left, right = core.beside(mesh)
     xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
-    shades = colours(scalars(stresses))                                        # [inner, 4]
     figure = plt.figure(figsize=(10.0, 5.0))
-    show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), terrain(mesh, heights, shades[:, :3], framing), framing)
+    picture = show(figure.add_axes((0.0, 0.0, 0.5, 1.0)), np.zeros(framing.shape + (3,), dtype=np.uint8), framing)
     plane = figure.add_axes((0.5, 0.05, 0.5, 0.9))
-    plane.add_collection(LineCollection(xy[mesh.edges[inner]], colors=shades, linewidths=BAR_WIDTH))
+    bars = plane.add_collection(LineCollection(xy[mesh.edges[inner]], linewidths=BAR_WIDTH))
     plane.add_collection(LineCollection(xy[mesh.edges[mesh.boundary_edges]], colors="0.5", linewidths=1.0))
-    centres = coordinates(duals)[:, :2]                                        # [faces, 2]
-    plane.add_collection(LineCollection(centres[np.stack([left, right], axis=-1)], colors=RECIPROCAL_COLOUR, linewidths=1.0))
-    plane.scatter(*centres.T, color=RECIPROCAL_COLOUR, s=8, zorder=3)
+    diagram = plane.add_collection(LineCollection([], colors=RECIPROCAL_COLOUR, linewidths=1.0))
+    vertices = plane.scatter(np.zeros(0), np.zeros(0), color=RECIPROCAL_COLOUR, s=8, zorder=3)
     plane.set(xlim=(-REACH, REACH), ylim=(-REACH, REACH), aspect="equal")
     plane.set_axis_off()
-    return figure
+
+    def drawn(heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> None:
+        shades = colours(scalars(stresses))                                    # [inner, 4]
+        picture.set_data(terrain(mesh, heights, shades[:, :3], framing))
+        bars.set_color(shades)
+        centres = coordinates(duals)[:, :2]                                    # [faces, 2]
+        diagram.set_segments(centres[np.stack([left, right], axis=-1)])
+        vertices.set_offsets(centres)
+
+    return figure, drawn
 
 
 def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> plt.Figure:
     """The terrain beside the planar truss and its reciprocal diagram, the terrain framed on itself."""
-    return panels(mesh, heights, stresses, duals, view(mesh, heights))
+    figure, drawn = panels(mesh, view(mesh, heights))
+    drawn(heights, stresses, duals)
+    return figure
 
 
-def animate(mesh: core.Mesh, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> list[np.ndarray]:
+def animate(mesh: core.Mesh, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> Iterator[np.ndarray]:
     """The figure at every frame: its heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
-    vertices `[faces] Vector`, the terrain seen by one camera framing every frame."""
-    frames = list(frames)
-    framing = view(mesh, np.stack([heights for heights, _, _ in frames]))
-    images = []
-    for heights, stresses, duals in frames:
-        figure = panels(mesh, heights, stresses, duals, framing)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+    vertices `[faces] Vector`, the terrain seen by one camera framing the first frame's with room for the heights to
+    move."""
+    frames = iter(frames)
+    first = next(frames)
+    figure, drawn = panels(mesh, view(mesh, first[0] + np.array([-SWING, SWING])[:, None]))
+    for heights, stresses, duals in chain([first], frames):
+        drawn(heights, stresses, duals)
+        yield capture(figure)
+    plt.close(figure)

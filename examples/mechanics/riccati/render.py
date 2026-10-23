@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
@@ -143,7 +145,7 @@ def print_costs(
 def animate(
     hull: core.Point, mounts: core.Point, directions: core.Point, poses: core.Motor, commands: core.Scalar,
     labels: tuple[str, ...], arrow_scale: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Docking motion with signed thruster arrows, a frame for each pose, on fixed limits shared by every
     case."""
     carried = poses[..., None] >> hull                                   # [times, cases, vertices] Point
@@ -175,12 +177,10 @@ def animate(
 
     figure.canvas.draw()
     figure.set_layout_engine("none")
-    images = []
     for index in range(len(poses)):
         for case, (body, thrust) in enumerate(zip(patches, quivers)):
             body.set_xy(bodies[index, case])
             thrust.set_offsets(bases[index, case])
             thrust.set_UVC(*arrows[index, case].T)
-        images.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return images

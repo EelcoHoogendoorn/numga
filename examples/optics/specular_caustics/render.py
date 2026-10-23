@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -88,11 +88,11 @@ def draw_critical(
 def animate(
     landings: Iterable[core.Horizontal], halfwidth: float, ray_area: float,
     n_pixels: int, blur_pixels: float, exposure: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Read and colour one ray map at a time, keeping the receiver and exposure fixed."""
-    return [np.ascontiguousarray(pixels(
-        irradiance(frame, halfwidth, ray_area, n_pixels, blur_pixels), exposure,
-    )[::-1]) for frame in landings]
+    for frame in landings:
+        density = irradiance(frame, halfwidth, ray_area, n_pixels, blur_pixels)
+        yield np.ascontiguousarray(pixels(density, exposure)[::-1])
 
 
 def draw_paths(

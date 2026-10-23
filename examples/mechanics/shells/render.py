@@ -3,6 +3,9 @@ sheet side by side, and a sheet relaxing frame by frame."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+from itertools import chain
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -10,11 +13,13 @@ from examples.mechanics.shells import core
 from examples.util.wgsl import meshes, solids
 
 # The sheet's colour and its slight sheen, the view, elevation and azimuth in radians, azimuth zero looking along
-# +y, the margin around a sheet, the pixels across a picture, and the duration of a frame.
+# +y, the margin around a sheet, the room an animation's view leaves around the sheet's first shape for it to spread
+# into, as a share of its size, the pixels across a picture, and the duration of a frame.
 colour = np.array([0.82, 0.62, 0.45])
 gloss = 0.08
 elevation, azimuth = np.radians([24.0, 40.0])
 margin = 0.1
+room = 0.08
 n_pixels = 480
 background = np.ones(3)
 DURATION_MS = 50
@@ -56,7 +61,10 @@ def draw_settled(sheets: list[tuple[np.ndarray, core.Point]]) -> plt.Figure:
     return figure
 
 
-def animate(faces: np.ndarray, frames: list[core.Point]) -> list[np.ndarray]:
-    """Frames of a sheet relaxing, all to the scale of its settled shape."""
-    half = extent(frames[-1])
-    return [picture(faces, points, half) for points in frames]
+def animate(faces: np.ndarray, frames: Iterable[core.Point]) -> Iterator[np.ndarray]:
+    """Frames of a sheet relaxing, all to the scale of its first shape, with room to spread."""
+    frames = iter(frames)
+    first = next(frames)
+    half = extent(first) * (1 + room)
+    for points in chain([first], frames):
+        yield picture(faces, points, half)

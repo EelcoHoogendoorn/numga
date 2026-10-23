@@ -27,4 +27,4 @@ def test_scenes_draw():
     figure = render.draw(*scenes[0])
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(render.animate(scenes)) == 6
+    assert len(list(render.animate(scenes))) == 6

@@ -83,7 +83,7 @@ def main() -> None:
     quadrics, solid_values = solids()
     still, = render.frames(tracer, quadrics, solid_values, orbit(1), lamp, half_view, image_shape)
     save_figure(image_figure(still), "csg_raytracer")
-    save_animation(list(render.frames(tracer, quadrics, solid_values, orbit(n_frames), lamp, half_view, animation_shape)),
+    save_animation(render.frames(tracer, quadrics, solid_values, orbit(n_frames), lamp, half_view, animation_shape),
                    "csg_raytracer", duration_ms)
 
     # --- checks

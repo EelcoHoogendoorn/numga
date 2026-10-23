@@ -8,7 +8,7 @@ parts show faintly through the sheets.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -123,12 +123,13 @@ def partner_picture(partner: np.ndarray, source: np.ndarray, faces: np.ndarray, 
     return compose([(*scene, 1.0), (segments, ghost_depth, hidden_opacity)], background)
 
 
-def frames(states: Iterable[core.Point], reference: core.Point) -> list[np.ndarray]:
-    """Draw each point grid with the camera fixed by a reference grid."""
-    states = [coordinates(state) for state in states]
-    faces, ink = mesh(*states[0].shape[:2])
-    view = viewport(coordinates(reference), elevation, azimuth)
-    return [picture(points, faces, ink, view) for points in states]
+def frames(states: Iterable[core.Point], reference: core.Point) -> Iterator[np.ndarray]:
+    """Draw each point grid with the camera fixed by a reference grid of the same rows and columns."""
+    places = coordinates(reference)                                           # [..., rows, columns, 3]
+    faces, ink = mesh(*places.shape[-3:-1])
+    view = viewport(places, elevation, azimuth)
+    for state in states:
+        yield picture(coordinates(state), faces, ink, view)
 
 
 def partner_frames(states: Iterable[core.Point], source: core.Point, reference: core.Point) -> list[np.ndarray]:
@@ -139,7 +140,8 @@ def partner_frames(states: Iterable[core.Point], source: core.Point, reference: 
     return [partner_picture(coordinates(state), source, faces, ink, view) for state in states]
 
 
-def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray, orbit_elevation: float) -> list[np.ndarray]:
+def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray, orbit_elevation: float
+                  ) -> Iterator[np.ndarray]:
     """Orbit a fixed pair, framed with one scale fitted to every view; azimuths and elevation in degrees, the
     azimuth measured from x."""
     source, partner = coordinates(source), coordinates(partner)
@@ -148,7 +150,8 @@ def partner_orbit(partner: core.Point, source: core.Point, azimuths: np.ndarray,
     view_elevation, view_azimuths = np.radians(orbit_elevation), np.radians(azimuths + 90)
     views = [viewport(points, view_elevation, view_azimuth) for view_azimuth in view_azimuths]
     half = np.max([view.half for view in views], axis=0)
-    return [partner_picture(partner, source, faces, ink, view._replace(half=half)) for view in views]
+    for view in views:
+        yield partner_picture(partner, source, faces, ink, view._replace(half=half))
 
 
 def draw(points: core.Point, reference: core.Point) -> plt.Figure:

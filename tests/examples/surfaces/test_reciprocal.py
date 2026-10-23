@@ -24,4 +24,4 @@ def test_on_the_paraboloid_the_reciprocal_is_the_voronoi_diagram_and_the_stresse
     centres = core.reciprocal(mesh, heights)                                   # [faces] Vector
     reach = [(centres.dual() - corner.batch()).scalar_norm_squared().to_array() for corner in mesh.corners]
     assert np.abs(reach[0] - reach[1]).max() < 1e-10 and np.abs(reach[0] - reach[2]).max() < 1e-10
-    assert len(render.animate(mesh, [(heights, core.stresses(mesh, heights), core.reciprocal(mesh, heights))])) == 1
+    assert len(list(render.animate(mesh, [(heights, core.stresses(mesh, heights), core.reciprocal(mesh, heights))]))) == 1

@@ -6,6 +6,8 @@ algebra here: a point is read by its pairings with the planes x, y and z, over i
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -13,6 +15,7 @@ from numga import stack
 
 from examples.optics.lens_camera.core import Motor, Plane, Point, Quadric, ga, mv, point
 from examples.util.wgsl import solids
+from examples.util.wgsl.scene import Scene
 
 # Sensor pixels, rows by columns, and their subdivision for antialiasing; the edges are smooth already.
 RESOLUTION = (210, 270)
@@ -86,10 +89,16 @@ def side_view() -> solids.View:
     return solids.view([display >> corners], 0.0, SIDE_ELEVATION, SIDE_AZIMUTH, 0.02, SIDE_PIXELS)
 
 
-def draw_side(view: solids.View, planes: Plane, radius: float, frame: Motor, legs: Point, scene: Point) -> np.ndarray:
-    """The camera from the side: the scene's points coloured by their layers, the front lens as wide as the aperture
-    and the rear lens, glass discs on their planes, the sensor where the frame places it, and the fan of rays from the
-    subject through the aperture's rim, leg by leg; `[rows, columns, 3]` bytes."""
+def scene_points(view: solids.View, scene: Point) -> tuple[solids.Quadric, np.ndarray]:
+    """The scene's points as the side view shows them, coloured by their layers."""
+    layers = np.broadcast_to(LAYER_COLOURS.reshape((3,) + (1,) * (scene.ndim - 1) + (3,)), scene.shape + (3,))
+    return solids.ball(display >> scene.reshape(-1), POINT_RADIUS * view.pixel)[:, None], layers.reshape(-1, 3)
+
+
+def draw_side(side: Scene, planes: Plane, radius: float, frame: Motor, legs: Point) -> np.ndarray:
+    """The camera from the side, among the scene's points the side scene holds: the front lens as wide as the
+    aperture and the rear lens, glass discs on their planes, the sensor where the frame places it, and the fan of rays
+    from the subject through the aperture's rim, leg by leg; `[rows, columns, 3]` bytes."""
     # Each lens a disc about the axis on its plane: its centre where the plane meets the axis.
     centres = xyz(planes[:2] ^ mv.y ^ mv.z)                                 # [lenses, 3]
     around = np.linspace(0, 2 * np.pi, N_RIM, endpoint=False)
@@ -98,12 +107,9 @@ def draw_side(view: solids.View, planes: Plane, radius: float, frame: Motor, leg
     lenses = solids.plates(xyz(display >> point(rims)), THICKNESS)          # [lenses, corners + 2] Quadric
     corners = frame >> point(np.array([[0, -1, -1], [0, 1, -1], [0, 1, 1], [0, -1, 1]]) * [0, *SENSOR])
     sensor = solids.plates(xyz(display >> corners)[None], THICKNESS)
-    layers = np.broadcast_to(LAYER_COLOURS.reshape((3,) + (1,) * (scene.ndim - 1) + (3,)), scene.shape + (3,))
-    points = solids.ball(display >> scene.reshape(-1), POINT_RADIUS * view.pixel)[:, None]
     shown = display >> legs                                                    # [plane + 1, ray] Point
-    rays = solids.rods(shown[:-1].reshape(-1), shown[1:].reshape(-1), RAY_RADIUS * view.pixel)
-    return solids.draw([(points, layers.reshape(-1, 3)), (sensor, SENSOR_COLOUR), (rays, RAY)], view, np.ones(3),
-                       translucent=[(lenses, np.array(LENS), LENS_OPACITY)])
+    rays = solids.rods(shown[:-1].reshape(-1), shown[1:].reshape(-1), RAY_RADIUS * side.view.pixel)
+    return side.draw([(sensor, SENSOR_COLOUR), (rays, RAY)], translucent=[(lenses, np.array(LENS), LENS_OPACITY)])
 
 
 def draw_stills(exposures) -> plt.Figure:
@@ -115,16 +121,16 @@ def draw_stills(exposures) -> plt.Figure:
     return fig
 
 
-def animate_camera(states, scene: Point) -> list[np.ndarray]:
-    """Frames of the sensor image, enlarged, over the camera seen from the side, one per state."""
+def animate_camera(states, scene: Point) -> Iterator[np.ndarray]:
+    """Frames of the sensor image, enlarged, over the camera seen from the side, one per state, among the scene's
+    points, which are set up once."""
     view = side_view()
-    frames = []
+    side = Scene(view, np.ones(3), [scene_points(view, scene)], [])
     for rear_at, focus_at, radius, (collineation, camera, frame, cones, planes, legs) in states:
         image = rasterise(frame, cones, (radius / REFERENCE_APERTURE)**2)
         sensor = np.round(np.repeat(np.repeat(image, ENLARGED, axis=0), ENLARGED, axis=1) * 255).astype(np.uint8)
-        side = draw_side(view, planes, radius, frame, legs, scene)
+        seen = draw_side(side, planes, radius, frame, legs)
         # The sensor image in the middle above the side view, on a white band as wide.
-        pad = (side.shape[1] - sensor.shape[1]) // 2
-        sensor = np.pad(sensor, ((0, 0), (pad, side.shape[1] - sensor.shape[1] - pad), (0, 0)), constant_values=255)
-        frames.append(np.concatenate([sensor, side], axis=0))
-    return frames
+        pad = (seen.shape[1] - sensor.shape[1]) // 2
+        sensor = np.pad(sensor, ((0, 0), (pad, seen.shape[1] - sensor.shape[1] - pad), (0, 0)), constant_values=255)
+        yield np.concatenate([sensor, seen], axis=0)

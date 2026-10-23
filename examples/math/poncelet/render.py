@@ -4,6 +4,8 @@ conic."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -40,11 +42,9 @@ def draw(outer: core.Conic, inner: core.Envelope, vertices: core.Point) -> plt.F
     return figure
 
 
-def animate(scenes: list[tuple[core.Conic, core.Envelope, core.Point]]) -> list[np.ndarray]:
+def animate(scenes: list[tuple[core.Conic, core.Envelope, core.Point]]) -> Iterator[np.ndarray]:
     """One frame per scene."""
-    frames = []
     for scene in scenes:
         figure = draw(*scene)
-        frames.append(capture(figure))
+        yield capture(figure)
         plt.close(figure)
-    return frames

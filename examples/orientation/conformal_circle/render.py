@@ -4,6 +4,8 @@ wireframe inked on it, the points balls and the sides arrows; the circle's motio
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -12,7 +14,7 @@ from matplotlib.colors import to_rgb
 from examples.util.animation import capture
 from numga import concatenate
 from examples.orientation.conformal_circle.core import Point, Sphere
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids, strokes
 
 sm = solids.mv
 PLANE = "#218c9d"
@@ -80,7 +82,7 @@ def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np
     planes = concatenate([circle_planes(globe), circle_planes(globe.transpose(1, 0, 2))])   # [circles] Plane
     spans = (planes | planes).to_array()
     planes = planes[spans > SPANNED * spans.max()]
-    curve = meshes.tube_samples([(circle, curve_colour)], CIRCLE_WIDTH, view)
+    curve = strokes.polylines([(circle, curve_colour)], CIRCLE_WIDTH, view)
 
     # Short arrows follow the point order around the circle in both views.
     count = len(circle) - 1
@@ -124,7 +126,7 @@ def draw_circle(points: Point, curve: Point, surface: Point, planes: Sphere,
     return figure
 
 
-def animate_circle_motions(grid: Point, fixed_points: Point) -> list[np.ndarray]:
+def animate_circle_motions(grid: Point, fixed_points: Point) -> Iterator[np.ndarray]:
     """A coloured disk turns rigidly beside its reflected, conformally distorted image."""
     positions = coordinates(grid)[..., :2]
     fixed = coordinates(fixed_points)[..., :2]
@@ -151,12 +153,10 @@ def animate_circle_motions(grid: Point, fixed_points: Point) -> list[np.ndarray]
     axes[1].scatter(*fixed.T, s=135, facecolors="none", edgecolors=CURVE,
                     linewidths=1.6, zorder=5)
 
-    frames = []
     for pair in positions:
         for disk, (rings, spokes, dots) in zip(pair, artists):
             rings.set_segments(disk[ring_indices])
             spokes.set_segments(disk[:, spoke_indices].transpose(1, 0, 2))
             dots.set_offsets(disk[-1, spoke_indices])
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames

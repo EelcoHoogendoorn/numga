@@ -128,7 +128,7 @@ def test_docking_figures_and_animation_draw_without_saving():
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
-    frames = render.animate(scenarios.HULL, scenarios.MOUNTS, scenarios.DIRECTIONS, poses[:2],
-                            commands[:2], scenarios.LABELS, scenarios.ARROW_SCALE)
+    frames = list(render.animate(scenarios.HULL, scenarios.MOUNTS, scenarios.DIRECTIONS, poses[:2],
+                                 commands[:2], scenarios.LABELS, scenarios.ARROW_SCALE))
     assert frames[0].ndim == 3 and frames[0].shape == frames[1].shape
     assert not np.array_equal(frames[0], frames[1])

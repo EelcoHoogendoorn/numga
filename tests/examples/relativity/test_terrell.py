@@ -53,4 +53,4 @@ def test_outline_of_a_sphere_stays_a_circle():
 
 
 def test_scene_draws():
-    assert len(scenarios.photographs(islice(scenarios.cameras(), 2))) == 2
+    assert len(list(scenarios.photographs(islice(scenarios.cameras(), 2)))) == 2

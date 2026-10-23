@@ -25,4 +25,4 @@ def test_scenes_draw():
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
     _, values = scenarios.frames()
-    assert len(render.animate_turning(values, islice(scenarios.turning(), 1))) == 1
+    assert len(list(render.animate_turning(values, islice(scenarios.turning(), 1)))) == 1

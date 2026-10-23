@@ -3,7 +3,7 @@ storage ring, and the anomalous precession rate against the electric field."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from itertools import chain
 
 import matplotlib.pyplot as plt
@@ -58,6 +58,12 @@ def arrows(ax: plt.Axes, tails: np.ndarray, directions: np.ndarray, length: floa
                      angles="xy", scale_units="xy", scale=1, color=colour, width=width, zorder=4)
 
 
+def aim(quiver, tails: np.ndarray, directions: np.ndarray, length: float) -> None:
+    """The arrows of `arrows` moved to other tails and directions."""
+    quiver.set_offsets(np.reshape(tails, (-1, 2)))
+    quiver.set_UVC(*(length * np.reshape(directions, (-1, 2))).T)
+
+
 def canvas(centre: tuple[float, float], reach: float) -> tuple[plt.Figure, plt.Axes]:
     """A square view of half width `reach` about `centre`."""
     figure, ax = plt.subplots(figsize=(FRAME_INCHES, FRAME_INCHES), dpi=DPI)
@@ -75,80 +81,93 @@ def disk_canvas(centre: tuple[float, float], reach: float) -> tuple[plt.Figure, 
     return figure, ax
 
 
-def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]]) -> list[np.ndarray]:
+def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, core.Antivector]]) -> Iterator[np.ndarray]:
     """Each frame: the triangle of velocities `[samples]`, rest to the first boost to the second and
     straight back; its corners `[3]`, with the rocket's first axis at each as the observer at rest
     reads it `[3]`, and at the last corner that axis as the straight boost from rest would carry it."""
-    images = []
-    for loop, corners, axes in frames:
-        figure, ax = disk_canvas(TRIANGLE_CENTRE, TRIANGLE_REACH)
+    frames = iter(frames)
+    loop, corners, axes = next(frames)
+    # The disk set up once, the triangle and its arrows drawn for the first frame and moved for each.
+    figure, ax = disk_canvas(TRIANGLE_CENTRE, TRIANGLE_REACH)
+    outline, tails = disk(loop), disk(corners)
+    fill, = ax.fill(*outline.T, color=FILL, zorder=1)
+    edge, = ax.plot(*outline.T, color=INK, linewidth=1.5, zorder=2)
+    straight = arrows(ax, tails[-1], np.array([1.0, 0.0]), DISK_ARROW, FAINT, 0.012)
+    rocket_axes = arrows(ax, tails, unit(axes), DISK_ARROW, SPIN, 0.012)
+    dots, = ax.plot(*tails.T, "o", color=INK, markersize=4, zorder=5)
+    for loop, corners, axes in chain([(loop, corners, axes)], frames):
         outline, tails = disk(loop), disk(corners)
-        ax.fill(*outline.T, color=FILL, zorder=1)
-        ax.plot(*outline.T, color=INK, linewidth=1.5, zorder=2)
-        arrows(ax, tails[-1], np.array([1.0, 0.0]), DISK_ARROW, FAINT, 0.012)
-        arrows(ax, tails, unit(axes), DISK_ARROW, SPIN, 0.012)
-        ax.plot(*tails.T, "o", color=INK, markersize=4, zorder=5)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        fill.set_xy(outline)
+        edge.set_data(*outline.T)
+        aim(straight, tails[-1], np.array([1.0, 0.0]), DISK_ARROW)
+        aim(rocket_axes, tails, unit(axes), DISK_ARROW)
+        dots.set_data(*tails.T)
+        yield capture(figure)
+    plt.close(figure)
 
 
-def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]) -> list[np.ndarray]:
+def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]) -> Iterator[np.ndarray]:
     """The circles of velocities `[steps + 1, orbits]`, and each frame's velocities and spins as the
     observer at rest reads them `[orbits]`, the first frame's spins kept faint at the start."""
     outlines = disk(loops)
     states = iter(states)
     first = next(states)
     starts, start_directions = disk(first[0]), spin_axes(first[1])
-    images = []
+    # The disk, the orbits and the first frame's spins set up once; the spins and the dots moved for each frame.
+    figure, ax = disk_canvas((0, 0), orbit_reach)
+    spin_arrows = []
+    for orbit, colour in enumerate(orbit_colours):
+        ax.plot(*outlines[:, orbit].T, color=colour, linewidth=1.2, alpha=0.5, zorder=2)
+        arrows(ax, starts[orbit], start_directions[orbit], ORBIT_ARROW, FAINT, 0.010)
+        spin_arrows.append(arrows(ax, starts[orbit], start_directions[orbit], ORBIT_ARROW, colour, 0.011))
+    dots, = ax.plot(*starts.T, "o", color=INK, markersize=4, zorder=5)
     for velocities, spins in chain([first], states):
-        figure, ax = disk_canvas((0, 0), orbit_reach)
         points, directions = disk(velocities), spin_axes(spins)
-        for orbit, colour in enumerate(orbit_colours):
-            ax.plot(*outlines[:, orbit].T, color=colour, linewidth=1.2, alpha=0.5, zorder=2)
-            arrows(ax, starts[orbit], start_directions[orbit], ORBIT_ARROW, FAINT, 0.010)
-            arrows(ax, points[orbit], directions[orbit], ORBIT_ARROW, colour, 0.011)
-        ax.plot(*points.T, "o", color=INK, markersize=4, zorder=5)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        for orbit, arrow in enumerate(spin_arrows):
+            aim(arrow, points[orbit], directions[orbit], ORBIT_ARROW)
+        dots.set_data(*points.T)
+        yield capture(figure)
+    plt.close(figure)
 
 
 def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]
-                ) -> list[np.ndarray]:
+                ) -> Iterator[np.ndarray]:
     """A square box, the diamond its particle bounces along between the midpoints of its `walls`
     `[4]`, and each frame's position and spin as the observer at rest reads it."""
     corners = half_width * np.array([[1, 1], [-1, 1], [-1, -1], [1, -1], [1, 1]])
     diamond = planar(walls)[[0, 1, 2, 3, 0]]
-    images = []
+    # The box and the diamond set up once; the spin and the particle moved for each frame.
+    figure, ax = canvas((0, 0), 1.15 * half_width)
+    ax.plot(*corners.T, color=INK, linewidth=2.0, zorder=2)
+    ax.plot(*diamond.T, color=FAINT, linewidth=1.0, zorder=1)
+    spin_arrow = arrows(ax, np.zeros(2), np.zeros(2), SCENE_ARROW * half_width, SPIN, 0.012)
+    particle, = ax.plot(0, 0, "o", color=INK, markersize=7, zorder=5)
     for position, spin in states:
-        figure, ax = canvas((0, 0), 1.15 * half_width)
-        ax.plot(*corners.T, color=INK, linewidth=2.0, zorder=2)
-        ax.plot(*diamond.T, color=FAINT, linewidth=1.0, zorder=1)
         point = planar(position)
-        arrows(ax, point, spin_axes(spin), SCENE_ARROW * half_width, SPIN, 0.012)
-        ax.plot(*point, "o", color=INK, markersize=7, zorder=5)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        aim(spin_arrow, point, spin_axes(spin), SCENE_ARROW * half_width)
+        particle.set_data(*point[:, None])
+        yield capture(figure)
+    plt.close(figure)
 
 
-def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Bivector]]) -> list[np.ndarray]:
+def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Bivector]]) -> Iterator[np.ndarray]:
     """The ring `[samples]`, and each frame's position, velocity and spin as the observer at rest reads
     it: the momentum's direction faint, the spin solid."""
     outline = planar(ring)
     radius = np.linalg.norm(outline, axis=-1).max()
-    images = []
+    # The ring set up once; the momentum, the spin and the particle moved for each frame.
+    figure, ax = canvas((0, 0), 1.3 * radius)
+    ax.plot(*outline.T, color=FAINT, linewidth=2.0, zorder=1)
+    momentum_arrow = arrows(ax, np.zeros(2), np.zeros(2), SCENE_ARROW * radius, line_colours[0], 0.010)
+    spin_arrow = arrows(ax, np.zeros(2), np.zeros(2), SCENE_ARROW * radius, SPIN, 0.012)
+    particle, = ax.plot(0, 0, "o", color=INK, markersize=7, zorder=5)
     for position, velocity, spin in states:
-        figure, ax = canvas((0, 0), 1.3 * radius)
-        ax.plot(*outline.T, color=FAINT, linewidth=2.0, zorder=1)
         point = planar(position)
-        arrows(ax, point, unit(velocity), SCENE_ARROW * radius, line_colours[0], 0.010)
-        arrows(ax, point, spin_axes(spin), SCENE_ARROW * radius, SPIN, 0.012)
-        ax.plot(*point, "o", color=INK, markersize=7, zorder=5)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        aim(momentum_arrow, point, unit(velocity), SCENE_ARROW * radius)
+        aim(spin_arrow, point, spin_axes(spin), SCENE_ARROW * radius)
+        particle.set_data(*point[:, None])
+        yield capture(figure)
+    plt.close(figure)
 
 
 def draw_magic(electric: np.ndarray, ratios: core.Scalar) -> plt.Figure:

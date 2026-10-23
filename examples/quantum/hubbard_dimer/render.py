@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -95,7 +97,7 @@ DIALS = (0, 2, 3, 5)
 
 
 def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitudes: core.Scalar,
-                  triplet_cosine: core.Scalar, triplet_sine: core.Scalar) -> list[np.ndarray]:
+                  triplet_cosine: core.Scalar, triplet_sine: core.Scalar) -> Iterator[np.ndarray]:
     """Each configuration's amplitude as an arrow on its own dial, its cosine part across and its sine
     part up, one labelled row per case, frame by frame. The arrow is drawn as the triplet's share,
     followed by the rest, the singlet block's, from its tip; the path the tip takes over the whole run
@@ -124,7 +126,6 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
     # The dials, labels and traced paths are drawn once; each frame draws only the arrows over them.
     figure.canvas.draw()
     background = figure.canvas.copy_from_bbox(figure.bbox)
-    frames = []
     for index in range(total.shape[1]):
         figure.canvas.restore_region(background)
         for triplet_line, rest_line, tip, row, column in arrows:
@@ -134,6 +135,5 @@ def animate_dials(rows: list[str], cosine_amplitudes: core.Scalar, sine_amplitud
             tip.set_data([end[0]], [end[1]])
             for artist in (triplet_line, rest_line, tip):
                 artist.axes.draw_artist(artist)
-        frames.append(np.asarray(figure.canvas.buffer_rgba())[..., :3].copy())
+        yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
     plt.close(figure)
-    return frames

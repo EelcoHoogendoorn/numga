@@ -58,7 +58,7 @@ def test_numpy_chain_keeps_its_joints_closed_and_draws():
     assert gaps.to_array().max() < 1e-2 * scenarios.LINK_SPACING
     origin = mv.w.dual()
     assert ((motors[:, 0] >> origin) & origin).norm().to_array().max() < 1e-6
-    frames = render.animate_chain(motors[:3], scenarios.SEMI_AXES, scenarios.LINK_SPACING)
+    frames = list(render.animate_chain(motors[:3], scenarios.SEMI_AXES, scenarios.LINK_SPACING))
     assert frames and all(f.shape == frames[0].shape for f in frames)
 
 

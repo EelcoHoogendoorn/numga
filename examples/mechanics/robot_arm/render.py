@@ -1,16 +1,16 @@
 """Drawing for the robot arm, on the GPU: the links as solid boxes, the target as a ball, and the trail of the tip
-as a tube."""
+as a stroke."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.robot_arm.core import Point, mv
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids, strokes
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))
@@ -18,14 +18,13 @@ TARGET_COLOUR = np.array(to_rgb("tab:red"))
 # front and back alike, and of the trail.
 LINK_OPACITY, TRAIL_OPACITY = 0.37, 0.8
 BACKGROUND = np.ones(3)
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin as a share of the larger
-# side, and the pixels across.
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the point it looks at, half its width
+# and height, holding the arm as its tip follows the loop, and the pixels across.
 ELEVATION, AZIMUTH = np.radians([22.0, 40.0])
-MARGIN = 0.1
+VIEW_CENTRE, VIEW_HALF = np.array([0.43, 0.85, 0.93]), np.array([1.25, 1.25])
 N_PIXELS = 500
-# The target's radius and the trail's width, in pixels, and the vertices around the trail.
+# The target's radius and the trail's width, in pixels.
 TARGET_RADIUS, TRAIL_WIDTH = 6.0, 3.0
-N_AROUND = 8
 # A box's faces, each by three of its corners: the corners lie at -/+ across, -/+ deep and bottom/top of the
 # link, numbered in that order with the last fastest.
 BOX_FACES = np.array([[0, 1, 2], [4, 5, 6], [0, 1, 4], [2, 3, 6], [0, 2, 4], [1, 3, 5]])
@@ -48,22 +47,17 @@ def solid_boxes(corners: Point) -> solids.Quadric:
     return solids.half_space(planes * -np.sign((planes & middles).to_array()))
 
 
-def animate_tracking(states: Iterable) -> list[np.ndarray]:
-    """One frame per solved state: the link boxes, the target, and the tip trail, all from one fixed view."""
-    boxes, targets, tips = (stack(list(parts)) for parts in zip(*states))       # [frames, links, 8], [frames], [frames] Point
-    view = solids.view([boxes.reshape(-1), targets], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    # The tip's whole path as one tube; each frame shows it up to that frame's tip, at least its first step, which
-    # the target covers.
-    rings, faces = meshes.tube(euclidean(tips)[None], TRAIL_WIDTH / 2 * view.pixel, N_AROUND)
-    faces_per_step = 2 * N_AROUND
-    normals = meshes.smooth(rings, faces)
-    frames = []
-    for index in range(boxes.shape[0]):
-        drawn = slice(faces_per_step * max(index, 1))
-        trail = meshes.samples(rings, faces[drawn], TARGET_COLOUR, {side: normal[drawn] for side, normal in normals.items()},
-                               view)
-        target = solids.ball(targets[index], TARGET_RADIUS * view.pixel)[None, None]     # [1, 1] Quadric
-        frames.append(solids.draw([(target, TARGET_COLOUR)], view, BACKGROUND,
-                                  translucent=[(solid_boxes(boxes[index]), LINK_COLOURS, LINK_OPACITY)],
-                                  meshes=[(trail, TRAIL_OPACITY)]))
-    return frames
+def animate_tracking(states: Iterable, centre: np.ndarray = VIEW_CENTRE,
+                     half: np.ndarray = VIEW_HALF) -> Iterator[np.ndarray]:
+    """One frame per solved state: the link boxes, the target, and the tip trail, all from one fixed view looking at
+    `centre`, `half` its width and height."""
+    view = solids.View(solids.aim(mv.point(centre), ELEVATION, AZIMUTH), half, N_PIXELS)
+    path = []
+    for boxes, target, tip in states:
+        # The tip's path up to this frame's tip.
+        path.append(euclidean(tip))
+        trail = strokes.polylines([(np.array(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
+        ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Quadric
+        yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
+                          translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],
+                          meshes=[(trail, TRAIL_OPACITY)])

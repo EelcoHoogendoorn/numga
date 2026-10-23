@@ -3,10 +3,11 @@ flow field beside the reciprocal flapper and their paths in hinge-angle space.""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.artist import Artist
 
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
@@ -56,17 +57,25 @@ def _zero_axes(ax, across: str, up: str) -> None:
             rotation=90, rotation_mode="anchor")
 
 
-def _draw_swimmer(ax, beads_xy: np.ndarray, colour: str, alpha: float) -> None:
-    """Draw the three-link body and its nine hydrodynamic beads."""
+def _links(beads_xy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The three-link body through its nine beads `[9, 2]`: the chain through the beads and the hinges `[11, 2]`, and
+    the two hinges `[2, 2]`."""
     # Left arm (beads 0, 1, 2), centre bar (beads 3, 4, 5), right arm (beads 6, 7, 8).
     left_hinge = 1.5 * beads_xy[3] - 0.5 * beads_xy[4]
     right_hinge = 1.5 * beads_xy[5] - 0.5 * beads_xy[4]
     chain = np.vstack([beads_xy[[0, 1, 2]], left_hinge, beads_xy[[3, 4, 5]], right_hinge, beads_xy[[6, 7, 8]]])
-    ax.plot(chain[:, 0], chain[:, 1], color=colour, linewidth=2.6, alpha=alpha, zorder=3)
-    ax.scatter(beads_xy[:, 0], beads_xy[:, 1], s=42, color=colour, alpha=alpha, zorder=4, edgecolors="white", linewidths=0.6)
-    ax.scatter(
-        [left_hinge[0], right_hinge[0]],
-        [left_hinge[1], right_hinge[1]],
+    return chain, np.stack([left_hinge, right_hinge])
+
+
+def _draw_swimmer(ax, beads_xy: np.ndarray, colour: str, alpha: float) -> list[Artist]:
+    """Draw the three-link body and its nine hydrodynamic beads: the chain, the beads and the hinges."""
+    chain, hinges = _links(beads_xy)
+    line, = ax.plot(chain[:, 0], chain[:, 1], color=colour, linewidth=2.6, alpha=alpha, zorder=3)
+    beads = ax.scatter(beads_xy[:, 0], beads_xy[:, 1], s=42, color=colour, alpha=alpha, zorder=4, edgecolors="white",
+                       linewidths=0.6)
+    joints = ax.scatter(
+        hinges[:, 0],
+        hinges[:, 1],
         s=26,
         color="white",
         edgecolors=colour,
@@ -74,6 +83,16 @@ def _draw_swimmer(ax, beads_xy: np.ndarray, colour: str, alpha: float) -> None:
         zorder=5,
         alpha=alpha,
     )
+    return [line, beads, joints]
+
+
+def _move_swimmer(parts: list[Artist], beads_xy: np.ndarray) -> None:
+    """Move a swimmer drawn by `_draw_swimmer` to its beads."""
+    line, beads, joints = parts
+    chain, hinges = _links(beads_xy)
+    line.set_data(chain[:, 0], chain[:, 1])
+    beads.set_offsets(beads_xy)
+    joints.set_offsets(hinges)
 
 
 def draw_summary(
@@ -133,7 +152,7 @@ def animate_swimmers(
     grid: core.Point,
     flows: Iterable[core.Direction],
     every: int,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Frames of Purcell's non-reciprocal swimmer (top), with the flow it drives at each frame
     `[grid_y, grid_x] Direction`, and the reciprocal flapper (bottom)."""
     beads_xy = point_coords(world_sites.batch())[::every]                       # [frames, swimmers, beads, 2]
@@ -142,32 +161,29 @@ def animate_swimmers(
 
     x_min = min(float(all_pos_xy[:, 0, 0].min()), 0.0) - 2.3
     x_max = max(float(all_pos_xy[:, 0, 0].max()), 0.0) + 2.3
-    images = []
+    # The figure set up once; the flow, the trails and the swimmers move.
+    figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=85)
+    arrows = axes[0].quiver(
+        grid_xy[..., 0], grid_xy[..., 1],
+        np.zeros(grid_xy.shape[:-1]), np.zeros(grid_xy.shape[:-1]),
+        color=FLOW_COLOUR, scale=3.2, width=0.003, zorder=1,
+    )
+    trails, swimmers = [], []
+    for ax, colour, beads in zip(axes, (PURCELL_COLOUR, SCALLOP_COLOUR), beads_xy[0]):
+        trails += ax.plot([], [], color=TRAIL_COLOUR, linewidth=1.6, zorder=2)
+        swimmers.append(_draw_swimmer(ax, beads, colour, 1.0))
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(-1.55, 1.55)
+        ax.set_aspect("equal")
+        ax.set_axis_off()
+    figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
+
     for frame, flow in enumerate(flows):
         flow_xy = point_coords(flow)                                            # [gy, gx, 2]
-        figure, (ax_top, ax_bot) = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=85)
         step_end = frame * every + 1
-
-        ax_top.quiver(
-            grid_xy[..., 0], grid_xy[..., 1],
-            flow_xy[..., 0], flow_xy[..., 1],
-            color=FLOW_COLOUR, scale=3.2, width=0.003, zorder=1,
-        )
-        ax_top.plot(all_pos_xy[:step_end, 0, 0], all_pos_xy[:step_end, 0, 1], color=TRAIL_COLOUR, linewidth=1.6, zorder=2)
-        _draw_swimmer(ax_top, beads_xy[frame, 0], PURCELL_COLOUR, 1.0)
-        ax_top.set_xlim(x_min, x_max)
-        ax_top.set_ylim(-1.55, 1.55)
-        ax_top.set_aspect("equal")
-        ax_top.set_axis_off()
-
-        ax_bot.plot(all_pos_xy[:step_end, 1, 0], all_pos_xy[:step_end, 1, 1], color=TRAIL_COLOUR, linewidth=1.6, zorder=2)
-        _draw_swimmer(ax_bot, beads_xy[frame, 1], SCALLOP_COLOUR, 1.0)
-        ax_bot.set_xlim(x_min, x_max)
-        ax_bot.set_ylim(-1.55, 1.55)
-        ax_bot.set_aspect("equal")
-        ax_bot.set_axis_off()
-
-        figure.subplots_adjust(left=0.02, right=0.98, bottom=0.02, top=0.98, hspace=0.06)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        arrows.set_UVC(flow_xy[..., 0], flow_xy[..., 1])
+        for swimmer, (trail, parts) in enumerate(zip(trails, swimmers)):
+            trail.set_data(all_pos_xy[:step_end, swimmer, 0], all_pos_xy[:step_end, swimmer, 1])
+            _move_swimmer(parts, beads_xy[frame, swimmer])
+        yield capture(figure)
+    plt.close(figure)

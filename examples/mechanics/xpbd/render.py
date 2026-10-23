@@ -9,10 +9,13 @@ tangent plane carried back out, `motor >> link(local)`, lights it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from functools import cache
+from itertools import chain
 
 import numpy as np
 
+from numga import concatenate
 from examples.mechanics.xpbd.core import Motor
 from examples.util.wgsl import Shader, solids, supersampled
 from examples.util.wgsl.solids import Plane, Point, Quadric, ga, mv, origin
@@ -22,9 +25,9 @@ link_colours = np.array([[0.86, 0.42, 0.20], [0.20, 0.52, 0.66]])
 pin_colour = np.array([0.25, 0.25, 0.28])
 # The darker tone of a link's alternate octants, which shows it turning about its own axes.
 octant_contrast = 0.22
-# The view: its elevation and azimuth, and its margin around the whole swing and its shadows, as a fraction of
-# the larger side; the floor's depth below the swing's lowest point and its reach beyond the swing, and a floor
-# tile's side, in link spacings; the pin's radius as a fraction of the spacing, and the pixels across.
+# The view: its elevation and azimuth, and its margin around where the swing can reach and its shadows, as a
+# fraction of the larger side; the floor's depth below the lowest the chain can hang and its reach beyond the swing,
+# and a floor tile's side, in link spacings; the pin's radius as a fraction of the spacing, and the pixels across.
 elevation, azimuth = np.radians(14.0), np.radians(32.0)
 margin = 0.08
 floor_drop, floor_reach, tile = 1.0, 12.0, 3.0
@@ -145,22 +148,29 @@ def framing(points: Point, floor: Plane, reach: float) -> solids.View:
     return solids.view([points, shadows], reach, elevation, azimuth, margin, pixels)
 
 
-def animate_chain(motors: Motor, semi_axes: np.ndarray, spacing: float) -> list[np.ndarray]:
-    """One frame per step: the links swinging from the pin, over a tiled floor below the swing's lowest point,
-    the view framed by the whole swing and its shadows."""
-    centres = (motors >> origin).reshape(-1)                                                  # [steps * bodies] Point
-    place = np.stack([(axis & centres).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)  # [steps * bodies, 3]
+def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float) -> Iterator[np.ndarray]:
+    """One frame per step of the bodies' motors `[bodies]`: the links swinging from the pin, over a tiled floor below
+    the lowest the chain can hang, the view framed by where the swing can reach and its shadows: the chain as it
+    starts, the same half a turn about the vertical through the pin, and hung straight down from the pin."""
+    motors = iter(motors)
+    first = next(motors)
+    centres = first >> origin                                                                # [bodies] Point
+    start = np.stack([(axis & centres).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)  # [bodies, 3]
+    # How far the chain reaches along itself from the pin.
+    length = np.linalg.norm(np.diff(start, axis=0), axis=-1).sum()
+    reach = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, mv.point([0.0, 0.0, -length])[None]])
+    place = np.stack([(axis & reach).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)    # [points, 3]
     low, high = place.min(axis=0), place.max(axis=0)
     floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane
-    view = framing(centres, floor, semi_axes.max())
+    view = framing(reach, floor, semi_axes.max())
     # The pin sits at the joint of the fixed body and the first link.
-    pin = solids.ball((motors[0, 0] >> origin) + mv.x.dual() * (spacing / 2), pin_radius * spacing)   # [] Quadric
-    n_links = motors.shape[1] - 1
-    return [np.round(np.clip(shader()(view.shape, motors=links, colours=link_colours[np.arange(n_links) % 2],
-                                      link=solids.ellipsoid(semi_axes), pin=pin, pin_colour=pin_colour,
-                                      octant_contrast=octant_contrast, floor_plane=floor,
-                                      floor_low=low[:2] - floor_reach * spacing, floor_high=high[:2] + floor_reach * spacing,
-                                      tile=tile * spacing, camera=view.camera, back=4 * view.half.max(),
-                                      half_height=view.half[1], lamp=lamp)["image"],
-                             0, 1) * 255).astype(np.uint8)
-            for links in motors[:, 1:]]
+    pin = solids.ball(centres[0] + mv.x.dual() * (spacing / 2), pin_radius * spacing)        # [] Quadric
+    n_links = len(start) - 1
+    for bodies in chain([first], motors):
+        yield np.round(np.clip(shader()(view.shape, motors=bodies[1:], colours=link_colours[np.arange(n_links) % 2],
+                                        link=solids.ellipsoid(semi_axes), pin=pin, pin_colour=pin_colour,
+                                        octant_contrast=octant_contrast, floor_plane=floor,
+                                        floor_low=low[:2] - floor_reach * spacing,
+                                        floor_high=high[:2] + floor_reach * spacing, tile=tile * spacing,
+                                        camera=view.camera, back=4 * view.half.max(), half_height=view.half[1],
+                                        lamp=lamp)["image"], 0, 1) * 255).astype(np.uint8)

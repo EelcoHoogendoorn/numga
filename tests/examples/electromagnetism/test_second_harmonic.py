@@ -89,5 +89,5 @@ def test_scenes_draw():
                render.draw_growth(*scenarios.phase_matching(256)))
     for figure in figures:
         plt.close(figure)
-    images = render.animate(pumps, frames)
+    images = list(render.animate(pumps, frames))
     assert len(images) == 2 and not np.array_equal(images[0], images[1])

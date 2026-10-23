@@ -55,4 +55,4 @@ def test_scenes_draw():
     plt.close(figure)
     motors = scenarios.gliding()
     _, impulse, _ = scenarios.launch()
-    assert len(render.animate_gliding(impulse, islice(scenarios.frames(motors), 2))) == 2
+    assert len(list(render.animate_gliding(impulse, islice(scenarios.frames(motors), 2)))) == 2

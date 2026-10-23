@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.image import AxesImage
+from matplotlib.lines import Line2D
 
 from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
 from examples.util.wgsl import labels, meshes, show, solids, vec3
+from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
 view_limit = 2.05
@@ -67,11 +70,14 @@ def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
     return [(shafts, axis_colour), (heads, axis_colour)]
 
 
-def surface(ax: Axes, sheets: core.Vector) -> None:
-    """Both sheets, translucent, with grid lines along every few latitudes and longitudes, in the frame of k-space,
-    its axes named at their tips."""
+def k_space() -> solids.View:
+    """The square view of k-space about the origin, the same for every medium."""
+    return solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
+
+
+def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Samples, float]]:
+    """Both sheets, translucent, with grid lines along every few latitudes and longitudes."""
     points = sheets.cast(core.ga.subspace("x y z")).kernel                       # [latitudes, longitudes, 2, 3]
-    view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, half_width), n_pixels)
     n_latitudes, n_longitudes = points.shape[:2]
     faces = sheet_faces(n_latitudes, n_longitudes)
     # Each vertex's place on the grid, latitude and longitude, for the grid lines inked on the sheet.
@@ -84,15 +90,21 @@ def surface(ax: Axes, sheets: core.Vector) -> None:
         normals = meshes.smooth(places, faces)
         sides += [(meshes.samples(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
-    show(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sides), view)
+    return sides
+
+
+def surface(ax: Axes, picture: np.ndarray, view: solids.View) -> AxesImage:
+    """A picture of k-space, its axes named at their tips; the image, for an animation to set its data."""
+    shown = show(ax, picture, view)
     labels(ax, view, sm.point(label_distance * np.eye(3)), ["$k_x$", "$k_y$", "$k_z$"], ha="center", va="center",
            fontsize=11, color=axis_colour)
+    return shown
 
 
-def section(ax: Axes, sections: core.Vector) -> None:
-    points = sections.cast(core.ga.subspace("x y z")).kernel
-    for mode, (colour, style, label) in enumerate(zip(sheet_colours, ("-", "--"), ("inner sheet", "outer sheet"))):
-        ax.plot(points[:, mode, 0], points[:, mode, 2], color=colour, linestyle=style, linewidth=2, label=label)
+def section_axes(ax: Axes) -> list[Line2D]:
+    """Axes for the sheets' sections, and each sheet's curve, empty, for its points to be set."""
+    curves = [ax.plot([], [], color=colour, linestyle=style, linewidth=2, label=label)[0]
+              for colour, style, label in zip(sheet_colours, ("-", "--"), ("inner sheet", "outer sheet"))]
     ax.axhline(0, color="#cbd5e1", linewidth=0.7)
     ax.axvline(0, color="#cbd5e1", linewidth=0.7)
     # The axes named at their ends, without scales: the sheets' shapes against each other are the point.
@@ -101,6 +113,14 @@ def section(ax: Axes, sections: core.Vector) -> None:
     ax.set(xlim=(-view_limit, view_limit), ylim=(-view_limit, view_limit))
     ax.set_aspect("equal")
     ax.set_axis_off()
+    return curves
+
+
+def trace_sections(curves: list[Line2D], sections: core.Vector) -> None:
+    """Each sheet's section in the xz plane along its curve."""
+    points = sections.cast(core.ga.subspace("x y z")).kernel
+    for mode, curve in enumerate(curves):
+        curve.set_data(points[:, mode, 0], points[:, mode, 2])
 
 
 def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...]) -> plt.Figure:
@@ -108,22 +128,24 @@ def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...
     count = len(names)
     for i, name in enumerate(names):
         ax = figure.add_subplot(2, count, i + 1)
-        surface(ax, sheets[i])
+        view = k_space()
+        surface(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sheet_sides(sheets[i], view)), view)
         ax.set_title(name, fontsize=11)
         ax = figure.add_subplot(2, count, count + i + 1)
-        section(ax, sections[i])
+        trace_sections(section_axes(ax), sections[i])
     ax.legend(loc="lower right", fontsize=9, frameon=False)
     return figure
 
 
-def frame(sheets: core.Vector, sections: core.Vector) -> np.ndarray:
+def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.ndarray]:
+    """The sheets beside their sections, frame by frame, the frame of k-space and the sections' axes set up once."""
     figure = plt.figure(figsize=(9, 4.5), dpi=85, layout="constrained")
-    surface(figure.add_subplot(1, 2, 1), sheets)
-    section(figure.add_subplot(1, 2, 2), sections)
-    pixels = capture(figure)
+    view = k_space()
+    scene = Scene(view, np.ones(3), k_axes(view), [])
+    image = surface(figure.add_subplot(1, 2, 1), np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+    curves = section_axes(figure.add_subplot(1, 2, 2))
+    for sheets, sections in frames:
+        image.set_data(scene.draw(meshes=sheet_sides(sheets, view)))
+        trace_sections(curves, sections)
+        yield capture(figure)
     plt.close(figure)
-    return pixels
-
-
-def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> list[np.ndarray]:
-    return [frame(sheets, sections) for sheets, sections in frames]

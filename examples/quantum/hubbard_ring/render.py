@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -27,7 +29,7 @@ def draw_levels(ratios: np.ndarray, excitations: core.Scalar, heisenberg: np.nda
     return figure
 
 
-def animate_ring(labels: list[str], occupation: core.Scalar) -> list[np.ndarray]:
+def animate_ring(labels: list[str], occupation: core.Scalar) -> Iterator[np.ndarray]:
     """Each site's spin-up count as an arrow up and its spin-down count as an arrow down, one ring per
     case, frame by frame."""
     counts = occupation.to_array()                                            # [cases, times, sites, spins]
@@ -46,13 +48,11 @@ def animate_ring(labels: list[str], occupation: core.Scalar) -> list[np.ndarray]
         ax.set_aspect("equal")
         for side in ax.spines.values():
             side.set_visible(False)
-    frames = []
     for index in range(counts.shape[1]):
         for (ups, downs), case in zip(arrows, counts[:, index]):
             for up, down, (x, y), (up_count, down_count) in zip(ups, downs, PLACES, case):
                 up.set_data([x, x], [y, y + 0.5 * up_count])
                 down.set_data([x, x], [y, y - 0.5 * down_count])
         figure.canvas.draw()
-        frames.append(np.asarray(figure.canvas.buffer_rgba())[..., :3].copy())
+        yield np.asarray(figure.canvas.buffer_rgba())[..., :3].copy()
     plt.close(figure)
-    return frames

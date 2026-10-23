@@ -61,4 +61,4 @@ def test_the_bunny_flow_takes_away_nearly_all_its_energy():
     energies = np.array([values.sum(axis=0).to_array() for _, values in states])
     assert np.all(np.diff(energies) < 0)
     assert energies[-1] < 0.2 * energies[0]
-    assert len(render.animate_flow(mesh, states[:1])) == 1
+    assert len(list(render.animate_flow(mesh, states[:1]))) == 1

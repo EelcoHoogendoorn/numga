@@ -7,6 +7,7 @@ quadric's form, `quadrics[body](point) & point`, is negative there.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import cache
 
 import numpy as np
@@ -56,11 +57,11 @@ def shader() -> Shader:
     return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
 
 
-def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> list[np.ndarray]:
+def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> Iterator[np.ndarray]:
     """One frame per row of world quadrics: a pixel takes the colour of the last quadric whose form is
     negative there, averaged over its samples."""
     rgb = np.array([to_rgb(color) for color in colors])
     painter = shader()
-    return [np.round(np.clip(painter((resolution, resolution), quadrics=quadrics, colours=rgb, disk=to_rgb(DISK),
-                                     rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)
-            for quadrics in world]
+    for quadrics in world:
+        yield np.round(np.clip(painter((resolution, resolution), quadrics=quadrics, colours=rgb, disk=to_rgb(DISK),
+                                       rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)

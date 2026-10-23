@@ -3,7 +3,7 @@ curve as the zero level of the area ratio; and small round sources as the lens s
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -65,17 +65,16 @@ def draw(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point],
 
 
 def animate(directions: core.Point, area: core.Scalar, lens: Callable[[core.Point], core.Point],
-            positions: core.Point, steps: Iterable[Step]) -> list[np.ndarray]:
+            positions: core.Point, steps: Iterable[Step]) -> Iterator[np.ndarray]:
     """One frame per step: the figure is drawn once, and each step replaces its two images."""
     steps = iter(steps)
     figure = draw(directions, area, lens, positions, next(steps))
     figure.set_dpi(ANIMATION_DPI)
     images = [ax.images[0] for ax in figure.axes]
-    frames = [capture(figure)]
+    yield capture(figure)
     for step in steps:
         for image, light in zip(images, step):
             image.set_data(light.to_array())
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 

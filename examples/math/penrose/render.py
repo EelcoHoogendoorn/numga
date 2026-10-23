@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,11 +34,16 @@ def canvas(extent: float) -> tuple[plt.Figure, plt.Axes]:
     return figure, ax
 
 
+def selected(polygons: np.ndarray, colours: np.ndarray, margins: core.Scalar) -> tuple[np.ndarray, np.ndarray]:
+    """The faces whose three margins are all positive, `polygons [points, faces, 4, 2]`, and their colours."""
+    chosen = np.all(margins.to_array() > 0, axis=-1)                         # [points, faces]
+    return polygons[chosen], colours[np.nonzero(chosen)[1]]
+
+
 def tiles(ax: plt.Axes, polygons: np.ndarray, colours: np.ndarray, margins: core.Scalar):
     """The faces whose three margins are all positive, `polygons [points, faces, 4, 2]`."""
-    chosen = np.all(margins.to_array() > 0, axis=-1)                         # [points, faces]
-    ax.add_collection(PolyCollection(polygons[chosen], facecolors=colours[np.nonzero(chosen)[1]],
-                                     edgecolors=EDGE, linewidths=0.6))
+    faces, shades = selected(polygons, colours, margins)
+    ax.add_collection(PolyCollection(faces, facecolors=shades, edgecolors=EDGE, linewidths=0.6))
 
 
 def draw_tiling(reading: core.Plane, corners: core.Antivector, areas: core.Scalar, margins: core.Scalar,
@@ -52,15 +57,16 @@ def draw_tiling(reading: core.Plane, corners: core.Antivector, areas: core.Scala
 
 
 def animate_flips(reading: core.Plane, corners: core.Antivector, areas: core.Scalar, frames: Iterable[core.Scalar],
-                  extent: float) -> list[np.ndarray]:
-    """The tiles each frame's margins select."""
+                  extent: float) -> Iterator[np.ndarray]:
+    """The tiles each frame's margins select, on a canvas laid out once."""
     shapes = areas.to_array()
     colours = np.where(shapes > shapes.mean(), THICK, THIN)                  # [faces]
     polygons = flat(reading, corners)                                        # [points, faces, 4, 2]
-    images = []
+    figure, ax = canvas(extent)
+    shown = ax.add_collection(PolyCollection([], edgecolors=EDGE, linewidths=0.6))
     for margins in frames:
-        figure, ax = canvas(extent)
-        tiles(ax, polygons, colours, margins)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        faces, shades = selected(polygons, colours, margins)
+        shown.set_verts(faces)
+        shown.set_facecolor(shades)
+        yield capture(figure)
+    plt.close(figure)

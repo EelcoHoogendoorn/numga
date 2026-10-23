@@ -57,4 +57,4 @@ def test_scenes_draw():
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
     flips = islice(scenarios.flips(scenarios.phasons(across), centres, frames), 2)
-    assert len(render.animate_flips(reading, corners, areas, flips, scenarios.EXTENT)) == 2
+    assert len(list(render.animate_flips(reading, corners, areas, flips, scenarios.EXTENT))) == 2

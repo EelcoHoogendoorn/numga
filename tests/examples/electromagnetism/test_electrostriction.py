@@ -146,7 +146,7 @@ def test_figures_and_animation_draw(loading):
     for figure in (shape, curve, lattice):
         figure.canvas.draw()
         plt.close(figure)
-    frames = render.animate_lattice(model.rest, model.bonds, positions[:2], dipoles[:2], fields[:2],
-                                     scenarios.dipole_scale, scenarios.field_scale)
+    frames = list(render.animate_lattice(model.rest, model.bonds, positions[:2], dipoles[:2], fields[:2],
+                                          scenarios.dipole_scale, scenarios.field_scale))
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])

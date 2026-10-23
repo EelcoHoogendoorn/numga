@@ -3,6 +3,8 @@ smooth-shaded mesh, the control net dashed rods, the frames' axes arrows."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
 from examples.surfaces.motor_loop import core
@@ -60,10 +62,12 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     return solids.draw(marks, view, background, meshes=[(sheet, 1.0)])
 
 
-def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
+def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray
+            ) -> Iterator[np.ndarray]:
     """Per frame, the surfaces of each scheme side by side, each with the control net, dashed, and the
     control frames, seen by one camera framing every frame."""
     frames, surfaces = coordinates(control), coordinates(surfaces)           # [frames, axes + 1, vertices, 3], [frames, schemes, refined, 3]
     view = solids.view([sm.point(frames), sm.point(surfaces)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    return [np.concatenate([panel(frames[index], surface, control_faces, faces, view) for surface in surfaces[index]],
-                           axis=1) for index in range(len(frames))]
+    for index in range(len(frames)):
+        yield np.concatenate([panel(frames[index], surface, control_faces, faces, view) for surface in surfaces[index]],
+                             axis=1)

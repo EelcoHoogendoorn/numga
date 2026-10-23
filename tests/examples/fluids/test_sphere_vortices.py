@@ -41,4 +41,4 @@ def test_two_vortices_alone_turn_rigidly():
 
 def test_the_steps_compare_and_the_animation_draws():
     by_pairs, _ = scenarios.compared()
-    assert len(render.animate([by_pairs[:3]], scenarios.TRAVEL_VIEW, 2)) == 2
+    assert len(list(render.animate([by_pairs[:3]], scenarios.TRAVEL_VIEW, 2))) == 2

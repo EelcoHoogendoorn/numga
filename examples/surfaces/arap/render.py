@@ -4,6 +4,7 @@ triangle sat at rest."""
 from __future__ import annotations
 
 import itertools
+from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -53,7 +54,8 @@ def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndar
     return figure
 
 
-def animate(bar, shapes: core.Point, cell: np.ndarray) -> list[np.ndarray]:
+def animate(bar, shapes: core.Point, cell: np.ndarray) -> Iterator[np.ndarray]:
     """The bar in each of the given shapes, one frame each."""
     colours = checker(bar.vertices, bar.faces, cell)
-    return [picture(shape, bar.faces, colours) for shape in shapes]
+    for shape in shapes:
+        yield picture(shape, bar.faces, colours)

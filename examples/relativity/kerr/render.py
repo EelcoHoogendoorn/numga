@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,7 +43,7 @@ def coordinates(events: core.Antivector, slices: tuple[core.Vector, ...]) -> np.
 
 
 def animate_rays(paths: core.Antivector, horizons: core.Antivector,
-                 extent: float) -> list[np.ndarray]:
+                 extent: float) -> Iterator[np.ndarray]:
     """Sweep stationary spins with fixed ray colours and spatial scales."""
     tracks = coordinates(paths, (core.mv.x, core.mv.y)).transpose(1, 2, 0, 3)
     outlines = coordinates(horizons, (core.mv.x, core.mv.y))
@@ -64,13 +64,11 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     figure.canvas.draw()
     figure.set_layout_engine("none")
 
-    frames = []
     for paths, outline in zip(tracks, outlines):
         rays.set_segments(paths)
         horizon.set_xy(outline)
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 
 
 def star_texture(width: int, height: int, seed: int) -> np.ndarray:
@@ -265,20 +263,20 @@ def draw_camera(image: core.Image, temperature: core.Scalar, reference: float, i
 
 
 def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: float, transmission: core.Scalar,
-                      image_shape: tuple[int, int], sky_texture: np.ndarray) -> list[np.ndarray]:
+                      image_shape: tuple[int, int], sky_texture: np.ndarray) -> Iterator[np.ndarray]:
     """The camera's view through each analyzer: each disk crossing by the power it transmits,
     `transmission [analyzers, crossings]`. The exposure is doubled to make up for the half of
     unpolarized light a polarizer stops, so the sky and unpolarized light look as in the still."""
     height, width = image_shape
     light = disk_light(image, temperature, clump_waves(image.disk[0], image.disk_radii))
     _, sky = camera_colours(image, temperature, image_shape, sky_texture)
-    return [np.round(np.clip(exposed(scattered(2 * light * passed[:, None], image.disk_pixels, height * width), reference)
-                             + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
-            for passed in transmission.kernel[..., 0]]
+    for passed in transmission.kernel[..., 0]:
+        disk = scattered(2 * light * passed[:, None], image.disk_pixels, height * width)
+        yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
 
 
 def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, flows: Iterable[core.Antivector],
-                 loop_frames: int, image_shape: tuple[int, int], sky_texture: np.ndarray) -> list[np.ndarray]:
+                 loop_frames: int, image_shape: tuple[int, int], sky_texture: np.ndarray) -> Iterator[np.ndarray]:
     """The camera's view as the disk's gas orbits: its light steady, its texture read where each
     crossing's gas was, `flows [2, crossings]` per frame, in this loop and the one before. Turning the
     clump waves from the first to the second over the loop closes it without a jump, and without the
@@ -286,12 +284,10 @@ def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, 
     height, width = image_shape
     _, sky = camera_colours(image, temperature, image_shape, sky_texture)
     glow = disk_glow(image, temperature)                                            # [crossings, 3]
-    frames = []
     for index, (now, before) in enumerate(flows):
         fade = np.pi / 2 * index / loop_frames
         waves = (np.cos(fade) * clump_waves(now, image.disk_radii)
                  + np.sin(fade) * clump_waves(before, image.disk_radii))
         light = glow * disk_emissivity(image.disk_radii, waves)[:, None]           # [crossings, 3]
         disk = scattered(light, image.disk_pixels, height * width)
-        frames.append(np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3))
-    return frames
+        yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)

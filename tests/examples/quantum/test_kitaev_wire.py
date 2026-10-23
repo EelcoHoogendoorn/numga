@@ -119,7 +119,7 @@ def test_scenes_draw(moving):
     for figure in figures:
         figure.canvas.draw()
         plt.close(figure)
-    frames = render.animate_transport(progress[:2], potentials[:2], history[:2], target[:2], share[:2],
-                                       scenarios.HOPPING)
+    frames = list(render.animate_transport(progress[:2], potentials[:2], history[:2], target[:2], share[:2],
+                                            scenarios.HOPPING))
     assert len(frames) == 2
     assert np.any(frames[0] != frames[1])

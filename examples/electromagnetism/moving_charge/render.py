@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -118,20 +119,24 @@ def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivecto
     return pixels
 
 
-def frame(events: core.Antivector, field: core.Bivector, current: core.Antivector) -> np.ndarray:
+def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
+    """Electric field strength with the charge's outline, and magnetic field, a frame for each of the lab's views
+    over one grid of events: one figure set up for the first, its images' data set for each."""
+    states = iter(frames)
+    events, field, current = next(states)
     xy = coordinates(events)
     figure = plt.figure(figsize=(11, 3.7), dpi=80, layout="constrained")
     left, right = figure.subplots(1, 2)
-    panel(left, events, electric_strength(field), strength_colours, LogNorm(*electric_range))
-    left.contour(xy[..., 0], xy[..., 1], np.abs(density(current)), levels=[density_level], colors=[density_colour], linewidths=1.2)
-    panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit))
-    pixels = capture(figure)
+    images = (panel(left, events, electric_strength(field), strength_colours, LogNorm(*electric_range)),
+              panel(right, events, magnetic_across(field), "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
+    for _, field, current in chain([(events, field, current)], states):
+        images[0].set_data(electric_strength(field))
+        images[1].set_data(magnetic_across(field))
+        outline = left.contour(xy[..., 0], xy[..., 1], np.abs(density(current)), levels=[density_level],
+                               colors=[density_colour], linewidths=1.2)
+        yield capture(figure)
+        outline.remove()
     plt.close(figure)
-    return pixels
-
-
-def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> list[np.ndarray]:
-    return [frame(*state) for state in frames]
 
 
 def wave_limit(events: core.Antivector, field: core.Bivector) -> np.ndarray:
@@ -151,21 +156,22 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 
-def waves(events: core.Antivector, field: core.Bivector, charge: core.Antivector, limit: np.ndarray) -> np.ndarray:
-    position = coordinates(charge)
+def animate_waves(frames: list[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
+    """The waves over one turn, on the first frame's colour scale, the charge marked: one figure set up for the
+    first frame, its image's data and the charge's place set for each."""
+    events, field, charge = frames[0]
+    limit = wave_limit(events, field)
     figure = plt.figure(figsize=(5.6, 5.6), dpi=wave_dpi, layout="constrained")
     ax = figure.subplots()
-    panel(ax, events, compressed_waves(events, field, limit), "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
-    ax.scatter(position[..., 0], position[..., 1], s=18, color=charge_colour, edgecolors="#0f172a", linewidths=0.8, zorder=3)
-    pixels = capture(figure)
+    image = panel(ax, events, compressed_waves(events, field, limit), "RdBu_r", TwoSlopeNorm(0.0, -1.0, 1.0))
+    position = coordinates(charge)
+    marker = ax.scatter(position[..., 0], position[..., 1], s=18, color=charge_colour, edgecolors="#0f172a",
+                        linewidths=0.8, zorder=3)
+    for events, field, charge in frames:
+        image.set_data(compressed_waves(events, field, limit))
+        marker.set_offsets(coordinates(charge).reshape(-1, 2))
+        yield capture(figure)
     plt.close(figure)
-    return pixels
-
-
-def animate_waves(frames: list[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> list[np.ndarray]:
-    events, field, _ = frames[0]
-    limit = wave_limit(events, field)
-    return [waves(*state, limit) for state in frames]
 
 
 def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antivector) -> plt.Figure:

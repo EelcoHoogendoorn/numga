@@ -101,21 +101,29 @@ def save_figure(figure: plt.Figure, name: str) -> Path:
     return path
 
 
-def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0) -> Path:
+def forward_and_back(frames: list) -> list:
+    """Frames played forward and then back, without repeating either end, so that the loop turns smoothly."""
+    return frames + frames[-2:0:-1]
+
+
+def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0,
+                   forward_then_back: bool = False) -> Path:
     """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`,
-    box-filtered to `scale` of their size."""
+    box-filtered to `scale` of their size; with `forward_then_back`, looping forward and then back."""
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
-    save_gif(frames, str(path), duration_ms, scale, colors)
+    frames = list(frames)
+    save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, scale, colors)
     print(f"Saved {path}")
     return path
 
 
-def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0, n_frames: int = 0) -> None:
+def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0, n_frames: int = 0,
+                   forward_then_back: bool = False) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping: in full colour, without the palette that keeps the repository's GIFs small, quickly
     encoded and of bounded size whatever the frames hold. Saved as PLOT_DIR/<name>.webp, or the next free
     <name>_NN.webp, box-filtered to `scale` of their size. The count under each frame says how many are expected
-    where `n_frames` is given."""
+    where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back."""
     import base64
     import io
 
@@ -141,6 +149,8 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
         updated = time.monotonic()
         count = f"frame {len(images)} of {n_frames}" if n_frames else f"frame {len(images)}"
         shown.update(embedded(images[-1], "JPEG", count, quality=85))
+    if forward_then_back:
+        images = forward_and_back(images)
     path = auto_increment_path(PLOT_DIR / f"{name}.webp")
     path.parent.mkdir(parents=True, exist_ok=True)
     images[0].save(path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0, quality=80, method=0)

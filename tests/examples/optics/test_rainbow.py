@@ -43,4 +43,4 @@ def test_scenes_draw():
     plt.close(figure)
     swept = scenarios.sweep(up * np.array([0.3, 0.86]))
     bundle = scenarios.sweep(up * np.linspace(0.1, 0.9, 5))
-    assert len(render.animate_sweep(swept, bundle, offsets, apart, scenarios.WAVELENGTHS)) == 2
+    assert len(list(render.animate_sweep(swept, bundle, offsets, apart, scenarios.WAVELENGTHS))) == 2

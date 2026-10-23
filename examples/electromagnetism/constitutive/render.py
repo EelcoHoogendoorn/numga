@@ -3,6 +3,8 @@ speeds by heading, and the drag of moving glass."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -10,7 +12,8 @@ from matplotlib.image import AxesImage
 
 from examples.util.animation import capture
 from examples.electromagnetism.constitutive import core
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import show, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 Modes = tuple[np.ndarray, core.Bivector]
 sm = solids.mv
@@ -65,17 +68,26 @@ def field_arrows(modes: Modes, taus: np.ndarray, distance: np.ndarray, omega: fl
     return (wave | core.t).cast(DRAWN).kernel, (wave.dual() | core.t).cast(DRAWN).kernel
 
 
-def wave_image(modes: Modes, tau: float, z_max: float, omega: float) -> tuple[np.ndarray, solids.View]:
-    """The travelling E and B fields at one time: the curves their arrows' tips trace along the axis, the arrows at
-    stations along it, and the axis; seen by a camera that frames every time of a period alike."""
+def wave_scene(modes: Modes, z_max: float, omega: float) -> Scene:
+    """The axis, seen by a camera that frames every time of a period alike, for the fields at any time to be drawn
+    along it."""
     distance = np.linspace(0, z_max, N_SAMPLES)
     axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
     reached = field_arrows(modes, np.linspace(0, 2 * np.pi / omega, N_FRAMING, endpoint=False), distance, omega)
     view = solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), AXIS_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
+    return Scene(view, np.ones(3), [], [], translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)])
+
+
+def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: float) -> np.ndarray:
+    """The travelling E and B fields at one time, along the scene's axis: the curves their arrows' tips trace, and
+    the arrows at stations along it."""
+    view = scene.view
+    distance = np.linspace(0, z_max, N_SAMPLES)
+    axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
     electric, magnetic = field_arrows(modes, np.array(tau), distance, omega)
 
-    curves = meshes.tube_samples([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], CURVE_WIDTH, view)
-    line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), AXIS_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
+    curves = strokes.polylines([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], CURVE_WIDTH, view)
     # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
     station_idx = np.linspace(0, N_SAMPLES - 1, N_STATIONS, dtype=int)
     stations = axis[station_idx]
@@ -86,8 +98,7 @@ def wave_image(modes: Modes, tau: float, z_max: float, omega: float) -> tuple[np
         shafts, heads = solids.arrows(sm.point(stations), sm.point(stations + tips), ARROW_WIDTH / 2 * view.pixel,
                                       head_lengths, HEAD_SPREAD * head_lengths)
         parts += [(shafts, colour), (heads, colour)]
-    return solids.draw(parts, view, np.ones(3), translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)],
-                       meshes=[(curves, 1.0)]), view
+    return scene.draw(parts, meshes=[(curves, 1.0)])
 
 
 def draw_wave_propagation(
@@ -98,8 +109,9 @@ def draw_wave_propagation(
     omega: float = 1.0,
 ) -> AxesImage:
     """Draw the travelling E and B field vectors in the medium along the propagation axis z, at one time; the
-    image, for an animation to set its data."""
-    return show(ax, *wave_image(modes, tau, z_max, omega))
+    image shown."""
+    scene = wave_scene(modes, z_max, omega)
+    return show(ax, wave_image(scene, modes, tau, z_max, omega), scene.view)
 
 
 def draw_wave_comparison_3d(
@@ -135,7 +147,7 @@ def animate_wave_comparison(
     n_frames: int,
     z_max: float = 4.0 * np.pi,
     omega: float = 1.0,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Frames of the travelling E and B field vectors through one period, in isotropic glass beside
     the birefringent crystal."""
     fig = plt.figure(figsize=FIGURE_SIZE, dpi=80)
@@ -143,17 +155,18 @@ def animate_wave_comparison(
     crystal_axes = fig.add_subplot(1, 2, 2)
     # One layout for every frame, so the axes stay put while the waves move.
     fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0, wspace=0.0)
-    panels = [(draw_wave_propagation(ax, modes, z_max=z_max, omega=omega), modes)
-              for ax, modes in ((glass_axes, glass_modes), (crystal_axes, crystal_modes))]
+    # Each medium's axis and camera set up once, and its image, for every frame to set.
+    panels = []
+    for ax, modes in ((glass_axes, glass_modes), (crystal_axes, crystal_modes)):
+        scene = wave_scene(modes, z_max, omega)
+        panels.append((show(ax, np.full((*scene.view.shape, 3), 255, dtype=np.uint8), scene.view), scene, modes))
 
-    frames = []
     for tau in np.linspace(0, 2.0 * np.pi / omega, n_frames, endpoint=False):
-        for shown, modes in panels:
-            shown.set_data(wave_image(modes, float(tau), z_max, omega)[0])
-        frames.append(capture(fig))
+        for shown, scene, modes in panels:
+            shown.set_data(wave_image(scene, modes, float(tau), z_max, omega))
+        yield capture(fig)
 
     plt.close(fig)
-    return frames
 
 
 def draw_dispersion(ax: plt.Axes, speeds: np.ndarray, residual: core.Scalar, expected: np.ndarray) -> None:

@@ -8,6 +8,7 @@ and places itself on the image by its pairings with the camera's own planes.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import numpy as np
@@ -102,6 +103,7 @@ def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def animate_flow(mesh: core.Mesh, states: list[tuple[core.Point, core.Scalar]]) -> list[np.ndarray]:
+def animate_flow(mesh: core.Mesh, states: Iterable[tuple[core.Point, core.Scalar]]) -> Iterator[np.ndarray]:
     """Frames of a surface flowing towards developable patches."""
-    return [draw(mesh, vertices) for vertices, _ in states]
+    for vertices, _ in states:
+        yield draw(mesh, vertices)

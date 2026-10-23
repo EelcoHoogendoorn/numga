@@ -4,13 +4,15 @@ front wheel."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import NumpyContext, concatenate
 from examples.util.animation import capture
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import meshes, solids, strokes
 
 sm = solids.mv
 
@@ -30,12 +32,12 @@ BACKGROUND = np.ones(3)
 AXLE_WIDTH, AXLE_DASHES = 1.5, (4.0, 3.0)
 # Space: the view's elevation and azimuth in radians, azimuth zero looking along +y, the margin around the square
 # of ground it follows as a share of the larger side, and the pixels across it; the length of a dash along an axle
-# and of the gap after it, the points around a rim and around a tube; the widths in pixels of the axles' dashes, the
-# frame, the post, the rims and the trail.
+# and of the gap after it, and the points around a rim; the widths in pixels of the axles' dashes, the frame, the
+# post, the rims and the trail.
 ELEVATION, AZIMUTH = np.radians(35.0), np.radians(25.0)
 MARGIN, N_PIXELS = 0.04, 600
 DASH = 0.12
-N_RIM, N_AROUND = 48, 8
+N_RIM = 48
 DASH_WIDTH, FRAME_WIDTH, POST_WIDTH, RIM_WIDTH, TRAIL_WIDTH = 4.0, 6.0, 4.0, 4.0, 4.0
 
 
@@ -89,7 +91,7 @@ def plane(contacts, forward, centre, middle) -> np.ndarray:
 
 def space(contacts, forward, centre, middle) -> np.ndarray:
     """Space around the tricycle, drawn on the GPU: the frame and the axles' dashes rods, the wheels' rims and the
-    trail tubes, and the turning centre a vertical post, met with the ground where it is drawn. The view follows
+    trail strokes, and the turning centre a vertical post, met with the ground where it is drawn. The view follows
     the middle of the rear axle."""
     mv = NumpyContext(centre.algebra).multivector
     wheels, ahead, middle = ground(contacts), ground(forward), ground(middle)
@@ -118,9 +120,9 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     sideways = np.stack([-heading[:, 1], heading[:, 0], np.zeros(len(wheels))], axis=-1)
     rims = meshes.circles(np.concatenate([wheels, np.full((len(wheels), 1), WHEEL_RADIUS)], axis=-1),
                           np.full(len(wheels), WHEEL_RADIUS), sideways, N_RIM)          # [wheels, rim + 1, 3]
-    tyres = meshes.tube_samples([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view, N_AROUND)
-    trail = meshes.tube_samples([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))],
-                                TRAIL_WIDTH, view, N_AROUND)
+    tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
+    trail = strokes.polylines([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))],
+                              TRAIL_WIDTH, view)
     return solids.draw(parts, view, BACKGROUND, meshes=[(tyres, 1.0), (trail, 1.0)])
 
 
@@ -141,6 +143,7 @@ def following(trail: np.ndarray) -> np.ndarray:
     return trail[-1] + np.array([[-VIEW, -VIEW], [VIEW, VIEW]])
 
 
-def animate(draw, scenes) -> list[np.ndarray]:
+def animate(draw, scenes) -> Iterator[np.ndarray]:
     """One frame per scene, drawn by the given view."""
-    return [draw(*scene) for scene in scenes]
+    for scene in scenes:
+        yield draw(*scene)

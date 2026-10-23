@@ -1,14 +1,17 @@
 """Drawing for the spin groups: the table of signatures, and the orbits of the two isoclinic flows on
-the three-sphere, seen through the stereographic projection: tubes and dots drawn on the GPU."""
+the three-sphere, seen through the stereographic projection: strokes and dots drawn on the GPU."""
 
 from __future__ import annotations
+
+from collections.abc import Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
 from examples.math.spin_groups import core
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import meshes, show, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 BACKGROUND = np.ones(3)
@@ -17,9 +20,8 @@ BACKGROUND = np.ones(3)
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(35.0)
 MARGIN = 0.14
 PANEL_PIXELS, FRAME_PIXELS = 540, 440
-# The points around a tube; the widths in pixels of the circles and the knots in the still, and of the faint orbits
-# in the animation, and their opacity; the riders' radius in pixels.
-N_AROUND = 8
+# The widths in pixels of the circles and the knots in the still, and of the faint orbits in the animation, and their
+# opacity; the riders' radius in pixels.
 CIRCLE_WIDTH, KNOT_WIDTH, FAINT_WIDTH, FAINT_OPACITY = 2.0, 3.2, 1.6, 0.45
 RIDER_RADIUS = 3.2
 
@@ -42,10 +44,10 @@ def view(pixels: int, *drawn: np.ndarray) -> solids.View:
 
 
 def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
-    """Each orbit `[heights, azimuths, steps + 1, 3]` as a tube of a width in pixels, in the colour of its start, at
+    """Each orbit `[heights, azimuths, steps + 1, 3]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
     curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
-    return meshes.tube_samples(list(curves), width, view, N_AROUND)
+    return strokes.polylines(list(curves), width, view)
 
 
 def dots(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
@@ -66,22 +68,22 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     return figure
 
 
-def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor, frames: int) -> list[np.ndarray]:
+def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor,
+                  frames: int) -> Iterator[np.ndarray]:
     """The points of the three-sphere carried along every flow at once, their orbits drawn faintly;
     six points ride along each knot. The three panels side by side, seen by one camera."""
     drawn = [components(orbits) for orbits in (left, right, knotted)]
     frame = view(FRAME_PIXELS, *drawn)
-    faint = [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY) for orbits in drawn]
+    # Each panel's faint orbits, set up once.
+    panels = [Scene(frame, BACKGROUND, [], [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY)])
+              for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
     riders = np.arange(6) * length // 6
     knots = drawn[2]
-    images = []
     for step in steps:
         # Every start carried along the two flows, and six points along each knot.
         riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
         riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
                        np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
-        images.append(np.concatenate([solids.draw([dots(*points, frame)], frame, BACKGROUND, meshes=[orbits])
-                                      for orbits, points in zip(faint, riding)], axis=1))
-    return images
+        yield np.concatenate([panel.draw([dots(*points, frame)]) for panel, points in zip(panels, riding)], axis=1)

@@ -8,6 +8,7 @@ taken here straight from the quadric. The point it reaches is `e * u + d`, kept 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -123,9 +124,10 @@ def picture(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Poin
 
 
 def frames(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
-           shape: tuple[int, int]) -> list[np.ndarray]:
+           shape: tuple[int, int]) -> Iterator[np.ndarray]:
     """One RGB frame per eye frame."""
-    return [picture(eye, surfaces, colors, light, fov, shape) for eye in eye_frames]
+    for eye in eye_frames:
+        yield picture(eye, surfaces, colors, light, fov, shape)
 
 
 def draw_walk(eye_frames: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,

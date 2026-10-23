@@ -44,4 +44,4 @@ def test_scenarios_draw():
     for figure in figures:
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
-    assert len(render.animate_sweep(scenarios.sweep(scenarios.SPIRAL_POLARS, 1, 3, 60))) == 3
+    assert len(list(render.animate_sweep(scenarios.sweep(scenarios.SPIRAL_POLARS, 1, 3, 60)))) == 3

@@ -3,7 +3,7 @@ spin echo. The Bloch ball is drawn on the GPU, the rest by matplotlib."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +13,7 @@ from numga import stack
 from numga.algebras import STA
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
-from examples.util.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, show, solids, strokes
 
 sm = solids.mv
 COLOURS = ("#c0392b", "#7d3c98", "#2e86c1")
@@ -24,12 +24,12 @@ CIRCLE_COLOUR, CIRCLE_OPACITY = np.full(3, 0.75), 0.55
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(40.0)
 REACH, N_PIXELS = 1.3, 700
-# The points around a tube; the widths of the great circles, the paths and the arrows, the
-# arrowheads' length and the dots' radius, in pixels; how far the axes' arrows and their names reach, in radii of the
-# ball.
-N_AROUND = 8
+# The widths of the great circles, the paths and the arrows, the arrowheads' length and the dots' radius, in pixels;
+# how far the axes' arrows and their names reach, in radii of the ball.
 CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 2.4, 3.0, 2.0, 16.0, 9.0, 6.0
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
+# The time the echo's signal is followed for, in µs from the first pulse.
+ECHO_SPAN = 8.0
 # Where the spin lives in each algebra: the vectors of space, or in spacetime the planes the spin
 # turns in, the spacelike planes yz, zx and xy, read as the directions x, y and z across them.
 BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("yz zx xy")}
@@ -53,7 +53,7 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
     paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    tubes = meshes.tube_samples(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view, N_AROUND)
+    tracks = strokes.polylines(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view)
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
@@ -65,7 +65,7 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
                                CIRCLE_COLOUR, CIRCLE_WIDTH, CIRCLE_OPACITY)
     figure = plt.figure(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
-    show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tubes, 1.0)]), view)
+    show(ax, solids.draw(parts, view, np.ones(3), [great_circles], translucent=ball, meshes=[(tracks, 1.0)]), view)
     # Each axis named just past its arrow's tip, where the camera sees it.
     labels(ax, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=13,
            color=AXIS_COLOUR)
@@ -143,33 +143,32 @@ def draw_decays(times: np.ndarray, echoed: core.State, faded: core.State, t2: fl
 
 
 def animate_echo(detunings: np.ndarray, states: Iterable[core.State], dt: float, delay: float, t2: float,
-                 every: int) -> list[np.ndarray]:
-    """The spins seen from above the field, fanning out and refocusing, beside the signal so far;
-    one frame for every few recorded states."""
-    ensemble = stack(list(states))                                       # [times, spins] State
-    times = np.arange(ensemble.shape[0]) * dt
-    r = components(ensemble)                                             # [times, spins, 3]
-    strength = signal(ensemble)
+                 every: int) -> Iterator[np.ndarray]:
+    """The spins seen from above the field, fanning out and refocusing, beside the signal so far, over ECHO_SPAN;
+    one frame for every few recorded states, each drawn as its state comes."""
     order = np.argsort(detunings)
+    span = np.linspace(0.0, ECHO_SPAN)
     figure, (top, trace) = plt.subplots(1, 2, figsize=(9, 4.2), gridspec_kw={"width_ratios": (1, 1.4)})
     top.add_patch(plt.Circle((0, 0), 1.0, fill=False, color="0.8"))
-    spins = top.scatter(r[0, order, 0], r[0, order, 1], c=detunings[order], cmap="coolwarm", s=6)
+    spins = top.scatter(np.zeros(len(order)), np.zeros(len(order)), c=detunings[order], cmap="coolwarm", s=6)
     top.set_xlim(-1.1, 1.1)
     top.set_ylim(-1.1, 1.1)
     top.set_aspect("equal")
     top.set_axis_off()
-    so_far, = trace.plot(times[:1], strength[:1], color="#2e86c1")
-    trace.plot(times, np.exp(-times / t2), "--", color="0.8")
+    so_far, = trace.plot([], [], color="#2e86c1")
+    trace.plot(span, np.exp(-span / t2), "--", color="0.8")
     trace.axvline(delay, color="0.85", linewidth=0.8)
     trace.annotate("π pulse", (delay, 0.95), textcoords="offset points", xytext=(4, 0))
-    trace.set_xlim(times[0], times[-1])
+    trace.set_xlim(0.0, ECHO_SPAN)
     trace.set(ylim=(0, 1.05), xticks=[], yticks=[], xlabel="time", ylabel="mean transverse spin")
     trace.spines[["top", "right"]].set_visible(False)
     figure.tight_layout()
-    frames = []
-    for index in range(0, len(times), every):
-        spins.set_offsets(r[index, order, :2])
-        so_far.set_data(times[: index + 1], strength[: index + 1])
-        frames.append(capture(figure))
+    times, strength = [], []
+    for index, rho in enumerate(states):
+        times.append(index * dt)
+        strength.append(signal(rho))
+        if index % every == 0:
+            spins.set_offsets(components(rho)[order, :2])
+            so_far.set_data(times, strength)
+            yield capture(figure)
     plt.close(figure)
-    return frames

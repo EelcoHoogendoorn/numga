@@ -24,7 +24,7 @@ def test_a_heavy_vertex_pulls_the_surface_and_a_light_one_releases_it():
     assert render.separation(stack([surfaces[0], core.unit(surfaces[0])])) < 1e-12
     plt.close(render.draw_weights(controls, scenarios.FACES, surfaces, faces))
     frames, faces = scenarios.sweep()
-    assert len(render.animate_weights(islice(frames, 2), scenarios.FACES, faces)) == 2
+    assert len(list(render.animate_weights(islice(frames, 2), scenarios.FACES, faces))) == 2
 
 
 def test_a_loop_step_keeps_unit_weights_and_splits_every_face_in_four():

@@ -1,9 +1,9 @@
 """Light-ray incidence, the Robinson congruence, and linked electromagnetic field lines, drawn on the GPU: curves
-as tubes, events as balls, rays as rods, and the spacetime diagram's axes as labelled arrows."""
+as strokes, events as balls, rays as rods, and the spacetime diagram's axes as labelled arrows."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +11,7 @@ from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.util.animation import capture
 from examples.relativity.twistors import core
-from examples.util.wgsl import image_figure, labels, meshes, show, solids
+from examples.util.wgsl import image_figure, labels, show, solids, strokes
 
 sm = solids.mv
 INK, BLUE, ORANGE = "#263b51", "#267fa9", "#d17c24"
@@ -24,9 +24,11 @@ DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH = np.radians(15.0), np.radians(22.0)
 # congruence, across the field lines' frame and across a panel of the diagram.
 MARGIN, DIAGRAM_MARGIN = 0.1, 0.15
 CONGRUENCE_PIXELS, FIELD_PIXELS, DIAGRAM_PIXELS = 600, 288, 480
-# The points around a tube; the widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length
-# and width, and the events' radius; how far the axes reach past what they hold, and their names past their tips.
-N_AROUND = 8
+# Half the width and height, about the origin, of the view the field lines are carried through, holding them at
+# every instant shown.
+FIELD_HALF = np.array([3.3, 3.65])
+# The widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length and width, and the events'
+# radius; how far the axes reach past what they hold, and their names past their tips.
 CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 2.4, 2.0, 3.4, 1.8, 14.0, 8.0, 5.0
 AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
@@ -54,11 +56,11 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
-    """Each spatial curve as a tube of a width in pixels, in its own colour."""
+    """Each spatial curve as a stroke of a width in pixels, in its own colour."""
     points = spatial(curves)
     points = points.reshape((-1,) + points.shape[-2:])                        # [curves, samples, 3]
-    tubes = meshes.tube_samples(list(zip(points, colours(len(points)))), width, view, N_AROUND)
-    return solids.draw([], view, BACKGROUND, meshes=[(tubes, 1.0)])
+    lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
+    return solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)])
 
 
 def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
@@ -94,13 +96,15 @@ def draw_fields(curves: core.Event) -> plt.Figure:
     return image_figure(draw_curves(curves, FIELD_WIDTH, space_view(FIELD_PIXELS, curves)))
 
 
-def animate_fields(stream: Iterable[core.Event]) -> list[np.ndarray]:
-    """Field lines carried through time, seen by one camera framing every instant."""
-    instants = list(stream)
-    view = space_view(FIELD_PIXELS, *instants)
-    frames = []
-    for curves in instants:
-        figure = image_figure(draw_curves(curves, FIELD_WIDTH, view))
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+def animate_fields(stream: Iterable[core.Event], half: np.ndarray = FIELD_HALF) -> Iterator[np.ndarray]:
+    """Field lines carried through time, seen by one camera about the origin, `half` its width and height."""
+    view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), half, FIELD_PIXELS)
+    stream = iter(stream)
+    # The figure set up once, with the first instant; only its picture changes between frames.
+    figure = image_figure(draw_curves(next(stream), FIELD_WIDTH, view))
+    shown = figure.axes[0].images[0]
+    yield capture(figure)
+    for curves in stream:
+        shown.set_data(draw_curves(curves, FIELD_WIDTH, view))
+        yield capture(figure)
+    plt.close(figure)

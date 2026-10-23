@@ -67,7 +67,7 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.electromagnetism.moving_charge import render
 
-    speeding_up = render.animate(speed_up())
+    speeding_up = list(render.animate(speed_up()))
     # Slowing down plays the rise back.
     save_animation(speeding_up + speeding_up[-2:0:-1], "moving_charge", duration_ms)
     for name, speed in zip(orbit_names, orbit_speeds):

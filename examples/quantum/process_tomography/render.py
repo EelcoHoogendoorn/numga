@@ -13,7 +13,8 @@ from matplotlib.lines import Line2D
 from numga import concatenate
 from examples.util.animation import capture
 from examples.quantum.process_tomography import core
-from examples.util.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, meshes, show, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 CHANNEL_COLOURS = ("#3275a8", "#d16a30", "#7b62a3")
@@ -29,11 +30,10 @@ IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.2
 # about the centre, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
 REACH, N_PIXELS = 1.45, 700
-# The grid lines drawn, every few of the sampled latitudes and longitudes, and the points around a tube; the
-# widths of the sphere's grid lines and an image's, the edges and the axes' shafts, the arrowheads' length and
-# width, and the radii of the probes alone, after a channel and as prepared, in pixels; how far the axes reach and
-# where they are named.
-LATITUDE_STEP, LONGITUDE_STEP, N_AROUND = 2, 3, 8
+# The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
+# an image's, the edges and the axes' shafts, the arrowheads' length and width, and the radii of the probes alone,
+# after a channel and as prepared, in pixels; how far the axes reach and where they are named.
+LATITUDE_STEP, LONGITUDE_STEP = 2, 3
 GRID_WIDTH, IMAGE_WIDTH, EDGE_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 2.0, 3.4, 4.0, 2.4, 18.0, 10.0
 PROBE_RADIUS, AFTER_RADIUS, PREPARED_RADIUS = 12.0, 7.0, 11.0
 AXIS_LENGTH, LABEL_DISTANCE = 1.3, 1.4
@@ -56,12 +56,14 @@ def bloch_axes(pixel: float) -> list[tuple[solids.Quadric, np.ndarray]]:
     return [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)]
 
 
-def show_ball(axes, image: np.ndarray, view: solids.View, title: str) -> None:
-    """A traced picture in an axes, with the axes named past their tips."""
-    show(axes, image, view)
+def show_ball(axes, image: np.ndarray, view: solids.View, title: str):
+    """A traced picture in an axes, with the axes named past their tips. The image, for an animation to set its
+    data."""
+    shown = show(axes, image, view)
     labels(axes, view, sm.point(LABEL_DISTANCE * np.eye(3)), list("xyz"), ha="center", va="center", fontsize=11,
            color=AXIS_COLOUR)
     axes.set_title(title)
+    return shown
 
 
 def surface_faces(rows: int, columns: int) -> np.ndarray:
@@ -81,10 +83,10 @@ def grid_lines(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
-    """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as tubes `width` pixels across in a
-    colour, at every sample."""
+    """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as strokes `width` pixels across in
+    a colour, at every sample."""
     lines = [line for batch in grid_lines(points) for line in batch]
-    return meshes.tube_samples([(line, colour) for line in lines], width, view, N_AROUND)
+    return strokes.polylines([(line, colour) for line in lines], width, view)
 
 
 def grid_planes(points: np.ndarray) -> solids.Plane:
@@ -132,36 +134,41 @@ def draw_experiment(prepared: core.State, probabilities: core.Scalar,
     return figure
 
 
-def draw_channels(surface: core.State, outputs: core.State, prepared: core.State,
-                  transformed: core.State, labels: tuple[str, ...]) -> plt.Figure:
-    """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
-    surface over the same grid as the sphere, the probes as prepared translucent and after the channel solid."""
-    sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
-    images = bloch(outputs)                                                    # [channels, latitudes + 1, longitudes + 1, 3]
-    probes = bloch(prepared)                                                   # [preparations, 3]
-    mapped = bloch(transformed)                                                # [channels, preparations, 3]
-    view = bloch_view()
+def channel_scene(sphere: np.ndarray, probes: np.ndarray, view: solids.View) -> Scene:
+    """What every picture of a channel shares, from the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]`
+    and the probes as prepared `[preparations, 3]`: the axes; the sphere and the probes, translucent; and the sphere's
+    grid inked where the planes of its lines cut it, the sphere the first part after the axes and the probes after
+    the channel, which each picture adds."""
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
-    faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
-    # The sphere of pure inputs and the probes as prepared, translucent; the planes of the sphere's grid lines.
     translucent = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY),
                    (solids.ball(sm.point(probes), PREPARED_RADIUS * view.pixel)[:, None], colours, PREPARED_OPACITY)]
     planes = grid_planes(sphere)                                               # [lines] Plane
+    axes = bloch_axes(view.pixel)
+    reference = solids.Ink(len(axes) + 1, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
+                           GRID_COLOUR, GRID_WIDTH, GRID_OPACITY)
+    return Scene(view, np.ones(3), axes, [], inks=[reference], translucent=translucent)
+
+
+def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: np.ndarray, colour: str) -> np.ndarray:
+    """A channel's picture among the scene's shared parts: its image of the sphere `[latitudes + 1, longitudes + 1,
+    3]`, a translucent surface over the same grid as the sphere, with its grid lines, and the probes after the
+    channel `[preparations, 3]`, solid."""
+    view = scene.view
+    colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
+    # The reference grid and the channel's image use the same sampled directions.
+    places = sm.point(image[:, :-1].reshape(-1, 3))                          # [(latitudes + 1) * longitudes] Point
+    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view, gloss=0.1)
+    lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
+    after = solids.ball(sm.point(points), AFTER_RADIUS * view.pixel)[:, None]
+    return scene.draw([(after, colours)], meshes=[(shell, IMAGE_OPACITY), (lines, 1.0)])
+
+
+def channels_figure(pictures: list[np.ndarray], view: solids.View, labels: tuple[str, ...]) -> tuple[plt.Figure, list]:
+    """The channels' pictures side by side, each named, over the legend of the probes: the figure, and each
+    picture's image, for an animation to set its data."""
     figure = plt.figure(figsize=(4.1 * len(labels), 4.3), layout="constrained")
-    for index, (label, image, points, colour) in enumerate(zip(labels, images, mapped, CHANNEL_COLOURS)):
-        axes = figure.add_subplot(1, len(labels), index + 1)
-        # The reference grid and the channel's image use the same sampled directions.
-        places = sm.point(image[:, :-1].reshape(-1, 3))                      # [(latitudes + 1) * longitudes] Point
-        shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view, gloss=0.1)
-        lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
-        # The axes, and the probes after the channel; the sphere's grid inked where the planes of its lines cut it, the
-        # sphere the first part after the opaque ones.
-        after = solids.ball(sm.point(points), AFTER_RADIUS * view.pixel)[:, None]
-        opaque = [*bloch_axes(view.pixel), (after, colours)]
-        reference = solids.Ink(len(opaque), solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape),
-                               GRID_COLOUR, GRID_WIDTH, GRID_OPACITY)
-        show_ball(axes, solids.draw(opaque, view, np.ones(3), [reference], translucent,
-                                    [(shell, IMAGE_OPACITY), (lines, 1.0)]), view, label)
+    shown = [show_ball(figure.add_subplot(1, len(labels), index + 1), picture, view, label)
+             for index, (label, picture) in enumerate(zip(labels, pictures))]
     # A prepared probe shows through both its surfaces.
     markers = (
         Line2D([], [], linestyle="none", marker="o", markersize=10, color="0.4", alpha=1 - (1 - PREPARED_OPACITY) ** 2,
@@ -169,6 +176,22 @@ def draw_channels(surface: core.State, outputs: core.State, prepared: core.State
         Line2D([], [], linestyle="none", marker="o", color="0.4", label="After channel"),
     )
     figure.legend(handles=markers, loc="outside lower center", ncol=2, frameon=False)
+    return figure, shown
+
+
+def draw_channels(surface: core.State, outputs: core.State, prepared: core.State,
+                  transformed: core.State, labels: tuple[str, ...]) -> plt.Figure:
+    """The sphere of pure inputs and its reconstructed images, with matching probe points: each image a translucent
+    surface over the same grid as the sphere, the probes as prepared translucent and after the channel solid."""
+    sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
+    images = bloch(outputs)                                                    # [channels, latitudes + 1, longitudes + 1, 3]
+    mapped = bloch(transformed)                                                # [channels, preparations, 3]
+    view = bloch_view()
+    scene = channel_scene(sphere, bloch(prepared), view)
+    faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
+    pictures = [channel_picture(scene, faces, image, points, colour)
+                for image, points, colour in zip(images, mapped, CHANNEL_COLOURS)]
+    figure, _ = channels_figure(pictures, view, labels)
     return figure
 
 
@@ -199,11 +222,21 @@ def print_completeness(spectra: core.Scalar, labels: tuple[str, ...]) -> None:
 
 def animate(surface: core.State, prepared: core.State,
             frames: Iterator[tuple[core.State, core.State]],
-            labels: tuple[str, ...]) -> list[np.ndarray]:
-    """Successive applications of each reconstructed channel to the same input sphere."""
-    images = []
+            labels: tuple[str, ...]) -> Iterator[np.ndarray]:
+    """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws
+    them: the figure, the axes, the sphere, its grid and the probes as prepared set up once, and each frame's images
+    of the sphere and probes after the channels drawn among them."""
+    sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
+    view = bloch_view()
+    scene = channel_scene(sphere, bloch(prepared), view)
+    faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
+    blank = np.full((*view.shape, 3), 255, dtype=np.uint8)
+    figure, shown = channels_figure([blank] * len(labels), view, labels)
+    # The layout settled once, so that only the pictures change between frames.
+    figure.canvas.draw()
+    figure.set_layout_engine("none")
     for output, transformed in frames:
-        figure = draw_channels(surface, output, prepared, transformed, labels)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        for image, picture, points, colour in zip(shown, bloch(output), bloch(transformed), CHANNEL_COLOURS):
+            image.set_data(channel_picture(scene, faces, picture, points, colour))
+        yield capture(figure)
+    plt.close(figure)

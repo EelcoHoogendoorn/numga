@@ -41,7 +41,7 @@ def cameras() -> Iterator[core.Antivector]:
         yield core.rest_camera(frame, core.sighting(track_distance, sighting))     # [cases] Antivector
 
 
-def photographs(cameras: Iterator[core.Antivector]) -> list[np.ndarray]:
+def photographs(cameras: Iterator[core.Antivector]) -> Iterator[np.ndarray]:
     """The pair photographed from each of the cameras, one lane per speed."""
     from examples.relativity.terrell import render
 

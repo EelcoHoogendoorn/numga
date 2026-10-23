@@ -30,5 +30,5 @@ def test_the_bending_scene_passes_its_checks_and_draws():
     change = [np.abs((bar.copy(vertices=shape).corner_cosines() - bar.corner_cosines()).to_array()).mean()
               for shape in (rigid[-1], laplacian[-1])]
     assert change[0] < 0.5 * change[1]
-    images = render.animate(bar, rigid[-1:], np.array([scenarios.LENGTH, 2.0, 2.0]) / scenarios.N_DIVISIONS)
+    images = list(render.animate(bar, rigid[-1:], np.array([scenarios.LENGTH, 2.0, 2.0]) / scenarios.N_DIVISIONS))
     assert len(images) == 1

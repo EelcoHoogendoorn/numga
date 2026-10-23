@@ -251,7 +251,7 @@ def main() -> None:
     def on_s3(scene, name: str, frames: int) -> tuple:
         """Simulate a scene on S³, trace it from its eye, save the last frame and the animation."""
         trajectory, colors, eye, light, *_ = geometry = scene(frames)
-        images = render.s3_frames(trajectory, colors, eye, light, S3_SHAPE)
+        images = list(render.s3_frames(trajectory, colors, eye, light, S3_SHAPE))
         save_figure(render.draw_last_frame(images), name)
         save_animation(images, name, S3_DURATION_MS)
         return geometry

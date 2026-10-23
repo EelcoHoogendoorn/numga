@@ -48,4 +48,4 @@ def test_scenes_draw():
                    render.draw_states(flake, scenarios.nearest(flake, scenarios.CASES))):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
-    assert len(render.animate_spin(flake, spins[:2])) == 2
+    assert len(list(render.animate_spin(flake, spins[:2]))) == 2

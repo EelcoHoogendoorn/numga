@@ -9,6 +9,7 @@ ball over them.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -119,9 +120,10 @@ def frame(background: np.ndarray, reach: float, position, turn, trail, radius: f
     return np.round(np.clip(shown, 0, 1) * 255).astype(np.uint8)
 
 
-def animate(path, rolling, radius: float) -> list[np.ndarray]:
+def animate(path, rolling, radius: float) -> Iterator[np.ndarray]:
     """One frame per state of the ball: its position, its turn and its contact point's trail, all over one view of the
     table, the loop drawn once."""
     reach = np.abs(coordinates(path)[:, :2]).max() + MARGIN * radius
     background = table(path, reach)
-    return [frame(background, reach, position, turn, trail, radius) for position, turn, trail in rolling]
+    for position, turn, trail in rolling:
+        yield frame(background, reach, position, turn, trail, radius)

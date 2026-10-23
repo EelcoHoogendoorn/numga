@@ -23,4 +23,4 @@ def test_pulls_turn_to_the_double_slip_corner_on_two_systems_and_the_figures_dra
     assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()
     directions, factors, planes, slips = scenarios.chart()
     plt.close(render.draw_chart(directions, factors, planes, slips, axes, amounts))
-    assert len(render.animate_paths(directions, factors, axes, amounts, 2)) == 2
+    assert len(list(render.animate_paths(directions, factors, axes, amounts, 2))) == 2

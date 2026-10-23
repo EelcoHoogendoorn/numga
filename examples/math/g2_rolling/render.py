@@ -8,7 +8,7 @@ lies, as the view sees it, within a line's half width of a segment of a route.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import numpy as np
@@ -186,21 +186,22 @@ class SphereScene:
 
 def frames(paths: tuple[Vector, ...], rolling: Iterable[tuple[Vector, Rotor]],
            sphere_radius: float, ball_radius: float, elevation: float, azimuth: float,
-           size: int) -> list[np.ndarray]:
+           size: int) -> Iterator[np.ndarray]:
     """Render successive contact directions and ball attitudes with one fixed camera."""
     scene = SphereScene(paths, paths, sphere_radius, ball_radius, elevation, azimuth, size)
-    return [scene.draw(contact, attitude) for contact, attitude in rolling]
+    for contact, attitude in rolling:
+        yield scene.draw(contact, attitude)
 
 
 def comparison_frames(paths: tuple[Vector, ...], transformed_paths: tuple[Vector, ...],
                       rolling: Iterable[tuple[Vector, Rotor]],
                       transformed_rolling: Iterable[tuple[Vector, Rotor]],
                       sphere_radius: float, ball_radius: float, elevation: float,
-                      azimuth: float, size: int) -> list[np.ndarray]:
+                      azimuth: float, size: int) -> Iterator[np.ndarray]:
     """Two rolling routes in identical camera frames, synchronized by their supplied states."""
     fit_paths = paths + transformed_paths
     scene = SphereScene(paths, fit_paths, sphere_radius, ball_radius, elevation, azimuth, size)
     transformed_scene = SphereScene(transformed_paths, fit_paths, sphere_radius, ball_radius,
                                     elevation, azimuth, size)
-    return [np.concatenate([scene.draw(*state), transformed_scene.draw(*transformed_state)], axis=1)
-            for state, transformed_state in zip(rolling, transformed_rolling)]
+    for state, transformed_state in zip(rolling, transformed_rolling):
+        yield np.concatenate([scene.draw(*state), transformed_scene.draw(*transformed_state)], axis=1)

@@ -3,6 +3,8 @@ green and blue by the planes yz, zx and xy of the vertex field together with tho
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -54,7 +56,7 @@ def view(mesh: Mesh) -> tuple:
     return points, meshes.smooth(points, mesh.faces), frame.squared()
 
 
-def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> list[np.ndarray]:
+def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> Iterator[np.ndarray]:
     """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]`, the tiles in rows
     of the given count, each exposed over all its frames."""
     corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
@@ -62,12 +64,12 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> 
     corners, sides = corners / level, sides / level
     tiles, frames = corners.shape[:2]
     seen = view(mesh)
-    pictures = np.stack([[image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)]
-                         for frame in range(frames)])
-    pictures = np.concatenate([pictures, np.zeros((frames, -tiles % columns) + pictures.shape[2:])], axis=1)
-    rows = pictures.reshape((frames, -1, columns) + pictures.shape[2:])       # [frames, rows, columns, P, P, 3]
-    layout = rows.transpose(0, 1, 3, 2, 4, 5).reshape(frames, rows.shape[1] * pixels, columns * pixels, 3)
-    return list(np.round(255 * layout).astype(np.uint8))
+    for frame in range(frames):
+        pictures = np.stack([image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)])
+        pictures = np.concatenate([pictures, np.zeros((-tiles % columns,) + pictures.shape[1:])])
+        rows = pictures.reshape((-1, columns) + pictures.shape[1:])           # [rows, columns, P, P, 3]
+        layout = rows.transpose(0, 2, 1, 3, 4).reshape(rows.shape[0] * pixels, columns * pixels, 3)
+        yield np.round(255 * layout).astype(np.uint8)
 
 
 def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:

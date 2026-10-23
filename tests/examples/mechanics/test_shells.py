@@ -40,4 +40,4 @@ def test_the_scenes_draw():
     disc, disc_frames = scenarios.disc()
     strip, strip_frames = scenarios.strip()
     plt.close(render.draw_settled([(disc.mesh.faces, disc_frames[-1]), (strip.mesh.faces, strip_frames[-1])]))
-    assert len(render.animate(strip.mesh.faces, strip_frames[-1:])) == 1
+    assert len(list(render.animate(strip.mesh.faces, strip_frames[-1:]))) == 1

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,14 +16,13 @@ from numga import stack
 
 from examples.util.animation import capture
 from examples.fluids.vortices import core
-from examples.util.wgsl import meshes, show, solids
+from examples.util.wgsl import show, solids, strokes
 
-# Worldlines: one colour per vortex, the strands' width in pixels and the sides of their tubes, the view as
-# elevation and azimuth in radians, azimuth zero looking along +y, the margin around a braid as a share of its
-# larger side, the size in inches of each braid's square panel and the pixels along its larger side.
+# Worldlines: one colour per vortex, the strands' width in pixels, the view as elevation and azimuth in radians,
+# azimuth zero looking along +y, the margin around a braid as a share of its larger side, the size in inches of each
+# braid's square panel and the pixels along its larger side.
 STRANDS = np.array([to_rgb(colour) for colour in ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe")])
 STRAND_WIDTH = 4.0
-N_AROUND = 8
 ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
 MARGIN = 0.1
 PANEL_SIZE = 6.0
@@ -60,11 +60,11 @@ def field(ax: Axes, points: core.Point, values: np.ndarray, limit: float, colour
 
 
 def panels(figure: plt.Figure, points: core.Point, derivative: core.Even, swirl: core.Scalar,
-           vorticity_limit: float, swirl_limit: float) -> None:
+           vorticity_limit: float, swirl_limit: float) -> list[AxesImage]:
     vorticity = derivative.cast(core.ga.subspace("xy")).kernel[..., 0]
     left, right = figure.subplots(1, 2)
-    field(left, points, vorticity, vorticity_limit, "RdBu_r")
-    field(right, points, swirl.kernel[..., 0], swirl_limit, "PuOr_r")
+    return [field(left, points, vorticity, vorticity_limit, "RdBu_r"),
+            field(right, points, swirl.kernel[..., 0], swirl_limit, "PuOr_r")]
 
 
 def figure(points: core.Point, derivative: core.Even, swirl: core.Scalar, vorticity_limit: float, swirl_limit: float) -> plt.Figure:
@@ -73,20 +73,25 @@ def figure(points: core.Point, derivative: core.Even, swirl: core.Scalar, vortic
     return result
 
 
-def frame(points: core.Point, derivative: core.Even, swirl: core.Scalar, vorticity_limit: float, swirl_limit: float) -> np.ndarray:
-    result = plt.figure(figsize=(10, 10 / (2 * aspect(points)) + 0.3), dpi=80, layout="constrained")
-    panels(result, points, derivative, swirl, vorticity_limit, swirl_limit)
-    pixels = capture(result)
-    plt.close(result)
-    return pixels
-
-
 def animate(frames: Iterable[tuple[core.Vortices, core.Point, core.Even, core.Scalar]],
-            vorticity_limit: float, swirl_limit: float) -> list[np.ndarray]:
-    return [frame(points, derivative, swirl, vorticity_limit, swirl_limit) for _, points, derivative, swirl in frames]
+            vorticity_limit: float, swirl_limit: float) -> Iterator[np.ndarray]:
+    """Vorticity and swirl on the window that follows the vortices, frame by frame: the figure set up on the first
+    frame, each frame's fields and window set in it."""
+    frames = iter(frames)
+    first = _, points, derivative, swirl = next(frames)
+    result = plt.figure(figsize=(10, 10 / (2 * aspect(points)) + 0.3), dpi=80, layout="constrained")
+    images = panels(result, points, derivative, swirl, vorticity_limit, swirl_limit)
+    for _, points, derivative, swirl in chain([first], frames):
+        box = extent(points)
+        for image, values in zip(images, (derivative.cast(core.ga.subspace("xy")).kernel[..., 0], swirl.kernel[..., 0])):
+            image.set_data(values)
+            image.set_extent(box)
+            image.axes.set(xlim=box[:2], ylim=box[2:])
+        yield capture(result)
+    plt.close(result)
 
 
-def window(points: core.Point, frames: Iterable[tuple[core.Vortices, core.Even]], vorticity_limit: float) -> list[np.ndarray]:
+def window(points: core.Point, frames: Iterable[tuple[core.Vortices, core.Even]], vorticity_limit: float) -> Iterator[np.ndarray]:
     """Vorticity on one fixed strip of the plane, frame by frame, each vortex trailing the path it has
     taken. One figure is updated in place and drawn once per frame, without supersampling, to keep
     pace."""
@@ -95,19 +100,17 @@ def window(points: core.Point, frames: Iterable[tuple[core.Vortices, core.Even]]
     image = field(ax, points, np.zeros(points.shape), vorticity_limit, "RdBu_r")
     path = ax.add_collection(LineCollection([], colors="#0f172a", linewidths=0.8, alpha=0.5))
     travelled = []
-    pixels = []
     for vortices, derivative in frames:
         travelled.append(positions(vortices.centres))                          # [vortices, 2] each
         image.set_data(derivative.cast(core.ga.subspace("xy")).kernel[..., 0])
         path.set_segments(np.stack(travelled, axis=1))
         result.canvas.draw()
-        pixels.append(np.asarray(result.canvas.buffer_rgba())[..., :3].copy())
+        yield np.asarray(result.canvas.buffer_rgba())[..., :3].copy()
     plt.close(result)
-    return pixels
 
 
 def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
-    """Worldlines `[times, vortices]` side by side, each a braid of tubes through the plane and time, one
+    """Worldlines `[times, vortices]` side by side, each a braid of strokes through the plane and time, one
     colour per vortex, drawn following the vortices' mean position. Time runs upward and is stretched to
     `height` times the braid's width: it has no scale of its own against distance."""
     result = plt.figure(figsize=(PANEL_SIZE * len(worldlines), PANEL_SIZE))
@@ -121,6 +124,6 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         # The braid's larger side spans the panel's pixels.
         view = solids.View(camera, half, round(PANEL_PIXELS * half[0] / half.max()))
         strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
-        tubes = meshes.tube_samples(strands, STRAND_WIDTH, view, N_AROUND)
-        show(ax, solids.draw([], view, BACKGROUND, meshes=[(tubes, 1.0)]), view)
+        lines = strokes.polylines(strands, STRAND_WIDTH, view)
+        show(ax, solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)]), view)
     return result

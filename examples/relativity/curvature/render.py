@@ -8,6 +8,7 @@ animation.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import matplotlib.pyplot as plt
@@ -264,7 +265,7 @@ def draw_detector(
 
 def animate_detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """The bead ring through the circular packet, as frames at 20 per unit time."""
     data = _detector(time, reference, displacement, acceleration, amplification)
     fig = plt.figure(figsize=(5.2, 5.2), dpi=animation_dpi, facecolor="white")
@@ -274,9 +275,7 @@ def animate_detector(
     ax.set_axis_off()
     update = _ring(ax, data, animated_polarization, static=False)
     count = min(len(data.time), max(2, round((data.time[-1] - data.time[0]) * 20) + 1))
-    frames = []
     for index in np.linspace(0, len(data.time) - 1, count, dtype=int):
         update(index)
-        frames.append(capture(fig))
+        yield capture(fig)
     plt.close(fig)
-    return frames

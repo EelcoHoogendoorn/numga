@@ -3,6 +3,8 @@ the rest by matplotlib."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -10,7 +12,8 @@ from matplotlib.figure import Figure
 
 from examples.util.animation import capture
 from examples.quantum.superconductivity import core
-from examples.util.wgsl import labels, meshes, solids
+from examples.util.wgsl import labels, meshes, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 INK = "#263b51"
@@ -29,9 +32,9 @@ ENERGY_SCALE, ENERGY_START, ENERGY_END, COHERENCE_REACH = 0.4, -3.4, 3.7, 0.68
 # of the larger side, and the pixels across it.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-58.0 + 90.0)
 MARGIN, N_PIXELS = 0.08, 700
-# The points around a circle and a tube; the widths of the axes' shafts, the circles, the path and the arrows'
-# shafts, the arrowheads' lengths and widths, and the radius of the tips, in pixels.
-N_CIRCLE, N_AROUND = 100, 8
+# The points around a circle; the widths of the axes' shafts, the circles, the path and the arrows' shafts, the
+# arrowheads' lengths and widths, and the radius of the tips, in pixels.
+N_CIRCLE = 100
 AXIS_WIDTH, CIRCLE_WIDTH, PATH_WIDTH, STEM_WIDTH = 2.0, 1.6, 2.0, 3.6
 AXIS_HEAD_LENGTH, AXIS_HEAD_WIDTH, STEM_HEAD_LENGTH, STEM_HEAD_WIDTH = 14.0, 8.0, 13.0, 10.0
 TIP_RADIUS = 4.0
@@ -92,8 +95,9 @@ def label_chart(axis: plt.Axes, view: solids.View) -> None:
 
 def animate_quench(
     dispersion: core.Spin, spins: core.Spin, gaps: core.Spin, times: np.ndarray,
-) -> list[np.ndarray]:
-    """Arrows in each energy level's pairing plane, beside their collective gap."""
+) -> Iterator[np.ndarray]:
+    """Arrows in each energy level's pairing plane, beside their collective gap; the chart's axes and circles set
+    up once."""
     energies = dispersion.dot(core.mv.xy).to_array()
     transverse = spins.cast(core.ga.subspace("yz zx")).kernel
     amplitudes = gaps.norm().to_array()
@@ -104,8 +108,8 @@ def animate_quench(
     colours = plt.colormaps["coolwarm"](np.linspace(0.08, 0.92, len(energies)))[:, :3]
 
     view, axes, circles = chart(energies)
-    rings = (meshes.tube_samples([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view, N_AROUND),
-             CIRCLE_OPACITY)
+    rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
+    scene = Scene(view, np.ones(3), axes, [rings])
 
     def arrows(coherence: np.ndarray) -> np.ndarray:
         """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
@@ -115,8 +119,8 @@ def animate_quench(
                                       STEM_HEAD_LENGTH * view.pixel, STEM_HEAD_WIDTH / 2 * view.pixel)
         stems = [(shafts, colours), (heads, colours),
                  (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
-        path = meshes.tube_samples([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view, N_AROUND)
-        return solids.draw(axes + stems, view, np.ones(3), meshes=[rings, (path, PATH_OPACITY)])
+        path = strokes.polylines([(tips, np.array(to_rgb(INK)))], PATH_WIDTH, view)
+        return scene.draw(stems, meshes=[(path, PATH_OPACITY)])
 
     figure = plt.figure(figsize=(9.0, 3.7), dpi=90)
     axis = figure.add_axes((0.01, 0.08, 0.57, 0.85))
@@ -126,17 +130,16 @@ def animate_quench(
     label_chart(axis, view)
     gap_line, = curve.plot([], [], color=PAIR, linewidth=2)
     gap_tip, = curve.plot([], [], "o", color=PAIR, markersize=6)
-    curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes.max() * 1.12))
+    # The gap's axis reaches past its value right after the quench, which it falls from.
+    curve.set(xlim=(times[0], times[-1]), ylim=(0, amplitudes[0] * 1.12))
     plain_axes(curve, "time", r"$|\Delta|$")
 
-    frames = []
     for index, coherence in enumerate(transverse):
         image.set_data(arrows(coherence))
         gap_line.set_data(times[:index + 1], amplitudes[:index + 1])
         gap_tip.set_data([times[index]], [amplitudes[index]])
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 
 
 def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> Figure:

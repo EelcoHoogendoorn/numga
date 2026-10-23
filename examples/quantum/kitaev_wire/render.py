@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap, PowerNorm
@@ -14,6 +16,9 @@ INK = "#263b51"
 SLOW = "#148d88"
 FAST = "#d06c36"
 GATE = LinearSegmentedColormap.from_list("gate", ["white", "#e8e4f5"])
+# The mode weight at the top of the transport panels: above the most any one site holds, as the fast move squeezes
+# the mode against the moving end.
+WEIGHT_LIMIT = 0.6
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -53,13 +58,12 @@ def draw_formation(chemical_potentials: np.ndarray, energies: core.Scalar,
 def animate_transport(
     progress: np.ndarray, potentials: core.Scalar, history: core.Majorana,
     target: core.Majorana, share: core.Scalar, hopping: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     weights = history.scalar_norm_squared().to_array()
     expected = target.scalar_norm_squared().to_array()
     chemical = potentials.to_array()
     leakage = 1 - share.to_array()
     sites = np.arange(weights.shape[-1])
-    maximum = max(weights.max(), expected.max()) * 1.15
     regime = shade(chemical, hopping)
 
     figure, axes = plt.subplots(3, 1, figsize=(8.4, 5.5), dpi=90,
@@ -68,7 +72,7 @@ def animate_transport(
     lines, references, gates, fills = [], [], [], []
     for case, (axis, colour) in enumerate(zip(axes[:2], (SLOW, FAST))):
         # A two-row mesh shaded between its vertices fills the panel with the gate profile.
-        gates.append(axis.pcolormesh(sites, [0, maximum], np.broadcast_to(regime[0], (2, len(sites))),
+        gates.append(axis.pcolormesh(sites, [0, WEIGHT_LIMIT], np.broadcast_to(regime[0], (2, len(sites))),
                                      shading="gouraud", cmap=GATE, vmin=0, vmax=1, zorder=0))
         line, = axis.plot(sites, weights[0, case], color=colour, linewidth=2, label="evolving mode")
         reference, = axis.plot(sites, expected[0], color=INK, linestyle="--", linewidth=1,
@@ -76,7 +80,7 @@ def animate_transport(
         fills.append(axis.fill_between(sites, weights[0, case], color=colour, alpha=0.25))
         lines.append(line)
         references.append(reference)
-        axis.set(xlim=(sites[0], sites[-1]), ylim=(0, maximum), xticks=[], yticks=[], xlabel="site", ylabel="mode weight")
+        axis.set(xlim=(sites[0], sites[-1]), ylim=(0, WEIGHT_LIMIT), xticks=[], yticks=[], xlabel="site", ylabel="mode weight")
         plain_axes(axis)
     axes[0].legend(frameon=False, loc="lower right", bbox_to_anchor=(1.0, 1.0), fontsize=8, ncol=2)
     traces = [axes[2].plot([], [], color=colour, linewidth=2)[0] for colour in (SLOW, FAST)]
@@ -85,7 +89,6 @@ def animate_transport(
     axes[2].set(xlim=(0, 1), ylim=(0, 1.02), xticks=[], yticks=[0, 1], xlabel="fraction of gate motion", ylabel="bulk weight")
     plain_axes(axes[2])
 
-    frames = []
     for frame, fraction in enumerate(progress):
         for case, colour in enumerate((SLOW, FAST)):
             lines[case].set_ydata(weights[frame, case])
@@ -95,9 +98,8 @@ def animate_transport(
             fills[case] = axes[case].fill_between(sites, weights[frame, case], color=colour, alpha=0.25)
             traces[case].set_data(progress[:frame + 1], leakage[:frame + 1, case])
         cursor.set_xdata([fraction, fraction])
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 
 
 def draw_transport(progress: np.ndarray, history: core.Majorana, potentials: core.Scalar,

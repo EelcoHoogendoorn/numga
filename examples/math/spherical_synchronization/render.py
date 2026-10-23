@@ -9,6 +9,7 @@ dots about their places on the screen. The far side shows faintly through the ne
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -160,6 +161,7 @@ def draw(population: Point, circles: Cut) -> plt.Figure:
     return image_figure(picture(population, circles))
 
 
-def frames(population: Point, circles: Cut) -> list[np.ndarray]:
+def frames(population: Point, circles: Cut) -> Iterator[np.ndarray]:
     """Animate a fixed camera while the common motion gathers the population."""
-    return [picture(frame_population, frame_circles) for frame_population, frame_circles in zip(population, circles)]
+    for frame_population, frame_circles in zip(population, circles):
+        yield picture(frame_population, frame_circles)

@@ -3,6 +3,8 @@ bow on the sky opposite the sun, seen from the ground."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -92,7 +94,7 @@ def draw_sky(apart: core.Scalar, flux: core.Scalar, wavelengths: np.ndarray, sun
 
 def animate_sweep(swept: tuple[core.Direction, core.Direction, core.Direction, core.Scalar],
                   bundle: tuple[core.Direction, core.Direction, core.Direction, core.Scalar],
-                  offsets: core.Direction, apart: core.Scalar, wavelengths: np.ndarray) -> list[np.ndarray]:
+                  offsets: core.Direction, apart: core.Scalar, wavelengths: np.ndarray) -> Iterator[np.ndarray]:
     """Light swept across the drop, with a bundle of light behind it, its paths after one and two
     reflections; beside it, the angle each colour is seen at against the offset of the light."""
     def rays(entry, vertices, exits):
@@ -106,32 +108,35 @@ def animate_sweep(swept: tuple[core.Direction, core.Direction, core.Direction, c
     heights = (mv.y & offsets).to_array()                                     # [rays]
     curves, colours = degrees(apart), spectrum(wavelengths) / spectrum(wavelengths).max(axis=-1, keepdims=True)
     marks, swept_heights = degrees(swept[3]), (mv.y & swept[0]).to_array()   # [orders + 1, frames], [frames]
-    images = []
+    # The drop, the bundle of light behind it and each colour's angles stay put; the swept light and its marks move.
+    figure = plt.figure(figsize=(11.0, 5.0), dpi=100, facecolor=BACKGROUND)
+    drop = figure.add_axes((0, 0, 0.5, 1))
+    drop.set_facecolor(BACKGROUND)
+    drop.add_patch(plt.Circle((0, 0), 1, color=DROP))
+    for paths, colour in zip(bundle_rays, (PRIMARY, SECONDARY)):
+        drop.add_collection(LineCollection(paths[:, -2:], colors=colour, linewidths=0.6, alpha=0.4))
+    # The swept light's paths after two reflections and after one, and the sunlight reaching the drop.
+    lights = [drop.plot([], [], color=colour, linewidth=2)[0] for colour in (SECONDARY, PRIMARY, SUNLIGHT)]
+    drop.set_xlim(-REACH, REACH)
+    drop.set_ylim(-REACH * 0.9, REACH * 0.9)
+    drop.set_aspect("equal")
+    drop.set_axis_off()
+    angles = figure.add_axes((0.57, 0.12, 0.4, 0.82))
+    angles.set_facecolor(BACKGROUND)
+    markers = []
+    for order, mark in ((0, PRIMARY), (1, SECONDARY)):
+        for curve, colour in zip(curves[order], colours):
+            angles.plot(heights, curve, color=colour, linewidth=0.8)
+        markers += angles.plot([], [], "o", color=mark, markersize=8)
+    angles.set_xlim(0, 1)
+    angles.set_ylim(0, 90)
+    angles.tick_params(colors="#94a3b8")
+    for spine in angles.spines.values():
+        spine.set_color("#475569")
     for frame in range(len(swept_heights)):
-        figure = plt.figure(figsize=(11.0, 5.0), dpi=100, facecolor=BACKGROUND)
-        drop = figure.add_axes((0, 0, 0.5, 1))
-        drop.set_facecolor(BACKGROUND)
-        drop.add_patch(plt.Circle((0, 0), 1, color=DROP))
-        for paths, colour in zip(bundle_rays, (PRIMARY, SECONDARY)):
-            drop.add_collection(LineCollection(paths[:, -2:], colors=colour, linewidths=0.6, alpha=0.4))
-        for paths, colour in reversed(list(zip(swept_rays, (PRIMARY, SECONDARY)))):
-            drop.plot(*paths[frame, 1:].T, color=colour, linewidth=2)
-        drop.plot(*swept_rays[0][frame, :2].T, color=SUNLIGHT, linewidth=2)
-        drop.set_xlim(-REACH, REACH)
-        drop.set_ylim(-REACH * 0.9, REACH * 0.9)
-        drop.set_aspect("equal")
-        drop.set_axis_off()
-        angles = figure.add_axes((0.57, 0.12, 0.4, 0.82))
-        angles.set_facecolor(BACKGROUND)
-        for order, mark in ((0, PRIMARY), (1, SECONDARY)):
-            for curve, colour in zip(curves[order], colours):
-                angles.plot(heights, curve, color=colour, linewidth=0.8)
-            angles.plot(swept_heights[frame], marks[order + 1, frame], "o", color=mark, markersize=8)
-        angles.set_xlim(0, 1)
-        angles.set_ylim(0, 90)
-        angles.tick_params(colors="#94a3b8")
-        for spine in angles.spines.values():
-            spine.set_color("#475569")
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        for light, path in zip(lights, (swept_rays[1][frame, 1:], swept_rays[0][frame, 1:], swept_rays[0][frame, :2])):
+            light.set_data(*path.T)
+        for order, marker in enumerate(markers):
+            marker.set_data([swept_heights[frame]], [marks[order + 1, frame]])
+        yield capture(figure)
+    plt.close(figure)

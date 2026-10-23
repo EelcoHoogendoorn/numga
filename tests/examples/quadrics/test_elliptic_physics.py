@@ -106,6 +106,6 @@ def test_s3_scenarios_render():
     for scene in (scenarios.crowd, scenarios.gap, scenarios.needle, scenarios.tunnel):
         trajectory, colors, eye, light, *_ = scene(12)
         scenarios.collisions_conserve_energy(trajectory)
-        frames = render.s3_frames(trajectory, colors, eye, light, (45, 60))
+        frames = list(render.s3_frames(trajectory, colors, eye, light, (45, 60)))
         assert isinstance(render.draw_last_frame(frames), plt.Figure)
         assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

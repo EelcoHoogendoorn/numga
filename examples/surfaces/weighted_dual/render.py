@@ -1,14 +1,16 @@
 """The hull and its polar dual in space, and both projected onto the sphere, ray traced on the GPU: the hull the
-translucent solid inside the planes of its faces, edges tubes, and the arcs on the sphere inked on its surface."""
+translucent solid inside the planes of its faces, edges strokes, and the arcs on the sphere inked on its surface."""
 
 from __future__ import annotations
+
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.weighted_dual import core
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, solids, strokes
 
 sm = solids.mv
 PRIMAL_COLOUR = np.array(to_rgb("#287fa0"))
@@ -76,13 +78,13 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     distance = np.linalg.norm(xyz, axis=-1)
     rays = xyz / distance[:, None]
     colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
-    # The edges and the rays are strokes, rasterized as tubes; the shells and the vertices are traced.
-    strokes = [meshes.segment_samples(xyz[edges[:, 0]], xyz[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
-               meshes.segment_samples(poles[beside[:, 0]], poles[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
-               meshes.segment_samples(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
+    # The edges and the rays are strokes; the shells and the vertices are traced.
+    lines = [strokes.segments(xyz[edges[:, 0]], xyz[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
+             strokes.segments(poles[beside[:, 0]], poles[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
+             strokes.segments(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
     space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
                         translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
-                        meshes=[(stroke, 1.0) for stroke in strokes])
+                        meshes=[(line, 1.0) for line in lines])
     # On the sphere, the arcs of both, each coloured by its kind.
     on_sphere, duals_on_sphere = rays, poles / np.linalg.norm(poles, axis=-1, keepdims=True)
     primal_arcs, dual_arcs = arcs(on_sphere[edges]), arcs(duals_on_sphere[beside])
@@ -92,6 +94,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     return np.concatenate([space, image], axis=1)
 
 
-def animate(frames: list[tuple[core.Point, np.ndarray, core.Point]]) -> list[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Point, np.ndarray, core.Point]]) -> Iterator[np.ndarray]:
     """The complex at every frame, from one view."""
-    return [picture(*geometry) for geometry in frames]
+    for geometry in frames:
+        yield picture(*geometry)

@@ -1,6 +1,6 @@
 """Coxeter projections of the E8 roots and their simultaneous planar rotations."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,7 +51,8 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     return figure
 
 
-def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector, vertical: Vector) -> list[np.ndarray]:
+def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector,
+                   vertical: Vector) -> Iterator[np.ndarray]:
     """Eight coloured roots moving in each invariant plane, with trails of equal duration."""
     projected = coordinates(roots[:, None, :], horizontal[None, :, None], vertical[None, :, None])
     positions = np.stack([
@@ -83,7 +84,6 @@ def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector,
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.025)
 
-    frames = []
     for frame in range(n_frames):
         for index in range(n_planes):
             trail = positions[(frame + history) % n_frames, index].transpose(1, 0, 2)
@@ -91,6 +91,5 @@ def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector,
             for arc, start, stop in zip(trails[index], angles[:, :-1].flat, angles[:, 1:].flat):
                 arc.theta1, arc.theta2 = start, stop
             riders[index].set_offsets(positions[frame, index])
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames

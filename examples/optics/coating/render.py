@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
 from examples.optics.coating import core
 from examples.util.wgsl import meshes, solids
+from examples.util.wgsl.scene import Scene
 
 case_colours = ("#2563eb", "#ea580c", "#0d9488", "#7c3aed")
 sm = solids.mv
@@ -148,13 +151,14 @@ def tube(rings: solids.Point, faces: np.ndarray, colours: np.ndarray, view: soli
                           colour=translucent)
 
 
-def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector, electric: core.Bivector) -> list[np.ndarray]:
-    """The electric field along the line at each frame, seen from aside and a little above: the path of its tip,
-    coloured by its direction around the line, over faint spokes from the line out to it. A field that turns traces
-    loops; one that does not stays in its plane. The slab is a translucent box, its optic axes grey rods."""
+def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
+          electric: Iterable[core.Bivector]) -> Iterator[np.ndarray]:
+    """The electric field along the line `[nodes]` at each frame, each drawn as it comes, seen from aside and a little
+    above: the path of its tip, coloured by its direction around the line, over faint spokes from the line out to it.
+    A field that turns traces loops; one that does not stays in its plane. The slab is a translucent box, its optic
+    axes grey rods."""
     algebra = nodes.algebra
     depths = nodes.cast(algebra.subspace("z")).kernel[:, 0]                           # [nodes]
-    fields = electric.cast(algebra.subspace("xt yt")).kernel                         # [frames, nodes, 2]
     slab_depths = slab.cast(algebra.subspace("z")).kernel[:, 0]                       # [slab nodes]
     optic_axes = optic_reach * field_length * directors.cast(algebra.subspace("x y")).kernel[::3]   # [rods, 2]
     rod_depths = slab_depths[::3, None]                                              # [rods, 1]
@@ -175,15 +179,12 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector, electri
                          upright >> sm.point(np.concatenate([optic_axes, rod_depths], axis=-1)),
                          optic_width / 2 * view.pixel)
 
-    # Every frame's path at once, so that the tubes' frames walk along the nodes once for all of them; each frame's
-    # tube its own run of rings, all with the same triangles.
-    paths = scene(np.concatenate([field_length * fields, np.broadcast_to(depths[:, None], fields.shape[:2] + (1,))],
-                                 axis=-1))                                          # [frames, nodes, 3]
-    rings, faces = meshes.tube(paths, path_width / 2 * view.pixel, n_around)
-    per_frame = len(depths) * n_around
-    faces = faces[:len(faces) // len(fields)]
-    frames = []
-    for index, (field, tips) in enumerate(zip(fields, paths)):
+    # The line, the optic axes and the slab stay put.
+    picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
+                    translucent=[(box, slab_colour, slab_opacity)])
+    for planes in electric:
+        field = planes.cast(algebra.subspace("xt yt")).kernel                        # [nodes, 2]
+        tips = scene(np.concatenate([field_length * field, depths[:, None]], axis=-1))   # [nodes, 3]
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
         strength = np.clip(np.hypot(*field.T) * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))
@@ -191,7 +192,6 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector, electri
         spoked = np.flatnonzero(strength > spoke_floor)[::2]
         spokes = strokes(scene(np.column_stack([np.zeros((len(spoked), 2)), depths[spoked]])), tips[spoked],
                          np.column_stack([colours, spoke_opacity * strength])[spoked], spoke_width, view)
-        path = tube(rings[index * per_frame:(index + 1) * per_frame], faces, np.column_stack([colours, strength]), view)
-        frames.append(solids.draw([(line, line_colour), (optics, optic_colour)], view, np.ones(3),
-                                  translucent=[(box, slab_colour, slab_opacity)], meshes=[(spokes, 1.0), (path, 1.0)]))
-    return frames
+        rings, faces = meshes.tube(tips[None], path_width / 2 * view.pixel, n_around)
+        path = tube(rings, faces, np.column_stack([colours, strength]), view)
+        yield picture.draw(meshes=[(spokes, 1.0), (path, 1.0)])

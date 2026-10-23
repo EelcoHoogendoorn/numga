@@ -127,6 +127,6 @@ def test_figures_and_composed_channel_animation_draw_without_saving():
 
     states = ((accumulated[:, None, None](surface), accumulated[:, None](prepared))
               for accumulated in core.powers(learned, 2))
-    frames = render.animate(surface, prepared, states, scenarios.LABELS)
+    frames = list(render.animate(surface, prepared, states, scenarios.LABELS))
     assert frames[0].ndim == 3 and frames[0].shape == frames[1].shape
     assert not np.array_equal(frames[0], frames[1])

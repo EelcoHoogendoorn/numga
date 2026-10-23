@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -73,16 +73,17 @@ def frame(points: core.Point, velocity: core.Point, stream: core.Bivector, lift:
 
 
 def animate_marked(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Point, core.Point, core.Point]],
-                   speed: float) -> list[np.ndarray]:
+                   speed: float) -> Iterator[np.ndarray]:
     """Each frame of points, velocity, stream function and lift, with the critical points' images and the
     cylinder's centre marked."""
-    return [frame(points, velocity, stream, lift, speed, critical, centre)
-            for points, velocity, stream, lift, critical, centre in frames]
+    for points, velocity, stream, lift, critical, centre in frames:
+        yield frame(points, velocity, stream, lift, speed, critical, centre)
 
 
-def animate(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Point]], speed: float) -> list[np.ndarray]:
+def animate(frames: Iterable[tuple[core.Point, core.Point, core.Bivector, core.Point]], speed: float) -> Iterator[np.ndarray]:
     """Each frame of points, velocity, stream function and lift."""
-    return [plain_frame(points, velocity, stream, lift, speed) for points, velocity, stream, lift in frames]
+    for points, velocity, stream, lift in frames:
+        yield plain_frame(points, velocity, stream, lift, speed)
 
 
 def plain_frame(points: core.Point, velocity: core.Point, stream: core.Bivector, lift: core.Point, speed: float) -> np.ndarray:

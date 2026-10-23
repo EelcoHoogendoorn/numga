@@ -18,5 +18,5 @@ def test_statics_and_homing():
 
 
 def test_tracking_animation_renders():
-    frames = render.animate_tracking(islice(scenarios.tracking(), 3))
+    frames = list(render.animate_tracking(islice(scenarios.tracking(), 3)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

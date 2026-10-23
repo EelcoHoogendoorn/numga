@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -225,7 +225,7 @@ def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
 
 
 def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
-            fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
+            fibres: tuple[core.Point, ...], shown: np.ndarray) -> Iterator[np.ndarray]:
     """Batched rotating materials and their currents, on one scale across cases and time, the currents' paths the
     contours of their streamfunctions, with `[curves, samples]` body-fixed guide families drawn on the panels that show
     them, `[cases, families]`."""
@@ -255,7 +255,6 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width
     panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
     fixed_patches = len(panels[0][0].patches)
-    images = []
     for state, vectors, speed, stream, alpha, frame_marks in zip(
             states, current, vertex_magnitude, streamfunction, opacity, marks):
         positions = planar(state.vertices.batch())
@@ -271,7 +270,7 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width
             colour = (0.29, 0.24, 0.20, alpha[i])
             paths.append(current_contours(ax, triangles, stream[i], vectors[i], levels[i, levels[i] != 0],
                                            current_arrow_length * extent, colour))
-        images.append(capture(figure))
+        yield capture(figure)
         for surface in surfaces:
             surface.remove()
         for path, (ax, threads, marker, outline) in zip(paths, panels):
@@ -279,11 +278,10 @@ def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width
             for arrow in tuple(ax.patches)[fixed_patches:]:
                 arrow.remove()
     plt.close(figure)
-    return images
 
 
 def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
-                 fibres: tuple[core.Point, ...], shown: np.ndarray) -> list[np.ndarray]:
+                 fibres: tuple[core.Point, ...], shown: np.ndarray) -> Iterator[np.ndarray]:
     """Accumulated heat per area, carried by the moving material faces on one common scale."""
     states = list(frames)
     # Face heat is energy. Dividing by each material face's area gives the density to colour.
@@ -300,7 +298,6 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
-    images = []
     for state, densities, frame_marks in zip(states, values, marks):
         positions = planar(state.vertices.batch())
         threads_at = planar(state.orientation[:, None, None] >> guides)
@@ -313,8 +310,7 @@ def animate_heat(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, 
             outline.set_segments(positions[i, boundary])
             threads.set_segments(threads_at[i])
             marker.set_offsets(frame_marks[i:i + 1])
-        images.append(capture(figure))
+        yield capture(figure)
         for surface in surfaces:
             surface.remove()
     plt.close(figure)
-    return images

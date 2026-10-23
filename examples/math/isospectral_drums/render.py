@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -153,16 +153,16 @@ class Membrane:
 def frames(
     vertices: tuple[Point, Point], triangles: tuple[np.ndarray, np.ndarray], tiles: Point,
     fields: Iterable[tuple[Scalar, Scalar]], exposure: float,
-) -> list[np.ndarray]:
+) -> Iterator[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
     seven triangles `tiles [2, tiles, 3]`."""
     points = tuple(coordinates(value) for value in vertices)
     corners = coordinates(tiles)                                             # [2, tiles, 3, 2]
     scale = 0.91 * PIXELS / max(np.ptp(value, axis=0).max() for value in points)
     membranes = tuple(Membrane(value, places, faces, scale) for value, places, faces in zip(vertices, points, triangles))
-    return [np.concatenate([membrane.outline(membrane.draw(amplitudes(field), exposure), drum)
-                            for membrane, field, drum in zip(membranes, pair, corners)], axis=1)
-            for pair in fields]
+    for pair in fields:
+        yield np.concatenate([membrane.outline(membrane.draw(amplitudes(field), exposure), drum)
+                              for membrane, field, drum in zip(membranes, pair, corners)], axis=1)
 
 
 def draw_pieces(vertices: Point, triangles: np.ndarray, pieces: Scalar, exposure: float) -> plt.Figure:

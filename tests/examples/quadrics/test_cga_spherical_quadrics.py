@@ -82,7 +82,7 @@ def test_render_all_shapes():
     assert len(table) == 13
     for name in table:
         world, colors = scenarios.vortex([name], 1)
-        frame = render.vortex_frames(world, colors, 60)[0]
+        frame = list(render.vortex_frames(world, colors, 60))[0]
         assert frame.shape == (60, 60, 3)
         assert frame.dtype == np.uint8
         assert np.any(frame != frame[0, 0])
@@ -90,5 +90,5 @@ def test_render_all_shapes():
 
 def test_vortex_animates():
     world, colors = scenarios.vortex(["trio"], 6)
-    frames = render.vortex_frames(world, colors, 80)
+    frames = list(render.vortex_frames(world, colors, 80))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from functools import cache
 
 import matplotlib.pyplot as plt
@@ -139,9 +140,10 @@ FOV = np.radians(120.0)                            # rad
 
 
 def s3_frames(trajectory: S3.Trajectory, colors: np.ndarray, eye: S3.Motor, light: S3.Point,
-              shape: tuple[int, int]) -> list[np.ndarray]:
+              shape: tuple[int, int]) -> Iterator[np.ndarray]:
     """Every frame traced from the eye along great circles, each ellipsoid lit by the light."""
-    return [trace(eye, surfaces, colors, light, FOV, shape) for surfaces in trajectory.surfaces]
+    for surfaces in trajectory.surfaces:
+        yield trace(eye, surfaces, colors, light, FOV, shape)
 
 
 def draw_last_frame(frames: list[np.ndarray]) -> plt.Figure:

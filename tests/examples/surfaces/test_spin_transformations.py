@@ -39,7 +39,7 @@ def test_the_dirac_spheres_have_fields_of_zero_energy():
 
 def test_the_rounding_animation_draws():
     frames = core.conformal_smooth(core.spot(), 1, scenarios.RATE)
-    assert len(render.animate_rounding(frames)) == 2
+    assert len(list(render.animate_rounding(frames))) == 2
 
 
 def test_the_dirac_operator_is_the_geometric_derivative_times_the_face_normals():

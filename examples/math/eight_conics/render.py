@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import contourpy
 import matplotlib.pyplot as plt
 import numpy as np
@@ -79,29 +81,36 @@ def draw_double_contact(base: core.Conic, touching: core.Conic, chord: core.Plan
 
 
 def animate_eighth(conics: core.Conic, chords: core.Plane, contacts: core.Point, edges: np.ndarray,
-                   closing_edges: np.ndarray) -> list[np.ndarray]:
+                   closing_edges: np.ndarray) -> Iterator[np.ndarray]:
     """The cube deforming `[frames, 8]`: the eighth conic bold, its three neighbours in their colours, each
     with their common chord and their two points of contact, and the other four conics faint."""
     n_frames, n_conics = conics.shape
-    paths = curves(conics.reshape(-1))
-    bounds = framing(paths)
+    # The view framed on the conics of the first frame.
+    bounds = framing(curves(conics[0]))
     neighbours = edges[closing_edges, 0]                                       # [3] vertices
     others = np.setdiff1d(np.arange(n_conics - 1), neighbours)
     chord_paths = line_segments(chords[:, closing_edges].reshape(-1), bounds)
     contact_points = xy(contacts[:, closing_edges])                            # [frames, 3, 2, 2]
-    frames = []
+    # The figure and its curves laid out once; each frame only moves them.
+    figure, axes = canvas(bounds)
+    other_lines = [axes.add_collection(LineCollection([], colors=CONTEXT, linewidths=1.2)) for _ in others]
+    chord_lines, neighbour_lines = [], []
+    for colour in NEIGHBOURS:
+        chord_lines.append(axes.add_collection(LineCollection([], colors=colour, linewidths=0.9, linestyles="dashed",
+                                                              alpha=0.6)))
+        neighbour_lines.append(axes.add_collection(LineCollection([], colors=colour, linewidths=1.8)))
+    eighth_line = axes.add_collection(LineCollection([], colors=COMPLETION, linewidths=3.0))
+    markers = [axes.scatter(*contact_points[0, side].T, s=90, color=colour, edgecolors="white", linewidths=1.5,
+                            zorder=4) for side, colour in enumerate(NEIGHBOURS)]
     for frame in range(n_frames):
-        figure, axes = canvas(bounds)
-        for vertex in others:
-            axes.add_collection(LineCollection(paths[frame * n_conics + vertex], colors=CONTEXT, linewidths=1.2))
-        for side, (vertex, colour) in enumerate(zip(neighbours, NEIGHBOURS)):
-            axes.add_collection(LineCollection(chord_paths[frame * 3 + side], colors=colour, linewidths=0.9,
-                                               linestyles="dashed", alpha=0.6))
-            axes.add_collection(LineCollection(paths[frame * n_conics + vertex], colors=colour, linewidths=1.8))
-        axes.add_collection(LineCollection(paths[frame * n_conics + n_conics - 1], colors=COMPLETION, linewidths=3.0))
-        for side, colour in enumerate(NEIGHBOURS):
-            axes.scatter(*contact_points[frame, side].T, s=90, color=colour, edgecolors="white",
-                         linewidths=1.5, zorder=4)
-        frames.append(capture(figure))
-        plt.close(figure)
-    return frames
+        paths = curves(conics[frame])
+        for line, vertex in zip(other_lines, others):
+            line.set_segments(paths[vertex])
+        for side, vertex in enumerate(neighbours):
+            chord_lines[side].set_segments(chord_paths[frame * 3 + side])
+            neighbour_lines[side].set_segments(paths[vertex])
+        eighth_line.set_segments(paths[n_conics - 1])
+        for side, marker in enumerate(markers):
+            marker.set_offsets(contact_points[frame, side])
+        yield capture(figure)
+    plt.close(figure)

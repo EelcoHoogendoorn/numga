@@ -6,8 +6,12 @@ its weight, a line in the layout x, y, w.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import PathCollection
+from matplotlib.lines import Line2D
 
 from numga import stack
 
@@ -31,9 +35,10 @@ def travel(rays: Line, handedness: np.ndarray) -> np.ndarray:
     return handedness[:, None] * np.stack([-normal[:, 1], normal[:, 0]], axis=-1)
 
 
-def segments(ax, start: np.ndarray, stop: np.ndarray, color: str) -> None:
-    """Draw segments between matching (n, 2) start and stop points."""
-    ax.plot(np.stack([start[:, 0], stop[:, 0]]), np.stack([start[:, 1], stop[:, 1]]), color=color, linewidth=0.7)
+def segments(ax, start: np.ndarray, stop: np.ndarray, color: str) -> list[Line2D]:
+    """Draw segments between matching (n, 2) start and stop points, a line each."""
+    return ax.plot(np.stack([start[:, 0], stop[:, 0]]), np.stack([start[:, 1], stop[:, 1]]), color=color,
+                   linewidth=0.7)
 
 
 def draw_rays(ax, rays: Line, start: Line, stop: Line, color: str) -> None:
@@ -41,10 +46,15 @@ def draw_rays(ax, rays: Line, start: Line, stop: Line, color: str) -> None:
     segments(ax, xy(rays ^ start), xy(rays ^ stop), color)
 
 
-def draw_plane(ax, plane: Plane, half_height: float) -> None:
+def plane_ends(planes: Plane, half_height: float) -> tuple[np.ndarray, np.ndarray]:
+    """Where elements' planes `[...]` meet the lines y == half_height and y == -half_height, `[..., 2]` each."""
+    return xy(planes ^ (mv.y + mv.w * half_height)), xy(planes ^ (mv.y - mv.w * half_height))
+
+
+def draw_plane(ax, plane: Plane, half_height: float) -> Line2D:
     """Draw an element's plane between the lines y == -half_height and y == half_height."""
-    a, b = xy(plane ^ (mv.y + mv.w * half_height)), xy(plane ^ (mv.y - mv.w * half_height))
-    ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")
+    a, b = plane_ends(plane, half_height)
+    return ax.plot([a[0], b[0]], [a[1], b[1]], color="gray")[0]
 
 
 def cross(ax) -> None:
@@ -72,36 +82,62 @@ def draw_lenses(one_lens: list, one_planes: list[Plane], two_lenses: list, two_p
     return fig
 
 
-def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap, picture: Point) -> None:
-    """Draw the bundle leg by leg between the element planes, then onward along its direction of travel.
+def bundle_legs(subject: Point, planes: Plane, legs: Line, train: LineMap) -> list[tuple[np.ndarray, np.ndarray]]:
+    """The bundle leg by leg between the element planes, then onward along its direction of travel: each leg's starts
+    and stops `[rays, 2]`.
 
     A line has no direction of travel, so the last leg follows a handedness that flips once per
     orientation-reversing element, which is what a mirror is: the sign of the train's determinant.
     """
-    ax.cla()
     count = planes.shape[0]
     start = xy(legs[0] ^ (subject & mv.wx))
+    ends = []
     for stage in range(count):
-        stop = xy(legs[stage] ^ planes[stage])
-        segments(ax, start, stop, f"C{stage}")
-        draw_plane(ax, planes[stage], 0.8)
+        ends.append((start, xy(legs[stage] ^ planes[stage])))
         start = xy(legs[stage + 1] ^ planes[stage])
     first = xy(legs[0] ^ planes[0]) - xy(legs[0] ^ (subject & mv.wx))
     heading = np.sign(np.einsum("ij,ij->i", first, travel(legs[0], np.ones(len(first)))))
     handedness = heading * np.sign(train.det().to_array())
-    segments(ax, start, start + 2.5 * travel(legs[-1], handedness), f"C{count}")
-    ax.scatter(*xy(subject), color="C0", zorder=3); ax.scatter(*xy(picture), color=f"C{count}", zorder=3)
+    return ends + [(start, start + 2.5 * travel(legs[-1], handedness))]
+
+
+def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap,
+               picture: Point) -> tuple[list[list[Line2D]], list[Line2D], list[PathCollection]]:
+    """Draw the bundle leg by leg, each element's plane after the leg that reaches it, and the subject and its image,
+    over the cross; the lines of each leg, the planes' lines and the two points, for `place_scene` to move."""
+    count = planes.shape[0]
+    rays, elements = [], []
+    for stage, (start, stop) in enumerate(bundle_legs(subject, planes, legs, train)):
+        rays.append(segments(ax, start, stop, f"C{stage}"))
+        if stage < count:
+            elements.append(draw_plane(ax, planes[stage], 0.8))
+    marks = [ax.scatter(*xy(subject), color="C0", zorder=3), ax.scatter(*xy(picture), color=f"C{count}", zorder=3)]
     cross(ax)
     ax.set_xlim(-1.3, 4.7); ax.set_ylim(-1.5, 3.2); ax.set_aspect("equal")
+    return rays, elements, marks
 
 
-def animate_train(states) -> list[np.ndarray]:
-    """Frames of the optical train from its geometric states."""
+def place_scene(rays: list[list[Line2D]], elements: list[Line2D], marks: list[PathCollection], subject: Point,
+                planes: Plane, legs: Line, train: LineMap, picture: Point) -> None:
+    """Move the lines and points `draw_scene` drew to another state of the train."""
+    for lines, (start, stop) in zip(rays, bundle_legs(subject, planes, legs, train)):
+        for line, a, b in zip(lines, start, stop):
+            line.set_data([a[0], b[0]], [a[1], b[1]])
+    for line, a, b in zip(elements, *plane_ends(planes, 0.8)):
+        line.set_data([a[0], b[0]], [a[1], b[1]])
+    for mark, place in zip(marks, (subject, picture)):
+        mark.set_offsets(xy(place)[None])
+
+
+def animate_train(states) -> Iterator[np.ndarray]:
+    """Frames of the optical train from its geometric states: the first state drawn, and each one after it moving
+    its lines and points."""
     fig = plt.figure(figsize=(7, 5), dpi=100)
     ax = fig.add_subplot()
-    frames = []
-    for subject, planes, legs, train, picture in states:
-        draw_scene(ax, subject, planes, legs, train, picture)
-        frames.append(capture(fig))
+    states = iter(states)
+    artists = draw_scene(ax, *next(states))
+    yield capture(fig)
+    for state in states:
+        place_scene(*artists, *state)
+        yield capture(fig)
     plt.close(fig)
-    return frames

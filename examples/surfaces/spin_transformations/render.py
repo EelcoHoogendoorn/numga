@@ -3,7 +3,8 @@ on both sides and textured with a checkerboard carried over from the sphere they
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -126,7 +127,9 @@ def draw_dirac(gallery: dict[int, list[Mesh]], reference: Mesh) -> plt.Figure:
     return figure
 
 
-def animate_rounding(frames: Iterable[Mesh]) -> list[np.ndarray]:
+def animate_rounding(frames: Iterable[Mesh]) -> Iterator[np.ndarray]:
     """Each step of the flow, textured with the checkerboard of the first."""
-    frames = list(frames)
-    return [render_surface(frame, frames[0], square_view(frame, pixels)) for frame in frames]
+    frames = iter(frames)
+    first = next(frames)
+    for frame in chain([first], frames):
+        yield render_surface(frame, first, square_view(frame, pixels))

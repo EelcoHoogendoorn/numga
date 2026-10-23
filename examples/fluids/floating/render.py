@@ -4,6 +4,8 @@ released hull rolling back upright or capsizing, beside its righting arm curve."
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -224,8 +226,8 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     return image_figure(np.concatenate([cubes, plot[:, :cubes.shape[1]]], axis=0))
 
 
-def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[core.Twist, core.Motor, core.Forque, core.Forque]],
-                    heels: np.ndarray, couples: core.Forque, weight: core.Scalar) -> list[np.ndarray]:
+def animate_release(hull: core.Point, centres: core.Point, frames: Iterable[tuple[core.Twist, core.Motor, core.Forque, core.Forque]],
+                    heels: np.ndarray, couples: core.Forque, weight: core.Scalar) -> Iterator[np.ndarray]:
     """Each frame: the released hull with each load seen along its axis of heel, its weight from its centre of
     gravity and its buoyancy from the water surface, as arrows on their lines, beside the righting arm curves
     of the loads, each with the hull's heel so far."""
@@ -233,13 +235,28 @@ def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[co
     # Past half a turn the righting arm repeats reversed: heeled the other way round, it pushes the other way.
     beyond = 360 - heels[::-1][1:]
     extended, extended_curves = np.concatenate([heels, beyond]), np.concatenate([curves, -curves[::-1][1:]])
-    states = np.array([[degrees(roll), arms(push + weighing, weight)] for roll, _, push, weighing in frames])   # [frames, 2, loads]
     colours = plt.get_cmap(LOAD_MAP)(np.array([0.3, 0.85]))
     view = end_view(END, N_END_PIXELS)
     rows = view.shape[0]
     marker = np.array([0.9 * END[0][0], 0.85 * END[1][1]])
-    images = []
-    for index, (_, placed, push, weighing) in enumerate(frames):
+    # The curves set up once; each load's heel so far and its heel now move.
+    figure, ax = plt.subplots(figsize=(1.4 * rows / DPI, rows / DPI), dpi=DPI)
+    ax.axhline(0, color="0.6", lw=0.8)
+    so_far, now = [], []
+    for case, colour in enumerate(colours):
+        ax.plot(extended, extended_curves[:, case], color=colour, lw=1.6, alpha=0.5)
+        so_far += ax.plot([], [], color=colour, lw=2)
+        now += ax.plot([], [], "o", color=colour, markersize=7)
+    ax.set_xticks([0, 90, 180])
+    ax.set_xlim(-30, 215)
+    ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+    figure.subplots_adjust(left=0.16, right=0.97, bottom=0.17, top=0.97)
+    states = []
+    for roll, placed, push, weighing in frames:
+        states.append([degrees(roll), arms(push + weighing, weight)])
+        trail = np.array(states)                                             # [frames, 2, loads]
         views = []
         for case, colour in enumerate(colours):
             triangles = coordinates(placed[case] >> hull)                        # [triangles, 3, 3]
@@ -248,18 +265,7 @@ def animate_release(hull: core.Point, centres: core.Point, frames: list[tuple[co
             dot = solids.ball(on_end(marker, front), MARKER_RADIUS * view.pixel)
             views.append(end_on(triangles, view, forces_end_on(view, placed[case], push[case], centres[case], front)
                                 + [(dot[None, None], colour[:3])]))
-        figure, ax = plt.subplots(figsize=(1.4 * rows / DPI, rows / DPI), dpi=DPI)
-        ax.axhline(0, color="0.6", lw=0.8)
-        for case, colour in enumerate(colours):
-            ax.plot(extended, extended_curves[:, case], color=colour, lw=1.6, alpha=0.5)
-            ax.plot(*states[:index + 1, :, case].T, color=colour, lw=2)
-            ax.plot(*states[index, :, case], "o", color=colour, markersize=7)
-        ax.set_xticks([0, 90, 180])
-        ax.set_xlim(-30, 215)
-        ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        figure.subplots_adjust(left=0.16, right=0.97, bottom=0.17, top=0.97)
-        images.append(side_by_side(views + [capture(figure)]))
-        plt.close(figure)
-    return images
+            so_far[case].set_data(*trail[:, :, case].T)
+            now[case].set_data(*trail[-1, :, case, None])
+        yield side_by_side(views + [capture(figure)])
+    plt.close(figure)

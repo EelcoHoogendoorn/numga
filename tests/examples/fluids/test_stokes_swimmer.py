@@ -25,4 +25,4 @@ def test_the_scene_draws():
     grid = scenarios.sample_grid()
     flow = next(scenarios.flows(world_sites, world_forces, grid))
     plt.close(render.draw_summary(angles, positions, world_sites, world_forces, grid, flow))
-    assert len(render.animate_swimmers(positions[:4], world_sites[:3], grid, iter([flow]), 3)) == 1
+    assert len(list(render.animate_swimmers(positions[:4], world_sites[:3], grid, iter([flow]), 3))) == 1

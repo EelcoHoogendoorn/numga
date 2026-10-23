@@ -72,7 +72,7 @@ def main() -> None:
 
     points, derivative, density = field()
     states = list(flyby(N_FRAMES))
-    drawn = [(stars, *outline(stars, shape)) for stars, shape in states]
+    drawn = ((stars, *outline(stars, shape)) for stars, shape in states)
     save_animation(render.animate(points, density, drawn), "tides_flyby", FRAME_DURATION)
 
     # checks

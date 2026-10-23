@@ -3,7 +3,7 @@ the fluid, seen from above, each case in its own lane with the line of its impul
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -60,7 +60,7 @@ def impulse_line(impulse: core.Forque, extent: tuple[float, float]) -> np.ndarra
 
 
 def animate_gliding(impulse: core.Forque,
-                    frames: Iterable[tuple[core.Point, core.Point, core.Point]]) -> list[np.ndarray]:
+                    frames: Iterable[tuple[core.Point, core.Point, core.Point]]) -> Iterator[np.ndarray]:
     """Each frame of every case's outline `[cases, outline + 1]`, centre `[cases]` and nose `[cases]`: the
     bodies seen from above, each in its own lane, with its path so far and its impulse."""
     frames = [tuple(coordinates(points) for points in frame) for frame in frames]
@@ -73,20 +73,24 @@ def animate_gliding(impulse: core.Forque,
     extent = (shapes[..., 0].min() - GAP / 2, shapes[..., 0].max() + GAP / 2)
     line = impulse_line(impulse, extent)                                     # [2, 2]
     height = lane * count
-    images = []
+    # The lanes and their impulses set up once; each body, its path so far and its nose move.
+    figure = plt.figure(figsize=(12.0, 12.0 * height / (extent[1] - extent[0])), dpi=100)
+    ax = figure.add_axes((0, 0, 1, 1))
+    trails, bodies, dots = [], [], []
+    for case in range(count):
+        ax.plot(*(line + lanes[case]).T, color=IMPULSE, linewidth=0.8, linestyle=(0, (6, 4)), zorder=0)
+        trails += ax.plot([], [], color=PATHS[case], linewidth=1.4, zorder=1)
+        bodies += ax.fill(*(shapes[0, case] + lanes[case]).T, facecolor=BODIES[case], edgecolor=EDGES[case],
+                          linewidth=1.4, zorder=2)
+        dots += ax.plot([], [], "o", color=EDGES[case], markersize=5, zorder=3)
+    ax.set_xlim(*extent)
+    ax.set_ylim(-lane / 2, height - lane / 2)
+    ax.set_aspect("equal")
+    ax.set_axis_off()
     for index, (outlines, _, noses) in enumerate(frames):
-        figure = plt.figure(figsize=(12.0, 12.0 * height / (extent[1] - extent[0])), dpi=100)
-        ax = figure.add_axes((0, 0, 1, 1))
         for case in range(count):
-            ax.plot(*(line + lanes[case]).T, color=IMPULSE, linewidth=0.8, linestyle=(0, (6, 4)), zorder=0)
-            ax.plot(*(paths[:index + 1, case] + lanes[case]).T, color=PATHS[case], linewidth=1.4, zorder=1)
-            ax.fill(*(outlines[case] + lanes[case]).T, facecolor=BODIES[case], edgecolor=EDGES[case],
-                    linewidth=1.4, zorder=2)
-            ax.plot(*(noses[case] + lanes[case]), "o", color=EDGES[case], markersize=5, zorder=3)
-        ax.set_xlim(*extent)
-        ax.set_ylim(-lane / 2, height - lane / 2)
-        ax.set_aspect("equal")
-        ax.set_axis_off()
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+            trails[case].set_data(*(paths[:index + 1, case] + lanes[case]).T)
+            bodies[case].set_xy(outlines[case] + lanes[case])
+            dots[case].set_data(*(noses[case] + lanes[case])[:, None])
+        yield capture(figure)
+    plt.close(figure)

@@ -38,13 +38,13 @@ def test_transport_turns_by_the_solid_angle_and_stays_tangent():
     carried = stack(tuple(core.transported(rings, starts)))
     np.testing.assert_allclose((carried | rings).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((carried[-1] | starts).to_array(), np.cos(2 * np.pi * (1 - np.cos(scenarios.COLATITUDES))), atol=2e-3)
-    frames = render.animate_holonomy(sphere, rings, islice(scenarios.carried_around(rings, starts, 60), 2))
+    frames = list(render.animate_holonomy(sphere, rings, islice(scenarios.carried_around(rings, starts, 60), 2)))
     torus, diffused, transported, modes, energies, _ = scenarios.torus_fields()
     np.testing.assert_allclose((diffused | torus.vertex_normals).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose((modes | torus.vertex_normals).to_array(), 0.0, atol=1e-11)
     np.testing.assert_allclose(energies.to_array()[0::2], energies.to_array()[1::2], rtol=1e-10)
     plt.close(render.draw_torus_fields(torus, [transported, modes[0]]))
-    assert len(frames) == 2 and len(render.animate_diffusion(torus, diffused[:1])) == 1
+    assert len(frames) == 2 and len(list(render.animate_diffusion(torus, diffused[:1]))) == 1
 
 
 def test_designed_fields_are_parallel_and_their_indices_add_up():
@@ -59,7 +59,7 @@ def test_designed_fields_are_parallel_and_their_indices_add_up():
     plt.close(render.draw_fields(sphere, sphere_scenes, render.sphere_limits, render.sphere_needle))
     plt.close(render.draw_fields(torus, torus_scenes, render.torus_limits, render.torus_needle))
     field, singular, indices = sphere_scenes[0]
-    assert len(render.animate_turning(sphere, scenarios.turning(sphere, field)[:1], singular, indices)) == 1
+    assert len(list(render.animate_turning(sphere, scenarios.turning(sphere, field)[:1], singular, indices))) == 1
 
 
 def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():
@@ -79,4 +79,4 @@ def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():
     plt.close(render.draw_patterns(sphere, bands, render.draw_bands, render.sphere_reach, views))
     plt.close(render.draw_patterns(sphere, crosses, render.draw_lines, render.sphere_reach, views))
     lines, stripes, advance = (family[..., :1] for family in patterns[0])
-    assert len(render.animate_flow(sphere, lines, scenarios.sliding(sphere, stripes)[:1], advance, render.sphere_reach)) == 1
+    assert len(list(render.animate_flow(sphere, lines, scenarios.sliding(sphere, stripes)[:1], advance, render.sphere_reach))) == 1

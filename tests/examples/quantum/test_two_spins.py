@@ -40,7 +40,7 @@ def test_steering_passes_its_checks_and_draws():
     np.testing.assert_allclose((probability - 0.5 * (1 + (directions | first))).kernel, 0.0, atol=1e-11)
     backwards = (second + correlations.adjoint()(directions)) / (1 + (directions | first))
     np.testing.assert_allclose((steered - backwards).kernel, 0.0, atol=1e-9)
-    assert len(render.animate_steering(directions, probability, steered)) == 5
+    assert len(list(render.animate_steering(directions, probability, steered))) == 5
 
 
 def test_field_and_qubit_scenes_pass_their_checks_and_draw():

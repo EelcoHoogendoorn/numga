@@ -13,4 +13,4 @@ def test_main_passes_its_checks_and_draws():
     figure = invariant_decomposition.draw(points, circles, parts, 30)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(invariant_decomposition.animate(points, circles, parts, 3)) == 3
+    assert len(list(invariant_decomposition.animate(points, circles, parts, 3))) == 3

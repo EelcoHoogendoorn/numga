@@ -4,13 +4,15 @@ red where they are real."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import Extensor
 from examples.math.klein_quadric import core
-from examples.util.wgsl import image_figure, meshes, solids
+from examples.util.wgsl import image_figure, solids, strokes
 
 mv = core.mv
 # Lines are drawn inside this ball about the origin, seen from this elevation and, at first, this azimuth, in
@@ -70,10 +72,10 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
     """The scene ray traced from an azimuth, framed on the ball: `[pixels, pixels, 3]` bytes."""
     view = solids.View(solids.aim(solids.origin, ELEVATION, azimuth), np.full(2, RADIUS * (1 + MARGIN)), N_PIXELS)
     points = solids.mv.point(coordinates(crossing)[real(crossing)])            # [crossings] Point
-    # The hyperboloid's two families of lines, faint: tubes drawn as meshes, which the tracer composites sample by
-    # sample, where traced rods would each be searched through every layer of the translucent crowd.
-    hyperboloid = [(meshes.tube_samples([(ends, colour) for ends in finite(chords(family))], 2 * RULING_RADIUS, view),
-                    # A traced rod is crossed twice, a tube's mesh once: its nearest surface hides what both would.
+    # The hyperboloid's two families of lines, faint: strokes, which the tracer composites sample by sample, where
+    # traced rods would each be searched through every layer of the translucent crowd.
+    hyperboloid = [(strokes.polylines([(ends, colour) for ends in finite(chords(family))], 2 * RULING_RADIUS, view),
+                    # A traced rod is crossed twice, a stroke once: its nearest surface hides what both would.
                     1 - (1 - RULING_OPACITY) ** 2) for family, colour in zip(rulings, RULING_COLOURS)]
     four = [(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
             (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
@@ -89,6 +91,7 @@ def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, cr
     return image_figure(picture(lines, rulings, across, crossing, azimuth))
 
 
-def animate(scenes: list[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]) -> list[np.ndarray]:
+def animate(scenes: list[tuple[core.Bivector, core.Bivector, core.Bivector, core.Point]]) -> Iterator[np.ndarray]:
     """One frame per scene, the view turning once around the hyperboloid over the loop."""
-    return [picture(*scene, azimuth=AZIMUTH + 2 * np.pi * index / len(scenes)) for index, scene in enumerate(scenes)]
+    for index, scene in enumerate(scenes):
+        yield picture(*scene, azimuth=AZIMUTH + 2 * np.pi * index / len(scenes))

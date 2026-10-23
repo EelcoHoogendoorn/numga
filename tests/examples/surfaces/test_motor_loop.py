@@ -11,7 +11,7 @@ def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
     # Untwisted the two agree; wound up, the points wring the ribbon towards its axis and the motors do not.
     assert abs(points_rest - motors_rest) < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest
-    assert len(render.animate(control[:1], surfaces[:1], control_faces, faces)) == 1
+    assert len(list(render.animate(control[:1], surfaces[:1], control_faces, faces))) == 1
 
 
 def test_only_the_turns_between_frames_bend_the_motor_surface():

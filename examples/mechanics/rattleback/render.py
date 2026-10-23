@@ -9,7 +9,9 @@ the bare wood of the deck and the cuts; the steel mirrors what lies around it.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from functools import cache
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,8 +41,11 @@ cut_wood = np.array([0.80, 0.63, 0.42])
 steel = np.array([0.68, 0.68, 0.70])
 paint_gloss = 0.08
 steel_mirroring = 1.0
-# The points of the body the framing follows.
+# The points of the body the framing follows; the turns of its first placement about the vertical it frames, every
+# way the body may come to face as it spins, and the room around them for the body to wander as it rolls.
 n_framing = 400
+n_turns = 16
+drift = 0.3
 
 source = supersampled() + """
 // A part: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`; each quadric's finish, the
@@ -242,12 +247,12 @@ def scene(built: core.Body, motor: core.Motor) -> dict:
                 finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float) -> solids.View:
-    """A view framing the body over every placement and its shadow on the ground, cast along the lamp, the height
-    rounded to whole pixels."""
+def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float, reach: float) -> solids.View:
+    """A view framing the body over every placement and its shadow on the ground, cast along the lamp, with `reach`
+    to spare around each, the height rounded to whole pixels."""
     body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point
     shadows = (body & lamp) ^ mv.z                                                # [..., points] Point
-    framed = solids.view([body, shadows], 0.0, elevation, azimuth, margin, n_pixels)
+    framed = solids.view([body, shadows], reach, elevation, azimuth, margin, n_pixels)
     n_rows = framed.shape[0]
     return solids.View(framed.camera, np.array([framed.half[0], framed.half[0] * n_rows / n_pixels]), n_pixels)
 
@@ -259,12 +264,23 @@ def picture(built: core.Body, motor: core.Motor, seen: solids.View) -> np.ndarra
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 
-def frames(motors: core.Motor, built: core.Body, samples: core.Point) -> list[np.ndarray]:
-    """The rolling body, viewed from a fixed camera."""
-    seen = framing(motors, samples, *view)
-    return [picture(built, motor, seen) for motor in motors]
+def turned(motor: core.Motor) -> core.Motor:
+    """A placement turned about the vertical through the centre of mass, a whole turn in `n_turns` steps `[turns]`."""
+    centre = motor >> mv.w.dual()                                               # [] Point
+    carried = solids.translator(centre / (mv.w & centre) - mv.w.dual())         # [] Motor
+    return carried * (mv.xy * (np.pi * np.arange(n_turns) / n_turns)).exp() * ~carried * motor
+
+
+def frames(motors: Iterable[core.Motor], built: core.Body, samples: core.Point) -> Iterator[np.ndarray]:
+    """The rolling body, viewed from a fixed camera framing its first placement turned every way about the vertical,
+    with room for it to wander."""
+    motors = iter(motors)
+    first = next(motors)
+    seen = framing(turned(first), samples, *view, drift)
+    for motor in chain([first], motors):
+        yield picture(built, motor, seen)
 
 
 def draw_setup(built: core.Body, samples: core.Point, motor: core.Motor) -> plt.Figure:
     """The body at rest, seen from above, its steel balls on opposite corners."""
-    return image_figure(picture(built, motor, framing(motor, samples, *setup_view)))
+    return image_figure(picture(built, motor, framing(motor, samples, *setup_view, 0.0)))

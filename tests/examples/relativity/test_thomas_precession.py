@@ -51,13 +51,13 @@ def test_the_magic_lorentz_factor_removes_the_electric_field():
 
 
 def test_the_animations_draw():
-    two = render.animate_two_boosts(scenarios.two_boosts(np.array([1.0]), np.linspace(0, 1, 5)))
+    two = list(render.animate_two_boosts(scenarios.two_boosts(np.array([1.0]), np.linspace(0, 1, 5))))
     velocities = scenarios.orbit_velocities(np.array([1.25, 1.5, 1.75]), 4)
-    orbit = render.animate_orbits(velocities, scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> core.about(mv.x.dual()), 4))
+    orbit = list(render.animate_orbits(velocities, scenarios.orbits(velocities, core.rest_boost(velocities[0]) >> core.about(mv.x.dual()), 4)))
     positions, path = scenarios.box_path(1.0, 0.8, 2, 2)
     walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> mv.x.dual()
-    box = render.animate_box(1.0, walls, scenarios.bouncing(positions[:2], path[:2], core.rest_boost(path[0]) >> core.about(mv.x.dual())))
+    box = list(render.animate_box(1.0, walls, scenarios.bouncing(positions[:2], path[:2], core.rest_boost(path[0]) >> core.about(mv.x.dual()))))
     outline = (mv.xy * (-np.linspace(0, 2 * np.pi, 8) / 2)).exp() >> mv.x.dual()
-    ring = render.animate_ring(outline, scenarios.ring(2.0, 1.0, 0.0, 0.1, 1, 4, 4))
+    ring = list(render.animate_ring(outline, scenarios.ring(2.0, 1.0, 0.0, 0.1, 1, 4, 4)))
     assert [len(two), len(orbit), len(box), len(ring)] == [1, 2, 2, 2]
     plt.close(render.draw_magic(np.zeros(2), mv.scalar(np.ones((2, 2, 1)))))

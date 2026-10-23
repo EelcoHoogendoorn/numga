@@ -3,6 +3,8 @@ running around the edge."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -58,23 +60,31 @@ def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
     return figure
 
 
+def spin_dots(spin: core.Vector) -> tuple[np.ndarray, np.ndarray]:
+    """A spin density's dots: their areas, in proportion to the density, and their shades, the spin up
+    over the largest density."""
+    vectors = spin.cast(core.ga.subspace("x y z")).kernel
+    density = np.linalg.norm(vectors, axis=-1)
+    return DOT * density / density.max(), vectors[:, 2] / density.max()
+
+
 def draw_spin(flake: core.Flake, spin: core.Vector) -> plt.Figure:
     """A spin density on the flake: dots sized by the density, red where the spin is up and blue
     where it is down."""
-    positions, vectors = coordinates(flake.positions), spin.cast(core.ga.subspace("x y z")).kernel
-    density = np.linalg.norm(vectors, axis=-1)
+    sizes, shades = spin_dots(spin)
     figure, ax = plt.subplots(figsize=(6, 6))
     draw_bonds(ax, flake)
-    ax.scatter(*positions.T, s=DOT * density / density.max(), c=vectors[:, 2] / density.max(), cmap="RdBu_r",
-               vmin=-1, vmax=1)
+    ax.scatter(*coordinates(flake.positions).T, s=sizes, c=shades, cmap="RdBu_r", vmin=-1, vmax=1)
     return figure
 
 
-def animate_spin(flake: core.Flake, spins: core.Vector) -> list[np.ndarray]:
-    """Each frame of the spin density."""
-    images = []
+def animate_spin(flake: core.Flake, spins: core.Vector) -> Iterator[np.ndarray]:
+    """Each frame of the spin density, the flake's bonds drawn once and only the dots changing."""
+    figure = draw_spin(flake, spins[0])
+    dots = figure.axes[0].collections[-1]
     for spin in spins:
-        figure = draw_spin(flake, spin)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+        sizes, shades = spin_dots(spin)
+        dots.set_sizes(sizes)
+        dots.set_array(shades)
+        yield capture(figure)
+    plt.close(figure)

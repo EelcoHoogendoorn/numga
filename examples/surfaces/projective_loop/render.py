@@ -3,7 +3,8 @@ smooth-shaded mesh, its control mesh a dotted line of beads along every edge."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -85,10 +86,13 @@ def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders:
                                                                  (gap[:, None] / largest for gap in gaps))], axis=1))
 
 
-def animate_weights(frames: Iterable[tuple[core.Point, core.Point]], control_faces: np.ndarray, faces: np.ndarray) -> list[np.ndarray]:
+def animate_weights(frames: Iterable[tuple[core.Point, core.Point]], control_faces: np.ndarray, faces: np.ndarray
+                    ) -> Iterator[np.ndarray]:
     """One frame per weighting: the control mesh `Point[vertices]`, dotted, and the surface it refines to
     `Point[refined]`, all framed on the first control mesh."""
-    frames = [(coordinates(controls), coordinates(surface)) for controls, surface in frames]
-    frame = view(frames[0][0])
+    frames = ((coordinates(controls), coordinates(surface)) for controls, surface in frames)
+    first = next(frames)
+    frame = view(first[0])
     colours = np.broadcast_to(SURFACE_COLOUR, (len(faces), 3))
-    return [picture(control, control_faces, surface, faces, colours, frame) for control, surface in frames]
+    for control, surface in chain([first], frames):
+        yield picture(control, control_faces, surface, faces, colours, frame)

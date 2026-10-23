@@ -54,4 +54,4 @@ def test_scenarios_pass_their_checks_and_draw():
     figure = render.draw_flows(left, right, knotted)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(render.animate_flows(left, right, knotted, 3)) == 3
+    assert len(list(render.animate_flows(left, right, knotted, 3))) == 3

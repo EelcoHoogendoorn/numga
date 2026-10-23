@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
+from matplotlib.collections import PathCollection
+from matplotlib.image import AxesImage
 from matplotlib.colors import LogNorm
 
 from numga import NumpyContext, stack
@@ -30,13 +32,15 @@ def cross(ax: Axes) -> None:
     ax.spines[:].set_visible(False)
 
 
-def atoms(ax: Axes, positions: core.Point) -> None:
+def atoms(ax: Axes, positions: core.Point) -> PathCollection:
     points = positions.cast(core.ga.subspace("yz zx xy")).kernel
-    ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
+    dots = ax.scatter(points[:, 0], points[:, 1], s=22, color="#0d9488", edgecolors="white", linewidths=0.4)
     cross(ax)
+    return dots
 
 
-def diffraction(ax: Axes, reciprocal: core.Plane, grid: core.Plane, intensity: core.Scalar) -> None:
+def diffraction(ax: Axes, reciprocal: core.Plane, grid: core.Plane,
+                intensity: core.Scalar) -> tuple[AxesImage, PathCollection]:
     samples = grid.cast(core.ga.subspace("x y z")).kernel
     peaks = reciprocal.cast(core.ga.subspace("x y z")).kernel
     values = intensity.kernel[..., 0]
@@ -44,10 +48,11 @@ def diffraction(ax: Axes, reciprocal: core.Plane, grid: core.Plane, intensity: c
     pixel = samples[0, 1, 0] - samples[0, 0, 0]
     extent = (samples[0, 0, 0] - pixel / 2, samples[0, -1, 0] + pixel / 2,
               samples[0, 0, 1] - pixel / 2, samples[-1, 0, 1] + pixel / 2)
-    ax.imshow(values, origin="lower", extent=extent, cmap="magma", interpolation="nearest",
-              norm=LogNorm(vmin=INTENSITY_FLOOR, vmax=1))
-    ax.scatter(peaks[:, 0], peaks[:, 1], facecolors="none", edgecolors="#67e8f9", s=62, linewidths=0.9)
+    image = ax.imshow(values, origin="lower", extent=extent, cmap="magma", interpolation="nearest",
+                      norm=LogNorm(vmin=INTENSITY_FLOOR, vmax=1))
+    rings = ax.scatter(peaks[:, 0], peaks[:, 1], facecolors="none", edgecolors="#67e8f9", s=62, linewidths=0.9)
     ax.set(xlim=extent[:2], ylim=extent[2:], xticks=[], yticks=[])
+    return image, rings
 
 
 def comparison(positions: core.Point, reciprocal: core.Plane, grid: core.Plane, intensity: core.Scalar) -> plt.Figure:
@@ -61,17 +66,21 @@ def comparison(positions: core.Point, reciprocal: core.Plane, grid: core.Plane, 
     return figure
 
 
-def frame(positions: core.Point, reciprocal: core.Plane, intensity: core.Scalar, grid: core.Plane) -> np.ndarray:
+def animate(frames: Iterable[tuple[core.Point, core.Plane, core.Scalar]], grid: core.Plane) -> Iterator[np.ndarray]:
+    """Per frame, the atoms beside their diffraction pattern: the first frame drawn, and each one after it moving the
+    atoms, the pattern and the rings."""
+    frames = iter(frames)
     figure, panels = plt.subplots(1, 2, figsize=(6, 3), dpi=70, layout="constrained")
-    atoms(panels[0], positions)
-    diffraction(panels[1], reciprocal, grid, intensity)
-    pixels = capture(figure)
+    positions, reciprocal, intensity = next(frames)
+    dots = atoms(panels[0], positions)
+    image, rings = diffraction(panels[1], reciprocal, grid, intensity)
+    yield capture(figure)
+    for positions, reciprocal, intensity in frames:
+        dots.set_offsets(positions.cast(core.ga.subspace("yz zx xy")).kernel[:, :2])
+        image.set_data(intensity.kernel[..., 0])
+        rings.set_offsets(reciprocal.cast(core.ga.subspace("x y z")).kernel[:, :2])
+        yield capture(figure)
     plt.close(figure)
-    return pixels
-
-
-def animate(frames: Iterable[tuple[core.Point, core.Plane, core.Scalar]], grid: core.Plane) -> list[np.ndarray]:
-    return [frame(positions, reciprocal, intensity, grid) for positions, reciprocal, intensity in frames]
 
 
 # --- spacetime read-out ---------------------------------------------------------------

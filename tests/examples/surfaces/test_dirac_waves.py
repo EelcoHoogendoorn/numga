@@ -21,7 +21,7 @@ def test_the_pulse_keeps_its_energy_and_gathers_at_the_south_pole():
     density = (vertex_areas * states[int(round(np.pi / scenarios.INTERVAL))][0].scalar_norm_squared()).to_array()
     assert density[(sphere.vertices & mv.z) < -0.9].sum() > 0.5 * density.sum()
     vertices, faces = states[0]
-    assert len(render.animate(sphere, vertices[None, None], faces[None, None], 1)) == 1
+    assert len(list(render.animate(sphere, vertices[None, None], faces[None, None], 1))) == 1
 
 
 def test_the_standing_waves_ring_at_whole_numbers():
@@ -30,4 +30,4 @@ def test_the_standing_waves_ring_at_whole_numbers():
     np.testing.assert_allclose(measured[:scenarios.N_CONSTANT], 0.0, atol=1e-9)
     levels = np.arange(1, scenarios.N_LEVELS + 1)
     np.testing.assert_allclose(np.sqrt(measured[scenarios.N_CONSTANT:]), np.repeat(levels, 8 * levels), rtol=0.03)
-    assert len(render.animate(sphere, vertices[:, :1], faces[:, :1], scenarios.N_LEVELS)) == 1
+    assert len(list(render.animate(sphere, vertices[:, :1], faces[:, :1], scenarios.N_LEVELS))) == 1

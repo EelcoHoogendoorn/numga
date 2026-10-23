@@ -5,7 +5,7 @@ at rest, and the first surface it meets colours it."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -153,7 +153,7 @@ fn sample(place_on_map: vec2<f32>) -> Sample {{
 
 def animate_photographs(frame: core.Rotor, cameras: Iterable[core.Antivector], sphere: core.Antivector, radius: float,
                         cube: core.Antivector, half_width: float, meridians: float, parallels: float,
-                        parallel_reach: float) -> list[np.ndarray]:
+                        parallel_reach: float) -> Iterator[np.ndarray]:
     """Each frame's photographs, one lane per case of the body's frame `[cases]`, from where the camera is in each
     `[cases]`: the sphere with its grid of meridians and parallels so many radians apart, the parallels reaching so far
     from its equator, above the cube, its faces coloured by the way they face."""
@@ -161,7 +161,6 @@ def animate_photographs(frame: core.Rotor, cameras: Iterable[core.Antivector], s
     (left, right), (bottom, top) = window
     shape = (round(n_pixels * (top - bottom) / (right - left)), n_pixels)
     gap = np.full((lane_gap, n_pixels, 3), 255, dtype=np.uint8)
-    images = []
     for camera in cameras:
         lanes = []
         for case in range(frame.shape[0]):
@@ -170,5 +169,4 @@ def animate_photographs(frame: core.Rotor, cameras: Iterable[core.Antivector], s
                            middle=np.array([(left + right) / 2, (bottom + top) / 2]), half_height=(top - bottom) / 2,
                            pixel=(right - left) / n_pixels)["image"]
             lanes += [np.round(np.clip(image, 0, 1) * 255).astype(np.uint8), gap]
-        images.append(np.concatenate(lanes[:-1]))
-    return images
+        yield np.concatenate(lanes[:-1])

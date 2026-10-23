@@ -38,4 +38,4 @@ def test_scenes_draw():
     figure = render.draw(*scenes[0], azimuth=render.AZIMUTH)
     assert isinstance(figure, plt.Figure)
     plt.close(figure)
-    assert len(render.animate(scenes)) == 4
+    assert len(list(render.animate(scenes))) == 4

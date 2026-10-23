@@ -174,5 +174,5 @@ def test_figures_and_animation_draw():
         render.draw_fresnel_drag_figure(*scenarios.drag()),
     ]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
-    frames = render.animate_wave_comparison(glass_modes, crystal_modes, 4)
+    frames = list(render.animate_wave_comparison(glass_modes, crystal_modes, 4))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

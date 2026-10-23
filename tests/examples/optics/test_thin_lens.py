@@ -27,5 +27,5 @@ def test_one_lens_images_by_the_lens_equation():
 def test_figure_and_animation_draw():
     one_lens, one_planes, two_lenses, two_planes, _, _ = scenarios.lenses()
     assert isinstance(render.draw_lenses(one_lens, one_planes, two_lenses, two_planes), plt.Figure)
-    frames = render.animate_train(scenarios.train(4))
+    frames = list(render.animate_train(scenarios.train(4)))
     assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)

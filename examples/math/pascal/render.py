@@ -4,6 +4,8 @@ a grid of points."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -47,11 +49,9 @@ def draw(shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> plt.Fi
     return figure
 
 
-def animate(scenes: list[tuple[core.Conic, core.Point, core.Point]]) -> list[np.ndarray]:
+def animate(scenes: list[tuple[core.Conic, core.Point, core.Point]]) -> Iterator[np.ndarray]:
     """One frame per scene."""
-    frames = []
     for scene in scenes:
         figure = draw(*scene)
-        frames.append(capture(figure))
+        yield capture(figure)
         plt.close(figure)
-    return frames

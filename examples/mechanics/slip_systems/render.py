@@ -3,6 +3,8 @@ axis takes through the crystal."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
@@ -95,10 +97,8 @@ def draw_disk(ax: plt.Axes, factors: core.Scalar, planes: core.Plane, slips: cor
     ax.set_axis_off()
 
 
-def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar) -> None:
-    """The standard triangle close up, in the colours of its systems, with each pull's axis's path so far and
-    its current place, each step in the colours of the systems that slipped in it, mixed by how much, and the
-    directions the axes head for."""
+def draw_close(ax: plt.Axes, factors: core.Scalar) -> None:
+    """The standard triangle close up, in the colours of its systems, with the directions the axes head for."""
     ax.imshow(shades(factors), extent=(-1, 1, -1, 1), origin="lower", interpolation="bilinear")
     draw_triangle(ax)
     for corner, name, lift in zip(projected(CORNERS), NAMES, LIFTS):
@@ -108,15 +108,30 @@ def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts
         ax.scatter(*goal, marker="D", s=22, color=EDGE_COLOUR, zorder=3)
         ax.annotate(name, goal, xytext=(0, 9), textcoords="offset points", ha="center", va="center", fontsize=9,
                     color=EDGE_COLOUR)
+    ax.set(xlim=WINDOW, ylim=WINDOW, aspect="equal")
+    ax.set_axis_off()
+
+
+def steps(axes: core.Direction, amounts: core.Scalar) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Each pull's axis's places on the disk `[steps + 1, starts, 2]`, the steps between them
+    `[starts, steps, ends, 2]`, and each step's colour `[starts, steps, 3]`: the colours of the systems that slipped
+    in it, mixed by how much, darkened."""
     tracks = projected(coordinates(axes))                                     # [steps + 1, starts, 2]
     weights = np.abs(scalars(amounts)).reshape(amounts.shape[:2] + (-1,))      # [steps, starts, systems]
     mixed = weights @ system_colours(weights.shape[-1]) / weights.sum(axis=-1, keepdims=True)   # [steps, starts, 3]
-    for track, colours in zip(np.moveaxis(tracks, 1, 0), np.moveaxis(mixed, 1, 0)):
-        segments = np.stack([track[:-1], track[1:]], axis=1)                  # [steps, ends, 2]
-        ax.add_collection(LineCollection(segments, colors=colours * PATH_SHADE, linewidths=1.6))
+    segments = np.stack([tracks[:-1], tracks[1:]], axis=2)                    # [steps, starts, ends, 2]
+    return tracks, np.moveaxis(segments, 1, 0), np.moveaxis(mixed, 1, 0) * PATH_SHADE
+
+
+def draw_paths(ax: plt.Axes, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar) -> None:
+    """The standard triangle close up, in the colours of its systems, with each pull's axis's path so far and
+    its current place, each step in the colours of the systems that slipped in it, mixed by how much, and the
+    directions the axes head for."""
+    draw_close(ax, factors)
+    tracks, segments, colours = steps(axes, amounts)
+    for track, shade in zip(segments, colours):
+        ax.add_collection(LineCollection(track, colors=shade, linewidths=1.6))
     ax.scatter(*tracks[-1].T, s=14, color=PATH_COLOUR, zorder=3)
-    ax.set(xlim=WINDOW, ylim=WINDOW, aspect="equal")
-    ax.set_axis_off()
 
 
 def draw_chart(directions: core.Direction, factors: core.Scalar, planes: core.Plane, slips: core.Line,
@@ -129,14 +144,21 @@ def draw_chart(directions: core.Direction, factors: core.Scalar, planes: core.Pl
 
 
 def animate_paths(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
-                  frames: int) -> list[np.ndarray]:
-    """The paths through the standard triangle growing, over so many frames."""
+                  frames: int) -> Iterator[np.ndarray]:
+    """The paths through the standard triangle growing, over so many frames, the triangle drawn once."""
     reached = np.linspace(2, axes.shape[0], frames).round().astype(int)
-
-    def frame(count: int) -> np.ndarray:
-        figure, ax = plt.subplots(figsize=(4.6, 4.6), layout="constrained")
-        draw_paths(ax, factors, axes[:count], amounts[:count - 1])
-        pixels = capture(figure)
-        plt.close(figure)
-        return pixels
-    return [frame(count) for count in reached]
+    tracks, segments, colours = steps(axes, amounts)
+    figure, ax = plt.subplots(figsize=(4.6, 4.6), layout="constrained")
+    draw_close(ax, factors)
+    paths = [ax.add_collection(LineCollection([], linewidths=1.6)) for _ in segments]
+    places = ax.scatter(*tracks[0].T, s=14, color=PATH_COLOUR, zorder=3)
+    # Lay the figure out once; only the paths and the places move between frames.
+    figure.canvas.draw()
+    figure.set_layout_engine("none")
+    for count in reached:
+        for path, track, shade in zip(paths, segments, colours):
+            path.set_segments(track[:count - 1])
+            path.set_color(shade[:count - 1])
+        places.set_offsets(tracks[count - 1])
+        yield capture(figure)
+    plt.close(figure)

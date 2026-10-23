@@ -18,4 +18,4 @@ def test_circles_touch_along_every_edge_and_both_polyhedra_touch_the_sphere_unde
 def test_the_centred_circles_balance_and_the_figure_draws():
     circles, faces, edges = scenarios.centred()
     assert np.linalg.norm(render.coordinates(core.touching(circles, edges).dual()).mean(axis=0)) < 1e-4
-    assert len(render.animate(circles[None], faces, edges)) == 1
+    assert len(list(render.animate(circles[None], faces, edges))) == 1

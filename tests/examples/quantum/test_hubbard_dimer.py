@@ -141,7 +141,7 @@ def test_large_repulsion_approaches_localized_spin_exchange(exchange_history):
 def test_the_dials_draw(exchange_history):
     from examples.quantum.hubbard_dimer import render
     parts = [part[:, :3] for part in exchange_history]
-    assert len(render.animate_dials(list(scenarios.NAMES), *scenarios.dials(parts))) == 3
+    assert len(list(render.animate_dials(list(scenarios.NAMES), *scenarios.dials(parts)))) == 3
 
 
 def test_a_field_difference_keeps_up_down_and_freezes_the_swap():

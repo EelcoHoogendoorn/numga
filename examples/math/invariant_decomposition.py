@@ -36,6 +36,8 @@ Run from the repository root with python -m examples.math.invariant_decompositio
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -44,7 +46,7 @@ from numga import Algebra, NumpyContext, stack
 from numga.gatype import GAType
 from numga.gatype import ReverseProductOne, Versor
 from examples.util.animation import capture
-from examples.util.wgsl import compose, meshes, solids
+from examples.util.wgsl import compose, solids, strokes
 
 ga = Algebra("x+y+z+w+v+u+")
 mv = NumpyContext(ga).multivector
@@ -172,13 +174,12 @@ def main(frames: int, seed: int) -> tuple[Bivector, Vector, Vector]:
 
 # --- plumbing -------------------------------------------------------------------------
 # The tangle's view, elevation and azimuth in radians, azimuth zero looking along +y; its margin, as a share of its
-# larger side; the pixels across it; the radii of the orbit's tube and of the moving point, in pixels, and the
-# tube's sides; the orbit's colour up to the moment and after it.
+# larger side; the pixels across it; the radii of the orbit's tube and of the moving point, in pixels; the orbit's
+# colour up to the moment and after it.
 tangle_elevation, tangle_azimuth = np.radians([30.0, 30.0])
 tangle_margin = 0.16
 n_tangle_pixels = 480
 tube_radius, marker_radius = 2.2, 5.5
-n_around = 8
 trail_colour, orbit_colour = np.array(to_rgb("#7d3c98")), np.array(to_rgb("0.8"))
 
 
@@ -215,42 +216,60 @@ def tangle_image(path: np.ndarray, index: int) -> np.ndarray:
     after it, with the point at that moment as a ball, from a fixed view that frames the whole orbit."""
     places = solids.mv.point(path)                                             # [times] Point
     view = solids.view([places], 0.0, tangle_elevation, tangle_azimuth, tangle_margin, n_tangle_pixels)
-    rings, faces = meshes.tube(path[None], tube_radius * view.pixel, n_around)
-    # Each ring sits at one time of the orbit: its corners are purple up to the moment, grey after it.
-    passed = np.arange(len(path)).repeat(n_around)[faces] <= index             # [faces, 3]
-    colours = np.where(passed[..., None], trail_colour, orbit_colour)         # [faces, 3, 3]
-    orbit = meshes.layer(rings, faces, colours, meshes.smooth(rings, faces), view)
+    # Each segment runs from one time of the orbit to the next: purple up to the moment, grey after it.
+    passed = np.arange(1, len(path)) <= index                                 # [times - 1]
+    colours = np.where(passed[:, None], trail_colour, orbit_colour)           # [times - 1, 3]
+    tube = strokes.segments(path[:-1], path[1:], colours, 2 * tube_radius, view)
+    orbit = solids.layer([], view, meshes=[(tube, 1.0)])
     moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view)
     return compose([(*orbit, 1.0), (*moment, 1.0)], np.ones(3))
 
 
-def draw(points: Vector, circles: Vector, parts: Bivector, index: int) -> plt.Figure:
-    """The orbit in the first three directions, and in each of the three planes, up to one moment."""
+def layout(points: Vector, circles: Vector, parts: Bivector, index: int) -> tuple[plt.Figure, Callable[[int], None]]:
+    """The orbit in the first three directions, and in each of the three planes, up to one moment: the figure, and
+    what moves it on to another moment."""
+    path = components(points, "x y z")                                         # [times, 3]
     figure = plt.figure(figsize=(12, 4.6))
     tangle = figure.add_axes((0.0, 0.0, 0.4, 1.0))
-    tangle.imshow(tangle_image(components(points, "x y z"), index))
+    shown = tangle.imshow(tangle_image(path, index))
     tangle.set_axis_off()
     figure.text(0.2, 0.9, "x, y and z", ha="center", fontsize=12)
     across, along = plane_axes(circles, parts)
     flat = np.stack([(circles | across[:, None]).to_array(), (circles | along[:, None]).to_array()], axis=-1)   # [3, times, 2]
+    traces, markers = [], []
     for plane, colour in enumerate(("#c0392b", "#2e86c1", "#27ae60")):
         extent = np.abs(flat[plane]).max() * 1.2
         ax = figure.add_axes((0.42 + plane * 0.19, 0.2, 0.17, 0.6))
         ax.plot(*flat[plane].T, color="0.85", linewidth=0.8)
-        ax.plot(*flat[plane, : index + 1].T, color=colour, linewidth=1.5)
-        ax.scatter(*flat[plane, index], color=colour, s=30, zorder=3)
+        traces += ax.plot(*flat[plane, : index + 1].T, color=colour, linewidth=1.5)
+        markers.append(ax.scatter(*flat[plane, index], color=colour, s=30, zorder=3))
         ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal", xticks=[], yticks=[])
         ax.set_title(f"plane {plane + 1}")
+
+    def move(moment: int) -> None:
+        shown.set_data(tangle_image(path, moment))
+        for plane, (trace, marker) in enumerate(zip(traces, markers)):
+            trace.set_data(*flat[plane, : moment + 1].T)
+            marker.set_offsets(flat[plane, moment])
+
+    return figure, move
+
+
+def draw(points: Vector, circles: Vector, parts: Bivector, index: int) -> plt.Figure:
+    """The orbit in the first three directions, and in each of the three planes, up to one moment."""
+    figure, _ = layout(points, circles, parts, index)
     return figure
 
 
-def animate(points: Vector, circles: Vector, parts: Bivector, frames: int) -> list[np.ndarray]:
-    images = []
-    for index in np.linspace(0, len(points) - 1, frames).astype(int):
-        figure = draw(points, circles, parts, index)
-        images.append(capture(figure))
-        plt.close(figure)
-    return images
+def animate(points: Vector, circles: Vector, parts: Bivector, frames: int) -> Iterator[np.ndarray]:
+    """The orbit up to moments evenly spread over it, in a figure laid out once."""
+    first, *rest = np.linspace(0, len(points) - 1, frames).astype(int)
+    figure, move = layout(points, circles, parts, first)
+    yield capture(figure)
+    for index in rest:
+        move(index)
+        yield capture(figure)
+    plt.close(figure)
 
 
 if __name__ == "__main__":

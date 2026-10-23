@@ -4,9 +4,11 @@ the three-sphere."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import numpy as np
 
-from examples.util.wgsl import meshes, solids
+from examples.util.wgsl import solids, strokes
 
 BACKGROUND = np.array([0.06, 0.07, 0.09])
 # The two tiles of a reflection: one colour for an even number of reflections, one for an odd number.
@@ -73,9 +75,10 @@ def kaleidoscope(folded, time: float) -> np.ndarray:
     return to_image(uncovered[..., -1:] * BACKGROUND + shown @ BEAD_COLOURS[::-1])
 
 
-def animate_kaleidoscope(folded, frames: int) -> list[np.ndarray]:
+def animate_kaleidoscope(folded, frames: int) -> Iterator[np.ndarray]:
     """The beads tumbling once around, each frame the kaleidoscopes side by side."""
-    return [side_by_side(kaleidoscope(folded, time)) for time in np.linspace(0, 2 * np.pi, frames, endpoint=False)]
+    for time in np.linspace(0, 2 * np.pi, frames, endpoint=False):
+        yield side_by_side(kaleidoscope(folded, time))
 
 
 # --- tiles ------------------------------------------------------------------------------
@@ -100,9 +103,10 @@ def sphere(screen, folded, flips, mirrors, outline) -> np.ndarray:
     return to_image(np.where(inside[..., None], colours, BACKGROUND))
 
 
-def animate_sphere(screen, turning, mirrors, outline) -> list[np.ndarray]:
+def animate_sphere(screen, turning, mirrors, outline) -> Iterator[np.ndarray]:
     """One frame per folded view of the turning sphere."""
-    return [sphere(screen, folded, flips, mirrors, outline) for folded, flips in turning]
+    for folded, flips in turning:
+        yield sphere(screen, folded, flips, mirrors, outline)
 
 
 def tiling(folded, flips, mirrors) -> np.ndarray:
@@ -130,7 +134,7 @@ def distinct(points: np.ndarray) -> np.ndarray:
 def polytope(spinors, tilt: float = 0.45) -> np.ndarray:
     """The distinct unit spinors as points of the three-sphere, in perspective from beyond the scalar
     axis into three dimensions and from there seen from slightly above, `[pixels, pixels, 3]` bytes:
-    the points traced as balls, and edges joining nearest neighbours rasterized as tubes, lit on the GPU."""
+    the points traced as balls, and edges joining nearest neighbours drawn as strokes, lit on the GPU."""
     points = distinct(coordinates(spinors, "1 yz zx xy"))                      # [vertices, 4]
     gaps = np.linalg.norm(points[:, None] - points[None], axis=-1)
     nearest = gaps[gaps > 1e-9].min()
@@ -139,16 +143,18 @@ def polytope(spinors, tilt: float = 0.45) -> np.ndarray:
     space = points[:, 1:] / (2.4 - points[:, :1])                              # [vertices, 3]
     # Seen from slightly above: the camera turned about x by the tilt, looking along its own -z.
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, HALF), N_PIXELS)
-    edges = meshes.segment_samples(space[first], space[second], EVEN, EDGE_WIDTH, view)
+    edges = strokes.segments(space[first], space[second], EVEN, EDGE_WIDTH, view)
     vertices = solids.ball(solids.mv.point(space), VERTEX_RADIUS * view.pixel)[:, None]   # [vertices, 1] Quadric
     return solids.draw([(vertices, VERTEX)], view, BACKGROUND, meshes=[(edges, 1.0)])
 
 
-def animate_polytope(turning) -> list[np.ndarray]:
+def animate_polytope(turning) -> Iterator[np.ndarray]:
     """One frame per batch of turned spinors."""
-    return [polytope(spinors) for spinors in turning]
+    for spinors in turning:
+        yield polytope(spinors)
 
 
-def animate_tilings(moving) -> list[np.ndarray]:
+def animate_tilings(moving) -> Iterator[np.ndarray]:
     """One frame per step of the motion: the disks of tiles of every geometry side by side."""
-    return [side_by_side(np.stack([tiling(*geometry) for geometry in step])) for step in moving]
+    for step in moving:
+        yield side_by_side(np.stack([tiling(*geometry) for geometry in step]))
