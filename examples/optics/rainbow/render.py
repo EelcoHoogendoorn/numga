@@ -11,6 +11,7 @@ from matplotlib.collections import LineCollection
 
 from numga import stack
 from examples.util.animation import capture
+from examples.util.wgsl import pinned, room
 from examples.optics.rainbow import core
 
 mv = core.mv
@@ -27,7 +28,6 @@ GROUND = "#14532d"
 REACH = 2.4
 BIN = 0.05
 VIEW = 62.0
-N_PIXELS = 900
 # The power the sky's light is raised to for display, brightening faint light more than bright.
 TONE = 0.65
 
@@ -37,6 +37,19 @@ def flat(points: core.Direction) -> np.ndarray:
     """Points of the cross-section through the drop along the sunlight, on the last axis: along the
     sunlight, and up."""
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
+
+
+def pixel_grid(view: tuple[float, float, float, float], columns: int, rows: int
+               ) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float, float]]:
+    """The middles of the square pixels of the view, left, right, bottom and top, that fit in `columns` by `rows`:
+    across, and up with the rows down from the top; and the grid's extent, the outer edges of its pixels."""
+    left, right, bottom, top = view
+    pixel = max((right - left) / columns, (top - bottom) / rows)
+    n_columns, n_rows = round((right - left) / pixel), round((top - bottom) / pixel)
+    middle, half = np.array([left + right, bottom + top]) / 2, np.array([n_columns, n_rows]) * pixel / 2
+    across = middle[0] - half[0] + pixel * (np.arange(n_columns) + 0.5)
+    up = middle[1] + half[1] - pixel * (np.arange(n_rows) + 0.5)
+    return across, up, (middle[0] - half[0], middle[0] + half[0], middle[1] - half[1], middle[1] + half[1])
 
 
 def degrees(apart: core.Scalar) -> np.ndarray:
@@ -75,20 +88,18 @@ def draw_sky(apart: core.Scalar, flux: core.Scalar, wavelengths: np.ndarray, sun
     angles, light = brightness(apart, flux, sun_width)
     colour = light.T @ spectrum(wavelengths)                                  # [angles, 3]
     colour = colour / colour.max()
-    # Each pixel at its angle from the point opposite the sun, in a view centred above it.
-    across = np.linspace(-VIEW, VIEW, N_PIXELS)
-    height = np.linspace(sun_elevation - 6, sun_elevation + VIEW * 0.8, N_PIXELS // 2)
+    # The view of the sky centred above the point opposite the sun, from below the horizon, in degrees.
+    view = (-VIEW, VIEW, sun_elevation - 6, sun_elevation + VIEW * 0.8)
+    figure = plt.figure(figsize=(9.0, 9.0 * (view[3] - view[2]) / (view[1] - view[0])), dpi=100, facecolor=BACKGROUND)
+    ax = figure.add_axes((0, 0, 1, 1))
+    # Each pixel the figure shows at its angle from the point opposite the sun.
+    across, height, extent = pixel_grid(view, *room(ax))
     distance = np.hypot(*np.meshgrid(across, height))
     image = np.stack([np.interp(distance, angles, colour[:, channel], right=0) for channel in range(3)], axis=-1)
-    image = np.clip(SKY + image ** TONE, 0, 1)
-    figure = plt.figure(figsize=(9.0, 9.0 * (height[-1] - height[0]) / (2 * VIEW)), dpi=100, facecolor=BACKGROUND)
-    ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow(image, origin="lower", extent=(across[0], across[-1], height[0], height[-1]), interpolation="bilinear")
-    ax.fill_between(across, height[0], sun_elevation, color=GROUND)
-    ax.set_xlim(across[0], across[-1])
-    ax.set_ylim(height[0], height[-1])
-    ax.set_aspect("auto")
-    ax.set_axis_off()
+    pinned(ax, np.clip(SKY + image ** TONE, 0, 1), extent)
+    ax.fill_between(extent[:2], extent[2], sun_elevation, color=GROUND)
+    ax.set_xlim(extent[0], extent[1])
+    ax.set_ylim(extent[2], extent[3])
     return figure
 
 

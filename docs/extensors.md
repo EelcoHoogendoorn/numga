@@ -65,7 +65,7 @@ overlap_gradient = geometry.null_gradient.adjugate()(momentum)                # 
 
 **Notebook**: [`examples/estimation/multiview/multiview_reconstruction.ipynb`](../examples/estimation/multiview/multiview_reconstruction.ipynb)
 
-<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="390" /></p>
+<p align="center"><img src="../plots/multiview_convergence.gif" alt="Three cameras aligned step by step, with their sight cones and the splats they fuse into" width="300" /></p>
 
 ```python
 back_projection = camera.adjugate()                        # [] Plane <- Plane
@@ -302,7 +302,7 @@ sample_echo = echo.mean(axis=-1)                               # [delays] State 
 
 **Notebook**: [`examples/surfaces/arap/arap.ipynb`](../examples/surfaces/arap/arap.ipynb)
 
-<p align="center"><img src="../plots/arap_bending.gif" alt="A bar held at one end and bent a quarter turn up, keeping its shape as it bends" width="360" /></p>
+<p align="center"><img src="../plots/arap_bending.gif" alt="A bar held at one end and bent a quarter turn up, keeping its shape as it bends" width="400" /></p>
 
 ```python
 edges = T10 * vertices                                                         # Point[E]

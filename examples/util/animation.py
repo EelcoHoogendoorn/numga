@@ -2,6 +2,9 @@
 
 Figures and animations go to PLOT_DIR under a new, incrementing name, so a run never
 overwrites an earlier result. Each save prints the path it wrote and returns it.
+
+Frames are written at exactly their own pixels, never enlarged and never shrunk (hard rule): a smaller picture is a
+picture rendered with fewer pixels. The one averaging is `capture`'s, supersampling within a frame's own pixels.
 """
 
 from __future__ import annotations
@@ -56,19 +59,14 @@ def indexed(image: Image.Image, lookup: np.ndarray, palette: Image.Image) -> Ima
     return fixed
 
 
-def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, scale: float, colors: int) -> str:
-    """Write RGB frames as a looping palette GIF, box-filtered by scale."""
+def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: int) -> str:
+    """Write RGB frames as a looping palette GIF, at their own pixels."""
     frames = list(frames)
-    height, width = frames[0].shape[:2]
-    size = (round(width * scale), round(height * scale))
-
-    def resized(frame: np.ndarray) -> Image.Image:
-        return Image.fromarray(frame).resize(size, resample=Image.Resampling.BOX)
 
     # Bound the palette population: very large repeated colour counts overflow Pillow's
     # quantizer accumulators. Sample the whole timeline while retaining source colours.
     indices = np.linspace(0, len(frames) - 1, min(len(frames), PALETTE_FRAMES), dtype=int)
-    samples = [resized(frames[index]).resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
+    samples = [Image.fromarray(frames[index]).resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
                for index in indices]
     sampled = np.concatenate([np.asarray(sample) for sample in samples], axis=0)
     palette = Image.fromarray(sampled).quantize(colors=colors)
@@ -83,8 +81,8 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, scale: f
     # Every colour's entry where it is one exactly, the first of equal entries, and -1 elsewhere.
     lookup = np.full(1 << 24, -1, dtype=np.int16)
     lookup[codes(entries)[::-1]] = np.arange(len(entries))[::-1]
-    # Each frame resized and put in the palette in turn, so that only the indexed frames, a byte a pixel, are held.
-    images = [indexed(resized(frame), lookup, palette) for frame in frames]
+    # Each frame put in the palette in turn, so that only the indexed frames, a byte a pixel, are held.
+    images = [indexed(Image.fromarray(frame), lookup, palette) for frame in frames]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     images[0].save(
         path, save_all=True, append_images=images[1:], palette=palette.getpalette(),
@@ -106,22 +104,22 @@ def forward_and_back(frames: list) -> list:
     return frames + frames[-2:0:-1]
 
 
-def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256, scale: float = 1.0,
+def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, colors: int = 256,
                    forward_then_back: bool = False) -> Path:
-    """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`,
-    box-filtered to `scale` of their size; with `forward_then_back`, looping forward and then back."""
+    """Save RGB frames as PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, in a palette of `colors`, at their own
+    pixels; with `forward_then_back`, looping forward and then back."""
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
     frames = list(frames)
-    save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, scale, colors)
+    save_gif(forward_and_back(frames) if forward_then_back else frames, str(path), duration_ms, colors)
     print(f"Saved {path}")
     return path
 
 
-def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0, n_frames: int = 0,
+def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, n_frames: int = 0,
                    forward_then_back: bool = False) -> None:
     """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
     whole animation looping, as the GIF it is saved as: PLOT_DIR/<name>.gif, or the next free <name>_NN.gif, as
-    `save_animation` writes it, box-filtered to `scale` of their size. The count under each frame says how many are
+    `save_animation` writes it, at their own pixels. The count under each frame says how many are
     expected where `n_frames` is given. With `forward_then_back`, the loop plays the frames forward and then back."""
     import base64
     import io
@@ -140,8 +138,7 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
     images = []
     updated = -np.inf
     for frame in frames:
-        image = Image.fromarray(frame)
-        images.append(image.resize((round(image.width * scale), round(image.height * scale)), resample=Image.Resampling.BOX))
+        images.append(Image.fromarray(frame))
         # Frames that come faster than the front end redraws smoothly are kept but not shown.
         if time.monotonic() - updated < UPDATE_INTERVAL:
             continue
@@ -151,6 +148,6 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
     if forward_then_back:
         images = forward_and_back(images)
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
-    save_gif([np.asarray(image) for image in images], str(path), duration_ms, 1.0, 256)
+    save_gif([np.asarray(image) for image in images], str(path), duration_ms, 256)
     shown.update(HTML(f'<img src="data:image/gif;base64,{base64.b64encode(path.read_bytes()).decode()}">'))
     print(f"Saved {path}")

@@ -1,7 +1,7 @@
 """Top-down drawing and convergence animation for multi-camera reconstruction in PGA2D.
 
 Sight cones and fused splats are rasterized by evaluating each quadric on a grid of plane
-points, `quadric(grid) & grid`.
+points, `quadric(grid) & grid`, one point per pixel the figure shows them at.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from numga.algebras import PGA2D
 
 from examples import instantiate
 from examples.util.animation import capture
+from examples.util.wgsl import pinned, room
 
 # The figures are top-down views of the plane: they draw PGA2D geometry.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
@@ -28,7 +29,9 @@ CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
 X_RANGE = (-1.25, 1.25)
 Y_RANGE = (-0.30, 2.95)
-RESOLUTION = (750, 750)
+# README picture: the figures' height in inches and their dots per inch set plots/multiview_convergence.gif, about 300
+# pixels a side, tuned as a visual for the README; to experiment, copy them.
+FIGURE_HEIGHT, FIGURE_DPI = 5.0, 60
 # The room an animation leaves around its first state's cameras, in metres, where they lie outside the scene drawn;
 # and the standard deviations a pose covariance is drawn at.
 CAMERA_ROOM = 0.35
@@ -64,13 +67,19 @@ def pose_covariance(information: Information) -> np.ndarray:
 
 
 # --- rasterized quadrics ------------------------------------------------------------------
-def plane_grid(x_range: tuple[float, float] = X_RANGE) -> tuple[Point, float]:
-    """The viewport across `x_range` as a grid of plane points, and the width of one pixel."""
-    pixel_w = (X_RANGE[1] - X_RANGE[0]) / RESOLUTION[1]
-    xs = np.linspace(*x_range, round((x_range[1] - x_range[0]) / pixel_w))
-    ys = np.linspace(*Y_RANGE, RESOLUTION[0])
+def plane_grid(x_range: tuple[float, float], columns: int, rows: int
+               ) -> tuple[Point, float, tuple[float, float, float, float]]:
+    """The scene across `x_range` and `Y_RANGE` as a grid of plane points, one at the middle of each of the square
+    pixels that fit in `columns` by `rows`; the width of one pixel; and the grid's extent, left, right, bottom, top."""
+    pixel_w = max((x_range[1] - x_range[0]) / columns, (Y_RANGE[1] - Y_RANGE[0]) / rows)
+    n_columns, n_rows = int((x_range[1] - x_range[0]) / pixel_w), int((Y_RANGE[1] - Y_RANGE[0]) / pixel_w)
+    middle = np.array([sum(x_range), sum(Y_RANGE)]) / 2
+    half = np.array([n_columns, n_rows]) * pixel_w / 2
+    xs = middle[0] - half[0] + pixel_w * (np.arange(n_columns) + 0.5)
+    ys = middle[1] - half[1] + pixel_w * (np.arange(n_rows) + 0.5)
     xx, yy = np.meshgrid(xs, ys)
-    return mv.point(np.stack([xx, yy], axis=-1)), pixel_w
+    extent = (middle[0] - half[0], middle[0] + half[0], middle[1] - half[1], middle[1] + half[1])
+    return mv.point(np.stack([xx, yy], axis=-1)), pixel_w, extent
 
 
 def depths(motors: Motor, grid: Point) -> np.ndarray:
@@ -111,8 +120,17 @@ def blend_splats(image: np.ndarray, grid: Point, pixel_w: float, motors: Motor, 
     return blend(image, covered, SPLAT_COLOR, 0.95)
 
 
-def show_image(ax: plt.Axes, image: np.ndarray, x_range: tuple[float, float] = X_RANGE) -> None:
-    ax.imshow(np.clip(image, 0.0, 1.0), extent=[*x_range, *Y_RANGE], origin="lower")
+def show_image(ax: plt.Axes, image: np.ndarray, extent: tuple[float, float, float, float]) -> None:
+    """The picture, rows up from the bottom, held pixel for pixel over its extent."""
+    pinned(ax, np.clip(image, 0.0, 1.0)[::-1], extent)
+    ax.set_xlim(extent[0], extent[1])
+    ax.set_ylim(extent[2], extent[3])
+    ax.axis("off")
+
+
+def rasterized(ax: plt.Axes, x_range: tuple[float, float]) -> tuple[Point, float, tuple[float, float, float, float]]:
+    """The grid of plane points across `x_range`, one per pixel of the room the figure's layout gives the axes."""
+    return plane_grid(x_range, *room(ax))
 
 
 # --- overlays -----------------------------------------------------------------------------
@@ -188,20 +206,19 @@ def frame_axes(ax: plt.Axes, x_range: tuple[float, float] = X_RANGE) -> None:
 
 
 def plot_reconstruction(ax: plt.Axes, motors: Motor, world_cones: Quadric, fused: Quadric, points: Point,
-                        x_range: tuple[float, float] = X_RANGE) -> None:
-    """Sight cones, fused splats, reconstructed points and cameras, across `x_range`."""
+                        raster: tuple[Point, float, tuple[float, float, float, float]]) -> None:
+    """Sight cones, fused splats, reconstructed points and cameras, on a raster from `rasterized`."""
     ax.clear()
-    grid, pixel_w = plane_grid(x_range)
+    grid, pixel_w, extent = raster
     image = blend_cones(np.ones(grid.shape + (3,)), grid, pixel_w, motors, world_cones)
-    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points), x_range)
+    show_image(ax, blend_splats(image, grid, pixel_w, motors, fused, points), extent)
     plot_cameras(ax, motors)
-    frame_axes(ax, x_range)
 
 
 # --- figures ------------------------------------------------------------------------------
 def draw_rig(motors: Motor) -> plt.Figure:
     """The cameras."""
-    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
+    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
     plot_cameras(ax, motors)
     frame_axes(ax)
     return fig
@@ -209,18 +226,17 @@ def draw_rig(motors: Motor) -> plt.Figure:
 
 def draw_cones(motors: Motor, world_cones: Quadric) -> plt.Figure:
     """The cameras and their sight cones through the scene points."""
-    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
-    grid, pixel_w = plane_grid()
-    show_image(ax, blend_cones(np.ones((*RESOLUTION, 3)), grid, pixel_w, motors, world_cones))
+    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
+    grid, pixel_w, extent = rasterized(ax, X_RANGE)
+    show_image(ax, blend_cones(np.ones(grid.shape + (3,)), grid, pixel_w, motors, world_cones), extent)
     plot_cameras(ax, motors)
-    frame_axes(ax)
     return fig
 
 
 def draw_reconstruction(motors: Motor, world_cones: Quadric, fused: Quadric, points: Point) -> plt.Figure:
     """Sight cones fused into splats around the reconstructed points."""
-    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=75, layout="constrained")
-    plot_reconstruction(ax, motors, world_cones, fused, points)
+    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
+    plot_reconstruction(ax, motors, world_cones, fused, points, rasterized(ax, X_RANGE))
     return fig
 
 
@@ -228,8 +244,8 @@ def draw_reconstruction_with_covariance(
     motors: Motor, world_cones: Quadric, fused: Quadric, points: Point, information: Information,
 ) -> plt.Figure:
     """The reconstruction with each camera's pose covariance."""
-    fig, ax = plt.subplots(figsize=(7.5, 7.5), dpi=140, layout="constrained")
-    plot_reconstruction(ax, motors, world_cones, fused, points)
+    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT, FIGURE_HEIGHT), dpi=FIGURE_DPI, layout="constrained")
+    plot_reconstruction(ax, motors, world_cones, fused, points, rasterized(ax, X_RANGE))
     plot_pose_covariance(ax, motors, information)
     return fig
 
@@ -243,9 +259,13 @@ def animate_convergence(states: Iterable, room: float = CAMERA_ROOM) -> Iterator
     first = next(states)
     centres = coordinates(first[0] >> mv.point(np.zeros(2)))[:, 0]               # [cameras]
     x_range = (min(X_RANGE[0], centres.min() - room), max(X_RANGE[1], centres.max() + room))
-    fig, ax = plt.subplots(figsize=(6.5 * (x_range[1] - x_range[0]) / (X_RANGE[1] - X_RANGE[0]), 6.5), dpi=60,
-                           layout="constrained")
+    fig, ax = plt.subplots(figsize=(FIGURE_HEIGHT * (x_range[1] - x_range[0]) / (X_RANGE[1] - X_RANGE[0]), FIGURE_HEIGHT),
+                           dpi=FIGURE_DPI, layout="constrained")
+    # The layout settled once, so that every frame's raster has the same pixels in the same place.
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    raster = rasterized(ax, x_range)
     for motors, world_cones, fused, points in chain([first], states):
-        plot_reconstruction(ax, motors, world_cones, fused, points, x_range)
+        plot_reconstruction(ax, motors, world_cones, fused, points, raster)
         yield capture(fig)
     plt.close(fig)

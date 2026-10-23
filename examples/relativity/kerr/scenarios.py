@@ -42,7 +42,6 @@ n_polarizer_frames = 80
 polarizer_angles = np.linspace(0, np.pi, n_polarizer_frames, endpoint=False)
 polarization_degree = 0.8
 n_flow_frames = 80
-web_scale = 2 / 3                                               # the camera's animations, box-filtered to this share of its size
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
 # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
 gallery_width = 400
@@ -120,9 +119,9 @@ def main() -> None:
     shape = (image_height, image_width)
     save_figure(render.draw_camera(image, temperature, exposure_temperature, shape, sky), "kerr_camera")
     save_animation(render.animate_polarizer(image, temperature, exposure_temperature, transmission, shape, sky),
-                   "kerr_polarizer", duration_ms, scale=web_scale)
+                   "kerr_polarizer", duration_ms)
     save_animation(render.animate_disk(image, temperature, exposure_temperature, disk_flow(image, n_flow_frames), n_flow_frames, shape, sky),
-                   "kerr_disk", duration_ms, scale=web_scale)
+                   "kerr_disk", duration_ms)
     gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
     # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
     save_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,

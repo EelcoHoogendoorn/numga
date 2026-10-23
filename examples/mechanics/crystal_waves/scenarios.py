@@ -18,10 +18,9 @@ DENSITY = np.array([2.20, 2.33, 7.60])
 
 MODES = ("slow shear", "fast shear", "compression")
 
-# Headings sampled over the sphere for the focusing, their seed, and the bins across each map.
+# Headings sampled over the sphere for the focusing, and their seed.
 N_HEADINGS = 400_000
 SEED = 0
-N_BINS = 400
 # Headings around the cube face for the wave fronts.
 N_ANGLES = 4000
 
@@ -62,7 +61,7 @@ def main() -> None:
     from examples.mechanics.crystal_waves import render
 
     velocity, heading, values = focusing(N_HEADINGS, SEED)
-    save_figure(render.draw_focusing(velocity, NAMES, N_BINS), "crystal_waves_focusing")
+    save_figure(render.draw_focusing(velocity, NAMES), "crystal_waves_focusing")
     save_figure(render.draw_wave_fronts(wave_fronts(N_ANGLES), NAMES), "crystal_waves_fronts")
 
     # checks

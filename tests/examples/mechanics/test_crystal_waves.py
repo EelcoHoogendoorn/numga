@@ -50,7 +50,7 @@ def test_figures_render():
     np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
     expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)
     np.testing.assert_allclose(speeds[:, 1], np.sqrt(expected / density[:, None]), rtol=1e-8)
-    for figure in (render.draw_focusing(velocity, names, 32),
+    for figure in (render.draw_focusing(velocity, names),
                    render.draw_wave_fronts(scenarios.wave_fronts(64), names)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)

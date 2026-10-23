@@ -379,10 +379,10 @@ def main() -> None:
     save_figure(render.draw_frame(render.develop(still["image"]["light"], still["image"]["sky"], scenarios.exposure_temperature)),
                 "kerr_gpu_camera")
     save_animation((render.develop(traced["image"]["light"], traced["image"]["sky"], scenarios.exposure_temperature)
-                    for traced in disk_flow(tracer, values)), "kerr_gpu_disk", scenarios.duration_ms, scale=scenarios.web_scale)
+                    for traced in disk_flow(tracer, values)), "kerr_gpu_disk", scenarios.duration_ms)
     # The exposure is doubled for the half of unpolarized light a polarizer stops.
     save_animation((render.develop(2 * traced["image"]["analyzed"], traced["image"]["sky"], scenarios.exposure_temperature)
-                    for traced in polarizer(tracer, values)), "kerr_gpu_polarizer", scenarios.duration_ms, scale=scenarios.web_scale)
+                    for traced in polarizer(tracer, values)), "kerr_gpu_polarizer", scenarios.duration_ms)
 
     # --- checks
     # Every pixel's light is finite and none is negative.

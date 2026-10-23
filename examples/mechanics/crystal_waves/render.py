@@ -7,11 +7,14 @@ import numpy as np
 
 from examples.mechanics.crystal_waves import core
 from examples.mechanics.crystal_waves.scenarios import MODES
+from examples.util.wgsl import pinned, room
 
 MODE_COLOURS = ("#c0392b", "#2e86c1", "#7d3c98")
 CROSS_COLOUR, LABEL_COLOUR = "0.85", "0.4"
 # The margin around the wave fronts, as a share of their reach.
 MARGIN = 0.2
+# The span of the cube face the focusing panels show, across and up.
+FACE = (-1.5, 1.5)
 
 
 def components(directions: core.Antivector) -> np.ndarray:
@@ -30,21 +33,25 @@ def cross(ax: plt.Axes, limit: float, across: str, up: str) -> None:
     ax.set_axis_off()
 
 
-def draw_focusing(velocities: core.Vector, names: list[str], bins: int) -> plt.Figure:
+def draw_focusing(velocities: core.Vector, names: list[str]) -> plt.Figure:
     """One row per crystal, one column per wave: how densely the energy of evenly spread headings
-    lands on a cube face, seen from a source at the centre of the opposite face."""
+    lands on a cube face, seen from a source at the centre of the opposite face, binned on the pixels of each
+    panel."""
     figure, grid = plt.subplots(len(names), len(MODES), figsize=(4 * len(MODES), 4 * len(names)))
-    for row, velocity, name in zip(np.atleast_2d(grid), velocities, names):
-        flow = components(velocity)                                    # [count, waves, 3]
-        for ax, wave, mode in zip(row, np.moveaxis(flow, 1, 0), MODES):
-            ahead = wave[:, 2] > 0
-            # Where each ray meets the face one unit along z.
-            face = wave[ahead, :2] / wave[ahead, 2:]
-            density, _, _ = np.histogram2d(face[:, 0], face[:, 1], bins=bins, range=[[-1.5, 1.5], [-1.5, 1.5]])
-            ax.imshow(np.log1p(density.T), cmap="inferno", origin="lower", extent=[-1.5, 1.5, -1.5, 1.5])
+    for row, name in zip(np.atleast_2d(grid), names):
+        for ax, mode in zip(row, MODES):
             ax.set_title(f"{name}: {mode}", fontsize=10)
             ax.set_axis_off()
     figure.tight_layout()
+    for row, velocity in zip(np.atleast_2d(grid), velocities):
+        flow = components(velocity)                                    # [count, waves, 3]
+        for ax, wave in zip(row, np.moveaxis(flow, 1, 0)):
+            ahead = wave[:, 2] > 0
+            # Where each ray meets the face one unit along z.
+            face = wave[ahead, :2] / wave[ahead, 2:]
+            bins = min(room(ax))
+            density, _, _ = np.histogram2d(face[:, 0], face[:, 1], bins=bins, range=[FACE, FACE])
+            pinned(ax, np.log1p(density.T[::-1]), (*FACE, *FACE)).set_cmap("inferno")
     return figure
 
 
