@@ -52,7 +52,7 @@ Repository = "https://github.com/EelcoHoogendoorn/numga"
 include = ["numga*", "examples*"]
 
 [tool.setuptools.package-data]
-examples = ["models/*.obj"]
+"examples.util" = ["models/*.obj"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

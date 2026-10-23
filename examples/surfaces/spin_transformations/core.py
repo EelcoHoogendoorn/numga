@@ -14,13 +14,13 @@ fields on the vertices, edges and faces, coupling their elements through multive
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import numpy as np
 
 from numga.sparse import SparseExtensor, spdiag
 from numga.extensor import Extensor
 from numga.algebras import VGA3D as ga
+from examples import MODEL_DIR
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
@@ -31,7 +31,7 @@ as_ga_sparse, as_scalar, context = mesh_module.as_ga_sparse, mesh_module.as_scal
 Even = ga.gatype.even()
 # Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
 # axis, up in the file, turned onto z, and then x onto y.
-SPOT = Path(__file__).parents[2] / "models" / "spot.obj"
+SPOT = MODEL_DIR / "spot.obj"
 UPRIGHT = ((context.multivector.x ^ context.multivector.y) * (-np.pi / 4)).exp() * ((context.multivector.y ^ context.multivector.z) * (-np.pi / 4)).exp()
 
 

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[1]
 PLOT_DIR = (ROOT if (ROOT / "pyproject.toml").exists() else Path.cwd()) / "plots"
 PLOT_DIR.mkdir(parents=True, exist_ok=True)
-MODEL_DIR = Path(__file__).resolve().parent / "models"
+MODEL_DIR = Path(__file__).resolve().parent / "util" / "models"
 
 
 def auto_increment_path(path: Path | str) -> Path:

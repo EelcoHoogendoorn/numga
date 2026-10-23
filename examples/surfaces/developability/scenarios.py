@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from itertools import islice
-from pathlib import Path
 
 import numpy as np
 
+from examples import MODEL_DIR
 from examples.surfaces.developability import core
 
 mv = core.mv
 # The Stanford bunny, from the shared models, its size, and the quarter turn that stands it up: its y axis,
 # up in the file, turned onto z.
-BUNNY = Path(__file__).parents[2] / "models" / "bunny.obj"
+BUNNY = MODEL_DIR / "bunny.obj"
 SIZE = 2.0
 UPRIGHT = ((mv.y ^ mv.z) * (-np.pi / 4)).exp()
 # The flow's step, as a share of what each vertex's faces can take, its number of steps, the steps between

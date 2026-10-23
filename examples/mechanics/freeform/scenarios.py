@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 
 import numpy as np
 
 from numga import stack
+from examples import MODEL_DIR
 from examples.mechanics.freeform import core, geometry, weights
 from examples.mechanics.freeform.core import mv, Scalar, Antivector, Vector
 from examples.mechanics.freeform.numerics import minimize_state
 
 # The bunny's height, its volume samples and kernel centres, the kernels' radius, and the weight modes.
-MESH_PATH = Path(__file__).resolve().parents[2] / "models" / "bunny.obj"
+MESH_PATH = MODEL_DIR / "bunny.obj"
 HEIGHT = 2
 N_QUADRATURE = 1600
 N_CENTERS = 96
