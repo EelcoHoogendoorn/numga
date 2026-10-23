@@ -152,6 +152,9 @@ def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.nd
     view = k_space(surface_axes)
     scene = Scene(view, np.ones(3), k_axes(view), [])
     image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
+    # Laid out once, so that nothing moves between frames.
+    figure.canvas.draw()
+    figure.set_layout_engine("none")
     for sheets, sections in frames:
         image.set_data(scene.draw(meshes=sheet_sides(sheets, view)))
         trace_sections(curves, sections)
