@@ -147,7 +147,7 @@ def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, sc
             continue
         updated = time.monotonic()
         count = f"frame {len(images)} of {n_frames}" if n_frames else f"frame {len(images)}"
-        shown.update(embedded(images[-1], "JPEG", count, quality=85))
+        shown.update(embedded(images[-1], "PNG", count, compress_level=1))
     if forward_then_back:
         images = forward_and_back(images)
     path = auto_increment_path(PLOT_DIR / f"{name}.gif")
