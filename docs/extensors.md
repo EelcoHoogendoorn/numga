@@ -84,7 +84,7 @@ vertices = held.solve(~T10 * H1 * turned + P * targets)      # Point[V]
 **Notebook**: [`examples/fluids/wing/wing.ipynb`](../examples/fluids/wing/wing.ipynb)
 
 <p align="center">
-  <img src="../plots/wing.gif" alt="A wing pitching up and back in a steady stream, its pressure, streamlines and lift" width="560" />
+  <img src="../plots/wing.gif" alt="A wing pitching up and back in a steady stream, its pressure, streamlines and lift" width="400" />
 </p>
 
 ```python

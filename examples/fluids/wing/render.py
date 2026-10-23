@@ -21,8 +21,8 @@ WING = "#0f172a"
 LIFT = "#16a34a"
 MARK = "#facc15"
 CENTRE = "#f8fafc"
-# The animations' dots per inch.
-FRAME_DPI = 70
+# The animations' dots per inch: the README's wing.gif 400 pixels across.
+FRAME_DPI = 50
 
 
 # --- plumbing -------------------------------------------------------------------------

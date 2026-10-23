@@ -25,7 +25,10 @@ N_ANGLES = 360
 N_DRAWN_RINGS = 35
 N_DRAWN_ANGLES = 90
 REACH = 6.0
-N_FRAMES = 80
+# README picture: the sweep's frames and their duration make plots/wing.gif, 400 pixels across and under 1.5 MB,
+# tuned as a visual for the README. Don't change them; to experiment, copy them.
+N_FRAMES = 48
+SWEEP_DURATION_MS = 100
 N_MORPH_FRAMES = 60
 MORPH_ATTACK = np.deg2rad(8.0)
 DURATION_MS = 60
@@ -83,7 +86,7 @@ def main() -> None:
 
     # README picture: this makes plots/wing.gif, tuned as a visual for the README. Don't change it; to
     # experiment, copy it.
-    save_animation(render.animate(sweep(), SPEED), "wing", DURATION_MS, forward_then_back=True)
+    save_animation(render.animate(sweep(), SPEED), "wing", SWEEP_DURATION_MS, forward_then_back=True)
     save_animation(render.animate_marked(morph(), SPEED), "wing_morph", DURATION_MS, forward_then_back=True)
 
     # checks

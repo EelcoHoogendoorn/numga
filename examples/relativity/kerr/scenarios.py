@@ -44,7 +44,7 @@ polarization_degree = 0.8
 n_flow_frames = 80
 web_scale = 2 / 3                                               # the camera's animations, box-filtered to this share of its size
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
-# Gallery picture: this makes plots/kerr.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
 gallery_width = 400
 gallery_height = gallery_width * 2 // 3
 gallery_half_view = np.tan(np.deg2rad(21.3))
@@ -124,7 +124,7 @@ def main() -> None:
     save_animation(render.animate_disk(image, temperature, exposure_temperature, disk_flow(image, n_flow_frames), n_flow_frames, shape, sky),
                    "kerr_disk", duration_ms, scale=web_scale)
     gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
-    # Gallery picture: this makes plots/kerr.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    # README and gallery picture: this makes plots/kerr.gif for the README and docs/extensors.md, tuned as a visual for both. Don't change it; to experiment, copy it.
     save_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
                                        disk_flow(gallery_image, gallery_frames), gallery_frames,
                                        (gallery_height, gallery_width), sky),

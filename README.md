@@ -12,8 +12,11 @@ Extensors generalize matrices and tensors from vectors to multivectors, and from
 | :---: | :---: |
 | <img src="plots/multiview_convergence.gif" alt="Cameras aligning on a scene" width="400" /> | <img src="plots/twistor_hopfion.gif" alt="The linked electric field lines of a pulse of light, carried along straight light rays" width="400" /> |
 
-* [extensors](docs/extensors.md): An introduction to extensors in numga
-* [examples](examples/README.md): An index of runnable example code.
+| [**Gravity as a gauge field**](examples/relativity/kerr/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr.ipynb) | [**Spin conservation as a type**](examples/quantum/kane_mele/) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/quantum/kane_mele/kane_mele.ipynb) |
+| :---: | :---: |
+| <img src="plots/kerr.gif" alt="The hot disk of gas around a rotating black hole, bent around its shadow as it orbits" width="400" /> | <img src="plots/kane_mele.gif" alt="An electron's two spins running round the edge of a honeycomb flake in opposite directions" width="400" /> |
+
+* [extensors](docs/extensors.md): An introduction to extensors in numga, with a gallery of examples
 
 A short example of the extensor syntax: building unary maps and bilinear forms, and solving for the vibration modes of four point masses on springs:
 
@@ -33,5 +36,5 @@ The full example: [vibration modes](examples/mechanics/modes/modes.ipynb) [![Ope
 
 ```sh
 python -m pip install -e ".[linalg,examples]"     # add ".[jax]" or ".[torch]" for those backends
-python -m examples.mechanics.modes.scenarios --animate
+python -m examples.mechanics.modes.scenarios
 ```
