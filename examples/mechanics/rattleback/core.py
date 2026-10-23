@@ -1,11 +1,16 @@
 """A rattleback: a body with an ellipsoidal underside rolling without slipping on a table, which turns
 rocking into spin and spin of one sense into rocking and back, in PGA3D.
 
-The rolling constraint is an extensor from spin to full body rate. Its adjugate preserves power and sends
-forces at the stationary contact to zero. The composition `pullback(inertia(rolling))` therefore gives
-the inertia on the allowed motions, including translation and rotation, while the same pullback removes
-the contact reaction from the force balance. The constraint used to construct the motion also constructs
-the reduced dynamics.
+Its points and directions are antivectors, and its underside a map from planes to directions, the support
+map: the table's plane through the shell's centre, read in the body, goes to the direction from that
+centre to the point that touches the table, `-shape(normal) / height`, with the height the pairing
+`normal & shape(normal)` under its square root. The body turns about its centre of mass, the origin, and
+the shell's centre sits off it by `centre`, so the touching point lies at `centre + support` from the
+centre of mass. Rolling holds that point still: a spin of the body about its centre of mass becomes the
+rate that turns it about the contact, the spin carried by the translation to the contact, the product
+`contact * origin.inverse()`. The adjugate of that rolling map pulls forques back onto spins and does so
+without the contact's reaction, which does no work under any rolling motion, so one solve gives the
+body's angular acceleration with the reaction eliminated.
 
 As the body rocks, the contact moves across the shell. Differentiating the rolling map contributes to
 the acceleration even at a fixed spin; this contribution and the rotation of the body's momentum remain
