@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext
+from numga import NumpyContext
+from numga.algebras import VGA2D
 
-ga = Algebra("x+y+")
+ga = VGA2D
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 # Directions on the sky are points, antivectors with intrinsic orientation.

@@ -15,10 +15,11 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import ArrayLike
 
-from numga import Algebra, NumpyContext
+from numga import NumpyContext
+from numga.algebras import VGA2D
 from numga.sparse import SparseExtensor
 
-ga = Algebra("x+y+")
+ga = VGA2D
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Majorana = ga.gatype.vector()

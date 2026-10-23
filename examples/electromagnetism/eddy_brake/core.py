@@ -19,12 +19,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from numga import Algebra, stack
+from numga import stack
+from numga.algebras import STA2D
 from numga.sparse import SparseExtensor, spdiag
 from examples import instantiate
 
 # The spacetime of the disc's plane, space positive.
-ga = Algebra("x+y+t-")
+ga = STA2D
 mesh_module = instantiate("examples.mesh", ga)
 Mesh, Scalar, Vector, Bivector, Point = (mesh_module.Mesh, mesh_module.Scalar, mesh_module.Vector,
                                          mesh_module.Bivector, mesh_module.Point)

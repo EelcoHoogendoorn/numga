@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import NumpyContext, stack
+from numga.algebras import CGA3D
 
-ga = Algebra("x+y+z+w+e-")
+ga = CGA3D
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
 Sphere = ga.gatype.vector()
