@@ -187,7 +187,7 @@ fn disk_opacity(crossing: Ray, radius: f32) -> f32 {
 // The disk's random waves where the gas seen at `position` was a time `before` ago.
 fn waves(position: Antivector, radius: f32, before: f32) -> f32 {
     let angle = orbital_speed(radius) * (elapsed - before + (mv.t & position));
-    let carried = (orbit * (-angle / 2)).exp() >> position;
+    let carried = (orbit * (angle / 2)).exp() >> position;
     let around = atan2(mv.y & carried, mv.x & carried);
     var total = 0.0;
     for (var index = 0u; index < arrayLength(&modes); index++) {

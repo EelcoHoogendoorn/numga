@@ -233,7 +233,7 @@ def carried(position: Antivector, radius: Scalar, orbit: Bivector, spin: Spin, m
     too, earlier for light that travelled further, and inner rings lap outer ones."""
     emitted = elapsed[..., None] + (mv.t & position)                                        # [elapsed..., events] Scalar
     angle = orbital_speed(radius, orbit, spin, mass) * emitted                              # [elapsed..., events] Scalar
-    return (orbit * (-angle / 2)).exp() >> position                                         # [elapsed..., events] Antivector
+    return (orbit * (angle / 2)).exp() >> position                                          # [elapsed..., events] Antivector
 
 
 def innermost_stable_orbit(orbit: Bivector, spin: Spin, mass: float) -> Scalar:
