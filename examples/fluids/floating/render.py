@@ -57,7 +57,7 @@ DPI = 90
 
 # --- plumbing -------------------------------------------------------------------------
 def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing and checks."""
+    """The values of a batch of scalars, for drawing."""
     return values.cast(ga.subspace.scalar()).kernel[..., 0]
 
 

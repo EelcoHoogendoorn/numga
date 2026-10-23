@@ -35,7 +35,7 @@ def test_box_buoyancy_metacentric_heights_and_righting_arm_are_the_closed_forms(
     turns = (mv.yz * (-heels / 2)).exp()
     heights = core.afloat(box, turns, weight, mv.scalar(np.zeros((len(heels), 1))), 1.0, scenarios.N_NEWTON_STEPS)
     push, weighing = core.forces(box, turns, heights, weight, centre, 1.0)
-    righting = render.arms(push + weighing, weight)
+    righting = (-((push + weighing) & core.heel_axis) / weight).to_array()
     expected = np.sin(heels) * (across + beam ** 2 / (12 * DRAFT) / 2 * np.tan(heels) ** 2)
     assert np.abs(righting - expected).max() < 1e-12
 

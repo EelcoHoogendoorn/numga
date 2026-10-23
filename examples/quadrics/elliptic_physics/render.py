@@ -19,6 +19,10 @@ S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
 
 BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
+# The colour of the pixels inside a body painted on the CPU, the pixels across a painting, on the CPU or the GPU, and
+# the samples along each side of a pixel on the CPU.
+INSIDE = "#38bdf8"
+PAINTED, SUPERSAMPLE = 240, 2
 
 
 # --- the front hemisphere of S² -------------------------------------------------------
@@ -30,6 +34,12 @@ def hemisphere(size: int):
     inside = r2 <= 1.0
     coordinates = np.stack([u, v, np.sqrt(np.clip(1.0 - r2, 0.0, None))], axis=-1)[inside]
     return coordinates, inside, r2[inside] > 0.985
+
+
+def hemisphere_points() -> np.ndarray:
+    """(x, y, z) of the front hemisphere under the samples of `draw_inside`'s painting, inside its disk."""
+    coordinates, _, _ = hemisphere(PAINTED * SUPERSAMPLE)
+    return coordinates
 
 
 def paint(coverage: np.ndarray, colors: np.ndarray, inside: np.ndarray, rim: np.ndarray, supersample: int) -> np.ndarray:
@@ -54,6 +64,12 @@ def picture(image: np.ndarray) -> plt.Figure:
     ax.imshow(image)
     ax.set_axis_off()
     return figure
+
+
+def draw_inside(inside: np.ndarray) -> plt.Figure:
+    """The front hemisphere painted on the CPU, the samples of `hemisphere_points` inside a body in `INSIDE`."""
+    _, disk, rim = hemisphere(PAINTED * SUPERSAMPLE)
+    return picture(paint(inside[None], rgb([INSIDE]), disk, rim, SUPERSAMPLE))
 
 
 def rgb(colors: list[str]) -> np.ndarray:
@@ -106,7 +122,7 @@ def shader() -> Shader:
     return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric))
 
 
-def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int) -> np.ndarray:
+def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int = PAINTED) -> np.ndarray:
     """The bodies' world forms painted on the GPU, `resolution` pixels across: a sample of the front hemisphere is a
     point of S², and it belongs to the last body whose primal form is negative there, as `paint` paints on the CPU.
     The spherical quadric is a cone through the origin, so the front hemisphere already shows both halves."""
@@ -115,7 +131,7 @@ def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int) ->
     return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
 
 
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> Iterator[np.ndarray]:
+def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int = PAINTED) -> Iterator[np.ndarray]:
     """One frame per row of world forms, as `hemisphere_image` paints it."""
     for bodies in surfaces:
         yield hemisphere_image(bodies, colors, resolution)

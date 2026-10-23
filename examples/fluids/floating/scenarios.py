@@ -128,7 +128,7 @@ def stable_heels(couples: core.Forque) -> np.ndarray:
     """For each row of righting couples over the heels of the cube's map, the smallest heel from upright at
     which the cube rests stably: where the couple turns from pushing the cube over to pushing it back,
     between the two heels around it in proportion to the couples there."""
-    arms = -(couples & core.heel_axis).cast(core.ga.subspace.scalar()).kernel[..., 0]   # [rows, heels]
+    arms = (-(couples & core.heel_axis)).to_array()                         # [rows, heels]
     below, above = arms[:, :-1], arms[:, 1:]
     share = -below / np.where(above == below, 1, above - below)
     rests = CUBE_HEELS[:-1] + share * np.diff(CUBE_HEELS)                   # [rows, heels - 1]
@@ -165,7 +165,7 @@ def main() -> None:
     face_up = np.abs(stable_heels(cube_couples)) < 1e-6
     assert np.array_equal(face_up, (DENSITIES < edges[0]) | (DENSITIES > edges[1]))
     # The hull with the low load comes back upright; with the high one it capsizes and floats upside down.
-    low, high = render.degrees(frames[-1][0])                               # [loads]
+    low, high = np.degrees((frames[-1][0] & core.heel_axis.dual()).to_array())   # [loads]
     assert abs(low) < 5 and abs(high - 180) < 10
 
 

@@ -290,7 +290,7 @@ def main() -> None:
     save_animation(render.facing_frames(vortex(N_FRAMES), SHAPE), "cyclides_vortex", DURATION_MS)
     for name, (build, *_) in FLAT_SCENES.items():
         turning, _ = build()
-        save_animation(render.scene_frames(flat_scene(name, N_FRAMES if turning else 1), render.PALETTE, SHAPE), f"cyclides_{name}", DURATION_MS)
+        save_animation(render.scene_frames(flat_scene(name, N_FRAMES if turning else 1), SHAPE), f"cyclides_{name}", DURATION_MS)
     save_figure(render.draw_facing(*dupin(), SHAPE), "cyclides_dupin")
     save_figure(render.draw_facing(*spindles(), SHAPE),
                 "cyclides_spindles")

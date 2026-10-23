@@ -34,8 +34,6 @@ N_S2_FRAMES = 160
 N_TUMBLING_FRAMES = 240
 N_S3_FRAMES = 120
 S3_TIME_STEP = 0.04
-# Pixels across the front hemisphere of S².
-HEMISPHERE_RESOLUTION = 240
 S2_DURATION_MS = 15
 # Pixels of the image traced on S³.
 S3_SHAPE = (360, 480)
@@ -245,7 +243,7 @@ def main() -> None:
     def on_s2(scene, name: str, frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         """Simulate a scene on S², save its hemisphere animation."""
         trajectory, colors = scene(frames)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, HEMISPHERE_RESOLUTION), name, S2_DURATION_MS)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors), name, S2_DURATION_MS)
         return trajectory, colors
 
     def on_s3(scene, name: str, frames: int) -> tuple:

@@ -27,7 +27,7 @@ def facing_frames(traced: Iterable, shape: tuple[int, int]) -> Iterator[np.ndarr
         yield (rgb * 255).round().astype(np.uint8)
 
 
-def scene_frames(traced: Iterable, colors: np.ndarray, shape: tuple[int, int]) -> Iterator[np.ndarray]:
+def scene_frames(traced: Iterable, shape: tuple[int, int], colors: np.ndarray = PALETTE) -> Iterator[np.ndarray]:
     """RGB frames of several surfaces, one per traced (facing, angle) pair over the bodies: each pixel shows the
     nearest hit among them, lit in that body's colour."""
     for facing, angle in traced:
@@ -36,6 +36,12 @@ def scene_frames(traced: Iterable, colors: np.ndarray, shape: tuple[int, int]) -
         facing = facing.to_array()[nearest, pixels]
         rgb = headlight(facing, np.isfinite(angle[nearest, pixels]), colors[nearest % len(colors)]).reshape(*shape, 3)
         yield (rgb * 255).round().astype(np.uint8)
+
+
+def linked_frames(traced: Iterable, shape: tuple[int, int]) -> Iterator[np.ndarray]:
+    """RGB frames of a surface and the ring linked through it, one per traced (facing, angle) pair over the two, as
+    `scene_frames` draws them: the surface teal, the ring gold."""
+    return scene_frames(traced, shape, np.stack([TEAL, GOLD]))
 
 
 def draw_facing(facing, angle: np.ndarray, shape: tuple[int, int]) -> plt.Figure:
