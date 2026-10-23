@@ -8,11 +8,8 @@ dist/
 
 # Generated renders; retain only the figures and animations linked by README.md and docs/extensors.md.
 /plots/*
-!/plots/curvature.gif
 !/plots/scenegraph.gif
-!/plots/constitutive.gif
 !/plots/modes.gif
-!/plots/cyclides_linked_vortex.gif
 !/plots/multiview_convergence.gif
 !/plots/resonance_echo.gif
 !/plots/odometry.gif
