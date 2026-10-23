@@ -25,7 +25,8 @@ mv = core.mv
 
 CAMERA_COLORS = ["#0284c7", "#ec4899", "#8b5cf6"]
 SPLAT_COLOR = np.array([0.98, 0.48, 0.04])
-X_RANGE = (-1.25, 1.25)
+# The square of the scene drawn, in metres: the landmarks, the rig, and the right camera where it is knocked to.
+X_RANGE = (-1.40, 1.85)
 Y_RANGE = (-0.30, 2.95)
 RESOLUTION = (750, 750)
 # Angular half-width of a pixel, the cone radius per unit depth.
