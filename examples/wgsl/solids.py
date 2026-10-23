@@ -705,17 +705,29 @@ def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
     light pass: over black, the layer itself. Where the CPU draws, the picture is traced with fewer pixels, as
     `drawn` gives them, and enlarged to the view's."""
     seen = view._replace(pixels=drawn(view.pixels))                           # the view as it is traced
-    quadrics, solids, ink_quadrics, ink_regions, marked, holding = scene(parts, translucent, inks)
     tracer = shader()
     encoder = tracer.device.create_command_encoder()
+    # The meshes' samples in the buffers the tracer keeps for any one picture.
+    buffers = mesh_buffers(seen, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
+    sampled(encoder, [mesh for mesh, _ in meshes], seen, 0, buffers)
+    return trace(tracer, encoder, view, seen, scene(parts, translucent, inks), buffers,
+                 [opacity for _, opacity in meshes], background)
+
+
+def trace(tracer: Shader, encoder: Any, view: View, seen: View, solids: tuple, buffers: MeshBuffers,
+          opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
+    opacity, over the background, on the encoder: the picture's colour and depth, enlarged from the view as traced to
+    the view's size."""
+    quadrics, solids, ink_quadrics, ink_regions, marked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
-    mesh_opacities = np.array([opacity for _, opacity in meshes] or [0.0], dtype=np.float32)
     outputs = tracer.encode(encoder, seen.shape, (), dict(
         quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
-        **sampled(tracer, encoder, [mesh for mesh, _ in meshes], seen), mesh_opacities=mesh_opacities,
-        n_meshes=len(meshes), **tiles(*holding, seen), pixel=view.pixel, camera=view.camera, back=4 * view.half.max(),
-        half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient, fill_tilt=fill_tilt, headlight=headlight,
-        gloss=gloss, shininess=shininess, background=background))
+        mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
+        mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
+        n_meshes=len(opacities), **tiles(*holding, seen), pixel=view.pixel, camera=view.camera,
+        back=4 * view.half.max(), half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient,
+        fill_tilt=fill_tilt, headlight=headlight, gloss=gloss, shininess=shininess, background=background))
     image = tracer.read(encoder, outputs, seen.shape)["image"]
     return enlarged(image["colour"], view.shape), enlarged(image["depth"][..., :1], view.shape)[..., 0]
 
@@ -728,28 +740,41 @@ def enlarged(image: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
                      for channel in np.moveaxis(image, -1, 0)], axis=-1)
 
 
-def sampled(tracer: Shader, encoder: Any, drawings: list[Samples], view: View) -> dict:
-    """The meshes drawn at every sample of the view's pixels, recorded on an encoder, and copied there, on the GPU,
-    mesh after mesh, into the buffers the tracer keeps for them: their colours and depths, and the cells a row of
-    samples takes, padded as a copy pads it."""
+class MeshBuffers(NamedTuple):
+    """The GPU buffers meshes' samples are copied into, slot after slot: their colours and their depths, the bytes
+    they hold, and the bytes a row of samples takes, padded as a copy pads it."""
+    colours: Any
+    depths: Any
+    size: int
+    row_bytes: int
+
+
+def mesh_buffers(view: View, n_slots: int, made: Any) -> MeshBuffers:
+    """Buffers for the samples of `n_slots` meshes over the view's pixels, each from `made(name, size, usage)`."""
     import wgpu
 
     rows, columns = view.shape
-    shape = (samples_per_side * rows, samples_per_side * columns)
     # A copy's rows start at multiples of 256 bytes; a sample's colour and its depth are four bytes each.
-    row_bytes = -(-shape[1] * 4 // 256) * 256
-    size = max(len(drawings) * shape[0] * row_bytes, 16)
+    row_bytes = -(-samples_per_side * columns * 4 // 256) * 256
+    size = max(n_slots * samples_per_side * rows * row_bytes, 16)
     usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
-    colours, depths = (tracer.buffer_kept(("meshes", name), size, usage) for name in ("colours", "depths"))
-    for index, drawing in enumerate(drawings):
+    return MeshBuffers(made("colours", size, usage), made("depths", size, usage), size, row_bytes)
+
+
+def sampled(encoder: Any, drawings: list[Samples], view: View, first: int, buffers: MeshBuffers) -> None:
+    """The meshes drawn at every sample of the view's pixels, recorded on an encoder, and copied there, on the GPU,
+    mesh after mesh, into the buffers' slots from `first` on, the slots before it left as they are."""
+    rows, columns = view.shape
+    shape = (samples_per_side * rows, samples_per_side * columns)
+    for index, drawing in enumerate(drawings, start=first):
         # Each mesh's values in buffers of its own: all are written before the encoder runs.
         targets = drawing.shader.encode_draw(encoder, shape, drawing.n_vertices, ("mesh", index), drawing.values)
-        for target, buffer in zip(targets, (colours, depths)):
+        for target, buffer in zip(targets, (buffers.colours, buffers.depths)):
             encoder.copy_texture_to_buffer(
                 {"texture": target},
-                {"buffer": buffer, "offset": index * shape[0] * row_bytes, "bytes_per_row": row_bytes, "rows_per_image": shape[0]},
+                {"buffer": buffer, "offset": index * shape[0] * buffers.row_bytes, "bytes_per_row": buffers.row_bytes,
+                 "rows_per_image": shape[0]},
                 (shape[1], shape[0], 1))
-    return dict(mesh_colours=Resident(colours, size), mesh_depths=Resident(depths, size), mesh_row=row_bytes // 4)
 
 
 def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = (),

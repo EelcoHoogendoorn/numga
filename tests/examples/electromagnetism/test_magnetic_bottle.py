@@ -54,4 +54,4 @@ def test_scene_draws():
     points, strength = scenarios.section(pieces, midpoints)
     images = render.animate_flights(events, scenarios.launch_pitches, points, strength, scenarios.coil_radius,
                                     scenarios.coil_heights, scenarios.n_steps_per_frame)
-    assert len(images) == 2
+    assert len(list(images)) == 2

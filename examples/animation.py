@@ -107,19 +107,36 @@ def save_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, co
     return path
 
 
-def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0):
-    """Save RGB frames as PLOT_DIR/<name>.webp, or the next free <name>_NN.webp, box-filtered to `scale` of their
-    size, and return the animation for a notebook to show: in full colour, without the palette that keeps the
-    repository's GIFs small, quickly encoded and of bounded size whatever the frames hold."""
+def show_animation(frames: Iterable[np.ndarray], name: str, duration_ms: int, scale: float = 1.0) -> None:
+    """Show RGB frames in a notebook as they come, each in place of the one before with how many have come, then the
+    whole animation looping: in full colour, without the palette that keeps the repository's GIFs small, quickly
+    encoded and of bounded size whatever the frames hold. Saved as PLOT_DIR/<name>.webp, or the next free
+    <name>_NN.webp, box-filtered to `scale` of their size."""
     import base64
-    from IPython.display import HTML
+    import io
+    from operator import length_hint
 
-    images = [Image.fromarray(frame) for frame in frames]
-    size = (round(images[0].width * scale), round(images[0].height * scale))
-    images = [image.resize(size, resample=Image.Resampling.BOX) for image in images]
+    from IPython.display import HTML, display
+
+    def embedded(image: Image.Image, kind: str, caption: str, **options) -> HTML:
+        """An image as an image element, which every notebook front end shows, whatever image formats its kernel
+        knows, with a line of text under it."""
+        encoded = io.BytesIO()
+        image.save(encoded, kind, **options)
+        source = base64.b64encode(encoded.getvalue()).decode()
+        return HTML(f'<img src="data:image/{kind.lower()};base64,{source}"><div>{caption}</div>')
+
+    # How many frames are coming, where the frames know; zero where they do not.
+    n_frames = length_hint(frames)
+    shown = display(HTML(""), display_id=True)
+    images = []
+    for frame in frames:
+        image = Image.fromarray(frame)
+        images.append(image.resize((round(image.width * scale), round(image.height * scale)), resample=Image.Resampling.BOX))
+        count = f"frame {len(images)} of {n_frames}" if n_frames else f"frame {len(images)}"
+        shown.update(embedded(images[-1], "JPEG", count, quality=85))
     path = auto_increment_path(PLOT_DIR / f"{name}.webp")
     path.parent.mkdir(parents=True, exist_ok=True)
     images[0].save(path, save_all=True, append_images=images[1:], duration=duration_ms, loop=0, quality=80, method=0)
+    shown.update(HTML(f'<img src="data:image/webp;base64,{base64.b64encode(path.read_bytes()).decode()}">'))
     print(f"Saved {path}")
-    # Embedded as an image element, which every notebook front end shows, whatever image formats its kernel knows.
-    return HTML(f'<img src="data:image/webp;base64,{base64.b64encode(path.read_bytes()).decode()}">')
