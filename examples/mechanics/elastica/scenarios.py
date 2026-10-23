@@ -194,7 +194,6 @@ def main() -> None:
     curls = curling()                                                        # [curls, pieces + 1] Motor
     save_figure(render.draw_curls(curls >> core.centre), "elastica_curls")
     rods = euler(np.array(END_ANGLES))                                       # [angles, pieces + 1] Motor
-    save_figure(render.draw_plate(rods >> core.centre), "elastica_euler")
     save_animation(render.animate_sweep(euler(SWEEP) >> core.centre), "elastica_sweep", DURATION_MS)
     coiled = kirchhoff()                                                     # [tilts, pieces + 1] Motor
     save_figure(render.draw_helices(coiled >> core.centre, ribbon(coiled, RIBBON)), "elastica_helices")

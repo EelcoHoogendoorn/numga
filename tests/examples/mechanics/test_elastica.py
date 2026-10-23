@@ -57,7 +57,6 @@ def test_figures_draw():
     coiled = scenarios.kirchhoff()
     edges = scenarios.ribbon(coiled, scenarios.RIBBON)
     for figure in (render.draw_curls(scenarios.curling() >> core.centre),
-                   render.draw_plate(scenarios.euler(np.array(scenarios.END_ANGLES)) >> core.centre),
                    render.draw_helices(coiled >> core.centre, edges)):
         plt.close(figure)
     assert len(list(render.animate_sweep(scenarios.euler(scenarios.SWEEP[:1]) >> core.centre))) == 1

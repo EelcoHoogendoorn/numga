@@ -17,12 +17,11 @@ from examples.util.wgsl import image_figure, meshes, solids, strokes
 
 ga = core.ga
 # The colours of the rods by case, of the line of thrust and the pins, and of the ribbon; the margin around
-# the drawn rods, the panels of Euler's plate per row, the spacing of the helices as a share of the widest,
-# and their view as (elevation, azimuth), in radians, azimuth zero looking along +y.
+# the drawn rods, the spacing of the helices as a share of the widest, and their view as (elevation, azimuth), in
+# radians, azimuth zero looking along +y.
 ROD_MAP = "viridis"
 ROD, THRUST, RIBBON = np.array(to_rgb("#1f6f99")), "0.55", np.array(to_rgb("#7cc4e4"))
 MARGIN = 0.08
-COLUMNS = 4
 SPACING = 1.4
 VIEW = np.radians([12.0, 10.0])
 # The uncoiling wire's view: its elevation, and the azimuths the camera turns through over the frames.
@@ -78,18 +77,6 @@ def draw_rod(ax: plt.Axes, curve: np.ndarray, low: np.ndarray, high: np.ndarray)
     pins, = ax.plot(*curve[[0, -1]].T, "^", color="0.2", markersize=6)
     frame_plane(ax, low, high)
     return rod, pins
-
-
-def draw_plate(centres: core.Point) -> plt.Figure:
-    """Euler's elastica at each end angle `[angles, pieces + 1]`, each in its own panel, all to one scale."""
-    curves = plane(centres)                                                  # [angles, pieces + 1, 2]
-    low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
-    rows = -(-len(curves) // COLUMNS)
-    figure, axes = plt.subplots(rows, COLUMNS, figsize=(2.6 * COLUMNS, 2.0 * rows), dpi=110)
-    for ax, curve in zip(axes.reshape(-1), curves):
-        draw_rod(ax, curve, low, high)
-    figure.subplots_adjust(left=0.01, right=0.99, bottom=0.01, top=0.99, wspace=0.05, hspace=0.05)
-    return figure
 
 
 def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
