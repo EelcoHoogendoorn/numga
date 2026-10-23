@@ -40,6 +40,8 @@ DAMPING = 0.2
 N_DAMPED_STEPS = 20
 SEED = 9
 FRAME_DURATION = 80
+# How far out the uncertainty ellipses lie, in standard deviations.
+SIGMAS = 2.0
 
 
 # --- math -----------------------------------------------------------------------------
@@ -126,11 +128,15 @@ def main() -> None:
     from examples.estimation.odometry import render
 
     # Dead reckoning drifts half a metre over the lap.
+    plane = instantiate(CORE, PGA2D)
     truth, dead, reckoned, poses, uncertainty = closing(lap_in_plane(), N_FULL_STEPS, SEED)
-    save_figure(render.draw(truth, dead, reckoned, poses, uncertainty), "odometry")
+    reckoned_ellipses = plane.ellipses(dead, reckoned, SIGMAS)                 # [poses] Plane <- Point
+    save_figure(render.draw(truth, dead, reckoned_ellipses, poses, plane.ellipses(poses, uncertainty, SIGMAS)), "odometry")
     # Closing the lap a fifth of the way at a time.
     *_, iterates = damped(lap_in_plane(), DAMPING, N_DAMPED_STEPS, SEED)
-    save_animation(render.animate(truth, dead, reckoned, iterates), "odometry", FRAME_DURATION)
+    save_animation(render.animate(truth, dead, reckoned_ellipses,
+                                  ((poses, plane.ellipses(poses, uncertainty, SIGMAS)) for poses, uncertainty in iterates)),
+                   "odometry", FRAME_DURATION)
 
     # checks
     # The gradient falls a millionfold from dead reckoning to the most likely poses, in the plane and, with

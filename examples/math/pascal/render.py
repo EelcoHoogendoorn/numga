@@ -37,11 +37,10 @@ def disc(points: core.Point, area: float, colour) -> Marks:
     return Marks(points, Marker.DISC, 0.0, (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, rgb(colour), 1.0)
 
 
-def picture(shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> np.ndarray:
+def picture(shape: core.Conic, hexagon: core.Point, sides: core.Plane, crossing: core.Point,
+            pascal_line: core.Plane) -> np.ndarray:
     """The hexagon under the conic, its sides in the colours of their pairs and the line through the crossings; its
     corners, the sixth orange, and the crossings, ringed in the line's colour: RGB bytes."""
-    sides = hexagon & hexagon[core.NEXT]                                       # [6] Plane
-    pascal_line = crossing[0] & crossing[2]                                    # [] Plane
     ring = np.sqrt(CROSSING_AREA) / 2
     layers = [Polygons(hexagon[None], rgb("0.85"), 0.5),
               Curves(shape[None], CONIC_WIDTH * POINT, rgb("0.25"), 1.0),
@@ -55,13 +54,14 @@ def picture(shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> np.
     return planar.draw(window(BOX[:, 0], BOX[:, 1], ROWS), layers, np.ones(3))
 
 
-def draw(shape: core.Conic, hexagon: core.Point, crossing: core.Point) -> plt.Figure:
+def draw(shape: core.Conic, hexagon: core.Point, sides: core.Plane, crossing: core.Point,
+         pascal_line: core.Plane) -> plt.Figure:
     """Six points on a conic as a hexagon, its opposite sides in matching colours, and the three
     points where they meet on one line."""
-    return image_figure(picture(shape, hexagon, crossing))
+    return image_figure(picture(shape, hexagon, sides, crossing, pascal_line))
 
 
-def animate(scenes: list[tuple[core.Conic, core.Point, core.Point]]) -> Iterator[np.ndarray]:
+def animate(scenes: list[tuple[core.Conic, core.Point, core.Plane, core.Point, core.Plane]]) -> Iterator[np.ndarray]:
     """One frame per scene."""
     for scene in scenes:
         yield picture(*scene)

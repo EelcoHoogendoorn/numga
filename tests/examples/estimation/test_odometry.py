@@ -7,6 +7,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga.algebras import PGA2D
 from examples import instantiate
 from examples.estimation.odometry import render, scenarios
 
@@ -50,17 +51,21 @@ def test_uncertainties_are_the_inverse_curvature():
 def test_the_lap_closes_in_the_plane_and_draws():
     steps = scenarios.lap_in_plane()
     truth, dead, reckoned, poses, uncertainty = scenarios.closing(steps, 3, 0)
-    for figure in (render.draw_lap(truth, dead, reckoned, dead[[0, -1]]),
-                   render.draw(truth, dead, reckoned, poses, uncertainty)):
+    plane = instantiate(scenarios.CORE, PGA2D)
+    reckoned_ellipses = plane.ellipses(dead, reckoned, scenarios.SIGMAS)
+    quadric = plane.ellipses(poses, uncertainty, scenarios.SIGMAS)
+    for figure in (render.draw_lap(truth, dead, reckoned_ellipses, dead[[0, -1]]),
+                   render.draw(truth, dead, reckoned_ellipses, poses, quadric)):
         assert isinstance(figure, plt.Figure)
         plt.close(figure)
     # Every pose's ellipse lies SIGMAS standard deviations out from the point it carries.
-    here = poses >> render.ORIGIN
-    quadric = render.ellipses(poses, uncertainty)
-    np.testing.assert_allclose((quadric(here) & here).to_array(), -render.SIGMAS**2, atol=1e-6)
+    here = poses >> plane.origin
+    np.testing.assert_allclose((quadric(here) & here).to_array(), -scenarios.SIGMAS**2, atol=1e-6)
     # A frame for each damped iteration.
     *_, iterates = scenarios.damped(steps, 0.2, 2, 0)
-    assert len(list(render.animate(truth, dead, reckoned, iterates))) == 2
+    frames = render.animate(truth, dead, reckoned_ellipses,
+                            ((poses, plane.ellipses(poses, uncertainty, scenarios.SIGMAS)) for poses, uncertainty in iterates))
+    assert len(list(frames)) == 2
 
 
 def test_the_same_core_in_space():

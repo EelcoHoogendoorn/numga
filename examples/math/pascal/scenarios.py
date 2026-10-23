@@ -27,23 +27,27 @@ SEED = 0
 
 
 # --- math -----------------------------------------------------------------------------
-def run(five: core.Point, angles: np.ndarray) -> tuple[core.Conic, core.Point, core.Point]:
+def run(five: core.Point, angles: np.ndarray) -> tuple[core.Conic, core.Point, core.Plane, core.Point, core.Plane]:
     """The conic through five points, and for a line through the first at each angle the hexagon of
-    the five and the line's second crossing with the conic, with the crossings of its opposite sides."""
+    the five and the line's second crossing with the conic, its sides, the crossings of its opposite
+    sides, and the line through them."""
     shape = core.conic(five)                                                   # [] Plane <- Point
     sixth = core.second_crossing(shape, five[0], core.headings(angles))        # [angles] Point
     sixth = sixth / (core.mv.w & sixth)                                        # [angles] Point
     hexagon = stack([five[index].broadcast_to(sixth.shape) for index in range(5)] + [sixth], axis=-1)   # [angles, 6] Point
-    return shape, hexagon, core.crossings(hexagon)                             # [], [angles, 6], [angles, 3]
+    sides = core.sides(hexagon)                                                # [angles, 6] Plane
+    crossing = core.crossings(sides)                                           # [angles, 3] Point
+    return shape, hexagon, sides, crossing, crossing[..., 0] & crossing[..., 2]   # ..., [angles] Plane
 
 
-def turn(n_frames: int) -> Iterator[tuple[core.Conic, core.Point, core.Point]]:
-    """The sixth point once around the conic: per frame the conic, the hexagon and its crossings."""
+def turn(n_frames: int) -> Iterator[tuple[core.Conic, core.Point, core.Plane, core.Point, core.Plane]]:
+    """The sixth point once around the conic: per frame the conic, the hexagon, its sides, its crossings
+    and the line through them."""
     # Angles of the turning line, half a turn in steps, off the angles where it meets the first point twice.
     angles = np.linspace(0.0, np.pi, n_frames, endpoint=False) + np.pi / (2 * n_frames)
-    shape, hexagon, crossing = run(ellipse_points(FIVE), angles)
+    shape, hexagon, sides, crossing, line = run(ellipse_points(FIVE), angles)
     for frame in range(n_frames):
-        yield shape, hexagon[frame], crossing[frame]
+        yield shape, hexagon[frame], sides[frame], crossing[frame], line[frame]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -66,8 +70,8 @@ def main() -> None:
     # far out; Pascal's condition on the sixth point is the conic itself, up to scale.
     five = ellipse_points(FIVE)
     shape = scenes[0][0]
-    hexagon = stack([hexagon for _, hexagon, _ in scenes])                     # [frames, 6] Point
-    crossing = stack([crossing for _, _, crossing in scenes])                  # [frames, 3] Point
+    hexagon = stack([scene[1] for scene in scenes])                            # [frames, 6] Point
+    crossing = stack([scene[3] for scene in scenes])                           # [frames, 3] Point
     np.testing.assert_allclose((shape(five) & five).to_array(), 0.0, atol=1e-11)
     np.testing.assert_allclose((shape(hexagon) & hexagon).to_array(), 0.0, atol=1e-11)
     join = (crossing[..., 0] & crossing[..., 1] & crossing[..., 2]).to_array()   # [frames]

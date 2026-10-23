@@ -23,12 +23,9 @@ core = instantiate("examples.estimation.odometry.core", PGA2D)
 mv = core.mv
 Point = PGA2D.gatype.antivector()
 Plane = PGA2D.gatype.vector()
-Quadric = PGA2D.gatype((Plane, Point))                                        # Plane <- Point
 # The point each pose carries: the origin, dual to the weight direction w.
 ORIGIN = mv.w.dual()                                                          # [] Point
-# How far out the ellipses lie, in standard deviations, and the colours of dead reckoning and of the most
-# likely poses.
-SIGMAS = 2.0
+# The colours of dead reckoning and of the most likely poses.
 DEAD = "#d9822b"
 LIKELY = "#2c5d9e"
 # The colours of the true path, the closing reading and the known start.
@@ -40,22 +37,6 @@ POINT = 100 / 72
 TRUTH_WIDTH, DEAD_WIDTH, LIKELY_WIDTH, CLOSING_WIDTH, ELLIPSE_WIDTH = 3.0, 1.4, 1.0, 1.5, 0.8
 DASHED = (3.7, 1.6)
 LIKELY_MARK, CLOSING_MARK, START_MARK = 2.5, 5.0, 7.0
-
-
-def ellipses(poses: core.Motor, uncertainty: core.Covariance) -> Quadric:
-    """The quadric SIGMAS standard deviations out, within which each pose carries the origin, from each
-    pose's own uncertainty.
-
-    A twist moves the carried point by its commutator with the point; reading that motion with a plane
-    is reading the twist with a forque, found by the motion's adjugate. So the uncertainty of the
-    twist gives the uncertainty of the point, whose second moment's inverse, paired twice with a point
-    of unit weight, is one plus the squared number of standard deviations to it.
-    """
-    here = poses >> ORIGIN                                                    # [...] Point
-    shift = core.Twist.commutator(here)(poses >> core.Twist)                  # [...] Point <- Twist
-    readout = shift.adjugate()                                                # [...] Forque <- Plane
-    moment = here * (Plane & here) + shift(uncertainty(readout))              # [...] Point <- Plane
-    return moment.inverse() - (1 + SIGMAS**2) * mv.w * (mv.w & Point)         # [...] Plane <- Point
 
 
 def xy(points: Point) -> np.ndarray:
@@ -80,17 +61,17 @@ def mark(points: Point, size: float, colour: str) -> Marks:
     return Marks(points, Marker.DISC, 0.0, (size + 1.0) / 2 * POINT, rgb(colour), 1.0)
 
 
-def paths(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance) -> list:
-    """The true path, and the dead-reckoned one, dashed, with each pose's uncertainty."""
+def paths(truth: core.Motor, dead: core.Motor, reckoned: core.Quadric) -> list:
+    """The true path, and the dead-reckoned one, dashed, with each pose's uncertainty ellipse."""
     return [Strokes((truth >> ORIGIN)[None], TRUTH_WIDTH * POINT, rgb(TRUTH), 1.0, SOLID, Cap.PROJECTING),
             Strokes((dead >> ORIGIN)[None], DEAD_WIDTH * POINT, rgb(DEAD), 1.0,
                     (DASHED[0] * DEAD_WIDTH * POINT, DASHED[1] * DEAD_WIDTH * POINT), Cap.BUTT),
-            Curves(ellipses(dead, reckoned), ELLIPSE_WIDTH * POINT, rgb(DEAD), 0.35)]
+            Curves(reckoned, ELLIPSE_WIDTH * POINT, rgb(DEAD), 0.35)]
 
 
-def likely(poses: core.Motor, uncertainty: core.Covariance) -> list:
-    """The most likely poses with their uncertainties."""
-    return [Curves(ellipses(poses, uncertainty), ELLIPSE_WIDTH * POINT, rgb(LIKELY), 0.7),
+def likely(poses: core.Motor, uncertainty: core.Quadric) -> list:
+    """The most likely poses with their uncertainty ellipses."""
+    return [Curves(uncertainty, ELLIPSE_WIDTH * POINT, rgb(LIKELY), 0.7),
             Strokes((poses >> ORIGIN)[None], LIKELY_WIDTH * POINT, rgb(LIKELY), 1.0, SOLID, Cap.PROJECTING),
             mark(poses >> ORIGIN, LIKELY_MARK, LIKELY)]
 
@@ -123,8 +104,8 @@ def picture(view: Window, layers: list) -> np.ndarray:
     return planar.draw(view, layers, np.ones(3))
 
 
-def draw_lap(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, linked: core.Motor) -> plt.Figure:
-    """The true lap and dead reckoning with its uncertainties, and the two dead-reckoned poses a reading
+def draw_lap(truth: core.Motor, dead: core.Motor, reckoned: core.Quadric, linked: core.Motor) -> plt.Figure:
+    """The true lap and dead reckoning with its uncertainty ellipses, and the two dead-reckoned poses a reading
     links."""
     closing = Line2D([], [], marker="o", color=CLOSING, markersize=CLOSING_MARK, linewidth=CLOSING_WIDTH,
                      label="closing reading")
@@ -137,16 +118,16 @@ def draw_lap(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, lin
     return figure
 
 
-def draw(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, poses: core.Motor,
-         uncertainty: core.Covariance) -> plt.Figure:
-    """The true path, dead reckoning with its uncertainties, and the poses with theirs."""
+def draw(truth: core.Motor, dead: core.Motor, reckoned: core.Quadric, poses: core.Motor,
+         uncertainty: core.Quadric) -> plt.Figure:
+    """The true path, dead reckoning with its uncertainty ellipses, and the poses with theirs."""
     figure, ax, view = framed(extent(truth, dead), most_likely())
     pinned(ax, picture(view, paths(truth, dead, reckoned) + likely(poses, uncertainty) + [start(truth)]), view.extent)
     return figure
 
 
-def animate(truth: core.Motor, dead: core.Motor, reckoned: core.Covariance, closing) -> Iterator[np.ndarray]:
-    """A frame for each iteration of the closing, from the poses and uncertainties it yields, over the
+def animate(truth: core.Motor, dead: core.Motor, reckoned: core.Quadric, closing) -> Iterator[np.ndarray]:
+    """A frame for each iteration of the closing, from the poses and uncertainty ellipses it yields, over the
     true path and dead reckoning."""
     figure, ax, view = framed(extent(truth, dead), most_likely())
     shown = pinned(ax, np.full(view.shape + (3,), 255, dtype=np.uint8), view.extent)

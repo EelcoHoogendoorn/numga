@@ -40,6 +40,11 @@ Forque = ga.gatype.antibivector()
 Covariance = ga.gatype((Twist, Forque))           # Twist <- Forque
 # The inverse of a covariance: a quadric on twists, `twist & information(twist)`.
 Information = ga.gatype((Forque, Twist))           # Forque <- Twist
+Point = ga.gatype.antivector()
+Plane = ga.gatype.vector()
+Quadric = ga.gatype((Plane, Point))                # Plane <- Point
+# The point each pose carries: the origin, dual to the weight direction w.
+origin = mv.w.dual()                               # [] Point
 
 
 # --- problem --------------------------------------------------------------------------
@@ -176,3 +181,19 @@ def isotropic(translation_std: float, rotation_std: float) -> Covariance:
     turning = twists.scalar_norm_squared()                                     # [twists] Scalar
     variances = translation_std**2 + (rotation_std**2 - translation_std**2) * turning   # [twists] Scalar
     return (twists * (twists & Forque) * variances).sum(axis=0)                  # [] Twist <- Forque
+
+
+def ellipses(poses: Motor, uncertainty: Covariance, sigmas: float) -> Quadric:
+    """The quadric `sigmas` standard deviations out, within which each pose carries the origin, from each
+    pose's own uncertainty.
+
+    A twist moves the carried point by its commutator with the point; reading that motion with a plane
+    is reading the twist with a forque, found by the motion's adjugate. So the uncertainty of the
+    twist gives the uncertainty of the point, whose second moment's inverse, paired twice with a point
+    of unit weight, is one plus the squared number of standard deviations to it.
+    """
+    here = poses >> origin                                                    # [...] Point
+    shift = Twist.commutator(here)(poses >> Twist)                            # [...] Point <- Twist
+    readout = shift.adjugate()                                                # [...] Forque <- Plane
+    moment = here * (Plane & here) + shift(uncertainty(readout))              # [...] Point <- Plane
+    return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)         # [...] Plane <- Point

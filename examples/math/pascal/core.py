@@ -62,9 +62,13 @@ def second_crossing(shape: Conic, start: Point, heading: Point) -> Point:
     return start * (shape(heading) & heading) - heading * (2 * (shape(start) & heading))   # [...] Point
 
 
-def crossings(hexagon: Point) -> Point:
+def sides(hexagon: Point) -> Plane:
+    """The six sides of a hexagon, on the last axis, each the join of a corner and the next."""
+    return hexagon & hexagon[..., NEXT]                                        # [..., 6] Plane
+
+
+def crossings(sides: Plane) -> Point:
     """The three points where opposite sides of a hexagon meet, on the last axis."""
-    sides = hexagon & hexagon[..., NEXT]                                       # [..., 6] Plane
     return sides[..., :3] ^ sides[..., 3:]                                     # [..., 3] Point
 
 
