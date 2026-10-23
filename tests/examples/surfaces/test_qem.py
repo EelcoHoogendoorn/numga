@@ -7,7 +7,6 @@ import numpy as np
 
 from examples.surfaces.qem import core, render, scenarios
 from examples.surfaces.qem.core import Point, mv
-from examples.surfaces.qem.render import euclidean
 
 
 def test_plane_dyad_evaluates_to_squared_perpendicular_distance():
@@ -32,7 +31,6 @@ def test_plane_dyad_evaluates_to_squared_perpendicular_distance():
 def test_edge_collapse_minimizes_joint_error():
     """Edge collapse combines incident quadrics and finds the joint minimum."""
     verts, faces = core.ridge_patch()
-    coords = euclidean(verts)
 
     v0 = verts[faces[:, 0]]
     v1 = verts[faces[:, 1]]
@@ -59,9 +57,8 @@ def test_edge_collapse_minimizes_joint_error():
     np.testing.assert_allclose(e_edge, ea + eb, atol=1e-12)
 
     # Optimal collapse point preserves the ridge line (y = 0) and is biased toward corner a
-    v_opt_xyz = euclidean(v_edge)
-    np.testing.assert_allclose(v_opt_xyz[1], 0.0, atol=1e-12)
-    assert 0.0 < v_opt_xyz[0] < coords[0, 0]
+    np.testing.assert_allclose((mv.y & v_edge).to_array(), 0.0, atol=1e-12)
+    assert 0.0 < (mv.x & v_edge).to_array() < (mv.x & pa).to_array()
 
     # Joint error at v_edge is lower than at either endpoint
     e_opt = (q_edge(v_edge) & v_edge).to_array()

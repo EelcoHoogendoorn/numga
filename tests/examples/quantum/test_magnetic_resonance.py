@@ -6,6 +6,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.quantum.magnetic_resonance import core, render, scenarios
 
 
@@ -15,7 +16,8 @@ def test_generator_is_the_bloch_equations():
     detuning, drive, t1, t2 = 0.7, 1.3, 5.0, 2.0
     rates = core.generator(core.mv.scalar([detuning]), core.mv.scalar([drive]), t1, t2)
     r = np.array([0.4, -0.2, 0.6])
-    change = render.components(rates(core.state(core.mv.vector(r))))
+    axes = stack((core.mv.x, core.mv.y, core.mv.z))                            # [3] Vector
+    change = (2 * rates(core.state(core.mv.vector(r)))[..., None]).scalar_product(axes).to_array()
     expected = np.cross([drive, 0.0, detuning], r) - np.array([r[0] / t2, r[1] / t2, (r[2] - 1) / t1])
     np.testing.assert_allclose(change, expected, atol=1e-12)
 

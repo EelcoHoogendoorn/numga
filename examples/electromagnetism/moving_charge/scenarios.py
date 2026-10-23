@@ -67,12 +67,11 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.electromagnetism.moving_charge import render
 
-    speeding_up = list(render.animate(speed_up()))
     # Slowing down plays the rise back.
-    save_animation(speeding_up + speeding_up[-2:0:-1], "moving_charge", duration_ms)
+    save_animation(render.animate(speed_up()), "moving_charge", duration_ms, forward_then_back=True)
     for name, speed in zip(orbit_names, orbit_speeds):
         orbit = core.Orbit(orbit_charge, orbit_radius, speed)
-        save_animation(render.animate_waves(list(circling(orbit))), f"radiating_charge_{name}", duration_ms)
+        save_animation(render.animate_waves(circling(orbit)), f"radiating_charge_{name}", duration_ms)
 
     # checks
     # At the top speed the field's derivative vanishes, and the current is the softened density carried

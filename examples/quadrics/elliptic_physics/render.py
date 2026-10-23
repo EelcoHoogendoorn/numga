@@ -106,15 +106,19 @@ def shader() -> Shader:
     return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric))
 
 
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> list[np.ndarray]:
-    """One frame per row of world forms, painted on the GPU, `resolution` pixels across: a sample of the front
-    hemisphere is a point of S², and it belongs to the last body whose primal form is negative there, as `paint`
-    paints on the CPU. The spherical quadric is a cone through the origin, so the front hemisphere already shows both
-    halves."""
-    painter = shader()
-    return [np.round(np.clip(painter((resolution, resolution), quadrics=bodies, colours=colors, disk=to_rgb(DISK),
-                                     rim=to_rgb(RIM), background=to_rgb(BACKGROUND))["image"], 0, 1) * 255).astype(np.uint8)
-            for bodies in surfaces]
+def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int) -> np.ndarray:
+    """The bodies' world forms painted on the GPU, `resolution` pixels across: a sample of the front hemisphere is a
+    point of S², and it belongs to the last body whose primal form is negative there, as `paint` paints on the CPU.
+    The spherical quadric is a cone through the origin, so the front hemisphere already shows both halves."""
+    image = shader()((resolution, resolution), quadrics=bodies, colours=colors, disk=to_rgb(DISK), rim=to_rgb(RIM),
+                     background=to_rgb(BACKGROUND))["image"]
+    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+
+
+def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> Iterator[np.ndarray]:
+    """One frame per row of world forms, as `hemisphere_image` paints it."""
+    for bodies in surfaces:
+        yield hemisphere_image(bodies, colors, resolution)
 
 
 def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:

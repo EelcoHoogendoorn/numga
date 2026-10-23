@@ -49,6 +49,14 @@ def moments(contacts, forward, centres, middle, n_frames: int) -> Iterator[tuple
 
 
 # --- plumbing -------------------------------------------------------------------------
+def ground(points) -> np.ndarray:
+    """x and y of points on the ground, on the last axis: their pairings with the planes x = 0 and y = 0 over
+    their weights; infinite for points at infinity."""
+    mv = points.context.multivector
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.stack([((plane & points) / (mv.w & points)).to_array() for plane in (mv.x, mv.y)], axis=-1)
+
+
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.mechanics.tricycle import render
@@ -65,11 +73,11 @@ def main() -> None:
     for core, (contacts, forward, _, middle) in zip(SCENES.values(), drives.values()):
         rolling = (contacts[:-1].normalized() & forward[:-1].normalized() & contacts[1:].normalized()).norm().to_array()
         assert rolling.max() < 0.1 * WHEELBASE * (STEP * WHEELBASE) ** 2
-        front_steps = np.linalg.norm(np.diff(render.ground(contacts[:, 2]), axis=0), axis=-1)
+        front_steps = np.linalg.norm(np.diff(ground(contacts[:, 2]), axis=0), axis=-1)
         np.testing.assert_allclose(front_steps, STEP * WHEELBASE, rtol=1e-3)
         rear, front, _ = core.axles(WHEELBASE, np.zeros(1))
         np.testing.assert_allclose((core.mv.w ^ (rear ^ front)).kernel, 0.0, atol=1e-12)
-    plane_track, space_track = (render.ground(drive[3]) for drive in drives.values())
+    plane_track, space_track = (ground(drive[3]) for drive in drives.values())
     np.testing.assert_allclose(plane_track, space_track, atol=1e-9)
 
 

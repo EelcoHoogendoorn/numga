@@ -7,7 +7,10 @@ from examples.surfaces.motor_loop import core, render, scenarios
 
 def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
     control, surfaces, control_faces, faces = scenarios.winding()
-    (points_rest, motors_rest), (points_peak, motors_peak) = render.reach(surfaces[[0, scenarios.N_FRAMES // 2]])
+    # How far each surface reaches from the z axis on average, at rest and wound up.
+    centre_line = core.mv.w.dual() & core.mv.point([0.0, 0.0, 1.0])           # [] Line
+    reach = (centre_line & surfaces[[0, scenarios.N_FRAMES // 2]].batch()).norm().mean(axis=-1)   # [cases, schemes] Scalar
+    (points_rest, motors_rest), (points_peak, motors_peak) = reach.to_array()
     # Untwisted the two agree; wound up, the points wring the ribbon towards its axis and the motors do not.
     assert abs(points_rest - motors_rest) < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest
@@ -16,11 +19,11 @@ def test_motors_keep_the_twisted_ribbon_wide_where_points_wring_it_thin():
 
 def test_only_the_turns_between_frames_bend_the_motor_surface():
     control, surfaces, control_faces, faces = scenarios.turning()
-    points, motors = surfaces[:, 0], surfaces[:, 1]                            # [frames] Point[refined]
+    points, motors = surfaces[:, 0].batch(), surfaces[:, 1].batch()            # [frames, refined] Point
     # Turning the frames about their origins leaves the points alone and bends the motors.
-    assert render.separation(points, points[:1]) < 1e-12
-    assert render.separation(motors, points) > 0.05
+    assert (points & points[:1]).norm().to_array().max() < 1e-12
+    assert (motors & points).norm().to_array().max() > 0.05
     # A turn common to every frame changes nothing.
     flat = core.ribbon(*scenarios.grid(), 0.0)                                 # [vertices] Motor
-    cases = scenarios.refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1]   # [cases] Point[refined]
-    assert render.separation(cases[0], cases[1]) < 1e-12
+    cases = scenarios.refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1].batch()   # [cases, refined] Point
+    assert (cases[0] & cases[1]).norm().to_array().max() < 1e-12

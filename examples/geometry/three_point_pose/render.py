@@ -21,6 +21,9 @@ ORDER = [0, 1, 2, 0]
 # side, and the pixels across a view.
 ELEVATION, AZIMUTH = np.radians(55.0), np.radians(-110.0 + 90.0)
 MARGIN, N_PIXELS = 0.28, 600
+# How many times over the animation's view frames the triangle's start and the markers, leaving room for the
+# triangle's path between them.
+VIEW_ROOM = 1.5
 # The widths of the triangle's edges and of the target's dashes, the dashes' length with their gaps, and the markers'
 # radius, in pixels.
 EDGE_WIDTH, DASH_WIDTH, DASH_PERIOD, MARKER_RADIUS = 5.0, 4.5, 18.0, 10.0
@@ -86,11 +89,12 @@ def draw_stages(target: core.Point, stages: Iterator[core.Point]) -> plt.Figure:
     return figure
 
 
-def animate(states: Iterator[core.Point], source: core.Point, target: core.Point) -> Iterator[np.ndarray]:
-    """The triangle carried through each alignment over the measured markers, which are set up once, framed alike
-    throughout."""
-    states = tuple(states)
-    view = framing([source, target, *states])
+def animate(states: Iterator[core.Point], source: core.Point, target: core.Point,
+            room: float = VIEW_ROOM) -> Iterator[np.ndarray]:
+    """The triangle carried through each alignment over the measured markers, which are set up once, all from one
+    view framing the triangle's start and the markers, `room` times over."""
+    framed = framing([source, target])
+    view = framed._replace(half=framed.half * room)
     measured = markers(target, view)
     for state in states:
         edges, translucent = triangle(state, view)

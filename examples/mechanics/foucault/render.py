@@ -36,25 +36,9 @@ CIRCLE_WIDTH, EDGE_RADIUS, SWING_RADIUS, COMPASS_RADIUS = 2.0, 0.8, 2.0, 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing and checks."""
-    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
     return points.cast(core.ga.subspace("yz zx xy")).kernel
-
-
-def on_floor(points: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
-    """East and north of points on a floor, on the last axis."""
-    return np.stack([scalars(points.dot(east)), scalars(points.dot(north))], axis=-1)
-
-
-def turned(directions: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
-    """How far each direction on its floor has turned from north, clockwise seen from above."""
-    floor = on_floor(directions, north, east)
-    return np.arctan2(floor[..., 0], floor[..., 1])
 
 
 def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: core.Point, east: core.Point) -> np.ndarray:

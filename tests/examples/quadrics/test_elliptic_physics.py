@@ -91,7 +91,7 @@ def test_s2_scenarios_render():
         trajectory, colors = scene(steps)
         assert trajectory.impulses == impulses
         scenarios.conserved(trajectory, drift)
-        frames = render.hemisphere_frames(trajectory.surfaces[::10], colors, 80)
+        frames = list(render.hemisphere_frames(trajectory.surfaces[::10], colors, 80))
         assert frames and frames[0].ndim == 3 and all(f.shape == frames[0].shape for f in frames)
 
 

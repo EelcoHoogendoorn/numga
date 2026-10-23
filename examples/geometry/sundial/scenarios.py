@@ -55,6 +55,12 @@ def hour_angle(hours: np.ndarray) -> np.ndarray:
     return np.radians(15.0 * (hours - 12))
 
 
+def bearings(offsets: core.Point) -> np.ndarray:
+    """The bearing of each offset across the dial, its angle from north towards east: from its pairings with the
+    planes x = 0 and y = 0."""
+    return np.arctan2((core.mv.x & offsets).to_array(), (core.mv.y & offsets).to_array())
+
+
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.geometry.sundial import render
@@ -72,7 +78,7 @@ def main() -> None:
     # Each hour's shadows at every season lie on one line through the foot of the style, at the angle
     # of gnomonics.
     tips = core.shadow(nodus, suns)                                             # [hours, samples] Point
-    angles = render.bearings(tips - foot)                                       # [hours, samples]
+    angles = bearings(tips - foot)                                              # [hours, samples]
     expected = np.arctan2(np.sin(LATITUDE) * np.sin(hour_angle(hours)), np.cos(hour_angle(hours)))
     assert np.abs(np.sin(angles - expected[:, None])).max() < 1e-10
 

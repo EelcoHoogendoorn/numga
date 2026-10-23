@@ -214,12 +214,6 @@ def draw_predictions(observed: core.Scalar, predicted: core.Scalar,
     return figure
 
 
-def print_completeness(spectra: core.Scalar, labels: tuple[str, ...]) -> None:
-    """Print each probe set's singular values, including unobserved directions."""
-    for label, spectrum in zip(labels, spectra.to_array()):
-        print(f"{label}: {np.array2string(spectrum, precision=4, suppress_small=True)}")
-
-
 def animate(surface: core.State, prepared: core.State,
             frames: Iterator[tuple[core.State, core.State]],
             labels: tuple[str, ...]) -> Iterator[np.ndarray]:

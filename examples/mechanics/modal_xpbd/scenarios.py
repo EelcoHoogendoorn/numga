@@ -143,7 +143,7 @@ def main():
     beam = core.girder(N_BEAM_CELLS, float(N_BEAM_CELLS), BEAM_HEIGHT, BEAM_STIFFNESS, DENSITY, N_MODES)
     bodies, constraints = clamped_beam(core, beam, N_BEAM_GIRDERS, BEAM_DAMPING)
     displacements = END_DISPLACEMENT * np.arange(N_BEAM_FRAMES) / N_BEAM_FRAMES
-    frames = [shapes for shapes, _ in compress(core, beam, bodies, constraints, displacements, BEAM_INTERVAL, N_BEAM_SUBSTEPS)]
+    frames = (shapes for shapes, _ in compress(core, beam, bodies, constraints, displacements, BEAM_INTERVAL, N_BEAM_SUBSTEPS))
     save_animation(render.beam(frames, beam.edges), "modal_xpbd_buckle", DURATION_MS)
 
 

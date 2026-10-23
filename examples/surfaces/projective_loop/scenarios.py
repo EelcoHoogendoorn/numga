@@ -73,10 +73,10 @@ def main() -> None:
 
     # checks
     # Refining points with their weights commutes with the perspective; refining positions does not.
-    assert render.separation(weighted_orders) < 1e-12
-    assert render.separation(positional_orders) > 1e-2
+    assert core.gaps(weighted_orders).to_array().max() < 1e-12
+    assert core.gaps(positional_orders).to_array().max() > 1e-2
     # With all weights alike the two schemes agree.
-    assert render.separation(stack([surfaces[0], core.unit(surfaces[0])])) < 1e-12
+    assert core.gaps(stack([surfaces[0], core.unit(surfaces[0])])).to_array().max() < 1e-12
 
 
 if __name__ == "__main__":

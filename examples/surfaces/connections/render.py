@@ -35,27 +35,25 @@ singular_radius = 3.0
 transport_view = np.array([28.0, -36.0])
 view = np.array([24.0, -36.0])
 # The needle lengths of the holonomy sphere and the transport torus, the stride between needles along the rings,
-# and the extents and needle lengths of the designed fields' sphere and torus.
+# the designed fields' needle length as a share of their surface's mean edge length, and the widest a panel of them
+# gets, as a share of its height.
 holonomy_stride = 3
 holonomy_needle = 0.25
 transport_needle = 0.32
-sphere_limits = np.array([[-1.1, 1.1], [-1.1, 1.1], [-1.1, 1.1]])
-torus_limits = np.array([[-2.75, 2.75], [-2.75, 2.75], [-1.0, 1.0]])
-sphere_needle = 0.09
-torus_needle = 0.2
+field_needle = 0.6
+widest_panel = 1.6
 # How much each surface of the holonomy sphere hides, and each surface of the trail of carried vectors.
 sphere_opacity = 0.12
 trail_opacity = 0.3
 # The colours of the dark and the light stripes, the share of a stripe that is dark, and how sharply one turns
 # into the other; the width of drawn lines and needles in pixels, and how far lines stand off the surface, as a
-# share of its reach; the image's side in pixels, how far around the centre the views of the sphere reach, and the
-# margin around a framed surface as a share of its larger side.
+# share of its reach around the centre; the image's side in pixels, and the margin around a framed surface as a share
+# of its larger side.
 dark, light = np.array([0.16, 0.24, 0.36]), np.array([0.93, 0.91, 0.86])
 bands = 0.5
 sharpness = 12.0
-line_width, standoff = 1.4, 0.006
+line_width, standoff = 1.4, 0.0066
 pixels = 420
-sphere_reach = 1.1
 margin = 0.04
 background = np.ones(3)
 
@@ -76,6 +74,12 @@ def square_view(view_degrees: np.ndarray, mesh: core.Mesh, reach: float) -> soli
     elevation, azimuth = np.radians(view_degrees[0]), np.radians(view_degrees[1] + 90)
     frame = solids.view([solids.mv.point(positions(mesh.vertices))], reach, elevation, azimuth, margin, pixels)
     return frame.squared()
+
+
+def needle_length(mesh: core.Mesh) -> float:
+    """The length of the designed fields' needles on a surface: a share of its mean edge length."""
+    places = positions(mesh.vertices)
+    return field_needle * float(np.linalg.norm(places[mesh.edges[:, 1]] - places[mesh.edges[:, 0]], axis=-1).mean())
 
 
 def facing(view_degrees: np.ndarray) -> np.ndarray:
@@ -194,12 +198,14 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
                        meshes=[(surface(mesh, surface_colour, frame), 1.0), (arrows, 1.0)])
 
 
-def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]], limits: np.ndarray,
-                needle: float) -> plt.Figure:
-    """The surface side by side for each scene's field and singular faces."""
-    width = (limits[0, 1] - limits[0, 0]) / (limits[2, 1] - limits[2, 0])
+def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]]) -> plt.Figure:
+    """The surface side by side for each scene's field and singular faces, each panel as wide as the surface across
+    x over its height, up to the widest a panel gets."""
+    extent = np.ptp(positions(mesh.vertices), axis=0)                          # [3]
+    width = min(extent[0] / extent[2], widest_panel)
+    needle = needle_length(mesh)
     frame = square_view(view, mesh, needle)
-    figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * min(width, 1.6), 3.6), dpi=110)
+    figure, axes = plt.subplots(1, len(scenes), figsize=(3.6 * len(scenes) * width, 3.6), dpi=110)
     for axis, (field, singular, indices) in zip(np.atleast_1d(axes), scenes):
         show(axis, field_panel(mesh, field, singular, indices, needle, frame), frame)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
@@ -210,11 +216,12 @@ def animate_turning(mesh: core.Mesh, fields: Iterable[core.Vector], singular: np
                     ) -> Iterator[np.ndarray]:
     """Frames of a parallel field on the sphere turned about every normal, a `Vector[V]` each, among the surface
     and the balls on its singular faces, which stay put."""
-    frame = square_view(view, mesh, sphere_needle)
+    needle = needle_length(mesh)
+    frame = square_view(view, mesh, needle)
     scene = Scene(frame, background, field_marks(mesh, singular, indices, frame),
                   [(surface(mesh, surface_colour, frame), 1.0)])
     for field in fields:
-        yield scene.draw(meshes=[(field_arrows(mesh, field, sphere_needle, frame), 1.0)])
+        yield scene.draw(meshes=[(field_arrows(mesh, field, needle, frame), 1.0)])
 
 
 # --- stripes --------------------------------------------------------------------------
@@ -298,49 +305,55 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 """
 
 
-def draw_bands(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], view_degrees: np.ndarray,
-               reach: float) -> None:
+def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     """The surface shaded with the stripes of every family of a pattern of lines `[V, n]`, stripe fields `[V, n]`
     and edge targets `[E, n]`, the given share of each stripe dark."""
-    frame = square_view(view_degrees, mesh, 0.0)
-    show(axis, bands_image(mesh, pattern, frame), frame)
-
-
-def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
     return solids.draw([], frame, background,
                        meshes=[(surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
 
 
-def draw_lines(axis: plt.Axes, mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], view_degrees: np.ndarray,
-               reach: float) -> None:
+def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
     """The lit surface with the middle line of every stripe of every family of a pattern drawn on it, straight
     across each face, ending in the faces where the stripes fork, standing just off the surface."""
-    frame = square_view(view_degrees, mesh, 0.0)
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
     places, normals = positions(mesh.vertices), coordinates(mesh.vertex_normals)
-    # Off the surface by a share of its size, so the straight segments clear it between its vertices.
+    # Off the surface by a share of its reach around the centre, so the straight segments clear it between its
+    # vertices.
+    reach = np.linalg.norm(places, axis=-1).max()
     lifted = (places + standoff * reach * normals)[mesh.faces]                 # [F, 3, 3]
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
     lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
-    show(axis, solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)]), frame)
+    return solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
 
 
-def draw_patterns(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]], draw, reach: float,
-                  views: np.ndarray) -> plt.Figure:
-    """The surface side by side for each pattern of lines, stripe fields and edge targets, each drawn by
-    `draw_bands` or `draw_lines` and seen from its (elevation, azimuth) `[patterns, 2]`."""
-    figure, axes = plt.subplots(1, len(patterns), figsize=(4.2 * len(patterns), 4.2), dpi=110)
-    for axis, pattern, view_degrees in zip(np.atleast_1d(axes), patterns, views):
-        draw(axis, mesh, pattern, view_degrees, reach)
+def pattern_figure(images: list[np.ndarray], frame: solids.View) -> plt.Figure:
+    """The images of the patterns side by side."""
+    figure, axes = plt.subplots(1, len(images), figsize=(4.2 * len(images), 4.2), dpi=110)
+    for axis, image in zip(np.atleast_1d(axes), images):
+        show(axis, image, frame)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return figure
 
 
-def animate_flow(mesh: core.Mesh, lines: core.Vector, stripe_fields: Iterable[core.Vector], advance: core.Scalar,
-                 reach: float) -> Iterator[np.ndarray]:
+def draw_bands(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]]) -> plt.Figure:
+    """The surface side by side for each pattern of lines, stripe fields and edge targets, shaded with its
+    stripes."""
+    frame = square_view(view, mesh, 0.0)
+    return pattern_figure([bands_image(mesh, pattern, frame) for pattern in patterns], frame)
+
+
+def draw_lines(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]]) -> plt.Figure:
+    """The surface side by side for each pattern of lines, stripe fields and edge targets, with the middle lines
+    of its stripes drawn on it."""
+    frame = square_view(view, mesh, 0.0)
+    return pattern_figure([lines_image(mesh, pattern, frame) for pattern in patterns], frame)
+
+
+def animate_flow(mesh: core.Mesh, lines: core.Vector, stripe_fields: Iterable[core.Vector], advance: core.Scalar
+                 ) -> Iterator[np.ndarray]:
     """Frames of the stripes as the stripe field `[V, 1]` turns about every normal, one frame each."""
     frame = square_view(view, mesh, 0.0)
     for stripe_field in stripe_fields:

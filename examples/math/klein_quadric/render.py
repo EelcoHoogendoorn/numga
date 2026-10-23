@@ -85,7 +85,7 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
 
 
 def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,
-         azimuth: float) -> plt.Figure:
+         azimuth: float = AZIMUTH) -> plt.Figure:
     """The four lines, the hyperboloid of the first three as its two families of lines, and the
     transversals through the points where the fourth line crosses it."""
     return image_figure(picture(lines, rulings, across, crossing, azimuth))

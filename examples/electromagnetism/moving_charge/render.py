@@ -96,7 +96,7 @@ def densities(events: core.Antivector, current: core.Antivector) -> plt.Figure:
     return result
 
 
-def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector) -> list[np.ndarray]:
+def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivector) -> Iterator[np.ndarray]:
     """Electric field strength with the charge's outline, and magnetic field, one frame per case. One
     figure is updated in place and drawn once per frame, without supersampling, to keep pace."""
     xy = coordinates(events)
@@ -106,17 +106,15 @@ def sweep(events: core.Antivector, field: core.Bivector, current: core.Antivecto
     axes = result.subplots(1, 2)
     images = (panel(axes[0], events, strengths[0], strength_colours, LogNorm(*electric_range)),
               panel(axes[1], events, magnetic[0], "RdBu_r", TwoSlopeNorm(0.0, -magnetic_limit, magnetic_limit)))
-    pixels = []
     for strength, across, value in zip(strengths, magnetic, charge_densities):
         images[0].set_data(strength)
         images[1].set_data(across)
         outline = axes[0].contour(xy[..., 0], xy[..., 1], np.abs(value), levels=[density_level],
                                   colors=[density_colour], linewidths=1.2)
         result.canvas.draw()
-        pixels.append(np.asarray(result.canvas.buffer_rgba())[..., :3].copy())
+        yield np.asarray(result.canvas.buffer_rgba())[..., :3].copy()
         outline.remove()
     plt.close(result)
-    return pixels
 
 
 def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
@@ -156,10 +154,12 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 
-def animate_waves(frames: list[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
+def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
     """The waves over one turn, on the first frame's colour scale, the charge marked: one figure set up for the
     first frame, its image's data and the charge's place set for each."""
-    events, field, charge = frames[0]
+    frames = iter(frames)
+    first = next(frames)
+    events, field, charge = first
     limit = wave_limit(events, field)
     figure = plt.figure(figsize=(5.6, 5.6), dpi=wave_dpi, layout="constrained")
     ax = figure.subplots()
@@ -167,7 +167,7 @@ def animate_waves(frames: list[tuple[core.Antivector, core.Bivector, core.Antive
     position = coordinates(charge)
     marker = ax.scatter(position[..., 0], position[..., 1], s=18, color=charge_colour, edgecolors="#0f172a",
                         linewidths=0.8, zorder=3)
-    for events, field, charge in frames:
+    for events, field, charge in chain([first], frames):
         image.set_data(compressed_waves(events, field, limit))
         marker.set_offsets(coordinates(charge).reshape(-1, 2))
         yield capture(figure)

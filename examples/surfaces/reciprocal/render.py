@@ -38,7 +38,7 @@ BACKGROUND = np.ones(3)
 
 # --- plumbing -------------------------------------------------------------------------
 def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for colouring and checks."""
+    """The values of a batch of scalars, for colouring."""
     return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
@@ -50,19 +50,6 @@ def coordinates(vectors: core.Vector) -> np.ndarray:
 def positions(points: core.Point) -> np.ndarray:
     """x, y and z of each point, an antivector, on the last axis."""
     return points.cast(core.ga.subspace("yz zx xy")).kernel
-
-
-def unbalanced(mesh: core.Mesh, stresses: core.Scalar) -> float:
-    """The largest net force on an interior vertex from the bars meeting there, each pulling along itself
-    by its stress times its length."""
-    inner, _, _ = core.beside(mesh)
-    pull = positions(mesh.edge_displacements.batch()[inner])[..., :2] * scalars(stresses)[..., None]   # [..., inner, 2]
-    ends = np.zeros((len(mesh.vertices.batch()), len(inner)))                 # [vertices, inner]
-    ends[mesh.edges[inner, 0], np.arange(len(inner))] = 1
-    ends[mesh.edges[inner, 1], np.arange(len(inner))] = -1
-    net = np.einsum("vi,...ic->...vc", ends, pull)                             # [..., vertices, 2]
-    interior = np.setdiff1d(np.arange(len(ends)), mesh.edges[mesh.boundary_edges])
-    return float(np.abs(net[..., interior, :]).max())
 
 
 def colours(stresses: np.ndarray) -> np.ndarray:

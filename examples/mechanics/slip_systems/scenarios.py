@@ -87,7 +87,7 @@ def main() -> None:
     along = np.abs(core.schmid(core.mv.z.dual(), planes, slips).to_array())   # [planes, directions]
     assert np.isclose(along.max(), 1 / np.sqrt(6)) and np.isclose(along, along.max()).sum() == 8
     # Every pull's axis ends at [112], two systems carrying nearly all of its slip on the way.
-    ends = render.coordinates(axes[-1])                                        # [starts, 3]
+    ends = (stack([core.mv.x, core.mv.y, core.mv.z]) & axes[-1][:, None]).to_array()   # [starts, 3]
     target = np.array([1, 1, 2]) / np.sqrt(6)
     assert (np.sort(ends, axis=-1) @ target > 0.999).all()
     carried = np.sort(np.abs(amounts.to_array()).sum(axis=0).reshape(len(STARTS), -1), axis=-1)   # [starts, systems]

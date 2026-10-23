@@ -4,6 +4,7 @@ over the root of six along [001], and pulls turning towards [112] on two systems
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.mechanics.slip_systems import core, render, scenarios
 
 
@@ -17,7 +18,7 @@ def test_slip_directions_lie_in_their_planes_and_schmid_factors_are_at_most_a_ha
 
 def test_pulls_turn_to_the_double_slip_corner_on_two_systems_and_the_figures_draw():
     axes, amounts = scenarios.paths()                                         # [steps + 1, starts] Direction
-    ends = render.coordinates(axes[-1])
+    ends = (stack([core.mv.x, core.mv.y, core.mv.z]) & axes[-1][:, None]).to_array()
     assert (np.sort(ends, axis=-1) @ (np.array([1, 1, 2]) / np.sqrt(6)) > 0.999).all()
     carried = np.sort(np.abs(amounts.to_array()).sum(axis=0).reshape(len(scenarios.STARTS), -1), axis=-1)   # [starts, systems]
     assert (carried[:, -2:].sum(axis=-1) / carried.sum(axis=-1) > 0.95).all()

@@ -10,11 +10,11 @@ def test_a_day_turns_each_swing_by_the_sine_of_its_latitude_clockwise_and_the_ho
     _, north, east = core.compass(scenarios.LATITUDES)
     expected = 2 * np.pi * np.sin(scenarios.LATITUDES)
     ends = core.swing(scenarios.LATITUDES, np.full(len(scenarios.LATITUDES), 2 * np.pi))
-    assert np.abs(np.sin(render.turned(ends, north, east) - expected)).max() < 1e-10
+    assert np.abs(np.sin(scenarios.turned(ends, north, east) - expected)).max() < 1e-10
     early = core.swing(scenarios.LATITUDES, np.full(len(scenarios.LATITUDES), 1e-3))
-    assert (render.turned(early, north, east)[1:] > 0).all()
+    assert (scenarios.turned(early, north, east)[1:] > 0).all()
     carried = core.carried(scenarios.LATITUDES, scenarios.N_STEPS) >> north
-    assert np.abs(np.sin(render.turned(carried, north, east) - expected)).max() < 1e-4
+    assert np.abs(np.sin(scenarios.turned(carried, north, east) - expected)).max() < 1e-4
 
 
 def test_a_frame_of_the_day_draws():

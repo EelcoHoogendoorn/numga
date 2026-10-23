@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import numpy as np
 from matplotlib.colors import to_rgb
@@ -20,6 +21,9 @@ BACKGROUND = np.ones(3)
 ELEVATION, AZIMUTH = np.radians([28.0, 32.0])
 MARGIN = 0.08
 N_PIXELS = 420
+# How many times over the animation's view frames the cube as it starts, leaving room for the turning layers'
+# corners.
+VIEW_ROOM = 1.25
 # The squares' edges: the width each square inks along its side of them, in pixels, and how dark.
 EDGE_WIDTH = 1.0
 EDGE_DARKNESS = 0.9
@@ -53,11 +57,15 @@ def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: sol
     return meshes.draw(places, faces, values, normals, view, BACKGROUND, face_values=ink, colour=INKED)
 
 
-def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray) -> Iterator[np.ndarray]:
+def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray,
+            room: float = VIEW_ROOM) -> Iterator[np.ndarray]:
     """A frame of the cube for each state of its stickers' corners and its turning cut, all seen by one camera
-    framing every state."""
-    states = list(states)
-    view = solids.view([solids.mv.point(coordinates(corners).reshape(-1, 3)) for corners, _ in states], 0.0,
-                       ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    for corners, cut in states:
+    framing the cube as it starts, `room` times over."""
+    states = iter(states)
+    first = next(states)
+    corners, _ = first
+    framed = solids.view([solids.mv.point(coordinates(corners).reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH, MARGIN,
+                         N_PIXELS)
+    view = framed._replace(half=framed.half * room)
+    for corners, cut in chain([first], states):
         yield picture(corners, colours, cut, view)

@@ -51,6 +51,12 @@ def unit(points: Point) -> Point:
     return points / (mv.w & points)
 
 
+def gaps(orders: Point) -> Scalar:
+    """The distance between where two refinements, on the first axis, put each vertex: the line joining the two
+    at unit weight is as long as their distance."""
+    return (unit(orders[0]) & unit(orders[1])).norm()
+
+
 def collineation(centre: Point, axis: Plane, strength: float) -> PointMap:
     """The central collineation of a centre and an axis plane: each point moves along its line through the
     centre, by the centre times its pairing with the axis; points on the axis stay where they are."""

@@ -27,6 +27,11 @@ def day() -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
 
 
 # --- plumbing -------------------------------------------------------------------------
+def turned(directions: core.Point, north: core.Point, east: core.Point) -> np.ndarray:
+    """How far each direction on its floor has turned from north, clockwise seen from above."""
+    return np.arctan2(directions.dot(east).to_array(), directions.dot(north).to_array())
+
+
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.mechanics.foucault import render
@@ -39,9 +44,9 @@ def main() -> None:
     # and a direction carried once around the latitude circle comes back turned the same way.
     ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Point
     expected = 2 * np.pi * np.sin(LATITUDES)
-    assert np.abs(np.sin(render.turned(ends, north, east) - expected)).max() < 1e-10
+    assert np.abs(np.sin(turned(ends, north, east) - expected)).max() < 1e-10
     carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Point
-    assert np.abs(np.sin(render.turned(carried, north, east) - expected)).max() < 1e-4
+    assert np.abs(np.sin(turned(carried, north, east) - expected)).max() < 1e-4
 
 
 if __name__ == "__main__":

@@ -66,7 +66,8 @@ def main() -> None:
     save_figure(render.draw_channels(surface, outputs, prepared, transformed, LABELS), "process_tomography_channels")
     save_figure(render.draw_predictions(*validation(learned), LABELS), "process_tomography_predictions")
 
-    render.print_completeness(completeness(), DESIGNS)
+    for label, spectrum in zip(DESIGNS, completeness().to_array()):
+        print(f"{label}: {np.array2string(spectrum, precision=4, suppress_small=True)}")
 
     frames = ((combined[:, None, None](surface), combined[:, None](prepared))
               for combined in core.powers(learned, STEPS))

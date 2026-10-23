@@ -56,8 +56,8 @@ def test_designed_fields_are_parallel_and_their_indices_add_up():
     np.testing.assert_allclose(np.concatenate([pair.to_array() for pair in energies + torus_energies]), 0.0, atol=1e-12)
     angles, circulation, target = core.trivial_connection(sphere, scenarios.face_indices(sphere, np.array([0]), [1]), [])
     np.testing.assert_allclose((circulation(angles) - target).to_array(), 2 * np.pi / len(sphere.faces), rtol=1e-9)
-    plt.close(render.draw_fields(sphere, sphere_scenes, render.sphere_limits, render.sphere_needle))
-    plt.close(render.draw_fields(torus, torus_scenes, render.torus_limits, render.torus_needle))
+    plt.close(render.draw_fields(sphere, sphere_scenes))
+    plt.close(render.draw_fields(torus, torus_scenes))
     field, singular, indices = sphere_scenes[0]
     assert len(list(render.animate_turning(sphere, scenarios.turning(sphere, field)[:1], singular, indices))) == 1
 
@@ -74,9 +74,8 @@ def test_stripes_follow_their_targets_and_crosses_land_on_their_lines():
         forward = core.adjusted_transport(sphere, angles)[:, 0]
         match = (lines[sphere.edges[:, 1]][:, :, None] | (forward[:, None] >> lines[sphere.edges[:, 0]])[:, None, :]).to_array()
         np.testing.assert_allclose(np.abs(match) * (1 - np.abs(match)), 0, atol=1e-8)
-    views = np.broadcast_to(render.view, (len(patterns), 2))
     bands = [tuple(family[..., :1] for family in pattern) for pattern in patterns]
-    plt.close(render.draw_patterns(sphere, bands, render.draw_bands, render.sphere_reach, views))
-    plt.close(render.draw_patterns(sphere, crosses, render.draw_lines, render.sphere_reach, views))
+    plt.close(render.draw_bands(sphere, bands))
+    plt.close(render.draw_lines(sphere, crosses))
     lines, stripes, advance = (family[..., :1] for family in patterns[0])
-    assert len(list(render.animate_flow(sphere, lines, scenarios.sliding(sphere, stripes)[:1], advance, render.sphere_reach))) == 1
+    assert len(list(render.animate_flow(sphere, lines, scenarios.sliding(sphere, stripes)[:1], advance))) == 1

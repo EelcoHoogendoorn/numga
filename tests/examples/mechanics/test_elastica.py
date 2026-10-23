@@ -11,19 +11,19 @@ from examples.mechanics.elastica import core, render, scenarios
 def test_curled_strip_closes_on_its_clamp():
     curled = scenarios.curling()                                             # [curls, pieces + 1] Motor
     whole = [scenarios.CURLS.index(turns) for turns in (1.0, 2.0)]
-    assert np.abs(render.coordinates(curled[whole, -1] >> core.centre)).max() < 1e-11
+    assert np.abs(scenarios.positions(curled[whole, -1] >> core.centre)).max() < 1e-11
 
 
 def test_euler_elastica_reach_their_far_pins():
     angles = np.array(scenarios.END_ANGLES)
-    far = render.coordinates(scenarios.euler(angles)[:, -1] >> core.centre)   # [angles, 3]
+    far = scenarios.positions(scenarios.euler(angles)[:, -1] >> core.centre)   # [angles, 3]
     # The tolerances test the steps along the rod.
     assert np.abs(far[:, :2]).max() < 1e-3
     assert np.abs(far[:, 2] - scenarios.chords(np.radians(angles))).max() < 1e-3
 
 
 def test_helices_end_above_their_starts():
-    tips = render.coordinates(scenarios.kirchhoff()[:, -1] >> core.centre)   # [tilts, 3]
+    tips = scenarios.positions(scenarios.kirchhoff()[:, -1] >> core.centre)   # [tilts, 3]
     rise = scenarios.LENGTH * np.cos(np.radians(scenarios.TILTS))
     # The tolerance tests the steps along the rod.
     assert np.abs(tips - rise[:, None] * [0, 0, 1]).max() < 3e-3

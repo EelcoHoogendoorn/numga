@@ -52,12 +52,6 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def bearings(offsets: core.Point) -> np.ndarray:
-    """The bearing of each offset across the dial, its angle from north towards east."""
-    xyz = coordinates(offsets)
-    return np.arctan2(xyz[..., 0], xyz[..., 1])
-
-
 def shadows(nodus: core.Point, suns: core.Point) -> np.ndarray:
     """East and north of the nodus's shadow for each sun, and nothing where the sun is below the horizon
     or the shadow falls off the dial."""

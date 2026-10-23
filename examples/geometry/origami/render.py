@@ -8,11 +8,11 @@ themselves, where a pixel lies near an edge of its polygon, so a crease buried u
 from __future__ import annotations
 
 from collections.abc import Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import concatenate
 from examples.geometry.origami import core
 from examples.util.wgsl import meshes, show, solids, vec3
 
@@ -25,6 +25,8 @@ pixels = 600
 # share of its larger side.
 elevation, azimuth = np.radians([35.0, 200.0])
 margin = 0.136
+# How many times over the animation's view frames the paper as it starts: once, as the flat sheet spans the most.
+view_room = 1.0
 # The separation of one layer from the next, and the creases' width in pixels.
 layer_spacing = 1e-4
 edge_width = 1.8
@@ -79,8 +81,11 @@ def draw(paper: core.Paper) -> plt.Figure:
     return figure
 
 
-def animate(states: Iterator[core.Paper]) -> Iterator[np.ndarray]:
-    states = tuple(states)
-    view = viewport(concatenate([state.points for state in states]))
-    for state in states:
+def animate(states: Iterator[core.Paper], room: float = view_room) -> Iterator[np.ndarray]:
+    """The paper through its folds, all from one view framing the paper as it starts, `room` times over."""
+    states = iter(states)
+    first = next(states)
+    framed = viewport(first.points)
+    view = framed._replace(half=framed.half * room)
+    for state in chain([first], states):
         yield picture(state, view)

@@ -32,17 +32,6 @@ def coordinates(points: core.Point) -> np.ndarray:
     return xyzw[..., :3] / xyzw[..., 3:]
 
 
-def reach(points: core.Point) -> np.ndarray:
-    """The mean distance from the z axis of the points at the sites of a field, per case."""
-    xyz = coordinates(points)
-    return np.hypot(xyz[..., 0], xyz[..., 1]).mean(axis=-1)
-
-
-def separation(first: core.Point, second: core.Point) -> float:
-    """The largest distance between where two fields put the same site."""
-    return float(np.linalg.norm(coordinates(first) - coordinates(second), axis=-1).max())
-
-
 def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, faces: np.ndarray,
           view: solids.View) -> np.ndarray:
     """A surface `[refined, 3]`, smooth shaded, with the control net, dashed, and the control frames `[axes + 1,

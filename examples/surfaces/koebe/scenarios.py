@@ -74,10 +74,16 @@ def main() -> None:
     # Every face circle is orthogonal to its vertices' circles, and passes through their touching points.
     duals = core.face_circles(frames, faces)                                   # [frames, faces] Vector
     assert np.abs((duals[..., None] | frames[:, faces]).to_array() / (duals | duals).to_array()[..., None] ** 0.5).max() < 1e-10
-    # Every edge of the polyhedron touches the sphere: its line's distance from the centre is one.
-    assert np.abs(render.edge_distances(core.apexes(frames), edges) - 1).max() < 1e-10
-    # Centred, the touching points balance about the centre.
-    assert np.linalg.norm(render.coordinates(core.touching(circles, edges).dual()).mean(axis=0)) < 1e-4
+    # Every edge of the polyhedron touches the sphere: its line's distance from the centre is one, the line's
+    # moment about the centre, its part paired with w, over its direction, its part wedged with w.
+    apexes = core.apexes(frames)                                               # [frames, points] Point
+    lines = apexes[..., edges[:, 0]] & apexes[..., edges[:, 1]]                # [frames, edges] Bivector
+    distances = ((lines | core.mv.w).squared() / (lines ^ core.mv.w).squared()).square_root()   # [frames, edges] Scalar
+    assert np.abs(distances.to_array() - 1).max() < 1e-10
+    # Centred, the touching points balance about the centre: their tangent planes at unit weight along w, each its
+    # touching point plus w, average to w.
+    tangents = core.touching(circles, edges)                                   # [edges] Vector
+    assert ((tangents / -(tangents | core.mv.w)).mean() - core.mv.w).norm().to_array() < 1e-4
 
 
 if __name__ == "__main__":

@@ -68,9 +68,9 @@ def main() -> None:
     sphere, states = pulse()
     frames = states[::STRIDE]
     vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames] Even[V], [frames] Even[F]
-    save_animation(render.animate(sphere, vertices[None], faces[None], 1), "dirac_waves_pulse", 80)
+    save_animation(render.animate_pulse(sphere, vertices, faces), "dirac_waves_pulse", 80)
     _, squared, mode_vertices, mode_faces = modes()
-    save_animation(render.animate(sphere, mode_vertices, mode_faces, N_LEVELS), "dirac_waves_modes", 50)
+    save_animation(render.animate_modes(sphere, mode_vertices, mode_faces), "dirac_waves_modes", 50)
 
     # checks
     # The leapfrog keeps the energy: the vertex field's area-weighted norm, and the face field's paired

@@ -18,11 +18,10 @@ def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres
     points = scenarios.directions(scenarios.N_POINTS)                          # [points] Point
     faces = core.hull(points)
     duals = core.poles(points, faces)
-    corners = render.coordinates(points)[faces]                                # [faces, 3, 3]
-    centres = render.coordinates(duals)
-    centres = centres / np.linalg.norm(centres, axis=-1, keepdims=True)
+    corners = points[faces]                                                    # [faces, 3] Point
+    centres = duals.normalized()                                               # [faces] Point
     # Each pole's image is equally far from the three corners of its face: their circumcentre.
-    distances = np.linalg.norm(corners - centres[:, None], axis=-1)
+    distances = (corners - centres[:, None]).norm().to_array()                 # [faces, 3]
     np.testing.assert_allclose(distances - distances[:, :1], 0, atol=1e-10)
 
 
@@ -36,13 +35,13 @@ def test_the_nearest_rescue_unfolds_the_mesh_steadily():
     settled = list(scenarios.settle())
     faces = settled[0][1]
     # The crossed dual edges are exactly the folded ones.
-    assert np.array_equal(scenarios.scalars(core.dual_lengths(settled[0][0], faces)) < 0,
-                          scenarios.scalars(core.folds(scenarios.directions(scenarios.N_POINTS), np.ones(scenarios.N_POINTS), faces)) < 0)
-    crossed = [(scenarios.scalars(core.dual_lengths(points, faces)) < 0).sum() for points, _, _ in settled]
+    assert np.array_equal(core.dual_lengths(settled[0][0], faces).to_array() < 0,
+                          core.folds(scenarios.directions(scenarios.N_POINTS), np.ones(scenarios.N_POINTS), faces).to_array() < 0)
+    crossed = [(core.dual_lengths(points, faces).to_array() < 0).sum() for points, _, _ in settled]
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # Every image on the sphere is held.
-    images = [render.coordinates(points) / np.linalg.norm(render.coordinates(points), axis=-1, keepdims=True) for points in (settled[0][0], settled[-1][0])]
-    np.testing.assert_allclose(images[0], images[1], atol=1e-12)
+    images = [points.normalized() for points in (settled[0][0], settled[-1][0])]   # [points] Point each
+    np.testing.assert_allclose((images[1] - images[0]).norm().to_array(), 0, atol=1e-12)
 
 
 def flip(faces: np.ndarray, edge: int) -> np.ndarray:

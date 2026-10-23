@@ -77,7 +77,7 @@ def main() -> None:
     from examples.math.klein_quadric import render
 
     scenes = list(swing(N_FRAMES, N_RULINGS))
-    save_figure(render.draw(*scenes[STILL], azimuth=render.AZIMUTH), "klein_transversals")
+    save_figure(render.draw(*scenes[STILL]), "klein_transversals")
     save_animation(render.animate(scenes), "klein_swing", FRAME_DURATION)
 
     # checks

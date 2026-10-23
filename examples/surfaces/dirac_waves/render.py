@@ -13,9 +13,11 @@ from examples.util.wgsl import meshes, solids
 
 Mesh = core.Mesh
 
-# Each tile's exposure, the percentile of its amplitudes over all its frames that shows at full
-# brightness; the surface's own grey under the field; the view; and each tile's pixels across.
+# Each tile's exposure, the percentile of its first frame's amplitudes that shows at full brightness, and how many
+# times that the pulse and the standing waves show at full brightness, room for the pulse as it gathers again; the
+# surface's own grey under the field; the view; and each tile's pixels across.
 exposure = 99.3
+pulse_room, mode_room = 1.9, 1.0
 base = 0.12
 elevation, azimuth = np.radians(8.0), np.radians(35.0)
 margin = 0.06
@@ -56,11 +58,13 @@ def view(mesh: Mesh) -> tuple:
     return points, meshes.smooth(points, mesh.faces), frame.squared()
 
 
-def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> Iterator[np.ndarray]:
+def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int,
+            room: float = 1.0) -> Iterator[np.ndarray]:
     """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]`, the tiles in rows
-    of the given count, each exposed over all its frames."""
+    of the given count, each exposed by its first frame, `room` times over."""
     corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
-    level = np.percentile(np.concatenate([corners, sides], axis=2), exposure, axis=(1, 2, 3), keepdims=True)
+    first = np.concatenate([corners[:, :1], sides[:, :1]], axis=2)            # [tiles, 1, V + F, 3]
+    level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
     corners, sides = corners / level, sides / level
     tiles, frames = corners.shape[:2]
     seen = view(mesh)
@@ -70,6 +74,20 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int) -> 
         rows = pictures.reshape((-1, columns) + pictures.shape[1:])           # [rows, columns, P, P, 3]
         layout = rows.transpose(0, 2, 1, 3, 4).reshape(rows.shape[0] * pixels, columns * pixels, 3)
         yield np.round(255 * layout).astype(np.uint8)
+
+
+def animate_pulse(mesh: Mesh, vertices: core.Even, faces: core.Even,
+                  room: float = pulse_room) -> Iterator[np.ndarray]:
+    """Frames of a wave's vertex and face fields `[frames] Even[V]` and `[frames] Even[F]`, exposed by its first frame,
+    `room` times over."""
+    return animate(mesh, vertices[None], faces[None], 1, room)
+
+
+def animate_modes(mesh: Mesh, vertices: core.Even, faces: core.Even,
+                  room: float = mode_room) -> Iterator[np.ndarray]:
+    """Frames of standing waves' vertex and face fields `[waves, frames] Even[V]` and `[waves, frames] Even[F]`, side
+    by side, each exposed by its first frame, `room` times over."""
+    return animate(mesh, vertices, faces, vertices.shape[0], room)
 
 
 def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:

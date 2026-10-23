@@ -40,12 +40,6 @@ def components(rho: core.State) -> np.ndarray:
     return 2 * rho.cast(BLOCH_AXES[rho.algebra]).kernel
 
 
-def timelike_components(rho: core.State) -> np.ndarray:
-    """The parts of a spacetime state in the planes through the time direction t, xt, yt and zt: the part
-    of it that an observer moving along t cannot read as a spin."""
-    return 2 * rho.cast(STA.subspace("xt yt zt")).kernel
-
-
 def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figure:
     """Each spin's Bloch vector from equilibrium, nutating about the drive and spiralling into its
     steady state, marked with a dot; the states are consumed as they are yielded. The Bloch ball is

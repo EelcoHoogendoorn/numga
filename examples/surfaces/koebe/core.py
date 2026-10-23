@@ -108,6 +108,13 @@ def spiral(n_points: int) -> Vector:
     return (mv.xy * (-azimuth / 2)).exp() >> (tilts >> mv.z)                   # [points] Vector
 
 
+def beside(faces: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    """The two faces either side of each edge, [edges, 2]."""
+    sides = np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2)
+    order = np.lexsort(sides.T[::-1])
+    return (order // 3).reshape(-1, 2)[np.argsort(np.lexsort(edges.T[::-1]))]
+
+
 # --- the step outside the algebra -------------------------------------------------------
 def hull(points: Vector) -> np.ndarray:
     """The faces `[faces, 3]` of the convex hull of points around the centre, read by their inner products

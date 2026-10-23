@@ -83,17 +83,22 @@ def main() -> None:
 
     # checks
     # Untwisted the two agree; wound up, the points wring the ribbon towards its axis and the motors do not.
-    (points_rest, motors_rest), (points_peak, motors_peak) = render.reach(wound[1][[0, N_FRAMES // 2]])
+    # How far each surface reaches from the z axis on average, at rest and wound up: a point joined with the line
+    # through the origin and z is a plane as large as their distance.
+    centre_line = core.mv.w.dual() & core.mv.point([0.0, 0.0, 1.0])           # [] Line
+    reach = (centre_line & wound[1][[0, N_FRAMES // 2]].batch()).norm().mean(axis=-1)   # [cases, schemes] Scalar
+    (points_rest, motors_rest), (points_peak, motors_peak) = reach.to_array()
     assert abs(points_rest - motors_rest) < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest
-    # Turning the frames about their origins leaves the points alone and bends the motors.
-    points, motors = turned[1][:, 0], turned[1][:, 1]                          # [frames] Point[refined]
-    assert render.separation(points, points[:1]) < 1e-12
-    assert render.separation(motors, points) > 0.05
+    # Turning the frames about their origins leaves the points alone and bends the motors: two points joined are
+    # a line as long as their distance.
+    points, motors = turned[1][:, 0].batch(), turned[1][:, 1].batch()          # [frames, refined] Point
+    assert (points & points[:1]).norm().to_array().max() < 1e-12
+    assert (motors & points).norm().to_array().max() > 0.05
     # A turn common to every frame changes nothing.
     flat = core.ribbon(*grid(), 0.0)                                           # [vertices] Motor
-    cases = refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1]   # [cases] Point[refined]
-    assert render.separation(cases[0], cases[1]) < 1e-12
+    cases = refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1].batch()   # [cases, refined] Point
+    assert (cases[0] & cases[1]).norm().to_array().max() < 1e-12
 
 
 if __name__ == "__main__":

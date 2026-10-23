@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,12 +36,20 @@ current_colours = LinearSegmentedColormap.from_list("current", ("#f8f5ed", "#edb
 heat_colours = LinearSegmentedColormap.from_list("heat", ("#fbf9f4", "#e58b3a", "#8f2d1b"))
 mode_colours = LinearSegmentedColormap.from_list("mode", ("#2b6c8f", "#f8f5ed", "#c95832"))
 mode_levels = 9
+# How many times over the currents' colour scale and contour values take the first state's: once, as the drag only
+# slows the disc; a later state's larger current widens them.
+current_room = 1.0
 
 
 # --- plumbing -------------------------------------------------------------------------
 def planar(directions: core.Point) -> np.ndarray:
     """Directions in the disc read by pairing with the slices across x and y, on the last axis."""
     return np.asarray((stack((core.mv.x, core.mv.y)) & directions[..., None]).to_array())
+
+
+def scalars(values: core.Scalar) -> np.ndarray:
+    """The values of a batch of scalars, for drawing."""
+    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
 
 
 def parallel_fibres(radius: float, curves: int, samples: int) -> core.Point:
@@ -225,45 +234,48 @@ def draw_modes(mesh: Mesh, streamfunctions: core.Scalar) -> plt.Figure:
 
 
 def animate(mesh: Mesh, frames: Iterable[core.Motion], centre: core.Point, width: float,
-            fibres: tuple[core.Point, ...], shown: np.ndarray) -> Iterator[np.ndarray]:
-    """Batched rotating materials and their currents, on one scale across cases and time, the currents' paths the
-    contours of their streamfunctions, with `[curves, samples]` body-fixed guide families drawn on the panels that show
-    them, `[cases, families]`."""
-    states = list(frames)
-    reference = planar(mesh.vertices.batch())
-    # The current belongs to material faces; turn its direction into the laboratory frame.
-    field = stack([state.orientation >> state.current for state in states])  # [frames, cases] Vector[F]
-    magnitude = field.squared().square_root().cast(core.ga.subspace.scalar()).kernel[..., 0]
-    current = planar(field.batch())
-    streamfunction = stack([state.streamfunction for state in states]).cast(core.ga.subspace.scalar()).kernel[..., 0]
-    # Each panel keeps its contour values throughout the animation, including current decay.
-    # Separate ranges keep the weak material cases legible; colours share one magnitude scale.
+            fibres: tuple[core.Point, ...], shown: np.ndarray, room: float = current_room) -> Iterator[np.ndarray]:
+    """Batched rotating materials and their currents, the currents' paths the contours of their streamfunctions, with
+    `[curves, samples]` body-fixed guide families drawn on the panels that show them, `[cases, families]`. The colours
+    share one magnitude scale across cases, and each panel keeps its contour values: both the first state's, `room`
+    times over, widened where a later state's current exceeds them."""
+    states = iter(frames)
+    first = next(states)
+    # Separate contour ranges keep the weak material cases legible; colours share one magnitude scale.
     fractions = (np.arange(-current_levels, current_levels) + 0.5) / current_levels
-    levels = np.abs(streamfunction).max(axis=(0, 2))[:, None] * fractions
-    peak = magnitude.max()
-    opacity = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(magnitude.shape[:2]),
-                         where=peak > 0) ** streamline_gamma
-    current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
-    vertex_magnitude = at_vertices(mesh, field.squared().square_root()).cast(core.ga.subspace.scalar()).kernel[..., 0]
+    peak = room * scalars((first.orientation >> first.current).squared().square_root()).max()
+    reach = room * np.abs(scalars(first.streamfunction)).max(axis=-1)          # [cases]
+    reference = planar(mesh.vertices.batch())
     extent = np.linalg.norm(reference, axis=-1).max()
     field_centre = planar(centre)
     boundary = mesh.edges[mesh.boundary_edges]
     guides = concatenate(fibres)                                              # [curves, samples] Vector
-    marks = rotation_marks(stack([state.orientation for state in states]), extent)
 
     figure = plt.figure(figsize=(3.3 * len(shown), 3.6), dpi=animation_dpi)
     panels = [disc_panel(figure, i, len(shown), extent, field_centre, width, colours)
               for i, colours in enumerate(fibre_colours(fibres, shown))]
     fixed_patches = len(panels[0][0].patches)
-    for state, vectors, speed, stream, alpha, frame_marks in zip(
-            states, current, vertex_magnitude, streamfunction, opacity, marks):
+    for state in chain([first], states):
+        # The current belongs to material faces; turn its direction into the laboratory frame.
+        field = state.orientation >> state.current                            # [cases] Vector[F]
+        magnitude = scalars(field.squared().square_root())                    # [cases, F]
+        vectors = planar(field.batch())                                       # [cases, F, 2]
+        stream = scalars(state.streamfunction)                                # [cases, V]
+        # The scales widened where this state's current exceeds them.
+        peak, reach = max(peak, magnitude.max()), np.maximum(reach, np.abs(stream).max(axis=-1))
+        levels = reach[:, None] * fractions                                   # [cases, levels]
+        alpha = np.divide(magnitude.max(axis=-1), peak, out=np.zeros(len(magnitude)),
+                          where=peak > 0) ** streamline_gamma
+        current_scale = PowerNorm(current_gamma, vmin=0, vmax=peak)
+        speed = scalars(at_vertices(mesh, field.squared().square_root()))      # [cases, V]
         positions = planar(state.vertices.batch())
         threads_at = planar(state.orientation[:, None, None] >> guides)
+        marks = rotation_marks(state.orientation, extent)                     # [cases, 2]
         paths, surfaces = [], []
         for i, (ax, threads, marker, outline) in enumerate(panels):
             outline.set_segments(positions[i, boundary])
             threads.set_segments(threads_at[i])
-            marker.set_offsets(frame_marks[i:i + 1])
+            marker.set_offsets(marks[i:i + 1])
             triangles = Triangulation(positions[i, :, 0], positions[i, :, 1], mesh.faces)
             surfaces.append(ax.tripcolor(triangles, speed[i], shading="gouraud",
                                           cmap=current_colours, norm=current_scale, rasterized=True, zorder=1))

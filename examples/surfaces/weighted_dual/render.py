@@ -36,10 +36,6 @@ EDGE_WIDTH, RAY_WIDTH, ARC_WIDTH, VERTEX_RADIUS = 2.2, 1.6, 2.4, 5.0
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    return values.cast(values.algebra.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
     """x, y and z of each point, on the last axis."""
     return points.cast(core.ga.subspace("yz zx xy")).kernel

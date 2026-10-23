@@ -32,12 +32,6 @@ def coordinates(points: core.Point) -> np.ndarray:
     return xyzw[..., :3] / xyzw[..., 3:]
 
 
-def separation(orders: core.Point) -> float:
-    """The largest distance between where two refinements, on the first axis, put the same vertex."""
-    xyz = coordinates(orders)
-    return float(np.linalg.norm(xyz[0] - xyz[1], axis=-1).max())
-
-
 def edges(faces: np.ndarray) -> np.ndarray:
     return np.unique(np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2), axis=0)
 

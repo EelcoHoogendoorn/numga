@@ -11,17 +11,17 @@ from examples.surfaces.projective_loop import core, render, scenarios
 
 def test_refining_commutes_with_perspective_for_weighted_points_only():
     seen, weighted_orders, positional_orders, faces = scenarios.perspective()
-    assert render.separation(weighted_orders) < 1e-12
-    assert render.separation(positional_orders) > 1e-2
+    assert core.gaps(weighted_orders).to_array().max() < 1e-12
+    assert core.gaps(positional_orders).to_array().max() > 1e-2
     plt.close(render.draw_orders(seen, scenarios.FACES, weighted_orders, positional_orders, faces))
 
 
 def test_a_heavy_vertex_pulls_the_surface_and_a_light_one_releases_it():
     controls, surfaces, faces = scenarios.weighted()
-    top = render.coordinates(surfaces)[..., 2].max(axis=-1)                   # [cases]
+    top = (core.mv.z & core.unit(surfaces)).to_array().max(axis=-1)           # [cases]
     assert top[1] > top[0] > top[2]
     # With all weights alike the surface is Loop subdivision of the positions.
-    assert render.separation(stack([surfaces[0], core.unit(surfaces[0])])) < 1e-12
+    assert core.gaps(stack([surfaces[0], core.unit(surfaces[0])])).to_array().max() < 1e-12
     plt.close(render.draw_weights(controls, scenarios.FACES, surfaces, faces))
     frames, faces = scenarios.sweep()
     assert len(list(render.animate_weights(islice(frames, 2), scenarios.FACES, faces))) == 2

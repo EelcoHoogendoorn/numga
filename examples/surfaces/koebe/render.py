@@ -37,20 +37,6 @@ def coordinates(points: core.Point) -> np.ndarray:
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (-mv.w & points)[..., None]).to_array()
 
 
-def edge_distances(apexes: core.Point, edges: np.ndarray) -> np.ndarray:
-    """The distance from the centre to the line of each edge between apexes."""
-    xyz = coordinates(apexes)
-    ends = xyz[..., edges[:, 0], :], xyz[..., edges[:, 1], :]
-    return np.linalg.norm(np.cross(*ends), axis=-1) / np.linalg.norm(ends[1] - ends[0], axis=-1)
-
-
-def beside(faces: np.ndarray, edges: np.ndarray) -> np.ndarray:
-    """The two faces either side of each edge, [edges, 2]."""
-    sides = np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2)
-    order = np.lexsort(sides.T[::-1])
-    return (order // 3).reshape(-1, 2)[np.argsort(np.lexsort(edges.T[::-1]))]
-
-
 def circle_planes(circles: core.Vector) -> solids.Plane:
     """The plane of each circle on the unit sphere: a circle `n + s * w` lies where the plane `n | x == s` cuts it."""
     mv = core.mv
@@ -73,7 +59,7 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     pixel = frame.pixel
     duals = core.face_circles(circles, faces)                                  # [faces] Vector
     apexes, dual_apexes = sm.point(coordinates(core.apexes(circles))), sm.point(coordinates(core.apexes(duals)))
-    sides = beside(faces, edges)                                               # [edges, 2]
+    sides = core.beside(faces, edges)                                          # [edges, 2]
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
     marks = [(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
              (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),

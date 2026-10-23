@@ -61,7 +61,12 @@ def main() -> None:
     bars = mesh.edge_displacements.batch()[inner]                              # [inner] Point
     # The jump in slope pairs to nothing with its bar: both planes agree along it.
     assert np.abs(((duals[:, left] - duals[:, right]) & bars).to_array()).max() < 1e-10
-    assert render.unbalanced(mesh, core.stresses(mesh, breaths)) < 1e-10
+    # The bars meeting at a vertex each pull it along themselves by their stress.
+    pulls = (bars * core.stresses(mesh, breaths)).field()                      # [frames] Point[inner]
+    tails, heads = (mesh.reading(mesh.edges[inner, end]) for end in range(2))  # [inner, vertices] Scalar each
+    net = (~tails * pulls - ~heads * pulls).batch()                            # [frames, vertices] Point
+    interior = np.setdiff1d(np.arange(len(mesh.vertices.batch())), mesh.edges[mesh.boundary_edges])
+    assert net[:, interior].norm().to_array().max() < 1e-10
     # On the paraboloid the stresses are the cotangent weights and the reciprocal vertices the circumcentres.
     assert np.abs(core.stresses(mesh, heights).to_array() - mesh.edge_ratio.to_array()[inner]).max() < 1e-10
     centres = core.reciprocal(mesh, heights)                                   # [faces] Vector

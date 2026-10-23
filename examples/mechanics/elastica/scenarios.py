@@ -182,6 +182,11 @@ def chords(angles: np.ndarray) -> np.ndarray:
     return LENGTH * (2 * (1 - deficit) - 1)
 
 
+def positions(points: core.Point) -> np.ndarray:
+    """x, y and z of unit points, on the last axis: their pairings with the coordinate planes."""
+    return (stack([mv.x, mv.y, mv.z]) & points[..., None]).to_array()
+
+
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.elastica import render
@@ -202,16 +207,16 @@ def main() -> None:
 
     # checks
     # Curled by whole turns, the strip's end comes back to its start.
-    ends = render.coordinates(curls[[0, 4, 5], -1] >> core.centre)
+    ends = positions(curls[[0, 4, 5], -1] >> core.centre)
     assert np.abs(ends[1:]).max() < 1e-11 and abs(ends[0, 2] - LENGTH) < 1e-11
     # Euler's elastica reach the line of thrust again at their far ends, a chord away from the first pin; the
     # tolerance tests the steps along the rod.
-    far = render.coordinates(rods[:, -1] >> core.centre)                     # [angles, 3]
+    far = positions(rods[:, -1] >> core.centre)                              # [angles, 3]
     assert np.abs(far[:, :2]).max() < 1e-3
     assert np.abs(far[:, 2] - chords(np.radians(END_ANGLES))).max() < 1e-3
     # Coiled through whole turns, the wire's end lies straight above its start, the length times the cosine
     # of the tilt higher; the tolerance tests the steps along the rod.
-    tips = render.coordinates(coiled[:, -1] >> core.centre)                  # [tilts, 3]
+    tips = positions(coiled[:, -1] >> core.centre)                           # [tilts, 3]
     assert np.abs(tips - LENGTH * np.cos(np.radians(TILTS))[:, None] * [0, 0, 1]).max() < 3e-3
     # The telephone cord bends and twists but hardly stretches or shears: its joints' shifts stay within a few
     # hundredths of their rest, the most where the handset springs back.

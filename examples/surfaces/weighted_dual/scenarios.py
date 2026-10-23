@@ -56,7 +56,7 @@ def breath() -> Iterator[tuple[core.Point, np.ndarray, core.Point]]:
 def fold_map(faces: np.ndarray) -> np.ndarray:
     """The folds of every edge as a linear map of the points' weights, one column per point: the folds with
     that point's weight one and every other zero, all points as one batch."""
-    return scalars(core.folds(directions(N_POINTS), np.eye(N_POINTS), faces)).T   # [edges, points]
+    return core.folds(directions(N_POINTS), np.eye(N_POINTS), faces).to_array().T   # [edges, points]
 
 
 def widest(conditions: np.ndarray) -> tuple[np.ndarray, float]:
@@ -76,7 +76,7 @@ def widest(conditions: np.ndarray) -> tuple[np.ndarray, float]:
 def inside_map(faces: np.ndarray) -> np.ndarray:
     """Every pole's signed distances inside its face as a linear map of the points' weights, one column per
     point: the distances with that point's weight one and every other zero, all points as one batch."""
-    return np.moveaxis(scalars(core.insides(directions(N_POINTS), np.eye(N_POINTS), faces)), 0, -1)   # [faces, 3, points]
+    return np.moveaxis(core.insides(directions(N_POINTS), np.eye(N_POINTS), faces).to_array(), 0, -1)   # [faces, 3, points]
 
 
 def nearest(conditions: np.ndarray, margin: float, start: np.ndarray) -> np.ndarray:
@@ -115,11 +115,6 @@ def timing(frames: int) -> np.ndarray:
     return np.where(time < closing_start, time * left * rate, 1 - left * np.exp(-(time - closing_start) * rate))
 
 
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for the descent and the checks."""
-    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
-
-
 # --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.util.animation import save_animation, save_figure
@@ -139,12 +134,12 @@ def main() -> None:
     # On the sphere some dual edges cross over, exactly where the polyhedron folds; along the straight line
     # to the rescue they only ever uncross, and at the rescue none is left.
     faces = settled[0][1]
-    crossed = [(scalars(core.dual_lengths(points, faces)) < 0).sum() for points, _, _ in settled]
-    assert np.array_equal(scalars(core.dual_lengths(settled[0][0], faces)) < 0,
-                          scalars(core.folds(directions(N_POINTS), np.ones(N_POINTS), faces)) < 0)
+    crossed = [(core.dual_lengths(points, faces).to_array() < 0).sum() for points, _, _ in settled]
+    assert np.array_equal(core.dual_lengths(settled[0][0], faces).to_array() < 0,
+                          core.folds(directions(N_POINTS), np.ones(N_POINTS), faces).to_array() < 0)
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # At the rescue every pole lies inside its face.
-    assert (scalars(core.sides(*settled[-1])) > 0).all()
+    assert (core.sides(*settled[-1]).to_array() > 0).all()
 
 
 if __name__ == "__main__":
