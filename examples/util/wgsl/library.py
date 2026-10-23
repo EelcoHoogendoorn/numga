@@ -102,19 +102,36 @@ def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
         room = ax.get_position(original=True)
         # The top left corner on a whole pixel of the figure's own resolution, and so of any multiple of it, counted
         # from the top left of the canvas, as its rows of pixels are.
-        canvas_rows = int(renderer.height)
+        canvas_rows = int(height)
         left = round(((room.x0 + room.x1) / 2 * width - columns * scale / 2) / scale) * scale
         top = round((canvas_rows - (room.y0 + room.y1) / 2 * height - rows * scale / 2) / scale) * scale
         bottom = canvas_rows - top - rows * scale
-        # A millionth of a pixel inwards, so that the round trip through the figure's fractions never lands short of
-        # the whole pixel the corner is on.
-        return Bbox.from_bounds((left + 1e-6) / width, (bottom + 1e-6) / height, columns * scale / width,
-                                rows * scale / height)
+        # The corner a millionth of a pixel over its whole pixel and the size a millionth under, so that the round
+        # trip through the figure's fractions lands on them as matplotlib rounds them: the corner down, the size up.
+        return Bbox.from_bounds((left + 1e-6) / width, (bottom + 1e-6) / height, (columns * scale - 1e-6) / width,
+                                (rows * scale - 1e-6) / height)
 
     shown = ax.imshow(image, extent=extent, interpolation="nearest", aspect="auto")
     ax.set_axes_locator(exact)
     ax.set_axis_off()
     return shown
+
+
+def room(ax) -> tuple[int, int]:
+    """The columns and rows of pixels the figure's layout gives the axes, at the figure's own resolution: the size a
+    picture shown in them is drawn at to fill them."""
+    figure = ax.figure
+    if figure.get_layout_engine() is not None:
+        figure.get_layout_engine().execute(figure)
+    box = ax.get_position(original=True)
+    return int(box.width * figure.bbox.width), int(box.height * figure.bbox.height)
+
+
+def fitted(view, ax):
+    """The view with as many pixels across as the room its axes get holds, the whole picture inside the room, for a
+    picture `show` holds pixel for pixel."""
+    columns, rows = room(ax)
+    return view._replace(pixels=min(columns, int(rows * view.half[0] / view.half[1])))
 
 
 def show(ax, image: np.ndarray, view):
