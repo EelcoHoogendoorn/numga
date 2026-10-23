@@ -767,6 +767,11 @@ def sampled(encoder: Any, drawings: list[Samples], view: View, first: int, buffe
     rows, columns = view.shape
     shape = (samples_per_side * rows, samples_per_side * columns)
     for index, drawing in enumerate(drawings, start=first):
+        # A mesh with nothing to draw, such as a trail not yet begun, shows nothing: its slot cleared.
+        if drawing.n_vertices == 0:
+            for buffer in (buffers.colours, buffers.depths):
+                encoder.clear_buffer(buffer, index * shape[0] * buffers.row_bytes, shape[0] * buffers.row_bytes)
+            continue
         # Each mesh's values in buffers of its own: all are written before the encoder runs.
         targets = drawing.shader.encode_draw(encoder, shape, drawing.n_vertices, ("mesh", index), drawing.values)
         for target, buffer in zip(targets, (buffers.colours, buffers.depths)):

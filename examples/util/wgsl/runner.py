@@ -196,9 +196,7 @@ def coefficients(value: Extensor, kind: GAType) -> bytes:
     """An Extensor's coefficients in the type the shader declares, flattened in kernel order."""
     if value.gatype != kind:
         value = value.cast(kind)
-    structural = len(kind.subspaces)
-    kernel = np.asarray(value.kernel, dtype=np.float32)
-    return kernel.reshape(kernel.shape[:kernel.ndim - structural] + (-1,)).tobytes()
+    return np.asarray(value.kernel, dtype=np.float32).tobytes()
 
 
 # The texture formats the raster stage may draw into: their bytes and channels a pixel, and how their numbers are kept.

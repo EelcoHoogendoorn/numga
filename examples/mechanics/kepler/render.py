@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 from matplotlib.ticker import NullLocator
 import numpy as np
@@ -101,7 +103,7 @@ def draw_errors(counts: np.ndarray, physical: core.Scalar, regularized: core.Sca
     return figure
 
 
-def animate_lift(positions: core.Point, spinors: core.Spinor) -> list[np.ndarray]:
+def animate_lift(positions: core.Point, spinors: core.Spinor) -> Iterator[np.ndarray]:
     """Two orbital revolutions and one closed spinor loop, sampled in the regularized clock."""
     points = positions.cast(core.ga.subspace("yz zx")).kernel
     lifted = spinors.cast(core.ga.subspace("1 xy")).kernel
@@ -116,11 +118,9 @@ def animate_lift(positions: core.Point, spinors: core.Spinor) -> list[np.ndarray
     # Lay the figure out once; only the markers move between frames.
     figure.canvas.draw()
     figure.set_layout_engine("none")
-    frames = []
     for point, spinor in zip(points, lifted):
         markers[0].set_offsets(point[None])
         markers[1].set_offsets(spinor[None])
-        frames.append(capture(figure))
+        yield capture(figure)
     plt.close(figure)
-    return frames
 

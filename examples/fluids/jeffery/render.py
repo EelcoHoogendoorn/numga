@@ -9,7 +9,7 @@ exactly.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from itertools import product
 
 import matplotlib.pyplot as plt
@@ -19,7 +19,8 @@ from matplotlib.colors import to_rgb
 
 from numga import concatenate, stack
 from examples.fluids.jeffery import core
-from examples.util.wgsl import labels, meshes, show, solids
+from examples.util.wgsl import labels, show, solids, strokes
+from examples.util.wgsl.scene import Scene
 
 # The directions along the flow and along the gradient, and the normal of the vortex plane.
 x, y, z = core.axes.dual()
@@ -34,12 +35,11 @@ TIP_REACH = 1.15
 FRAME_MARGIN = 0.08
 PIXELS = 360
 # A body's octants, by the signs of its own directions along its three axes, and their colours: dark where the
-# signs multiply to plus. The width in pixels of the paths of the tips and of the marks past them, and the points
-# around their tubes.
+# signs multiply to plus. The width in pixels of the paths of the tips and of the marks past them.
 OCTANTS = np.array(list(product((1.0, -1.0), repeat=3)))                     # [octants, 3]
 OCTANT_COLOURS = np.where((OCTANTS.prod(axis=-1) > 0)[:, None], to_rgb(BODY_DARK), to_rgb(BODY))   # [octants, 3]
 TIP_RGB = np.array(to_rgb(TIP))
-PATH_WIDTH, MARK_WIDTH, N_AROUND = 2.0, 3.0, 6
+PATH_WIDTH, MARK_WIDTH = 2.0, 3.0
 # The sphere of directions, drawn on the GPU: its colour and how much each of its surfaces hides, and its grid's
 # width in pixels and opacity; the frame's arrows' length in radii of the sphere, their width and heads in pixels, the
 # flow's arrows' too, and how far their names reach; the orbits' width in pixels, the margin around the names' reach,
@@ -86,8 +86,8 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
     parts, ball, inks = sphere(view)
     for body in range(count):
-        orbits = meshes.tube_samples([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
-                                      for end in (1, -1)], ORBIT_WIDTH, view)
+        orbits = strokes.polylines([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
+                                    for end in (1, -1)], ORBIT_WIDTH, view)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
@@ -110,10 +110,10 @@ def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
 
 
 def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: core.Point,
-                     frames: Iterable[tuple[core.Rotor, core.Point]]) -> list[np.ndarray]:
+                     frames: Iterable[tuple[core.Rotor, core.Point]]) -> Iterator[np.ndarray]:
     """Each frame of the bodies' orientations `[bodies]` and the tips of their long axes `[bodies]`, two or more:
     every body tumbling in the flow, side by side in a row, with the paths of its tips so far, each frame traced in
-    one pass."""
+    one pass among the flow, which is set up once."""
     orientations, tips = (stack(list(part)) for part in zip(*frames))        # [frames, bodies] Rotor, Point
     count = tips.shape[1]
     # One frame for every panel, so that the bodies' sizes compare: the farthest marks past a long axis's tips,
@@ -134,26 +134,14 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     shafts, heads = solids.arrows(starts, ends, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                   HEAD_WIDTH / 2 * view.pixel)
     flow = [(shafts.reshape(-1, 3), FLOW_RGB), (heads.reshape(-1, 3), FLOW_RGB)]
-    # Both ends of every long axis, in its panel: their paths over the frames, and the marks from each end out past
-    # it, one mesh of tubes built once.
+    # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
     axis_ends = np.array([1.0, -1.0])[:, None, None, None] * coordinates(tips) + offsets   # [ends, frames, bodies, 3]
-    paths = np.moveaxis(axis_ends, 1, 2).reshape(-1, len(tips), 3)            # [ends * bodies, frames, 3]
-    marks = np.stack([axis_ends, TIP_REACH * (axis_ends - offsets) + offsets], axis=-2)   # [ends, frames, bodies, 2, 3]
-    marks = np.moveaxis(marks, 1, 0).reshape(-1, 2, 3)                        # [frames * ends * bodies, 2, 3]
-    path_rings, path_faces = meshes.tube(paths, PATH_WIDTH / 2 * view.pixel, N_AROUND)
-    mark_rings, mark_faces = meshes.tube(marks, MARK_WIDTH / 2 * view.pixel, N_AROUND)
-    rings = concatenate([path_rings, mark_rings])
-    faces = np.concatenate([path_faces, mark_faces + path_rings.shape[0]])
-    normals = meshes.smooth(rings, faces)
-    # Each face's index: the paths' a run per curve and step, the marks' a run per frame.
-    path_index = np.arange(len(path_faces)).reshape(len(paths), len(tips) - 1, -1)
-    mark_index = len(path_faces) + np.arange(len(mark_faces)).reshape(len(tips), -1)
-
-    def frame(index: int) -> np.ndarray:
-        shown = np.concatenate([path_index[:, :index].reshape(-1), mark_index[index]])
-        tubes = meshes.samples(rings, faces[shown], TIP_RGB, {name: corner[shown] for name, corner in normals.items()},
-                               view)
-        return solids.draw([(placed_bodies[index].reshape(-1, 4), colours)] + flow, view, np.ones(3),
-                           meshes=[(tubes, 1.0)])
-
-    return [frame(index) for index in range(len(tips))]
+    reach = TIP_REACH * (axis_ends - offsets) + offsets                       # [ends, frames, bodies, 3]
+    scene = Scene(view, np.ones(3), flow, [])
+    for index in range(len(tips)):
+        # The paths of the tips so far, and the marks from each end out past it.
+        paths = strokes.segments(axis_ends[:, :index].reshape(-1, 3), axis_ends[:, 1:index + 1].reshape(-1, 3),
+                                 TIP_RGB, PATH_WIDTH, view)
+        marks = strokes.segments(axis_ends[:, index].reshape(-1, 3), reach[:, index].reshape(-1, 3), TIP_RGB,
+                                 MARK_WIDTH, view)
+        yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], meshes=[(paths, 1.0), (marks, 1.0)])
