@@ -55,11 +55,6 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     ax.add_collection(rays)
     ax.add_patch(horizon)
     ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
-    # No scales: a faint cross through the hole's centre, its lines named at their ends.
-    ax.axhline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
-    ax.axvline(0, color="#cbd5e1", linewidth=0.8, zorder=0)
-    ax.annotate("x", (extent, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center", color="#64748b")
-    ax.annotate("y", (0, extent), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom", color="#64748b")
     ax.set_axis_off()
     figure.canvas.draw()
     figure.set_layout_engine("none")
