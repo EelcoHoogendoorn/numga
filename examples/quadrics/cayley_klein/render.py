@@ -1,15 +1,23 @@
-"""Drawing and coordinate readout for the Cayley-Klein example."""
+"""Drawing for the Cayley-Klein example, on the GPU by `planar`: the level sets of polarities, the curves where they
+vanish; lines, whole across the view; and points, as marks. The angles' labels over it in matplotlib."""
 
 from __future__ import annotations
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, ga, mv
+from examples.util.wgsl import pinned
+from examples.util.wgsl import planar
+from examples.util.wgsl.planar import Curves, Lines, Marker, Marks, window
+from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, ga
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
-# Grid samples per axis for level sets.
-RESOLUTION = 400
+# The rows of pixels down the view.
+ROWS = 680
+# Pixels a point, at the figure's 120 dots per inch; the width of the marks' outlines.
+POINT = 120 / 72
+OUTLINE = 1.5
 
 
 def euclidean(points: Point) -> np.ndarray:
@@ -18,37 +26,23 @@ def euclidean(points: Point) -> np.ndarray:
     return k[..., :2] / k[..., 2:]
 
 
-def draw_points(ax, points: Point, **style) -> None:
-    xy = euclidean(points).reshape(-1, 2)
-    ax.scatter(xy[:, 0], xy[:, 1], zorder=6, **style)
+def rgb(colour: str) -> np.ndarray:
+    return np.array(mcolors.to_rgb(colour))
 
 
-def draw_lines(ax, lines: Line, **style) -> None:
-    """Draw lines mv.x * a + mv.y * b + mv.w * c through their foot from the origin, along their
-    direction."""
-    a, b, c = np.moveaxis(lines.cast(ga.subspace("x y w")).kernel.reshape(-1, 3), -1, 0)
-    foot = -np.stack([a, b], axis=-1) * (c / (a * a + b * b))[:, None]
-    along = np.stack([-b, a], axis=-1)
-    for start, direction in zip(foot, along):
-        ax.axline(start, start + direction, **style)
+def marks(points: Point, colour: str, area: float, marker: Marker) -> Marks:
+    """Points as marks of the area, in square points, with an outline in their colour."""
+    return Marks(points.reshape(-1), marker, 0.0, (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, rgb(colour), 1.0)
 
 
-def draw_level_sets(ax, quadrics: Polarity, **style) -> None:
-    """Draw each locus P & quadric(P) == 0 by contouring it on a grid."""
-    xs = np.linspace(BOX[0], BOX[1], RESOLUTION)
-    ys = np.linspace(BOX[2], BOX[3], RESOLUTION)
-    samples = mv.point(np.stack(np.meshgrid(xs, ys), axis=-1))
-    quadrics = quadrics.reshape(-1)
-    values = (samples[..., None] & quadrics(samples[..., None])).to_array()
-    for index in range(quadrics.shape[0]):
-        ax.contour(xs, ys, values[..., index], levels=[0.0], **style)
+def level_sets(quadrics: Polarity, colour: str, width: float) -> Curves:
+    """Each locus P & quadric(P) == 0, `width` points across."""
+    return Curves(quadrics.reshape(-1), width * POINT, rgb(colour), 1.0)
 
 
-def style_axis(ax) -> None:
-    ax.set_xlim(BOX[0], BOX[1])
-    ax.set_ylim(BOX[2], BOX[3])
-    ax.set_aspect("equal")
-    ax.set_axis_off()
+def lines(lines: Line, colour: str, width: float) -> Lines:
+    """Lines whole across the view, `width` points across."""
+    return Lines(lines.reshape(-1), width * POINT, rgb(colour), 1.0)
 
 
 def draw_hyperbolic_plane(
@@ -58,24 +52,24 @@ def draw_hyperbolic_plane(
     """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
     the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
     purple diamond. Right, the circles about the two centres, blue and orange."""
+    view = window(BOX[:2], BOX[2:], ROWS)
     fig, (left, right) = plt.subplots(1, 2, figsize=(13, 6), dpi=120)
-    draw_level_sets(left, C, colors="black", linewidths=2.0)
-    draw_lines(left, sides, color="#2563eb", linewidth=2.0)
-    draw_lines(left, normal, color="#dc2626", linewidth=1.6)
-    draw_points(left, vertices, color="#1d4ed8", s=40)
-    draw_points(left, P, color="#dc2626", s=50)
-    draw_points(left, foot, color="#b91c1c", marker="s", s=40)
-    draw_points(left, reflected, color="#f97316", s=45)
-    draw_points(left, pole, color="#a855f7", marker="D", s=45)
+    for ax in (left, right):
+        ax.set_axis_off()
+    fig.tight_layout()
+    hyperbolic = [level_sets(C[None], "black", 2.0),
+                  lines(sides, "#2563eb", 2.0),
+                  lines(normal[None], "#dc2626", 1.6),
+                  marks(vertices, "#1d4ed8", 40, Marker.DISC),
+                  marks(P[None], "#dc2626", 50, Marker.DISC),
+                  marks(foot[None], "#b91c1c", 40, Marker.SQUARE),
+                  marks(reflected[None], "#f97316", 45, Marker.DISC),
+                  marks(pole[None], "#a855f7", 45, Marker.DIAMOND)]
+    pinned(left, planar.draw(view, hyperbolic, np.ones(3)), view.extent)
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(6, 6), fontsize=9)
-    style_axis(left)
 
-    draw_level_sets(right, C, colors="black", linewidths=2.0)
-    for family, colour in zip(circles, ("#3b82f6", "#f97316")):
-        draw_level_sets(right, family, colors=colour, linewidths=1.4)
-    draw_points(right, centres, color="#111827", s=35)
-    style_axis(right)
-
-    fig.tight_layout()
+    rings = [level_sets(C[None], "black", 2.0)] + [level_sets(family, colour, 1.4)
+                                                    for family, colour in zip(circles, ("#3b82f6", "#f97316"))]
+    pinned(right, planar.draw(view, rings + [marks(centres, "#111827", 35, Marker.DISC)], np.ones(3)), view.extent)
     return fig

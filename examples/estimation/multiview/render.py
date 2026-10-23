@@ -18,7 +18,7 @@ from numga.algebras import PGA2D
 
 from examples import instantiate
 from examples.util.wgsl import image_figure
-from examples.util.wgsl.planar import Cap, Conics, Regions, Strokes, Triangles, draw, window
+from examples.util.wgsl.planar import SOLID, Cap, Conics, Polygons, Regions, Strokes, draw, window
 
 # The figures are top-down views of the plane: they draw PGA2D geometry.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
@@ -90,12 +90,12 @@ def cameras(motors: Motor) -> list:
     reach = WEDGE_DEPTH * np.tan(HALF_FIELD)
     local = mv.point([[0.0, 0.0], [reach, WEDGE_DEPTH], [-reach, WEDGE_DEPTH], [0.0, WEDGE_DEPTH * AXIS_REACH]])
     marks = motors[:, None] >> local                                             # [cameras, 4] Point
-    wedges = [[Triangles(marks[camera:camera + 1, :3], colour, 0.18),
-               Strokes(marks[camera:camera + 1, [0, 1, 2, 0]], EDGE_WIDTH, colour, 0.18, cap=Cap.PROJECTING),
-               Strokes(marks[camera][np.array([[0, 1], [0, 2]])], RAY_WIDTH, colour, 0.6, cap=Cap.PROJECTING)]
+    wedges = [[Polygons(marks[camera:camera + 1, :3], colour, 0.18),
+               Strokes(marks[camera:camera + 1, [0, 1, 2, 0]], EDGE_WIDTH, colour, 0.18, SOLID, Cap.PROJECTING),
+               Strokes(marks[camera][np.array([[0, 1], [0, 2]])], RAY_WIDTH, colour, 0.6, SOLID, Cap.PROJECTING)]
               for camera, colour in enumerate(colours(motors))]
-    sensors = [[Strokes(marks[camera:camera + 1, [1, 2]], SENSOR_WIDTH, colour, 1.0, cap=Cap.PROJECTING),
-                Strokes(marks[camera:camera + 1, [0, 3]], AXIS_WIDTH, colour, 1.0, dashes(AXIS_WIDTH, DASHED))]
+    sensors = [[Strokes(marks[camera:camera + 1, [1, 2]], SENSOR_WIDTH, colour, 1.0, SOLID, Cap.PROJECTING),
+                Strokes(marks[camera:camera + 1, [0, 3]], AXIS_WIDTH, colour, 1.0, dashes(AXIS_WIDTH, DASHED), Cap.BUTT)]
                for camera, colour in enumerate(colours(motors))]
     return [layer for camera in wedges + sensors for layer in camera]
 
@@ -126,9 +126,9 @@ def pose_covariances(motors: Motor, ellipses: Quadric, spreads: Scalar) -> list:
         fan = motors[camera] >> mv.point(around)                                # [segments + 1] Point
         spokes = motors[camera] >> mv.point(np.stack([np.zeros((2, 2)), around[[0, -1]]], axis=1))   # [2, 2] Point
         layers += [Regions(ellipses[camera:camera + 1], colour, 0.28),
-                   Strokes(outlines[:, camera][None], OUTLINE_WIDTH, colour, 0.28, dashes(OUTLINE_WIDTH, DASHED)),
-                   Strokes(fan[None], ARC_WIDTH, colour, 1.0, dashes(ARC_WIDTH, DOTTED)),
-                   Strokes(spokes, SPOKE_WIDTH, colour, 1.0, dashes(SPOKE_WIDTH, DOTTED))]
+                   Strokes(outlines[:, camera][None], OUTLINE_WIDTH, colour, 0.28, dashes(OUTLINE_WIDTH, DASHED), Cap.BUTT),
+                   Strokes(fan[None], ARC_WIDTH, colour, 1.0, dashes(ARC_WIDTH, DOTTED), Cap.BUTT),
+                   Strokes(spokes, SPOKE_WIDTH, colour, 1.0, dashes(SPOKE_WIDTH, DOTTED), Cap.BUTT)]
     return layers
 
 
