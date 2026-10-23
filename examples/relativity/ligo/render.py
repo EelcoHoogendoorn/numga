@@ -15,12 +15,13 @@ from examples.relativity.ligo import core
 ga = core.ga
 # Colour maps for signed responses, for sensitivities and for likeness; the colours of the sites, the
 # ring and the arms; the drawn reach of the arms on the ring, the samples of the ring at rest, and the
-# ring view's half width.
+# ring view's half width; the polarization animation's figure size, in inches.
 SIGNED, SENSITIVE = "RdBu_r", "magma"
 SITE, LABEL, RING, REST, ARM = "#22d3ee", "#0f172a", "#0369a1", "#cbd5e1", "#f97316"
 ARM_REACH = 1.25
 REST_SAMPLES = 200
 RING_LIMIT = 1.5
+POLARIZATION_SIZE = (12, 4.0)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -106,9 +107,16 @@ def animate_polarization(directions: core.Point, responses: core.Scalar, site: c
                          rings: core.Point, name: str) -> list[np.ndarray]:
     """Each frame: the ring stretched by the plus strain at the polarization angle, beside the detector's
     response to it over the sky."""
+    return animate_polarization_sized(directions, responses, site, arms, rings, name, POLARIZATION_SIZE)
+
+
+def animate_polarization_sized(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
+                               rings: core.Point, name: str, size: tuple[float, float]) -> list[np.ndarray]:
+    """Each frame, in a figure `size` inches wide and high: the ring stretched by the plus strain at the
+    polarization angle, beside the detector's response to it over the sky."""
 
     def frame(index: int) -> np.ndarray:
-        figure = plt.figure(figsize=(12, 4.0), dpi=100)
+        figure = plt.figure(figsize=size, dpi=100)
         draw_ring(figure.add_subplot(1, 2, 1), site, arms, rings[index])
         ax = figure.add_subplot(1, 2, 2, projection="mollweide")
         sky_map(ax, directions, responses[index], SIGNED, -1, 1)

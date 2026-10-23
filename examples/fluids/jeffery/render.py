@@ -115,13 +115,19 @@ def animate_tumbling(stretches: core.Stretch, heights: core.Point, velocities: c
     """Each frame of the bodies' orientations `[bodies]` and the tips of their long axes `[bodies]`, two or more:
     every body tumbling in the flow, side by side in a row, with the paths of its tips so far, each frame traced in
     one pass among the flow, which is set up once."""
+    return animate_tumbling_sized(stretches, heights, velocities, frames, PIXELS)
+
+
+def animate_tumbling_sized(stretches: core.Stretch, heights: core.Point, velocities: core.Point,
+                           frames: Iterable[tuple[core.Rotor, core.Point]], pixels: int) -> Iterator[np.ndarray]:
+    """The bodies tumbling as `animate_tumbling` draws them, each panel so many pixels across."""
     orientations, tips = (stack(list(part)) for part in zip(*frames))        # [frames, bodies] Rotor, Point
     count = tips.shape[1]
     # One frame for every panel, so that the bodies' sizes compare: the farthest marks past a long axis's tips,
     # and the margin.
     limit = TIP_REACH * (1 + FRAME_MARGIN) * tips.norm().to_array().max()
     camera = solids.aim(solids.origin, np.radians(VIEW[0]), np.radians(VIEW[1] + 90))
-    view = solids.View(camera, np.array([count, 1.0]) * limit, count * PIXELS)
+    view = solids.View(camera, np.array([count, 1.0]) * limit, count * pixels)
     # Each body's panel about its own centre, two half-widths apart across the image, the row about the origin.
     across = (camera >> solids.mv.x.dual()) * (2 * limit * (np.arange(count) - (count - 1) / 2))   # [bodies] Point
     shifts = solids.translator(across)                                        # [bodies] Motor

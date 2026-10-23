@@ -23,6 +23,9 @@ N_FRAMES = 48
 N_MASSES = 24
 STRAIN_SHOWN = 0.3
 DURATION_MS = 80
+# Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_SIZE = (7.2, 2.4)
+GALLERY_FRAMES = 32
 
 
 # --- math -----------------------------------------------------------------------------
@@ -81,6 +84,12 @@ def main() -> None:
     save_figure(render.draw_network(directions, network, alike, zeniths, NAMES), "ligo_network")
     save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0]),
                    "ligo_polarization", DURATION_MS)
+    gallery_angles = np.linspace(0, np.pi, GALLERY_FRAMES, endpoint=False)
+    gallery_responses, gallery_rings = polarization(sites[0], arms[0], frames, gallery_angles)
+    # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate_polarization_sized(directions, gallery_responses, sites[0], arms[0], gallery_rings,
+                                                     NAMES[0], GALLERY_SIZE),
+                   "ligo", DURATION_MS * N_FRAMES // GALLERY_FRAMES)
 
     # checks
     # Straight overhead each detector the sensitivity is one, the arms lying across the wave, and nowhere

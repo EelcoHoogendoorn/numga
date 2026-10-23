@@ -72,6 +72,12 @@ def main() -> None:
     frames = ((combined[:, None, None](surface), combined[:, None](prepared))
               for combined in core.powers(learned, STEPS))
     save_animation(render.animate(surface, prepared, frames, LABELS), "process_tomography", FRAME_DURATION)
+    # Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    # Every second use, each frame showing twice as long.
+    frames = ((combined[:, None, None](surface), combined[:, None](prepared))
+              for combined in core.powers(learned(learned), STEPS // 2))
+    save_animation(render.animate_panels(surface, prepared, frames, LABELS, render.GALLERY_PANEL), "tomography",
+                   2 * FRAME_DURATION)
 
 
 if __name__ == "__main__":

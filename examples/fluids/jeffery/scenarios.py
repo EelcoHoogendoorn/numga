@@ -33,6 +33,8 @@ N_STEPS_PER_FRAME = 3
 # The heights at which the flow is drawn, all where it moves, and the duration of a frame.
 HEIGHTS = np.array([-3.0, -2.0, -1.0, 1.0, 2.0, 3.0])
 DURATION_MS = 60
+# Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_PIXELS = 240
 
 
 # --- math -----------------------------------------------------------------------------
@@ -73,6 +75,9 @@ def main() -> None:
     save_figure(render.draw_orbits(trails), "jeffery_orbits")
     save_animation(render.animate_tumbling(core.stretch(SEMI_AXES), heights, flow()(heights), frames(rotors)),
                    "jeffery_tumbling", DURATION_MS)
+    # Gallery picture: this makes plots/jeffery.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate_tumbling_sized(core.stretch(SEMI_AXES), heights, flow()(heights), frames(rotors),
+                                                 GALLERY_PIXELS), "jeffery", DURATION_MS)
 
     # checks
     # The rotors stay unit over the whole span: the bodies stay rigid.

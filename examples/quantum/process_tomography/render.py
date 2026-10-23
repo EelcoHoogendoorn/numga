@@ -26,10 +26,15 @@ GRID_COLOUR, GRID_OPACITY = np.full(3, 0.6), 0.6
 EDGE_COLOUR, AXIS_COLOUR = np.full(3, 0.75), np.full(3, 0.55)
 # The opacities of a channel's image of the sphere and of the probes as prepared.
 IMAGE_OPACITY, PREPARED_OPACITY = 0.2, 0.2
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view
-# about the centre, and the pixels across it, until the view is fitted to its axes.
+# The view's elevation and azimuth in radians, azimuth zero looking along +y; the half width of the square view of
+# the probes about the centre, the margin about a channel's ball and its axes as a share of the larger side, and the
+# pixels across a view, until it is fitted to its axes.
 ELEVATION, AZIMUTH = np.radians(24.0), np.radians(-54.0 + 90.0)
-REACH, N_PIXELS = 1.45, 700
+REACH, MARGIN, N_PIXELS = 1.45, 0.2, 700
+# The width and height in inches of each channel's panel, its title and its share of the legend.
+PANEL = (3.6, 4.2)
+# Gallery picture: this makes plots/tomography.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_PANEL = (2.4, 2.85)
 # The grid lines drawn, every few of the sampled latitudes and longitudes; the widths of the sphere's grid lines and
 # an image's, the edges and the axes' shafts, the arrowheads' length and width, and the radii of the probes alone,
 # after a channel and as prepared, in radii of the ball; how far the axes reach and where they are named.
@@ -49,6 +54,14 @@ def bloch(states: core.State) -> np.ndarray:
 def bloch_view(axes) -> solids.View:
     """The view of the Bloch ball every picture shares, fitted to the matplotlib axes it is shown in."""
     return fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS), axes)
+
+
+def channel_view(sphere: np.ndarray, axes) -> solids.View:
+    """The view of a channel's pictures, framing the sphere of pure inputs `[latitudes + 1, longitudes + 1, 3]` and
+    the axes' names with a margin, fitted to the matplotlib axes it is shown in."""
+    framed = solids.view([sm.point(sphere.reshape(-1, 3)), sm.point(LABEL_DISTANCE * np.eye(3))], 0.0, ELEVATION,
+                         AZIMUTH, MARGIN, N_PIXELS)
+    return fitted(framed, axes)
 
 
 def bloch_axes() -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -165,9 +178,10 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: 
     return scene.draw([(after, colours)], meshes=[(shell, IMAGE_OPACITY), (lines, 1.0)])
 
 
-def channels_figure(labels: tuple[str, ...]) -> tuple[plt.Figure, list]:
-    """The channels' axes side by side, each named, over the legend of the probes: the figure, and the axes."""
-    figure = plt.figure(figsize=(4.1 * len(labels), 4.3), layout="constrained")
+def channels_figure(labels: tuple[str, ...], panel: tuple[float, float]) -> tuple[plt.Figure, list]:
+    """The channels' axes side by side, each named, over the legend of the probes, each channel a panel of a width
+    and height in inches: the figure, and the axes."""
+    figure = plt.figure(figsize=(panel[0] * len(labels), panel[1]), layout="constrained")
     axes = [figure.add_subplot(1, len(labels), index + 1) for index in range(len(labels))]
     for ax, label in zip(axes, labels):
         ax.set_title(label)
@@ -189,8 +203,8 @@ def draw_channels(surface: core.State, outputs: core.State, prepared: core.State
     sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
     images = bloch(outputs)                                                    # [channels, latitudes + 1, longitudes + 1, 3]
     mapped = bloch(transformed)                                                # [channels, preparations, 3]
-    figure, axes = channels_figure(labels)
-    view = bloch_view(axes[0])
+    figure, axes = channels_figure(labels, PANEL)
+    view = channel_view(sphere, axes[0])
     scene = channel_scene(sphere, bloch(prepared), view)
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
     for ax, image, points, colour in zip(axes, images, mapped, CHANNEL_COLOURS):
@@ -221,11 +235,19 @@ def animate(surface: core.State, prepared: core.State,
             frames: Iterator[tuple[core.State, core.State]],
             labels: tuple[str, ...]) -> Iterator[np.ndarray]:
     """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws
-    them: the figure, the axes, the sphere, its grid and the probes as prepared set up once, and each frame's images
-    of the sphere and probes after the channels drawn among them."""
+    them."""
+    return animate_panels(surface, prepared, frames, labels, PANEL)
+
+
+def animate_panels(surface: core.State, prepared: core.State, frames: Iterator[tuple[core.State, core.State]],
+                   labels: tuple[str, ...], panel: tuple[float, float]) -> Iterator[np.ndarray]:
+    """Successive applications of each reconstructed channel to the same input sphere, as `draw_channels` draws
+    them, each channel a panel of a width and height in inches: the figure, the axes, the sphere, its grid and the
+    probes as prepared set up once, and each frame's images of the sphere and probes after the channels drawn among
+    them."""
     sphere = bloch(surface)                                                    # [latitudes + 1, longitudes + 1, 3]
-    figure, axes = channels_figure(labels)
-    view = bloch_view(axes[0])
+    figure, axes = channels_figure(labels, panel)
+    view = channel_view(sphere, axes[0])
     scene = channel_scene(sphere, bloch(prepared), view)
     faces = surface_faces(sphere.shape[0], sphere.shape[1] - 1)
     blank = np.full((*view.shape, 3), 255, dtype=np.uint8)

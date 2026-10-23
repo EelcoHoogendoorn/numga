@@ -126,10 +126,15 @@ def animate_uncoiling(centres: core.Point, edges: core.Point) -> Iterator[np.nda
 
 
 def animate_cord(centres: core.Point, edges: core.Point) -> Iterator[np.ndarray]:
+    """The telephone cord at each frame, as `sized_cord` draws it `N_CORD_PIXELS` across."""
+    return sized_cord(centres, edges, N_CORD_PIXELS)
+
+
+def sized_cord(centres: core.Point, edges: core.Point, pixels: int) -> Iterator[np.ndarray]:
     """The telephone cord at each frame `[frames, drawn]`, as a ribbon `[frames, drawn, 2]` with its base and its
-    handset, all from one fixed view and to one scale."""
+    handset, `pixels` across, all from one fixed view and to one scale."""
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, drawn, 3], [..., 2, 3]
-    view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, N_CORD_PIXELS)
+    view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, pixels)
     # The clamps at the base and the handset: small balls at the cord's two ends.
     clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
     for curve, ribbon, ends in zip(curves, ribbons, clamps):

@@ -55,6 +55,9 @@ CORD_MASS, CORD_SPREAD, GRAVITY, CORD_DAMPING = 0.05, 2.0, 9.81, 1.0
 HANG, OUT, REACH, HOLD, BACK = 0.3, 0.9, 0.6, 0.3, 0.4
 TIME_STEP, N_STEPS_PER_FRAME, N_CORD_FRAMES = 1e-3, 40, 70
 N_DRAWN_BETWEEN, CORD_RIBBON, CORD_MS = 4, 0.025, 40
+# Gallery picture: this makes plots/telephone_cord.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's telephone cord: its pixels across.
+GALLERY_PIXELS = 600
 
 
 # --- math -----------------------------------------------------------------------------
@@ -203,6 +206,9 @@ def main() -> None:
     moved = stack(list(pulled()))                                            # [frames, pieces + 2] Motor
     cord = core.between(moved, N_DRAWN_BETWEEN)                                # [frames, drawn] Motor
     save_animation(render.animate_cord(cord >> core.centre, ribbon(cord, CORD_RIBBON)), "elastica_cord", CORD_MS)
+    # Gallery picture: this makes plots/telephone_cord.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.sized_cord(cord >> core.centre, ribbon(cord, CORD_RIBBON), GALLERY_PIXELS), "telephone_cord",
+                   CORD_MS)
 
     # checks
     # Curled by whole turns, the strip's end comes back to its start.

@@ -15,6 +15,8 @@ from examples.quantum.kane_mele import core
 # The bonds' shade, and the largest dot, in points squared, at the densest atom.
 BONDS = "#d5d8dc"
 DOT = 160.0
+# The spin animation's pixels across.
+PIXELS = 600
 
 
 def coordinates(points: core.Point) -> np.ndarray:
@@ -80,7 +82,14 @@ def draw_spin(flake: core.Flake, spin: core.Vector) -> plt.Figure:
 
 def animate_spin(flake: core.Flake, spins: core.Vector) -> Iterator[np.ndarray]:
     """Each frame of the spin density, the flake's bonds drawn once and only the dots changing."""
+    return animate_spin_sized(flake, spins, PIXELS)
+
+
+def animate_spin_sized(flake: core.Flake, spins: core.Vector, pixels: int) -> Iterator[np.ndarray]:
+    """Each frame of the spin density, the flake's bonds drawn once and only the dots changing, the figure so many
+    pixels across."""
     figure = draw_spin(flake, spins[0])
+    figure.set_dpi(pixels / figure.get_figwidth())
     dots = figure.axes[0].collections[-1]
     for spin in spins:
         sizes, shades = spin_dots(spin)

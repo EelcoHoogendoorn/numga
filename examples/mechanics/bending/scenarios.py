@@ -36,6 +36,9 @@ RIGID_SHEAR = 1e6 * SHEAR_MODULUS
 # every section's kern and one outside.
 PUSH = 1e-3
 PUSH_POINTS = [[0.03, 0.04], [0.1, 0.3]]
+# Gallery picture: this makes plots/bending.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's move across: its pixels to the inch.
+GALLERY_DPI = 64
 
 
 # --- math -----------------------------------------------------------------------------
@@ -120,6 +123,9 @@ def main() -> None:
                                         centres[NAMES.index("Z-section")], turning, turned), "bending_turning", DURATION_MS)
     save_animation(render.animate_loads(tube, centres[NAMES.index("slotted tube")], shear_centres[NAMES.index("slotted tube")],
                                         across, down, moved), "bending_across", DURATION_MS)
+    # Gallery picture: this makes plots/bending.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.sized_loads(tube, centres[NAMES.index("slotted tube")], shear_centres[NAMES.index("slotted tube")],
+                                      across, down, moved, GALLERY_DPI), "bending", DURATION_MS, forward_then_back=True)
     save_figure(render.draw_stubby(stubby, [frames for _, frames, _, _ in stubs], centres[NAMES.index("I-section")],
                                    STUBBY_LOAD * -up_direction), "bending_stubby")
 

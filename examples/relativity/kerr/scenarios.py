@@ -44,6 +44,11 @@ polarization_degree = 0.8
 n_flow_frames = 80
 web_scale = 2 / 3                                               # the camera's animations, box-filtered to this share of its size
 flow_time = 50.0 * mass                                         # coordinate time the disk turns through in one loop
+# Gallery picture: this makes plots/kerr.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+gallery_width = 400
+gallery_height = gallery_width * 2 // 3
+gallery_half_view = np.tan(np.deg2rad(21.3))
+gallery_frames = 40
 
 
 # --- math -----------------------------------------------------------------------------
@@ -66,17 +71,16 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     return paths, horizons
 
 
-def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
-    """The camera's view, resolved ray by ray; each disk crossing's observed temperature, `[crossings]
-    Scalar`; and the power its emission passes through each analyzer, `[analyzers, crossings]
-    Scalar`."""
+def camera(width: int, height: int, view: float) -> tuple[core.Image, core.Scalar, core.Scalar]:
+    """The camera's view, `width` by `height` pixels, `view` the tangent of half its angle from top to
+    bottom, resolved ray by ray; each disk crossing's observed temperature, `[crossings] Scalar`; and
+    the power its emission passes through each analyzer, `[analyzers, crossings] Scalar`."""
     orientation = (core.mv.zx * (-camera_inclination / 2)).exp()
     eye = (orientation >> core.mv.z.dual()) * camera_distance
     spin = core.mv.xy * camera_spin
     # The thin disk ends at the innermost stable orbit of gas turning with the hole.
     inner_radius = core.innermost_stable_orbit(core.mv.xy, spin, mass)
-    position, momentum = core.camera_rays(eye, orientation, image_width, image_height,
-                                         half_view, spin, mass)
+    position, momentum = core.camera_rays(eye, orientation, width, height, view, spin, mass)
     screen = core.camera_screen(position, momentum, orientation, spin, mass)
     def opacity(event: core.Antivector, momentum: core.Vector, radius: core.Scalar) -> core.Scalar:
         depth = core.disk_depth(radius, inner_radius, disk_outer_radius, inner_depth)
@@ -94,13 +98,13 @@ def camera() -> tuple[core.Image, core.Scalar, core.Scalar]:
     return image, temperature, core.transmitted(coherency, analyzers[:, None])
 
 
-def disk_flow(image: core.Image) -> Iterator[core.Antivector]:
-    """Where the gas seen at each disk crossing was at each frame of one loop, and one loop before
-    that, `[2, crossings] Antivector` per frame: the flow carries the disk's texture, while its light
-    stays steady."""
+def disk_flow(image: core.Image, loop_frames: int) -> Iterator[core.Antivector]:
+    """Where the gas seen at each disk crossing was at each of the loop's `loop_frames` frames, and one
+    loop before that, `[2, crossings] Antivector` per frame: the flow carries the disk's texture, while
+    its light stays steady."""
     points, _, _ = image.disk
     spin = core.mv.xy * camera_spin
-    for elapsed in np.linspace(0, flow_time, n_flow_frames, endpoint=False):
+    for elapsed in np.linspace(0, flow_time, loop_frames, endpoint=False):
         yield core.carried(points, image.disk_radii, core.mv.xy, spin, mass, np.array([elapsed, elapsed - flow_time]))
 
 
@@ -111,14 +115,20 @@ def main() -> None:
 
     paths, horizons = scene()
     save_animation(render.animate_rays(paths, horizons, extent), "kerr_spin", duration_ms, forward_then_back=True)
-    image, temperature, transmission = camera()
+    image, temperature, transmission = camera(image_width, image_height, half_view)
     sky = render.star_texture(sky_width, sky_height, sky_seed)
     shape = (image_height, image_width)
     save_figure(render.draw_camera(image, temperature, exposure_temperature, shape, sky), "kerr_camera")
     save_animation(render.animate_polarizer(image, temperature, exposure_temperature, transmission, shape, sky),
                    "kerr_polarizer", duration_ms, scale=web_scale)
-    save_animation(render.animate_disk(image, temperature, exposure_temperature, disk_flow(image), n_flow_frames, shape, sky),
+    save_animation(render.animate_disk(image, temperature, exposure_temperature, disk_flow(image, n_flow_frames), n_flow_frames, shape, sky),
                    "kerr_disk", duration_ms, scale=web_scale)
+    gallery_image, gallery_temperature, _ = camera(gallery_width, gallery_height, gallery_half_view)
+    # Gallery picture: this makes plots/kerr.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate_disk(gallery_image, gallery_temperature, exposure_temperature,
+                                       disk_flow(gallery_image, gallery_frames), gallery_frames,
+                                       (gallery_height, gallery_width), sky),
+                   "kerr", duration_ms * n_flow_frames // gallery_frames)
 
     # --- checks
     # Each pixel's light is shared at most once between the disk and the sky, all of it when its ray

@@ -34,6 +34,8 @@ SPINOR = (1 - mv.zx) * 0.5**0.5
 LAP = 50.0
 N_FRAMES = 50
 DURATION_MS = 120
+# Gallery picture: this makes plots/kane_mele.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_PIXELS = 440
 
 
 # --- math -----------------------------------------------------------------------------
@@ -73,6 +75,8 @@ def main() -> None:
     save_figure(render.draw_levels(MASSES, energies, shares, 3 * 3**0.5 * SPIN_ORBIT), "kane_mele_levels")
     save_figure(render.draw_states(flake, densities), "kane_mele_states")
     save_animation(render.animate_spin(flake, spins), "kane_mele_helical", DURATION_MS)
+    # Gallery picture: this makes plots/kane_mele.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate_spin_sized(flake, spins, GALLERY_PIXELS), "kane_mele", DURATION_MS)
 
     # checks
     # The Hamiltonian is its own reverse: every coupling's reverse couples the other way.

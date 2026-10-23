@@ -48,6 +48,10 @@ TIME_STEP = 0.04
 N_STEPS = 250
 FRAME_STRIDE = 2
 ROCKING_DURATION = 8
+# Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+# The gallery's reversal: its pixels across and the steps between frames drawn.
+GALLERY_PIXELS = 420
+GALLERY_STRIDE = 3
 
 
 # --- math -----------------------------------------------------------------------------
@@ -148,6 +152,9 @@ def main() -> None:
     save_figure(render.draw_setup(built, samples, placements[0, 1]), "rattleback_body")
     save_animation(render.frames(placements[rocking_frames, 0], built, samples), "rattleback_rocking", duration_ms)
     save_animation(render.frames(placements[reversal_frames, 1], built, samples), "rattleback_reversal", duration_ms)
+    # Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.sized_frames(placements[::GALLERY_STRIDE, 1], built, samples, GALLERY_PIXELS), "rattleback",
+                   round(TIME_STEP * GALLERY_STRIDE * 1000))
 
     # checks
     # The tipped body spins up from rest, the spinning one reverses, and the energy is kept.

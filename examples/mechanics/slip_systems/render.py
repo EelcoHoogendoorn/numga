@@ -30,6 +30,9 @@ PATH_SHADE = 0.55
 LIFTS = (-10, 8, 8)
 EDGE_SAMPLES = 60
 WINDOW = (-0.04, 0.46)
+# The animation's side in inches, and in pixels.
+SIDE = 4.6
+PIXELS = 460
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -146,9 +149,17 @@ def draw_chart(directions: core.Direction, factors: core.Scalar, planes: core.Pl
 def animate_paths(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
                   frames: int) -> Iterator[np.ndarray]:
     """The paths through the standard triangle growing, over so many frames, the triangle drawn once."""
+    return animate_paths_sized(directions, factors, axes, amounts, frames, PIXELS)
+
+
+def animate_paths_sized(directions: core.Direction, factors: core.Scalar, axes: core.Direction, amounts: core.Scalar,
+                        frames: int, pixels: int) -> Iterator[np.ndarray]:
+    """The paths through the standard triangle growing, over so many frames, the triangle drawn once, the figure
+    so many pixels across."""
     reached = np.linspace(2, axes.shape[0], frames).round().astype(int)
     tracks, segments, colours = steps(axes, amounts)
-    figure, ax = plt.subplots(figsize=(4.6, 4.6), layout="constrained")
+    figure, ax = plt.subplots(figsize=(SIDE, SIDE), layout="constrained")
+    figure.set_dpi(pixels / SIDE)
     draw_close(ax, factors)
     paths = [ax.add_collection(LineCollection([], linewidths=1.6)) for _ in segments]
     places = ax.scatter(*tracks[0].T, s=14, color=PATH_COLOUR, zorder=3)

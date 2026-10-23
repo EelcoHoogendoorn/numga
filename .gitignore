@@ -25,6 +25,15 @@ dist/
 !/plots/pairs_in_mirror.png
 !/plots/normal_orientation.png
 !/plots/mirror_energy.gif
+!/plots/rattleback.gif
+!/plots/bending.gif
+!/plots/telephone_cord.gif
+!/plots/slip_systems_00.gif
+!/plots/jeffery.gif
+!/plots/kerr.gif
+!/plots/ligo.gif
+!/plots/kane_mele.gif
+!/plots/tomography.gif
 
 # The style guide for examples and notebooks is kept locally, out of the repository.
 /examples/STYLE.md

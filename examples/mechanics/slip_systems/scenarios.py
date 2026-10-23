@@ -25,6 +25,8 @@ STEEPNESS = 30
 N_STEPS = 500
 N_FRAMES = 50
 DURATION_MS = 70
+# Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+GALLERY_PIXELS = 420
 
 
 # --- math -----------------------------------------------------------------------------
@@ -79,6 +81,9 @@ def main() -> None:
     axes, amounts = paths()
     save_figure(render.draw_chart(directions, factors, planes, slips, axes, amounts), "slip_systems")
     save_animation(render.animate_paths(directions, factors, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
+    # Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
+    save_animation(render.animate_paths_sized(directions, factors, axes, amounts, N_FRAMES, GALLERY_PIXELS),
+                   "slip_systems", DURATION_MS)
 
     # checks
     values = factors.to_array()                                          # [rows, columns, planes, directions]

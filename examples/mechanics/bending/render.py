@@ -292,8 +292,16 @@ def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list
 def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
                   through: core.Point, loads: core.Point,
                   beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> Iterator[np.ndarray]:
+    """Each frame of a changing tip load, as `sized_loads` draws it at 100 pixels to the inch."""
+    return sized_loads(section, centre, shear, through, loads, beam, 100)
+
+
+def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
+                through: core.Point, loads: core.Point, beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar],
+                dpi: int) -> Iterator[np.ndarray]:
     """Each frame of a changing tip load, through points `through` in directions `loads`, either batched
-    over the frames: the bent beam, and its section's stress at the clamp with the tip's cross-section."""
+    over the frames, at `dpi` pixels to the inch: the bent beam, and its section's stress at the clamp with the tip's
+    cross-section."""
     nodes, ends, _ = section
     strains, frames, principal, stress = beam
     count = frames.shape[0]
@@ -304,7 +312,7 @@ def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: co
     moved = frames[:, -1] >> through                                         # [frames] Point
     # The figure and the section's still parts drawn once; the beam's picture, the stress, the tip's walls, the
     # neutral axis and the load's arrow set for each frame.
-    figure = plt.figure(figsize=(9.0, 4.6), dpi=100)
+    figure = plt.figure(figsize=(9.0, 4.6), dpi=dpi)
     beam_ax, section_ax = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     figure.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.98, wspace=0.05)
     # One camera framing every frame's beam.
