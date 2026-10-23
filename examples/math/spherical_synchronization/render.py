@@ -17,7 +17,6 @@ import numpy as np
 
 from numga import stack
 from examples.util.wgsl import Shader, image_figure, supersampled
-from examples.util.wgsl.library import drawn
 from examples.math.spherical_synchronization.core import Cut, Point, Rotor, ga, mv
 
 size = 500
@@ -146,7 +145,7 @@ def coordinates(points: Point) -> np.ndarray:
 
 def picture(population: Point, circles: Cut) -> np.ndarray:
     """One population and its circles, `[size, size, 3]` bytes."""
-    pixels = drawn(size)
+    pixels = size
     pixel = 2 * half_width / pixels
     colours = particle_colours[np.arange(population.shape[-1]) % len(particle_colours)]
     traced = shader()((pixels, pixels), camera=camera, half_height=half_width,

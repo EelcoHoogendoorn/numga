@@ -7,7 +7,6 @@ from typing import Any
 
 import numpy as np
 
-from examples.util.wgsl.library import drawn
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.solids import Ink, Quadric, View, mesh_buffers, sampled, scene, shader, trace
 
@@ -23,8 +22,6 @@ class Scene:
                  translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> None:
         self.view, self.background = view, np.asarray(background, dtype=float)
         self.parts, self.inks, self.translucent, self.meshes = list(parts), list(inks), list(translucent), list(meshes)
-        # The view as it is traced: where the CPU draws, with fewer pixels, enlarged to the view's.
-        self.seen = view._replace(pixels=drawn(view.pixels))
         self.tracer = shader()
         # The buffers holding the still meshes' samples, and the meshes they have room for, made by the first frame.
         self.buffers, self.n_slots = None, 0
@@ -42,11 +39,11 @@ class Scene:
         n_still, n_slots = len(self.meshes), len(self.meshes) + len(meshes)
         # Buffers too small for the frame's meshes are made again, and the still meshes drawn into them once.
         if self.buffers is None or self.n_slots < n_slots:
-            self.buffers, self.n_slots = mesh_buffers(self.seen, n_slots, self.made), n_slots
-            sampled(encoder, [mesh for mesh, _ in self.meshes], self.seen, 0, self.buffers)
-        sampled(encoder, [mesh for mesh, _ in meshes], self.seen, n_still, self.buffers)
+            self.buffers, self.n_slots = mesh_buffers(self.view, n_slots, self.made), n_slots
+            sampled(encoder, [mesh for mesh, _ in self.meshes], self.view, 0, self.buffers)
+        sampled(encoder, [mesh for mesh, _ in meshes], self.view, n_still, self.buffers)
         solids = scene(self.parts + list(parts), self.translucent + list(translucent), self.inks + list(inks))
-        return trace(self.tracer, encoder, self.view, self.seen, solids, self.buffers,
+        return trace(self.tracer, encoder, self.view, solids, self.buffers,
                      [opacity for _, opacity in self.meshes + list(meshes)], self.background)
 
     def draw(self, parts: list[tuple[Quadric, np.ndarray]] = (), inks: list[Ink] = (),

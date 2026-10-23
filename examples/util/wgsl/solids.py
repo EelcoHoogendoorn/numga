@@ -14,12 +14,11 @@ from functools import cache
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
-from PIL import Image
 
 from numga import NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import drawn, samples_per_side
+from examples.util.wgsl.library import samples_per_side
 from examples.util.wgsl.runner import Resident
 
 if TYPE_CHECKING:
@@ -702,42 +701,31 @@ def traced(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
            translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]],
            background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The picture `layer` makes, over a background, which shows through each sample as much as its surfaces let
-    light pass: over black, the layer itself. Where the CPU draws, the picture is traced with fewer pixels, as
-    `drawn` gives them, and enlarged to the view's."""
-    seen = view._replace(pixels=drawn(view.pixels))                           # the view as it is traced
+    light pass: over black, the layer itself."""
     tracer = shader()
     encoder = tracer.device.create_command_encoder()
     # The meshes' samples in the buffers the tracer keeps for any one picture.
-    buffers = mesh_buffers(seen, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
-    sampled(encoder, [mesh for mesh, _ in meshes], seen, 0, buffers)
-    return trace(tracer, encoder, view, seen, scene(parts, translucent, inks), buffers,
+    buffers = mesh_buffers(view, len(meshes), lambda name, size, usage: tracer.buffer_kept(("meshes", name), size, usage))
+    sampled(encoder, [mesh for mesh, _ in meshes], view, 0, buffers)
+    return trace(tracer, encoder, view, scene(parts, translucent, inks), buffers,
                  [opacity for _, opacity in meshes], background)
 
 
-def trace(tracer: Shader, encoder: Any, view: View, seen: View, solids: tuple, buffers: MeshBuffers,
+def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: MeshBuffers,
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
-    opacity, over the background, on the encoder: the picture's colour and depth, enlarged from the view as traced to
-    the view's size."""
+    opacity, over the background, on the encoder: the picture's colour and depth."""
     quadrics, solids, ink_quadrics, ink_regions, marked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
-    outputs = tracer.encode(encoder, seen.shape, (), dict(
+    outputs = tracer.encode(encoder, view.shape, (), dict(
         quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
         mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
         mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
-        n_meshes=len(opacities), **tiles(*holding, seen), pixel=view.pixel, camera=view.camera,
+        n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, camera=view.camera,
         back=4 * view.half.max(), half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient,
         fill_tilt=fill_tilt, headlight=headlight, gloss=gloss, shininess=shininess, background=background))
-    image = tracer.read(encoder, outputs, seen.shape)["image"]
-    return enlarged(image["colour"], view.shape), enlarged(image["depth"][..., :1], view.shape)[..., 0]
-
-
-def enlarged(image: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
-    """An image `[rows, columns, channels]` resized to `shape`, each channel interpolated linearly."""
-    rows, columns = shape
-    return np.stack([np.asarray(Image.fromarray(np.ascontiguousarray(channel, dtype=np.float32), "F")
-                                .resize((columns, rows), Image.Resampling.BILINEAR))
-                     for channel in np.moveaxis(image, -1, 0)], axis=-1)
+    image = tracer.read(encoder, outputs, view.shape)["image"]
+    return image["colour"], image["depth"][..., 0]
 
 
 class MeshBuffers(NamedTuple):

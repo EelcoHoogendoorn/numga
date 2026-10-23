@@ -14,7 +14,6 @@ from functools import cache
 import numpy as np
 
 from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import drawn
 from numga import concatenate
 
 from .core import Rotor, Vector, ga, mv
@@ -161,7 +160,7 @@ class SphereScene:
         middle = (low + high) / 2
         self.middle = self.camera >> (mv.x * middle[0] + mv.y * middle[1])                    # [] Vector
         self.half = np.max(high - low) / 2 * (1 + margin)
-        self.size = drawn(size)
+        self.size = size
         self.sphere_radius, self.ball_radius = sphere_radius, ball_radius
         # The routes on the sphere: each leg's samples joined in segments, their colours by leg.
         places = [path * sphere_radius for path in paths]                                      # [legs][samples] Vector

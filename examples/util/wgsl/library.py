@@ -17,16 +17,9 @@ def software() -> bool:
     return device().adapter.info["adapter_type"] == "CPU"
 
 
-# The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, four on the CPU, where sixteen
-# cost too much; and the share of a traced picture's pixels drawn across, all of them on a GPU, half on the CPU.
-samples_per_side = 2 if software() else 4
-pixel_share = 0.5 if software() else 1.0
-
-
-def drawn(pixels: int) -> int:
-    """The pixels a traced picture draws across where `pixels` are asked for: all of them on a GPU, `pixel_share` of
-    them where the CPU draws."""
-    return round(pixels * pixel_share)
+# The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, one on the CPU, where more cost
+# too much.
+samples_per_side = 1 if software() else 4
 
 
 def supersampled() -> str:
@@ -92,7 +85,7 @@ def vec3(rgb: np.ndarray) -> str:
 def show(ax, image: np.ndarray, view):
     """An image of a view in matplotlib axes, its middle at the origin, in the scene's units, so that places from
     `view.across` land where they are seen; without axes. The image, for an animation to set its data."""
-    shown = ax.imshow(image, extent=view.extent, interpolation="bilinear")
+    shown = ax.imshow(image, extent=view.extent, interpolation="nearest")
     ax.set_axis_off()
     return shown
 
@@ -107,7 +100,7 @@ def image_figure(image: np.ndarray):
     """A figure of an image at its pixel size, without axes or margins."""
     import matplotlib.pyplot as plt
     figure, ax = plt.subplots(figsize=(image.shape[1] / 100, image.shape[0] / 100), dpi=100)
-    ax.imshow(image)
+    ax.imshow(image, interpolation="nearest")
     ax.set_axis_off()
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     return figure
