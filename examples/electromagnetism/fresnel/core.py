@@ -3,10 +3,12 @@
 A material is a map from the field, a bivector, to its excitation, built by multiplying by the space
 of fields: `dielectric` weights the observer's electric planes by their permittivities and the magnetic planes
 by one reluctivity. A potential A gives the field `k ^ A`, and `potential_map` is the map from A to
-what is left of Maxwell's other equation, `(k ^ material(k ^ A)).dual()`, a map `Vector <- Vector`.
-It always loses the potential along k; a wave is a second potential it loses, which its action on
-volumes, its outermorphism on trivectors, detects. The adjugate of that action holds two factors of
-k and one number more, the Fresnel quartic, `polynomial`, zero where light can travel, and
+what is left of Maxwell's other equation, the current the potential would need, `k ^ material(k ^ A)`:
+from potentials, extrinsic, to currents, intrinsic, `Antivector <- Vector`, with no metric but the
+material's. It always loses the potential along k; a wave is a second potential it loses, which its action
+on volumes detects, its outermorphism from the volume of three potentials to the join of their currents.
+Read back on the observer's rest space, `rest_space & volumes(rest_space)`, it holds two factors of the
+frequency and one number more, the Fresnel quartic, `polynomial`, zero where light can travel, and
 `radial_sheets` finds its two roots along each direction, the two polarizations.
 """
 
@@ -23,8 +25,10 @@ Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antibivector = ga.gatype.antibivector()
 Trivector = ga.gatype.trivector()
+# Potentials are vectors, extrinsic; the currents they drive are antivectors, intrinsic.
+Antivector = ga.gatype.antivector()
 Constitutive = ga.gatype((Antibivector, Bivector))             # Antibivector <- Bivector
-WaveMap = ga.gatype((Vector, Vector))                         # Vector <- Vector
+WaveMap = ga.gatype((Antivector, Vector))                     # Antivector <- Vector
 # A coupling of the excitation to the field itself, with a sense of its own: measured against a handedness.
 Axion = ga.gatype(ga.subspace.scalar(), orientation=Orientation.intrinsic)
 axes = stack([mv.x, mv.y, mv.z])
@@ -57,22 +61,23 @@ def axion(coupling: Axion) -> Constitutive:
 
 
 def potential_map(medium: Constitutive, wavevector: Vector) -> WaveMap:
-    """Map a potential to its excitation residual; wavevector always lies in its kernel."""
+    """Map a potential to the current it would need, its excitation's residual; the wavevector always
+    lies in its kernel."""
     field = wavevector ^ Vector                                              # [...] Bivector <- Vector
-    return (wavevector ^ medium(field)).dual()                                # [...] Vector <- Vector
+    return wavevector ^ medium(field)                                         # [...] Antivector <- Vector
 
 
 def polynomial(medium: Constitutive, rest_space: Trivector, wavevector: Vector) -> Scalar:
     """The Fresnel quartic, for a nonzero frequency measured by the observer whose unit rest space is
     `rest_space`; the volume enters twice, so its sense drops out."""
-    wave = potential_map(medium, wavevector)                                  # [...] Vector <- Vector
-    adjugate = wave.outermorphism(Trivector).adjugate()                       # [...] Vector <- Vector
-    # The adjugate acts on complements of volumes: the observer enters as the dual of its rest space, and
-    # its output is read by pairing with the rest space.
-    observer = rest_space.dual()                                              # [...] Vector
+    wave = potential_map(medium, wavevector)                                  # [...] Antivector <- Vector
+    # The potential map's action on volumes: from the volume of three potentials to the join of their
+    # currents.
+    volumes = wave.outermorphism(Trivector)                                   # [...] intrinsic Vector <- Trivector
     # The frequency the observer measures: the wavevector paired with its rest space.
     frequency = wavevector & rest_space                                       # [...] Scalar
-    return (rest_space & adjugate(observer)) / frequency.squared()            # [...] Scalar
+    # The rest space reads the join of the currents of its own three directions.
+    return (rest_space & volumes(rest_space)) / frequency.squared()           # [...] Scalar
 
 
 def radial_sheets(medium: Constitutive, directions: Vector, frequency: float) -> Vector:
