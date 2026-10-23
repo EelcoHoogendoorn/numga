@@ -33,13 +33,13 @@ RING_VIEW, TRAVEL_VIEW = (70.0, -60.0), (20.0, 0.0)
 # How far each place is turned off at random, and the seed.
 DISTURBANCE = 1e-4
 SEED = 0
-# The time step, the midpoint step's fixed-point sweeps, the steps, the steps compared between the two
-# time steps, the steps between frames, and the duration of a frame.
+# The time step, the midpoint step's fixed-point sweeps, the steps of the rings and of the travelling pairs and the
+# steps between their frames, the steps compared between the two time steps, and the duration of a frame.
 DT = 0.05
 N_SWEEPS = 3
-N_STEPS = 160
+RING_STEPS, RING_STEPS_PER_FRAME = 320, 2
+TRAVEL_STEPS, TRAVEL_STEPS_PER_FRAME = 640, 4
 N_COMPARED_STEPS = 100
-N_STEPS_PER_FRAME = 1
 DURATION_MS = 80
 
 
@@ -74,7 +74,7 @@ def rings() -> list[core.Pivot]:
     def ring(size: int) -> core.Pivot:
         places = turned(np.full(size, RING_ANGLE), 2 * np.pi * np.arange(size) / size)   # [vortices] Pivot
         nudges = (core.pivot(rng.normal(size=(size, 3))) * DISTURBANCE).exp()       # [vortices] Rotor
-        return history(core.Vortices(nudges >> places, np.ones(size), RING_CORE), midpoint, N_STEPS)
+        return history(core.Vortices(nudges >> places, np.ones(size), RING_CORE), midpoint, RING_STEPS)
 
     return [ring(size) for size in RING_COUNTS]
 
@@ -82,7 +82,7 @@ def rings() -> list[core.Pivot]:
 def travelling() -> list[core.Pivot]:
     """A dipole and two leapfrogging pairs travelling around the equator: their pivots
     `[steps + 1, vortices] Pivot`."""
-    return [history(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE), midpoint, N_STEPS)
+    return [history(core.Vortices(turned(np.pi / 2 - angles, np.zeros(len(angles))), circulations, PAIR_CORE), midpoint, TRAVEL_STEPS)
             for angles, circulations in ((DIPOLE_ANGLES, DIPOLE_CIRCULATIONS), (LEAPFROG_ANGLES, LEAPFROG_CIRCULATIONS))]
 
 
@@ -114,8 +114,9 @@ def main() -> None:
     histories = rings()
     dipole, frogs = travelling()
     by_pairs, by_midpoints = compared()
-    save_animation(render.animate(histories, RING_VIEW, N_STEPS_PER_FRAME), "sphere_vortices_rings", DURATION_MS)
-    save_animation(render.animate([dipole, frogs], TRAVEL_VIEW, N_STEPS_PER_FRAME), "sphere_vortices_travelling", DURATION_MS)
+    save_animation(render.animate(histories, RING_VIEW, RING_STEPS_PER_FRAME), "sphere_vortices_rings", DURATION_MS)
+    save_animation(render.animate([dipole, frogs], TRAVEL_VIEW, TRAVEL_STEPS_PER_FRAME), "sphere_vortices_travelling",
+                   DURATION_MS)
 
     # checks
     # The ring of five keeps its shape, the ring of six nearly; the ring of seven, neutral in the plane,
