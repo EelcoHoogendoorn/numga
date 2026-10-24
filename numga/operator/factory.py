@@ -278,22 +278,26 @@ class OperatorFactory:
         return -1 if (mask & self.algebra.negative_mask).bit_count() % 2 else 1
 
     def _right_complement(self, mask: int) -> tuple[int, int]:
-        """The right complement, mask * I with the metric's negative signs: the blade that follows mask."""
+        """The right complement with the metric's negative signs: the blade that follows mask, signed as mask times the
+        blade of all generators."""
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask, pseudoscalar) * self._negative_sign(mask)
 
     def _left_complement(self, mask: int) -> tuple[int, int]:
-        """The left complement, I * mask with the metric's negative signs: the blade that precedes mask."""
+        """The left complement with the metric's negative signs: the blade that precedes mask, signed as the blade of all
+        generators times mask."""
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(pseudoscalar, mask) * self._negative_sign(mask)
 
     def _volume_complement(self, mask: int) -> tuple[int, int]:
-        """The blade that completes mask to the unit volume, on its right: mask ^ complement == I."""
+        """The blade that completes mask to the unit volume, on its right: mask ^ complement is the blade of all
+        generators in signature order."""
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask, mask ^ pseudoscalar)
 
     def _volume_complement_inverse(self, mask: int) -> tuple[int, int]:
-        """The blade that mask completes to the unit volume, on its left: complement ^ mask == I."""
+        """The blade that mask completes to the unit volume, on its left: complement ^ mask is the blade of all
+        generators in signature order."""
         pseudoscalar = self.algebra.pseudoscalar_mask
         return mask ^ pseudoscalar, self._swap_sign(mask ^ pseudoscalar, mask)
 
@@ -378,10 +382,10 @@ class OperatorFactory:
     def regressive(self, left: GAType, right: GAType) -> Extensor:
         """The regressive product, measured against the unit volume and nothing else.
 
-        Two blades of complementary grade span a volume, `left ^ right == (left & right) * I`, and
-        their regressive product is that volume in units of the intrinsic unit volume `I`; for other
-        grades it is the blade the two share, scaled by the volume they span together. No metric
-        enters, and measuring against the intrinsic `I` flips the orientation once.
+        Two blades of complementary grade span a volume, `left ^ right == (left & right) * antiscalar`,
+        and their regressive product is that volume in units of the intrinsic unit volume `antiscalar`;
+        for other grades it is the blade the two share, scaled by the volume they span together. No
+        metric enters, and measuring against the intrinsic unit volume flips the orientation once.
         """
 
         return self._regressive(

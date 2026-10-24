@@ -12,7 +12,7 @@ Extensors generalize matrices and tensors from vectors to multivectors, and from
 <tr><td width="50%" align="center"><a href="examples/relativity/kerr/"><b>Gravity as a gauge field</b></a> <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"></a><br><img src="plots/kerr.gif" alt="The hot disk of gas around a rotating black hole, bent around its shadow as it orbits" width="100%"></td><td width="50%" align="center"><a href="examples/quantum/kane_mele/"><b>Spin conservation as a type</b></a> <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/quantum/kane_mele/kane_mele.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open in Colab"></a><br><img src="plots/kane_mele.gif" alt="An electron's two spins running round the edge of a honeycomb flake in opposite directions" width="100%"></td></tr>
 </table>
 
-* [extensors](docs/extensors.md): An introduction to extensors in numga, with a gallery of examples
+* [extensors](docs/extensors.md): a short introduction to extensors, and a showcase of their applications
 
 A short example of the extensor syntax: building unary maps and bilinear forms, and solving for the vibration modes of four point masses on springs:
 
@@ -27,6 +27,11 @@ values, modes = (Bivector & stiffness).eigh(Bivector & inertia)
 ```
 
 The full example: [vibration modes](examples/mechanics/modes/modes.ipynb) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/mechanics/modes/modes.ipynb)
+
+## Tutorials
+
+* [Geometric algebra](docs/tutorial/geometric-algebra/00-introduction.md): a primer for readers new to geometric algebra.
+* [Extensors](docs/tutorial/extensors/00-introduction.md): a primer for readers new to extensors.
 
 ## Install and run
 

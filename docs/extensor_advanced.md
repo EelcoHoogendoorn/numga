@@ -164,13 +164,13 @@ The products of the algebra split into two groups. The geometric product, the in
 **The regressive product.** It is measured against the unit volume and nothing else. Each blade is completed to the volume by its complement, the blade that, wedged after it, gives the unit volume; the complements are wedged, and the result is read back through the complement. For a vector and an antivector, whose grades together fill the volume, that is one identity, in every signature, a degenerate one included:
 
 ```python
-I = mv.antiscalar([1.0])                    # the unit volume, intrinsic
-a ^ b == (a & b) * I                        # a: Vector, b: Antivector
+volume = mv.antiscalar([1.0])               # the unit volume, intrinsic
+a ^ b == (a & b) * volume                   # a: Vector, b: Antivector
 ```
 
 The sign of `&` is the orientation of the unit volume, the sense its own blades give it, and owes nothing to the metric: spacetime, whose metric has a negative determinant, and a projective algebra, whose metric is degenerate, pair exactly as Euclidean space does. The regressive product joins a space with its complement, an intrinsic quantity with an extrinsic one: a direction with the slice that reads it, an event with a wavevector, `wavevector & event` its phase, a field with the plane a direction sweeps through time, `field & (axis & time)`. The examples write their measurements as these pairings, and no metric enters them.
 
-**The dual.** The metric meets the complement in the dual: `a.dual()` is the complement measured by the metric, `b ^ a.dual() == b.dot(a) * I`. A regressive pairing with a dual is therefore the metric pairing, in every signature where the metric is not degenerate:
+**The dual.** The metric meets the complement in the dual: `a.dual()` is the complement measured by the metric, `b ^ a.dual() == b.dot(a) * volume`. A regressive pairing with a dual is therefore the metric pairing, in every signature where the metric is not degenerate:
 
 ```python
 a & b.dual() == a.dot(b)                    # a, b: Vector
@@ -455,7 +455,7 @@ A map on vectors extends to every grade by mapping each factor of a product. The
 t.outermorphism(Bivector)(a ^ b) == t(a) ^ t(b)         # t: Vector <- Vector
 T.outermorphism(Line)(p & q) == T(p) & T(q)             # T: Point <- Point, in PGA3D
 T.outermorphism(Plane)(p & q & r) == T(p) & T(q) & T(r)
-t.outermorphism(Pseudoscalar)(I) == t.det() * I         # the top grade is the determinant
+t.outermorphism(Pseudoscalar)(a ^ b ^ c) == t.det() * (a ^ b ^ c)   # the top grade is the determinant
 t(s).outermorphism(Bivector) == t.outermorphism(Bivector)(s.outermorphism(Bivector))
 ```
 
