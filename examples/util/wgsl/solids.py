@@ -466,19 +466,8 @@ def lift_vga3d_dual_quadric_to_pga3d(shape: Extensor, frame: Extensor) -> Quadri
     return dual_quadric.inverse()                                                    # [...] Quadric
 
 
-def embedded(form: Extensor, frame: Extensor) -> Quadric:
-    """The quadric cones through the origin that pair each point of unit weight with itself to what forms on pairs of
-    offsets in another algebra of space give its offset from the origin, `form(offset, offset)`, the offsets of
-    `frame` `[3]` there along x, y and z here: each form read on the frame, a sum of dyads of the planes x, y and z."""
-    readings = form[..., None, None](frame[:, None], frame[None, :]).to_array()   # [..., 3, 3]
-    return (axes[:, None] * (axes & Point)[None, :] * readings).sum(axis=(-1, -2))
 
 
-def centred(form: Extensor, frame: Extensor) -> Quadric:
-    """The solids about the origin where forms on pairs of offsets in another algebra of space pair an offset with
-    itself to at most one, `form(offset, offset) <= 1`, the offsets of `frame` `[3]` there along x, y and z here: the
-    cones `embedded` gives, less one at every point of unit weight."""
-    return embedded(form, frame) - mv.w * (mv.w & Point)
 
 
 def ball(centres: Point, radius: float) -> Quadric:

@@ -25,8 +25,6 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.plane()
 Rotor = ga.gatype.rotor()
-# The angle of a turn about a point: a sense of turning, so a pseudoscalar, as every sense of turning is.
-Turn = Scalar.derive.flipped_orientation
 # The polarity maps a point to its polar plane, the dual polarity a plane to its pole.
 Polarity = ga.gatype((Plane, Point))             # Plane <- Point
 DualPolarity = ga.gatype((Point, Plane))         # Point <- Plane
@@ -73,14 +71,3 @@ def cone(eigenvalues: np.ndarray, radius: np.ndarray, t: np.ndarray) -> Point:
     l1, l2, l3 = eigenvalues
     x, y = np.sqrt(-l3 / (l1 - l3)) * np.cos(t), np.sqrt(-l3 / (l2 - l3)) * np.sin(t)
     return points(radius[..., None] * np.stack([x, y, np.sqrt(1.0 - x**2 - y**2)], axis=-1))
-
-
-def geodesic(start: Point, end: Point, t: np.ndarray) -> Point:
-    """The great-circle arc from start to end, at fractions t of its length."""
-    angle = (-(start | end)).clip(-1.0, 1.0).arccos()
-    return (start * ((1.0 - t) * angle).sin() + end * (t * angle).sin()) / angle.sin()
-
-
-def great_circles(planes: Plane, through: Point, turns: Turn) -> Point:
-    """The great circle of each plane, swept from a point on it by turns about the plane's pole."""
-    return (planes.dual() * (turns / 2.0)).exp() >> through
