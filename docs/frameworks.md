@@ -99,7 +99,7 @@ Differential forms are fields of these alternating forms. Their exterior derivat
 
 ### Exterior and metric structure in applications
 
-Roughly [90–95% of the examples](example_product_audit.md) in this collection use both metric and exterior structure. A swimming body needs force and torque balance together with a fluid response that depends on distance. Elastic waves need oriented faces and flux together with a metric in the shear response. Gravitational curvature acts on spacetime areas and produces the tidal forces whose accelerations the metric determines. The need for both structures comes from the problems themselves.
+Roughly 90–95% of the examples in this collection use both metric and exterior structure. A swimming body needs force and torque balance together with a fluid response that depends on distance. Elastic waves need oriented faces and flux together with a metric in the shear response. Gravitational curvature acts on spacetime areas and produces the tidal forces whose accelerations the metric determines. The need for both structures comes from the problems themselves.
 
 Electromagnetism makes their relationship particularly clear. Exterior structure describes circulation, flux and conservation; the vacuum constitutive law supplies the metric structure that determines light propagation. The separation is explicit in [premetric electrodynamics](https://arxiv.org/abs/physics/0610221): the field equations keep their exterior form while the constitutive map supplies the response. The [constitutive-tensor case](common_practice.md#electromagnetic-constitutive-tensors) expresses that response as an extensor.
 
