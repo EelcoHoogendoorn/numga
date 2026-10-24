@@ -43,6 +43,10 @@ InverseMetric = ga.gatype((Antivector, Vector))             # Antivector <- Vect
 # direction within that slice.
 time = -mv.t.dual()                                          # [] Antivector
 space = Antivector - time * (mv.t & Antivector)              # Antivector <- Antivector
+# The camera's own axes in its rest frame, before it is turned: it looks along -z, with its right +y and its up -x.
+camera_forward = -mv.z.dual()                                # [] Antivector
+camera_right = mv.y.dual()                                   # [] Antivector
+camera_up = -mv.x.dual()                                     # [] Antivector
 # The crossings of the disk a camera ray keeps: its direct, secondary and tertiary images, and one more.
 CROSSINGS = 4
 
@@ -471,8 +475,7 @@ def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_hei
     """Pixel-centre rays of a coordinate-static camera, looking along its -z, with right +y and up -x."""
     horizontal = ((np.arange(pixel_width) + 0.5) / pixel_width * 2 - 1) * half_view * pixel_width / pixel_height
     vertical = (1 - (np.arange(pixel_height) + 0.5) / pixel_height * 2) * half_view
-    x, y, z = mv.x.dual(), mv.y.dual(), mv.z.dual()
-    direction = orientation >> (-z + y * horizontal[None, :] - x * vertical[:, None])
+    direction = orientation >> (camera_forward + camera_right * horizontal[None, :] + camera_up * vertical[:, None])
     direction = direction / direction.squared().square_root()
     geometry = field(eye, spin, mass)
     # The future photon arrives opposite the direction the camera looks; its rest frame is boosted
@@ -492,15 +495,13 @@ def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
     boost = camera_boost(geometry)
     heading = boost.reverse() >> source_components(geometry)(inverse_metric(geometry)(momentum))                                 # [...] Antivector
     direction = space(heading) / -(mv.t & heading)                                          # [...] Antivector
-    # The camera's own right and up, local +y and -x, each less its parts along the directions before
-    # it; every direction here is a unit of space, squaring to one.
-    right = orientation >> mv.y.dual()
-    right = right - direction * (direction | right)
-    right = right / right.squared().square_root()
-    up = orientation >> -mv.x.dual()
-    up = up - direction * (direction | up) - right * (right | up)
-    up = up / up.squared().square_root()
-    # A screen direction is read by pairing with the camera's slices x and y.
-    return source_frame(geometry)(boost >> (right * (mv.x & Screen) + up * (mv.y & Screen)))                         # [...] Antivector <- Screen
+    # The turn carrying the camera's forward onto the direction it looks to see the ray: the reflection in
+    # the forward, then in the direction halfway between the two.
+    forward = orientation >> camera_forward                                                 # [] Antivector
+    halfway = direction + forward                                                           # [...] Antivector
+    turn = halfway * forward / halfway.squared().square_root()                              # [...] Rotor
+    # The camera's own right and up, turned with it; a screen direction is read by pairing with the
+    # camera's slices x and y.
+    return source_frame(geometry)((boost * turn * orientation) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen)))  # [...] Antivector <- Screen
 
 

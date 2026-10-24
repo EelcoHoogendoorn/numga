@@ -131,19 +131,19 @@ def clump_waves(points: core.Antivector, radius: core.Scalar) -> np.ndarray:
     turns keep each continuous in angle."""
     horizontal_x, horizontal_y = np.moveaxis(coordinates(points, (core.mv.x, core.mv.y)), -1, 0)
     angle = np.arctan2(horizontal_y, horizontal_x)
-    turns, wavenumbers, phases = np.moveaxis(wave_modes(), -1, 0)
-    waves = np.sin(turns * angle[..., None] + wavenumbers * radius.kernel + phases)                # [..., modes]
+    modes = wave_modes()
+    waves = np.sin(modes["turns"] * angle[..., None] + modes["wavenumber"] * radius.kernel + modes["phase"])  # [..., modes]
     return waves.sum(axis=-1) / np.sqrt(clump_modes / 2)
 
 
-def wave_modes() -> np.ndarray:
-    """The disk's random waves, `[modes, 3]`: each one's whole turns around the disk, waves per unit
+def wave_modes() -> dict[str, np.ndarray]:
+    """The disk's random waves, each `[modes]` by name: their whole turns around the disk, waves per unit
     radius across it, and phase."""
     modes = np.random.default_rng(clump_seed)
     turns = modes.integers(3, 18, clump_modes)
     wavenumbers = modes.uniform(0.8, 4.0, clump_modes)
     phases = modes.uniform(0, 2 * np.pi, clump_modes)
-    return np.stack([turns, wavenumbers, phases], axis=-1)
+    return dict(turns=turns, wavenumber=wavenumbers, phase=phases)
 
 
 def blackbody_table(hottest: float, n_entries: int) -> np.ndarray:

@@ -76,7 +76,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     screens[id.x] = camera_screen(positions[id.x], momenta[id.x]);
 }
 """
-    shader = Shader(gpu.geometry + camera_functions + camera_probe, core.ga, gpu.types, {})
+    shader = Shader(gpu.geometry + camera_functions + camera_probe, core.ga, gpu.types, gpu.constants)
     result = shader((1, 15), spin=spin, mass=mass, orientation=orientation, positions=positions, momenta=momenta)
     expected = core.camera_screen(positions, momenta, orientation, spin, mass)
     np.testing.assert_allclose((result["screens"][0] - expected).kernel, 0, atol=SINGLE_PRECISION, rtol=0)

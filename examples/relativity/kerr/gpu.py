@@ -21,6 +21,8 @@ from examples.util.wgsl import Shader, supersampled
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
              Rotor=core.Rotor, Screen=core.Screen, ScreenSlice=core.ScreenSlice, ScreenFrame=core.ScreenFrame,
              Coherency=core.Coherency, GaugeField=core.GaugeField)
+# The camera's own axes, which the shader takes as constants.
+constants = dict(camera_forward=core.camera_forward, camera_right=core.camera_right, camera_up=core.camera_up)
 mv = core.mv
 n_table_entries = 256
 # The colour table's hottest temperature, past any the camera sees.
@@ -161,8 +163,14 @@ var<uniform> hottest: f32;
 var<storage, read> temperatures: array<f32>;
 var blackbodies: texture_2d<f32>;
 var filtered: sampler;
-// The disk's random waves: whole turns around it, waves per unit radius across it, and phase.
-var<storage, read> modes: array<vec4<f32>>;
+// One of the disk's random waves: its whole turns around the disk, waves per unit radius across it, and phase.
+struct Mode {
+    turns: f32,
+    wavenumber: f32,
+    phase: f32,
+}
+
+var<storage, read> modes: array<Mode>;
 
 fn orbital_speed(radius: f32) -> f32 {
     let alignment = -spin.scalar_product(orbit);
@@ -192,7 +200,7 @@ fn waves(position: Antivector, radius: f32, before: f32) -> f32 {
     var total = 0.0;
     for (var index = 0u; index < arrayLength(&modes); index++) {
         let mode = modes[index];
-        total += sin(mode.x * around + mode.y * radius + mode.z);
+        total += sin(mode.turns * around + mode.wavenumber * radius + mode.phase);
     }
     return total / sqrt(f32(arrayLength(&modes)) / 2);
 }
@@ -252,12 +260,6 @@ struct Sample {
 
 const pi = 3.141592653589793;
 
-// A future null momentum along a unit spatial direction of the local frame, carried back and lowered.
-fn initial_momentum(position: Antivector, direction: Antivector) -> Vector {
-    let momentum = -gauge_inverse(field(position))(time + direction).dual();
-    return momentum / (momentum & time);
-}
-
 // The static camera's rest frame carried into the local Kerr–Schild frame.
 fn camera_boost(geometry: Field) -> Rotor {
     let carried_time = gauge_inverse(geometry)(time);
@@ -271,13 +273,12 @@ fn camera_screen(position: Antivector, momentum: Vector) -> ScreenFrame {
     let boost = camera_boost(geometry);
     let heading = boost.reverse() >> local(geometry, momentum);
     let direction = space(heading) / -(mv.t & heading);
-    var right = orientation >> mv.y.dual();
-    right = right - direction * (direction | right);
-    right = right / right.squared().square_root();
-    var up = orientation >> -mv.x.dual();
-    up = up - direction * (direction | up) - right * (right | up);
-    up = up / up.squared().square_root();
-    return boost >> (right * (mv.x & Screen) + up * (mv.y & Screen));
+    // The turn carrying the camera's forward onto the direction it looks to see the ray: the reflection in the
+    // forward, then in the direction halfway between the two. It turns the camera's right and up with it.
+    let forward = orientation >> camera_forward;
+    let halfway = direction + forward;
+    let turn = halfway * forward / halfway.squared().square_root();
+    return (boost * turn * orientation) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen));
 }
 
 // The starlight a ray escaping along a direction brings: the sky's image at its longitude and latitude.
@@ -292,7 +293,7 @@ fn starlight(direction: Antivector) -> vec3<f32> {
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_view;
     // Past-directed light from the pixel, looking along the camera's -z.
-    var direction = orientation >> (-mv.z.dual() + mv.y.dual() * across.x - mv.x.dual() * across.y);
+    var direction = orientation >> (camera_forward + camera_right * across.x + camera_up * across.y);
     direction = direction / direction.squared().square_root();
     let geometry = field(eye);
     let heading = camera_boost(geometry) >> (time - direction);
@@ -338,7 +339,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 def shader() -> Shader:
     """The camera's shader, compiled."""
-    return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types, {})
+    return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types, constants)
 
 
 def scene() -> dict:
