@@ -17,12 +17,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.14"]
+        # The oldest Python the package supports, and the newest.
+        python: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      # Mesa's software Vulkan driver: the GPU the examples' pictures are traced on, on a runner without one.
+      - run: sudo apt-get -qq update && sudo apt-get -qq install -y mesa-vulkan-drivers
       # The CPU wheel of torch; the default index serves the much larger CUDA build.
       - run: python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: python -m pip install -e ".[linalg,jax,examples,test]"
@@ -32,13 +35,17 @@ jobs:
           MPLBACKEND: Agg
 
   minimal:
-    name: NumPy only
+    name: NumPy only, Python ${{ matrix.python }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[test]"
       # JAX and SciPy are optional: their tests skip, and the examples need matplotlib.
       - run: python -m pytest --i-am-a-dunce-for-ignoring-instructions tests --ignore=tests/examples
