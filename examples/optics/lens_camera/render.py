@@ -21,7 +21,7 @@ from examples.util.wgsl import Shader, image_figure, solids, supersampled
 from examples.util.wgsl.scene import Scene
 
 # Sensor pixels, rows by columns.
-RESOLUTION = (210, 270)
+RESOLUTION = (168, 216)
 # How bright a disc's light shows, per unit of its energy over the sensor's area, and the width of a disc's edge, a
 # crude diffraction limit, in pixels.
 BRIGHTNESS = 1.36e-3
@@ -47,8 +47,8 @@ GAP_PIXELS = 40
 # sensor and the rays.
 SIDE_ELEVATION, SIDE_AZIMUTH = np.radians([14.0, -18.0])
 SIDE_BOX = ((-3.6, 2.6), (-1.0, 1.0), (-0.6, 0.6))
-SIDE_PIXELS = 540
-POINT_RADIUS, RAY_RADIUS = 3.0, 0.8
+SIDE_PIXELS = 216
+POINT_RADIUS, RAY_RADIUS = 2.0, 0.6
 N_RIM, THICKNESS, LENS_OPACITY = 32, 0.02, 0.3
 LENS, SENSOR_COLOUR, RAY = (0.55, 0.7, 0.85), (0.3, 0.3, 0.32), (1.0, 0.5, 0.05)
 # A quarter turn about the optical axis for display: the scene has y up, the view z up.
