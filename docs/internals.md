@@ -187,7 +187,7 @@ structural axis, with the batch axes broadcasting:
 "...oi,...i->...o"
 ```
 
-That string is how the NumPy backend evaluates the map. The map is a linear function between geometric types; its kernel holds the coefficients in the blade bases of its input and output. The backend evaluates these coefficients through einsum, matmul or an XLA dot. The dense executor uses matmul for a unary map applied to a value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or an index position, for the reasons given in [`extensor_advanced.md`](extensor_advanced.md).
+That string is how the NumPy backend evaluates the map. The map is a linear function between geometric types; its kernel holds the coefficients in the blade bases of its input and output. The backend evaluates these coefficients through einsum, matmul or an XLA dot. The dense executor uses matmul for a unary map applied to a value or to another unary map, and einsum otherwise. Nothing in the layout carries a metric or an index position.
 
 ## 4. Stages and contexts
 
@@ -359,7 +359,7 @@ multivector by dividing out a self-product, choosing the involution and the numb
 that its type needs to reach a scalar, falling back to a linear solve in the subalgebra its
 blades generate. `solve` dispatches on the shape of the problem: a map against a value, a form
 against a linear form, two values, or a multilinear construction against a map, as
-[`extensor_advanced.md`](extensor_advanced.md) describes from the outside.
+[extensor syntax](extensor_syntax.md) describes from the outside.
 
 An implementation takes extensors and returns an extensor with a type it declares. The numeric
 escape, a call into `linalg` or a formula over kernel columns, lives inside the registration
