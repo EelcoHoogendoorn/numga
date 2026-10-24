@@ -19,8 +19,8 @@ def test_split_product_is_alternative_and_preserves_its_norm() -> None:
 
 
 def test_product_finds_the_two_roll_waypoint() -> None:
-    start = core.encode(core.mv.z, core.mv.rotor())
-    finish = core.encode(core.mv.x, (core.mv.xy * 0.6).exp())
+    start = core.encode(core.mv.z.dual(), core.mv.rotor())
+    finish = core.encode(core.mv.x.dual(), (core.mv.xy * 0.6).exp())
     waypoint = core.normalize(core.multiply(start, finish).cast(core.State))
 
     np.testing.assert_allclose(core.pairing(start, finish).kernel, 0, atol=1e-12)
@@ -28,13 +28,13 @@ def test_product_finds_the_two_roll_waypoint() -> None:
     for first, second in ((start, waypoint), (waypoint, finish)):
         np.testing.assert_allclose(core.multiply(first, second).kernel, 0, atol=1e-12)
     contact, attitude = core.decode(finish)
-    np.testing.assert_allclose((contact - core.mv.x).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((contact - core.mv.x.dual()).kernel, 0, atol=1e-12)
     np.testing.assert_allclose((attitude - (core.mv.xy * 0.6).exp()).kernel, 0, atol=1e-12)
 
 
 def test_kernel_and_product_find_three_rolls_for_independent_endpoints() -> None:
-    start = core.encode(core.mv.z, core.mv.rotor())
-    finish = core.encode(core.mv.z, (core.mv.xy * 0.6).exp())
+    start = core.encode(core.mv.z.dual(), core.mv.rotor())
+    finish = core.encode(core.mv.z.dual(), (core.mv.xy * 0.6).exp())
     first, second = core.three_rolls(start, finish, core.mv.x * core.volume)
     reachable = core.annihilator(start)
 
@@ -50,8 +50,8 @@ def test_kernel_and_product_find_three_rolls_for_independent_endpoints() -> None
 
 
 def test_split_g2_deformation_preserves_products_and_physical_rolling() -> None:
-    start = core.encode(core.mv.z, core.mv.rotor())
-    finish = core.encode(core.mv.z, (core.mv.xy * 0.6).exp())
+    start = core.encode(core.mv.z.dual(), core.mv.rotor())
+    finish = core.encode(core.mv.z.dual(), (core.mv.xy * 0.6).exp())
     first, second = core.three_rolls(start, finish, core.mv.x * core.volume)
     generator = core.derivation(start, core.mv.x)
     amount = 0.12
@@ -83,15 +83,15 @@ def test_split_g2_deformation_preserves_products_and_physical_rolling() -> None:
             # The centre moves at radius four; rotation cancels its contact-point velocity.
             slip = 4 * contact_rate - rotation_rate.commutator(contact)
             # Rotation in the contact tangent plane would twist the ball about its contact.
-            twist = rotation_rate.scalar_product(contact * core.volume)
+            twist = rotation_rate.scalar_product(contact)
             np.testing.assert_allclose(slip.kernel, 0, atol=1e-5)
             np.testing.assert_allclose(twist.kernel, 0, atol=1e-5)
 
 
 def test_physical_route_lifts_commute_with_mirroring() -> None:
     mirror = (core.mv.x + core.mv.y + core.mv.z).normalized()
-    start_contact = core.mv.z
-    two_roll_contact = core.mv.x
+    start_contact = core.mv.z.dual()
+    two_roll_contact = core.mv.x.dual()
     start_attitude = core.mv.rotor()
     finish_attitude = (core.mv.xy * 0.6).exp()
     hemisphere = core.mv.x

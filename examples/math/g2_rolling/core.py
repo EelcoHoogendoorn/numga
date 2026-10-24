@@ -16,6 +16,8 @@ from numga.algebras import VGA3D as ga
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
+# Contact points are antivectors with intrinsic orientation.
+Point = ga.gatype.antivector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
 Even = ga.gatype.even()
@@ -43,9 +45,11 @@ def pairing(first: Octonion, second: Octonion) -> Scalar:
     return first.clifford_conjugate().scalar_product(second)
 
 
-def encode(contact: Vector, attitude: Rotor) -> State:
-    """A unit contact direction and ball attitude as one null split octonion."""
-    contact_plane = contact * volume                           # Bivector
+def encode(contact: Point, attitude: Rotor) -> State:
+    """A unit contact point and ball attitude as one null split octonion."""
+    # The contact enters by the plane through the centre square to it, `contact.dual_inverse()`, times the volume: a
+    # bivector of the attitude's own, extrinsic kind, so that the two multiply as quaternions.
+    contact_plane = contact.dual_inverse() * volume            # Bivector
     return contact_plane + contact_plane * attitude * volume
 
 
@@ -55,17 +59,18 @@ def normalize(state: State) -> State:
 
 
 def lift(state: State, hemisphere: Vector) -> State:
-    """Choose the representative whose contact lies in the specified open hemisphere."""
-    direction = state.restrict[2] / volume                     # Vector
-    return normalize(state * direction.scalar_product(hemisphere))
+    """Choose the representative whose contact lies on the positive side of the plane `hemisphere`, through the
+    sphere's centre."""
+    contact = (state.restrict[2] / volume).dual()              # Point
+    return normalize(state * (hemisphere & contact))
 
 
-def decode(state: State) -> tuple[Vector, Rotor]:
-    """Recover the contact direction and ball attitude from a null representative."""
+def decode(state: State) -> tuple[Point, Rotor]:
+    """Recover the contact point and ball attitude from a null representative."""
     state = normalize(state)                                   # State
     contact_plane = state.restrict[2]                          # Bivector
     partner = state.restrict.odd() / volume                    # Even
-    return contact_plane / volume, contact_plane.inverse() * partner
+    return (contact_plane / volume).dual(), contact_plane.inverse() * partner
 
 
 def annihilator(state: State) -> StateMap:

@@ -8,7 +8,7 @@ import numpy as np
 
 from numga import stack
 from examples.math.g2_rolling import core
-from examples.math.g2_rolling.core import Rotor, State, Vector, mv, volume
+from examples.math.g2_rolling.core import Point, Rotor, State, mv, volume
 
 # The ball's turn about the vertical between the ends of each route, in radians.
 ATTITUDE_ANGLE = -2.4
@@ -31,30 +31,30 @@ SYMMETRY_AMOUNT = 0.12
 # --- math -----------------------------------------------------------------------------
 def two_roll_route() -> State:
     """A product supplies the intermediate configuration between two chosen endpoints."""
-    start = core.encode(mv.z, mv.rotor())                              # State
-    finish = core.encode(mv.x, (mv.xy * (-ATTITUDE_ANGLE / 2)).exp())   # State
+    start = core.encode(mv.z.dual(), mv.rotor())                       # State
+    finish = core.encode(mv.x.dual(), (mv.xy * (-ATTITUDE_ANGLE / 2)).exp())   # State
     waypoint = core.lift(core.multiply(start, finish).cast(State), mv.x)  # State
     return stack([start, waypoint, finish])                            # [stops] State
 
 
 def three_roll_route() -> State:
     """Return to the same contact point with a prescribed change of attitude."""
-    start = core.encode(mv.z, mv.rotor())                              # State
-    finish = core.encode(mv.z, (mv.xy * (-ATTITUDE_ANGLE / 2)).exp())    # State
+    start = core.encode(mv.z.dual(), mv.rotor())                       # State
+    finish = core.encode(mv.z.dual(), (mv.xy * (-ATTITUDE_ANGLE / 2)).exp())   # State
     preference = mv.x * volume                                       # Bivector
     first, second = core.three_rolls(start, finish, preference)         # State, State
     # Select the representatives in the preferred contact hemisphere.
     return stack([start, core.lift(first, mv.x), core.lift(second, mv.x), finish])  # [stops] State
 
 
-def paths(stops: State, fractions: np.ndarray) -> tuple[Vector, ...]:
+def paths(stops: State, fractions: np.ndarray) -> tuple[Point, ...]:
     """Sample each contact arc for the fixed route drawing."""
     states = core.roll(stops[:-1, None], stops[1:, None], fractions)    # [legs, samples] State
-    contacts, _ = core.decode(states)                                 # [legs, samples] Vector, Rotor
+    contacts, _ = core.decode(states)                                 # [legs, samples] Point, Rotor
     return tuple(contacts)
 
 
-def rolling(stops: State, fractions: np.ndarray, n_hold_frames: int) -> Iterator[tuple[Vector, Rotor]]:
+def rolling(stops: State, fractions: np.ndarray, n_hold_frames: int) -> Iterator[tuple[Point, Rotor]]:
     """Yield the contact and attitude along each algebraically constructed roll."""
     for _ in range(n_hold_frames):
         yield core.decode(stops[0])
