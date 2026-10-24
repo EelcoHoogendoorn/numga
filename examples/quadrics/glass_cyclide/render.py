@@ -19,7 +19,7 @@ from examples.util.wgsl import Shader, supersampled
 
 types = dict(Sphere=core.Sphere, Euclidean=core.Euclidean, Point=core.Point, Rotation=core.Rotation, Quadric=core.Quadric)
 
-source = supersampled() + """
+source = """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, each negative
 // inside it, within a bounding sphere about `centre`. Its colour, the tint glass takes on per unit
 // length; the share of light it lets through, and its refractive index; two directions whose unit steps
@@ -226,7 +226,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 def shader() -> Shader:
-    return Shader(source, core.ga, types)
+    return Shader(supersampled() + source, core.ga, types)
 
 
 def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, turns: core.Rotation, eyes: core.Euclidean,

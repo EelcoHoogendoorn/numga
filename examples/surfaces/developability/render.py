@@ -95,7 +95,7 @@ def draw(mesh: core.Mesh, vertices: core.Point) -> np.ndarray:
     turn, eye = camera()
     # Drawn at every sample of each pixel, as many to a side as the traced pictures take, and averaged on the GPU: the
     # colour premultiplied by each pixel's coverage, the background showing through the rest.
-    drawn, = shader().draw_averaged(frame_shape, samples_per_side, 3 * len(mesh.faces),
+    drawn, = shader().draw_averaged(frame_shape, samples_per_side(), 3 * len(mesh.faces),
                                     points=vertices.batch(), faces=mesh.faces, turn=turn, eye=eye,
                                     lamp=light_direction.normalized(), half_view=half_view, colour=surface_colour,
                                     ambient=ambient)

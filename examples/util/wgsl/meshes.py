@@ -21,7 +21,6 @@ from examples.util.wgsl.solids import Motor, Plane, Point, View, ambient, fill_t
 
 # How many times finer than the image a mesh is drawn, across and up: one sample of a pixel to a drawn pixel, as many
 # as the traced solids take.
-oversampling = samples_per_side
 # The intrinsic unit: the volume four points span, from the origin along each axis.
 unit = origin & mv.point([1, 0, 0]) & mv.point([0, 1, 0]) & mv.point([0, 0, 1])
 
@@ -134,7 +133,7 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 @cache
 def shader(colour: str) -> Shader:
     # The colour a byte a channel, premultiplied by how much it hides, and the depth alone at full precision.
-    return Shader(source(colour).replace("OVERSAMPLING", f"{oversampling:.1f}"), ga, dict(Point=Point, Plane=Plane, Motor=Motor),
+    return Shader(source(colour).replace("OVERSAMPLING", f"{samples_per_side():.1f}"), ga, dict(Point=Point, Plane=Plane, Motor=Motor),
                   targets=("rgba8unorm", "r32float"))
 
 

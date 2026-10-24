@@ -8,6 +8,8 @@ and `screen(place)`, the place's direction across the view.
 
 from __future__ import annotations
 
+from functools import cache
+
 import numpy as np
 
 
@@ -17,19 +19,22 @@ def software() -> bool:
     return device().adapter.info["adapter_type"] == "CPU"
 
 
-# The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, one on the CPU, where more cost
-# too much.
-samples_per_side = 1 if software() else 4
+@cache
+def samples_per_side() -> int:
+    """The samples a side of every pixel, for every picture: sixteen to a pixel on a GPU, one on the CPU, where more
+    cost too much. Asked of the device when a picture is first drawn, so that importing the drawing code needs none."""
+    return 1 if software() else 4
 
 
 def supersampled() -> str:
     """WGSL for an image of `samples_per_side` squared samples a pixel, on a grid turned so that no two
     share a row or a column, which resolves near-horizontal and near-vertical edges as finely as a grid
     of that many to a side."""
-    count = samples_per_side**2
-    offsets = [((across * samples_per_side + down + 0.5) / count - 0.5,
-                (down * samples_per_side + samples_per_side - 1 - across + 0.5) / count - 0.5)
-               for across in range(samples_per_side) for down in range(samples_per_side)]
+    side = samples_per_side()
+    count = side**2
+    offsets = [((across * side + down + 0.5) / count - 0.5,
+                (down * side + side - 1 - across + 0.5) / count - 0.5)
+               for across in range(side) for down in range(side)]
     entries = ", ".join(f"vec2<f32>({x!r}, {y!r})" for x, y in offsets)
     return f"""
 // The image's size, columns then rows, and each pixel's average of what its samples see.
@@ -37,7 +42,7 @@ var<uniform> pixels: vec2<u32>;
 var<storage, read_write> image: array<Sample>;
 
 // Where a pixel's samples lie, in pixel widths from its centre: one in each cell of a grid `samples_per_side` across.
-const samples_per_side = {samples_per_side}u;
+const samples_per_side = {side}u;
 const n_samples = {count}u;
 const samples = array<vec2<f32>, {count}>({entries});
 
