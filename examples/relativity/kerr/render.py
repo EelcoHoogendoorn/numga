@@ -66,6 +66,21 @@ def animate_rays(paths: core.Antivector, horizons: core.Antivector,
     plt.close(figure)
 
 
+def draw_ray_comparison(paths: tuple[core.Antivector, core.Antivector], horizon: core.Antivector,
+                        extent: float) -> plt.Figure:
+    """Gauge and metric rays side by side, with the same colours, horizon and spatial scale."""
+    outline = coordinates(horizon, (core.mv.x, core.mv.y))
+    figure, axes = plt.subplots(1, 2, figsize=(10, 5), dpi=sweep_dpi, layout="constrained")
+    for ax, path in zip(axes, paths):
+        tracks = coordinates(path, (core.mv.x, core.mv.y)).transpose(1, 0, 2)
+        colours = plt.colormaps["coolwarm"](np.linspace(0.05, 0.95, tracks.shape[0]))
+        ax.add_collection(LineCollection(tracks, colors=colours, linewidths=1.0, alpha=0.9))
+        ax.add_patch(Polygon(outline, facecolor="#161b22", edgecolor="none", zorder=3))
+        ax.set(xlim=(-extent, extent), ylim=(-extent, extent), aspect="equal")
+        ax.set_axis_off()
+    return figure
+
+
 def star_texture(width: int, height: int, seed: int) -> np.ndarray:
     """A seamless sky image with unresolved stars and a faint dusty stellar band."""
     random = np.random.default_rng(seed)
@@ -253,6 +268,15 @@ def draw_camera(image: core.Image, temperature: core.Scalar, reference: float, i
     return draw_frame(np.clip(exposed(disk, reference) + sky, 0, 1).reshape(height, width, 3))
 
 
+def draw_camera_comparison(images: tuple[core.Image, core.Image], temperatures: tuple[core.Scalar, core.Scalar],
+                           reference: float, image_shape: tuple[int, int], sky_texture: np.ndarray) -> plt.Figure:
+    """Gauge and metric camera images side by side, each at its own pixels and the same exposure."""
+    height, width = image_shape
+    frames = []
+    for image, temperature in zip(images, temperatures):
+        disk, sky = camera_colours(image, temperature, image_shape, sky_texture)
+        frames.append(develop(disk, sky, reference).reshape(height, width, 3))
+    return draw_frame(np.concatenate(frames, axis=1))
 
 
 
@@ -267,6 +291,23 @@ def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: fl
     for passed in transmission.kernel[..., 0]:
         disk = scattered(2 * light * passed[:, None], image.disk_pixels, height * width)
         yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
+
+
+def animate_polarizer_comparison(images: tuple[core.Image, core.Image], temperatures: tuple[core.Scalar, core.Scalar],
+                                reference: float, transmissions: tuple[core.Scalar, core.Scalar],
+                                image_shape: tuple[int, int], sky_texture: np.ndarray) -> Iterator[np.ndarray]:
+    """The same rotating analyzer on both camera images, kept side by side at their native resolution."""
+    frames = (animate_polarizer(image, temperature, reference, transmission, image_shape, sky_texture)
+              for image, temperature, transmission in zip(images, temperatures, transmissions))
+    for pair in zip(*frames):
+        yield np.concatenate(pair, axis=1)
+
+
+def comparison_readout(position: core.Antivector, momentum: core.Vector, screen: core.ScreenFrame,
+                       metric_residual: core.Vector) -> dict[str, float]:
+    """Largest absolute coefficient differences between the two descriptions and the metric inverse residual."""
+    return {name: float(np.max(np.abs(value.kernel))) for name, value in (
+        ("position", position), ("momentum", momentum), ("screen", screen), ("metric inverse", metric_residual))}
 
 
 
