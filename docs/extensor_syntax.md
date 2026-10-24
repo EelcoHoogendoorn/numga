@@ -5,6 +5,8 @@ In numga, the `Extensor` abstraction unifies multivectors and linear/multilinear
 * **Arity 1**: Unary linear maps (`Output <- Input`).
 * **Arity n**: Multilinear maps (bilinear forms, energy functionals, and maps of more inputs).
 
+The identities that define the operations are collected in [conventions](conventions.md).
+
 ---
 
 ## 1. The Core Viewpoint: Multivectors Waiting for Arguments

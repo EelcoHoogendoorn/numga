@@ -11,6 +11,8 @@ The tutorial is an entry point, not an exhaustive treatment. It covers the opera
 5. Geometric calculus, in which the derivative is a vector, and its geometric product with a field gives the divergence and the curl together.
 6. Extensors, linear maps written in the algebra, which the [extensor tutorial](../extensors/00-introduction.md) takes up from here.
 
+The definitions numga uses for these operations, the regressive product and the dual among them, are collected in the [conventions](../../conventions.md).
+
 Applications run from geometry and mechanics to relativity and quantum physics. A few runnable examples that stay close to the algebra itself:
 
 - [Two mirrors](../../../examples/math/reflections/kaleidoscope.ipynb), whose product is a turn by twice the angle between them.
