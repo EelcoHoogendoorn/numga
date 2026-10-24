@@ -1,108 +1,201 @@
-# Extensors and common practice, case by case
+# Extensors and Common Practice
 
-This document compares, case by case, how problems in applied fields are commonly set up with matrices, indices and coordinates, and how the same problems are set up with extensors, and reflects on the practical differences between the two. The cases come from graphics, robotics, estimation, continuum mechanics and electrodynamics. Each one pairs a documented habit of the field, with references, with its extensor formulation and, where there is one, with the numga example that uses it.
+This document compares common approaches to applied problems with the constructions that arise naturally in geometric algebra and extensors. Each case describes how the problem is usually formulated, develops the geometric construction, and examines the practical consequences for modelling and computation. The comparisons focus on what becomes simpler, which choices and conventions become explicit, and where mistakes can arise. Together, they show how a choice of mathematical language shapes the work of building and solving a model.
 
-The two formulations have the same reach: anything written with extensors can also be written with matrices, and the arithmetic can be the same. The differences are practical. Typed axes and the absence of a transpose decide which formulations are easy to write, and in the cases below the habitual formulation, with its known pitfalls, is the one that is awkward or impossible to write with extensors, while the formulation that avoids the pitfalls is the natural one. The [frameworks document](frameworks.md) sets out the formal relation between extensors, linear algebra, tensors and forms; this document is the practical evidence alongside it.
+The [framework comparison](frameworks.md) develops the relation to linear algebra, tensors and forms. The snippets use the [extensor syntax](extensor_syntax.md), [conventions](conventions.md) and [orientation rules](orientation.md) documented separately.
 
-The cases fall into three groups. The first concerns maps, forms and the pairings between them; the second, tensors with many axes or antisymmetric parts, and the encodings that fit them into vectors and matrices. The third collects cases whose benefit comes from geometric algebra itself rather than from extensors, kept apart so that the two are not credited for each other.
+## Maps and numerical methods
 
-## Maps, forms and pairings
+### Scene reconstruction and camera alignment
 
-These cases concern maps: how they pair, compose, move and decompose. With typed axes and no transpose, the form a problem wants is the one that is easiest to write, and the habitual forms are awkward or cannot be written at all.
+Scene reconstruction estimates landmark positions and camera poses from image measurements. A common formulation minimizes weighted squared image errors, using Gauss–Newton and the normal equations to compute an update. A Schur complement eliminates the landmark steps before solving for the camera steps. [Ceres](https://ceres-solver.readthedocs.io/latest/nnls_solving.html) develops these methods for camera alignment.
 
-**Normal equations and transposes in bundle adjustment.** The [multiview example](../examples/estimation/multiview/core.py) was first written with a coefficient transpose, as Gauss-Newton is taught: Jacobians, the normal matrix $J^T J$, and the right-hand side $J^T r$.
+The [multiview example](../examples/estimation/multiview/core.py) represents each image measurement by a quadratic cost on the sensor. Pulling that cost through the camera gives a sight cone. Its polar plane vanishes on the sight line, making it tempting to treat the plane as a residual and form normal equations from its coefficients. But the cone already supplies a quadratic cost and its weighting. Camera motion can enter that cost directly:
 
 ```python
-h = (j.transpose()(j)).sum(axis=0)                   # Twist <- Twist
-rhs = -(j.transpose()(res)).sum(axis=0)              # Twist
-step = h.lstsq(rhs, rcond=1e-4)
+motion = -Twist.commutator(seen)                         # Point <- Twist
+curvature = (cones(motion) & motion).sum(axis=0)         # Scalar <- (Twist, Twist)
+slope = (cones(seen) & motion).sum(axis=0)               # Scalar <- Twist
+step = curvature.lstsq(-slope, rcond=1e-4)               # Twist
 ```
 
-The transpose identified a map's output with its input by index label, a Euclidean metric on coefficients hidden in the interface, and the residual needed a metric of its own. Removing the transpose from numga (commit `d0b41af`) left no way to write this, and the form that remained is the cone value itself: the curvature is a cone joined with the motion, the gradient the cone at the point joined with the motion, with no residual and no residual metric.
+Squaring the polar-plane residual applies the cone's weighting twice and introduces a coefficient norm on planes. Using the cone value directly preserves the intended weighting and avoids building a second least-squares objective around an already quadratic cost. The curvature and slope are geometric expressions ready for the numerical solve.
+
+The joint solve also benefits from choosing the unknowns geometrically. Cameras step by twists and landmarks by directions, so the landmark blocks contain no redundant homogeneous scale. With the landmarks constrained by the views, `point_curvature[:, None].solve(cross_curvature)` gives their response to a camera step by a direct solve, avoiding a pseudoinverse over homogeneous point coordinates. Schur elimination then folds those responses into the camera problem. Depth weighting relates the cone costs to pixel errors, and fixed cameras anchor the scene.
+
+In matrix notation, a cone cost $x^{\mathsf T}Qx$ and a point-motion map $M$ give the local quadratic form $M^{\mathsf T}QM$. Treating $Qx$ as a Euclidean residual instead gives $M^{\mathsf T}Q^{\mathsf T}QM$. The extra copy of the cone comes from the choice of objective. The geometric construction makes that choice visible.[^multiview-history]
+
+### Motion and force in robot control
+
+A robot can move freely in some directions while pressing against a constraint in others. Splitting these tasks by Euclidean orthogonality of six motion coordinates mixes angular and linear quantities and depends on how the coordinates are chosen. Duffy's [critique of orthogonal complements in hybrid control](https://onlinelibrary.wiley.com/doi/10.1002/rob.4620070202) concerns this identification of motion and force spaces. Their physically meaningful relation is the power a force system supplies to a motion.
+
+In numga a rate is a twist and a force system a forque, with complementary grades and opposite orientations. `twist & forque` gives power. In the [odometry example](../examples/estimation/odometry/core.py), the same distinction separates a pose correction from the differential of its cost: information takes twists to forques, and covariance runs in the opposite direction. Conjugate gradients pairs those types and preconditions by solving the information map.
+
+The types carry the distinction through the products, compositions and solves. An inertia or information form supplies a meaningful weighting of motions; a coefficient dot product would silently choose its own weighting of angular and linear coordinates.
+
+### Surface normals under deformation
+
+A surface normal can describe a chosen positive side or encode the area and winding of a patch. Graphics commonly stores either as three coefficients. Under an invertible linear deformation, a side covector uses the inverse transpose; an area normal uses the cofactor matrix. They differ by the determinant, including its sign under a reflection. Reed develops the distinction through [areas](https://www.reedbeta.com/blog/normals-inverse-transpose-part-1/) and [dual spaces](https://www.reedbeta.com/blog/normals-inverse-transpose-part-2/).
+
+The [normals example](../examples/orientation/normals/core.py) gives the side and winding different orientations. Reflecting a triangle carries its chosen side and its ordered vertices consistently, even when their normal coefficients acquire different signs. For a general deformation, the outermorphism carries the patch forward. The [adjugate](tutorial/extensors/10-the-adjugate.md) is the dual map on complementary spaces, defined by `T.adjugate()(c) & x == c & T(x)`. It carries a plane condition backward:
 
 ```python
-curvature = (local_cones(motion) & motion).sum(axis=0)        # Scalar <- (Twist, Twist)
-gradient = (local_cones(local_points) & motion).sum(axis=0)   # Scalar <- Twist
-step = curvature.lstsq(-gradient, rcond=1e-4)                 # Twist
+input_plane = deformation.adjugate()(output_plane)       # Plane
 ```
 
-The Schur variant changed the same way. Its transposed version formed the point blocks as maps and inverted them with a pseudoinverse, which needed a gauge on homogeneous points; the typed version moves points by directions and solves the point curvature against the cross term, with the twist axis carried, `h_pt.solve(h_cross)`.
+This pullback exists even for a singular deformation. In dual bases it is represented by a transpose; carrying an input plane forward while preserving its readings requires solving through it, which gives the inverse transpose when the deformation is invertible. The distinction prevents a backward measurement map from being used as a forward normal transform. It also leaves the cofactor available when a volume collapses but some surface areas survive.
 
-**Orthogonality of twists and wrenches.** Hybrid force and motion control was built on orthogonal complements of twist and wrench spaces, with a dot product on six coordinates. J. Duffy, [The fallacy of modern hybrid control theory that is based on "orthogonal complements" of twist and wrench spaces](https://onlinelibrary.wiley.com/doi/10.1002/rob.4620070202) (Journal of Robotic Systems, 1990), showed that this dot product mixes units and depends on the frame, and that the meaningful pairing of a twist is with a wrench. In numga twists and forques are different types, and the pairing between them is the regressive product, which needs no metric. The conjugate gradients of the [odometry example](../examples/estimation/odometry/core.py) take every inner product they need between a twist and a line, and precondition with a map of type `Line <- Twist` per pose; a dot product of two twists, the one that mixes radians with meters, is not available to write.
+### Area elements and stress measures
 
-**Normals under a transform.** The standard practice in graphics is the normal matrix, the inverse transpose of the model matrix. It needs an inverse, fails for a singular transform, and flips normals under reflections. N. Reed, [Normals and the Inverse Transpose, Part 1: Grassmann Algebra](https://www.reedbeta.com/blog/normals-inverse-transpose-part-1/), and [Transforming normals: adjugate transpose vs inverse transpose](https://www.forwardscattering.org/post/62) argue for the adjugate, from the observation that a normal is a bivector. Here that is the default: a map on vectors moves bivectors by its outermorphism, and a map on points moves planes by its adjugate, defined for singular maps such as a camera.
+A deformation changes both the area on which a load acts and the directions in which that load is expressed. Continuum mechanics records these choices through the Cauchy and Piola–Kirchhoff stress measures. Their component formulas combine the deformation gradient, its inverse and its determinant.
+
+The [area transport example](../examples/mechanics/area_transport/core.py) carries an oriented patch by moving its spanning edges together. A flux density is carried backward through that area map so that it measures the same flux:
 
 ```python
-on_planes = (Plane & Point).solve(Plane & collineation)   # Plane <- Plane, singular collineation included
+areas = deformation.outermorphism(Patch)                 # Patch <- Patch
+flux_pullback = areas.adjugate()                          # Flux <- Flux
 ```
 
-**Area elements and stress measures.** Continuum mechanics moves area elements through a deformation $F$ by Nanson's formula, $n\, da = J F^{-T} N\, dA$, and keeps a zoo of stress measures, Cauchy, first and second Piola-Kirchhoff, and Kirchhoff, converted into one another by factors of $F$, $F^{-T}$ and $J$; keeping track of which factor goes where is a well-known source of mistakes. An area element is a bivector, and a deformation moves it by its outermorphism, the two edges moved together. The [area transport example](../examples/mechanics/area_transport/core.py) carries oriented patches this way, and gets the cofactor that Nanson's formula needs as the adjoint of the adjugate of that map, without an inverse, at zero volume included:
+Both maps remain defined when the deformation is singular. Stress conversion follows the same geometry: composing a map from current patches to forces with `areas` makes it act on reference patches. Expressing its output in reference directions requires a further inverse deformation. Each factor has a role on an input or an output, which makes the placement of the factors visible.
+
+In continuum-mechanics matrix notation, Nanson's relation is $n\,da=J F^{-\mathsf T}N\,dA$. With traction written as $t=\sigma n$, the first and second Piola–Kirchhoff stresses are $P=J\sigma F^{-\mathsf T}$ and $S=F^{-1}P$. The cofactor extends to singular $F$; the expressions requiring $F^{-1}$ do not. [Traction and stress](https://archive.nptel.ac.in/content/storage2/courses/105106049/lecnotes/mainch4.html) develops these measures and their index conventions.
+
+### Vibration modes
+
+A common frustration in numerical geometry is a matrix that fails to display the symmetry expected from the physical model. Averaging it with its transpose is a tempting repair; forming normal equations is another familiar route to a symmetric system. The first changes the operator, and the second squares its singular values and condition number. When the symmetry belongs to a pairing between different spaces, the useful step is to recover that pairing.
+
+A vibration mode is a motion for which elastic and inertial loads are proportional. The [modes example](../examples/mechanics/modes/core.py) constructs stiffness from springs and inertia from masses. Both take twists to forques, so their coefficient arrays need not display the symmetry of the energies. Pairing each output with a twist exposes it:
 
 ```python
-areas = deformation.outermorphism(Bivector)          # Bivector <- Bivector
-cofactor = areas.adjugate().adjoint()                 # Vector <- Vector: area normals carried forward
-```
-
-The stress measures follow the same way. The Cauchy stress is a map from oriented areas of the deformed body to forces. Composed with the area map, it takes areas of the undeformed body to forces, the first Piola-Kirchhoff stress, and composed further with the inverse deformation on its output, it takes them to forces in the undeformed frame, the second. The factors of $J$ and $F^{-T}$ are what the composition with the area map is in coordinates.
-
-**Modes from a map that is not symmetric.** A stiffness assembled as a map from twists to forques, rates to momentum lines, is not symmetric in coordinates, since its input and output are different kinds of things. The habitual remedies are symmetrizing, which discards information, or the normal equations, which square the condition number and cost a product. The [modes example](../examples/mechanics/modes/core.py) pairs the output with `Twist`, the space of rates, giving a symmetric form on pairs of rates, and solves the generalized eigenproblem on the two forms directly.
-
-```python
-pe_form = Twist & stiffness                     # Scalar <- (Twist, Twist)
-ke_form = Twist & inertia                       # Scalar <- (Twist, Twist)
+pe_form = Twist & stiffness                              # Scalar <- (Twist, Twist)
+ke_form = Twist & inertia                                # Scalar <- (Twist, Twist)
 values, modes = pe_form.eigh(ke_form)
 ```
 
-**Fitting a rotation.** The accepted method is Kabsch's: the SVD of a cross-covariance matrix, with a documented correction, flipping a sign by the determinant, because the SVD can return a reflection. The correction is easy to get wrong in practice; see for instance the [reflection fix in MapClosures](https://github.com/PRBonn/MapClosures/pull/118). Horn's and Davenport's methods avoid it with a quaternion eigenproblem, on a 4×4 matrix assembled by hand. In the [registration example](../examples/geometry/registration/core.py) the fit is the symmetric form `target.scalar_product(Rotor >> source)` on pairs of rotors, and its top eigenvector is a rotor by type, so no reflection can come out of it.
+The pairing expresses the original maps as energy forms, preserving their information. Their symmetry follows from the spring and mass constructions, and inertia supplies the physical comparison between modes. The geometry therefore leads directly to a symmetric generalized eigenproblem, without an artificial symmetrization or a normal-equation product.
+
+In structural-mechanics notation the problem is $Ku=\omega^2Mu$, as in [finite-element modal analysis](https://docs.frontistr.com/en/theory/solution_methods/03_eigen.html). The eigenvalues above are squared angular frequencies, and the inertia form must be positive definite on the motions being solved for.
+
+### Fitting a rotation
+
+Rigid registration aligns corresponding points after subtracting their centroids. The Kabsch method takes an SVD of the cross-covariance and includes a determinant correction to select a proper rotation. That correction is easy to mishandle: omitting it permits a reflection, and putting the sign in the wrong place can spoil the fit. The [reflection fix in MapClosures](https://github.com/PRBonn/MapClosures/pull/118) gives a concrete implementation example; the [Kabsch–Umeyama derivation](https://doi.org/10.6028/jres.124.028) states the constrained problem.
+
+The [registration example](../examples/geometry/registration/core.py) instead maximizes alignment as a quadratic form on the four-dimensional Euclidean rotor space:
 
 ```python
-alignment = target.scalar_product(Rotor >> source).sum(axis=0)   # Scalar <- (Rotor, Rotor)
+alignment = target.scalar_product(Rotor >> source).sum(axis=0)
 values, rotors = alignment.eigh()
+rotation = rotors[values.argmax()].normalized()
 ```
 
-**Maps in a moving frame.** The constitutive relations of a moving medium, Minkowski's, are among the more involved formulas of electrodynamics: the medium's response at rest, rewritten for an observer it moves past, mixes the electric and magnetic parts of both the field and the excitation. A constitutive relation is a map from fields to excitations, and moving a map is a composition: the field pulled into the rest frame, the response at rest, the excitation pushed back out. The [constitutive example](../examples/electromagnetism/constitutive/core.py) writes it in one line, and the [moving charge example](../examples/electromagnetism/moving_charge/core.py) builds the field gradients of a charge at any speed the same way, from the charge at rest:
+The normalized solution is a proper rotation, so a reflection cannot be selected. This is the quaternion eigenproblem of [Horn](https://people.csail.mit.edu/bkph/papers/Absolute_Orientation.pdf), whose four-by-four matrix is usually supplied as a separate coefficient formula. Here the alignment expression constructs that form. The objective and the solution live in rotation space, and the determinant correction disappears from the implementation.
+
+### Material laws in moving frames
+
+A moving dielectric mixes the electric and magnetic components of both the field and the material response. Component formulations express that mixing through coupled transformation formulas. The underlying operation is to evaluate the rest-frame material on the rest-frame field and carry its response back.
+
+The [constitutive example](../examples/electromagnetism/constitutive/core.py) expresses that operation directly:
 
 ```python
-rotor >> base_medium(rotor << Bivector)                       # Antibivector <- Bivector
-charge.boost >> (radial + turning)(charge.boost << Vector)   # Bivector <- Vector
+moving_medium = boost >> rest_medium(boost << Bivector)  # Antibivector <- Bivector
 ```
 
-The same composition moves an inertia between body and space frames, the place where $R I R^T$ and $R^T I R$ get confused; local inputs, global outputs, or both, are three different compositions with three different types, as in the [extensor tutorial's chapter on moving maps](tutorial/extensors/08-moving-maps.md).
+The same composition moves an inertia between body and space frames. Applying a motion to the output alone, to the input alone, or to both produces different maps, as the [moving-maps tutorial](tutorial/extensors/08-moving-maps.md) shows. The expression records which frame supplies each argument, reducing the need to reconstruct that information from matrix order. A boost also carries the [moving charge's field gradient](../examples/electromagnetism/moving_charge/core.py), whose type is `Bivector <- Antivector`.
 
-## Tensors and their encodings
+In matrix notation a map moved by a change of frame has the form $A_{\mathrm{out}}TA_{\mathrm{in}}^{-1}$. The matrices on the two sides represent the actions on their respective spaces; they need not be the same matrix.
 
-These cases concern tensors with many axes or with antisymmetric parts, and the encodings that tensor practice uses to fit them into vectors and matrices.
+## Tensor representations
 
-**Antisymmetric objects encoded as vectors.** In three dimensions, index notation turns an antisymmetric object into a vector through the Levi-Civita symbol, and the encoding leaves traces in the formulas. The inertia tensor is the standard case: $I_{ij} = \sum m\,(r^2 \delta_{ij} - r_i r_j)$, with a trace subtracted, takes an angular velocity vector to an angular momentum vector. Both are planes of rotation encoded as their normals, and the $r^2 \delta_{ij}$ term is what the encoding costs; it has no counterpart in other dimensions. As a map on the planes themselves, the inertia is the map from a body's rate to each mass point joined with its velocity, with nothing subtracted, as in the [spinning top example](../examples/mechanics/spinning_top/core.py):
+### Inertia, vorticity and curvature
+
+Three-dimensional vector mechanics describes a rotation by an arrow along its axis. An inertia matrix then maps angular velocity to angular momentum. The representation is compact, but the identification of a rotation plane with its normal depends on three-dimensional space and its orientation.
+
+The [spinning top](../examples/mechanics/spinning_top/core.py) builds inertia from each mass point and the velocity induced there by a rate:
 
 ```python
-(points & points.commutator(Line) * masses).sum()     # momentum <- rate
+inertia = (points & points.commutator(Rate) * masses).sum()  # Forque <- Rate
 ```
 
-Fluid mechanics has the same encoding with a factor in it: the vorticity vector, the curl of the velocity, is twice the angular velocity of a fluid element, and the spin tensor, the antisymmetric part of the velocity gradient, is half the dual of the vorticity, a standard place to lose a factor of two. In the [vortices example](../examples/fluids/vortices/core.py) the derivative of the flow is one even element, the divergence plus the vorticity bivector. The Riemann tensor has pair symmetries, antisymmetric in each pair of indices and symmetric between the pairs, which index notation states as identities; as a symmetric map on bivectors, the antisymmetry is the type and only the symmetry remains to state. The Petrov classification works with it in that form, and the [curvature example](../examples/relativity/curvature/core.py) types it as `Bivector <- Bivector` and binds an observer into it for the tidal map.
+The same construction applies to rotational and translational motion in projective geometry. Changing dimension changes the types and their coefficient counts while preserving the construction. In vector-mechanics notation the rotational part reads $I_{ij}=\sum m(r^2\delta_{ij}-r_i r_j)$; the terms arise when the action on rotation planes is expressed through axis vectors.
 
-**Fourth-order tensors flattened into matrices.** To compute with the elasticity tensor, engineering practice flattens it into a 6×6 matrix in Voigt notation, with the shear components of strain doubled, the engineering shear strain. The flattened matrix does not keep the tensor's norm or eigenvalues, which Mandel notation repairs with factors of $\sqrt{2}$; P. Helnwein, [Some remarks on the compressed matrix representation of symmetric second-order and fourth-order tensors](https://www.sciencedirect.com/science/article/abs/pii/S0045782500002632) (Computer Methods in Applied Mechanics and Engineering, 2001), sorts out the covariant and contravariant readings these representations need. The [crystal waves example](../examples/mechanics/crystal_waves/core.py) builds the stiffness of a cubic crystal as a trilinear map on vectors, binding a heading as two of its arguments to get the map whose eigenvalues are the wave speeds; nothing is flattened, so no factor is to be placed.
+Vorticity has a similar distinction. Vector calculus uses the curl, whose magnitude is twice a fluid element's angular speed in rigid rotation. The [vortices example](../examples/fluids/vortices/core.py) keeps the velocity gradient as a map on displacements and obtains its divergence and vorticity together through the geometric derivative. The factor relating vorticity to angular speed remains part of the mathematics; the rotation plane is represented directly.
+
+For curvature, tensor indices express antisymmetry in each pair. The [gravitational-wave example](../examples/relativity/curvature/core.py) makes those pairs the input and output spaces, `Bivector <- Antibivector`: a spacetime area produces a plane of rotation. Pair symmetry and the Bianchi identity remain conditions on curvature. Binding an observer into the map gives the tidal response without expanding the paired indices.
+
+### Elasticity and compressed tensor notation
+
+Elasticity often compresses symmetric strain and stress tensors into six coordinates and the stiffness into a six-by-six matrix. Engineering Voigt notation doubles the shear strains; Mandel notation uses square-root-of-two factors to preserve the tensor inner product in an orthonormal compressed basis. Mixing the encodings gives incorrect energies and spectra. [Helnwein](https://repositum.tuwien.at/handle/20.500.12708/174886) explains the covariant and contravariant coordinates behind these representations.
+
+The [crystal-wave example](../examples/mechanics/crystal_waves/core.py) constructs stiffness as a map taking a face, a displacement and a wavevector to a traction. Binding the propagation heading gives the response whose modes are the wave polarizations:
 
 ```python
-crystal(heading, Vector, heading).eigh()                # density times squared speed, polarization
+christoffel = crystal(heading, Antivector, heading)       # Vector <- Antivector
+wave_form = christoffel(Antivector) & Antivector          # Scalar <- (Antivector, Antivector)
+length_form = Antivector.dual().dot(Antivector.dual())    # Scalar <- (Antivector, Antivector)
+values, polarizations = wave_form.eigh(length_form)
 ```
 
-**Which index is which.** Textbooks differ on whether the first index of the stress tensor is the direction of the force or the normal of the face, as the [notes on traction and stress](https://archive.nptel.ac.in/content/storage2/courses/105106049/lecnotes/mainch4.html) of NPTEL point out. For the symmetric Cauchy stress the choice does not change a result; for the first Piola-Kirchhoff stress, which is not symmetric, it decides the formula. With typed axes the question does not arise: a stress is a map from oriented areas to forces, and its input and output have different types.
+The eigenvalues are density times squared wave speed. Binding arguments gives the wave problem directly from the material law, with displacement and traction kept distinct. The geometric products determine the contractions, and the calculation bypasses the six-coordinate strain encoding and its shear-factor conventions.
 
-**The constitutive tensor without a metric.** Tensor electrodynamics has a premetric formulation, in F. W. Hehl and Y. N. Obukhov, [Foundations of Classical Electrodynamics: Charge, Flux, and Metric](https://books.google.com/books/about/Foundations_of_Classical_Electrodynamics.html?id=48-hHXL-CYUC) (2003). Maxwell's equations themselves need no metric; the constitutive tensor, with 36 components, takes field strengths to excitations, both 2-forms, and all the metric there is enters through it. The metric is not avoided, it is located: in a vacuum the constitutive map is the metric's duality, and in a medium it replaces it. That is the form an extensor takes without being asked: the [constitutive example](../examples/electromagnetism/constitutive/core.py) types the medium as `Antibivector <- Bivector`, a map from field bivectors to their complements, six by six, and writes the field equations of a plane wave as wedges, `(k ^ Bivector) + (k ^ medium).dual()`, with the metric only in the medium.
+### Stress index conventions
 
-## The algebra itself
+A stress component needs two directions: the face on which the traction acts and the component of the traction being read. Texts differ on which receives the first index, as the [NPTEL stress notes](https://archive.nptel.ac.in/content/storage2/courses/105106049/lecnotes/mainch4.html) explain. Symmetric Cauchy stress can conceal a transposition mistake that becomes visible for first Piola–Kirchhoff stress.
 
-These cases are benefits of geometric algebra itself rather than of extensors: they concern the objects, not maps between them, and hold independently of the representation of maps.
+An extensor declares its face argument and force output. Application, composition and frame changes follow that declaration. Converting an external coefficient array still requires knowing its convention, but the convention need not be carried as an informal index rule through the subsequent calculation.
 
-**Spatial vectors.** R. Featherstone's spatial vector algebra, in A Beginner's Guide to 6-D Vectors (IEEE Robotics & Automation Magazine, 2010) and his [notes on spatial vector algebra](http://royfeatherstone.org/teaching/2008/notes.pdf), keeps motion and force vectors apart with two cross products, `crm` and `crf`, and transforms forces by $X^* = X^{-T}$; screw theory pairs them through a swap of the two 3-vector halves. Here a twist and a forque are a bivector and a line of the same algebra: one commutator acts on both, one sandwich moves both, and the swap is the regressive product, a signed permutation of coefficients.
+### Electromagnetic constitutive tensors
 
-**Blending rigid motions.** Linear blend skinning, the standard in real-time animation, blends transformation matrices, and a blend of rigid transforms is not rigid: the candy-wrapper collapse at twisting joints is its well-known artifact. L. Kavan, S. Collins, J. Žára and C. O'Sullivan, [Skinning with dual quaternions](https://dl.acm.org/doi/abs/10.1145/1230100.1230107) (I3D 2007), blend in the even subalgebra instead, and the artifact goes. Dual quaternions are the motors of projective geometric algebra; in that algebra the blend of motors is the natural one to write, and the matrix blend is not.
+Electromagnetism commonly separates electric field, magnetic induction, electric displacement and magnetic field strength. Their material relations may be assembled into block matrices. Premetric electrodynamics instead starts from field strength and excitation as distinct two-forms, the excitation twisted, and places the metric and material response in a constitutive map. [Hehl, Itin and Obukhov](https://arxiv.org/abs/physics/0610221) develop this formulation.
 
-**Fields under a boost.** The transformation of the electric and magnetic fields between frames, in J. D. Jackson's Classical Electrodynamics, splits each field into parts parallel and perpendicular to the velocity, with factors of $\gamma$ and cross products between the two fields, and is easy to garble. The field is one bivector, and a boost moves it by one sandwich.
+The [constitutive example](../examples/electromagnetism/constitutive/core.py) follows that separation with a map of type `Antibivector <- Bivector`. Both spaces have six coefficients in spacetime, while their orientations distinguish field from excitation. The same map can be composed with a boost, applied to a field, or inserted into the wave equations.
 
-**Composition of boosts.** Two boosts in different directions compose to a boost and a rotation, and the rotation is what Thomas precession accumulates. Getting it wrong is part of the history of the electron's spin: the spin-orbit coupling of Uhlenbeck and Goudsmit came out twice the observed value until L. H. Thomas, [The motion of the spinning electron](https://www.nature.com/articles/117514a0) (Nature, 1926), supplied the relativistic factor of one half, and the derivation remains a standard place to stumble. With boosts as rotors, the composition is their product, and the rotation is its part in the planes of space.
+The practical comparison is with both traditions. The four-field notation exposes an observer's electric and magnetic split; the premetric formulation exposes the constitutive law; the extensor formulation makes that law a geometric map that participates in the same products as the field. A change of medium changes the response map while the exterior field equations keep their form.
 
-**Pseudovectors under reflection.** In 3D vector notation, encoding magnetic fields, angular momenta and torques as axial vectors or pseudovectors replaces oriented planes with arrows and requires a separate reflection sign rule. That bookkeeping is a cost of the representation. Keeping the blades and their orientations lets the products determine the sign.
+## Representations in geometric algebra
 
-**Quaternion conventions.** Attitude estimation in robotics and aerospace uses two quaternion multiplications, Hamilton's and a flipped one associated with JPL, together with active and passive readings and world-to-body or body-to-world frames. H. Sommer, I. Gilitschenski, M. Bloesch, S. Weiss, R. Siegwart and J. Nieto, [Why and How to Avoid the Flipped Quaternion Multiplication](https://www.mdpi.com/2226-4310/5/3/72) (Aerospace, 2018), document the confusion and how to migrate between conventions. A rotor has one product, and moving a value forward and back is `>>` and `<<`.
+These cases concern the geometric objects themselves. Their benefits also apply to GA calculations that do not construct extensors.
+
+### Spatial vectors
+
+[Featherstone's spatial vector algebra](https://royfeatherstone.org/teaching/2008/notes.pdf) packages rigid-body motion and force into separate six-dimensional spaces. Reciprocal bases make their power pairing a coefficient dot product. Motion and force transform differently, and their cross-product actions have separate matrix representations.
+
+Projective GA represents a twist by an extrinsic bivector and a forque by an intrinsic antibivector. One commutator acts on both, one motor action moves both, and the regressive product gives their power pairing. Those same operations act on the points, planes and rays used elsewhere in a robot's model. Separate cross-product matrices, transformation rules and pairing matrices become instances of the algebra's products.
+
+### Blending rigid motions
+
+Linear blend skinning averages transformation matrices. The average need not be rigid, producing the familiar loss of volume at a twisting joint. [Dual quaternion skinning](https://users.cs.utah.edu/~ladislav/kavan07skinning/kavan07skinning.pdf) blends representations of rigid motions and normalizes the result.
+
+The [skinning example](../examples/surfaces/skinning/core.py) writes both constructions in the same algebra:
+
+```python
+motor_skin = (root + weight * (tip - root)).normalized() >> vertices
+matrix_skin = ((root >> Point) + weight * ((tip >> Point) - (root >> Point)))(vertices)
+```
+
+The first blends the motors; the second blends their point maps. Normalizing the motor blend gives a rigid motion at each vertex and avoids the collapse caused by averaging rotation matrices. Compatible motor signs must be chosen before blending, since a motor and its negative describe the same motion but can cancel in a sum.
+
+### Electromagnetic fields under a boost
+
+Three-vector formulas transform the electric and magnetic fields by splitting each into parts parallel and perpendicular to the relative velocity. A Lorentz-tensor formulation transforms the antisymmetric field tensor instead. Both describe the mixing seen by a moving observer.
+
+Spacetime GA represents the field by one bivector. `boost >> field` transforms it, and the observer supplies the electric and magnetic split when a measurement needs it. The [moving-charge example](../examples/electromagnetism/moving_charge/core.py) uses this action to obtain moving fields from rest-frame constructions. The calculation avoids maintaining separate transformation formulas for the two spatial fields.
+
+### Composition of boosts
+
+Successive boosts in different directions include a spatial rotation. A calculation that tracks only the final velocity discards that rotation. Its effect on spin was the correction in [Thomas's account of the spinning electron](https://www.nature.com/articles/117514a0).
+
+The [Thomas-precession example](../examples/relativity/thomas_precession/core.py) carries a spin by a product of boost rotors. The product keeps the frame's orientation as well as its velocity, so the accumulated rotation follows from composing the boosts. A final pure boost brings the velocity back to the observer's frame and exposes that rotation. The same geometric product handles the boosts, their composition and their action on the spin.
+
+### Reflections and pseudovectors
+
+Vector notation assigns a determinant sign to axial vectors so that angular momentum and magnetic quantities transform correctly under reflection. A separate rule is needed whenever an oriented plane is represented by its normal arrow.
+
+The [orientation examples](why_orientation.md) retain the geometry and its orientation on the type. A rotation plane, a directed line and a surface's positive side can therefore respond differently to the same mirror. The reflection operation propagates those differences through the calculation. This moves the sign bookkeeping into the algebra's operations and permits the result to be checked by reflecting the complete scene.
+
+### Quaternion conventions
+
+Quaternion formulas differ in multiplication order, component order and the direction of the represented frame change. [Sommer and colleagues](https://arxiv.org/abs/1801.07478) document the confusion between Hamilton multiplication and its flipped alternative, and give procedures for identifying and translating conventions.
+
+In numga the geometric product fixes composition, and `rotor >> value` and `rotor << value` distinguish the forward and reverse actions for a normalized rotor. Named blades also identify the planes used to construct it. Exchanging quaternion coefficients with another library still requires a convention conversion; within the geometric calculation, the action and its direction are explicit.
+
+[^multiview-history]: The multiview example underwent this reformulation in [commit `d0b41af`](https://github.com/EelcoHoogendoorn/numga/commit/d0b41af9f270900e609898a54823f367f601ba4e). The earlier implementation squared polar-plane residuals and used a pseudoinverse on homogeneous landmark blocks; the revision worked directly with cone costs and landmark displacements.

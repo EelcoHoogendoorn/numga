@@ -1,90 +1,152 @@
-# Extensors, linear algebra, tensors and forms
+# Extensors, Linear Algebra, Tensors and Forms
 
-Extensors, linear algebra, tensor algebra and the exterior algebra of differential forms describe overlapping territory, and the same questions come up whenever they meet: is an extensor just a tensor, is a map just a matrix, and where did the transpose go. This document answers them at the level of what each framework is, without derivations.
+This document compares geometric algebra and extensors with linear algebra, tensors, exterior algebra and differential forms. It is intended for readers familiar with these frameworks who want to understand how they relate: which objects and operations they share, which are special cases of broader constructions, and where additional structure is needed. The aim is to show how familiar mathematics fits into the combined algebra, and what follows from having its objects, products and maps available together.
 
-## What each one is
+Background on [extensors](multiple_lenses.md), [syntax](extensor_syntax.md), [conventions](conventions.md) and [orientation](why_orientation.md) is developed separately.
 
-**Linear algebra** studies vectors and the linear maps between them. In a basis, a map is a matrix, and most of its operations, the transpose, the trace, the determinant, are defined on that matrix.
+## The containment relationships
 
-**Tensor algebra** extends linear algebra to multilinear maps: functions of several vectors and covectors, linear in each. The metric is one such tensor, a symmetric form, and it is applied by hand to turn vectors into covectors and back, by raising and lowering indices.
+Extensors are multilinear maps between multivector spaces. Linear maps are the one-argument case, and every finite-dimensional linear map can be constructed from the products of the algebra. Ordinary tensors are a special case, restricted to the generating vectors and their duals. Allowing all grades gives those maps a richer geometric vocabulary: areas, volumes, rotations and spinors can be arguments and outputs in their own right.
 
-**Exterior algebra**, the algebra of differential forms, is graded: its elements have parts of every grade from zero to the dimension, multiplied by the wedge product, which needs no metric. Forms are written on the dual space, as functions of vectors that change sign when two arguments swap, and differential forms are fields of them. The algebra allows sums of different grades, though practice rarely uses them. It has no geometric product: the wedge only raises grade, so a vector has no inverse and there are no rotors.
+The products themselves construct these maps. For a fixed vector `a`, the expression `a ^ Vector` maps vectors to bivectors; `Vector.dot(Vector)` and `Vector * Vector` are bilinear maps to scalars and even multivectors. The [multiple-lenses document](multiple_lenses.md) develops this construction. The relationships to the other frameworks follow from the spaces they admit and the products available on them.
 
-**Extensors** are the multilinear maps of geometric algebra: functions of multivectors whose outputs are multivectors. Products of the algebra with identity maps construct them:
+The generating vector space sits inside its geometric algebra as the one-vectors. Extensors extend multilinear maps from that space to arbitrary multivector spaces, including mixtures of grades.
+
+| Framework or object | Its place in GA and extensors |
+| --- | --- |
+| Linear algebra | The one-argument extensors, including every linear map between the chosen spaces |
+| Tensors on the generating vector space | Extensors restricted to vector and covector arguments |
+| Tensor algebra | Sums, tensor products and contractions of those restricted maps |
+| Exterior algebra | The multivectors with their wedge-product structure |
+| Exterior forms | Scalar-valued extensors on the corresponding exterior powers |
+| Multivectors | Extensors with no arguments |
+
+These inclusions preserve the constructions of the smaller frameworks. Extensors extend their arguments and outputs to every grade, and GA supplies products that relate those grades.
+
+## Matrices and linear algebra
+
+Every linear map between finite-dimensional multivector spaces is a linear extensor, and every such map can be built from GA products. This includes maps between different grades and maps on mixed-grade spaces, as well as the familiar maps from vectors to vectors.
+
+A scalar readout multiplied by a fixed output is a rank-one map. A plane's reading of a point can scale a fixed direction:
 
 ```python
-a ^ Vector                         # Bivector <- Vector
-Vector | Vector                    # Scalar <- (Vector, Vector), the metric
-(Vector | Vector) + (Vector ^ Vector) - Vector * Vector   # zero: the geometric product is the sum of the inner and outer products
+dyad = direction * (plane & Point)
 ```
 
-## How they fit together
+Sums of these dyads construct every linear map. The complementary pairing supplies a complete set of independent readouts, and the output assigned to each readout is arbitrary. Products of independent readouts extend the construction to every multilinear map. The [completeness argument](multiple_lenses.md#3-the-mathematical-lens-multilinear-maps-and-sums-of-products) establishes that the sum-of-products construction and the multilinear-map definition describe the same class of extensors.
 
-- A matrix is an extensor with one vector input and a vector output, `Vector <- Vector`. Linear algebra is the part of the extensors restricted to vectors and the inner product: inputs and outputs of grade one, and the scalar product as the only product that pairs them.
-- A tensor on vectors and covectors is an extensor whose inputs take vectors, with a covector input written through one of the two pairings below. Conversely, every extensor is a tensor on the larger space of multivectors. In finite dimensions, the two frameworks have the same reach.
-- The tensor product is the product of extensors with independent axes, built from the algebra's own products. A dyad `a * (b | Vector)` is the tensor product of `a` with the covector of `b`, its input paired through the inner product, or through the regressive product where no metric is wanted. Sums of such products give every tensor, as sums of dyads give every matrix.
-- Exterior algebra is the outer half of the geometric product, contained in geometric algebra as plainly as the algebra of the scalar product is. A form of grade k is an extensor from k-vectors to scalars, written with the regressive product `&` where no metric is wanted. Tensor practice mostly emulates grades above one through constructions such as the Levi-Civita symbol, which writes a plane as its normal vector; the forms community keeps every grade and stops before the geometric product. What geometric algebra adds is that product of the two halves, and with it mixed grades that mean something: rotors, spinors, the inverse of a vector.
+Abstract linear algebra applies to multivector spaces as it does to any vector space. The inclusion here is constructive: all its linear maps are available through the products of GA. Conventional matrix work concentrates on one-vector maps and inner-product pairings, with cross products, oriented volumes and spinor actions introduced as further constructions. GA and extensors contain that collection of operations and connect them through the same algebra.
 
-Extensors are therefore the tensor algebra of geometric algebra rather than of plain vectors. Linear algebra is the subset of extensors restricted to vectors and the inner product; extensors are linear algebra over every grade, with every product of the algebra as their vocabulary.
+Composition, inversion, trace, determinant and eigenspaces remain available. `A.solve(b)` gives an element of the input space of `A`; `A.solve(B)` gives a map into that space with the inputs of `B`. The result participates in the same geometric products as the maps that defined it.
 
-## What differs
+### Pairings and adjoints
 
-The reach is the same; the differences are in where things live and what each makes easy.
+In matrix calculations, a transpose often appears as a routine way to reverse the direction of a map. Two constructions lie behind that notation. An adjoint transfers a map across an inner product; a dual map pulls measurements of the output back to measurements of the input. Their defining relationships make the pairings explicit:
 
-**Where the metric lives.** Tensor algebra keeps the metric as a separate object and applies it by index placement. Geometric algebra puts it in the products. Extensors keep two pairings: the inner product `|`, which uses the metric and pairs a space with itself, and the regressive product `&`, which needs no metric and pairs a space with its complement. A covector axis can be written with either. Where the metric is degenerate, as in projective geometry, only the complement pairs every element, much as tensor calculus falls back on the volume form there.
+```python
+A.adjoint()(b).scalar_product(a) == b.scalar_product(A(a))
+A.adjugate()(c) & a == c & A(a)
+```
 
-**What an axis is.** An index is up or down. An axis has a type: a vector, a bivector, a rotor, a point, a plane. The type decides which operations mean something:
+The first uses the scalar product. The second uses the complementary pairing and runs from complements of the outputs to complements of the inputs; this is the [adjugate](tutorial/extensors/10-the-adjugate.md) used in the examples. The transpose represents the dual map in dual bases, and in orthonormal Euclidean bases it also represents the one-vector adjoint. Keeping the pairing explicit records which of these operations is intended and which spaces the resulting map acts on. [Linear Algebra Done Right](https://linear.axler.net/LADR4e.pdf), §§3F and 7A, develops the dual-map and adjoint constructions.
 
-- There is no transpose, because a transpose identifies a space with its dual through the coefficients. In its place a map has an adjoint, which moves it across the inner product and needs the metric, and an adjugate, which moves it across the regressive product and needs none. In an orthonormal Euclidean basis, both have the coefficients of the transpose; in spacetime and in projective geometry they differ.
-- A map has eigenvalues only where its output has the type of its input; a map between different spaces has singular values; a form has eigenvalues only against another form. A matrix does not record which of these applies, and a type does.
-- A map and a form with the same coefficients are different objects, and their conversion is a solve against a pairing: a signed permutation of the coefficients, with nothing computed.
+The complementary pairing remains available with a degenerate metric. It also lets a singular map pull measurements back: a camera can carry an image condition back into the scene without an inverse camera. The cofactor construction follows from extending a map to the appropriate exterior grade. The [normals case](common_practice.md#surface-normals-under-deformation) develops the relation to area transport.
 
-**Native ground.** Geometric algebra is native to antisymmetric objects, where index notation needs extra machinery: the geometric product of vectors, which matrix physics rebuilds as Pauli and Dirac matrices; areas and normals under a deformation, the outermorphism `F(a) ^ F(b)` in place of $\det(F)\, F^{-T}$; the electromagnetic field as one bivector; rigid motions as twists and forques with one commutator; curvature as a symmetric map on bivectors. Index notation encodes antisymmetric objects as vectors through the Levi-Civita symbol in three dimensions, and the encoding shows: the inertia tensor's subtracted trace, $r^2 \delta_{ij} - r_i r_j$, is the cost of writing a map on planes of rotation as a map on their normals, and has no counterpart in other dimensions. Index notation is native to symmetric objects. A symmetric product $a \odot b$ is not an element of the algebra; in extensors it is the symmetric map `a * (b | Vector) + b * (a | Vector)`, and symmetry is a property of the coefficients rather than of the type. In practice the gap is small: forms built by pairing an expression with itself, such as second moments, covariances and the normal forms of least squares, are symmetric by construction.
+### Eigenvalue problems
 
-## What linear algebra does not see
+An ordinary eigenvalue problem compares a map's output with its input, which requires both to belong to the same space. A bilinear form needs a second form to define an eigenvalue comparison. Pairing a rate-to-load map with another rate exposes the energy form and its symmetry. Stiffness and inertia then give a symmetric generalized eigenproblem directly, as the [vibration case](common_practice.md#vibration-modes) shows.
 
-Linear algebra is the theory of a vector space: it sees the space, and not the algebra on it. It knows one bilinear structure, an inner product, or none. Everything else the geometry needs enters as a special construction, a fixed table of signed ones with its own formula and conventions, specific to a dimension, which someone has to know, write down and keep consistent. Each of them is a product of the algebra:
+Singular values likewise depend on norms on the input and output spaces. An inertia or uncertainty form may supply the relevant measure. Keeping these forms in the construction makes the choices visible and avoids replacing them silently by a default norm.
 
-| In linear algebra | In extensors |
+## Tensors and tensor algebra
+
+A tensor on a vector space acts multilinearly on vectors and covectors. Those arguments are among the arguments an extensor can take, so ordinary tensors are contained in extensors. An extensor can additionally take a bivector, an oriented volume or a spinor directly, and return an object of any multivector type.
+
+A covector is represented by its scalar readout of an argument. In the inner-product formulation, `a.dot(Vector)` supplies that readout by pairing one-vectors. The complementary pairing supplies readouts without relying on the metric; a plane measures a point through `plane & point`, and `plane & Point` is the corresponding linear form. This also makes covector arguments available when the metric is degenerate.
+
+The tensor product is carried by independent arguments. Multiplying scalar-valued maps, each with its own argument, gives a multilinear scalar-valued map; multiplying by a fixed output gives a multilinear map with that output type. Sums of these products span the tensors. Binding arguments, composing maps and contracting paired arguments retain their familiar meanings. Extensors make these operations available with the full set of GA products and multivector types.
+
+### Grades and symmetries
+
+An antisymmetric pair of tensor arguments can be represented by one bivector argument. Its grade carries the antisymmetry. An inertia can therefore act directly on a plane of rotation, and curvature can take an area to a plane of rotation. The [inertia and curvature cases](common_practice.md#inertia-vorticity-and-curvature) develop the practical difference. Curvature's pair symmetry and Bianchi identity remain conditions on that map.
+
+Symmetric tensors remain symmetric maps: a symmetric product of two vectors does not become a new grade. Tensor notation is particularly concise for stating permutation symmetries among many arguments. Extensor expressions are particularly direct when the symmetry follows from a geometric construction, as it does for sums of quadratic spring energies. The grades and the symmetries of the map perform different jobs.
+
+Tensor transformation laws also retain their meaning. Each argument and output has a space, and moving the map composes the corresponding action with those spaces. An extensor built from geometric ingredients transforms with its ingredients under motions preserving its products. The [moving-maps tutorial](tutorial/extensors/08-moving-maps.md) develops that relationship; the [multiple-lenses account](multiple_lenses.md#2-the-geometric-lens-meaning-from-construction) explains why the transformation law follows from the construction.
+
+### Reference and physical metrics
+
+Tensor algebra usually starts with a vector space and supplies a metric as a separate bilinear form. A geometric algebra includes a metric in its product. That built-in metric need not be the physical metric of the model: a varying physical metric can be supplied as an extensor while the algebra's product stays fixed.
+
+With a fixed nondegenerate reference metric defining the dot product, every physical metric on a direction space `Direction` has the form `Direction.dot(metric_map)`. The position-dependent `metric_map` is self-adjoint with respect to the reference metric, and its variation can describe curved geometry. Alternatively, the physical metric can remain a map from directions to covectors, with evaluation through the metric-independent complementary pairing. GA supports either placement; choosing its product does not commit the model to that metric for its physical measurements.
+
+The Kerr notebooks make this concrete. The [metric formulation](../examples/relativity/kerr/kerr_metric.ipynb) carries the physical metric and its Levi-Civita connection explicitly. The [gauge formulation](../examples/relativity/kerr/kerr.ipynb) carries a position-dependent frame map and a bivector connection, with a fixed flat metric on the local directions. The frame takes local directions to coordinate directions; its inverse brings a direction back to the local frame for measurement. The two formulations read the same squared interval:
+
+```python
+metric_interval = metric(geometry)(direction) & direction
+gauge_interval = -gauge_inverse(geometry)(direction).squared()
+```
+
+The [side-by-side comparison](../examples/relativity/kerr/kerr_comparison.ipynb) follows the same rays and polarization through both descriptions. The choice changes which map carries the geometry and how transport is expressed. Supplying a metric separately or including a reference metric in the product is a choice of formulation; neither restricts the physical metrics or geometric constructions that can be described.
+
+## Forms and exterior algebra
+
+Exterior algebra is contained in GA as its wedge-product structure. All its grades and their alternating products are available. The geometric product combines this exterior structure with metric contractions, so a calculation can use both within the same algebra.
+
+An exterior form is also a special case of an extensor. An alternating form on several vectors is a linear scalar-valued map on their exterior power: a two-form measures a bivector, and a higher form measures the corresponding higher-grade element. The complementary pairing represents these scalar evaluations without a metric. The Hodge star is a further map supplied by the metric and orientation.
+
+Differential forms are fields of these alternating forms. Their exterior derivative, pullback and integration retain their roles in conservation laws. Twisted forms record the orientation behavior needed by quantities such as charge and flux. Intrinsic and extrinsic orientations carry the corresponding distinction through geometric expressions; [orientation](why_orientation.md) develops it, and [Bossavit's treatment of computational electromagnetism](https://www.jpier.org/ac_api/download.php?id=00080102) gives the connection to forms and oriented meshes.
+
+### Exterior and metric structure in applications
+
+Roughly [90–95% of the examples](example_product_audit.md) in this collection use both metric and exterior structure. A swimming body needs force and torque balance together with a fluid response that depends on distance. Elastic waves need oriented faces and flux together with a metric in the shear response. Gravitational curvature acts on spacetime areas and produces the tidal forces whose accelerations the metric determines. The need for both structures comes from the problems themselves.
+
+Electromagnetism makes their relationship particularly clear. Exterior structure describes circulation, flux and conservation; the vacuum constitutive law supplies the metric structure that determines light propagation. The separation is explicit in [premetric electrodynamics](https://arxiv.org/abs/physics/0610221): the field equations keep their exterior form while the constitutive map supplies the response. The [constitutive-tensor case](common_practice.md#electromagnetic-constitutive-tensors) expresses that response as an extensor.
+
+Three-dimensional vector calculus packages these structures into separate operators. Curl combines an exterior derivative with a metric and orientation identification; cross products encode oriented planes through their normal vectors. The exterior structure is present in these constructions even when the notation names only vectors. GA keeps the exterior products and metric contractions together, so their combination follows from the algebra's operations. The constitutive map, field, derivative and observer can participate in the same geometric calculation.
+
+For a practitioner, the combined algebra should be the starting point. Introducing either part alone and supplying the other through separate operators leaves the connections to be reconstructed for each application. Learning the products together makes those connections available when the physical model needs them.
+
+## Geometric algebra and extensors
+
+A multivector is an extensor with no arguments. The same products that combine multivectors construct maps when some factors vary over a space. GA supplies the geometric objects and their products; extensors carry those products into the maps between objects.
+
+A thin lens makes that relationship concrete. It is an object built from a centre, a plane and a focal length, and a map acting on rays. A motor moves it by acting on its input and output:
+
+```python
+lens = Line - (center & (Line ^ plane)) / focal
+placed_lens = motor >> lens(motor << Line)
+```
+
+The [scenegraph example](../examples/geometry/scenegraph/core.py) moves lenses, applies them to rays and composes them into a camera. An inertia, covariance or material law has the same status: it can be added, composed, moved or solved as a map, with its geometric meaning supplied by its construction.
+
+## Geometric constructions
+
+Linear and tensor formulations commonly introduce oriented products, reciprocity pairings and spinor actions through separate definitions. Levi–Civita contractions are a familiar example: they supply alternating structure to an expression whose other operations are tensor products and contractions. In GA that structure is available through the exterior products themselves.
+
+| Construction introduced separately | Construction in GA and extensors |
 | --- | --- |
-| the Levi-Civita symbol | `Vector ^ Vector` |
-| the cross-product matrix of $a$ | `(a ^ Vector).dual()` |
-| the determinant | the outermorphism on the pseudoscalar |
-| the cofactor matrix, as in transforming normals | the outermorphism on bivectors |
-| the swap matrix that pairs twists with wrenches | the regressive product `&` |
-| the Pauli and Dirac matrices | multiplication as a map on spinors |
+| Levi–Civita contractions for oriented products | Wedge and regressive products on the relevant grades |
+| Cross product with a fixed vector in three dimensions | `a ^ Vector`, followed by the normal identification |
+| Determinant | The outermorphism's action on volume elements |
+| Cofactor construction for area transport in three dimensions | The outermorphism on oriented areas |
+| Reciprocity pairing of twists and wrenches in screw theory | The regressive pairing of a twist with a wrench |
+| Pauli and Dirac matrices | Multiplication acting as a map on spinors |
 
-At the level of coefficients nothing is hidden. Every operation on extensors is a contraction of coefficient arrays against such a table, which is a Euclidean dot product on coefficients, and the reach of the two frameworks is the same. The difference is where the tables come from. In linear algebra they are inputs, supplied by hand. In extensors they follow from the products, and the right contraction is the one that writing the geometric expression gives. The coefficients cannot tell which table a contraction used, as a matrix cannot tell whether it is a map or a form; the products and the types can.
+Each row connects a familiar construction to an operation used throughout the algebra. The wedge that constructs a cross product also constructs a plane; the outermorphism that carries an area also carries a volume; multiplication on spinors comes from the product that also composes rotations. The [representations example](../examples/math/extensor_representations/core.py) constructs the spinor actions directly.
 
-## Linear algebra as a method
+The common origin matters. These constructions acquire their geometric meaning and conventions together, and the grades carry the same relationships into other dimensions.
 
-That a matrix is a map from vectors to vectors is the dry part. The interesting part is that the methods come along: Gauss-Newton, Schur complements, conjugate gradients, eigenproblems and least squares run on geometric types from start to finish, with nothing flattened into coordinates. From the extensor point of view the boundary between numerical linear algebra and geometry dissolves.
+## Numerical methods
 
-The reach is the same, and anything done this way can be done with matrices. What changes is which form is convenient, and with typed axes and no transpose, the form a problem wants is the one easiest to write. Several habitual forms of current practice, in applied fields and in physics, turn out to be the ones the types do not offer:
+The linear-algebra methods come with the maps. Gauss–Newton, Schur complements, conjugate gradients, least squares and generalized eigenproblems operate on geometric types from construction through solution. A camera correction is a twist that moves the camera; a vibration mode is a rate that moves the body.
 
-- Hybrid force and motion control took orthogonal complements of twists and wrenches under a dot product of six coordinates; Duffy showed in 1990 that this mixes units and depends on the frame. A twist and a forque are different types here, and the only pairing on offer between them is the meaningful one.
-- Graphics transforms normals by the inverse transpose, which fails for singular transforms and flips under reflections; the adjugate, which treats a normal as the bivector it is, is the default here.
-- Continuum mechanics converts between its stress measures by factors of $F$, $F^{-T}$ and $J$; with stress as a map from oriented areas to forces, they are compositions with the deformation's map on areas.
-- A stiffness from rates to momenta is not symmetric in coordinates, and the habit is to symmetrize it or form normal equations, squaring the condition number; paired with `Twist`, the space of rates, it gives a symmetric form on pairs of rates.
-- The standard rotation fit, Kabsch's SVD, needs a determinant correction because it can return a reflection; posed as an eigenproblem on rotors, the answer is a rotor by type.
-- The constitutive relations of a moving medium, and an inertia between body and space frames, are maps moved between frames; each is a composition with the rotation or boost on either side, with the type saying which side is which.
-
-The first-hand account is numga's own multiview example. It was first written with a coefficient transpose and the normal equations $J^T J$, as Gauss-Newton is taught. Removing the transpose from the library left no way to write that, and what remained was better: the cone value as the cost, its curvature a cone joined with the motion, no residual metric to choose, and a Schur complement solved as a form against a form. [Extensors and common practice](common_practice.md) works through each case with its references and code, including the encodings of tensor practice, such as Voigt notation and the inertia tensor, and separately lists the cases, such as composing boosts or blending rigid motions, that are benefits of geometric algebra itself rather than of extensors.
-
-## Object or map
-
-Whether a tensor is an object, defined by a universal property, or a multilinear map, is a question about which construction to call the definition. In finite dimensions the two are the same up to canonical isomorphism. An extensor is both at once: a value that is stored, added, batched and transformed, and a function that is called by filling its axes. A multivector is the case with no axes to fill.
+The pairings and spaces remain visible throughout the algorithm. A Schur solve retains the geometric arguments of its blocks, conjugate gradients pairs a step with a cost differential, and a mode problem compares energy forms. This also helps find simpler formulations: a quadratic cost supplies its local curvature directly, and the relevant pairing can expose a symmetric energy before an artificial symmetrization changes the problem. The [common-practice comparison](common_practice.md) develops these consequences case by case.
 
 ## Closure
 
-The deepest difference between the frameworks is not in any single operation but in closure: whether everything a calculation needs can be written inside the framework, or whether some of it has to be brought in from outside. Geometric algebra is closed in this sense for the objects of geometry and physics. Points, lines, planes, rotations, rigid motions, fields and spinors are all elements of one algebra, and every operation on them is one of its products. Extensors carry that closure over to the maps between those objects: an inertia, a stiffness, a material, a covariance or a camera is built from the same products and solved with the same operations as the geometry it acts on.
+GA and extensors provide a unified algebra for the objects and maps of a geometric model. The inclusions establish its reach: tensors, linear maps, exterior products and forms all have their place. The geometric products relate those parts and construct the transformations acting on them.
 
-Each of the other frameworks keeps part of this and gives up the rest, and what it gives up comes back in as a construction supplied by hand. Linear algebra keeps vectors and the inner product, and brings in the antisymmetric side through the Levi-Civita symbol, cross-product matrices and determinant formulas. Exterior algebra keeps the outer product and every grade, and brings in the metric through the Hodge star; without the geometric product, it has no rotations among its elements. Tensor algebra keeps maps with many axes, each taking vectors, and brings in rotations as matrices and spinors through the Pauli and Dirac matrices. Each of these imports is a fixed table, specific to a dimension, that someone has to know and keep consistent, as the table in [what linear algebra does not see](#what-linear-algebra-does-not-see) lists.
+An alternating tensor, a cross product, a reciprocity pairing and a spinor action each need their own motivation and conventions when introduced separately. Their shared construction in GA makes those relationships part of the algebra, and extensors extend them to arbitrary multilinear maps. The model can move from its objects to its laws and transformations without acquiring a separate language for each construction.
 
-The matrix is where all of these imports meet. Once one part of a calculation has been recast in matrices, it is easiest to recast all of it, and that is what practice does: to compute an inertia, a stiffness or a covariance numerically, the problem is first rewritten in matrix form and then assembled. Numerical software written in tensor notation exists, in finite element mechanics and in the tensor networks of many-body physics, but it works within the restriction to vectors, and its geometric constructions are still supplied by hand.
-
-Closure is what lets one language carry all of numga's examples, from rigid bodies, cameras and estimation to materials, light, spacetime and spin, without leaving the algebra. Neither half achieves it alone. Geometric algebra without extensors closes the objects but not the maps, and a geometric algebra program falls back on a matrix at its first inertia or covariance. Maps built on the inner product alone, or on the outer product alone, lose part of the objects they act on. Together, the full geometric product and multilinear maps make a language in which nothing has to be brought in from outside. This is a claim about coherence, not about reach: every calculation here can also be done with matrices, but done that way it is a collection of separate constructions rather than one language.
-
-## In numga
-
-numga implements extensors as typed coefficient arrays with the products of geometric algebra as their operations. The [extensor overview](extensors.md) shows what this buys in the examples, the [extensor tutorial](tutorial/extensors/01-products-as-maps.md) builds the ideas from a linear map, and the [geometric algebra tutorial](tutorial/geometric-algebra/01-the-scalar-product.md) builds the algebra from a single product.
+The [multiple-lenses account](multiple_lenses.md) develops the relationship between geometric construction and multilinear maps. The [orientation discussion](why_orientation.md) develops how those constructions behave under reflections.
