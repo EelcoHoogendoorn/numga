@@ -146,7 +146,8 @@ def test_camera_and_disk_geometry_rotate_with_the_black_hole():
                                0, atol=ROUND_OFF, rtol=0)
     assert np.all((mv.t & tangent).kernel < 0)
     center = (pixel_width * pixel_height) // 2
-    heading = core.space(core.local(core.field(position[center], spin, mass), momentum[center]))
+    camera_geometry = core.field(position[center], spin, mass)
+    heading = core.space(core.camera_boost(camera_geometry).reverse() >> core.local(camera_geometry, momentum[center]))
     center_direction = heading / heading.squared().square_root()
     toward_hole = -eye / eye.squared().square_root()
     np.testing.assert_allclose((center_direction - toward_hole).kernel,
@@ -255,7 +256,7 @@ def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
     pixel_width, pixel_height = 5, 3
     half_view = 0.4
     inner_radius, outer_radius = 2.02, 40.0
-    step_fraction = 0.1
+    step_fraction = 0.08
     steps = 250
     position, momentum = core.camera_rays(
         eye, orientation, pixel_width, pixel_height, half_view, spin, mass)

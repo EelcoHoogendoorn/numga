@@ -258,9 +258,18 @@ fn initial_momentum(position: Antivector, direction: Antivector) -> Vector {
     return momentum / (momentum & time);
 }
 
+// The static camera's rest frame carried into the local Kerr–Schild frame.
+fn camera_boost(geometry: Field) -> Rotor {
+    let carried_time = gauge_inverse(geometry)(time);
+    let observer = carried_time / (-carried_time.squared()).square_root();
+    return (1 - observer * time).normalized();
+}
+
 // The camera's own right and up across a ray, as a map from the screen's two axes.
 fn camera_screen(position: Antivector, momentum: Vector) -> ScreenFrame {
-    let heading = local(field(position), momentum);
+    let geometry = field(position);
+    let boost = camera_boost(geometry);
+    let heading = boost.reverse() >> local(geometry, momentum);
     let direction = space(heading) / -(mv.t & heading);
     var right = orientation >> mv.y.dual();
     right = right - direction * (direction | right);
@@ -268,7 +277,7 @@ fn camera_screen(position: Antivector, momentum: Vector) -> ScreenFrame {
     var up = orientation >> -mv.x.dual();
     up = up - direction * (direction | up) - right * (right | up);
     up = up / up.squared().square_root();
-    return right * (mv.x & Screen) + up * (mv.y & Screen);
+    return boost >> (right * (mv.x & Screen) + up * (mv.y & Screen));
 }
 
 // The starlight a ray escaping along a direction brings: the sky's image at its longitude and latitude.
@@ -285,7 +294,10 @@ fn sample(place: vec2<f32>) -> Sample {
     // Past-directed light from the pixel, looking along the camera's -z.
     var direction = orientation >> (-mv.z.dual() + mv.y.dual() * across.x - mv.x.dual() * across.y);
     direction = direction / direction.squared().square_root();
-    let momentum = -initial_momentum(eye, -direction);
+    let geometry = field(eye);
+    let heading = camera_boost(geometry) >> (time - direction);
+    let future_momentum = -gauge_inverse(geometry)(heading).dual();
+    let momentum = -future_momentum / (future_momentum & time);
     var ray = Ray(eye, momentum, camera_screen(eye, momentum));
 
     var radius = field(ray.position).radius;

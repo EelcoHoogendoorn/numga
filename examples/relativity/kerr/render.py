@@ -156,9 +156,9 @@ def blackbody_table(hottest: float, n_entries: int) -> np.ndarray:
 
 def draw_frame(frame: np.ndarray) -> plt.Figure:
     """A display image `[rows, columns, 3]`, edge to edge on black."""
-    figure = plt.figure(figsize=(9, 9 * frame.shape[0] / frame.shape[1]), facecolor="black")
+    figure = plt.figure(figsize=(frame.shape[1] / 100, frame.shape[0] / 100), dpi=100, facecolor="black")
     ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow(frame)
+    ax.imshow(frame, interpolation="none")
     ax.set_axis_off()
     return figure
 
@@ -250,11 +250,10 @@ def draw_camera(image: core.Image, temperature: core.Scalar, reference: float, i
     sky."""
     height, width = image_shape
     disk, sky = camera_colours(image, temperature, image_shape, sky_texture)
-    figure = plt.figure(figsize=(9, 9 * height / width), facecolor="black")
-    ax = figure.add_axes((0, 0, 1, 1))
-    ax.imshow(np.clip(exposed(disk, reference) + sky, 0, 1).reshape(height, width, 3), interpolation="lanczos")
-    ax.set_axis_off()
-    return figure
+    return draw_frame(np.clip(exposed(disk, reference) + sky, 0, 1).reshape(height, width, 3))
+
+
+
 
 
 def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: float, transmission: core.Scalar,
@@ -268,6 +267,7 @@ def animate_polarizer(image: core.Image, temperature: core.Scalar, reference: fl
     for passed in transmission.kernel[..., 0]:
         disk = scattered(2 * light * passed[:, None], image.disk_pixels, height * width)
         yield np.round(np.clip(exposed(disk, reference) + sky, 0, 1) * 255).astype(np.uint8).reshape(height, width, 3)
+
 
 
 def animate_disk(image: core.Image, temperature: core.Scalar, reference: float, flows: Iterable[core.Antivector],

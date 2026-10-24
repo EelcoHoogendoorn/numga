@@ -38,7 +38,8 @@ def test_shader_rates_match_core():
     random = np.random.default_rng(1)
     n_rays = 64
     # Events between the photon orbits and the camera, and null momenta in random directions there.
-    positions = (mv.vector(random.normal(size=(n_rays, 4))).dual() * random.uniform(3, 20, (n_rays,)))
+    positions = core.space(mv.vector(random.normal(size=(n_rays, 4))).dual())
+    positions = positions / positions.squared().square_root() * random.uniform(3, 20, (n_rays,))
     directions = core.space(mv.vector(random.normal(size=(n_rays, 4))).dual())
     directions = directions / directions.squared().square_root()
     momenta = -core.initial_momentum(positions, directions, spin, scenarios.mass)
@@ -52,3 +53,30 @@ def test_shader_rates_match_core():
     for name, rate in zip(("position_rates", "momentum_rates", "screen_rates"), expected):
         error = (traced[name][0] - rate).kernel
         np.testing.assert_allclose(error, 0, atol=SINGLE_PRECISION * np.abs(rate.kernel).max(), rtol=0)
+
+
+def test_shader_camera_screen_uses_the_same_static_observer_as_core():
+    spin, mass = .8 * mv.xy, 1.
+    orientation = (mv.zx * (-1.2 / 2)).exp()
+    eye = (orientation >> mv.z.dual()) * 28
+    positions, momenta = core.camera_rays(eye, orientation, 5, 3, .35, spin, mass)
+    camera_functions = gpu.camera.split("// The static camera's rest frame")[1].split("// The starlight")[0]
+    camera_functions = "// The static camera's rest frame" + camera_functions
+    camera_probe = """
+var<uniform> orientation: Rotor;
+var<storage, read> positions: array<Antivector>;
+var<storage, read> momenta: array<Vector>;
+var<storage, read_write> screens: array<ScreenFrame>;
+
+@compute @workgroup_size(8, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    if (id.x >= arrayLength(&positions)) {
+        return;
+    }
+    screens[id.x] = camera_screen(positions[id.x], momenta[id.x]);
+}
+"""
+    shader = Shader(gpu.geometry + camera_functions + camera_probe, core.ga, gpu.types)
+    result = shader((1, 15), spin=spin, mass=mass, orientation=orientation, positions=positions, momenta=momenta)
+    expected = core.camera_screen(positions, momenta, orientation, spin, mass)
+    np.testing.assert_allclose((result["screens"][0] - expected).kernel, 0, atol=SINGLE_PRECISION, rtol=0)

@@ -4,9 +4,9 @@ Events and the directions between them are antivectors, and a ray's momentum is 
 that pairs with a direction to a number, `momentum & direction`. The geometry is gauge theory gravity's:
 a flat background, and a position gauge field that carries the directions of a local frame, measured flat,
 to the directions of the Kerr geometry, `gauge(geometry)`: the identity plus the profile times the null
-dyad. The dyad squares to zero, so its inverse is the identity less the dyad, and no metric is written
-down: an observer's interval is the flat square of its direction carried back into the local frame, and a
-ray's Hamiltonian is half the flat square of its momentum raised and carried into it. Differentiating
+dyad. The dyad squares to zero, so its inverse is the identity less the dyad. An observer's squared
+proper time is minus the flat square of its direction carried back into the local frame, and a
+ray's Hamiltonian is minus half the flat square of its momentum raised and carried into it. Differentiating
 with respect to momentum gives the tangent, a direction, and differentiating with respect to position
 gives minus the momentum rate, a covector. The rotation gauge field, `rotation(geometry, direction)`,
 is the plane the local frame turns in per step along a direction. The scalar profile's gradient is a
@@ -113,7 +113,7 @@ def gauge_inverse(geometry: Field) -> GaugeField:
 
 def local(geometry: Field, momentum: Vector) -> Antivector:
     """A covector momentum's direction in the local frame: raised flat, `-momentum.dual()`, and carried
-    through the gauge field. Half its flat square is the ray's Hamiltonian."""
+    through the gauge field. Minus half its flat square is the ray's Hamiltonian."""
     return gauge(geometry)(-momentum.dual())                                                # [...] Antivector
 
 
@@ -121,6 +121,11 @@ def proper_squared(geometry: Field, direction: Antivector) -> Scalar:
     """The squared proper length of a timelike direction: minus the flat square of the direction carried
     back into the local frame."""
     return -gauge_inverse(geometry)(direction).squared()                                    # [...] Scalar
+
+
+def hamiltonian(geometry: Field, momentum: Vector) -> Scalar:
+    """The ray Hamiltonian, positive for a timelike momentum in the physical +--- convention."""
+    return -local(geometry, momentum).squared() / 2                                         # [...] Scalar
 
 
 def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
@@ -132,7 +137,7 @@ def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
 def motion(geometry: Field, momentum: Vector) -> tuple[Antivector, Vector]:
     """The two Hamiltonian derivatives at a field: the ray tangent and minus its position gradient."""
     overlap = momentum & geometry.null                                                      # [...] Scalar
-    # Half the flat square of the momentum's local direction is the Hamiltonian; its momentum derivative
+    # Minus half the flat square of the momentum's local direction is the Hamiltonian; its momentum derivative
     # is that direction carried through the gauge field once more.
     tangent = gauge(geometry)(local(geometry, momentum))                                    # [...] Antivector
     # The gradient of profile * overlap squared, by the product rule.
@@ -451,15 +456,26 @@ def trace(position: Antivector, momentum: Vector, spin: Spin, mass: float,
     return tuple(concatenate([first[None], after]).materialize(mv.context) for first, after in zip(start, later))
 
 
+def camera_boost(geometry: Field) -> Rotor:
+    """A coordinate-static camera's rest frame in the Kerr–Schild frame, outside the static limit."""
+    observer = gauge_inverse(geometry)(time) / proper_squared(geometry, time).square_root()  # [...] Antivector
+    return (1 - observer * time).normalized()                                               # [...] Rotor
+
+
 def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_height: int,
                 half_view: float, spin: Spin, mass: float) -> tuple[Antivector, Vector]:
-    """Pixel-centre rays looking along local -z, with right +y and up -x, flattened over pixels."""
+    """Pixel-centre rays of a coordinate-static camera, looking along its -z, with right +y and up -x."""
     horizontal = ((np.arange(pixel_width) + 0.5) / pixel_width * 2 - 1) * half_view * pixel_width / pixel_height
     vertical = (1 - (np.arange(pixel_height) + 0.5) / pixel_height * 2) * half_view
     x, y, z = mv.x.dual(), mv.y.dual(), mv.z.dual()
     direction = orientation >> (-z + y * horizontal[None, :] - x * vertical[:, None])
     direction = direction / direction.squared().square_root()
-    momentum = -initial_momentum(eye, -direction, spin, mass)
+    geometry = field(eye, spin, mass)
+    # The future photon arrives opposite the direction the camera looks; its rest frame is boosted
+    # into the Kerr–Schild frame before its heading is lowered into a coordinate momentum.
+    heading = camera_boost(geometry) >> (time - direction)
+    momentum = -gauge_inverse(geometry)(heading).dual()
+    momentum = -momentum / (momentum & time)
     momentum = momentum.reshape(-1)
     # Every ray starts at the eye, as an event of the whole of spacetime, the type its steps carry.
     return eye.broadcast_to(momentum.shape), momentum
@@ -468,7 +484,9 @@ def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_hei
 def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
                   spin: Spin, mass: float) -> ScreenFrame:
     """Orthonormal transverse camera axes, with horizontal x and vertical y screen inputs."""
-    heading = local(field(position, spin, mass), momentum)                                  # [...] Antivector
+    geometry = field(position, spin, mass)
+    boost = camera_boost(geometry)
+    heading = boost.reverse() >> local(geometry, momentum)                                 # [...] Antivector
     direction = space(heading) / -(mv.t & heading)                                          # [...] Antivector
     # The camera's own right and up, local +y and -x, each less its parts along the directions before
     # it; every direction here is a unit of space, squaring to one.
@@ -479,6 +497,6 @@ def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
     up = up - direction * (direction | up) - right * (right | up)
     up = up / up.squared().square_root()
     # A screen direction is read by pairing with the camera's slices x and y.
-    return right * (mv.x & Screen) + up * (mv.y & Screen)                                   # [...] Antivector <- Screen
+    return boost >> (right * (mv.x & Screen) + up * (mv.y & Screen))                         # [...] Antivector <- Screen
 
 
