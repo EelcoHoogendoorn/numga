@@ -15,7 +15,7 @@ import numpy as np
 
 from numga import stack
 from examples.surfaces.k_surfaces import core
-from examples.util.wgsl import compose, image_figure, meshes, solids, vec3
+from examples.util.wgsl import compose, image_figure, meshes, solids
 
 n_width = 640
 n_height = 480
@@ -42,16 +42,20 @@ n_connector_rows = 3
 n_connector_columns = 3
 
 
-def grid_colour(front: np.ndarray, back: np.ndarray) -> str:
-    """WGSL colouring a sheet by the side the camera sees, darkened along the grid's edges: each face's ink at
-    the edge opposite each corner, by how many pixels away that edge lies."""
-    return f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
-    let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
+# WGSL colouring a sheet by the side the camera sees, darkened along the grid's edges: each face's ink at the edge
+# opposite each corner, by how many pixels away that edge lies.
+gridded = """
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
+    let edges = clamp(1 - corner / (edge_width * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
-    return vec4<f32>(select({vec3(back)}, {vec3(front)}, front) * (1 - ink), 1.0);
-}}
+    return vec4<f32>(select(back_colour, front_colour, front) * (1 - ink), 1.0);
+}
 """
+
+
+def grid_colour(front: np.ndarray, back: np.ndarray) -> meshes.Colour:
+    """A sheet coloured `front` on the side its normal points to and `back` on the other, gridded."""
+    return meshes.Colour(gridded, dict(edge_width=edge_width, front_colour=front, back_colour=back))
 
 
 # --- plumbing
@@ -93,7 +97,8 @@ def viewport(points: np.ndarray, view_elevation: float, view_azimuth: float) -> 
     return view._replace(half=landscape(view.half))
 
 
-def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
+def sheet(points: np.ndarray, faces: np.ndarray, ink: np.ndarray, colour: meshes.Colour,
+          view: solids.View) -> meshes.Samples:
     """One sheet, lit on both sides, at every sample, as `meshes.samples`."""
     places = projective(points)
     return meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), view, face_values=ink,

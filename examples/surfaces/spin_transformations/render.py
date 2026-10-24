@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.surfaces.spin_transformations.core import Mesh, Scalar, ga
-from examples.util.wgsl import fitted, meshes, show, solids, vec3
+from examples.util.wgsl import fitted, meshes, show, solids
 
 # The camera's elevation and azimuth, its margin as a share of the larger side, and the image's side in pixels, until
 # a figure's view is fitted to its axes.
@@ -21,20 +21,20 @@ background = np.ones(3)
 # The checkerboard's cubes across the reference surface, and its light and dark squares on the outer and inner
 # side of the surface.
 squares = 8
-outside = np.array([[0.98, 0.84, 0.62], [0.90, 0.45, 0.18]])
-inside = np.array([[0.70, 0.82, 0.96], [0.22, 0.42, 0.72]])
+outside_light, outside_dark = np.array([0.98, 0.84, 0.62]), np.array([0.90, 0.45, 0.18])
+inside_light, inside_dark = np.array([0.70, 0.82, 0.96]), np.array([0.22, 0.42, 0.72])
 
 # A solid checkerboard of cubes, in the place each pixel had on the reference surface, scaled so the cubes
 # are unit; light and dark squares, warm outside and cool inside.
-checkerboard = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
+checkerboard = meshes.Colour("""
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let cells = round(values.xyz);
     let dark = abs(cells.x + cells.y + cells.z) % 2.0 > 0.5;
-    let outside = select({vec3(outside[0])}, {vec3(outside[1])}, dark);
-    let inside = select({vec3(inside[0])}, {vec3(inside[1])}, dark);
+    let outside = select(outside_light, outside_dark, dark);
+    let inside = select(inside_light, inside_dark, dark);
     return vec4<f32>(select(inside, outside, front), 1.0);
-}}
-"""
+}
+""", dict(outside_light=outside_light, outside_dark=outside_dark, inside_light=inside_light, inside_dark=inside_dark))
 
 
 def euclidean(points) -> np.ndarray:

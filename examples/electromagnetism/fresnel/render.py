@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
 from examples.electromagnetism.fresnel import core
-from examples.util.wgsl import fitted, labels, meshes, show, solids, vec3
+from examples.util.wgsl import fitted, labels, meshes, show, solids
 from examples.util.wgsl.scene import Scene
 
 sheet_colours = ("#2563eb", "#ea580c")
@@ -44,23 +44,29 @@ def sheet_faces(n_latitudes: int, n_longitudes: int) -> np.ndarray:
     return np.concatenate([corners[:-1, :, [0, 1, 2]].reshape(-1, 3), corners[1:, :, [0, 2, 3]].reshape(-1, 3)])
 
 
-def gridded(colour: np.ndarray, n_latitudes: int, near: bool) -> str:
-    """WGSL colouring one side of a sheet, the side the camera sees the front of or the far side, translucent, inked
-    more opaquely along every few parallels short of the poles and every few meridians: by how many pixels the
-    corners' grid indices, `values.x` and `values.y`, lie from the nearest line, their change across a pixel the
-    measure. The other side hides nothing, and is left for the other mesh."""
-    return f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
-    let strides = vec2<f32>({latitude_stride:.1f}, {longitude_stride:.1f});
+# WGSL colouring a sheet, translucent, inked more opaquely along every few parallels short of the poles and every few
+# meridians: by how many pixels the corners' grid indices, `values.x` and `values.y`, lie from the nearest line, their
+# change across a pixel the measure; and showing as much of each side, the side the camera sees the front of and the
+# far side, as the constants `front_shown` and `back_shown` say.
+gridded = """
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let nearest = round(values.xy / strides) * strides;
     let steps = oversampling * fwidth(values.xy);
-    var ink = clamp({grid_width / 2 + 0.5} - abs(values.xy - nearest) / steps, vec2<f32>(0.0), vec2<f32>(1.0));
+    var ink = clamp(grid_width / 2 + 0.5 - abs(values.xy - nearest) / steps, vec2<f32>(0.0), vec2<f32>(1.0));
     // No parallel on the poles, where they shrink to points.
-    ink.x *= select(0.0, 1.0, nearest.x > 0 && nearest.x < {n_latitudes - 1:.1f});
-    let shown = select(0.0, 1.0, front == {str(near).lower()});
-    return vec4<f32>({vec3(colour)}, shown * mix({sheet_opacity}, {grid_opacity}, max(ink.x, ink.y)));
-}}
+    ink.x *= select(0.0, 1.0, nearest.x > 0 && nearest.x < f32(n_latitudes - 1));
+    let shown = select(back_shown, front_shown, front);
+    return vec4<f32>(sheet_colour, shown * mix(sheet_opacity, grid_opacity, max(ink.x, ink.y)));
+}
 """
+
+
+def side_colour(colour: np.ndarray, n_latitudes: int, near: bool) -> meshes.Colour:
+    """One side of a sheet in its colour, gridded, the side the camera sees the front of or the far side; the other
+    side hides nothing, and is left for the other mesh."""
+    return meshes.Colour(gridded, dict(sheet_colour=colour, strides=np.array([latitude_stride, longitude_stride]),
+                                       grid_width=grid_width, n_latitudes=n_latitudes, sheet_opacity=sheet_opacity,
+                                       grid_opacity=grid_opacity, front_shown=float(near), back_shown=float(not near)))
 
 
 def k_axes(view: solids.View) -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -90,7 +96,7 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
         places = sm.point(sheet.reshape(-1, 3))
         normals = meshes.smooth(places, faces)
         sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
-                                  colour=gridded(np.array(colour), n_latitudes, near),
+                                  colour=side_colour(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
     return sides
 

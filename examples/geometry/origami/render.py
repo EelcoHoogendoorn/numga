@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.geometry.origami import core
-from examples.util.wgsl import fitted, meshes, show, solids, vec3
+from examples.util.wgsl import fitted, meshes, show, solids
 
 front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])
@@ -32,15 +32,15 @@ layer_spacing = 1e-4
 edge_width = 1.8
 
 
-colour = f"""
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
+colour = meshes.Colour("""
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     // Ink where the pixel lies within the crease width of an edge of its polygon, by how many pixels away it lies.
-    let edges = clamp(1 - corner / ({edge_width} * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
+    let edges = clamp(1 - corner / (edge_width * oversampling * fwidth(corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * face_values.xyz;
     let ink = max(edges.x, max(edges.y, edges.z));
-    let paper = select({vec3(back_colour)}, {vec3(front_colour)}, front);
-    return vec4<f32>(mix(paper, {vec3(edge_colour)}, ink), 1.0);
-}}
-"""
+    let paper = select(back_colour, front_colour, front);
+    return vec4<f32>(mix(paper, edge_colour, ink), 1.0);
+}
+""", dict(edge_width=edge_width, front_colour=front_colour, back_colour=back_colour, edge_colour=edge_colour))
 
 
 # --- plumbing -------------------------------------------------------------------------

@@ -90,11 +90,6 @@ def compose(layers: list[tuple[np.ndarray, np.ndarray, float]], background: np.n
     return np.round(np.clip(shown + passing * background, 0, 1) * 255).astype(np.uint8)
 
 
-def vec3(rgb: np.ndarray) -> str:
-    """A colour as a WGSL constant."""
-    return f"vec3<f32>({', '.join(f'{value:.6f}' for value in rgb)})"
-
-
 def pinned(ax, image: np.ndarray, extent: tuple[float, float, float, float]):
     """An image in matplotlib axes over an extent, left, right, bottom and top, without axes; the image, for an
     animation to set its data.

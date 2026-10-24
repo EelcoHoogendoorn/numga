@@ -20,7 +20,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.connections import core
-from examples.util.wgsl import fitted, meshes, show, solids, strokes, vec3
+from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 # Surface base colours, ring palette, needle colour, the colours of positive and negative singularities and their
@@ -99,8 +99,8 @@ def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray,
     return solids.mv.point(starts), solids.mv.point(np.concatenate([tips, tips, tips]))
 
 
-def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
-            colour: str = meshes.plain) -> meshes.Samples:
+def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray,
+            colour: meshes.Colour) -> meshes.Samples:
     """A mesh, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.mv.point(positions(mesh.vertices))
     return meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
@@ -199,7 +199,9 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
     `[S]`, larger for larger indices."""
     arrows = field_arrows(mesh, field, needle, frame)
     return solids.draw(field_marks(mesh, singular, indices, frame), frame, background,
-                       inks=[], translucent=[], meshes=[(surface(mesh, surface_colour, frame), 1.0), (arrows, 1.0)])
+                       inks=[], translucent=[],
+                       meshes=[(surface(mesh, surface_colour, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
+                               (arrows, 1.0)])
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]]) -> plt.Figure:
@@ -224,7 +226,8 @@ def animate_turning(mesh: core.Mesh, fields: Iterable[core.Vector], singular: np
     needle = needle_length(mesh)
     frame = square_view(view, mesh, needle)
     scene = Scene(frame, background, field_marks(mesh, singular, indices, frame),
-                  [(surface(mesh, surface_colour, frame), 1.0)], inks=[], translucent=[])
+                  [(surface(mesh, surface_colour, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0)],
+                  inks=[], translucent=[])
     for field in fields:
         yield scene.draw([], inks=[], translucent=[], meshes=[(field_arrows(mesh, field, needle, frame), 1.0)])
 
@@ -284,29 +287,28 @@ def crossings(places: np.ndarray, phases: np.ndarray) -> np.ndarray:
     return ends
 
 
-def stripe_colour(n_families: int) -> str:
-    """WGSL colouring a surface by the stripes of up to four families: each family's phase, the corners'
-    blended across the face, plus the whole turns a fork winds around it, spread by an angle about the face's
-    middle that rises by a whole turn once around; light where every family's stripe is light."""
-    return f"""
+# WGSL colouring a surface by the stripes of up to four families, `n_families`: each family's phase, the corners'
+# blended across the face, plus the whole turns a fork winds around it, spread by an angle about the face's middle
+# that rises by a whole turn once around; light where every family's stripe is light.
+striped = """
 // An angle around the middle of a triangle from how near a pixel lies to each corner, rising by a whole turn once
 // around: piecewise linear on the three sectors nearest each edge.
-fn winding(near: vec3<f32>) -> f32 {{
+fn winding(near: vec3<f32>) -> f32 {
     let least = min(near.x, min(near.y, near.z));
     let along = select(select(near.y - near.x, near.x - near.z, near.y == least), near.z - near.y, near.x == least);
     let start = select(select(1.0, 5.0, near.y == least), 3.0, near.x == least);
     return (3.14159265 / 3) * (start + along / max(1 - 3 * least, 1e-6));
-}}
+}
 
-fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {{
+fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: bool) -> vec4<f32> {
     let phases = values + winding(corner) * face_values;
-    let shares = 0.5 - 0.5 * tanh({sharpness} * (cos(phases) - cos(3.14159265 * {bands})));
+    let shares = 0.5 - 0.5 * tanh(sharpness * (cos(phases) - cos(3.14159265 * bands)));
     var share = 1.0;
-    for (var family = 0u; family < {n_families}u; family++) {{
+    for (var family = 0u; family < n_families; family++) {
         share *= shares[family];
-    }}
-    return vec4<f32>(mix({vec3(dark)}, {vec3(light)}, share), 1.0);
-}}
+    }
+    return vec4<f32>(mix(dark_stripe, light_stripe, share), 1.0);
+}
 """
 
 
@@ -314,9 +316,11 @@ def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
     """The surface shaded with the stripes of every family of a pattern of lines `[V, n]`, stripe fields `[V, n]`
     and edge targets `[E, n]`, the given share of each stripe dark."""
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
+    stripes = meshes.Colour(striped, dict(n_families=corners.shape[-1], sharpness=sharpness, bands=bands,
+                                          dark_stripe=dark, light_stripe=light))
     return solids.draw([], frame, background,
                        inks=[], translucent=[],
-                       meshes=[(surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
+                       meshes=[(surface(mesh, corners, frame, face_values=turns, colour=stripes), 1.0)])
 
 
 def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.Scalar], frame: solids.View) -> np.ndarray:
@@ -333,7 +337,8 @@ def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
     drawn = solids.mv.point(segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0])   # [S, 2] Point
     lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
     return solids.draw([], frame, background, inks=[], translucent=[],
-                       meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
+                       meshes=[(surface(mesh, light, frame, face_values=np.zeros(4), colour=meshes.plain), 1.0),
+                               (lines, 1.0)])
 
 
 def pattern_figure(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]],
