@@ -86,7 +86,7 @@ source = (source.replace("LIGHT", vec3(LIGHT)).replace("DARK", vec3(DARK)).repla
 
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, VGA3D, dict(Vector=VGA3D.gatype.vector(), Rotor=VGA3D.gatype.rotor()))
+    return Shader(supersampled() + source, VGA3D, dict(Vector=VGA3D.gatype.vector(), Rotor=VGA3D.gatype.rotor()), {})
 
 
 def coordinates(points) -> np.ndarray:

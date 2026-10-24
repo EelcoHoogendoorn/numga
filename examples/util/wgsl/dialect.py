@@ -11,6 +11,18 @@ constants, fold into those functions as numbers. `f32` is the algebra's scalar. 
 are values of the algebra, numbers or vectors of numbers adds, subtracts and scales member by member, as
 a state of an integrator does, or the light a pixel's samples average.
 
+A value of the algebra passes from the vertex stage to the fragment stage as a member of the struct between them,
+`@location(2) @interpolate(perspective, sample) normal: Plane`: its coefficients cross as vectors of numbers, four to
+a location from the one it names, each interpolated as the others are, so the fragment stage reads the value blended
+linearly across the triangle.
+
+Constants come from Python by name, as module-scope `const` declarations: an integer as a `u32`, a number as an
+`f32`, an array of two to four numbers, such as a colour, as a vector of `f32`, and a value of the algebra folded
+into the operations that use it, as `const origin = mv.w.dual();` is. A batch of two to four values of the algebra,
+such as a frame's planes, `stack((mv.x, mv.y, mv.z))`, crosses between numbers and the algebra: an operation takes
+it value by value, against each component of a vector of as many numbers, and its values gather into such a vector
+where they are numbers, `axes & point`, or sum into one value, `(axes.dual() * place).sum()`.
+
 Module-scope `var<uniform>` values gather into one buffer, and storage arrays, textures and samplers are
 bound in order of declaration: a shader declares what it reads and writes, not where.
 """
@@ -660,6 +672,8 @@ class Value:
 
 _MV = "mv"
 _ABSTRACT = "abstract"
+# A batch of values known when the shader compiles, or computed from them, held value by value.
+_BATCH = "batch"
 # Methods of the scalar that are not polynomials, by their WGSL builtin.
 _SCALAR_FUNCTIONS = {"square_root": "sqrt", "exp": "exp", "log": "log", "cos": "cos", "sin": "sin",
                      "tan": "tan", "arccos": "acos", "arcsin": "asin", "arctan": "atan", "abs": "abs",
@@ -703,8 +717,9 @@ class Program:
 
 
 class Compiler:
-    def __init__(self, algebra: Any, types: Mapping[str, GAType]) -> None:
+    def __init__(self, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any]) -> None:
         self.algebra = algebra
+        self.given = constants
         self.context = SymbolicContext(algebra)
         self.scalar = algebra.gatype.scalar()
         self.names = {}                                                         # dict[GAType, str]
@@ -729,6 +744,8 @@ class Compiler:
         self.stages = {}                                                        # dict[str, str]
         self.targets = 0
         self.member_attributes = {}                                             # dict[str, list[list[str]]]
+        # The values of the algebra each struct between shader stages carries, by member.
+        self.carried = {}                                                       # dict[str, dict[str, GAType]]
 
     def error(self, line: int, message: str) -> SyntaxError:
         return SyntaxError(f"line {line}: {message}")
@@ -769,9 +786,55 @@ class Compiler:
     def is_state(self, kind: Any) -> bool:
         """A struct that adds and scales member by member: its members values of the algebra, or numbers
         and vectors of numbers."""
-        return kind in self.structs and all(
+        return kind in self.structs and kind not in self.carried and all(
             isinstance(member, GAType) or template(member)[0] in ("vec2", "vec3", "vec4")
             for _, member in self.structs[kind])
+
+    def chunks(self, kind: GAType) -> list[str]:
+        """The vectors of numbers a value of the algebra crosses between shader stages as: its coefficients, four to
+        a vector, the last holding what remains."""
+        size = int(np.prod([len(subspace) for subspace in kind.subspaces]))
+        return [f"vec{count}<f32>" if count > 1 else "f32" for count in
+                [min(4, size - start) for start in range(0, size, 4)]]
+
+    def lifted(self, kind: GAType, parts: list[str]) -> Value:
+        """A value of the algebra from the vectors of numbers it crossed between shader stages as."""
+        key = ("lift", kind)
+        if key not in self.helpers:
+            name = f"ga_lift_{len(self.helpers)}"
+            chunks = self.chunks(kind)
+            parameters = ", ".join(f"a{index}: {chunk}" for index, chunk in enumerate(chunks))
+            components = [f"a{index}" if chunk == "f32" else f"a{index}.{axis}" for index, chunk in enumerate(chunks)
+                          for axis in "xyzw"[:int(chunk[3]) if chunk != "f32" else 1]]
+            code = (f"fn {name}({parameters}) -> {self.wgsl(kind)} {{\n"
+                    f"    return {self.wgsl(kind)}({', '.join(components)});\n}}\n")
+            self.helpers[key] = (name, code, kind)
+        name, _, _ = self.helpers[key]
+        return Value(f"{name}({', '.join(parts)})", kind)
+
+    def lowered(self, kind: GAType, value: str) -> list[str]:
+        """WGSL for the vectors of numbers a value of the algebra crosses between shader stages as."""
+        chunks, start, found = self.chunks(kind), 0, []
+        for chunk in chunks:
+            count = int(chunk[3]) if chunk != "f32" else 1
+            coefficients = ", ".join(f"{value}.c{index}" for index in range(start, start + count))
+            found.append(f"{chunk}({coefficients})")
+            start += count
+        return found
+
+    def carrying(self, name: str) -> str:
+        """The function building a struct between shader stages from its members, values of the algebra as
+        they are, each lowered to the vectors of numbers it crosses as."""
+        key = ("carry", name)
+        if key not in self.helpers:
+            helper = f"ga_carry_{len(self.helpers)}"
+            members = self.structs[name]
+            parameters = ", ".join(f"{member}: {self.wgsl(kind)}" for member, kind in members)
+            arguments = ", ".join(", ".join(self.lowered(kind, member)) if member in self.carried[name] else member
+                                  for member, kind in members)
+            code = f"fn {helper}({parameters}) -> {name} {{\n    return {name}({arguments});\n}}\n"
+            self.helpers[key] = (helper, code, name)
+        return self.helpers[key][0]
 
     def element(self, kind: Any) -> Any:
         """The element type of an array, the component type of a vector, a matrix's column."""
@@ -806,6 +869,9 @@ class Compiler:
         """WGSL for a value, spelling out a compile-time one as its coefficients."""
         if value.text is not None:
             return value.text
+        if value.type == _BATCH:
+            raise TypeError(f"a batch of {len(value.constant)} values is no WGSL value: gather it into numbers or "
+                            f"sum it")
         if value.type == _ABSTRACT:
             return literal(value.constant)
         coefficients = ", ".join(literal(float(Polynomial.lift(c))) for c in np.asarray(value.constant.kernel).ravel())
@@ -912,6 +978,9 @@ class Compiler:
             return self.call(node, scope)
         if isinstance(node, Unary):
             operand = self.value(node.operand, scope)
+            if node.operator == "-" and operand.type == _BATCH:
+                return self.gathered([self.operation("negate", operator.neg, [element], node.line)
+                                      for element in operand.constant])
             if node.operator == "-" and (isinstance(operand.type, GAType) and operand.type != self.scalar or operand.text is None):
                 return self.operation("negate", operator.neg, [operand], node.line)
             if node.operator == "-" and operand.type == _ABSTRACT:
@@ -952,6 +1021,10 @@ class Compiler:
             members = dict(self.structs[base.type])
             if node.name not in members:
                 raise self.error(node.line, f"{base.type} has no member {node.name!r}")
+            if node.name in self.carried.get(base.type, {}):
+                kind = members[node.name]
+                return self.lifted(kind, [f"{self.text(base)}.{node.name}_{index}"
+                                          for index in range(len(self.chunks(kind)))])
             return Value(f"{self.text(base)}.{node.name}", members[node.name])
         name, arguments = template(base.type)
         if name.startswith("vec"):
@@ -962,6 +1035,8 @@ class Compiler:
         raise self.error(node.line, f"{base.type} has no member {node.name!r}")
 
     def binary(self, line: int, symbol: str, left: Value, right: Value) -> Value:
+        if _BATCH in (left.type, right.type):
+            return self.batched(line, symbol, left, right)
         algebra = any(isinstance(side.type, GAType) and (side.type != self.scalar or side.text is None)
                       for side in (left, right))
         if symbol == "**":
@@ -990,6 +1065,31 @@ class Compiler:
             right.type if left.type == _ABSTRACT or (left.type == self.scalar and str(right.type).startswith("vec"))
             else left.type)
         return Value(f"({self.text(left)} {symbol} {self.text(right)})", kind)
+
+    def batched(self, line: int, symbol: str, left: Value, right: Value) -> Value:
+        """An operation on a batch, value by value: against each value of another batch of as many, each component
+        of a vector of as many numbers, or one value throughout."""
+        count = len((left if left.type == _BATCH else right).constant)
+
+        def elements(side: Value) -> list[Value]:
+            if side.type == _BATCH:
+                if len(side.constant) != count:
+                    raise self.error(line, f"cannot {symbol} batches of {count} and {len(side.constant)} values")
+                return side.constant
+            name, arguments = template(side.type) if isinstance(side.type, str) else (None, [])
+            if name is not None and name.startswith("vec"):
+                if int(name[3]) != count:
+                    raise self.error(line, f"cannot {symbol} a batch of {count} values and a {side.type}")
+                return [Value(f"{self.text(side)}.{axis}", self.resolve(arguments[0])) for axis in "xyzw"[:count]]
+            return [side] * count
+        return self.gathered([self.binary(line, symbol, a, b) for a, b in zip(elements(left), elements(right))])
+
+    def gathered(self, values: list[Value]) -> Value:
+        """Values of a batch: numbers gathered into a vector of them, values of the algebra kept as a batch."""
+        if all(self.is_scalar(value) for value in values):
+            kind = f"vec{len(values)}<f32>"
+            return Value(f"{kind}({', '.join(self.text(value) for value in values)})", kind)
+        return Value(None, _BATCH, values)
 
     def state(self, line: int, symbol: str, left: Value, right: Value) -> Value:
         """Arithmetic on structs of values of the algebra, member by member."""
@@ -1022,7 +1122,7 @@ class Compiler:
         callee = node.callee
         if isinstance(callee, Member):
             base = self.value(callee.object, scope)
-            if base.type != _MV and (isinstance(base.type, GAType) or base.type == _ABSTRACT):
+            if base.type != _MV and (isinstance(base.type, GAType) or base.type in (_ABSTRACT, _BATCH)):
                 return self.method(node.line, base, callee.name, callee.arguments if False else node.arguments, scope)
         if isinstance(callee, TypeName):
             arguments = ", ".join(self.text(self.value(argument, scope)) for argument in node.arguments)
@@ -1042,7 +1142,8 @@ class Compiler:
                 members = self.structs[name]
                 arguments = ", ".join(self.coerce(self.value(argument, scope), member, node.line)
                                       for argument, (_, member) in zip(node.arguments, members))
-                return Value(f"{name}({arguments})", name)
+                built = self.carrying(name) if name in self.carried else name
+                return Value(f"{built}({arguments})", name)
             if name in self.types and name != "f32":
                 # A type applied to a value is its identity map applied: an embedding or a projection.
                 return self.operation("apply", lambda kind, x: kind(x),
@@ -1057,6 +1158,11 @@ class Compiler:
     def method(self, line: int, base: Value, name: str, nodes: list, scope: list[dict]) -> Value:
         if name.endswith("_") and name[:-1] in _RESERVED:
             name = name[:-1]
+        if base.type == _BATCH:
+            if name == "sum":
+                # One operation over the whole batch: its values' coefficients gather in one function.
+                return self.operation("sum", lambda *values: sum(values[1:], values[0]), base.constant, line)
+            return self.gathered([self.method(line, value, name, nodes, scope) for value in base.constant])
         if name == "cast":
             target = self.types[nodes[0].id]
             if base.text is None:
@@ -1235,6 +1341,9 @@ class Compiler:
         if isinstance(node, Assignment):
             if isinstance(node.target, Name) and node.target.id == "_":
                 return f"_ = {self.text(self.value(node.value, scope))}"
+            if (isinstance(node.target, Member) and node.target.name in
+                    self.carried.get(self.value(node.target.object, scope).type, {})):
+                raise self.error(node.line, f"build a struct carrying {node.target.name} between stages whole")
             target = self.value(node.target, scope)
             value = self.value(node.value, scope)
             if node.operator != "=" and (isinstance(target.type, GAType) or self.is_state(target.type)):
@@ -1263,11 +1372,17 @@ class Compiler:
             if isinstance(item, Struct):
                 self.structs[item.name] = [(member, self.resolve(kind)) for _, member, kind in item.members]
                 self.member_attributes[item.name] = [attributes for attributes, _, _ in item.members]
+                for attributes, (member, kind) in zip(self.member_attributes[item.name], self.structs[item.name]):
+                    if (isinstance(kind, GAType) and kind != self.scalar
+                            and any(attribute.startswith("@location") for attribute in attributes)):
+                        self.carried.setdefault(item.name, {})[member] = kind
             elif isinstance(item, Function):
                 self.functions[item.name] = ([self.resolve(kind) for _, _, kind in item.parameters], self.resolve(item.result))
-        constants = []
+        constants = [line for name, value in self.given.items() for line in self.given_constant(name, value)]
         for item in items:
             if isinstance(item, Declaration):
+                if item.name in self.given:
+                    raise self.error(item.line, f"{item.name} is a constant given from Python")
                 constants.extend(self.global_(item))
         functions = []
         for item in items:
@@ -1299,9 +1414,58 @@ class Compiler:
 
     def struct_code(self, name: str, members: list) -> str:
         attributes = self.member_attributes.get(name, [[] for _ in members])
-        fields = "\n".join(f"    {' '.join(attribute + [member])}: {self.wgsl(kind)},"
-                           for attribute, (member, kind) in zip(attributes, members))
-        return f"struct {name} {{\n{fields}\n}};\n"
+        fields, taken = [], set()
+        for attribute, (member, kind) in zip(attributes, members):
+            if member not in self.carried.get(name, {}):
+                fields.append((attribute, member, self.wgsl(kind)))
+                continue
+            # A value of the algebra takes a location for each vector of numbers it crosses as, from the one it names.
+            first = int(next(entry for entry in attribute if entry.startswith("@location"))[len("@location("):-1])
+            others = [entry for entry in attribute if not entry.startswith("@location")]
+            fields.extend(([f"@location({first + index})"] + others, f"{member}_{index}", chunk)
+                          for index, chunk in enumerate(self.chunks(kind)))
+        for attribute, member, _ in fields:
+            for entry in attribute:
+                if entry.startswith("@location"):
+                    if entry in taken:
+                        raise SyntaxError(f"struct {name}: {member} takes {entry}, which another member holds")
+                    taken.add(entry)
+        lines = "\n".join(f"    {' '.join(attribute + [member])}: {kind}," for attribute, member, kind in fields)
+        return f"struct {name} {{\n{lines}\n}};\n"
+
+    def given_constant(self, name: str, value: Any) -> list[str]:
+        """A constant given from Python: a value of the algebra folded where it is used, an integer, a number or a
+        vector of numbers declared as a `const`."""
+        if isinstance(value, Extensor):
+            if value.shape not in ((), (2,), (3,), (4,)):
+                raise ValueError(f"the constant {name} is a batch {value.shape}, not one value or two to four")
+            self.globals[name] = (self.constant(self.narrowed(value)) if value.shape == () else
+                                  Value(None, _BATCH, [self.constant(self.narrowed(value[index]))
+                                                       for index in range(value.shape[0])]))
+            return []
+        if isinstance(value, (bool, np.bool_)):
+            raise TypeError(f"the constant {name} is a truth value, which the shader takes as no number")
+        if isinstance(value, (int, np.integer)):
+            if value < 0:
+                raise ValueError(f"the constant {name} is a negative integer, not a u32")
+            self.globals[name] = Value(name, "u32")
+            return [f"const {name}: u32 = {int(value)}u;"]
+        if isinstance(value, (float, np.floating)):
+            self.globals[name] = Value(name, self.scalar)
+            return [f"const {name}: f32 = {literal(value)};"]
+        numbers = np.asarray(value, dtype=float)
+        if numbers.shape not in ((2,), (3,), (4,)):
+            raise ValueError(f"the constant {name} of shape {numbers.shape} is no vector of two to four numbers")
+        kind = f"vec{len(numbers)}<f32>"
+        self.globals[name] = Value(name, kind)
+        return [f"const {name}: {kind} = {kind}({', '.join(literal(number) for number in numbers)});"]
+
+    def narrowed(self, value: Extensor) -> Extensor:
+        """A value of the algebra given from Python in the type of its blades that are not zero, as a blade such as
+        `mv.x` has, so that operations on it compute only with those."""
+        names = [name for name, coefficient in zip(value.gatype.subspaces[0].blade_names, np.asarray(value.kernel))
+                 if coefficient != 0] if value.gatype.arity == 0 else []
+        return value.restrict_subspace(self.algebra.subspace(names)) if names else value
 
     def global_(self, node: Declaration) -> list[str]:
         if node.kind in ("const", "let") or node.kind == "override":
@@ -1364,6 +1528,7 @@ def _power(value: Any, exponent: int) -> Any:
     return result
 
 
-def compile(source: str, algebra: Any, types: Mapping[str, GAType]) -> Program:
-    """WGSL for a shader in the dialect, with the algebra's types named as the shader names them."""
-    return Compiler(algebra, types).compile(source)
+def compile(source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any]) -> Program:
+    """WGSL for a shader in the dialect, with the algebra's types named as the shader names them, and the constants
+    given from Python declared by their names."""
+    return Compiler(algebra, types, constants).compile(source)

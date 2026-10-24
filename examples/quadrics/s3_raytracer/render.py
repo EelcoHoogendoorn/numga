@@ -109,7 +109,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
+    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric), {})
 
 
 def picture(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,

@@ -227,7 +227,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, PGA3D, dict(Point=core.Point, Cut=core.Cut, Motor=core.Motor, Quadric=core.Quadric))
+    return Shader(supersampled() + source, PGA3D, dict(Point=core.Point, Cut=core.Cut, Motor=core.Motor, Quadric=core.Quadric), {})
 
 
 def scene(built: core.Body, motor: core.Motor) -> dict:

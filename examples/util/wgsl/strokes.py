@@ -15,23 +15,18 @@ import numpy as np
 
 from examples.util.wgsl import Shader
 from examples.util.wgsl.meshes import Samples
-from examples.util.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, shininess
+from examples.util.wgsl.solids import Motor, Plane, Point, View, axes, ga, gloss, lamp_shading, lighting, mv
 
 source = """
 var<storage, read> starts: array<Point>;
 var<storage, read> ends: array<Point>;
 var<storage, read> colours: array<vec4<f32>>;
 var<uniform> radius: f32;
-// The camera of `solids`: looking along its own -z, its rays parallel, the image half as wide and high as these.
+// The camera of `solids`: looking along its own -z, its rays parallel, the image half as wide and high as these; its
+// frame, `axes`, given from Python.
 var<uniform> camera: Motor;
 var<uniform> half_size: vec2<f32>;
 var<uniform> depth: f32;
-var<uniform> lamp: Point;
-var<uniform> ambient: f32;
-var<uniform> fill_tilt: f32;
-var<uniform> headlight: f32;
-var<uniform> gloss: f32;
-var<uniform> shininess: f32;
 
 struct Corner {
     @builtin(position) position: vec4<f32>,
@@ -52,8 +47,7 @@ struct Shade {
 // A point in the camera's frame: its pairings with the camera's planes, over its weight.
 fn framed(point: Point) -> vec3<f32> {
     let seen = camera << point;
-    let weight = mv.w & seen;
-    return vec3<f32>((mv.x & seen) / weight, (mv.y & seen) / weight, (mv.z & seen) / weight);
+    return (axes & seen) / (mv.w & seen);
 }
 
 // A corner of the box around a segment's capsule on the image, six to a segment, two triangles.
@@ -122,11 +116,8 @@ fn shade(corner: Corner) -> Shade {
     // camera's frame.
     let normal = camera >> (mv.x * outward.x + mv.y * outward.y + mv.z * outward.z);
     let direction = camera >> -mv.z.dual();
-    let light = max(normal & lamp, 0.0);
-    let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
-    let lit = corner.colour.rgb * (fill + (1 - ambient - headlight) * light) + gloss * glint;
-    return Shade(vec4<f32>(lit, 1.0), vec4<f32>(-hit.z, 0.0, 0.0, 1.0), 0.5 - hit.z / depth);
+    let shaded = corner.colour.rgb * brightness(normal, direction) + gloss * glint(normal, direction);
+    return Shade(vec4<f32>(shaded, 1.0), vec4<f32>(-hit.z, 0.0, 0.0, 1.0), 0.5 - hit.z / depth);
 }
 """
 
@@ -135,7 +126,8 @@ fn shade(corner: Corner) -> Shade {
 @cache
 def shader() -> Shader:
     # The colour a byte a channel, and the depth alone at full precision, as meshes write them.
-    return Shader(source, ga, dict(Point=Point, Plane=Plane, Motor=Motor), targets=("rgba8unorm", "r32float"))
+    return Shader(lamp_shading() + source, ga, dict(Point=Point, Plane=Plane, Motor=Motor), dict(axes=axes),
+                  targets=("rgba8unorm", "r32float"))
 
 
 def segments(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: float, view: View) -> Samples:
@@ -144,8 +136,7 @@ def segments(starts: np.ndarray, ends: np.ndarray, colours: np.ndarray, width: f
     shades = np.concatenate([np.broadcast_to(colours, starts.shape), np.ones((len(starts), 1))], axis=-1)
     return Samples(shader(), 6 * len(starts), dict(
         starts=mv.point(starts), ends=mv.point(ends), colours=shades, radius=width / 2 * view.pixel,
-        camera=view.camera, half_size=view.half, depth=8 * view.half.max(), lamp=lamp(view.camera), ambient=ambient,
-        fill_tilt=fill_tilt, headlight=headlight, gloss=gloss, shininess=shininess))
+        camera=view.camera, half_size=view.half, depth=8 * view.half.max(), **lighting(view.camera, gloss)))
 
 
 def polylines(curves: list[tuple[np.ndarray, np.ndarray]], width: float, view: View) -> Samples:

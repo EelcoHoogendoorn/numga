@@ -204,12 +204,13 @@ FORMATS = {"rgba32float": (16, 4, np.float32), "r32float": (4, 1, np.float32), "
 
 
 class Shader:
-    """A compiled shader in the numga dialect, ready to run over images; where it draws, the formats of the targets its
-    fragment stage writes, one per target."""
+    """A compiled shader in the numga dialect, ready to run over images, with constants given from Python by name, as
+    `compile` declares them; where it draws, the formats of the targets its fragment stage writes, one per target."""
 
-    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], targets: tuple[str, ...] = ()) -> None:
+    def __init__(self, source: str, algebra: Any, types: Mapping[str, GAType], constants: Mapping[str, Any],
+                 targets: tuple[str, ...] = ()) -> None:
         self.targets = targets
-        self.program = compile(source, algebra, types)
+        self.program = compile(source, algebra, types, constants)
         self.context = NumpyContext(algebra)
         self.layout = Layout(self.program, algebra.gatype.scalar())
         self.device = device()

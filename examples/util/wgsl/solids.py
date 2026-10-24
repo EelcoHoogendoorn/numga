@@ -29,6 +29,9 @@ Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
+# The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
+# to the right, up, and toward the viewer, the camera looking along its own -z; a place so far along each is the
+# origin moved by their duals, `origin + (axes.dual() * place).sum()`.
 axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane
 origin = mv.w.dual()                                                         # [] Point
 # The light that falls everywhere, the glint's share and sharpness, and the lamp: from up and to the right
@@ -41,87 +44,107 @@ fill_tilt = 0.5
 # squarely it is turned to the viewer; the lamp gives the rest.
 headlight = 0.25
 
-source = """
-// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, its colour, how much of what
-// lies behind it it hides, and whether its quadrics are all half-spaces, bounded by planes alone.
-struct Solid {
-    first: u32,
-    end: u32,
-    colour: vec3<f32>,
-    opacity: f32,
-    flat: u32,
-}
 
-var<storage, read> solids: array<Solid>;
-// The solids each tile of the picture, `tile` pixels a side, may see: the solids `tile_solids[tile_starts[tile]]` up to
-// `tile_solids[tile_starts[tile + 1]]`, in their order; the tiles across the picture.
-var<storage, read> tile_starts: array<u32>;
-var<storage, read> tile_solids: array<u32>;
-var<uniform> tiles_across: u32;
-const tile = 16.0;
-var<storage, read> quadrics: array<Quadric>;
-// Lines inked on the surfaces of the solids `first` up to `end`, where the ink's quadric pairs to zero with the point,
-// `width` pixels across, each pixel `pixel` across in the scene, hiding `opacity` of what lies behind them.
-struct Ink {
-    first: u32,
-    end: u32,
-    colour: vec3<f32>,
-    width: f32,
-    opacity: f32,
-}
-
-var<storage, read> inks: array<Ink>;
-var<storage, read> ink_quadrics: array<Quadric>;
-// Where each ink shows: where its region's quadric pairs negatively with the point.
-var<storage, read> ink_regions: array<Quadric>;
-var<uniform> pixel: f32;
-// Meshes drawn at every sample of every pixel, mesh after mesh, each sample one cell of a grid `samples_per_side` to a
-// pixel's side, rows first, each row `mesh_row` cells long: its colour, premultiplied by how much of what lies behind
-// it it hides, a byte a channel packed in a word, red first, and its depth along the view, both zero where the mesh
-// shows nothing.
-var<storage, read> mesh_colours: array<u32>;
-var<storage, read> mesh_depths: array<f32>;
-var<uniform> mesh_row: u32;
-// How much of what each mesh covers it hides, a share of its colour's own.
-var<storage, read> mesh_opacities: array<f32>;
-var<uniform> n_meshes: u32;
-// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the
-// image half as high as this.
-var<uniform> camera: Motor;
-var<uniform> back: f32;
-var<uniform> half_height: f32;
+def lamp_shading() -> str:
+    """WGSL lighting a surface by the lamp, for the solids, meshes and strokes alike: the lamp's uniforms, as
+    `lighting` gives them, and from a tangent plane and the direction of the view, `facing`, the plane at unit weight
+    turned to the viewer, `brightness`, how brightly the lamp, the sky and the viewer light it, `glint`, and `lit`, a
+    colour lit with its glint."""
+    return """
+// The lamp's direction, the light that falls everywhere, how much more of it falls on faces turned up, the share of
+// the light that comes from the viewer, and the glint's share and sharpness.
 var<uniform> lamp: Point;
 var<uniform> ambient: f32;
 var<uniform> fill_tilt: f32;
 var<uniform> headlight: f32;
 var<uniform> gloss: f32;
 var<uniform> shininess: f32;
-// What shows through where the surfaces let light pass: black, nothing, for a layer to compose with others.
-var<uniform> background: vec3<f32>;
 
-// A sample's colour and its depth along the view, in the first channel, each with its coverage.
-struct Sample {
-    colour: vec4<f32>,
-    depth: vec4<f32>,
+// A tangent plane at unit weight, facing a viewer looking along `direction`: a surface is lit on the side the camera
+// sees.
+fn facing(tangent: Plane, direction: Point) -> Plane {
+    return (tangent * select(1.0, -1.0, (tangent & direction) > 0)).normalized();
 }
 
-const origin = mv.w.dual();
+// How brightly a surface is lit, its normal a plane at unit weight facing the viewer: by the lamp, by the sky above
+// and the ground below, by the normal's pairing with the upward direction, and by the viewer.
+fn brightness(normal: Plane, direction: Point) -> f32 {
+    let light = max(normal & lamp, 0.0);
+    let fill = ambient * (1 + fill_tilt * (normal & mv.z.dual())) + headlight * -(normal & direction);
+    return fill + (1 - ambient - headlight) * light;
+}
+
+// The glint where the view ray, reflected in the tangent plane, meets the lamp, on a surface the lamp lights:
+// `-d.dual()` is the plane square to d.
+fn glint(normal: Plane, direction: Point) -> f32 {
+    return pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, (normal & lamp) > 0);
+}
+
+// A colour on a surface with this tangent plane, lit, with its glint.
+fn lit(colour: vec3<f32>, tangent: Plane, direction: Point) -> vec3<f32> {
+    let normal = facing(tangent, direction);
+    return colour * brightness(normal, direction) + gloss * glint(normal, direction);
+}
+"""
+
+
+def quadric_tracing() -> str:
+    """WGSL tracing rays through solids bounded by quadrics, as `scene` and `tiles` lay them out: `first_hit`, the
+    first point a ray meets on a solid's surface after the last surface seen, by `crossings`, where it crosses each
+    quadric, and `inside_others`."""
+    return """
+// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and whether they are all
+// half-spaces, bounded by planes alone.
+struct Solid {
+    first: u32,
+    end: u32,
+    flat: u32,
+}
+
+var<storage, read> solids: array<Solid>;
+var<storage, read> quadrics: array<Quadric>;
+// The solids each tile of the picture, `tile` pixels a side, may see: the solids `tile_solids[tile_starts[tile]]` up to
+// `tile_solids[tile_starts[tile + 1]]`, in their order; the tiles across the picture.
+var<storage, read> tile_starts: array<u32>;
+var<storage, read> tile_solids: array<u32>;
+var<uniform> tiles_across: u32;
+const tile = 16.0;
+// A pixel's size in the scene.
+var<uniform> pixel: f32;
+
 const far = 1e30;
 // How far a point may lie outside a quadric and still count as inside, for points on two surfaces.
 const tolerance = 1e-5;
-// The most surfaces a ray sees through, nearest first, and how little light may pass for it to stop looking.
-const n_layers = 8u;
-const opaque = 0.004;
 // Surfaces closer along a ray than this share of a pixel lie at one depth, and are taken in the order of their solids,
 // then their meshes: every surface is seen once, coincident ones included.
 const tie = 0.01;
 
+// The surface a ray meets: how far along it, its tangent plane there, and its solid.
 struct Hit {
     distance: f32,
     tangent: Plane,
-    colour: vec3<f32>,
-    opacity: f32,
     solid: u32,
+}
+
+// A quadric along a ray, from `start` along `direction`: its pairing with the ray's point, a quadratic in the distance
+// t along it, a t^2 + 2 b t + c.
+struct Quadratic {
+    a: f32,
+    b: f32,
+    c: f32,
+}
+
+fn along_ray(quadric: Quadric, start: Point, direction: Point) -> Quadratic {
+    return Quadratic(quadric(direction) & direction, ((quadric(direction) & start) + (quadric(start) & direction)) / 2,
+                     quadric(start) & start);
+}
+
+// Where a ray crosses a quadric's surface, the roots of the quadratic along it, where it has them: both without
+// cancellation; a half-space, with no square term, has only the second, the first at `far`.
+fn crossings(along: Quadratic) -> vec2<f32> {
+    let discriminant = along.b * along.b - along.a * along.c;
+    let q = -(along.b + select(-1.0, 1.0, along.b >= 0) * sqrt(discriminant));
+    return vec2<f32>(select(q / along.a, far, along.a == 0), along.c / q);
 }
 
 fn inside_others(solid: Solid, own: u32, point: Point) -> bool {
@@ -156,22 +179,20 @@ fn planes_hit(solid: Solid, index: u32, start: Point, direction: Point, last_dis
     var entering = solid.end;
     var leaving = solid.end;
     for (var own = solid.first; own < solid.end; own++) {
-        let quadric = quadrics[own];
-        let b = ((quadric(direction) & start) + (quadric(start) & direction)) / 2;
-        let c = quadric(start) & start;
+        let along = along_ray(quadrics[own], start, direction);
         // Along a plane, the ray is inside it everywhere or nowhere.
-        if (b == 0) {
-            if (c > 0) {
+        if (along.b == 0) {
+            if (along.c > 0) {
                 return hit;
             }
             continue;
         }
-        let crossing = -c / (2 * b);
-        if (b < 0 && crossing > entry) {
+        let crossing = -along.c / (2 * along.b);
+        if (along.b < 0 && crossing > entry) {
             entry = crossing;
             entering = own;
         }
-        if (b > 0 && crossing < exit) {
+        if (along.b > 0 && crossing < exit) {
             exit = crossing;
             leaving = own;
         }
@@ -179,13 +200,13 @@ fn planes_hit(solid: Solid, index: u32, start: Point, direction: Point, last_dis
     if (entry >= exit) {
         return hit;
     }
-    let crossings = vec2<f32>(entry, exit);
+    let distances = vec2<f32>(entry, exit);
     let planes = vec2<u32>(entering, leaving);
     for (var which = 0u; which < 2u; which++) {
-        let distance = crossings[which];
+        let distance = distances[which];
         if (planes[which] < solid.end && after(distance, index, last_distance, last_order)
             && before(distance, index, hit.distance, hit.solid)) {
-            hit = Hit(distance, quadrics[planes[which]](start + direction * distance), solid.colour, solid.opacity, index);
+            hit = Hit(distance, quadrics[planes[which]](start + direction * distance), index);
         }
     }
     return hit;
@@ -194,7 +215,7 @@ fn planes_hit(solid: Solid, index: u32, start: Point, direction: Point, last_dis
 // The first point a ray meets on a solid's surface after the last surface seen, by distance and then by the solids'
 // order, among the solids its tile of the picture may see: on one of its quadrics, and inside all the others.
 fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32, seen: u32) -> Hit {
-    var hit = Hit(far, mv.z, vec3<f32>(0.0), 0.0, 0u);
+    var hit = Hit(far, mv.z, 0u);
     for (var listed = tile_starts[seen]; listed < tile_starts[seen + 1]; listed++) {
         let index = tile_solids[listed];
         let solid = solids[index];
@@ -204,39 +225,83 @@ fn first_hit(start: Point, direction: Point, last_distance: f32, last_order: u32
         }
         for (var own = solid.first; own < solid.end; own++) {
             let quadric = quadrics[own];
-            // Along the ray the quadric is a quadratic in the distance, a t^2 + 2 b t + c.
-            let a = quadric(direction) & direction;
-            let b = ((quadric(direction) & start) + (quadric(start) & direction)) / 2;
-            let c = quadric(start) & start;
-            let discriminant = b * b - a * c;
-            if (discriminant < 0) {
+            let along = along_ray(quadric, start, direction);
+            if (along.b * along.b - along.a * along.c < 0) {
                 // Outside this quadric all along the ray, the ray never enters the solid: its other quadrics need no
                 // test. Inside it all along, this quadric has no surface on the ray.
-                if (a > 0) {
+                if (along.a > 0) {
                     break;
                 }
                 continue;
             }
-            // Both roots without cancellation; a half-space, with no square term, has only the second.
-            let q = -(b + select(-1.0, 1.0, b >= 0) * sqrt(discriminant));
-            let roots = vec2<f32>(select(q / a, far, a == 0), c / q);
+            let roots = crossings(along);
             for (var which = 0u; which < 2u; which++) {
                 let distance = roots[which];
                 let point = start + direction * distance;
                 if (after(distance, index, last_distance, last_order) && before(distance, index, hit.distance, hit.solid)
                     && inside_others(solid, own, point)) {
                     // The quadric's plane at a point of its surface is the tangent plane there.
-                    hit = Hit(distance, quadric(point), solid.colour, solid.opacity, index);
+                    hit = Hit(distance, quadric(point), index);
                 }
             }
         }
     }
     return hit;
 }
+"""
 
-// A hit's colour and opacity with the lines inked on its solid, and whether one covers it: the distance along the
-// surface to an ink's zero set is its pairing with the point over the part of its gradient along the surface, the
-// quadric's plane there less its part along the normal.
+
+source = """
+// Each solid's colour, and how much of what lies behind it it hides.
+struct Look {
+    colour: vec3<f32>,
+    opacity: f32,
+}
+
+var<storage, read> looks: array<Look>;
+// Lines inked on the surfaces of the solids `first` up to `end`, where the ink's quadric pairs to zero with the point,
+// `width` pixels across, hiding `opacity` of what lies behind them.
+struct Ink {
+    first: u32,
+    end: u32,
+    colour: vec3<f32>,
+    width: f32,
+    opacity: f32,
+}
+
+var<storage, read> inks: array<Ink>;
+var<storage, read> ink_quadrics: array<Quadric>;
+// Where each ink shows: where its region's quadric pairs negatively with the point.
+var<storage, read> ink_regions: array<Quadric>;
+// Meshes drawn at every sample of every pixel, mesh after mesh, each sample one cell of a grid `samples_per_side` to a
+// pixel's side, rows first, each row `mesh_row` cells long: its colour, premultiplied by how much of what lies behind
+// it it hides, a byte a channel packed in a word, red first, and its depth along the view, both zero where the mesh
+// shows nothing.
+var<storage, read> mesh_colours: array<u32>;
+var<storage, read> mesh_depths: array<f32>;
+var<uniform> mesh_row: u32;
+// How much of what each mesh covers it hides, a share of its colour's own.
+var<storage, read> mesh_opacities: array<f32>;
+var<uniform> n_meshes: u32;
+// A camera looking along its own -z, its rays parallel, starting `back` behind the middle of the view; the
+// image half as high as this. Its frame, `axes`, is given from Python.
+var<uniform> camera: Motor;
+var<uniform> back: f32;
+var<uniform> half_height: f32;
+// What shows through where the surfaces let light pass: black, nothing, for a layer to compose with others.
+var<uniform> background: vec3<f32>;
+
+// A sample's colour and its depth along the view, in the first channel, each with its coverage.
+struct Sample {
+    colour: vec4<f32>,
+    depth: vec4<f32>,
+}
+
+const origin = mv.w.dual();
+// The most surfaces a ray sees through, nearest first, and how little light may pass for it to stop looking.
+const n_layers = 8u;
+const opaque = 0.004;
+
 // A surface's colour and opacity, and whether an ink covers it there.
 struct Painted {
     colour: vec4<f32>,
@@ -247,8 +312,12 @@ struct Painted {
 // still reads in its colour, while the rest takes the surface's shading.
 const ink_own = 0.5;
 
+// A hit's colour and opacity with the lines inked on its solid, and whether one covers it: the distance along the
+// surface to an ink's zero set is its pairing with the point over the part of its gradient along the surface, the
+// quadric's plane there less its part along the normal.
 fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
-    var colour = vec4<f32>(hit.colour, hit.opacity);
+    let look = looks[hit.solid];
+    var colour = vec4<f32>(look.colour, look.opacity);
     var painted = false;
     for (var index = 0u; index < arrayLength(&inks); index++) {
         let ink = inks[index];
@@ -258,7 +327,7 @@ fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
         }
         let gradient = ink_quadrics[index](point) * 2;
         let along = gradient - normal * (gradient | normal);
-        let distance = abs(ink_quadrics[index](point) & point) / (along | along).square_root();
+        let distance = abs(ink_quadrics[index](point) & point) / along.norm();
         let covers = distance < ink.width / 2 * pixel;
         colour = select(colour, vec4<f32>(ink.colour, ink.opacity), covers);
         painted = painted || covers;
@@ -266,19 +335,13 @@ fn inked(hit: Hit, point: Point, normal: Plane) -> Painted {
     return Painted(colour, painted);
 }
 
-// A hit's colour, lit by the lamp, the sky and the viewer, and its opacity.
+// A hit's colour, lit by the lamp, the sky and the viewer, and its opacity; an ink keeps a share of its own colour.
 fn shade(hit: Hit, start: Point, direction: Point) -> vec4<f32> {
-    // Facing the viewer: a tangent plane is lit on the side the ray comes from.
-    let tangent = hit.tangent * select(1.0, -1.0, (hit.tangent & direction) > 0);
-    let normal = tangent / (tangent | tangent).square_root();
-    let light = max(normal & lamp, 0.0);
-    // The view ray reflected in the tangent plane, against the lamp: `-d.dual()` is the plane square to d.
-    let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    let fill = ambient * (1 + fill_tilt * (normal | mv.z)) + headlight * -(normal & direction);
+    let normal = facing(hit.tangent, direction);
     let surface = inked(hit, start + direction * hit.distance, normal);
-    let lit = surface.colour.rgb * (fill + (1 - ambient - headlight) * light);
     let own = select(0.0, ink_own, surface.inked);
-    return vec4<f32>(mix(lit, surface.colour.rgb, own) + gloss * glint, surface.colour.a);
+    let shaded = mix(surface.colour.rgb * brightness(normal, direction), surface.colour.rgb, own);
+    return vec4<f32>(shaded + gloss * glint(normal, direction), surface.colour.a);
 }
 
 // A mesh's surface at a sample: its colour, premultiplied by how much it hides, and its distance along the ray.
@@ -307,8 +370,9 @@ fn mesh_after(cell: u32, last_distance: f32, last_order: u32) -> Seen {
 // The surfaces along a ray, solids' and meshes' alike, nearest first, each hiding its share of what lies behind it;
 // the depth is the nearest one's, weighted as the colour is by how much the surfaces hide.
 fn sample(place: vec2<f32>) -> Sample {
+    // The ray's start in the camera's frame: across and up the image, and `back` toward the viewer.
     let across = screen(place) * half_height;
-    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
+    let start = camera >> (origin + (axes.dual() * vec3<f32>(across, back)).sum());
     let direction = camera >> -mv.z.dual();
     // The sample's cell in the meshes' grid, and its tile of the picture.
     let grid = vec2<u32>(floor(place * f32(samples_per_side)));
@@ -400,9 +464,8 @@ def aligned(starts: Point, ends: Point) -> tuple[Plane, np.ndarray, Motor]:
     """For segments between points of unit weight: the unit plane through the origin square to each, how z lies
     along it, `1` or `-1`, and the turn carrying z onto that, whichever way along the segment lies nearer z, so the
     turn never reverses z."""
-    across = -(ends - starts).dual()                                          # [...] Plane
-    across = across / (across | across).square_root()
-    sense = np.where((across | mv.z).to_array() >= 0, 1.0, -1.0)
+    across = (-(ends - starts).dual()).normalized()                           # [...] Plane
+    sense = np.where((across & mv.z.dual()).to_array() >= 0, 1.0, -1.0)
     return across, sense, (1 + across * sense * mv.z).normalized()
 
 
@@ -488,7 +551,8 @@ TILE = 16
 
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric))
+    return Shader(supersampled() + quadric_tracing() + lamp_shading() + source, ga,
+                  dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric), dict(axes=axes))
 
 
 class Ink(NamedTuple):
@@ -581,11 +645,11 @@ def bounded_by_planes(solids: Quadric) -> np.ndarray:
 
 
 def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
-          inks: list[Ink]) -> tuple[Quadric, dict, Quadric, Quadric, dict, tuple[np.ndarray, np.ndarray]]:
-    """Every solid's quadrics, solid after solid, and each solid's range of them, colour and opacity, from parts: each
-    a batch of solids, `[solids, quadrics]` Quadric, all of one kind, their colours, `[solids, 3]` or one for all,
-    and for the translucent parts their opacity; and every ink's quadric, with its part's range of solids, colour and
-    width."""
+          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[np.ndarray, np.ndarray]]:
+    """Every solid's quadrics, solid after solid, each solid's range of them and whether they are all half-spaces, and
+    its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, their
+    colours, `[solids, 3]` or one for all, and for the translucent parts their opacity; and every ink's quadric, with
+    its part's range of solids, colour and width."""
     parts = [(solids, colour, 1.0) for solids, colour in parts] + list(translucent)
     quadrics, counts, colours, opacities, flats, centres, radii = [], [], [], [], [], [], []
     for solids, colour, opacity in parts:
@@ -619,8 +683,9 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
                   end=np.repeat([part_ends[ink.part] for ink in inks[:-1]] + [0], sizes),
                   colour=np.concatenate([np.broadcast_to(ink.colours, (size, 3)) for ink, size in zip(inks, sizes)]),
                   width=np.repeat([ink.width for ink in inks], sizes), opacity=np.repeat([ink.opacity for ink in inks], sizes))
-    return (concatenate(quadrics), dict(first=ends - np.concatenate(counts), end=ends, colour=np.concatenate(colours),
-                                        opacity=np.concatenate(opacities), flat=np.concatenate(flats).astype(np.uint32)),
+    return (concatenate(quadrics),
+            dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),
+            dict(colour=np.concatenate(colours), opacity=np.concatenate(opacities)),
             ink_quadrics, ink_regions, marked, (np.concatenate(centres), np.concatenate(radii)))
 
 
@@ -655,21 +720,20 @@ class View(NamedTuple):
         """Points, of any weight, across and up the image from its middle `[..., 2]`: read in the camera's own frame
         by its planes x and y."""
         seen = self.camera << points
-        weight = mv.w & seen
-        return np.stack([((mv.x & seen) / weight).to_array(), ((mv.y & seen) / weight).to_array()], axis=-1)
+        return ((axes[:2] & seen[..., None]) / (mv.w & seen)[..., None]).to_array()
 
 
 def view(points: list[Point], reach: float, elevation: float, azimuth: float, margin: float, pixels: int) -> View:
     """A view framing batches of points, of any weight, and `reach` around each, from an elevation and azimuth, in
     radians, z up and azimuth zero looking along +y, with a margin as a share of the larger side, `pixels` across."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Motor
-    # Across and up the image: the pairings with the camera's planes through the origin, over the weights.
-    right, up = (np.concatenate([((turn >> plane) & batch / (mv.w & batch)).to_array().reshape(-1) for batch in points])
-                 for plane in (mv.x, mv.y))
+    # Across and up the image: the pairings with the camera's planes through the origin, at unit weight.
+    seen = concatenate([(batch / (mv.w & batch)).reshape(-1) for batch in points])   # [points] Point
+    right, up = ((turn >> axes[:2]) & seen[:, None]).to_array().T
     middle = np.array([right.max() + right.min(), up.max() + up.min()]) / 2
     half = np.array([np.ptp(right), np.ptp(up)]) / 2 + reach
     half = half + margin * half.max()
-    return View(aim(turn >> (origin + mv.x.dual() * middle[0] + mv.y.dual() * middle[1]), elevation, azimuth), half, pixels)
+    return View(aim(turn >> (origin + (axes[:2].dual() * middle).sum()), elevation, azimuth), half, pixels)
 
 
 def aim(centre: Point, elevation: float, azimuth: float) -> Motor:
@@ -683,7 +747,13 @@ def lamp(camera: Motor) -> Point:
     """The lamp's direction for a camera: up and to the right of the viewer, and a little behind, so that strokes
     running up the image catch it as well as the faces turned up."""
     toward = camera >> mv.direction([0.35, 0.5, 0.8])
-    return toward / (-(toward.dual() & toward)).square_root()
+    return toward / toward.dual().norm()
+
+
+def lighting(camera: Motor, glint: float) -> dict:
+    """The uniforms of `lamp_shading` for a camera, with a glint of `glint`."""
+    return dict(lamp=lamp(camera), ambient=ambient, fill_tilt=fill_tilt, headlight=headlight, gloss=glint,
+                shininess=shininess)
 
 
 def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = (),
@@ -715,15 +785,14 @@ def trace(tracer: Shader, encoder: Any, view: View, solids: tuple, buffers: Mesh
           opacities: list[float], background: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """The solids, as `scene` lays them out, traced among the meshes whose samples the buffers hold, each with its
     opacity, over the background, on the encoder: the picture's colour and depth."""
-    quadrics, solids, ink_quadrics, ink_regions, marked, holding = solids
+    quadrics, solids, looks, ink_quadrics, ink_regions, marked, holding = solids
     # A mesh that shows nothing stands for none, so that the opacities are never empty.
     outputs = tracer.encode(encoder, view.shape, (), dict(
-        quadrics=quadrics, solids=solids, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
+        quadrics=quadrics, solids=solids, looks=looks, inks=marked, ink_quadrics=ink_quadrics, ink_regions=ink_regions,
         mesh_colours=Resident(buffers.colours, buffers.size), mesh_depths=Resident(buffers.depths, buffers.size),
         mesh_row=buffers.row_bytes // 4, mesh_opacities=np.array(opacities or [0.0], dtype=np.float32),
         n_meshes=len(opacities), **tiles(*holding, view), pixel=view.pixel, camera=view.camera,
-        back=4 * view.half.max(), half_height=view.half[1], lamp=lamp(view.camera), ambient=ambient,
-        fill_tilt=fill_tilt, headlight=headlight, gloss=gloss, shininess=shininess, background=background))
+        back=4 * view.half.max(), half_height=view.half[1], background=background, **lighting(view.camera, gloss)))
     image = tracer.read(encoder, outputs, view.shape)["image"]
     return image["colour"], image["depth"][..., 0]
 

@@ -132,7 +132,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor))
+    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), {})
 
 
 camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Rotor

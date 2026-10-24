@@ -148,7 +148,7 @@ fn sample(place_on_map: vec2<f32>) -> Sample {{
     }}
     return colour;
 }}
-""", core.ga, dict(Rotor=core.ga.gatype.rotor(), Antivector=core.ga.gatype.antivector()))
+""", core.ga, dict(Rotor=core.ga.gatype.rotor(), Antivector=core.ga.gatype.antivector()), {})
 
 
 def animate_photographs(frame: core.Rotor, cameras: Iterable[core.Antivector], sphere: core.Antivector, radius: float,

@@ -139,7 +139,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Vector=Vector, Rotor=Rotor))
+    return Shader(supersampled() + source, ga, dict(Vector=Vector, Rotor=Rotor), {})
 
 
 class SphereScene:

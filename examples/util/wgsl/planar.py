@@ -295,14 +295,12 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 """
 
 
-# Each kind, cap and marker as a constant of the shader.
-constants = "".join(f"const {kind.__name__.lower()}_{member.name.lower()} = {member.value}u;\n"
-                    for kind in (Kind, Cap, Marker) for member in kind)
-
-
 @cache
 def shader() -> Shader:
-    return Shader(constants + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric))
+    # Each kind, cap and marker as a constant of the shader, `kind_conic`, `cap_round`.
+    constants = {f"{kind.__name__.lower()}_{member.name.lower()}": member.value
+                 for kind in (Kind, Cap, Marker) for member in kind}
+    return Shader(source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric), constants)
 
 
 class Window(NamedTuple):

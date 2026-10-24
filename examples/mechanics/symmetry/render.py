@@ -187,7 +187,7 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
 @cache
 def sphere_shader(rotary: object) -> Shader:
     """The sphere's shader, for rotary powers of a type: a scalar of two directions."""
-    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction))
+    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction), {})
 
 
 def draw_optical_activity(rotary: Scalar) -> plt.Figure:

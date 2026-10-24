@@ -75,7 +75,7 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()), targets=("rgba32float",))
+    return Shader(source, core.ga, dict(Point=core.Point, Rotor=core.ga.gatype.rotor()), {}, targets=("rgba32float",))
 
 
 def coordinates(points: core.Point) -> np.ndarray:

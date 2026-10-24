@@ -46,7 +46,7 @@ def test_shader_rates_match_core():
     orientation = (mv.zx * (-scenarios.camera_inclination / 2)).exp()
     screens = core.camera_screen(positions, momenta, orientation, spin, scenarios.mass)
 
-    shader = Shader(gpu.geometry + gpu.rays + probe, core.ga, gpu.types)
+    shader = Shader(gpu.geometry + gpu.rays + probe, core.ga, gpu.types, {})
     traced = shader((1, n_rays), spin=spin, mass=scenarios.mass,
                     positions=positions, momenta=momenta, screens=screens)
     expected = core.polarized_rates(positions, momenta, screens, spin, scenarios.mass)
@@ -76,7 +76,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     screens[id.x] = camera_screen(positions[id.x], momenta[id.x]);
 }
 """
-    shader = Shader(gpu.geometry + camera_functions + camera_probe, core.ga, gpu.types)
+    shader = Shader(gpu.geometry + camera_functions + camera_probe, core.ga, gpu.types, {})
     result = shader((1, 15), spin=spin, mass=mass, orientation=orientation, positions=positions, momenta=momenta)
     expected = core.camera_screen(positions, momenta, orientation, spin, mass)
     np.testing.assert_allclose((result["screens"][0] - expected).kernel, 0, atol=SINGLE_PRECISION, rtol=0)

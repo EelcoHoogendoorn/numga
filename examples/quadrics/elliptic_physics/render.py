@@ -117,7 +117,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric))
+    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric), {})
 
 
 def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int = PAINTED) -> np.ndarray:

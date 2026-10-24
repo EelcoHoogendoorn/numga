@@ -226,7 +226,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 def shader() -> Shader:
-    return Shader(supersampled() + source, core.ga, types)
+    return Shader(supersampled() + source, core.ga, types, {})
 
 
 def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, turns: core.Rotation, eyes: core.Euclidean,

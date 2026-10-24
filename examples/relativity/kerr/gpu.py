@@ -338,7 +338,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 def shader() -> Shader:
     """The camera's shader, compiled."""
-    return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types)
+    return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types, {})
 
 
 def scene() -> dict:
