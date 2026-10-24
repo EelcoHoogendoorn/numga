@@ -48,8 +48,7 @@ def draw_isolator(polarizations: Polarization, depths: np.ndarray) -> plt.Figure
     square = np.array([[-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]]) * reach + length * np.eye(3)[2]   # [4, 3]
     corners = np.concatenate([square - length * np.eye(3)[2], square + length * np.eye(3)[2]])          # [8, 3]
     view = solids.view([upright >> sm.point(corners)], 0.0, elevation, azimuth, margin, n_pixels)
-    reflector = solids.plates((solids.axes & (upright >> sm.point(square))[..., None]).to_array()[None],
-                              reflector_thickness)
+    reflector = solids.plates((upright >> sm.point(square))[None], reflector_thickness)
     beam = solids.rods(upright >> sm.point(ends[0]), upright >> sm.point(ends[1]), beam_width / 2 * view.pixel)[None]
     # Each dash's start and end along its line, as shares of the line's half-length from its middle.
     cells = np.linspace(-1, 1, n_dashes + 1)

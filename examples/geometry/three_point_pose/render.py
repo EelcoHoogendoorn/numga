@@ -62,7 +62,7 @@ def triangle(placed: core.Point, view: solids.View) -> tuple[list[tuple[solids.Q
     """The placed triangle's solid edges, and the triangle itself, translucent."""
     rods, joints = solids.edges(placed[ORDER[:-1]], placed[ORDER[1:]], EDGE_WIDTH / 2 * view.pixel)
     # The triangle as a plate a pixel thick.
-    plate = solids.plates(coordinates(placed)[None], view.pixel)             # [1, 5] Quadric
+    plate = solids.plates(placed[None], view.pixel)                          # [1, 5] Plane
     return [(rods, COLOUR), (joints, COLOUR)], [(plate, COLOUR, TRIANGLE_OPACITY)]
 
 

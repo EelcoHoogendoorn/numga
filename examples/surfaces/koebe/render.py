@@ -44,7 +44,8 @@ def circle_planes(circles: core.Vector) -> solids.Plane:
     # which squares to minus one.
     along = (circles[..., None] | stack((mv.x, mv.y, mv.z))).to_array()      # [..., 3]
     offset = -(circles | mv.w).to_array()                                      # [...]
-    return solids.plane(along, offset)
+    # The plane through the centre square to the normal, moved out by the offset.
+    return -sm.direction(along).dual() - sm.w * offset
 
 
 def view(apexes: core.Point) -> solids.View:

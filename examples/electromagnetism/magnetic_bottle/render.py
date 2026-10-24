@@ -63,11 +63,10 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     reach = np.abs(grid).max(axis=(0, 1))
     box = np.stack(np.meshgrid(*[[-1, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3) * [reach[0], reach[1], reach[1]]
     view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
-    # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis.
-    centres = np.stack([heights, np.zeros_like(heights), np.zeros_like(heights)], axis=-1)    # [coils, 3]
-    rims = meshes.circles(centres, np.full(len(heights), radius), np.broadcast_to([1.0, 0.0, 0.0], centres.shape),
-                          n_around_coil)                                      # [coils, around + 1, 3]
-    rings = solids.mv.point(rims)                                             # [coils, around + 1] Point
+    # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis, x, through the point
+    # a radius above the axis at its height.
+    rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point
+    rings = meshes.circles(rims, solids.mv.y ^ solids.mv.z, n_around_coil)   # [coils, around + 1] Point
     wire = strokes.polylines([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)])
     # What moves, frame by frame: the particles and their trails.

@@ -14,7 +14,7 @@ from matplotlib.colors import to_rgb
 from examples.util.animation import capture
 from numga import concatenate
 from examples.orientation.conformal_circle.core import Point, Sphere
-from examples.util.wgsl import meshes, show, solids, strokes
+from examples.util.wgsl import show, solids, strokes
 
 sm = solids.mv
 PLANE = "#218c9d"
@@ -59,10 +59,10 @@ def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head: float, view
 
 def circle_planes(lines: np.ndarray) -> solids.Plane:
     """The planes of circles sampled along lines `[lines, n, 3]`, each through its first sample and those a third and
-    two thirds along it: the join of the three, made extrinsic by the intrinsic unit."""
+    two thirds along it: the join of the three, made extrinsic by the intrinsic scalar one."""
     count = lines.shape[1]
     first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))
-    return (first & second & third) * meshes.unit
+    return (first & second & third) * solids.flip
 
 
 def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np.ndarray, sphere: np.ndarray,
@@ -70,10 +70,10 @@ def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np
     """One side of the mirror: the circle through its ordered points, on the plane's sheet and in the sphere,
     with arrows into the positive sides of the plane and the sphere."""
     plane_colour, sphere_colour, curve_colour = (np.array(to_rgb(colour)) for colour in (PLANE, SPHERE, CURVE))
-    sheet = solids.plates(SHEET[None], SHEET_THICKNESS * view.pixel)        # [1, corners + 2] Quadric
+    sheet = solids.plates(sm.point(SHEET)[None], SHEET_THICKNESS * view.pixel)   # [1, corners + 2] Plane
     # The sheet's rim: its edges, where the half-spaces along them pair to zero; only the inner half of each line lies
     # on the sheet.
-    edges = sheet[0, 2:]                                                      # [corners] Quadric
+    edges = solids.half_space(sheet[0, 2:])                                   # [corners] Quadric
     # The ball the sphere's parallels and meridians lie on: its centre and radius from the sphere's coefficients, as
     # the centre's coordinates and squared radius over its weight; the circles inked on it where their planes cut it.
     weight = sphere[4] - sphere[3]

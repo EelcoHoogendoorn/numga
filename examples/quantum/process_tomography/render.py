@@ -112,13 +112,13 @@ def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View
 
 def grid_planes(points: np.ndarray) -> solids.Plane:
     """The planes of the grid lines of a grid of points on a sphere `[latitudes + 1, longitudes + 1, 3]`, each
-    through its line's first point and those a third and two thirds along it."""
+    through its line's first point and those a third and two thirds along it: the join of the three, made extrinsic
+    by the intrinsic scalar one."""
     planes = []
     for lines in grid_lines(points):
         count = lines.shape[1]
-        first, second, third = (lines[:, index] for index in (0, count // 3, 2 * count // 3))   # [lines, 3] each
-        normals = np.cross(second - first, third - first)
-        planes.append(solids.plane(normals, np.sum(normals * first, axis=-1)))
+        first, second, third = (sm.point(lines[:, index]) for index in (0, count // 3, 2 * count // 3))   # [lines] Point each
+        planes.append((first & second & third) * solids.flip)
     return concatenate(planes)
 
 

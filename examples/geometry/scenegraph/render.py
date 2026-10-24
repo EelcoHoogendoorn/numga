@@ -71,9 +71,10 @@ def optics(camera_pose: Motor) -> tuple[Point, Point]:
     """The optical elements in the camera frame, moved into the world by the camera pose: the front lens rim,
     radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3, `[2, rim + 1]`; and the corners of the
     1.6 x 1.2 sensor chip at z == -1.25, `[4]`."""
-    rims = meshes.circles(np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -0.3]]), np.array([0.3, 0.25]), np.array([0.0, 0.0, 1.0]), N_RIM)
+    # Each rim from its point on the plane x, turned about the optical axis, the camera's z.
+    rims = meshes.circles(mv.point([[0.0, 0.3, 0.0], [0.0, 0.25, -0.3]]), mv.x ^ mv.y, N_RIM)   # [2, rim + 1] Point
     sensor = np.array([[-0.8, -0.6, -1.25], [0.8, -0.6, -1.25], [0.8, 0.6, -1.25], [-0.8, 0.6, -1.25]])
-    return camera_pose >> mv.point(rims), camera_pose >> mv.point(sensor)
+    return camera_pose >> rims, camera_pose >> mv.point(sensor)
 
 
 def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
@@ -91,7 +92,7 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
     of those set above."""
     rims, sensor = optics(camera_pose)
     # The sensor chip as a plate a pixel thick, with its edge.
-    chip = solids.plates(euclidean(sensor)[None], view.pixel)                 # [1, 6] Quadric
+    chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Plane
     edge, edge_joints = solids.edges(sensor, sensor[[1, 2, 3, 0]], thickness * RAY_WIDTH / 2 * view.pixel)
     grid = solids.rods(mv.point(floor()[:, 0]), mv.point(floor()[:, 1]), thickness * FLOOR_WIDTH / 2 * view.pixel)
     lenses = strokes.polylines([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
@@ -107,13 +108,13 @@ def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View,
     the hits' radius a share `thickness` of those set above."""
     _, faces = unit_box_topology()
     # Every body a box, the half-spaces inside its faces.
-    arm = solids.polyhedra(euclidean(world_vertices), faces)                  # [bodies, faces] Quadric
+    arm = solids.polyhedra(world_vertices, faces)                             # [bodies, faces] Plane
     body_colours = np.array([mcolors.to_rgb(color) for color in BODY_COLORS])
     # Traced rays: scene point to pupil, pupil to rear lens, rear lens to sensor, each a run of segments.
-    paths = np.stack([euclidean(stage) for stage in rays], axis=-2)           # [rays, stages, 3]
+    paths = stack(rays, axis=-1)                                              # [rays, stages] Point
     segments = paths.shape[1] - 1
     ray_colours = np.array([mcolors.to_rgb(color) for color in RAY_COLORS[:len(paths)]])
-    beams, beam_joints = solids.edges(mv.point(paths[:, :-1].reshape(-1, 3)), mv.point(paths[:, 1:].reshape(-1, 3)),
+    beams, beam_joints = solids.edges(paths[:, :-1].reshape(-1), paths[:, 1:].reshape(-1),
                                       thickness * RAY_WIDTH / 2 * view.pixel)
     hits = solids.ball(rays[3], thickness * HIT_RADIUS * view.pixel)[:, None]             # [rays, 1] Quadric
     return [(arm, body_colours),

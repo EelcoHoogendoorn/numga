@@ -1,9 +1,9 @@
 """Renders of the arm and its ellipsoids, ray traced on the GPU: the arm's boxes opaque, an ellipsoid translucent
 among them.
 
-A box is the unit cube carried by its body map, six half-spaces. A plane carried by the map pairs with each carried
-point as the cube's plane did with the point, so the box's quadrics in the world are the cube's, read through the
-map's inverse on points and its adjugate's inverse on planes: `bodies.adjugate().solve(cube(bodies.solve(Point)))`.
+A box is the unit cube carried by its body map, bounded by six planes. A plane carried by the map pairs with each
+carried point as the cube's plane did with the point, so the box's planes in the world are the cube's, through the
+adjugate's inverse: `bodies.adjugate().solve(cube)`.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ velocity_colour, force_colour = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.
 # How much each of an ellipsoid's surfaces, front and back, hides of what lies behind it.
 quadric_opacity = 0.33
 background = np.ones(3)
-# The unit cube's six half-spaces, within half a unit of the planes across the axes.
-cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Quadric
+# The unit cube's six planes, half a unit from the origin across the axes, the cube on their negative sides.
+cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Plane
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -32,7 +32,7 @@ def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, 
     bytes."""
     elevation, azimuth = np.radians(view[0]), np.radians(view[1] + 90)
     seen = solids.View(solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent), pixels)
-    boxes = bodies[:, None].adjugate().solve(cube(bodies[:, None].solve(core.Point)))   # [boxes, 6] Quadric
+    boxes = bodies[:, None].adjugate().solve(cube)                           # [boxes, 6] Plane
     return solids.draw([(boxes, box_colours)], seen, background, translucent=[(surface[None, None], colour, quadric_opacity)])
 
 

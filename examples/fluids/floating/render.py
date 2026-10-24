@@ -163,7 +163,7 @@ def in_water(triangles: np.ndarray) -> np.ndarray:
     hull = meshes.samples(corners, faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
                           gloss=HULL_GLOSS)
     # The water's surface, a plate a pixel thick.
-    water = solids.plates(sea[None], view.pixel)                              # [1, 6] Quadric
+    water = solids.plates(solids.mv.point(sea)[None], view.pixel)             # [1, 6] Plane
     return solids.draw([], view, BACKGROUND, translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
                        meshes=[(hull, 1.0)])
 

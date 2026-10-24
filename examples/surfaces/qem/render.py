@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
 from examples.surfaces.qem.core import Point, Quadric, mv
 from examples.util.wgsl import image_figure, solids
 
@@ -41,11 +40,6 @@ TRIANGLE_THICKNESS = 0.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def euclidean(points: Point) -> np.ndarray:
-    """Cartesian coordinates of points: their pairings with the planes x, y and z, over their weights."""
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
 def error_region(quadric: Quadric, centre: Point) -> Quadric:
     """The points whose error exceeds the centre's by less than EPSILON squared, the centre of unit weight: the
     quadric less that level times the squared weight, negative inside, an ellipsoid about the centre where the
@@ -54,9 +48,9 @@ def error_region(quadric: Quadric, centre: Point) -> Quadric:
     return quadric - mv.w * (mv.w & Point) * level
 
 
-def triangles(vertices: Point, faces: np.ndarray, thickness: float) -> solids.Quadric:
-    """Triangles as thin plates of a thickness, `[faces, 5]` quadrics each."""
-    return solids.plates(euclidean(vertices)[faces], thickness)
+def triangles(vertices: Point, faces: np.ndarray, thickness: float) -> solids.Plane:
+    """Triangles as thin plates of a thickness, bounded by planes, `[faces, 5]` each."""
+    return solids.plates(vertices[faces], thickness)
 
 
 def edges(vertices: Point, faces: np.ndarray, width: float) -> Quadric:

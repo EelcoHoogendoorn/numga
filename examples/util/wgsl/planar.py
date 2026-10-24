@@ -36,6 +36,7 @@ from numga import Extensor, NumpyContext, concatenate
 from numga.algebras import PGA2D as ga
 from numga.gatype import GAType
 from examples.util.wgsl import Shader
+from examples.util.wgsl.library import intrinsic_one
 
 mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
@@ -48,7 +49,7 @@ everywhere = mv.w                                                            # [
 # A conic that covers no point of unit weight.
 nothing = (mv.w * (mv.w & Point)).cast(Quadric)                              # [] Plane <- Point
 # The intrinsic scalar one: a product with it keeps every coefficient and flips only the orientation.
-flip = mv(ga.gatype.scalar().derive.flipped_orientation, [1.0])              # [] Scalar
+flip = intrinsic_one(mv)                                                     # [] Scalar
 # A solid stroke: one dash, no gap.
 SOLID = (1.0, 0.0)
 

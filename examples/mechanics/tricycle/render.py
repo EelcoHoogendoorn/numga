@@ -115,11 +115,13 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     if np.isfinite(foot).all():
         post = solids.rods(at_height(foot, 0.0), at_height(foot, 4 * WHEEL_RADIUS), POST_WIDTH / 2 * view.pixel)
         parts.append((post[None], to_rgb(CENTRE)))
-    # Each rim: a circle about its hub, square to the axle, across the way the wheel rolls.
+    # Each rim: a circle about its axle, the line through its hub across the way the wheel rolls, from the point of
+    # the rim ahead of the hub.
     heading = (ahead - wheels) / np.linalg.norm(ahead - wheels, axis=-1, keepdims=True)
-    sideways = np.stack([-heading[:, 1], heading[:, 0], np.zeros(len(wheels))], axis=-1)
-    rims = sm.point(meshes.circles(np.concatenate([wheels, np.full((len(wheels), 1), WHEEL_RADIUS)], axis=-1),
-                                   np.full(len(wheels), WHEEL_RADIUS), sideways, N_RIM))   # [wheels, rim + 1] Point
+    level = np.zeros(len(wheels))
+    forward = sm.direction(np.stack([heading[:, 0], heading[:, 1], level], axis=-1))     # [wheels] Point
+    sideways = sm.direction(np.stack([-heading[:, 1], heading[:, 0], level], axis=-1))   # [wheels] Point
+    rims = meshes.circles(hubs + forward * WHEEL_RADIUS, (hubs & sideways) * solids.flip, N_RIM)   # [wheels, rim + 1] Point
     tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
     trail = strokes.polylines([(at_height(middle, 0.0), to_rgb(TRAIL))], TRAIL_WIDTH, view)
     return solids.draw(parts, view, BACKGROUND, meshes=[(tyres, 1.0), (trail, 1.0)])

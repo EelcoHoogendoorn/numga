@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from matplotlib.colors import to_rgb
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.mechanics.foucault import core
 from examples.util.wgsl import solids
 
@@ -60,12 +60,12 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     swing_start, swing_end, compass_start, compass_end, *corners = coordinates(earth >> stack(
         [resting - swing * FLOOR, resting + swing * FLOOR, resting + north * FLOOR, resting + north * (COMPASS * FLOOR)]
         + [site + east * across + north * along for across, along in signs]))   # [3] each
-    sides = coordinates(earth >> stack([vertical, north, east]))               # [3, 3]
-    middle = coordinates(earth >> site) - sides[0] * FLOOR_THICKNESS / 2
+    sides = solids.mv.direction(coordinates(earth >> stack([vertical, north, east])))   # [3] Point
+    middle = solids.mv.point(coordinates(earth >> site)) - sides[0] * (FLOOR_THICKNESS / 2)   # [] Point
     reach = np.array([FLOOR_THICKNESS / 2, FLOOR, FLOOR])
-    # The slab: inside the planes across each of its sides, as far from its middle as it reaches.
-    floor = solids.half_space(solids.plane(np.concatenate([sides, -sides]),
-                                           np.concatenate([sides @ middle + reach, -sides @ middle + reach])))[None]
+    # The slab: inside the planes square to each of its sides, as far from its middle as it reaches.
+    across = concatenate([-sides.dual(), sides.dual()])                        # [6] Plane
+    floor = (across - solids.mv.w * (across & middle) - solids.mv.w * np.concatenate([reach, reach]))[None]   # [1, 6] Plane
     # The swing through the middle of the floor, both ways, and north from its edge outwards.
     tile = solids.mv.point(np.array(corners))                                  # [corners] Point
     swing_rod = solids.rods(solids.mv.point(swing_start), solids.mv.point(swing_end), SWING_RADIUS * view.pixel)

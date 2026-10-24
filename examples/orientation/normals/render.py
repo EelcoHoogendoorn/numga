@@ -46,14 +46,14 @@ def arrows(starts: np.ndarray, ends: np.ndarray, width: float, head_share: float
 
 
 def polygons(corners: np.ndarray, view: solids.View, thickness: float
-             ) -> tuple[solids.Quadric, solids.Quadric, solids.Quadric]:
-    """Flat polygons of corners `[polygons, corners, 3]`: plates a pixel thick `[polygons, corners + 2]`, and their
-    rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2, 1]`, the rims' width a
-    share `thickness` of the one set above."""
+             ) -> tuple[solids.Plane, solids.Quadric, solids.Quadric]:
+    """Flat polygons of corners `[polygons, corners, 3]`: plates a pixel thick, bounded by planes `[polygons,
+    corners + 2]`, and their rims, rods `[polygons * corners, 3]` and the balls joining them `[polygons * corners * 2,
+    1]`, the rims' width a share `thickness` of the one set above."""
     places = sm.point(corners)                                                 # [polygons, corners] Point
     following = places[:, np.roll(np.arange(corners.shape[1]), -1)]
     rims, joints = solids.edges(places.reshape(-1), following.reshape(-1), thickness * RIM_WIDTH / 2 * view.pixel)
-    return solids.plates(corners, view.pixel), rims, joints
+    return solids.plates(places, view.pixel), rims, joints
 
 
 def panels(figure: plt.Figure, images: list[np.ndarray], view: solids.View, n_columns: int) -> None:

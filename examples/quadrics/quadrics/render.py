@@ -64,7 +64,7 @@ def draw_panels(panels: list) -> plt.Figure:
         view = view._replace(half=half)
         # The ellipsoid's point quadric, which pairs each point with its polar plane: the inverse of the dual quadric.
         body = quadric.inverse()[None, None]                                  # [1, 1] Quadric
-        plate = solids.plates(patch[None], PATCH_THICKNESS * view.pixel)       # [1, 6] Quadric
+        plate = solids.plates(solids.mv.point(patch)[None], PATCH_THICKNESS * view.pixel)   # [1, 6] Plane
         marks = [(solids.ball(solids.mv.point(euclidean(quadric(mv.w))), CENTRE_RADIUS * view.pixel)[None, None],
                   ELLIPSOID),
                  (solids.ball(solids.mv.point(euclidean(contact)), CONTACT_RADIUS * view.pixel)[None, None], CONTACT)]

@@ -58,17 +58,23 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.
     opacity; and the view, fitted to the matplotlib axes it is shown in."""
     view = fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS), ax)
     along = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None, None] * np.eye(3)    # [dots, 3, 3]
-    # The great circle in the plane the vector turns in at the start, square to its dual, every point of it but the
-    # last, which closes it onto the first.
-    dotted = meshes.circles(np.zeros(3), np.array(1.0), coordinates(start_plane.dual()), N_CIRCLE_DOTS)[:-1]  # [dots, 3]
-    parts = [(solids.ball(sm.point(points), radius)[:, None], colour)
-             for points, radius, colour in ((along.reshape(-1, 3), AXIS_DOT_RADIUS, axis_colour),
+    # The great circle in the plane the vector turns in at the start, about its dual, from the circle's point nearest
+    # the electron flavor's pole: the pole's direction less its part along the dual, read by the plane through the
+    # centre square to it. Every point of the circle but the last, which closes it onto the first.
+    axis = sm.direction(coordinates(start_plane.dual()))                       # [] Point
+    square = -axis.dual()                                                      # [] Plane
+    pole = sm.direction(coordinates(core.flavor_e))                            # [] Point
+    toward = pole - axis * ((square & pole) / (square & axis))                 # [] Point
+    rim = solids.origin + toward / toward.dual().norm()                        # [] Point
+    dotted = meshes.circles(rim, (solids.origin & axis) * solids.flip, N_CIRCLE_DOTS)[:-1]   # [dots] Point
+    parts = [(solids.ball(points, radius)[:, None], colour)
+             for points, radius, colour in ((sm.point(along.reshape(-1, 3)), AXIS_DOT_RADIUS, axis_colour),
                                             (dotted, CIRCLE_DOT_RADIUS, plane_colour),
-                                            (coordinates(FLAVORS), FLAVOR_RADIUS, flavor_colours))]
+                                            (sm.point(coordinates(FLAVORS)), FLAVOR_RADIUS, flavor_colours))]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
     # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the vector turns in at the
     # end, through the centre square to its dual.
-    end_circle = solids.plane(coordinates(end_plane.dual())[None], np.zeros(1))  # [1] Plane
+    end_circle = -sm.direction(coordinates(end_plane.dual())[None]).dual()     # [1] Plane
     circles = [(solids.axes, grid_colour, GRID_WIDTH / view.pixel, grid_opacity),
                (end_circle, plane_colour, PLANE_WIDTH / view.pixel, 1.0)]
     return parts, ball, circles, view

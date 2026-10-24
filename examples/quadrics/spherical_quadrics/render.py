@@ -88,16 +88,17 @@ def form(conic: Polarity) -> solids.Quadric:
     return (solids.axes[:, None] * (solids.axes & solids.Point)[None, :] * matrix).sum(axis=(-1, -2))
 
 
-def through_centre(normals: np.ndarray) -> solids.Plane:
-    """The planes through the centre square to normals `[..., 3]`."""
-    return solids.plane(normals, np.zeros(normals.shape[:-1]))
+def through_centre(directions: solids.Point) -> solids.Plane:
+    """The planes through the centre square to directions."""
+    return -directions.dual()
 
 
-def chord_balls(starts: np.ndarray, ends: np.ndarray) -> solids.Quadric:
-    """The balls on the chords from starts to ends `[..., 3]`: of a circle through both ends, each holds the shorter
-    arc between them and no more of it, and of a short run of a smooth curve, the run."""
-    radii = np.linalg.norm(ends - starts, axis=-1) / 2
-    return solids.quadric(np.eye(3) / radii[..., None, None] ** 2, sm.point((starts + ends) / 2))
+def chord_balls(starts: solids.Point, ends: solids.Point) -> solids.Quadric:
+    """The balls on the chords from starts to ends of unit weight: of a circle through both ends, each holds the
+    shorter arc between them and no more of it, and of a short run of a smooth curve, the run."""
+    radii = (ends - starts).dual().norm().to_array() / 2                      # [...]
+    return solids.placed(solids.ellipsoid(np.repeat(radii[..., None], 3, axis=-1)),
+                         solids.translator((starts + ends) / 2 - solids.origin))
 
 
 def draw_spherical_conic(
@@ -118,7 +119,7 @@ def draw_spherical_conic(
     # The form's cone cuts the sphere in the oval and in its antipodal loop; the oval is its part on the side of the
     # centre the oval lies on.
     cone_form = form(conic)                                                    # [] Quadric
-    nappe = solids.half_space(through_centre(-pk.mean(axis=0)))                # [] Quadric
+    nappe = solids.half_space(through_centre(sm.direction(-pk.mean(axis=0))))  # [] Quadric
 
     def oval(part: int) -> solids.Ink:
         """The oval inked on a part's surfaces."""
@@ -132,7 +133,7 @@ def draw_spherical_conic(
     geodesics = strokes.polylines([(sm.point(arc), colour) for arc, colour in zip(ak, GEODESICS)], GEODESIC_WIDTH, view)
     # The sphere itself, clear, is the first part after the opaque ones and carries the oval and its antipodal loop,
     # dashed: each dash the loop within the ball on its chord.
-    runs = dashes(-pk)                                                         # [dashes, N_DASH + 1, 3]
+    runs = sm.point(dashes(-pk))                                               # [dashes, N_DASH + 1] Point
     antipode = solids.Ink(len(marks), cone_form[None].broadcast_to(runs.shape[:1]), chord_balls(runs[:, 0], runs[:, -1]),
                           OVAL, ANTIPODE_WIDTH, ANTIPODE_OPACITY)
     primal = solids.draw(marks, view, background, [antipode, oval(len(marks))], translucent=[(unit_ball, SPHERE, 0.0)],
@@ -149,7 +150,7 @@ def draw_spherical_conic(
     # tangent great circles, inked where their planes cut it.
     meridians = solids.Ink(len(pointers), solids.half_space(solids.axes), solids.everywhere[None].broadcast_to((3,)),
                            SPHERE, MERIDIAN_WIDTH, MERIDIAN_OPACITY)
-    tangent_planes = through_centre(normals(touching))                         # [touching] Plane
+    tangent_planes = through_centre(sm.direction(normals(touching)))           # [touching] Plane
     tangent_circles = solids.Ink(len(pointers), solids.half_space(tangent_planes),
                                  solids.everywhere[None].broadcast_to(tangent_planes.shape), colours, CIRCLE_WIDTH,
                                  CIRCLE_OPACITY)
@@ -164,7 +165,7 @@ def draw_spherical_conic(
     polhodes = solids.Ink(0, cone_form + solids.everywhere * levels, solids.everywhere[None].broadcast_to(levels.shape),
                           inks, POLHODE_WIDTH, 1.0)
     reach = np.linalg.norm(cone, axis=-1).max()
-    sheet = solids.Ink(1, solids.half_space(through_centre(pk.mean(axis=0)))[None],
+    sheet = solids.Ink(1, solids.half_space(through_centre(sm.direction(pk.mean(axis=0))))[None],
                        solids.ball(solids.origin, reach)[None], CONE, np.inf, CONE_OPACITY)
     solid_cone = stack([cone_form, nappe])[None]                               # [1, 2] Quadric
     polhode_view = solids.draw([], view, background, [polhodes, oval(0), sheet],

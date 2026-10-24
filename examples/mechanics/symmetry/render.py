@@ -96,11 +96,13 @@ def unit_directions(count: int) -> np.ndarray:
     return np.stack([ring * np.cos(angle), ring * np.sin(angle), height], axis=-1)
 
 
-def image_of_sphere(matrix: np.ndarray) -> tuple[solids.Quadric, Point]:
-    """The solid ellipsoid a map with these matrices makes of the unit ball, `x @ inv(matrix @ matrix.T) @ x <= 1`,
-    and points on its surface to frame it by: the unit directions, mapped."""
-    quadric = solids.quadric(np.linalg.inv(matrix @ np.swapaxes(matrix, -1, -2)), pga_mv.point(np.zeros(3)))
-    return quadric, pga_mv.point(unit_directions(n_framing) @ np.swapaxes(matrix, -1, -2).reshape(-1, 3, 3)[0])
+def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
+    """The solid ellipsoid a conductivity makes of the unit ball of driving fields, the flows whose driving field,
+    `conductivity.inverse()`, is at most of unit length, and points on its surface to frame it by: the flows of unit
+    fields."""
+    driving = conductivity.inverse()                                          # Field <- Direction
+    quadric = solids.centred(driving | driving, stack((mv.x, mv.y, mv.z)).dual())
+    return quadric, pga_mv.point(along(conductivity(mv.vector(unit_directions(n_framing)))))
 
 
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -119,7 +121,7 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     largest = np.sqrt(np.linalg.eigvalsh(matrix @ np.swapaxes(matrix, -1, -2)).max())
     # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
     driving_tip, flows = pga_mv.point(across(driving) * largest), pga_mv.point(along(fluxes))
-    ellipsoids = [image_of_sphere(panel_matrix) for panel_matrix in matrix]
+    ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
     fig, axes = figure([view.half] * len(matrix), 3.6)
     # The panels' rooms alike, one view fitted to the first holds them all.
@@ -170,7 +172,7 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
     and its stiffness along every direction as a radius, a cube with rounded faces."""
     parts = lattice(sites, axial, diagonal)
     lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, 1)
-    ellipsoid, framed = image_of_sphere(matrices(conductivity))
+    ellipsoid, framed = image_of_sphere(conductivity)
     conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, 1)
     points, faces = stiffness_mesh(stiffness)
     stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, 1)

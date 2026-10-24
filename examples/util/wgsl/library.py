@@ -12,6 +12,14 @@ from functools import cache
 
 import numpy as np
 
+from numga import Extensor
+
+
+def intrinsic_one(mv) -> Extensor:
+    """An algebra's intrinsic scalar one, of its multivectors `mv`: a product with it keeps every coefficient and flips
+    only the orientation, as it makes the join of points, intrinsic, the plane or line through them, extrinsic."""
+    return mv(mv.algebra.gatype.scalar().derive.flipped_orientation, [1.0])
+
 
 def software() -> bool:
     """Whether the adapter is the CPU itself, a software driver as in a notebook's runtime without a GPU."""

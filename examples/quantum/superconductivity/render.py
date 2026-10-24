@@ -76,11 +76,9 @@ def chart(energies: np.ndarray, axis: plt.Axes
     start, end = ENERGY_SCALE * ENERGY_START, ENERGY_SCALE * ENERGY_END
     starts = np.full((3, 3), [start, 0, 0])
     ends = np.array([[end, 0, 0], [start, COHERENCE_REACH, 0], [start, 0, COHERENCE_REACH]])
-    # The circles about the energy axis, square to x, through every few levels.
-    centres = np.outer(ENERGY_SCALE * energies[::CIRCLE_EVERY], [1, 0, 0])               # [circles, 3]
-    rims = meshes.circles(centres, np.full(len(centres), CIRCLE_RADIUS), np.broadcast_to([1.0, 0, 0], centres.shape),
-                          N_CIRCLE)                                                       # [circles, circle + 1, 3]
-    circles = sm.point(rims)                                                              # [circles, circle + 1] Point
+    # The circles about the energy axis, x, at every few levels, each through the point the largest coherence above it.
+    levels = solids.origin + sm.x.dual() * (ENERGY_SCALE * energies[::CIRCLE_EVERY])        # [circles] Point
+    circles = meshes.circles(levels + sm.z.dual() * CIRCLE_RADIUS, sm.y ^ sm.z, N_CIRCLE)  # [circles, circle + 1] Point
     view = fitted(solids.view([circles, sm.point(starts), sm.point(ends)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS),
                   axis)
     shafts, heads = solids.arrows(sm.point(starts), sm.point(ends), AXIS_WIDTH / 2 * view.pixel,

@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
-from numga import NumpyContext, concatenate, stack
+from numga import Extensor, NumpyContext, concatenate, stack
 from numga.algebras import PGA3D as ga
 from examples.util.wgsl import Shader, supersampled
-from examples.util.wgsl.library import samples_per_side
+from examples.util.wgsl.library import intrinsic_one, samples_per_side
 from examples.util.wgsl.runner import Resident
 
 if TYPE_CHECKING:
@@ -28,14 +28,19 @@ mv = NumpyContext(ga).multivector
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Motor = ga.gatype.rotor()
+Line = ga.gatype.bivector()
 Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
 # The planes of the frame, and of every camera's in its own: a point's pairings with them are how far it lies across
 # to the right, up, and toward the viewer, the camera looking along its own -z; a place so far along each is the
 # origin moved by their duals, `origin + (axes.dual() * place).sum()`.
 axes = stack((mv.x, mv.y, mv.z))                                             # [3] Plane
 origin = mv.w.dual()                                                         # [] Point
-# The light that falls everywhere, the glint's share and sharpness, and the lamp: from up and to the right
-# of a viewer looking along -y.
+# The intrinsic scalar one: the join of points, intrinsic, times it is the plane or line through them, extrinsic.
+flip = intrinsic_one(mv)                                                     # [] Scalar
+# The direction square to each plane through the origin: a form on directions read through it is measured as the
+# scene's lengths are.
+normal_direction = Plane.derive.nondegenerate.dual()                         # Point <- Plane
+# The light that falls everywhere, and the glint's share and sharpness.
 ambient, gloss, shininess = 0.22, 0.45, 32.0
 # How much brighter the light that falls everywhere is on faces turned up than on faces turned sideways, and dimmer
 # on faces turned down: a sky above and a ground below, so the form reads away from the lamp too.
@@ -440,21 +445,17 @@ def ellipsoid(semi_axes: np.ndarray) -> Quadric:
     return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
-def quadric(matrix: np.ndarray, centre: Point) -> Quadric:
-    """The solids `(x - centre) @ matrix @ (x - centre) <= 1` of symmetric matrices `[..., 3, 3]`, about points."""
-    at_origin = (axes[:, None] * (axes & Point)[None, :] * matrix).sum(axis=(-1, -2)) - mv.w * (mv.w & Point)
-    return placed(at_origin, translator(centre - origin))
+def centred(form: Extensor, frame: Extensor) -> Quadric:
+    """The solids about the origin where forms on pairs of offsets in another algebra of space pair an offset with
+    itself to at most one, `form(offset, offset) <= 1`, the offsets of `frame` `[3]` there along x, y and z here: each
+    form read on the frame, a sum of dyads of the planes x, y and z."""
+    readings = form[..., None, None](frame[:, None], frame[None, :]).to_array()   # [..., 3, 3]
+    return (axes[:, None] * (axes & Point)[None, :] * readings).sum(axis=(-1, -2)) - mv.w * (mv.w & Point)
 
 
 def ball(centres: Point, radius: float) -> Quadric:
     """Solid balls about points, of any weight."""
     return placed(ellipsoid(np.full(3, radius)), translator(centres / (mv.w & centres) - origin))
-
-
-def plane(normals: np.ndarray, offsets: np.ndarray) -> Plane:
-    """The planes `normal @ x == offset`, normals `[..., 3]` and offsets `[...]`, positive on the side the normal
-    points to."""
-    return (axes * normals).sum(axis=-1) - mv.w * offsets
 
 
 # All of space: the quadric pairing every point of unit weight to minus one.
@@ -508,41 +509,45 @@ def arrows(starts: Point, ends: Point, radius: float, head_length: float, head_r
 def frame(length: float, radius: float, head_length: float, head_radius: float) -> tuple[Quadric, Quadric]:
     """The coordinate frame: arrows along x, y and z from the shared origin, a length long; their shafts and heads
     `[3, 3]` each."""
-    return arrows(mv.point(np.zeros((3, 3))), mv.point(length * np.eye(3)), radius, head_length, head_radius)
+    return arrows(origin, origin + axes.dual() * length, radius, head_length, head_radius)
 
 
-def boxes(motors: Motor, half_extents: np.ndarray) -> Quadric:
-    """Solid boxes placed by motors, their half extents along their own x, y and z on the last axis, `[..., 6]`
-    quadrics each: the half-spaces inside each face."""
+def boxes(motors: Motor, half_extents: np.ndarray) -> Plane:
+    """Solid boxes placed by motors, their half extents along their own x, y and z on the last axis, bounded by planes
+    alone, `[..., 6]` each: the planes of the faces, the box on their negative sides."""
     reach = mv.w * half_extents                                               # [..., 3] Plane
     faces = concatenate([axes - reach, -axes - reach], axis=-1)               # [..., 6] Plane
-    return placed(half_space(faces), motors[..., None])
+    return motors[..., None] >> faces
 
 
-def plates(corners: np.ndarray, thickness: float) -> Quadric:
-    """Flat convex polygons of a thickness, their corners `[..., corners, 3]` in order around each, `[..., corners + 2]`
-    quadrics each: the half-spaces within half the thickness either side of the polygon's plane, and one along each
+def outward(planes: Plane, middles: Point) -> Plane:
+    """Planes turned so that points of unit weight lie on their negative sides."""
+    return planes * -np.sign((planes & middles).to_array())
+
+
+def plates(corners: Point, thickness: float) -> Plane:
+    """Flat convex polygons of a thickness, their corners `[..., corners]` in order around each, bounded by planes
+    alone, `[..., corners + 2]` each: the two half the thickness either side of the polygon's plane, and one along each
     edge, facing away from the polygon's middle."""
-    normal = np.cross(corners[..., 1, :] - corners[..., 0, :], corners[..., 2, :] - corners[..., 0, :])
-    normal /= np.linalg.norm(normal, axis=-1, keepdims=True)                  # [..., 3]
-    middle = corners.mean(axis=-2)                                            # [..., 3]
-    outwards = np.cross(np.roll(corners, -1, axis=-2) - corners, normal[..., None, :])   # [..., corners, 3]
-    outwards *= np.sign(np.sum(outwards * (corners - middle[..., None, :]), axis=-1, keepdims=True))
-    across = np.stack([normal, -normal], axis=-2)                              # [..., 2, 3]
-    normals = np.concatenate([across, outwards], axis=-2)
-    offsets = np.concatenate([np.sum(across * middle[..., None, :], axis=-1) + thickness / 2,
-                              np.sum(outwards * corners, axis=-1)], axis=-1)
-    return half_space(plane(normals, offsets))
+    corners = corners / (mv.w & corners)
+    middle = corners.mean(axis=-1)                                            # [...] Point
+    # The polygon's plane, the join of its first three corners, at unit weight, through its middle.
+    joined = ((corners[..., 0] & corners[..., 1] & corners[..., 2]) * flip).normalized()   # [...] Plane
+    face = joined - mv.w * (joined & middle)
+    # Along each edge, the plane through the edge and the direction square to the polygon's plane.
+    square = (face - mv.w * (face & origin)).dual()                           # [...] Point
+    following = concatenate([corners[..., 1:], corners[..., :1]], axis=-1)    # [..., corners] Point
+    sides = outward((corners & following & square[..., None]) * flip, middle[..., None])   # [..., corners] Plane
+    return concatenate([stack([face, -face], axis=-1) - mv.w * (thickness / 2), sides], axis=-1)
 
 
-def polyhedra(corners: np.ndarray, faces: np.ndarray) -> Quadric:
-    """Convex polyhedra, their corners `[..., corners, 3]` and three or more corners of each face `[faces, corners]`,
-    `[..., faces]` quadrics each: the half-spaces inside the planes of the faces, facing away from the middle."""
-    a, b, c = (corners[..., faces[:, index], :] for index in range(3))       # [..., faces, 3] each
-    normals = np.cross(b - a, c - a)
-    middle = corners.mean(axis=-2)                                            # [..., 3]
-    normals *= np.sign(np.sum(normals * (a - middle[..., None, :]), axis=-1, keepdims=True))
-    return half_space(plane(normals, np.sum(normals * a, axis=-1)))
+def polyhedra(corners: Point, faces: np.ndarray) -> Plane:
+    """Convex polyhedra, their corners `[..., corners]` and three or more corners of each face `[faces, corners]`,
+    bounded by planes alone, `[..., faces]` each: the planes of the faces, the joins of their first three corners,
+    facing away from the middle."""
+    corners = corners / (mv.w & corners)
+    joined = (corners[..., faces[:, 0]] & corners[..., faces[:, 1]] & corners[..., faces[:, 2]]) * flip   # [..., faces] Plane
+    return outward(joined, corners.mean(axis=-1)[..., None])
 
 
 def edges(starts: Point, ends: Point, radius: float) -> tuple[Quadric, Quadric]:
@@ -575,51 +580,61 @@ class Ink(NamedTuple):
     opacity: float
 
 
-def spheres(solids: Quadric) -> tuple[np.ndarray, np.ndarray]:
-    """A ball holding each of a batch of solids `[solids, quadrics]`: its centre `[solids, 3]` and radius `[solids]`,
-    infinite where no quadric bounds it. A quadric is a form x S x + 2 l x + c in a point's place x: one whose S is
-    positive definite, an ellipsoid, is held by a ball about its centre; one positive but for its axis, a cylinder,
-    is held between the half-spaces of the solid that cross its axis; any other leaves the solid unbounded."""
-    basis = concatenate([mv.direction(np.eye(3)), origin[None]])                # [4] Point
-    gram = (solids[..., None, None](basis[:, None]) & basis[None, :]).to_array()   # [solids, quadrics, 4, 4]
-    gram = (gram + np.swapaxes(gram, -1, -2)) / 2
-    square, linear, constant = gram[..., :3, :3], gram[..., :3, 3], gram[..., 3, 3]
-    values, vectors = np.linalg.eigh(square)                                   # [solids, quadrics, 3], [..., 3, 3]
-    scale = np.abs(gram).reshape(gram.shape[:-2] + (16,)).max(axis=-1, initial=0.0)[..., None]
-    positive = values > 1e-9 * scale                                           # [solids, quadrics, 3]
-    flat = np.all(np.abs(values) <= 1e-9 * scale, axis=-1)                     # [solids, quadrics]
-    # The centre and the reach of the form's level set along its positive directions.
-    inverse = np.einsum("...ij,...j,...kj->...ik", vectors, np.where(positive, 1 / np.where(positive, values, 1), 0), vectors)
-    centre = -np.einsum("...ij,...j->...i", inverse, linear)                   # [solids, quadrics, 3]
-    level = np.maximum(np.einsum("...i,...i->...", linear, -centre) - constant, 0)   # [solids, quadrics]
-    across = np.sqrt(level / np.where(positive, values, np.inf).min(axis=-1))   # [solids, quadrics]
-    count = positive.sum(axis=-1)
-    radius = np.where(count == 3, across, np.inf)
-    # A cylinder's axis, the direction its form does not grow along, cut by the solid's half-spaces 2 l x + c <= 0.
-    axis = vectors[..., :, 0]                                                  # [solids, quadrics, 3]
-    rate = np.einsum("...ki,...ji->...jk", linear, axis)                       # [solids, cylinders, half-spaces]
-    offset = np.einsum("...ki,...ji->...jk", linear, centre)
-    reach = -(2 * offset + constant[..., None, :]) / np.where(rate == 0, 1, 2 * rate)
-    cuts = flat[..., None, :] & (rate != 0)
-    upper = np.where(cuts & (rate > 0), reach, np.inf).min(axis=-1)           # [solids, quadrics]
-    lower = np.where(cuts & (rate < 0), reach, -np.inf).max(axis=-1)
+def spheres(solids: Quadric) -> tuple[Point, np.ndarray]:
+    """A ball holding each of a batch of solids `[solids, quadrics]`: its centre `[solids]` and radius `[solids]`,
+    infinite where no quadric bounds it. How a quadric grows along the directions, its form on them, `quadric(direction)
+    & direction`, says what it bounds: one growing along all three, an ellipsoid, is held by a ball about its centre,
+    the pole of the plane at infinity; one growing along two, a cylinder or a cone, by its axis between where the
+    solid's quadrics that the axis runs straight through cut it; any other leaves the solid unbounded."""
+    # The form on directions: its rates of growth, slowest first, and the directions it grows along at those rates.
+    rates, normals = (solids(normal_direction) & normal_direction).eigh()   # [solids, quadrics, 3] Scalar, Plane
+    directions = normals.dual()                                               # [solids, quadrics, 3] Point
+    rates = rates.to_array()
+    # A rate is a growth where it exceeds round-off of the quadric's size, the largest gain of its map.
+    size = solids.svdvals().to_array()[..., :1]                               # [solids, quadrics, 1]
+    growing = rates > 1e-9 * size
+    slowest = np.where(growing, rates, np.inf).min(axis=-1)                   # [solids, quadrics]
+    count = growing.sum(axis=-1)
+    # The centre: the origin moved along each direction the quadric grows along, to where its pairing with the point
+    # stops changing along it; the pole of the plane at infinity, `quadric.solve(mv.w)`, of an ellipsoid.
+    slopes = ((solids(origin)[..., None] & directions) + (solids[..., None](directions) & origin)).to_array() / 2
+    steps = np.where(growing, -slopes / np.where(growing, rates, 1), 0)       # [solids, quadrics, 3]
+    centres = origin + (directions * steps).sum(axis=-1)                      # [solids, quadrics] Point
+
+    def reach(points: Point) -> np.ndarray:
+        """How far a quadric's solid reaches from points of unit weight across its slowest growth: its pairing
+        with each, against that rate."""
+        return np.sqrt(np.maximum(-(solids(points) & points).to_array(), 0) / slowest)
+
+    # A cylinder's or a cone's axis, the direction it grows slowest along, through the centre, and where the other
+    # quadrics of its solid that the axis runs straight through, linearly along it, b t + c, cut it.
+    axis = directions[..., 0]                                                 # [solids, quadrics] Point
+    others = solids[..., None, :]                                             # [solids, 1, quadrics] Quadric
+    along = (others(centres[..., None]) & axis[..., None]) + (others(axis[..., None]) & centres[..., None])
+    rate, offset = along.to_array(), (others(centres[..., None]) & centres[..., None]).to_array()   # [solids, quadrics, quadrics]
+    straight = np.abs((others(axis[..., None]) & axis[..., None]).to_array()) <= 1e-9 * size[:, None, :, 0]
+    cuts = straight & (rate != 0) & ~np.eye(solids.shape[-1], dtype=bool)
+    crossing = -offset / np.where(cuts, rate, 1)
+    upper = np.where(cuts & (rate > 0), crossing, np.inf).min(axis=-1)        # [solids, quadrics]
+    lower = np.where(cuts & (rate < 0), crossing, -np.inf).max(axis=-1)
     cylinder = (count == 2) & np.isfinite(upper) & np.isfinite(lower)
     upper, lower = np.where(cylinder, upper, 0), np.where(cylinder, lower, 0)
-    middle = centre + axis * ((upper + lower) / 2)[..., None]
-    radius = np.where(cylinder, np.hypot((upper - lower) / 2, across), radius)
-    centre = np.where((count == 3)[..., None], centre, middle)
+    # Held across the widest of its two ends, from the middle between them.
+    widest = np.maximum(reach(centres + axis * lower), reach(centres + axis * upper))
+    radius = np.where(count == 3, reach(centres), np.where(cylinder, np.hypot((upper - lower) / 2, widest), np.inf))
+    centres = centres + axis * ((upper + lower) / 2)
     # The smallest ball any of its quadrics gives.
-    chosen = np.argmin(radius, axis=-1)[..., None]                              # [solids, 1]
-    return (np.take_along_axis(centre, chosen[..., None], axis=-2)[..., 0, :],
-            np.take_along_axis(radius, chosen, axis=-1)[..., 0])
+    chosen = np.argmin(radius, axis=-1)                                       # [solids]
+    picked = np.arange(len(chosen))
+    return centres[picked, chosen], radius[picked, chosen]
 
 
-def tiles(centres: np.ndarray, radii: np.ndarray, view: View) -> dict:
-    """The solids each tile of the picture may see, from the balls holding them `[solids, 3]`, `[solids]`: each tile's
-    range in a list of solids, the list, and the tiles across; a solid without a ball in every tile."""
+def tiles(centres: Point, radii: np.ndarray, view: View) -> dict:
+    """The solids each tile of the picture may see, from the balls holding them, their centres and radii `[solids]`:
+    each tile's range in a list of solids, the list, and the tiles across; a solid without a ball in every tile."""
     rows, columns = view.shape
     across, down = -(-columns // TILE), -(-rows // TILE)
-    seen = view.across(mv.point(centres))                                      # [solids, 2]
+    seen = view.across(centres)                                                # [solids, 2]
     reach = radii / view.pixel + 1                                             # [solids] pixels
     column = (seen[:, 0] + view.half[0]) / view.pixel
     row = (view.half[1] - seen[:, 1]) / view.pixel
@@ -639,35 +654,30 @@ def tiles(centres: np.ndarray, radii: np.ndarray, view: View) -> dict:
                 tiles_across=across)
 
 
-def bounded_by_planes(solids: Quadric) -> np.ndarray:
-    """Which of a batch of solids `[solids, quadrics]` are bounded by planes alone: every quadric pairing every
-    direction with itself to nothing, its square part gone, against the size of its coefficients `[solids]`."""
-    # Six directions settle a symmetric form on three dimensions.
-    directions = mv.direction(np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [0, 1, 1], [1, 0, 1]]))   # [6] Point
-    squares = np.abs((solids[..., None](directions) & directions).to_array())  # [solids, quadrics, 6]
-    coefficients = np.abs(np.asarray(solids.kernel))
-    sizes = coefficients.reshape(solids.shape + (int(np.prod(coefficients.shape[len(solids.shape):])),)).max(axis=-1,
-                                                                                                        initial=0.0)   # [solids, quadrics]
-    return np.all(squares <= 1e-9 * sizes[..., None], axis=(-1, -2))
-
-
 def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadric, np.ndarray, float]],
-          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[np.ndarray, np.ndarray]]:
+          inks: list[Ink]) -> tuple[Quadric, dict, dict, Quadric, Quadric, dict, tuple[Point, np.ndarray]]:
     """Every solid's quadrics, solid after solid, each solid's range of them and whether they are all half-spaces, and
-    its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, their
-    colours, `[solids, 3]` or one for all, and for the translucent parts their opacity; and every ink's quadric, with
-    its part's range of solids, colour and width."""
+    its colour and opacity, from parts: each a batch of solids, `[solids, quadrics]` Quadric, all of one kind, or
+    `[solids, planes]` Plane for solids bounded by planes alone, on their negative sides, their colours, `[solids, 3]`
+    or one for all, and for the translucent parts their opacity; and every ink's quadric, with its part's range of
+    solids, colour and width."""
     parts = [(solids, colour, 1.0) for solids, colour in parts] + list(translucent)
     quadrics, counts, colours, opacities, flats, centres, radii = [], [], [], [], [], [], []
     for solids, colour, opacity in parts:
+        # Planes, values rather than maps, bound their solids as half-spaces, solids no ball holds.
+        flat = solids.arity == 0
+        if flat:
+            centre, radius = origin[None].broadcast_to(solids.shape[:1]), np.full(solids.shape[0], np.inf)
+            solids = half_space(solids)
+        else:
+            centre, radius = spheres(solids)
         quadrics.append(solids.reshape(-1))
-        centre, radius = spheres(solids)
         centres.append(centre)
         radii.append(radius)
         counts.append(np.full(solids.shape[0], solids.shape[1]))
         colours.append(np.broadcast_to(colour, (solids.shape[0], 3)))
         opacities.append(np.full(solids.shape[0], opacity))
-        flats.append(bounded_by_planes(solids))
+        flats.append(np.full(solids.shape[0], flat))
     # A solid of no quadrics, which no ray meets, and a quadric no solid holds, so that the arrays are never empty.
     quadrics.append(everywhere[None])
     counts.append(np.zeros(1, dtype=int))
@@ -675,7 +685,7 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
     opacities.append(np.zeros(1))
     flats.append(np.zeros(1, dtype=bool))
     # It lies in no tile: a ball of no size, out of every picture.
-    centres.append(np.zeros((1, 3)))
+    centres.append(origin[None])
     radii.append(np.full(1, -np.inf))
     ends = np.cumsum(np.concatenate(counts))
     # The solids each part spans, part after part.
@@ -693,7 +703,7 @@ def scene(parts: list[tuple[Quadric, np.ndarray]], translucent: list[tuple[Quadr
     return (concatenate(quadrics),
             dict(first=ends - np.concatenate(counts), end=ends, flat=np.concatenate(flats).astype(np.uint32)),
             dict(colour=np.concatenate(colours), opacity=np.concatenate(opacities)),
-            ink_quadrics, ink_regions, marked, (np.concatenate(centres), np.concatenate(radii)))
+            ink_quadrics, ink_regions, marked, (concatenate(centres), np.concatenate(radii)))
 
 
 class View(NamedTuple):

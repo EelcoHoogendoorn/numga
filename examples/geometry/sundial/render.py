@@ -12,7 +12,7 @@ import numpy as np
 
 from examples.util.animation import capture
 from examples.geometry.sundial import core
-from numga import concatenate
+from numga import concatenate, stack
 from examples.util.wgsl import fitted, show, solids
 
 # The part of the dial drawn, east and north of the point below the nodus.
@@ -109,23 +109,21 @@ def sky_view(ax: plt.Axes, nodus: core.Point, rays: core.Point) -> solids.View:
     return fitted(solids.view([solids.mv.point(DIAL), solids.mv.point(sunward)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
 
 
-def plane(normals: np.ndarray, through: np.ndarray) -> solids.Plane:
-    """The planes square to directions `[..., 3]` through places `[..., 3]`, positive on the side the direction points
-    to."""
-    return solids.plane(normals, np.sum(normals * through, axis=-1))
-
-
 def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
     """The day's shadow path inked on the dial: the cone the day's rays sweep about the pole, through the nodus, on
     the side of it away from the sun. The day's suns lie on a circle about the pole, so the pole is square to the
     plane through them; the cone takes it squared, so its sense does not matter."""
-    suns = coordinates(day)                                                    # [hours, 3]
-    pole = np.cross(suns[1] - suns[0], suns[2] - suns[0])
-    pole /= np.linalg.norm(pole)
-    height = float(pole @ suns[0]) / np.linalg.norm(suns[0])                   # the sine of the declination
-    apex = coordinates(nodus)
-    axial = plane(pole, apex)                                                  # Plane through the nodus, square to the pole
-    across = plane(np.eye(3), apex)                                            # [3] Plane through the nodus
+    suns = solids.mv.point(coordinates(day))                                   # [hours] Point
+    apex = solids.mv.point(coordinates(nodus))                                 # [] Point
+    # The plane through the suns, at unit weight; the equator's, through the origin square to the pole; and its
+    # pairing with the first sun's direction at unit length, the sine of the declination.
+    circle = ((suns[0] & suns[1] & suns[2]) * solids.flip).normalized()        # [] Plane
+    equator = circle - solids.mv.w * (circle & solids.origin)                  # [] Plane
+    sun = suns[0] - solids.origin                                              # [] Point
+    height = float((equator & sun).to_array() / sun.dual().norm().to_array())
+    # The planes through the nodus: square to the pole, and across x, y and z.
+    axial = equator - solids.mv.w * (equator & apex)                           # [] Plane
+    across = solids.axes - solids.mv.w * (solids.axes & apex)                  # [3] Plane
     # Zero on a ray from the nodus at the sun's angle to the pole: its part along the pole squared, less the sine of the
     # declination squared of its length squared.
     cone = axial * (axial & solids.Point) - height**2 * (across * (across & solids.Point)).sum(axis=0)
@@ -139,9 +137,11 @@ def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quad
     solids."""
     middle = np.array([np.mean(EAST), np.mean(NORTH), -PLATE_THICKNESS / 2])
     halves = np.array([np.ptp(EAST) / 2, np.ptp(NORTH) / 2, PLATE_THICKNESS / 2])
-    slab = solids.boxes(solids.translator(solids.mv.point(middle) - solids.origin), halves)[None]   # [1, 6] Quadric
-    tip = coordinates(nodus)
-    gnomon = solids.plates(np.stack([coordinates(foot), tip, tip * [1, 1, 0]])[None], GNOMON_THICKNESS)   # [1, 5] Quadric
+    slab = solids.boxes(solids.translator(solids.mv.point(middle) - solids.origin), halves)[None]   # [1, 6] Plane
+    tip = solids.mv.point(coordinates(nodus))                                  # [] Point
+    # The gnomon's triangle: the foot of the style, the nodus, and the point of the dial below the nodus.
+    below = tip - solids.mv.z.dual() * (solids.mv.z & tip)                     # [] Point
+    gnomon = solids.plates(stack([solids.mv.point(coordinates(foot)), tip, below])[None], GNOMON_THICKNESS)   # [1, 5] Plane
     return [(slab, np.array(to_rgb(DIAL_COLOUR))), (gnomon, np.array(to_rgb(GNOMON_COLOUR)))]
 
 
@@ -152,7 +152,9 @@ def sunlight(nodus: core.Point, rays: core.Point, day: core.Point,
     sunward, ends = daylight(nodus, rays)
     # Each ray cut where it leaves the space above the dial, at the walls standing on its edges, so that a ray whose
     # shadow moves off the dial shortens at its edge rather than vanishing.
-    walls = solids.half_space(plane(np.array([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]]), DIAL[[0, 2, 0, 2]]))
+    sides = stack([-solids.mv.x, solids.mv.x, -solids.mv.y, solids.mv.y])     # [4] Plane
+    corners = solids.mv.point(DIAL[[0, 2, 0, 2]])                              # [4] Point
+    walls = solids.half_space(sides - solids.mv.w * (sides & corners))
     rods = solids.rods(solids.mv.point(sunward), solids.mv.point(ends), RAY_WIDTH / 2 * view.pixel)   # [rays, 3]
     beams = concatenate([rods, walls[None].broadcast_to((len(sunward), 4))], axis=-1)               # [rays, 7]
     # The rays as lightly as they show over the white page.

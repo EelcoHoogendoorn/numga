@@ -96,7 +96,7 @@ def panel(ax: plt.Axes, corners: np.ndarray, ends: list[tuple[np.ndarray, np.nda
     rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
     parts = (arrows(axis_ends, LIGHT, AXIS_WIDTH, view) + [(rims, PATCH), (joints, PATCH)]
              + [part for points, colour, width in ends for part in arrows(points, colour, width, view)])
-    area = [(solids.plates(corners[None], view.pixel), PATCH, PATCH_OPACITY)]
+    area = [(solids.plates(places[None], view.pixel), PATCH, PATCH_OPACITY)]
     show(ax, solids.draw(parts, view, np.ones(3), translucent=area), view)
     labels(ax, view, solids.mv.point(np.eye(3) * extent * LABEL_DISTANCE), ["x", "z", "ct"], ha="center", va="center",
            fontsize=12, color=INK)

@@ -20,6 +20,7 @@ from matplotlib.colors import Normalize, to_rgb, to_rgba
 from matplotlib.lines import Line2D
 from matplotlib.text import Annotation
 
+from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.bending import core
 from examples.util.wgsl import fitted, image_figure, meshes, show, solids
@@ -215,12 +216,12 @@ def swept(bent: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
     return meshes.samples(places, triangles, np.array(to_rgb(colour)), meshes.flat(places, triangles), view, gloss=GLOSS)
 
 
-def ghost(bent: np.ndarray, view: solids.View) -> solids.Quadric:
+def ghost(bent: np.ndarray, view: solids.View) -> solids.Plane:
     """The straight beam beside a bent one `[pieces + 1, walls, 2, 3]`: each wall a plate a pixel thick, from its
-    ends at the clamp to its ends at the tip, `[walls, 6]`."""
-    straight = straightened(bent)                                            # [pieces + 1, walls, 2, 3]
-    return solids.plates(np.stack([straight[0, :, 0], straight[0, :, 1], straight[-1, :, 1], straight[-1, :, 0]],
-                                  axis=-2), view.pixel)
+    ends at the clamp to its ends at the tip, bounded by planes `[walls, 6]`."""
+    straight = solids.mv.point(straightened(bent))                           # [pieces + 1, walls, 2] Point
+    return solids.plates(stack([straight[0, :, 0], straight[0, :, 1], straight[-1, :, 1], straight[-1, :, 0]],
+                               axis=-1), view.pixel)
 
 
 def clamped(through: core.Point, load: core.Point, length: float, radii: tuple[float, float],

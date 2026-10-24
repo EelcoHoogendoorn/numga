@@ -100,7 +100,7 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
                                  thickness * principal_radius * view.pixel)
     parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
              (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]
-    body = solids.polyhedra(coordinates(corners), FACES)[None]                # [1, 6] Quadric
+    body = solids.polyhedra(places, FACES)[None]                              # [1, 6] Plane
     return parts, [(body, cube_colour, face_opacity)]
 
 

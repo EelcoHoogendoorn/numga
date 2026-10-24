@@ -74,7 +74,7 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     edge_colour = np.array(to_rgb(EDGE_COLOUR))
     opaque = [(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour), (joints, edge_colour)]
     # Each face a plate a pixel thick, in its own colour.
-    faces = solids.plates(corners[FACES[shown]], view.pixel)                 # [faces, 6] Quadric
+    faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane
     return solids.draw(opaque, view, background, translucent=[(faces, colours[shown], face_opacity)])
 
 

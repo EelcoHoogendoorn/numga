@@ -41,14 +41,15 @@ def coordinates(points: core.Point) -> np.ndarray:
     return points.cast(core.ga.subspace("yz zx xy")).kernel
 
 
-def arcs(ends: np.ndarray) -> tuple[solids.Quadric, solids.Quadric]:
-    """The great arcs on the unit sphere between pairs of points on it `[pairs, 2, 3]`, as lines to ink: the plane
-    through the centre and both ends, and, to bound it, the side of the plane across the chord away from the centre,
-    `[pairs]` each."""
+def arcs(ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
+    """The great arcs on the unit sphere between pairs of points on it of unit weight `[pairs, 2]`, as lines to ink:
+    the plane through the centre and both ends, and, to bound it, the side of the plane across the chord away from
+    the centre, `[pairs]` each."""
     start, end = ends[:, 0], ends[:, 1]
-    middle = start + end
-    across = solids.plane(-middle, -np.sum(middle * start, axis=-1))
-    return solids.half_space(solids.plane(np.cross(start, end), np.zeros(len(ends)))), solids.half_space(across)
+    # The direction from the centre to the chord's middle; the plane square to it through the start, facing the centre.
+    middle = (start - solids.origin) + (end - solids.origin)                  # [pairs] Point
+    across = middle.dual() - sm.w * (middle.dual() & start)                   # [pairs] Plane
+    return solids.half_space((solids.origin & start & end) * solids.flip), solids.half_space(across)
 
 
 def draw_complex(points: core.Point, faces: np.ndarray, duals: core.Point) -> plt.Figure:
@@ -64,18 +65,17 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     pixel = view.pixel
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
     edges, beside = core.adjacency(faces)                                      # [edges, 2] each
-    vertices = sm.point(xyz)                                                   # [points] Point
+    vertices, dual_vertices = sm.point(xyz), sm.point(poles)                   # [points], [faces] Point
     sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Quadric
     # The hull: inside the plane of every face, the plane that pairs to one with the face's points, whose dual is the
     # face's pole.
-    hull = solids.half_space(solids.plane(poles, np.ones(len(poles))))[None]  # [1, faces] Quadric
+    hull = (-(dual_vertices - solids.origin).dual() - sm.w)[None]              # [1, faces] Plane
     # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
     # the ray from the centre it moves along.
     distance = np.linalg.norm(xyz, axis=-1)
     rays = xyz / distance[:, None]
     colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
     # The edges and the rays are strokes; the shells and the vertices are traced.
-    dual_vertices = sm.point(poles)                                            # [faces] Point
     lines = [strokes.segments(vertices[edges[:, 0]], vertices[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
              strokes.segments(dual_vertices[beside[:, 0]], dual_vertices[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
              strokes.segments(sm.point(rays * (1 - RAY_SPAN)), sm.point(rays * (1 + RAY_SPAN)), RAY_COLOUR, RAY_WIDTH,
@@ -85,7 +85,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
                         meshes=[(line, 1.0) for line in lines])
     # On the sphere, the arcs of both, each coloured by its kind.
     on_sphere, duals_on_sphere = rays, poles / np.linalg.norm(poles, axis=-1, keepdims=True)
-    primal_arcs, dual_arcs = arcs(on_sphere[edges]), arcs(duals_on_sphere[beside])
+    primal_arcs, dual_arcs = arcs(sm.point(on_sphere[edges])), arcs(sm.point(duals_on_sphere[beside]))
     inks = [solids.Ink(0, *primal_arcs, PRIMAL_COLOUR, ARC_WIDTH, 1.0),
             solids.Ink(0, *dual_arcs, DUAL_COLOUR, ARC_WIDTH, 1.0)]
     image = solids.draw([(sphere, SPHERE_COLOUR)], view, background, inks)

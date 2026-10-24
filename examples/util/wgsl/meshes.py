@@ -16,12 +16,9 @@ import numpy as np
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.solids import Motor, Plane, Point, View, axes, ga, gloss, lamp_shading, lighting, mv, origin
+from examples.util.wgsl.solids import (Line, Motor, Plane, Point, View, axes, flip, ga, gloss, lamp_shading, lighting,
+                                       mv, origin)
 
-# How many times finer than the image a mesh is drawn, across and up: one sample of a pixel to a drawn pixel, as many
-# as the traced solids take.
-# The intrinsic unit: the volume four points span, from the origin along each axis.
-unit = origin & mv.point([1, 0, 0]) & mv.point([0, 1, 0]) & mv.point([0, 0, 1])
 
 def source(colour: str) -> str:
     """WGSL drawing a mesh, coloured by `colour`, WGSL defining `fn colour(values: vec4<f32>, face_values:
@@ -139,9 +136,9 @@ def smooth(points: Point, faces: np.ndarray) -> dict:
 
 def face_normals(points: Point, faces: np.ndarray) -> Plane:
     """Each face's unit normal, as the plane through the origin square to it `[faces]`: the join of its
-    corners, intrinsic as they are, made extrinsic by the intrinsic unit, and moved to the origin."""
+    corners, intrinsic as they are, made extrinsic by the intrinsic scalar one, and moved to the origin."""
     corners = points[faces]
-    joined = (corners[:, 0] & corners[:, 1] & corners[:, 2]) * unit           # [faces] Plane
+    joined = (corners[:, 0] & corners[:, 1] & corners[:, 2]) * flip           # [faces] Plane
     through_origin = joined - mv.w * (joined & origin)
     return through_origin.normalized()
 
@@ -177,16 +174,11 @@ def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, v
     return solids.layer([], view, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
 
 
-def circles(centres: np.ndarray, radii: np.ndarray, normals: np.ndarray, n_points: int) -> np.ndarray:
-    """Closed circles about centres `[..., 3]` with radii `[...]`, square to normals `[..., 3]`, as polylines
-    `[..., n_points + 1, 3]`: a point at the radius, on the axis each normal leans on least crossed with it, turned
-    about the line through the centre along the normal."""
-    across = np.cross(normals, np.eye(3)[np.argmin(np.abs(normals), axis=-1)])
-    rims = mv.point(centres + radii[..., None] * across / np.linalg.norm(across, axis=-1, keepdims=True))
-    pivots = (mv.point(centres) & mv.point(centres + normals)) * unit                  # [...] Line
+def circles(rims: Point, pivots: Line, n_points: int) -> Point:
+    """Closed circles, as polylines `[..., n_points + 1]`: each point of a rim `[...]` turned a full turn about its
+    pivot `[...]`, the line through the circle's centre square to it."""
     turns = (pivots.normalized()[..., None] * (np.linspace(0, 2 * np.pi, n_points + 1) / 2)).exp()   # [..., n + 1] Motor
-    points = turns >> rims[..., None]
-    return ((axes & points[..., None]) / (mv.w & points)[..., None]).to_array()
+    return turns >> rims[..., None]
 
 
 def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View, background: np.ndarray,

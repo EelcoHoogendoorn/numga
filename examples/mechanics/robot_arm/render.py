@@ -11,7 +11,7 @@ from matplotlib.colors import to_rgb
 
 from numga import stack
 from examples.mechanics.robot_arm.core import Point
-from examples.util.wgsl import meshes, solids, strokes
+from examples.util.wgsl import solids, strokes
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
 TARGET_COLOUR = np.array(to_rgb("tab:red"))
@@ -32,15 +32,15 @@ BOX_FACES = np.array([[0, 1, 2], [4, 5, 6], [0, 1, 4], [2, 3, 6], [0, 2, 4], [1,
 
 
 # --- plumbing -------------------------------------------------------------------------
-def solid_boxes(corners: Point) -> solids.Quadric:
-    """The boxes of corner points `[boxes, 8]` as solids `[boxes, 6]`: the half-spaces inside each face, the face
-    the join of three of its corners, made extrinsic by the intrinsic unit, and turned so that the box's middle lies
-    on its negative side."""
+def solid_boxes(corners: Point) -> solids.Plane:
+    """The boxes of corner points `[boxes, 8]` as solids bounded by planes `[boxes, 6]`: each face the join of three
+    of its corners, made extrinsic by the intrinsic scalar one, and turned so that the box's middle lies on its
+    negative side."""
     faces = corners[:, BOX_FACES]                                              # [boxes, 6, 3] Point
-    planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * meshes.unit     # [boxes, 6] Plane
+    planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * solids.flip     # [boxes, 6] Plane
     planes = planes / (planes | planes).square_root()
     middles = corners.sum(axis=-1)[:, None]                                    # [boxes, 1] Point
-    return solids.half_space(planes * -np.sign((planes & middles).to_array()))
+    return planes * -np.sign((planes & middles).to_array())
 
 
 def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.ndarray]:

@@ -99,14 +99,13 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
 def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
     """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
     takes into the unit ball, cut by its own planes into eight octants."""
-    # The point quadric, the inverse of the dual quadric, read on the scene's axes; it is symmetric.
+    # The point quadric, the inverse of the dual quadric, about the origin of the scene's axes.
     quadric = core.placed(stretches, orientations).inverse()                  # [...] Plane <- Point
     scene_axes = stack((z, x, y))                                             # [3] Point
-    matrix = (quadric[..., None, None](scene_axes[:, None]) & scene_axes[None, :]).to_array()   # [..., 3, 3]
-    ellipsoids = solids.quadric(matrix, solids.origin)                        # [...] Quadric
+    ellipsoids = solids.centred(quadric(core.Point) & core.Point, scene_axes)   # [...] Quadric
     # Each octant on the side of each of the body's own planes its signs pick: its normals are the body's axes.
-    normals = coordinates(orientations[..., None] >> core.axes.dual())        # [..., 3, 3]
-    sides = solids.half_space(solids.plane(-OCTANTS[:, :, None] * normals[..., None, :, :], 0.0))   # [..., octants, 3]
+    normals = -solids.mv.direction(coordinates(orientations[..., None] >> core.axes.dual())).dual()   # [..., 3] Plane
+    sides = solids.half_space(normals[..., None, :] * -OCTANTS)               # [..., octants, 3] Quadric
     return concatenate([ellipsoids[..., None, None].broadcast_to(sides.shape[:-1] + (1,)), sides], axis=-1)
 
 

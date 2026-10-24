@@ -104,9 +104,9 @@ def draw_side(side: Scene, planes: Plane, radius: float, frame: Motor, legs: Poi
     around = np.linspace(0, 2 * np.pi, N_RIM, endpoint=False)
     radii = np.array([radius, LENS_HALF_HEIGHTS[0]])
     rims = centres[:, None] + radii[:, None, None] * np.stack([np.zeros_like(around), np.cos(around), np.sin(around)], axis=-1)
-    lenses = solids.plates(xyz(display >> point(rims)), THICKNESS)          # [lenses, corners + 2] Quadric
+    lenses = solids.plates(display >> point(rims), THICKNESS)               # [lenses, corners + 2] Plane
     corners = frame >> point(np.array([[0, -1, -1], [0, 1, -1], [0, 1, 1], [0, -1, 1]]) * [0, *SENSOR])
-    sensor = solids.plates(xyz(display >> corners)[None], THICKNESS)
+    sensor = solids.plates((display >> corners)[None], THICKNESS)
     shown = display >> legs                                                    # [plane + 1, ray] Point
     rays = solids.rods(shown[:-1].reshape(-1), shown[1:].reshape(-1), RAY_RADIUS * side.view.pixel)
     return side.draw([(sensor, SENSOR_COLOUR), (rays, RAY)], translucent=[(lenses, np.array(LENS), LENS_OPACITY)])
