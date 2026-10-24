@@ -16,7 +16,7 @@ from examples.util.wgsl import Shader, supersampled
 
 types = dict(Point=core.Point, Plane=core.Plane, Motor=core.Motor, Quadric=core.Quadric)
 
-source = supersampled() + """
+source = """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, each negative
 // inside it; its colour, the share of light it reflects as a mirror, and two planes whose unit steps
 // lay a checker over it.
@@ -142,7 +142,7 @@ fn sample(place: vec2<f32>) -> Sample {
 
 # --- plumbing -------------------------------------------------------------------------
 def shader() -> Shader:
-    return Shader(source, core.ga, types)
+    return Shader(supersampled() + source, core.ga, types)
 
 
 def frames(tracer: Shader, quadrics: core.Quadric, solids: dict, cameras: core.Motor, lamp: core.Point,

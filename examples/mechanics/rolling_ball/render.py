@@ -33,7 +33,7 @@ TRAIL_SEGMENTS = 64
 N_PIXELS = 500
 MARGIN = 1.3
 
-source = supersampled() + """
+source = """
 // The ball's turn, its centre on the table and its radius; half the width of the table seen; and the points of the
 // ball its contact point has met, in the ball's own frame, a segment between each and the next.
 var<uniform> turn: Rotor;
@@ -86,7 +86,7 @@ source = (source.replace("LIGHT", vec3(LIGHT)).replace("DARK", vec3(DARK)).repla
 
 @cache
 def shader() -> Shader:
-    return Shader(source, VGA3D, dict(Vector=VGA3D.gatype.vector(), Rotor=VGA3D.gatype.rotor()))
+    return Shader(supersampled() + source, VGA3D, dict(Vector=VGA3D.gatype.vector(), Rotor=VGA3D.gatype.rotor()))
 
 
 def coordinates(points) -> np.ndarray:

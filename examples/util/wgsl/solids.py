@@ -41,7 +41,7 @@ fill_tilt = 0.5
 # squarely it is turned to the viewer; the lamp gives the rest.
 headlight = 0.25
 
-source = supersampled() + """
+source = """
 // A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, its colour, how much of what
 // lies behind it it hides, and whether its quadrics are all half-spaces, bounded by planes alone.
 struct Solid {
@@ -488,7 +488,7 @@ TILE = 16
 
 @cache
 def shader() -> Shader:
-    return Shader(source, ga, dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric))
+    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric))
 
 
 class Ink(NamedTuple):
@@ -743,8 +743,8 @@ def mesh_buffers(view: View, n_slots: int, made: Any) -> MeshBuffers:
 
     rows, columns = view.shape
     # A copy's rows start at multiples of 256 bytes; a sample's colour and its depth are four bytes each.
-    row_bytes = -(-samples_per_side * columns * 4 // 256) * 256
-    size = max(n_slots * samples_per_side * rows * row_bytes, 16)
+    row_bytes = -(-samples_per_side() * columns * 4 // 256) * 256
+    size = max(n_slots * samples_per_side() * rows * row_bytes, 16)
     usage = wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST
     return MeshBuffers(made("colours", size, usage), made("depths", size, usage), size, row_bytes)
 
@@ -753,7 +753,7 @@ def sampled(encoder: Any, drawings: list[Samples], view: View, first: int, buffe
     """The meshes drawn at every sample of the view's pixels, recorded on an encoder, and copied there, on the GPU,
     mesh after mesh, into the buffers' slots from `first` on, the slots before it left as they are."""
     rows, columns = view.shape
-    shape = (samples_per_side * rows, samples_per_side * columns)
+    shape = (samples_per_side() * rows, samples_per_side() * columns)
     for index, drawing in enumerate(drawings, start=first):
         # A mesh with nothing to draw, such as a trail not yet begun, shows nothing: its slot cleared.
         if drawing.n_vertices == 0:

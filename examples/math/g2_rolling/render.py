@@ -24,7 +24,7 @@ line_width = 3
 dot_radius = 4
 margin = 0.07
 
-source = supersampled() + """
+source = """
 // A camera turned to look along its own -z at the middle of the view, its rays parallel, starting `back` behind
 // it; the image half as high as this; the lamp, toward it.
 var<uniform> camera: Rotor;
@@ -139,7 +139,7 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(source, ga, dict(Vector=Vector, Rotor=Rotor))
+    return Shader(supersampled() + source, ga, dict(Vector=Vector, Rotor=Rotor))
 
 
 class SphereScene:

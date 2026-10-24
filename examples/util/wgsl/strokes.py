@@ -14,7 +14,6 @@ from functools import cache
 import numpy as np
 
 from examples.util.wgsl import Shader
-from examples.util.wgsl.library import samples_per_side
 from examples.util.wgsl.meshes import Samples
 from examples.util.wgsl.solids import Motor, Plane, Point, View, ambient, fill_tilt, ga, gloss, headlight, lamp, mv, shininess
 

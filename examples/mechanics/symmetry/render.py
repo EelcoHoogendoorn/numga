@@ -35,7 +35,7 @@ n_framing = 400
 # The lattice's site and bond radii, in lattice spacings.
 site_radius, bond_radius = 0.13, 0.035
 
-sphere_source = supersampled() + """
+sphere_source = """
 // A unit sphere of directions, seen along parallel rays by a camera turned by `turn`, coloured by the rotary
 // power along each direction against the largest, through a colour table, and lit by the lamp.
 var<uniform> rotary: Rotary;
@@ -187,7 +187,7 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
 @cache
 def sphere_shader(rotary: object) -> Shader:
     """The sphere's shader, for rotary powers of a type: a scalar of two directions."""
-    return Shader(sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction))
+    return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction))
 
 
 def draw_optical_activity(rotary: Scalar) -> plt.Figure:
