@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.surfaces.weighted_dual import core, render, scenarios
 
 
@@ -44,6 +45,18 @@ def test_the_nearest_rescue_unfolds_the_mesh_steadily():
     np.testing.assert_allclose((images[1] - images[0]).norm().to_array(), 0, atol=1e-12)
 
 
+def canonical(points: core.Point, faces: np.ndarray) -> np.ndarray:
+    """The faces each turned outward, started at its smallest corner, and sorted: the same mesh in the same order,
+    whatever order and turning the hull's library returns them in, so that a seed picks the same edges."""
+    xyz = (stack((core.mv.x, core.mv.y, core.mv.z), axis=-1) & points[..., None]).to_array()   # [points, 3]
+    corners = xyz[faces]                                                       # [faces, 3, 3]
+    normals = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0])
+    outward = np.einsum("fi,fi->f", normals, corners.mean(axis=1)) > 0
+    faces = np.where(outward[:, None], faces, faces[:, ::-1])
+    faces = np.array([np.roll(face, -int(np.argmin(face))) for face in faces])
+    return faces[np.lexsort(faces.T[::-1])]
+
+
 def flip(faces: np.ndarray, edge: int) -> np.ndarray:
     """The mesh with one edge turned to join the other two corners of the faces beside it."""
     edges, beside = core.adjacency(faces)
@@ -61,7 +74,8 @@ def test_a_mesh_that_is_no_hull_at_any_distances_has_no_rescue():
     # The sphere's mesh with so many random edges flipped, from this seed.
     flips, seed = 8, 6
     rng = np.random.default_rng(seed)
-    faces = core.hull(scenarios.directions(scenarios.N_POINTS))
+    points = scenarios.directions(scenarios.N_POINTS)                          # [points] Point
+    faces = canonical(points, core.hull(points))
     for _ in range(flips):
         faces = flip(faces, rng.integers(len(core.adjacency(faces)[0])))
     assert scenarios.widest(scenarios.fold_map(faces))[1] < 0
