@@ -1,5 +1,7 @@
 # numga
 
+[![CI](https://github.com/EelcoHoogendoorn/numga/actions/workflows/ci.yml/badge.svg)](https://github.com/EelcoHoogendoorn/numga/actions/workflows/ci.yml)
+
 Geometric algebra with Extensors in NumPy, JAX and PyTorch.
 
 Extensors generalize matrices and tensors from vectors to multivectors, and from the inner and tensor products to every product of geometric algebra.
