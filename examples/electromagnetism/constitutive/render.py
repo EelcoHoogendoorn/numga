@@ -90,8 +90,8 @@ def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: floa
     axis = distance[:, None] * np.eye(3)[0]                                     # [samples, 3]
     electric, magnetic = field_arrows(modes, np.array(tau), distance, omega)
 
-    curves = strokes.polylines([(axis + electric, ELECTRIC), (axis + magnetic, MAGNETIC)], thickness * CURVE_WIDTH,
-                                view)
+    curves = strokes.polylines([(sm.point(axis + electric), ELECTRIC), (sm.point(axis + magnetic), MAGNETIC)],
+                               thickness * CURVE_WIDTH, view)
     # Arrows from the axis at evenly spaced stations, their heads a share of their length, so weak fields stay slender.
     station_idx = np.linspace(0, N_SAMPLES - 1, N_STATIONS, dtype=int)
     stations = axis[station_idx]

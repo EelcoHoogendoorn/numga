@@ -82,7 +82,7 @@ def panel(vertices: np.ndarray, circle: np.ndarray, globe: np.ndarray, plane: np
     planes = concatenate([circle_planes(globe), circle_planes(globe.transpose(1, 0, 2))])   # [circles] Plane
     spans = (planes | planes).to_array()
     planes = planes[spans > SPANNED * spans.max()]
-    curve = strokes.polylines([(circle, curve_colour)], CIRCLE_WIDTH, view)
+    curve = strokes.polylines([(sm.point(circle), curve_colour)], CIRCLE_WIDTH, view)
 
     # Short arrows follow the point order around the circle in both views.
     count = len(circle) - 1

@@ -67,13 +67,13 @@ def floor() -> np.ndarray:
     return np.concatenate([along_x, along_x[..., [1, 0, 2]]])
 
 
-def optics(camera_pose: Motor) -> tuple[np.ndarray, np.ndarray]:
+def optics(camera_pose: Motor) -> tuple[Point, Point]:
     """The optical elements in the camera frame, moved into the world by the camera pose: the front lens rim,
-    radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3, `[2, rim + 1, 3]`; and the corners of the
-    1.6 x 1.2 sensor chip at z == -1.25, `[4, 3]`."""
+    radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3, `[2, rim + 1]`; and the corners of the
+    1.6 x 1.2 sensor chip at z == -1.25, `[4]`."""
     rims = meshes.circles(np.array([[0.0, 0.0, 0.0], [0.0, 0.0, -0.3]]), np.array([0.3, 0.25]), np.array([0.0, 0.0, 1.0]), N_RIM)
     sensor = np.array([[-0.8, -0.6, -1.25], [0.8, -0.6, -1.25], [0.8, 0.6, -1.25], [-0.8, 0.6, -1.25]])
-    return euclidean(camera_pose >> mv.point(rims)), euclidean(camera_pose >> mv.point(sensor))
+    return camera_pose >> mv.point(rims), camera_pose >> mv.point(sensor)
 
 
 def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
@@ -81,7 +81,7 @@ def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
     points = [mv.point(floor())]
     for world_vertices, camera_pose, rays in scenes:
         rims, sensor = optics(camera_pose)
-        points += [world_vertices, mv.point(rims), mv.point(sensor), *rays]
+        points += [world_vertices, rims, sensor, *rays]
     return solids.view(points, 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
@@ -91,9 +91,8 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
     of those set above."""
     rims, sensor = optics(camera_pose)
     # The sensor chip as a plate a pixel thick, with its edge.
-    chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Quadric
-    corners = mv.point(sensor)                                                # [4] Point
-    edge, edge_joints = solids.edges(corners, corners[[1, 2, 3, 0]], thickness * RAY_WIDTH / 2 * view.pixel)
+    chip = solids.plates(euclidean(sensor)[None], view.pixel)                 # [1, 6] Quadric
+    edge, edge_joints = solids.edges(sensor, sensor[[1, 2, 3, 0]], thickness * RAY_WIDTH / 2 * view.pixel)
     grid = solids.rods(mv.point(floor()[:, 0]), mv.point(floor()[:, 1]), thickness * FLOOR_WIDTH / 2 * view.pixel)
     lenses = strokes.polylines([(rims[0], mcolors.to_rgb(FRONT_LENS_COLOR)), (rims[1], mcolors.to_rgb(REAR_LENS_COLOR))],
                                thickness * RIM_WIDTH, view)

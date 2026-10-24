@@ -52,7 +52,7 @@ def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndar
     traced = [spatial(trace)[:upto] for trace in paths]                         # [times, 3] each
     here = np.stack([xyz[-1] for xyz in traced])                                # [mixtures, 3]
     spins = unit(np.stack([spatial(core.spin(psi[upto - 1])) for psi in spinors]))   # [mixtures, 3]
-    lines = strokes.polylines(list(zip(traced, rgb)), PATH_WIDTH, view)
+    lines = strokes.polylines([(sm.point(xyz), colour) for xyz, colour in zip(traced, rgb)], PATH_WIDTH, view)
     shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, meshes=[(lines, 1.0)])

@@ -59,20 +59,21 @@ def colour(spins: core.Bivector) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full_like(hue, 0.75), 0.55 + 0.4 * (1 + z) / 2], axis=-1))
 
 
-def visible(curves: np.ndarray, colours: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+def visible(curves: np.ndarray, colours: np.ndarray) -> list[tuple[solids.Point, np.ndarray]]:
     """Polylines `[curves, n, 3]`, each with its colour `[curves, 3]`, cut where they pass beyond the drawing limit:
-    the runs of two or more points inside it, each with its curve's colour."""
+    the runs of two or more points inside it `[run]`, each with its curve's colour."""
     runs = []
     for curve, rgb in zip(curves, colours):
         inside = np.linalg.norm(curve, axis=-1) <= LIMIT
         cuts = np.flatnonzero(np.diff(inside)) + 1
-        runs += [(run, rgb) for run, kept in zip(np.split(curve, cuts), np.split(inside, cuts)) if kept[0] and len(run) > 1]
+        runs += [(sm.point(run), rgb) for run, kept in zip(np.split(curve, cuts), np.split(inside, cuts))
+                 if kept[0] and len(run) > 1]
     return runs
 
 
-def space_view(runs: list[tuple[np.ndarray, np.ndarray]]) -> solids.View:
+def space_view(runs: list[tuple[solids.Point, np.ndarray]]) -> solids.View:
     """A view framing every run drawn in space."""
-    return solids.view([sm.point(np.concatenate([run for run, _ in runs]))], 0.0, ELEVATION, AZIMUTH, MARGIN, 1)
+    return solids.view([concatenate([run for run, _ in runs])], 0.0, ELEVATION, AZIMUTH, MARGIN, 1)
 
 
 def sweep_view() -> solids.View:
@@ -114,12 +115,12 @@ def dots(points: np.ndarray, colours: np.ndarray, radius: float,
     return solids.ball(sm.point(points), radius * view.pixel)[:, None], colours
 
 
-def segments(runs: list[tuple[np.ndarray, np.ndarray]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Polylines, each with its colour, as their segments: the starts, the ends and the colours, `[segments, 3]`
-    each, none for no polylines."""
-    none = [np.zeros((0, 3))]
-    return (np.concatenate(none + [run[:-1] for run, _ in runs]), np.concatenate(none + [run[1:] for run, _ in runs]),
-            np.concatenate(none + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
+def segments(runs: list[tuple[solids.Point, np.ndarray]]) -> tuple[solids.Point, solids.Point, np.ndarray]:
+    """Polylines, each with its colour, as their segments: the starts and the ends `[segments]`, and the colours
+    `[segments, 3]`, none for no polylines."""
+    none = sm.point(np.zeros((0, 3)))                                          # [0] Point
+    return (concatenate([none] + [run[:-1] for run, _ in runs]), concatenate([none] + [run[1:] for run, _ in runs]),
+            np.concatenate([np.zeros((0, 3))] + [np.broadcast_to(rgb, (len(run) - 1, 3)) for run, rgb in runs]))
 
 
 def panels(space: solids.View, size: tuple[float, float]) -> tuple[plt.Figure, list[plt.Axes], list[solids.View]]:
@@ -160,7 +161,7 @@ def draw_lift(loop: core.Bivector, path: core.Bivector, fibre: core.Bivector) ->
              for runs, width in ((circles, LIFT_FIBRE_WIDTH), (tracks, TRACK_WIDTH))]
     # The track's start in blue, its end in its own colour.
     ends = (solids.ball(sm.point(track[[0, -1]]), END_RADIUS * space.pixel)[:, None], np.stack([START_COLOUR, LOOP_COLOUR]))
-    on_sphere = strokes.polylines([(components(loop), LOOP_COLOUR)], TRACK_WIDTH, sphere)
+    on_sphere = strokes.polylines([(sm.point(components(loop)), LOOP_COLOUR)], TRACK_WIDTH, sphere)
     shown(axes, solids.draw([ends], space, BACKGROUND, meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
           (space, sphere))
     return figure
@@ -183,7 +184,8 @@ def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> Iter
         colours.append(colour(spin))                                           # [3]
         fibres.append(segments(visible(components(projected)[None], colours[-1][None])))
         # Every fibre so far thin, and the newest thick around its thin self.
-        thin = strokes.segments(*(np.concatenate(part) for part in zip(*fibres)), SWEPT_WIDTH, space)
+        starts, ends, shades = zip(*fibres)
+        thin = strokes.segments(concatenate(starts), concatenate(ends), np.concatenate(shades), SWEPT_WIDTH, space)
         thick = strokes.segments(*fibres[-1], NEWEST_WIDTH, space)
         sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), SWEEP_DOT_RADIUS, sphere)]))
         space_shown.set_data(space_scene.draw(meshes=[(thin, 1.0), (thick, 1.0)]))

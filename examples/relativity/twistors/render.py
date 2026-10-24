@@ -57,8 +57,8 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each spatial curve as a stroke of a width in pixels, in its own colour."""
-    points = spatial(curves)
-    points = points.reshape((-1,) + points.shape[-2:])                        # [curves, samples, 3]
+    points = sm.point(spatial(curves))
+    points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point
     lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
     return solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)])
 

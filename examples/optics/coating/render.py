@@ -119,10 +119,10 @@ def axion(jumps: np.ndarray, reflectance: core.Scalar, names: tuple[str, ...]) -
     return figure
 
 
-def scene(places: np.ndarray) -> np.ndarray:
-    """Places in the beam's frame, across the line along x and y and along it by depth `[..., 3]`, turned upright
-    into the scene `[..., 3]`."""
-    return (solids.axes & (upright >> sm.point(places))[..., None]).to_array()
+def scene(places: np.ndarray) -> solids.Point:
+    """Places in the beam's frame, across the line along x and y and along it by depth `[..., 3]`, as points turned
+    upright into the scene `[...]`."""
+    return upright >> sm.point(places)
 
 
 def faded(colours: np.ndarray, strength: np.ndarray) -> np.ndarray:
@@ -163,7 +163,7 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
                     translucent=[(box, slab_colour, slab_opacity)])
     for planes in electric:
         field = planes.cast(algebra.subspace("xt yt")).kernel                        # [nodes, 2]
-        tips = scene(np.concatenate([field_length * field, depths[:, None]], axis=-1))   # [nodes, 3]
+        tips = scene(np.concatenate([field_length * field, depths[:, None]], axis=-1))   # [nodes] Point
         hue = (np.arctan2(field[:, 1], field[:, 0]) / (2 * np.pi)) % 1
         strength = np.clip(np.hypot(*field.T) * 4, 0, 1)
         colours = hsv_to_rgb(np.column_stack([hue, np.full_like(hue, 0.85), np.ones_like(hue)]))

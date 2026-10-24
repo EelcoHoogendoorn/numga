@@ -46,7 +46,7 @@ def view(pixels: int, *drawn: np.ndarray) -> solids.View:
 def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """Each orbit `[heights, azimuths, steps + 1, 3]` as a stroke of a width in pixels, in the colour of its start, at
     every sample."""
-    curves = zip(orbits.reshape(-1, *orbits.shape[-2:]), colours(orbits.shape[:2]).reshape(-1, 3))
+    curves = zip(sm.point(orbits.reshape(-1, *orbits.shape[-2:])), colours(orbits.shape[:2]).reshape(-1, 3))
     return strokes.polylines(list(curves), width, view)
 
 

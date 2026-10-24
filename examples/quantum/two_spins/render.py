@@ -193,7 +193,7 @@ def draw_qubit(across: core.Scalar, turned: core.Scalar, balance: core.Scalar, t
     figure = plt.figure(figsize=(11, 4.2))
     ax = figure.add_axes((0.0, 0.0, 0.45, 1.0))
     view = ball(ax)
-    tracks = strokes.polylines([(path, np.array(to_rgb(colour))) for path, colour in zip(paths, shades)],
+    tracks = strokes.polylines([(sm.point(path), np.array(to_rgb(colour))) for path, colour in zip(paths, shades)],
                                PATH_WIDTH / view.pixel, view)
     start = [(solids.ball(sm.point(paths[0, 0]), START_RADIUS)[None, None], START_COLOUR)]
     show(ax, on_sphere(start, view, [(tracks, 1.0)]), view)

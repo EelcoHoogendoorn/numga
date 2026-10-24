@@ -143,8 +143,9 @@ def polytope(spinors, tilt: float = 0.45) -> np.ndarray:
     space = points[:, 1:] / (2.4 - points[:, :1])                              # [vertices, 3]
     # Seen from slightly above: the camera turned about x by the tilt, looking along its own -z.
     view = solids.View((solids.mv.yz * (tilt / 2)).exp(), np.full(2, HALF), N_PIXELS)
-    edges = strokes.segments(space[first], space[second], EVEN, EDGE_WIDTH, view)
-    vertices = solids.ball(solids.mv.point(space), VERTEX_RADIUS * view.pixel)[:, None]   # [vertices, 1] Quadric
+    places = solids.mv.point(space)                                            # [vertices] Point
+    edges = strokes.segments(places[first], places[second], EVEN, EDGE_WIDTH, view)
+    vertices = solids.ball(places, VERTEX_RADIUS * view.pixel)[:, None]       # [vertices, 1] Quadric
     return solids.draw([(vertices, VERTEX)], view, BACKGROUND, meshes=[(edges, 1.0)])
 
 

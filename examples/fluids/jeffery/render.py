@@ -86,8 +86,8 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
     figure = plt.figure(figsize=(count * ORBIT_PIXELS / 100, ORBIT_PIXELS / 100), dpi=100)
     parts, ball, inks = sphere(view)
     for body in range(count):
-        orbits = strokes.polylines([(end * paths[:, body, start], colour[:3]) for start, colour in enumerate(STARTS)
-                                    for end in (1, -1)], ORBIT_WIDTH, view)
+        orbits = strokes.polylines([(solids.mv.point(end * paths[:, body, start]), colour[:3])
+                                    for start, colour in enumerate(STARTS) for end in (1, -1)], ORBIT_WIDTH, view)
         ax = figure.add_axes((body / count, 0, 1 / count, 1))
         show(ax, solids.draw(parts, view, np.ones(3), inks, translucent=ball, meshes=[(orbits, 1.0)]), view)
         # Each arrow named just past its tip by the direction it runs along: the normal z, the flow x, the gradient y.
@@ -131,7 +131,6 @@ def animate_tumbling_sized(stretches: core.Stretch, heights: core.Point, velocit
     # Each body's panel about its own centre, two half-widths apart across the image, the row about the origin.
     across = (camera >> solids.mv.x.dual()) * (2 * limit * (np.arange(count) - (count - 1) / 2))   # [bodies] Point
     shifts = solids.translator(across)                                        # [bodies] Motor
-    offsets = (solids.axes & across[:, None]).to_array()                      # [bodies, 3]
     # Every body in its own panel, at every frame, `[frames, bodies, octants, 4]`.
     placed_bodies = solids.placed(bodies(stretches, orientations), shifts[:, None, None])
     colours = np.tile(OCTANT_COLOURS, (count, 1))                             # [bodies * octants, 3]
@@ -142,13 +141,14 @@ def animate_tumbling_sized(stretches: core.Stretch, heights: core.Point, velocit
                                   HEAD_WIDTH / 2 * view.pixel)
     flow = [(shafts.reshape(-1, 3), FLOW_RGB), (heads.reshape(-1, 3), FLOW_RGB)]
     # Both ends of every long axis, in its panel, over the frames, and the flow, which stays put.
-    axis_ends = np.array([1.0, -1.0])[:, None, None, None] * coordinates(tips) + offsets   # [ends, frames, bodies, 3]
-    reach = TIP_REACH * (axis_ends - offsets) + offsets                       # [ends, frames, bodies, 3]
+    tip_places = np.array([1.0, -1.0])[:, None, None, None] * coordinates(tips)   # [ends, frames, bodies, 3]
+    axis_ends = shifts >> solids.mv.point(tip_places)                         # [ends, frames, bodies] Point
+    reach = shifts >> solids.mv.point(TIP_REACH * tip_places)                 # [ends, frames, bodies] Point
     scene = Scene(view, np.ones(3), flow, [])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
-        paths = strokes.segments(axis_ends[:, :index].reshape(-1, 3), axis_ends[:, 1:index + 1].reshape(-1, 3),
-                                 TIP_RGB, PATH_WIDTH, view)
-        marks = strokes.segments(axis_ends[:, index].reshape(-1, 3), reach[:, index].reshape(-1, 3), TIP_RGB,
-                                 MARK_WIDTH, view)
+        paths = strokes.segments(axis_ends[:, :index].reshape(-1), axis_ends[:, 1:index + 1].reshape(-1), TIP_RGB,
+                                 PATH_WIDTH, view)
+        marks = strokes.segments(axis_ends[:, index].reshape(-1), reach[:, index].reshape(-1), TIP_RGB, MARK_WIDTH,
+                                 view)
         yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], meshes=[(paths, 1.0), (marks, 1.0)])

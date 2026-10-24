@@ -56,7 +56,7 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     """The particles' tracks `[steps, particles]`, coloured by their angle to the axis, each trailing behind its
     particle, through the field's strength at the points of a grid in the plane through the axis `[across, along]`,
     between the coils of a radius at their heights."""
-    tracks = space(events)                                                    # [steps, particles, 3]
+    tracks = solids.mv.point(space(events))                                   # [steps, particles] Point
     grid = space(points)                                                      # [across, along, 3]
     colours = particle_colours(0.15 + 0.7 * (pitches - pitches.min()) / np.ptp(pitches))[:, :3]
     # The box of the grid, as deep across the axis as it is wide.
@@ -65,14 +65,15 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     view = solids.view([solids.mv.point(box)], 0.0, elevation, azimuth, margin, n_pixels)
     # What stays put, set up once: the sheet and the coils' wire, each coil a ring about the axis.
     centres = np.stack([heights, np.zeros_like(heights), np.zeros_like(heights)], axis=-1)    # [coils, 3]
-    rings = meshes.circles(centres, np.full(len(heights), radius), np.broadcast_to([1.0, 0.0, 0.0], centres.shape),
-                           n_around_coil)                                     # [coils, around + 1, 3]
+    rims = meshes.circles(centres, np.full(len(heights), radius), np.broadcast_to([1.0, 0.0, 0.0], centres.shape),
+                          n_around_coil)                                      # [coils, around + 1, 3]
+    rings = solids.mv.point(rims)                                             # [coils, around + 1] Point
     wire = strokes.polylines([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
     scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)])
     # What moves, frame by frame: the particles and their trails.
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
-        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles, 3]
+        trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point
         trails = strokes.polylines([(trail[:, particle], colour) for particle, colour in enumerate(colours)],
                                    track_width, view)
-        particles = solids.ball(solids.mv.point(tracks[end - 1]), particle_radius * view.pixel)[:, None]
+        particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]
         yield scene.draw([(particles, colours)], meshes=[(trails, 1.0)])

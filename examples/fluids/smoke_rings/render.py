@@ -72,13 +72,13 @@ def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
     return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
 
 
-def curve_strokes(points: np.ndarray, speeds: np.ndarray, fastest: float, view: solids.View) -> meshes.Samples:
-    """Polylines `[curves, n, 3]` as strokes, each segment coloured by the mean speed at its ends, from the speeds at
+def curve_strokes(points: solids.Point, speeds: np.ndarray, fastest: float, view: solids.View) -> meshes.Samples:
+    """Polylines `[curves, n]` as strokes, each segment coloured by the mean speed at its ends, from the speeds at
     the vertices `[curves, n]`, against the fastest, at every sample of the view."""
     middles = (speeds[..., :-1] + speeds[..., 1:]) / 2                         # [curves, n - 1]
     shades = plt.get_cmap(speed_map)(rest_share + (fastest_share - rest_share) * middles / fastest)[..., :3]   # [curves, n - 1, 3]
-    return strokes.segments(points[:, :-1].reshape(-1, 3), points[:, 1:].reshape(-1, 3), shades.reshape(-1, 3),
-                            curve_width, view)
+    return strokes.segments(points[:, :-1].reshape(-1), points[:, 1:].reshape(-1), shades.reshape(-1, 3), curve_width,
+                            view)
 
 
 def draw_surface(curves: core.Point) -> plt.Figure:
@@ -114,7 +114,8 @@ def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarr
     points, rates = coordinates(curves), speeds.to_array()                     # [times, ..., n, 3], [times, ..., n]
     view, _ = framed(points, n_frame_pixels)
     for curve, rate in zip(points, rates):
-        flowing = curve_strokes(curve.reshape(-1, *points.shape[-2:]), rate.reshape(-1, points.shape[-2]), rates.max(), view)
+        flowing = curve_strokes(places(curve.reshape(-1, *points.shape[-2:])), rate.reshape(-1, points.shape[-2]),
+                                rates.max(), view)
         yield solids.draw([], view, background, meshes=[(flowing, 1.0)])
 
 
@@ -135,7 +136,8 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
     colours = ((1 - share) * early + share * late).reshape(-1, 3)
     for time in range(len(points)):
         swept = faces[:time][kept[:time]]                                      # [faces, 3]
-        shown = [(curve_strokes(points[time][inside[time]][None], rates[time][inside[time]][None], rates.max(), view), 1.0)]
+        shown = [(curve_strokes(places(points[time][inside[time]][None]), rates[time][inside[time]][None], rates.max(),
+                                view), 1.0)]
         if len(swept):
             shown.append((sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
         yield solids.draw([], view, background, meshes=shown)

@@ -106,7 +106,7 @@ def grid_lines(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def grid(points: np.ndarray, colour: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
     """The grid lines of a grid of points `[latitudes + 1, longitudes + 1, 3]`, as strokes `width` across in a
     colour, at every sample."""
-    lines = [line for batch in grid_lines(points) for line in batch]
+    lines = [line for batch in grid_lines(points) for line in solids.mv.point(batch)]
     return strokes.polylines([(line, colour) for line in lines], width / view.pixel, view)
 
 

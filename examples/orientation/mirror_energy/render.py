@@ -39,7 +39,7 @@ def scenes(paths: np.ndarray) -> list[Scene]:
     as faint strokes, set up once for the masses to be drawn among, all in one view."""
     corners = np.stack(np.meshgrid(*[[-1.0, 1.0]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)
     view = solids.view([solids.mv.point(corners)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
-    closed = np.concatenate([paths, paths[:1]], axis=0)                       # [times + 1, cases, masses, 3]
+    closed = solids.mv.point(np.concatenate([paths, paths[:1]], axis=0))      # [times + 1, cases, masses] Point
     sphere = solids.ball(solids.origin, 1.0)[None, None]
     # The great circles where the planes x, y and z through the centre cut the sphere, the first translucent part,
     # after the shape, each mass's ball, and the arrows' shafts and heads.

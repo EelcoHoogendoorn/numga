@@ -129,7 +129,7 @@ def draw_spherical_conic(
     shown_form = meshes.samples(places, faces, shades[faces], radial, view, gloss=0.1)
     marks = [(solids.ball(sm.point(fk), FOCUS_RADIUS * view.pixel)[:, None], FOCUS),
              (solids.ball(sm.point(sk), SAMPLE_RADIUS * view.pixel)[None, None], SAMPLE)]
-    geodesics = strokes.polylines(list(zip(ak, GEODESICS)), GEODESIC_WIDTH, view)
+    geodesics = strokes.polylines([(sm.point(arc), colour) for arc, colour in zip(ak, GEODESICS)], GEODESIC_WIDTH, view)
     # The sphere itself, clear, is the first part after the opaque ones and carries the oval and its antipodal loop,
     # dashed: each dash the loop within the ball on its chord.
     runs = dashes(-pk)                                                         # [dashes, N_DASH + 1, 3]

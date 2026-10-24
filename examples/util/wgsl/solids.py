@@ -88,43 +88,11 @@ fn lit(colour: vec3<f32>, tangent: Plane, direction: Point) -> vec3<f32> {
 """
 
 
-def quadric_tracing() -> str:
-    """WGSL tracing rays through solids bounded by quadrics, as `scene` and `tiles` lay them out: `first_hit`, the
-    first point a ray meets on a solid's surface after the last surface seen, by `crossings`, where it crosses each
-    quadric, and `inside_others`."""
+def quadric_crossings() -> str:
+    """WGSL for where a ray crosses a quadric's surface, for the solids and strokes alike: `along_ray`, the quadric's
+    pairing with the ray's points as a quadratic in the distance along it, and `crossings`, its roots."""
     return """
-// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and whether they are all
-// half-spaces, bounded by planes alone.
-struct Solid {
-    first: u32,
-    end: u32,
-    flat: u32,
-}
-
-var<storage, read> solids: array<Solid>;
-var<storage, read> quadrics: array<Quadric>;
-// The solids each tile of the picture, `tile` pixels a side, may see: the solids `tile_solids[tile_starts[tile]]` up to
-// `tile_solids[tile_starts[tile + 1]]`, in their order; the tiles across the picture.
-var<storage, read> tile_starts: array<u32>;
-var<storage, read> tile_solids: array<u32>;
-var<uniform> tiles_across: u32;
-const tile = 16.0;
-// A pixel's size in the scene.
-var<uniform> pixel: f32;
-
 const far = 1e30;
-// How far a point may lie outside a quadric and still count as inside, for points on two surfaces.
-const tolerance = 1e-5;
-// Surfaces closer along a ray than this share of a pixel lie at one depth, and are taken in the order of their solids,
-// then their meshes: every surface is seen once, coincident ones included.
-const tie = 0.01;
-
-// The surface a ray meets: how far along it, its tangent plane there, and its solid.
-struct Hit {
-    distance: f32,
-    tangent: Plane,
-    solid: u32,
-}
 
 // A quadric along a ray, from `start` along `direction`: its pairing with the ray's point, a quadratic in the distance
 // t along it, a t^2 + 2 b t + c.
@@ -145,6 +113,45 @@ fn crossings(along: Quadratic) -> vec2<f32> {
     let discriminant = along.b * along.b - along.a * along.c;
     let q = -(along.b + select(-1.0, 1.0, along.b >= 0) * sqrt(discriminant));
     return vec2<f32>(select(q / along.a, far, along.a == 0), along.c / q);
+}
+"""
+
+
+def quadric_tracing() -> str:
+    """WGSL tracing rays through solids bounded by quadrics, as `scene` and `tiles` lay them out: `first_hit`, the
+    first point a ray meets on a solid's surface after the last surface seen, by `crossings`, where it crosses each
+    quadric, and `inside_others`."""
+    return quadric_crossings() + """
+// A solid: the intersection of its quadrics, `quadrics[first]` up to `quadrics[end]`, and whether they are all
+// half-spaces, bounded by planes alone.
+struct Solid {
+    first: u32,
+    end: u32,
+    flat: u32,
+}
+
+var<storage, read> solids: array<Solid>;
+var<storage, read> quadrics: array<Quadric>;
+// The solids each tile of the picture, `tile` pixels a side, may see: the solids `tile_solids[tile_starts[tile]]` up to
+// `tile_solids[tile_starts[tile + 1]]`, in their order; the tiles across the picture.
+var<storage, read> tile_starts: array<u32>;
+var<storage, read> tile_solids: array<u32>;
+var<uniform> tiles_across: u32;
+const tile = 16.0;
+// A pixel's size in the scene.
+var<uniform> pixel: f32;
+
+// How far a point may lie outside a quadric and still count as inside, for points on two surfaces.
+const tolerance = 1e-5;
+// Surfaces closer along a ray than this share of a pixel lie at one depth, and are taken in the order of their solids,
+// then their meshes: every surface is seen once, coincident ones included.
+const tie = 0.01;
+
+// The surface a ray meets: how far along it, its tangent plane there, and its solid.
+struct Hit {
+    distance: f32,
+    tangent: Plane,
+    solid: u32,
 }
 
 fn inside_others(solid: Solid, own: u32, point: Point) -> bool {

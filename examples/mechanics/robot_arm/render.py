@@ -10,7 +10,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.mechanics.robot_arm.core import Point, mv
+from examples.mechanics.robot_arm.core import Point
 from examples.util.wgsl import meshes, solids, strokes
 
 LINK_COLOURS = np.array([to_rgb(colour) for colour in ("tab:blue", "tab:cyan", "tab:purple")])
@@ -32,11 +32,6 @@ BOX_FACES = np.array([[0, 1, 2], [4, 5, 6], [0, 1, 4], [2, 3, 6], [0, 2, 4], [1,
 
 
 # --- plumbing -------------------------------------------------------------------------
-def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
-    return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
-
-
 def solid_boxes(corners: Point) -> solids.Quadric:
     """The boxes of corner points `[boxes, 8]` as solids `[boxes, 6]`: the half-spaces inside each face, the face
     the join of three of its corners, made extrinsic by the intrinsic unit, and turned so that the box's middle lies
@@ -58,8 +53,8 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
     path = []
     for boxes, target, tip in chain([first], states):
         # The tip's path up to this frame's tip.
-        path.append(euclidean(tip))
-        trail = strokes.polylines([(np.array(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
+        path.append(tip)
+        trail = strokes.polylines([(stack(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Quadric
         yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
                           translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],

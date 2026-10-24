@@ -149,7 +149,7 @@ def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tu
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = solids.mv.point(ribbons.reshape(-1, 3))
     strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
-    rods = strokes.polylines([(curve, ROD) for curve in curves], ROD_WIDTH, view)
+    rods = strokes.polylines([(curve, ROD) for curve in solids.mv.point(curves)], ROD_WIDTH, view)
     return [(strips, 1.0), (rods, 1.0)]
 
 

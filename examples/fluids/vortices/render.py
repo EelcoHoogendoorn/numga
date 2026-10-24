@@ -118,9 +118,10 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         places = positions(following)                                            # [times, vortices, 2]
         width = np.ptp(places.reshape(-1, 2), axis=0).max()
         times = np.broadcast_to(np.linspace(0, height * width, len(places))[:, None, None], places.shape[:2] + (1,))
-        drawn = np.concatenate([places, times], axis=-1)                         # [times, vortices, 3]
-        view = fitted(solids.view([solids.mv.point(drawn)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
-        strands = list(zip(np.moveaxis(drawn, 1, 0), STRANDS))                   # [n, 3] and colour, per vortex
+        drawn = solids.mv.point(np.concatenate([places, times], axis=-1))        # [times, vortices] Point
+        view = fitted(solids.view([drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
+        # Each vortex's strand, its points through time and its colour.
+        strands = [(drawn[:, vortex], colour) for vortex, colour in zip(range(drawn.shape[1]), STRANDS)]
         lines = strokes.polylines(strands, STRAND_WIDTH, view)
         show(ax, solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)]), view)
     return result

@@ -75,9 +75,11 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     rays = xyz / distance[:, None]
     colours = plt.get_cmap(DISTANCE_MAP)((distance - 1 + DISTANCE_RANGE) / (2 * DISTANCE_RANGE))[:, :3]
     # The edges and the rays are strokes; the shells and the vertices are traced.
-    lines = [strokes.segments(xyz[edges[:, 0]], xyz[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
-             strokes.segments(poles[beside[:, 0]], poles[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
-             strokes.segments(rays * (1 - RAY_SPAN), rays * (1 + RAY_SPAN), RAY_COLOUR, RAY_WIDTH, view)]
+    dual_vertices = sm.point(poles)                                            # [faces] Point
+    lines = [strokes.segments(vertices[edges[:, 0]], vertices[edges[:, 1]], PRIMAL_COLOUR, EDGE_WIDTH, view),
+             strokes.segments(dual_vertices[beside[:, 0]], dual_vertices[beside[:, 1]], DUAL_COLOUR, EDGE_WIDTH, view),
+             strokes.segments(sm.point(rays * (1 - RAY_SPAN)), sm.point(rays * (1 + RAY_SPAN)), RAY_COLOUR, RAY_WIDTH,
+                              view)]
     space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
                         translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
                         meshes=[(line, 1.0) for line in lines])

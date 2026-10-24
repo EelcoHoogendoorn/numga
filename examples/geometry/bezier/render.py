@@ -76,8 +76,8 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     corners = polygons.reshape(-1, 3)
     reaches = corners * np.maximum(1.0, 1 / np.linalg.norm(corners, axis=-1, keepdims=True))
     rays = solids.rods(sm.point(np.zeros_like(reaches)), sm.point(reaches), LINE_WIDTH / 2 * view.pixel)   # [corners, 3] Quadric
-    arc_strokes = strokes.polylines([(xyw, colour) for xyw, colour in zip(arcs, colours)], LINE_WIDTH, view)
-    on_sphere = strokes.polylines([(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True), colour)
+    arc_strokes = strokes.polylines([(sm.point(xyw), colour) for xyw, colour in zip(arcs, colours)], LINE_WIDTH, view)
+    on_sphere = strokes.polylines([(sm.point(xyw / np.linalg.norm(xyw, axis=-1, keepdims=True)), colour)
                                    for xyw, colour in zip(arcs, colours)], SPHERE_CURVE_WIDTH, view)
     # The control polygons dotted, their corners and the origin as points.
     dots = sm.point(np.concatenate([dotted(polygon, DOT_SPACING * view.pixel) for polygon in polygons]))

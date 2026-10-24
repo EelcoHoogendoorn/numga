@@ -65,5 +65,5 @@ def animate_strips(rest: core.Vector, frames: core.Vector, across_fibres: core.S
         # The deformed surface, interpolated linearly between its samples at each fibre line's positions.
         threads = [np.stack([map_coordinates(grids[case][..., axis], line.T, order=1, mode="nearest") for axis in range(3)], axis=-1)
                    for case, line in lines]                            # [lines] of [vertices, 3]
-        fibres = strokes.polylines([(thread, FIBRE) for thread in threads], FIBRE_WIDTH, view)
+        fibres = strokes.polylines([(sm.point(thread), FIBRE) for thread in threads], FIBRE_WIDTH, view)
         yield solids.draw([], view, background, meshes=[(strips, 1.0), (fibres, 1.0)])

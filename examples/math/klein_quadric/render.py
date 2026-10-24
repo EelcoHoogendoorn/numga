@@ -74,9 +74,10 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
     points = solids.mv.point(coordinates(crossing)[real(crossing)])            # [crossings] Point
     # The hyperboloid's two families of lines, faint: strokes, which the tracer composites sample by sample, where
     # traced rods would each be searched through every layer of the translucent crowd.
-    hyperboloid = [(strokes.polylines([(ends, colour) for ends in finite(chords(family))], 2 * RULING_RADIUS, view),
+    ruling_ends = [solids.mv.point(finite(chords(family))) for family in rulings]   # [chords, 2] Point each
+    hyperboloid = [(strokes.segments(ends[:, 0], ends[:, 1], colour, 2 * RULING_RADIUS, view),
                     # A traced rod is crossed twice, a stroke once: its nearest surface hides what both would.
-                    1 - (1 - RULING_OPACITY) ** 2) for family, colour in zip(rulings, RULING_COLOURS)]
+                    1 - (1 - RULING_OPACITY) ** 2) for ends, colour in zip(ruling_ends, RULING_COLOURS)]
     four = [(rods(chords(lines[:3]), LINE_RADIUS * view.pixel), LINE_COLOUR),
             (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
             (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),

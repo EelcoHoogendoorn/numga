@@ -118,11 +118,10 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     # Each rim: a circle about its hub, square to the axle, across the way the wheel rolls.
     heading = (ahead - wheels) / np.linalg.norm(ahead - wheels, axis=-1, keepdims=True)
     sideways = np.stack([-heading[:, 1], heading[:, 0], np.zeros(len(wheels))], axis=-1)
-    rims = meshes.circles(np.concatenate([wheels, np.full((len(wheels), 1), WHEEL_RADIUS)], axis=-1),
-                          np.full(len(wheels), WHEEL_RADIUS), sideways, N_RIM)          # [wheels, rim + 1, 3]
+    rims = sm.point(meshes.circles(np.concatenate([wheels, np.full((len(wheels), 1), WHEEL_RADIUS)], axis=-1),
+                                   np.full(len(wheels), WHEEL_RADIUS), sideways, N_RIM))   # [wheels, rim + 1] Point
     tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
-    trail = strokes.polylines([(np.concatenate([middle, np.zeros((len(middle), 1))], axis=-1), to_rgb(TRAIL))],
-                              TRAIL_WIDTH, view)
+    trail = strokes.polylines([(at_height(middle, 0.0), to_rgb(TRAIL))], TRAIL_WIDTH, view)
     return solids.draw(parts, view, BACKGROUND, meshes=[(tyres, 1.0), (trail, 1.0)])
 
 

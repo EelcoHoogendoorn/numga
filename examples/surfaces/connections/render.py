@@ -88,14 +88,15 @@ def facing(view_degrees: np.ndarray) -> np.ndarray:
     return np.array([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)])
 
 
-def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray, length: float) -> tuple[np.ndarray, np.ndarray]:
+def needles(origins: np.ndarray, directions: np.ndarray, normals: np.ndarray,
+            length: float) -> tuple[solids.Point, solids.Point]:
     """Arrows along the directions, with their heads in each point's tangent plane: a shaft and two strokes to the
-    tip, as segments, their starts and ends `[arrows * 3, 3]`."""
+    tip, as segments, their starts and ends `[arrows * 3]`."""
     tips = origins + directions * length
     side = np.cross(normals, directions)
     base = origins + directions * (0.62 * length)
     starts = np.concatenate([origins, base + side * (0.25 * length), base - side * (0.25 * length)])
-    return starts, np.concatenate([tips, tips, tips])
+    return solids.mv.point(starts), solids.mv.point(np.concatenate([tips, tips, tips]))
 
 
 def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_values: np.ndarray = np.zeros(4),
@@ -117,7 +118,8 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
     colours = np.array([to_rgb(colour) for colour in ring_colours])             # [rings, 3]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], surface_colour, sphere_opacity)]
     # The circles and the needles are strokes; the sphere alone is traced. The sphere and the circles stay put.
-    circles = strokes.polylines(list(zip(np.moveaxis(ring_places, 1, 0), colours)), 4 * line_width, frame)
+    circles = strokes.polylines(list(zip(solids.mv.point(np.moveaxis(ring_places, 1, 0)), colours)), 4 * line_width,
+                                frame)
     scene = Scene(frame, background, [], [(circles, 1.0)], translucent=ball)
     points, carried = [], []
     for point, vector in states:
@@ -326,7 +328,7 @@ def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
     lifted = (places + standoff * reach * normals)[mesh.faces]                 # [F, 3, 3]
     segments = np.concatenate([crossings(lifted, corners[..., family] / (2 * np.pi))[turns[:, family] == 0].reshape(-1, 2, 3)
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
-    drawn = segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0]
+    drawn = solids.mv.point(segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0])   # [S, 2] Point
     lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
     return solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
 

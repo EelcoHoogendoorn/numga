@@ -82,7 +82,7 @@ def inked(circles: list, n_opaque: int) -> list[solids.Ink]:
 
 def path_marks(path: np.ndarray, view: solids.View) -> tuple[Samples, tuple[solids.Quadric, np.ndarray]]:
     """A path over the sphere `[steps, 3]` as a stroke, and its ends as balls, its start green and its end orange."""
-    stroke = strokes.polylines([(path, path_colour)], PATH_WIDTH / view.pixel, view)
+    stroke = strokes.polylines([(sm.point(path), path_colour)], PATH_WIDTH / view.pixel, view)
     ends = (solids.ball(sm.point(path[[0, -1]]), END_RADIUS)[:, None], np.stack([start_colour, end_colour]))
     return stroke, ends
 

@@ -47,7 +47,7 @@ def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figu
     paths, ends = components(stack(list(states))), components(settled)  # [times, detunings, 3], [detunings, 3]
     colours = np.array([to_rgb(colour) for colour in COLOURS[: paths.shape[1]]])
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, REACH), N_PIXELS)
-    tracks = strokes.polylines(list(zip(np.moveaxis(paths, 1, 0), colours)), PATH_WIDTH, view)
+    tracks = strokes.polylines(list(zip(sm.point(np.moveaxis(paths, 1, 0)), colours)), PATH_WIDTH, view)
     shafts, heads = solids.frame(AXIS_LENGTH, ARROW_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel,
                                  HEAD_WIDTH / 2 * view.pixel)
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR),
