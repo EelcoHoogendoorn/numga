@@ -285,12 +285,13 @@ fn cone(beneath: vec3<f32>, across: vec2<f32>, low: f32, high: f32) -> vec3<f32>
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
     let depth = sqrt(max(1 - dot(across, across), 0.0));
+    // The sphere's parts are kept by selection rather than a branch: Mesa's software Vulkan driver crashes on a loop
+    // of runtime length, like the one over the levels, within a branch.
+    let inside = depth > 0;
     var colour = cone(background, across, -reach, -depth);
-    if (depth > 0) {
-        colour = side(colour, on_sphere(across, -depth));
-        colour = cone(colour, across, -depth, depth);
-        colour = side(colour, on_sphere(across, depth));
-    }
+    colour = select(colour, side(colour, on_sphere(across, -depth)), inside);
+    colour = select(colour, cone(colour, across, -depth, depth), inside);
+    colour = select(colour, side(colour, on_sphere(across, depth)), inside);
     return cone(colour, across, depth, reach);
 }
 """
