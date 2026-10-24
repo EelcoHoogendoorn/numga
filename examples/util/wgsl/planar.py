@@ -161,7 +161,9 @@ fn line_share(primitive: Primitive, point: Point) -> f32 {
 // Where the polygon winds about the point, from the fan of triangles from its first corner, each counted with the
 // sign of its area: inside where the point, joined with each edge, spans the triangle's area with its sign, each
 // edge's line at unit weight pairing with the point to its distance. Along an edge two triangles share, their shares
-// make up the whole pixel.
+// make up the whole pixel. Each triangle lies across its longest edge, both angles at that edge being acute, so its
+// share is also cut to that edge's length along it: past a thin triangle's sharp corners, where its edges' lines lie
+// within a pixel of each other, it covers nothing.
 fn polygon_share(primitive: Primitive, point: Point) -> f32 {
     let a = points[primitive.first];
     var winding = 0.0;
@@ -172,14 +174,28 @@ fn polygon_share(primitive: Primitive, point: Point) -> f32 {
         let side = sign(area);
         let share = inner(((a & b).normalized() & point) * side) * inner(((b & c).normalized() & point) * side)
             * inner(((c & a).normalized() & point) * side);
-        winding += select(side * share, 0.0, area == 0);
+        winding += select(side * share * spanned(a, b, c, point), 0.0, area == 0);
     }
     return min(abs(winding), 1.0);
 }
 
+// The share of a pixel's width that lies along the longest edge of a triangle of points at unit weight, between its
+// two ends: the line square to the edge through its first end, pointing to its other end, paired with the point.
+fn spanned(a: Point, b: Point, c: Point, point: Point) -> f32 {
+    let ab = (a & b).norm();
+    let bc = (b & c).norm();
+    let ca = (c & a).norm();
+    let start = select(select(c, b, bc >= ca), a, ab >= bc && ab >= ca);
+    let end = select(select(a, c, bc >= ca), b, ab >= bc && ab >= ca);
+    let length = max(ab, max(bc, ca));
+    let square = -((start & end).normalized() | start);
+    return overlap(0.0, length, square & point);
+}
+
 // The share of a pixel a dash from `low` to `high` along a segment covers, the pixel's centre `along` it and `across`
 // it: a band of the stroke's width, cut square at the dash's ends, and at an end the dash ends at, rather than carrying
-// on into the segment next to it, past it by its cap.
+// on into the segment next to it, past it by its cap. Where it carries on, the band reaches half a pixel past the end,
+// so that the pixel on the joint, half on each segment, is covered whole by either.
 fn dash_share(primitive: Primitive, low: f32, high: f32, low_capped: bool, high_capped: bool, along: f32,
               across: f32) -> f32 {
     let half = primitive.width / 2;
@@ -188,7 +204,7 @@ fn dash_share(primitive: Primitive, low: f32, high: f32, low_capped: bool, high_
     }
     let reach = select(0.0, half, primitive.shape == cap_projecting);
     let band = overlap(-half, half, across)
-        * overlap(low - select(0.0, reach, low_capped), high + select(0.0, reach, high_capped), along);
+        * overlap(low - select(pixel / 2, reach, low_capped), high + select(pixel / 2, reach, high_capped), along);
     let round = primitive.shape == cap_round;
     let from_low = sqrt((along - low) * (along - low) + across * across);
     let from_high = sqrt((along - high) * (along - high) + across * across);
