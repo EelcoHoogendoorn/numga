@@ -83,7 +83,7 @@ def space_scene(view: solids.View) -> Scene:
     beam_colour = np.array(to_rgb(PUMP_COLOUR))
     parts = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (beam_shaft[None], beam_colour), (beam_head[None], beam_colour),
              (solids.ball(solids.origin, CENTRE_RADIUS * view.pixel)[None, None], CENTRE_COLOUR)]
-    return Scene(view, np.ones(3), parts, [])
+    return Scene(view, np.ones(3), parts, [], inks=[], translucent=[])
 
 
 def crystal_image(bonds: np.ndarray, scene: Scene) -> np.ndarray:
@@ -92,7 +92,8 @@ def crystal_image(bonds: np.ndarray, scene: Scene) -> np.ndarray:
     ends = sm.point(bonds)                                                   # [bonds] Point
     view = scene.view
     return scene.draw([(solids.rods(solids.origin, ends, BOND_WIDTH / 2 * view.pixel), BOND_COLOUR),
-                       (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR)))])
+                       (solids.ball(ends, END_RADIUS * view.pixel)[:, None], np.array(to_rgb(GENERATED_COLOUR)))],
+                       inks=[], translucent=[], meshes=[])
 
 
 class ResponseView:

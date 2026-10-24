@@ -74,12 +74,13 @@ def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: s
     pixel = framing.pixel
     # The faces as a mesh, which the tracer composites sample by sample, where thin plates would each be searched
     # through every translucent layer; a plate is crossed twice, a face once, so a face hides what both would.
-    surface = meshes.samples(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing)
+    surface = meshes.samples(places, mesh.faces, TERRAIN_COLOUR, meshes.flat(places, mesh.faces), framing,
+                             face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     creases = solids.rods(places[mesh.edges[inner, 0]], places[mesh.edges[inner, 1]], CREASE_WIDTH / 2 * pixel)
     boundary = solids.rods(places[mesh.edges[mesh.boundary_edges, 0]], places[mesh.edges[mesh.boundary_edges, 1]],
                            BOUNDARY_WIDTH / 2 * pixel)
     return solids.draw([(creases, shades), (boundary, BOUNDARY_COLOUR)], framing, BACKGROUND,
-                       meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
+                       inks=[], translucent=[], meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 
 
 def panels(mesh: core.Mesh, framing: solids.View

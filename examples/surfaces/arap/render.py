@@ -44,7 +44,7 @@ def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: 
     """The bar's triangles, each its own colour, flat, as a view of the fixed box sees them."""
     places = solids.mv.point(coordinates(vertices))
     return meshes.draw(places, faces, np.zeros(3), meshes.flat(places, faces), view, background, face_values=colours,
-                       colour=meshes.by_face)
+                       colour=meshes.by_face, gloss=solids.gloss)
 
 
 def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndarray) -> plt.Figure:

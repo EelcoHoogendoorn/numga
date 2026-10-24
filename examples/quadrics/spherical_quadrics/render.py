@@ -127,7 +127,8 @@ def draw_spherical_conic(
 
     # Primal spherical oval, its antipodal loop, the foci and geodesics to one point, over the form on the sphere.
     shades = cm.coolwarm((level - level.min()) / (level.max() - level.min()))[..., :3].reshape(-1, 3)
-    shown_form = meshes.samples(places, faces, shades[faces], radial, view, gloss=0.1)
+    shown_form = meshes.samples(places, faces, shades[faces], radial, view, face_values=np.zeros(4),
+                                colour=meshes.plain, gloss=0.1)
     marks = [(solids.ball(sm.point(fk), FOCUS_RADIUS * view.pixel)[:, None], FOCUS),
              (solids.ball(sm.point(sk), SAMPLE_RADIUS * view.pixel)[None, None], SAMPLE)]
     geodesics = strokes.polylines([(sm.point(arc), colour) for arc, colour in zip(ak, GEODESICS)], GEODESIC_WIDTH, view)
@@ -155,7 +156,7 @@ def draw_spherical_conic(
                                  solids.everywhere[None].broadcast_to(tangent_planes.shape), colours, CIRCLE_WIDTH,
                                  CIRCLE_OPACITY)
     envelope = solids.draw(pointers, view, background, [meridians, tangent_circles, oval(len(pointers))],
-                           translucent=[(unit_ball, SPHERE, BALL_OPACITY)])
+                           translucent=[(unit_ball, SPHERE, BALL_OPACITY)], meshes=[])
 
     # The quadratic cone through the oval, and the polhodes: level sets of P & C(P), below zero and above, where the
     # form less each level cuts the pale sheet. The cone is clear, its sheet painted on it as far from the centre as
@@ -169,7 +170,8 @@ def draw_spherical_conic(
                        solids.ball(solids.origin, reach)[None], CONE, np.inf, CONE_OPACITY)
     solid_cone = stack([cone_form, nappe])[None]                               # [1, 2] Quadric
     polhode_view = solids.draw([], view, background, [polhodes, oval(0), sheet],
-                               translucent=[(unit_ball, POLHODE_SHEET, SHEET_OPACITY), (solid_cone, CONE, 0.0)])
+                               translucent=[(unit_ball, POLHODE_SHEET, SHEET_OPACITY), (solid_cone, CONE, 0.0)],
+                               meshes=[])
 
     fig = plt.figure(figsize=(3 * N_PIXELS / 100, view.shape[0] / 100), dpi=100)
     for index, image in enumerate((primal, envelope, polhode_view)):

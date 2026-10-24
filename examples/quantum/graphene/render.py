@@ -103,9 +103,11 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
     view = fitted(view, ax)
     shafts, heads = solids.arrows(sm.point(np.broadcast_to(corner, (3, 3))), sm.point(tips), AXIS_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, gloss=0.2), 1.0)
+    bands = [(meshes.samples(places, faces, shade, meshes.smooth(places, faces), view, face_values=np.zeros(4),
+                             colour=meshes.plain, gloss=0.2), 1.0)
              for places, shade in sheets]
-    show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), meshes=bands), view)
+    show(ax, solids.draw([(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR)], view, np.ones(3), inks=[], translucent=[],
+                         meshes=bands), view)
     # Each arrow named just past its tip.
     for place, name, offset, align in zip(view.across(sm.point(tips)), ("momentum x", "momentum y", "energy"),
                                           ((8, 0), (0, 8), (0, 8)), ("left", "center", "center")):

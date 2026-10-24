@@ -79,7 +79,7 @@ def wave_scene(ax: plt.Axes, modes: Modes, z_max: float, omega: float, thickness
     view = fitted(solids.view([sm.point(axis + arrows) for arrows in reached], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
     radius = thickness * AXIS_WIDTH / 2 * view.pixel
     line = solids.rods(sm.point(axis[0]), sm.point(axis[-1]), radius)[None]   # [1, 3] Quadric
-    return Scene(view, np.ones(3), [], [], translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)])
+    return Scene(view, np.ones(3), [], [], inks=[], translucent=[(line, AXIS_COLOUR, AXIS_OPACITY)])
 
 
 def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: float, thickness: float) -> np.ndarray:
@@ -103,7 +103,7 @@ def wave_image(scene: Scene, modes: Modes, tau: float, z_max: float, omega: floa
                                       thickness * ARROW_WIDTH / 2 * view.pixel, head_lengths,
                                       HEAD_SPREAD * head_lengths)
         parts += [(shafts, colour), (heads, colour)]
-    return scene.draw(parts, meshes=[(curves, 1.0)])
+    return scene.draw(parts, inks=[], translucent=[], meshes=[(curves, 1.0)])
 
 
 def draw_wave_propagation(

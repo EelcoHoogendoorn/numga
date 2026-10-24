@@ -55,7 +55,7 @@ VARIATIONS = {
     "heavy_disc": replace(BASE, disc_mass=2.0),
     "slippery": replace(BASE, dynamic_friction=0.1),
 }
-VIEW, CENTRE, EXTENT = (30, -60), np.array([0.0, 0.0, 0.15]), 0.55
+VIEW, CENTRE, EXTENT = (30, -60), mv.w.dual() + UP * 0.15, 0.55
 
 
 # --- math -----------------------------------------------------------------------------

@@ -138,7 +138,8 @@ def sized_cord(centres: core.Point, edges: core.Point, pixels: int) -> Iterator[
     # The clamps at the base and the handset: small balls at the cord's two ends.
     clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
     for curve, ribbon, ends in zip(curves, ribbons, clamps):
-        yield solids.draw([(ends, CLAMP)], view, BACKGROUND, meshes=wires(curve[None], ribbon[None], view))
+        yield solids.draw([(ends, CLAMP)], view, BACKGROUND, inks=[], translucent=[],
+                          meshes=wires(curve[None], ribbon[None], view))
 
 
 def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tuple[meshes.Samples, float]]:
@@ -148,11 +149,12 @@ def wires(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> list[tu
     corners = np.stack([index[:, :-1, 0], index[:, 1:, 0], index[:, 1:, 1], index[:, :-1, 1]], axis=-1)
     faces = corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     edges = solids.mv.point(ribbons.reshape(-1, 3))
-    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view)
+    strips = meshes.samples(edges, faces, RIBBON, meshes.smooth(edges, faces), view, face_values=np.zeros(4),
+                            colour=meshes.plain, gloss=solids.gloss)
     rods = strokes.polylines([(curve, ROD) for curve in solids.mv.point(curves)], ROD_WIDTH, view)
     return [(strips, 1.0), (rods, 1.0)]
 
 
 def scene(curves: np.ndarray, ribbons: np.ndarray, view: solids.View) -> np.ndarray:
     """Rods and their ribbons, as `wires`, on the background, `[rows, columns, 3]` bytes."""
-    return solids.draw([], view, BACKGROUND, meshes=wires(curves, ribbons, view))
+    return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=wires(curves, ribbons, view))

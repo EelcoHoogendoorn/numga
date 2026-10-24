@@ -80,7 +80,8 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
                        solids.half_space(-latitude)[None], np.array(to_rgb(CAP_COLOUR)), np.inf, CAP_OPACITY),
             solids.Ink(len(parts), circles, solids.everywhere[None],
                        np.array([to_rgb(EQUATOR_COLOUR), to_rgb(CAP_COLOUR)]), CIRCLE_WIDTH, 1.0)]
-    return solids.draw(parts, view, np.ones(3), inks, translucent=[(sphere, np.array(to_rgb(GLOBE_COLOUR)), GLOBE_OPACITY)])
+    return solids.draw(parts, view, np.ones(3), inks,
+                       translucent=[(sphere, np.array(to_rgb(GLOBE_COLOUR)), GLOBE_OPACITY)], meshes=[])
 
 
 def animate_day(earth: core.Rotor, swings: core.Point, vertical: core.Point, north: core.Point,

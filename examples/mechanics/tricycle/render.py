@@ -124,7 +124,7 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     rims = meshes.circles(hubs + forward * WHEEL_RADIUS, (hubs & sideways) * solids.flip, N_RIM)   # [wheels, rim + 1] Point
     tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
     trail = strokes.polylines([(at_height(middle, 0.0), to_rgb(TRAIL))], TRAIL_WIDTH, view)
-    return solids.draw(parts, view, BACKGROUND, meshes=[(tyres, 1.0), (trail, 1.0)])
+    return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])
 
 
 def at_height(places: np.ndarray, height: float) -> solids.Point:

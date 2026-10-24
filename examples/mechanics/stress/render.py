@@ -109,7 +109,7 @@ def draw_cube(corners: core.Point, centres: core.Point, normal: core.Point, shea
     """The cube seen from one frame: the undeformed cube a ghost, the deformed one translucent, the normal
     traction on each face in blue and the shear in red, and the principal directions in green."""
     parts, translucent = cube(corners, centres, normal, shear, principal, view, 1.0)
-    return solids.draw(ghost(view, 1.0) + parts, view, background, translucent=translucent)
+    return solids.draw(ghost(view, 1.0) + parts, view, background, inks=[], translucent=translucent, meshes=[])
 
 
 def draw_circles(ax, values: core.Scalar) -> None:
@@ -194,13 +194,13 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     figure = plt.figure(figsize=(9.5, 4.5), dpi=100)
     cube_ax, circles = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     seen = fitted(view(*first, TURNING_ROOM), cube_ax)
-    scene = Scene(seen, background, ghost(seen, turning_thickness), [])
+    scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])
     picture = show(cube_ax, np.zeros((*seen.shape, 3), dtype=np.uint8), seen)
     draw_circles(circles, values)
     line, filled, hollow = draw_diameter(circles, np.zeros((2, 2)), COLOURS[0])
     for corners, centres, normal, shear, principal in chain([first], frames):
         parts, translucent = cube(corners, centres, normal, shear, principal, seen, turning_thickness)
-        picture.set_data(scene.draw(parts, translucent=translucent))
+        picture.set_data(scene.draw(parts, inks=[], translucent=translucent, meshes=[]))
         ends = diameter(coordinates(normal), coordinates(shear))
         line.set_data(*ends.T)
         filled.set_offsets(ends[:1])

@@ -55,7 +55,7 @@ def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndar
     lines = strokes.polylines([(sm.point(xyz), colour) for xyz, colour in zip(traced, rgb)], PATH_WIDTH, view)
     shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
-    return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, meshes=[(lines, 1.0)])
+    return solids.draw([(shafts, rgb), (heads, rgb)], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 
 
 def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int, view: solids.View) -> AxesImage:

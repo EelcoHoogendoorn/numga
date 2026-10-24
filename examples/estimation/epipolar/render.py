@@ -77,4 +77,4 @@ def animate_reconstruction(landmarks: Point, edges: np.ndarray, true_motor: Moto
                   (solids.rods(*(at_scale(ends, scale) for ends in camera_edges(motor)), edge_radius), camera_2_found),
                   (solids.rods(eye_1.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every]),
                   (solids.rods(eye.broadcast_to(shown.shape), shown, ray_radius), colours[::ray_every])]
-        yield solids.draw(fixed + moving, view, background)
+        yield solids.draw(fixed + moving, view, background, inks=[], translucent=[], meshes=[])

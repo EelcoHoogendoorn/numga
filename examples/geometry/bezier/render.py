@@ -94,7 +94,8 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
     vertices = sm.point(np.concatenate([np.concatenate([np.zeros((1, 3)), xyw]) for xyw in arcs]))
     faces = np.concatenate([fan(arcs[0], 0), fan(arcs[1], len(arcs[0]) + 1)])
     face_colours = np.concatenate([np.broadcast_to(colour, (len(xyw) - 1, 3)) for xyw, colour in zip(arcs, colours)])
-    fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view)
+    fans = meshes.samples(vertices, faces, face_colours[:, None], meshes.flat(vertices, faces), view,
+                          face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     return solids.draw(parts, view, np.ones(3), inks, translucent=sphere,
                        meshes=[(fans, FAN_OPACITY), (arc_strokes, 1.0), (on_sphere, 1.0)])
 

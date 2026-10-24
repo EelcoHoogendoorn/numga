@@ -69,7 +69,8 @@ def sheet(points: np.ndarray, faces: np.ndarray, colours: np.ndarray,
     """Triangles over vertices `[vertices, 3]`, coloured at each corner `[faces, 3, 3]`, smoothly lit, at every sample
     of the view."""
     corners = places(points)
-    return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, gloss=surface_gloss)
+    return meshes.samples(corners, faces, colours, meshes.smooth(corners, faces), view, face_values=np.zeros(4),
+                          colour=meshes.plain, gloss=surface_gloss)
 
 
 def curve_strokes(points: solids.Point, speeds: np.ndarray, fastest: float, view: solids.View) -> meshes.Samples:
@@ -89,7 +90,7 @@ def draw_surface(curves: core.Point) -> plt.Figure:
     colours = ((1 - share) * early + share * late).reshape(-1, 3)[faces]       # [faces, 3, 3]
     view, _ = framed(points, n_picture_pixels)
     surface = sheet(points.reshape(-1, 3), faces, colours, view)
-    return image_figure(solids.draw([], view, background, meshes=[(surface, 1.0)]))
+    return image_figure(solids.draw([], view, background, inks=[], translucent=[], meshes=[(surface, 1.0)]))
 
 
 def draw_swept(curves: core.Point) -> plt.Figure:
@@ -105,7 +106,7 @@ def draw_swept(curves: core.Point) -> plt.Figure:
     faces = (strips(rings[0]) + offsets)[kept].reshape(-1, 3)                  # [faces, 3]
     colours = np.broadcast_to(tubes[:, None, None, None, None, :], kept.shape + (2, 3, 3))[kept].reshape(-1, 3, 3)
     swept = sheet(rings.reshape(-1, 3), faces, colours, view)
-    return image_figure(solids.draw([], view, background, meshes=[(swept, 1.0)]))
+    return image_figure(solids.draw([], view, background, inks=[], translucent=[], meshes=[(swept, 1.0)]))
 
 
 def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
@@ -116,7 +117,7 @@ def animate_curves(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarr
     for curve, rate in zip(points, rates):
         flowing = curve_strokes(places(curve.reshape(-1, *points.shape[-2:])), rate.reshape(-1, points.shape[-2]),
                                 rates.max(), view)
-        yield solids.draw([], view, background, meshes=[(flowing, 1.0)])
+        yield solids.draw([], view, background, inks=[], translucent=[], meshes=[(flowing, 1.0)])
 
 
 def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarray]:
@@ -140,7 +141,7 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
                                 view), 1.0)]
         if len(swept):
             shown.append((sheet(points.reshape(-1, 3), swept, colours[swept], view), trail_opacity))
-        yield solids.draw([], view, background, meshes=shown)
+        yield solids.draw([], view, background, inks=[], translucent=[], meshes=shown)
 
 
 def draw_turns(turns: core.Rotor) -> plt.Figure:

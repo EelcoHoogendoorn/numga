@@ -70,7 +70,7 @@ def coloured(mesh: Mesh, values: Scalar, limit: float, view: solids.View) -> np.
     """The mesh, each face flat in its colour by a field in [-limit, limit], as the view sees it."""
     points = projective(mesh)
     return meshes.draw(points, mesh.faces, np.zeros(3), meshes.flat(points, mesh.faces), view, background,
-                       face_values=face_colours(values, limit), colour=meshes.by_face)
+                       face_values=face_colours(values, limit), colour=meshes.by_face, gloss=solids.gloss)
 
 
 def render_surface(mesh: Mesh, reference: Mesh, view: solids.View) -> np.ndarray:
@@ -81,7 +81,7 @@ def render_surface(mesh: Mesh, reference: Mesh, view: solids.View) -> np.ndarray
     original = euclidean(reference.vertices)
     cells = original / np.abs(original).max() * squares / 2
     return meshes.draw(points, mesh.faces, cells[mesh.faces], meshes.smooth(points, mesh.faces), view, background,
-                       colour=checkerboard)
+                       face_values=np.zeros(4), colour=checkerboard, gloss=solids.gloss)
 
 
 def draw_surface(mesh: Mesh, values: Scalar) -> plt.Figure:

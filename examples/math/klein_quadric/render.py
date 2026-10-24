@@ -82,7 +82,7 @@ def picture(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector,
             (rods(chords(lines[3:]), LINE_RADIUS * view.pixel), FOURTH_COLOUR),
             (rods(chords(across)[real(across)], LINE_RADIUS * view.pixel), TRANSVERSAL_COLOUR),
             (solids.ball(points, CROSSING_RADIUS * view.pixel)[:, None], TRANSVERSAL_COLOUR)]
-    return solids.draw(four, view, BACKGROUND, meshes=hyperboloid)
+    return solids.draw(four, view, BACKGROUND, inks=[], translucent=[], meshes=hyperboloid)
 
 
 def draw(lines: core.Bivector, rulings: core.Bivector, across: core.Bivector, crossing: core.Point,

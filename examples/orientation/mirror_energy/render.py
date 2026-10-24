@@ -66,7 +66,7 @@ def case_image(scene: Scene, positions: np.ndarray, velocities: np.ndarray, mass
                                   HEAD_LENGTH * view.pixel, HEAD_RADIUS * view.pixel)
     parts = ([(shape, SHAPE)] + [(ball[:, None], colour) for ball, colour in zip(balls, COLOURS)]
              + [(shafts, COLOURS), (heads, COLOURS)])
-    return scene.draw(parts)
+    return scene.draw(parts, inks=[], translucent=[], meshes=[])
 
 
 def frames(positions: Point, velocities: Point, masses: np.ndarray, moments: range) -> Iterator[np.ndarray]:

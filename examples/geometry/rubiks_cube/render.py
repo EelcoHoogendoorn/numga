@@ -54,7 +54,8 @@ def picture(corners: core.Point, colours: np.ndarray, cut: core.Point, view: sol
     ink = np.tile([[1, 1, 0], [1, 0, 1]], (len(squares), 1)) * EDGE_DARKNESS                       # [faces, 3]
     values = np.repeat(fills, 2, axis=0)[:, None]                                                    # [faces, 1, 3]
     normals = meshes.flat(places, faces)
-    return meshes.draw(places, faces, values, normals, view, BACKGROUND, face_values=ink, colour=INKED)
+    return meshes.draw(places, faces, values, normals, view, BACKGROUND, face_values=ink, colour=INKED,
+                       gloss=solids.gloss)
 
 
 def animate(states: Iterable[tuple[core.Point, core.Point]], colours: np.ndarray,

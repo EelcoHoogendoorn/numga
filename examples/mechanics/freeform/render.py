@@ -33,7 +33,8 @@ def viewport(points: solids.Point) -> solids.View:
 
 def picture(points: solids.Point, faces: np.ndarray, view: solids.View) -> np.ndarray:
     """The surface, smooth shaded by normals blended across each face from its vertices."""
-    return meshes.draw(points, faces, surface, meshes.smooth(points, faces), view, background)
+    return meshes.draw(points, faces, surface, meshes.smooth(points, faces), view, background, face_values=np.zeros(4),
+                       colour=meshes.plain, gloss=solids.gloss)
 
 
 def frames(vertices: Iterable[Antivector], faces: np.ndarray) -> Iterator[np.ndarray]:

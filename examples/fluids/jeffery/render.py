@@ -143,11 +143,12 @@ def animate_tumbling_sized(stretches: core.Stretch, heights: core.Point, velocit
     tip_places = np.array([1.0, -1.0])[:, None, None, None] * coordinates(tips)   # [ends, frames, bodies, 3]
     axis_ends = shifts >> solids.mv.point(tip_places)                         # [ends, frames, bodies] Point
     reach = shifts >> solids.mv.point(TIP_REACH * tip_places)                 # [ends, frames, bodies] Point
-    scene = Scene(view, np.ones(3), flow, [])
+    scene = Scene(view, np.ones(3), flow, [], inks=[], translucent=[])
     for index in range(len(tips)):
         # The paths of the tips so far, and the marks from each end out past it.
         paths = strokes.segments(axis_ends[:, :index].reshape(-1), axis_ends[:, 1:index + 1].reshape(-1), TIP_RGB,
                                  PATH_WIDTH, view)
         marks = strokes.segments(axis_ends[:, index].reshape(-1), reach[:, index].reshape(-1), TIP_RGB, MARK_WIDTH,
                                  view)
-        yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], meshes=[(paths, 1.0), (marks, 1.0)])
+        yield scene.draw([(placed_bodies[index].reshape(-1, 4), colours)], inks=[], translucent=[],
+                         meshes=[(paths, 1.0), (marks, 1.0)])

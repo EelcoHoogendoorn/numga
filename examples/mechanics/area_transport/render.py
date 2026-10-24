@@ -75,7 +75,8 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     opaque = [(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour), (joints, edge_colour)]
     # Each face a plate a pixel thick, in its own colour.
     faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane
-    return solids.draw(opaque, view, background, translucent=[(faces, colours[shown], face_opacity)])
+    return solids.draw(opaque, view, background, inks=[], translucent=[(faces, colours[shown], face_opacity)],
+                       meshes=[])
 
 
 def heights(patches: core.Patch, volume: core.Scalar) -> np.ndarray:

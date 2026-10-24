@@ -67,7 +67,7 @@ def vertex_panel(vertices: Point, faces: np.ndarray, vertex: Point, quadric: Qua
              (solids.ball(vertex, VERTEX_RADIUS * pixel)[None, None], VERTEX_COLOUR)]
     translucent = [(triangles(vertices, faces, TRIANGLE_THICKNESS * pixel), colours, MESH_OPACITY),
                    (error_region(quadric, vertex)[None, None], ellipsoid_colour, ELLIPSOID_OPACITY)]
-    return solids.draw(marks, view, background, translucent=translucent)
+    return solids.draw(marks, view, background, inks=[], translucent=translucent, meshes=[])
 
 
 def collapse_panel(vertices: Point, faces: np.ndarray, collapsed: Point, surviving: np.ndarray, quadric: Quadric,
@@ -87,7 +87,7 @@ def collapse_panel(vertices: Point, faces: np.ndarray, collapsed: Point, survivi
                    (triangles(collapsed, faces[surviving], TRIANGLE_THICKNESS * pixel), FACE_COLORS[surviving],
                     MESH_OPACITY),
                    (error_region(quadric, optimum)[None, None], OPTIMUM_COLOUR, ELLIPSOID_OPACITY)]
-    return solids.draw(marks, view, background, translucent=translucent)
+    return solids.draw(marks, view, background, inks=[], translucent=translucent, meshes=[])
 
 
 def draw_qem(

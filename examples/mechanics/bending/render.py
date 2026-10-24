@@ -213,7 +213,8 @@ def swept(bent: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
     quads = np.stack([index[:-1, :, 0], index[:-1, :, 1], index[1:, :, 1], index[1:, :, 0]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)             # [pieces * walls * 2, 3]
     places = solids.mv.point(bent.reshape(-1, 3))
-    return meshes.samples(places, triangles, np.array(to_rgb(colour)), meshes.flat(places, triangles), view, gloss=GLOSS)
+    return meshes.samples(places, triangles, np.array(to_rgb(colour)), meshes.flat(places, triangles), view,
+                          face_values=np.zeros(4), colour=meshes.plain, gloss=GLOSS)
 
 
 def ghost(bent: np.ndarray, view: solids.View) -> solids.Plane:
@@ -248,7 +249,8 @@ def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: 
     dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Quadric
     opaque = [(dashes, np.array(to_rgb(SHEAR_LINE)))] + clamped(through, load, TIP_ARROW, (CLAMP_RADIUS, SHAFT_RADIUS),
                                                                 view)
-    return solids.draw(opaque, view, np.ones(3), translucent=[(ghost(bent, view), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
+    return solids.draw(opaque, view, np.ones(3), inks=[],
+                       translucent=[(ghost(bent, view), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
                        meshes=[(swept(bent, BEAM, view), 1.0)])
 
 
@@ -286,6 +288,7 @@ def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list
     seen = view(bent, [load_tip(through, load, ARROW)], STUBBY_ELEVATION, STUBBY_AZIMUTH)
     held = clamped(through, load, ARROW, (STUBBY_CLAMP_RADIUS, STUBBY_SHAFT_RADIUS), seen)
     return image_figure(solids.draw(held, seen, np.ones(3),
+                                    inks=[],
                                     translucent=[(ghost(bent[0], seen), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
                                     meshes=[(swept(bent[0], BEAM, seen), 1.0), (swept(bent[1], PRINCIPAL, seen), RIGID_OPACITY)]))
 

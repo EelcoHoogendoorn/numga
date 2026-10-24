@@ -18,8 +18,8 @@ class Scene:
     theirs."""
 
     def __init__(self, view: View, background: np.ndarray, parts: list[tuple[Quadric, np.ndarray]],
-                 meshes: list[tuple[Samples, float]], inks: list[Ink] = (),
-                 translucent: list[tuple[Quadric, np.ndarray, float]] = ()) -> None:
+                 meshes: list[tuple[Samples, float]], inks: list[Ink],
+                 translucent: list[tuple[Quadric, np.ndarray, float]]) -> None:
         self.view, self.background = view, np.asarray(background, dtype=float)
         self.parts, self.inks, self.translucent, self.meshes = list(parts), list(inks), list(translucent), list(meshes)
         self.tracer = shader()
@@ -30,9 +30,9 @@ class Scene:
         """A buffer of the scene's own."""
         return self.tracer.device.create_buffer(size=size, usage=usage)
 
-    def frame(self, parts: list[tuple[Quadric, np.ndarray]] = (), inks: list[Ink] = (),
-              translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-              meshes: list[tuple[Samples, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+    def frame(self, parts: list[tuple[Quadric, np.ndarray]], inks: list[Ink],
+              translucent: list[tuple[Quadric, np.ndarray, float]],
+              meshes: list[tuple[Samples, float]]) -> tuple[np.ndarray, np.ndarray]:
         """The picture with a frame's moving parts among the still ones, over the background: its colour,
         `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`, each weighted by coverage."""
         encoder = self.tracer.device.create_command_encoder()
@@ -46,9 +46,8 @@ class Scene:
         return trace(self.tracer, encoder, self.view, solids, self.buffers,
                      [opacity for _, opacity in self.meshes + list(meshes)], self.background)
 
-    def draw(self, parts: list[tuple[Quadric, np.ndarray]] = (), inks: list[Ink] = (),
-             translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-             meshes: list[tuple[Samples, float]] = ()) -> np.ndarray:
+    def draw(self, parts: list[tuple[Quadric, np.ndarray]], inks: list[Ink],
+             translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]]) -> np.ndarray:
         """The picture of a frame on the background, `[rows, columns, 3]`, as `frame`."""
         colour, _ = self.frame(parts, inks, translucent, meshes)
         return np.round(np.clip(colour[..., :3], 0, 1) * 255).astype(np.uint8)

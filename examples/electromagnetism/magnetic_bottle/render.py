@@ -48,7 +48,8 @@ def sheet(points: core.Antivector, strength: core.Scalar, view: solids.View) -> 
     quads = np.stack([index[:-1, :-1], index[:-1, 1:], index[1:, 1:], index[1:, :-1]], axis=-1)
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     places = solids.mv.point(grid.reshape(-1, 3))
-    return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view)
+    return meshes.samples(places, triangles, shades.reshape(-1, 3)[triangles], meshes.flat(places, triangles), view,
+                          face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
 
 
 def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.Antivector, strength: core.Scalar,
@@ -68,11 +69,12 @@ def animate_flights(events: core.Antivector, pitches: np.ndarray, points: core.A
     rims = solids.origin + solids.mv.x.dual() * heights + solids.mv.z.dual() * radius   # [coils] Point
     rings = meshes.circles(rims, solids.mv.y ^ solids.mv.z, n_around_coil)   # [coils, around + 1] Point
     wire = strokes.polylines([(ring, to_rgb(wire_colour)) for ring in rings], wire_width, view)
-    scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)])
+    scene = Scene(view, np.ones(3), [], [(sheet(points, strength, view), sheet_opacity), (wire, 1.0)], inks=[],
+                  translucent=[])
     # What moves, frame by frame: the particles and their trails.
     for end in range(n_steps_per_frame, len(tracks) + 1, n_steps_per_frame):
         trail = tracks[max(0, end - n_trail):end]                             # [trail, particles] Point
         trails = strokes.polylines([(trail[:, particle], colour) for particle, colour in enumerate(colours)],
                                    track_width, view)
         particles = solids.ball(tracks[end - 1], particle_radius * view.pixel)[:, None]
-        yield scene.draw([(particles, colours)], meshes=[(trails, 1.0)])
+        yield scene.draw([(particles, colours)], inks=[], translucent=[], meshes=[(trails, 1.0)])

@@ -48,7 +48,8 @@ def picture(faces: np.ndarray, points: core.Point, half: np.ndarray) -> np.ndarr
     about its mean."""
     places = points.batch()
     view = solids.View(solids.aim(centre(points), elevation, azimuth), half, n_pixels)
-    return meshes.draw(places, faces, colour, meshes.flat(places, faces), view, background, gloss=gloss)
+    return meshes.draw(places, faces, colour, meshes.flat(places, faces), view, background, face_values=np.zeros(4),
+                       colour=meshes.plain, gloss=gloss)
 
 
 def draw_settled(sheets: list[tuple[np.ndarray, core.Point]]) -> plt.Figure:

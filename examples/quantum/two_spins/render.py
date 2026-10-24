@@ -77,7 +77,7 @@ def sphere_scene(view: solids.View, n_parts: int) -> Scene:
 def on_sphere(parts: list[tuple[solids.Quadric, np.ndarray]], view: solids.View,
               lines: list[tuple[meshes.Samples, float]] = ()) -> np.ndarray:
     """Solids and lines among the unit sphere, as `sphere_scene` sets it up."""
-    return sphere_scene(view, len(parts)).draw(parts, meshes=lines)
+    return sphere_scene(view, len(parts)).draw(parts, inks=[], translucent=[], meshes=lines)
 
 
 def arrow(tip: np.ndarray, colour: str) -> list[tuple[solids.Quadric, np.ndarray]]:
@@ -133,7 +133,8 @@ def steering_frames(points: np.ndarray, targets: np.ndarray, weights: np.ndarray
     landing = sphere_scene(view, 1)
 
     def landed(target: np.ndarray, weight: np.ndarray) -> np.ndarray:
-        return landing.draw([(dots(target, LANDING_RADIUS * np.sqrt(weight)), colours)])
+        return landing.draw([(dots(target, LANDING_RADIUS * np.sqrt(weight)), colours)], inks=[], translucent=[],
+                            meshes=[])
 
     image = show(landed_ax, landed(targets[0], weights[0]), view)
     for target, weight in zip(targets, weights):

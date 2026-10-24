@@ -125,7 +125,8 @@ def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View,
 def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
     """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
     parts, translucent, lenses = camera_and_floor(camera_pose, view, 1.0)
-    return solids.draw(parts + arm_and_rays(world_vertices, rays, view, 1.0), view, np.ones(3), translucent=translucent,
+    return solids.draw(parts + arm_and_rays(world_vertices, rays, view, 1.0), view, np.ones(3), inks=[],
+                       translucent=translucent,
                        meshes=lenses)
 
 
@@ -161,7 +162,8 @@ def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose
     quads = faces[None] + len(places[0]) * np.arange(len(places))[:, None, None]   # [bodies, faces, 4]
     triangles = quads[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
     colours = np.repeat([mcolors.to_rgb(colour) for colour in BODY_COLORS], 2 * len(faces), axis=0)[:, None]
-    return meshes.draw(corners, triangles, colours, meshes.flat(corners, triangles), view, np.ones(3), gloss=PHOTO_GLOSS)
+    return meshes.draw(corners, triangles, colours, meshes.flat(corners, triangles), view, np.ones(3),
+                       face_values=np.zeros(4), colour=meshes.plain, gloss=PHOTO_GLOSS)
 
 
 def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor,
@@ -217,13 +219,15 @@ def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
     sensor = sensor_view(ax_2d)
     world_vertices, projected_pixels, camera_pose, rays = frames[0]
     parts, translucent, lenses = camera_and_floor(camera_pose, view, ANIMATION_THICKNESS)
-    scene = Scene(view, np.ones(3), parts, lenses, translucent=translucent)
+    scene = Scene(view, np.ones(3), parts, lenses, inks=[], translucent=translucent)
     # Lay the figure out once; only the two pictures change between frames.
-    scene_image = show(ax_3d, scene.draw(arm_and_rays(world_vertices, rays, view, ANIMATION_THICKNESS)), view)
+    scene_image = show(ax_3d, scene.draw(arm_and_rays(world_vertices, rays, view, ANIMATION_THICKNESS), inks=[],
+                                         translucent=[], meshes=[]), view)
     photograph = plot_camera_image(ax_2d, world_vertices, projected_pixels, camera_pose, sensor)
     yield capture(fig)
     for world_vertices, projected_pixels, camera_pose, rays in frames[1:]:
-        scene_image.set_data(scene.draw(arm_and_rays(world_vertices, rays, view, ANIMATION_THICKNESS)))
+        scene_image.set_data(scene.draw(arm_and_rays(world_vertices, rays, view, ANIMATION_THICKNESS), inks=[],
+                                        translucent=[], meshes=[]))
         photograph.set_data(photograph_image(world_vertices, projected_pixels, camera_pose, sensor))
         yield capture(fig)
     plt.close(fig)

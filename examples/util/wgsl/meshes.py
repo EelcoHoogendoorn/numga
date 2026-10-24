@@ -16,7 +16,7 @@ import numpy as np
 from examples.util.wgsl import Shader
 from examples.util.wgsl import solids
 from examples.util.wgsl.library import samples_per_side
-from examples.util.wgsl.solids import (Line, Motor, Plane, Point, View, axes, flip, ga, gloss, lamp_shading, lighting,
+from examples.util.wgsl.solids import (Line, Motor, Plane, Point, View, axes, flip, ga, lamp_shading, lighting,
                                        mv, origin)
 
 
@@ -153,7 +153,7 @@ class Samples(NamedTuple):
 
 
 def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
-            face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> Samples:
+            face_values: np.ndarray, colour: str, gloss: float) -> Samples:
     """The mesh at every sample of the view's pixels, for `solids.layer` to compose: its colour, premultiplied by how
     much it hides, and its depth along the view, both zero where it shows nothing; from up to four values at each
     corner of each face, `[faces, 3, values]` or one row for all, and at each face, coloured by `colour`, with a glint
@@ -168,10 +168,11 @@ def samples(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict,
 
 
 def layer(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View,
-          face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> tuple[np.ndarray, np.ndarray]:
+          face_values: np.ndarray, colour: str, gloss: float) -> tuple[np.ndarray, np.ndarray]:
     """The mesh as the view sees it: its colour, `[rows, columns, 4]`, and its depth along the view, `[rows, columns]`,
     each weighted by coverage; its samples, as `samples`, averaged over each pixel on the GPU."""
-    return solids.layer([], view, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
+    return solids.layer([], view, inks=[], translucent=[],
+                        meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
 
 
 def circles(rims: Point, pivots: Line, n_points: int) -> Point:
@@ -182,6 +183,7 @@ def circles(rims: Point, pivots: Line, n_points: int) -> Point:
 
 
 def draw(points: Point, faces: np.ndarray, values: np.ndarray, normals: dict, view: View, background: np.ndarray,
-         face_values: np.ndarray = np.zeros(4), colour: str = plain, gloss: float = gloss) -> np.ndarray:
+         face_values: np.ndarray, colour: str, gloss: float) -> np.ndarray:
     """The mesh as the view sees it on the background, `[rows, columns, 3]`; as `layer`."""
-    return solids.draw([], view, background, meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])
+    return solids.draw([], view, background, inks=[], translucent=[],
+                       meshes=[(samples(points, faces, values, normals, view, face_values, colour, gloss), 1.0)])

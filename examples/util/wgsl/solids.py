@@ -95,7 +95,8 @@ fn lit(colour: vec3<f32>, tangent: Plane, direction: Point) -> vec3<f32> {
 
 def quadric_crossings() -> str:
     """WGSL for where a ray crosses a quadric's surface, for the solids and strokes alike: `along_ray`, the quadric's
-    pairing with the ray's points as a quadratic in the distance along it, and `crossings`, its roots."""
+    pairing with the ray's points as a quadratic in the distance along it, `crossings`, its roots, and `entry`, the
+    root where the ray enters the solid."""
     return """
 const far = 1e30;
 
@@ -118,6 +119,14 @@ fn crossings(along: Quadratic) -> vec2<f32> {
     let discriminant = along.b * along.b - along.a * along.c;
     let q = -(along.b + select(-1.0, 1.0, along.b >= 0) * sqrt(discriminant));
     return vec2<f32>(select(q / along.a, far, along.a == 0), along.c / q);
+}
+
+// Where a ray enters a solid quadric: the crossing where the pairing falls through zero, its slope there, 2 (a t + b),
+// twice the negative square root of the discriminant; the first root where b is positive, the second where it is
+// negative, and `far` where the ray misses the surface or only leaves a half-space.
+fn entry(along: Quadratic) -> f32 {
+    let roots = crossings(along);
+    return select(far, select(roots.y, roots.x, along.b >= 0), along.b * along.b - along.a * along.c >= 0);
 }
 """
 
@@ -773,9 +782,9 @@ def lighting(camera: Motor, glint: float) -> dict:
                 shininess=shininess)
 
 
-def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink] = (),
-          translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-          meshes: list[tuple[Samples, float]] = ()) -> tuple[np.ndarray, np.ndarray]:
+def layer(parts: list[tuple[Quadric, np.ndarray]], view: View, inks: list[Ink],
+          translucent: list[tuple[Quadric, np.ndarray, float]],
+          meshes: list[tuple[Samples, float]]) -> tuple[np.ndarray, np.ndarray]:
     """The solids as the view sees them, with the lines inked on them, the translucent solids over and among them,
     each with its opacity, and the meshes among them, each its samples, as `meshes.samples` gives them, and its
     opacity, sample by sample: their colour, `[rows, columns, 4]`, and their depth along the view, `[rows, columns]`,
@@ -856,9 +865,8 @@ def sampled(encoder: Any, drawings: list[Samples], view: View, first: int, buffe
                 (shape[1], shape[0], 1))
 
 
-def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink] = (),
-         translucent: list[tuple[Quadric, np.ndarray, float]] = (),
-         meshes: list[tuple[Samples, float]] = ()) -> np.ndarray:
+def draw(parts: list[tuple[Quadric, np.ndarray]], view: View, background: np.ndarray, inks: list[Ink],
+         translucent: list[tuple[Quadric, np.ndarray, float]], meshes: list[tuple[Samples, float]]) -> np.ndarray:
     """The solids as the view sees them on the background, with the lines inked on them, the translucent solids over
     and among them, and the meshes among them, as `layer`, `[rows, columns, 3]`: the background blended in on the GPU,
     sample by sample."""

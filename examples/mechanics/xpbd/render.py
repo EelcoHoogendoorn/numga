@@ -18,11 +18,13 @@ import numpy as np
 from numga import concatenate
 from examples.mechanics.xpbd.core import Motor
 from examples.util.wgsl import Shader, solids, supersampled
-from examples.util.wgsl.solids import Plane, Point, Quadric, ga, mv, origin
+from examples.util.wgsl.solids import Plane, Point, Quadric, axes, ga, lamp_shading, mv, origin, quadric_crossings
 
 # Two alternating link colours, the pin's colour, the floor's two tiles and the background.
 link_colours = np.array([[0.86, 0.42, 0.20], [0.20, 0.52, 0.66]])
 pin_colour = np.array([0.25, 0.25, 0.28])
+floor_light, floor_dark = np.array([0.86, 0.85, 0.82]), np.array([0.76, 0.75, 0.72])
+background = np.array([0.97, 0.97, 0.96])
 # The darker tone of a link's alternate octants, which shows it turning about its own axes.
 octant_contrast = 0.22
 # The view: its elevation and azimuth, and its margin around where the swing can reach and its shadows, as a
@@ -33,8 +35,12 @@ margin = 0.08
 floor_drop, floor_reach, tile = 1.0, 12.0, 3.0
 pin_radius = 0.18
 pixels = 360
-lamp = mv.direction([0.35, -0.45, 0.82])
-lamp = lamp / (-(lamp.dual() & lamp)).square_root()
+# The lamp's direction at unit length; the light that falls everywhere, and the glint's share and sharpness, with the
+# lamp as `lamp_shading` takes them; and how much of the lamp's light falls in a shadow.
+toward_lamp = mv.direction([0.35, -0.45, 0.82])                                # [] Point
+lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point
+lighting = dict(lamp=lamp, ambient=0.3, fill_tilt=0.0, headlight=0.0, gloss=0.3, shininess=40.0)
+shadow = 0.25
 
 source = """
 // Each link's motor and colour; a link's solid about its own origin; the pin, placed.
@@ -50,33 +56,15 @@ var<uniform> floor_low: vec2<f32>;
 var<uniform> floor_high: vec2<f32>;
 var<uniform> tile: f32;
 // A camera looking along its own -z, its rays parallel, starting `back` behind the scene's middle; the image
-// half as high as this.
+// half as high as this. Its frame, `axes`, is given from Python.
 var<uniform> camera: Motor;
 var<uniform> back: f32;
 var<uniform> half_height: f32;
-var<uniform> lamp: Point;
 
 alias Sample = vec3<f32>;
 
 const origin = mv.w.dual();
-const far = 1e6;
 const clearance = 1e-6;
-const ambient = 0.3;
-const gloss = 0.3;
-const shininess = 40.0;
-const shadow = 0.25;
-const background = vec3<f32>(0.97, 0.97, 0.96);
-const floor_colours = array<vec3<f32>, 2>(vec3<f32>(0.86, 0.85, 0.82), vec3<f32>(0.76, 0.75, 0.72));
-
-// Where a ray enters a solid quadric, or `far`: along it the quadric is a quadratic in the distance.
-fn entry(quadric: Quadric, origin: Point, direction: Point) -> f32 {
-    let a = quadric(direction) & direction;
-    let b = quadric(direction) & origin;
-    let c = quadric(origin) & origin;
-    let discriminant = b * b - a * c;
-    let distance = (-b - sqrt(max(discriminant, 0.0))) / a;
-    return select(far, distance, discriminant >= 0 && a > 0 && distance > clearance);
-}
 
 // The nearest body a ray meets: the pin, numbered after the links, or a link, met in its own frame.
 struct Hit {
@@ -84,10 +72,16 @@ struct Hit {
     body: u32,
 }
 
-fn nearest(origin: Point, direction: Point) -> Hit {
-    var hit = Hit(entry(pin, origin, direction), arrayLength(&motors));
+// Where a ray enters a solid quadric past its start, or `far`.
+fn entered(quadric: Quadric, start: Point, direction: Point) -> f32 {
+    let distance = entry(along_ray(quadric, start, direction));
+    return select(far, distance, distance > clearance);
+}
+
+fn nearest(start: Point, direction: Point) -> Hit {
+    var hit = Hit(entered(pin, start, direction), arrayLength(&motors));
     for (var body = 0u; body < arrayLength(&motors); body++) {
-        let distance = entry(link, motors[body] << origin, motors[body] << direction);
+        let distance = entered(link, motors[body] << start, motors[body] << direction);
         if (distance < hit.distance) {
             hit = Hit(distance, body);
         }
@@ -95,19 +89,18 @@ fn nearest(origin: Point, direction: Point) -> Hit {
     return hit;
 }
 
-// The lamp's light on a surface with this tangent plane, shadowed by the bodies, with its glint.
-fn lit(colour: vec3<f32>, tangent: Plane, point: Point, direction: Point) -> vec3<f32> {
-    let normal = tangent / (tangent | tangent).square_root();
-    let shaded = select(1.0, shadow, nearest(point + lamp * clearance, lamp).distance < far);
-    let light = max(normal & lamp, 0.0) * shaded;
-    // The view ray reflected in the tangent plane, against the lamp: `-d.dual()` is the plane square to d.
-    let glint = pow(max(-((normal >> direction).dual() & lamp), 0.0), shininess) * select(0.0, 1.0, light > 0);
-    return colour * (ambient + (1 - ambient) * light) + gloss * glint;
+// A colour on a surface with this tangent plane, lit, with its glint; where the bodies stand between it and the lamp,
+// only `shadow` of the lamp's light and glint reaches it, and all the light that falls everywhere.
+fn lit_or_shadowed(colour: vec3<f32>, tangent: Plane, point: Point, direction: Point) -> vec3<f32> {
+    let normal = facing(tangent, direction);
+    let lamp_share = select(1.0, shadow, nearest(point + lamp * clearance, lamp).distance < far);
+    return colour * mix(ambient, brightness(normal, direction), lamp_share) + gloss * lamp_share * glint(normal, direction);
 }
 
 fn sample(place: vec2<f32>) -> Sample {
+    // The ray's start in the camera's frame: across and up the image, and `back` toward the viewer.
     let across = screen(place) * half_height;
-    let start = camera >> (origin + mv.z.dual() * back + mv.x.dual() * across.x + mv.y.dual() * across.y);
+    let start = camera >> (origin + (axes.dual() * vec3<f32>(across, back)).sum());
     let direction = camera >> -mv.z.dual();
     let hit = nearest(start, direction);
     let to_floor = -(floor_plane & start) / (floor_plane & direction);
@@ -116,21 +109,21 @@ fn sample(place: vec2<f32>) -> Sample {
     let floor_seen = all(floor_place >= floor_low) && all(floor_place <= floor_high) && to_floor < hit.distance;
     if (floor_seen) {
         let parity = u32(abs(floor(floor_place.x / tile) + floor(floor_place.y / tile))) % 2;
-        return lit(floor_colours[parity], floor_plane, on_floor, direction);
+        return lit_or_shadowed(select(floor_dark, floor_light, parity == 0), floor_plane, on_floor, direction);
     }
     if (hit.distance >= far) {
         return background;
     }
     let point = start + direction * hit.distance;
     if (hit.body == arrayLength(&motors)) {
-        return lit(pin_colour, pin(point), point, direction);
+        return lit_or_shadowed(pin_colour, pin(point), point, direction);
     }
     // The hit in the link's own frame: its octant, and its tangent plane there, carried back out.
     let motor = motors[hit.body];
     let local = motor << point;
     let octant = (select(0, 1, (mv.x & local) > 0) + select(0, 1, (mv.y & local) > 0) + select(0, 1, (mv.z & local) > 0)) % 2;
     let colour = colours[hit.body] * (1 - octant_contrast * f32(octant));
-    return lit(colour, motor >> link(local), point, direction);
+    return lit_or_shadowed(colour, motor >> link(local), point, direction);
 }
 """
 
@@ -138,7 +131,9 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric), {})
+    return Shader(supersampled() + quadric_crossings() + lamp_shading() + source, ga,
+                  dict(Point=Point, Plane=Plane, Motor=Motor, Quadric=Quadric),
+                  dict(axes=axes, shadow=shadow, floor_light=floor_light, floor_dark=floor_dark, background=background))
 
 
 def framing(points: Point, floor: Plane, reach: float) -> solids.View:
@@ -155,17 +150,16 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
     motors = iter(motors)
     first = next(motors)
     centres = first >> origin                                                                # [bodies] Point
-    start = np.stack([(axis & centres).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)  # [bodies, 3]
-    # How far the chain reaches along itself from the pin.
-    length = np.linalg.norm(np.diff(start, axis=0), axis=-1).sum()
-    reach = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, mv.point([0.0, 0.0, -length])[None]])
-    place = np.stack([(axis & reach).to_array() for axis in (mv.x, mv.y, mv.z)], axis=-1)    # [points, 3]
+    # How far the chain reaches along itself from the pin: the lengths of the offsets between neighbouring links.
+    length = (centres[1:] - centres[:-1]).dual().norm().sum()                                # [] Scalar
+    reach = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, (origin - mv.z.dual() * length)[None]])
+    place = (axes & reach[:, None]).to_array()                                               # [points, 3]
     low, high = place.min(axis=0), place.max(axis=0)
     floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane
     view = framing(reach, floor, semi_axes.max())
     # The pin sits at the joint of the fixed body and the first link.
     pin = solids.ball(centres[0] + mv.x.dual() * (spacing / 2), pin_radius * spacing)        # [] Quadric
-    n_links = len(start) - 1
+    n_links = centres.shape[0] - 1
     for bodies in chain([first], motors):
         yield np.round(np.clip(shader()(view.shape, motors=bodies[1:], colours=link_colours[np.arange(n_links) % 2],
                                         link=solids.ellipsoid(semi_axes), pin=pin, pin_colour=pin_colour,
@@ -173,4 +167,4 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
                                         floor_low=low[:2] - floor_reach * spacing,
                                         floor_high=high[:2] + floor_reach * spacing, tile=tile * spacing,
                                         camera=view.camera, back=4 * view.half.max(), half_height=view.half[1],
-                                        lamp=lamp)["image"], 0, 1) * 255).astype(np.uint8)
+                                        **lighting)["image"], 0, 1) * 255).astype(np.uint8)

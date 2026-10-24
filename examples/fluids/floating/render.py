@@ -126,7 +126,8 @@ def end_on(triangles: np.ndarray, view: solids.View, parts: list[tuple[solids.Qu
     waterline, and parts in front of it, `[rows, columns, 3]` bytes."""
     corners = solids.mv.point(triangles.reshape(-1, 3))
     faces = np.arange(len(corners)).reshape(-1, 3)
-    body = meshes.samples(corners, faces, np.array(to_rgb(HULL)), meshes.flat(corners, faces), view, gloss=HULL_GLOSS)
+    body = meshes.samples(corners, faces, np.array(to_rgb(HULL)), meshes.flat(corners, faces), view,
+                          face_values=np.zeros(4), colour=meshes.plain, gloss=HULL_GLOSS)
     # The water: a box up to the surface, past the view's sides and bottom, and as long along the axis as the body.
     across, up = view.half + view.pixel
     centre = middle(view)                                                       # [2]
@@ -138,7 +139,8 @@ def end_on(triangles: np.ndarray, view: solids.View, parts: list[tuple[solids.Qu
     waterline = solids.rods(on_end(np.array([centre[0] - across, 0.0]), front),
                             on_end(np.array([centre[0] + across, 0.0]), front), WATERLINE_RADIUS * view.pixel)
     return solids.draw(parts + [(waterline[None], to_rgb(WATER))], view, BACKGROUND,
-                       translucent=[(water[None], np.array(to_rgb(WATER)), END_WATER_OPACITY)], meshes=[(body, 1.0)])
+                       inks=[], translucent=[(water[None], np.array(to_rgb(WATER)), END_WATER_OPACITY)],
+                       meshes=[(body, 1.0)])
 
 
 def side_by_side(images: list[np.ndarray]) -> np.ndarray:
@@ -164,7 +166,7 @@ def in_water(triangles: np.ndarray) -> np.ndarray:
                           gloss=HULL_GLOSS)
     # The water's surface, a plate a pixel thick.
     water = solids.plates(solids.mv.point(sea)[None], view.pixel)             # [1, 6] Plane
-    return solids.draw([], view, BACKGROUND, translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
+    return solids.draw([], view, BACKGROUND, inks=[], translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
                        meshes=[(hull, 1.0)])
 
 

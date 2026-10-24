@@ -57,5 +57,5 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
         trail = strokes.polylines([(stack(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
         ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Quadric
         yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
-                          translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],
+                          inks=[], translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],
                           meshes=[(trail, TRAIL_OPACITY)])

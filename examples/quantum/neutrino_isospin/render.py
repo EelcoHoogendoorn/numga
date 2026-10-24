@@ -186,7 +186,7 @@ def animate_precession(states: Iterable[core.Vector], plane: core.Bivector, dist
             path.append(coordinates(state))
             electron.append(electron_probability(state))
         stroke, ends = path_marks(np.array(path), view)
-        image.set_data(scene.draw([ends], meshes=[(stroke, 1.0)]))
+        image.set_data(scene.draw([ends], inks=[], translucent=[], meshes=[(stroke, 1.0)]))
         electron_line.set_data(distances[:end], electron)
         muon_line.set_data(distances[:end], 1 - np.array(electron))
         yield capture(figure)

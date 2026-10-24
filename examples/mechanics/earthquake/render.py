@@ -134,7 +134,7 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     spanned = np.linalg.norm(np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0]), axis=-1) > 0
     places = solids.mv.point(surface.reshape(-1, 3))
     lobe_samples = meshes.samples(places, triangles[spanned], colours[spanned], meshes.smooth(places, triangles[spanned]),
-                                  view)
+                                  view, face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss)
     # The patch: a thin disc about the source, square to the normal, reaching half the rim's width past the patch so
     # that its rim, inked where the cylinder of the patch's radius about the normal meets it, lies whole on it.
     across = PATCH_THICKNESS / 2 * view.pixel * upright(normal)              # [3]
@@ -147,7 +147,8 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     starts, ends = slip_arrows(normal, slip)
     shafts, heads = solids.arrows(solids.mv.point(starts), solids.mv.point(ends), SHAFT_RADIUS * view.pixel,
                                   HEAD_SHARE * SLIP_LENGTH, HEAD_WIDTH * HEAD_SHARE * SLIP_LENGTH)
-    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (heads, np.array(to_rgb(SLIP)))], view)
+    arrow_colour, arrow_depth = solids.layer([(shafts, np.array(to_rgb(SLIP))), (heads, np.array(to_rgb(SLIP)))], view,
+                                             inks=[], translucent=[], meshes=[])
     # The slip arrows lie inside the lobes, which meet the fault at the source: drawn over the fault and its lobes,
     # in front.
     return compose([(arrow_colour, np.full_like(arrow_depth, -np.inf), 1.0), (*fault, 1.0)], np.ones(3))

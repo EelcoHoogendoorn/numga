@@ -177,7 +177,7 @@ def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, n
     path = face.add_collection(LineCollection([], colors=DAY_COLOUR, linewidths=2.2))
     for index in range(len(declinations)):
         beams, inks = sunlight(nodus, rays[index], days[index], view)
-        sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks))
+        sky.set_data(solids.draw(dial + beams, view, np.ones(3), inks, translucent=[], meshes=[]))
         path.set_segments(shadows(nodus, days[index])[None])
         yield capture(figure)
     plt.close(figure)

@@ -160,7 +160,8 @@ def experiment(probes: np.ndarray, probabilities: core.Scalar, labels: tuple[str
     first, second = np.triu_indices(len(probes), k=1)
     edges = solids.rods(sm.point(probes[first]), sm.point(probes[second]), EDGE_WIDTH / 2)
     scene = solids.draw([*bloch_axes(), (edges, EDGE_COLOUR),
-                         (solids.ball(sm.point(probes), PROBE_RADIUS)[:, None], colours)], view, np.ones(3))
+                         (solids.ball(sm.point(probes), PROBE_RADIUS)[:, None], colours)], view, np.ones(3), inks=[],
+                         translucent=[], meshes=[])
     show_ball(probe_axes, scene, view)
     for (x, y), name, colour in zip(view.across(sm.point(probes * 1.12)), PROBE_NAMES, PROBE_COLOURS):
         probe_axes.text(x, y, name, color=colour, fontsize=10)
@@ -190,10 +191,11 @@ def channel_picture(scene: Scene, faces: np.ndarray, image: np.ndarray, points: 
     colours = np.array([to_rgb(colour) for colour in PROBE_COLOURS])
     # The reference grid and the channel's image use the same sampled directions.
     places = sm.point(image[:, :-1].reshape(-1, 3))                          # [(latitudes + 1) * longitudes] Point
-    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view, gloss=0.1)
+    shell = meshes.samples(places, faces, np.array(to_rgb(colour)), meshes.smooth(places, faces), view,
+                           face_values=np.zeros(4), colour=meshes.plain, gloss=0.1)
     lines = grid(image, np.array(to_rgb(colour)), IMAGE_WIDTH, view)
     after = solids.ball(sm.point(points), AFTER_RADIUS)[:, None]
-    return scene.draw([(after, colours)], meshes=[(shell, IMAGE_OPACITY), (lines, 1.0)])
+    return scene.draw([(after, colours)], inks=[], translucent=[], meshes=[(shell, IMAGE_OPACITY), (lines, 1.0)])
 
 
 def channels_figure(labels: tuple[str, ...], panel: tuple[float, float]) -> tuple[plt.Figure, list]:

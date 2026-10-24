@@ -60,7 +60,7 @@ def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarr
     points = sm.point(spatial(curves))
     points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point
     lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
-    return solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)])
+    return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 
 
 def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
@@ -81,7 +81,7 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
         ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Quadric
         marks = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ray, to_rgb(BLUE)),
                  (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
-        show(ax, solids.draw(marks, view, BACKGROUND), view)
+        show(ax, solids.draw(marks, view, BACKGROUND, inks=[], translucent=[], meshes=[]), view)
         # Each axis named just past its arrow's tip.
         labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=12, color=AXIS_COLOUR)
     return figure

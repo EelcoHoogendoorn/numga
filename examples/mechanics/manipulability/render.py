@@ -33,7 +33,8 @@ def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, 
     elevation, azimuth = np.radians(view[0]), np.radians(view[1] + 90)
     seen = solids.View(solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent), pixels)
     boxes = bodies[:, None].adjugate().solve(cube)                           # [boxes, 6] Plane
-    return solids.draw([(boxes, box_colours)], seen, background, translucent=[(surface[None, None], colour, quadric_opacity)])
+    return solids.draw([(boxes, box_colours)], seen, background, inks=[],
+                       translucent=[(surface[None, None], colour, quadric_opacity)], meshes=[])
 
 
 def frame(pose, view, centre: np.ndarray, extent: float, pixels: int) -> np.ndarray:

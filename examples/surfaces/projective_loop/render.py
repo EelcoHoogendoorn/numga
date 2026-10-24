@@ -47,12 +47,12 @@ def picture(control: np.ndarray, control_faces: np.ndarray, surface: np.ndarray,
     `[vertices, 3]`, dotted."""
     places = sm.point(surface)
     sheet = meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), frame, face_values=colours,
-                           colour=meshes.by_face)
+                           colour=meshes.by_face, gloss=solids.gloss)
     ends = control[edges(control_faces)]                                       # [edges, 2, 3]
     share = np.linspace(0, 1, N_DOTS)[:, None]                                 # [dots, 1]
     dots = ends[:, None, 0] * (1 - share) + ends[:, None, 1] * share           # [edges, dots, 3]
     beads = [(solids.ball(sm.point(dots.reshape(-1, 3)), DOT_RADIUS * frame.pixel)[:, None], CONTROL_COLOUR)]
-    return solids.draw(beads, frame, background, meshes=[(sheet, 1.0)])
+    return solids.draw(beads, frame, background, inks=[], translucent=[], meshes=[(sheet, 1.0)])
 
 
 def draw_weights(controls: core.Point, control_faces: np.ndarray, surfaces: core.Point, faces: np.ndarray) -> plt.Figure:

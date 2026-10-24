@@ -146,7 +146,7 @@ def polytope(spinors, tilt: float = 0.45) -> np.ndarray:
     places = solids.mv.point(space)                                            # [vertices] Point
     edges = strokes.segments(places[first], places[second], EVEN, EDGE_WIDTH, view)
     vertices = solids.ball(places, VERTEX_RADIUS * view.pixel)[:, None]       # [vertices, 1] Quadric
-    return solids.draw([(vertices, VERTEX)], view, BACKGROUND, meshes=[(edges, 1.0)])
+    return solids.draw([(vertices, VERTEX)], view, BACKGROUND, inks=[], translucent=[], meshes=[(edges, 1.0)])
 
 
 def animate_polytope(turning) -> Iterator[np.ndarray]:

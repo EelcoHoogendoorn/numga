@@ -51,7 +51,8 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
                                       for pivots, centre in zip(histories, centres)], axis=1))   # [steps, points] Point
     n_points = [2 * pivots.shape[1] for pivots in histories]
     colours = np.concatenate([STRANDS[np.arange(n) % (n // 2) % len(STRANDS)] for n in n_points])   # [points, 3]
-    scene = Scene(seen, np.ones(3), [(solids.ball(sm.point(centres), 1.0)[:, None], SPHERE_COLOUR)], [])
+    scene = Scene(seen, np.ones(3), [(solids.ball(sm.point(centres), 1.0)[:, None], SPHERE_COLOUR)], [], inks=[],
+                  translucent=[])
     for time in range(0, places.shape[0], every):
         first, last = max(time - TRAIL, 0), max(time, 1)
         # Each trail's segment its vortex's colour, mixed with the sphere's the older its middle is.
@@ -60,4 +61,4 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
         drawn = strokes.segments(places[first:last].reshape(-1), places[first + 1:last + 1].reshape(-1),
                                  shades.reshape(-1, 3), TRAIL_WIDTH, seen)
         dots = solids.ball(places[time], DOT_RADIUS * seen.pixel)[:, None]
-        yield scene.draw([(dots, colours)], meshes=[(drawn, 1.0)])
+        yield scene.draw([(dots, colours)], inks=[], translucent=[], meshes=[(drawn, 1.0)])

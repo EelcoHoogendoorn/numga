@@ -71,8 +71,8 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     kinds = np.repeat(np.stack([PRIMAL_COLOUR, DUAL_COLOUR]), [circles.shape[-1], duals.shape[-1]], axis=0)   # [circles, 3]
     loops = solids.Ink(0, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), kinds,
                        CIRCLE_WIDTH, 1.0)
-    return (solids.draw(marks, frame, background, translucent=sphere),
-            solids.draw([], frame, background, [loops], translucent=sphere))
+    return (solids.draw(marks, frame, background, inks=[], translucent=sphere, meshes=[]),
+            solids.draw([], frame, background, [loops], translucent=sphere, meshes=[]))
 
 
 def draw(circles: core.Vector, faces: np.ndarray, edges: np.ndarray) -> plt.Figure:

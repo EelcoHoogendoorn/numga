@@ -132,8 +132,8 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
                   ((driving_tip, driving_rgb, driving_arrow), (flow, flow_rgb, flow_arrow))
                   for part in solids.arrows(solids.origin, tip, width / 2 * view.pixel, head_length * view.pixel,
                                             head_width / 2 * view.pixel)]
-        show(ax, solids.draw(arrows, view, background, translucent=[(ellipsoid[None, None], surface_colour,
-                                                                     surface_opacity)]), view)
+        show(ax, solids.draw(arrows, view, background, inks=[], translucent=[(ellipsoid[None, None], surface_colour,
+                                                                     surface_opacity)], meshes=[]), view)
     return fig
 
 
@@ -179,9 +179,11 @@ def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Cond
     fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 4.0)
     lattice_view, conduction_view, stiffness_view = (fitted(view, ax) for view, ax in
                                                      zip((lattice_view, conduction_view, stiffness_view), axes))
-    show(axes[0], solids.draw(parts, lattice_view, background), lattice_view)
-    show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background), conduction_view)
-    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background),
+    show(axes[0], solids.draw(parts, lattice_view, background, inks=[], translucent=[], meshes=[]), lattice_view)
+    show(axes[1], solids.draw([(ellipsoid[None, None], surface_colour)], conduction_view, background, inks=[],
+                              translucent=[], meshes=[]), conduction_view)
+    show(axes[2], meshes.draw(points, faces, stiffness_colour, meshes.smooth(points, faces), stiffness_view, background,
+                              face_values=np.zeros(4), colour=meshes.plain, gloss=solids.gloss),
          stiffness_view)
     return fig
 

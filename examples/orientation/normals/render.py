@@ -105,8 +105,9 @@ def draw_normals(vertices: Point, side: Plane, winding: Surface, mirror: Plane) 
                      (edge_arrows[1], WINDING)]
 
     figure = grid_figure(view, 1, 2)
-    panels(figure, [solids.draw(common + side_panel, view, background, translucent=sheets),
-                    solids.draw(common + winding_panel, view, background, translucent=sheets)], view, 2)
+    panels(figure, [solids.draw(common + side_panel, view, background, inks=[], translucent=sheets, meshes=[]),
+                    solids.draw(common + winding_panel, view, background, inks=[], translucent=sheets,
+                                meshes=[])], view, 2)
     return figure
 
 
@@ -131,7 +132,7 @@ def draw_line_in_mirror(ends: Point, lines: Spear, mirror: Plane) -> plt.Figure:
         shaft, head = arrows(middle[None] - direction * span * 0.2, middle[None] + direction * span * 0.2,
                              NORMAL_WIDTH, 0.3, view, LINE_THICKNESS)
         images.append(solids.draw(common + [(shaft, WINDING), (head, WINDING)], view, background,
-                                  translucent=[(mirror, MIRROR, MIRROR_OPACITY)]))
+                                  inks=[], translucent=[(mirror, MIRROR, MIRROR_OPACITY)], meshes=[]))
     figure = grid_figure(view, 1, len(directions))
     panels(figure, images, view, len(directions))
     return figure
@@ -166,13 +167,14 @@ def draw_pairs_in_mirror(planes: Plane, ends: Point, meets: Axis, joins: Spear, 
                            PAIR_THICKNESS * LINE_WIDTH / 2 * view.pixel)[None]
         marks = [(mirror_rims, MIRROR_RIM), (mirror_joints, MIRROR_RIM), (line, LINE)]
         dots = solids.ball(sm.point(points[panel]), PAIR_THICKNESS * DOT_RADIUS * view.pixel)[:, None]
-        top.append(solids.draw(marks + [(dots, colours)], view, background, translucent=[mirror_plate]))
+        top.append(solids.draw(marks + [(dots, colours)], view, background, inks=[], translucent=[mirror_plate],
+                               meshes=[]))
         # Each plane's patch and its rim in its own colour, rim by rim and joint by joint.
         sheets, rims, joints = polygons(patches[panel], view, PAIR_THICKNESS)
         n_corners = patches.shape[2]
         crossing = [(rims, np.repeat(colours, n_corners, axis=0)), (joints, np.repeat(colours, 2 * n_corners, axis=0))]
         bottom.append(solids.draw(marks + crossing, view, background,
-                                  translucent=[mirror_plate, (sheets, colours, PLANE_OPACITY)]))
+                                  inks=[], translucent=[mirror_plate, (sheets, colours, PLANE_OPACITY)], meshes=[]))
     figure = grid_figure(view, 2, len(points))
     panels(figure, top + bottom, view, len(points))
     return figure

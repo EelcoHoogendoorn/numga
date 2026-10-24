@@ -109,7 +109,8 @@ def draw_side(side: Scene, planes: Plane, radius: float, frame: Motor, legs: Poi
     sensor = solids.plates((display >> corners)[None], THICKNESS)
     shown = display >> legs                                                    # [plane + 1, ray] Point
     rays = solids.rods(shown[:-1].reshape(-1), shown[1:].reshape(-1), RAY_RADIUS * side.view.pixel)
-    return side.draw([(sensor, SENSOR_COLOUR), (rays, RAY)], translucent=[(lenses, np.array(LENS), LENS_OPACITY)])
+    return side.draw([(sensor, SENSOR_COLOUR), (rays, RAY)], inks=[],
+                     translucent=[(lenses, np.array(LENS), LENS_OPACITY)], meshes=[])
 
 
 def draw_stills(exposures) -> plt.Figure:
@@ -125,7 +126,7 @@ def animate_camera(states, scene: Point) -> Iterator[np.ndarray]:
     """Frames of the sensor image, enlarged, over the camera seen from the side, one per state, among the scene's
     points, which are set up once."""
     view = side_view()
-    side = Scene(view, np.ones(3), [scene_points(view, scene)], [])
+    side = Scene(view, np.ones(3), [scene_points(view, scene)], [], inks=[], translucent=[])
     for rear_at, focus_at, radius, (collineation, camera, frame, cones, planes, legs) in states:
         image = rasterise(frame, cones, (radius / REFERENCE_APERTURE)**2)
         sensor = np.round(np.repeat(np.repeat(image, ENLARGED, axis=0), ENLARGED, axis=1) * 255).astype(np.uint8)

@@ -70,7 +70,7 @@ def scene(target: core.Point, placed: core.Point, view: solids.View) -> np.ndarr
     """The measured markers, joined by a dashed outline, and the placed triangle, translucent with solid edges,
     `[rows, columns, 3]`."""
     edges, translucent = triangle(placed, view)
-    return solids.draw(markers(target, view) + edges, view, np.ones(3), translucent=translucent)
+    return solids.draw(markers(target, view) + edges, view, np.ones(3), inks=[], translucent=translucent, meshes=[])
 
 
 def draw_pose(source: core.Point, target: core.Point, placed: core.Point) -> plt.Figure:
@@ -88,4 +88,4 @@ def animate(states: Iterator[core.Point], source: core.Point, target: core.Point
     measured = markers(target, view)
     for state in states:
         edges, translucent = triangle(state, view)
-        yield solids.draw(measured + edges, view, np.ones(3), translucent=translucent)
+        yield solids.draw(measured + edges, view, np.ones(3), inks=[], translucent=translucent, meshes=[])

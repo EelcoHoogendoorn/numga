@@ -81,6 +81,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
              strokes.segments(sm.point(rays * (1 - RAY_SPAN)), sm.point(rays * (1 + RAY_SPAN)), RAY_COLOUR, RAY_WIDTH,
                               view)]
     space = solids.draw([(solids.ball(vertices, VERTEX_RADIUS * pixel)[:, None], colours)], view, background,
+                        inks=[],
                         translucent=[(sphere, SPHERE_COLOUR, SPHERE_OPACITY), (hull, HULL_COLOUR, HULL_OPACITY)],
                         meshes=[(line, 1.0) for line in lines])
     # On the sphere, the arcs of both, each coloured by its kind.
@@ -88,7 +89,7 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     primal_arcs, dual_arcs = arcs(sm.point(on_sphere[edges])), arcs(sm.point(duals_on_sphere[beside]))
     inks = [solids.Ink(0, *primal_arcs, PRIMAL_COLOUR, ARC_WIDTH, 1.0),
             solids.Ink(0, *dual_arcs, DUAL_COLOUR, ARC_WIDTH, 1.0)]
-    image = solids.draw([(sphere, SPHERE_COLOUR)], view, background, inks)
+    image = solids.draw([(sphere, SPHERE_COLOUR)], view, background, inks, translucent=[], meshes=[])
     return np.concatenate([space, image], axis=1)
 
 

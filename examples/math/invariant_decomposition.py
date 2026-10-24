@@ -220,8 +220,9 @@ def tangle_image(path: np.ndarray, index: int) -> np.ndarray:
     passed = np.arange(1, len(path)) <= index                                 # [times - 1]
     colours = np.where(passed[:, None], trail_colour, orbit_colour)           # [times - 1, 3]
     tube = strokes.segments(places[:-1], places[1:], colours, 2 * tube_radius, view)
-    orbit = solids.layer([], view, meshes=[(tube, 1.0)])
-    moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view)
+    orbit = solids.layer([], view, inks=[], translucent=[], meshes=[(tube, 1.0)])
+    moment = solids.layer([(solids.ball(places[index], marker_radius * view.pixel)[None, None], trail_colour)], view,
+                          inks=[], translucent=[], meshes=[])
     return compose([(*orbit, 1.0), (*moment, 1.0)], np.ones(3))
 
 

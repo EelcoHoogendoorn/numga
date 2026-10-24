@@ -38,7 +38,8 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     vertices, 3]`, their origins first: each axis an arrow from the origin, x red, y green, z blue."""
     pixel = view.pixel
     places = sm.point(surface)
-    sheet = meshes.samples(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view)
+    sheet = meshes.samples(places, faces, SURFACE_COLOUR, meshes.smooth(places, faces), view, face_values=np.zeros(4),
+                           colour=meshes.plain, gloss=solids.gloss)
     # Each edge of the net cut into equal pieces, one fewer than twice the dashes, every other piece a dash.
     ends = frames[0][edges(control_faces)]                                     # [edges, 2, 3]
     share = np.linspace(0, 1, 2 * N_DASHES).reshape(N_DASHES, 2)[..., None]    # [dashes, 2, 1]
@@ -48,7 +49,7 @@ def panel(frames: np.ndarray, surface: np.ndarray, control_faces: np.ndarray, fa
     colours = np.repeat(AXIS_COLOURS, frames.shape[1], axis=0)                 # [axes * vertices, 3]
     marks = [(solids.rods(sm.point(dashes[..., 0, :]), sm.point(dashes[..., 1, :]), NET_WIDTH / 2 * pixel).reshape(-1, 3),
               CONTROL_COLOUR), (shafts.reshape(-1, 3), colours), (heads.reshape(-1, 3), colours)]
-    return solids.draw(marks, view, background, meshes=[(sheet, 1.0)])
+    return solids.draw(marks, view, background, inks=[], translucent=[], meshes=[(sheet, 1.0)])
 
 
 def animate(control: core.Point, surfaces: core.Point, control_faces: np.ndarray, faces: np.ndarray

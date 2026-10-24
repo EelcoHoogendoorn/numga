@@ -113,7 +113,7 @@ def animate_quench(
     curve = figure.add_axes((0.68, 0.22, 0.29, 0.64))
     view, axes, circles = chart(energies, axis)
     rings = (strokes.polylines([(circle, CIRCLE_COLOUR) for circle in circles], CIRCLE_WIDTH, view), CIRCLE_OPACITY)
-    scene = Scene(view, np.ones(3), axes, [rings])
+    scene = Scene(view, np.ones(3), axes, [rings], inks=[], translucent=[])
 
     def arrows(coherence: np.ndarray) -> np.ndarray:
         """Each level's arrow from the energy axis to its pair coherence, and its tip, over the path through the
@@ -124,7 +124,7 @@ def animate_quench(
         stems = [(shafts, colours), (heads, colours),
                  (solids.ball(sm.point(tips), TIP_RADIUS * view.pixel)[:, None], np.array(to_rgb(PAIR)))]
         path = strokes.polylines([(sm.point(tips), np.array(to_rgb(INK)))], PATH_WIDTH, view)
-        return scene.draw(stems, meshes=[(path, PATH_OPACITY)])
+        return scene.draw(stems, inks=[], translucent=[], meshes=[(path, PATH_OPACITY)])
 
     image = show(axis, arrows(transverse[0]), view)
     label_chart(axis, view)

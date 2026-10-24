@@ -47,7 +47,7 @@ def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np
     them, joined with each face's own, and lit."""
     points, normals, frame = seen
     return meshes.draw(points, mesh.faces, corners[mesh.faces], normals, frame, background, face_values=sides,
-                       colour=colour) / 255
+                       colour=colour, gloss=solids.gloss) / 255
 
 
 def view(mesh: Mesh) -> tuple:

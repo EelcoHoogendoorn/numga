@@ -69,7 +69,9 @@ def draw_panels(panels: list) -> plt.Figure:
                   ELLIPSOID),
                  (solids.ball(solids.mv.point(euclidean(contact)), CONTACT_RADIUS * view.pixel)[None, None], CONTACT)]
         image = solids.draw(marks, view, background,
-                            translucent=[(body, ELLIPSOID, ELLIPSOID_OPACITY), (plate, CONTACT, PATCH_OPACITY)])
+                            inks=[],
+                            translucent=[(body, ELLIPSOID, ELLIPSOID_OPACITY), (plate, CONTACT, PATCH_OPACITY)],
+                            meshes=[])
         show(figure.add_axes((index / len(panels), 0.0, 1 / len(panels), 1.0)), image, view)
     return figure
 

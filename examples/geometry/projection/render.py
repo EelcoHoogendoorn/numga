@@ -81,7 +81,7 @@ def render_shadow_scene(
              (solids.ball(trail, bead_radius * pixel)[:, None], LIGHT_COLOUR),
              (solids.ball(light, light_radius * pixel)[None, None], LIGHT_COLOUR),
              (shaft[None], SUN_COLOUR), (head[None], SUN_COLOUR)]
-    show(ax, solids.draw(parts, view, background), view)
+    show(ax, solids.draw(parts, view, background, inks=[], translucent=[], meshes=[]), view)
 
 
 def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndarray:

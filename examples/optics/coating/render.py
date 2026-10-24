@@ -160,7 +160,7 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
 
     # The line, the optic axes and the slab stay put.
     picture = Scene(view, np.ones(3), [(line, line_colour), (optics, optic_colour)], [],
-                    translucent=[(box, slab_colour, slab_opacity)])
+                    inks=[], translucent=[(box, slab_colour, slab_opacity)])
     for planes in electric:
         field = planes.cast(algebra.subspace("xt yt")).kernel                        # [nodes, 2]
         tips = scene(np.concatenate([field_length * field, depths[:, None]], axis=-1))   # [nodes] Point
@@ -174,4 +174,4 @@ def pulse(nodes: core.Vector, slab: core.Vector, directors: core.Vector,
         # Each piece of the path in the colour and strength halfway along it.
         shades = faded(colours, strength)
         path = strokes.segments(tips[:-1], tips[1:], (shades[:-1] + shades[1:]) / 2, path_width, view)
-        yield picture.draw(meshes=[(spokes, 1.0), (path, 1.0)])
+        yield picture.draw([], inks=[], translucent=[], meshes=[(spokes, 1.0), (path, 1.0)])

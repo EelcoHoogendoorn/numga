@@ -38,4 +38,4 @@ def draw_registration(source: Point, target: Point, aligned: Point) -> plt.Figur
               (solids.ball(aligned, point_radius * pixel)[:, None], aligned_colour),
               (solids.rods(aligned, target, tie_radius * pixel), aligned_colour)]
     shells = [(solids.ball(target, target_radius * pixel)[:, None], target_colour, target_opacity)]
-    return image_figure(solids.draw(opaque, view, background, translucent=shells))
+    return image_figure(solids.draw(opaque, view, background, inks=[], translucent=shells, meshes=[]))

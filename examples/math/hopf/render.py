@@ -146,7 +146,7 @@ def draw_tori(spins: core.Bivector, projected: core.Bivector) -> plt.Figure:
     runs = visible(curves, colours)
     figure, axes, (space, sphere) = panels(space_view(runs), (11, 6))
     fibres = strokes.polylines(runs, TORUS_WIDTH, space)
-    shown(axes, solids.draw([], space, BACKGROUND, meshes=[(fibres, 1.0)]),
+    shown(axes, solids.draw([], space, BACKGROUND, inks=[], translucent=[], meshes=[(fibres, 1.0)]),
           sphere_image([dots(points, colours, DOT_RADIUS, sphere)], [], sphere), (space, sphere))
     return figure
 
@@ -162,7 +162,8 @@ def draw_lift(loop: core.Bivector, path: core.Bivector, fibre: core.Bivector) ->
     # The track's start in blue, its end in its own colour.
     ends = (solids.ball(sm.point(track[[0, -1]]), END_RADIUS * space.pixel)[:, None], np.stack([START_COLOUR, LOOP_COLOUR]))
     on_sphere = strokes.polylines([(sm.point(components(loop)), LOOP_COLOUR)], TRACK_WIDTH, sphere)
-    shown(axes, solids.draw([ends], space, BACKGROUND, meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
+    shown(axes, solids.draw([ends], space, BACKGROUND, inks=[], translucent=[],
+                            meshes=lines), sphere_image([], [(on_sphere, 1.0)], sphere),
           (space, sphere))
     return figure
 
@@ -176,7 +177,7 @@ def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> Iter
     space_shown, sphere_shown = shown(axes, np.ones((*space.shape, 3)), np.ones((*sphere.shape, 3)), (space, sphere))
     inks, ball = sphere_surface(1, SWEEP_CIRCLE_WIDTH)
     sphere_scene = Scene(sphere, BACKGROUND, [], [], inks=inks, translucent=ball)
-    space_scene = Scene(space, BACKGROUND, [], [])
+    space_scene = Scene(space, BACKGROUND, [], [], inks=[], translucent=[])
     # The spins so far, their colours, and each one's fibre as segments of its runs inside the drawing limit.
     points, colours, fibres = [], [], []
     for spin, projected in stream:
@@ -187,7 +188,8 @@ def animate_sweep(stream: Iterable[tuple[core.Bivector, core.Bivector]]) -> Iter
         starts, ends, shades = zip(*fibres)
         thin = strokes.segments(concatenate(starts), concatenate(ends), np.concatenate(shades), SWEPT_WIDTH, space)
         thick = strokes.segments(*fibres[-1], NEWEST_WIDTH, space)
-        sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), SWEEP_DOT_RADIUS, sphere)]))
-        space_shown.set_data(space_scene.draw(meshes=[(thin, 1.0), (thick, 1.0)]))
+        sphere_shown.set_data(sphere_scene.draw([dots(np.stack(points), np.stack(colours), SWEEP_DOT_RADIUS, sphere)],
+                                                inks=[], translucent=[], meshes=[]))
+        space_shown.set_data(space_scene.draw([], inks=[], translucent=[], meshes=[(thin, 1.0), (thick, 1.0)]))
         yield capture(figure)
     plt.close(figure)

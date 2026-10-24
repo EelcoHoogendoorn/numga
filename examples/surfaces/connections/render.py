@@ -104,7 +104,7 @@ def surface(mesh: core.Mesh, colours: np.ndarray, frame: solids.View, face_value
     """A mesh, smooth shaded, at every sample, as `meshes.samples`."""
     points = solids.mv.point(positions(mesh.vertices))
     return meshes.samples(points, mesh.faces, colours, meshes.smooth(points, mesh.faces), frame, face_values=face_values,
-                          colour=colour)
+                          colour=colour, gloss=solids.gloss)
 
 
 # --- parallel transport ---------------------------------------------------------------
@@ -120,7 +120,7 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
     # The circles and the needles are strokes; the sphere alone is traced. The sphere and the circles stay put.
     circles = strokes.polylines(list(zip(solids.mv.point(np.moveaxis(ring_places, 1, 0)), colours)), 4 * line_width,
                                 frame)
-    scene = Scene(frame, background, [], [(circles, 1.0)], translucent=ball)
+    scene = Scene(frame, background, [], [(circles, 1.0)], inks=[], translucent=ball)
     points, carried = [], []
     for point, vector in states:
         points.append(coordinates(point))                                       # [rings, 3]
@@ -132,7 +132,7 @@ def animate_holonomy(sphere: core.Mesh, rings: core.Vector, states: Iterable[tup
                                  2 * line_width, frame)
         now = strokes.segments(*needles(points[-1], carried[-1], points[-1], holonomy_needle * 1.15),
                                np.tile(colours, (3, 1)), 5 * line_width, frame)
-        yield scene.draw(meshes=[(now, 1.0), (trail, trail_opacity)])
+        yield scene.draw([], inks=[], translucent=[], meshes=[(now, 1.0), (trail, trail_opacity)])
 
 
 def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, frame: solids.View) -> np.ndarray:
@@ -148,6 +148,7 @@ def torus_panel(torus: core.Mesh, field: core.Vector, amplitudes: np.ndarray, fr
     arrows = strokes.segments(*needles(places[visible] + normals[visible] * 0.03, units[visible] * scale,
                                        normals[visible], transport_needle), needle_colour, 2 * line_width, frame)
     return solids.draw([], frame, background,
+                       inks=[], translucent=[],
                        meshes=[(surface(torus, np.zeros(3), frame, face_values=face_colours, colour=meshes.by_face), 1.0),
                                (arrows, 1.0)])
 
@@ -198,7 +199,7 @@ def field_panel(mesh: core.Mesh, field: core.Vector, singular: np.ndarray, indic
     `[S]`, larger for larger indices."""
     arrows = field_arrows(mesh, field, needle, frame)
     return solids.draw(field_marks(mesh, singular, indices, frame), frame, background,
-                       meshes=[(surface(mesh, surface_colour, frame), 1.0), (arrows, 1.0)])
+                       inks=[], translucent=[], meshes=[(surface(mesh, surface_colour, frame), 1.0), (arrows, 1.0)])
 
 
 def draw_fields(mesh: core.Mesh, scenes: list[tuple[core.Vector, np.ndarray, list[int]]]) -> plt.Figure:
@@ -223,9 +224,9 @@ def animate_turning(mesh: core.Mesh, fields: Iterable[core.Vector], singular: np
     needle = needle_length(mesh)
     frame = square_view(view, mesh, needle)
     scene = Scene(frame, background, field_marks(mesh, singular, indices, frame),
-                  [(surface(mesh, surface_colour, frame), 1.0)])
+                  [(surface(mesh, surface_colour, frame), 1.0)], inks=[], translucent=[])
     for field in fields:
-        yield scene.draw(meshes=[(field_arrows(mesh, field, needle, frame), 1.0)])
+        yield scene.draw([], inks=[], translucent=[], meshes=[(field_arrows(mesh, field, needle, frame), 1.0)])
 
 
 # --- stripes --------------------------------------------------------------------------
@@ -314,6 +315,7 @@ def bands_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
     and edge targets `[E, n]`, the given share of each stripe dark."""
     corners, turns = corner_phases(mesh, *pattern)                             # [F, 3, n], [F, n]
     return solids.draw([], frame, background,
+                       inks=[], translucent=[],
                        meshes=[(surface(mesh, corners, frame, face_values=turns, colour=stripe_colour(corners.shape[-1])), 1.0)])
 
 
@@ -330,7 +332,8 @@ def lines_image(mesh: core.Mesh, pattern: tuple[core.Vector, core.Vector, core.S
                                for family in range(corners.shape[-1])])         # [S, 2, 3]
     drawn = solids.mv.point(segments[np.linalg.norm(segments[:, 1] - segments[:, 0], axis=-1) > 0])   # [S, 2] Point
     lines = strokes.segments(drawn[:, 0], drawn[:, 1], dark, line_width, frame)
-    return solids.draw([], frame, background, meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
+    return solids.draw([], frame, background, inks=[], translucent=[],
+                       meshes=[(surface(mesh, light, frame), 1.0), (lines, 1.0)])
 
 
 def pattern_figure(mesh: core.Mesh, patterns: list[tuple[core.Vector, core.Vector, core.Scalar]],

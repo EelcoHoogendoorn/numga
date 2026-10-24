@@ -89,7 +89,8 @@ def sheet_sides(sheets: core.Vector, view: solids.View) -> list[tuple[meshes.Sam
     for sheet, colour in zip(np.moveaxis(points, 2, 0), map(to_rgb, sheet_colours)):
         places = sm.point(sheet.reshape(-1, 3))
         normals = meshes.smooth(places, faces)
-        sides += [(meshes.samples(places, faces, grid, normals, view, colour=gridded(np.array(colour), n_latitudes, near),
+        sides += [(meshes.samples(places, faces, grid, normals, view, face_values=np.zeros(4),
+                                  colour=gridded(np.array(colour), n_latitudes, near),
                                    gloss=0.2), 1.0) for near in (True, False)]
     return sides
 
@@ -138,7 +139,8 @@ def comparison(sheets: core.Vector, sections: core.Vector, names: tuple[str, ...
     # size of its room.
     for i, ax in enumerate(surface_axes):
         view = k_space(ax)
-        surface(ax, solids.draw(k_axes(view), view, np.ones(3), meshes=sheet_sides(sheets[i], view)), view)
+        surface(ax, solids.draw(k_axes(view), view, np.ones(3), inks=[], translucent=[],
+                                meshes=sheet_sides(sheets[i], view)), view)
     return figure
 
 
@@ -150,13 +152,13 @@ def animate(frames: Iterable[tuple[core.Vector, core.Vector]]) -> Iterator[np.nd
     surface_axes.set_axis_off()
     curves = section_axes(figure.add_subplot(1, 2, 2))
     view = k_space(surface_axes)
-    scene = Scene(view, np.ones(3), k_axes(view), [])
+    scene = Scene(view, np.ones(3), k_axes(view), [], inks=[], translucent=[])
     image = surface(surface_axes, np.full((*view.shape, 3), 255, dtype=np.uint8), view)
     # Laid out once, so that nothing moves between frames.
     figure.canvas.draw()
     figure.set_layout_engine("none")
     for sheets, sections in frames:
-        image.set_data(scene.draw(meshes=sheet_sides(sheets, view)))
+        image.set_data(scene.draw([], inks=[], translucent=[], meshes=sheet_sides(sheets, view)))
         trace_sections(curves, sections)
         yield capture(figure)
     plt.close(figure)

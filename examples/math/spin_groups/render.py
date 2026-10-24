@@ -65,7 +65,8 @@ def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor
     # The panels' rooms alike, one view fitted to the first holds them all.
     panel = fitted(view(1, *drawn), axes[0])
     for ax, orbits, width in zip(axes, drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH)):
-        show(ax, solids.draw([], panel, BACKGROUND, meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
+        show(ax, solids.draw([], panel, BACKGROUND, inks=[], translucent=[],
+                             meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 
 
@@ -76,7 +77,8 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
     drawn = [components(orbits) for orbits in (left, right, knotted)]
     frame = view(FRAME_PIXELS, *drawn)
     # Each panel's faint orbits, set up once.
-    panels = [Scene(frame, BACKGROUND, [], [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY)])
+    panels = [Scene(frame, BACKGROUND, [], [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY)], inks=[],
+                    translucent=[])
               for orbits in drawn]
     length = drawn[0].shape[2] - 1
     steps = np.linspace(0, length, frames, endpoint=False).astype(int)
@@ -87,4 +89,5 @@ def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Exten
         riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
         riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
                        np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
-        yield np.concatenate([panel.draw([dots(*points, frame)]) for panel, points in zip(panels, riding)], axis=1)
+        yield np.concatenate([panel.draw([dots(*points, frame)], inks=[], translucent=[],
+                                         meshes=[]) for panel, points in zip(panels, riding)], axis=1)

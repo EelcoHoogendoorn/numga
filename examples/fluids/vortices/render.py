@@ -123,5 +123,5 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
         # Each vortex's strand, its points through time and its colour.
         strands = [(drawn[:, vortex], colour) for vortex, colour in zip(range(drawn.shape[1]), STRANDS)]
         lines = strokes.polylines(strands, STRAND_WIDTH, view)
-        show(ax, solids.draw([], view, BACKGROUND, meshes=[(lines, 1.0)]), view)
+        show(ax, solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)]), view)
     return result

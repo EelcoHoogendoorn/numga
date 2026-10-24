@@ -56,7 +56,7 @@ def surface(points: Point, n_rings: int, n_around: int, view: solids.View) -> np
     colours = np.broadcast_to(stripes[None, :, None, None], faces.shape + (3,))                 # [rings - 1, around, 2, 3, 3]
     faces = faces.reshape(-1, 3)
     return meshes.draw(places, faces, colours.reshape(-1, 3, 3), meshes.smooth(places, faces), view, background,
-                       face_values=ink.reshape(-1, 3), colour=inked)
+                       face_values=ink.reshape(-1, 3), colour=inked, gloss=solids.gloss)
 
 
 def draw_skinning(motor_skin: Point, slerp_skin: Point, matrix_skin: Point, n_rings: int, n_around: int) -> plt.Figure:

@@ -30,7 +30,8 @@ def euclidean(points: Point) -> np.ndarray:
 def draw(framed: list[Point], reach: float, parts: list[tuple[solids.Quadric, np.ndarray]]) -> plt.Figure:
     """One figure of solids in parts, each a batch of solids with one colour, framed around batches of points
     with `reach` to spare."""
-    return image_figure(solids.draw(parts, solids.view(framed, reach, elevation, azimuth, margin, pixels), background))
+    return image_figure(solids.draw(parts, solids.view(framed, reach, elevation, azimuth, margin, pixels), background,
+                                    inks=[], translucent=[], meshes=[]))
 
 
 def balls(centres: Point, radius: float) -> solids.Quadric:

@@ -68,7 +68,8 @@ def draw_isolator(polarizations: Polarization, depths: np.ndarray) -> plt.Figure
                                  dash_width / 2 * view.pixel)                              # [2, dashes, 3]
             parts = [(beam, beam_colour), (dashes.reshape(-1, 3), entering_colour),
                      *((lines[leg], colour) for leg, colour in enumerate(leg_colours))]
-            image = solids.draw(parts, view, np.ones(3), translucent=[(reflector, reflector_colour, reflector_opacity)])
+            image = solids.draw(parts, view, np.ones(3), inks=[],
+                                translucent=[(reflector, reflector_colour, reflector_opacity)], meshes=[])
             ax = figure.add_axes((medium / media, 1 - (setup + 1) / setups, 1 / media, 1 / setups))
             show(ax, image, view)
     return figure
