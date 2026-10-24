@@ -1,23 +1,25 @@
 # Definition
 
-An extensor is a multilinear map from multivectors to a multivector: an expression whose arguments are bound later. On the blackboard one moves freely between a specific vector and the space of all vectors; extensors bring that to code. The definition is Hestenes and Sobczyk's [[ca-to-gc](#ref-ca-to-gc)], for whom extensors are what tensors become when their arguments are multivectors. Built from the algebra's products, they transform as the geometry they are built from.
+In mathematical terms, an extensor is a multilinear map from multivectors to a multivector. Tensors are a special case of extensors, restricted to inner products of 1-vectors.
+
+In programming terms, extensors let us build maps directly from geometric expressions. On the blackboard one moves freely between a specific vector and the space of all vectors; extensor syntax brings that flexibility to code.
+
+Geometrically, objects and transformations belong to the same algebra. A lens is both an object we can move and a map that acts on rays. An extensor built from geometry takes its meaning from that construction and transforms as its geometry does.
 
 # Motivation
 
-Inertia, stiffness and material responses are maps we construct, combine, transform and solve with. Extensors make them first-class, written with the same products as the geometry they relate.
-
-Extensors include matrices and tensors. A matrix is an extensor that takes a vector and returns a vector, and a tensor is an extensor that takes only vectors. Extensors take any kind of multivector, such as a plane, a line or a rotor, and can be built from any product of the algebra.
+Geometric relationships deserve to be first-class objects alongside the objects they relate. Inertia, stiffness and material responses are maps we construct, combine, transform and solve with. Extensors keep those relationships in the same algebra as their ingredients.
 
 # Companion documents
 
-* [`multiple_lenses.md`](multiple_lenses.md): the definition read three ways, as partial application, as objects and transformations in one algebra, and as multilinear maps.
+* [`multiple_lenses.md`](multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
 * [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
-* [`examples/README.md`](../examples/README.md): the complete index of examples.
+* [Complete index of 138 worked examples](../examples/README.md).
 
 # Examples
 
-The repository holds 138 worked examples, each with a notebook, indexed in [`examples/README.md`](../examples/README.md); the gallery below shows favourites. In the code, capitalized names stand for whole spaces of multivectors and lower case names for specific ones, so `v ^ V` is a vector wedged with every vector, a map from vectors to bivectors.
+In the selected examples below, lowercase names denote values and capitalized names denote spaces: `v ^ Vector` is a map from vectors to bivectors.
 
 ---
 
