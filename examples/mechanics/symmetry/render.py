@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Scalar, ga, mv, pga_mv
+from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Rotor, Scalar, ga, mv
 from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
@@ -25,7 +25,7 @@ surface_colour = np.array([0.36, 0.60, 0.80])
 surface_opacity = 0.45
 driving_arrow, flow_arrow = (4.9, 23.0, 14.8), (6.6, 26.0, 18.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
-site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "other": [0.78, 0.78, 0.80]}
+site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "corner": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
 # The view's elevation and azimuth, the margin around what it shows as a fraction of its larger side, and the
 # directions an ellipsoid is framed by.
@@ -65,7 +65,7 @@ fn sample(place: vec2<f32>) -> Sample {
     let colour = textureSampleLevel(colours, filtered, vec2<f32>(((power + 1) / 2 * (entries - 1) + 0.5) / entries, 0.5), 0.0).rgb;
     // The sphere's normal is the direction itself; the glint where it bisects the lamp and the viewer.
     let light = max(direction & lamp, 0.0);
-    let halfway = (lamp + (turn >> mv.z)) / ((lamp + (turn >> mv.z)) | (lamp + (turn >> mv.z))).square_root();
+    let halfway = (lamp + (turn >> mv.z)).normalized();
     let glint = pow(max(direction & halfway, 0.0), shininess);
     return colour * (ambient + (1 - ambient) * light) + gloss * glint;
 }
@@ -78,22 +78,19 @@ def along(directions: Direction) -> np.ndarray:
     return (stack((mv.x, mv.y, mv.z)) & directions[..., None]).to_array()
 
 
-def across(fields: Field) -> np.ndarray:
-    """The components of fields along x, y and z: their pairings with the directions x, y and z."""
-    return (fields[..., None] & stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))).to_array()
+def placed(directions: Direction) -> Point:
+    """The points the directions reach from the origin, carried into the scene as `solids.centred` carries forms:
+    read by the planes x, y and z here, and moved as far along x, y and z there."""
+    return solids.origin + (solids.axes.dual() * along(directions)).sum(axis=-1)
 
 
-def matrices(conductivities: Conductivity) -> np.ndarray:
-    """The conductivities' matrices `[..., 3, 3]`: column j the flow driven by the unit field along axis j."""
-    return np.swapaxes(along(conductivities[..., None](stack((mv.x, mv.y, mv.z)))), -1, -2)
-
-
-def unit_directions(count: int) -> np.ndarray:
-    """Directions spread evenly over the sphere, `[count, 3]`, on a golden spiral."""
-    height = 1 - 2 * (np.arange(count) + 0.5) / count
-    angle = np.pi * (3 - np.sqrt(5)) * np.arange(count)
-    ring = np.sqrt(1 - height**2)
-    return np.stack([ring * np.cos(angle), ring * np.sin(angle), height], axis=-1)
+def spiral(count: int) -> Rotor:
+    """Turns that carry x to `count` directions spread evenly over the sphere, on a golden spiral: up toward z to
+    heights evenly apart, then about z by the golden angle from one to the next."""
+    latitude = np.arcsin(1 - 2 * (np.arange(count) + 0.5) / count)
+    # The golden angle on from one direction to the next, as an angle within one turn.
+    longitude = np.pi * (3 - np.sqrt(5)) * np.arange(count) % (2 * np.pi)
+    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp()     # [count] Rotor
 
 
 def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
@@ -102,7 +99,7 @@ def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
     fields."""
     driving = conductivity.inverse()                                          # Field <- Direction
     quadric = solids.centred(driving | driving, stack((mv.x, mv.y, mv.z)).dual())
-    return quadric, pga_mv.point(along(conductivity(mv.vector(unit_directions(n_framing)))))
+    return quadric, placed(conductivity(spiral(n_framing) >> mv.x))
 
 
 def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[plt.Axes]]:
@@ -117,13 +114,13 @@ def figure(halves: list[np.ndarray], height: float) -> tuple[plt.Figure, list[pl
 def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direction) -> plt.Figure:
     """For the candidate and each group's average, the image of the unit ball of driving fields, a heat-flow
     ellipsoid, with one driving field, dark, and the heat flow it drives, orange."""
-    matrix = matrices(conductivities)                                         # [panels, 3, 3]
-    largest = np.sqrt(np.linalg.eigvalsh(matrix @ np.swapaxes(matrix, -1, -2)).max())
-    # The unit driving field is drawn at the largest gain, the scale the flows are drawn at.
-    driving_tip, flows = pga_mv.point(across(driving) * largest), pga_mv.point(along(fluxes))
+    # The unit driving field is drawn along its direction at the largest gain of any panel's conductivity, the scale
+    # the flows are drawn at.
+    largest = conductivities.svdvals().to_array().max()
+    driving_tip, flows = placed(driving.dual() * largest), placed(fluxes)
     ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
-    fig, axes = figure([view.half] * len(matrix), 3.6)
+    fig, axes = figure([view.half] * conductivities.shape[0], 3.6)
     # The panels' rooms alike, one view fitted to the first holds them all.
     view = fitted(view, axes[0])
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
@@ -137,41 +134,34 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     return fig
 
 
-def lattice(sites: Point, axial: Point, diagonal: Point) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The lattice's sites as balls, the centre dark, its axial neighbours orange, its diagonal ones blue, and
-    the bonds from the centre to them as rods."""
-    def among(points: Point) -> np.ndarray:
-        """Which of the sites are among the points, by their coordinates."""
-        return np.isclose(places(sites)[:, None], places(points)[None]).all(axis=-1).any(axis=1)
-    centre = np.linalg.norm(places(sites), axis=-1) < 1e-9
-    names = np.where(centre, "centre", np.where(among(axial), "axial", np.where(among(diagonal), "diagonal", "other")))
-    colours = np.array([site_colours[name] for name in names])
-    origin = sites[np.flatnonzero(centre)[:1]]
-    return [(solids.ball(sites, site_radius)[:, None], colours),
-            (solids.rods(origin.broadcast_to(axial.shape), axial, bond_radius), site_colours["axial"]),
-            (solids.rods(origin.broadcast_to(diagonal.shape), diagonal, bond_radius), site_colours["diagonal"])]
-
-
-def places(points: Point) -> np.ndarray:
-    """Points' coordinates, `[..., 3]`, to tell them apart."""
-    return np.stack([((plane & points) / (pga_mv.w & points)).to_array() for plane in (pga_mv.x, pga_mv.y, pga_mv.z)], axis=-1)
+def lattice(centre: Point, axial: Point, diagonal: Point, corners: Point) -> list[tuple[solids.Quadric, np.ndarray]]:
+    """The lattice's sites as balls, the centre dark, its axial neighbours orange, its diagonal ones blue, the
+    corners pale, and the bonds from the centre to its neighbours as rods."""
+    return [(solids.ball(centre, site_radius)[:, None], site_colours["centre"]),
+            (solids.ball(axial, site_radius)[:, None], site_colours["axial"]),
+            (solids.ball(diagonal, site_radius)[:, None], site_colours["diagonal"]),
+            (solids.ball(corners, site_radius)[:, None], site_colours["corner"]),
+            (solids.rods(centre.broadcast_to(axial.shape), axial, bond_radius), site_colours["axial"]),
+            (solids.rods(centre.broadcast_to(diagonal.shape), diagonal, bond_radius), site_colours["diagonal"])]
 
 
 def stiffness_mesh(stiffness: Direction) -> tuple[Point, np.ndarray]:
     """The stiffness along every direction as a radius, sampled on a latitude-longitude grid, as a mesh."""
-    vertices = along(stiffness)                                               # [latitudes, longitudes, 3]
-    rows, columns = vertices.shape[:2]
+    vertices = placed(stiffness)                                              # [latitudes, longitudes] Point
+    rows, columns = vertices.shape
     index = np.arange(rows * columns).reshape(rows, columns)
     corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
     faces = np.concatenate([np.stack([corner[0], corner[1], corner[2]], -1), np.stack([corner[0], corner[2], corner[3]], -1)])
-    return pga_mv.point(vertices.reshape(-1, 3)), faces
+    return vertices.reshape(-1), faces
 
 
-def draw_crystal(sites: Point, axial: Point, diagonal: Point, conductivity: Conductivity, stiffness: Direction) -> plt.Figure:
-    """The lattice with its bonds; the lattice's conduction, the image of the unit ball of fields, a sphere;
-    and its stiffness along every direction as a radius, a cube with rounded faces."""
-    parts = lattice(sites, axial, diagonal)
-    lattice_view = solids.view([sites], site_radius, elevation, azimuth, margin, 1)
+def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, conductivity: Conductivity,
+                 stiffness: Direction) -> plt.Figure:
+    """The lattice, its sites by their shells about the centre, with its bonds; the lattice's conduction, the image of
+    the unit ball of fields, a sphere; and its stiffness along every direction as a radius, a cube with rounded
+    faces."""
+    parts = lattice(centre, axial, diagonal, corners)
+    lattice_view = solids.view([centre, axial, diagonal, corners], site_radius, elevation, azimuth, margin, 1)
     ellipsoid, framed = image_of_sphere(conductivity)
     conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, 1)
     points, faces = stiffness_mesh(stiffness)
@@ -199,7 +189,7 @@ def draw_optical_activity(rotary: Scalar) -> plt.Figure:
     power along each, red for one sense and blue for the other, shaded by the lamp."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
     toward_lamp = turn >> (mv.x * 0.4 + mv.y * 0.7 + mv.z * 0.6)
-    directions = mv.antivector(unit_directions(n_framing))                    # [directions] Direction
+    directions = spiral(n_framing) >> mv.x.dual()                             # [directions] Direction
     limit = np.abs(rotary[:, None](directions, directions).to_array()).max()
     # The sphere about the origin, seen as the other views see it.
     view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), 1)
@@ -208,7 +198,7 @@ def draw_optical_activity(rotary: Scalar) -> plt.Figure:
     view = fitted(view, axes[0])
     for ax, response in zip(axes, rotary):
         image = sphere_shader(rotary.gatype)(view.shape, rotary=response, limit=limit, turn=turn, half_height=view.half[1],
-                                lamp=toward_lamp / (toward_lamp | toward_lamp).square_root(), background=background,
+                                lamp=toward_lamp.normalized(), background=background,
                                 ambient=solids.ambient, gloss=solids.gloss, shininess=solids.shininess, colours=colours)["image"]
         show(ax, np.clip(image, 0, 1), view)
     return fig

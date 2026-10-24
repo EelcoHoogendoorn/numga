@@ -17,10 +17,12 @@ from examples.surfaces.developability import core
 from examples.util.wgsl import Shader
 from examples.util.wgsl.library import samples_per_side
 
-# The surface's colour, the light's direction and the share of light that falls everywhere; the camera's
-# elevation and azimuth, its distance and half its view; the frames' size and background.
+# The surface's colour; the direction toward the light, up and off to one side, a sum of the directions along the
+# axes, and the share of light that falls everywhere; the camera's elevation and azimuth, its distance and half its
+# view; the frames' size and background.
 surface_colour = np.array([0.90, 0.89, 0.86])
-light_direction, ambient = core.mv.antivector([-0.4, -0.7, 0.6]), 0.25
+light_direction = core.mv.z.dual() * 0.6 - core.mv.x.dual() * 0.4 - core.mv.y.dual() * 0.7      # [] Point
+ambient = 0.25
 elevation, azimuth = np.radians(24.0), np.radians(54.0)
 distance, half_view = 8.0, 0.17
 frame_shape = (480, 480)

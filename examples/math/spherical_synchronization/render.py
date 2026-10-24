@@ -62,6 +62,12 @@ const fade_depth = 1.0 / 12;
 const far_circles = 0.18;
 const far_particles = 0.25;
 
+// The point of the sphere at a place across the view and a depth toward the viewer.
+fn on_sphere(across: vec2<f32>, depth: f32) -> Point {
+    return (camera >> mv.x.dual()) * across.x + (camera >> mv.y.dual()) * across.y + (camera >> mv.z.dual()) * depth
+           + time;
+}
+
 // How strongly a point at a depth toward the viewer shows, from a floor on the far side to one on the near.
 fn showing(depth: f32, floor: f32) -> f32 {
     return floor + (1 - floor) * clamp(depth / fade_depth + 0.5, 0.0, 1.0);
@@ -79,7 +85,7 @@ fn circles(beneath: vec3<f32>, across: vec2<f32>, depth: f32) -> vec3<f32> {
     let right = camera >> mv.x.dual();
     let up = camera >> mv.y.dual();
     let toward = camera >> mv.z.dual();
-    let point = right * across.x + up * across.y + toward * depth + time;
+    let point = on_sphere(across, depth);
     // Moving across the view, the point keeps to the sphere by moving along the view as well.
     let rightward = right - toward * (across.x / depth);
     let upward = up - toward * (across.y / depth);
@@ -116,8 +122,8 @@ fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
     let reach = length(across);
     let depth = sqrt(max(1 - reach * reach, 0.0));
-    // The sphere, softly lit from up and to the left, white beyond it, its outline drawn.
-    let shade = 0.92 + 0.07 * clamp(-0.25 * across.x + 0.35 * across.y + 0.9 * depth, 0.0, 1.0);
+    // The sphere, softly lit by the lamp, white beyond it, its outline drawn.
+    let shade = 0.92 + 0.07 * clamp(lamp & on_sphere(across, depth), 0.0, 1.0);
     var colour = select(white, shade * vec3<f32>(1.0, 1.005, 1.01), reach <= 1);
     colour = select(colour, outline_colour, abs(reach - 1) < outline_half_width);
     colour = dots(colour, across, false);
@@ -132,10 +138,13 @@ fn sample(place: vec2<f32>) -> Sample {
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), {})
+    return Shader(supersampled() + source, ga, dict(Point=Point, Cut=Cut, Rotor=Rotor), dict(lamp=lamp))
 
 
 camera = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()     # [] Rotor
+# The lamp, up and to the left of the viewer and in front, a cut through the centre: its pairing with a point of the
+# sphere's near side is how squarely the point faces it.
+lamp = camera >> (mv.y * 0.35 + mv.z * 0.9 - mv.x * 0.25)                    # [] Cut
 
 
 def coordinates(points: Point) -> np.ndarray:

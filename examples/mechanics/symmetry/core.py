@@ -66,12 +66,13 @@ def directions() -> Direction:
     return sphere_turns() >> mv.x.dual()                                             # [latitudes, longitudes] Direction
 
 
-def lattice_samples():
-    """PGA sites of a simple-cubic lattice, with the central site's two neighbour shells."""
+def lattice_samples() -> tuple[Point, Point, Point, Point]:
+    """PGA sites of a simple-cubic lattice, by their shells about the central site: the centre `[1]`, its axial
+    neighbours `[6]`, its face-diagonal ones `[12]`, and the corners `[8]`."""
     i, j, k = np.indices((3, 3, 3)) - 1
     sites = pga_mv.xyz + pga_mv.wzy * i + pga_mv.wxz * j + pga_mv.wyx * k
     shell = i * i + j * j + k * k
-    return sites.reshape(-1), sites[shell == 1], sites[shell == 2]
+    return sites[shell == 0], sites[shell == 1], sites[shell == 2], sites[shell == 3]
 
 
 # --- math -----------------------------------------------------------------------------

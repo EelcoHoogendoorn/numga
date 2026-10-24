@@ -682,9 +682,15 @@ _SCALAR_FUNCTIONS = {"square_root": "sqrt", "exp": "exp", "log": "log", "cos": "
 _ELEMENTWISE = {"abs", "sqrt", "exp", "exp2", "log", "log2", "sin", "cos", "tan", "asin", "acos", "atan",
                 "atan2", "sinh", "cosh", "tanh", "pow", "min", "max", "clamp", "mix", "smoothstep", "step",
                 "floor", "ceil", "fract", "round", "trunc", "sign", "normalize", "select", "inverseSqrt",
-                "fma", "saturate", "cross", "reflect", "degrees", "radians",
+                "fma", "saturate", "degrees", "radians",
                 "fwidth", "dpdx", "dpdy", "fwidthFine", "dpdxFine", "dpdyFine", "fwidthCoarse", "dpdxCoarse", "dpdyCoarse"}
 _REDUCING = {"length", "distance", "dot", "determinant"}
+# WGSL builtins the dialect leaves out, as the algebra has the operation, and what to write instead.
+_REJECTED = {"cross": "a join or a meet, `a & b` or `a ^ b`", "reflect": "a sandwich, `mirror >> x`"}
+# WGSL builtins that measure three or four numbers by their sum of squares, where they are a value of the algebra held
+# as numbers, and what to write on the value instead.
+_MEASURING = {"normalize": "`x.normalized()`", "length": "`x.norm()`", "distance": "`(a - b).norm()`",
+              "dot": "a pairing, `plane & point`, or the metric, `a.dot(b)`"}
 _OPERATORS = {"+": operator.add, "-": operator.sub, "*": operator.mul,          # dict[str, Callable]
                                    "&": operator.and_, "|": operator.or_, "^": operator.xor,
                                    ">>": operator.rshift, "<<": operator.lshift}
@@ -1218,6 +1224,12 @@ class Compiler:
         return Value(f"{name}({self.text(base)})", kind)
 
     def builtin(self, node: Call, name: str, arguments: list[Value]) -> Value:
+        if name in _REJECTED:
+            raise self.error(node.line, f"{name} is not in the dialect: the algebra has it, as {_REJECTED[name]}")
+        measured = [argument.type for argument in arguments if str(argument.type).startswith(("vec3", "vec4"))]
+        if name in _MEASURING and measured:
+            raise self.error(node.line, f"{name} of a {measured[0]} measures numbers that a value of the algebra would "
+                                        f"hold: hold them as one, and write {_MEASURING[name]}")
         if name == "select" and isinstance(arguments[0].type, GAType) and arguments[0].type != self.scalar:
             # A choice between two values of the algebra, of the first one's type, by a condition.
             kind = arguments[0].type

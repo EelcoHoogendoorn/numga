@@ -15,7 +15,7 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from numga import stack
-from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, points
+from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv
 from examples.util.wgsl import meshes, show, solids, strokes
 
 sm = solids.mv
@@ -82,10 +82,9 @@ def dashes(curve: np.ndarray) -> np.ndarray:
 
 def form(conic: Polarity) -> solids.Quadric:
     """The polarity's form, `P & conic(P)`, as a quadric of the traced scene: the cone through the centre where it
-    vanishes, and on the unit sphere the form itself."""
-    # The form's matrix: each basis point's polar plane, read on the basis planes.
-    matrix = normals(conic(points(np.eye(3))))                                  # [3, 3]
-    return (solids.axes[:, None] * (solids.axes & solids.Point)[None, :] * matrix).sum(axis=(-1, -2))
+    vanishes, and on the unit sphere the form itself: the sphere's points on its axes, the poles of its planes x, y
+    and z, taken along the scene's x, y and z."""
+    return solids.embedded(conic(Point) & Point, stack((mv.x, mv.y, mv.z)).dual())
 
 
 def through_centre(directions: solids.Point) -> solids.Plane:

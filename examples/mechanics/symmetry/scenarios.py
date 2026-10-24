@@ -44,15 +44,15 @@ def heat_conduction():
 
 def crystal_lattice():
     """Axial and face-diagonal bonds averaged over the cube rotations, probed on the unit sphere: the
-    lattice sites and the two neighbour shells, the stiffness surface, and the conductivity and
+    lattice sites by their shells about the centre, the stiffness surface, and the conductivity and
     elasticity."""
     seeds = mv.vector(SEEDS).dual().normalized()                               # [families] Direction
-    sites, axial, diagonal = core.lattice_samples()
+    centre, axial, diagonal, corners = core.lattice_samples()
     sphere = core.directions()                                                 # [latitudes, longitudes] Direction
     conductivity, elasticity = core.lattice_responses(seeds, core.cube_rotations())
     # A unit direction in every input probes imposed uniaxial strain; the stiffness becomes a radius.
     stiffness_surface = sphere * elasticity(sphere, sphere, sphere, sphere)    # [latitudes, longitudes] Direction
-    return sites, axial, diagonal, stiffness_surface, conductivity, elasticity
+    return centre, axial, diagonal, corners, stiffness_surface, conductivity, elasticity
 
 
 def optical_activity():
@@ -84,8 +84,8 @@ def main() -> None:
 
     responses, surfaces, driving, fluxes = heat_conduction()
     save_figure(render.draw_conduction(responses, driving, fluxes), "symmetry_conductivity")
-    sites, axial, diagonal, stiffness, conductivity, elasticity = crystal_lattice()
-    save_figure(render.draw_crystal(sites, axial, diagonal, conductivity, stiffness), "symmetry_crystal_lattice")
+    centre, axial, diagonal, corners, stiffness, conductivity, elasticity = crystal_lattice()
+    save_figure(render.draw_crystal(centre, axial, diagonal, corners, conductivity, stiffness), "symmetry_crystal_lattice")
     rotary, rotary_surfaces, sphere = optical_activity()
     save_figure(render.draw_optical_activity(rotary), "symmetry_optical_activity")
 

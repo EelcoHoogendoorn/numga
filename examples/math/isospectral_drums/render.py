@@ -9,7 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection, PolyCollection
 from matplotlib.colors import LinearSegmentedColormap
-from PIL import Image, ImageDraw
 
 from numga import stack
 from examples.math.isospectral_drums.core import Point, Scalar, ga, mv
@@ -20,7 +19,9 @@ PIXELS = 380
 COLOURS = LinearSegmentedColormap.from_list(
     "membrane", ["#277daf", "#f1efe9", "#e79a47"],
 )
-OUTLINE = (39, 49, 58)
+OUTLINE = np.array([39, 49, 58]) / 255
+# The width of the tiles' outlines in pixels.
+OUTLINE_WIDTH = 2.0
 TILE_COLOURS = np.array([
     [0.85, 0.40, 0.25], [0.94, 0.66, 0.27], [0.84, 0.78, 0.48],
     [0.35, 0.66, 0.54], [0.32, 0.65, 0.76], [0.39, 0.48, 0.72],
@@ -73,8 +74,9 @@ membrane_source = """
 var<storage, read> points: array<Point>;
 var<storage, read> faces: array<vec3<u32>>;
 var<storage, read> values: array<f32>;
-// Per face: one where the edge opposite each corner lies on the drum's perimeter.
-var<storage, read> rims: array<vec3<f32>>;
+// The tiles, and the tile each face lies in.
+var<storage, read> tiles: array<Tile>;
+var<storage, read> owners: array<u32>;
 // The drum's middle, and how far across the image a unit length reaches.
 var<uniform> centre: Point;
 var<uniform> scale: f32;
@@ -82,25 +84,39 @@ var<uniform> exposure: f32;
 var colours: texture_2d<f32>;
 var filtered: sampler;
 
+// A tile's corners, and how far into it, in pixels, its outline reaches from the edge opposite each.
+struct Tile {
+    a: Point,
+    b: Point,
+    c: Point,
+    rim: vec3<f32>,
+}
+
 // Interpolated at every sample of a pixel, so the colour and the inked lines are supersampled with the edges.
 struct Corner {
     @builtin(position) position: vec4<f32>,
     @location(0) @interpolate(perspective, sample) value: f32,
-    @location(1) @interpolate(perspective, sample) corner: vec3<f32>,
+    @location(1) @interpolate(perspective, sample) shares: vec3<f32>,
     @location(2) @interpolate(flat) rim: vec3<f32>,
 }
 
 @vertex
 fn place(@builtin(vertex_index) index: u32) -> Corner {
     let face = faces[index / 3];
-    let which = index % 3;
-    let offset = points[face[which]] - centre;
-    let corner = vec3<f32>(f32(which == 0), f32(which == 1), f32(which == 2));
-    return Corner(vec4<f32>((mv.x & offset) * scale, (mv.y & offset) * scale, 0.5, 1.0), values[face[which]], corner, rims[index / 3]);
+    let tile = tiles[owners[index / 3]];
+    let point = points[face[index % 3]];
+    // The point's share of each of its tile's corners: the area it spans with the other two, over the tile's. Each
+    // is nothing on the edge opposite its corner and grows evenly away from it.
+    let area = (tile.b - tile.a) & (tile.c - tile.a);
+    let shares = vec3<f32>((tile.b - point) & (tile.c - point), (tile.c - point) & (tile.a - point),
+                           (tile.a - point) & (tile.b - point)) / area;
+    let offset = point - centre;
+    return Corner(vec4<f32>((mv.x & offset) * scale, (mv.y & offset) * scale, 0.5, 1.0), values[face[index % 3]],
+                  shares, tile.rim);
 }
 
-// The displacement through the colour table, inked where it crosses zero and along the perimeter: a line a
-// pixel or so wide wherever a quantity lies within that many of its own changes across a pixel of zero.
+// The displacement through the colour table, inked where it crosses zero, a line wherever it lies within so many of
+// its own changes across a pixel of zero, and outlined along the tiles' edges.
 @fragment
 fn shade(corner: Corner) -> @location(0) vec4<f32> {
     let entries = f32(textureDimensions(colours).x);
@@ -108,46 +124,45 @@ fn shade(corner: Corner) -> @location(0) vec4<f32> {
     let colour = textureSampleLevel(colours, filtered, vec2<f32>(place / entries, 0.5), 0.0).rgb;
     let change = fwidth(corner.value);
     let nodal = clamp(1 - abs(corner.value) / (0.65 * change), 0.0, 1.0) * select(0.0, 1.0, change > 1e-12);
-    let edges = clamp(1 - corner.corner / (1.3 * fwidth(corner.corner)), vec3<f32>(0.0), vec3<f32>(1.0)) * corner.rim;
-    let ink = max(0.4 * nodal, 0.78 * max(edges.x, max(edges.y, edges.z)));
-    return vec4<f32>(colour * (1 - ink), 1.0);
+    // Each share over how fast it grows from pixel to pixel is how many pixels the place lies from the edge where it
+    // is nothing; the outline fades out over the pixel about its reach.
+    let growth = sqrt(dpdx(corner.shares) * dpdx(corner.shares) + dpdy(corner.shares) * dpdy(corner.shares));
+    let edges = clamp(corner.rim + 0.5 - corner.shares / growth, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(mix(colour * (1 - 0.4 * nodal), outline, max(edges.x, max(edges.y, edges.z))), 1.0);
 }
 """
 
 
 @cache
 def membrane_shader() -> Shader:
-    return Shader(membrane_source, ga, dict(Point=Point), {}, targets=("rgba32float",))
+    return Shader(membrane_source, ga, dict(Point=Point), dict(outline=OUTLINE), targets=("rgba32float",))
 
 
 class Membrane:
-    """A flat triangular mesh drawn on the GPU at a fixed place and scale, `pixels` across."""
+    """A flat triangular mesh of tiles drawn on the GPU at a fixed place and scale, `pixels` across, with the tiles'
+    outlines; the mesh's triangles come tile after tile, as many to each."""
 
-    def __init__(self, vertices: Point, points: np.ndarray, triangles: np.ndarray, scale: float):
-        self.vertices, self.triangles = vertices.batch(), triangles
-        self.centre_point = (points.min(axis=0) + points.max(axis=0)) / 2
-        self.centre = mv.x.dual() * self.centre_point[0] + mv.y.dual() * self.centre_point[1]
-        self.scale = scale
-        self.rims = boundary_corners(points, triangles).astype(float)
+    def __init__(self, vertices: Point, triangles: np.ndarray, corners: Point, scale: float):
+        self.vertices, self.triangles, self.corners, self.scale = vertices.batch(), triangles, corners, scale
+        places = coordinates(vertices)
+        # The middle of the drum's extent, a point as the vertices are: the plane's points, offsets from the origin,
+        # as far along x and y as they read on the lines x and y.
+        self.centre = (stack((mv.x, mv.y)).dual() * ((places.min(axis=0) + places.max(axis=0)) / 2)).sum()
+        # The outline is whole on the drum's perimeter, and half on each side of a seam between two tiles.
+        n_tiles = corners.shape[0]
+        perimeter = boundary_corners(coordinates(corners).reshape(-1, 2), np.arange(3 * n_tiles).reshape(-1, 3))
+        self.rims = np.where(perimeter, OUTLINE_WIDTH, OUTLINE_WIDTH / 2)               # [tiles, 3]
+        self.owners = np.repeat(np.arange(n_tiles), len(triangles) // n_tiles).astype(np.uint32)
 
     def draw(self, field: np.ndarray, exposure: float) -> np.ndarray:
-        """Signed displacement with dark zero curves, on white."""
+        """Signed displacement with dark zero curves and the tiles' outlines, on white."""
+        tiles = dict(a=self.corners[:, 0], b=self.corners[:, 1], c=self.corners[:, 2], rim=self.rims)
         drawn, = membrane_shader().draw((PIXELS, PIXELS), 3 * len(self.triangles), points=self.vertices,
-                                       faces=self.triangles, values=field, rims=self.rims, centre=self.centre,
-                                       scale=2 * self.scale / PIXELS, exposure=exposure,
+                                       faces=self.triangles, values=field, tiles=tiles, owners=self.owners,
+                                       centre=self.centre, scale=2 * self.scale / PIXELS, exposure=exposure,
                                        colours=COLOURS(np.linspace(0, 1, 256))[None, :, :3])
         shown = drawn[..., :3] + (1 - drawn[..., 3:])
         return np.rint(255 * np.clip(shown, 0, 1)).astype(np.uint8)
-
-    def outline(self, picture: np.ndarray, corners: np.ndarray) -> np.ndarray:
-        """The picture with the outlines of triangles `[tiles, 3, 2]` drawn over it."""
-        screen = (corners - self.centre_point) * self.scale + PIXELS / 2
-        screen[..., 1] = PIXELS - screen[..., 1]
-        image = Image.fromarray(picture)
-        draw = ImageDraw.Draw(image)
-        for triangle in screen:
-            draw.polygon([tuple(point) for point in triangle], outline=OUTLINE, width=2)
-        return np.asarray(image)
 
 
 def frames(
@@ -156,13 +171,11 @@ def frames(
 ) -> Iterator[np.ndarray]:
     """Two flat displacement maps sharing a fixed scale and colour range, each with the outlines of its
     seven triangles `tiles [2, tiles, 3]`."""
-    points = tuple(coordinates(value) for value in vertices)
-    corners = coordinates(tiles)                                             # [2, tiles, 3, 2]
-    scale = 0.91 * PIXELS / max(np.ptp(value, axis=0).max() for value in points)
-    membranes = tuple(Membrane(value, places, faces, scale) for value, places, faces in zip(vertices, points, triangles))
+    scale = 0.91 * PIXELS / max(np.ptp(coordinates(value), axis=0).max() for value in vertices)
+    membranes = tuple(Membrane(value, faces, drum, scale) for value, faces, drum in zip(vertices, triangles, tiles))
     for pair in fields:
-        yield np.concatenate([membrane.outline(membrane.draw(amplitudes(field), exposure), drum)
-                              for membrane, field, drum in zip(membranes, pair, corners)], axis=1)
+        yield np.concatenate([membrane.draw(amplitudes(field), exposure) for membrane, field in zip(membranes, pair)],
+                             axis=1)
 
 
 def draw_pieces(vertices: Point, triangles: np.ndarray, pieces: Scalar, exposure: float) -> plt.Figure:

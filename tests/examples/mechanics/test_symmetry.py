@@ -27,10 +27,10 @@ def test_the_cube_makes_conduction_isotropic_and_removes_rotary_power_with_the_i
 
 def test_figures_draw():
     responses, _, driving, fluxes = scenarios.heat_conduction()
-    sites, axial, diagonal, stiffness, conductivity, _ = scenarios.crystal_lattice()
+    centre, axial, diagonal, corners, stiffness, conductivity, _ = scenarios.crystal_lattice()
     rotary, _, _ = scenarios.optical_activity()
     figures = [render.draw_conduction(responses, driving, fluxes),
-               render.draw_crystal(sites, axial, diagonal, conductivity, stiffness),
+               render.draw_crystal(centre, axial, diagonal, corners, conductivity, stiffness),
                render.draw_optical_activity(rotary)]
     assert all(isinstance(figure, plt.Figure) for figure in figures)
     for figure in figures:

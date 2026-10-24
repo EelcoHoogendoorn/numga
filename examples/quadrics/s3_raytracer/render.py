@@ -14,20 +14,18 @@ from functools import cache
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ScreenPoint, ga, mv, origin
+from numga import stack
+from examples.quadrics.s3_raytracer.core import Motor, Plane, Point, Quadric, ga, mv, origin
 from examples.util.wgsl import Shader, image_figure, supersampled
 
 background = 0.02
 
 source = """
-// The bodies' quadrics and colours; the eye, its view straight ahead, right and up, each a point a quarter turn
-// from the eye; how far up the image's top edge looks, and the light.
+// The bodies' quadrics and colours; the motor carrying the eye's frame out from the origin's, the eye looking along
+// its own x, right along y and up along z; how far up the image's top edge looks, and the light.
 var<storage, read> quadrics: array<Quadric>;
 var<storage, read> colours: array<vec3<f32>>;
-var<uniform> eye: Point;
-var<uniform> ahead: Point;
-var<uniform> right: Point;
-var<uniform> up: Point;
+var<uniform> eye_frame: Motor;
 var<uniform> half_height: f32;
 var<uniform> light: Point;
 
@@ -37,14 +35,12 @@ const ambient = 0.15;
 // The glint's share and sharpness.
 const gloss = 0.35;
 const shininess = 40.0;
-const background = BACKGROUND;
 // How far along the arc to the light a shadow test starts.
 const clearance = 1e-4;
 
 // A point's direction along the sphere at a place on it, unit: its part square to the place.
 fn along(place: Point, toward: Point) -> Point {
-    let tangent = toward - place * place.dot(toward);
-    return tangent / sqrt(tangent.dot(tangent));
+    return (toward - place * place.dot(toward)).normalized();
 }
 
 // Whether the short arc from a hit to the light enters any body, without roots: it does when either end lies
@@ -65,7 +61,10 @@ fn shadowed(hit: Point) -> bool {
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place) * half_height;
-    let direction = ahead + right * across.x + up * across.y;
+    // The eye, and the direction of the pixel's ray from it: a point a quarter turn away, straight ahead, and as far
+    // right and up as the pixel lies across the image.
+    let eye = eye_frame >> origin;
+    let direction = eye_frame >> (frame * vec3<f32>(1.0, across.x, across.y)).sum();
     var depth = -1e30;
     var body = 0u;
     for (var index = 0u; index < arrayLength(&quadrics); index++) {
@@ -83,14 +82,13 @@ fn sample(place: vec2<f32>) -> Sample {
     if (depth <= -1e30) {
         return vec3<f32>(background);
     }
-    let reached = eye * depth + direction;
-    let hit = reached / sqrt(-(reached | reached));
+    let hit = (eye * depth + direction).normalized();
     // The great circle out of the light reaches the hit along an arc; the surface is lit where that arc
     // arrives from outside, which the pairing of its polar plane with the light decides, with the falloff
     // of a point source on the sphere.
     let polar = quadrics[body](hit);
-    let arc = acos(clamp((hit | light) / (light | light), -1.0, 1.0));
-    let cosine = (polar & light) / ((polar | polar).square_root() * sin(arc));
+    let arc = acos(clamp(hit.dot(light) / light.dot(light), -1.0, 1.0));
+    let cosine = (polar & light) / (polar.norm() * sin(arc));
     let lit = cosine < 0 && !shadowed(hit);
     // Rolled off softly where the light is strongest, rather than clipped, so the brightest faces keep their form.
     let lambert = select(0.0, tanh(-cosine / (sin(arc) * sin(arc))), lit);
@@ -103,23 +101,24 @@ fn sample(place: vec2<f32>) -> Sample {
     let glint = select(0.0, pow(max(facing.dot(halfway), 0.0), shininess), lit);
     return colours[body] * (ambient + (1 - ambient) * lambert) + gloss * glint;
 }
-""".replace("BACKGROUND", repr(background))
+"""
 
 
 # --- plumbing -------------------------------------------------------------------------
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric), {})
+    # The points a quarter turn from the origin along x, y and z, ahead, right and up from the origin's own view.
+    frame = stack((mv.x, mv.y, mv.z)).dual()                                   # [3] Point
+    return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric, Motor=Motor),
+                  dict(origin=origin, frame=frame, background=background))
 
 
 def picture(eye_frame: Motor, surfaces: Quadric, colors: np.ndarray, light: Point, fov: float,
             shape: tuple[int, int]) -> np.ndarray:
     """One RGB image, `[rows, columns, 3]` bytes, through a pinhole of the given field of view looking along the
     eye frame's x."""
-    ahead, right, up = eye_frame >> mv(ScreenPoint, np.eye(3))                 # [3] Point
-    traced = shader()(shape, quadrics=surfaces, colours=colors, eye=eye_frame >> origin, ahead=ahead,
-                                 right=right, up=up, half_height=np.tan(fov / 2) * shape[0] / shape[1],
-                                 light=light)["image"]
+    traced = shader()(shape, quadrics=surfaces, colours=colors, eye_frame=eye_frame,
+                      half_height=np.tan(fov / 2) * shape[0] / shape[1], light=light)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)
 
 

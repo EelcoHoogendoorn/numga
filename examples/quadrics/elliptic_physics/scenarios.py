@@ -243,7 +243,7 @@ def main() -> None:
     def on_s2(scene, name: str, frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         """Simulate a scene on S², save its hemisphere animation."""
         trajectory, colors = scene(frames)
-        save_animation(render.hemisphere_frames(trajectory.surfaces, colors), name, S2_DURATION_MS)
+        save_animation(render.hemisphere_frames(trajectory.surfaces, colors, render.PAINTED), name, S2_DURATION_MS)
         return trajectory, colors
 
     def on_s3(scene, name: str, frames: int) -> tuple:

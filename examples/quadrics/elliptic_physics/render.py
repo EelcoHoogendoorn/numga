@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from numga.algebras import Spherical3D
 from examples import instantiate
 from examples.quadrics.s3_raytracer import core as raytracer
@@ -19,6 +20,10 @@ S2 = instantiate("examples.quadrics.elliptic_physics.core", Spherical3D)
 S3 = instantiate("examples.quadrics.elliptic_physics.core", raytracer.ga)
 
 BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
+# Where the disk's rim begins: the squared distance from its centre, in its radii, past which a pixel is rim.
+RIM_START = 0.985
+# The planes x, y and z of S²'s space: a point of S² is the dual of their sum weighted by its unit coordinates.
+axes = stack((S2.mv.x, S2.mv.y, S2.mv.z))                                     # [3] Plane
 # The colour of the pixels inside a body painted on the CPU, the pixels across a painting, on the CPU or the GPU, and
 # the samples along each side of a pixel on the CPU.
 INSIDE = "#38bdf8"
@@ -33,13 +38,14 @@ def hemisphere(size: int):
     r2 = u**2 + v**2
     inside = r2 <= 1.0
     coordinates = np.stack([u, v, np.sqrt(np.clip(1.0 - r2, 0.0, None))], axis=-1)[inside]
-    return coordinates, inside, r2[inside] > 0.985
+    return coordinates, inside, r2[inside] > RIM_START
 
 
-def hemisphere_points() -> np.ndarray:
-    """(x, y, z) of the front hemisphere under the samples of `draw_inside`'s painting, inside its disk."""
+def hemisphere_points() -> S2.Point:
+    """The points of S² on the front hemisphere under the samples of `draw_inside`'s painting, inside its disk: each
+    the dual of its unit vector, as the shader builds it."""
     coordinates, _, _ = hemisphere(PAINTED * SUPERSAMPLE)
-    return coordinates
+    return (axes * coordinates).sum(axis=-1).dual()                            # [pixels] Point
 
 
 def paint(coverage: np.ndarray, colors: np.ndarray, inside: np.ndarray, rim: np.ndarray, supersample: int) -> np.ndarray:
@@ -84,14 +90,8 @@ def hues(fractions: np.ndarray) -> np.ndarray:
 source = """
 var<storage, read> quadrics: array<Quadric>;
 var<storage, read> colours: array<vec3<f32>>;
-var<uniform> disk: vec3<f32>;
-var<uniform> rim: vec3<f32>;
-var<uniform> background: vec3<f32>;
 
 alias Sample = vec3<f32>;
-
-// The share of the disk's radius inside its rim.
-const rim_start = 0.985;
 
 fn sample(place: vec2<f32>) -> Sample {
     let across = screen(place);
@@ -102,8 +102,8 @@ fn sample(place: vec2<f32>) -> Sample {
     if (squared > rim_start) {
         return rim;
     }
-    // The point of S² under the sample, on the front hemisphere.
-    let point = (mv.x * across.x + mv.y * across.y + mv.z * sqrt(1 - squared)).dual();
+    // The point of S² under the sample, on the front hemisphere: the dual of its unit vector.
+    let point = (axes * vec3<f32>(across, sqrt(1 - squared))).sum().dual();
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
         if ((quadrics[body](point) & point) < 0) {
@@ -117,22 +117,25 @@ fn sample(place: vec2<f32>) -> Sample {
 
 @cache
 def shader() -> Shader:
-    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric), {})
+    return Shader(supersampled() + source, S2.ga, dict(Point=S2.Point, Plane=S2.Plane, Quadric=S2.Quadric),
+                  dict(axes=axes, rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
 
 
-def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray, resolution: int = PAINTED) -> np.ndarray:
-    """The bodies' world forms painted on the GPU, `resolution` pixels across: a sample of the front hemisphere is a
-    point of S², and it belongs to the last body whose primal form is negative there, as `paint` paints on the CPU.
-    The spherical quadric is a cone through the origin, so the front hemisphere already shows both halves."""
-    image = shader()((resolution, resolution), quadrics=bodies, colours=colors, disk=to_rgb(DISK), rim=to_rgb(RIM),
-                     background=to_rgb(BACKGROUND))["image"]
-    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
-
-
-def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int = PAINTED) -> Iterator[np.ndarray]:
-    """One frame per row of world forms, as `hemisphere_image` paints it."""
+def hemisphere_frames(surfaces: S2.Quadric, colors: np.ndarray, resolution: int) -> Iterator[np.ndarray]:
+    """One frame per row of world forms, painted on the GPU, `resolution` pixels across: a sample of the front
+    hemisphere is a point of S², and it belongs to the last body whose primal form is negative there, as `paint`
+    paints on the CPU. The spherical quadric is a cone through the origin, so the front hemisphere already shows both
+    halves."""
+    painter = shader()
     for bodies in surfaces:
-        yield hemisphere_image(bodies, colors, resolution)
+        image = painter((resolution, resolution), quadrics=bodies, colours=colors)["image"]
+        yield np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+
+
+def hemisphere_image(bodies: S2.Quadric, colors: np.ndarray) -> np.ndarray:
+    """The bodies' world forms painted as `hemisphere_frames` paints them, as many pixels across as the CPU's
+    painting."""
+    return next(hemisphere_frames(bodies[None], colors, PAINTED))
 
 
 def draw_tumbling(trajectory: S2.Trajectory, dt: float) -> plt.Figure:
