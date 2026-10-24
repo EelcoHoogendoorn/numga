@@ -454,6 +454,18 @@ def ellipsoid(semi_axes: np.ndarray) -> Quadric:
     return (axes * (axes & Point) / semi_axes**2).sum(axis=-1) - mv.w * (mv.w & Point)
 
 
+def lift_vga3d_dual_quadric_to_pga3d(shape: Extensor, frame: Extensor) -> Quadric:
+    """The solids about the origin whose dual quadrics are maps from planes to points in VGA3D, `shape`, the planes of
+    `frame` `[3]` there along x, y and z here: each frame plane's offset under the shape paired with each frame plane,
+    rebuilt as a sum of dyads of the directions along x, y and z, less the origin's own dyad, and inverted into the
+    quadric that pairs points to at most zero inside."""
+    readings = (frame[:, None] & shape[..., None](frame)[..., None, :]).to_array()   # [..., 3, 3]
+    directions = axes.dual()                                                         # [3] Point
+    dual_quadric = ((directions[:, None] * readings * (Plane & directions)[None, :]).sum(axis=(-1, -2))
+                    - origin * (Plane & origin))                                     # [...] Point <- Plane
+    return dual_quadric.inverse()                                                    # [...] Quadric
+
+
 def embedded(form: Extensor, frame: Extensor) -> Quadric:
     """The quadric cones through the origin that pair each point of unit weight with itself to what forms on pairs of
     offsets in another algebra of space give its offset from the origin, `form(offset, offset)`, the offsets of

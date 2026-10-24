@@ -22,8 +22,6 @@ from examples.fluids.jeffery import core
 from examples.util.wgsl import labels, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
-# The directions along the flow and along the gradient, and the normal of the vortex plane.
-x, y, z = core.axes.dual()
 # The colours of the starts, of the bodies, of the flow and of the frame's names. The view as (elevation, azimuth) in
 # degrees: raised from the normal of the vortex plane towards the gradient, then turned towards the flow. How far the
 # marks on the long axis reach past its tips, as a share of the axis; the margin around the farthest reach, as a share
@@ -99,10 +97,9 @@ def draw_orbits(trails: core.Point) -> plt.Figure:
 def bodies(stretches: core.Stretch, orientations: core.Rotor) -> solids.Quadric:
     """Each body as traced solids about the origin, `[..., octants, 4]`: its ellipsoid, the offsets its inverse shape
     takes into the unit ball, cut by its own planes into eight octants."""
-    # The point quadric, the inverse of the dual quadric, about the origin of the scene's axes.
-    quadric = core.placed(stretches, orientations).inverse()                  # [...] Plane <- Point
-    scene_axes = stack((z, x, y))                                             # [3] Point
-    ellipsoids = solids.centred(quadric(core.Point) & core.Point, scene_axes)   # [...] Quadric
+    # The body's shape, its dual quadric, lifted about the origin of the scene's axes.
+    scene_planes = stack((core.mv.z, core.mv.x, core.mv.y))                   # [3] Plane
+    ellipsoids = solids.lift_vga3d_dual_quadric_to_pga3d(core.placed(stretches, orientations), scene_planes)   # [...] Quadric
     # Each octant on the side of each of the body's own planes its signs pick: its normals are the body's axes.
     normals = -solids.mv.direction(coordinates(orientations[..., None] >> core.axes.dual())).dual()   # [..., 3] Plane
     sides = solids.half_space(normals[..., None, :] * -OCTANTS)               # [..., octants, 3] Quadric

@@ -79,7 +79,7 @@ def along(directions: Direction) -> np.ndarray:
 
 
 def placed(directions: Direction) -> Point:
-    """The points the directions reach from the origin, carried into the scene as `solids.centred` carries forms:
+    """The points the directions reach from the origin, carried into the scene as `solids.lift_vga3d_dual_quadric_to_pga3d` carries shapes:
     read by the planes x, y and z here, and moved as far along x, y and z there."""
     return solids.origin + (solids.axes.dual() * along(directions)).sum(axis=-1)
 
@@ -97,8 +97,9 @@ def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
     """The solid ellipsoid a conductivity makes of the unit ball of driving fields, the flows whose driving field,
     `conductivity.inverse()`, is at most of unit length, and points on its surface to frame it by: the flows of unit
     fields."""
-    driving = conductivity.inverse()                                          # Field <- Direction
-    quadric = solids.centred(driving | driving, stack((mv.x, mv.y, mv.z)).dual())
+    # The unit ball's dual quadric, each field to the flow across it, carried by the conductivity.
+    image = conductivity(Direction.dual()(conductivity.adjugate()))           # Direction <- Field
+    quadric = solids.lift_vga3d_dual_quadric_to_pga3d(image, stack((mv.x, mv.y, mv.z)))
     return quadric, placed(conductivity(spiral(n_framing) >> mv.x))
 
 
