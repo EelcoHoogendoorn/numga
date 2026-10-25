@@ -168,15 +168,15 @@ points = mv.point([[1.0, 0.0, 0.0], [0.0, 1.0, 0.5], [-0.5, 0.0, 1.0]])  # [poin
 masses = np.array([1.0, 1.5, 0.5])
 inertia = (points & points.commutator(Line) * masses).sum()    # Antibivector- <- Bivector+
 # Turning about z, and a little about x.
-spin = (mv.x ^ mv.y) + 0.3 * (mv.y ^ mv.z)                    # Bivector+
-momentum = inertia(spin)                                     # Antibivector-
+rate = (mv.x ^ mv.y) + 0.3 * (mv.y ^ mv.z)                    # Bivector+
+momentum = inertia(rate)                                     # Antibivector-
 
 # 1.494.
-(momentum & spin) / 2                                        # Scalar+
+(momentum & rate) / 2                                        # Scalar+
 # 1.494: the same energy.
-((mirror >> momentum) & (mirror >> spin)) / 2                 # Scalar+
+((mirror >> momentum) & (mirror >> rate)) / 2                 # Scalar+
 # -1.494: negative energy.
-(sandwich(momentum) & sandwich(spin)) / 2                     # Scalar+
+(sandwich(momentum) & sandwich(rate)) / 2                     # Scalar+
 ```
 
 The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipynb) example animates the body, and the [mechanical work](../examples/orientation/mechanical_work/mechanical_work.ipynb) example does the same for the power a push delivers to a crank.
@@ -186,7 +186,7 @@ The [energy in a mirror](../examples/orientation/mirror_energy/mirror_energy.ipy
 Two examples illustrate what orientation rules out. The rate of turning and momentum above have different orientations, so they cannot be added:
 
 ```python
-spin + momentum          # GATypeError: cannot combine extrinsic in bivector and intrinsic bivector: their orientations differ
+rate + momentum          # GATypeError: cannot combine extrinsic in bivector and intrinsic bivector: their orientations differ
 ```
 
 The exponential of an intrinsic element would require such a sum: its even powers are extrinsic and its odd powers intrinsic. It is therefore ruled out by the same addition rule:

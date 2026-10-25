@@ -123,8 +123,8 @@ Inertia = ga.gatype((Antibivector, Bivector))                   # Antibivector- 
 
 points: Point = mv.point([[1, 0, 0], [0, 1, 0], [0, 0, 1]])    # [points] Antivector-
 inertia: Inertia = (points & points.commutator(Bivector)).sum(axis=0)  # Antibivector- <- Bivector+
-spin: Bivector = mv.xy                                       # Bivector+
-momentum: Antibivector = inertia(spin)                        # Antibivector-
+rate: Bivector = mv.xy                                       # Bivector+
+momentum: Antibivector = inertia(rate)                        # Antibivector-
 ```
 
 | Property | Meaning |
@@ -152,7 +152,7 @@ Pairing two inputs leaves the other axes unchanged. The inertia above is a corre
 EnergyForm = ga.gatype((Scalar, Bivector, Bivector))           # Scalar+ <- (Bivector+, Bivector+)
 
 kinetic: EnergyForm = Bivector & inertia(Bivector)            # Scalar+ <- (Bivector+, Bivector+)
-energy: Scalar = kinetic(spin, spin) / 2                      # Scalar+
+energy: Scalar = kinetic(rate, rate) / 2                      # Scalar+
 ```
 
 A form's eigenvalues are measured against a metric form. Omitted, that metric is the input type's own metric; supplied explicitly, it must be a square form on the same input type. For `elastic.eigh(kinetic)`, `elastic` and `kinetic` are the stiffness and inertia forms, and `kinetic` must be positive definite. Two unary correlations must first be paired into forms this way.
@@ -162,9 +162,9 @@ A form's eigenvalues are measured against a metric form. Omitted, that metric is
 Sums, differences, stacks and concatenations need matching orientations on every axis; binding needs the input's orientation, and `solve` needs the output's. Mismatches raise `GATypeError`, a subclass of `TypeError`, before any kernel runs:
 
 ```python
-spin + momentum                  # GATypeError: orientations differ
+rate + momentum                  # GATypeError: orientations differ
 inertia(momentum)                # GATypeError: input requires extrinsic orientation
-inertia.solve(spin)              # GATypeError: right-hand side requires intrinsic orientation
+inertia.solve(rate)              # GATypeError: right-hand side requires intrinsic orientation
 momentum.exp()                   # GATypeError: exp requires extrinsic orientation
 inertia.eigh()                   # GATypeError: requires an endomorphism or a square form
 ga.gatype(ga.subspace.vector())  # TypeError: a subspace has no orientation
