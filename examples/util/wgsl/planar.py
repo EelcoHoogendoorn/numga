@@ -229,6 +229,10 @@ fn stroke_share(primitive: Primitive, point: Point) -> f32 {
     for (var index = primitive.first; index + 1 < primitive.end; index++) {
         let start = points[index];
         let end = points[index + 1];
+        // A segment of no length draws nothing, and has no line to draw it by; its neighbours join across it.
+        if ((start & end).norm() == 0) {
+            continue;
+        }
         // Across the segment: its line at unit weight paired with the point; along it: the line square to it through
         // its start, pointing to its end. Along the polyline, from its start.
         let line = (start & end).normalized();
@@ -237,7 +241,8 @@ fn stroke_share(primitive: Primitive, point: Point) -> f32 {
         let low = phases[index];
         let high = phases[index + 1];
         let along = low + (square & point);
-        let after_first = index > primitive.first;
+        // A segment after the first joins the one before, unless that one has no length and no direction to join.
+        let after_first = index > primitive.first && (points[index - 1] & start).norm() > 0;
         let before_last = index + 2 < primitive.end;
         // A segment's start on a dash, after the first segment, joins it to the one before.
         let into = low - floor(low / period) * period;
