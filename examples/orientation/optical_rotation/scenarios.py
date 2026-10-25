@@ -26,15 +26,18 @@ def isolator() -> tuple[Polarization, np.ndarray]:
     """
     direction = mv.z.dual()
     start = mv.x.dual()
+    # The beam's cross-section, spanned by the two directions across the path.
+    cross_section = mv.x.dual() & mv.y.dual()                                     # [] CrossSection
     # Measured against the lab's handedness, the basis volume x ^ y ^ z.
     rotary_power = mv(core.RotaryPower, [quartz_rotary_power])                           # [] RotaryPower
     field = mv.xy * field_strength                                                         # [] Field, along z
     mirror = mv.x                                                                 # the plane x = 0, holding the path
     depths = np.linspace(0, length, n_samples)
 
-    original = core.through_media(direction, rotary_power, field, verdet, start, depths)
-    # The mirror image of the setup: the medium, the field and the incoming light, all reflected.
-    mirrored = core.through_media(direction, mirror >> rotary_power, mirror >> field, verdet, mirror >> start, depths)
+    original = core.through_media(direction, cross_section, rotary_power, field, verdet, start, depths)
+    # The mirror image of the setup: the beam, the medium, the field and the incoming light, all reflected.
+    mirrored = core.through_media(mirror >> direction, mirror >> cross_section, mirror >> rotary_power, mirror >> field,
+                                  verdet, mirror >> start, depths)
     return stack([original, mirrored], axis=1), depths                           # [media, setups, legs, depths] Polarization
 
 

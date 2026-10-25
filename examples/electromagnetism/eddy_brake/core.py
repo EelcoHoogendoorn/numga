@@ -322,7 +322,9 @@ def solve(mesh: Mesh, magnetic: Bivector, spin: Bivector,
     # Each edge's flux meets the magnetic field's plane with the edge: the magnetic force. The pairing
     # transpose makes charge balance equate mechanical power loss with Joule heating.
     force = flux & (mesh.edge_displacements & magnetic)                     # Vector[E]
-    # Each force's moment about the origin: the force met with the edge's midpoint.
+    # Each force's moment about the origin: the force met with the edge's midpoint. The contraction is the
+    # join written once: it equals `midpoint & force.dual()`, the midpoint joined with the force turned into a
+    # direction, which takes the dual only to undo it.
     torque = (force | mesh.edge_midpoints).sites.sum()                      # [] Moment
     heating = mesh.triangle_areas * (electric & (current & time))           # Scalar[F]
     return Response(potential, voltage, flux, current, heating, torque)
