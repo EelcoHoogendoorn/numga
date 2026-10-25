@@ -102,6 +102,7 @@
 ## Relativity
 
 - [Radar ranging](relativity/radar/radar.ipynb) — Echo times recover a moving reflector's range and velocity in projective spacetime.
+- [Satellite navigation](relativity/gps/gps.ipynb) — Light-cone correlations recover a receiver's position and clock error, while timing readouts determine its uncertainty.
 - [Distributed impulses](relativity/impulse/) — Continuous worldlines expose the strains behind the ladder paradox and Bell's spaceships.
 - [Gravitational-wave curvature](relativity/curvature/) — A spacetime curvature map determines the tidal deformation caused by a passing wave.
 - [Dirac electron](relativity/dirac/) — A spacetime spinor carries the electron's density, current and spin through its action as a map.
