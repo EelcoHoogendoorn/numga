@@ -38,10 +38,10 @@ SPIN_PLANES = stack((sta.yz, sta.zx, sta.xy))                    # [3] Bivector+
 
 
 def components(rho: core.State) -> np.ndarray:
-    """The Bloch vector's x, y and z components: twice the state's vector part, or in spacetime twice the scalar
-    part of its pairings with the spin planes, whose pairings with the trace are planes."""
+    """The Bloch vector's x, y and z components: twice the state's vector part, or in spacetime twice the pairings
+    of its spin part with the spin planes."""
     if rho.algebra is STA:
-        return 2 * (SPIN_PLANES & rho[..., None]).select.scalar().to_array()
+        return 2 * (SPIN_PLANES & rho.select[2][..., None]).to_array()
     return 2 * rho.cast(BLOCH_AXES).kernel
 
 
