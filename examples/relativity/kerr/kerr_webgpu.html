@@ -44,23 +44,31 @@ async function start() {
   device.addEventListener("uncapturederror", event => { status.textContent = "WebGPU: " + event.error.message; });
   device.lost.then(info => { status.textContent = "The GPU was lost: " + (info.message || info.reason); });
 
-  // The canvas at the screen's own pixels behind its points.
+  // The canvas as wide as the page's design, or as the screen where that is narrower, so that the browser never
+  // shrinks it; the image traces at the screen's own pixels behind it, or at a share of them when frames come slower
+  // than about 24 a second, the share growing back when they come faster than about 40. A third of them at the start,
+  // so that a slow GPU's first frames come quickly.
   const canvas = document.getElementById("view");
   const ratio = window.devicePixelRatio || 1;
-  canvas.style.width = C.size[0] + "px";
-  canvas.style.height = C.size[1] + "px";
-  // The image traces at the screen's pixels, or at a share of them when frames come slower than about 24 a second;
-  // the share grows back when they come faster than about 40.
-  const full = [Math.round(C.size[0] * ratio), Math.round(C.size[1] * ratio)];
-  // A third of them at the start, so that a slow GPU's first frames come quickly; the share grows as frames keep up.
-  let share = 0.35, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
+  // The pixels of the largest canvas the page draws, which the image's buffer holds.
+  const largest = [Math.round(C.size[0] * ratio), Math.round(C.size[1] * ratio)];
+  let full = largest, share = 0.35, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
   const resize = () => {
     columns = Math.max(1, Math.round(full[0] * share));
     rows = Math.max(1, Math.round(full[1] * share));
     canvas.width = columns;
     canvas.height = rows;
   };
-  resize();
+  const fit = () => {
+    const width = Math.min(C.size[0], document.documentElement.clientWidth - 32);
+    const height = width * C.size[1] / C.size[0];
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    full = [Math.min(Math.round(width * ratio), largest[0]), Math.min(Math.round(height * ratio), largest[1])];
+    resize();
+  };
+  fit();
+  window.addEventListener("resize", fit);
   const context = canvas.getContext("webgpu");
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
@@ -116,7 +124,7 @@ async function start() {
     filtered: device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "clamp-to-edge" }),
     modes: { buffer: modeBuffer },
     stars: sky.createView(),
-    image: { buffer: device.createBuffer({ size: full[0] * full[1] * C.stride, usage: GPUBufferUsage.STORAGE }) },
+    image: { buffer: device.createBuffer({ size: largest[0] * largest[1] * C.stride, usage: GPUBufferUsage.STORAGE }) },
   };
   const group = device.createBindGroup({ layout, entries: C.bindings.map(binding => ({ binding: binding.index, resource: resources[binding.name] })) });
 
