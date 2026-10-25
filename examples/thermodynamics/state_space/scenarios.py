@@ -24,13 +24,13 @@ def initial() -> core.State:
     return (core.mv.s.dual() * 0 + core.mv.v.dual())[None].broadcast_to((2,))
 
 
-def equal_heating(total_heat: float, n_steps: int) -> Iterator[tuple[core.State, core.State]]:
-    """The two cylinders' states `[2]`, latched then loaded, and their heating directions, as equal slices of heat come
-    in."""
+def equal_heating(total_heat: float, n_steps: int) -> Iterator[tuple[core.State, core.State, float]]:
+    """The two cylinders' states `[2]`, latched then loaded, their heating directions, and the heat each has taken in,
+    as equal slices of heat come in."""
     states = initial()
     for step in range(n_steps + 1):
         directions, _ = core.heating_direction(states, core.held(states, THERMAL_CAPACITY), THERMAL_CAPACITY)
-        yield states, directions
+        yield states, directions, step * total_heat / n_steps
         states = core.heated(states, total_heat / n_steps, THERMAL_CAPACITY)
 
 
@@ -38,6 +38,6 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.state_space import render
 
-    first, directions = next(equal_heating(2.4, 48))
+    first, directions, _ = next(equal_heating(2.4, 48))
     save_figure(render.draw_directions(temperature_of, pressure_of, first, directions), "thermodynamics_heating_charts")
     save_animation(render.heating(temperature_of, pressure_of, equal_heating(2.4, 48)), "thermodynamics_heating", 80)

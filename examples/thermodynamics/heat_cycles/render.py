@@ -1,8 +1,8 @@
 """A piston taken around a Carnot cycle beside the gas's two charts.
 
-The pressure–volume chart holds isotherms and dashed adiabats, lines of equal entropy; the cycle runs along two of
-each, and the area it encloses is the net work. The temperature–entropy chart holds lines of equal volume and dashed
-lines of equal pressure; the cycle is a rectangle there, and the area it encloses is the net heat, the same as the
+The pressure–volume chart holds isotherms, red, and adiabats, lines of equal entropy, teal; the cycle runs along two of
+each, and the area it encloses is the net work. The temperature–entropy chart holds lines of equal volume, green, and of
+equal pressure, purple; the cycle is a rectangle there, and the area it encloses is the net heat, the same as the
 work. Each stroke has its colour: orange while the gas takes in heat from the hot reservoir, blue while it gives heat
 to the cold one, grey while it is insulated.
 
@@ -21,7 +21,7 @@ from examples.thermodynamics import rendering as art
 Reading = Callable[[Extensor], Extensor]
 
 # The charts' size in pixels and their ranges: volume and pressure, entropy and temperature.
-ROWS, COLUMNS = 250, 270
+ROWS, COLUMNS = 300, 320
 VOLUMES, PRESSURES = (0.0, 3.2), (0.0, 3.2)
 ENTROPIES, TEMPERATURES = (-0.6, 1.6), (0.0, 2.0)
 # The levels of the charts' families, and the plane of states sampled for them.
@@ -35,9 +35,8 @@ STATE_VOLUMES = np.geomspace(0.2, 5.0, 120)
 STROKES = np.stack([art.ORANGE, art.GREY, art.BLUE, art.GREY])
 ENCLOSED = art.rgb("#c5d9a7")
 # The cylinder's picture, pixels across, and the height of a unit of volume; line widths and dashes.
-CYLINDER_PIXELS, HEIGHT_PER_VOLUME = 130, 0.6
+CYLINDER_PIXELS, HEIGHT_PER_VOLUME = 150, 0.7
 THIN, BOLD = 1.0, 2.4
-DASHES = (4.0, 3.0)
 
 
 class Charts:
@@ -49,10 +48,10 @@ class Charts:
         self.entropy_temperature = art.Diagram(ENTROPIES, TEMPERATURES, (ENTROPIES[0], 0.0), ROWS, COLUMNS, ("S", "T"))
         lines = art.gas_lines(temperature_of, pressure_of, cycle.context.multivector, STATE_ENTROPIES, STATE_VOLUMES,
                               art.GasLines(ISOCHORES, ISOBARS, ISOTHERMS, ADIABATS))
-        self.pressure_lines = (art.drawn(self.volume_pressure, lines.isotherms, 2, 3, THIN, art.FAINT, art.SOLID)
-                               + art.drawn(self.volume_pressure, lines.adiabats, 2, 3, THIN, art.GREY, DASHES))
-        self.temperature_lines = (art.drawn(self.entropy_temperature, lines.isochores, 0, 1, THIN, art.FAINT, art.SOLID)
-                                  + art.drawn(self.entropy_temperature, lines.isobars, 0, 1, THIN, art.GREY, DASHES))
+        self.pressure_lines = (art.drawn(self.volume_pressure, lines.isotherms, 2, 3, THIN, "temperature")
+                               + art.drawn(self.volume_pressure, lines.adiabats, 2, 3, THIN, "entropy"))
+        self.temperature_lines = (art.drawn(self.entropy_temperature, lines.isochores, 0, 1, THIN, "volume")
+                                  + art.drawn(self.entropy_temperature, lines.isobars, 0, 1, THIN, "pressure"))
         self.cycle = self.values(cycle)                                                    # [steps, 4]
         self.n_steps = (len(self.cycle) - 1) // 4
 
@@ -74,11 +73,17 @@ class Charts:
         middle = self.cycle[:-1].mean(axis=0)
         hot, cold = self.cycle[0, 1], self.cycle[2 * self.n_steps, 1]
         pressure_labels = [art.Label(middle[2], middle[3], "W", art.INK, art.NAME_SIZE, "mm", (0, 0)),
-                           art.Label(VOLUMES[1], 0.2 * PRESSURES[1], "T = const", art.GREY, art.LABEL_SIZE, "rb", (0, 0)),
-                           art.Label(VOLUMES[1], 0.03 * PRESSURES[1], "S = const", art.GREY, art.LABEL_SIZE, "rb", (0, 0))]
+                           art.Label(VOLUMES[1], 0.2 * PRESSURES[1], "T = const", art.FAMILIES["temperature"], art.LABEL_SIZE,
+                                     "rb", (0, 0)),
+                           art.Label(VOLUMES[1], 0.03 * PRESSURES[1], "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE,
+                                     "rb", (0, 0))]
         temperature_labels = [art.Label(middle[0], middle[1], "W", art.INK, art.NAME_SIZE, "mm", (0, 0)),
                               art.Label(ENTROPIES[0], hot, "hot", art.ORANGE, art.LABEL_SIZE, "lb", (4, 2)),
-                              art.Label(ENTROPIES[0], cold, "cold", art.BLUE, art.LABEL_SIZE, "lt", (4, -2))]
+                              art.Label(ENTROPIES[0], cold, "cold", art.BLUE, art.LABEL_SIZE, "lt", (4, -2)),
+                              art.Label(ENTROPIES[1], 0.3 * TEMPERATURES[1], "V = const", art.FAMILIES["volume"],
+                                        art.LABEL_SIZE, "rb", (0, 0)),
+                              art.Label(ENTROPIES[1], 0.92 * TEMPERATURES[1], "p = const", art.FAMILIES["pressure"],
+                                        art.LABEL_SIZE, "rt", (0, 0))]
         return [self.picture(self.volume_pressure, self.pressure_lines, 2, 3, travelled, pressure_labels),
                 self.picture(self.entropy_temperature, self.temperature_lines, 0, 1, travelled, temperature_labels)]
 

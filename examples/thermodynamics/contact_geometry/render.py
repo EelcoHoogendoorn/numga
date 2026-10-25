@@ -1,8 +1,8 @@
 """The Legendre change from the energy as a function of the entropy to the Helmholtz energy as a function of the
 temperature, as tangent lines.
 
-On the left, the energy against the entropy at several volumes, the section the example follows bold, and its tangent
-lines, faint, enveloping it. The moving tangent's slope is the temperature, and where it crosses zero entropy, its
+On the left, the energy against the entropy at several volumes, green, the section the example follows bold, and its
+tangent lines, grey-blue, enveloping it. The moving tangent's slope is the temperature, and where it crosses zero entropy, its
 height is the Helmholtz energy. On the right, the Helmholtz energy against the temperature, traced as the tangent moves,
 with its own tangent: its slope is minus the entropy and its height at zero temperature the energy again.
 """
@@ -16,7 +16,7 @@ from numga import Extensor
 from examples.thermodynamics import rendering as art
 
 # The charts' size in pixels and their ranges: entropy and energy, temperature and Helmholtz energy.
-ROWS, COLUMNS = 250, 290
+ROWS, COLUMNS = 300, 330
 ENTROPIES, ENERGIES = (-0.8, 1.25), (0.0, 3.4)
 TEMPERATURES, FREE_ENERGIES = (0.0, 2.2), (0.0, 3.4)
 # Every so many samples of the section, a faint tangent; the samples along each tangent line; line widths.
@@ -46,10 +46,10 @@ class Chart:
         self.family, self.section = readings(family), readings(points)                   # [volumes, samples, 2], [samples, 2]
         steps = readings(tangents)
         self.slopes = steps[:, 1] / steps[:, 0]
-        self.layers = (art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], THIN, art.FAINT,
-                                     1.0, art.SOLID)
-                       + art.polylines(diagram, tangent_lines(self.section[::EVERY], self.slopes[::EVERY], diagram.across),
-                                       THIN, art.GREY, 0.45, art.SOLID))
+        self.layers = (art.polylines(diagram, tangent_lines(self.section[::EVERY], self.slopes[::EVERY], diagram.across),
+                                     THIN, art.FAMILIES["level"], 0.6, art.SOLID)
+                       + art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], THIN,
+                                       art.FAMILIES["volume"], 1.0, art.SOLID))
 
     def picture(self, index: int) -> np.ndarray:
         point, slope = self.section[index], self.slopes[index]
@@ -62,7 +62,9 @@ class Chart:
                                   art.ORANGE, 1.0, art.SOLID)
                   + art.dots(self.diagram, 0.0, intercept, art.GREEN)
                   + art.dots(self.diagram, point[0], point[1], art.ORANGE))
-        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0))]
+        last = self.family[-1][-1]
+        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0)),
+                  art.Label(last[0], last[1], "V = const", art.FAMILIES["volume"], art.LABEL_SIZE, "rb", (-2, 4))]
         return art.picture(self.diagram, layers, labels)
 
 

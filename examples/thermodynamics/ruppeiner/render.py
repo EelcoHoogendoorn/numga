@@ -1,8 +1,8 @@
 """The fluctuation metric of a van der Waals fluid, drawn as the ellipses of equal cost about its states.
 
-On the left, the plane of temperature and volume. Below the green spinodal the uniform fluid is unstable, shaded; above
-it, the faint ellipses are the variations of equal cost about a lattice of states, and the curves are the level lines
-of the metric's scalar curvature, crowding toward the critical point, the dot where the spinodal peaks. The moving
+On the left, the plane of temperature and volume. Below the black spinodal the uniform fluid is unstable, shaded; above
+it, the teal ellipses are the variations of equal cost about a lattice of states, and the grey-blue curves are the
+level lines of the metric's scalar curvature, crowding toward the critical point, the dot where the spinodal peaks. The moving
 state's ellipse is orange: as it cools toward the critical point, fluctuations of the volume grow cheap and its ellipse
 stretches along the volume. On the right, the isotherms, and the moving state's isotherm with its tangent: the
 pressure's slope, the mechanical part of the cost, flattens.
@@ -21,7 +21,7 @@ from examples.util.wgsl import planar
 Function = Callable[[Extensor], Extensor]
 
 # The charts' size in pixels and their ranges: volume and temperature, volume and pressure.
-ROWS, COLUMNS = 260, 300
+ROWS, COLUMNS = 310, 340
 VOLUMES, TEMPERATURES = (0.0, 3.0), (0.7, 2.0)
 PRESSURES = (0.0, 1.0)
 # The grid of states the curvature and the spinodal are found on, and the curvature's levels.
@@ -56,7 +56,7 @@ class Charts:
         mechanical = coefficients(metric_of, grid)[..., 0, 0]
         stable = mechanical > 0
         curvature = np.where(stable, curvature_of(grid).to_array(), np.nan)
-        spinodal = art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, mechanical, np.zeros(1))
+        spinodal = [line for _, line in art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, mechanical, np.zeros(1))]
         unstable = [art.areas(self.plane, line[:, 0], line[:, 1], art.GREY, 0.25) for line in spinodal]
         lattice = mv.v.dual() * LATTICE_VOLUMES[None, :] + mv.t.dual() * LATTICE_TEMPERATURES[:, None]
         forms = coefficients(metric_of, lattice).reshape(-1, 2, 2)
@@ -65,16 +65,16 @@ class Charts:
         conics = art.ellipses(self.plane, x.reshape(-1)[kept], y.reshape(-1)[kept], forms[kept], COST)
         self.plane_layers = (unstable
                              + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in
-                                                          art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, curvature, CURVATURES)],
-                                             THIN, art.FAINT, 1.0, art.SOLID)
-                             + [planar.Curves(conics, 1.0, art.GREY, 1.0)]
-                             + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in spinodal], 1.6, art.GREEN,
+                                                          [line for _, line in art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, curvature, CURVATURES)]],
+                                             THIN, art.FAMILIES["level"], 1.0, art.SOLID)
+                             + [planar.Curves(conics, 1.0, art.FAMILIES["entropy"], 1.0)]
+                             + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in spinodal], 1.6, art.BOUNDARY,
                                              1.0, art.SOLID)
-                             + art.dots(self.plane, 1.0, 1.0, art.GREEN))
+                             + art.dots(self.plane, 1.0, 1.0, art.BOUNDARY))
         volumes = np.linspace(0.38, VOLUMES[1], 240)
         family = mv.v.dual() * volumes[None, :] + mv.t.dual() * ISOTHERMS[:, None]
         pressures = pressure_of(family).to_array()
-        shades = np.where((ISOTHERMS == 1.0)[:, None], art.GREY, art.FAINT)
+        shades = np.where((ISOTHERMS == 1.0)[:, None], art.BOUNDARY, art.FAMILIES["temperature"])
         self.isotherm_layers = art.within(self.isotherm, np.broadcast_to(volumes, pressures.shape), pressures, THIN,
                                           shades, 1.0)
         self.volumes = volumes
@@ -97,9 +97,13 @@ class Charts:
                     + art.polylines(self.isotherm, [(span, pressure + slope * (span - volume))], 1.6, art.ORANGE, 1.0,
                                     art.SOLID)
                     + art.dots(self.isotherm, volume, pressure, art.ORANGE))
-        labels = [art.Label(1.0, 1.0, "critical point", art.GREEN, art.LABEL_SIZE, "lt", (6, -4)),
-                  art.Label(0.45, 0.75, "unstable", art.INK, art.LABEL_SIZE, "lb", (0, 2))]
-        return [art.picture(self.plane, plane, labels), art.picture(self.isotherm, isotherm, [])]
+        labels = [art.Label(1.0, 1.0, "critical point", art.BOUNDARY, art.LABEL_SIZE, "lt", (6, -4)),
+                  art.Label(0.45, 0.75, "unstable", art.INK, art.LABEL_SIZE, "lb", (0, 2)),
+                  art.Label(VOLUMES[1], 1.12, "R = const", art.FAMILIES["level"], art.LABEL_SIZE, "rb", (0, 2)),
+                  art.Label(VOLUMES[1], 1.9, "equal cost", art.FAMILIES["entropy"], art.LABEL_SIZE, "rb", (0, 2))]
+        isotherm_labels = [art.Label(VOLUMES[1], 0.1, "T = const", art.FAMILIES["temperature"], art.LABEL_SIZE, "rb",
+                                     (0, 2))]
+        return [art.picture(self.plane, plane, labels), art.picture(self.isotherm, isotherm, isotherm_labels)]
 
 
 def fluctuations(metric_of: Function, curvature_of: Function, pressure_of: Function,

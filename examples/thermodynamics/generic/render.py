@@ -1,9 +1,15 @@
-"""A damped oscillator warming its damper, beside its phase portrait and its energies over time.
+"""A damped oscillator warming its damper, drawn around the entropy the damping forces up.
 
-The phase portrait holds the ellipses of equal mechanical energy, kinetic and spring; the state spirals inward across
-them. At the state, the reversible motion, blue, runs along its ellipse, and the irreversible motion, green, crosses
-the ellipses inward, the momentum it takes going into the store. The energies over time are stacked: the store's at
-the bottom, then the spring's, then the kinetic; their sum stays flat.
+At fixed total energy the store's entropy is a function of the position and momentum alone, the store holding all the
+energy they leave over; its level lines on the phase portrait are the ellipses of equal mechanical energy, teal, each
+marked with its entropy. The reversible motion, the Poisson map of the energy's covector, runs along them, keeping the
+entropy; the irreversible motion, the friction mobility of the entropy's covector, crosses them inward, raising it.
+The state spirals in, up the entropy. Beside it, the entropy against time, rising in steps: fast while the mass moves
+fast, flat at its turning points, never falling. Last, the entropy against the mechanical energy left, along the
+fixed total energy: the state slides to the curve's top, where the store holds everything.
+
+The damper is coloured from icy blue to red heat by its temperature, on the logarithm of how far it still has to warm,
+so that its last warming stays visible.
 """
 from __future__ import annotations
 
@@ -16,20 +22,21 @@ from numga import Extensor
 from examples.thermodynamics import rendering as art
 from examples.util.wgsl import solids, strokes
 
-# The charts' size in pixels and their ranges: position and momentum, time and energy.
-ROWS, COLUMNS = 250, 260
+# The charts' size in pixels and their ranges: position and momentum, time and entropy, mechanical energy and entropy.
+ROWS, COLUMNS = 300, 310
 POSITIONS, MOMENTA = (-2.6, 2.6), (-4.6, 4.6)
-TIMES, ENERGIES = (0.0, 12.5), (0.0, 11.5)
-# The mechanical energies of the ellipses, and the grid of the phase plane they are found on.
-LEVELS = np.array([0.5, 1.5, 3.0, 5.0, 8.0, 11.0])
+TIMES, ENTROPIES = (0.0, 12.5), (0.0, 3.6)
+MECHANICAL = (0.0, 8.6)
+# The entropies of the level lines, and the grid of the phase plane they are found on.
+LEVELS = np.array([0.0, 1.0, 1.8, 2.3, 2.7, 3.0, 3.15])
 GRID_POSITIONS, GRID_MOMENTA = np.linspace(-2.6, 2.6, 121), np.linspace(-4.6, 4.6, 121)
-# The bands' colours: the store, the spring, the motion; how far ahead the rates' arrows look, in seconds, at most and
-# in pixels; line widths.
-BANDS = np.stack([art.ORANGE, art.rgb("#6bbcaf"), art.BLUE])
-LOOK, ARROW_MOST = 0.25, 40.0
+# How far ahead the rates' arrows look, in seconds, at most in pixels, and their colours; line widths.
+LOOK, ARROW_MOST = 0.25, 44.0
+REVERSIBLE, IRREVERSIBLE = art.rgb("#5b6fd6"), art.rgb("#d0402f")
 THIN, BOLD = 1.0, 2.2
-# The oscillator's picture, pixels across.
+# The oscillator's picture, pixels across, and the decades of the damper's remaining warming its colour spans.
 APPARATUS_PIXELS = 230
+DECADES = 2.0
 
 
 def oscillator(position: float, warmth: float) -> np.ndarray:
@@ -51,61 +58,80 @@ def oscillator(position: float, warmth: float) -> np.ndarray:
 
 
 class Charts:
-    """The phase portrait's ellipses, sampled once, and the drawing of the motion so far on both charts."""
+    """The level lines of the entropy at fixed energy, and its curve against the mechanical energy, sampled once; and
+    the drawing of the motion so far on the three charts."""
 
-    def __init__(self, energies_of: Callable, mv) -> None:
+    def __init__(self, energies_of: Callable, surface_entropy_of: Callable, mv) -> None:
         self.read = lambda states: np.stack([(mv.q & states).to_array(), (mv.p & states).to_array()], axis=-1)
         self.phase = art.Diagram(POSITIONS, MOMENTA, (0.0, 0.0), ROWS, COLUMNS, ("q", "p"))
-        self.energy = art.Diagram(TIMES, ENERGIES, (0.0, 0.0), ROWS, COLUMNS, ("t", "E"))
+        self.rising = art.Diagram(TIMES, ENTROPIES, (0.0, 0.0), ROWS, COLUMNS, ("t", "S"))
+        self.hill = art.Diagram(MECHANICAL, ENTROPIES, (0.0, 0.0), ROWS, COLUMNS, ("E_mech", "S"))
         grid = mv.q.dual() * GRID_POSITIONS[None, :] + mv.p.dual() * GRID_MOMENTA[:, None]
-        kinetic, spring, _ = energies_of(grid)
-        ellipses = art.level_lines(GRID_POSITIONS, GRID_MOMENTA, (kinetic + spring).to_array(), LEVELS)
-        self.ellipses = art.polylines(self.phase, [(line[:, 0], line[:, 1]) for line in ellipses], THIN, art.FAINT,
-                                      1.0, art.SOLID)
+        entropy = surface_entropy_of(grid).to_array()
+        levels = art.level_lines(GRID_POSITIONS, GRID_MOMENTA, np.where(np.isfinite(entropy), entropy, -10.0), LEVELS)
+        self.levels = art.family(self.phase, [(level, line[:, 0], line[:, 1]) for level, line in levels], "entropy", THIN)
+        # Each level's entropy written at its upper right, where it crosses the diagonal of the chart.
+        self.level_labels = []
+        for level, line in levels:
+            corner = line[np.argmax(line[:, 0] / np.ptp(POSITIONS) + line[:, 1] / np.ptp(MOMENTA))]
+            if corner[1] < MOMENTA[1] - 0.3:
+                self.level_labels.append(art.Label(corner[0], corner[1], f"{level:g}", art.FAMILIES["entropy"],
+                                                   art.LABEL_SIZE, "lb", (2, 2)))
+        # The entropy at fixed energy against the mechanical energy, along the positions at rest.
+        rest = mv.q.dual() * np.linspace(0, 2.0, 200)
+        kinetic, spring, _ = energies_of(rest)
+        self.curve = ((kinetic + spring).to_array(), surface_entropy_of(rest).to_array())
 
-    def pictures(self, path: np.ndarray, rates: np.ndarray, times: np.ndarray, energies: np.ndarray) -> list[np.ndarray]:
-        """The spiral so far with the rates' arrows at its end `[2, 2]`, and the stacked energies so far
-        `[steps, 3]`."""
+    def pictures(self, path: np.ndarray, rates: np.ndarray, times: np.ndarray, entropies: np.ndarray,
+                 mechanical: np.ndarray) -> list[np.ndarray]:
+        """The spiral so far over the entropy's level lines, with the rates' arrows at its end `[2, 2]`; the entropy
+        against time; and the entropy against the mechanical energy left."""
         now = path[-1]
-        arrows = []
-        for rate, colour in zip(rates, [art.BLUE, art.GREEN]):
+        arrows, arrow_labels = [], []
+        for rate, colour, name in zip(rates, [REVERSIBLE, IRREVERSIBLE], ["reversible", "dissipative"]):
             reach = np.linalg.norm(rate * LOOK / (np.array([np.ptp(POSITIONS), np.ptp(MOMENTA)]) / COLUMNS))
             if reach > 3:
                 arrows += art.arrows(self.phase, now[:1], now[1:], now[:1] + rate[0], now[1:] + rate[1],
                                      min(reach, ARROW_MOST), 1.8, colour)
-        phase = (self.ellipses + art.polylines(self.phase, [(path[:, 0], path[:, 1])], BOLD, art.ORANGE, 1.0, art.SOLID)
+        phase = (self.levels + art.polylines(self.phase, [(path[:, 0], path[:, 1])], BOLD, art.ORANGE, 1.0, art.SOLID)
                  + arrows + art.dots(self.phase, now[0], now[1], art.ORANGE))
-        stacked = np.cumsum(energies, axis=1)                                                    # [steps, 3]
-        floors = np.concatenate([np.zeros((len(times), 1)), stacked[:, :-1]], axis=1)
-        bands = [art.areas(self.energy, np.concatenate([times, times[::-1]]),
-                           np.concatenate([stacked[:, band], floors[::-1, band]]), BANDS[band], 0.75)
-                 for band in range(3) if len(times) > 1]
-        total = art.dashed(self.energy, np.array(TIMES), np.full(2, stacked[0, -1]), 1.2, art.INK, (4.0, 3.0))
-        labels = [art.Label(times[-1], (floors[-1, band] + stacked[-1, band]) / 2, name, art.INK, art.LABEL_SIZE,
-                            "lm", (4, 0))
-                  for band, name in enumerate(["U", "V", "K"]) if stacked[-1, band] - floors[-1, band] > 0.6]
-        return [art.picture(self.phase, phase, []), art.picture(self.energy, bands + [total], labels)]
+        phase_labels = self.level_labels + [
+            art.Label(POSITIONS[1], MOMENTA[0], "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "rb", (0, 4)),
+            art.Label(POSITIONS[0], MOMENTA[1], "reversible", REVERSIBLE, art.LABEL_SIZE, "lt", (4, 0)),
+            art.Label(POSITIONS[0], MOMENTA[1] - 0.8, "dissipative", IRREVERSIBLE, art.LABEL_SIZE, "lt", (4, 0))]
+        rising = (art.polylines(self.rising, [(times, entropies)], BOLD, art.ORANGE, 1.0, art.SOLID)
+                  + art.dots(self.rising, times[-1], entropies[-1], art.ORANGE))
+        hill = (art.polylines(self.hill, [self.curve], 1.6, art.FAMILIES["entropy"], 1.0, art.SOLID)
+                + art.polylines(self.hill, [(mechanical, entropies)], BOLD, art.ORANGE, 1.0, art.SOLID)
+                + art.dots(self.hill, mechanical[-1], entropies[-1], art.ORANGE))
+        hill_labels = [art.Label(MECHANICAL[1], self.curve[1][-1], "E = const", art.FAMILIES["entropy"], art.LABEL_SIZE,
+                                 "rb", (0, 4))]
+        return [art.picture(self.phase, phase, phase_labels), art.picture(self.rising, rising, []),
+                art.picture(self.hill, hill, hill_labels)]
 
 
-def damping(energies_of: Callable, rates_of: Callable, states: Iterator[Extensor], frame_time: float
-            ) -> Iterator[np.ndarray]:
-    """The oscillator and the two charts at each state as it comes, the states a frame time apart."""
+def damping(energies_of: Callable, surface_entropy_of: Callable, rates_of: Callable, states: Iterator[Extensor],
+            frame_time: float) -> Iterator[np.ndarray]:
+    """The oscillator and the three charts at each state as it comes, the states a frame time apart."""
     first = next(states)
-    charts = Charts(energies_of, first.context.multivector)
-    path, energies = [], []
+    mv = first.context.multivector
+    charts = Charts(energies_of, surface_entropy_of, mv)
+    path, entropies, mechanical = [], [], []
+    start = np.array([float(energy.to_array()) for energy in energies_of(first)])
     for state in chain([first], states):
+        kinetic, spring, internal = (float(energy.to_array()) for energy in energies_of(state))
         path.append(charts.read(state))
-        # The store's energy, then the spring's and the kinetic, stacked from the bottom up.
-        energies.append([float(energy.to_array()) for energy in energies_of(state)][::-1])
+        entropies.append(float((mv.s & state).to_array()))
+        mechanical.append(kinetic + spring)
         rates = np.stack([charts.read(rate) for rate in rates_of(state)])
-        # The damper's colour: the share of the mechanical energy it has taken in.
-        start, now = np.array(energies[0]), np.array(energies[-1])
-        warmth = (now[0] - start[0]) / (start.sum() - start[0])
+        # The share of its warming the damper has still to do, on its logarithm.
+        remaining = max(start.sum() - internal, 1e-300) / (start.sum() - start[2])
+        warmth = 1.0 - np.clip(np.log10(remaining) / DECADES + 1, 0.0, 1.0)
         times = np.arange(len(path)) * frame_time
         yield art.beside([oscillator(path[-1][0], warmth)]
-                         + charts.pictures(np.array(path), rates, times, np.array(energies)))
+                         + charts.pictures(np.array(path), rates, times, np.array(entropies), np.array(mechanical)))
 
 
-def draw(energies_of: Callable, rates_of: Callable, state: Extensor):
-    """The oscillator and the two charts at a state."""
-    return art.figure(next(damping(energies_of, rates_of, iter([state]), 0.0)))
+def draw(energies_of: Callable, surface_entropy_of: Callable, rates_of: Callable, state: Extensor):
+    """The oscillator and the three charts at a state."""
+    return art.figure(next(damping(energies_of, surface_entropy_of, rates_of, iter([state]), 0.0)))

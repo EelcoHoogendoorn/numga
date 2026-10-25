@@ -1,7 +1,7 @@
 """Moist air cooled, dried and reheated, beside its psychrometric chart.
 
 The chart holds the air's temperature across and its water content up, with the lines of equal relative humidity,
-the saturation curve bold, and the dashed lines of equal enthalpy, each marked with its value where it meets the
+blue, the saturation curve black, and the lines of equal enthalpy, brown, each marked with its value where it meets the
 saturation curve. Above the saturation curve no air holds that much water as vapour. The air's path runs left at fixed
 water content to the saturation curve, down along it while water condenses, and right at fixed water content through
 the reheater; the arrows are the directions it moves in at the inlet and at the coil's outlet, solved for one degree
@@ -25,7 +25,7 @@ Function = Callable[[Extensor], Extensor]
 
 # The chart's size in pixels, its ranges, temperature in degrees and water content in grams per kg of dry air, and the
 # values read off its axes.
-ROWS, COLUMNS = 270, 340
+ROWS, COLUMNS = 320, 400
 TEMPERATURES, WATER = (5.0, 35.0), (0.0, 25.0)
 TEMPERATURE_TICKS, WATER_TICKS = np.array([10, 20, 30]), np.array([5, 10, 15, 20])
 # The grid the levels are found on; the relative humidities and enthalpies of the lines.
@@ -39,7 +39,7 @@ ARROW = 28.0
 SATURATION_LABEL = (27.5, 22.5)
 THIN, BOLD = 1.0, 2.2
 # The apparatus's picture, pixels across.
-APPARATUS_PIXELS = 220
+APPARATUS_PIXELS = 240
 
 
 def apparatus(fraction: float, warmth: float, liquid: float) -> np.ndarray:
@@ -69,34 +69,37 @@ class Chart:
         # The enthalpy only where the air holds its water as vapour.
         heat = np.where(relative <= 1, enthalpy_of(grid).to_array(), np.nan)
         scaled = lambda lines: [(line[:, 0], GRAMS * line[:, 1]) for line in lines]
-        humidities = art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative, HUMIDITIES)
-        saturation = art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative, np.ones(1))
-        enthalpies = [art.level_lines(GRID_TEMPERATURES, GRID_WATER, heat, np.array([level])) for level in ENTHALPIES]
+        humidities = [line for _, line in art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative, HUMIDITIES)]
+        saturation = [line for _, line in art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative, np.ones(1))]
+        enthalpies = [[line for _, line in art.level_lines(GRID_TEMPERATURES, GRID_WATER, heat, np.array([level]))]
+                      for level in ENTHALPIES]
         # Above the saturation curve: the region up to the chart's top left corner.
         top = [(np.concatenate([line[:, 0], [TEMPERATURES[1], TEMPERATURES[0]]]),
                 np.concatenate([GRAMS * line[:, 1], [WATER[1], WATER[1]]])) for line in saturation]
         tick_layers, self.tick_labels = art.ticks(self.diagram, TEMPERATURE_TICKS, WATER_TICKS)
         self.layers = ([art.areas(self.diagram, x, np.clip(y, *WATER), art.GREY, 0.18) for x, y in top]
-                       + art.polylines(self.diagram, scaled(humidities), THIN, art.FAINT, 1.0, art.SOLID)
+                       + art.polylines(self.diagram, scaled(humidities), THIN, art.FAMILIES["humidity"], 1.0, art.SOLID)
                        + art.polylines(self.diagram, [line for lines in enthalpies for line in scaled(lines)], THIN,
-                                       art.GREY, 1.0, (4.0, 3.0))
-                       + art.polylines(self.diagram, scaled(saturation), 1.8, art.INK, 1.0, art.SOLID)
+                                       art.FAMILIES["enthalpy"], 1.0, art.SOLID)
+                       + art.polylines(self.diagram, scaled(saturation), 1.8, art.BOUNDARY, 1.0, art.SOLID)
                        + tick_layers)
         # Each enthalpy line's value at its upper end, where it meets the saturation curve; each humidity line's at its
         # right end.
-        self.labels = [art.Label(SATURATION_LABEL[0], SATURATION_LABEL[1], "saturation", art.INK, art.LABEL_SIZE, "lb",
+        self.labels = [art.Label(SATURATION_LABEL[0], SATURATION_LABEL[1], "saturation", art.BOUNDARY, art.LABEL_SIZE, "lb",
                                  (0, 2))]
         for level, lines in zip(ENTHALPIES, enthalpies):
             for x, y in scaled(lines):
                 top = np.argmax(y)
                 if TEMPERATURES[0] < x[top] and y[top] < WATER[1] - 1:
-                    self.labels.append(art.Label(x[top], y[top], f"{level:g}", art.GREY, art.LABEL_SIZE, "rb", (-2, 2)))
+                    self.labels.append(art.Label(x[top], y[top], f"{level:g}", art.FAMILIES["enthalpy"], art.LABEL_SIZE,
+                                                 "rb", (-2, 2)))
         for level in HUMIDITIES:
-            for x, y in scaled(art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative, np.array([level]))):
+            for x, y in scaled([line for _, line in art.level_lines(GRID_TEMPERATURES, GRID_WATER, relative,
+                                                                     np.array([level]))]):
                 right = np.argmax(x)
                 if y[right] < WATER[1] - 1:
-                    self.labels.append(art.Label(x[right], y[right], f"{level:.0%}", art.GREY, art.LABEL_SIZE, "rm",
-                                                 (-2, 0)))
+                    self.labels.append(art.Label(x[right], y[right], f"{level:.0%}", art.FAMILIES["humidity"],
+                                                 art.LABEL_SIZE, "rm", (-2, 0)))
 
     def picture(self, path: np.ndarray, travelled: int, states: np.ndarray, toward: np.ndarray) -> np.ndarray:
         layers = (self.layers

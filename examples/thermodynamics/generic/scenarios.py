@@ -22,6 +22,14 @@ def energies_of(state: core.State) -> tuple[core.Scalar, core.Scalar, core.Scala
             core.internal_energy(state, THERMAL_CAPACITY, REFERENCE_TEMPERATURE))
 
 
+def surface_entropy_of(state: core.State) -> core.Scalar:
+    """The store's entropy when the total energy is the start's: at fixed energy, the entropy as a function of the
+    position and momentum, all the energy they leave over held by the store."""
+    total = core.total_energy(initial(), MASS, STIFFNESS, THERMAL_CAPACITY, REFERENCE_TEMPERATURE)
+    left = total - core.kinetic_energy(state, MASS) - core.potential_energy(state, STIFFNESS)
+    return THERMAL_CAPACITY * (left / (THERMAL_CAPACITY * REFERENCE_TEMPERATURE)).log()
+
+
 def rates_of(state: core.State) -> tuple[core.State, core.State]:
     return core.rates(state, MASS, STIFFNESS, FRICTION, THERMAL_CAPACITY, REFERENCE_TEMPERATURE)
 
@@ -39,5 +47,6 @@ if __name__ == "__main__":
     from examples.util.animation import save_animation, save_figure
     from examples.thermodynamics.generic import render
 
-    save_figure(render.draw(energies_of, rates_of, initial()), "generic_thermodynamics")
-    save_animation(render.damping(energies_of, rates_of, release(150, 2, 0.04), 2 * 0.04), "generic_thermodynamics", 40)
+    save_figure(render.draw(energies_of, surface_entropy_of, rates_of, initial()), "generic_thermodynamics")
+    save_animation(render.damping(energies_of, surface_entropy_of, rates_of, release(150, 2, 0.04), 2 * 0.04),
+                   "generic_thermodynamics", 40)

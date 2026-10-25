@@ -52,6 +52,7 @@ def test_release_conserves_energy_and_heats_the_damper():
 
 
 def test_damping_frames_are_drawn():
-    frames = render.damping(scenarios.energies_of, scenarios.rates_of, scenarios.release(6, 2, 0.04), 0.08)
+    frames = render.damping(scenarios.energies_of, scenarios.surface_entropy_of, scenarios.rates_of,
+                            scenarios.release(6, 2, 0.04), 0.08)
     frame = next(itertools.islice(frames, 3, None))
     assert frame.ndim == 3 and frame.dtype == np.uint8

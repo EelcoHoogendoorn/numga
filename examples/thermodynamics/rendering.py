@@ -26,9 +26,16 @@ def rgb(colour: str) -> np.ndarray:
 
 
 BLUE, ORANGE, GREY, INK, GREEN = rgb("#3196b4"), rgb("#de9439"), rgb("#aab9c1"), rgb("#485961"), rgb("#458875")
-# The faint colour of the lines a diagram is read against, isotherms or levels, and the white behind everything.
+# The faint colour of the lines a diagram is read against where no ramp of its own suits, and the white behind
+# everything.
 FAINT = rgb("#cfd9dc")
 WHITE = np.ones(3)
+# The colour of each family of lines a diagram is read against, one plain colour a family: isotherms red, isobars
+# purple, isochores green, adiabats teal, levels of humidity blue, of enthalpy brown, other levels grey-blue. Phase
+# boundaries, the lines the regions of a diagram part along, are black.
+FAMILIES = dict(temperature=rgb("#d9604c"), pressure=rgb("#8a68b8"), volume=rgb("#5aa260"), entropy=rgb("#3f9e96"),
+                humidity=rgb("#4a82bd"), enthalpy=rgb("#a8763f"), level=rgb("#8a9ea6"))
+BOUNDARY = rgb("#1c2326")
 
 # Pixels around a diagram's plot: room for the name of the quantity up on the left, of the one across below, and a
 # little on the other two sides.
@@ -115,11 +122,19 @@ def polylines(diagram: Diagram, lines: list[tuple[np.ndarray, np.ndarray]], widt
     return strokes
 
 
-def level_lines(across: np.ndarray, up: np.ndarray, values: np.ndarray, levels: np.ndarray) -> list[np.ndarray]:
+def level_lines(across: np.ndarray, up: np.ndarray, values: np.ndarray,
+                levels: np.ndarray) -> list[tuple[float, np.ndarray]]:
     """Where a function sampled on a grid, `values[up, across]` at the grid's coordinates `across` and `up`, takes
-    each of the levels: polylines `[samples, 2]` of the two coordinates."""
+    each of the levels: each level with a polyline `[samples, 2]` of the two coordinates, as many as it has."""
     lines = contour_generator(across, up, values)
-    return [line for level in levels for line in lines.lines(level) if len(line) > 1]
+    return [(level, line) for level in levels for line in lines.lines(level) if len(line) > 1]
+
+
+def family(diagram: Diagram, lines: list[tuple[float, np.ndarray, np.ndarray]], name: str,
+           width: float) -> list[Strokes]:
+    """A family of lines, each a level and its polyline through values of the two quantities, in the family's
+    colour."""
+    return polylines(diagram, [(x, y) for _, x, y in lines], width, FAMILIES[name], 1.0, SOLID)
 
 
 def arrows(diagram: Diagram, x: np.ndarray, y: np.ndarray, toward_x: np.ndarray, toward_y: np.ndarray, length: float,
@@ -240,12 +255,12 @@ def figure(image: np.ndarray):
 
 # --- the charts of a gas ---------------------------------------------------------------
 class GasLines(NamedTuple):
-    """A gas's lines of equal volume, pressure, temperature and entropy, each a list of polylines of samples of
-    entropy, temperature, volume and pressure `[samples, 4]`."""
-    isochores: list[np.ndarray]
-    isobars: list[np.ndarray]
-    isotherms: list[np.ndarray]
-    adiabats: list[np.ndarray]
+    """A gas's lines of equal volume, pressure, temperature and entropy, each family a list of levels with a polyline
+    of samples of entropy, temperature, volume and pressure `[samples, 4]`; or, as the levels asked for, numbers."""
+    isochores: list
+    isobars: list
+    isotherms: list
+    adiabats: list
 
 
 def gas_values(temperature_of: Callable[[Extensor], Extensor], pressure_of: Callable[[Extensor], Extensor],
@@ -266,16 +281,18 @@ def gas_lines(temperature_of: Callable[[Extensor], Extensor], pressure_of: Calla
     values = lambda entropy, volume: gas_values(temperature_of, pressure_of, states(entropy, volume))
     grid = states(entropies[None, :], volumes[:, None])                                   # [volumes, entropies]
     temperatures, pressures = temperature_of(grid).to_array(), pressure_of(grid).to_array()
-    return GasLines(list(values(entropies[None, :], np.asarray(levels.isochores)[:, None])),
-                    [values(*line.T) for line in level_lines(entropies, volumes, pressures, np.asarray(levels.isobars))],
-                    [values(*line.T) for line in level_lines(entropies, volumes, temperatures, np.asarray(levels.isotherms))],
-                    list(values(np.asarray(levels.adiabats)[:, None], volumes[None, :])))
+    return GasLines(list(zip(levels.isochores, values(entropies[None, :], np.asarray(levels.isochores)[:, None]))),
+                    [(level, values(*line.T)) for level, line in
+                     level_lines(entropies, volumes, pressures, np.asarray(levels.isobars))],
+                    [(level, values(*line.T)) for level, line in
+                     level_lines(entropies, volumes, temperatures, np.asarray(levels.isotherms))],
+                    list(zip(levels.adiabats, values(np.asarray(levels.adiabats)[:, None], volumes[None, :]))))
 
 
-def drawn(diagram: Diagram, lines: list[np.ndarray], x: int, y: int, width: float, colour: np.ndarray,
-          dashes: tuple[float, float]) -> list[Strokes]:
-    """A gas's lines on a diagram of two of their four values, by index: entropy, temperature, volume, pressure."""
-    return polylines(diagram, [(line[:, x], line[:, y]) for line in lines], width, colour, 1.0, dashes)
+def drawn(diagram: Diagram, lines: list, x: int, y: int, width: float, name: str) -> list[Strokes]:
+    """A family of a gas's lines on a diagram of two of their four values, by index: entropy, temperature, volume,
+    pressure; in the family's colour."""
+    return family(diagram, [(level, line[:, x], line[:, y]) for level, line in lines], name, width)
 
 
 # --- apparatus -------------------------------------------------------------------------
@@ -284,9 +301,23 @@ def box(centre: np.ndarray, half: np.ndarray) -> solids.Plane:
     return solids.boxes(solids.translator(solids.mv.point(centre) - solids.origin), np.asarray(half))[None]
 
 
+# The thermal ramp, from icy blue for the coldest shown, through a pale middle, to red heat for the hottest.
+THERMAL = np.stack([rgb(colour) for colour in ("#1f6fc5", "#8fd0f7", "#f2eee8", "#f6a04d", "#d01f17")])
+
+
 def thermal_colour(fraction: float) -> np.ndarray:
-    """Blue for cold through orange for hot, by a share of the way between the coldest and hottest shown."""
-    return BLUE * (1 - fraction) + ORANGE * fraction
+    """The thermal ramp's colour a share of the way from the coldest shown to the hottest."""
+    place = np.clip(fraction, 0.0, 1.0) * (len(THERMAL) - 1)
+    low = min(int(place), len(THERMAL) - 2)
+    return THERMAL[low] * (1 - (place - low)) + THERMAL[low + 1] * (place - low)
+
+
+def relaxing(gap: float, widest: float, decades: float) -> float:
+    """The share along the thermal ramp of a temperature a gap above a reference, positive or negative, which the
+    widest gap shown puts at the ramp's ends: by the gap's logarithm, over as many decades as shown, so that a gap
+    closing exponentially moves along the ramp at a steady pace and the last of it stays visible."""
+    depth = np.clip(np.log10(abs(gap) / widest + 1e-300) / decades + 1, 0.0, 1.0)
+    return 0.5 + 0.5 * np.sign(gap) * depth
 
 
 # The cylinder's inner half width and depth, its wall thickness, and the piston's thickness.

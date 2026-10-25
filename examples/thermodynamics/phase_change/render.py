@@ -1,10 +1,12 @@
 """Boiling under a loaded piston beside two property charts of the van der Waals fluid.
 
-The pressure–volume chart holds the isotherms under the dome of coexisting volumes; the isotherm at the boiling
-temperature crosses its loop at the saturation pressure, cutting off two equal areas. The temperature–enthalpy chart
-holds the dome again and the isobars, each rising through the liquid, flat across the dome while the fluid boils and
-rising through the vapour, with lines of equal vapour fraction across the dome. Heat taken in at fixed pressure is the
-enthalpy's change, so the heated fluid walks along its isobar in equal steps of enthalpy.
+The pressure–volume chart holds the isotherms, red, under the dome of coexisting volumes, black; the isotherm at the
+boiling temperature crosses its loop at the saturation pressure, cutting off two equal areas. The temperature–enthalpy
+chart holds the dome again and the isobars, purple, each rising through the liquid, flat across the dome while the
+fluid boils and rising through the vapour, with lines of equal vapour fraction, grey-blue, across the dome. The phase
+diagram holds the saturation pressure against the temperature, ending at the critical point, and lines of equal
+volume, green; the heated fluid crosses the saturation curve at its fixed pressure. Heat taken in at fixed pressure is
+the enthalpy's change, so the heated fluid walks along its isobar in equal steps of enthalpy.
 
 The charts' curves come from the fluid's own functions, which the notebook hands over; this module only samples them.
 """
@@ -26,10 +28,13 @@ IsobarAt = Callable[[core.Scalar, float], core.Scalar]
 # The charts' size in pixels; the pressure–volume chart's ranges and isotherms; the temperature–enthalpy chart's
 # ranges, the temperatures of the dome's samples, the saturation temperatures of its isobars, and the vapour fractions
 # of its lines across the dome.
-ROWS, COLUMNS = 260, 300
+ROWS, COLUMNS = 300, 330
 VOLUMES, PRESSURES = (0.0, 4.4), (0.0, 0.44)
 ISOTHERMS = np.array([0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0, 1.05, 1.1])
 ENTHALPIES, TEMPERATURES = (-1.6, 2.4), (0.6, 1.12)
+# The phase diagram's ranges, temperature and pressure, and the volumes of its lines of equal volume.
+PHASE_TEMPERATURES, PHASE_PRESSURES = (0.6, 1.12), (0.0, 0.55)
+ISOCHORES = np.array([0.5, 0.6, 0.8, 1.0, 1.4, 2.0, 3.0])
 DOME = np.linspace(0.6, 0.995, 40)
 ISOBARS = np.array([0.7, 0.75, 0.8, 0.85, 0.9, 0.95])
 FRACTIONS = np.array([0.2, 0.4, 0.6, 0.8])
@@ -42,7 +47,7 @@ CRITICAL_VOLUME, CRITICAL_PRESSURE, CRITICAL_TEMPERATURE = 1.0, 3 / 8, 1.0
 HEIGHT_PER_VOLUME, CYLINDER_PIXELS = 0.55, 150
 # The colours of the liquid and of the vapour, and how much of what lies behind it the vapour hides; the dome's.
 LIQUID, VAPOUR, VAPOUR_OPACITY = art.BLUE, art.rgb("#9ccfe0"), 0.35
-DOME_COLOUR = art.GREEN
+DOME_COLOUR = art.BOUNDARY
 # Line widths, in pixels.
 THIN, BOLD = 1.0, 2.2
 
@@ -111,6 +116,14 @@ class Charts:
         self.fractions = (liquid_enthalpies * (1 - FRACTIONS[:, None]) + vapour_enthalpies * FRACTIONS[:, None],
                           np.broadcast_to(temperatures, (len(FRACTIONS), len(temperatures))))
         self.isotherm_volumes, self.isotherm_pressures = isotherms(mv, pressure_at, ISOTHERMS)
+        # The phase diagram: the saturation curve, and lines of equal volume, straight in temperature.
+        self.pressure_temperature = art.Diagram(PHASE_TEMPERATURES, PHASE_PRESSURES, (PHASE_TEMPERATURES[0], 0.0), ROWS,
+                                                COLUMNS, ("T", "p"))
+        self.saturation_temperatures = np.concatenate([temperatures, [CRITICAL_TEMPERATURE]])
+        self.saturation_pressures = np.concatenate([levels, [CRITICAL_PRESSURE]])
+        self.isochore_temperatures = np.linspace(*PHASE_TEMPERATURES, 60)
+        self.isochore_pressures = list(numbers(pressure_at(mv.scalar(ISOCHORES[:, None, None]),
+                                                           self.isochore_temperatures[None, :])))
         self.own = ISOTHERMS == temperature
         self.temperature = temperature
         # The isobars at the saturation pressures of their temperatures.
@@ -137,34 +150,54 @@ class Charts:
     def pressure_volume_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         diagram = self.pressure_volume
         family = self.isotherm_pressures
-        shades = np.where(self.own[:, None], art.INK, np.where((ISOTHERMS == 1.0)[:, None], art.GREY, art.FAINT))
+        isotherm = art.FAMILIES["temperature"]
         layers = ([art.areas(diagram, x, y, colour, 0.28) for x, y, colour in self.lobes]
-                  + art.within(diagram, self.isotherm_volumes, family, THIN, shades, 1.0)
-                  + art.within(diagram, self.dome_volumes[None], self.dome_pressures[None], 1.6, DOME_COLOUR[None], 1.0)
+                  + art.within(diagram, self.isotherm_volumes[~self.own], family[~self.own], THIN,
+                               np.broadcast_to(isotherm, (int((~self.own).sum()), 3)), 1.0)
+                  + art.within(diagram, self.isotherm_volumes[self.own], family[self.own], 1.8, isotherm[None], 1.0)
+                  + art.within(diagram, self.dome_volumes[None], self.dome_pressures[None], 1.8, DOME_COLOUR[None], 1.0)
                   + marked(diagram, path))
         labels = region_labels((0.2, 0.06), (2.0, 0.12), (3.3, 0.33)) + [
             art.Label(CRITICAL_VOLUME, CRITICAL_PRESSURE, "critical point", DOME_COLOUR, art.LABEL_SIZE, "lb", (6, 3)),
-            art.Label(VOLUMES[1], self.isotherm_pressures[self.own][0, -1], f"T = {self.temperature:g}", art.INK,
+            art.Label(VOLUMES[1], self.isotherm_pressures[self.own][0, -1], f"T = {self.temperature:g}", isotherm,
                       art.LABEL_SIZE, "rb", (0, 3))]
         return art.picture(diagram, layers, labels)
 
     def temperature_enthalpy_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         diagram = self.temperature_enthalpy
-        faint = [art.within(diagram, enthalpies[None], temperatures[None], THIN,
-                            (art.INK if own else art.FAINT)[None], 1.0)
+        isobar = art.FAMILIES["pressure"]
+        lines = [art.within(diagram, enthalpies[None], temperatures[None], 1.8 if own else THIN, isobar[None], 1.0)
                  for (enthalpies, temperatures), own in zip(self.isobars, self.own_isobar)]
-        layers = ([art.dashed(diagram, *self.fractions, THIN, art.GREY, (3.0, 3.0))]
-                  + [stroke for strokes in faint for stroke in strokes]
-                  + art.within(diagram, self.dome_enthalpies[None], self.dome_temperatures[None], 1.6, DOME_COLOUR[None], 1.0)
+        layers = (art.polylines(diagram, list(zip(*self.fractions)), THIN, art.FAMILIES["level"], 1.0, art.SOLID)
+                  + [stroke for strokes in lines for stroke in strokes]
+                  + art.within(diagram, self.dome_enthalpies[None], self.dome_temperatures[None], 1.8, DOME_COLOUR[None], 1.0)
                   + marked(diagram, path))
         bottom = np.argmin(np.abs(DOME - TEMPERATURES[0] - 0.03))
         labels = region_labels((-1.15, 1.02), (0.45, 0.665), (2.0, 0.8)) + [
             art.Label(self.dome_enthalpies[len(DOME)], CRITICAL_TEMPERATURE, "critical point", DOME_COLOUR,
                       art.LABEL_SIZE, "lb", (6, 3)),
-            art.Label(ENTHALPIES[1], self.temperature, f"p = {self.saturation:.2f}", art.INK, art.LABEL_SIZE, "rb",
+            art.Label(ENTHALPIES[1], self.temperature, f"p = {self.saturation:.2f}", isobar, art.LABEL_SIZE, "rb",
                       (0, 3))] + [
-            art.Label(enthalpy, DOME[bottom], f"{fraction:g}", art.GREY, art.LABEL_SIZE, "mt", (0, -2))
+            art.Label(enthalpy, DOME[bottom], f"{fraction:g}", art.FAMILIES["level"], art.LABEL_SIZE, "mt", (0, -2))
             for enthalpy, fraction in zip(self.fractions[0][:, bottom], FRACTIONS)]
+        return art.picture(diagram, layers, labels)
+
+    def pressure_temperature_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
+        """The phase diagram: the saturation pressure against the temperature up to the critical point, with the lines
+        of equal volume, and the heated fluid's path across the saturation curve at its fixed pressure."""
+        diagram = self.pressure_temperature
+        layers = (art.polylines(diagram, [(self.isochore_temperatures, line) for line in self.isochore_pressures], THIN,
+                                art.FAMILIES["volume"], 1.0, art.SOLID)
+                  + art.polylines(diagram, [(self.saturation_temperatures, self.saturation_pressures)], 1.8, DOME_COLOUR,
+                                  1.0, art.SOLID)
+                  + art.dots(diagram, CRITICAL_TEMPERATURE, CRITICAL_PRESSURE, DOME_COLOUR)
+                  + marked(diagram, path))
+        labels = [art.Label(0.68, 0.33, "liquid", art.INK, art.NAME_SIZE, "mm", (0, 0)),
+                  art.Label(0.98, 0.1, "vapour", art.INK, art.NAME_SIZE, "mm", (0, 0)),
+                  art.Label(CRITICAL_TEMPERATURE, CRITICAL_PRESSURE, "critical point", DOME_COLOUR, art.LABEL_SIZE, "rb",
+                            (-6, 3)),
+                  art.Label(PHASE_TEMPERATURES[1], self.isochore_pressures[-1][-1], "V = const", art.FAMILIES["volume"],
+                            art.LABEL_SIZE, "rt", (0, -3))]
         return art.picture(diagram, layers, labels)
 
 
@@ -184,7 +217,8 @@ def draw_charts(pressure_at: PressureAt, enthalpy_at: EnthalpyAt, coexistence_at
     """The two property charts, the isotherm and the isobar at the temperature drawn dark."""
     charts = Charts(pressure_at, enthalpy_at, coexistence_at, isobar_at, temperature)
     empty = (np.zeros(0), np.zeros(0))
-    return art.figure(art.beside([charts.pressure_volume_chart(empty), charts.temperature_enthalpy_chart(empty)]))
+    return art.figure(art.beside([charts.pressure_volume_chart(empty), charts.temperature_enthalpy_chart(empty),
+                                  charts.pressure_temperature_chart(empty)]))
 
 
 def heating(pressure_at: PressureAt, enthalpy_at: EnthalpyAt, coexistence_at: CoexistenceAt, isobar_at: IsobarAt,
@@ -202,4 +236,5 @@ def heating(pressure_at: PressureAt, enthalpy_at: EnthalpyAt, coexistence_at: Co
         pressures = np.full(len(traced), charts.saturation)
         yield art.beside([boiler(values[0], values[3], VOLUMES[1], share),
                           charts.pressure_volume_chart((traced[:, 0], pressures)),
-                          charts.temperature_enthalpy_chart((traced[:, 2], traced[:, 1]))])
+                          charts.temperature_enthalpy_chart((traced[:, 2], traced[:, 1])),
+                          charts.pressure_temperature_chart((traced[:, 1], pressures))])
