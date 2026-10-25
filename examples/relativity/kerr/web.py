@@ -1,7 +1,8 @@
 """A page that traces the black hole in the browser, on the reader's own GPU: the GPU notebook's shader, compiled once
 here, with the data it reads, the sky, the blackbody colours and the disk's waves, written into one HTML file. The page
 drives the shader with the spin and the camera's orientation and distance; nothing is computed on a server, and no
-picture is sent.
+picture is sent. The sky is drawn on the GPU when the page loads, so that the file holds only the shader and a few
+tables, and the image traces at fewer pixels when frames come slower than the GPU can keep up with.
 
 Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]` to halve or double the step, space to
 stop or restart the disk, `s` the spin's sweep, and `e` the exposure's following of the brightest light, as in the
@@ -22,10 +23,79 @@ from examples.relativity.kerr import core, gpu, render, scenarios, viewer
 from examples.util.wgsl.runner import coefficients
 
 mv = core.mv
-# The page's image, in points, traced at the screen's pixels behind them: smaller than the window's, for slower GPUs;
-# and the sky's size, half the scenario's, so that the page stays a few megabytes.
-SIZE = (360, 240)
-SKY = (scenarios.sky_width // 2, scenarios.sky_height // 2)
+# The page's image, in points, traced at the screen's pixels behind them, or fewer when frames come slowly; and the
+# sky's size, the scenario's.
+SIZE = viewer.WINDOW
+SKY = (scenarios.sky_width, scenarios.sky_height)
+
+# The sky of `render.star_texture`, drawn on the GPU into a texture once: a faint dusty band across the background,
+# and stars spread evenly over the sphere, each a small Gaussian stamp. Each texel gathers the stars of its own cell and
+# the eight around it, a cell holding at most one, at a hashed place, kept by the cosine of its latitude, so that they
+# fall evenly over the sphere as the catalogue's do; their brightness and warmth are hashed as the catalogue's are drawn.
+SKY_SHADER = """
+@group(0) @binding(0) var sky: texture_storage_2d<rgba16float, write>;
+
+const pi = 3.141592653589793;
+// A cell's side in texels: one star per 140 texels on average once the cosine has thinned them by 2 / pi.
+const cell_side = 9.44;
+
+fn hash(value: u32) -> u32 {
+    var state = value * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+fn uniform(cell: vec2<u32>, which: u32) -> f32 {
+    return f32(hash(hash(cell.x * 1973u + cell.y * 9277u + 26699u) + which * 1046527u)) / 4294967296.0;
+}
+
+@compute @workgroup_size(8, 8)
+fn draw(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = textureDimensions(sky);
+    if (id.x >= size.x || id.y >= size.y) {
+        return;
+    }
+    let longitude = (f32(id.x) + 0.5) * (2 * pi / f32(size.x)) - pi;
+    let latitude = (0.5 - (f32(id.y) + 0.5) / f32(size.y)) * pi;
+    let direction = vec3<f32>(cos(latitude) * cos(longitude), cos(latitude) * sin(longitude), sin(latitude));
+    let band_height = 0.2 * direction.x - 0.6 * direction.y - sqrt(0.6) * direction.z;
+    let cloud = sin(13 * direction.x + 9 * direction.y - 7 * direction.z)
+        + 0.45 * sin(31 * direction.x - 23 * direction.y + 19 * direction.z)
+        + 0.18 * sin(79 * direction.x + 47 * direction.y + 53 * direction.z);
+    let band = exp(-pow(band_height / 0.16, 2.0)) * (0.75 + 0.2 * cloud);
+    let dust = exp(-pow((band_height + 0.025 * cloud) / 0.035, 2.0));
+    var colour = vec3<f32>(0.006, 0.009, 0.019) + band * vec3<f32>(0.065, 0.058, 0.09) * (1 - 0.7 * dust);
+
+    let cells = max(vec2<u32>(round(vec2<f32>(size) / cell_side)), vec2<u32>(1u));
+    let cell_size = vec2<f32>(size) / vec2<f32>(cells);
+    let home = vec2<i32>(vec2<f32>(f32(id.x) + 0.5, f32(id.y) + 0.5) / cell_size);
+    for (var down = -1; down <= 1; down++) {
+        for (var across = -1; across <= 1; across++) {
+            let row = home.y + down;
+            if (row < 0 || row >= i32(cells.y)) {
+                continue;
+            }
+            let cell = vec2<u32>(u32((home.x + across + i32(cells.x)) % i32(cells.x)), u32(row));
+            let place = (vec2<f32>(cell) + vec2<f32>(uniform(cell, 0u), uniform(cell, 1u))) * cell_size;
+            let star_latitude = (0.5 - place.y / f32(size.y)) * pi;
+            if (uniform(cell, 2u) > cos(star_latitude)) {
+                continue;
+            }
+            // The star's place from this texel's centre, across the seam where the sky wraps round.
+            var offset = place - vec2<f32>(f32(id.x) + 0.5, f32(id.y) + 0.5);
+            offset.x = offset.x - f32(size.x) * round(offset.x / f32(size.x));
+            if (abs(offset.x) > 2.5 || abs(offset.y) > 2.5) {
+                continue;
+            }
+            let brightness = 0.35 + 2.5 * pow(uniform(cell, 3u), 6.0);
+            let warmth = uniform(cell, 4u);
+            let tint = mix(vec3<f32>(0.57, 0.72, 1.0), vec3<f32>(1.0, 0.79, 0.51), warmth);
+            colour += exp(-dot(offset, offset) / (2 * 0.6 * 0.6)) * brightness * tint;
+        }
+    }
+    textureStore(sky, id.xy, vec4<f32>(clamp(colour, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0));
+}
+"""
 PAGE = Path("build") / "kerr.html"
 
 
@@ -84,8 +154,8 @@ def contents() -> dict:
         rotor=rotor_terms(kinds["orientation"]),
         modes=encoded(tracer.layout.array(mode, values["modes"])),
         blackbodies=half_floats(values["blackbodies"] * unit),
-        stars=half_floats(render.star_texture(SKY[0], SKY[1], scenarios.sky_seed)),
-        stride=tracer.layout.stride(tracer.layout.resolve("Sample")), sky=sample["sky"],
+        sky=dict(code=SKY_SHADER, width=SKY[0], height=SKY[1]),
+        stride=tracer.layout.stride(tracer.layout.resolve("Sample")), sky_offset=sample["sky"],
         size=list(SIZE),
         start=dict(inclination=scenarios.camera_inclination, distance=scenarios.camera_distance, step=viewer.STEP,
                    flow_time=scenarios.flow_time, scenario_step=scenarios.camera_step_fraction,

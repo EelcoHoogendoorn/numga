@@ -41,9 +41,17 @@ async function start() {
   const ratio = window.devicePixelRatio || 1;
   canvas.style.width = C.size[0] + "px";
   canvas.style.height = C.size[1] + "px";
-  const columns = Math.round(C.size[0] * ratio), rows = Math.round(C.size[1] * ratio);
-  canvas.width = columns;
-  canvas.height = rows;
+  // The image traces at the screen's pixels, or at a share of them when frames come slower than about 24 a second;
+  // the share grows back when they come faster than about 40.
+  const full = [Math.round(C.size[0] * ratio), Math.round(C.size[1] * ratio)];
+  let share = 1, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
+  const resize = () => {
+    columns = Math.max(1, Math.round(full[0] * share));
+    rows = Math.max(1, Math.round(full[1] * share));
+    canvas.width = columns;
+    canvas.height = rows;
+  };
+  resize();
   const context = canvas.getContext("webgpu");
   const format = navigator.gpu.getPreferredCanvasFormat();
   context.configure({ device, format, alphaMode: "opaque" });
@@ -77,13 +85,26 @@ async function start() {
                               [image.width, image.height]);
     return made;
   };
+  // The sky, drawn once on the GPU.
+  const sky = device.createTexture({ size: [C.sky.width, C.sky.height], format: "rgba16float",
+                                     usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
+  {
+    const drawing = device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code: C.sky.code }), entryPoint: "draw" } });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(drawing);
+    pass.setBindGroup(0, device.createBindGroup({ layout: drawing.getBindGroupLayout(0), entries: [{ binding: 0, resource: sky.createView() }] }));
+    pass.dispatchWorkgroups(Math.ceil(C.sky.width / 8), Math.ceil(C.sky.height / 8));
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+  }
   const resources = {
     uniforms: { buffer: uniformBuffer },
     blackbodies: texture(C.blackbodies).createView(),
     filtered: device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "clamp-to-edge" }),
     modes: { buffer: modeBuffer },
-    stars: texture(C.stars).createView(),
-    image: { buffer: device.createBuffer({ size: columns * rows * C.stride, usage: GPUBufferUsage.STORAGE }) },
+    stars: sky.createView(),
+    image: { buffer: device.createBuffer({ size: full[0] * full[1] * C.stride, usage: GPUBufferUsage.STORAGE }) },
   };
   const group = device.createBindGroup({ layout, entries: C.bindings.map(binding => ({ binding: binding.index, resource: resources[binding.name] })) });
 
@@ -133,6 +154,12 @@ async function start() {
   async function frame() {
     const now = performance.now(), seconds = (now - last) / 1000;
     last = now;
+    frameTime += 0.2 * (Math.min(seconds, 0.5) - frameTime);
+    if (now - paced > 500) {
+      const wanted = frameTime > 1 / 24 ? Math.max(share * 0.85, 0.3) : frameTime < 1 / 40 ? Math.min(share * 1.1, 1) : share;
+      if (Math.abs(wanted - share) > 1e-3) { share = wanted; resize(); }
+      paced = now;
+    }
     if (state.flowing) state.elapsed += seconds * C.start.flow_time / 10;
     if (state.spinning) state.sweep += seconds * 2 * Math.PI / C.limits.spin_period;
     const spin = C.limits.largest_spin * Math.sin(state.sweep);
@@ -150,7 +177,7 @@ async function start() {
     uniforms.setUint32(C.offsets.pixels, columns, true);
     uniforms.setUint32(C.offsets.pixels + 4, rows, true);
     device.queue.writeBuffer(uniformBuffer, 0, block);
-    [columns, C.stride / 4, C.sky, columns * rows].forEach((number, index) => view.setUint32(4 * index, number, true));
+    [columns, C.stride / 4, C.sky_offset, columns * rows].forEach((number, index) => view.setUint32(4 * index, number, true));
     [state.following ? state.reference : C.exposure.fixed, C.exposure.mid_grey, C.exposure.gamma, C.exposure.saturation]
       .forEach((number, index) => view.setFloat32(16 + 4 * index, number, true));
     device.queue.writeBuffer(viewBuffer, 0, view.buffer);
