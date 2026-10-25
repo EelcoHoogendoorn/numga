@@ -49,10 +49,12 @@ struct Field {
 
 fn field(position: Antivector) -> Field {
     let spatial = space(position);
-    // The volume the position spans with the spin plane, and the position's height off that plane.
-    let volume = spatial.anticommutator(spin);
-    let height = volume ^ spin;
-    let spin_squared = -spin.squared();
+    // The plane the hole turns in, whose dual is its spin; the volume the position spans with it, and the
+    // position's height off it.
+    let turning = spin.dual_inverse();
+    let volume = spatial.anticommutator(turning);
+    let height = volume ^ turning;
+    let spin_squared = spin.squared();
     let offset = spatial.squared() - spin_squared;
     let discriminant = (offset.squared() - 4 * volume.squared()).square_root();
     let radius_squared = (offset + discriminant) / 2;
@@ -60,18 +62,18 @@ fn field(position: Antivector) -> Field {
     // Paired with a small step, how far the step changes the oblate radius.
     let radius_gradient = (radius_squared * spatial - height).dual() / (radius * discriminant);
     // The hole drags the outgoing direction against its turning.
-    let direction = (radius * spatial - spatial.commutator(spin) - height / radius) / (radius_squared + spin_squared);
+    let direction = (radius * spatial - spatial.commutator(turning) - height / radius) / (radius_squared + spin_squared);
     let lever = spatial - 2 * radius * direction + height / radius_squared;
     let direction_gradient = (
         lever * (radius_gradient & Antivector)
-        + radius * space - space.commutator(spin)
-        - (space.anticommutator(spin) ^ spin) / radius
+        + radius * space - space.commutator(turning)
+        - (space.anticommutator(turning) ^ turning) / radius
     ) / (radius_squared + spin_squared);
     let denominator = radius_squared.squared() - volume.squared();
     let profile = mass * radius**3 / denominator;
     let profile_gradient = profile * (3 * radius_gradient / radius
         - (4 * radius**3 * radius_gradient - 2 * height.dual()) / denominator);
-    let null_curl = ((radius_gradient ^ lever.dual()) - 2 * spin) / (radius_squared + spin_squared);
+    let null_curl = ((radius_gradient ^ lever.dual()) - 2 * turning) / (radius_squared + spin_squared);
     return Field(radius, profile, time - direction, profile_gradient, -direction_gradient, null_curl);
 }
 
@@ -173,7 +175,7 @@ struct Mode {
 var<storage, read> modes: array<Mode>;
 
 fn orbital_speed(radius: f32) -> f32 {
-    let alignment = -spin.scalar_product(orbit);
+    let alignment = orbit & spin;
     return mass.square_root() / (radius * radius.square_root() + alignment * mass.square_root());
 }
 
@@ -344,7 +346,7 @@ def shader() -> Shader:
 
 def scene() -> dict:
     """The values the shader reads for the still: hole, camera, disk, tables and sky."""
-    spin = mv.xy * scenarios.camera_spin                                        # [] Spin
+    spin = mv.xy.dual() * scenarios.camera_spin                                 # [] Spin
     orientation = (mv.zx * (-scenarios.camera_inclination / 2)).exp()           # [] Rotor
     eye = (orientation >> mv.z.dual()) * scenarios.camera_distance              # [] Antivector
     # The camera at rest, a unit along the lab's time measured in proper time at the eye.

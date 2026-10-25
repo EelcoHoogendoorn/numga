@@ -156,4 +156,4 @@ def anomalous_angle(velocity: Antivector, spin: Spin) -> Scalar:
     direction = motion / motion.squared().square_root()                         # [...] Antivector
     along = spin_along(direction)                                               # [...] Spin
     # The product of two such patches is the rotor through their angle, read by pairing with the orbit's patch.
-    return (along.inverse() * lab_view(velocity, spin)).log() & (mv.x.dual() & mv.y.dual())   # [...] Scalar
+    return (along.inverse() * lab_view(velocity, spin)).log() & mv.xy.dual()    # [...] Scalar

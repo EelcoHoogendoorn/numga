@@ -73,7 +73,7 @@ beam_direction = section_plane.dual()                      # [] Point
 shift_along_beam = section_plane ^ mv.w                    # [] Twist
 # The couple about the beam: the line at infinity of the section's plane as a load, the join of the
 # directions across and up.
-couple_about_beam = mv.x.dual() & mv.y.dual()              # [] Forque
+couple_about_beam = mv.xy.dual()                           # [] Forque
 
 
 # --- math -----------------------------------------------------------------------------

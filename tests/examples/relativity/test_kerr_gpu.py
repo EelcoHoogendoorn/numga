@@ -34,7 +34,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 
 def test_shader_rates_match_core():
-    spin = mv.xy * scenarios.camera_spin + mv.yz * 0.2
+    spin = (mv.xy * scenarios.camera_spin + mv.yz * 0.2).dual()
     random = np.random.default_rng(1)
     n_rays = 64
     # Events between the photon orbits and the camera, and null momenta in random directions there.
@@ -56,7 +56,7 @@ def test_shader_rates_match_core():
 
 
 def test_shader_camera_screen_uses_the_same_static_observer_as_core():
-    spin, mass = .8 * mv.xy, 1.
+    spin, mass = .8 * mv.xy.dual(), 1.
     orientation = (mv.zx * (-1.2 / 2)).exp()
     eye = (orientation >> mv.z.dual()) * 28
     positions, momenta = core.camera_rays(eye, orientation, 5, 3, .35, spin, mass)

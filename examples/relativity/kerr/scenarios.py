@@ -55,7 +55,7 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     """Rays sent along x past the hole, one sweep of its spin, and the horizon's cut through the
     equatorial plane at each spin."""
     x, y = core.mv.x.dual(), core.mv.y.dual()
-    spin = core.mv.xy * spins[:, None]                         # [frames, 1] Spin
+    spin = core.mv.xy.dual() * spins[:, None]                  # [frames, 1] Spin
     position = -x * extent + y * offsets                        # [rays] Antivector
     momentum = core.initial_momentum(position, x, spin, mass)
     position = position.broadcast_to(momentum.shape)
@@ -76,7 +76,7 @@ def camera(width: int, height: int, view: float) -> tuple[core.Image, core.Scala
     the power its emission passes through each analyzer, `[analyzers, crossings] Scalar`."""
     orientation = (core.mv.zx * (-camera_inclination / 2)).exp()
     eye = (orientation >> core.mv.z.dual()) * camera_distance
-    spin = core.mv.xy * camera_spin
+    spin = core.mv.xy.dual() * camera_spin
     # The thin disk ends at the innermost stable orbit of gas turning with the hole.
     inner_radius = core.innermost_stable_orbit(core.mv.xy, spin, mass)
     position, momentum = core.camera_rays(eye, orientation, width, height, view, spin, mass)
@@ -102,7 +102,7 @@ def disk_flow(image: core.Image, loop_frames: int) -> Iterator[core.Antivector]:
     loop before that, `[2, crossings] Antivector` per frame: the flow carries the disk's texture, while
     its light stays steady."""
     points, _, _ = image.disk
-    spin = core.mv.xy * camera_spin
+    spin = core.mv.xy.dual() * camera_spin
     for elapsed in np.linspace(0, flow_time, loop_frames, endpoint=False):
         yield core.carried(points, image.disk_radii, core.mv.xy, spin, mass, np.array([elapsed, elapsed - flow_time]))
 
@@ -138,7 +138,7 @@ def main() -> None:
     assert np.all(disk_share + sky_share <= 1 + 1e-13)
     np.testing.assert_allclose((disk_share + sky_share)[image.sky_pixels], 1, atol=1e-13, rtol=0)
     points, momenta, _ = image.disk
-    tangent, _ = core.rates(points, momenta, core.mv.xy * camera_spin, mass)
+    tangent, _ = core.rates(points, momenta, core.mv.xy.dual() * camera_spin, mass)
     np.testing.assert_allclose((momenta & tangent).kernel, 0, atol=7e-2, rtol=0)
 
 

@@ -17,8 +17,8 @@ from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
 # The patches a field's planes xy and yz are read across: the joins of the two directions in each plane.
-XY_PATCH = core.mv.x.dual() & core.mv.y.dual()
-YZ_PATCH = core.mv.y.dual() & core.mv.z.dual()
+XY_PATCH = core.mv.xy.dual()
+YZ_PATCH = core.mv.yz.dual()
 INK = "#263b51"
 PAIR = "#198b87"
 FIXED = "#d17c24"

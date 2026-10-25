@@ -45,7 +45,7 @@ Up = Even.derive.within("x y")
 Down = Even.derive.containing("z")
 Bivector = ga.gatype.bivector()
 # The spin of the spinor one, spin up: the patch of the plane xy.
-UP_SPIN = mv.x.dual() & mv.y.dual()                                           # [] Spin
+UP_SPIN = mv.xy.dual()                                                        # [] Spin
 
 
 # --- math -----------------------------------------------------------------------------

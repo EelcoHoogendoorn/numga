@@ -51,7 +51,7 @@ BONDS = mv.vector([[0.5, np.sqrt(3) / 2, 0.0], [0.5, -np.sqrt(3) / 2, 0.0], [-1.
 VALLEYS = mv.vector([[2 * np.pi / 3, 2 * np.pi / (3 * np.sqrt(3)), 0.0],
                      [2 * np.pi / 3, -2 * np.pi / (3 * np.sqrt(3)), 0.0]])                     # [2] Vector
 # The pseudospin of a state wholly on the first sublattice: the patch of the plane xy.
-FIRST_SUBLATTICE = mv.x.dual() & mv.y.dual()                                   # [] Pseudospin
+FIRST_SUBLATTICE = mv.xy.dual()                                                # [] Pseudospin
 
 
 # --- math -----------------------------------------------------------------------------

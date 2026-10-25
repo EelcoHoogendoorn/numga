@@ -8,7 +8,7 @@ leaves as a muon neutrino.
 
 A two-flavor state is modelled as half the antiscalar, its trace, plus its isospin, `0.5 * (antiscalar +
 isospin)`, a point of the flavor sphere with the electron flavor at z. The isospin is intrinsic, like every
-spin: the electron flavor is the patch of the phase plane, `mv.x.dual() & mv.y.dual()`, and a flavor's part
+spin: the electron flavor is the patch of the phase plane, `phase_plane.dual()`, and a flavor's part
 of an isospin is its pairing with that plane, `phase_plane & isospin`. The Hamiltonian is an extrinsic
 bivector, the plane the state turns in, and the change of a state under it is the map
 `-plane.commutator(State)`; matter shifts that plane, and the drift
@@ -46,7 +46,7 @@ phase_plane = mv.x ^ mv.y                                                    # [
 mixing_plane = mv.x ^ mv.z                                                   # [] Bivector
 # The flavors at the poles of the flavor sphere: the electron neutrino along z, the patch of the phase plane, the
 # muon neutrino against it.
-flavor_e = mv.x.dual() & mv.y.dual()                                         # [] Isospin
+flavor_e = phase_plane.dual()                                                # [] Isospin
 flavor_mu = -flavor_e                                                        # [] Isospin
 
 

@@ -26,7 +26,8 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Antivector = ga.gatype.antivector()
-Spin = Bivector.derive.within("x y z")
+# The hole's spin per unit mass: intrinsic, the patch of the plane it turns in, a plane through time.
+Spin = Bivector.derive.containing("t").derive.flipped_orientation
 Rotor = ga.gatype.rotor()
 # Directions on the camera's screen, along its own x and y: the antivectors that hold both t and z.
 Screen = Antivector.derive.containing("t z")
@@ -55,26 +56,28 @@ CROSSINGS = 4
 def field(position: Antivector, spin: Spin, mass: float) -> Field:
     """The Kerr profile, null direction and their derivatives at a batch of events."""
     spatial = space(position)                                                               # [...] Antivector
-    # The volume the position spans with the spin plane: the spin times the position's height off its
-    # plane, held by its complement along time. Wedged with the spin it is that height along the spin's
-    # axis, times the spin squared; the spin enters twice, so its sense of turning drops out.
-    volume = spatial.anticommutator(spin)                                                   # [...] Vector
-    height = volume ^ spin                                                                  # [...] Antivector
-    spin_squared = -spin.squared()                                                          # [...] Scalar
+    # The plane the hole turns in, whose dual is its spin.
+    turning = spin.dual_inverse()                                                           # [...] Bivector
+    # The volume the position spans with the turning plane: the plane times the position's height off it,
+    # held by its complement along time. Wedged with the plane it is that height along the spin, times the
+    # spin squared; the plane enters twice, so its sense of turning drops out.
+    volume = spatial.anticommutator(turning)                                                # [...] Vector
+    height = volume ^ turning                                                               # [...] Antivector
+    spin_squared = spin.squared()                                                           # [...] Scalar
     offset = spatial.squared() - spin_squared                                               # [...] Scalar
     discriminant = (offset.squared() - 4 * volume.squared()).square_root()                  # [...] Scalar
     radius_squared = (offset + discriminant) / 2                                            # [...] Scalar
     radius = radius_squared.square_root()                                                   # [...] Scalar
     # Paired with a small step, how far the step changes the oblate radius.
     radius_gradient = (radius_squared * spatial - height).dual() / (radius * discriminant)  # [...] Vector
-    # The hole turns as `(spin * (-angle / 2)).exp()` does, and drags the frame with it: the outgoing
-    # direction twists against the turning, by the position's commutator with the spin.
-    direction = (radius * spatial - spatial.commutator(spin) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector
+    # The hole turns as `(turning * (-angle / 2)).exp()` does, and drags the frame with it: the outgoing
+    # direction twists against the turning, by the position's commutator with the plane.
+    direction = (radius * spatial - spatial.commutator(turning) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector
     lever = spatial - 2 * radius * direction + height / radius_squared                      # [...] Antivector
     direction_gradient = (
         lever * (radius_gradient & Antivector)
-        + radius * space - space.commutator(spin)
-        - (space.anticommutator(spin) ^ spin) / radius
+        + radius * space - space.commutator(turning)
+        - (space.anticommutator(turning) ^ turning) / radius
     ) / (radius_squared + spin_squared)                                                     # [...] Antivector <- Antivector
     denominator = radius_squared.squared() - volume.squared()                               # [...] Scalar
     profile = mass * radius**3 / denominator                                                # [...] Scalar
@@ -236,7 +239,7 @@ def orbiting_gas(position: Antivector, orbit: Bivector, spin: Spin, mass: float)
 def orbital_speed(radius: Scalar, orbit: Bivector, spin: Spin, mass: float) -> Scalar:
     """Kepler's angular speed, per coordinate time, of a circular equatorial orbit in the unit plane
     `orbit` at each oblate radius, the spin counted along the orbit."""
-    alignment = -spin.scalar_product(orbit)                                                 # [] Scalar
+    alignment = orbit & spin                                                                # [] Scalar
     return np.sqrt(mass) / (radius * radius.square_root() + alignment * np.sqrt(mass))      # [...] Scalar
 
 
@@ -254,7 +257,7 @@ def innermost_stable_orbit(orbit: Bivector, spin: Spin, mass: float) -> Scalar:
     """The radius of the innermost stable circular equatorial orbit in the unit plane `orbit`, turning
     with the hole, the spin counted along the orbit: 6M without spin, M at the extreme (Bardeen, Press
     and Teukolsky, 1972)."""
-    ratio = -spin.scalar_product(orbit) / mass                                              # [] Scalar
+    ratio = (orbit & spin) / mass                                                           # [] Scalar
     first = 1 + cube_root(1 - ratio**2) * (cube_root(1 + ratio) + cube_root(1 - ratio))     # [] Scalar
     second = (3 * ratio**2 + first**2).square_root()                                        # [] Scalar
     return mass * (3 + second - ((3 - first) * (3 + first + 2 * second)).square_root())    # [] Scalar
@@ -265,7 +268,7 @@ def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, s
     (1974), for gas orbiting in the unit plane `orbit`, the spin counted along the orbit: zero at the
     innermost stable orbit, falling as the radius to the power -3/4 far out. `scale` is
     (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
-    ratio = -spin.scalar_product(orbit) / mass                                              # [] Scalar
+    ratio = (orbit & spin) / mass                                                           # [] Scalar
     root_radius = (radius / mass).square_root()                                             # [...] Scalar
     edge = (innermost_stable_orbit(orbit, spin, mass) / mass).square_root()                 # [] Scalar
     # The roots of the cubic `root_radius**3 - 3 * root_radius + 2 * ratio`, and the weight of each in
@@ -449,7 +452,7 @@ def trace(position: Antivector, momentum: Vector, spin: Spin, mass: float,
     import jax
     from numga.backend.jax import JaxContext
 
-    horizon = mass + (mass**2 + spin.squared()).square_root()
+    horizon = mass + (mass**2 - spin.squared()).square_root()
 
     def step(state: tuple[Antivector, Vector], _) -> tuple[tuple[Antivector, Vector], tuple[Antivector, Vector]]:
         radius = field(state[0], spin, mass).radius

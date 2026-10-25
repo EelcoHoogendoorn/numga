@@ -27,7 +27,7 @@ def isolator() -> tuple[Polarization, np.ndarray]:
     direction = mv.z.dual()
     start = mv.x.dual()
     # The beam's cross-section, spanned by the two directions across the path.
-    cross_section = mv.x.dual() & mv.y.dual()                                     # [] CrossSection
+    cross_section = mv.xy.dual()                                                  # [] CrossSection
     # Measured against the lab's handedness, the basis volume x ^ y ^ z.
     rotary_power = mv(core.RotaryPower, [quartz_rotary_power])                           # [] RotaryPower
     field = mv.xy * field_strength                                                         # [] Field, along z

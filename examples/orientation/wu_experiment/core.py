@@ -1,7 +1,7 @@
 """Electrons from polarized cobalt-60, and the mirror image of the experiment.
 
 A coil's current polarizes the nuclei. Their spin is an angular momentum, intrinsic like a momentum: the
-patch the current circulates around, the join of two directions in the coil's plane, which reverses with
+patch the current circulates around, the dual of the coil's plane, which reverses with
 the current. A nucleus decays by emitting an electron, and the rate along a unit direction is one plus
 the decay's asymmetry times the spin's pairing with that direction, `spin & direction`. Both are
 intrinsic, so their pairing is an intrinsic scalar; for the rate to be an ordinary number, the asymmetry

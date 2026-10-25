@@ -29,8 +29,8 @@ AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.92, 14.4, 8.0
 
 
 # The patches of the planes yz, zx and xy, which read a field's parts in those planes.
-PATCHES = stack((core.mv.y.dual() & core.mv.z.dual(), core.mv.z.dual() & core.mv.x.dual(),
-                 core.mv.x.dual() & core.mv.y.dual()))                             # [3] Pseudospin
+PATCHES = stack((core.mv.yz.dual(), core.mv.zx.dual(),
+                 core.mv.xy.dual()))                                               # [3] Pseudospin
 
 
 def components(vectors: core.Vector) -> np.ndarray:

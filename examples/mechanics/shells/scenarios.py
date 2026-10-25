@@ -56,7 +56,7 @@ def strip() -> tuple[core.Sheet, list[core.Point]]:
     tails, heads = (end * mesh.vertices for end in mesh.edge_ends)               # Point[E] each
     lengths = (tails & heads).norm()                                             # Scalar[E]
     # The two layers curve along lines through the centre, turned either way from the strip's axis.
-    axis = mv.w.dual() & mv.x.dual()                                               # [] Line
+    axis = mv.wx.dual()                                                            # [] Line
     along, across = (((mv.xy * (-sense * POD_ANGLE / 2)).exp() >> axis) for sense in (1, -1))
     curvature = NATURAL_CURVATURE * ((across | core.Line) * (across | core.Line) - (along | core.Line) * (along | core.Line))
     sheet = core.sheet(mesh, lengths, curvature, mv.z, STRIP_THICKNESS)

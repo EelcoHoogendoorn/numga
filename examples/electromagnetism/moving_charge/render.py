@@ -36,7 +36,7 @@ wave_dpi = 75
 # electric field, and the patch spanned by x and y, whose pairing with the field is the magnetic flux across
 # the plane.
 electric_planes = core.time & stack((core.mv.x.dual(), core.mv.y.dual(), core.mv.z.dual()))   # [3] Antibivector
-across_patch = core.mv.x.dual() & core.mv.y.dual()                                  # [] Antibivector
+across_patch = core.mv.xy.dual()                                                    # [] Antibivector
 
 
 # --- plumbing -------------------------------------------------------------------------

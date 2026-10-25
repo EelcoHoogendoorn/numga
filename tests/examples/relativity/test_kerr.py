@@ -26,7 +26,7 @@ def matrix(direction_map: core.DirectionGradient) -> np.ndarray:
 
 def test_null_congruence_and_exact_inverse_gauge():
     positions = events([[0, 4, 2, 1], [3, -3, 1, 2], [-1, 2, -4, -1]])
-    spin = 0.7 * mv.xy + 0.2 * mv.yz
+    spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
     mass = 1.0
     geometry = core.field(positions, spin, mass)
     momentum = core.initial_momentum(positions, X, spin, mass)
@@ -57,7 +57,7 @@ def test_null_congruence_and_exact_inverse_gauge():
 def test_directional_derivatives_drive_hamiltonian_rates():
     position = events([1, 4, 2, 1])
     momentum = mv.vector([1, 0.8, -0.3, 0.2])
-    spin = 0.7 * mv.xy + 0.2 * mv.yz
+    spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
     mass = 1.0
     increment = 1e-4
     geometry = core.field(position, spin, mass)
@@ -87,7 +87,7 @@ def test_directional_derivatives_drive_hamiltonian_rates():
 
 def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
     mass = 1.0
-    spin = mv.xy * np.array([0.7, -0.7])[:, None]
+    spin = mv.xy.dual() * np.array([0.7, -0.7])[:, None]
     offsets = np.array([-7.0, 2.0, 7.0])
     initial = -8 * X + Y * offsets
     # The mirror across the plane y = 0, on events and on covectors; it reverses the spin.
@@ -103,8 +103,8 @@ def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
     hamiltonian = -(momenta & momenta.dual()) / 2 + geometry.profile * (momenta & geometry.null).squared()
     energy = momenta & T
     # The momentum along the direction the spin turns each event in.
-    angular_momentum = momenta & spin.commutator(positions)
-    horizon = mass + (mass**2 + spin.squared()).square_root()
+    angular_momentum = momenta & spin.dual_inverse().commutator(positions)
+    horizon = mass + (mass**2 - spin.squared()).square_root()
 
     # Null propagation and axial angular momentum constrain the integrated dynamics.
     # Their tolerances measure the accuracy of the finite RK4 steps.
@@ -125,7 +125,7 @@ def test_rays_conserve_their_invariants_and_spin_reversal_mirrors_the_paths():
 
 def test_camera_and_disk_geometry_rotate_with_the_black_hole():
     mass = 1.0
-    spin = 0.7 * mv.xy
+    spin = 0.7 * mv.xy.dual()
     orientation = (0.31 * mv.xz).exp()
     eye = (orientation >> Z) * 25
     rotation = (0.23 * mv.yz).exp()
@@ -166,7 +166,7 @@ def test_camera_and_disk_geometry_rotate_with_the_black_hole():
 
 def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
     mass = 1.0
-    spin = 0 * mv.xy
+    spin = 0 * mv.xy.dual()
     eye = 25 * X
     slopes = np.array([0.14, 0.18, 0.20, 0.28])
     direction = -X + Y * slopes
@@ -211,7 +211,7 @@ def test_backward_camera_rays_resolve_the_schwarzschild_capture_boundary():
 
 def test_connection_matches_directional_metric_variation():
     position = events([1, 4, 2, 1])
-    spin = 0.7 * mv.xy + 0.2 * mv.yz
+    spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
     mass = 1.0
     velocity = events([1, 0.4, -0.2, 0.3])
     increment = 1e-4
@@ -250,7 +250,7 @@ def test_connection_matches_directional_metric_variation():
 
 def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
     mass = 1.0
-    spin = 0.7 * mv.xy + 0.2 * mv.yz
+    spin = (0.7 * mv.xy + 0.2 * mv.yz).dual()
     orientation = (0.31 * mv.xz).exp()
     eye = (orientation >> Z) * 18
     pixel_width, pixel_height = 5, 3
@@ -279,7 +279,7 @@ def test_parallel_transport_preserves_the_transverse_screen_along_kerr_rays():
 
 def test_disk_coherency_through_a_rotating_polarizer():
     position = 6 * X
-    spin = 0.7 * mv.xy
+    spin = 0.7 * mv.xy.dual()
     mass = 0.0
     orientation = mv.rotor()
     polarization_degrees = np.array([0.0, 0.6, 1.0])
@@ -305,7 +305,7 @@ def test_disk_coherency_through_a_rotating_polarizer():
 
 def test_every_camera_ray_shares_its_light_once_between_disk_sky_and_hole():
     mass = 1.0
-    spin = 0.7 * mv.xy
+    spin = 0.7 * mv.xy.dual()
     orientation = (0.6 * mv.zx).exp()
     eye = (orientation >> Z) * 25
     pixel_width, pixel_height = 9, 7
@@ -340,7 +340,7 @@ def test_every_camera_ray_shares_its_light_once_between_disk_sky_and_hole():
 
 def test_disk_opacity_face_on_and_where_its_gas_recedes():
     mass, depth = 1.0, 0.7
-    spin = 0.8 * mv.xy
+    spin = 0.8 * mv.xy.dual()
     far, near = 1e6, 6.0
     # Far out the gas barely moves and the field is flat: a ray along the normal meets the bare depth.
     face_on = core.initial_momentum(X * far, -Z, spin, mass)
@@ -360,11 +360,11 @@ def test_disk_opacity_face_on_and_where_its_gas_recedes():
 def test_frequency_ratio_of_orbiting_gas_seen_by_a_camera_at_rest():
     mass, radius, distance = 1.0, 8.0, 1e6
     position = radius * X
-    no_spin = 0 * mv.xy
+    no_spin = 0 * mv.xy.dual()
     radial = core.initial_momentum(position, X, no_spin, mass)
     schwarzschild = core.frequency_ratio(position, radial, distance * X, mv.xy, no_spin, mass)
     flat = core.frequency_ratio(position, radial, distance * X, mv.xy, no_spin, 0.0)
-    spin = 0.8 * mv.xy
+    spin = 0.8 * mv.xy.dual()
     toward = core.initial_momentum(position, Y, spin, mass)
     away = core.initial_momentum(position, -Y, spin, mass)
     approaching = core.frequency_ratio(position, toward, distance * Y, mv.xy, spin, mass)
@@ -382,7 +382,7 @@ def test_relativistic_thin_disk_temperature():
     mass, scale = 1.0, 1.0
     orbit = mv.xy
     radii = np.array([6.5, 8.0, 12.0, 40.0])
-    nearly_still = core.disk_temperature(mv.scalar(radii[:, None]), orbit, orbit * 1e-9, mass, scale).kernel[:, 0]
+    nearly_still = core.disk_temperature(mv.scalar(radii[:, None]), orbit, orbit.dual() * 1e-9, mass, scale).kernel[:, 0]
     root3, root6 = np.sqrt(3), np.sqrt(6)
     logarithm = np.log((np.sqrt(radii) + root3) * (root6 - root3) / ((np.sqrt(radii) - root3) * (root6 + root3)))
     schwarzschild = (3 / (8 * np.pi * radii**3) / (1 - 3 / radii)
@@ -391,10 +391,10 @@ def test_relativistic_thin_disk_temperature():
     # Without spin, the Kerr flux is Page and Thorne's Schwarzschild one.
     np.testing.assert_allclose(nearly_still, schwarzschild, rtol=1e-6, atol=0)
     # Zero at the innermost stable orbit; a faster spin reaches deeper and runs hotter.
-    edge = core.innermost_stable_orbit(orbit, orbit * 0.8, mass)
-    assert core.disk_temperature(edge, orbit, orbit * 0.8, mass, scale).kernel[0] < 1e-3
-    peaks = [core.disk_temperature(mv.scalar(np.geomspace(core.innermost_stable_orbit(orbit, orbit * spin, mass).kernel[0], 30, 2000)[:, None]),
-                                   orbit, orbit * spin, mass, scale).kernel.max() for spin in (0.5, 0.8, 0.95)]
+    edge = core.innermost_stable_orbit(orbit, orbit.dual() * 0.8, mass)
+    assert core.disk_temperature(edge, orbit, orbit.dual() * 0.8, mass, scale).kernel[0] < 1e-3
+    peaks = [core.disk_temperature(mv.scalar(np.geomspace(core.innermost_stable_orbit(orbit, orbit.dual() * spin, mass).kernel[0], 30, 2000)[:, None]),
+                                   orbit, orbit.dual() * spin, mass, scale).kernel.max() for spin in (0.5, 0.8, 0.95)]
     assert peaks[0] < peaks[1] < peaks[2]
 
 
@@ -402,7 +402,7 @@ def test_innermost_stable_orbit():
     orbit = mv.xy
     # At the extreme the cube root of zero is taken through its logarithm, minus infinity.
     with np.errstate(divide="ignore"):
-        radii = core.innermost_stable_orbit(orbit, orbit * np.array([0.0, 0.8, 1.0]), 1.0)
+        radii = core.innermost_stable_orbit(orbit, orbit.dual() * np.array([0.0, 0.8, 1.0]), 1.0)
     # 6M without spin, about 2.91M at spin 0.8M, and the hole's own mass at the extreme.
     np.testing.assert_allclose(radii.kernel[..., 0], [6.0, 2.9066, 1.0], atol=1e-4, rtol=0)
     np.testing.assert_allclose(radii.kernel[[0, 2], 0], [6.0, 1.0], atol=ROUND_OFF, rtol=0)

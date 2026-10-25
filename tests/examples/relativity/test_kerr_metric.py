@@ -19,7 +19,7 @@ def events(coordinates):
 def test_metric_and_hamiltonian_agree_with_the_frame_on_general_momenta():
     positions = events([[0., 4., 2., 1.], [3., -3., 1., 2.], [-1., 2., -4., -1.]])
     momenta = (SLICES * np.array([[1., .8, -.3, .2], [2., .1, .5, -.7], [-1., .4, .2, .9]])).sum(axis=-1)
-    spin, mass = .7 * mv.xy + .2 * mv.yz, 1.
+    spin, mass = (.7 * mv.xy + .2 * mv.yz).dual(), 1.
     geometry = metric.field(positions, spin, mass)
     frame_geometry = core.field(positions, spin, mass)
     tangent = metric.inverse_metric(geometry)(momenta)
@@ -35,7 +35,7 @@ def test_metric_and_hamiltonian_agree_with_the_frame_on_general_momenta():
 
 def test_christoffel_is_symmetric_and_matches_the_changing_local_frame():
     position = events([1., 4., 2., 1.])
-    spin, mass = .7 * mv.xy + .2 * mv.yz, 1.
+    spin, mass = (.7 * mv.xy + .2 * mv.yz).dual(), 1.
     along, direction = events([1., .4, -.2, .3]), events([.2, -.3, .8, -.1])
     geometry = metric.field(position, spin, mass)
     frame_geometry = core.field(position, spin, mass)
@@ -57,7 +57,7 @@ def test_christoffel_is_symmetric_and_matches_the_changing_local_frame():
 
 
 def test_both_cameras_use_the_coordinate_static_observer_for_screen_and_frequency():
-    spin, mass = .8 * mv.xy, 1.
+    spin, mass = .8 * mv.xy.dual(), 1.
     orientation = (mv.zx * (-1.2 / 2)).exp()
     eye = (orientation >> Z) * 28
     position, momentum = core.camera_rays(eye, orientation, 5, 3, .35, spin, mass)
@@ -80,7 +80,7 @@ def test_both_cameras_use_the_coordinate_static_observer_for_screen_and_frequenc
 
 
 def test_disk_images_and_polarization_agree_after_coordinate_transport():
-    mass, spin = 1., .8 * mv.xy
+    mass, spin = 1., .8 * mv.xy.dual()
     orientation = (mv.zx * (-1.2 / 2)).exp()
     eye = (orientation >> Z) * 28
     position, momentum = core.camera_rays(eye, orientation, 9, 7, .35, spin, mass)
