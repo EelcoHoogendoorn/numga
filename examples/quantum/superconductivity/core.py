@@ -1,9 +1,12 @@
 """The superconducting Higgs mode: self-consistent Anderson pseudospins in a collisionless s-wave superconductor.
 
-Each pair of opposite-momentum orbitals is a bivector, the plane its pair state turns in: its xy
-part is occupation minus one half, and its yz and zx parts carry pairing coherence. The mean of
-those coherence parts produces the gap, which feeds back into the plane every spin turns in.
-Energies are measured from the chemical potential and hbar is one.
+Each pair of opposite-momentum orbitals carries a pseudospin, the state the pair is in: intrinsic, like a
+spin, its part along z the occupation minus one half and its parts along x and y the pairing coherence. The
+field a pseudospin turns in is an extrinsic bivector: the dispersion in the plane xy, and the gap in the
+planes yz and zx. The pairing interaction is a correlation from pseudospins to fields, `Field <- Spin`,
+which reads the mean coherence by pairing, `mv.yz & spin`, into the gap; the gap feeds back into the field
+every pseudospin turns in, and the energy pairs each field with its pseudospin, `field & spin`. Energies
+are measured from the chemical potential and hbar is one.
 """
 
 from __future__ import annotations
@@ -18,17 +21,20 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Spin = ga.gatype.bivector()
-Map = ga.gatype((Spin, Spin))
+# A pseudospin, the state of a pair, intrinsic; the field it turns in, extrinsic.
+Spin = ga.gatype.vector().derive.flipped_orientation
+Field = ga.gatype.bivector()
+Pairing = ga.gatype((Field, Spin))                 # Field <- Spin
+Map = ga.gatype((Spin, Spin))                      # Spin <- Spin
 
 
 # --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Condensate:
-    dispersion: Spin                         # Spin[levels]
-    pairing: Map                             # [] Spin <- Spin
+    dispersion: Field                        # Field[levels]
+    pairing: Pairing                         # [] Field <- Spin
 
-    def gap(self, spins: Spin) -> Spin:
+    def gap(self, spins: Spin) -> Field:
         """The pairing field shared by all energy levels."""
         return self.pairing(spins.sites.mean())
 
@@ -37,11 +43,12 @@ class Condensate:
         field = self.dispersion - self.gap(spins)
         return (-2 * field).commutator(spins)
 
-    def equilibrium(self, seed: Spin, n_iterations: int) -> Spin:
-        """Zero-temperature alignment against the field, iterated to self-consistency."""
+    def equilibrium(self, seed: Field, n_iterations: int) -> Spin:
+        """Zero-temperature alignment against the field, iterated to self-consistency: each pseudospin of length
+        one half, square to its field's plane and set against it."""
         gap = seed
         for _ in range(n_iterations):
-            spins = -(self.dispersion - gap).normalized() / 2
+            spins = -(self.dispersion - gap).dual().normalized() / 2
             gap = self.gap(spins)
         return spins
 
@@ -54,14 +61,14 @@ class Condensate:
         return local, feedback
 
     def energy(self, spins: Spin) -> Scalar:
-        """Energy per pair orbital, counting the shared interaction only once."""
+        """Energy per pair orbital, counting the shared interaction only once: each field paired with its
+        pseudospin."""
         mean = spins.sites.mean()
-        # Planes pair with their reverses: a plane against itself is then its squared size.
-        return 2 * self.dispersion.dot(spins).sites.mean() - mean.dot(self.pairing(mean))
+        return 2 * (self.dispersion & spins).sites.mean() - (self.pairing(mean) & mean)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def energy_levels(n_levels: int, cutoff: float) -> Spin:
+def energy_levels(n_levels: int, cutoff: float) -> Field:
     """Midpoint quadrature for a constant density of states between two energy cutoffs."""
     energies = cutoff * (2 * (np.arange(n_levels) + 0.5) / n_levels - 1)
     return (mv.xy * energies).field()

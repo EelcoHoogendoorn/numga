@@ -62,7 +62,7 @@ def draw_states(flake: core.Flake, densities: core.Scalar) -> plt.Figure:
     return figure
 
 
-def spin_dots(spin: core.Vector) -> tuple[np.ndarray, np.ndarray]:
+def spin_dots(spin: core.Spin) -> tuple[np.ndarray, np.ndarray]:
     """A spin density's dots: their areas, in proportion to the density, and their shades, the spin up
     over the largest density."""
     vectors = spin.cast(core.ga.subspace("x y z")).kernel
@@ -70,7 +70,7 @@ def spin_dots(spin: core.Vector) -> tuple[np.ndarray, np.ndarray]:
     return DOT * density / density.max(), vectors[:, 2] / density.max()
 
 
-def draw_spin(flake: core.Flake, spin: core.Vector) -> plt.Figure:
+def draw_spin(flake: core.Flake, spin: core.Spin) -> plt.Figure:
     """A spin density on the flake: dots sized by the density, red where the spin is up and blue
     where it is down."""
     sizes, shades = spin_dots(spin)
@@ -80,12 +80,12 @@ def draw_spin(flake: core.Flake, spin: core.Vector) -> plt.Figure:
     return figure
 
 
-def animate_spin(flake: core.Flake, spins: core.Vector) -> Iterator[np.ndarray]:
+def animate_spin(flake: core.Flake, spins: core.Spin) -> Iterator[np.ndarray]:
     """Each frame of the spin density, the flake's bonds drawn once and only the dots changing."""
     return animate_spin_sized(flake, spins, PIXELS)
 
 
-def animate_spin_sized(flake: core.Flake, spins: core.Vector, pixels: int) -> Iterator[np.ndarray]:
+def animate_spin_sized(flake: core.Flake, spins: core.Spin, pixels: int) -> Iterator[np.ndarray]:
     """Each frame of the spin density, the flake's bonds drawn once and only the dots changing, the figure so many
     pixels across."""
     figure = draw_spin(flake, spins[0])

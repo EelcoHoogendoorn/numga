@@ -35,8 +35,8 @@ from numga.sparse import SparseExtensor
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-# A spin, read out in its own space.
-Vector = ga.gatype.vector()
+# A spin, read out in its own space: intrinsic, like every angular momentum.
+Spin = ga.gatype.vector().derive.flipped_orientation
 # The atoms' positions, and displacements between them, are antivectors with intrinsic orientation.
 Point = ga.gatype.antivector()
 Even = ga.gatype.even()
@@ -44,6 +44,8 @@ Even = ga.gatype.even()
 Up = Even.derive.within("x y")
 Down = Even.derive.containing("z")
 Bivector = ga.gatype.bivector()
+# The spin of the spinor one, spin up: the patch of the plane xy.
+UP_SPIN = mv.x.dual() & mv.y.dual()                                           # [] Spin
 
 
 # --- math -----------------------------------------------------------------------------
@@ -72,15 +74,15 @@ def rim_share(flake: Flake, states: Even) -> Scalar:
     return (density * flake.rim).sites.sum() / density.sites.sum()   # [...] Scalar
 
 
-def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.ndarray) -> Iterator[Vector]:
+def spread(states: Even, energies: Scalar, start: int, spinor: Even, times: np.ndarray) -> Iterator[Spin]:
     """An electron started on one atom with the given spinor, keeping only its part in the given
-    states, at each time: its spin density `psi >> mv.z`, as long as the electron's density and
+    states, at each time: its spin density `psi >> UP_SPIN`, as long as the electron's density and
     pointing along its spin."""
     weights = states.batch()[:, start].reverse().scalar_product(spinor)        # [states] Scalar
     for time in times:
         # Each state turns on its right at the rate of its energy.
         turned = weights * (mv.xy * (-energies * time)).exp()                  # [states] Even
-        yield (states * turned).sum(axis=0) >> mv.z                            # Vector[atoms]
+        yield (states * turned).sum(axis=0) >> UP_SPIN                         # Spin[atoms]
 
 
 # --- plumbing -------------------------------------------------------------------------

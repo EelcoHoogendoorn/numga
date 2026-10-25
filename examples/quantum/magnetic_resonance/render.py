@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
-from numga import stack
+from numga import NumpyContext, stack
 from numga.algebras import STA
 from examples.util.animation import capture
 from examples.quantum.magnetic_resonance import core
@@ -30,14 +30,19 @@ CIRCLE_WIDTH, PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH, DOT_RADIUS = 2.4
 AXIS_LENGTH, LABEL_DISTANCE = 1.18, 1.26
 # The time the echo's signal is followed for, in µs from the first pulse.
 ECHO_SPAN = 8.0
-# Where the spin lives in each algebra: the vectors of space, or in spacetime the planes the spin
-# turns in, the spacelike planes yz, zx and xy, read as the directions x, y and z across them.
-BLOCH_AXES = {core.ga: core.ga.subspace("x y z"), STA: STA.subspace("yz zx xy")}
+# In space the spin is the vector part of the state; in spacetime it is the patch of the plane it turns in, read by
+# pairing with the spacelike planes yz, zx and xy as the directions x, y and z.
+BLOCH_AXES = core.ga.subspace("x y z")
+sta = NumpyContext(STA).multivector
+SPIN_PLANES = stack((sta.yz, sta.zx, sta.xy))                    # [3] Bivector+
 
 
 def components(rho: core.State) -> np.ndarray:
-    """The Bloch vector's x, y and z components: twice the state's part along the Bloch axes."""
-    return 2 * rho.cast(BLOCH_AXES[rho.algebra]).kernel
+    """The Bloch vector's x, y and z components: twice the state's vector part, or in spacetime twice the scalar
+    part of its pairings with the spin planes, whose pairings with the trace are planes."""
+    if rho.algebra is STA:
+        return 2 * (SPIN_PLANES & rho[..., None]).select.scalar().to_array()
+    return 2 * rho.cast(BLOCH_AXES).kernel
 
 
 def draw_nutation(states: Iterable[core.State], settled: core.State) -> plt.Figure:

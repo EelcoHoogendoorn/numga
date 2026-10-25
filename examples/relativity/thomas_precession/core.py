@@ -6,10 +6,10 @@ gives the Bargmann–Michel–Telegdi equation that the muon g−2 storage ring 
 A velocity is a direction in time, an antivector like every direction: the lab's time direction under
 every boost, `boost >> time`, a hyperboloid whose geometry is the hyperbolic plane. The pure boost from
 one velocity to another is the square root of their product, `(head * tail.inverse()).square_root()`, and
-carrying a spin along a path of velocities is the product of those boosts. A spin is the plane the
-gyroscope turns in, a rate like every turning, and an observer at rest reads it after the pure boost
-back to rest, `(time * velocity.inverse()).square_root() >> spin`. The plane a spin along a direction
-turns in is `about(axis)`.
+carrying a spin along a path of velocities is the product of those boosts. The plane turning about a
+direction, a rate like every turning, is `about(axis)`; a spin, intrinsic like every angular momentum, is
+the patch of the plane the gyroscope turns in, `spin_along(axis)`, the dual of that rate, and an observer
+at rest reads it after the pure boost back to rest, `(time * velocity.inverse()).square_root() >> spin`.
 
 In a field bivector `field`, with charge-to-mass ratio one, the force is the field read along the
 velocity, `velocity & field`, and with the particle's own slice of space, `rest_slice = -velocity.dual()`,
@@ -36,6 +36,8 @@ mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
+# A spin: the patch of the plane it turns in, intrinsic.
+Spin = Bivector.derive.flipped_orientation
 Antivector = ga.gatype.antivector()
 Rotor = ga.gatype.rotor()
 
@@ -59,15 +61,21 @@ def about(axis: Antivector) -> Bivector:
     return pseudoscalar * (axis & time).dual()                                  # [...] Bivector
 
 
+def spin_along(axis: Antivector) -> Spin:
+    """A spin along a spatial direction: the patch of the plane that turns about it, the dual of that
+    plane, which pairs with it to one."""
+    return about(axis).dual()                                                   # [...] Spin
+
+
 def rest_boost(velocity: Antivector) -> Rotor:
     """The pure boost carrying the lab's time direction to `velocity`."""
     return (velocity * time.inverse()).square_root()                            # [...] Rotor
 
 
-def lab_view(velocity: Antivector, spin: Bivector) -> Bivector:
+def lab_view(velocity: Antivector, spin: Spin) -> Spin:
     """A spin of the frame moving at `velocity`, as the observer at rest reads it: after the pure
     boost back to rest."""
-    return (time * velocity.inverse()).square_root() >> spin                    # [...] Bivector
+    return (time * velocity.inverse()).square_root() >> spin                    # [...] Spin
 
 
 def transport(tail: Antivector, head: Antivector) -> Rotor:
@@ -85,12 +93,12 @@ def on_hyperboloid(spatial: Antivector) -> Antivector:
     return spatial + time * (1 + spatial.squared()).square_root()               # [...] Antivector
 
 
-def carried(velocities: Antivector, spin: Bivector) -> Iterator[Bivector]:
+def carried(velocities: Antivector, spin: Spin) -> Iterator[Spin]:
     """A spin carried along a path of velocities `[steps + 1, ...]` by the pure boost between each
     velocity and the next, torque-free: the spin at each velocity."""
     yield spin
     for tail, head in zip(velocities[:-1], velocities[1:]):
-        spin = transport(tail, head) >> spin                                    # [...] Bivector
+        spin = transport(tail, head) >> spin                                    # [...] Spin
         yield spin
 
 
@@ -141,12 +149,11 @@ def ring_radius(gamma: np.ndarray, magnetic: float, electric: np.ndarray) -> np.
     return gamma * speed**2 / (speed * magnetic - electric)
 
 
-def anomalous_angle(velocity: Antivector, spin: Bivector) -> Scalar:
-    """The angle in the orbit's plane from the plane a spin along the momentum turns in to the spin, as
-    the observer at rest reads both."""
+def anomalous_angle(velocity: Antivector, spin: Spin) -> Scalar:
+    """The angle in the orbit's plane from a spin along the momentum to the spin, as the observer at rest
+    reads both."""
     motion = velocity - (mv.t & velocity) * time                                # [...] Antivector
     direction = motion / motion.squared().square_root()                         # [...] Antivector
-    # A spin along the momentum turns about its direction.
-    along = about(direction)                                                    # [...] Bivector
-    # The product of two such planes is the rotor through their angle.
-    return (lab_view(velocity, spin) * along.inverse()).log().scalar_product(mv.xy)   # [...] Scalar
+    along = spin_along(direction)                                               # [...] Spin
+    # The product of two such patches is the rotor through their angle, read by pairing with the orbit's patch.
+    return (along.inverse() * lab_view(velocity, spin)).log() & (mv.x.dual() & mv.y.dual())   # [...] Scalar

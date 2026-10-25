@@ -76,7 +76,7 @@ def orbit_velocities(gammas: np.ndarray, n_steps: int) -> core.Antivector:
     return core.boost(directions, np.arccosh(gammas)) >> core.time              # [steps + 1, orbits] Antivector
 
 
-def orbits(velocities: core.Antivector, spin: core.Bivector, stride: int) -> Iterator[tuple[core.Antivector, core.Bivector]]:
+def orbits(velocities: core.Antivector, spin: core.Spin, stride: int) -> Iterator[tuple[core.Antivector, core.Spin]]:
     """Every `stride`-th velocity along the orbits, with the carried spin as the observer at rest reads it."""
     for velocity, transported in islice(zip(velocities, core.carried(velocities, spin)), None, None, stride):
         yield velocity, core.lab_view(velocity, transported)
@@ -101,7 +101,7 @@ def box_path(half_width: float, momentum: float, n_flight: int, n_bounce: int) -
     return positions, velocities                                                # [frames] Antivector each
 
 
-def bouncing(positions: core.Antivector, velocities: core.Antivector, spin: core.Bivector) -> Iterator[tuple[core.Antivector, core.Bivector]]:
+def bouncing(positions: core.Antivector, velocities: core.Antivector, spin: core.Spin) -> Iterator[tuple[core.Antivector, core.Spin]]:
     """Each position, with the carried spin as the observer at rest reads it."""
     for position, velocity, transported in zip(positions, velocities, core.carried(velocities, spin)):
         yield position, core.lab_view(velocity, transported)
@@ -117,7 +117,7 @@ def ring_start(gamma: np.ndarray, magnetic: float, electric: np.ndarray) -> tupl
 
 
 def ring(gamma: float, magnetic: float, electric: float, anomaly: float, n_turns: int, n_turn_steps: int,
-         stride: int) -> Iterator[tuple[core.Antivector, core.Antivector, core.Bivector]]:
+         stride: int) -> Iterator[tuple[core.Antivector, core.Antivector, core.Spin]]:
     """Every `stride`-th step of a particle's turns around the ring: its event, velocity, and spin as
     the observer at rest reads it."""
     radius = core.ring_radius(gamma, magnetic, electric)
@@ -126,7 +126,7 @@ def ring(gamma: float, magnetic: float, electric: float, anomaly: float, n_turns
     states = core.evolve(event, frame, magnetic, electric, anomaly, proper_period / n_turn_steps)
     for event, frame in islice(states, 0, n_turns * n_turn_steps + 1, stride):
         velocity = frame >> core.time                                           # [] Antivector
-        yield event, velocity, core.lab_view(velocity, frame >> core.about(mv.y.dual()))
+        yield event, velocity, core.lab_view(velocity, frame >> core.spin_along(mv.y.dual()))
 
 
 def anomalous_rates(gammas: np.ndarray, magnetic: float, electric: np.ndarray, anomaly: float,
@@ -137,7 +137,7 @@ def anomalous_rates(gammas: np.ndarray, magnetic: float, electric: np.ndarray, a
     event, frame = ring_start(gammas, magnetic, electric)
     proper_step = lab_duration / (gammas * n_steps)
     *_, (event, frame) = islice(core.evolve(event, frame, magnetic, electric, anomaly, proper_step), n_steps + 1)
-    angle = core.anomalous_angle(frame >> core.time, frame >> core.about(mv.y.dual()))   # [gammas, fields] Scalar
+    angle = core.anomalous_angle(frame >> core.time, frame >> core.spin_along(mv.y.dual()))   # [gammas, fields] Scalar
     return angle / (anomaly * magnetic * lab_duration)
 
 
@@ -153,12 +153,12 @@ def main() -> None:
     save_animation(render.animate_two_boosts(two_boosts(rapidities, fractions)), "thomas_two_boosts", duration_ms,
                    forward_then_back=True)
     velocities = orbit_velocities(orbit_gammas, n_orbit_steps)
-    # A spin along x, the plane turning about it, in each orbit's first frame.
-    start_spin = core.rest_boost(velocities[0]) >> core.about(mv.x.dual())
+    # A spin along x, the patch of the plane turning about it, in each orbit's first frame.
+    start_spin = core.rest_boost(velocities[0]) >> core.spin_along(mv.x.dual())
     save_animation(render.animate_orbits(velocities, orbits(velocities, start_spin, orbit_stride)), "thomas_orbits", duration_ms)
     positions, path = box_path(box_half_width, box_momentum, n_flight_frames, n_bounce_steps)
     positions, path = concatenate([positions] * n_loops), concatenate([path] * n_loops)
-    box_spin = core.rest_boost(path[0]) >> core.about(mv.x.dual())
+    box_spin = core.rest_boost(path[0]) >> core.spin_along(mv.x.dual())
     walls = (mv.xy * (-np.arange(4) * np.pi / 4)).exp() >> (box_half_width * mv.x.dual())
     save_animation(render.animate_box(box_half_width, walls, bouncing(positions, path, box_spin)), "thomas_box", duration_ms)
     magic = np.sqrt(1 + 1 / muon_anomaly)
@@ -181,14 +181,14 @@ def main() -> None:
     np.testing.assert_allclose(angle, -(np.pi / 2 - 2 * np.arctan2(y, x)), atol=1e-12)
     # Around a circular orbit the spin turns back by the cap's area, 2 pi (gamma - 1).
     end = core.lab_view(velocities[-1], tuple(core.carried(velocities, start_spin))[-1])
-    expected = (mv.xy * (np.pi * (orbit_gammas - 1))).exp() >> core.about(mv.x.dual())
+    expected = (mv.xy * (np.pi * (orbit_gammas - 1))).exp() >> core.spin_along(mv.x.dual())
     np.testing.assert_allclose((end - expected).kernel, 0.0, atol=5e-3)
     # In the box, each round trip turns it back by the area the square of momenta encloses on the
     # hyperboloid.
     square_area = 4 * (2 * box_momentum * np.arcsinh(box_momentum / np.sqrt(1 + box_momentum**2))
                        - np.arctan(box_momentum**2 / np.sqrt(1 + 2 * box_momentum**2)))
     *_, (_, box_end) = bouncing(positions, path, box_spin)
-    expected = (mv.xy * (n_loops * square_area / 2)).exp() >> core.about(mv.x.dual())
+    expected = (mv.xy * (n_loops * square_area / 2)).exp() >> core.spin_along(mv.x.dual())
     np.testing.assert_allclose((box_end - expected).kernel, 0.0, atol=5e-2)
     # At the magic Lorentz factor the electric field drops out of the anomalous rate; elsewhere it
     # enters by the Bargmann–Michel–Telegdi formula.

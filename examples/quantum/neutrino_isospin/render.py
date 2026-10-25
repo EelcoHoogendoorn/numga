@@ -1,4 +1,4 @@
-"""Drawing for neutrino flavor oscillations: the isospin vector's path on the flavor sphere with the plane it
+"""Drawing for neutrino flavor oscillations: the isospin's path on the flavor sphere with the plane it
 turns in, beside the flavor probabilities along the way. The flavor sphere is drawn on the GPU, translucent, its
 dotted lines rows of small balls; the probabilities are matplotlib's."""
 
@@ -20,7 +20,7 @@ from examples.util.wgsl.scene import Scene
 
 mv, sm = core.mv, solids.mv
 # The flavors at the poles, the electron's and the muon's, and their colours.
-FLAVORS = stack((core.flavor_e, core.flavor_mu))                             # [2] Vector
+FLAVORS = stack((core.flavor_e, core.flavor_mu))                             # [2] Isospin
 flavor_colours = np.array([to_rgb("#0284c7"), to_rgb("#e11d48")])
 path_colour, start_colour, end_colour = np.array(to_rgb("#6366f1")), np.array(to_rgb("#10b981")), np.array(to_rgb("#f59e0b"))
 plane_colour, axis_colour = np.array(to_rgb("#1e293b")), np.array(to_rgb("#94a3b8"))
@@ -40,25 +40,25 @@ AXIS_REACH, LABEL_DISTANCE = 1.2, 1.3
 
 
 # --- plumbing -------------------------------------------------------------------------
-def coordinates(vectors: core.Vector) -> np.ndarray:
+def coordinates(vectors: core.Isospin) -> np.ndarray:
     """The x, y and z coordinates of vectors."""
     return vectors.cast(core.ga.subspace("x y z")).kernel
 
 
-def electron_probability(trajectory: core.Vector) -> np.ndarray:
-    """The electron flavor's probability along a path of isospin vectors."""
-    return (1.0 + coordinates(trajectory)[..., 2]) * 0.5
+def electron_probability(trajectory: core.Isospin) -> np.ndarray:
+    """The electron flavor's probability along a path of isospins, from their pairings with the phase plane."""
+    return (1.0 + (core.phase_plane & trajectory).to_array()) * 0.5
 
 
 def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.Axes
                   ) -> tuple[list, list, list, solids.View]:
-    """What stays put on the flavor sphere: its axes dotted, its flavors at the poles, and the plane the vector turns
+    """What stays put on the flavor sphere: its axes dotted, its flavors at the poles, and the plane the isospin turns
     in at the start, dotted, as opaque parts; the sphere, translucent; its equator and two meridians, and the plane
-    the vector turns in at the end, as great circles to ink on it, each the planes cutting it, their colour, width and
+    the isospin turns in at the end, as great circles to ink on it, each the planes cutting it, their colour, width and
     opacity; and the view, fitted to the matplotlib axes it is shown in."""
     view = fitted(solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, LIMIT), N_PIXELS), ax)
     along = np.linspace(-AXIS_REACH, AXIS_REACH, N_AXIS_DOTS)[:, None, None] * np.eye(3)    # [dots, 3, 3]
-    # The great circle in the plane the vector turns in at the start, about its dual, from the circle's point nearest
+    # The great circle in the plane the isospin turns in at the start, about its dual, from the circle's point nearest
     # the electron flavor's pole: the pole's direction less its part along the dual, read by the plane through the
     # centre square to it. Every point of the circle but the last, which closes it onto the first.
     axis = sm.direction(coordinates(start_plane.dual()))                       # [] Point
@@ -72,7 +72,7 @@ def flavor_sphere(start_plane: core.Bivector, end_plane: core.Bivector, ax: plt.
                                             (dotted, CIRCLE_DOT_RADIUS, plane_colour),
                                             (sm.point(coordinates(FLAVORS)), FLAVOR_RADIUS, flavor_colours))]
     ball = [(solids.ball(solids.origin, 1.0)[None, None], sphere_colour, sphere_opacity)]
-    # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the vector turns in at the
+    # The equator and two meridians, where the planes x, y and z cut the sphere; the plane the isospin turns in at the
     # end, through the centre square to its dual.
     end_circle = -sm.direction(coordinates(end_plane.dual())[None]).dual()     # [1] Plane
     circles = [(solids.axes, grid_colour, GRID_WIDTH / view.pixel, grid_opacity),
@@ -100,8 +100,8 @@ def name_flavors(ax, view: solids.View) -> None:
         ax.text(x, y, name, ha="center", va="center", fontsize=13, fontweight="bold", color=colour)
 
 
-def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: core.Vector) -> None:
-    """The flavor sphere and the isospin vector's path over it, from its start, green, to its end, orange, with
+def draw_sphere(ax, sphere: tuple[list, list, list, solids.View], trajectory: core.Isospin) -> None:
+    """The flavor sphere and the isospin's path over it, from its start, green, to its end, orange, with
     the flavors named at the poles."""
     parts, ball, circles, view = sphere
     stroke, ends = path_marks(coordinates(trajectory), view)
@@ -133,9 +133,9 @@ def panels() -> tuple[plt.Figure, plt.Axes, plt.Axes]:
     return figure, sphere, figure.add_subplot(1, 2, 2)
 
 
-def draw_precession(states: Iterable[core.Vector], plane: core.Bivector, distances: np.ndarray) -> plt.Figure:
-    """The isospin vector turning in one plane, and the flavor probabilities oscillating."""
-    trajectory = stack(list(states), axis=0)                                 # [steps] Vector
+def draw_precession(states: Iterable[core.Isospin], plane: core.Bivector, distances: np.ndarray) -> plt.Figure:
+    """The isospin turning in one plane, and the flavor probabilities oscillating."""
+    trajectory = stack(list(states), axis=0)                                 # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     figure.tight_layout()
@@ -143,9 +143,9 @@ def draw_precession(states: Iterable[core.Vector], plane: core.Bivector, distanc
     return figure
 
 
-def draw_decoherence(states: Iterable[core.Vector], plane: core.Bivector, distances: np.ndarray, settled: float) -> plt.Figure:
-    """The isospin vector spiralling inward, and the flavor probabilities settling where the dashed line says."""
-    trajectory = stack(list(states), axis=0)                                 # [steps] Vector
+def draw_decoherence(states: Iterable[core.Isospin], plane: core.Bivector, distances: np.ndarray, settled: float) -> plt.Figure:
+    """The isospin spiralling inward, and the flavor probabilities settling where the dashed line says."""
+    trajectory = stack(list(states), axis=0)                                 # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     probabilities.axhline(settled, color="#64748b", linestyle="--", linewidth=1.2)
@@ -154,11 +154,11 @@ def draw_decoherence(states: Iterable[core.Vector], plane: core.Bivector, distan
     return figure
 
 
-def draw_adiabatic(steps: Iterable[tuple[core.Vector, core.Bivector]], distances: np.ndarray, potentials: np.ndarray) -> plt.Figure:
-    """The isospin vector following the plane as it tilts, and the flavor converting as the potential, dotted,
+def draw_adiabatic(steps: Iterable[tuple[core.Isospin, core.Bivector]], distances: np.ndarray, potentials: np.ndarray) -> plt.Figure:
+    """The isospin following the plane as it tilts, and the flavor converting as the potential, dotted,
     falls away."""
     pairs = list(steps)
-    trajectory = stack([state for state, _ in pairs], axis=0)               # [steps] Vector
+    trajectory = stack([state for state, _ in pairs], axis=0)               # [steps] Isospin
     figure, sphere, probabilities = panels()
     draw_probabilities(probabilities, distances, electron_probability(trajectory))
     probabilities.plot(distances, potentials / potentials.max(), color="#94a3b8", linestyle=":", linewidth=1.2)
@@ -167,8 +167,8 @@ def draw_adiabatic(steps: Iterable[tuple[core.Vector, core.Bivector]], distances
     return figure
 
 
-def animate_precession(states: Iterable[core.Vector], plane: core.Bivector, distances: np.ndarray, n_frames: int) -> Iterator[np.ndarray]:
-    """The isospin vector's path and the flavor probabilities growing along the distance, frame by frame, each drawn
+def animate_precession(states: Iterable[core.Isospin], plane: core.Bivector, distances: np.ndarray, n_frames: int) -> Iterator[np.ndarray]:
+    """The isospin's path and the flavor probabilities growing along the distance, frame by frame, each drawn
     as its states come: the sphere, the flavors' names and the probabilities' axes set up once, and each frame the
     path so far and its ends drawn among them."""
     figure, sphere, probabilities = panels()

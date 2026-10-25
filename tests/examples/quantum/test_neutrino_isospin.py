@@ -1,6 +1,6 @@
 """Neutrino flavor oscillations: the flavors' probabilities at the poles, the vacuum oscillation against the
 two-flavor formula, decoherence settling where it should, the Sun converting electron neutrinos, and the
-states' scalar part kept."""
+states' trace kept."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from numga import stack
 from examples.quantum.neutrino_isospin import core, scenarios
 
 
-def electron_probability(trajectory: core.Vector) -> np.ndarray:
+def electron_probability(trajectory: core.Isospin) -> np.ndarray:
     electron, _ = core.flavor_probabilities(trajectory)
     return electron.to_array()
 
@@ -41,7 +41,7 @@ def test_the_sun_converts_electron_neutrinos():
     assert electron[-1] < 0.05
 
 
-def test_the_scalar_part_is_kept():
+def test_the_trace_is_kept():
     theta = np.radians(30.0)
     mass_plane = core.mixing_rotor(theta) >> core.phase_plane
     rates = core.coherent_generator(core.vacuum_hamiltonian(1.0, theta)) + core.dephasing_generator(mass_plane, 0.1)
@@ -49,4 +49,4 @@ def test_the_scalar_part_is_kept():
     rho = core.state(core.flavor_e)
     for _ in range(50):
         rho = step(rho)
-        np.testing.assert_allclose(rho.select[0].to_array(), 0.5, atol=1e-12)
+        np.testing.assert_allclose((core.one & rho).to_array(), 0.5, atol=1e-12)

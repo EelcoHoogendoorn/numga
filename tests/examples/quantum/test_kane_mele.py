@@ -32,7 +32,7 @@ def test_edge_states_lie_on_the_rim_and_the_spins_circle_oppositely():
     # A quarter lap on, the spin-up half has turned counterclockwise around the flake and the spin-down half
     # clockwise: the sine of each half's turn from the start, by its centre.
     quarter = scenarios.N_FRAMES // 4
-    density, along = spins[quarter].norm(), spins[quarter] | core.mv.z
+    density, along = spins[quarter].norm(), core.mv.xy & spins[quarter]
     start = flake.positions.batch()[flake.start].normalized()
     sines = []
     for half in ((density + along) * 0.5, (density - along) * 0.5):

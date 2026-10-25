@@ -19,8 +19,9 @@ COIL_COLOUR = "#262b32"
 def draw_experiment(spins: Spin, directions: Direction, rates: Scalar) -> plt.Figure:
     """One panel per case `[cases]`: the emission rate along each direction `[cases, directions]` as a
     polar curve in the xz plane, and the coil cut by that plane, with the sense of its current."""
-    # The sense of each coil's current, and each direction read by pairing it with the planes across x and z.
-    senses = spins.dot(mv.xy).to_array()                                          # [cases]
+    # The sense of each coil's current, read by pairing its patch with the vertical direction, and each direction
+    # read by pairing it with the planes across x and z.
+    senses = (spins & mv.z.dual()).to_array()                                     # [cases]
     coordinates = (stack((mv.x, mv.z), axis=-1) & directions[..., None]).to_array()   # [directions, 2]
     curves = rates.to_array()[..., None] * coordinates                            # [cases, directions, 2]
     limit = np.abs(curves).max() * 1.1

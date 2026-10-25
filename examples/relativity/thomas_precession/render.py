@@ -45,11 +45,10 @@ def unit(directions: core.Antivector) -> np.ndarray:
     return xy / np.linalg.norm(xy, axis=-1, keepdims=True)
 
 
-def spin_axes(spins: core.Bivector) -> np.ndarray:
-    """The arrow each spin plane turns about, drawn by the right-hand rule, in the plane, on the last axis."""
-    # The spins along x and y.
+def spin_axes(spins: core.Spin) -> np.ndarray:
+    """The arrow of each spin, in the plane, on the last axis: its pairings with the planes turning about x and y."""
     planes = stack((core.about(core.mv.x.dual()), core.about(core.mv.y.dual())))   # [2] Bivector
-    xy = (spins[..., None] | planes.inverse()).to_array()
+    xy = (planes & spins[..., None]).to_array()
     return xy / np.linalg.norm(xy, axis=-1, keepdims=True)
 
 
@@ -106,7 +105,7 @@ def animate_two_boosts(frames: Iterable[tuple[core.Antivector, core.Antivector, 
     plt.close(figure)
 
 
-def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]) -> Iterator[np.ndarray]:
+def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivector, core.Spin]]) -> Iterator[np.ndarray]:
     """The circles of velocities `[steps + 1, orbits]`, and each frame's velocities and spins as the
     observer at rest reads them `[orbits]`, the first frame's spins kept faint at the start."""
     outlines = disk(loops)
@@ -130,7 +129,7 @@ def animate_orbits(loops: core.Antivector, states: Iterable[tuple[core.Antivecto
     plt.close(figure)
 
 
-def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tuple[core.Antivector, core.Bivector]]
+def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tuple[core.Antivector, core.Spin]]
                 ) -> Iterator[np.ndarray]:
     """A square box, the diamond its particle bounces along between the midpoints of its `walls`
     `[4]`, and each frame's position and spin as the observer at rest reads it."""
@@ -150,7 +149,7 @@ def animate_box(half_width: float, walls: core.Antivector, states: Iterable[tupl
     plt.close(figure)
 
 
-def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Bivector]]) -> Iterator[np.ndarray]:
+def animate_ring(ring: core.Antivector, states: Iterable[tuple[core.Antivector, core.Antivector, core.Spin]]) -> Iterator[np.ndarray]:
     """The ring `[samples]`, and each frame's position, velocity and spin as the observer at rest reads
     it: the momentum's direction faint, the spin solid."""
     outline = planar(ring)

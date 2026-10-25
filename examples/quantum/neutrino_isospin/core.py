@@ -6,9 +6,12 @@ astrophysical distances the mass states' wavepackets drift apart and the oscilla
 mixture; inside the Sun, the electrons' density tilts the turning slowly enough that a neutrino follows it and
 leaves as a muon neutrino.
 
-A two-flavor state is modelled as half of one plus its isospin vector, `0.5 * (one + isospin)`, a point of the
-flavor sphere with the electron flavor at z. The Hamiltonian is a bivector, the plane the state turns in, and
-the change of a state under it is the map `-plane.commutator(State)`; matter shifts that plane, and the drift
+A two-flavor state is modelled as half the antiscalar, its trace, plus its isospin, `0.5 * (antiscalar +
+isospin)`, a point of the flavor sphere with the electron flavor at z. The isospin is intrinsic, like every
+spin: the electron flavor is the patch of the phase plane, `mv.x.dual() & mv.y.dual()`, and a flavor's part
+of an isospin is its pairing with that plane, `phase_plane & isospin`. The Hamiltonian is an extrinsic
+bivector, the plane the state turns in, and the change of a state under it is the map
+`-plane.commutator(State)`; matter shifts that plane, and the drift
 of the wavepackets apart dephases the state by the half turn in the mass states' plane. The evolution over a
 step is the exponential of the rates, one map from states to states.
 
@@ -27,37 +30,41 @@ from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
 Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-# A two-flavor state, half of one plus its isospin vector; its rates of change, and its evolution over a step.
-State = ga.gatype.self_reverse()                                             # 1 x y z
+# An isospin, intrinsic; a two-flavor state, half the antiscalar, its trace, plus its isospin; its rates of change,
+# and its evolution over a step.
+Isospin = ga.gatype.vector().derive.flipped_orientation
+State = ga.gatype.odd().derive.flipped_orientation                           # x y z xyz
 Rates = ga.gatype((State, State))                                            # State <- State
 Evolution = ga.gatype((State, State))                                        # State <- State
 
 one = mv.scalar([1.0])
-# The flavors at the poles of the flavor sphere: the electron neutrino along z, the muon neutrino against it.
-flavor_e = mv.z                                                              # [] Vector
-flavor_mu = -mv.z                                                            # [] Vector
+antiscalar = mv.antiscalar([1.0])
 # The plane a flavor state's phase turns in, and the plane the mixing angle tilts it in.
 phase_plane = mv.x ^ mv.y                                                    # [] Bivector
 mixing_plane = mv.x ^ mv.z                                                   # [] Bivector
+# The flavors at the poles of the flavor sphere: the electron neutrino along z, the patch of the phase plane, the
+# muon neutrino against it.
+flavor_e = mv.x.dual() & mv.y.dual()                                         # [] Isospin
+flavor_mu = -flavor_e                                                        # [] Isospin
 
 
 # --- math -----------------------------------------------------------------------------
-def state(isospin: Vector) -> State:
-    """The state with the given isospin vector."""
-    return 0.5 * (one + isospin)                                             # [...] State
+def state(isospin: Isospin) -> State:
+    """The state with the given isospin."""
+    return 0.5 * (antiscalar + isospin)                                      # [...] State
 
 
-def isospin(rho: State) -> Vector:
-    """The isospin vector of a state, twice its vector part."""
-    return 2.0 * rho.select[1]                                               # [...] Vector
+def isospin(rho: State) -> Isospin:
+    """The isospin of a state, twice its vector part."""
+    return 2.0 * rho.select[1]                                               # [...] Isospin
 
 
-def flavor_probabilities(isospin: Vector) -> tuple[Scalar, Scalar]:
-    """The probabilities of the electron and the muon flavor, from the isospin vector's part along the flavor axis."""
-    along = isospin | flavor_e                                               # [...] Scalar
+def flavor_probabilities(isospin: Isospin) -> tuple[Scalar, Scalar]:
+    """The probabilities of the electron and the muon flavor, from the isospin's part along the electron flavor: its
+    pairing with the phase plane."""
+    along = phase_plane & isospin                                            # [...] Scalar
     return 0.5 * (one + along), 0.5 * (one - along)
 
 
@@ -83,7 +90,7 @@ def resonance_potential(omega: float, theta: float) -> float:
 
 def coherent_generator(plane: Bivector) -> Rates:
     """The rates of a state turning in the plane: its commutator with the plane, a map from states to rates."""
-    # The commutator of a bivector with a state has no scalar part; the cast embeds it among the states.
+    # The commutator of a bivector with a state has no part in the antiscalar; the cast embeds it among the states.
     return -plane.commutator(State).cast(Rates)                              # [...] State <- State
 
 
@@ -109,18 +116,18 @@ def evolution(rates: Rates, dx: float) -> Evolution:
     return total                                                             # [...] State <- State
 
 
-def evolve_channel(initial_state: State, transfer: Evolution, n_steps: int) -> Iterator[Vector]:
-    """The isospin vector at each step of a state carried by one transfer map."""
+def evolve_channel(initial_state: State, transfer: Evolution, n_steps: int) -> Iterator[Isospin]:
+    """The isospin at each step of a state carried by one transfer map."""
     rho = initial_state
     for _ in range(n_steps):
-        yield isospin(rho)                                                   # [] Vector
+        yield isospin(rho)                                                   # [] Isospin
         rho = transfer(rho)
 
 
-def adiabatic_channel(initial_state: State, rates: Rates, planes: Bivector, dx: float) -> Iterator[tuple[Vector, Bivector]]:
-    """The isospin vector and the Hamiltonian's plane at each step of a state carried through rates that change
+def adiabatic_channel(initial_state: State, rates: Rates, planes: Bivector, dx: float) -> Iterator[tuple[Isospin, Bivector]]:
+    """The isospin and the Hamiltonian's plane at each step of a state carried through rates that change
     along the way `[steps]`."""
     rho = initial_state
     for step in range(rates.shape[0]):
-        yield isospin(rho), planes[step]                                     # [] Vector, [] Bivector
+        yield isospin(rho), planes[step]                                     # [] Isospin, [] Bivector
         rho = evolution(rates[step], dx)(rho)

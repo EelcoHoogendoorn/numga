@@ -8,7 +8,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.quantum.neutrino_isospin import core
-from examples.quantum.neutrino_isospin.core import Bivector, Vector
+from examples.quantum.neutrino_isospin.core import Bivector, Isospin
 
 # The vacuum oscillation's rate and mixing angle in degrees, and the steps over two wavelengths.
 OMEGA = 1.0
@@ -31,8 +31,8 @@ DURATION_MS = 50
 
 
 # --- math -----------------------------------------------------------------------------
-def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int) -> tuple[Iterator[Vector], Bivector, np.ndarray]:
-    """Coherent oscillation in vacuum over two wavelengths: the isospin vector at each step, the plane it turns
+def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int) -> tuple[Iterator[Isospin], Bivector, np.ndarray]:
+    """Coherent oscillation in vacuum over two wavelengths: the isospin at each step, the plane it turns
     in, and the distances."""
     plane = core.vacuum_hamiltonian(omega, np.radians(theta_degrees))           # [] Bivector
     wavelength = 4.0 * np.pi / omega
@@ -42,8 +42,8 @@ def vacuum_oscillations(theta_degrees: float, omega: float, n_steps: int) -> tup
 
 
 def wavepacket_decoherence(theta_degrees: float, omega: float, gamma: float, distance: float, n_steps: int
-                           ) -> tuple[Iterator[Vector], Bivector, np.ndarray, float]:
-    """The oscillation fading as the mass states' wavepackets drift apart: the isospin vector at each step, the
+                           ) -> tuple[Iterator[Isospin], Bivector, np.ndarray, float]:
+    """The oscillation fading as the mass states' wavepackets drift apart: the isospin at each step, the
     plane it turns in, the distances, and the electron flavor's probability it settles at."""
     theta = np.radians(theta_degrees)
     plane = core.vacuum_hamiltonian(omega, theta)                                # [] Bivector
@@ -55,8 +55,8 @@ def wavepacket_decoherence(theta_degrees: float, omega: float, gamma: float, dis
 
 
 def solar_adiabatic(theta_degrees: float, omega: float, distance: float, n_steps: int
-                    ) -> tuple[Iterator[tuple[Vector, Bivector]], np.ndarray, np.ndarray]:
-    """An electron neutrino leaving the Sun through a density that falls off slowly: the isospin vector and the
+                    ) -> tuple[Iterator[tuple[Isospin, Bivector]], np.ndarray, np.ndarray]:
+    """An electron neutrino leaving the Sun through a density that falls off slowly: the isospin and the
     plane at each step, the distances, and the matter potential along the way."""
     theta = np.radians(theta_degrees)
     vacuum = core.vacuum_hamiltonian(omega, theta)                               # [] Bivector

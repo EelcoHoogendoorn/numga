@@ -59,7 +59,7 @@ def helical(flake: core.Flake):
     edge facing x, spin along x, keeping its part in those states: its spin density at each frame over one lap."""
     energies, states = core.levels(core.hamiltonian(flake, SPIN_ORBIT, 0.0), core.Even, N_IN_GAP)   # [states] Scalar, [states] Even[atoms]
     times = np.linspace(0.0, LAP, N_FRAMES + 1)
-    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Vector[atoms]
+    spins = stack(list(core.spread(states, energies, flake.start, SPINOR, times)))   # [frames + 1] Spin[atoms]
     return energies, states, spins
 
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.quantum.graphene import core
 from examples.util.wgsl import fitted, meshes, show, solids
 
@@ -27,17 +28,26 @@ MARGIN, N_PIXELS = 0.1, 1000
 AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.92, 14.4, 8.0
 
 
+# The patches of the planes yz, zx and xy, which read a field's parts in those planes.
+PATCHES = stack((core.mv.y.dual() & core.mv.z.dual(), core.mv.z.dual() & core.mv.x.dual(),
+                 core.mv.x.dual() & core.mv.y.dual()))                             # [3] Pseudospin
+
+
 def components(vectors: core.Vector) -> np.ndarray:
     """The x, y and z components of vectors."""
     return vectors.cast(core.ga.subspace("x y z")).kernel
 
 
-def phase(rotors: core.Rotor, starts: core.Vector) -> np.ndarray:
+def plane_components(fields: core.Field) -> np.ndarray:
+    """The parts of fields in the planes yz, zx and xy: their pairings with those planes' patches."""
+    return (fields[..., None] & PATCHES).to_array()
+
+
+def phase(rotors: core.Rotor, starts: core.Pseudospin) -> np.ndarray:
     """The Berry phase of each holonomy: its rotor's angle, signed by the sense of the turn about the
     pseudospin direction the loop starts from."""
-    # The plane perpendicular to the start.
-    about = core.mv.xyz * starts                                                   # [...] Bivector
-    turned = (rotors.select_subspace(core.ga.subspace.bivector()) | about).to_array()
+    # A rotor turning a positive angle about the start has minus the start's plane in its bivector part.
+    turned = ((-rotors.select_subspace(core.ga.subspace.bivector())) & starts).to_array()
     return np.arctan2(turned, rotors.select[0].to_array())
 
 
@@ -53,11 +63,11 @@ def cross(ax, across: str, up: str) -> None:
     ax.set_axis_off()
 
 
-def draw_field(momenta: core.Vector, field: core.Vector) -> plt.Figure:
+def draw_field(momenta: core.Vector, field: core.Field) -> plt.Figure:
     """The pseudospin field over the momentum plane: its length as shade, vanishing at the six
     corners of the zone, and its direction in the plane as arrows, which turn once around each
     corner."""
-    k, d = components(momenta), components(field)                                  # [n, n, 3], [n, n, 3]
+    k, d = components(momenta), plane_components(field)                            # [n, n, 3], [n, n, 3]
     length = np.linalg.norm(d, axis=-1)
     sparse = (slice(None, None, ARROW_STRIDE),) * 2
     figure, ax = plt.subplots(figsize=(6, 6), layout="constrained")
@@ -116,7 +126,7 @@ def draw_bands(momenta: core.Vector, values: core.Scalar) -> plt.Figure:
     return figure
 
 
-def draw_textures(offsets: core.Vector, directions: core.Vector) -> plt.Figure:
+def draw_textures(offsets: core.Vector, directions: core.Pseudospin) -> plt.Figure:
     """The pseudospin of the upper band about each valley: its in-plane part as arrows, its part
     along z as colour. It winds once around each valley, in opposite senses."""
     k, s = components(offsets), components(directions)                            # [n, n, 3], [valleys, n, n, 3]
@@ -129,7 +139,7 @@ def draw_textures(offsets: core.Vector, directions: core.Vector) -> plt.Figure:
     return figure
 
 
-def draw_berry(radii: np.ndarray, gaps: np.ndarray, rotors: core.Rotor, starts: core.Vector) -> plt.Figure:
+def draw_berry(radii: np.ndarray, gaps: np.ndarray, rotors: core.Rotor, starts: core.Pseudospin) -> plt.Figure:
     """The Berry phase of a loop against its radius, per gap, for both valleys: pi for every loop
     without a gap, rising from zero toward pi with one, with opposite signs in the two valleys."""
     phases = phase(rotors, starts) / np.pi                                         # [gaps, valleys, radii]

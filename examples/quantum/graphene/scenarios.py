@@ -35,29 +35,30 @@ def bands(extent: float, n_samples: int, gap: float):
     along = np.linspace(-extent, extent, n_samples)
     kx, ky = np.meshgrid(along, along)
     momenta = mv.vector(np.stack([kx, ky, np.zeros_like(kx)], axis=-1))          # [samples, samples] Vector
-    field = core.pseudospin(momenta, gap)                            # [samples, samples] Vector
+    field = core.pseudospin_field(momenta, gap)                      # [samples, samples] Field
     values, _ = core.hamiltonian(field).eigh()                                    # [samples, samples, 4] Scalar
     return momenta, field, values
 
 
-def textures(radius: float, n_samples: int, gap: float) -> tuple[core.Vector, core.Vector]:
+def textures(radius: float, n_samples: int, gap: float) -> tuple[core.Vector, core.Pseudospin]:
     """The pseudospin of the upper band on a small square of momenta about each valley."""
     along = np.linspace(-radius, radius, n_samples)
     kx, ky = np.meshgrid(along, along)
     offsets = mv.vector(np.stack([kx, ky, np.zeros_like(kx)], axis=-1))           # [samples, samples] Vector
-    field = core.pseudospin(core.VALLEYS[:, None, None] + offsets, gap)   # [valleys, samples, samples] Vector
+    field = core.pseudospin_field(core.VALLEYS[:, None, None] + offsets, gap)   # [valleys, samples, samples] Field
     _, states = core.hamiltonian(field).eigh()                                    # [valleys, samples, samples, 4] Even
-    directions = core.direction(states[..., -1])                                  # [valleys, samples, samples] Vector
+    directions = core.direction(states[..., -1])                                  # [valleys, samples, samples] Pseudospin
     return offsets, directions
 
 
-def berry(radii: np.ndarray, gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor, core.Vector]:
+def berry(radii: np.ndarray, gaps: np.ndarray, n_steps: int) -> tuple[core.Rotor, core.Pseudospin]:
     """The holonomy of loops of the given radii about each valley, for each gap, with the
     pseudospin direction each loop starts from."""
     loops = core.VALLEYS[:, None] + core.circle(n_steps)[:, None, None] * radii   # [steps + 1, valleys, radii] Vector
-    field = core.pseudospin(loops[:, None], gaps[:, None, None])  # [steps + 1, gaps, valleys, radii] Vector
-    directions = field.normalized()                                                # [steps + 1, gaps, valleys, radii] Vector
-    rotors, starts = core.transport(directions)[-1], directions[0]                 # [gaps, valleys, radii] Rotor, Vector
+    field = core.pseudospin_field(loops[:, None], gaps[:, None, None])  # [steps + 1, gaps, valleys, radii] Field
+    # The upper band's pseudospin, along the field.
+    directions = field.normalized().dual()                                         # [steps + 1, gaps, valleys, radii] Pseudospin
+    rotors, starts = core.transport(directions)[-1], directions[0]                 # [gaps, valleys, radii] Rotor, Pseudospin
     return rotors, starts
 
 
@@ -77,12 +78,12 @@ def main() -> None:
     # checks
     # The energies are minus and plus the field's length, each twice; without a gap the field
     # vanishes at the valleys, where the cones meet.
-    length = (field | field).square_root().to_array()[..., None]
+    length = field.norm().to_array()[..., None]
     np.testing.assert_allclose(values.to_array(), np.concatenate([-length, -length, length, length], -1), atol=1e-9)
-    np.testing.assert_allclose(core.pseudospin(core.VALLEYS, 0.0).kernel, 0.0, atol=1e-6)
+    np.testing.assert_allclose(core.pseudospin_field(core.VALLEYS, 0.0).kernel, 0.0, atol=1e-6)
     # The upper band's pseudospin points along the field.
-    valley_field = core.pseudospin(core.VALLEYS[:, None, None] + offsets, TEXTURE_GAP)   # [valleys, samples, samples] Vector
-    np.testing.assert_allclose(directions.kernel, valley_field.normalized().kernel, atol=1e-10)
+    valley_field = core.pseudospin_field(core.VALLEYS[:, None, None] + offsets, TEXTURE_GAP)   # [valleys, samples, samples] Field
+    np.testing.assert_allclose(directions.kernel, valley_field.normalized().dual().kernel, atol=1e-10)
     # Without a gap every loop comes back turned by a full turn: the rotor is -1, a Berry phase of pi.
     # With one, a small loop's phase is that of a cone, pi times one less the gap over the field's length
     # there, in both valleys. The rotor's scalar part is the cosine of the phase; comparing one minus it

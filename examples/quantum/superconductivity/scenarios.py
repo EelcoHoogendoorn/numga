@@ -25,9 +25,10 @@ RESPONSE_NAMES = ("collective response", "fixed pairing field")
 # --- math -----------------------------------------------------------------------------
 def quench(ratio: float) -> tuple[core.Condensate, core.Spin, core.Spin, np.ndarray, core.Spin]:
     dispersion = core.energy_levels(N_LEVELS, CUTOFF)
-    # Remove occupation, the part in the plane xy; only the coherence contributes to pairing.
-    transverse = core.Spin - core.mv.xy.inverse() * (core.mv.xy | core.Spin)
-    before = core.Condensate(dispersion, COUPLING * transverse)
+    # The coherence, read by pairing with the planes yz and zx, gives the gap in those planes; the occupation does
+    # not contribute to pairing.
+    coherence = core.mv.yz * (core.mv.yz & core.Spin) + core.mv.zx * (core.mv.zx & core.Spin)   # Field <- Spin
+    before = core.Condensate(dispersion, COUPLING * coherence)
     after = core.Condensate(dispersion, ratio * before.pairing)
     initial = before.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)
     equilibrium = after.equilibrium(core.mv.yz, N_EQUILIBRIUM_ITERATIONS)

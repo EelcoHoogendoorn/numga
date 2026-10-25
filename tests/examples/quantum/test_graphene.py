@@ -10,11 +10,11 @@ from examples.quantum.graphene import core, render, scenarios
 
 
 def test_the_hamiltonian_squares_to_the_fields_length():
-    """H(H(psi)) == (field | field) * psi, so the eigenvalues are plus and minus the field's length."""
-    field = core.mv.vector(np.array([0.3, -1.1, 0.7]))
+    """H(H(psi)) is the field's squared length times psi, so the eigenvalues are plus and minus the field's length."""
+    field = core.mv(core.Field, np.array([0.3, -1.1, 0.7]))
     psi = core.mv(core.Even, np.array([0.4, -0.2, 1.3, 0.5]))
     H = core.hamiltonian(field)
-    np.testing.assert_allclose((H(H(psi)) - (field | field) * psi).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((H(H(psi)) - field.scalar_norm_squared() * psi).kernel, 0.0, atol=1e-12)
 
 
 def test_transport_around_a_circle_of_latitude_turns_by_the_enclosed_solid_angle():

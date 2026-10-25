@@ -16,6 +16,9 @@ from examples.util.wgsl import fitted, labels, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
+# The patches a field's planes xy and yz are read across: the joins of the two directions in each plane.
+XY_PATCH = core.mv.x.dual() & core.mv.y.dual()
+YZ_PATCH = core.mv.y.dual() & core.mv.z.dual()
 INK = "#263b51"
 PAIR = "#198b87"
 FIXED = "#d17c24"
@@ -53,9 +56,19 @@ def plain_axes(axis: plt.Axes, across: str, up: str) -> None:
     axis.xaxis.label.set_va("top")
 
 
-def draw_equilibrium(dispersion: core.Spin, spins: core.Spin) -> Figure:
-    energies = dispersion.dot(core.mv.xy).to_array()
-    coherence = spins.cast(core.ga.subspace("yz zx xy")).kernel
+def coherences(spins: core.Spin, planes: tuple[core.Field, ...]) -> np.ndarray:
+    """The pseudospins' parts, read by pairing with field planes, `[..., levels, planes]`."""
+    return np.stack([(plane & spins).to_array() for plane in planes], axis=-1)
+
+
+def readings(fields: core.Field, patch: core.Spin) -> np.ndarray:
+    """A field's part in one plane, read across the patch square to it."""
+    return (fields & patch).to_array()
+
+
+def draw_equilibrium(dispersion: core.Field, spins: core.Spin) -> Figure:
+    energies = readings(dispersion, XY_PATCH)
+    coherence = coherences(spins, (core.mv.yz, core.mv.zx, core.mv.xy))
     figure, axes = plt.subplots(1, 2, figsize=(8.0, 2.7), layout="constrained")
     axes[0].plot(energies, coherence[:, 2] + 0.5, color=INK, linewidth=2)
     axes[0].set(ylim=(0, 1.04))
@@ -95,12 +108,12 @@ def label_chart(axis: plt.Axes, view: solids.View) -> None:
 
 
 def animate_quench(
-    dispersion: core.Spin, spins: core.Spin, gaps: core.Spin, times: np.ndarray,
+    dispersion: core.Field, spins: core.Spin, gaps: core.Field, times: np.ndarray,
 ) -> Iterator[np.ndarray]:
     """Arrows in each energy level's pairing plane, beside their collective gap; the chart's axes and circles set
     up once."""
-    energies = dispersion.dot(core.mv.xy).to_array()
-    transverse = spins.cast(core.ga.subspace("yz zx")).kernel
+    energies = readings(dispersion, XY_PATCH)
+    transverse = coherences(spins, (core.mv.yz, core.mv.zx))
     amplitudes = gaps.norm().to_array()
     visible = np.flatnonzero(np.abs(energies) < DISPLAY_CUTOFF)
     indices = visible[np.linspace(0, len(visible) - 1, DISPLAY_LEVELS, dtype=int)]
@@ -142,7 +155,7 @@ def animate_quench(
     plt.close(figure)
 
 
-def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> Figure:
+def draw_gap(times: np.ndarray, gaps: core.Field, equilibrium_gap: core.Field) -> Figure:
     amplitudes = gaps.norm().to_array()
     equilibrium = equilibrium_gap.norm().to_array()
     figure, axis = plt.subplots(figsize=(7.5, 2.8), layout="constrained")
@@ -155,10 +168,10 @@ def draw_gap(times: np.ndarray, gaps: core.Spin, equilibrium_gap: core.Spin) -> 
 
 
 def draw_response(
-    times: np.ndarray, exact: core.Spin, predicted: core.Spin, names: tuple[str, str],
+    times: np.ndarray, exact: core.Field, predicted: core.Field, names: tuple[str, str],
 ) -> Figure:
-    exact_amplitude = exact.dot(core.mv.yz).to_array()
-    predicted_amplitude = predicted.dot(core.mv.yz).to_array()
+    exact_amplitude = readings(exact, YZ_PATCH)
+    predicted_amplitude = readings(predicted, YZ_PATCH)
     figure, axis = plt.subplots(figsize=(7.5, 3.0), layout="constrained")
     axis.plot(times, exact_amplitude, color=INK, linewidth=3, alpha=0.5, label="nonlinear evolution")
     for values, name, colour in zip(predicted_amplitude.T, names, (PAIR, FIXED)):
