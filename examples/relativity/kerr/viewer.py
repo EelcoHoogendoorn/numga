@@ -4,7 +4,9 @@ allows: the shader of the GPU notebook, its light exposed and drawn into the win
 Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]` to halve or double the integration
 step, the fraction of a ray's radius each Runge–Kutta step covers, space to stop or restart the disk's orbit, and `s`
 to stop or restart the spin, which sweeps from turning one way to turning the other and back, the disk orbiting with
-the hole and then against it. The terminal reports the frames per second, the step and the spin.
+the hole and then against it. Against the hole the disk is far cooler and dimmer, a few hundredths of its light with
+it, so the exposure follows the brightest light of the last frame, as a camera's meter would; `e` holds it at the
+scenario's exposure instead, to compare brightness across spins. The terminal reports the frames per second, the step and the spin.
 
     python -m examples.relativity.kerr.viewer
 """
@@ -28,6 +30,9 @@ TURN_PER_POINT, ZOOM_PER_SCROLL = 0.006, 0.0015
 STEP, FINEST, COARSEST = 0.4, 0.05, 1.6
 # The spin's largest size, in masses, and the seconds of one sweep there and back.
 LARGEST_SPIN, SPIN_PERIOD = 0.95, 12.0
+# Where a frame's brightest light sits, in mid-greys, when the exposure follows it: where it sits in the scenario's
+# still; and the share of the way each frame's exposure moves toward it.
+BRIGHTEST, FOLLOWING = 3.7, 0.3
 
 # The traced light, exposed as `render.develop` exposes it and added to the sky, drawn over the window by one
 # triangle: each pixel reads its sample from the tracer's output, `stride` numbers to a pixel.
@@ -36,6 +41,7 @@ struct View {
     columns: u32,
     stride: u32,
     sky: u32,
+    count: u32,
     reference: f32,
     mid_grey: f32,
     gamma: f32,
@@ -44,8 +50,19 @@ struct View {
 
 @group(0) @binding(0) var<storage, read> samples: array<f32>;
 @group(0) @binding(1) var<uniform> view: View;
+@group(0) @binding(2) var<storage, read_write> brightest: atomic<u32>;
 
 const weights = vec3<f32>(0.2126, 0.7152, 0.0722);
+
+// The frame's brightest disk light, by its luminance: a non-negative number's bits order as the number does.
+@compute @workgroup_size(64)
+fn meter(@builtin(global_invocation_id) id: vec3<u32>) {
+    if (id.x >= view.count) {
+        return;
+    }
+    let first = id.x * view.stride;
+    atomicMax(&brightest, bitcast<u32>(dot(vec3<f32>(samples[first], samples[first + 1u], samples[first + 2u]), weights)));
+}
 
 @vertex
 fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
@@ -94,9 +111,15 @@ def hole(spin_size: float) -> dict:
     return dict(spin=spin, inner_radius=inner_radius, temperatures=temperatures, capture_radius=capture_radius)
 
 
+def luminance(temperature: float) -> float:
+    """A blackbody's luminance at a temperature, K, in the units of the traced light."""
+    return float(render.blackbody(np.array(temperature)) @ render.luminance_weights)
+
+
 def max_steps(step_fraction: float) -> int:
     """Steps enough for a ray to cover what the scenario's step and count cover."""
     return int(np.ceil(scenarios.camera_step_fraction * scenarios.n_camera_steps / step_fraction))
+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -108,7 +131,7 @@ def main() -> None:
     device = tracer.device
     values = gpu.scene()
     state = dict(azimuth=0.0, inclination=scenarios.camera_inclination, distance=scenarios.camera_distance,
-                 step_fraction=STEP, flowing=True, elapsed=0.0, spinning=True, sweep=0.0, dragging=None)
+                 step_fraction=STEP, flowing=True, elapsed=0.0, spinning=True, sweep=0.0, following=True, reference=luminance(scenarios.exposure_temperature), dragging=None)
 
     canvas = RenderCanvas(size=WINDOW, title="Kerr", update_mode="continuous", max_fps=240, vsync=False)
     context = canvas.get_context("wgpu")
@@ -119,10 +142,12 @@ def main() -> None:
         layout="auto", vertex={"module": module, "entry_point": "vertex", "buffers": []},
         fragment={"module": module, "entry_point": "fragment", "targets": [{"format": "bgra8unorm"}]},
         primitive={"topology": "triangle-list"})
+    meter = device.create_compute_pipeline(layout="auto", compute={"module": module, "entry_point": "meter"})
     view = device.create_buffer(size=32, usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST)
+    brightest = device.create_buffer(size=4, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC | wgpu.BufferUsage.COPY_DST)
     done = device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST)
+    fixed = luminance(scenarios.exposure_temperature)
     sample = gpu_sample_layout(tracer)
-    reference = float(render.blackbody(np.array(scenarios.exposure_temperature)) @ render.luminance_weights)
 
     @canvas.add_event_handler("pointer_down", "pointer_up", "pointer_move", "wheel", "key_down")
     def on_event(event: dict) -> None:
@@ -146,6 +171,8 @@ def main() -> None:
             state["flowing"] = not state["flowing"]
         elif kind == "key_down" and event["key"] == "s":
             state["spinning"] = not state["spinning"]
+        elif kind == "key_down" and event["key"] == "e":
+            state["following"] = not state["following"]
 
     clock = dict(last=time.perf_counter(), frames=0, reported=time.perf_counter())
 
@@ -166,11 +193,22 @@ def main() -> None:
         encoder = device.create_command_encoder()
         outputs = tracer.encode(encoder, (rows, columns), ("viewer",), frame)
         samples, _, element_size = outputs["image"]
-        device.queue.write_buffer(view, 0, np.array([columns, element_size // 4, sample["sky"]], dtype=np.uint32).tobytes()
+        reference = state["reference"] if state["following"] else fixed
+        device.queue.write_buffer(view, 0, np.array([columns, element_size // 4, sample["sky"], rows * columns], dtype=np.uint32).tobytes()
                                   + np.array([reference, render.mid_grey, render.display_gamma, render.colour_saturation],
-                                             dtype=np.float32).tobytes() + bytes(4))
+                                             dtype=np.float32).tobytes())
+        size = rows * columns * element_size
+        encoder.clear_buffer(brightest, 0, 4)
+        metering = encoder.begin_compute_pass()
+        metering.set_pipeline(meter)
+        metering.set_bind_group(0, device.create_bind_group(layout=meter.get_bind_group_layout(0), entries=[
+            {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": size}},
+            {"binding": 1, "resource": {"buffer": view, "offset": 0, "size": 32}},
+            {"binding": 2, "resource": {"buffer": brightest, "offset": 0, "size": 4}}]))
+        metering.dispatch_workgroups(-(-rows * columns // 64))
+        metering.end()
         group = device.create_bind_group(layout=pipeline.get_bind_group_layout(0), entries=[
-            {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": rows * columns * element_size}},
+            {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": size}},
             {"binding": 1, "resource": {"buffer": view, "offset": 0, "size": 32}}])
         drawing = encoder.begin_render_pass(color_attachments=[{"view": target.create_view(), "load_op": "clear",
                                                                 "store_op": "store", "clear_value": (0, 0, 0, 1)}])
@@ -178,12 +216,16 @@ def main() -> None:
         drawing.set_bind_group(0, group)
         drawing.draw(3)
         drawing.end()
-        encoder.copy_buffer_to_buffer(samples, 0, done, 0, 4)
+        encoder.copy_buffer_to_buffer(brightest, 0, done, 0, 4)
         device.queue.submit([encoder.finish()])
-        # One frame on the GPU at a time, waited for by reading back one number of it: the next is traced for where
-        # the camera is when this one is done, and frames never queue up behind each other.
+        # One frame on the GPU at a time, waited for by reading back its brightest light: the next is traced for where
+        # the camera is when this one is done, frames never queue up behind each other, and the next exposure moves
+        # toward the one that puts this frame's brightest light where the scenario's still has it.
         done.map_sync(wgpu.MapMode.READ, 0, 4)
+        light = float(np.frombuffer(done.read_mapped(0, 4), dtype=np.float32)[0])
         done.unmap()
+        if light > 0:
+            state["reference"] *= (light / BRIGHTEST / state["reference"]) ** FOLLOWING
         clock["frames"] += 1
         if now - clock["reported"] > 1:
             print(f"{clock['frames'] / (now - clock['reported']):5.1f} frames a second at {columns} x {rows} pixels,"
