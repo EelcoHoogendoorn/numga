@@ -1,0 +1,203 @@
+"""A camera above a rotating black hole's disk, traced on the GPU at the window's own pixels, as fast as the GPU
+allows: the shader of the GPU notebook, its light exposed and drawn into the window without leaving the GPU.
+
+Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]` to halve or double the integration
+step, the fraction of a ray's radius each Runge–Kutta step covers, space to stop or restart the disk's orbit, and `s`
+to stop or restart the spin, which sweeps from turning one way to turning the other and back, the disk orbiting with
+the hole and then against it. The terminal reports the frames per second, the step and the spin.
+
+    python -m examples.relativity.kerr.viewer
+"""
+
+from __future__ import annotations
+
+import time
+
+import numpy as np
+
+from examples.relativity.kerr import core, gpu, render, scenarios
+
+mv = core.mv
+# The window's size at the start, in points; the image is traced at the screen's pixels behind them.
+WINDOW = (480, 320)
+# The camera's nearest and farthest distance from the hole, in masses, and how fast dragging and scrolling move it.
+NEAREST, FARTHEST = 8.0, 90.0
+TURN_PER_POINT, ZOOM_PER_SCROLL = 0.006, 0.0015
+# The step at the start, a fraction of the ray's radius, and the steps `[` and `]` move between: a step of 0.4
+# changes a few pixels by a few levels from one eight times finer.
+STEP, FINEST, COARSEST = 0.4, 0.05, 1.6
+# The spin's largest size, in masses, and the seconds of one sweep there and back.
+LARGEST_SPIN, SPIN_PERIOD = 0.95, 12.0
+
+# The traced light, exposed as `render.develop` exposes it and added to the sky, drawn over the window by one
+# triangle: each pixel reads its sample from the tracer's output, `stride` numbers to a pixel.
+DISPLAY = """
+struct View {
+    columns: u32,
+    stride: u32,
+    sky: u32,
+    reference: f32,
+    mid_grey: f32,
+    gamma: f32,
+    saturation: f32,
+}
+
+@group(0) @binding(0) var<storage, read> samples: array<f32>;
+@group(0) @binding(1) var<uniform> view: View;
+
+const weights = vec3<f32>(0.2126, 0.7152, 0.0722);
+
+@vertex
+fn vertex(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    let corner = vec2<f32>(f32((index << 1u) & 2u), f32(index & 2u));
+    return vec4<f32>(corner * 2.0 - 1.0, 0.0, 1.0);
+}
+
+@fragment
+fn fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
+    let first = (u32(at.y) * view.columns + u32(at.x)) * view.stride;
+    let light = vec3<f32>(samples[first], samples[first + 1u], samples[first + 2u]);
+    let sky = vec3<f32>(samples[first + view.sky], samples[first + view.sky + 1u], samples[first + view.sky + 2u]);
+    // Mid-grey at the reference blackbody, linear below it and rolled off above, the colour kept.
+    let luminance = dot(light, weights);
+    let exposure = luminance / view.reference;
+    let mapped = select(1.0 - (1.0 - view.mid_grey) * exp(1.0 - exposure), view.mid_grey * exposure, exposure < 1.0);
+    let scale = select(0.0, mapped / luminance, luminance > 0.0);
+    let shown = pow(light * scale, vec3<f32>(1.0 / view.gamma));
+    let grey = dot(shown, weights);
+    let vivid = max(vec3<f32>(grey) + view.saturation * (shown - vec3<f32>(grey)), vec3<f32>(0.0));
+    let exposed = vivid / max(max(vivid.x, max(vivid.y, vivid.z)), 1.0);
+    return vec4<f32>(clamp(exposed + sky, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0);
+}
+"""
+
+
+# --- math -----------------------------------------------------------------------------
+def camera(azimuth: float, inclination: float, distance: float, spin: core.Spin) -> dict:
+    """The camera's orientation, its eye, and its unit along the lab's time measured in proper time at the eye,
+    for a camera turned by `inclination` from above the hole and by `azimuth` around it."""
+    orientation = (mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-inclination / 2)).exp()     # [] Rotor
+    eye = (orientation >> mv.z.dual()) * distance                                         # [] Antivector
+    at_rest = core.time / core.proper_squared(core.field(eye, spin, scenarios.mass), core.time).square_root()
+    return dict(orientation=orientation, eye=eye, at_rest=at_rest)
+
+
+def hole(spin_size: float) -> dict:
+    """What the shader reads of a hole whose spin, per unit mass, turns in the disk's plane by `spin_size`, negative
+    against the disk: the spin, the disk's inner edge at the innermost stable orbit, the rest temperatures across it,
+    and the radius inside every photon orbit, where rays stop."""
+    spin = mv.xy.dual() * spin_size                                                       # [] Spin
+    inner_radius = core.innermost_stable_orbit(mv.xy, spin, scenarios.mass)              # [] Scalar
+    radii = inner_radius + (scenarios.disk_outer_radius - inner_radius) * np.linspace(0, 1, gpu.n_table_entries)
+    temperatures = core.disk_temperature(radii, mv.xy, spin, scenarios.mass, scenarios.disk_temperature_scale)
+    capture_radius = 1.05 * (scenarios.mass + np.sqrt(scenarios.mass**2 - spin_size**2))
+    return dict(spin=spin, inner_radius=inner_radius, temperatures=temperatures, capture_radius=capture_radius)
+
+
+def max_steps(step_fraction: float) -> int:
+    """Steps enough for a ray to cover what the scenario's step and count cover."""
+    return int(np.ceil(scenarios.camera_step_fraction * scenarios.n_camera_steps / step_fraction))
+
+
+# --- plumbing -------------------------------------------------------------------------
+def main() -> None:
+    import wgpu
+    from rendercanvas.glfw import RenderCanvas, loop
+
+    tracer = gpu.shader()
+    device = tracer.device
+    values = gpu.scene()
+    state = dict(azimuth=0.0, inclination=scenarios.camera_inclination, distance=scenarios.camera_distance,
+                 step_fraction=STEP, flowing=True, elapsed=0.0, spinning=True, sweep=0.0, dragging=None)
+
+    canvas = RenderCanvas(size=WINDOW, title="Kerr", update_mode="continuous", max_fps=240, vsync=False)
+    context = canvas.get_context("wgpu")
+    context.configure(device=device, format="bgra8unorm")
+
+    module = device.create_shader_module(code=DISPLAY)
+    pipeline = device.create_render_pipeline(
+        layout="auto", vertex={"module": module, "entry_point": "vertex", "buffers": []},
+        fragment={"module": module, "entry_point": "fragment", "targets": [{"format": "bgra8unorm"}]},
+        primitive={"topology": "triangle-list"})
+    view = device.create_buffer(size=32, usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST)
+    done = device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST)
+    sample = gpu_sample_layout(tracer)
+    reference = float(render.blackbody(np.array(scenarios.exposure_temperature)) @ render.luminance_weights)
+
+    @canvas.add_event_handler("pointer_down", "pointer_up", "pointer_move", "wheel", "key_down")
+    def on_event(event: dict) -> None:
+        kind = event["event_type"]
+        if kind == "pointer_down":
+            state["dragging"] = (event["x"], event["y"])
+        elif kind == "pointer_up":
+            state["dragging"] = None
+        elif kind == "pointer_move" and state["dragging"] is not None:
+            x, y = state["dragging"]
+            state["azimuth"] -= TURN_PER_POINT * (event["x"] - x)
+            state["inclination"] = float(np.clip(state["inclination"] - TURN_PER_POINT * (event["y"] - y), 0.02, np.pi - 0.02))
+            state["dragging"] = (event["x"], event["y"])
+        elif kind == "wheel":
+            state["distance"] = float(np.clip(state["distance"] * np.exp(ZOOM_PER_SCROLL * event["dy"]), NEAREST, FARTHEST))
+        elif kind == "key_down" and event["key"] == "[":
+            state["step_fraction"] = max(state["step_fraction"] / 2, FINEST)
+        elif kind == "key_down" and event["key"] == "]":
+            state["step_fraction"] = min(state["step_fraction"] * 2, COARSEST)
+        elif kind == "key_down" and event["key"] == " ":
+            state["flowing"] = not state["flowing"]
+        elif kind == "key_down" and event["key"] == "s":
+            state["spinning"] = not state["spinning"]
+
+    clock = dict(last=time.perf_counter(), frames=0, reported=time.perf_counter())
+
+    @canvas.request_draw
+    def draw() -> None:
+        now = time.perf_counter()
+        if state["flowing"]:
+            state["elapsed"] += (now - clock["last"]) * scenarios.flow_time / 10
+        if state["spinning"]:
+            state["sweep"] += (now - clock["last"]) * 2 * np.pi / SPIN_PERIOD
+        clock["last"] = now
+        spin_size = LARGEST_SPIN * np.sin(state["sweep"])
+        spinning = hole(spin_size)
+        target = context.get_current_texture()
+        columns, rows = target.size[0], target.size[1]
+        frame = values | spinning | camera(state["azimuth"], state["inclination"], state["distance"], spinning["spin"]) | dict(
+            elapsed=state["elapsed"], fade=0.0, step_fraction=state["step_fraction"], n_steps=max_steps(state["step_fraction"]))
+        encoder = device.create_command_encoder()
+        outputs = tracer.encode(encoder, (rows, columns), ("viewer",), frame)
+        samples, _, element_size = outputs["image"]
+        device.queue.write_buffer(view, 0, np.array([columns, element_size // 4, sample["sky"]], dtype=np.uint32).tobytes()
+                                  + np.array([reference, render.mid_grey, render.display_gamma, render.colour_saturation],
+                                             dtype=np.float32).tobytes() + bytes(4))
+        group = device.create_bind_group(layout=pipeline.get_bind_group_layout(0), entries=[
+            {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": rows * columns * element_size}},
+            {"binding": 1, "resource": {"buffer": view, "offset": 0, "size": 32}}])
+        drawing = encoder.begin_render_pass(color_attachments=[{"view": target.create_view(), "load_op": "clear",
+                                                                "store_op": "store", "clear_value": (0, 0, 0, 1)}])
+        drawing.set_pipeline(pipeline)
+        drawing.set_bind_group(0, group)
+        drawing.draw(3)
+        drawing.end()
+        encoder.copy_buffer_to_buffer(samples, 0, done, 0, 4)
+        device.queue.submit([encoder.finish()])
+        # One frame on the GPU at a time, waited for by reading back one number of it: the next is traced for where
+        # the camera is when this one is done, and frames never queue up behind each other.
+        done.map_sync(wgpu.MapMode.READ, 0, 4)
+        done.unmap()
+        clock["frames"] += 1
+        if now - clock["reported"] > 1:
+            print(f"{clock['frames'] / (now - clock['reported']):5.1f} frames a second at {columns} x {rows} pixels,"
+                  f" step {state['step_fraction']:.3g} of the radius, spin {spin_size:+.2f}")
+            clock["frames"], clock["reported"] = 0, now
+
+    loop.run()
+
+
+def gpu_sample_layout(tracer) -> dict:
+    """Where the sky's colour begins in a traced pixel's sample, in numbers from its start."""
+    offsets = dict(zip([member for member, _ in tracer.program.structs["Sample"]], tracer.layout.offsets("Sample")))
+    return dict(sky=offsets["sky"] // 4)
+
+
+if __name__ == "__main__":
+    main()

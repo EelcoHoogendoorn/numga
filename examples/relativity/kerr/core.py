@@ -250,13 +250,15 @@ def carried(position: Antivector, radius: Scalar, orbit: Bivector, spin: Spin, m
 
 
 def innermost_stable_orbit(orbit: Bivector, spin: Spin, mass: float) -> Scalar:
-    """The radius of the innermost stable circular equatorial orbit in the unit plane `orbit`, turning
-    with the hole, the spin counted along the orbit: 6M without spin, M at the extreme (Bardeen, Press
-    and Teukolsky, 1972)."""
+    """The radius of the innermost stable circular equatorial orbit in the unit plane `orbit`, the spin
+    counted along the orbit, negative for gas orbiting against the hole: 6M without spin, and at the
+    extreme M with the hole and 9M against it (Bardeen, Press and Teukolsky, 1972)."""
     ratio = (orbit & spin) / mass                                                           # [] Scalar
     first = 1 + cube_root(1 - ratio**2) * (cube_root(1 + ratio) + cube_root(1 - ratio))     # [] Scalar
     second = (3 * ratio**2 + first**2).square_root()                                        # [] Scalar
-    return mass * (3 + second - ((3 - first) * (3 + first + 2 * second)).square_root())    # [] Scalar
+    # Gas orbiting with the hole reaches inward of the radius without spin, gas orbiting against it outward.
+    reach = ((3 - first) * (3 + first + 2 * second)).square_root()                      # [] Scalar
+    return mass * (3 + second - where(ratio < 0, -reach, reach))                         # [] Scalar
 
 
 def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, scale: float) -> Scalar:

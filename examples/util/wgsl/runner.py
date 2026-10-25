@@ -487,8 +487,13 @@ class Shader:
 
     def texture(self, key: tuple, binding: Binding, image: np.ndarray) -> Any:
         """A float texture holding an image, `[rows, columns, channels]`; channels pad to four, the last
-        with one."""
+        with one. Given the same array as the call before, the texture keeps what that call wrote: a star map or
+        a colour table is written once, however many frames read it."""
         import wgpu
+        written = self.kept.get(key + ("written", binding.name))
+        if written is not None and written[0] is image:
+            return written[1]
+        source = image
         image = np.asarray(image, dtype=np.float32)
         padded = np.ones(image.shape[:2] + (4,), dtype=np.float32 if self.filterable else np.float16)
         padded[..., :image.shape[2]] = image
@@ -498,4 +503,5 @@ class Shader:
                                wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST)
         self.device.queue.write_texture({"texture": texture}, padded.tobytes(),
                                         {"bytes_per_row": width * padded.itemsize * 4, "rows_per_image": height}, (width, height, 1))
+        self.kept[key + ("written", binding.name)] = (source, texture)
         return texture
