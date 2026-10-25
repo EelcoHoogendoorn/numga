@@ -15,7 +15,7 @@ Geometric relationships deserve to be first-class objects alongside the objects 
 * [`multiple_lenses.md`](multiple_lenses.md): the three perspectives developed in detail, from maps built from expressions to their geometric meaning and multilinear structure.
 * [`extensor_syntax.md`](extensor_syntax.md): the syntax and the extension methods, as a reference sheet.
 * [`internals.md`](internals.md): what the library builds from an expression, and what runs when values are supplied.
-* [Complete index of 138 worked examples](../examples/README.md).
+* [Complete index of 155 worked examples](../examples/README.md).
 
 # Examples
 
@@ -411,6 +411,27 @@ adjugate = areas.adjugate()                # [frames] Flux <- Flux
 
 * One point map gives patches by its outermorphism and volumes by its determinant.
 * The adjugate carries flux back with no inverse, `adjugate(flux) & patch == flux & areas(patch)`, through the collapse to zero volume.
+
+---
+
+## 21. Radar Ranging in Projective Spacetime
+
+**Notebook**: [`examples/relativity/radar/radar.ipynb`](../examples/relativity/radar/radar.ipynb)
+
+![Radar light paths and the recovered range carried through a boost and translation, with the transmitting clock's readings unchanged](../plots/radar_frames.gif)
+
+```python
+reflection = (Event & outward) ^ reflector                    # [] Event <- Event
+returning = (Event & inward) ^ receiver                       # [] Event <- Event
+reflection = reflection / (mv.w & reflection(reference))      # [] Event <- Event
+returning = returning / (mv.w & returning(reference))          # [] Event <- Event
+echo = returning(reflection)                                 # [] Event <- Event
+received = echo(emitted)                                     # [pulses] Event
+```
+
+* Joining an emission to a light direction and intersecting the target gives its reflection event.
+* One constant fixes each map's homogeneous scale, so the two linear maps compose into the echo, `returning(reflection)`.
+* A motor carries events and their clock together through boosts and translations; `clock & event` keeps its reading.
 
 # References
 
