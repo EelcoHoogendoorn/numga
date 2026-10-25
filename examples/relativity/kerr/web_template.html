@@ -13,6 +13,8 @@
   #help { color: #8a8a93; text-align: center; }
   #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; }
   kbd { font: inherit; color: #c9c9cf; }
+  button { font: inherit; color: #0b0b0d; background: #c9c9cf; border: 0; border-radius: 6px; padding: 6px 18px; cursor: pointer; }
+  button[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -20,11 +22,14 @@
 <div id="help">Drag to fly around the hole · scroll to move in or out · <kbd>[</kbd> <kbd>]</kbd> step ·
   <kbd>space</kbd> disk · <kbd>s</kbd> spin · <kbd>e</kbd> exposure</div>
 <div id="status">Starting WebGPU…</div>
+<button id="start" hidden>Start tracing</button>
 <script>
 // Filled in by examples/relativity/kerr/web.py: the compiled shader and everything it reads.
 const C = /*CONTENTS*/null;
 
 const status = document.getElementById("status");
+// The rows a job traces: a frame is as many jobs as it has bands.
+const BAND = 32;
 // Each step of starting up, shown as it begins, with the seconds the steps before it took.
 const begun = performance.now();
 const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
@@ -185,20 +190,27 @@ async function start() {
     uniforms.setUint32(C.offsets.n_steps, Math.ceil(C.start.scenario_step * C.start.scenario_steps / state.step), true);
     uniforms.setUint32(C.offsets.pixels, columns, true);
     uniforms.setUint32(C.offsets.pixels + 4, rows, true);
-    device.queue.writeBuffer(uniformBuffer, 0, block);
     [columns, C.stride / 4, C.sky_offset, columns * rows].forEach((number, index) => view.setUint32(4 * index, number, true));
     [state.following ? state.reference : C.exposure.fixed, C.exposure.mid_grey, C.exposure.gamma, C.exposure.saturation]
       .forEach((number, index) => view.setFloat32(16 + 4 * index, number, true));
     device.queue.writeBuffer(viewBuffer, 0, view.buffer);
 
-    const encoder = device.createCommandEncoder();
-    for (const [pipeline, size] of pipelines) {
-      const pass = encoder.beginComputePass();
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, group);
-      pass.dispatchWorkgroups(Math.ceil(columns / size[0]), Math.ceil(rows / size[1]));
-      pass.end();
+    // The frame traced in bands of rows, each a job of its own, so that no job runs long on a slow GPU.
+    for (let top = 0; top < rows; top += BAND) {
+      uniforms.setUint32(C.offsets.tile_corner, 0, true);
+      uniforms.setUint32(C.offsets.tile_corner + 4, top, true);
+      device.queue.writeBuffer(uniformBuffer, 0, block);
+      const tracing = device.createCommandEncoder();
+      for (const [pipeline, size] of pipelines) {
+        const pass = tracing.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, group);
+        pass.dispatchWorkgroups(Math.ceil(columns / size[0]), Math.ceil(Math.min(BAND, rows - top) / size[1]));
+        pass.end();
+      }
+      device.queue.submit([tracing.finish()]);
     }
+    const encoder = device.createCommandEncoder();
     encoder.clearBuffer(brightest);
     const metering = encoder.beginComputePass();
     metering.setPipeline(meter);
@@ -229,8 +241,16 @@ async function start() {
     }
     requestAnimationFrame(frame);
   }
-  step("Tracing the first frame…");
-  requestAnimationFrame(frame);
+  // Nothing is traced until asked: the tracing runs on this device's GPU.
+  step("Ready");
+  const button = document.getElementById("start");
+  button.hidden = false;
+  button.addEventListener("click", () => {
+    button.hidden = true;
+    step("Tracing the first frame…");
+    last = performance.now();
+    requestAnimationFrame(frame);
+  }, { once: true });
 }
 
 start().catch(error => { status.textContent = String(error); });

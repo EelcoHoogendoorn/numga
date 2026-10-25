@@ -45,8 +45,10 @@ def supersampled() -> str:
                for across in range(side) for down in range(side)]
     entries = ", ".join(f"vec2<f32>({x!r}, {y!r})" for x, y in offsets)
     return f"""
-// The image's size, columns then rows, and each pixel's average of what its samples see.
+// The image's size, columns then rows, and each pixel's average of what its samples see; and where this dispatch
+// begins on the image, columns then rows: its corner for the whole image, or a tile's, traced as a job of its own.
 var<uniform> pixels: vec2<u32>;
+var<uniform> tile_corner: vec2<u32>;
 var<storage, read_write> image: array<Sample>;
 
 // Where a pixel's samples lie, in pixel widths from its centre: one in each cell of a grid `samples_per_side` across.
@@ -62,14 +64,15 @@ fn screen(place: vec2<f32>) -> vec2<f32> {{
 
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
-    if (id.x >= pixels.x || id.y >= pixels.y) {{
+    let pixel = id.xy + tile_corner;
+    if (pixel.x >= pixels.x || pixel.y >= pixels.y) {{
         return;
     }}
-    var total = sample(vec2<f32>(id.xy) + 0.5 + samples[0]) / f32(n_samples);
+    var total = sample(vec2<f32>(pixel) + 0.5 + samples[0]) / f32(n_samples);
     for (var index = 1u; index < n_samples; index++) {{
-        total += sample(vec2<f32>(id.xy) + 0.5 + samples[index]) / f32(n_samples);
+        total += sample(vec2<f32>(pixel) + 0.5 + samples[index]) / f32(n_samples);
     }}
-    image[id.y * pixels.x + id.x] = total;
+    image[pixel.y * pixels.x + pixel.x] = total;
 }}
 """
 

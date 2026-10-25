@@ -136,7 +136,7 @@ def contents() -> dict:
     """Everything the page reads: the compiled shader, its bindings, its uniforms and the data they hold."""
     tracer = gpu.shader()
     program = tracer.program
-    values = gpu.scene() | dict(pixels=[SIZE[0], SIZE[1]], step_fraction=viewer.STEP, n_steps=viewer.max_steps(viewer.STEP))
+    values = gpu.scene() | dict(pixels=[SIZE[0], SIZE[1]], tile_corner=[0, 0], step_fraction=viewer.STEP, n_steps=viewer.max_steps(viewer.STEP))
     uniforms, offsets = packed(tracer, values)
     kinds = dict(program.uniforms)
     mode = tracer.layout.resolve("Mode")
