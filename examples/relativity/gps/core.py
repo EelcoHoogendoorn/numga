@@ -10,9 +10,7 @@ Lengths are in Earth radii and times in Earth-radius light-travel times, so ligh
 
 from __future__ import annotations
 
-import numpy as np
-
-from numga import Algebra, NumpyContext, stack
+from numga import Algebra, NumpyContext, stack, where
 
 ga = Algebra("x+y+z+t-w0")
 mv = NumpyContext(ga).multivector
@@ -91,8 +89,8 @@ def intersect_cones(cones: Cone) -> Event:
 
 def reception(candidates: Event, emitted: Event) -> Event:
     """Of the cones' two intersections, the one every signal reaches after it left."""
-    after = (mv.t & (candidates[:, None] - emitted)).to_array() > 0
-    return candidates[int(np.argmax(after.all(axis=-1)))]
+    after = (mv.t & (candidates[:, None] - emitted)) > 0                  # [candidates, signals]
+    return where(after[0].all(), candidates[0], candidates[1])
 
 
 def intervals(cones: Cone, emitted: Event, receiver: Event) -> tuple[Scalar, Readout, Scalar]:
