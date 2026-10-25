@@ -70,6 +70,9 @@ def contents() -> dict:
     uniforms, offsets = packed(tracer, values)
     kinds = dict(program.uniforms)
     mode = tracer.layout.resolve("Mode")
+    # Half floats hold the blackbody table only scaled into their range, its hottest entry one; the light it gives, and
+    # the exposure it is shown at, scale alike.
+    unit = 1 / values["blackbodies"].max()
     sample = viewer.gpu_sample_layout(tracer)
     return dict(
         code=program.code, display=viewer.DISPLAY,
@@ -80,7 +83,7 @@ def contents() -> dict:
         spin=np.frombuffer(coefficients(mv.xy.dual(), kinds["spin"]), np.float32).tolist(),
         rotor=rotor_terms(kinds["orientation"]),
         modes=encoded(tracer.layout.array(mode, values["modes"])),
-        blackbodies=half_floats(values["blackbodies"]),
+        blackbodies=half_floats(values["blackbodies"] * unit),
         stars=half_floats(render.star_texture(SKY[0], SKY[1], scenarios.sky_seed)),
         stride=tracer.layout.stride(tracer.layout.resolve("Sample")), sky=sample["sky"],
         size=list(SIZE),
@@ -90,7 +93,7 @@ def contents() -> dict:
         limits=dict(nearest=viewer.NEAREST, farthest=viewer.FARTHEST, finest=viewer.FINEST, coarsest=viewer.COARSEST,
                     largest_spin=viewer.LARGEST_SPIN, spin_period=viewer.SPIN_PERIOD, turn=viewer.TURN_PER_POINT,
                     zoom=viewer.ZOOM_PER_SCROLL, brightest=viewer.BRIGHTEST, following=viewer.FOLLOWING),
-        exposure=dict(fixed=viewer.luminance(scenarios.exposure_temperature), mid_grey=render.mid_grey,
+        exposure=dict(fixed=viewer.luminance(scenarios.exposure_temperature) * unit, mid_grey=render.mid_grey,
                       gamma=render.display_gamma, saturation=render.colour_saturation))
 
 
