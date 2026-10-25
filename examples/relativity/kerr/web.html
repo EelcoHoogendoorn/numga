@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kerr black hole</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0b0b0d; color: #c9c9cf; font: 14px/1.5 system-ui, sans-serif;
+         display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  canvas { display: block; cursor: grab; touch-action: none; }
+  canvas:active { cursor: grabbing; }
+  #help { color: #8a8a93; text-align: center; }
+  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; }
+  kbd { font: inherit; color: #c9c9cf; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="help">Drag to fly around the hole · scroll to move in or out · <kbd>[</kbd> <kbd>]</kbd> step ·
+  <kbd>space</kbd> disk · <kbd>s</kbd> spin · <kbd>e</kbd> exposure</div>
+<div id="status">Starting WebGPU…</div>
+<script>
+// Written by examples/relativity/kerr/web.py: the compiled shader and everything it reads.
+const C = /*CONTENTS*/null;
+
+const status = document.getElementById("status");
+const bytes = text => Uint8Array.from(atob(text), character => character.charCodeAt(0));
+
+async function start() {
+  if (!navigator.gpu) { status.textContent = "This browser has no WebGPU."; return; }
+  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!adapter) { status.textContent = "No WebGPU adapter."; return; }
+  const device = await adapter.requestDevice({ requiredLimits: {
+    maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+    maxBufferSize: adapter.limits.maxBufferSize } });
+  device.addEventListener("uncapturederror", event => { status.textContent = "WebGPU: " + event.error.message; });
+
+  // The canvas at the screen's own pixels behind its points.
+  const canvas = document.getElementById("view");
+  const ratio = window.devicePixelRatio || 1;
+  canvas.style.width = C.size[0] + "px";
+  canvas.style.height = C.size[1] + "px";
+  const columns = Math.round(C.size[0] * ratio), rows = Math.round(C.size[1] * ratio);
+  canvas.width = columns;
+  canvas.height = rows;
+  const context = canvas.getContext("webgpu");
+  const format = navigator.gpu.getPreferredCanvasFormat();
+  context.configure({ device, format, alphaMode: "opaque" });
+
+  // The tracer: its bindings as the runner lays them out, its uniforms as one block, its data, and its output.
+  const tracerModule = device.createShaderModule({ code: C.code });
+  for (const message of (await tracerModule.getCompilationInfo()).messages) {
+    if (message.type === "error") { status.textContent = "Shader: " + message.message; return; }
+  }
+  const layout = device.createBindGroupLayout({ entries: C.bindings.map(binding => {
+    const entry = { binding: binding.index, visibility: GPUShaderStage.COMPUTE };
+    if (binding.kind === "texture") entry.texture = { sampleType: "float", viewDimension: "2d" };
+    else if (binding.kind === "sampler") entry.sampler = { type: "filtering" };
+    else entry.buffer = { type: binding.writable ? "storage" : "read-only-storage" };
+    return entry;
+  }) });
+  const pipelines = C.entry_points.map(([name, size]) => [device.createComputePipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
+    compute: { module: tracerModule, entryPoint: name } }), size]);
+
+  const block = bytes(C.uniforms);
+  const uniformBuffer = device.createBuffer({ size: block.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  const uniforms = new DataView(block.buffer);
+  const modes = bytes(C.modes);
+  const modeBuffer = device.createBuffer({ size: modes.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+  device.queue.writeBuffer(modeBuffer, 0, modes);
+  const texture = image => {
+    const made = device.createTexture({ size: [image.width, image.height], format: "rgba16float",
+                                        usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    device.queue.writeTexture({ texture: made }, bytes(image.data), { bytesPerRow: image.width * 8, rowsPerImage: image.height },
+                              [image.width, image.height]);
+    return made;
+  };
+  const resources = {
+    uniforms: { buffer: uniformBuffer },
+    blackbodies: texture(C.blackbodies).createView(),
+    filtered: device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "clamp-to-edge" }),
+    modes: { buffer: modeBuffer },
+    stars: texture(C.stars).createView(),
+    image: { buffer: device.createBuffer({ size: columns * rows * C.stride, usage: GPUBufferUsage.STORAGE }) },
+  };
+  const group = device.createBindGroup({ layout, entries: C.bindings.map(binding => ({ binding: binding.index, resource: resources[binding.name] })) });
+
+  // The light exposed and drawn into the canvas, and the meter of each frame's brightest light.
+  const displayModule = device.createShaderModule({ code: C.display });
+  const meter = device.createComputePipeline({ layout: "auto", compute: { module: displayModule, entryPoint: "meter" } });
+  const draw = device.createRenderPipeline({ layout: "auto",
+    vertex: { module: displayModule, entryPoint: "vertex" },
+    fragment: { module: displayModule, entryPoint: "fragment", targets: [{ format }] },
+    primitive: { topology: "triangle-list" } });
+  const viewBuffer = device.createBuffer({ size: 32, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const brightest = device.createBuffer({ size: 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+  const done = device.createBuffer({ size: 4, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+  const meterGroup = device.createBindGroup({ layout: meter.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: resources.image }, { binding: 1, resource: { buffer: viewBuffer } }, { binding: 2, resource: { buffer: brightest } }] });
+  const drawGroup = device.createBindGroup({ layout: draw.getBindGroupLayout(0), entries: [
+    { binding: 0, resource: resources.image }, { binding: 1, resource: { buffer: viewBuffer } }] });
+  const view = new DataView(new ArrayBuffer(32));
+
+  // Where the camera is, what the hole and disk are doing, and how the frame is exposed.
+  const state = { azimuth: 0, inclination: C.start.inclination, distance: C.start.distance, step: C.start.step,
+                  flowing: true, elapsed: 0, spinning: true, sweep: 0, following: true, reference: C.exposure.fixed };
+  let dragging = null;
+  canvas.addEventListener("pointerdown", event => { dragging = [event.clientX, event.clientY]; canvas.setPointerCapture(event.pointerId); });
+  canvas.addEventListener("pointerup", () => { dragging = null; });
+  canvas.addEventListener("pointermove", event => {
+    if (!dragging) return;
+    state.azimuth -= C.limits.turn * (event.clientX - dragging[0]);
+    state.inclination = Math.min(Math.max(state.inclination - C.limits.turn * (event.clientY - dragging[1]), 0.02), Math.PI - 0.02);
+    dragging = [event.clientX, event.clientY];
+  });
+  canvas.addEventListener("wheel", event => {
+    event.preventDefault();
+    state.distance = Math.min(Math.max(state.distance * Math.exp(C.limits.zoom * event.deltaY), C.limits.nearest), C.limits.farthest);
+  }, { passive: false });
+  window.addEventListener("keydown", event => {
+    if (event.key === "[") state.step = Math.max(state.step / 2, C.limits.finest);
+    else if (event.key === "]") state.step = Math.min(state.step * 2, C.limits.coarsest);
+    else if (event.key === " ") { state.flowing = !state.flowing; event.preventDefault(); }
+    else if (event.key === "s") state.spinning = !state.spinning;
+    else if (event.key === "e") state.following = !state.following;
+  });
+
+  const setNumbers = (name, numbers) => numbers.forEach((number, index) => uniforms.setFloat32(C.offsets[name] + 4 * index, number, true));
+  let last = performance.now(), reported = last, frames = 0;
+
+  async function frame() {
+    const now = performance.now(), seconds = (now - last) / 1000;
+    last = now;
+    if (state.flowing) state.elapsed += seconds * C.start.flow_time / 10;
+    if (state.spinning) state.sweep += seconds * 2 * Math.PI / C.limits.spin_period;
+    const spin = C.limits.largest_spin * Math.sin(state.sweep);
+
+    // The spin along the disk's plane, and the camera's orientation from its four terms.
+    setNumbers("spin", C.spin.map(coefficient => spin * coefficient));
+    const [ca, sa, ci, si] = [Math.cos(state.azimuth / 2), Math.sin(state.azimuth / 2), Math.cos(state.inclination / 2), Math.sin(state.inclination / 2)];
+    const weights = [ca * ci, ca * si, sa * ci, sa * si];
+    setNumbers("orientation", C.rotor[0].map((_, index) => C.rotor.reduce((sum, term, which) => sum + weights[which] * term[index], 0)));
+    setNumbers("distance", [state.distance]);
+    setNumbers("elapsed", [state.elapsed]);
+    setNumbers("fade", [0]);
+    setNumbers("step_fraction", [state.step]);
+    uniforms.setUint32(C.offsets.n_steps, Math.ceil(C.start.scenario_step * C.start.scenario_steps / state.step), true);
+    uniforms.setUint32(C.offsets.pixels, columns, true);
+    uniforms.setUint32(C.offsets.pixels + 4, rows, true);
+    device.queue.writeBuffer(uniformBuffer, 0, block);
+    [columns, C.stride / 4, C.sky, columns * rows].forEach((number, index) => view.setUint32(4 * index, number, true));
+    [state.following ? state.reference : C.exposure.fixed, C.exposure.mid_grey, C.exposure.gamma, C.exposure.saturation]
+      .forEach((number, index) => view.setFloat32(16 + 4 * index, number, true));
+    device.queue.writeBuffer(viewBuffer, 0, view.buffer);
+
+    const encoder = device.createCommandEncoder();
+    for (const [pipeline, size] of pipelines) {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(columns / size[0]), Math.ceil(rows / size[1]));
+      pass.end();
+    }
+    encoder.clearBuffer(brightest);
+    const metering = encoder.beginComputePass();
+    metering.setPipeline(meter);
+    metering.setBindGroup(0, meterGroup);
+    metering.dispatchWorkgroups(Math.ceil(columns * rows / 64));
+    metering.end();
+    const drawing = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(),
+      loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });
+    drawing.setPipeline(draw);
+    drawing.setBindGroup(0, drawGroup);
+    drawing.draw(3);
+    drawing.end();
+    encoder.copyBufferToBuffer(brightest, 0, done, 0, 4);
+    device.queue.submit([encoder.finish()]);
+
+    // One frame on the GPU at a time, waited for by reading back its brightest light, which the next exposure follows.
+    await done.mapAsync(GPUMapMode.READ);
+    const light = new Float32Array(done.getMappedRange())[0];
+    done.unmap();
+    if (light > 0) state.reference *= Math.pow(light / C.limits.brightest / state.reference, C.limits.following);
+
+    frames += 1;
+    if (now - reported > 1000) {
+      status.textContent = `${(frames * 1000 / (now - reported)).toFixed(1)} frames a second at ${columns} × ${rows} pixels · ` +
+                           `step ${state.step.toPrecision(2)} of the radius · spin ${spin >= 0 ? "+" : "−"}${Math.abs(spin).toFixed(2)}`;
+      frames = 0;
+      reported = now;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+
+start().catch(error => { status.textContent = String(error); });
+</script>
+</body>
+</html>
