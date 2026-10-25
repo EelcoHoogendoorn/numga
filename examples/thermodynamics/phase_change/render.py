@@ -158,10 +158,14 @@ class Charts:
                   + art.within(diagram, self.dome_volumes[None], self.dome_pressures[None], 1.8, DOME_COLOUR[None], 1.0)
                   + marked(diagram, path))
         labels = region_labels((0.2, 0.06), (2.0, 0.12), (3.3, 0.33)) + [
-            art.Label(CRITICAL_VOLUME, CRITICAL_PRESSURE, "critical point", DOME_COLOUR, art.LABEL_SIZE, "lb", (6, 3)),
-            art.Label(VOLUMES[1], self.isotherm_pressures[self.own][0, -1], f"T = {self.temperature:g}", isotherm,
-                      art.LABEL_SIZE, "rb", (0, 3))]
-        return art.picture(diagram, layers, labels)
+            art.Label(CRITICAL_VOLUME, CRITICAL_PRESSURE, "critical point", DOME_COLOUR, art.LABEL_SIZE, "lb", (6, 3))]
+        others = list(zip(self.isotherm_volumes[~self.own], family[~self.own]))
+        names = [art.Floating(*art.along(list(zip(self.isotherm_volumes[self.own], family[self.own])), 6),
+                              f"T = {self.temperature:g}", isotherm, art.LABEL_SIZE, "lb"),
+                 art.Floating(*art.along(others, 6), "T = const", isotherm, art.LABEL_SIZE, "lb"),
+                 art.Floating(*art.along([(self.dome_volumes, self.dome_pressures)], 3), "coexistence", DOME_COLOUR,
+                              art.LABEL_SIZE, "lt")]
+        return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
     def temperature_enthalpy_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         diagram = self.temperature_enthalpy
@@ -175,12 +179,16 @@ class Charts:
         bottom = np.argmin(np.abs(DOME - TEMPERATURES[0] - 0.03))
         labels = region_labels((-1.15, 1.02), (0.45, 0.665), (2.0, 0.8)) + [
             art.Label(self.dome_enthalpies[len(DOME)], CRITICAL_TEMPERATURE, "critical point", DOME_COLOUR,
-                      art.LABEL_SIZE, "lb", (6, 3)),
-            art.Label(ENTHALPIES[1], self.temperature, f"p = {self.saturation:.2f}", isobar, art.LABEL_SIZE, "rb",
-                      (0, 3))] + [
+                      art.LABEL_SIZE, "lb", (6, 3))] + [
             art.Label(enthalpy, DOME[bottom], f"{fraction:g}", art.FAMILIES["level"], art.LABEL_SIZE, "mt", (0, -2))
             for enthalpy, fraction in zip(self.fractions[0][:, bottom], FRACTIONS)]
-        return art.picture(diagram, layers, labels)
+        own = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if flag]
+        others = [isobar_line for isobar_line, flag in zip(self.isobars, self.own_isobar) if not flag]
+        names = [art.Floating(*art.along(own, 8), f"p = {self.saturation:.2f}", isobar, art.LABEL_SIZE, "lb"),
+                 art.Floating(*art.along(others, 8), "p = const", isobar, art.LABEL_SIZE, "lb"),
+                 art.Floating(*art.along(list(zip(*self.fractions)), 4), "x = const", art.FAMILIES["level"],
+                              art.LABEL_SIZE, "lb")]
+        return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
     def pressure_temperature_chart(self, path: tuple[np.ndarray, np.ndarray]) -> np.ndarray:
         """The phase diagram: the saturation pressure against the temperature up to the critical point, with the lines
@@ -195,10 +203,12 @@ class Charts:
         labels = [art.Label(0.68, 0.33, "liquid", art.INK, art.NAME_SIZE, "mm", (0, 0)),
                   art.Label(0.98, 0.1, "vapour", art.INK, art.NAME_SIZE, "mm", (0, 0)),
                   art.Label(CRITICAL_TEMPERATURE, CRITICAL_PRESSURE, "critical point", DOME_COLOUR, art.LABEL_SIZE, "rb",
-                            (-6, 3)),
-                  art.Label(PHASE_TEMPERATURES[1], self.isochore_pressures[-1][-1], "V = const", art.FAMILIES["volume"],
-                            art.LABEL_SIZE, "rt", (0, -3))]
-        return art.picture(diagram, layers, labels)
+                            (-6, 3))]
+        names = [art.Floating(*art.along([(self.isochore_temperatures, line) for line in self.isochore_pressures], 4),
+                              "V = const", art.FAMILIES["volume"], art.LABEL_SIZE, "lb"),
+                 art.Floating(*art.along([(self.saturation_temperatures, self.saturation_pressures)], 3), "saturation",
+                              DOME_COLOUR, art.LABEL_SIZE, "lt")]
+        return art.floated(diagram, art.picture(diagram, layers, labels), names)
 
 
 def boiler(volume: float, liquid_volume: float, largest_volume: float, warmth: float) -> np.ndarray:

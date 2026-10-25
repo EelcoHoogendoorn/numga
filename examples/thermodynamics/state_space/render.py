@@ -54,6 +54,7 @@ class Charts:
         self.volume_pressure = art.Diagram(VOLUMES, PRESSURES, (0.0, 0.0), ROWS, COLUMNS, ("V", "p"))
         lines = art.gas_lines(temperature_of, pressure_of, mv, STATE_ENTROPIES, STATE_VOLUMES,
                               art.GasLines(ISOCHORES, ISOBARS, ISOTHERMS, ADIABATS))
+        self.lines = lines
         self.temperature_lines = (art.drawn(self.entropy_temperature, lines.isochores, 0, 1, THIN, "volume")
                                   + art.drawn(self.entropy_temperature, lines.isobars, 0, 1, THIN, "pressure"))
         self.pressure_lines = (art.drawn(self.volume_pressure, lines.isotherms, 2, 3, THIN, "temperature")
@@ -80,16 +81,18 @@ class Charts:
                           + (art.arrows(diagram, now[:, x], now[:, y], toward[:, x], toward[:, y], ARROW, 1.6, art.INK)
                              if pointed else [])
                           + art.dots(diagram, now[:, x], now[:, y], CASES))
-        temperature_labels = [art.Label(ENTROPIES[1], 0.3 * TEMPERATURES[1], "V = const", art.FAMILIES["volume"],
-                                        art.LABEL_SIZE, "rb", (0, 0)),
-                              art.Label(ENTROPIES[0] + 0.1, 0.62 * TEMPERATURES[1], "p = const",
-                                        art.FAMILIES["pressure"], art.LABEL_SIZE, "lb", (0, 0))]
-        pressure_labels = [art.Label(VOLUMES[1], 0.2 * PRESSURES[1], "T = const", art.FAMILIES["temperature"],
-                                     art.LABEL_SIZE, "rb", (0, 0)),
-                           art.Label(VOLUMES[1], 0.04 * PRESSURES[1], "S = const", art.FAMILIES["entropy"],
-                                     art.LABEL_SIZE, "rb", (0, 0))]
-        return [art.picture(self.entropy_temperature, layers[0], temperature_labels),
-                art.picture(self.volume_pressure, layers[1], pressure_labels)]
+        lines = self.lines
+        temperature_names = [art.Floating(*art.gas_along(lines.isochores, 0, 1, 8), "V = const", art.FAMILIES["volume"],
+                                          art.LABEL_SIZE, "lb"),
+                             art.Floating(*art.gas_along(lines.isobars, 0, 1, 8), "p = const", art.FAMILIES["pressure"],
+                                          art.LABEL_SIZE, "lb")]
+        pressure_names = [art.Floating(*art.gas_along(lines.isotherms, 2, 3, 8), "T = const",
+                                       art.FAMILIES["temperature"], art.LABEL_SIZE, "lb"),
+                          art.Floating(*art.gas_along(lines.adiabats, 2, 3, 8), "S = const", art.FAMILIES["entropy"],
+                                       art.LABEL_SIZE, "lb")]
+        return [art.floated(self.entropy_temperature, art.picture(self.entropy_temperature, layers[0], []),
+                            temperature_names),
+                art.floated(self.volume_pressure, art.picture(self.volume_pressure, layers[1], []), pressure_names)]
 
     def heating_curves(self, heats: np.ndarray, path: np.ndarray) -> np.ndarray:
         """Each cylinder's temperature against the heat it has taken in so far."""
@@ -99,7 +102,7 @@ class Charts:
             layers += art.polylines(diagram, [(heats, path[:, case, 1])], BOLD, CASES[case], 1.0, art.SOLID)
         layers += art.dots(diagram, np.full(2, heats[-1]), now[:, 1], CASES)
         labels = [art.Label(heats[-1], now[0, 1], "fixed volume", CASES[0], art.LABEL_SIZE, "rb", (-6, 6)),
-                  art.Label(heats[-1], now[1, 1], "fixed pressure", CASES[1], art.LABEL_SIZE, "lt", (6, -6))]
+                  art.Label(heats[-1], now[1, 1], "fixed pressure", CASES[1], art.LABEL_SIZE, "rt", (-6, -8))]
         return art.picture(diagram, layers, labels)
 
 

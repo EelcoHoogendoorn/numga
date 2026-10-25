@@ -1,7 +1,7 @@
 """Two bodies sharing heat, beside the plane of their energies and the entropy along the line of fixed total energy.
 
-The bodies are coloured by how far each is from the common temperature they approach, on the logarithm of that gap,
-so that the gap closing exponentially changes their colours at a steady pace. On the first chart, the bodies' energies,
+The bodies are coloured by how far each is from the common temperature they approach, half by that gap and half by its
+logarithm, so that the closing gap keeps changing their colours to the end without crowding the start. On the first chart, the bodies' energies,
 with the entropy's level lines, teal; the state runs along the line of fixed total energy, straight
 in the direction of the transfer, and its arrow is the heat flow. It comes to rest where the entropy's level line,
 black, touches the line. On the second, the entropy along that line against body a's energy: a hill whose top is
@@ -74,6 +74,7 @@ class Charts:
         self.top = (self.line[top], self.line_entropy[top])
         # The entropy's level line through the top of the hill touches the line of fixed energy there.
         touching = art.level_lines(GRID, GRID, entropy_of(grid).to_array(), np.array([self.line_entropy.max()]))
+        self.level_lines = [(line[:, 0], line[:, 1]) for _, line in levels]
         self.energy_layers = (art.family(self.energies, [(level, line[:, 0], line[:, 1]) for level, line in levels],
                                          "entropy", THIN)
                               + art.polylines(self.energies, [(line[:, 0], line[:, 1]) for _, line in touching], 1.4,
@@ -100,8 +101,8 @@ class Charts:
                 + art.polylines(self.hill, [(tangent, now_entropy + slope * (tangent - now[0]))], 1.4, art.ORANGE, 1.0,
                                 art.SOLID)
                 + art.dots(self.hill, now[0], now_entropy, art.ORANGE))
-        labels = [art.Label(ENERGIES[1], 0.6, "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "rb", (0, 3))]
-        return [art.picture(self.energies, energy, labels), art.picture(self.hill, hill, [])]
+        names = [art.Floating(*art.along(self.level_lines, 8), "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "lb")]
+        return [art.floated(self.energies, art.picture(self.energies, energy, []), names), art.picture(self.hill, hill, [])]
 
     def temperatures(self, times: np.ndarray, temperatures: np.ndarray, common: float) -> np.ndarray:
         """The two temperatures against time so far `[steps, 2]`, the hot body's red and the cold one's blue, over

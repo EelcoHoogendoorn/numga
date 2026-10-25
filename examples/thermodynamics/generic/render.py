@@ -8,8 +8,8 @@ The state spirals in, up the entropy. Beside it, the entropy against time, risin
 fast, flat at its turning points, never falling. Last, the entropy against the mechanical energy left, along the
 fixed total energy: the state slides to the curve's top, where the store holds everything.
 
-The damper is coloured from icy blue to red heat by its temperature, on the logarithm of how far it still has to warm,
-so that its last warming stays visible.
+The damper is coloured from icy blue to red heat by how far it still has to warm, half as it is and half on its
+logarithm, so that its last warming stays visible without crowding its first.
 """
 from __future__ import annotations
 
@@ -70,6 +70,7 @@ class Charts:
         entropy = surface_entropy_of(grid).to_array()
         levels = art.level_lines(GRID_POSITIONS, GRID_MOMENTA, np.where(np.isfinite(entropy), entropy, -10.0), LEVELS)
         self.levels = art.family(self.phase, [(level, line[:, 0], line[:, 1]) for level, line in levels], "entropy", THIN)
+        self.level_lines = [(line[:, 0], line[:, 1]) for _, line in levels]
         # Each level's entropy written at its upper right, where it crosses the diagonal of the chart.
         self.level_labels = []
         for level, line in levels:
@@ -96,7 +97,6 @@ class Charts:
         phase = (self.levels + art.polylines(self.phase, [(path[:, 0], path[:, 1])], BOLD, art.ORANGE, 1.0, art.SOLID)
                  + arrows + art.dots(self.phase, now[0], now[1], art.ORANGE))
         phase_labels = self.level_labels + [
-            art.Label(POSITIONS[1], MOMENTA[0], "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "rb", (0, 4)),
             art.Label(POSITIONS[0], MOMENTA[1], "reversible", REVERSIBLE, art.LABEL_SIZE, "lt", (4, 0)),
             art.Label(POSITIONS[0], MOMENTA[1] - 0.8, "dissipative", IRREVERSIBLE, art.LABEL_SIZE, "lt", (4, 0))]
         rising = (art.polylines(self.rising, [(times, entropies)], BOLD, art.ORANGE, 1.0, art.SOLID)
@@ -106,7 +106,9 @@ class Charts:
                 + art.dots(self.hill, mechanical[-1], entropies[-1], art.ORANGE))
         hill_labels = [art.Label(MECHANICAL[1], self.curve[1][-1], "E = const", art.FAMILIES["entropy"], art.LABEL_SIZE,
                                  "rb", (0, 4))]
-        return [art.picture(self.phase, phase, phase_labels), art.picture(self.rising, rising, []),
+        names = [art.Floating(*art.along(self.level_lines, 6), "S = const", art.FAMILIES["entropy"], art.LABEL_SIZE, "lt")]
+        return [art.floated(self.phase, art.picture(self.phase, phase, phase_labels), names),
+                art.picture(self.rising, rising, []),
                 art.picture(self.hill, hill, hill_labels)]
 
 
@@ -124,9 +126,9 @@ def damping(energies_of: Callable, surface_entropy_of: Callable, rates_of: Calla
         entropies.append(float((mv.s & state).to_array()))
         mechanical.append(kinetic + spring)
         rates = np.stack([charts.read(rate) for rate in rates_of(state)])
-        # The share of its warming the damper has still to do, on its logarithm.
+        # The share of its warming the damper has still to do, half as it is and half on its logarithm.
         remaining = max(start.sum() - internal, 1e-300) / (start.sum() - start[2])
-        warmth = 1.0 - np.clip(np.log10(remaining) / DECADES + 1, 0.0, 1.0)
+        warmth = 1.0 - 0.5 * remaining - 0.5 * np.clip(np.log10(remaining) / DECADES + 1, 0.0, 1.0)
         times = np.arange(len(path)) * frame_time
         yield art.beside([oscillator(path[-1][0], warmth)]
                          + charts.pictures(np.array(path), rates, times, np.array(entropies), np.array(mechanical)))

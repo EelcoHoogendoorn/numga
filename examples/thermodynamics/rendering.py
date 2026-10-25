@@ -46,6 +46,8 @@ AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.2, 7.0, 5.0
 NAME_SIZE, LABEL_SIZE = 14, 11
 FONTS = {size: ImageFont.truetype(findfont(FontProperties(family="DejaVu Sans", style="italic")), size)
          for size in (NAME_SIZE, LABEL_SIZE)}
+# The width of the white halo around written text, in pixels.
+HALO = 2
 # The radius of a dot marking a state, and of the white ring around it, in pixels.
 DOT, RING = 4.0, 5.5
 
@@ -234,9 +236,66 @@ def written(diagram: Diagram, image: np.ndarray, labels: list[Label]) -> np.ndar
         whole = pen.textbbox((right, diagram.rows - up), base, font=font, anchor=label.anchor)
         shift = small.getlength(subscript) if subscript else 0.0
         horizontal = {"l": 0.0, "m": shift / 2, "r": shift}[label.anchor[0]]
-        pen.text((right - horizontal, diagram.rows - up), base, fill=colour, font=font, anchor=label.anchor)
+        # A thin white halo keeps the text readable over the lines under it.
+        pen.text((right - horizontal, diagram.rows - up), base, fill=colour, font=font, anchor=label.anchor,
+                 stroke_width=HALO, stroke_fill=(255, 255, 255))
         if subscript:
-            pen.text((whole[2] - horizontal + 1, whole[3] + 2), subscript, fill=colour, font=small, anchor="lb")
+            pen.text((whole[2] - horizontal + 1, whole[3] + 2), subscript, fill=colour, font=small, anchor="lb",
+                     stroke_width=HALO, stroke_fill=(255, 255, 255))
+    return np.asarray(canvas)
+
+
+class Floating(NamedTuple):
+    """A name that finds its own place: among candidate values of the two quantities `[n]`, the one where the text,
+    placed by its Pillow anchor, covers the least of what is drawn; in its colour and size."""
+    x: np.ndarray
+    y: np.ndarray
+    text: str
+    colour: np.ndarray
+    size: int
+    anchor: str
+
+
+def along(lines: list[tuple[np.ndarray, np.ndarray]], every: int) -> tuple[np.ndarray, np.ndarray]:
+    """Candidate places along polylines: every so many of their samples."""
+    return (np.concatenate([x[every // 2::every] for x, _ in lines]),
+            np.concatenate([y[every // 2::every] for _, y in lines]))
+
+
+# Where each floating name was written the first time its diagram was drawn, so that it holds still across the frames
+# of an animation.
+PLACES: dict = {}
+
+
+def floated(diagram: Diagram, image: np.ndarray, names: list[Floating]) -> np.ndarray:
+    """An image of the diagram with each floating name written where it covers the least ink, inside the plot and
+    clear of the names written before it; at the place found for it the first time, after that."""
+    canvas = Image.fromarray(image)
+    pen = ImageDraw.Draw(canvas)
+    for name in names:
+        key = (diagram, name.text, name.anchor, np.asarray(name.x).tobytes(), np.asarray(name.y).tobytes())
+        if key in PLACES:
+            if PLACES[key] is not None:
+                colour = tuple(int(round(255 * channel)) for channel in name.colour)
+                pen.text((PLACES[key][0], diagram.rows - PLACES[key][1]), name.text, fill=colour,
+                         font=FONTS[name.size], anchor=name.anchor, stroke_width=HALO, stroke_fill=(255, 255, 255))
+            continue
+        ink = 255 - np.asarray(canvas).min(axis=-1).astype(float)                       # [rows, columns]
+        places = diagram.places(name.x, name.y)
+        best, cost = None, np.inf
+        for right, up in places:
+            box = pen.textbbox((right, diagram.rows - up), name.text, font=FONTS[name.size], anchor=name.anchor)
+            left, top, far, bottom = (int(round(value)) for value in box)
+            left, top, far, bottom = left - HALO, top - HALO, far + HALO, bottom + HALO
+            inside = (left >= LEFT and far <= diagram.columns - RIGHT // 2 and top >= TOP // 2
+                      and bottom <= diagram.rows - BOTTOM)
+            if inside and ink[top:bottom, left:far].sum() < cost:
+                best, cost = (right, up), ink[top:bottom, left:far].sum()
+        PLACES[key] = best
+        if best is not None:
+            colour = tuple(int(round(255 * channel)) for channel in name.colour)
+            pen.text((best[0], diagram.rows - best[1]), name.text, fill=colour, font=FONTS[name.size],
+                     anchor=name.anchor, stroke_width=HALO, stroke_fill=(255, 255, 255))
     return np.asarray(canvas)
 
 
@@ -295,6 +354,11 @@ def drawn(diagram: Diagram, lines: list, x: int, y: int, width: float, name: str
     return family(diagram, [(level, line[:, x], line[:, y]) for level, line in lines], name, width)
 
 
+def gas_along(lines: list, x: int, y: int, every: int) -> tuple[np.ndarray, np.ndarray]:
+    """Candidate places along a family of a gas's lines on a diagram of two of their four values."""
+    return along([(line[:, x], line[:, y]) for _, line in lines], every)
+
+
 # --- apparatus -------------------------------------------------------------------------
 def box(centre: np.ndarray, half: np.ndarray) -> solids.Plane:
     """A box about a centre, of half extents along x, y and z, as the six planes bounding it `[1, 6]`."""
@@ -314,9 +378,11 @@ def thermal_colour(fraction: float) -> np.ndarray:
 
 def relaxing(gap: float, widest: float, decades: float) -> float:
     """The share along the thermal ramp of a temperature a gap above a reference, positive or negative, which the
-    widest gap shown puts at the ramp's ends: by the gap's logarithm, over as many decades as shown, so that a gap
-    closing exponentially moves along the ramp at a steady pace and the last of it stays visible."""
-    depth = np.clip(np.log10(abs(gap) / widest + 1e-300) / decades + 1, 0.0, 1.0)
+    widest gap shown puts at the ramp's ends: half by the gap itself, half by its logarithm over as many decades as
+    shown, so that a gap closing exponentially keeps moving along the ramp to the end without its start crowding
+    together."""
+    share = abs(gap) / widest
+    depth = 0.5 * np.clip(share, 0.0, 1.0) + 0.5 * np.clip(np.log10(share + 1e-300) / decades + 1, 0.0, 1.0)
     return 0.5 + 0.5 * np.sign(gap) * depth
 
 

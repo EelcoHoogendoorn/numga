@@ -63,6 +63,9 @@ class Charts:
         kept = np.linalg.eigvalsh(forms).min(axis=-1) > 0
         x, y = np.meshgrid(LATTICE_VOLUMES, LATTICE_TEMPERATURES)
         conics = art.ellipses(self.plane, x.reshape(-1)[kept], y.reshape(-1)[kept], forms[kept], COST)
+        self.curvature_lines = [(line[:, 0], line[:, 1]) for _, line in
+                                art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, curvature, CURVATURES)]
+        self.lattice = (x.reshape(-1)[kept], y.reshape(-1)[kept])
         self.plane_layers = (unstable
                              + art.polylines(self.plane, [(line[:, 0], line[:, 1]) for line in
                                                           [line for _, line in art.level_lines(GRID_VOLUMES, GRID_TEMPERATURES, curvature, CURVATURES)]],
@@ -78,6 +81,7 @@ class Charts:
         self.isotherm_layers = art.within(self.isotherm, np.broadcast_to(volumes, pressures.shape), pressures, THIN,
                                           shades, 1.0)
         self.volumes = volumes
+        self.isotherm_lines = [(volumes, line) for line in pressures]
 
     def pictures(self, state: Extensor, path: np.ndarray) -> list[np.ndarray]:
         mv = self.mv
@@ -98,12 +102,13 @@ class Charts:
                                     art.SOLID)
                     + art.dots(self.isotherm, volume, pressure, art.ORANGE))
         labels = [art.Label(1.0, 1.0, "critical point", art.BOUNDARY, art.LABEL_SIZE, "lt", (6, -4)),
-                  art.Label(0.45, 0.75, "unstable", art.INK, art.LABEL_SIZE, "lb", (0, 2)),
-                  art.Label(VOLUMES[1], 1.12, "R = const", art.FAMILIES["level"], art.LABEL_SIZE, "rb", (0, 2)),
-                  art.Label(VOLUMES[1], 1.9, "equal cost", art.FAMILIES["entropy"], art.LABEL_SIZE, "rb", (0, 2))]
-        isotherm_labels = [art.Label(VOLUMES[1], 0.1, "T = const", art.FAMILIES["temperature"], art.LABEL_SIZE, "rb",
-                                     (0, 2))]
-        return [art.picture(self.plane, plane, labels), art.picture(self.isotherm, isotherm, isotherm_labels)]
+                  art.Label(0.45, 0.75, "unstable", art.INK, art.LABEL_SIZE, "lb", (0, 2))]
+        names = [art.Floating(*art.along(self.curvature_lines, 6), "R = const", art.FAMILIES["level"], art.LABEL_SIZE, "lb"),
+                 art.Floating(*self.lattice, "equal cost", art.FAMILIES["entropy"], art.LABEL_SIZE, "lt")]
+        isotherm_names = [art.Floating(*art.along(self.isotherm_lines, 8), "T = const", art.FAMILIES["temperature"],
+                                       art.LABEL_SIZE, "lb")]
+        return [art.floated(self.plane, art.picture(self.plane, plane, labels), names),
+                art.floated(self.isotherm, art.picture(self.isotherm, isotherm, []), isotherm_names)]
 
 
 def fluctuations(metric_of: Function, curvature_of: Function, pressure_of: Function,

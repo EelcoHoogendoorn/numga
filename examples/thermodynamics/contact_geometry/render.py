@@ -62,10 +62,10 @@ class Chart:
                                   art.ORANGE, 1.0, art.SOLID)
                   + art.dots(self.diagram, 0.0, intercept, art.GREEN)
                   + art.dots(self.diagram, point[0], point[1], art.ORANGE))
-        last = self.family[-1][-1]
-        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0)),
-                  art.Label(last[0], last[1], "V = const", art.FAMILIES["volume"], art.LABEL_SIZE, "rb", (-2, 4))]
-        return art.picture(self.diagram, layers, labels)
+        labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0))]
+        names = [art.Floating(*art.along([(curve[:, 0], curve[:, 1]) for curve in self.family], 4), "V = const",
+                              art.FAMILIES["volume"], art.LABEL_SIZE, "lb")]
+        return art.floated(self.diagram, art.picture(self.diagram, layers, labels), names)
 
 
 def charts(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor, changed: Extensor,
