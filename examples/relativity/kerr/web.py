@@ -22,9 +22,9 @@ from examples.relativity.kerr import core, gpu, render, scenarios, viewer
 from examples.util.wgsl.runner import coefficients
 
 mv = core.mv
-# The page's image, in points, traced at the screen's pixels behind them, and the sky's size: half the scenario's, so
-# that the page stays a few megabytes.
-SIZE = viewer.WINDOW
+# The page's image, in points, traced at the screen's pixels behind them: smaller than the window's, for slower GPUs;
+# and the sky's size, half the scenario's, so that the page stays a few megabytes.
+SIZE = (360, 240)
 SKY = (scenarios.sky_width // 2, scenarios.sky_height // 2)
 PAGE = Path("build") / "kerr.html"
 
