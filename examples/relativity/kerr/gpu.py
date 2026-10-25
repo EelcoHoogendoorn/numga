@@ -16,7 +16,7 @@ from collections.abc import Iterator
 import numpy as np
 
 from examples.relativity.kerr import core, render, scenarios
-from examples.util.wgsl import Shader, supersampled
+from examples.util.wgsl import Shader, sampled, supersampled
 
 types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivector, Spin=core.Spin,
              Rotor=core.Rotor, Screen=core.Screen, ScreenSlice=core.ScreenSlice, ScreenFrame=core.ScreenFrame,
@@ -378,8 +378,13 @@ fn sample(place: vec2<f32>) -> Sample {
 
 
 def shader() -> Shader:
-    """The camera's shader, compiled."""
+    """The camera's shader, compiled, for pictures."""
     return Shader(geometry + rays + disk + camera + supersampled(), core.ga, types, constants)
+
+
+def live_shader() -> Shader:
+    """The camera's shader for tracing live, one sample a pixel: resolution, not samples, is what a live view spends."""
+    return Shader(geometry + rays + disk + camera + sampled(1), core.ga, types, constants)
 
 
 def scene() -> dict:

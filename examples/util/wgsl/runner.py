@@ -389,9 +389,6 @@ class Shader:
         # A shader that declares the image's size reads it from the shape it runs over.
         if any(name == "pixels" for name, _ in self.program.uniforms):
             values = values | dict(pixels=[shape[1], shape[0]])
-        # One that may trace a tile of it starts at its corner unless told otherwise.
-        if any(name == "tile_corner" for name, _ in self.program.uniforms) and "tile_corner" not in values:
-            values = values | dict(tile_corner=[0, 0])
         for binding in self.program.bindings:
             if binding.kind == "uniforms":
                 missing = [name for name, _ in self.program.uniforms if name not in values]

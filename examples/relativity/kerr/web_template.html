@@ -28,8 +28,6 @@
 const C = /*CONTENTS*/null;
 
 const status = document.getElementById("status");
-// The rows a job traces: a frame is as many jobs as it has bands.
-const BAND = 32;
 // Each step of starting up, shown as it begins, with the seconds the steps before it took.
 const begun = performance.now();
 const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
@@ -195,27 +193,20 @@ async function start() {
       .forEach((number, index) => view.setFloat32(16 + 4 * index, number, true));
     device.queue.writeBuffer(viewBuffer, 0, view.buffer);
 
-    // The frame traced in bands of rows, each a job of its own, so that no job runs long on a slow GPU.
-    for (let top = 0; top < rows; top += BAND) {
-      uniforms.setUint32(C.offsets.tile_corner, 0, true);
-      uniforms.setUint32(C.offsets.tile_corner + 4, top, true);
-      device.queue.writeBuffer(uniformBuffer, 0, block);
-      const tracing = device.createCommandEncoder();
-      for (const [pipeline, size] of pipelines) {
-        const pass = tracing.beginComputePass();
-        pass.setPipeline(pipeline);
-        pass.setBindGroup(0, group);
-        pass.dispatchWorkgroups(Math.ceil(columns / size[0]), Math.ceil(Math.min(BAND, rows - top) / size[1]));
-        pass.end();
-      }
-      device.queue.submit([tracing.finish()]);
-    }
+    device.queue.writeBuffer(uniformBuffer, 0, block);
     const encoder = device.createCommandEncoder();
+    for (const [pipeline, size] of pipelines) {
+      const pass = encoder.beginComputePass();
+      pass.setPipeline(pipeline);
+      pass.setBindGroup(0, group);
+      pass.dispatchWorkgroups(Math.ceil(columns / size[0]), Math.ceil(rows / size[1]));
+      pass.end();
+    }
     encoder.clearBuffer(brightest);
     const metering = encoder.beginComputePass();
     metering.setPipeline(meter);
     metering.setBindGroup(0, meterGroup);
-    metering.dispatchWorkgroups(Math.ceil(columns * rows / 64));
+    metering.dispatchWorkgroups(Math.ceil(columns / 8), Math.ceil(rows / 8));
     metering.end();
     const drawing = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(),
       loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] });

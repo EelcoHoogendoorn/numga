@@ -55,12 +55,12 @@ struct View {
 const weights = vec3<f32>(0.2126, 0.7152, 0.0722);
 
 // The frame's brightest disk light, by its luminance: a non-negative number's bits order as the number does.
-@compute @workgroup_size(64)
+@compute @workgroup_size(8, 8)
 fn meter(@builtin(global_invocation_id) id: vec3<u32>) {
-    if (id.x >= view.count) {
+    if (id.x >= view.columns || id.y >= view.count / view.columns) {
         return;
     }
-    let first = id.x * view.stride;
+    let first = (id.y * view.columns + id.x) * view.stride;
     atomicMax(&brightest, bitcast<u32>(dot(vec3<f32>(samples[first], samples[first + 1u], samples[first + 2u]), weights)));
 }
 
@@ -113,7 +113,7 @@ def main() -> None:
     import wgpu
     from rendercanvas.glfw import RenderCanvas, loop
 
-    tracer = gpu.shader()
+    tracer = gpu.live_shader()
     device = tracer.device
     values = gpu.scene()
     state = dict(azimuth=0.0, inclination=scenarios.camera_inclination, distance=scenarios.camera_distance,
@@ -131,7 +131,8 @@ def main() -> None:
     meter = device.create_compute_pipeline(layout="auto", compute={"module": module, "entry_point": "meter"})
     view = device.create_buffer(size=32, usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST)
     brightest = device.create_buffer(size=4, usage=wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC | wgpu.BufferUsage.COPY_DST)
-    done = device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST)
+    # Two readbacks of the brightest light, a frame apart, each read while the other's frame runs.
+    done = [device.create_buffer(size=4, usage=wgpu.BufferUsage.MAP_READ | wgpu.BufferUsage.COPY_DST) for _ in range(2)]
     fixed = luminance(scenarios.exposure_temperature)
     sample = gpu_sample_layout(tracer)
 
@@ -160,7 +161,7 @@ def main() -> None:
         elif kind == "key_down" and event["key"] == "e":
             state["following"] = not state["following"]
 
-    clock = dict(last=time.perf_counter(), frames=0, reported=time.perf_counter())
+    clock = dict(last=time.perf_counter(), frames=0, drawn=0, reported=time.perf_counter())
 
     @canvas.request_draw
     def draw() -> None:
@@ -190,7 +191,7 @@ def main() -> None:
             {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": size}},
             {"binding": 1, "resource": {"buffer": view, "offset": 0, "size": 32}},
             {"binding": 2, "resource": {"buffer": brightest, "offset": 0, "size": 4}}]))
-        metering.dispatch_workgroups(-(-rows * columns // 64))
+        metering.dispatch_workgroups(-(-columns // 8), -(-rows // 8))
         metering.end()
         group = device.create_bind_group(layout=pipeline.get_bind_group_layout(0), entries=[
             {"binding": 0, "resource": {"buffer": samples, "offset": 0, "size": size}},
@@ -201,17 +202,19 @@ def main() -> None:
         drawing.set_bind_group(0, group)
         drawing.draw(3)
         drawing.end()
-        encoder.copy_buffer_to_buffer(brightest, 0, done, 0, 4)
+        encoder.copy_buffer_to_buffer(brightest, 0, done[clock["drawn"] % 2], 0, 4)
         device.queue.submit([encoder.finish()])
-        # One frame on the GPU at a time, waited for by reading back its brightest light: the next is traced for where
-        # the camera is when this one is done, frames never queue up behind each other, and the next exposure moves
-        # toward the one that puts this frame's brightest light where the scenario's still has it.
-        done.map_sync(wgpu.MapMode.READ, 0, 4)
-        light = float(np.frombuffer(done.read_mapped(0, 4), dtype=np.float32)[0])
-        done.unmap()
+        # The frame before this one, waited for by reading back its brightest light: at most two frames are on the GPU,
+        # the GPU never waits on the host, and the next exposure moves toward the one that puts that light where the
+        # scenario's still has it.
+        before = done[(clock["drawn"] + 1) % 2]
+        before.map_sync(wgpu.MapMode.READ, 0, 4)
+        light = float(np.frombuffer(before.read_mapped(0, 4), dtype=np.float32)[0])
+        before.unmap()
         if light > 0:
             state["reference"] *= (light / BRIGHTEST / state["reference"]) ** FOLLOWING
         clock["frames"] += 1
+        clock["drawn"] += 1
         if now - clock["reported"] > 1:
             print(f"{clock['frames'] / (now - clock['reported']):5.1f} frames a second at {columns} x {rows} pixels,"
                   f" step {state['step_fraction']:.3g} of the radius, spin {spin_size:+.2f}")
