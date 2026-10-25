@@ -35,7 +35,13 @@ The full example: [vibration modes](examples/mechanics/modes/modes.ipynb) [![Ope
 
 ## Install and run
 
+Install directly from GitHub with Python 3.11+ and Git:
+
 ```sh
-python -m pip install -e ".[linalg,examples]"     # add ".[jax]" or ".[torch]" for those backends
+python -m pip install "numga[examples] @ git+https://github.com/EelcoHoogendoorn/numga.git@main"
 python -m examples.mechanics.modes.scenarios
 ```
+
+The core library depends only on NumPy; omit `[examples]` to install it. Use `[examples,jax]` or `[examples,torch]` to include those backends.
+
+The API is under active development and may change. Replace `@main` with a commit hash to keep a particular version.
