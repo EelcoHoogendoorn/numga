@@ -25,16 +25,21 @@
 const C = /*CONTENTS*/null;
 
 const status = document.getElementById("status");
+// Each step of starting up, shown as it begins, with the seconds the steps before it took.
+const begun = performance.now();
+const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
 const bytes = text => Uint8Array.from(atob(text), character => character.charCodeAt(0));
 
 async function start() {
   if (!navigator.gpu) { status.textContent = "This browser has no WebGPU."; return; }
+  step("Asking for the GPU…");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) { status.textContent = "No WebGPU adapter."; return; }
   const device = await adapter.requestDevice({ requiredLimits: {
     maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: adapter.limits.maxBufferSize } });
   device.addEventListener("uncapturederror", event => { status.textContent = "WebGPU: " + event.error.message; });
+  device.lost.then(info => { status.textContent = "The GPU was lost: " + (info.message || info.reason); });
 
   // The canvas at the screen's own pixels behind its points.
   const canvas = document.getElementById("view");
@@ -44,7 +49,8 @@ async function start() {
   // The image traces at the screen's pixels, or at a share of them when frames come slower than about 24 a second;
   // the share grows back when they come faster than about 40.
   const full = [Math.round(C.size[0] * ratio), Math.round(C.size[1] * ratio)];
-  let share = 1, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
+  // A third of them at the start, so that a slow GPU's first frames come quickly; the share grows as frames keep up.
+  let share = 0.35, columns = full[0], rows = full[1], paced = performance.now(), frameTime = 1 / 30;
   const resize = () => {
     columns = Math.max(1, Math.round(full[0] * share));
     rows = Math.max(1, Math.round(full[1] * share));
@@ -57,6 +63,7 @@ async function start() {
   context.configure({ device, format, alphaMode: "opaque" });
 
   // The tracer: its bindings as the runner lays them out, its uniforms as one block, its data, and its output.
+  step("Compiling the shader…");
   const tracerModule = device.createShaderModule({ code: C.code });
   for (const message of (await tracerModule.getCompilationInfo()).messages) {
     if (message.type === "error") { status.textContent = "Shader: " + message.message; return; }
@@ -68,9 +75,10 @@ async function start() {
     else entry.buffer = { type: binding.writable ? "storage" : "read-only-storage" };
     return entry;
   }) });
-  const pipelines = C.entry_points.map(([name, size]) => [device.createComputePipeline({
+  step("Building the tracer…");
+  const pipelines = await Promise.all(C.entry_points.map(async ([name, size]) => [await device.createComputePipelineAsync({
     layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
-    compute: { module: tracerModule, entryPoint: name } }), size]);
+    compute: { module: tracerModule, entryPoint: name } }), size]));
 
   const block = bytes(C.uniforms);
   const uniformBuffer = device.createBuffer({ size: block.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
@@ -86,6 +94,7 @@ async function start() {
     return made;
   };
   // The sky, drawn once on the GPU.
+  step("Drawing the sky…");
   const sky = device.createTexture({ size: [C.sky.width, C.sky.height], format: "rgba16float",
                                      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.STORAGE_BINDING });
   {
@@ -110,8 +119,8 @@ async function start() {
 
   // The light exposed and drawn into the canvas, and the meter of each frame's brightest light.
   const displayModule = device.createShaderModule({ code: C.display });
-  const meter = device.createComputePipeline({ layout: "auto", compute: { module: displayModule, entryPoint: "meter" } });
-  const draw = device.createRenderPipeline({ layout: "auto",
+  const meter = await device.createComputePipelineAsync({ layout: "auto", compute: { module: displayModule, entryPoint: "meter" } });
+  const draw = await device.createRenderPipelineAsync({ layout: "auto",
     vertex: { module: displayModule, entryPoint: "vertex" },
     fragment: { module: displayModule, entryPoint: "fragment", targets: [{ format }] },
     primitive: { topology: "triangle-list" } });
@@ -220,6 +229,7 @@ async function start() {
     }
     requestAnimationFrame(frame);
   }
+  step("Tracing the first frame…");
   requestAnimationFrame(frame);
 }
 
