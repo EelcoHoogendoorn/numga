@@ -90,25 +90,11 @@ fn fragment(@builtin(position) at: vec4<f32>) -> @location(0) vec4<f32> {
 
 
 # --- math -----------------------------------------------------------------------------
-def camera(azimuth: float, inclination: float, distance: float, spin: core.Spin) -> dict:
-    """The camera's orientation, its eye, and its unit along the lab's time measured in proper time at the eye,
-    for a camera turned by `inclination` from above the hole and by `azimuth` around it."""
+def camera(azimuth: float, inclination: float, distance: float) -> dict:
+    """The camera's orientation and distance from the hole, for a camera turned by `inclination` from above the hole
+    and by `azimuth` around it; the shader finds its eye and its rest frame."""
     orientation = (mv.xy * (-azimuth / 2)).exp() * (mv.zx * (-inclination / 2)).exp()     # [] Rotor
-    eye = (orientation >> mv.z.dual()) * distance                                         # [] Antivector
-    at_rest = core.time / core.proper_squared(core.field(eye, spin, scenarios.mass), core.time).square_root()
-    return dict(orientation=orientation, eye=eye, at_rest=at_rest)
-
-
-def hole(spin_size: float) -> dict:
-    """What the shader reads of a hole whose spin, per unit mass, turns in the disk's plane by `spin_size`, negative
-    against the disk: the spin, the disk's inner edge at the innermost stable orbit, the rest temperatures across it,
-    and the radius inside every photon orbit, where rays stop."""
-    spin = mv.xy.dual() * spin_size                                                       # [] Spin
-    inner_radius = core.innermost_stable_orbit(mv.xy, spin, scenarios.mass)              # [] Scalar
-    radii = inner_radius + (scenarios.disk_outer_radius - inner_radius) * np.linspace(0, 1, gpu.n_table_entries)
-    temperatures = core.disk_temperature(radii, mv.xy, spin, scenarios.mass, scenarios.disk_temperature_scale)
-    capture_radius = 1.05 * (scenarios.mass + np.sqrt(scenarios.mass**2 - spin_size**2))
-    return dict(spin=spin, inner_radius=inner_radius, temperatures=temperatures, capture_radius=capture_radius)
+    return dict(orientation=orientation, distance=distance)
 
 
 def luminance(temperature: float) -> float:
@@ -185,10 +171,9 @@ def main() -> None:
             state["sweep"] += (now - clock["last"]) * 2 * np.pi / SPIN_PERIOD
         clock["last"] = now
         spin_size = LARGEST_SPIN * np.sin(state["sweep"])
-        spinning = hole(spin_size)
         target = context.get_current_texture()
         columns, rows = target.size[0], target.size[1]
-        frame = values | spinning | camera(state["azimuth"], state["inclination"], state["distance"], spinning["spin"]) | dict(
+        frame = values | camera(state["azimuth"], state["inclination"], state["distance"]) | dict(spin=mv.xy.dual() * spin_size,
             elapsed=state["elapsed"], fade=0.0, step_fraction=state["step_fraction"], n_steps=max_steps(state["step_fraction"]))
         encoder = device.create_command_encoder()
         outputs = tracer.encode(encoder, (rows, columns), ("viewer",), frame)

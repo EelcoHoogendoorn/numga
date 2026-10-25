@@ -25,12 +25,14 @@ types = dict(Vector=core.Vector, Bivector=core.Bivector, Antivector=core.Antivec
 constants = dict(camera_forward=core.camera_forward, camera_right=core.camera_right, camera_up=core.camera_up)
 mv = core.mv
 n_table_entries = 256
-# The colour table's hottest temperature, past any the camera sees.
+# The colour table's entries, and its hottest temperature, past any the camera sees.
 hottest = 3 * scenarios.disk_temperature_scale                                  # K
 
 
 # --- math -----------------------------------------------------------------------------
 geometry = """
+const pi = 3.141592653589793;
+
 // One unit along the lab's time, and the part of a direction within the lab's slice of space.
 const time = -mv.t.dual();
 const space = Antivector - time * (mv.t & Antivector);
@@ -151,8 +153,6 @@ disk = """
 const orbit = mv.xy;
 const normal = mv.z;
 
-var<uniform> at_rest: Antivector;
-var<uniform> inner_radius: f32;
 var<uniform> outer_radius: f32;
 var<uniform> inner_depth: f32;
 var<uniform> polarization_degree: f32;
@@ -161,8 +161,8 @@ var<uniform> elapsed: f32;
 var<uniform> flow_time: f32;
 var<uniform> fade: f32;
 var<uniform> hottest: f32;
-// The rest temperature at evenly spaced radii across the disk, and blackbody light up to the hottest.
-var<storage, read> temperatures: array<f32>;
+// The disk's temperature scale, (accretion rate c^6 / (σ G^2 M^2))^(1/4), and blackbody light up to the hottest.
+var<uniform> temperature_scale: f32;
 var blackbodies: texture_2d<f32>;
 var filtered: sampler;
 // One of the disk's random waves: its whole turns around the disk, waves per unit radius across it, and phase.
@@ -173,6 +173,17 @@ struct Mode {
 }
 
 var<storage, read> modes: array<Mode>;
+
+// The radius of the innermost stable circular orbit in the disk's plane, the spin counted along the orbit, negative
+// for gas orbiting against the hole: gas orbiting with the hole reaches inward of the radius without spin, gas
+// orbiting against it outward (Bardeen, Press and Teukolsky, 1972).
+fn inner_radius() -> f32 {
+    let ratio = (orbit & spin) / mass;
+    let first = 1 + pow(1 - ratio * ratio, 1.0 / 3) * (pow(1 + ratio, 1.0 / 3) + pow(1 - ratio, 1.0 / 3));
+    let second = sqrt(3 * ratio * ratio + first * first);
+    let reach = sqrt((3 - first) * (3 + first + 2 * second));
+    return mass * (3 + second - select(reach, -reach, ratio < 0));
+}
 
 fn orbital_speed(radius: f32) -> f32 {
     let alignment = orbit & spin;
@@ -187,7 +198,8 @@ fn orbiting_gas(position: Antivector, radius: f32) -> Antivector {
 
 // The share of a ray's light the disk absorbs where it crosses: its depth over the slant the gas sees.
 fn disk_opacity(crossing: Ray, radius: f32) -> f32 {
-    let fraction = (radius - inner_radius) / (outer_radius - inner_radius);
+    let inner = inner_radius();
+    let fraction = (radius - inner) / (outer_radius - inner);
     let depth = inner_depth * (1 - fraction) * (1 - fraction);
     let gas = orbiting_gas(crossing.position, radius);
     let slant = abs((crossing.momentum & gas) / (crossing.momentum & normal.dual()));
@@ -207,17 +219,28 @@ fn waves(position: Antivector, radius: f32, before: f32) -> f32 {
     return total / sqrt(f32(arrayLength(&modes)) / 2);
 }
 
+// A relativistic thin disk's temperature at an oblate radius, from the flux of Page and Thorne (1974): zero at the
+// innermost stable orbit, falling as the radius to the power -3/4 far out.
 fn rest_temperature(radius: f32) -> f32 {
-    let place = (radius - inner_radius) / (outer_radius - inner_radius) * f32(arrayLength(&temperatures) - 1);
-    let index = min(u32(place), arrayLength(&temperatures) - 2);
-    return mix(temperatures[index], temperatures[index + 1], place - f32(index));
+    let ratio = (orbit & spin) / mass;
+    let root_radius = sqrt(radius / mass);
+    let edge = sqrt(inner_radius() / mass);
+    // The roots of the cubic `root_radius**3 - 3 * root_radius + 2 * ratio`, and the weight of each in the torque.
+    let roots = 2 * cos((acos(ratio) + vec3<f32>(-pi, pi, 3 * pi)) / 3);
+    let weights = (roots - ratio) * (roots - ratio) / (roots * (roots * roots - 1));
+    // The torque the disk carries, zero at the innermost stable orbit.
+    let terms = weights * log((root_radius - roots) / (edge - roots));
+    let torque = max(root_radius - edge - 1.5 * ratio * log(root_radius / edge) - (terms.x + terms.y + terms.z), 0.0);
+    let cubic = root_radius * root_radius * root_radius - 3 * root_radius + 2 * ratio;
+    let flux = 3 / (8 * pi) * torque / (root_radius * root_radius * root_radius * root_radius * cubic);
+    return temperature_scale * sqrt(sqrt(flux));
 }
 
 // Linear light the disk emits towards the camera: a blackbody at the shifted temperature, textured.
 fn disk_light(crossing: Ray, radius: f32) -> vec3<f32> {
     let gas = orbiting_gas(crossing.position, radius);
     // A blackbody seen at a shifted frequency is a blackbody at the shifted temperature.
-    let shift = (crossing.momentum & at_rest) / (crossing.momentum & gas);
+    let shift = (crossing.momentum & at_rest()) / (crossing.momentum & gas);
     // The table's entries sit at its texel centres, from zero to the hottest temperature.
     let entries = f32(textureDimensions(blackbodies).x);
     let entry = clamp(shift * rest_temperature(radius) / hottest, 0.0, 1.0) * (entries - 1) + 0.5;
@@ -243,14 +266,13 @@ fn disk_coherency(crossing: Ray) -> Coherency {
 """
 
 camera = """
-var<uniform> eye: Antivector;
 var<uniform> orientation: Rotor;
+var<uniform> distance: f32;
 var<uniform> analyzer: ScreenSlice;
 var<uniform> half_view: f32;
 var<uniform> step_fraction: f32;
 var<uniform> n_steps: u32;
 var<uniform> escape_radius: f32;
-var<uniform> capture_radius: f32;
 var stars: texture_2d<f32>;
 
 // What a ray brings back: the disk's light, the share of it an analyzer passes, and the starlight.
@@ -260,7 +282,20 @@ struct Sample {
     sky: vec3<f32>,
 }
 
-const pi = 3.141592653589793;
+// The camera's eye, at its distance from the hole along its own backward direction.
+fn eye() -> Antivector {
+    return (orientation >> mv.z.dual()) * distance;
+}
+
+// The camera at rest: a unit along the lab's time measured in proper time at the eye.
+fn at_rest() -> Antivector {
+    return time / proper_squared(field(eye()), time).square_root();
+}
+
+// The radius inside every photon orbit, where no ray turns back out.
+fn capture_radius() -> f32 {
+    return 1.05 * (mass + sqrt(mass * mass - spin.squared()));
+}
 
 // The static camera's rest frame carried into the local Kerr–Schild frame.
 fn camera_boost(geometry: Field) -> Rotor {
@@ -297,11 +332,14 @@ fn sample(place: vec2<f32>) -> Sample {
     // Past-directed light from the pixel, looking along the camera's -z.
     var direction = orientation >> (camera_forward + camera_right * across.x + camera_up * across.y);
     direction = direction / direction.squared().square_root();
-    let geometry = field(eye);
+    let start = eye();
+    let geometry = field(start);
     let heading = camera_boost(geometry) >> (time - direction);
     let future_momentum = -gauge_inverse(geometry)(heading).dual();
     let momentum = -future_momentum / (future_momentum & time);
-    var ray = Ray(eye, momentum, camera_screen(eye, momentum));
+    var ray = Ray(start, momentum, camera_screen(start, momentum));
+    let inner = inner_radius();
+    let capture = capture_radius();
 
     var radius = field(ray.position).radius;
     var remaining = 1.0;
@@ -315,7 +353,7 @@ fn sample(place: vec2<f32>) -> Sample {
         if ((normal & ray.position) * (normal & end.position) <= 0) {
             let crossing = ray + (end - ray) * (-(normal & ray.position) / (normal & (end.position - ray.position)));
             let crossing_radius = field(crossing.position).radius;
-            if (crossing_radius >= inner_radius && crossing_radius <= outer_radius) {
+            if (crossing_radius >= inner && crossing_radius <= outer_radius) {
                 let weight = remaining * disk_opacity(crossing, crossing_radius);
                 let emitted = weight * disk_light(crossing, crossing_radius);
                 disk += emitted;
@@ -328,7 +366,7 @@ fn sample(place: vec2<f32>) -> Sample {
             stars_seen = remaining * starlight(gauge(geometry)(local(geometry, end.momentum)));
             break;
         }
-        if (end_radius < capture_radius) {
+        if (end_radius < capture) {
             break;
         }
         ray = end;
@@ -345,24 +383,20 @@ def shader() -> Shader:
 
 
 def scene() -> dict:
-    """The values the shader reads for the still: hole, camera, disk, tables and sky."""
+    """The values the shader reads for the still: hole, camera, disk, tables and sky. The shader finds the rest from
+    them: the camera's eye and rest frame, and the disk's inner edge and temperatures."""
     spin = mv.xy.dual() * scenarios.camera_spin                                 # [] Spin
     orientation = (mv.zx * (-scenarios.camera_inclination / 2)).exp()           # [] Rotor
-    eye = (orientation >> mv.z.dual()) * scenarios.camera_distance              # [] Antivector
-    # The camera at rest, a unit along the lab's time measured in proper time at the eye.
-    at_rest = core.time / core.proper_squared(core.field(eye, spin, scenarios.mass), core.time).square_root()  # [] Antivector
-    inner_radius = core.innermost_stable_orbit(mv.xy, spin, scenarios.mass)   # [] Scalar
-    radii = inner_radius + (scenarios.disk_outer_radius - inner_radius) * np.linspace(0, 1, n_table_entries)  # [entries] Scalar
     return dict(
-        spin=spin, mass=scenarios.mass, eye=eye, orientation=orientation, at_rest=at_rest,
-        inner_radius=inner_radius, outer_radius=scenarios.disk_outer_radius, inner_depth=scenarios.inner_depth,
+        spin=spin, mass=scenarios.mass, orientation=orientation, distance=scenarios.camera_distance,
+        outer_radius=scenarios.disk_outer_radius, inner_depth=scenarios.inner_depth,
         polarization_degree=scenarios.polarization_degree, clump_contrast=render.clump_contrast,
         elapsed=0.0, flow_time=scenarios.flow_time, fade=0.0, analyzer=mv.x,
-        hottest=hottest, temperatures=core.disk_temperature(radii, mv.xy, spin, scenarios.mass, scenarios.disk_temperature_scale),
+        hottest=hottest, temperature_scale=scenarios.disk_temperature_scale,
         blackbodies=render.blackbody_table(hottest, n_table_entries), modes=render.wave_modes(),
         half_view=scenarios.half_view,
         step_fraction=scenarios.camera_step_fraction, n_steps=scenarios.n_camera_steps,
-        escape_radius=scenarios.escape_radius, capture_radius=scenarios.capture_radius,
+        escape_radius=scenarios.escape_radius,
         stars=render.star_texture(scenarios.sky_width, scenarios.sky_height, scenarios.sky_seed))
 
 
