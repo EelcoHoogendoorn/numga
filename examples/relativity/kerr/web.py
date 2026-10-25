@@ -8,7 +8,7 @@ Drag to fly the camera around the hole, scroll to move it in or out, `[` and `]`
 stop or restart the disk, `s` the spin's sweep, and `e` the exposure's following of the brightest light, as in the
 window of `viewer`.
 
-    python -m examples.relativity.kerr.web            # writes build/kerr.html
+    python -m examples.relativity.kerr.web            # writes kerr_webgpu.html beside this file
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ fn draw(@builtin(global_invocation_id) id: vec3<u32>) {
     textureStore(sky, id.xy, vec4<f32>(clamp(colour, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0));
 }
 """
-PAGE = Path("build") / "kerr.html"
+PAGE = Path(__file__).parent / "kerr_webgpu.html"
 
 
 # --- math -----------------------------------------------------------------------------
@@ -168,10 +168,9 @@ def contents() -> dict:
 
 
 def main() -> None:
-    PAGE.parent.mkdir(exist_ok=True)
-    template = (Path(__file__).parent / "web.html").read_text()
+    template = (Path(__file__).parent / "web_template.html").read_text()
     PAGE.write_text(template.replace("/*CONTENTS*/null", json.dumps(contents())))
-    print(f"wrote {PAGE}, {PAGE.stat().st_size / 1e6:.1f} MB")
+    print(f"wrote {PAGE.name}, {PAGE.stat().st_size / 1e3:.0f} kB")
 
 
 if __name__ == "__main__":
