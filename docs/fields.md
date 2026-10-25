@@ -81,11 +81,8 @@ In block-matrix notation a field map is a matrix of blocks, one block per pair o
 The derivative with respect to a field keeps its sites inside the step's axis, so every site is coupled to every other. The second derivative of a scalar function of `vector[4]` is the bilinear form `scalar <- vector[4], vector[4]`, and solving it against the gradient is the Newton step of the whole string:
 
 ```python
-import jax
-
 from numga.backend.jax import JaxContext, derivative
 
-jax.config.update("jax_enable_x64", True)
 # The same string, on JAX:
 jax_mv = JaxContext(VGA3D, np.float64).multivector
 springs = (jax_mv.scalar(weights[..., None]) * Vector).field(0, 1)      # vector[4] <- vector[4]

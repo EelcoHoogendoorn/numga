@@ -12,13 +12,11 @@ dry air. Saturation uses the Magnus approximation over liquid water.
 """
 from __future__ import annotations
 
-import jax
 import numpy as np
 
 from numga import Algebra, stack
 from numga.backend.jax import JaxContext, derivative
 
-jax.config.update('jax_enable_x64', True)
 ga = Algebra('t0w0')
 mv = JaxContext(ga, np.float64).multivector
 Scalar = ga.gatype.scalar()

@@ -12,13 +12,11 @@ Temperature and volume are in their critical values, pressure in R T_c / V_c, en
 
 from __future__ import annotations
 
-import jax
 import numpy as np
 
 from numga import Algebra, stack
 from numga.backend.jax import JaxContext, derivative
 
-jax.config.update("jax_enable_x64", True)
 ga = Algebra("t0v0")
 mv = JaxContext(ga, np.float64).multivector
 

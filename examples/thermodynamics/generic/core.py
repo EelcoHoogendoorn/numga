@@ -18,7 +18,6 @@ import numpy as np
 from numga import Algebra
 from numga.backend.jax import JaxContext
 
-jax.config.update("jax_enable_x64", True)
 ga = Algebra("q0p0s0")
 mv = JaxContext(ga, np.float64).multivector
 Scalar = ga.gatype.scalar()

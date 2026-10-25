@@ -12,13 +12,11 @@ of the fluid.
 """
 from __future__ import annotations
 
-import jax
 import numpy as np
 
 from numga import Algebra
 from numga.backend.jax import JaxContext, derivative
 
-jax.config.update("jax_enable_x64", True)
 ga = Algebra("l0g0")
 mv = JaxContext(ga, np.float64).multivector
 Scalar = ga.gatype.scalar()
