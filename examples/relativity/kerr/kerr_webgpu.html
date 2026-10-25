@@ -11,7 +11,9 @@
   canvas { display: block; cursor: grab; touch-action: none; }
   canvas:active { cursor: grabbing; }
   #help { color: #8a8a93; text-align: center; }
-  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; }
+  #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; max-width: 480px; text-align: center; }
+  #fallback { display: block; }
+  #fallback[hidden] { display: none; }
   kbd { font: inherit; color: #c9c9cf; }
   button { font: inherit; color: #0b0b0d; background: #c9c9cf; border: 0; border-radius: 6px; padding: 6px 18px; cursor: pointer; }
   button[hidden] { display: none; }
@@ -19,6 +21,7 @@
 </head>
 <body>
 <canvas id="view"></canvas>
+<img id="fallback" hidden alt="The black hole's disk, traced ahead of time" src="../../../plots/kerr.gif" width="400" height="266">
 <div id="help">Drag to fly around the hole · scroll to move in or out · <kbd>[</kbd> <kbd>]</kbd> step ·
   <kbd>space</kbd> disk · <kbd>s</kbd> spin · <kbd>e</kbd> exposure</div>
 <div id="status">Starting WebGPU…</div>
@@ -33,11 +36,25 @@ const begun = performance.now();
 const step = text => { status.textContent = `${text} (${((performance.now() - begun) / 1000).toFixed(1)} s)`; };
 const bytes = text => Uint8Array.from(atob(text), character => character.charCodeAt(0));
 
+// Where the page cannot trace, the scene traced ahead of time, in place of the canvas.
+function unavailable(text) {
+  document.getElementById("view").hidden = true;
+  document.getElementById("help").hidden = true;
+  document.getElementById("fallback").hidden = false;
+  status.textContent = text;
+}
+
 async function start() {
-  if (!navigator.gpu) { status.textContent = "This browser has no WebGPU."; return; }
+  if (!navigator.gpu) {
+    return unavailable("This browser has WebGPU switched off or lacks it. In Firefox it may need dom.webgpu.enabled set in " +
+                       "about:config; recent Chrome and Edge have it on most systems. Meanwhile, the same scene traced ahead of time:");
+  }
   step("Asking for the GPU…");
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-  if (!adapter) { status.textContent = "No WebGPU adapter."; return; }
+  if (!adapter) {
+    return unavailable("WebGPU is on, but found no GPU it can use; on Linux it needs working Vulkan drivers. " +
+                       "Meanwhile, the same scene traced ahead of time:");
+  }
   const device = await adapter.requestDevice({ requiredLimits: {
     maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: adapter.limits.maxBufferSize } });
@@ -252,7 +269,7 @@ async function start() {
   }, { once: true });
 }
 
-start().catch(error => { status.textContent = String(error); });
+start().catch(error => unavailable("The page could not start WebGPU (" + String(error) + "). The same scene traced ahead of time:"));
 </script>
 </body>
 </html>
