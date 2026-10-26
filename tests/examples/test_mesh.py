@@ -1,53 +1,45 @@
-"""Sparse mesh derivatives, geometric reconstruction, and the boundary agree."""
+"""Mesh topology: the incidences compose to nothing, the boundary encloses the faces, and the disk constructors give
+regular triangles."""
 
 import numpy as np
 import pytest
 
 from numga.algebras import VGA3D
-from numga.sparse import SparseExtensor
 from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", VGA3D)
-Mesh, as_scalar, context, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.ctx, mesh_module.mv
+Mesh, as_scalar, mv = mesh_module.Mesh, mesh_module.as_scalar, mesh_module.mv
 
 
-@pytest.mark.parametrize("mesh", (Mesh.disk(1.7, 8, 48), Mesh.triangular_disk(1.7, 10),
-                                  Mesh.concentric_disk(np.array([0.34, 1.445, 1.7]), 10)),
+def sides(mesh: Mesh, vertices):
+    """The edge facing each corner of each face `[3] Point[F]`, one of the edges signed as the face runs along it."""
+    return ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()
+
+
+def corner_angles(mesh: Mesh, vertices) -> np.ndarray:
+    """Each corner's angle in degrees `[3, F]`: one edge's slice read along the other, over both lengths."""
+    edges = sides(mesh, vertices)
+    after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
+    return np.rad2deg(np.arccos(np.clip((-(after.dual_inverse() & before) / (after.norm() * before.norm())).to_array(), -1, 1)))
+
+
+@pytest.mark.parametrize("built", (Mesh.disk(2.0, 8, 48), Mesh.triangular_disk(2.0, 10),
+                                   Mesh.concentric_disk(np.array([0.4, 1.7, 2.0]), 10)),
                          ids=("rings", "triangular", "concentric"))
-def test_affine_field_reconstruction_and_energy_follow_a_turned_mesh(mesh: Mesh):
-    turn = (mv.xz * 0.31).exp()
-    mesh = mesh.copy(vertices=turn >> mesh.vertices)
-    gradient = turn >> (mv.x + 2 * mv.y)
-    # A linear function's value at each vertex: the point paired with the gradient.
-    potential = mesh.vertices & gradient
-    differences = mesh.d0 * potential
-
-    # Integrating a gradient around a triangle vanishes, and edge integrals reconstruct
-    # the same constant vector on every face, including after turning the whole mesh.
-    np.testing.assert_allclose((mesh.d1 * mesh.d0).cells.kernel, 0.0, atol=0.0)
-    np.testing.assert_allclose((mesh.d1 * differences).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((mesh.reconstruction(differences) - gradient).kernel, 0.0, atol=1e-12)
-
-    # The cotangent Hodge measures the same energy as integrating the squared gradient.
-    edge_energy = (mesh.edge_ratio * differences.squared()).batch().sum()
-    face_energy = mesh.triangle_areas.batch().sum() * gradient.scalar_norm_squared()
-    np.testing.assert_allclose((edge_energy - face_energy).kernel, 0.0, atol=1e-11)
-
-
-@pytest.mark.parametrize("mesh", (Mesh.disk(2.0, 8, 48), Mesh.triangular_disk(2.0, 10),
-                                  Mesh.concentric_disk(np.array([0.4, 1.7, 2.0]), 10)),
-                         ids=("rings", "triangular", "concentric"))
-def test_boundary_integral_matches_oriented_face_area(mesh: Mesh):
+def test_boundary_integral_matches_oriented_face_area(built):
+    mesh, vertices = built
     turn = (mv.yz * -0.24).exp()
-    mesh = mesh.copy(vertices=turn >> mesh.vertices + mv.x.dual())
+    vertices = turn >> vertices + mv.x.dual()
 
+    # Circulation around a face of a difference vanishes.
+    np.testing.assert_allclose((mesh.d1 * mesh.d0).cells.kernel, 0.0, atol=0.0)
     # Interior edges cancel in the sum of face boundaries. The surviving edge pairs
     # enclose exactly the same oriented area as the sum of triangular faces.
     boundary = ~mesh.d1 * as_scalar(np.ones(len(mesh.faces))).field()
-    tail, head = SparseExtensor.selection(context, mesh.edges.T, len(mesh.vertices.batch())) * mesh.vertices   # [ends] Point[E]
-    edge_area = tail & head
-    boundary_area = (boundary * edge_area).batch().sum() / 2
-    face_area = (mesh.triangle_areas * mesh.face_normals).batch().sum()
+    tail, head = vertices.batch()[mesh.edges.T]                               # [E] Point each
+    boundary_area = (boundary.batch() * (tail & head)).sum() / 2
+    edges = sides(mesh, vertices)
+    face_area = (edges[0] & edges[1]).sites.sum() / 2
     np.testing.assert_allclose((boundary_area - face_area).kernel, 0.0, atol=1e-11)
     np.testing.assert_array_equal(np.flatnonzero(boundary.kernel[:, 0]), mesh.boundary_edges)
 
@@ -55,20 +47,22 @@ def test_boundary_integral_matches_oriented_face_area(mesh: Mesh):
 @pytest.mark.parametrize("divisions", (6, 10, 16, 24, 32))
 def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(divisions: int):
     radius = 0.1
-    mesh = Mesh.triangular_disk(radius, divisions)
+    mesh, vertices = Mesh.triangular_disk(radius, divisions)
     boundary = np.unique(mesh.edges[mesh.boundary_edges])
-    radii = mesh.vertices.norm()
-    degrees = np.bincount(mesh.edges.ravel(), minlength=len(mesh.vertices.batch()))
-    interior = np.setdiff1d(np.arange(len(mesh.vertices.batch())), boundary)
-    angles = np.rad2deg(np.arccos(np.clip(mesh.corner_cosines().kernel, -1, 1)))
-    lengths = mesh.edge_displacements.norm().kernel[:, 0]
-    areas = mesh.triangle_areas.kernel[:, 0]
-    rim_areas = areas[mesh.face_centers.norm().kernel[:, 0] > 0.75 * radius]
+    degrees = np.bincount(mesh.edges.ravel(), minlength=mesh.n_vertices)
+    interior = np.setdiff1d(np.arange(mesh.n_vertices), boundary)
+    lengths = (mesh.d0 * vertices).norm().kernel[:, 0]
+    edges = sides(mesh, vertices)
+    planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector[F]
+    areas = (edges[0] & edges[1]).norm().kernel[:, 0] / 2
+    centres = vertices.batch()[mesh.faces.T].sum(axis=0) / 3                 # [F] Point
+    rim_areas = areas[centres.norm().kernel[:, 0] > 0.75 * radius]
+    angles = corner_angles(mesh, vertices)
 
     # Every interior vertex has six neighbours; the boundary follows the circle.
     assert np.all(degrees[interior] == 6)
-    np.testing.assert_allclose((radii.batch()[boundary] - radius).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((mesh.face_planes - mv.xy).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((vertices.norm().batch()[boundary] - radius).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((planes - mv.xy).kernel, 0, atol=1e-12)
     # Edge lengths and areas remain uniform through the rim without thin triangles.
     assert lengths.std() < 0.1 * lengths.mean()
     assert areas.std() < 0.1 * areas.mean()
@@ -80,11 +74,13 @@ def test_triangular_disk_has_regular_interior_and_resolved_circular_boundary(div
 @pytest.mark.parametrize("divisions", (10, 24, 32))
 def test_concentric_disk_follows_material_interfaces_without_thin_cells(divisions: int):
     boundaries = np.array([0.02, 0.085, 0.1])
-    mesh = Mesh.concentric_disk(boundaries, divisions)
-    radii = mesh.vertices.norm().kernel[:, 0]
+    mesh, vertices = Mesh.concentric_disk(boundaries, divisions)
+    radii = vertices.norm().kernel[:, 0]
     edge_radii = radii[mesh.edges]
-    angles = np.rad2deg(np.arccos(np.clip(mesh.corner_cosines().kernel, -1, 1)))
-    areas = mesh.triangle_areas.kernel[:, 0]
+    edges = sides(mesh, vertices)
+    planes = (edges[1].commutator(edges[0])).normalized()                     # Bivector[F]
+    areas = (edges[0] & edges[1]).norm().kernel[:, 0] / 2
+    angles = corner_angles(mesh, vertices)
     tolerance = 1e-12
 
     # Every prescribed circle is an unbroken chain of mesh edges; no face straddles it.
@@ -96,7 +92,7 @@ def test_concentric_disk_follows_material_interfaces_without_thin_cells(division
         assert np.all(degrees[on_ring] == 2)
         assert not np.any((edge_radii.min(axis=-1) < radius - tolerance)
                           & (edge_radii.max(axis=-1) > radius + tolerance))
-    np.testing.assert_allclose((mesh.face_planes - mv.xy).kernel, 0, atol=tolerance)
+    np.testing.assert_allclose((planes - mv.xy).kernel, 0, atol=tolerance)
     assert angles.min() > 30
     assert angles.max() < 105
     assert areas.std() < 0.2 * areas.mean()

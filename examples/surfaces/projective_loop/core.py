@@ -12,7 +12,6 @@ affine maps only.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from functools import reduce
 
 import numpy as np
 
@@ -35,29 +34,5 @@ def refinements(mesh: Mesh, pinned: np.ndarray, n_steps: int) -> Iterator[tuple[
     """The map of each of so many Loop steps from a mesh, with the finer mesh it gives."""
     for _ in range(n_steps):
         step = mesh.loop(pinned)                                               # [finer, coarser] Scalar
-        mesh, pinned = Mesh(step * mesh.vertices, mesh.split_faces), mesh.split_pins(pinned)
+        mesh, pinned = Mesh(step.shape[0], mesh.split_faces), mesh.split_pins(pinned)
         yield step, mesh
-
-
-def subdivision(mesh: Mesh, n_steps: int) -> tuple[SparseExtensor, Mesh]:
-    """So many Loop steps from a closed mesh, nothing pinned, composed into one map from its vertex sites to
-    those of the refined mesh, and the refined mesh."""
-    steps, meshes = zip(*refinements(mesh, np.zeros(mesh.vertices.batch().shape[-1], dtype=bool), n_steps))
-    return reduce(lambda total, step: step * total, steps), meshes[-1]       # [refined, vertices] Scalar
-
-
-def unit(points: Point) -> Point:
-    """The points divided by their weights: their positions, at unit weight."""
-    return points / (mv.w & points)
-
-
-def gaps(orders: Point) -> Scalar:
-    """The distance between where two refinements, on the first axis, put each vertex: the line joining the two
-    at unit weight is as long as their distance."""
-    return (unit(orders[0]) & unit(orders[1])).norm()
-
-
-def collineation(centre: Point, axis: Plane, strength: float) -> PointMap:
-    """The central collineation of a centre and an axis plane: each point moves along its line through the
-    centre, by the centre times its pairing with the axis; points on the axis stay where they are."""
-    return Point + centre * (axis & Point) * strength                         # [] Point <- Point

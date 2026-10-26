@@ -52,18 +52,17 @@ Point = mesh_module.Point
 
 
 # --- math -----------------------------------------------------------------------------
-def spread(mesh: Mesh) -> tuple[Vector, Vector]:
+def spread(mesh: Mesh, edges: Point, angles: Scalar) -> tuple[Vector, Vector]:
     """The unit normal of each face `Vector[F]`, and the spread of the face normals around each vertex,
     the sum of their dyads, each weighted by the face's angle at the vertex, a map `Vector <- Vector` at
     each vertex."""
-    edges = mesh.triangle_edges                                                 # [3] Point[F]
     # two edges meet in the face's normal
-    normals = (edges[0] & edges[1]).normalized()                                # Vector[F]
-    around = ~mesh.at_corners(mesh.corner_cosines().arccos())                     # [V, F] Scalar
+    normals = (edges[0] & edges[1]).normalized().field()                        # Vector[F]
+    around = ~mesh.at_corners(angles)                                           # [V, F] Scalar
     return normals, around * (normals * (normals | Vector))                    # Vector[F], [V] Vector <- Vector
 
 
-def gradient(mesh: Mesh, normals: Vector, directions: Vector) -> Vector:
+def gradient(mesh: Mesh, edges: Point, angles: Scalar, normals: Vector, directions: Vector) -> Vector:
     """The energy's gradient at each vertex `Vector[V]`, with each vertex's least-spread direction
     `[V] Vector` held fixed. A face's term at a corner is its angle there times the square of the corner's
     direction along its normal, and changes both ways. As the normal turns: for each face, the angle-
@@ -71,10 +70,8 @@ def gradient(mesh: Mesh, normals: Vector, directions: Vector) -> Vector:
     with the edge facing each corner over twice the face's area. As the angle opens: each corner's angle
     moves with its two neighbours, each along the face square to the edge from the corner, over that
     edge's length, and with the corner itself against both."""
-    edges = mesh.triangle_edges.batch()                                         # [3, F] Point
     double_areas = (edges[0] & edges[1]).norm()                                 # [F] Scalar
     face_normals = normals.batch()                                              # [F] Vector
-    angles = mesh.corner_cosines().batch().arccos()                               # [3, F] Scalar
     corner_directions = directions[mesh.faces.T]                                # [3, F] Vector
     along = corner_directions | face_normals                                    # [3, F] Scalar
     pulled = (corner_directions * (along * angles)).sum(axis=0)                 # [F] Vector
@@ -91,27 +88,27 @@ def gradient(mesh: Mesh, normals: Vector, directions: Vector) -> Vector:
     return ~mesh.at_corners(turning + opening) * as_scalar(np.ones(len(mesh.faces))).field()   # Vector[V]
 
 
-def stiffness(mesh: Mesh) -> Scalar:
+def stiffness(mesh: Mesh, edges: Point, angles: Scalar) -> Scalar:
     """How sharply the energy curves at each vertex `Scalar[V]`: moving a corner turns its face's normal by
     the step over the corner's height above the opposite edge, so each face around the vertex adds its
     angle there over that height squared, `(edge | edge) / double_areas**2`."""
-    edges = mesh.triangle_edges.batch()                                         # [3, F] Point
     double_areas = (edges[0] & edges[1]).norm()                                 # [F] Scalar
-    angles = mesh.corner_cosines().batch().arccos()                             # [3, F] Scalar
     return ~mesh.at_corners(angles * edges.scalar_norm_squared() / double_areas.squared()) * as_scalar(np.ones(len(mesh.faces))).field()
 
 
-def flow(mesh: Mesh, step: float) -> Iterator[tuple[Vector, Scalar]]:
+def flow(mesh: Mesh, vertices: Point, step: float) -> Iterator[tuple[Point, Scalar]]:
     """Gradient descent on the developability energy, each vertex's step the gradient over the energy's
-    stiffness there, times `step`: at every step, without end, the vertices `Vector[V]` and each vertex's
+    stiffness there, times `step`: at every step, without end, the vertices `Point[V]` and each vertex's
     smallest eigenvalue `[V] Scalar`. A step of the same size everywhere
     overshoots where triangles are small or thin, and the flow jitters there; over the stiffness, every
     vertex moves by the same share of what its faces can take."""
-    vertices = mesh.vertices
     while True:
-        current = mesh.copy(vertices)
-        normals, spreads = spread(current)
+        # The edge facing each corner of each face, and the angle at each corner between the two edges meeting there.
+        edges = (mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T   # [3, F] Point
+        after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                                       # [3, F] Point each
+        angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()    # [3, F] Scalar
+        normals, spreads = spread(mesh, edges, angles)
         values, vectors = spreads.batch().eigh()                                # [V, 3] Scalar, [V, 3] Vector
         yield vertices, values[:, 0]
         # The gradient pairs with a step; the metric turns it into one.
-        vertices = vertices - step * (gradient(current, normals, vectors[:, 0]) / stiffness(current)).dual()
+        vertices = vertices - step * (gradient(mesh, edges, angles, normals, vectors[:, 0]) / stiffness(mesh, edges, angles)).dual()

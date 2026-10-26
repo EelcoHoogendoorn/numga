@@ -115,10 +115,29 @@ Rotor = ga.gatype.rotor()
 
 
 # --- math -----------------------------------------------------------------------------
-def transport_step(normal_tail: Vector, normal_head: Vector) -> Rotor:
-    """The shortest rotor carrying `normal_tail` onto `normal_head`: parallel transport between their
-    tangent planes."""
-    return (normal_head * normal_tail).square_root()                            # [...] Rotor
+def vertex_normals(mesh: Mesh, vertices: Point) -> Vector:
+    """The unit normal at each vertex `Vector[V]`: the sum of its faces' normals, each where two of the face's
+    edges meet, twice the face's area long."""
+    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    spread = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces, dtype=float)))   # [F, V] Scalar
+    return (~spread * (edges[0] & edges[1])).normalized()
+
+
+def vertex_areas(mesh: Mesh, vertices: Point) -> Scalar:
+    """A third of the area of each face at each vertex `Scalar[V]`, a face's area half the size of its plane."""
+    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
+    return ~thirds * (edges[1].commutator(edges[0]).norm() / 2)
+
+
+def cotangent_weights(mesh: Mesh, vertices: Point, face_weights: Scalar) -> Scalar:
+    """Half the cotangents of the angles facing each edge `Scalar[E]`, each face's share weighted by
+    `Scalar[F]`: the cotangent at a corner is one edge's slice read along the other, over the size of the plane
+    they span; head to tail, the corner's own edges point the other way."""
+    edges = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]                          # [3] Point[F] each
+    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar[F]
+    return ~mesh.by_corner(cotangents / 2) * face_weights
 
 
 def transported(normals: Vector, start: Vector) -> Iterator[Vector]:
@@ -126,34 +145,28 @@ def transported(normals: Vector, start: Vector) -> Iterator[Vector]:
     `[steps + 1, ...] Vector`: the vector at each of them."""
     yield start
     for tail, head in zip(normals[:-1], normals[1:]):
-        start = transport_step(tail, head) >> start                             # [...] Vector
+        start = (head * tail).square_root() >> start                            # [...] Vector
         yield start
-
-
-def turn(rotors: Rotor, normals: Vector) -> Scalar:
-    """The angle by which each rotor turns tangent vectors about its unit normal, in (-pi, pi]: read
-    from the rotor's square, the turn itself, so that whole turns read as nothing."""
-    return (rotors * rotors).log() | normals.dual()                              # [...] Scalar
 
 
 def loop_turn(normals: Vector) -> Scalar:
     """The holonomy of transport around closed loops of unit normals `[..., steps]`: the turn of the
-    running product of the transport rotors, each later step multiplying from the left."""
+    running product of the transport rotors, each later step multiplying from the left, read from
+    the rotor's square so that whole turns read as nothing."""
     following = concatenate([normals[..., 1:], normals[..., :1]], axis=-1)      # [..., steps] Vector
-    steps = transport_step(normals, following)                                   # [..., steps] Rotor
+    steps = (following * normals).square_root()                                  # [..., steps] Rotor
     around = steps.cumprod(axis=-1)[..., -1]                                     # [...] Rotor
-    return turn(around, normals[..., 0])                                         # [...] Scalar
+    return (around * around).log() | normals[..., 0].dual()                      # [...] Scalar
 
 
-def adjusted_transport(mesh: Mesh, angles: Scalar) -> Rotor:
+def adjusted_transport(mesh: Mesh, normals: Vector, angles: Scalar) -> Rotor:
     """The rotors from each end of each edge to its head `[E, 2]`: the surface's own transport from
     the tail followed by the edge's extra turn `Scalar[E]` in the head's tangent plane, and none at the
     head. With no extra turns, this is the surface's own parallel transport."""
-    normals = mesh.vertex_normals.batch()                                         # [V] Vector
-    tails, heads = normals[mesh.edges[:, 0]], normals[mesh.edges[:, 1]]           # [E] Vector each
+    unit_normals = normals.batch()                                               # [V] Vector
+    tails, heads = unit_normals[mesh.edges[:, 0]], unit_normals[mesh.edges[:, 1]]   # [E] Vector each
     extra = (heads.dual() * (-angles.batch() / 2)).exp()                         # [E] Rotor
-    return stack([extra * transport_step(tails, heads), mv.rotor().broadcast_to(extra.shape)], axis=-1)
-
+    return stack([extra * (heads * tails).square_root(), mv.rotor().broadcast_to(extra.shape)], axis=-1)
 
 def connection(mesh: Mesh, transports: Rotor, weights: Scalar) -> tuple[SparseExtensor, SparseExtensor]:
     """The sparse covariant derivative of the rotors `[E, 2]` from each end of each edge to its head,
@@ -187,33 +200,20 @@ def heat_transport(laplacian: SparseExtensor, areas: Scalar, source: Vector, ste
         yield field, field / field.norm()                                       # Vector[V], Vector[V]
 
 
-def trivial_connection(mesh: Mesh, indices: np.ndarray, generators: list[np.ndarray]) -> tuple[Scalar, SparseExtensor, Scalar]:
+def trivial_connection(mesh: Mesh, normals: Vector, indices: np.ndarray, generators: list[np.ndarray]) -> tuple[Scalar, SparseExtensor, Scalar]:
     """The smallest extra turns on the edges `Scalar[E]` that make every face turn by `2 pi` times its
     index `[F]` and every generator, a closed loop of vertices, by nothing; with the circulation of
     edge turns around the faces and generators and its target, for checking."""
-    normals = mesh.vertex_normals.batch()                                         # [V] Vector
-    curvature = loop_turn(normals[mesh.faces])                                    # [F] Scalar
+    unit_normals = normals.batch()                                                # [V] Vector
+    curvature = loop_turn(unit_normals[mesh.faces])                               # [F] Scalar
     # Around each generator, the extra turns undo the surface's own holonomy.
-    undone = [-loop_turn(normals[loop[None]]) for loop in generators]              # [1] Scalar each
+    undone = [-loop_turn(unit_normals[loop[None]]) for loop in generators]        # [1] Scalar each
     circulation = loops(mesh, generators)                                         # [F + G, E] Scalar <- Scalar
     target = concatenate([2 * np.pi * as_scalar(indices) - curvature, *undone]).field()   # Scalar[F + G]
     return circulation.lstsq(target), circulation, target
 
 
-def targets(mesh: Mesh, field: Vector, frequency: float) -> Scalar:
-    """The phase advance across every edge `Scalar[E]`: the frequency times the field paired with the
-    edge's displacement, the field averaged over the edge's two ends."""
-    ends = field.batch()[mesh.edges]                                             # [E, 2] Vector
-    return ((ends.sum(axis=-1) / 2 & mesh.edge_displacements.batch()) * frequency).field()
-
-
-def quarter_turn(mesh: Mesh, field: Vector) -> Vector:
-    """The field turned a quarter turn about every vertex normal `Vector[V]`: parallel wherever the field is,
-    since a turn in the tangent plane commutes with the transport into it."""
-    return (field.batch() | mesh.vertex_normals.batch().dual()).field()          # Vector[V]
-
-
-def carried_out(mesh: Mesh, angles: Scalar) -> Vector:
+def carried_out(mesh: Mesh, vertices: Point, normals: Vector, angles: Scalar) -> Vector:
     """A unit tangent vector at every vertex `Vector[V]`, carried out from the first vertex by the transport
     of the given turns along a breadth-first tree: one sparse solve, each tree edge asking its head to be
     its tail carried across it, and the first vertex asking to point across its first edge. Where the turns
@@ -221,17 +221,16 @@ def carried_out(mesh: Mesh, angles: Scalar) -> Vector:
     any edge, the tail's vector lands on the head's turned by a whole number of quarter turns."""
     children, tree = spanning_tree(mesh)
     count = len(children) + 1
-    turns = adjusted_transport(mesh, angles)[tree]                               # [V - 1, 2] Rotor
+    turns = adjusted_transport(mesh, normals, angles)[tree]                      # [V - 1, 2] Rotor
     along_tree = SparseExtensor.from_indices((turns >> Vector) * np.array([-1, 1]), children[:, None], mesh.edges[tree], (count, count))
     first = SparseExtensor.from_indices(as_scalar([1.0]), np.array([0]), np.array([0]), (count, count)) * Vector
-    normal = mesh.vertex_normals.batch()[0]                                      # Vector
     # the first edge met with the normal: a tangent direction across it
-    seed = (mesh.edge_displacements.batch()[0] | normal).normalized()          # Vector
+    seed = ((mesh.d0 * vertices).batch()[0] | normals.batch()[0]).normalized()   # Vector
     return (along_tree + first).solve((seed * as_scalar(np.arange(count) == 0)).field())
 
 
-def cross_stripes(mesh: Mesh, angles: Scalar, cross: Vector, regular: Scalar, frequency: float, normal_stiffness: float
-                  ) -> tuple[Vector, Vector, Scalar]:
+def cross_stripes(mesh: Mesh, vertices: Point, normals: Vector, areas: Scalar, angles: Scalar, cross: Vector,
+                  regular: Scalar, frequency: float, normal_stiffness: float) -> tuple[Vector, Vector, Scalar]:
     """Two families of stripes across the two lines of a cross field `Vector[V]` parallel up to quarter
     turns for the connection of the given turns: the lines `[V, 2] Vector`, the stripe field of each
     `[V, 2] Vector`, and the targets across every edge for each line at its head `[E, 2] Scalar`.
@@ -242,17 +241,18 @@ def cross_stripes(mesh: Mesh, angles: Scalar, cross: Vector, regular: Scalar, fr
     stripes' angle from the line negated. The two families are one field over the cross's two lines at
     every vertex, coupled across the edges where the lines trade places, around the cross's singularities.
     Each face adds its half-cotangents to its edges' weights only where it is regular `Scalar[F]`."""
-    count = mesh.vertex_areas.batch().shape[0]
-    forward = adjusted_transport(mesh, angles)[:, 0]                             # [E] Rotor
-    lines = stack([cross.batch(), quarter_turn(mesh, cross).batch()], axis=-1)   # [V, 2] Vector
+    count = mesh.n_vertices
+    unit_normals = normals.batch()                                               # [V] Vector
+    forward = adjusted_transport(mesh, normals, angles)[:, 0]                    # [E] Rotor
+    lines = stack([cross.batch(), cross.batch() | unit_normals.dual()], axis=-1) # [V, 2] Vector
     tails, heads = mesh.edges[:, 0], mesh.edges[:, 1]
     ahead = lines[heads]                                                         # [E, 2] Vector
     # One where the tail's line b lands along the head's line a, minus one where it lands against it, and
     # zero where it lands across it.
     match = ahead[:, :, None] | (forward[:, None] >> lines[tails])[:, None, :]  # [E, 2, 2] Scalar
     behind = (match * lines[tails][:, None, :]).sum(axis=-1)                     # [E, 2] Vector
-    advance = (((ahead + behind) / 2) & mesh.edge_displacements.batch()[:, None]) * frequency   # [E, 2] Scalar
-    turn = (mesh.vertex_normals.batch()[heads][:, None].dual() * (-advance / 2)).exp()     # [E, 2] Rotor
+    advance = (((ahead + behind) / 2) & (mesh.d0 * vertices).batch()[:, None]) * frequency   # [E, 2] Scalar
+    turn = (unit_normals[heads][:, None].dual() * (-advance / 2)).exp()          # [E, 2] Rotor
     # Carried, then mirrored onto the head's line where it lands against it.
     moved = forward[:, None, None] >> Vector                                     # [E, 1, 1] Vector <- Vector
     along = ahead[:, :, None]                                                    # [E, 2, 1] Vector
@@ -262,14 +262,13 @@ def cross_stripes(mesh: Mesh, angles: Scalar, cross: Vector, regular: Scalar, fr
     rows = np.arange(len(heads))[:, None, None] * 2 + np.arange(2)[None, :, None]           # [E, 2, 1]
     columns = np.stack(np.broadcast_arrays(heads[:, None] * 2 + np.arange(2), tails[:, None] * 2, tails[:, None] * 2 + 1), axis=-1)
     covariant = SparseExtensor.from_indices(cells, rows, columns, (2 * len(heads), 2 * count))   # [2E, 2V] Vector <- Vector
-    weights = mesh.weighted_edge_ratio(regular).batch()                          # [E] Scalar
+    weights = cotangent_weights(mesh, vertices, regular).batch()                 # [E] Scalar
     vertex = np.arange(2 * count) // 2                                           # each line's vertex
     laplacian = covariant.adjoint()(spdiag(weights[np.arange(2 * len(heads)) // 2].field()) * covariant)   # [2V, 2V]
-    _, stripe_fields = low_modes(laplacian, mesh.vertex_normals.batch()[vertex].field(),
-                                 mesh.vertex_areas.batch()[vertex].field(), normal_stiffness, 1)
+    _, stripe_fields = low_modes(laplacian, unit_normals[vertex].field(),
+                                 areas.batch()[vertex].field(), normal_stiffness, 1)
     stripe = stripe_fields.batch()[0].reshape(count, 2)                          # [V, 2] Vector
     return lines, stripe / stripe.norm(), advance
-
 
 # --- plumbing -------------------------------------------------------------------------
 def latitude_rings(colatitudes: np.ndarray, steps: int) -> tuple[Vector, Vector]:

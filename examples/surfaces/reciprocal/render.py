@@ -57,18 +57,19 @@ def colours(stresses: np.ndarray) -> np.ndarray:
     return plt.get_cmap(STRESS_MAP)(TwoSlopeNorm(0.0, COMPRESSION, TENSION)(np.clip(stresses, COMPRESSION, TENSION)))
 
 
-def view(mesh: core.Mesh, heights: np.ndarray) -> solids.View:
-    """A view framing the terrain at all the heights `[..., vertices]`."""
-    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
+def view(points: core.Point, heights: np.ndarray) -> solids.View:
+    """A view framing the terrain over the points at all the heights `[..., vertices]`."""
+    xy = positions(points.batch())[:, :2]                               # [vertices, 2]
     lifted = np.concatenate([np.broadcast_to(xy, heights.shape + (2,)), heights[..., None]], axis=-1)   # [..., vertices, 3]
     return solids.view([solids.mv.point(lifted.reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
 
 
-def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: solids.View) -> np.ndarray:
-    """The terrain the heights lift the mesh to, translucent and flat over its faces, its creases rods coloured
-    by their shades `[inner, 3]`, and its boundary grey."""
+def terrain(mesh: core.Mesh, points: core.Point, heights: np.ndarray, shades: np.ndarray,
+            framing: solids.View) -> np.ndarray:
+    """The terrain the heights lift the mesh at its points to, translucent and flat over its faces, its creases
+    rods coloured by their shades `[inner, 3]`, and its boundary grey."""
     inner, _, _ = core.beside(mesh)
-    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
+    xy = positions(points.batch())[:, :2]                               # [vertices, 2]
     lifted = np.concatenate([xy, heights[:, None]], axis=-1)                   # [vertices, 3]
     places = solids.mv.point(lifted)
     pixel = framing.pixel
@@ -83,14 +84,14 @@ def terrain(mesh: core.Mesh, heights: np.ndarray, shades: np.ndarray, framing: s
                        inks=[], translucent=[], meshes=[(surface, 1 - (1 - TERRAIN_OPACITY) ** 2)])
 
 
-def panels(mesh: core.Mesh, framing: solids.View
+def panels(mesh: core.Mesh, points: core.Point, framing: solids.View
            ) -> tuple[plt.Figure, Callable[[np.ndarray, core.Scalar, core.Vector], None]]:
     """The figure, laid out once, and what draws heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
     vertices `[faces] Vector` on it: left, the terrain the heights lift the mesh to, its creases coloured by stress,
     seen by the framing camera, fitted to its axes; right, the planar truss, its bars coloured by stress, and the reciprocal diagram over
     it, an edge across every bar."""
     inner, left, right = core.beside(mesh)
-    xy = positions(mesh.vertices.batch())[:, :2]                               # [vertices, 2]
+    xy = positions(points.batch())[:, :2]                               # [vertices, 2]
     figure = plt.figure(figsize=(10.0, 5.0))
     terrain_axes = figure.add_axes((0.0, 0.0, 0.5, 1.0))
     framing = fitted(framing, terrain_axes)
@@ -105,7 +106,7 @@ def panels(mesh: core.Mesh, framing: solids.View
 
     def drawn(heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> None:
         shades = colours(scalars(stresses))                                    # [inner, 4]
-        picture.set_data(terrain(mesh, heights, shades[:, :3], framing))
+        picture.set_data(terrain(mesh, points, heights, shades[:, :3], framing))
         bars.set_color(shades)
         centres = coordinates(duals)[:, :2]                                    # [faces, 2]
         diagram.set_segments(centres[np.stack([left, right], axis=-1)])
@@ -114,20 +115,21 @@ def panels(mesh: core.Mesh, framing: solids.View
     return figure, drawn
 
 
-def draw(mesh: core.Mesh, heights: np.ndarray, stresses: core.Scalar, duals: core.Vector) -> plt.Figure:
+def draw(mesh: core.Mesh, points: core.Point, heights: np.ndarray, stresses: core.Scalar,
+         duals: core.Vector) -> plt.Figure:
     """The terrain beside the planar truss and its reciprocal diagram, the terrain framed on itself."""
-    figure, drawn = panels(mesh, view(mesh, heights))
+    figure, drawn = panels(mesh, points, view(points, heights))
     drawn(heights, stresses, duals)
     return figure
 
 
-def animate(mesh: core.Mesh, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> Iterator[np.ndarray]:
+def animate(mesh: core.Mesh, points: core.Point, frames: Iterable[tuple[np.ndarray, core.Scalar, core.Vector]]) -> Iterator[np.ndarray]:
     """The figure at every frame: its heights `[vertices]`, stresses `Scalar[inner]` and reciprocal
     vertices `[faces] Vector`, the terrain seen by one camera framing the first frame's with room for the heights to
     move."""
     frames = iter(frames)
     first = next(frames)
-    figure, drawn = panels(mesh, view(mesh, first[0] + np.array([-SWING, SWING])[:, None]))
+    figure, drawn = panels(mesh, points, view(points, first[0] + np.array([-SWING, SWING])[:, None]))
     for heights, stresses, duals in chain([first], frames):
         drawn(heights, stresses, duals)
         yield capture(figure)

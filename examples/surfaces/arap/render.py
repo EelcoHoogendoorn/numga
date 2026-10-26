@@ -47,9 +47,10 @@ def picture(vertices: core.Point, faces: np.ndarray, colours: np.ndarray, view: 
                        colour=meshes.by_face, gloss=solids.gloss)
 
 
-def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndarray) -> plt.Figure:
+def side_by_side(bar: core.Mesh, at_rest: core.Point, shapes: list[core.Point], titles: list[str],
+                 cell: np.ndarray) -> plt.Figure:
     """The bar in each of the given shapes, side by side, checkered by where each triangle sat at rest."""
-    colours = checker(bar.vertices, bar.faces, cell)
+    colours = checker(at_rest, bar.faces, cell)
     figure, axes = plt.subplots(1, len(shapes), figsize=(4 * len(shapes), 4), dpi=100, squeeze=False)
     for ax, shape, title in zip(axes[0], shapes, titles):
         show_pixels(ax, picture(shape, bar.faces, colours, fitted(box_view(n_pixels), ax)))
@@ -57,9 +58,9 @@ def side_by_side(bar, shapes: list[core.Point], titles: list[str], cell: np.ndar
     return figure
 
 
-def animate(bar, shapes: Iterable[core.Point], cell: np.ndarray) -> Iterator[np.ndarray]:
-    """The bar in each of the given shapes, one frame each."""
-    colours = checker(bar.vertices, bar.faces, cell)
+def animate(bar: core.Mesh, at_rest: core.Point, shapes: Iterable[core.Point], cell: np.ndarray) -> Iterator[np.ndarray]:
+    """The bar in each of the given shapes, one frame each, checkered by where each triangle sat at rest."""
+    colours = checker(at_rest, bar.faces, cell)
     view = box_view(n_pixels)
     for shape in shapes:
         yield picture(shape, bar.faces, colours, view)

@@ -24,17 +24,17 @@ DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
-def flowed() -> tuple[core.Mesh, list[tuple[core.Vector, core.Scalar]]]:
+def flowed() -> tuple[core.Mesh, list[tuple[core.Point, core.Scalar]]]:
     """The bunny with the states of its flow: the vertices and each vertex's smallest eigenvalue."""
-    mesh = bunny()
-    return mesh, list(islice(core.flow(mesh, STEP), 0, N_STEPS + 1, STRIDE))
+    mesh, vertices = bunny()
+    return mesh, list(islice(core.flow(mesh, vertices, STEP), 0, N_STEPS + 1, STRIDE))
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bunny() -> core.Mesh:
-    """The bunny, upright, centred in a box of the given size."""
-    mesh = core.Mesh.read(BUNNY, SIZE)
-    return mesh.copy(UPRIGHT >> mesh.vertices)
+def bunny() -> tuple[core.Mesh, core.Point]:
+    """The bunny's mesh, and its vertices upright, centred in a box of the given size."""
+    mesh, vertices = core.Mesh.read(BUNNY, SIZE)
+    return mesh, UPRIGHT >> vertices
 
 
 def main() -> None:

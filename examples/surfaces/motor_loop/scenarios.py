@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import reduce
+
 import numpy as np
 
 from numga import stack
@@ -33,7 +35,10 @@ def winding() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
     along, across = grid()
     wound = WOUND * (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2   # [frames]
     held = ((along + LENGTH / 2) / LENGTH) ** 2                                # [vertices]
-    return refined(core.ribbon(along, across, wound[:, None] * held).field())   # [frames] Motor[vertices]
+    # Frames on the ribbon down the z axis: slid along it and out across it along x, then turned about the axis.
+    motors = ((core.mv.xy * (-wound[:, None] * held / 2)).exp()
+              * (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp())
+    return refined(motors.field())                                             # [frames] Motor[vertices]
 
 
 def turning() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
@@ -45,7 +50,8 @@ def turning() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
     axes = core.mv(core.Line.derive.nondegenerate, rng.normal(size=(len(along), 3))).normalized()   # [vertices] Line
     phases = rng.uniform(0, 2 * np.pi, len(along))
     angles = TURNING * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)   # [frames, vertices]
-    return refined((core.ribbon(along, across, 0.0) * core.turn(axes, angles)).field())   # [frames] Motor[vertices]
+    flat = (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp()
+    return refined((flat * (axes * (-angles / 2)).exp()).field())              # [frames] Motor[vertices]
 
 
 def refined(motors: core.Motor) -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
@@ -58,9 +64,9 @@ def refined(motors: core.Motor) -> tuple[core.Point, core.Point, np.ndarray, np.
     markers = stack([core.mv.w.dual(), core.mv.point([AXIS, 0.0, 0.0]), core.mv.point([0.0, AXIS, 0.0]),
                      core.mv.point([0.0, 0.0, AXIS])])                         # [axes + 1] Point
     origin = markers[0]                                                        # [] Point
-    steps, meshes = zip(*core.refinements(core.Mesh(motors, faces), pinned, N_LOOP_STEPS))
-    points = core.composed(steps) * (motors >> origin)                         # [frames] Point[refined]
-    surfaces = stack([points, meshes[-1].vertices >> origin], axis=1)          # [frames, schemes] Point[refined]
+    steps, meshes, refined_motors = zip(*core.refinements(core.Mesh(N_ALONG * N_ACROSS, faces), motors, pinned, N_LOOP_STEPS))
+    points = reduce(lambda total, step: step * total, steps) * (motors >> origin)   # [frames] Point[refined]
+    surfaces = stack([points, refined_motors[-1] >> origin], axis=1)           # [frames, schemes] Point[refined]
     return motors[:, None] >> markers, surfaces, faces, meshes[-1].faces       # [frames, axes + 1] Point[vertices]
 
 
@@ -96,8 +102,9 @@ def main() -> None:
     assert (points & points[:1]).norm().to_array().max() < 1e-12
     assert (motors & points).norm().to_array().max() > 0.05
     # A turn common to every frame changes nothing.
-    flat = core.ribbon(*grid(), 0.0)                                           # [vertices] Motor
-    cases = refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1].batch()   # [cases, refined] Point
+    along, across = grid()
+    flat = (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp()   # [vertices] Motor
+    cases = refined(stack([flat, flat * (core.mv.yz * (-0.7 / 2)).exp()]).field())[1][:, 1].batch()   # [cases, refined] Point
     assert (cases[0] & cases[1]).norm().to_array().max() < 1e-12
 
 

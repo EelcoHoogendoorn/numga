@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import reduce
 
 import numpy as np
 
@@ -21,43 +22,48 @@ WEIGHTS = np.array([[1.0, 1.0, 1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0, 4.0, 1.
 # origin, its axis the plane z = 0, and its strength, one over the distance at which it halves sizes.
 STRETCH = np.array([1.0, 1.0, 1.5])
 OFFSET = np.array([0.0, 0.0, 1.6])
-STRENGTH = 1.0
+CENTRE, AXIS, STRENGTH = core.mv.w.dual(), core.mv.z, 1.0
 # The top vertex's weight swept from light to heavy and back, the frames of the sweep, and the duration
 # of each.
 SWEEP = (0.25, 4.0)
 N_SWEEP_FRAMES = 48
 DURATION_MS = 60
 
+# The Loop steps from the octahedron, nothing pinned, composed into one map from its vertex sites to
+# those of the refined mesh.
+STEPS, MESHES = zip(*core.refinements(core.Mesh(len(OCTAHEDRON), FACES), np.zeros(len(OCTAHEDRON), dtype=bool), N_LOOP_STEPS))
+SUBDIVIDE, REFINED = reduce(lambda total, step: step * total, STEPS), MESHES[-1]
+
 
 # --- math -----------------------------------------------------------------------------
 def weighted() -> tuple[core.Point, core.Point, np.ndarray]:
     """The weighted octahedra of each case, the surfaces they refine to, and the surfaces' faces."""
-    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), N_LOOP_STEPS)   # [refined, vertices] Scalar
     controls = (core.mv.point(OCTAHEDRON) * WEIGHTS).field()                  # [cases] Point[vertices]
-    return controls, subdivide * controls, refined.faces                       # [cases] Point[refined]
+    return controls, SUBDIVIDE * controls, REFINED.faces                       # [cases] Point[refined]
 
 
 def sweep() -> tuple[Iterator[tuple[core.Point, core.Point]], np.ndarray]:
     """The octahedron as its top vertex's weight sweeps from light to heavy along a cosine of its logarithm, and
     the surface it refines to, frame by frame; with the surface's faces."""
-    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), N_LOOP_STEPS)   # [refined, vertices] Scalar
     # The sweep from light to heavy alone; the animation plays it forward and back.
     phase = np.linspace(0, np.pi, N_SWEEP_FRAMES // 2 + 1)
     top = np.exp(np.log(SWEEP).mean() - np.log(SWEEP[1] / SWEEP[0]) / 2 * np.cos(phase))   # [frames]
     weights = np.where(np.arange(len(OCTAHEDRON)) == TOP, top[:, None], 1.0)  # [frames, vertices]
     controls = ((core.mv.point(OCTAHEDRON) * weight).field() for weight in weights)   # Point[vertices] each
-    return ((control, subdivide * control) for control in controls), refined.faces
+    return ((control, SUBDIVIDE * control) for control in controls), REFINED.faces
 
 
 def perspective() -> tuple[core.Point, core.Point, core.Point, np.ndarray]:
     """The octahedron after the perspective, and the surface refined after and before it: as points with
     their weights, and as positions, each point divided by its weight before the refinement."""
-    subdivide, refined = core.subdivision(core.Mesh(core.mv.point(OCTAHEDRON).field(), FACES), N_LOOP_STEPS)   # [refined, vertices] Scalar
     shape = core.mv.point(OCTAHEDRON * STRETCH + OFFSET).field()               # Point[vertices]
-    seen = core.collineation(core.mv.w.dual(), core.mv.z, STRENGTH)           # [] Point <- Point
-    weighted_orders = stack([subdivide * seen(shape), seen(subdivide * shape)])   # [orders] Point[refined]
-    positional_orders = stack([subdivide * core.unit(seen(shape)), seen(subdivide * core.unit(shape))])   # [orders] Point[refined]
-    return seen(shape), weighted_orders, positional_orders, refined.faces
+    # The central collineation of the centre and axis plane: each point moves along its line through the centre.
+    seen = core.Point + CENTRE * (AXIS & core.Point) * STRENGTH                # [] Point <- Point
+    weighted_orders = stack([SUBDIVIDE * seen(shape), seen(SUBDIVIDE * shape)])   # [orders] Point[refined]
+    positions = shape / (core.mv.w & shape)                                    # Point[vertices]
+    seen_positions = seen(shape) / (core.mv.w & seen(shape))                   # Point[vertices]
+    positional_orders = stack([SUBDIVIDE * seen_positions, seen(SUBDIVIDE * positions)])   # [orders] Point[refined]
+    return seen(shape), weighted_orders, positional_orders, REFINED.faces
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -75,10 +81,12 @@ def main() -> None:
 
     # checks
     # Refining points with their weights commutes with the perspective; refining positions does not.
-    assert core.gaps(weighted_orders).to_array().max() < 1e-12
-    assert core.gaps(positional_orders).to_array().max() > 1e-2
+    weighted_unit = weighted_orders / (core.mv.w & weighted_orders)
+    positional_unit = positional_orders / (core.mv.w & positional_orders)
+    assert (weighted_unit[0] & weighted_unit[1]).norm().to_array().max() < 1e-12
+    assert (positional_unit[0] & positional_unit[1]).norm().to_array().max() > 1e-2
     # With all weights alike the two schemes agree.
-    assert core.gaps(stack([surfaces[0], core.unit(surfaces[0])])).to_array().max() < 1e-12
+    assert (surfaces[0] & (surfaces[0] / (core.mv.w & surfaces[0]))).norm().to_array().max() < 1e-12
 
 
 if __name__ == "__main__":

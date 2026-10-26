@@ -10,11 +10,11 @@
          display: flex; flex-direction: column; align-items: center; gap: 10px; }
   canvas { display: block; cursor: grab; touch-action: none; }
   canvas:active { cursor: grabbing; }
-  #help { color: #8a8a93; text-align: center; }
+  #help, #note { color: #8a8a93; text-align: center; }
   #status { color: #8a8a93; font-variant-numeric: tabular-nums; min-height: 1.5em; max-width: 480px; text-align: center; }
   #fallback { display: block; }
   #fallback[hidden] { display: none; }
-  kbd { font: inherit; color: #c9c9cf; }
+  a, kbd { font: inherit; color: #c9c9cf; }
   button { font: inherit; color: #0b0b0d; background: #c9c9cf; border: 0; border-radius: 6px; padding: 6px 18px; cursor: pointer; }
   button[hidden] { display: none; }
 </style>
@@ -26,6 +26,9 @@
   <kbd>space</kbd> disk · <kbd>s</kbd> spin · <kbd>e</kbd> exposure</div>
 <div id="status">Starting WebGPU…</div>
 <button id="start" hidden>Start tracing</button>
+<div id="note">The shader is written in <a href="https://github.com/EelcoHoogendoorn/numga">numga</a>:
+  run <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr_gpu.ipynb">the GPU notebook</a> or
+  <a href="https://colab.research.google.com/github/EelcoHoogendoorn/numga/blob/main/examples/relativity/kerr/kerr.ipynb">the physics notebook</a> in Colab</div>
 <script>
 // Filled in by examples/relativity/kerr/web.py: the compiled shader and everything it reads.
 const C = /*CONTENTS*/null;

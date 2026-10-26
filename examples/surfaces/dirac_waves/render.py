@@ -50,24 +50,24 @@ def image(mesh: Mesh, seen: tuple, corners: np.ndarray, sides: np.ndarray) -> np
                        colour=colour, gloss=solids.gloss) / 255
 
 
-def view(mesh: Mesh) -> tuple:
-    """The surface as the camera sees it, the same for every field on it: its points carried into projective
-    space, their smooth normals, and the camera framing them."""
-    points = solids.mv.point(coordinates(mesh.vertices))
+def view(mesh: Mesh, positions: core.Point) -> tuple:
+    """The surface at the positions of its vertices as the camera sees it, the same for every field on it: its
+    points carried into projective space, their smooth normals, and the camera framing them."""
+    points = solids.mv.point(coordinates(positions))
     frame = solids.view([points], 0.0, elevation, azimuth, margin, pixels)
     return points, meshes.smooth(points, mesh.faces), frame.squared()
 
 
-def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int,
+def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,
             room: float = 1.0) -> Iterator[np.ndarray]:
-    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]`, the tiles in rows
-    of the given count, each exposed by its first frame, `room` times over."""
+    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]` on the mesh at the
+    positions `Point[V]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
     corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
     first = np.concatenate([corners[:, :1], sides[:, :1]], axis=2)            # [tiles, 1, V + F, 3]
     level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
     corners, sides = corners / level, sides / level
     tiles, frames = corners.shape[:2]
-    seen = view(mesh)
+    seen = view(mesh, positions)
     for frame in range(frames):
         pictures = np.stack([image(mesh, seen, corners[tile, frame], sides[tile, frame]) for tile in range(tiles)])
         pictures = np.concatenate([pictures, np.zeros((-tiles % columns,) + pictures.shape[1:])])
@@ -76,23 +76,24 @@ def animate(mesh: Mesh, vertices: core.Even, faces: core.Even, columns: int,
         yield np.round(255 * layout).astype(np.uint8)
 
 
-def animate_pulse(mesh: Mesh, vertices: core.Even, faces: core.Even,
+def animate_pulse(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = pulse_room) -> Iterator[np.ndarray]:
     """Frames of a wave's vertex and face fields `[frames] Even[V]` and `[frames] Even[F]`, exposed by its first frame,
     `room` times over."""
-    return animate(mesh, vertices[None], faces[None], 1, room)
+    return animate(mesh, positions, vertices[None], faces[None], 1, room)
 
 
-def animate_modes(mesh: Mesh, vertices: core.Even, faces: core.Even,
+def animate_modes(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = mode_room) -> Iterator[np.ndarray]:
     """Frames of standing waves' vertex and face fields `[waves, frames] Even[V]` and `[waves, frames] Even[F]`, side
     by side, each exposed by its first frame, `room` times over."""
-    return animate(mesh, vertices, faces, vertices.shape[0], room)
+    return animate(mesh, positions, vertices, faces, vertices.shape[0], room)
 
 
-def still(mesh: Mesh, vertices: core.Even, faces: core.Even) -> plt.Figure:
-    """A vertex field `Even[V]` and a face field `Even[F]` on the surface, exposed together."""
-    picture, = animate(mesh, vertices[None, None], faces[None, None], 1)
+def still(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even) -> plt.Figure:
+    """A vertex field `Even[V]` and a face field `Even[F]` on the surface at the positions `Point[V]`, exposed
+    together."""
+    picture, = animate(mesh, positions, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))
     show_pixels(ax, picture)
     return figure

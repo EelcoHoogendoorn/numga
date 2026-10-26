@@ -25,18 +25,18 @@ DURATION_MS = 80
 
 # --- math -----------------------------------------------------------------------------
 def bending():
-    """The bar bent over the frames, as rigid as possible and by Laplacian editing: the vertices at each
-    frame `[frames] Point[V]`, both ways, and the bar at rest; then which vertices are handles, where
+    """The bar bent over the frames, as rigid as possible and by Laplacian editing: the bar and its vertices
+    at rest, and the vertices at each frame `[frames] Point[V]`, both ways; then which vertices are handles, where
     they are moved at the last frame, and the energy over the iterations of the last frame."""
-    bar = core.bar(N_DIVISIONS, LENGTH)
-    along = mv.x & bar.vertices                                                # Scalar[V]
+    bar, at_rest = core.bar(N_DIVISIONS, LENGTH)
+    along = mv.x & at_rest                                                     # Scalar[V]
     near, far = along < -LENGTH / 2 + 1e-6, along > LENGTH / 2 - 1e-6
     moved = core.as_scalar(far).field()                                        # Scalar[V]
-    poses = [bar.vertices + moved * (bent(bar.vertices, angle) - bar.vertices)   # Point[V]
+    poses = [at_rest + moved * (bent(at_rest, angle) - at_rest)                # Point[V]
              for angle in np.linspace(0.0, BEND, N_FRAMES + 1)[1:]]
-    frames = list(core.deform(bar, near | far, poses, STIFFNESS, N_ITERATIONS))
+    frames = list(core.deform(bar, at_rest, near | far, poses, STIFFNESS, N_ITERATIONS))
     rigid, laplacian = stack([shape for shape, _, _ in frames]), stack([edited for _, edited, _ in frames])
-    return bar, rigid, laplacian, near | far, poses[-1], frames[-1][2]
+    return bar, at_rest, rigid, laplacian, near | far, poses[-1], frames[-1][2]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -53,8 +53,8 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.surfaces.arap import render
 
-    bar, rigid, laplacian, handles, target, last_energies = bending()
-    save_animation(render.animate(bar, rigid, CELL), "arap_bending", DURATION_MS)
+    bar, at_rest, rigid, laplacian, handles, target, last_energies = bending()
+    save_animation(render.animate(bar, at_rest, rigid, CELL), "arap_bending", DURATION_MS)
 
     # checks
     # At the last frame the energy falls with every iteration, and the handles are where they were moved to.
@@ -62,12 +62,12 @@ def main() -> None:
     assert np.all(np.diff(energies) <= 1e-9 * energies[0])
     assert (rigid[-1] - target).norm().batch()[handles].to_array().max() < 1e-3
     # The bar keeps its angles: its corners' cosines change a fraction as much as by Laplacian editing.
-    change = [np.abs((bar.copy(vertices=shape).corner_cosines() - bar.corner_cosines()).to_array()).mean()
+    change = [np.abs((core.corner_cosines(bar, shape) - core.corner_cosines(bar, at_rest)).to_array()).mean()
               for shape in (rigid[-1], laplacian[-1])]
     assert change[0] < 0.5 * change[1]
     # Left at rest, the bar stays as it is.
-    (still, _, _), = core.deform(bar, handles, [bar.vertices], STIFFNESS, 2)
-    np.testing.assert_allclose((still - bar.vertices).kernel, 0.0, atol=1e-9)
+    (still, _, _), = core.deform(bar, at_rest, handles, [at_rest], STIFFNESS, 2)
+    np.testing.assert_allclose((still - at_rest).kernel, 0.0, atol=1e-9)
 
 
 if __name__ == "__main__":

@@ -70,27 +70,18 @@ class Sheet:
 
 
 # --- math -----------------------------------------------------------------------------
-def hinge_motors(ends: Point, tips: Point, across: Point, opposite: Point) -> tuple[Line, Plane, Plane, Motor]:
-    """Every hinge's line `Line[H]`, the planes of its two faces `Plane[H]` each, and the motor that folds
-    the first face onto the second `Motor[H]`, from its two ends and the corners across it."""
-    line = ends & tips                                                           # Line[H]
-    # Both planes wound as the first face, so that a flat hinge folds by nothing.
-    first, second = line & across, -(line & opposite)                            # Plane[H] each
-    # The product of two unit planes is twice the turn about their common line: its square root folds one onto the other.
-    return line, first, second, (second.normalized() * first.normalized()).square_root()
-
-
-def bending_angles(line: Line, motor: Motor) -> Scalar:
-    """Every hinge's bending angle `Scalar[H]`: twice the logarithm of its motor, along its unit line."""
-    return -2 * (motor.log() | line.normalized())
-
-
 def energy(sheet: Sheet, points: Point) -> Scalar:
     """The elastic energy of the sheet at the given points `Point[V]`."""
     tails, heads = (end * points for end in sheet.mesh.edge_ends)
     stretched = (tails & heads).norm() - sheet.lengths                           # Scalar[E]
-    line, _, _, motor = hinge_motors(*(corner * points for corner in sheet.corners))
-    bent = bending_angles(line, motor) - sheet.angles                             # Scalar[H]
+    ends, tips, across, opposite = (corner * points for corner in sheet.corners)   # Point[H] each
+    line = ends & tips                                                           # Line[H]
+    # Both planes wound as the first face, so that a flat hinge folds by nothing.
+    first, second = line & across, -(line & opposite)                            # Plane[H] each
+    # The product of two unit planes is twice the turn about their common line: its square root folds one onto
+    # the other, and twice its logarithm, along the unit line, is the bending angle.
+    motor = (second.normalized() * first.normalized()).square_root()             # Motor[H]
+    bent = -2 * (motor.log() | line.normalized()) - sheet.angles                 # Scalar[H]
     return ((sheet.stretching * stretched * stretched / sheet.lengths).sites.sum() + (sheet.bending * bent * bent).sites.sum()) / 2
 
 
@@ -101,10 +92,11 @@ def forces(sheet: Sheet, points: Point) -> Direction:
     lengths = (tails & heads).norm()                                             # Scalar[E]
     pull = (heads - tails) * (sheet.stretching * (lengths - sheet.lengths) / (sheet.lengths * lengths))   # Direction[E]
 
-    corners = [corner * points for corner in sheet.corners]                     # Point[H] each
-    ends, _, across, opposite = corners
-    line, first, second, motor = hinge_motors(*corners)
-    moment = line.norm() * sheet.bending * (bending_angles(line, motor) - sheet.angles)   # Scalar[H]
+    ends, tips, across, opposite = (corner * points for corner in sheet.corners)   # Point[H] each
+    line = ends & tips                                                           # Line[H]
+    first, second = line & across, -(line & opposite)                            # Plane[H] each
+    motor = (second.normalized() * first.normalized()).square_root()             # Motor[H]
+    moment = line.norm() * sheet.bending * (-2 * (motor.log() | line.normalized()) - sheet.angles)   # Scalar[H]
     # Each face pushes the corner across the hinge square to its plane, along `(plane | corner) ^ w`, by the
     # moment over the corner's distance from the hinge.
     pushes = [((plane | corner) ^ mv.w) * (moment / plane.norm_squared()) for plane, corner in ((first, across), (second, opposite))]
@@ -118,11 +110,6 @@ def forces(sheet: Sheet, points: Point) -> Direction:
     at_ends_map, at_tips_map, across_map, opposite_map = sheet.corners
     return (-(~sheet.mesh.d0 * pull) + ~at_ends_map * at_ends + ~at_tips_map * at_tips
             + ~across_map * pushes[0] + ~opposite_map * pushes[1])
-
-
-def forque(points: Point, pushes: Direction) -> Line:
-    """The sum of the lines along which forces act, each through its vertex: their total force and moment."""
-    return (points & pushes).sites.sum()
 
 
 def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: int, n_steps_per_frame: int
@@ -148,13 +135,14 @@ def relax(sheet: Sheet, points: Point, step: float, damping: float, n_frames: in
     yield state[0].materialize(mv.context)
 
 
-def sheet(mesh: Mesh, lengths: Scalar, curvature: Curvature, top: Plane, thickness: float) -> Sheet:
-    """The rest state of a sheet of the given thickness, of unit stiffness and density, at the mesh's
-    vertices, with the given rest lengths `Scalar[E]` and the rest angles of the given natural curvature,
+def sheet(mesh: Mesh, points: Point, lengths: Scalar, curvature: Curvature, top: Plane, thickness: float) -> Sheet:
+    """The rest state of a sheet of the given thickness, of unit stiffness and density, at the points
+    `Point[V]` of the mesh's vertices, with the given rest lengths `Scalar[E]` and the rest angles of the given natural curvature,
     which bends towards the given top side of the sheet."""
-    points = mesh.vertices
     corners = tuple(mesh.reading(index) for index in hinges(mesh).T)             # [H, V] each
-    line, first, second, _ = hinge_motors(*(corner * points for corner in corners))
+    ends, tips, across, opposite = (corner * points for corner in corners)       # Point[H] each
+    line = ends & tips                                                           # Line[H]
+    first, second = line & across, -(line & opposite)                            # Plane[H] each
     # The curvature across each hinge, times the distance between its faces' centres, a third of the sum of
     # the corners' distances from the hinge, is the angle the hinge bends by on a surface of that curvature.
     unit = line.normalized()
@@ -193,15 +181,16 @@ def hinges(mesh: Mesh) -> np.ndarray:
                      faces[first, at_first], faces[second, at_second]], axis=-1)
 
 
-def flat_mesh(coords: np.ndarray, spacing: float) -> Mesh:
+def flat_mesh(coords: np.ndarray, spacing: float) -> tuple[Mesh, Point]:
     """The Delaunay triangulation of points in the xy plane `[V, 2]`, every face wound as the largest, without
-    the slivers along straight rows of the boundary. Which way that is the sheet reads off its top side."""
+    the slivers along straight rows of the boundary, and its vertices. Which way that is the sheet reads off its
+    top side."""
     faces = Delaunay(coords).simplices
     first, second = coords[faces[:, 1]] - coords[faces[:, 0]], coords[faces[:, 2]] - coords[faces[:, 0]]
     turning = first[:, 0] * second[:, 1] - first[:, 1] * second[:, 0]
     faces = np.where((turning * turning[np.argmax(np.abs(turning))] < 0)[:, None], faces[:, [0, 2, 1]], faces)
     points = mv.point(np.concatenate([coords, np.zeros((len(coords), 1))], axis=-1)).field()   # Point[V]
-    return Mesh(points, faces[np.abs(turning) > 1e-6 * spacing ** 2])
+    return Mesh(len(coords), faces[np.abs(turning) > 1e-6 * spacing ** 2]), points
 
 
 def lattice(spacing: float, radius: float) -> np.ndarray:

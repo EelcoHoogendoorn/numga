@@ -11,7 +11,6 @@ across the chord instead.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from functools import reduce
 
 import numpy as np
 
@@ -30,35 +29,15 @@ Motor = ga.gatype.rotor()
 
 
 # --- math -----------------------------------------------------------------------------
-def refinements(mesh: Mesh, pinned: np.ndarray, depth: int) -> Iterator[tuple[SparseExtensor, Mesh]]:
-    """Each of so many Loop steps on a mesh of motors, with the vertices pinned `[V]` staying where they are:
-    the averaging map, built once from the faces, and the finer mesh it gives, every averaged motor normalized
-    back to a motor."""
+def refinements(mesh: Mesh, motors: Motor, pinned: np.ndarray, depth: int) -> Iterator[tuple[SparseExtensor, Mesh, Motor]]:
+    """Each of so many Loop steps on a mesh with motors at its vertices, with the vertices pinned `[V]` staying
+    where they are: the averaging map, built once from the faces, the finer mesh, and its motors, every averaged
+    motor normalized back to a motor."""
     for _ in range(depth):
         step = mesh.loop(pinned)                                               # [finer, coarser] Scalar
-        mesh, pinned = Mesh((step * mesh.vertices).normalized(), mesh.split_faces), mesh.split_pins(pinned)
-        yield step, mesh
-
-
-def composed(steps: tuple[SparseExtensor, ...]) -> SparseExtensor:
-    """Successive maps composed into one, from the first map's input sites to the last map's output sites."""
-    return reduce(lambda total, step: step * total, steps)
-
-
-def turn(plane: Line, angle: np.ndarray) -> Motor:
-    """The turn by an angle in a plane through the origin."""
-    return (plane * (-angle / 2)).exp()
-
-
-def slide(direction: Plane, distance: np.ndarray) -> Motor:
-    """The translation by a distance along the normal of a plane through the origin."""
-    return (direction * mv.w * (distance / 2)).exp()
-
-
-def ribbon(along: np.ndarray, across: np.ndarray, angle: np.ndarray) -> Motor:
-    """Frames on a ribbon down the z axis: slid along it and out across it along x, then turned about the
-    axis by an angle."""
-    return turn(mv.xy, angle) * slide(mv.z, along) * slide(mv.x, across)
+        motors = (step * motors).normalized()                                  # Motor[finer]
+        mesh, pinned = Mesh(step.shape[0], mesh.split_faces), mesh.split_pins(pinned)
+        yield step, mesh, motors
 
 
 # --- plumbing -------------------------------------------------------------------------

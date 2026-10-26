@@ -15,25 +15,26 @@ SCALE = np.array([1.0, 1.0])
 
 def conducting(along: np.ndarray) -> core.Conductivity:
     """A uniform sheet conductance along x and along y."""
-    return core.principal_conductivity(AXES, np.asarray(along))
+    return (AXES * (core.Field & (AXES & core.time)) * np.asarray(along)).sum(axis=-1)
 
 
-def radial_conductivity(mesh: core.Mesh, along: np.ndarray) -> core.Conductivity:
+def radial_conductivity(disc: core.Disc, along: np.ndarray) -> core.Conductivity:
     """A sheet conductance along each face's radius and around it."""
-    distance = mesh.face_centers.squared().square_root()
-    radial = (mesh.face_centers / distance).cast(core.Current)
-    return core.principal_conductivity(stack((radial, core.quarter_turn >> radial), axis=-1), np.asarray(along))
+    distance = disc.face_centers.squared().square_root()
+    radial = (disc.face_centers / distance).cast(core.Current)
+    directions = stack((radial, core.quarter_turn >> radial), axis=-1)
+    return (directions * (core.Field & (directions & core.time)) * np.asarray(along)).sum(axis=-1)
 
 
 def test_a_uniform_field_is_cancelled_by_the_charge_distribution():
     radius, rings, sectors = 0.1, 6, 36
     strength, speed, conductance = 0.2, 1.0, 5.8e4
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     conductivity = conducting(conductance * np.array([2.0, 1.0]))
-    response = core.solve(mesh, core.mv.xy * strength, core.mv.xy * speed, conductivity)
+    response = core.solve(disc, core.mv.xy * strength, core.mv.xy * speed, conductivity)
 
     # The midpoint edge integral is exact for rigid rotation in a uniform field.
-    potential = strength * speed * mesh.vertices.squared() / 2
+    potential = strength * speed * disc.vertices.squared() / 2
     potential = potential - potential.batch()[0]
     np.testing.assert_allclose(response.potential.kernel, potential.kernel, atol=1e-12)
     np.testing.assert_allclose(response.flux.kernel, 0, atol=1e-9)
@@ -45,14 +46,14 @@ def test_localized_field_conserves_charge_and_turns_mechanical_power_into_heat()
     radius, rings, sectors = 0.1, 8, 48
     strength, width, offset = 0.2, 0.02, 0.055
     speed, conductance = 1.0, 5.8e4
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    magnetic = core.field(mesh.edge_midpoints, (core.mv.x * offset).dual(), core.mv.xy, strength, width)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    magnetic = (core.mv.xy * strength * (-((disc.edge_midpoints) - ((core.mv.x * offset).dual())).squared() / (2 * (width) ** 2)).exp())
     spin = core.mv.xy * speed
     principal = conductance * np.array([[1.0, 1.0], [1.9, 0.1], [0.1, 1.9]])
-    conductivity = core.fibre_conductivity(mesh, principal, 0, radius, conductance)
-    response = core.solve(mesh, magnetic, spin, conductivity)
+    conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
+    response = core.solve(disc, magnetic, spin, conductivity)
 
-    charge_balance = ~mesh.d0 * response.flux
+    charge_balance = ~disc.mesh.d0 * response.flux
     heat = response.heating.sites.sum()
     # The moment paired with the spin: minus the power it takes out of the turning.
     mechanical_loss = -(spin & response.torque)
@@ -70,11 +71,11 @@ def test_speed_field_and_conductance_have_their_physical_scalings():
     conductance = 5.8e4
     speeds = np.array([1.0, 2.0, 1.0, -1.0])
     strengths = np.array([1.0, 1.0, 2.0, 1.0])
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    magnetic = core.field(mesh.edge_midpoints, (core.mv.x * offset).dual(), core.mv.xy, strength, width)
-    response = core.solve(mesh, magnetic * strengths,
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    magnetic = (core.mv.xy * strength * (-((disc.edge_midpoints) - ((core.mv.x * offset).dual())).squared() / (2 * (width) ** 2)).exp())
+    response = core.solve(disc, magnetic * strengths,
                           core.mv.xy * speeds, conducting(conductance * SCALE))
-    doubled = core.solve(mesh, magnetic, core.mv.xy, conducting(2 * conductance * SCALE))
+    doubled = core.solve(disc, magnetic, core.mv.xy, conducting(2 * conductance * SCALE))
 
     current_factors = speeds * strengths
     torque_factors = speeds * strengths ** 2
@@ -95,17 +96,16 @@ def test_turning_the_disc_and_magnet_turns_the_solution():
     radius, rings, sectors = 0.1, 6, 36
     strength, width, offset = 0.2, 0.02, 0.055
     conductance, angle = 5.8e4, 0.7
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     centre, plane, spin = (core.mv.x * offset).dual(), core.mv.xy, core.mv.xy
     turn = (core.mv.xy * (-angle / 2)).exp()
-    turned_mesh = mesh.copy(vertices=turn >> mesh.vertices)
-    magnetic = core.field(mesh.edge_midpoints, centre, plane, strength, width)
-    turned_magnetic = core.field(turned_mesh.edge_midpoints, turn >> centre,
-                                 turn >> plane, strength, width)
+    turned_disc = core.disc(disc.mesh, turn >> disc.vertices)
+    magnetic = (plane * strength * (-((disc.edge_midpoints) - (centre)).squared() / (2 * (width) ** 2)).exp())
+    turned_magnetic = (turn >> plane * strength * (-((turned_disc.edge_midpoints) - (turn >> centre)).squared() / (2 * (width) ** 2)).exp())
     conductivity = conducting(conductance * np.array([2.0, 1.0]))
     turned_conductivity = turn >> conductivity(turn << core.Field)
-    response = core.solve(mesh, magnetic, spin, conductivity)
-    turned = core.solve(turned_mesh, turned_magnetic, turn >> spin, turned_conductivity)
+    response = core.solve(disc, magnetic, spin, conductivity)
+    turned = core.solve(turned_disc, turned_magnetic, turn >> spin, turned_conductivity)
 
     np.testing.assert_allclose(turned.potential.kernel, response.potential.kernel, atol=1e-12)
     np.testing.assert_allclose(turned.flux.kernel, response.flux.kernel, atol=1e-9)
@@ -119,11 +119,11 @@ def test_braking_power_converges_under_mesh_refinement():
     conductance, rings, sectors = 5.8e4, 4, 24
     powers = []
     for refinement in (1, 2, 4):
-        mesh = core.Mesh.disk(radius, rings * refinement, sectors * refinement)
-        magnetic = core.field(mesh.edge_midpoints, (core.mv.x * offset).dual(), core.mv.xy, strength, width)
+        disc = core.disc(*core.Mesh.disk(radius, rings * refinement, sectors * refinement))
+        magnetic = (core.mv.xy * strength * (-((disc.edge_midpoints) - ((core.mv.x * offset).dual())).squared() / (2 * (width) ** 2)).exp())
         principal = conductance * np.array([[1.0, 1.0], [1.9, 0.1], [0.1, 1.9]])
-        conductivity = core.fibre_conductivity(mesh, principal, 0, radius, conductance)
-        response = core.solve(mesh, magnetic, core.mv.xy, conductivity)
+        conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
+        response = core.solve(disc, magnetic, core.mv.xy, conductivity)
         powers.append(response.heating.sites.sum().kernel)
     # Midpoint edge integration and the polygonal rim both approach the smooth-disc problem.
     assert np.all(abs(powers[2] - powers[1]) < 0.4 * abs(powers[1] - powers[0]))
@@ -142,20 +142,20 @@ def test_annular_fibres_lose_mesh_orientation_bias_under_uniform_refinement():
     errors = np.empty((len(divisions), len(principal)))
 
     for index, density in enumerate(divisions):
-        mesh = core.Mesh.concentric_disk(material_radii, density)
-        conductivity = core.fibre_conductivity(mesh, principal, inner_radius, outer_radius, conductance)
+        disc = core.disc(*core.Mesh.concentric_disk(material_radii, density))
+        conductivity = core.fibre_conductivity(disc, principal, inner_radius, outer_radius, conductance)
 
         # Zero streamfunction on the rim gives closed currents. Solve their full steady
         # response so this check measures spatial discretization, without a modal cutoff.
-        embedder, current = core.closed_currents(mesh)
+        embedder, current = core.closed_currents(disc)
         resistivity = conductivity.batch().inverse().field()
-        swept = core.sweep(mesh, core.Current & core.time)(current)
-        resistance = swept.adjugate()(core.spdiag(mesh.triangle_areas * resistivity)(current))
+        swept = core.spdiag(core.as_scalar(np.ones(len(disc.mesh.faces))).field() * (core.Current & core.time))(current)
+        resistance = swept.adjugate()(core.spdiag(disc.triangle_areas * resistivity)(current))
         # Pull the stationary laboratory magnet into each orientation's material frame.
         centres = turns << ((core.mv.x * offset).dual())
-        magnetic = core.field(mesh.face_centers, centres, core.mv.xy, strength, width)
-        electric = core.lorentz(mesh.face_centers.commutator(core.mv.xy), magnetic)
-        drive = swept.adjugate()(mesh.triangle_areas * electric)
+        magnetic = (core.mv.xy * strength * (-((disc.face_centers) - (centres)).squared() / (2 * (width) ** 2)).exp())
+        electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+        drive = swept.adjugate()(disc.triangle_areas * electric)
         streamfunction = embedder(resistance.solve(drive[:, None]))
 
         # checks: compare the world fields on one fixed grid, including amplitude errors.
@@ -164,9 +164,9 @@ def test_annular_fibres_lose_mesh_orientation_bias_under_uniform_refinement():
         horizontal, vertical = np.meshgrid(axis, axis)
         inside = horizontal ** 2 + vertical ** 2 < (0.9 * radius) ** 2
         horizontal, vertical = horizontal[inside], vertical[inside]
-        points = (stack((core.mv.x, core.mv.y)) & (turns >> mesh.vertices).batch()[..., None]).to_array()
+        points = (stack((core.mv.x, core.mv.y)) & (turns >> disc.vertices).batch()[..., None]).to_array()
         fields = np.array([
-            [np.asarray(LinearTriInterpolator(Triangulation(point[:, 0], point[:, 1], mesh.faces), values)
+            [np.asarray(LinearTriInterpolator(Triangulation(point[:, 0], point[:, 1], disc.mesh.faces), values)
                         (horizontal, vertical)) for values in cases]
             for point, cases in zip(points, streamfunction.kernel[..., 0])
         ])
@@ -179,13 +179,19 @@ def test_annular_fibres_lose_mesh_orientation_bias_under_uniform_refinement():
 
 def test_isotropic_material_recovers_the_cotangent_stiffness():
     radius, rings, sectors, conductance = 0.1, 6, 36, 2.5
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    gradient = core.sweep(mesh, core.Vector ^ core.mv.t)(mesh.reconstruction)(mesh.d0 * core.Scalar)
-    outflow = gradient.adjugate()(core.sweep(mesh, core.Current & core.time))
-    material = core.spdiag(mesh.triangle_areas * conducting(conductance * SCALE))
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    face_ones = core.as_scalar(np.ones(len(disc.mesh.faces))).field()
+    gradient = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)(disc.mesh.d0 * core.Scalar)
+    outflow = gradient.adjugate()(core.spdiag(face_ones * (core.Current & core.time)))
+    material = core.spdiag(disc.triangle_areas * conducting(conductance * SCALE))
     balance = outflow(material(gradient))
-    cotangent = (~mesh.d0 * core.spdiag(conductance * mesh.edge_ratio) * mesh.d0) * core.Scalar
-    potentials = core.as_scalar(np.random.default_rng(3).normal(size=len(mesh.vertices.batch()))).field()
+    # Each edge's cotangent weight, half the cotangents of the angles facing it: at each corner, one edge's slice
+    # read along the other, over the size of the plane they span.
+    after, before = disc.triangle_edges[[1, 2, 0]], disc.triangle_edges[[2, 0, 1]]
+    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()
+    weights = ~disc.mesh.by_corner(cotangents / 2) * core.as_scalar(np.ones(len(disc.mesh.faces))).field()
+    cotangent = (~disc.mesh.d0 * core.spdiag(conductance * weights) * disc.mesh.d0) * core.Scalar
+    potentials = core.as_scalar(np.random.default_rng(3).normal(size=disc.mesh.n_vertices)).field()
     # The face gradient is constant, so integrating its material pairing at the centroid is exact.
     np.testing.assert_allclose(balance(potentials).kernel, cotangent(potentials).kernel, atol=1e-10)
 
@@ -195,19 +201,22 @@ def test_free_rotation_converts_kinetic_energy_into_heat_with_closed_currents():
     strength, width, offset, conductance = 0.2, 0.02, 0.055, 5.8e4
     inertia, step, steps = 0.005, 0.1, 30
     initial_speeds = np.array([2.0, 1.0])
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     conductivity = conducting(conductance * np.array([1.9, 0.1]))
     conductivity = conductivity.broadcast_to(initial_speeds.shape)
     orientation = core.mv.rotor().broadcast_to(initial_speeds.shape)
-    heat = (mesh.triangle_areas * 0).broadcast_to(initial_speeds.shape)
-    states = list(core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
+    heat = (disc.triangle_areas * 0).broadcast_to(initial_speeds.shape)
+    states = list(core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
                                inertia, orientation, core.mv.xy * initial_speeds, heat, step, steps))
 
     energy = stack([state.heat.sites.sum() + inertia / 2 * state.spin.scalar_norm_squared() for state in states])
     speed = stack([-(core.mv.xy | state.spin) for state in states])
-    flux = stack([core.fluxes(mesh, state.current) for state in states])
+    face_ones = core.as_scalar(np.ones(len(disc.mesh.faces))).field()
+    reconstruction = core.spdiag(face_ones * (core.Vector ^ core.mv.t))(disc.reconstruction)
+    swept_currents = core.spdiag(face_ones * (core.Current & core.time))
+    flux = stack([reconstruction.adjugate()(swept_currents(disc.triangle_areas * state.current)) for state in states])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((~mesh.d0 * flux).kernel, 0, atol=1e-9)
+    np.testing.assert_allclose((~disc.mesh.d0 * flux).kernel, 0, atol=1e-9)
     assert np.all(speed.kernel > 0)
     assert np.all(np.diff(speed.kernel, axis=0) < 0)
     assert np.all(states[-1].heat.sites.sum().kernel > 0)
@@ -217,13 +226,13 @@ def test_free_rotation_converges_at_second_order_in_time():
     radius, rings, sectors = 0.1, 4, 24
     strength, width, offset, conductance = 0.2, 0.02, 0.055, 5.8e4
     inertia, initial_speed, duration, steps = 0.005, 2.0, 2.0, 10
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     conductivity = conducting(conductance * np.array([1.5, 0.5]))
-    heat = mesh.triangle_areas * 0
+    heat = disc.triangle_areas * 0
     final = []
     for refinement in (1, 2, 4):
         count = steps * refinement
-        states = core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
+        states = core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
                               inertia, core.mv.rotor(), core.mv.xy * initial_speed, heat, duration / count, count)
         final.append(list(states)[-1])
 
@@ -241,12 +250,12 @@ def test_axisymmetric_materials_brake_in_batches():
     strength, width, offset, conductance = 0.2, 0.02, 0.055, 5.8e4
     inertia, initial_speed, step, steps = 0.005, 2.0, 0.1, 40
     principal = conductance * np.array([[1.0, 1.0], [1.9, 0.1], [0.1, 1.9]])
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    conductivity = core.fibre_conductivity(mesh, principal, 0, radius, conductance)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
     orientation = core.mv.rotor().broadcast_to(conductivity.shape)
     spin = (core.mv.xy * initial_speed).broadcast_to(conductivity.shape)
-    heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)
-    states = list(core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
+    heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)
+    states = list(core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy, strength, width, conductivity,
                                inertia, orientation, spin, heat, step, steps))
 
     energy = stack([state.heat.sites.sum() + inertia / 2 * state.spin.scalar_norm_squared() for state in states])
@@ -264,11 +273,11 @@ def test_moving_material_faces_gain_heat_and_preserve_total_energy():
     initial_speeds = np.array([2.0, 1.0])
     initial_angles = np.array([0.0, 0.3])
     principal = conductance * np.array([[1.9, 0.1], [0.1, 1.9]])
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    conductivity = core.fibre_conductivity(mesh, principal, 0, radius, conductance)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
     orientation = (core.mv.xy * (-initial_angles / 2)).exp()
-    heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)
-    states = list(core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy,
+    heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)
+    states = list(core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy,
                                strength, width, conductivity, inertia, orientation,
                                core.mv.xy * initial_speeds, heat, step, steps))
 
@@ -278,7 +287,7 @@ def test_moving_material_faces_gain_heat_and_preserve_total_energy():
     turns = stack([state.orientation for state in states])
     vertices = stack([state.vertices for state in states])
     np.testing.assert_allclose((energy - energy[0]).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((vertices - (turns >> mesh.vertices)).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((vertices - (turns >> disc.vertices)).kernel, 0, atol=1e-12)
     assert np.all(np.diff(thermal.kernel, axis=0) >= -1e-14)
     assert np.all(states[-1].heat.sites.sum().kernel > 0)
     assert np.linalg.norm((vertices[-1] - vertices[0]).kernel) > radius
@@ -290,14 +299,14 @@ def test_coasting_transports_nonuniform_heat_with_the_material():
     inertia, step, steps = 0.005, 0.1, 12
     speeds = np.array([2.0, -1.0])
     angles = np.array([0.0, 0.3])
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     conductivity = conducting(conductance * SCALE).broadcast_to(speeds.shape)
     orientation = (core.mv.xy * (-angles / 2)).exp()
     spin = core.mv.xy * speeds
     # A warmer side identifies material faces even when no current adds further heat.
-    heat = mesh.triangle_areas * (1 + (mesh.face_centers & core.mv.x) / radius)
+    heat = disc.triangle_areas * (1 + (disc.face_centers & core.mv.x) / radius)
     heat = heat.broadcast_to(conductivity.shape)
-    states = list(core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy,
+    states = list(core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy,
                                strength, width, conductivity, inertia,
                                orientation, spin, heat, step, steps))
 
@@ -311,8 +320,8 @@ def test_coasting_transports_nonuniform_heat_with_the_material():
                                0, atol=1e-12)
 
     # The heat-weighted position turns in world space while each face keeps its own heat.
-    first_centers = mesh.copy(states[0].vertices).face_centers
-    last_centers = mesh.copy(states[-1].vertices).face_centers
+    first_centers = (states[0].vertices.batch()[..., disc.mesh.faces.T].sum(axis=-2) / 3).field()   # [cases] Point[F]
+    last_centers = (states[-1].vertices.batch()[..., disc.mesh.faces.T].sum(axis=-2) / 3).field()   # [cases] Point[F]
     first = (first_centers * heat).sites.sum() / heat.sites.sum()
     last = (last_centers * heat).sites.sum() / heat.sites.sum()
     np.testing.assert_allclose((last - (turn >> first)).kernel, 0, atol=1e-12)
@@ -323,24 +332,24 @@ def test_material_frame_heating_matches_a_solve_on_the_rotated_world_mesh():
     radius, rings, sectors = 0.1, 4, 24
     strength, width, offset, conductance = 0.2, 0.02, 0.055, 5.8e4
     inertia, speed, angle, step, steps = 0.005, 2.0, 0.4, 0.1, 1
-    mesh = core.Mesh.disk(radius, rings, sectors)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
     tilt = (core.mv.xy * -0.2).exp()
     plane = tilt >> core.mv.xy
     centre = tilt >> ((core.mv.x * offset).dual())
     orientation = (plane * (-angle / 2)).exp() * tilt
     spin = plane * speed
-    conductivity = radial_conductivity(mesh, conductance * np.array([1.9, 0.1]))
-    heat = mesh.triangle_areas * 0
-    states = list(core.braking(mesh, centre, plane, strength, width,
+    conductivity = radial_conductivity(disc, conductance * np.array([1.9, 0.1]))
+    heat = disc.triangle_areas * 0
+    states = list(core.braking(disc, centre, plane, strength, width,
                                conductivity[None], inertia, orientation[None],
                                spin[None], heat[None], step, steps))
 
     # Solve independently in world coordinates, leaving the magnet fixed as the mesh turns.
     midpoint = (spin * (-step / 4)).exp() * orientation
-    world_mesh = mesh.copy(vertices=midpoint >> mesh.vertices)
-    magnetic = core.field(world_mesh.edge_midpoints, centre, plane, strength, width)
+    world = core.disc(disc.mesh, midpoint >> disc.vertices)
+    magnetic = (plane * strength * (-((world.edge_midpoints) - (centre)).squared() / (2 * (width) ** 2)).exp())
     material = midpoint >> conductivity(midpoint << core.Field)
-    response = core.solve(world_mesh, magnetic, plane, material)
+    response = core.solve(world, magnetic, plane, material)
     drag = -(plane & response.torque)
     midpoint_spin = spin / (1 + drag * step / (2 * inertia))
     gained_heat = step * midpoint_spin.scalar_norm_squared() * response.heating
@@ -352,15 +361,15 @@ def test_material_heat_and_motion_converge_at_second_order_in_time():
     radius, rings, sectors = 0.1, 4, 24
     strength, width, offset, conductance = 0.2, 0.02, 0.055, 5.8e4
     inertia, speed, elapsed, steps = 0.005, 2.0, 1.6, 8
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    conductivity = radial_conductivity(mesh, conductance * np.array([1.7, 0.3]))
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    conductivity = radial_conductivity(disc, conductance * np.array([1.7, 0.3]))
     orientation = (core.mv.xy * 0).exp().broadcast_to((1,))
     spin = (core.mv.xy * speed).broadcast_to((1,))
-    heat = (mesh.triangle_areas * 0)[None]
+    heat = (disc.triangle_areas * 0)[None]
     final = []
     for refinement in (1, 2, 4):
         count = steps * refinement
-        states = core.braking(mesh, (core.mv.x * offset).dual(), core.mv.xy, strength, width,
+        states = core.braking(disc, (core.mv.x * offset).dual(), core.mv.xy, strength, width,
                               conductivity[None], inertia, orientation, spin,
                               heat, elapsed / count, count)
         final.append(list(states)[-1])
@@ -383,21 +392,23 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     stored_current = np.array([0.0, 1.0, 0.0])
     preparation_time = 0.01
     principal = conductance * np.array([[1.0, 1.0], [1.5, 0.5], [1.5, 0.5]])
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    conductivity = core.fibre_conductivity(mesh, principal, 0, radius, conductance)
-    modes = core.current_modes(mesh, conductivity, permeability, count)
-    magnetic = core.field(mesh.face_centers, (core.mv.x * offset).dual(), core.mv.xy, strength, width)
-    electric = core.lorentz(mesh.face_centers.commutator(core.mv.xy), magnetic)
-    amplitudes = -preparation_time * modes.drive(mesh, electric) * stored_current
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    conductivity = core.fibre_conductivity(disc, principal, 0, radius, conductance)
+    modes = core.current_modes(disc, conductivity, permeability, count)
+    magnetic = (core.mv.xy * strength * (-((disc.face_centers) - ((core.mv.x * offset).dual())).squared() / (2 * (width) ** 2)).exp())
+    electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+    face_ones = core.as_scalar(np.ones(len(disc.mesh.faces))).field()
+    swept = core.spdiag(face_ones * (core.Current & core.time))(modes.current)
+    amplitudes = -preparation_time * modes.reading(swept.adjugate()(disc.triangle_areas * electric)) * stored_current
     orientation = (core.mv.xy * np.zeros(len(speeds))).exp()
-    heat = (mesh.triangle_areas * 0).broadcast_to(conductivity.shape)
+    heat = (disc.triangle_areas * 0).broadcast_to(conductivity.shape)
     harmonics = 16
-    forcing = core.periodic_drive(mesh, modes, (core.mv.x * offset).dual(), core.mv.xy,
+    forcing = core.periodic_drive(disc, modes, (core.mv.x * offset).dual(), core.mv.xy,
                                    strength, width, orientation, harmonics)
     motor_steps = 10
     motor_torque = core.mv.scalar((np.array([0.0, 0.0, 20.0]) *
         (np.arange(steps) < motor_steps)[:, None, None] * np.ones((1, substeps, 1)))[..., None])
-    states = list(core.inductive_braking(mesh, modes, forcing, core.mv.xy,
+    states = list(core.inductive_braking(disc, modes, forcing, core.mv.xy,
                                          inertia, orientation, core.mv.xy * speeds,
                                          heat, amplitudes, motor_torque, step))
 
@@ -421,28 +432,29 @@ def test_inductive_currents_exchange_energy_with_rotation_and_remain_closed():
     assert (states[-1].spin[2].scalar_norm_squared() < states[motor_steps].spin[2].scalar_norm_squared())
 
     # The stored magnetic energy agrees with the integrated interaction of the actual currents.
-    coupling = core.magnetic_coupling(mesh, permeability)
+    coupling = core.magnetic_coupling(disc.corners, permeability)
     integrated = (coupling(currents) & currents).sites.sum() / 2
     np.testing.assert_allclose((integrated - magnetic_energy).kernel, 0, atol=1e-11)
 
     # Each face's flux across each of its edges, in the face's own sense, is the oriented difference of
     # its streamfunction along that edge. Shared edges therefore cancel and the constant boundary stream
     # gives no leakage.
-    normal_flux = (currents[..., None] & (mesh.triangle_edges & core.time)) / core.face_sense(mesh)
-    differences = mesh.d0 * streams
-    orientation_by_corner = core.as_scalar(mesh.face_edge_orientation.T).field()
-    facing = SparseExtensor.selection(core.context, mesh.face_edges.T, len(mesh.edges))   # [3] [F, E] Scalar
+    face_sense = (disc.triangle_edges[0] & disc.triangle_edges[1] & core.time) / (2 * disc.triangle_areas)
+    normal_flux = (currents[..., None] & (disc.triangle_edges & core.time)) / face_sense
+    differences = disc.mesh.d0 * streams
+    orientation_by_corner = core.as_scalar(disc.mesh.face_edge_orientation.T).field()
+    facing = SparseExtensor.selection(core.context, disc.mesh.face_edges.T, len(disc.mesh.edges))   # [3] [F, E] Scalar
     expected_flux = facing * differences[..., None] * orientation_by_corner
     np.testing.assert_allclose((normal_flux - expected_flux).kernel, 0, atol=1e-9)
-    np.testing.assert_allclose(differences.batch()[..., mesh.boundary_edges].kernel, 0, atol=1e-12)
+    np.testing.assert_allclose(differences.batch()[..., disc.mesh.boundary_edges].kernel, 0, atol=1e-12)
 
     # Between angular samples, the periodic drive agrees with projecting the magnet directly.
     sample_angles = np.array([-0.37, 0.31, 2.11])
     turns = (core.mv.xy * (-sample_angles[:, None] / 2)).exp() * orientation
-    positions = turns >> mesh.face_centers
-    magnetic = turns << core.field(positions, (core.mv.x * offset).dual(), core.mv.xy, strength, width)
-    electric = core.lorentz(mesh.face_centers.commutator(core.mv.xy), magnetic)
-    projected = modes.drive(mesh, electric)
+    positions = turns >> disc.face_centers
+    magnetic = turns << (core.mv.xy * strength * (-((positions) - ((core.mv.x * offset).dual())).squared() / (2 * (width) ** 2)).exp())
+    electric = (disc.face_centers.commutator(core.mv.xy) & magnetic) ^ core.mv.t
+    projected = modes.reading(swept.adjugate()(disc.triangle_areas * electric))
     periodic = forcing(core.mv.scalar(sample_angles[:, None, None]))
     assert np.linalg.norm((periodic - projected).kernel) < 1e-3 * np.linalg.norm(projected.kernel)
 
@@ -452,23 +464,23 @@ def test_unforced_current_memory_decays_to_heat_at_second_order_in_time():
     strength, width, offset, conductance = 0.0, 0.02, 0.055, 5.8e4
     permeability, inertia, speed = 4e-7 * np.pi, 0.005, 20.0
     step, steps = 0.0002, 10
-    mesh = core.Mesh.disk(radius, rings, sectors)
-    conductivity = core.fibre_conductivity(mesh, conductance * np.ones((1, 2)), 0, radius, conductance)
-    modes = core.current_modes(mesh, conductivity, permeability, count)
+    disc = core.disc(*core.Mesh.disk(radius, rings, sectors))
+    conductivity = core.fibre_conductivity(disc, conductance * np.ones((1, 2)), 0, radius, conductance)
+    modes = core.current_modes(disc, conductivity, permeability, count)
     amplitudes = core.mv.scalar(np.full((1, count, 1), 0.02)).field()
     orientation = (core.mv.xy * np.zeros(1)).exp()
     spin = (core.mv.xy * speed).broadcast_to((1,))
-    heat = (mesh.triangle_areas * 0)[None]
+    heat = (disc.triangle_areas * 0)[None]
     elapsed = step * steps
     expected_amplitudes = amplitudes * (-modes.decay * elapsed).exp()
-    expected_current = modes.currents(expected_amplitudes)
+    expected_current = modes.current(modes.projection.adjoint()(expected_amplitudes))
     harmonics = 16
-    forcing = core.periodic_drive(mesh, modes, (core.mv.x * offset).dual(), core.mv.xy,
+    forcing = core.periodic_drive(disc, modes, (core.mv.x * offset).dual(), core.mv.xy,
                                    strength, width, orientation, harmonics)
     errors = []
     for substeps in (1, 2, 4):
         motor_torque = core.mv.scalar(np.zeros((steps, substeps, 1, 1)))
-        states = list(core.inductive_braking(mesh, modes, forcing, core.mv.xy,
+        states = list(core.inductive_braking(disc, modes, forcing, core.mv.xy,
                                              inertia, orientation, spin,
                                              heat, amplitudes, motor_torque, step))
         errors.append(np.linalg.norm((states[-1].current - expected_current).kernel))

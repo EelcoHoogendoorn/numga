@@ -30,13 +30,13 @@ UP = mv.z.dual()
 
 
 # --- math -----------------------------------------------------------------------------
-def slopes(mesh: Mesh, heights: np.ndarray) -> Vector:
+def slopes(mesh: Mesh, points: Point, heights: np.ndarray) -> Vector:
     """The plane of each face of the terrain, through its corners at their heights, as the vector whose
     pairing with a point lifted to unit height, `point + UP`, is the height there: the slope across the
     plane and the height at the origin. The corners' heights times the reciprocal frame of the corners
     lifted to unit height, the three vectors pairing to one with their own corner and to nothing with the
     other two: linear in the heights, the heights on the last axis."""
-    lifted = mesh.vertices.batch() + UP                                        # [vertices] Point
+    lifted = points.batch() + UP                                        # [vertices] Point
     a, b, c = (lifted[mesh.faces[:, corner]] for corner in range(3))          # [faces] Point each
     # Two corners meet in a vector that pairs to nothing with either; over the meet of all three, it pairs
     # to one with the third.
@@ -45,36 +45,33 @@ def slopes(mesh: Mesh, heights: np.ndarray) -> Vector:
     return (frame * heights[..., mesh.faces]).sum(axis=-1)                     # [..., faces] Vector
 
 
-def reciprocal(mesh: Mesh, heights: np.ndarray) -> Vector:
-    """The vertices of the reciprocal diagram: the slope of each face, its height at the origin left out."""
-    planes = slopes(mesh, heights)                                             # [..., faces] Vector
-    return (planes ^ mv.z) * mv.z                                              # [..., faces] Vector
 
-
-def stresses(mesh: Mesh, heights: np.ndarray) -> Scalar:
+def stresses(mesh: Mesh, points: Point, heights: np.ndarray) -> Scalar:
     """The stress of each interior edge: the jump in slope between the faces on either side, measured
     towards the corner across the edge, over the edge's length, positive in tension, where the terrain
     bends convex. Which face is called left does not matter: swapping them turns both the jump and the
     side the corner lies on."""
     inner, left, right = beside(mesh)                                          # [inner] each
-    planes = slopes(mesh, heights)                                             # [..., faces] Vector
+    planes = slopes(mesh, points, heights)                                             # [..., faces] Vector
     jump = planes[..., left] - planes[..., right]                              # [..., inner] Vector
-    bars = mesh.edge_displacements.batch()[inner]                              # [inner] Point
+    # Each bar from its tail to its head.
+    bars = points.batch()[mesh.edges[inner, 1]] - points.batch()[mesh.edges[inner, 0]]   # [inner] Point
     # The corner across each edge in the face on its right, as its offset square to the bar.
     far = mesh.faces[right].sum(axis=-1) - mesh.edges[inner].sum(axis=-1)    # [inner]
-    corner = mesh.vertices.batch()[far] - mesh.vertices.batch()[mesh.edges[inner, 0]]   # [inner] Point
+    corner = points.batch()[far] - points.batch()[mesh.edges[inner, 0]]   # [inner] Point
     across = corner - bars * ((bars | corner) / (bars | bars))                # [inner] Point
     # The jump in slope paired with that offset: how much faster the terrain rises across the bar.
     return -(jump & across) / (across.norm() * bars.norm())                    # [..., inner] Scalar
 
 
-def folds(mesh: Mesh, heights: np.ndarray) -> Scalar:
+def folds(mesh: Mesh, points: Point, heights: np.ndarray) -> Scalar:
     """How far the corner across each interior edge on its right lies above the plane of the face on its
     left: positive where the terrain bends convex."""
     inner, left, right = beside(mesh)                                          # [inner] each
     far = mesh.faces[right].sum(axis=-1) - mesh.edges[inner].sum(axis=-1)    # [inner]
-    lifted = mesh.vertices.batch()[far] + UP                                   # [inner] Point
-    return heights[..., far] - (slopes(mesh, heights)[..., left] & lifted)     # [..., inner] Scalar
+    lifted = points.batch()[far] + UP                                   # [inner] Point
+    return heights[..., far] - (slopes(mesh, points, heights)[..., left] & lifted)     # [..., inner] Scalar
+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -89,7 +86,3 @@ def beside(mesh: Mesh) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     inner = np.flatnonzero((left >= 0) & (right >= 0))
     return inner, left[inner], right[inner]
 
-
-def planar(coords: np.ndarray) -> Point:
-    """Points of the plane from their x and y coordinates."""
-    return mv.antivector(np.concatenate([coords, np.zeros(coords.shape[:-1] + (1,))], axis=-1))

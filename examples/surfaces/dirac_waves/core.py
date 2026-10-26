@@ -33,6 +33,7 @@ from examples import instantiate
 
 mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, context = mesh_module.Mesh, mesh_module.ctx
+as_ga_sparse, as_scalar = mesh_module.as_ga_sparse, mesh_module.as_scalar
 mv = context.multivector
 Scalar = ga.gatype.scalar()
 Point = mesh_module.Point
@@ -40,44 +41,52 @@ Even = ga.gatype.even()
 
 
 # --- math -----------------------------------------------------------------------------
-def dirac(mesh: Mesh) -> tuple[SparseExtensor, SparseExtensor, SparseExtensor, SparseExtensor]:
-    """The Dirac operator from vertices to faces, the face areas, and the vertex areas and their
-    inverses."""
-    # diagonal operators: the triangle areas, and the vertex areas and their inverses
-    face_areas = spdiag(mesh.triangle_areas)                               # [F, F] Scalar
-    inverse_face_areas = spdiag(1 / mesh.triangle_areas)                   # [F, F] Scalar
-    vertex_areas = spdiag(mesh.vertex_areas)                               # [V, V] Scalar
-    inverse_vertex_areas = spdiag(1 / mesh.vertex_areas)                   # [V, V] Scalar
-
-    # each face takes each corner by the edge it faces, over twice the face's area
-    operator = inverse_face_areas * mesh.at_corners(mesh.triangle_edges) * 0.5    # [F, V] Point
-    return operator, face_areas, vertex_areas, inverse_vertex_areas
-
-
-def spread(mesh: Mesh, start: Even, interval: float) -> Iterator[tuple[Even, Even]]:
+def spread(mesh: Mesh, points: Point, start: Even, interval: float) -> Iterator[tuple[Even, Even]]:
     """A wave from the given vertex field, without end: the vertex field at each step and the face
     field half a step after it."""
-    operator, face_areas, _, inverse_vertex_areas = dirac(mesh)
-    vertices, faces = start, operator * start * 0.0                         # Even[V], Even[F]
+    # The edge facing each corner, from the corner after it to the corner after that: one of the edges, signed as
+    # the face runs along it.
+    edges = ((mesh.d0 * points).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    # A face's area is half the size of its plane, the commutator of two of its edges; a vertex's is a third
+    # of the area of each face at it.
+    triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar[F]
+    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
+    dual_areas = ~thirds * triangle_areas                                  # Scalar[V]
+
+    face_areas = spdiag(triangle_areas)                                    # [F, F] Scalar
+    inverse_face_areas = spdiag(1 / triangle_areas)                        # [F, F] Scalar
+    inverse_vertex_areas = spdiag(1 / dual_areas)                          # [V, V] Scalar
+    dirac = inverse_face_areas * mesh.at_corners(edges) * 0.5              # [F, V] Point
+
+    vertices, faces = start, dirac * start * 0.0                           # Even[V], Even[F]
     while True:
         # the face field moved on by the Dirac operator of the vertex field
-        faces = faces + operator * vertices * interval                      # Even[F]
+        faces = faces + dirac * vertices * interval                        # Even[F]
         yield vertices, faces
         # the vertex field moved back by the reverse of the face field, weighted by the areas
-        vertices = vertices - inverse_vertex_areas * (~operator * (face_areas * faces)) * interval   # Even[V]
+        vertices = vertices - inverse_vertex_areas * (~dirac * (face_areas * faces)) * interval   # Even[V]
 
 
-def standing(mesh: Mesh, count: int) -> tuple[Scalar, Even]:
-    """The count standing waves of least frequency: their frequencies squared and their vertex fields,
-    the eigenfields of `~dirac * face_areas * dirac` against the vertex areas."""
-    operator, face_areas, vertex_areas, _ = dirac(mesh)
-    return ((~operator * face_areas * operator) * Even).eigh(vertex_areas * Even, count)   # [count] Scalar, [count] Even[V]
+def modes(mesh: Mesh, points: Point, sizes: np.ndarray, probe: Even, frequencies: np.ndarray,
+          phases: np.ndarray) -> tuple[Scalar, Even, Even]:
+    """The standing waves of the first few frequencies, one of each, over its period: the frequencies
+    squared of all the waves found, and the vertex and face fields `[frequencies, phases] Even[V]` and
+    `[frequencies, phases] Even[F]`."""
+    edges = ((mesh.d0 * points).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    triangle_areas = edges[1].commutator(edges[0]).norm() / 2              # Scalar[F]
+    thirds = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
+    dual_areas = ~thirds * triangle_areas                                  # Scalar[V]
 
+    face_areas = spdiag(triangle_areas)                                    # [F, F] Scalar
+    inverse_face_areas = spdiag(1 / triangle_areas)                        # [F, F] Scalar
+    vertex_areas = spdiag(dual_areas)                                      # [V, V] Scalar
+    dirac = inverse_face_areas * mesh.at_corners(edges) * 0.5              # [F, V] Point
 
-def oscillation(mesh: Mesh, waves: Even, frequencies: Scalar, phases: np.ndarray) -> tuple[Even, Even]:
-    """Standing waves at the given phases of their periods `[waves, phases]`: the vertex field a
-    cosine, and the face field, the Dirac operator of it over the frequency, a sine."""
-    operator, _, _, _ = dirac(mesh)
-    vertices = waves[:, None] * np.cos(phases)                              # [waves, phases] Even[V]
-    faces = (operator * waves / frequencies)[:, None] * np.sin(phases)      # [waves, phases] Even[F]
-    return vertices, faces
+    dirac_squared = ~dirac * face_areas * dirac                            # [V, V] Even
+    squared, waves = (dirac_squared * Even).eigh(vertex_areas * Even, int(sizes[-1]))   # [modes] Scalar, [modes] Even[V]
+    shares = [waves[low:high] for low, high in zip(sizes[:-1], sizes[1:])]
+    chosen = mesh_module.stack([(share * (vertex_areas * share.reverse().scalar_product(probe)).sites.sum()).sum(axis=0)
+                                for share in shares])                      # [levels] Even[V]
+    vertices = chosen[:, None] * np.cos(phases)                            # [levels, phases] Even[V]
+    faces = (dirac * chosen * (1 / frequencies))[:, None] * np.sin(phases) # [levels, phases] Even[F]
+    return squared, vertices, faces

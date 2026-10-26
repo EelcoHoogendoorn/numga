@@ -8,12 +8,14 @@ never imports it.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
 from examples.surfaces.qem.core import Point, Quadric, mv
-from examples.util.wgsl import image_figure, solids
+from examples.util.wgsl import image_figure, meshes, solids
 
 # Blue: shared flanking ridge triangles (faces 0, 1)
 # Red/Rose: steep corner triangles at vertex a (faces 2, 3)
@@ -37,6 +39,10 @@ REACH, MARGIN, N_PIXELS = 0.1, 0.1, 600
 EDGE_WIDTH, COLLAPSE_WIDTH, N_DASHES = 2.6, 4.0, 5
 VERTEX_RADIUS, OPTIMUM_RADIUS = 6.0, 9.0
 TRIANGLE_THICKNESS = 0.5
+# A fixed three-quarter view of the whole surface, with each surviving triangle lit separately.
+MESH_ELEVATION, MESH_AZIMUTH = np.radians(24.0), np.radians(54.0)
+MESH_MARGIN, MESH_PIXELS, MESH_GLOSS = 0.05, 300, 0.18
+SURFACE_COLOUR = np.array(to_rgb("#8fb3c9"))
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -109,3 +115,16 @@ def draw_qem(
         vertex_panel(vertices, faces[incident_b], vertices[1], quadric_b, FACE_COLORS[incident_b], B_COLOUR, view),
         collapse_panel(vertices, faces, collapsed, surviving, edge_quadric, optimum, view),
     ], axis=1))
+
+
+def draw_mesh(vertices: Point, faces: np.ndarray, view: solids.View) -> np.ndarray:
+    """The complete surface, flat shaded so its surviving triangles remain visible."""
+    return meshes.draw(vertices, faces, SURFACE_COLOUR, meshes.flat(vertices, faces), view, background,
+                       face_values=np.zeros(4), colour=meshes.plain, gloss=MESH_GLOSS)
+
+
+def animate_mesh(states: Iterator[tuple[Point, np.ndarray]], reference: Point) -> Iterator[np.ndarray]:
+    """Progressive mesh simplification, with the camera and framing fixed by the reference surface."""
+    view = solids.view([reference], 0.0, MESH_ELEVATION, MESH_AZIMUTH, MESH_MARGIN, MESH_PIXELS).squared()
+    for vertices, faces in states:
+        yield draw_mesh(vertices, faces, view)

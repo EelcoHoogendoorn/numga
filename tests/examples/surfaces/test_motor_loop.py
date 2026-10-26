@@ -24,6 +24,7 @@ def test_only_the_turns_between_frames_bend_the_motor_surface():
     assert (points & points[:1]).norm().to_array().max() < 1e-12
     assert (motors & points).norm().to_array().max() > 0.05
     # A turn common to every frame changes nothing.
-    flat = core.ribbon(*scenarios.grid(), 0.0)                                 # [vertices] Motor
-    cases = scenarios.refined(stack([flat, flat * core.turn(core.mv.yz, 0.7)]).field())[1][:, 1].batch()   # [cases, refined] Point
+    along, across = scenarios.grid()
+    flat = (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp()   # [vertices] Motor
+    cases = scenarios.refined(stack([flat, flat * (core.mv.yz * (-0.7 / 2)).exp()]).field())[1][:, 1].batch()   # [cases, refined] Point
     assert (cases[0] & cases[1]).norm().to_array().max() < 1e-12

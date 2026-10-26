@@ -42,7 +42,7 @@ import numpy as np
 
 from numga import stack
 from numga.sparse import spdiag
-from examples.surfaces.spin_transformations.core import Mesh, Point, as_ga_sparse, as_scalar, context, cube
+from examples.surfaces.spin_transformations.core import Mesh, Point, as_ga_sparse, as_scalar, context, corner_cosines, cube
 
 mv = context.multivector
 ga = context.algebra
@@ -51,25 +51,34 @@ Even = ga.gatype.even()
 
 
 # --- math -----------------------------------------------------------------------------
-def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Point], stiffness: float,
+def deform(mesh: Mesh, at_rest: Point, handles: np.ndarray, poses: Iterable[Point], stiffness: float,
            n_iterations: int) -> Iterator[tuple[Point, Point, Scalar]]:
     """For each pose of the handles, the targets of every vertex `Point[V]` of which the handles' are
-    held: the mesh as rigid as possible after the given iterations, each pose starting from the last
-    one's; the mesh by Laplacian editing; and the energy at each iteration `[iterations] Scalar`."""
+    held: the mesh, at rest at the given vertices, as rigid as possible after the given iterations, each
+    pose starting from the last one's; the mesh by Laplacian editing; and the energy at each iteration
+    `[iterations] Scalar`."""
     # the boundary, taking each edge's tail from its head, and the mean over each edge
     I10 = mesh.edges                                                        # [E, 2]
     T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))        # [E, V] Scalar
     A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))              # [E, V] Scalar
 
+    rest = T10 * at_rest                                                    # Point[E]
+    # The edge facing each corner of each face, one of the edges signed as the face runs along it; the
+    # cotangent at each corner, one edge's slice read along the other, over the size of the plane they
+    # span; and each edge's cotangent weight, half the cotangents of the angles facing it.
+    triangle_edges = (rest.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
+    after, before = triangle_edges[[1, 2, 0]], triangle_edges[[2, 0, 1]]    # [3] Point[F] each
+    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar[F]
+    cotangent_weights = ~mesh.by_corner(cotangents / 2) * as_scalar(np.ones(len(mesh.faces))).field()   # Scalar[E]
+
     # diagonal operators: each edge's cotangent weight, and the handles' stiffness
-    H1 = spdiag(mesh.edge_ratio)                                           # [E, E] Scalar
+    H1 = spdiag(cotangent_weights)                                         # [E, E] Scalar
     P = spdiag(as_scalar(handles * stiffness).field())                     # [V, V] Scalar
 
-    rest = T10 * mesh.vertices                                              # Point[E]
     # the cotangent Laplacian, with the handles held
     held = (~T10 * H1 * T10 + P) * Point                                    # Point[V] <- Point[V]
 
-    vertices = mesh.vertices                                                # Point[V]
+    vertices = at_rest                                                      # Point[V]
     for targets in poses:
         energies = []
         for _ in range(n_iterations):
@@ -90,8 +99,8 @@ def deform(mesh: Mesh, handles: np.ndarray, poses: Iterable[Point], stiffness: f
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bar(divisions: int, length: float) -> Mesh:
+def bar(divisions: int, length: float) -> tuple[Mesh, Point]:
     """A closed bar along x, its square cross section 2 across and its length the given one, each side
-    of the cube it is stretched from a grid of divisions by divisions squares."""
-    box = cube(divisions)
-    return box.copy(vertices=box.vertices + (mv.x & box.vertices) * mv.x.dual() * (length / 2 - 1))
+    of the cube it is stretched from a grid of divisions by divisions squares: its mesh and its vertices."""
+    box, corners = cube(divisions)
+    return box, corners + (mv.x & corners) * mv.x.dual() * (length / 2 - 1)

@@ -23,7 +23,7 @@
 
 ## Surfaces
 
-- [Quadric error metrics](surfaces/qem/) — Summed face quadrics choose vertex positions as a triangle mesh is simplified.
+- [Quadric error metrics](surfaces/qem/) — Summed face quadrics place edge contractions, from a single ridge to progressive simplification of the bunny.
 - [Skinning](surfaces/skinning/) — Blending motors and blending their maps produce different deformations of a jointed surface.
 - [Surface curvature](surfaces/surface_curvature/) — A quadric's polarity determines its tangent planes, principal curvatures and curvature directions.
 - [As-rigid-as-possible deformation](surfaces/arap/) — Moving a few vertices bends a mesh while keeping each neighbourhood close to a rigid rotation.
@@ -79,6 +79,7 @@
 - [Stress in an elastic cube](mechanics/stress/) — Strain and stress maps determine face tractions, principal directions and Mohr's circle.
 - [Area transport](mechanics/area_transport/) — A deformation carries edges, oriented areas and volumes through a complete flattening.
 - [Composite strip](mechanics/composite_strip/) — Fibre directions couple axial extension to twist in a laminated strip.
+- [Piezoelectric bimorph](electromagnetism/piezoelectric/piezoelectric.ipynb) — One constitutive coupling bends a layered continuum under voltage and generates an electrical signal under load.
 - [Crystal waves](mechanics/crystal_waves/) — Crystal stiffness determines elastic wave speeds, polarizations and energy focusing.
 - [Beam bending](mechanics/bending/) — Loads on thin-walled cantilevers produce bending and torsion according to the cross-section's geometry.
 - [Elastica](mechanics/elastica/) — End loads bend elastic rods into buckled shapes, curls and helices.
@@ -98,6 +99,7 @@
 - [Smoke rings](fluids/smoke_rings/) — Vortex filaments evolve under their own curvature and the flow induced by neighbouring rings.
 - [Vortices on the sphere](fluids/sphere_vortices/) — Point vortices carry circulation and induce motion on a spherical surface.
 - [Swimming without inertia](fluids/stokes_swimmer/) — Cyclic shape changes propel a swimmer while fluid forces and torques balance at every instant.
+- [Stokes flow on a mesh](fluids/dec_stokes/) — Incidence and diagonal Hodge maps determine pressure and flux through a channel around an obstacle.
 
 ## Relativity
 
