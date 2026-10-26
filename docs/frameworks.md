@@ -137,6 +137,40 @@ Each row connects a familiar construction to an operation used throughout the al
 
 The common origin matters. These constructions acquire their geometric meaning and conventions together, and the grades carry the same relationships into other dimensions.
 
+## Specialized algebras and calculi
+
+Many named algebras in physics, geometry and engineering are taught as separate formalisms with their own symbols, rules and libraries. Within GA and extensors they arise by choosing a signature, a grade subspace and an orientation—first at the nullary level of multivectors, and then as maps and correlations when extensor arguments enter.
+
+### Nullary subalgebras and grade subspaces
+
+| Algebra or system | Its place in multivectors |
+| --- | --- |
+| Complex, split-complex and dual numbers ($\mathbb{C}$, $\mathbb{R}[\varepsilon]/(\varepsilon^2=0)$) | The even subalgebra (`Scalar + Bivector`) of 2D Euclidean (`x+y+`), Lorentzian (`x+t-`) and degenerate (`x+w0`) algebras |
+| Quaternions and biquaternions ($\mathbb{H}$, $\mathbb{H}\otimes\mathbb{C}$) | The even subalgebras of 3D space (`x+y+z+`, $\mathrm{Cl}^+(3,0)$) and spacetime (`STA`), respectively; the latter includes scalars, bivectors and the pseudoscalar |
+| Dual quaternions and screw / motor algebra ($\mathrm{SE}(3)$, $\mathfrak{se}(3)$, $\mathfrak{se}(3)^*$) | Even motors (`Scalar + Bivector + Pseudoscalar`), extrinsic twists (`Bivector+`) and intrinsic wrenches/forques (`Antibivector-`) in `PGA3D`, paired by `twist & forque` |
+| Plücker coordinates and Grassmann–Cayley algebra | Meets of planes (`^`, `Bivector+`) and joins of points (`&`, `Antibivector-`) in projective space (`PGA`) |
+| Lie algebras $\mathfrak{so}(p,q)$, $\mathfrak{spin}(p,q)$ and Lie–Poisson duals $\mathfrak{g}^*$ | Extrinsic bivectors (`Bivector+`) under `.commutator()` and `.exp()`, paired by `&` with intrinsic momenta (`Antibivector-`) in $\mathfrak{g}^*$ |
+| Cayley–Klein geometries (elliptic, hyperbolic, Euclidean, Galilean, Minkowski) | Projective geometry with a chosen full signature and absolute structure; with positive spatial directions, `w+`, `w-`, `w0` give elliptic, hyperbolic and Euclidean geometry |
+| Conformal geometry and Möbius transformations | Null-cone points, spheres, circles, planes and $\mathrm{Spin}(4,1)$ versors in `CGA3D` ($\mathrm{Cl}(4,1)$) |
+| Lie sphere geometry in three dimensions | Oriented spheres on the projective null cone of $\mathrm{Cl}(4,2)$, with contact represented by totally null two-planes ([Lie sphere geometry](https://link.springer.com/article/10.1007/s13366-018-0394-6)) |
+| Pauli and spacetime spinor/bivector algebras | `VGA3D` (`x+y+z+`) and the even subalgebra of `STA` (`x+y+z+t-`), with spins as intrinsic patches (`Vector-` in space, `Bivector-` in spacetime) and fields as extrinsic planes (`Bivector+`) |
+| Twistors and conformal spacetime spinors ($\mathrm{SU}(2,2) \cong \mathrm{Spin}_0(4,2)$) | Spinor representations of conformal spacetime $\mathrm{Cl}(4,2)$, with null twistors determining light rays ([twistors and linked light](../examples/relativity/twistors/core.py)) |
+
+### Extensor constructions
+
+| Calculus or formalism | Its place in extensors |
+| --- | --- |
+| Pauli and Dirac matrix representations ($\sigma_i$, $\gamma_\mu$, Majorana / Weyl spinors) | Left multiplication on suitable left ideals (`state_readout(Full * Spinor * projector)`) gives faithful `Spinor <- Spinor` maps and trace/Fierz readouts; Weyl subspaces carry the even action ([extensor representations](../examples/math/extensor_representations/scenarios.py), [spinors](../examples/relativity/spinors/core.py)) |
+| Octonions, split octonions, $\mathfrak{g}_2$ derivations and $\mathrm{Spin}(8)$ triality ($\mathbb{O}$, $\mathbb{O}_s$) | Bilinear multiplication maps `((Octonion * Octonion) * (1 - orientation)).cast(Octonion)` in $\mathrm{Cl}(0,7)$ or Cayley–Dickson doubling across even and odd grades of $\mathrm{Cl}(3,0)$, with $\mathfrak{g}_2$ as the kernel of `Bivector.commutator(orientation)` ([octonions](../examples/math/octonions/core.py), [octonionic rolling](../examples/math/g2_rolling/core.py), [triality](../examples/math/triality/core.py)) |
+| Bloch-ball states, POVM effects and Pauli transfer channels | Projective points of weight one (`Antivector-`), measurement planes (`Vector+`) paired by `effect & state`, and linear maps `Point <- Point` ([process tomography](../examples/quantum/process_tomography/process_tomography_projective.ipynb)) |
+| Jones, Stokes and Mueller polarization calculus | Transverse screen slices (`ScreenSlice+`), rotor/projection maps on screen directions, and coherency correlations `Screen- <- ScreenSlice+` ([Kerr polarization](../examples/relativity/kerr/core.py)) |
+| Multiparticle quantum registers and stabilizer projectors | Direct-sum signatures ($\mathrm{Cl}(3n,0)$ or $\mathrm{Cl}(3n,n)$), commuting blade involutions `(1 + blade) / 2` as stabilizer projectors, and multilinear maps across state spaces ([two spins in spacetime](../examples/quantum/two_spins/two_spins_spacetime.ipynb), [stabilizer code](../examples/quantum/stabilizer/core.py)) |
+| Projective quadrics, conics and absolute metrics | Symmetric correlations `Plane+ <- Point-` and `Point- <- Plane+`, pulled back through singular projections by `.adjugate()` ([multiview reconstruction](../examples/estimation/multiview/core.py)) |
+| Algebraic relationships of discrete exterior calculus | Incidence and Hodge maps on fields, dual pairings and adjoints, with chain identities such as `d1(d0) == 0` and Laplacians built by composition ([surface connections](../examples/surfaces/connections/core.py)) |
+| Symplectic / Poisson brackets and Onsager–GENERIC thermodynamics | Correlations `Covector+ <- State-` (symplectic 2-form or Ruppeiner metric) and `State- <- Covector+` (Poisson bivector or Onsager mobility) on a null-metric state space ([GENERIC](../examples/thermodynamics/generic/core.py)) |
+| Premetric electrodynamics and crystal optics | Constitutive correlations `Antibivector- <- Bivector+` from untwisted field 2-forms to twisted excitation 2-forms, including `Scalar-` axion couplings ([Fresnel wave surfaces](../examples/electromagnetism/fresnel/core.py)) |
+| Voigt / Kelvin fourth-order elasticity and compliance | Stiffness takes strain (`Plane+ <- Point-`) to Cauchy or Piola–Kirchhoff stress (`Point- <- Plane+`); compliance maps stress back to strain. These fourth-order extensors act on second-order geometric maps ([elastic stress](../examples/mechanics/stress/core.py), [crystal waves](../examples/mechanics/crystal_waves/core.py)) |
+
 ## Numerical methods
 
 The linear-algebra methods come with the maps. Gauss–Newton, Schur complements, conjugate gradients, least squares and generalized eigenproblems operate on geometric types from construction through solution. A camera correction is a twist that moves the camera; a vibration mode is a rate that moves the body.
