@@ -35,19 +35,13 @@ a ^ b == (a & b) * antiscalar
 
 **Dot.** `a.dot(b)` is the scalar part of `a * ~b`.
 
-**Dual.** The dual is defined implicitly by the relationship, for every `a` and `b` of one grade,
-
-```python
-a.dot((b.reverse() * antiscalar).dual_inverse()) == a.dot(b)
-```
-
-In a nondegenerate algebra the dots can be dropped, and the relationship becomes the familiar
+**Dual.** The dual flips the orientation. In a nondegenerate algebra it is the product with the unit volume,
 
 ```python
 b.dual() == b.reverse() * antiscalar
 ```
 
-In a degenerate algebra the relationship leaves the dual of a null blade undefined, and the convention chosen for a null basis blade `e` is its complement, `e & e.dual() == 1`. `a.dual_inverse()` is the dual's inverse.
+and so reads the metric: `a & b.dual() == a.dot(b)` for every `a` of `b`'s grade. In a degenerate algebra the product gives the dual of every blade of non-null basis directions, but sends a blade with a null direction to zero; such a blade has a rule of its own, pairing with its dual to the square of its other directions, as `w & w.dual() == 1` and `(y ^ w) & (y ^ w).dual() == y.dot(y)`. `a.dual_inverse()` is the dual's inverse.
 
 **Inner product.** For `a` of grade `r` and `b` of grade `s`,
 
