@@ -11,7 +11,7 @@ from numga import stack
 from examples.mechanics.freeform.geometry import Antivector
 from examples.util.wgsl import image_figure, meshes, solids
 
-n_pixels = 460
+n_pixels = 230
 elevation, azimuth = np.radians(24.0), np.radians(54.0)
 # Room around the first surface for the later ones to flex into, as a share of its larger side.
 margin = 0.12

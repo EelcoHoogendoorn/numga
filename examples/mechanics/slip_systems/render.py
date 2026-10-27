@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import numpy as np
 
+from numga import stack
+
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, room
 from examples.mechanics.slip_systems import core
@@ -35,28 +37,23 @@ DISK = (-1.02, 1.02)
 WINDOW = (-0.04, 0.46)
 # The animation's side in inches, and in pixels.
 SIDE = 4.6
-PIXELS = 460
+PIXELS = 230
 
 
 # --- plumbing -------------------------------------------------------------------------
 def scalars(values: core.Scalar) -> np.ndarray:
     """The values of a batch of scalars, for drawing and checks."""
-    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
+    return values.to_array()
 
 
 def coordinates(directions: core.Direction) -> np.ndarray:
-    """x, y and z of each direction, on the last axis."""
-    return directions.cast(core.ga.subspace("yz zx xy")).kernel
-
-
-def along(lines: core.Line) -> np.ndarray:
-    """x, y and z along each line, on the last axis."""
-    return lines.cast(core.ga.subspace("yz zx xy")).kernel
+    """x, y and z of each direction, on the last axis: its pairings with the planes x, y and z."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & directions[..., None]).to_array()
 
 
 def normals(planes: core.Plane) -> np.ndarray:
-    """x, y and z of each plane's normal, on the last axis."""
-    return planes.cast(core.ga.subspace("x y z")).kernel
+    """x, y and z of each plane's normal, on the last axis: its pairings with the directions x, y and z."""
+    return (planes[..., None] & stack((core.mv.x, core.mv.y, core.mv.z)).dual()).to_array()
 
 
 def projected(xyz: np.ndarray) -> np.ndarray:
@@ -73,8 +70,8 @@ def lifted(window: tuple[float, float], pixels: int) -> core.Direction:
     [001] reflected in the mirror through [001] plus the point."""
     edges = np.linspace(*window, pixels + 1)
     across = (edges[:-1] + edges[1:]) / 2
-    offsets = core.mv.x * across + core.mv.y * across[::-1, None]             # [rows, columns] Vector
-    return (core.mv.z + offsets).normalized() >> core.mv.z.dual()            # [rows, columns] Direction
+    offsets = core.mv.x * across + core.mv.y * across[::-1, None]             # [rows, columns] Vector+
+    return (core.mv.z + offsets).normalized() >> core.mv.z.dual()            # [rows, columns] Direction-
 
 
 def system_colours(count: int) -> np.ndarray:
@@ -105,13 +102,13 @@ def draw_triangle(ax: plt.Axes) -> None:
 
 
 def draw_disk(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], planes: core.Plane,
-              slips: core.Line) -> None:
+              slips: core.Direction) -> None:
     """The whole disk: each region in the colour of its first system, white outside the rim, the slip planes'
     normals as triangles and the slip directions as dots, and the standard triangle."""
     image = picture(ax, factors, DISK)
     image.set_clip_path(ax.add_patch(plt.Circle((0, 0), 1, fill=False, color=EDGE_COLOUR, linewidth=0.9)))
     ax.scatter(*projected(normals(planes)).T, marker="^", s=40, color=NORMAL_COLOUR, zorder=3)
-    ax.scatter(*projected(along(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
+    ax.scatter(*projected(coordinates(slips).reshape(-1, 3)).T, marker="o", s=16, color=NORMAL_COLOUR, zorder=3)
     draw_triangle(ax)
     ax.set(xlim=DISK, ylim=DISK)
 
@@ -153,11 +150,11 @@ def draw_paths(ax: plt.Axes, factors: Callable[[core.Direction], core.Scalar], a
     ax.scatter(*tracks[-1].T, s=14, color=PATH_COLOUR, zorder=3)
 
 
-def draw_chart(factors: Callable[[core.Direction], core.Scalar], planes: core.Plane, slips: core.Line,
+def draw_chart(factors: Callable[[core.Direction], core.Scalar], planes: core.Plane, slips: core.Direction,
                axes: core.Direction, amounts: core.Scalar) -> plt.Figure:
     """The whole disk, and the standard triangle with the paths, coloured by each system's Schmid factors for a
     pull direction, `factors`."""
-    figure, (disk, close) = plt.subplots(1, 2, figsize=(9.0, 4.5), layout="constrained")
+    figure, (disk, close) = plt.subplots(1, 2, figsize=(9.0, 4.5), dpi=55, layout="constrained")
     # Both panels without axes before either takes its room.
     disk.set_axis_off()
     close.set_axis_off()

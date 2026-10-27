@@ -39,15 +39,17 @@ Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Bivector = ga.gatype.bivector()
 Rotor = ga.gatype.rotor()
-Moment = ga.gatype((Plane, Point))                         # Plane <- Point
+Moment = ga.gatype((Plane, Point))                         # Plane+ <- Point-
 
-north, east, down = mv.basis().dual()                      # [] Point each
+north, east, down = mv.basis().dual()                      # [] Point-, Point-, Point-
 # The level ground, facing up, and the prime vertical, the upright plane facing north: a fault's frame
 # turns them onto the fault plane and the auxiliary plane.
-ground, prime_vertical = -mv.z, mv.x                       # [] Plane each
+ground, prime_vertical = -mv.z, mv.x                       # [] Plane+, Plane+
 # The planes the fault's frame turns in, from one direction towards another: their commutator.
-horizontal = east.commutator(north)                        # [] Bivector: north towards east
-upright = down.commutator(east)                            # [] Bivector: east towards down
+# The horizontal plane, its sense from north towards east.
+horizontal = east.commutator(north)                        # [] Bivector+
+# The upright plane through east, its sense from east towards down.
+upright = down.commutator(east)                            # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -56,10 +58,11 @@ def fault_frame(strikes: np.ndarray, dips: np.ndarray, rakes: np.ndarray) -> Rot
     horizontal plane, then the dip about north, then the strike from north towards east. It carries
     north onto the slip and up onto the fault's normal, so the prime vertical onto the auxiliary plane
     and the level ground onto the fault plane, and the fault dips to the right of its strike."""
-    rake = (horizontal * (rakes / 2)).exp()                                   # [...] Rotor: north towards -east
-    dip = (upright * (-dips / 2)).exp()                                       # [...] Rotor: east towards down
-    strike = (horizontal * (-strikes / 2)).exp()                              # [...] Rotor: north towards east
-    return strike * dip * rake                                                # [...] Rotor
+    # The rake turns north towards -east, the dip east towards down, and the strike north towards east.
+    rake = (horizontal * (rakes / 2)).exp()                                   # [...] Rotor+
+    dip = (upright * (-dips / 2)).exp()                                       # [...] Rotor+
+    strike = (horizontal * (-strikes / 2)).exp()                              # [...] Rotor+
+    return strike * dip * rake                                                # [...] Rotor+
 
 
 def double_couple(faults: Plane, auxiliaries: Plane, moments: np.ndarray) -> Moment:
@@ -72,14 +75,14 @@ def curl(moment: Moment) -> Bivector:
     """How much a moment would turn the ground: zero for any symmetric moment."""
     # Each plane the moment gives, wedged with the plane that reads its direction: the trace pairs the
     # open plane with the moment's input, plane against direction, with no metric between them.
-    return (Plane ^ moment(Point)).trace(1, 2)                               # [...] Bivector
+    return (Plane ^ moment(Point)).trace(1, 2)                               # [...] Bivector+
 
 
 def radiation(moment: Moment, directions: Point) -> tuple[Scalar, Point]:
     """Along each direction, the P wave's first motion, positive for a push away from the source,
     and the S wave's, the part of the moment's response across the direction."""
-    reading = moment(directions)                                              # [...] Plane
-    push = reading & directions                                               # [...] Scalar
+    reading = moment(directions)                                              # [...] Plane+
+    push = reading & directions                                               # [...] Scalar+
     # The metric turns the moment's reading into the motion it drives.
     return push, reading.dual() - directions * push
 
@@ -87,24 +90,25 @@ def radiation(moment: Moment, directions: Point) -> tuple[Scalar, Point]:
 def principal_axes(moment: Moment) -> tuple[Scalar, Point]:
     """The principal values and axes, from pressure through the null axis to tension: the eigenvectors
     of the moment's reading of directions, against the metric, the dot of the planes across them."""
-    return (moment(Point) & Point).eigh(Point.dual().dot(Point.dual()))      # [..., 3] Scalar, [..., 3] Point
+    return (moment(Point) & Point).eigh(Point.dual().dot(Point.dual()))      # [..., 3] Scalar+, [..., 3] Point-
 
 
 def fault_planes(moment: Moment) -> tuple[Plane, Plane]:
     """The two faults with this moment, from its pressure and tension axes: their fault and auxiliary
     planes `[..., 2]`, each fault's auxiliary plane the other's fault."""
-    _, axes = principal_axes(moment)                                          # [..., 3] Point: pressure, null, tension
-    pressure, tension = axes[..., 0], axes[..., 2]                            # [...] Point each
+    # The principal axes, in order: pressure, null and tension.
+    _, axes = principal_axes(moment)                                          # [..., 3] Point-
+    pressure, tension = axes[..., 0], axes[..., 2]                            # [...] Point-, Point-
     # The two planes' normals, which the metric turns into the planes across them.
-    first = ((tension + pressure) / np.sqrt(2)).dual_inverse()               # [...] Plane
-    second = ((tension - pressure) / np.sqrt(2)).dual_inverse()              # [...] Plane
-    return stack([first, second], axis=-1), stack([second, first], axis=-1)   # [..., 2] Plane each
+    first = ((tension + pressure) / np.sqrt(2)).dual_inverse()               # [...] Plane+
+    second = ((tension - pressure) / np.sqrt(2)).dual_inverse()              # [...] Plane+
+    return stack([first, second], axis=-1), stack([second, first], axis=-1)   # [..., 2] Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def directions(polar: np.ndarray, azimuths: np.ndarray) -> Point:
     """Directions on the sphere `[rings, spokes]`, by two turns: away from straight down towards
     north by each polar angle, then about the vertical from north towards east by each azimuth."""
-    tilt = (north.commutator(down) * (-polar[:, None] / 2)).exp()             # [rings, 1] Rotor
-    spin = (horizontal * (-azimuths[None, :] / 2)).exp()                      # [1, spokes] Rotor
-    return (spin * tilt) >> down                                              # [rings, spokes] Point
+    tilt = (north.commutator(down) * (-polar[:, None] / 2)).exp()             # [rings, 1] Rotor+
+    spin = (horizontal * (-azimuths[None, :] / 2)).exp()                      # [1, spokes] Rotor+
+    return (spin * tilt) >> down                                              # [rings, spokes] Point-

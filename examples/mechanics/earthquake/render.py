@@ -89,7 +89,7 @@ def draw_ball(ax, directions: core.Point, push: core.Scalar,
 def draw_mechanisms(directions: core.Point, push: core.Scalar, axes: core.Point) -> plt.Figure:
     """The beachball of each fault `[faults]`, side by side."""
     count = push.shape[0]
-    figure, panels = plt.subplots(1, count, figsize=(3.2 * count, 3.2), dpi=120)
+    figure, panels = plt.subplots(1, count, figsize=(3.2 * count, 3.2), dpi=55)
     for index, ax in enumerate(panels):
         draw_ball(ax, directions, push[index], axes[index])
     figure.tight_layout()
@@ -138,8 +138,8 @@ def draw_fault(directions: core.Point, push: core.Scalar, normal: core.Point, sl
     # The patch: a thin disc about the source, square to the normal, reaching half the rim's width past the patch so
     # that its rim, inked where the cylinder of the patch's radius about the normal meets it, lies whole on it.
     across = PATCH_THICKNESS / 2 * view.pixel * upright(normal)              # [3]
-    faces = solids.mv.point(np.stack([-across, across]))                     # [2] Point
-    disc = solids.rods(faces[0], faces[1], PATCH + RIM_WIDTH / 2 * view.pixel)[None]   # [1, 3] Quadric
+    faces = solids.mv.point(np.stack([-across, across]))                     # [2] Point-
+    disc = solids.rods(faces[0], faces[1], PATCH + RIM_WIDTH / 2 * view.pixel)[None]   # [1, 3] Plane+ <- Point-
     rim = solids.Ink(0, solids.rods(faces[0], faces[1], PATCH)[:1], solids.everywhere[None], np.array(to_rgb(RIM)),
                      RIM_WIDTH, 1.0)
     fault = solids.layer([], view, [rim], translucent=[(disc, np.array(to_rgb(FAULT)), PATCH_OPACITY)],
@@ -162,7 +162,7 @@ def animate_sweep(hemisphere: core.Point, frames: Iterable[tuple[core.Point, cor
     normals, slips, _, _, spheres, pushes = (stack(list(parts)) for parts in zip(*frames))   # [frames, ...] each
     # The figure and the beachball's rim set up once; the fault's picture, the shading and the axes' marks set for
     # each frame.
-    figure = plt.figure(figsize=(8.4, 4.2), dpi=100)
+    figure = plt.figure(figsize=(8.4, 4.2), dpi=50)
     fault_ax, ax = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     shading, marks = draw_ball(ax, hemisphere, frames[0][3], frames[0][2])
     # The figure laid out with the fault's axes bare, as its picture shows them, and the view fitted to them.

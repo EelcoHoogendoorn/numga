@@ -4,6 +4,7 @@ the pull's axis takes through the crystal as it slips."""
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import partial
 
 import numpy as np
 
@@ -12,6 +13,9 @@ from examples.mechanics.slip_systems import core
 
 # The normals of the four slip planes, the {111} planes.
 NORMALS = [[1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
+# Four neighbouring atoms, the corners of the Thompson tetrahedron, each opposite the face in the plane of the same
+# place.
+ATOMS = [[0, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1]]
 # The samples across the stereographic disk of pull directions.
 N_SAMPLES = 1000
 # The axes the pulls start along, spread over the standard triangle between [001], [011] and [111] away from
@@ -30,35 +34,35 @@ GALLERY_PIXELS = 420
 
 
 # --- math -----------------------------------------------------------------------------
-def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Line]:
+def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
     """Pull directions over the upper half of the sphere, laid out on the stereographic disk `[rows, columns]`,
     each system's Schmid factor for each `[rows, columns, planes, directions]`, and the slip planes and slip
     directions."""
     # Each point of the chart, the plane across [001], lifts to the direction that projects onto it: [001]
     # reflected in the mirror through [001] plus the point.
     across = np.linspace(-1, 1, N_SAMPLES)
-    offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector
-    directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction
-    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane
-    slips = core.slip_directions(planes)                                      # [planes, directions] Line
+    offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector+
+    directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction-
+    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane+
+    slips = core.slip_directions(core.mv.vector(ATOMS).dual())                # [planes, directions] Direction-
     return directions, core.schmid(directions, planes, slips), planes, slips
 
 
-def rotation(axis: core.Direction, planes: core.Plane, slips: core.Line) -> Iterator[tuple[core.Direction, core.Scalar]]:
+def rotation(axis: core.Direction, planes: core.Plane, slips: core.Direction) -> Iterator[tuple[core.Direction, core.Scalar]]:
     """Each pull's axis after every slip step, and how much each system slipped in the step: every system
     slips in the sense the pull drives it, at a rate rising steeply with its Schmid factor."""
     for _ in range(N_STEPS):
-        amounts = power_law(core.schmid(axis, planes, slips))                  # [starts, planes, directions] Scalar
+        amounts = power_law(core.schmid(axis, planes, slips))                  # [starts, planes, directions] Scalar-
         axis = core.slipped(axis, planes, slips, amounts)
-        yield axis, amounts                                                   # [starts] Direction
+        yield axis, amounts                                                   # [starts] Direction-
 
 
 def paths() -> tuple[core.Direction, core.Scalar]:
     """The pulls' axes at every step `[steps + 1, starts]`, and how much each system slipped in each step
     `[steps, starts, planes, directions]`."""
-    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane
-    starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction
-    axes, amounts = zip(*rotation(starts, planes, core.slip_directions(planes)))
+    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane+
+    starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction-
+    axes, amounts = zip(*rotation(starts, planes, core.slip_directions(core.mv.vector(ATOMS).dual())))
     return stack([starts, *axes]), stack(amounts)
 
 
@@ -79,7 +83,7 @@ def main() -> None:
 
     directions, factors, planes, slips = chart()
     axes, amounts = paths()
-    schmid = lambda direction: core.schmid(direction, planes, slips)          # [..., planes, directions] Scalar
+    schmid = partial(core.schmid, planes=planes, directions=slips)
     save_figure(render.draw_chart(schmid, planes, slips, axes, amounts), "slip_systems")
     save_animation(render.animate_paths(schmid, axes, amounts, N_FRAMES), "slip_systems_paths", DURATION_MS)
     # Gallery picture: this makes plots/slip_systems.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.

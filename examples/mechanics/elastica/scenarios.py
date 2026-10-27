@@ -52,7 +52,7 @@ CORD_MASS, CORD_SPREAD, GRAVITY, CORD_DAMPING = 0.05, 2.0, 9.81, 1.0
 # The pull: the time the cord hangs first, the time the handset takes out and the distance, the time it is
 # held, and the time it takes back, in seconds and metres; the time step, the steps per frame, the frames, the
 # drawn frames between neighbouring segments, the width of the drawn ribbon, and the duration of a frame.
-HANG, OUT, REACH, HOLD, BACK = 0.3, 0.9, 0.6, 0.3, 0.4
+HANG, OUT, HANDSET_DISTANCE, HOLD, BACK = 0.3, 0.9, 0.6, 0.3, 0.4
 TIME_STEP, N_STEPS_PER_FRAME, N_CORD_FRAMES = 1e-3, 40, 70
 N_DRAWN_BETWEEN, CORD_RIBBON, CORD_MS = 4, 0.025, 40
 # Gallery picture: this makes plots/telephone_cord.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
@@ -69,21 +69,21 @@ def turned(degrees: np.ndarray) -> core.Motor:
 def curling() -> core.Motor:
     """The strip's frames under a couple about the axis across it, by each number of turns of its end
     `[curls, pieces + 1]`: the couple whose rigidity over it is the strip's length over the turns."""
-    couples = (mv.y ^ mv.z).dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Forque
+    couples = mv.yz.dual() * (2 * np.pi / (TURNING[0] * LENGTH) * np.array(CURLS))   # [curls] Forque-
     return core.rod(couples, core.compliance(TURNING, SHIFTING), mv.rotor(), LENGTH, N_PIECES)
 
 
 def euler(degrees: np.ndarray) -> core.Motor:
     """The frames of rods leaving their first pin at each angle to the line of thrust through both pins
     `[angles, pieces + 1]`, under the thrust that brings them back to the line at their full length."""
-    thrust = (core.centre & mv.z.dual()) * thrusts(np.radians(degrees))     # [angles] Forque
+    thrust = (core.centre & mv.z.dual()) * thrusts(np.radians(degrees))     # [angles] Forque-
     return core.rod(thrust, core.compliance(TURNING, SHIFTING), turned(degrees), LENGTH, N_PIECES)
 
 
 def kirchhoff() -> core.Motor:
     """The frames of rods started at each tilt from an upward couple `[tilts, pieces + 1]`, the couple coiling
     them through whole turns."""
-    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * N_TURNS / (TURNING[0] * LENGTH))           # [] Forque
+    couple = mv.xy.dual() * (2 * np.pi * N_TURNS / (TURNING[0] * LENGTH))           # [] Forque-
     return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(np.array(TILTS)), LENGTH, N_PIECES)
 
 
@@ -92,23 +92,23 @@ def uncoiling() -> core.Motor:
     from square to along it and back `[frames, pieces + 1]`: the couple bending it into a ring, coiling it,
     and twisting it straight."""
     tilts = 45 * (1 + np.cos(np.linspace(0, 2 * np.pi, N_UNCOIL_FRAMES, endpoint=False)))   # [frames] degrees
-    couple = (mv.x ^ mv.y).dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Forque
+    couple = mv.xy.dual() * (2 * np.pi * UNCOIL_TURNS / (TURNING[0] * LENGTH))    # [] Forque-
     return core.rod(couple, core.compliance(TURNING, SHIFTING), turned(tilts), LENGTH, N_PIECES)
 
 
 def cord_tilt() -> core.Motor:
     """The turn by the cord's pitch from the rod's cross-section towards its length: it tilts the coil's
     turn, about the line along x, towards the line along z."""
-    return ((mv.x ^ mv.z) * (-np.radians(CORD_PITCH) / 2)).exp()             # [] Motor
+    return (mv.xz * (-np.radians(CORD_PITCH) / 2)).exp()             # [] Motor+
 
 
 def coil(n_pieces: int) -> tuple[core.Twist, core.Motor]:
     """The cord at rest: its turn per unit length, a shift along it with a bend and a twist that coil it, and
     the rest frames of its segments with one held frame beyond each end `[pieces + 2]`."""
     turning = 2 * np.pi * N_CORD_COILS / CORD_LENGTH
-    rest = core.shift_along_rod + (cord_tilt() >> mv.yz) * turning          # [] Twist
+    rest = core.shift_along_rod + (cord_tilt() >> mv.yz) * turning          # [] Twist+
     step = CORD_LENGTH / n_pieces
-    return rest, (rest * (np.arange(-1, n_pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor
+    return rest, (rest * (np.arange(-1, n_pieces + 1) * step / 2)).exp()   # [pieces + 2] Motor+
 
 
 def pulled() -> Iterator[core.Motor]:
@@ -123,13 +123,13 @@ def pulled() -> Iterator[core.Motor]:
     rest, frames = coil(n_pieces)
     stiff = core.stiffness(CORD_TURNING, CORD_SHIFTING)
     mass = CORD_MASS * step
-    inertia = core.segment_inertia(mass, step, CORD_SPREAD * step)            # [] Forque <- Twist
-    inverse = inertia.inverse()                                              # [] Twist <- Forque
-    weight = mv.y.dual() * (-GRAVITY * mass)                                 # [] Point
+    inertia = core.segment_inertia(mass, step, CORD_SPREAD * step)            # [] Forque- <- Twist+
+    inverse = inertia.inverse()                                              # [] Twist+ <- Forque-
+    weight = mv.y.dual() * (-GRAVITY * mass)                                 # [] Point-
     # The coil's axis is the direction of its turn; the handset moves along it, keeping its turn.
-    axis = cord_tilt() >> mv.x                                               # [] Vector
+    axis = cord_tilt() >> mv.x                                               # [] Vector+
     handset = frames[-1]
-    joint = (rest * (step / 2)).exp()                                        # [] Motor
+    joint = (rest * (step / 2)).exp()                                        # [] Motor+
 
     def tick(state: tuple[core.Motor, core.Twist], out: float) -> tuple[tuple[core.Motor, core.Twist], None]:
         frames, rates = state
@@ -140,7 +140,7 @@ def pulled() -> Iterator[core.Motor]:
     # A frame's steps compiled into one loop over how far the handset is out at each, carrying the cord's segments as
     # plain motors and their rates as twists.
     frame = jax.jit(lambda state, outs: jax.lax.scan(tick, state, outs)[0])
-    outs = reach(np.arange(N_CORD_FRAMES * N_STEPS_PER_FRAME) * TIME_STEP).reshape(N_CORD_FRAMES, N_STEPS_PER_FRAME)
+    outs = handset_distance(np.arange(N_CORD_FRAMES * N_STEPS_PER_FRAME) * TIME_STEP).reshape(N_CORD_FRAMES, N_STEPS_PER_FRAME)
     state = (frames.retyped(core.Motor).materialize(JaxContext(core.ga)),
              mv.bivector(np.zeros((n_pieces, 6))).retyped(core.Twist).materialize(JaxContext(core.ga)))
     for frame_outs in outs:
@@ -149,11 +149,11 @@ def pulled() -> Iterator[core.Motor]:
 
 
 # --- plumbing -------------------------------------------------------------------------
-def reach(time: float) -> float:
+def handset_distance(time: float) -> float:
     """How far the handset is out at a time: eased out after the hang, held, and eased back."""
     out = np.clip((time - HANG) / OUT, 0, 1)
     back = np.clip((time - HANG - OUT - HOLD) / BACK, 0, 1)
-    return REACH * (3 * out ** 2 - 2 * out ** 3) * (1 - (3 * back ** 2 - 2 * back ** 3))
+    return HANDSET_DISTANCE * (3 * out ** 2 - 2 * out ** 3) * (1 - (3 * back ** 2 - 2 * back ** 3))
 
 
 def ribbon(frames: core.Motor, width: float) -> core.Point:
@@ -194,17 +194,17 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.mechanics.elastica import render
 
-    curls = curling()                                                        # [curls, pieces + 1] Motor
+    curls = curling()                                                        # [curls, pieces + 1] Motor+
     save_figure(render.draw_curls(curls >> core.centre), "elastica_curls")
-    rods = euler(np.array(END_ANGLES))                                       # [angles, pieces + 1] Motor
+    rods = euler(np.array(END_ANGLES))                                       # [angles, pieces + 1] Motor+
     save_animation(render.animate_sweep(euler(SWEEP) >> core.centre), "elastica_sweep", DURATION_MS)
-    coiled = kirchhoff()                                                     # [tilts, pieces + 1] Motor
+    coiled = kirchhoff()                                                     # [tilts, pieces + 1] Motor+
     save_figure(render.draw_helices(coiled >> core.centre, ribbon(coiled, RIBBON)), "elastica_helices")
-    uncoiled = uncoiling()                                                   # [frames, pieces + 1] Motor
+    uncoiled = uncoiling()                                                   # [frames, pieces + 1] Motor+
     save_animation(render.animate_uncoiling(uncoiled >> core.centre, ribbon(uncoiled, UNCOIL_RIBBON)),
                    "elastica_uncoiling", UNCOIL_MS)
-    moved = stack(list(pulled()))                                            # [frames, pieces + 2] Motor
-    cord = core.between(moved, N_DRAWN_BETWEEN)                                # [frames, drawn] Motor
+    moved = stack(list(pulled()))                                            # [frames, pieces + 2] Motor+
+    cord = core.between(moved, N_DRAWN_BETWEEN)                                # [frames, drawn] Motor+
     save_animation(render.animate_cord(cord >> core.centre, ribbon(cord, CORD_RIBBON)), "elastica_cord", CORD_MS)
     # Gallery picture: this makes plots/telephone_cord.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
     save_animation(render.sized_cord(cord >> core.centre, ribbon(cord, CORD_RIBBON), GALLERY_PIXELS), "telephone_cord",
@@ -227,7 +227,7 @@ def main() -> None:
     # hundredths of their rest, the most where the handset springs back.
     rest, _ = coil(N_CORD_COILS * N_PER_COIL)
     joint = (rest * (CORD_LENGTH / (N_CORD_COILS * N_PER_COIL) / 2)).exp()
-    deviations = (joint.reverse() * moved[:, :-1].reverse() * moved[:, 1:]).log() * 2   # [frames, joints] Twist
+    deviations = (joint.reverse() * moved[:, :-1].reverse() * moved[:, 1:]).log() * 2   # [frames, joints] Twist+
     shifts = deviations.cast(core.ga.subspace("wx wy wz")).kernel / (CORD_LENGTH / (N_CORD_COILS * N_PER_COIL))
     assert np.abs(shifts).max() < 0.1
 

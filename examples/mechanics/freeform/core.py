@@ -27,14 +27,16 @@ Antivector = ga.gatype.antivector()
 Vector = ga.gatype.vector()
 # A point with an intrinsic one prepended, on which affine functions are linear.
 AffinePoint = ga.gatype(ga.subspace.from_grades([0, 2]), orientation=Orientation.intrinsic)
-Deformation = ga.gatype((Antivector, Antivector))          # Antivector <- Antivector
-Stress = ga.gatype((Vector, Vector))                        # Vector <- Vector: from gradients to forces
+Deformation = ga.gatype((Antivector, Antivector))          # Antivector- <- Antivector-
+# The stress, from gradients to forces.
+Stress = ga.gatype((Vector, Vector))                        # Vector+ <- Vector+
 Sampling = ga.gatype((Antivector, Antivector))
-Mass = ga.gatype((Vector, Antivector))                       # Vector <- Antivector: from accelerations to forces
+# The mass, from accelerations to forces.
+Mass = ga.gatype((Vector, Antivector))                       # Vector+ <- Antivector-
 
 # The planes across the three axes, and the directions along them, which they pair with to the identity.
-planes = stack((mv.x, mv.y, mv.z))                           # [3] Vector
-directions = planes.dual()                                   # [3] Antivector
+planes = stack((mv.x, mv.y, mv.z))                           # [3] Vector+
+directions = planes.dual()                                   # [3] Antivector-
 # The reference volume, the join of the three directions: an intrinsic scalar of value one.
 unit_volume = directions[0] & directions[1] & directions[2]
 # Planes as the joins of the two directions that span them: vectors, oriented within themselves.
@@ -47,23 +49,23 @@ def deformation_basis(queries: Antivector, centers: Antivector, radius: float,
                       modes: Scalar, corners: Antivector) -> tuple[Sampling, Vector]:
     """The displacement map and feature gradients for four affine controls per weight mode."""
     evaluation, gradient = kernels(queries, centers, radius)
-    weights = evaluation[:, None](modes)                         # [samples, modes] Scalar
-    weight_gradients = gradient[:, None](modes)                   # [samples, modes] Vector
+    weights = evaluation[:, None](modes)                         # [samples, modes] Scalar+
+    weight_gradients = gradient[:, None](modes)                   # [samples, modes] Vector+
 
     # Four control points determine each affine map through their barycentric coordinates.
-    points = one + corners                                      # [4] AffinePoint
+    points = one + corners                                      # [4] AffinePoint-
     moment = (points * points.scalar_product(AffinePoint)).sum(axis=0)  # AffinePoint <- AffinePoint
-    coordinates = points.scalar_product(moment.solve(AffinePoint))    # [4] Scalar <- AffinePoint
-    affine_weights = coordinates(one + queries[:, None])         # [samples, 4] Scalar
+    coordinates = points.scalar_product(moment.solve(AffinePoint))    # [4] Scalar+ <- AffinePoint
+    affine_weights = coordinates(one + queries[:, None])         # [samples, 4] Scalar+
     # Each coordinate's gradient: the covector that reads its change along every direction.
-    affine_gradients = (planes[:, None] * coordinates[None, :](directions[:, None])).sum(axis=0)   # [4] Vector
+    affine_gradients = (planes[:, None] * coordinates[None, :](directions[:, None])).sum(axis=0)   # [4] Vector+
 
-    features = weights[..., None] * affine_weights[:, None, :]   # [samples, modes, 4] Scalar
+    features = weights[..., None] * affine_weights[:, None, :]   # [samples, modes, 4] Scalar+
     derivatives = (weight_gradients[..., None] * affine_weights[:, None, :]
-                   + weights[..., None] * affine_gradients)     # [samples, modes, 4] Vector
+                   + weights[..., None] * affine_gradients)     # [samples, modes, 4] Vector+
     # A state is the field of the four control displacements of every affine map.
-    sampling = (features.reshape(len(queries), -1) * Antivector).field(1)  # [samples] Antivector <- Antivector[controls]
-    gradients = derivatives.reshape(len(queries), -1).field()    # [samples] Vector[controls]
+    sampling = (features.reshape(len(queries), -1) * Antivector).field(1)  # [samples] Antivector- <- Antivector-[controls]
+    gradients = derivatives.reshape(len(queries), -1).field()    # [samples] Vector+[controls]
     return sampling, gradients
 
 
@@ -83,13 +85,13 @@ def cofactor(local: Deformation) -> Stress:
 
 def constitutive(local: Deformation, lame_lambda: float, lame_mu: float) -> tuple[Scalar, Stress]:
     """Stable Neo-Hookean energy density and its stress, from gradients to forces."""
-    determinant = local.det()                                   # [samples] Scalar
+    determinant = local.det()                                   # [samples] Scalar+
     bulk = lame_lambda + lame_mu
     target = 1 + lame_mu / bulk
     rest_energy = bulk * (1 - target)**2 + 3 * lame_mu
     # The stretch: the deformed metric read on reference directions, the Cauchy-Green form, traced against
     # the reference metric.
-    stretch = local(Antivector).dot(local(Antivector)).contract()  # [samples] Scalar
+    stretch = local(Antivector).dot(local(Antivector)).contract()  # [samples] Scalar+
     energy = (bulk * (determinant - target).squared() + lame_mu * stretch - rest_energy) / 2
     # The stretch is metric, so its stress carries the deformation over to covectors through the metric.
     stress = lame_mu * local.adjoint().adjugate() + bulk * (determinant - target) * cofactor(local)   # [samples] Stress
@@ -107,15 +109,15 @@ def potential(state: Antivector, sampling: Sampling, gradients: Vector,
               clamp: Scalar, load: Vector) -> tuple[Scalar, Vector]:
     """Elastic energy, a compliant base clamp and an applied force density, with their gradient, the
     forces on the controls."""
-    displacement = sampling(state)                              # [samples] Antivector
-    local = deformation(state, gradients)                        # [samples] Antivector <- Antivector
+    displacement = sampling(state)                              # [samples] Antivector-
+    local = deformation(state, gradients)                        # [samples] Antivector- <- Antivector-
     density, stress = constitutive(local, lame_lambda, lame_mu)
     density = density + clamp * displacement.dot(displacement) / 2 - (load & displacement)
-    energy = (density * sample_volumes).sum(axis=0)               # Scalar
-    elastic = (stress(gradients) * sample_volumes).sum(axis=0)     # Vector[controls]
+    energy = (density * sample_volumes).sum(axis=0)               # Scalar+
+    elastic = (stress(gradients) * sample_volumes).sum(axis=0)     # Vector+[controls]
     # The clamp pulls back along the metric covector of the displacement; the adjugate of the sampling
     # collects every local force onto the affine controls.
     applied = sampling.field(0).adjugate()(
         ((clamp * displacement.dual() - load) * sample_volumes).field()
-    )                                                           # Vector[controls]
+    )                                                           # Vector+[controls]
     return energy, elastic + applied

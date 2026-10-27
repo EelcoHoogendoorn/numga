@@ -32,7 +32,7 @@ CORD_VIEW = np.radians([20.0, 26.0])
 CLAMP = np.full(3, 0.2)
 # The pixels across the helices, the uncoiling wire and the cord; the width of a rod in pixels, the radius of a
 # clamp, and the background.
-N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 660, 460, 900
+N_HELIX_PIXELS, N_UNCOIL_PIXELS, N_CORD_PIXELS = 330, 160, 450
 ROD_WIDTH, CLAMP_RADIUS = 3.0, 5.0
 BACKGROUND = np.ones(3)
 
@@ -59,7 +59,7 @@ def draw_curls(centres: core.Point) -> plt.Figure:
     its clamp."""
     curves = plane(centres)                                                  # [curls, pieces + 1, 2]
     colours = plt.get_cmap(ROD_MAP)(np.linspace(0.05, 0.9, len(curves)))
-    figure, ax = plt.subplots(figsize=(7.5, 4.0), dpi=110)
+    figure, ax = plt.subplots(figsize=(7.5, 4.0), dpi=55)
     for curve, colour in zip(curves, colours):
         ax.plot(*curve.T, color=colour, lw=2.2)
     low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
@@ -85,7 +85,7 @@ def animate_sweep(centres: core.Point) -> Iterator[np.ndarray]:
     curves = plane(centres)                                                  # [frames, pieces + 1, 2]
     low, high = curves.reshape(-1, 2).min(axis=0), curves.reshape(-1, 2).max(axis=0)
     figure, ax = plt.subplots(figsize=(5.0, 5.0 * (high[1] - low[1] + 2 * MARGIN) / (high[0] - low[0] + 2 * MARGIN)),
-                              dpi=100)
+                              dpi=60)
     rod, pins = draw_rod(ax, curves[0], low, high)
     figure.subplots_adjust(left=0, right=1, bottom=0, top=1)
     for curve in curves:
@@ -136,7 +136,7 @@ def sized_cord(centres: core.Point, edges: core.Point, pixels: int) -> Iterator[
     curves, ribbons = coordinates(centres), coordinates(edges)               # [frames, drawn, 3], [..., 2, 3]
     view = solids.view([solids.mv.point(ribbons)], 0.0, *CORD_VIEW, MARGIN, pixels)
     # The clamps at the base and the handset: small balls at the cord's two ends.
-    clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Quadric
+    clamps = solids.ball(solids.mv.point(curves[:, [0, -1]]), CLAMP_RADIUS * view.pixel)[..., None]   # [frames, 2, 1] Plane+ <- Point-
     for curve, ribbon, ends in zip(curves, ribbons, clamps):
         yield solids.draw([(ends, CLAMP)], view, BACKGROUND, inks=[], translucent=[],
                           meshes=wires(curve[None], ribbon[None], view))
