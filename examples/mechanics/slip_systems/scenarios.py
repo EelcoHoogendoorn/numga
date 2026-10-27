@@ -11,10 +11,7 @@ import numpy as np
 from numga import stack
 from examples.mechanics.slip_systems import core
 
-# The normals of the four slip planes, the {111} planes.
-NORMALS = [[1, 1, 1], [-1, 1, 1], [-1, -1, 1], [1, -1, 1]]
-# Four neighbouring atoms, the corners of the Thompson tetrahedron, each opposite the face in the plane of the same
-# place.
+# Four mutually neighbouring atoms of the crystal, each across from the slip plane of the same place.
 ATOMS = [[0, 0, 0], [0, 1, 1], [1, 1, 0], [1, 0, 1]]
 # The samples across the stereographic disk of pull directions.
 N_SAMPLES = 1000
@@ -43,8 +40,9 @@ def chart() -> tuple[core.Direction, core.Scalar, core.Plane, core.Direction]:
     across = np.linspace(-1, 1, N_SAMPLES)
     offsets = core.mv.x * across + core.mv.y * across[:, None]                 # [rows, columns] Vector+
     directions = (core.mv.z + offsets).normalized() >> core.mv.z.dual()       # [rows, columns] Direction-
-    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane+
-    slips = core.slip_directions(core.mv.vector(ATOMS).dual())                # [planes, directions] Direction-
+    atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
+    slips = core.slip_directions(atoms)                                       # [planes, directions] Direction-
+    planes = core.slip_planes(atoms, slips)                                   # [planes] Plane+
     return directions, core.schmid(directions, planes, slips), planes, slips
 
 
@@ -60,9 +58,10 @@ def rotation(axis: core.Direction, planes: core.Plane, slips: core.Direction) ->
 def paths() -> tuple[core.Direction, core.Scalar]:
     """The pulls' axes at every step `[steps + 1, starts]`, and how much each system slipped in each step
     `[steps, starts, planes, directions]`."""
-    planes = core.mv.vector(NORMALS).normalized()                             # [planes] Plane+
+    atoms = core.mv.vector(ATOMS).dual()                                      # [atoms] Direction-
+    slips = core.slip_directions(atoms)                                       # [planes, directions] Direction-
     starts = core.mv.vector(STARTS).normalized().dual()                       # [starts] Direction-
-    axes, amounts = zip(*rotation(starts, planes, core.slip_directions(core.mv.vector(ATOMS).dual())))
+    axes, amounts = zip(*rotation(starts, core.slip_planes(atoms, slips), slips))
     return stack([starts, *axes]), stack(amounts)
 
 
