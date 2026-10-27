@@ -34,9 +34,9 @@ def setting() -> tuple[core.Masses, core.Stars, core.Shape]:
     rng = np.random.default_rng(SEED)
     # Uniform over the disc: a radius growing as the square root, turned by a rotor to a random angle.
     radii = CLUSTER_RADIUS * np.sqrt(rng.uniform(size=N_STARS))
-    turns = (core.mv.xy * (-np.pi * rng.uniform(size=N_STARS))).exp()           # [stars] Rotor
-    offsets = turns >> (core.mv.x.dual() * radii)                            # [stars] Point
-    centre, velocity = core.mv.vector(START).dual(), core.mv.vector(START_VELOCITY).dual()   # [] Point each
+    turns = (core.mv.xy * (-np.pi * rng.uniform(size=N_STARS))).exp()           # [stars] Rotor+
+    offsets = turns >> (core.mv.x.dual() * radii)                            # [stars] Point-
+    centre, velocity = core.mv.vector(START).dual(), core.mv.vector(START_VELOCITY).dual()   # [] Point-, Point-
     stars = core.Stars(centre + offsets, velocity.broadcast_to(offsets.shape))
     shape = core.Shape(centre, velocity, core.Point, 0 * core.Point)
     return masses, stars, shape
@@ -60,8 +60,8 @@ def outline(stars: core.Stars, shape: core.Shape) -> tuple[core.Point, core.Form
 def field() -> tuple[core.Point, core.Even, core.Scalar]:
     """The geometric derivative of gravity on the plane z = 0, and the density it gives by Poisson's equation."""
     masses, _, _ = setting()
-    points = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)              # [rows, columns] Point
-    derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even
+    points = core.grid(HALF_WIDTH, HALF_HEIGHT, N_COLUMNS, N_ROWS)              # [rows, columns] Point-
+    derivative = core.derivative(masses.tidal(points))                      # [rows, columns] Even+
     return points, derivative, -derivative.select[0] / (4 * np.pi)
 
 
@@ -85,7 +85,7 @@ def main() -> None:
     # Through the whole flyby the stars spread in the plane as the deformation predicts: a uniform
     # disc's moment is a quarter of its radius squared. Measured against the largest spread, the
     # sampling of the disc costs about a tenth, and the passage through the mass's core a quarter.
-    planes = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [planes] Plane
+    planes = (core.mv.xy * (-np.pi * np.arange(8) / 8)).exp() >> core.mv.x   # [planes] Plane+
     for stars, shape in states:
         measured = (planes & stars.moment()(planes)).to_array()              # [planes]
         predicted = (planes & (shape.spread(CLUSTER_RADIUS) / 4)(planes)).to_array()

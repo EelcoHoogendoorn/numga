@@ -76,6 +76,9 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
     mobility = response * compliance * Load.dual()                         # [..., modes] (Scalar+ <- Load-)[bodies]
     # Each constraint's own compliance over the step squared, as a map from force to gap at that constraint.
     constraint_compliance = (constraints.compliance / dt**2 * Force.dual()).on_diagonal()   # (Displacement- <- Force+)[constraints <- constraints]
+    # The derivatives are maps from motion to the gaps, displacements, intrinsic; a force at a gap is extrinsic, its
+    # work `force & displacement`, and each derivative's adjugate reads that pairing backwards, carrying the forces
+    # to the bodies' forques and the modes' loads with no transpose and no metric.
     # The change in the gaps for forces at the constraints: the adjugates carry the forces back to the
     # bodies' forques and the modes' loads, the inverse inertias and mobilities turn those into motion,
     # and the derivatives carry the motion forward to the gaps.

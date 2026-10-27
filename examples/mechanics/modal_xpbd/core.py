@@ -170,6 +170,8 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     # A gap is the second anchor's position minus the first's.
     signs = np.array([-1, 1])
     # How each anchor moves for a twist of its body: its commutator with the space of twists, in the world frame.
+    # The body's motion is a twist, extrinsic, and the anchor's displacement under it intrinsic, so a force at the
+    # anchor is extrinsic: its work is `force & displacement`, the regressive product of the two kinds.
     anchor_motion = (motor >> local_anchors.commutator(Twist)) * signs     # [..., sides] (Displacement- <- Twist+)[constraints]
     # How each anchor moves for each mode amplitude of its body: the mode's shape at the anchor, in the world frame.
     anchor_modes = (motor[..., None, :] >> constraints.modes) * signs      # [..., modes, sides] Displacement-[constraints]
@@ -181,7 +183,8 @@ def coupling(bodies: Bodies, constraints: Constraints) -> tuple[SparseExtensor, 
     rigid = SparseExtensor.from_indices(anchor_motion.batch(), constraint_idx, constraints.body_idx, (constraint_count, body_count))  # [...] (Displacement- <- Twist+)[constraints <- bodies]
     # The change in each gap for the bodies' amplitudes of each mode, one map per mode.
     modal = SparseExtensor.from_indices(anchor_modes.batch(), constraint_idx, constraints.body_idx, (constraint_count, body_count))  # [..., modes] Displacement-[constraints <- bodies]
-    # The load on each mode of each body for forces at the constraints, one map per mode.
+    # The load on each mode of each body for forces at the constraints, one map per mode: each force paired with
+    # the mode's displacement at its anchor, `force & displacement`, the work it does per unit of amplitude.
     modal_load = SparseExtensor.from_indices((Force & anchor_modes).batch(), constraints.body_idx, constraint_idx, (body_count, constraint_count))  # [..., modes] (Scalar+ <- Force+)[bodies <- constraints]
     return rigid, modal, modal_load, gap
 
@@ -200,6 +203,9 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
     constraint_compliance = spdiag(constraints.compliance / dt**2 * Force.dual())  # (Displacement- <- Force+)[constraints <- constraints]
     # Each body's inverse inertia, from forque to twist.
     inverse_inertias = spdiag(bodies.inverse_inertia)                      # [...] (Twist+ <- Forque-)[bodies <- bodies]
+    # The adjugate reads the work pairing backwards: `rigid.adjugate()(force) & twist == force & rigid(twist)`
+    # for every force and twist, so it turns forces at the anchors, extrinsic, into the forques they exert on the
+    # bodies, intrinsic. This is the principle of virtual work, with no transpose and no metric.
     # The change in the gaps for forces at the constraints: through the bodies' rigid motion, through
     # their modes, summed over the modes, and through the constraints' own compliance.
     system = rigid(inverse_inertias(rigid.adjugate())) + (modal * (mobility * modal_load)).sum(axis=-1) + constraint_compliance  # [...] (Displacement- <- Force+)[constraints <- constraints]
@@ -207,7 +213,8 @@ def project(bodies: Bodies, constraints: Constraints, previous_amplitudes: Scala
     # They are position-level, force times the step squared, so through an inverse inertia they give a
     # displacement.
     reactions = system.solve((-gap - (modal * unconstrained_step).sum(axis=-1)).cast(Displacement))  # [...] Force+[constraints]
-    # Each body's twist, from the forques the reactions exert on it.
+    # Each body's twist, from the forques the reactions exert on it: the forces carried back to the bodies by
+    # the adjugate, then turned into motion by the inverse inertia.
     displacement = bodies.inverse_inertia(rigid.adjugate()(reactions))     # [...] Twist+[bodies]
     # Each mode's load from the reactions, and its spring's reaction to the whole.
     mode_loads = modal_load(reactions[..., None])                          # [..., modes] Scalar+[bodies]

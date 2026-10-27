@@ -45,29 +45,29 @@ def globe(earth: core.Rotor, vertical: core.Point, swing: core.Point, north: cor
     """The earth turned by a rotor: its equator and the site's latitude circle, the polar cap that circle
     bounds, and the site's floor with the line the pendulum swings along."""
     view = solids.view([solids.origin], 1.0 + FLOOR, ELEVATION, AZIMUTH, MARGIN, PIXELS)
-    sphere = solids.ball(solids.origin, 1.0)[None, None]                      # [1, 1] Quadric
+    sphere = solids.ball(solids.origin, 1.0)[None, None]                      # [1, 1] Plane+ <- Point-
     # The equator and the site's latitude circle, inked where their planes across the axis cut the globe, and the cap:
     # the globe on the far side of the latitude circle's plane from the equator.
     height = coordinates(vertical)[2]
-    latitude = solids.mv.z - solids.mv.w * height                              # [] Plane
-    circles = solids.half_space(stack([solids.mv.z, latitude]))                 # [2] Quadric
+    latitude = solids.mv.z - solids.mv.w * height                              # [] Plane+
+    circles = solids.half_space(stack([solids.mv.z, latitude]))                 # [2] Plane+ <- Point-
     # The floor at the site, turned with the earth: a slab across the vertical, north and east along its sides, its top
     # lifted off the globe by the latitude circle's width, so that the circle through the site passes under it.
-    site = vertical * (1 + CIRCLE_WIDTH * view.pixel)                          # [] Point
+    site = vertical * (1 + CIRCLE_WIDTH * view.pixel)                          # [] Point-
     signs = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) * FLOOR             # [corners, 2]
     # The swing and the compass lie on the floor, their axes their own radius above it.
-    resting = site + vertical * (SWING_RADIUS * view.pixel)                   # [] Point
+    resting = site + vertical * (SWING_RADIUS * view.pixel)                   # [] Point-
     swing_start, swing_end, compass_start, compass_end, *corners = coordinates(earth >> stack(
         [resting - swing * FLOOR, resting + swing * FLOOR, resting + north * FLOOR, resting + north * (COMPASS * FLOOR)]
         + [site + east * across + north * along for across, along in signs]))   # [3] each
-    sides = solids.mv.direction(coordinates(earth >> stack([vertical, north, east])))   # [3] Point
-    middle = solids.mv.point(coordinates(earth >> site)) - sides[0] * (FLOOR_THICKNESS / 2)   # [] Point
-    reach = np.array([FLOOR_THICKNESS / 2, FLOOR, FLOOR])
+    sides = solids.mv.direction(coordinates(earth >> stack([vertical, north, east])))   # [3] Point-
+    middle = solids.mv.point(coordinates(earth >> site)) - sides[0] * (FLOOR_THICKNESS / 2)   # [] Point-
+    half_extents = np.array([FLOOR_THICKNESS / 2, FLOOR, FLOOR])
     # The slab: inside the planes square to each of its sides, as far from its middle as it reaches.
-    across = concatenate([-sides.dual(), sides.dual()])                        # [6] Plane
-    floor = (across - solids.mv.w * (across & middle) - solids.mv.w * np.concatenate([reach, reach]))[None]   # [1, 6] Plane
+    across = concatenate([-sides.dual(), sides.dual()])                        # [6] Plane+
+    floor = (across - solids.mv.w * (across & middle) - solids.mv.w * np.concatenate([half_extents, half_extents]))[None]   # [1, 6] Plane+
     # The swing through the middle of the floor, both ways, and north from its edge outwards.
-    tile = solids.mv.point(np.array(corners))                                  # [corners] Point
+    tile = solids.mv.point(np.array(corners))                                  # [corners] Point-
     swing_rod = solids.rods(solids.mv.point(swing_start), solids.mv.point(swing_end), SWING_RADIUS * view.pixel)
     compass = solids.rods(solids.mv.point(compass_start), solids.mv.point(compass_end), COMPASS_RADIUS * view.pixel)
     edges, joints = solids.edges(tile, tile[[1, 2, 3, 0]], EDGE_RADIUS * view.pixel)

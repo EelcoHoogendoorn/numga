@@ -35,86 +35,87 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Even = ga.gatype.even()
-Tidal = ga.gatype((Plane, Point))                           # Plane <- Point
-Deformation = ga.gatype((Point, Point))                     # Point <- Point
-Spread = ga.gatype((Point, Plane))                          # Point <- Plane
-Form = ga.gatype((Scalar, Point, Point))                    # Scalar <- (Point, Point)
+Tidal = ga.gatype((Plane, Point))                           # Plane+ <- Point-
+Deformation = ga.gatype((Point, Point))                     # Point- <- Point-
+Spread = ga.gatype((Point, Plane))                          # Point- <- Plane+
+Form = ga.gatype((Scalar, Point, Point))                    # Scalar+ <- (Point-, Point-)
 
 
 # --- math -----------------------------------------------------------------------------
 @dataclass(frozen=True)
 class Masses:
-    centres: Point                                           # [masses] Point
-    masses: np.ndarray                                       # [masses] mass of each
+    centres: Point                                           # [masses] Point-
+    # The mass of each.
+    masses: np.ndarray                                       # [masses] float
     core_radius: float
 
     def acceleration(self, points: Point) -> Point:
         """The pull of the masses at each point."""
-        towards = self.centres - points[..., None]                           # [..., masses] Point
-        pull, _ = self._profile(towards)                                     # [..., masses] Scalar
-        return (pull * towards).sum(axis=-1)                                 # [...] Point
+        towards = self.centres - points[..., None]                           # [..., masses] Point-
+        pull, _ = self._profile(towards)                                     # [..., masses] Scalar+
+        return (pull * towards).sum(axis=-1)                                 # [...] Point-
 
     def tidal(self, points: Point) -> Tidal:
         """The tidal map at each point: the change in gravity for a small displacement, as the plane that
         reads it."""
-        towards = self.centres - points[..., None]                           # [..., masses] Point
-        pull, pull_change = self._profile(towards)                           # [..., masses] Scalar each
+        towards = self.centres - points[..., None]                           # [..., masses] Point-
+        pull, pull_change = self._profile(towards)                           # [..., masses] Scalar+, Scalar+
         # The planes across the line to each mass, which read a step's part towards it.
-        across = towards.dual_inverse()                                      # [..., masses] Plane
+        across = towards.dual_inverse()                                      # [..., masses] Plane+
         # A displacement moves away from each mass by itself, weakening the pull along every direction,
         # and changes the pull by its reading by the plane across the line to the mass, along that line.
-        squeeze = -pull * Point.dual_inverse()                               # [..., masses] Plane <- Point
-        stretch = -2 * pull_change * across * (across & Point)               # [..., masses] Plane <- Point
-        return (squeeze + stretch).sum(axis=-1)                              # [...] Plane <- Point
+        squeeze = -pull * Point.dual_inverse()                               # [..., masses] Plane+ <- Point-
+        stretch = -2 * pull_change * across * (across & Point)               # [..., masses] Plane+ <- Point-
+        return (squeeze + stretch).sum(axis=-1)                              # [...] Plane+ <- Point-
 
     def _profile(self, towards: Point) -> tuple[Scalar, Scalar]:
         """The pull per unit distance towards each mass, and its change with the squared distance."""
-        softened = towards.scalar_norm_squared() + self.core_radius**2       # [..., masses] Scalar
-        pull = self.masses / (softened * softened.square_root())             # [..., masses] Scalar
+        softened = towards.scalar_norm_squared() + self.core_radius**2       # [..., masses] Scalar+
+        pull = self.masses / (softened * softened.square_root())             # [..., masses] Scalar+
         return pull, -1.5 * pull / softened
 
 
 @dataclass(frozen=True)
 class Stars:
-    positions: Point                                         # [..., stars] Point
-    velocities: Point                                        # [..., stars] Point
+    positions: Point                                         # [..., stars] Point-
+    velocities: Point                                        # [..., stars] Point-
 
     def centre(self) -> Point:
         """The stars' centre of mass."""
-        return self.positions.mean(axis=-1)                                  # [...] Point
+        return self.positions.mean(axis=-1)                                  # [...] Point-
 
     def moment(self) -> Spread:
         """The stars' spread about their centre of mass, a map from planes to offsets: the mean of each
         offset weighted by its reading by the plane."""
-        offsets = self.positions - self.centre()[..., None]                # [..., stars] Point
-        return (offsets * (Plane & offsets)).mean(axis=-1)                  # [...] Point <- Plane
+        offsets = self.positions - self.centre()[..., None]                # [..., stars] Point-
+        return (offsets * (Plane & offsets)).mean(axis=-1)                  # [...] Point- <- Plane+
 
     def fall(self, masses: Masses, dt: float) -> Stars:
         """The stars moved for a time `dt` by the velocity Verlet rule."""
-        start = masses.acceleration(self.positions)                          # [..., stars] Point
+        start = masses.acceleration(self.positions)                          # [..., stars] Point-
         positions = self.positions + self.velocities * dt + start * (dt**2 / 2)
-        end = masses.acceleration(positions)                                 # [..., stars] Point
+        end = masses.acceleration(positions)                                 # [..., stars] Point-
         return Stars(positions, self.velocities + (start + end) * (dt / 2))
 
 
 @dataclass(frozen=True)
 class Shape:
     """The cluster's centre and its deformation: how an offset from the centre at the start has moved."""
-    centre: Point                                            # [] Point
-    velocity: Point                                          # [] Point
-    deformation: Deformation                                 # [] Point <- Point
-    rate: Deformation                                        # [] Point <- Point
+    centre: Point                                            # [] Point-
+    velocity: Point                                          # [] Point-
+    deformation: Deformation                                 # [] Point- <- Point-
+    rate: Deformation                                        # [] Point- <- Point-
 
     def deform(self, masses: Masses, dt: float) -> Shape:
         """The centre moved and the deformation carried by the tidal map at it, by the velocity Verlet
         rule: the deformation's rate of change changes by the tidal map applied to the deformation."""
         # The metric turns the tidal map's reading into the change in acceleration.
-        start = masses.acceleration(self.centre)                             # [] Point
-        start_tide = masses.tidal(self.centre)(self.deformation).dual()      # [] Point <- Point
+        start = masses.acceleration(self.centre)                             # [] Point-
+        start_tide = masses.tidal(self.centre)(self.deformation).dual()      # [] Point- <- Point-
         centre = self.centre + self.velocity * dt + start * (dt**2 / 2)
         deformation = self.deformation + self.rate * dt + start_tide * (dt**2 / 2)
-        end = masses.acceleration(centre)                                    # [] Point
-        end_tide = masses.tidal(centre)(deformation).dual()                  # [] Point <- Point
+        end = masses.acceleration(centre)                                    # [] Point-
+        end_tide = masses.tidal(centre)(deformation).dual()                  # [] Point- <- Point-
         return Shape(centre, self.velocity + (start + end) * (dt / 2),
                      deformation, self.rate + (start_tide + end_tide) * (dt / 2))
 
@@ -124,19 +125,19 @@ class Shape:
         offsets `x` have `spread.solve(x) & x == 1`."""
         # Round is where the metric enters: each plane reads the offsets across it, out to the radius.
         start = radius**2 * Plane.dual()                                     # [] Spread
-        return self.deformation(start(self.deformation.adjugate()))          # [] Point <- Plane
+        return self.deformation(start(self.deformation.adjugate()))          # [] Point- <- Plane+
 
     def rim(self, radius: float) -> Form:
         """The rim of a round cluster of the given starting radius, carried by the deformation: the form
         that is one, on the same offset twice, at the rim's offsets from the centre."""
-        return self.spread(radius).solve(Point) & Point                      # [] Scalar <- (Point, Point)
+        return self.spread(radius).solve(Point) & Point                      # [] Scalar+ <- (Point-, Point-)
 
 
 def derivative(tides: Tidal) -> Even:
     """The geometric derivative of gravity: its inner half, where the metric enters, minus four pi times
     the density, and its outer half the curl, which needs none."""
     # The trace pairs each open plane with the displacement the tidal map reads, plane against point.
-    return (Plane * tides(Point)).trace(1, 2)                               # [...] Even
+    return (Plane * tides(Point)).trace(1, 2)                               # [...] Even+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -144,4 +145,4 @@ def grid(half_width: float, half_height: float, columns: int, rows: int) -> Poin
     """Displacements on a grid in the plane z = 0, at the centres of its cells."""
     x = (np.arange(columns) + 0.5) / columns * 2 * half_width - half_width
     y = (np.arange(rows) + 0.5) / rows * 2 * half_height - half_height
-    return (mv.x * x[None, :] + mv.y * y[:, None]).dual().cast(Point)       # [rows, columns] Point
+    return (mv.x * x[None, :] + mv.y * y[:, None]).dual().cast(Point)       # [rows, columns] Point-

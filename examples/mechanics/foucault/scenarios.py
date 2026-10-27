@@ -23,7 +23,8 @@ def day() -> tuple[core.Rotor, core.Point, core.Point, core.Point, core.Point]:
     the pendulum swings along on its floor; with the site's vertical, north and east at the start of the day."""
     turns = np.linspace(0, 2 * np.pi, N_FRAMES + 1)                              # [frames + 1]
     vertical, north, east = core.compass(LATITUDES[PARIS])
-    return core.turn(core.equator, turns), core.swing(LATITUDES[PARIS], turns), vertical, north, east
+    earth = (core.equator * (-turns / 2)).exp()                               # [frames + 1] Rotor+
+    return earth, core.swing(LATITUDES[PARIS], turns), vertical, north, east
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -42,10 +43,10 @@ def main() -> None:
     _, north, east = core.compass(LATITUDES)
     # After a day each swing has turned clockwise from north by the sine of the latitude times a full turn,
     # and a direction carried once around the latitude circle comes back turned the same way.
-    ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Point
+    ends = core.swing(LATITUDES, np.full(len(LATITUDES), 2 * np.pi))         # [latitudes] Point-
     expected = 2 * np.pi * np.sin(LATITUDES)
     assert np.abs(np.sin(turned(ends, north, east) - expected)).max() < 1e-10
-    carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Point
+    carried = core.carried(LATITUDES, N_STEPS) >> north                          # [latitudes] Point-
     assert np.abs(np.sin(turned(carried, north, east) - expected)).max() < 1e-4
 
 
