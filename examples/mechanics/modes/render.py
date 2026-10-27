@@ -13,16 +13,17 @@ from matplotlib.patches import Polygon
 import numpy as np
 
 from examples.util.animation import capture
-from examples.mechanics.modes.core import ModeCase, Point
-from numga.algebras import PGA2D
+from numga import stack
+from examples.mechanics.modes.core import ModeCase, Point, mv
 
 
 BODY, GHOST, SUPPORT, SPRING = "#254e70", "#929ba7", "#3a414b", "#5b6470"
 
 
 def coordinates(points: Point) -> np.ndarray:
-    """Read Cartesian coordinates from PGA2D Point antivectors for plotting."""
-    return points.select_subspace(PGA2D.subspace("yw wx")).kernel
+    """Coordinates of points of unit weight, and of directions, `[..., 2]`: their pairings with the lines x = 0 and
+    y = 0."""
+    return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
 def spring_path(start: Point, end: Point) -> np.ndarray:
@@ -46,8 +47,8 @@ def fixed_support(ax: plt.Axes, anchor: Point) -> None:
 def _new_figure(cases: list[ModeCase], header: float, top: float, hspace: float) -> tuple[plt.Figure, list[list[plt.Axes]]]:
     """A row of three mode panels per case, with `header` inches above them."""
     n = len(cases)
-    fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + header), dpi=150, facecolor="white")
-    axes = axes_grid.tolist() if n > 1 else [axes_grid.tolist()]
+    fig, axes_grid = plt.subplots(n, 3, figsize=(9, 2.7 * n + header), dpi=75, facecolor="white", squeeze=False)
+    axes = axes_grid.tolist()
 
     all_points = np.concatenate([
         np.concatenate((coordinates(case.body), coordinates(case.anchors)))
@@ -129,7 +130,7 @@ def render_setup(
     anchors: Point,
     attachments: Point,
 ) -> plt.Figure:
-    """Render the physical suspension layout at equilibrium."""
+    """The suspension at equilibrium: the plate, its springs and their anchors."""
     fig, ax = plt.subplots(figsize=(5, 4), dpi=120, facecolor="white")
 
     plate = Polygon(coordinates(body), closed=True, facecolor="#d4e3ed", edgecolor=BODY, lw=1.6, zorder=3)

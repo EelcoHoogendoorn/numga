@@ -27,10 +27,10 @@ ga: Algebra
 ctx: Context
 mv = ctx.multivector
 
-Scalar = ga.gatype.scalar()
-Motor = ga.gatype.rotor()
-Rate = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
+Scalar = ga.gatype.scalar()                         # Scalar+
+Motor = ga.gatype.rotor()                           # Rotor+
+Rate = ga.gatype.bivector()                         # Bivector+
+Forque = ga.gatype.antibivector()                   # Antibivector-
 Inertia = ga.gatype((Forque, Rate))
 InverseInertia = ga.gatype((Rate, Forque))
 
@@ -52,12 +52,12 @@ def racket(seed: int) -> Body:
     dimension = ga.dimension
     # Each corner's signs along the axes, from the bits of its index, times the half-lengths.
     signs = 2.0 * ((np.arange(2**dimension)[:, None] & (1 << np.arange(dimension))) > 0) - 1.0
-    corners = mv.vector(signs * (np.arange(dimension) + 1.0)).dual()                        # [corners] Antivector
+    corners = mv.vector(signs * (np.arange(dimension) + 1.0)).dual()                        # [corners] Antivector-
     n_planes = len(Rate.output_subspace)
     inertia, inverse_inertia = lie.inertia_from_points(corners[None, :].broadcast_to((n_planes, len(signs))))
     motor = mv.rotor().broadcast_to(n_planes)
     rng = np.random.default_rng(seed)
-    rate = mv.bivector(np.eye(n_planes) + rng.normal(scale=1e-5, size=(n_planes, n_planes)))   # [bodies] Rate
+    rate = mv.bivector(np.eye(n_planes) + rng.normal(scale=1e-5, size=(n_planes, n_planes)))   # [bodies] Rate+
     return Body(motor, rate, inertia, inverse_inertia)
 
 
@@ -72,7 +72,7 @@ def motion(body: Body, step: Callable, dt: float) -> Iterator[tuple[Motor, Rate]
 def simulate(body: Body, step: Callable, dt: float, n_steps: int) -> tuple[Motor, Rate]:
     """The motors and rates of the first steps, stacked over time, the initial state first."""
     motors, rates = zip(*islice(motion(body, step, dt), n_steps + 1))
-    return stack(motors), stack(rates)                                                      # [steps + 1, bodies] Motor, Rate
+    return stack(motors), stack(rates)                                                      # [steps + 1, bodies] Motor+, Rate+
 
 
 def momentum_drift(motors: Motor, rates: Rate, inertia: Inertia) -> Scalar:

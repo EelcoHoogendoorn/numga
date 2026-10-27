@@ -22,15 +22,11 @@ INTEGRATORS = ("verlet", "rk4", "rkmk4")
 
 
 # --- math -----------------------------------------------------------------------------
-def racket_core(dimension: int):
-    """The racket's mathematics in the Euclidean algebra of the given dimension."""
-    return instantiate("examples.mechanics.tennis_racket.core", Algebra.from_pqr(dimension, 0, 0))
-
-
 def spinning_racket(dimension: int, dt: float, runtime: float, seed: int):
     """The rates of a racket spun in every principal plane, `[steps + 1, bodies]`, and their kinetic
     energies."""
-    core = racket_core(dimension)
+    # The racket's mathematics in the Euclidean algebra of the dimension.
+    core = instantiate("examples.mechanics.tennis_racket.core", Algebra.from_pqr(dimension, 0, 0))
     body = core.racket(seed)
     _, rates = core.simulate(body, core.lie.explicit_verlet, dt, int(runtime / dt))
     return rates, core.lie.kinetic_energy(rates, body.inertia)
@@ -39,7 +35,7 @@ def spinning_racket(dimension: int, dt: float, runtime: float, seed: int):
 def integrator_comparison(dimensions: tuple[int, ...], dt: float, runtime: float, seed: int) -> Iterator:
     """Each integrator's drift of the world angular momentum, per dimension, `[steps + 1, bodies]`."""
     for dimension in dimensions:
-        core = racket_core(dimension)
+        core = instantiate("examples.mechanics.tennis_racket.core", Algebra.from_pqr(dimension, 0, 0))
         body = core.racket(seed)
         for name in INTEGRATORS:
             motors, rates = core.simulate(body, getattr(core.lie, f"explicit_{name}"), dt, int(runtime / dt))

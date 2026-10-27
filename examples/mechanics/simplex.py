@@ -20,9 +20,7 @@ from numga import Extensor
 
 @lru_cache(maxsize=None)
 def simplex_inertia_weights(n_vertices: int) -> np.ndarray:
-    """Compute barycentric weighting matrix mapping a uniform density simplex
-    to its equivalent vertex-lumped-mass simplex.
-    """
+    """The barycentric weights mapping a uniform density simplex to its equivalent vertex-lumped-mass simplex."""
     n = n_vertices
     d = np.eye(n) - 1.0 / n
     f = np.sqrt(1.0 / (1.0 + n))
@@ -31,7 +29,7 @@ def simplex_inertia_weights(n_vertices: int) -> np.ndarray:
 
 
 def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
-    """Compute inertia map given barycentric weights and corner points.
+    """The inertia map of the barycentric samples of corner points.
 
     Parameters
     ----------
@@ -42,8 +40,8 @@ def simplex_inertia(weights: np.ndarray, corners: Extensor) -> Extensor:
         Antivector points of shape `[n_corners]`.
     """
     samples = barycentric_samples(weights, corners)
-    bivector = corners.context.algebra.gatype.bivector()
-    return samples.regressive(samples.commutator(bivector)).sum(axis=-1)
+    Bivector = corners.algebra.gatype.bivector()
+    return (samples & samples.commutator(Bivector)).sum(axis=-1)
 
 
 def simplex_second_moment(weights: np.ndarray, corners: Extensor) -> Extensor:
@@ -59,7 +57,7 @@ def simplex_second_moment(weights: np.ndarray, corners: Extensor) -> Extensor:
 
 
 def barycentric_samples(weights: np.ndarray, corners: Extensor) -> Extensor:
-    """Construct square-root-mass-weighted points `[..., samples]` from corners `[..., corners]`."""
+    """Square-root-mass-weighted points `[..., samples]` from corners `[..., corners]`."""
     points = (corners[..., None, :] * weights).sum(axis=-1)
     return points / np.sqrt(weights.sum(axis=-1))
 
@@ -76,10 +74,10 @@ def simplex_second_moment_lumped(corners: Extensor) -> Extensor:
     return simplex_second_moment(weights, corners)
 
 
-def simplex_inertia_brute(corners: Extensor, n: int = 100) -> Extensor:
-    """Inertia map via uniform grid sampling of simplex."""
+def simplex_inertia_brute(corners: Extensor, n_steps: int) -> Extensor:
+    """Inertia map via uniform grid sampling of simplex, `n_steps` cells along each edge."""
     k = corners.shape[0]
-    s = np.linspace(0, 1, n + 1)
+    s = np.linspace(0, 1, n_steps + 1)
     s = (s[1:] + s[:-1]) / 2.0
     grid = np.array(np.meshgrid(*[s] * (k - 1), indexing="ij"))
     b = grid.T.reshape(-1, k - 1)
@@ -88,11 +86,7 @@ def simplex_inertia_brute(corners: Extensor, n: int = 100) -> Extensor:
     return simplex_inertia(b / len(b), corners)
 
 
-def simplex_inertia_random(
-    corners: Extensor,
-    n_samples: int = 50000,
-    rng: np.random.Generator = np.random.default_rng(0),
-) -> Extensor:
+def simplex_inertia_random(corners: Extensor, n_samples: int, rng: np.random.Generator) -> Extensor:
     """Inertia map via uniform Dirichlet / exponential random sampling."""
     b = rng.exponential(size=(n_samples, corners.shape[0]))
     weights = b / b.sum(axis=1, keepdims=True)
@@ -100,28 +94,23 @@ def simplex_inertia_random(
 
 
 def run_simplex_demo() -> None:
-    """Demonstrate simplex inertia operator construction, linear action, and inverse."""
+    """Print a simplex's inertia by three quadratures, its action on a rate, the rate solved back, and the energy."""
     from numga import NumpyContext
     from numga.algebras import PGA3D
 
     ctx = NumpyContext(PGA3D)
     mv = ctx.multivector
 
-    # 3D Tetrahedron corners: 4 antivector points in PGA3D (x, y, z, 1)
-    corners_coords = [
-        [1.0, 0.0, 0.0, 1.0],
-        [-0.5, 0.866, 0.0, 1.0],
-        [-0.5, -0.866, 0.0, 1.0],
-        [0.0, 0.0, 1.414, 1.0],
-    ]
-    corners = mv.antivector(corners_coords)
+    # The corners of a tetrahedron; the grid's cells along an edge, and the random samples.
+    corners = mv.point([[1.0, 0.0, 0.0], [-0.5, 0.866, 0.0], [-0.5, -0.866, 0.0], [0.0, 0.0, 1.414]])   # [corners] Point-
+    n_steps, n_samples = 100, 100000
 
-    # 1. Compute inertia operators (arity 1: Antibivector <- Bivector)
-    bivector = PGA3D.gatype.bivector()
+    # 1. The inertia maps, Antibivector- <- Bivector+, by lumped masses, a grid and random samples.
+    Bivector = PGA3D.gatype.bivector()
     samples = barycentric_samples(simplex_inertia_weights(corners.shape[0]), corners)
-    I_lumped = (samples & samples.commutator(bivector)).sum(axis=0)
-    I_brute = simplex_inertia_brute(corners, n=100)
-    I_random = simplex_inertia_random(corners, n_samples=100000)
+    lumped_inertia = (samples & samples.commutator(Bivector)).sum(axis=0)
+    brute_inertia = simplex_inertia_brute(corners, n_steps)
+    random_inertia = simplex_inertia_random(corners, n_samples, np.random.default_rng(0))
 
     # Both factors contain the square root of each sample's mass.
     Plane = PGA3D.gatype.vector()
@@ -130,23 +119,23 @@ def run_simplex_demo() -> None:
 
     print("--- 3D Tetrahedron Inertia Tensor Comparison ---")
     with np.printoptions(precision=3):
-        print(f"Exact Lumped Inertia:\n{I_lumped.coefficient_table()}")
-        print(f"Grid-Sampled Brute Inertia:\n{I_brute.coefficient_table()}")
-        print(f"Monte Carlo Random Inertia:\n{I_random.coefficient_table()}")
+        print(f"Exact Lumped Inertia:\n{lumped_inertia.coefficient_table()}")
+        print(f"Grid-Sampled Brute Inertia:\n{brute_inertia.coefficient_table()}")
+        print(f"Monte Carlo Random Inertia:\n{random_inertia.coefficient_table()}")
 
-    # 2. Linear map action: `momentum = I_lumped(rate)`
+    # 2. The inertia applied to a rate gives its momentum.
     rate = mv.bivector([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    momentum = I_lumped(rate)
+    momentum = lumped_inertia(rate)
     print("\nAngular Rate bivector:", rate.kernel)
     print("Resulting Momentum antibivector:", np.around(momentum.kernel, 4))
 
-    # 3. The rate back from the momentum: `recovered_rate = I_lumped.solve(momentum)`
-    recovered_rate = I_lumped.solve(momentum)
+    # 3. The rate back from the momentum.
+    recovered_rate = lumped_inertia.solve(momentum)
     print("Recovered Rate via I.solve():", np.around(recovered_rate.kernel, 4))
 
-    # 4. Kinetic energy: 0.5 * (rate & momentum)
-    ke = 0.5 * rate.regressive(momentum)
-    print("Kinetic Energy:", float(ke.kernel.item()))
+    # 4. The kinetic energy, the rate paired with its momentum.
+    kinetic_energy = 0.5 * (rate & momentum)
+    print("Kinetic Energy:", float(kinetic_energy.kernel.item()))
 
 
 if __name__ == "__main__":
