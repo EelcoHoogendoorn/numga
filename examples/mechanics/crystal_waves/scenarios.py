@@ -34,9 +34,9 @@ def focusing(n_headings: int, seed: int) -> tuple[core.Antivector, core.Vector, 
     """Group velocities of the three waves in every material, for headings spread evenly over the
     sphere; then the headings, and the stiffness eigenvalues of the three waves along them."""
     stiffness, density = crystals()
-    heading = core.mv.vector(np.random.default_rng(seed).normal(size=(n_headings, 3))).normalized()   # [headings] Vector
+    heading = core.mv.vector(np.random.default_rng(seed).normal(size=(n_headings, 3))).normalized()   # [headings] Vector+
     values, polarization = core.waves(stiffness[:, None], heading)                # [materials, headings, 3] each
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector-
     return velocity, heading, values
 
 
@@ -50,9 +50,9 @@ def wave_fronts(n_angles: int) -> core.Vector:
     stiffness, density = crystals()
     angles = np.linspace(0.0, 2 * np.pi, n_angles, endpoint=False)
     # The x axis turned through every angle in the face z = 0.
-    heading = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x                    # [headings] Vector
-    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Antivector
-    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector
+    heading = (core.mv.xy * (-angles / 2)).exp() >> core.mv.x                    # [headings] Vector+
+    _, polarization = core.waves(stiffness[:, None], heading)                     # [materials, headings, 3] Antivector-
+    velocity = core.energy_flow(stiffness[:, None], heading, polarization, density[:, None])   # [materials, headings, 3] Antivector-
     return velocity
 
 
@@ -70,7 +70,7 @@ def main() -> None:
     phase = (values / density[:, None, None]).square_root()
     np.testing.assert_allclose((heading[:, None] & velocity).to_array(), phase.to_array(), rtol=1e-8)
     # The textbook speeds along a cube edge and a face diagonal.
-    edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar
+    edge_and_diagonal = core.waves(stiffness[:, None], core.mv.vector([[1.0, 0, 0], [1, 1, 0]]).normalized())[0]   # [materials, 2, 3] Scalar+
     speeds = (edge_and_diagonal / density[:, None, None]).square_root().to_array()      # [materials, 2, 3]
     np.testing.assert_allclose(speeds[:, 0], np.sqrt(np.stack([C44, C44, C11], axis=-1) / density[:, None]), rtol=1e-8)
     expected = np.sort(np.stack([(C11 - C12) / 2, C44, (C11 + C12 + 2 * C44) / 2], axis=-1), axis=-1)

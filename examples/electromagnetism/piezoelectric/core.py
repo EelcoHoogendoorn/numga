@@ -42,12 +42,12 @@ def triangles(vertices: Point, faces: np.ndarray) -> tuple[Scalar, Plane]:
     # Each corner's opposite edge, from the next corner to the one after it.
     edges = corners[:, [1, 2, 0]] - corners[:, [2, 0, 1]]
     # Twice a triangle's signed area: its two edges joined, read against time, intrinsic as a winding is.
-    doubled = (edges[:, 0] & edges[:, 1]) & time
+    double_area = (edges[:, 0] & edges[:, 1]) & time
     # A corner's shape function rises from zero along the opposite edge to one at the corner: its gradient is the
     # plane through that edge and time, over twice the signed area.
-    gradients = (edges & time) / doubled[:, None]
+    gradients = (edges & time) / double_area[:, None]
     # The integrals weight by the area's size, an ordinary number.
-    return doubled.norm() / 2, gradients
+    return double_area.norm() / 2, gradients
 
 
 def strain(displacement: Point, gradients: Plane, faces: np.ndarray) -> Strain:

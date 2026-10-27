@@ -30,9 +30,9 @@ Scalar = ga.gatype.scalar()
 Vector = ga.gatype.vector()
 Antivector = ga.gatype.antivector()
 # The traction on a face, from the face, the displacement and its wavevector.
-Stiffness = ga.gatype((Vector, Vector, Antivector, Vector))         # Vector <- (Vector, Antivector, Vector)
+Stiffness = ga.gatype((Vector, Vector, Antivector, Vector))         # Vector+ <- (Vector+, Antivector-, Vector+)
 # The crystal's cube axes, which its anisotropy singles out.
-axes = mv.basis()                                                   # [3] Vector
+axes = mv.basis()                                                   # [3] Vector+
 
 
 # --- math ----------------------------------------------------------------------------------------
@@ -47,12 +47,12 @@ def stiffness(c11: np.ndarray, c12: np.ndarray, c44: np.ndarray) -> Stiffness:
     """
     # The dilation is `n * (h & v)`, the shear `g(v) * (n | h) + h * (n & v)`, and the cubic term has
     # each axis reading n, v and h, all three in the order of the stiffness's inputs.
-    dilation = Vector * (Antivector & Vector)                                    # Vector <- (Vector, Antivector, Vector)
-    shear = 2 * (Vector & Antivector) * Vector - (Vector | (Antivector.dual_inverse() ^ Vector))   # Vector <- (Vector, Antivector, Vector)
-    cubic = (axes * (axes | Vector) * (axes & Antivector) * (axes | Vector)).sum()   # Vector <- (Vector, Antivector, Vector)
+    dilation = Vector * (Antivector & Vector)                                    # Vector+ <- (Vector+, Antivector-, Vector+)
+    shear = 2 * (Vector & Antivector) * Vector - (Vector | (Antivector.dual_inverse() ^ Vector))   # Vector+ <- (Vector+, Antivector-, Vector+)
+    cubic = (axes * (axes | Vector) * (axes & Antivector) * (axes | Vector)).sum()   # Vector+ <- (Vector+, Antivector-, Vector+)
     # The constants as scalars of the context, which carry their batch into the stiffness.
     c11, c12, c44 = (mv.scalar(np.asarray(value)[..., None]) for value in (c11, c12, c44))
-    return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic       # [...] Vector <- (Vector, Vector, Vector)
+    return c12 * dilation + c44 * shear + (c11 - c12 - 2 * c44) * cubic       # [...] Vector+ <- (Vector+, Antivector-, Vector+)
 
 
 def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Antivector]:
@@ -62,8 +62,8 @@ def waves(crystal: Stiffness, heading: Vector) -> tuple[Scalar, Antivector]:
     the forces they cause; its form against the metric, the dot of the planes across the
     displacements, has the three waves as eigenpairs, slowest first.
     """
-    christoffel = crystal(heading, Antivector, heading)              # [...] Vector <- Antivector
-    return (christoffel(Antivector) & Antivector).eigh(Antivector.dual().dot(Antivector.dual()))   # [..., 3] Scalar, [..., 3] Antivector
+    christoffel = crystal(heading, Antivector, heading)              # [...] Vector+ <- Antivector-
+    return (christoffel(Antivector) & Antivector).eigh(Antivector.dual().dot(Antivector.dual()))   # [..., 3] Scalar+, [..., 3] Antivector-
 
 
 def energy_flow(crystal: Stiffness, heading: Vector, polarization: Antivector, density: np.ndarray) -> Antivector:
@@ -77,7 +77,7 @@ def energy_flow(crystal: Stiffness, heading: Vector, polarization: Antivector, d
     # The crystal, its density and the heading against each of the waves, and each wave's density
     # times squared speed.
     crystal, density, wave_heading = crystal[..., None], density[..., None], heading[..., None]   # [..., 1] each
-    wave_modulus = crystal(wave_heading, polarization, wave_heading) & polarization   # [..., 3] Scalar
+    wave_modulus = crystal(wave_heading, polarization, wave_heading) & polarization   # [..., 3] Scalar+
     # The power through each face, a form on faces; the trace pairs it with the directions the faces read.
-    power = crystal(Vector, polarization, wave_heading) & polarization        # [..., 3] Scalar <- Vector
-    return (Antivector * power).trace(1, 2) / (wave_modulus * density).square_root()   # [..., 3] Antivector
+    power = crystal(Vector, polarization, wave_heading) & polarization        # [..., 3] Scalar+ <- Vector+
+    return (Antivector * power).trace(1, 2) / (wave_modulus * density).square_root()   # [..., 3] Antivector-

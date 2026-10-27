@@ -60,18 +60,18 @@ class DeviceView:
         self.interface = mesh.interface[np.argsort(self.rest[mesh.interface, 0])]
         self.poles = np.linspace(0, len(self.top) - 1, 9, dtype=int)[1:-1]
 
-        self.figure, ax = plt.subplots(figsize=(10.5, 2.8), dpi=100)
+        self.figure, ax = plt.subplots(figsize=(5.25, 1.4), dpi=100)
         self.figure.subplots_adjust(0.015, 0.025, 0.995, 0.975)
-        reach = max(3.3 * self.thickness, 0.11 * length)
+        half_height = max(3.3 * self.thickness, 0.11 * length)
         ax.set(xlim=(left - 0.045 * length, right + 0.025 * length),
-               ylim=(middle - reach, middle + reach), aspect="equal")
+               ylim=(middle - half_height, middle + half_height), aspect="equal")
         ax.set_axis_off()
         ax.add_patch(Rectangle((left - 0.025 * length, middle - self.thickness),
                                0.025 * length, 2 * self.thickness,
                                facecolor="#edf0f0", edgecolor="#a0aaaf", linewidth=0.8,
                                hatch="////", zorder=1))
         ax.plot([left, left], [middle - self.thickness, middle + self.thickness],
-                color=interface_colour, linewidth=1.5, zorder=5)
+                color=interface_colour, linewidth=0.8, zorder=5)
 
         rest_outline = np.concatenate((self.bottom, self.tip, self.top[::-1]))
         ax.plot(*self.rest[rest_outline].T, color=rest_colour, linewidth=0.9,
@@ -81,7 +81,7 @@ class DeviceView:
                                  cmap=strain_colours, norm=self.strain_norm, edgecolors="none", zorder=2)
         self.bond, = ax.plot([], [], color=interface_colour, linewidth=0.9, zorder=4)
         self.end, = ax.plot([], [], color=interface_colour, linewidth=1, zorder=4)
-        self.electrodes = LineCollection([], linewidths=3, zorder=5, capstyle="round")
+        self.electrodes = LineCollection([], linewidths=1.5, zorder=5, capstyle="round")
         ax.add_collection(self.electrodes)
         # The arrows belong to the material: the upper layer is poled up and the lower layer down.
         count = 2 * len(self.poles)

@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 def solve_coupled(mechanical: SparseExtensor, coupling: SparseExtensor, dielectric: SparseExtensor,
                   force: Plane, charge: Amount) -> tuple[Point, Scalar]:
-    """Solve the coupled work equations for displacement and potential, with unbatched maps and any leading load
+    """The displacement and potential that solve the coupled work equations, with unbatched maps and any leading load
     batches: the maps and loads go in as numga values and the fields come out as numga fields, and only in between
     does the system leave the algebra, for SciPy's sparse solve. The dielectric block carries its electric-enthalpy
     sign; the reverse coupling is the adjugate. Essential boundary conditions have already been applied to the maps."""
