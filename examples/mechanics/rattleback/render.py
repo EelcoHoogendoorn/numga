@@ -25,7 +25,7 @@ from examples.util.wgsl.solids import lamp_shading, quadric_crossings
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
 
-n_pixels = 500
+n_pixels = 300
 # The views, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the subject as a
 # share of its larger side.
 view = np.radians([25.0, 0.0])
@@ -33,8 +33,8 @@ setup_view = np.radians([58.0, 22.0])
 margin = 0.1
 # The lamp's direction at unit length; the light that falls everywhere and the glint's sharpness, with the lamp as
 # `lamp_shading` takes them, each finish carrying its own glint.
-toward_lamp = mv.direction([-0.3, -0.6, 0.85])                                 # [] Point
-lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point
+toward_lamp = mv.direction([-0.3, -0.6, 0.85])                                 # [] Point-
+lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point-
 lighting = dict(lamp=lamp, ambient=0.38, fill_tilt=0.0, headlight=0.0, gloss=0.0, shininess=32.0)
 # The surfaces' colours; the glint of the satin paint, the bare wood having none; and how much of what lies around
 # it the steel mirrors.
@@ -230,8 +230,8 @@ def shader() -> Shader:
 def scene(built: core.Body, motor: core.Motor) -> dict:
     """The parts placed by a motor, their quadrics one after another, and each quadric's finish: the wood first,
     then each ball."""
-    wood = built.wood()                                                         # [quadrics] Quadric
-    quadrics = concatenate([wood, built.balls])                                 # [quadrics] Quadric
+    wood = built.wood()                                                         # [quadrics] Plane+ <- Point-
+    quadrics = concatenate([wood, built.balls])                                 # [quadrics] Plane+ <- Point-
     n_wood, n_balls = wood.shape[0], built.balls.shape[0]
     ends = np.concatenate([[n_wood], n_wood + 1 + np.arange(n_balls)])
     starts = np.concatenate([[0], ends[:-1]])
@@ -244,13 +244,13 @@ def scene(built: core.Body, motor: core.Motor) -> dict:
                 finishes=dict(colour=colours, gloss=gloss, mirroring=mirroring))
 
 
-def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float, reach: float,
+def framing(motors: core.Motor, samples: core.Point, elevation: float, azimuth: float, clearance: float,
             pixels: int) -> solids.View:
     """A view `pixels` across framing the body over every placement and its shadow on the ground, cast along the
-    lamp, with `reach` to spare around each, the height rounded to whole pixels."""
-    body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point
-    shadows = (body & lamp) ^ mv.z                                                # [..., points] Point
-    framed = solids.view([body, shadows], reach, elevation, azimuth, margin, pixels)
+    lamp, with `clearance` to spare around each, the height rounded to whole pixels."""
+    body = motors[..., None] >> samples[::max(1, samples.shape[0] // n_framing)]   # [..., points] Point-
+    shadows = (body & lamp) ^ mv.z                                                # [..., points] Point-
+    framed = solids.view([body, shadows], clearance, elevation, azimuth, margin, pixels)
     n_rows = framed.shape[0]
     return solids.View(framed.camera, np.array([framed.half[0], framed.half[0] * n_rows / pixels]), pixels)
 
@@ -266,7 +266,7 @@ def turned(motor: core.Motor) -> core.Motor:
     """A placement turned about the vertical line through the centre of mass, a whole turn in `n_turns` steps
     `[turns]`."""
     # The vertical line through the centre: the join of the centre with the upward direction, made extrinsic.
-    vertical = ((motor >> mv.w.dual()) & mv.z.dual()) * solids.flip                   # [] Line
+    vertical = ((motor >> mv.w.dual()) & mv.z.dual()) * solids.flip                   # [] Line+
     return (vertical.normalized() * (np.pi * np.arange(n_turns) / n_turns)).exp() * motor
 
 

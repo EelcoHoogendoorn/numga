@@ -34,20 +34,20 @@ Scalar = ga.gatype.scalar()
 Point = ga.gatype.antivector()
 Plane = ga.gatype.vector()
 Rotor = ga.gatype.rotor()
-Strain = ga.gatype((Plane, Point))                         # Plane <- Point
-Stress = ga.gatype((Point, Plane))                         # Point <- Plane
+Strain = ga.gatype((Plane, Point))                         # Plane+ <- Point-
+Stress = ga.gatype((Point, Plane))                         # Point- <- Plane+
 
-axes = mv.basis()                                          # [3] Plane
+axes = mv.basis()                                          # [3] Plane+
 # The cube of unit side about the origin: its corners, and its faces' planes, facing out.
-corners = mv.vector(np.stack(np.meshgrid(*[[-0.5, 0.5]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)).dual()   # [8] Point
-faces = concatenate([axes, -axes])                         # [6] Plane
+corners = mv.vector(np.stack(np.meshgrid(*[[-0.5, 0.5]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)).dual()   # [8] Point-
+faces = concatenate([axes, -axes])                         # [6] Plane+
 
 
 # --- math -----------------------------------------------------------------------------
 def cauchy_stress(strain: Strain, lame: float, shear_modulus: float) -> Stress:
     """The stress of an isotropic material under the strain."""
     # The strain's change of volume: its trace, read on the directions the metric gives the axes' planes.
-    dilatation = strain(Plane.dual()).trace()                                  # [] Scalar
+    dilatation = strain(Plane.dual()).trace()                                  # [] Scalar+
     # The metric turns a face's plane into the direction across it, and the strain's reading back into one.
     return lame * dilatation * Plane.dual() + 2 * shear_modulus * strain(Plane.dual()).dual()   # [] Stress
 
@@ -55,8 +55,8 @@ def cauchy_stress(strain: Strain, lame: float, shear_modulus: float) -> Stress:
 def tractions(stress: Stress, faces: Plane) -> tuple[Point, Point]:
     """The traction on each face of the given unit plane, split into its part across the face and the
     shear along it."""
-    total = stress(faces)                                                      # [...] Point
-    across = faces.dual() * (faces & total)                                    # [...] Point
+    total = stress(faces)                                                      # [...] Point-
+    across = faces.dual() * (faces & total)                                    # [...] Point-
     return across, total - across
 
 
@@ -66,7 +66,7 @@ def principal_frame(stress: Stress) -> tuple[Scalar, Point, Rotor]:
     the principal frame."""
     # The stress paired with a second plane is a form; its eigenvectors against the metric are the
     # principal planes.
-    values, planes = (Plane & stress(Plane)).eigh(Plane | Plane)              # [3] Scalar, [3] Plane
+    values, planes = (Plane & stress(Plane)).eigh(Plane | Plane)              # [3] Scalar+, [3] Plane+
     # The metric turns each principal plane into the direction across it.
     return values, planes.dual(), (1 + planes[0] * ~axes[0]).normalized()
 
@@ -84,8 +84,8 @@ def views(strain: Strain, stress: Stress, directions: Point, rotors: Rotor
     `[..., 6]`, and the principal directions `[..., 3]`."""
     local_strain = rotors << strain(rotors >> Point)                           # [...] Strain
     local_stress = rotors << stress(rotors >> Plane)                           # [...] Stress
-    normal, shear = tractions(local_stress[..., None], faces)                 # [..., 6] Point
+    normal, shear = tractions(local_stress[..., None], faces)                 # [..., 6] Point-
     # The metric turns each point's strain reading into how far it moves.
-    return (corners + local_strain[..., None](corners).dual(),                  # [..., 8] Point
-            0.5 * (faces.dual() + local_strain[..., None](faces.dual()).dual()),   # [..., 6] Point
-            normal, shear, rotors[..., None] << directions)                    # [..., 3] Point
+    return (corners + local_strain[..., None](corners).dual(),                  # [..., 8] Point-
+            0.5 * (faces.dual() + local_strain[..., None](faces.dual()).dual()),   # [..., 6] Point-
+            normal, shear, rotors[..., None] << directions)                    # [..., 3] Point-

@@ -39,14 +39,16 @@ Rate = ga.gatype.bivector()
 Motor = ga.gatype.rotor()
 Forque = ga.gatype.antibivector()
 AngularMomentum = Forque.derive.degenerate
-Shape = ga.gatype((Direction, Plane))                    # Direction <- Plane: the support map
-Stretch = ga.gatype((Direction, Direction))              # Direction <- Direction: the unit sphere onto the shell
+# The support map, from the table's plane to the direction of the touching point, and the stretch of the unit
+# sphere onto the shell.
+Shape = ga.gatype((Direction, Plane))
+Stretch = ga.gatype((Direction, Direction))
 Rolling = ga.gatype((Rate, Spin))
 Inertia = ga.gatype((Forque, Rate))
 # Planes anywhere, extrinsic; a quadric pairs each point with its plane, negative inside and zero on the surface,
 # where the plane is the tangent plane.
 Cut = ga.gatype.vector()
-Quadric = ga.gatype((Cut, Point))                       # Cut <- Point
+Quadric = ga.gatype((Cut, Point))
 
 infinity = mv.w
 origin = infinity.dual()
@@ -58,13 +60,13 @@ def contact_geometry(motor: Motor, shape: Shape, centre: Direction,
                      up: Direction) -> tuple[Plane, Direction, Scalar, Rolling]:
     """The table's plane in the body, the direction from the shell's centre to the lowest point, the shell
     centre's height, and the motions that keep the lowest point instantaneously at rest."""
-    normal = (motor << up).dual_inverse()                         # Plane
-    height = (normal & shape(normal)).square_root()               # Scalar
-    support = -shape(normal) / height                             # Direction
+    normal = (motor << up).dual_inverse()                         # Plane+
+    height = (normal & shape(normal)).square_root()               # Scalar+
+    support = -shape(normal) / height                             # Direction-
 
     # A spin about the centre of mass carried to the contact by the translation there, the product of the
     # two points, turns the body about the contact.
-    rolling = ((centre + support) * origin.inverse() / 2).exp() >> Spin   # Rate <- Spin
+    rolling = ((centre + support) * origin.inverse() / 2).exp() >> Spin   # Rate+ <- Spin-
     return normal, support, height, rolling
 
 
@@ -72,21 +74,21 @@ def dynamics(motor: Motor, spin: Spin, shape: Shape, centre: Direction, inertia:
              mass: float, gravity: Direction, up: Direction) -> tuple[Rate, Spin]:
     """Rolling velocity and angular acceleration, with the contact force eliminated."""
     normal, support, height, rolling = contact_geometry(motor, shape, centre, up)
-    rate = rolling(spin)                                          # Rate
+    rate = rolling(spin)                                          # Rate+
 
     # The touching point changes as the body rocks; differentiate its support geometry. The shell's centre
     # is fixed in the body, so only the support moves.
-    normal_rate = spin.commutator(normal)                         # Plane
-    contact_rate = -shape(normal_rate) / height - support * (normal & shape(normal_rate)) / height.squared()  # Direction
-    rolling_change = (contact_rate * origin.inverse()).commutator(spin)   # Rate
-    force = (origin & (motor << gravity)) * mass                  # Forque
+    normal_rate = spin.commutator(normal)                         # Plane+
+    contact_rate = -shape(normal_rate) / height - support * (normal & shape(normal_rate)) / height.squared()  # Direction-
+    rolling_change = (contact_rate * origin.inverse()).commutator(spin)   # Rate+
+    force = (origin & (motor << gravity)) * mass                  # Forque-
 
     # The adjugate pairs forces with allowed rolling motions, so the resting contact does no work.
-    pullback = rolling.adjugate()                                 # AngularMomentum <- Forque
-    effective = pullback(inertia(rolling))                        # AngularMomentum <- Spin
+    pullback = rolling.adjugate()                                 # AngularMomentum <- Forque-
+    effective = pullback(inertia(rolling))                        # AngularMomentum <- Spin-
     acceleration = effective.solve(pullback(
         force - inertia(rate).commutator(rate) - inertia(rolling_change)
-    ))                                                           # Spin
+    ))                                                           # Spin-
     return rate, acceleration
 
 
@@ -94,8 +96,8 @@ def energy(motor: Motor, spin: Spin, shape: Shape, centre: Direction, inertia: I
            mass: float, gravity: Direction, up: Direction) -> Scalar:
     """Kinetic and gravitational energy of a rolling body."""
     _, _, _, rolling = contact_geometry(motor, shape, centre, up)
-    rate = rolling(spin)                                          # Rate
-    potential = -mass * (gravity.dual_inverse() & (motor >> origin))  # Scalar
+    rate = rolling(spin)                                          # Rate+
+    potential = -mass * (gravity.dual_inverse() & (motor >> origin))  # Scalar+
     return (rate & inertia(rate)) / 2 + potential
 
 
@@ -121,16 +123,16 @@ def step(motor: Motor, spin: Spin, dt: float,
     """A fourth-order Runge–Kutta–Munthe-Kaas step in the body's motion algebra."""
     def derivative(increment: Rate, angular: Spin) -> tuple[Rate, Spin]:
         rate, acceleration = velocity_and_acceleration(motor * increment.exp(), angular)
-        ad = increment.commutator(Rate) * 2                       # Rate <- Rate
-        differential = Rate + ad / 2 + ad(ad) / 12                # Rate <- Rate
+        ad = increment.commutator(Rate) * 2                       # Rate+ <- Rate+
+        differential = Rate + ad / 2 + ad(ad) / 12                # Rate+ <- Rate+
         return differential(-rate / 2), acceleration
 
     first_motion, first_spin = derivative(spin * 0, spin)
     second_motion, second_spin = derivative(first_motion * (dt / 2), spin + first_spin * (dt / 2))
     third_motion, third_spin = derivative(second_motion * (dt / 2), spin + second_spin * (dt / 2))
     fourth_motion, fourth_spin = derivative(third_motion * dt, spin + third_spin * dt)
-    increment = (first_motion + 2 * second_motion + 2 * third_motion + fourth_motion) * (dt / 6)  # Rate
-    spin = spin + (first_spin + 2 * second_spin + 2 * third_spin + fourth_spin) * (dt / 6)  # Spin
+    increment = (first_motion + 2 * second_motion + 2 * third_motion + fourth_motion) * (dt / 6)  # Rate+
+    spin = spin + (first_spin + 2 * second_spin + 2 * third_spin + fourth_spin) * (dt / 6)  # Spin+
     return motor * increment.exp(), spin
 
 

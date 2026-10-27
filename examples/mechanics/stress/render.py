@@ -11,6 +11,8 @@ from itertools import chain
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+from numga import stack
 from matplotlib.colors import to_rgb
 
 from examples.util.animation import capture
@@ -44,7 +46,7 @@ margin = 0.14
 face_opacity, ghost_opacity, principal_opacity = 0.14, 0.7, 0.8
 ghost_tint, principal_tint = (opacity * colour + (1 - opacity) for opacity, colour in
                               ((ghost_opacity, ghost_colour), (principal_opacity, principal_colour)))
-edge_radius, ghost_radius, principal_radius, shaft_radius = 1.6, 1.0, 1.0, 2.0
+edge_radius, ghost_radius, principal_radius, shaft_radius = 0.9, 0.6, 0.6, 1.1
 # The turning animation's radii as a share of those above, its picture that much narrower than a frame's.
 turning_thickness = 0.62
 head_share = 0.28
@@ -52,8 +54,8 @@ head_width = 0.4
 
 
 def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """The x, y and z coordinates of points: their pairings with the planes x, y and z."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
 
 
 def view(corners: core.Point, centres: core.Point, normal: core.Point, shear: core.Point,
@@ -78,7 +80,7 @@ def arrows(starts: np.ndarray, offsets: np.ndarray, pixel: float,
 
 def ghost(view: solids.View, thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
     """The undeformed cube, a ghost of thin pale rods, their radius a share `thickness` of the one set above."""
-    corners = solids.mv.point(coordinates(core.corners))                      # [8] Point
+    corners = solids.mv.point(coordinates(core.corners))                      # [8] Point-
     edges, joints = solids.edges(corners[EDGES[:, 0]], corners[EDGES[:, 1]], thickness * ghost_radius * view.pixel)
     return [(edges, ghost_tint), (joints, ghost_tint)]
 
@@ -89,7 +91,7 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
     """The deformed cube seen from one frame, its edges solid and its faces translucent, the normal traction on each
     face in blue and the shear in red, and the principal directions in green; the radii a share `thickness` of those
     set above."""
-    places = solids.mv.point(coordinates(corners))                             # [8] Point
+    places = solids.mv.point(coordinates(corners))                             # [8] Point-
     centres = coordinates(centres)                                             # [6, 3]
     directions = REACH * coordinates(principal)                                # [3, 3]
     normal_shafts, normal_heads = arrows(centres, coordinates(normal) * NORMAL_SCALE, view.pixel, thickness)
@@ -100,7 +102,7 @@ def cube(corners: core.Point, centres: core.Point, normal: core.Point, shear: co
                                  thickness * principal_radius * view.pixel)
     parts = [(edges, edge_colour), (joints, edge_colour), (normal_shafts, normal_colour), (normal_heads, normal_colour),
              (shear_shafts, shear_colour), (shear_heads, shear_colour), (principal_rods, principal_tint)]
-    body = solids.polyhedra(places, FACES)[None]                              # [1, 6] Plane
+    body = solids.polyhedra(places, FACES)[None]                              # [1, 6] Plane+
     return parts, [(body, cube_colour, face_opacity)]
 
 
@@ -119,21 +121,21 @@ def draw_circles(ax, values: core.Scalar) -> None:
     for low, high, style in [(0, 2, "-"), (0, 1, ":"), (1, 2, ":")]:
         centre, radius = (stresses[low] + stresses[high]) / 2, (stresses[high] - stresses[low]) / 2
         ax.plot(centre + radius * np.cos(angle), radius * np.sin(angle), color="#1e293b" if style == "-" else "#94a3b8",
-                linestyle=style, linewidth=1.8 if style == "-" else 1.1)
-    ax.scatter(stresses, np.zeros(3), color="#1e293b", s=18, zorder=3)
+                linestyle=style, linewidth=0.9 if style == "-" else 0.6)
+    ax.scatter(stresses, np.zeros(3), color="#1e293b", s=6, zorder=3)
     # The outer two outside the circle that passes through them, the middle one below its dot.
     for stress, name, shift, align in zip(stresses, ["$\\sigma_1$", "$\\sigma_2$", "$\\sigma_3$"], (-5, 0, 5),
                                           ("right", "center", "left")):
-        ax.annotate(name, (stress, 0), xytext=(shift, -5), textcoords="offset points", ha=align, va="top",
-                    fontsize=9, color="#1e293b")
+        ax.annotate(name, (stress, 0), xytext=(shift / 2, -2), textcoords="offset points", ha=align, va="top",
+                    fontsize=5, color="#1e293b")
     centre, radius = (stresses[0] + stresses[2]) / 2, (stresses[2] - stresses[0]) / 2
     margin = 1.3 * radius
     ax.set_xlim(centre - margin, centre + margin)
     ax.set_ylim(-margin, margin)
-    ax.axhline(0, color="#94a3b8", linewidth=0.9, zorder=2)
-    ax.axvline(0, color="#94a3b8", linewidth=0.9, zorder=2)
-    ax.text(centre + 0.95 * margin, 0.04, "$\\sigma$", ha="right", va="bottom", fontsize=11, color="#64748b")
-    ax.text(0.04, 0.95 * margin, "$\\tau$", ha="left", va="top", fontsize=11, color="#64748b")
+    ax.axhline(0, color="#94a3b8", linewidth=0.5, zorder=2)
+    ax.axvline(0, color="#94a3b8", linewidth=0.5, zorder=2)
+    ax.text(centre + 0.95 * margin, 0.04, "$\\sigma$", ha="right", va="bottom", fontsize=6, color="#64748b")
+    ax.text(0.04, 0.95 * margin, "$\\tau$", ha="left", va="top", fontsize=6, color="#64748b")
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.set_xticks([])
@@ -150,9 +152,9 @@ def diameter(normal: np.ndarray, shear: np.ndarray) -> np.ndarray:
 def draw_diameter(ax, ends: np.ndarray, colour: str) -> tuple:
     """A frame's diameter between its ends `[2, 2]`, the face facing x filled and the face facing y open: the line
     and the two markers, for an animation to move."""
-    line, = ax.plot(*ends.T, color=colour, linewidth=1.6, zorder=4)
-    filled = ax.scatter(*ends[0], color=colour, s=65, zorder=5)
-    hollow = ax.scatter(*ends[1], s=65, zorder=5, facecolors="none", edgecolors=colour, linewidth=1.6)
+    line, = ax.plot(*ends.T, color=colour, linewidth=0.8, zorder=4)
+    filled = ax.scatter(*ends[0], color=colour, s=12, zorder=5)
+    hollow = ax.scatter(*ends[1], s=12, zorder=5, facecolors="none", edgecolors=colour, linewidth=0.8)
     return line, filled, hollow
 
 
@@ -171,7 +173,7 @@ def draw_frames(views: tuple[core.Point, core.Point, core.Point, core.Point, cor
     diameter."""
     corners, centres, normal, shear, principal = views
     count = corners.shape[0]
-    figure = plt.figure(figsize=(4.5 * (count + 1), 4.5), dpi=120)
+    figure = plt.figure(figsize=(1.5 * (count + 1), 1.5), dpi=120)
     cubes = [figure.add_subplot(1, count + 1, frame + 1) for frame in range(count)]
     draw_mohr(figure.add_subplot(1, count + 1, count + 1), values, normal, shear)
     # The figure laid out with the cubes' axes bare, as their pictures show them; their rooms alike, one view fitted
@@ -191,7 +193,7 @@ def animate_turning(values: core.Scalar, frames: Iterable[tuple[core.Point, core
     and its diameter on Mohr's circles; the undeformed cube and the circles set up once."""
     frames = iter(frames)
     first = next(frames)
-    figure = plt.figure(figsize=(9.5, 4.5), dpi=100)
+    figure = plt.figure(figsize=(4.75, 2.25), dpi=100)
     cube_ax, circles = figure.add_subplot(1, 2, 1), figure.add_subplot(1, 2, 2)
     seen = fitted(view(*first, TURNING_ROOM), cube_ax)
     scene = Scene(seen, background, ghost(seen, turning_thickness), [], inks=[], translucent=[])

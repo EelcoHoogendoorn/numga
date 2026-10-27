@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 import numpy as np
+
+from numga import stack
 from contourpy import contour_generator
 from matplotlib.colors import to_rgb
 from scipy.ndimage import map_coordinates
@@ -17,12 +19,12 @@ sm = solids.mv
 # The pixels across the frames; the view's elevation and azimuth in radians, azimuth zero looking along +y, and
 # the margin around the strips as a share of the larger side; the strip's colour and its fibres', and the fibres'
 # width in pixels.
-N_PIXELS = 560
+N_PIXELS = 300
 AZIMUTH, ELEVATION = np.deg2rad(-74.0), np.deg2rad(22.0)
 MARGIN = 0.1
 FACE = np.array(to_rgb("#c6a15b"))
 FIBRE = np.array(to_rgb("#4a3a1f"))
-FIBRE_WIDTH = 1.4
+FIBRE_WIDTH = 0.8
 background = np.ones(3)
 
 
@@ -45,13 +47,15 @@ def grid_faces(shape: tuple[int, ...]) -> np.ndarray:
     return corners[..., [[0, 1, 2], [0, 2, 3]]].reshape(-1, 3)
 
 
-def animate_strips(rest: core.Vector, frames: core.Vector, across_fibres: core.Scalar, spacing: float) -> Iterator[np.ndarray]:
+def animate_strips(rest: core.Direction, frames: core.Direction, across_fibres: core.Scalar, spacing: float) -> Iterator[np.ndarray]:
     """The strips deformed at each frame, `[frames, cases, length samples, width samples]`, seen from
     behind the ends that stay in place: flat-shaded meshes with the top ply's fibres over them, the level lines
     of `across_fibres`, `[cases, length samples, width samples]`, `spacing` apart, carried on each deformed
     surface. `rest` sets the common framing."""
-    rests = rest.cast(core.ga.subspace("x y z")).kernel                # [cases, length samples, width samples, 3]
-    deformed = frames.cast(core.ga.subspace("x y z")).kernel           # [frames, cases, length samples, width samples, 3]
+    # Coordinates by pairing with the planes x, y and z.
+    planes = stack((core.mv.x, core.mv.y, core.mv.z))
+    rests = (planes & rest[..., None]).to_array()                      # [cases, length samples, width samples, 3]
+    deformed = (planes & frames[..., None]).to_array()                 # [frames, cases, length samples, width samples, 3]
     view = solids.view([sm.point(rests.reshape(-1, 3)), sm.point(deformed.reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH,
                        MARGIN, N_PIXELS)
     faces = grid_faces(deformed.shape[1:-1])                           # [faces, 3]
@@ -60,7 +64,7 @@ def animate_strips(rest: core.Vector, frames: core.Vector, across_fibres: core.S
              for line in level_lines(field, spacing)]
 
     for grids in deformed:
-        points = sm.point(grids.reshape(-1, 3))                        # [vertices] Point
+        points = sm.point(grids.reshape(-1, 3))                        # [vertices] Point-
         strips = meshes.samples(points, faces, FACE, meshes.flat(points, faces), view, face_values=np.zeros(4),
                                 colour=meshes.plain, gloss=solids.gloss)
         # The deformed surface, interpolated linearly between its samples at each fibre line's positions.

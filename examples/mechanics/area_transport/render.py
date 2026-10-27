@@ -13,6 +13,7 @@ from matplotlib.axes import Axes
 from matplotlib.colors import to_rgb
 from matplotlib.container import BarContainer
 
+from numga import stack
 from examples.util.animation import capture
 from examples.mechanics.area_transport import core
 from examples.util.wgsl import fitted, show, solids
@@ -43,14 +44,16 @@ head_width = 0.4
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors, `[..., 3]`."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """The x, y and z coordinates of points, antivectors, `[..., 3]`: their pairings with the planes x, y and z."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
 
 
 def arrow_ends(centres: core.Point, patches: core.Patch) -> np.ndarray:
     """Where each patch's arrow ends, `[..., 3]`: its face's centre, moved along the patch's normal as far as its
     area."""
-    return coordinates(centres) + patches.cast(core.ga.subspace("x y z")).kernel * ARROW_SCALE
+    # A patch's normal, read against the coordinate planes' bivectors yz, zx and xy.
+    normals = (stack((core.mv.yz, core.mv.zx, core.mv.xy)) & patches[..., None]).to_array()
+    return coordinates(centres) + normals * ARROW_SCALE
 
 
 def view(vertices: core.Point, centres: core.Point, patches: core.Patch) -> solids.View:
@@ -74,14 +77,14 @@ def picture(vertices: core.Point, centres: core.Point, patches: core.Patch, view
     edge_colour = np.array(to_rgb(EDGE_COLOUR))
     opaque = [(shafts, colours[shown]), (heads, colours[shown]), (edges, edge_colour), (joints, edge_colour)]
     # Each face a plate a pixel thick, in its own colour.
-    faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane
+    faces = solids.plates(places[FACES[shown]], view.pixel)                  # [faces, 6] Plane+
     return solids.draw(opaque, view, background, inks=[], translucent=[(faces, colours[shown], face_opacity)],
                        meshes=[])
 
 
 def heights(patches: core.Patch, volume: core.Scalar) -> np.ndarray:
     """The areas of the faces normal to x, y and z, and the volume."""
-    return np.concatenate([patches[:3].norm().kernel[..., 0], volume.kernel])
+    return np.concatenate([patches[:3].norm().to_array(), volume.to_array()[None]])
 
 
 def measures(ax: Axes, patches: core.Patch, volume: core.Scalar) -> BarContainer:

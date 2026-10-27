@@ -54,10 +54,10 @@ def test_tension_response_matches_full_laminate_and_reverses_with_stack():
     nodes, weights = np.polynomial.legendre.leggauss(quadrature_count)
     edges = np.linspace(-thickness / 2, thickness / 2, ply_count + 1)
     half_height = thickness / (2 * ply_count)
-    heights = core.mv.z * ((edges[:-1] + edges[1:])[:, None] / 2 + nodes * half_height)
+    heights = core.along_z * ((edges[:-1] + edges[1:])[:, None] / 2 + nodes * half_height)
     weights = np.broadcast_to(weights * half_height, (ply_count, quadrature_count))
     turns = -angles[..., None] / 2
-    fibres = (core.mv.xy * turns).exp() >> core.mv.x
+    fibres = (core.mv.xy * turns).exp() >> core.along_x
 
     state, transverse_strain = core.response(
         fibres, heights, weights, thickness,

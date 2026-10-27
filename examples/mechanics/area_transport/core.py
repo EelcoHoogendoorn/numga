@@ -32,8 +32,8 @@ Point = ga.gatype.antivector()
 Patch = ga.gatype.vector().derive.flipped_orientation
 # A flux density: its pairing with a patch is the flux through it.
 Flux = ga.gatype.bivector()
-Linear = ga.gatype((Point, Point))                           # Point <- Point
-AreaMap = ga.gatype((Patch, Patch))                          # Patch <- Patch
+Linear = ga.gatype((Point, Point))                           # Point- <- Point-
+AreaMap = ga.gatype((Patch, Patch))                          # Patch- <- Patch-
 FluxMap = ga.gatype((Flux, Flux))                            # Flux <- Flux
 
 
@@ -47,17 +47,17 @@ def deformation(thickness: np.ndarray, shear: np.ndarray) -> Linear:
 def cube(side: float) -> tuple[Point, Point, Patch]:
     """A cube centred at the origin: its corners, its faces' centres, and each face's oriented patch, the
     meet of its two edges, as large as the face, all wound alike around the cube."""
-    corners = mv.vector(list(product((-side / 2, side / 2), repeat=3))).dual()   # [vertices] Point
-    outward = concatenate([mv.basis(), -mv.basis()])                           # [faces] Vector
-    centres = outward.dual() * (side / 2)                                      # [faces] Point
+    corners = mv.vector(list(product((-side / 2, side / 2), repeat=3))).dual()   # [vertices] Point-
+    outward = concatenate([mv.basis(), -mv.basis()])                           # [faces] Vector+
+    centres = outward.dual() * (side / 2)                                      # [faces] Point-
     # The cube's edge along each of its axes; a face's patch is the meet of the two edges it spans.
-    edges = mv.basis().dual() * side                                           # [axes] Point
-    meets = edges[[1, 2, 0]] & edges[[2, 0, 1]]                                # [axes] Patch
-    spans = concatenate([meets, meets])                                        # [faces] Patch
+    edges = mv.basis().dual() * side                                           # [axes] Point-
+    meets = edges[[1, 2, 0]] & edges[[2, 0, 1]]                                # [axes] Patch-
+    spans = concatenate([meets, meets])                                        # [faces] Patch-
     # Each patch turned so that the volume it spans with its face's centre shares the sense of the cube's
     # own volume, the meet of its three edges: the surface wound consistently.
-    sense = edges[0] & edges[1] & edges[2]                                     # [] Scalar
-    facing = (spans & centres) * sense                                         # [faces] Scalar
+    sense = edges[0] & edges[1] & edges[2]                                     # [] Scalar-
+    facing = (spans & centres) * sense                                         # [faces] Scalar+
     return corners, centres, spans * facing / facing.norm()
 
 
@@ -65,7 +65,7 @@ def transport(deformation: Linear) -> tuple[AreaMap, FluxMap, Scalar]:
     """The deformation's area map, the adjugate that carries flux densities back through it, and the
     volume factor."""
     # Move the two edges of each oriented patch together.
-    areas = deformation.outermorphism(Patch)                                  # [...] Patch <- Patch
+    areas = deformation.outermorphism(Patch)                                  # [...] Patch- <- Patch-
     # Pull a flux density back through that area map: the flux through every patch is kept.
     adjugate = areas.adjugate()                                               # [...] Flux <- Flux
     return areas, adjugate, deformation.det()

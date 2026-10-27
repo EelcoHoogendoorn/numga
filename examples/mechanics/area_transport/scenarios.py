@@ -21,7 +21,7 @@ SHEARS = MAX_SHEAR * (1 - THICKNESSES)
 def scene(thicknesses: np.ndarray, shears: np.ndarray) -> tuple[core.Point, core.Point, core.Patch, core.Scalar]:
     """The cube carried by each deformation: its corners, face centres and oriented face patches, and the
     volume factor."""
-    deformation = core.deformation(thicknesses, shears)                       # [...] Point <- Point
+    deformation = core.deformation(thicknesses, shears)                       # [...] Point- <- Point-
     areas, _, volume = core.transport(deformation)
     corners, centres, patches = core.cube(SIDE)
     return deformation[..., None](corners), deformation[..., None](centres), areas[..., None](patches), volume
@@ -38,9 +38,9 @@ def main() -> None:
 
     # checks
     # The deformation and its area map scale every volume by the determinant, at the flat sheet too.
-    deformation = core.deformation(THICKNESSES, SHEARS)                       # [frames] Point <- Point
+    deformation = core.deformation(THICKNESSES, SHEARS)                       # [frames] Point- <- Point-
     areas, _, _ = core.transport(deformation)
-    volumes = deformation(core.Point) & areas(core.Patch)                     # [frames] Scalar <- (Point, Patch)
+    volumes = deformation(core.Point) & areas(core.Patch)                     # [frames] Scalar+ <- (Point-, Patch-)
     np.testing.assert_allclose((volumes - volume * (core.Point & core.Patch)).kernel, 0, atol=1e-12)
 
 

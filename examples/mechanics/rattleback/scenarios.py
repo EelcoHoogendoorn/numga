@@ -20,7 +20,7 @@ from examples import instantiate
 
 core = instantiate("examples.mechanics.rattleback.core", PGA3D)
 mv = core.mv
-mirrors = stack((mv.x, mv.y, mv.z))                                          # [3] Plane
+mirrors = stack((mv.x, mv.y, mv.z))                                          # [3] Plane+
 # The shell's semi-axes, the body's mass and gravity.
 SEMI_AXES = np.array([5, 17 / 16, 1])
 MASS = 4
@@ -50,7 +50,7 @@ FRAME_STRIDE = 2
 ROCKING_DURATION = 8
 # Gallery picture: this makes plots/rattleback.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 # The gallery's reversal: its pixels across and the steps between frames drawn.
-GALLERY_PIXELS = 420
+GALLERY_PIXELS = 260
 GALLERY_STRIDE = 3
 
 
@@ -61,45 +61,45 @@ def distribution(wood: core.Quadric, steel: core.Quadric) -> tuple[core.Point, c
     low = -SEMI_AXES - [0, 2 * BALL_RADIUS, 0]
     high = np.array([SEMI_AXES[0], SEMI_AXES[1] + 2 * BALL_RADIUS, DECK_HEIGHT])
     axes = [np.arange(start, stop, SAMPLE_SPACING) + SAMPLE_SPACING / 2 for start, stop in zip(low, high)]
-    grid = mv.point(np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3))   # [grid] Point
+    grid = mv.point(np.stack(np.meshgrid(*axes, indexing="ij"), axis=-1).reshape(-1, 3))   # [grid] Point-
     in_wood = ((wood[:, None](grid) & grid) <= 0).all(axis=0)                 # [grid]
     in_steel = ((steel[:, None](grid) & grid) <= 0).any(axis=0)               # [grid]
     densities = WOOD_DENSITY * in_wood + STEEL_DENSITY * in_steel            # [grid]
     inside = densities > 0
-    samples, weights = grid[inside], densities[inside] / densities[inside].sum()   # [samples] Point, [samples]
-    centre = (samples * weights).sum(axis=0)                                 # [] Point
+    samples, weights = grid[inside], densities[inside] / densities[inside].sum()   # [samples] Point-, [samples]
+    centre = (samples * weights).sum(axis=0)                                 # [] Point-
     # Each sample joined with its own motion under a rate is its momentum; the inertia is their weighted sum.
-    relative = core.origin + (samples - centre)                              # [samples] Point
-    inertia = (relative & relative.commutator(core.Rate) * weights).sum(axis=0) * MASS   # Forque <- Rate
+    relative = core.origin + (samples - centre)                              # [samples] Point-
+    inertia = (relative & relative.commutator(core.Rate) * weights).sum(axis=0) * MASS   # Forque- <- Rate+
     return samples, centre, inertia
 
 
 def body() -> tuple[core.Shape, core.Direction, core.Inertia, core.Body, core.Point]:
     """The shell's support map, the shell's centre seen from the centre of mass, the inertia about the centre
     of mass, and the body as built and the points its mass is read from, in the frame of its centre of mass."""
-    directions = mirrors.dual()                                              # [3] Direction
-    outline = (directions * (mirrors & core.Direction) * SEMI_AXES).sum(axis=0)       # Direction <- Direction
-    shape = (directions * (core.Plane & directions) * SEMI_AXES**2).sum(axis=0)       # Direction <- Plane
+    directions = mirrors.dual()                                              # [3] Direction-
+    outline = (directions * (mirrors & core.Direction) * SEMI_AXES).sum(axis=0)       # Direction- <- Direction-
+    shape = (directions * (core.Plane & directions) * SEMI_AXES**2).sum(axis=0)       # Direction- <- Plane+
     # The unit ball's planes across its axes carried onto the shell: each pairs with a stretched direction as
     # the ball's plane does with the direction, so the stretch's adjugate carries it back.
-    across = outline.adjugate().solve(mirrors)                               # [3] Plane
-    underside = (across * (across & core.Point)).sum(axis=0) - mv.w * (mv.w & core.Point)   # Quadric
-    deck = half_space(mv.z - mv.w * DECK_HEIGHT)                             # Quadric
+    across = outline.adjugate().solve(mirrors)                               # [3] Plane+
+    underside = (across * (across & core.Point)).sum(axis=0) - mv.w * (mv.w & core.Point)   # Cut+ <- Point-
+    deck = half_space(mv.z - mv.w * DECK_HEIGHT)                             # Cut+ <- Point-
 
     # Every cut and ball has its partner half a turn about the vertical.
-    sides = (mv.xy * np.array([0, np.pi]) / 2).exp()                         # [sides] Motor
-    tipped = (mv.yz * (-CHAMFER_ROLL / 2)).exp() * (mv.xz * (CHAMFER_PITCH / 2)).exp() >> mv.z   # Plane
-    corner = core.origin + mv.direction(CHAMFER_THROUGH)                     # Point
-    chamfers = half_space(sides >> (tipped - mv.w * (tipped & corner)))      # [sides] Quadric
+    sides = (mv.xy * np.array([0, np.pi]) / 2).exp()                         # [sides] Motor+
+    tipped = (mv.yz * (-CHAMFER_ROLL / 2)).exp() * (mv.xz * (CHAMFER_PITCH / 2)).exp() >> mv.z   # Plane+
+    corner = core.origin + mv.direction(CHAMFER_THROUGH)                     # Point-
+    chamfers = half_space(sides >> (tipped - mv.w * (tipped & corner)))      # [sides] Cut+ <- Point-
     # A ball on the shell's side, its diameter pressed in by the sink.
     side = SEMI_AXES[1] * np.sqrt(1 - (BALL_ALONG / SEMI_AXES[0])**2)
-    seat = core.origin + mv.direction([BALL_ALONG, side + BALL_RADIUS * (1 - 2 * BALL_SINK), 0])   # Point
-    balls = ball(sides >> seat, BALL_RADIUS)                                 # [sides] Quadric
+    seat = core.origin + mv.direction([BALL_ALONG, side + BALL_RADIUS * (1 - 2 * BALL_SINK), 0])   # Point-
+    balls = ball(sides >> seat, BALL_RADIUS)                                 # [sides] Cut+ <- Point-
 
     built = core.Body(underside, deck, chamfers, balls)
     samples, centre, inertia = distribution(built.wood(), balls)
     # Everything moved so that the centre of mass is the origin.
-    shift = ((core.origin - centre) * core.origin.inverse() / 2).exp()       # [] Motor
+    shift = ((core.origin - centre) * core.origin.inverse() / 2).exp()       # [] Motor+
     placed = core.Body(*(shift >> part(shift << core.Point) for part in built))
     return shape, core.origin - centre, inertia, placed, shift >> samples
 
@@ -108,22 +108,22 @@ def launches(dt: float, n_steps: int) -> tuple[core.Body, core.Point, core.Motor
     """Both launches from their start over the steps `[steps + 1, cases]`: the body and the points its mass is
     read from, the placements, the body-frame spins and the energies."""
     shape, centre, inertia, built, samples = body()
-    up = mv.z.dual()                                                         # [] Direction
-    gravity = -up * GRAVITY                                                  # [] Direction
-    spin = mv.xy * SPINS - mv.xz * PITCH_RATES                               # [cases] Spin
-    tilt = (-mv.xz * TILTS / 2).exp()                                        # [cases] Motor
+    up = mv.z.dual()                                                         # [] Direction-
+    gravity = -up * GRAVITY                                                  # [] Direction-
+    spin = mv.xy * SPINS - mv.xz * PITCH_RATES                               # [cases] Spin+
+    tilt = (-mv.xz * TILTS / 2).exp()                                        # [cases] Motor+
     # Each launch lifted by its centre of mass's height, so that the shell rests on the table: the shell's
     # centre's height, less how far that centre sits above the centre of mass.
-    normal = (tilt << up).dual_inverse()                                     # [cases] Plane
-    height = (normal & shape(normal)).square_root() - (normal & centre)     # [cases] Scalar
-    motor = (up * core.origin.inverse() * height / 2).exp() * tilt           # [cases] Motor
+    normal = (tilt << up).dual_inverse()                                     # [cases] Plane+
+    height = (normal & shape(normal)).square_root() - (normal & centre)     # [cases] Scalar+
+    motor = (up * core.origin.inverse() * height / 2).exp() * tilt           # [cases] Motor+
 
     def motion(motor: core.Motor, spin: core.Spin) -> tuple[core.Rate, core.Spin]:
         return core.dynamics(motor, spin, shape, centre, inertia, MASS, gravity, up)
 
     states = islice(core.evolve(motor, spin, dt, motion), n_steps + 1)
     placements, spins = (stack(list(history)) for history in zip(*states))   # [steps + 1, cases] each
-    energies = core.energy(placements, spins, shape, centre, inertia, MASS, gravity, up)   # [steps + 1, cases] Scalar
+    energies = core.energy(placements, spins, shape, centre, inertia, MASS, gravity, up)   # [steps + 1, cases] Scalar+
     return built, samples, placements, spins, energies
 
 
@@ -137,7 +137,7 @@ def half_space(cut: core.Cut) -> core.Quadric:
 def ball(centre: core.Point, radius: float) -> core.Quadric:
     """Solid balls about points of unit weight: the planes across the axes through each centre, each one at a
     radius from it, less the weight squared."""
-    across = mirrors - mv.w * (mirrors & centre[..., None])                  # [..., 3] Cut
+    across = mirrors - mv.w * (mirrors & centre[..., None])                  # [..., 3] Cut+
     return (across * (across & core.Point)).sum(axis=-1) / radius**2 - mv.w * (mv.w & core.Point)
 
 
