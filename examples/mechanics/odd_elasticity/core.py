@@ -1,11 +1,11 @@
 """Odd elasticity from active bonds that push sideways when stretched.
 
-Positions and displacements are directions, antivectors; forces are covectors, vectors, and the work of
-a force over a displacement is their pairing, `force & displacement`. A bond reads its extension with
-the covector along it and answers with a force that has a sideways part, turned in the actuation plane,
-so its response, `Vector <- Antivector`, does net work around a closed path. The pairing transpose,
-`motion.adjugate()`, carries forces back through any map of displacements with their work kept, from
-bonds to the deformations that move them and to the particles at their ends.
+Positions and displacements are directions, antivectors; a force is a vector, extrinsic, read by its
+pairing with a displacement, the work `force & displacement`. A bond reads its extension with the unit
+force along it and answers with a force that has a sideways part, turned in the actuation plane, so its
+response, `Force <- Displacement`, does net work around a closed path. The adjugate of a map of
+displacements, `motion.adjugate()`, carries forces back through it with their work kept, from bonds to
+the deformations that move them and to the particles at their ends.
 """
 
 from __future__ import annotations
@@ -21,29 +21,29 @@ from numga.sparse import SparseExtensor, spdiag
 ga = VGA2D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Scalar = ga.gatype.scalar()
-# Positions and displacements are antivectors; forces are covectors, vectors.
-Antivector = ga.gatype.antivector()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
-Response = ga.gatype((Vector, Antivector))                   # from displacements to forces
+Scalar = ga.gatype.scalar()                                                  # Scalar+
+# Positions and displacements are antivectors; a force is a vector, read by its pairing with a displacement.
+Displacement = ga.gatype.antivector()                                        # Antivector-
+Force = ga.gatype.vector()                                                   # Vector+
+Bivector = ga.gatype.bivector()                                              # Bivector+
+# A response maps displacements to forces.
+Response = ga.gatype((Force, Displacement))
 # The two amplitudes of a shear, geometric like displacements.
-Shear = Antivector
+Shear = ga.gatype.antivector()                                               # Antivector-
 
-# The lines across the two axes, and the directions along them, which they pair with to the identity.
-lines = stack((mv.x, mv.y))                                  # [2] Vector
-directions = lines.dual()                                    # [2] Antivector
+# The unit displacements along the two axes, which the unit forces `mv.x` and `mv.y` read as one.
+directions = stack((mv.x, mv.y)).dual()                                      # [2] Displacement-
 
 
 # --- plumbing -------------------------------------------------------------------------
-def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Antivector, np.ndarray, SparseExtensor]:
+def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Displacement, np.ndarray, SparseExtensor]:
     """A triangular lattice with free edges, its positions and oriented bond incidence."""
     columns, rows = np.meshgrid(np.arange(n_columns), np.arange(n_rows))
     positions = spacing * (
         directions[0] * (columns + (rows % 2) / 2 - (n_columns - 1) / 2)
         + directions[1] * ((rows - (n_rows - 1) / 2) * np.sqrt(3) / 2)
-    )                                                                       # [rows, columns] Antivector
-    positions = positions.reshape(-1).field()                                # Antivector[sites]
+    )                                                                        # [rows, columns] Displacement-
+    positions = positions.reshape(-1).field()                                # Displacement-[sites]
 
     indices = np.arange(n_columns * n_rows).reshape(n_rows, n_columns)
     horizontal = np.stack((indices[:, :-1], indices[:, 1:]), axis=-1).reshape(-1, 2)
@@ -54,55 +54,55 @@ def triangular_patch(n_columns: int, n_rows: int, spacing: float) -> tuple[Antiv
     edges = np.concatenate((horizontal, vertical, diagonal))
     incidence = SparseExtensor.from_columns(
         edges, mv.scalar((np.ones_like(edges) * [-1, 1])[..., None]), n_columns * n_rows,
-    )                                                                       # Scalar[edges, sites]
+    )                                                                        # Scalar+[bonds <- sites]
     return positions, edges, incidence
 
 
 # --- math -----------------------------------------------------------------------------
-def bond_response(direction: Antivector, actuation_plane: Bivector, stiffness: float, activity: float) -> Response:
+def bond_response(direction: Displacement, actuation_plane: Bivector, stiffness: float, activity: float) -> Response:
     """The restoring and sideways force caused by a bond's endpoint displacement."""
-    # The covector that reads a displacement's component along the unit bond.
-    along = direction.dual_inverse()                                         # Vector
-    push = -stiffness * along + activity * (along | actuation_plane)         # Vector
-    return push * (along & Antivector)                                       # Vector <- Antivector
+    # The unit force along the bond, which reads a displacement's component along it.
+    unit_force = direction.dual_inverse()                                    # Force+
+    push = -stiffness * unit_force + activity * (unit_force | actuation_plane)   # Force+
+    return push * (unit_force & Displacement)                                # Force+ <- Displacement-
 
 
-def integrate_cycle(response: Response, cycle: Antivector) -> Iterator[tuple[Antivector, Vector, Scalar]]:
+def integrate_cycle(response: Response, cycle: Displacement) -> Iterator[tuple[Displacement, Force, Scalar]]:
     """Displacement, force and work delivered along consecutive straight path segments."""
-    work = mv.scalar([0])                                                    # Scalar
+    work = mv.scalar([0])                                                    # Scalar+
     yield cycle[0], response(cycle[0]), work
     for start, end in zip(cycle[:-1], cycle[1:]):
         # A linear force's work along a straight segment is its midpoint force
         # paired with the segment's displacement.
-        work = work + (response((start + end) / 2) & (end - start))           # Scalar
+        work = work + (response((start + end) / 2) & (end - start))          # Scalar+
         yield end, response(end), work
 
 
 def evolution(incidence: SparseExtensor, response: Response, drags: Scalar) -> SparseExtensor:
     """The particles' velocities from their displacements, overdamped: no inertia, every force met by drag."""
-    gradient = incidence * Antivector                                        # Antivector[bonds] <- Antivector[sites]
+    gradient = incidence * Displacement                                      # (Displacement- <- Displacement-)[bonds <- sites]
     # Drag turns each particle's force into its velocity, along the force's metric direction.
-    mobility = spdiag(Vector.dual() / drags)                                 # Antivector[sites] <- Vector[sites]
+    mobility = spdiag(Force.dual() / drags)                                  # (Velocity- <- Force+)[sites <- sites]
     # Relative endpoint motion goes to each bond; equal opposite forces return to its endpoints.
-    return mobility(gradient.adjugate()(spdiag(response)(gradient)))         # Antivector[sites] <- Antivector[sites]
+    return mobility(gradient.adjugate()(spdiag(response)(gradient)))         # (Velocity- <- Displacement-)[sites <- sites]
 
 
-def rk4_step(generator: SparseExtensor, displacement: Antivector, dt: float) -> Antivector:
+def rk4_step(generator: SparseExtensor, displacement: Displacement, dt: float) -> Displacement:
     """One fourth-order Runge–Kutta step of an overdamped displacement field."""
-    first_rate = generator(displacement)                                     # Antivector[sites]
-    second_rate = generator(displacement + first_rate * (dt / 2))            # Antivector[sites]
-    third_rate = generator(displacement + second_rate * (dt / 2))             # Antivector[sites]
-    fourth_rate = generator(displacement + third_rate * dt)                   # Antivector[sites]
+    first_rate = generator(displacement)                                     # Velocity-[sites]
+    second_rate = generator(displacement + first_rate * (dt / 2))            # Velocity-[sites]
+    third_rate = generator(displacement + second_rate * (dt / 2))            # Velocity-[sites]
+    fourth_rate = generator(displacement + third_rate * dt)                  # Velocity-[sites]
     return displacement + (first_rate + 2 * second_rate + 2 * third_rate + fourth_rate) * (dt / 6)
 
 
 def wave_states(
-    reference: Antivector, incidence: SparseExtensor, bond_directions: Antivector, generator: SparseExtensor,
-    initial: Antivector, n_frames: int, dt: float,
-) -> Iterator[tuple[Antivector, Scalar]]:
+    reference: Displacement, incidence: SparseExtensor, bond_directions: Displacement, generator: SparseExtensor,
+    initial: Displacement, n_frames: int, dt: float,
+) -> Iterator[tuple[Displacement, Scalar]]:
     """The moving lattice and bond extensions during its free overdamped response."""
-    displacement = initial                                                  # Antivector[sites]
+    displacement = initial                                                   # Displacement-[sites]
     for _ in range(n_frames):
-        extensions = bond_directions.dual_inverse() & (incidence * displacement)   # Scalar[edges]
+        extensions = bond_directions.dual_inverse() & (incidence * displacement)   # Scalar+[bonds]
         yield reference + displacement, extensions
-        displacement = rk4_step(generator, displacement, dt)                 # Antivector[sites]
+        displacement = rk4_step(generator, displacement, dt)                 # Displacement-[sites]

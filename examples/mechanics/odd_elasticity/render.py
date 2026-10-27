@@ -25,13 +25,13 @@ STRAIN = LinearSegmentedColormap.from_list("bond_extension", ["#4775bd", "#32666
 
 
 # --- plumbing -------------------------------------------------------------------------
-def _coordinates(points: core.Antivector) -> np.ndarray:
+def _coordinates(points: core.Displacement) -> np.ndarray:
     """Positions read by pairing with the lines across the axes; sites become a batch axis."""
     lines = stack((core.mv.x, core.mv.y))
     return (lines & points.batch()[..., None]).to_array()
 
 
-def _arrows(forces: core.Vector) -> np.ndarray:
+def _arrows(forces: core.Force) -> np.ndarray:
     """Forces drawn along their metric directions."""
     return _coordinates(forces.dual())
 
@@ -52,8 +52,8 @@ def _scene(figure: plt.Figure, bounds: tuple[np.ndarray, np.ndarray], position: 
 
 
 def bond_frames(
-    anchor: core.Antivector, reference: core.Antivector, path: core.Antivector,
-    states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
+    anchor: core.Displacement, reference: core.Displacement, path: core.Displacement,
+    states: Iterable[tuple[core.Displacement, core.Force]], force_scale: float,
 ) -> Iterator[np.ndarray]:
     """An endpoint follows its closed path, the area it has swept about its rest position shaded, while
     the bond's force changes."""
@@ -65,7 +65,7 @@ def bond_frames(
     arrow_tips = endpoints + force_scale * forces
     bounds = _bounds(np.concatenate((fixed[None], rest[None], loop, arrow_tips)), 0.08)
 
-    figure = plt.figure(figsize=(6.2, 2.9), dpi=100, facecolor=BACKGROUND)
+    figure = plt.figure(figsize=(6.2, 2.9), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
     swept = Polygon(np.stack((rest, rest)), closed=True, facecolor=SWEPT, edgecolor="none", zorder=0)
     ax.add_patch(swept)
@@ -91,8 +91,8 @@ def bond_frames(
 
 
 def patch_frames(
-    reference: core.Antivector, edges: np.ndarray,
-    states: Iterable[tuple[core.Antivector, core.Vector]], force_scale: float,
+    reference: core.Displacement, edges: np.ndarray,
+    states: Iterable[tuple[core.Displacement, core.Force]], force_scale: float,
 ) -> Iterator[np.ndarray]:
     """A deforming patch pushes on its boundary around its closed cycle."""
     rest = _coordinates(reference)
@@ -102,7 +102,7 @@ def patch_frames(
     arrow_tips = positions[:, boundary] + force_scale * forces[:, boundary]
     bounds = _bounds(np.concatenate((rest, positions.reshape(-1, 2), arrow_tips.reshape(-1, 2))), 0.055)
 
-    figure = plt.figure(figsize=(5.2, 3.6), dpi=100, facecolor=BACKGROUND)
+    figure = plt.figure(figsize=(5.2, 3.6), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, bounds, (0.02, 0.02, 0.96, 0.96))
     ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=1))
     bonds = LineCollection([], colors=BOND, linewidths=1.7)
@@ -122,13 +122,13 @@ def patch_frames(
 
 
 def wave_frames(
-    reference: core.Antivector, edges: np.ndarray,
-    states: Iterable[tuple[core.Antivector, core.Scalar]],
+    reference: core.Displacement, edges: np.ndarray,
+    states: Iterable[tuple[core.Displacement, core.Scalar]],
     displacement_scale: float, extension_scale: float, tracked_index: int,
 ) -> Iterator[np.ndarray]:
     """Moving bonds coloured by signed extension, with one particle's short trajectory marked."""
     rest = _coordinates(reference)
-    figure = plt.figure(figsize=(6.5, 3.7), dpi=100, facecolor=BACKGROUND)
+    figure = plt.figure(figsize=(6.5, 3.7), dpi=50, facecolor=BACKGROUND)
     ax = _scene(figure, _bounds(rest, 0.035), (0.015, 0.015, 0.97, 0.97))
     ax.add_collection(LineCollection(rest[edges], colors=REFERENCE, linewidths=0.65))
     bonds = LineCollection([], linewidths=1.15, cmap=STRAIN, norm=Normalize(-extension_scale, extension_scale))

@@ -8,25 +8,25 @@ import pytest
 from examples.mechanics.odd_elasticity import core
 from numga.sparse import spdiag
 
-mv, Antivector = core.mv, core.Antivector
+mv, Displacement = core.mv, core.Displacement
 x, y = core.directions
 
 
 @pytest.fixture
-def cycle() -> core.Antivector:
+def cycle() -> core.Displacement:
     n_samples = 48
     angles = np.linspace(0, 2 * np.pi, n_samples + 1)
     circle = (-mv.xy * angles / 2).exp() >> x
-    stretch = 0.18 * x * (mv.x & Antivector) + 0.11 * y * (mv.y & Antivector)
+    stretch = 0.18 * x * (mv.x & Displacement) + 0.11 * y * (mv.y & Displacement)
     return stretch(circle) + 0.07 * x - 0.03 * y
 
 
-def loop_work(response: core.Response, cycle: core.Antivector) -> core.Scalar:
+def loop_work(response: core.Response, cycle: core.Displacement) -> core.Scalar:
     """The work of a linear force around a polygon, each segment's midpoint force paired with it."""
     return (response((cycle[1:] + cycle[:-1]) / 2) & (cycle[1:] - cycle[:-1])).sum(axis=0)
 
 
-def test_cycle_work_is_oriented_area_and_changes_sign_on_reversal(cycle: core.Antivector):
+def test_cycle_work_is_oriented_area_and_changes_sign_on_reversal(cycle: core.Displacement):
     activity = 0.8
     direction = (x + 0.3 * y).normalized()
     response = core.bond_response(direction, mv.xy, 0.9, activity)
@@ -44,7 +44,7 @@ def test_cycle_work_is_oriented_area_and_changes_sign_on_reversal(cycle: core.An
     assert work.kernel.item() > 0.04
 
 
-def test_mirror_transports_bond_force_and_preserves_cycle_work(cycle: core.Antivector):
+def test_mirror_transports_bond_force_and_preserves_cycle_work(cycle: core.Displacement):
     direction = (x + 0.4 * y).normalized()
     mirror = (mv.x - 0.2 * mv.y).normalized()
     response = core.bond_response(direction, mv.xy, 0.9, 0.8)
@@ -57,17 +57,17 @@ def test_mirror_transports_bond_force_and_preserves_cycle_work(cycle: core.Antiv
                                loop_work(response, cycle).kernel, atol=1e-12)
 
 
-def test_three_bond_families_pull_back_to_an_odd_shear_response(cycle: core.Antivector):
+def test_three_bond_families_pull_back_to_an_odd_shear_response(cycle: core.Displacement):
     stiffness, activity = 0.9, 0.8
     angles = np.arange(3) * np.pi / 3
     directions = (-mv.xy * angles / 2).exp() >> x
     response = core.bond_response(directions, mv.xy, stiffness, activity)
-    shear_first = x * (mv.x & Antivector) - y * (mv.y & Antivector)
-    shear_second = x * (mv.y & Antivector) + y * (mv.x & Antivector)
-    strain = (mv.x & Antivector) * shear_first + (mv.y & Antivector) * shear_second
-    bond_motion = strain(Antivector, directions)
+    shear_first = x * (mv.x & Displacement) - y * (mv.y & Displacement)
+    shear_second = x * (mv.y & Displacement) + y * (mv.x & Displacement)
+    strain = (mv.x & Displacement) * shear_first + (mv.y & Displacement) * shear_second
+    bond_motion = strain(Displacement, directions)
     shear_response = bond_motion.adjugate()(response(bond_motion)).sum(axis=0)
-    along = Antivector.dual_inverse()
+    along = Displacement.dual_inverse()
     expected = -1.5 * stiffness * along + 1.5 * activity * (along | mv.xy)
     bond_cycle = bond_motion(cycle[:, None])
     bond_work = (response((bond_cycle[1:] + bond_cycle[:-1]) / 2) & (bond_cycle[1:] - bond_cycle[:-1])).sum(axis=1).sum(axis=0)
@@ -88,7 +88,7 @@ def test_lattice_motion_is_covariant_and_has_the_expected_strain_dissipation(sti
     positions, _, incidence = core.triangular_patch(n_columns, n_rows, spacing)
     bonds = incidence * positions
     directions = bonds.normalized()
-    gradient = incidence * Antivector
+    gradient = incidence * Displacement
     drags = mv.scalar([[1]] * n_sites).field()
     generator = core.evolution(incidence, core.bond_response(directions, mv.xy, stiffness, activity), drags)
     displacement = mv.vector(np.random.default_rng(7).normal(scale=0.1, size=(n_sites, 2))).dual().field()
@@ -99,7 +99,7 @@ def test_lattice_motion_is_covariant_and_has_the_expected_strain_dissipation(sti
     # The gradient of half the sum of squared bond extensions reads the extensions
     # back as longitudinal nodal loads. Sideways activity does no work against it.
     along = directions.dual_inverse()
-    strain_map = gradient.adjugate()(spdiag(along * (along & Antivector))(gradient))
+    strain_map = gradient.adjugate()(spdiag(along * (along & Displacement))(gradient))
     strain_gradient = strain_map(displacement)
     strain_rate = strain_gradient & velocity
     passive_decay = -stiffness * strain_gradient.scalar_norm_squared()

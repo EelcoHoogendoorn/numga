@@ -6,6 +6,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.mechanics.shells import core, render, scenarios
 
 
@@ -24,6 +25,7 @@ def test_forces_are_the_energy_gradient_and_balance():
     sheet = core.sheet(mesh, points, lengths, curvature, core.mv.z, 0.1)
     bent = np.concatenate([flat, np.zeros((len(flat), 1))], axis=-1) + 0.05 * rng.normal(size=(len(flat), 3))
     pushes = core.forces(sheet, core.mv.point(bent).field()).batch()
+    components = (stack((core.mv.x, core.mv.y, core.mv.z)) & pushes[:, None]).to_array()
     shift = 1e-6
     for vertex in (0, len(bent) // 2):
         for axis in range(3):
@@ -31,7 +33,7 @@ def test_forces_are_the_energy_gradient_and_balance():
             up[vertex, axis] += shift
             down[vertex, axis] -= shift
             slope = (core.energy(sheet, core.mv.point(up).field()) - core.energy(sheet, core.mv.point(down).field())).to_array() / (2 * shift)
-            np.testing.assert_allclose(pushes[vertex].cast(core.ga.subspace("wzy wxz wyx")).kernel[axis], -slope, rtol=1e-6, atol=1e-9)
+            np.testing.assert_allclose(components[vertex, axis], -slope, rtol=1e-6, atol=1e-9)
     total = (core.mv.point(bent).field() & pushes.field()).sites.sum()
     assert np.abs(total.kernel).max() < 1e-12
 

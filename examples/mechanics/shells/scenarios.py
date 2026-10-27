@@ -35,37 +35,37 @@ SEED = 0
 
 # --- math -----------------------------------------------------------------------------
 def disc() -> tuple[core.Sheet, list[core.Point]]:
-    """The growing disc and its points at every frame `[frames] Point[V]`."""
+    """The growing disc and its points at every frame `[frames] Point-[vertices]`."""
     flat = core.lattice(DISC_SPACING, DISC_RADIUS)
     flat = flat[np.linalg.norm(flat, axis=-1) <= DISC_RADIUS + 1e-9]
     mesh, points = core.flat_mesh(flat, DISC_SPACING)
-    tails, heads = (end * points for end in mesh.edge_ends)               # Point[E] each
+    tails, heads = (end * points for end in mesh.edge_ends)                     # Point-[edges], Point-[edges]
     # Each edge grows with the square of its middle's distance from the centre, in disc radii.
-    distance = (mv.w.dual() & ((tails + heads) / 2)).norm() / DISC_RADIUS       # Scalar[E]
-    lengths = (tails & heads).norm() * (1 + GROWTH * distance * distance)       # Scalar[E]
+    distance = (mv.w.dual() & ((tails + heads) / 2)).norm() / DISC_RADIUS       # Scalar+[edges]
+    lengths = (tails & heads).norm() * (1 + GROWTH * distance * distance)       # Scalar+[edges]
     sheet = core.sheet(mesh, points, lengths, 0 * (core.Line | core.Line), mv.z, DISC_THICKNESS)
     # The flat disc lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
-    rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point[V]
+    rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
     frames = list(core.relax(sheet, rough, DISC_STEP, DAMPING, N_FRAMES, N_STEPS_PER_FRAME))
     return sheet, frames
 
 
 def strip() -> tuple[core.Sheet, list[core.Point]]:
-    """The pod strip and its points at every frame `[frames] Point[V]`."""
+    """The pod strip and its points at every frame `[frames] Point-[vertices]`."""
     flat = core.lattice(STRIP_SPACING, STRIP_LENGTH)
     flat = flat[(np.abs(flat[:, 0]) <= STRIP_LENGTH / 2) & (np.abs(flat[:, 1]) <= STRIP_WIDTH / 2)]
     mesh, points = core.flat_mesh(flat, STRIP_SPACING)
-    tails, heads = (end * points for end in mesh.edge_ends)               # Point[E] each
-    lengths = (tails & heads).norm()                                             # Scalar[E]
+    tails, heads = (end * points for end in mesh.edge_ends)                     # Point-[edges], Point-[edges]
+    lengths = (tails & heads).norm()                                            # Scalar+[edges]
     # The two layers curve along lines through the centre, turned either way from the strip's axis.
-    axis = mv.wx.dual()                                                            # [] Line
+    axis = mv.wx.dual()                                                         # [] Line-
     along, across = (((mv.xy * (-sense * POD_ANGLE / 2)).exp() >> axis) for sense in (1, -1))
     curvature = NATURAL_CURVATURE * ((across | core.Line) * (across | core.Line) - (along | core.Line) * (along | core.Line))
     sheet = core.sheet(mesh, points, lengths, curvature, mv.z, STRIP_THICKNESS)
     # The flat strip lifted by small random heights, to let it leave its plane.
     heights = ROUGHNESS * np.random.default_rng(SEED).normal(size=(len(flat), 1))
-    rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point[V]
+    rough = mv.point(np.concatenate([flat, heights], axis=-1)).field()          # Point-[vertices]
     frames = list(core.relax(sheet, rough, STRIP_STEP, DAMPING, N_FRAMES, N_STEPS_PER_FRAME))
     return sheet, frames
 
@@ -89,7 +89,7 @@ def main() -> None:
     for sheet, frames, rise in ((disc_sheet, disc_frames, 0.3), (strip_sheet, strip_frames, 0.1)):
         settled = frames[-1]
         total = (settled & core.forces(sheet, settled)).sites.sum()
-        assert (-(total | total) - (total.dual() | total.dual())).to_array() < 1e-30
+        assert (-(total | total) - (total.dual() | total.dual())) < 1e-30
         assert np.ptp((settled & mv.z).batch().to_array()) > rise
     tails, heads = (end * disc_frames[-1] for end in disc_sheet.mesh.edge_ends)
     strain = ((tails & heads).norm() / disc_sheet.lengths - 1).batch().to_array()

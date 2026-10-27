@@ -112,10 +112,10 @@ var<storage, read> planes: array<Plane>;
 var<storage, read> points: array<Point>;
 // How far along its polyline each point of a stroke lies.
 var<storage, read> phases: array<f32>;
-// The window's top left corner, a pixel's width in the plane, and what lies under every primitive.
+// The window's top left corner, a pixel's width in the plane, and what lies under every primitive at each pixel.
 var<uniform> corner: Point;
 var<uniform> pixel: f32;
-var<uniform> background: vec3<f32>;
+var<storage, read> background: array<vec3<f32>>;
 // The image's columns and rows, and each pixel's colour.
 var<uniform> pixels: vec2<u32>;
 var<storage, read_write> image: array<vec3<f32>>;
@@ -291,7 +291,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
     // The pixel's centre: right and down from the window's top left corner.
     let point = corner + (mv.x.dual() * (f32(id.x) + 0.5) - mv.y.dual() * (f32(id.y) + 0.5)) * pixel;
-    var colour = background;
+    var colour = background[id.y * pixels.x + id.x];
     for (var index = 0u; index < arrayLength(&primitives); index++) {
         let primitive = primitives[index];
         var share = 0.0;
@@ -532,8 +532,8 @@ class Marks(NamedTuple):
 
 def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
     """The layers, `Conics`, `Regions`, `Curves`, `Envelopes`, `Lines`, `Polygons`, `Strokes` and `Marks`, composited
-    in order over the background `[3]`, each primitive of a layer after the one before: the window's RGB bytes
-    `[rows, columns, 3]`."""
+    in order over the background, a colour `[3]` or a picture of the window `[rows, columns, 3]`, each primitive of a
+    layer after the one before: the window's RGB bytes `[rows, columns, 3]`."""
     parts = Parts()
     found = [layer.primitives(parts, window.pixel) for layer in layers]
     # Every field of every primitive; those a kind does not read are zero.
@@ -547,5 +547,5 @@ def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
               for name in fillers}
     image = shader()(window.shape, **arrays, phases=np.concatenate(parts.phases or [np.zeros(1)]),
                      primitives=primitives, corner=mv.point([window.left, window.top]), pixel=window.pixel,
-                     background=np.asarray(background, dtype=float))["image"]
+                     background=np.broadcast_to(np.asarray(background, dtype=float), window.shape + (3,)))["image"]
     return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)

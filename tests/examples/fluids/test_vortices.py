@@ -28,7 +28,7 @@ def test_the_derivative_of_the_flow_and_the_leapfrog():
     # The derivative has no divergence, and its bivector is the blobs' vorticity.
     separations = points[..., None, None] - (vortices.centres[..., None] + vortices.copies)
     blob = (separations | separations) + vortices.core_radius**2
-    vorticity = (vortices.spins[:, None] * vortices.core_radius**2 / np.pi / (blob * blob)).sum(axis=-1).sum(axis=-1)
+    vorticity = (vortices.circulations[:, None] * vortices.core_radius**2 / np.pi / (blob * blob)).sum(axis=-1).sum(axis=-1)
     np.testing.assert_allclose((core.derivative(gradients) - vorticity).kernel, 0.0, atol=1e-12)
     # Without divergence, swirl is the gradient's determinant.
     np.testing.assert_allclose((core.swirl(gradients) - gradients.det()).kernel, 0.0, atol=1e-12)
@@ -53,11 +53,11 @@ def test_the_shear_layer_rolls_up():
 
 def test_the_gas_keeps_its_impulses():
     scene = scenarios.gas()
-    spins = scene.vortices.spins
+    circulations = scene.vortices.circulations
 
-    def impulses(vortices: core.Vortices) -> tuple[core.Point, core.Spin]:
-        linear = (spins * vortices.centres).sum(axis=-1)                     # [] Point
-        angular = (spins * (vortices.centres | vortices.centres)).sum(axis=-1)   # [] Spin
+    def impulses(vortices: core.Vortices) -> tuple[core.Point, core.Circulation]:
+        linear = (circulations * vortices.centres).sum(axis=-1)              # [] Point-
+        angular = (circulations * (vortices.centres | vortices.centres)).sum(axis=-1)   # [] Circulation+
         return linear, angular
 
     (linear, angular), (linear_after, angular_after) = impulses(scene.vortices), impulses(run(scene.vortices, scene.dt, 300))
@@ -69,13 +69,13 @@ def test_the_gas_keeps_its_impulses():
 def test_the_mirror_image_of_the_gas_moves_as_its_mirror_image():
     vortices = scenarios.gas().vortices
     mirror = (core.mv.x + 0.4 * core.mv.y).normalized()
-    # A mirror turns every spin the other way, along with every centre.
-    mirrored = replace(vortices, centres=mirror >> vortices.centres, spins=mirror >> vortices.spins, copies=mirror >> vortices.copies)
+    # A mirror turns every circulation the other way, along with every centre.
+    mirrored = replace(vortices, centres=mirror >> vortices.centres, circulations=mirror >> vortices.circulations, copies=mirror >> vortices.copies)
     np.testing.assert_allclose(((mirror >> run(vortices, 0.01, 10).centres) - run(mirrored, 0.01, 10).centres).kernel, 0.0, atol=1e-12)
 
 
 def test_the_walkabout_takes_one_lap_and_leapfrogs_on():
-    walker, _ = scenarios.walkabout()
+    walker = scenarios.walkabout()
     farthest = []
     for _ in range(scenarios.N_WALKABOUT_FRAMES):
         walker = run(walker, scenarios.WALKABOUT_DT, scenarios.N_WALKABOUT_SUBSTEPS)

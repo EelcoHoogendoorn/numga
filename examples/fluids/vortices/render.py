@@ -3,29 +3,42 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from itertools import chain
+from functools import cache
 
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.collections import LineCollection
-from matplotlib.colors import TwoSlopeNorm, to_rgb
+from matplotlib.colors import to_rgb
 from matplotlib.image import AxesImage
 
 from numga import stack
 
-from examples.util.animation import capture
 from examples.fluids.vortices import core
-from examples.util.wgsl import fitted, show, solids, strokes
+from examples.util.wgsl import Shader, fitted, pinned, planar, show, solids, strokes, supersampled
 
+# Fields: the figures' resolution, and the pixels between two panels side by side.
+DPI = 100
+GAP = 8
+# The fields' colours: white at zero, deepening with the field's size, without end, so that where the vortices
+# overlap their fields add up deeper; the vorticity red where the fluid turns counterclockwise and blue where it
+# turns clockwise, the swirl orange where the fluid turns faster than it stretches and purple where it stretches.
+CALM = np.ones(3)
+TURNING = np.array(to_rgb("#b2182b"))
+COUNTER = np.array(to_rgb("#2166ac"))
+SWIRLING = np.array(to_rgb("#b35806"))
+STRAINED = np.array(to_rgb("#542788"))
+# The trails: their colour, opacity and width in pixels.
+TRAIL = np.array(to_rgb("#0f172a"))
+TRAIL_OPACITY = 0.5
+TRAIL_WIDTH = 1.1
 # Worldlines: one colour per vortex, the strands' width in pixels, the view as elevation and azimuth in radians,
 # azimuth zero looking along +y, the margin around a braid as a share of its larger side, and the size in inches of
 # each braid's square panel.
 STRANDS = np.array([to_rgb(colour) for colour in ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe")])
-STRAND_WIDTH = 3.1
+STRAND_WIDTH = 1.6
 ELEVATION, AZIMUTH = np.radians([18.0, 30.0])
 MARGIN = 0.1
-PANEL_SIZE = 6.0
+PANEL_SIZE = 3.0
 BACKGROUND = np.ones(3)
 
 
@@ -43,69 +56,49 @@ def extent(points: core.Point) -> tuple[float, float, float, float]:
     return low[0], high[0], low[1], high[1]
 
 
-def aspect(points: core.Point) -> float:
-    left, right, bottom, top = extent(points)
-    return (right - left) / (top - bottom)
+def coloured(values: np.ndarray, scale: float, positive: np.ndarray, negative: np.ndarray, n_samples_per_side: int
+             ) -> np.ndarray:
+    """Values on the grid `[rows, columns]`, rows upward as the grid holds them, from white towards the colour of
+    their sign, two thirds of the way at `scale`, each pixel the average of its block of samples,
+    `n_samples_per_side` along each side: the picture's RGB `[rows, columns, 3]`, rows downward."""
+    depth = 1 - np.exp(-np.abs(values) / scale)
+    samples = CALM + depth[..., None] * (np.where(values[..., None] > 0, positive, negative) - CALM)
+    rows, columns = values.shape[0] // n_samples_per_side, values.shape[1] // n_samples_per_side
+    blocks = samples.reshape(rows, n_samples_per_side, columns, n_samples_per_side, 3)
+    return blocks.mean(axis=(1, 3))[::-1]
 
 
-def field(ax: Axes, points: core.Point, values: np.ndarray, limit: float, colours: str) -> AxesImage:
-    box = extent(points)
-    image = ax.imshow(values, extent=box, origin="lower", cmap=colours, interpolation="bilinear",
-                      norm=TwoSlopeNorm(vcenter=0.0, vmin=-limit, vmax=limit))
-    ax.set(xlim=box[:2], ylim=box[2:], xticks=[], yticks=[])
-    ax.autoscale(False)
-    ax.set_aspect("equal")
-    return image
+def field(ax: Axes, points: core.Point, values: np.ndarray, scale: float, positive: np.ndarray, negative: np.ndarray,
+          n_samples_per_side: int) -> AxesImage:
+    """A field sampled on the grid of points, a block of samples a pixel, held pixel for pixel."""
+    return pinned(ax, coloured(values, scale, positive, negative, n_samples_per_side), extent(points))
 
 
-def panels(figure: plt.Figure, points: core.Point, derivative: core.Even, swirl: core.Scalar,
-           vorticity_limit: float, swirl_limit: float) -> list[AxesImage]:
-    vorticity = derivative.cast(core.ga.subspace("xy")).kernel[..., 0]
-    left, right = figure.subplots(1, 2)
-    return [field(left, points, vorticity, vorticity_limit, "RdBu_r"),
-            field(right, points, swirl.kernel[..., 0], swirl_limit, "PuOr_r")]
-
-
-def figure(points: core.Point, derivative: core.Even, swirl: core.Scalar, vorticity_limit: float, swirl_limit: float) -> plt.Figure:
-    result = plt.figure(figsize=(12, 12 / (2 * aspect(points)) + 0.3), layout="constrained")
-    panels(result, points, derivative, swirl, vorticity_limit, swirl_limit)
+def side_by_side(points: core.Point, n_samples_per_side: int) -> plt.Figure:
+    """A figure with room for two panels of the grid's pixels side by side."""
+    rows, columns = points.shape[0] // n_samples_per_side, points.shape[1] // n_samples_per_side
+    result = plt.figure(figsize=((2 * columns + GAP) / DPI, rows / DPI), dpi=DPI)
+    result.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0)
     return result
 
 
-def animate(frames: Iterable[tuple[core.Vortices, core.Point, core.Even, core.Scalar]],
-            vorticity_limit: float, swirl_limit: float) -> Iterator[np.ndarray]:
-    """Vorticity and swirl on the window that follows the vortices, frame by frame: the figure set up on the first
-    frame, each frame's fields and window set in it."""
-    frames = iter(frames)
-    first = _, points, derivative, swirl = next(frames)
-    result = plt.figure(figsize=(10, 10 / (2 * aspect(points)) + 0.3), dpi=80, layout="constrained")
-    images = panels(result, points, derivative, swirl, vorticity_limit, swirl_limit)
-    for _, points, derivative, swirl in chain([first], frames):
-        box = extent(points)
-        for image, values in zip(images, (derivative.cast(core.ga.subspace("xy")).kernel[..., 0], swirl.kernel[..., 0])):
-            image.set_data(values)
-            image.set_extent(box)
-            image.axes.set(xlim=box[:2], ylim=box[2:])
-        yield capture(result)
-    plt.close(result)
+def vorticity(derivative: core.Even) -> np.ndarray:
+    """The derivative's bivector part, the vorticity, read by its pairing with the unit scalar."""
+    return (derivative & core.mv.scalar([1])).to_array()
 
 
-def window(points: core.Point, frames: Iterable[tuple[core.Vortices, core.Even]], vorticity_limit: float) -> Iterator[np.ndarray]:
-    """Vorticity on one fixed strip of the plane, frame by frame, each vortex trailing the path it has
-    taken. One figure is updated in place and drawn once per frame, without supersampling, to keep
-    pace."""
-    result = plt.figure(figsize=(12, 12 / aspect(points) + 0.2), dpi=80, layout="constrained")
-    ax = result.subplots()
-    image = field(ax, points, np.zeros(points.shape), vorticity_limit, "RdBu_r")
-    path = ax.add_collection(LineCollection([], colors="#0f172a", linewidths=0.8, alpha=0.5))
-    travelled = []
-    for vortices, derivative in frames:
-        travelled.append(positions(vortices.centres))                          # [vortices, 2] each
-        image.set_data(derivative.cast(core.ga.subspace("xy")).kernel[..., 0])
-        path.set_segments(np.stack(travelled, axis=1))
-        result.canvas.draw()
-        yield np.asarray(result.canvas.buffer_rgba())[..., :3].copy()
-    plt.close(result)
+def panels(figure: plt.Figure, points: core.Point, derivative: core.Even, swirl: core.Scalar,
+           vorticity_scale: float, swirl_scale: float, n_samples_per_side: int) -> list[AxesImage]:
+    left, right = figure.subplots(1, 2)
+    return [field(left, points, vorticity(derivative), vorticity_scale, TURNING, COUNTER, n_samples_per_side),
+            field(right, points, swirl.to_array(), swirl_scale, SWIRLING, STRAINED, n_samples_per_side)]
+
+
+def figure(points: core.Point, derivative: core.Even, swirl: core.Scalar, vorticity_scale: float, swirl_scale: float,
+           n_samples_per_side: int) -> plt.Figure:
+    result = side_by_side(points, n_samples_per_side)
+    panels(result, points, derivative, swirl, vorticity_scale, swirl_scale, n_samples_per_side)
+    return result
 
 
 def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
@@ -114,14 +107,92 @@ def braids(worldlines: list[core.Point], height: float) -> plt.Figure:
     `height` times the braid's width: it has no scale of its own against distance."""
     result = plt.figure(figsize=(PANEL_SIZE * len(worldlines), PANEL_SIZE))
     for ax, centres in zip(result.subplots(1, len(worldlines)), worldlines):
-        following = centres - centres.mean(axis=-1)[..., None]                  # [times, vortices] Point
+        following = centres - centres.mean(axis=-1)[..., None]                  # [times, vortices] Point-
         places = positions(following)                                            # [times, vortices, 2]
         width = np.ptp(places.reshape(-1, 2), axis=0).max()
         times = np.broadcast_to(np.linspace(0, height * width, len(places))[:, None, None], places.shape[:2] + (1,))
-        drawn = solids.mv.point(np.concatenate([places, times], axis=-1))        # [times, vortices] Point
+        drawn = solids.mv.point(np.concatenate([places, times], axis=-1))        # [times, vortices] Point-
         view = fitted(solids.view([drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
         # Each vortex's strand, its points through time and its colour.
         strands = [(drawn[:, vortex], colour) for vortex, colour in zip(range(drawn.shape[1]), STRANDS)]
         lines = strokes.polylines(strands, STRAND_WIDTH, view)
         show(ax, solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)]), view)
     return result
+
+
+# --- vorticity on the GPU ---------------------------------------------------------------
+# Each sample of a window sums the vorticity of every vortex blob and its copies, `circulation * core_radius**2 / pi /
+# blob**2`, the bivector part of the flow's derivative, in closed form.
+source = """
+alias Sample = vec3<f32>;
+// The vortices: their centres, their circulations and the offsets their pattern repeats at; the square of their core's
+// radius, the middle of the window, half its height, and the vorticity at which the colours are two thirds deep.
+var<storage, read> centres: array<Point>;
+var<storage, read> circulations: array<Circulation>;
+var<storage, read> copies: array<Point>;
+var<uniform> core_squared: f32;
+var<uniform> middle: Point;
+var<uniform> half_height: f32;
+var<uniform> scale: f32;
+
+fn sample(place: vec2<f32>) -> Sample {
+    let point = middle + (directions * screen(place)).sum() * half_height;
+    var vorticity = circulations[0] * 0.0;
+    for (var vortex = 0u; vortex < arrayLength(&centres); vortex++) {
+        for (var copy = 0u; copy < arrayLength(&copies); copy++) {
+            // The squared distance from the vortex, softened by its core.
+            let separation = point - (centres[vortex] + copies[copy]);
+            let blob = separation.dot(separation) + core_squared;
+            vorticity = vorticity + circulations[vortex] * (core_squared / pi / (blob * blob));
+        }
+    }
+    // White at zero, deepening towards the colour of the sense of the turn without end.
+    let size = vorticity & one;
+    return mix(calm, select(counter, turning, size > 0), 1 - exp(-abs(size) / scale));
+}
+"""
+
+
+@cache
+def shader() -> Shader:
+    """The shader of the vorticity around the vortices: the unit directions along x and y, which place a sample, the
+    scalar one, which reads the vorticity's size, and the colours, given as its constants."""
+    mv = core.mv
+    return Shader(supersampled() + source, core.ga, dict(Point=core.Point, Circulation=core.Circulation),
+                  dict(directions=stack((mv.x, mv.y)).dual(), one=mv.scalar([1]), pi=np.pi, calm=CALM, turning=TURNING,
+                       counter=COUNTER))
+
+
+def vorticity_image(vortices: core.Vortices, middle: core.Point, half_height: float, shape: tuple[int, int],
+                    scale: float) -> np.ndarray:
+    """The vorticity on a window about its middle, half its height across, of `shape` rows and columns, coloured two
+    thirds deep at `scale`: its RGB `[rows, columns, 3]`, from zero to one."""
+    return shader()(shape, centres=vortices.centres, circulations=vortices.circulations, copies=vortices.copies,
+                    core_squared=vortices.core_radius**2, middle=middle, half_height=half_height, scale=scale)["image"]
+
+
+def as_bytes(image: np.ndarray) -> np.ndarray:
+    return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
+
+
+def animate(frames: Iterable[core.Vortices], half_height: float, shape: tuple[int, int], scale: float
+            ) -> Iterator[np.ndarray]:
+    """The vorticity on a window that follows the vortices' mean place, frame by frame."""
+    for vortices in frames:
+        yield as_bytes(vorticity_image(vortices, vortices.centres.mean(axis=-1), half_height, shape, scale))
+
+
+def window(frames: Iterable[core.Vortices], middle: core.Point, half_height: float, shape: tuple[int, int],
+           scale: float) -> Iterator[np.ndarray]:
+    """The vorticity on one fixed window of the plane, frame by frame, each vortex trailing the path it has taken,
+    stroked over it."""
+    rows, columns = shape
+    (x, y), pixel = positions(middle), 2 * half_height / rows
+    view = planar.Window(x - pixel * columns / 2, y + half_height, pixel, shape)
+    travelled = []
+    for vortices in frames:
+        travelled.append(positions(vortices.centres))                          # [vortices, 2]
+        # Each vortex's path so far, from where it started, which is the whole path on the first frame.
+        paths = planar.mv.point(np.stack([travelled[0]] + travelled, axis=1))  # [vortices, frames + 1] Point
+        trails = planar.Strokes(paths, TRAIL_WIDTH, TRAIL, TRAIL_OPACITY, planar.SOLID, planar.Cap.ROUND)
+        yield planar.draw(view, [trails], vorticity_image(vortices, middle, half_height, shape, scale))

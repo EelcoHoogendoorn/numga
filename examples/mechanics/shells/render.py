@@ -20,15 +20,9 @@ gloss = 0.08
 elevation, azimuth = np.radians([24.0, 40.0])
 margin = 0.1
 room = 0.08
-n_pixels = 480
+n_pixels = 240
 background = np.ones(3)
 DURATION_MS = 50
-
-
-def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points `[..., 3]`, at unit weight."""
-    places = points.cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
-    return places[..., :3] / places[..., 3:]
 
 
 def centre(points: core.Point) -> core.Point:
@@ -44,8 +38,8 @@ def extent(points: core.Point) -> np.ndarray:
 
 
 def picture(faces: np.ndarray, points: core.Point, half: np.ndarray) -> np.ndarray:
-    """A sheet's triangles `[F, 3]` at the given points `Point[V]`, flat, lit on the side the camera sees, seen
-    about its mean."""
+    """A sheet's triangles `[faces, 3]` at the given points `Point-[vertices]`, flat, lit on the side the
+    camera sees, seen about its mean."""
     places = points.batch()
     view = solids.View(solids.aim(centre(points), elevation, azimuth), half, n_pixels)
     return meshes.draw(places, faces, colour, meshes.flat(places, faces), view, background, face_values=np.zeros(4),

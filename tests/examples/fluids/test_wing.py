@@ -7,8 +7,8 @@ from examples.fluids.wing import core, scenarios
 
 def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     pitched = scenarios.wing(scenarios.HIGHEST_ATTACK)
-    stream = scenarios.stream()
-    plane = core.rings(pitched, 20, scenarios.N_ANGLES, scenarios.REACH)
+    stream = scenarios.STREAM
+    plane = core.rings(pitched, 20, scenarios.N_ANGLES, scenarios.OUTER_DISTANCE)
     edge = scenarios.trailing_edge(pitched)
     _, velocity, _, _ = core.flow(pitched, stream, plane, edge)
 
@@ -24,11 +24,13 @@ def test_the_velocity_has_no_derivative_and_the_wing_lifts_by_its_circulation():
     # Far away the flow is the stream.
     _, far_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 2, 8, 1e4)[-1], edge)
     np.testing.assert_allclose((far_velocity - stream).kernel, 0.0, atol=1e-3)
-    # The pressure around the surface is the Kutta–Joukowski lift, with no drag.
+    # The pressure around the surface, each step's swept area in the sense the surface winds, is the
+    # Kutta–Joukowski lift, with no drag.
     surface, surface_velocity, _, _ = core.flow(pitched, stream, core.rings(pitched, 1, scenarios.N_ANGLES, 1.0)[0], edge)
     next_idx = (np.arange(scenarios.N_ANGLES) + 1) % scenarios.N_ANGLES
     steps = surface[next_idx] - surface
-    speed_squared = surface_velocity | surface_velocity
-    inward = (core.mv.xy * (np.pi / 4)).exp() >> steps
-    force = (0.5 * scenarios.DENSITY * (speed_squared + speed_squared[next_idx]) / 2 * inward).sum(axis=-1)
-    np.testing.assert_allclose((force - core.lift(pitched, stream, scenarios.DENSITY)).kernel, 0.0, atol=1e-3)
+    speed_squared = surface_velocity.dot(surface_velocity)
+    pressure = -0.5 * scenarios.DENSITY * (speed_squared + speed_squared[next_idx]) / 2
+    winding = (surface & surface[next_idx]).sum(axis=-1)
+    force = (pressure * (steps & core.Point)).sum(axis=-1) * (winding / winding.norm())
+    np.testing.assert_allclose((force - (core.lift(pitched, stream, scenarios.DENSITY) & core.Point)).kernel, 0.0, atol=1e-3)
