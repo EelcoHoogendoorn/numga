@@ -31,13 +31,13 @@ def run(core):
     """The drive in the core's algebra: per step the wheels' contacts with the ground and the points ahead
     of them, the turning centre, and the middle of the rear axle, all in the ground's frame."""
     steering = BIAS + SWING * np.sin(2 * np.pi * N_SWINGS * np.arange(N_STEPS) / N_STEPS)   # [steps]
-    rear, front, steer = core.axles(WHEELBASE, steering)                        # [], [steps], [steps]
-    poses = core.drive(rear, front, STEP)                                       # [steps] Motor
-    contacts, forward = core.wheels(WHEELBASE, TRACK, steer)                    # [wheels], [steps, wheels] Point
-    contacts = poses[:, None] >> contacts                                       # [steps, wheels] Point
-    forward = poses[:, None] >> forward                                         # [steps, wheels] Point
-    centres = poses >> (rear ^ front)                                           # [steps] Meet
-    middle = poses >> core.point([0.0, 0.0])                                    # [steps] Point
+    rear, front, steer = core.axles(WHEELBASE, steering)                        # [] Plane+, [steps] Plane+, [steps] Motor+
+    poses = core.drive(rear, front, STEP)                                       # [steps] Motor+
+    contacts, forward = core.wheels(WHEELBASE, TRACK, steer)                    # [wheels] Point-, [steps, wheels] Point-
+    contacts = poses[:, None] >> contacts                                       # [steps, wheels] Point-
+    forward = poses[:, None] >> forward                                         # [steps, wheels] Point-
+    centres = poses >> (rear ^ front)                                           # [steps] Meet+
+    middle = poses >> core.point([0.0, 0.0])                                    # [steps] Point-
     return contacts, forward, centres, middle
 
 

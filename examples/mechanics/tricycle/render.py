@@ -29,16 +29,16 @@ REACH = 2.0
 VIEW = 3.0
 BACKGROUND = np.ones(3)
 # The plane: the width in points of the axles' lines, and the lengths of their dashes and gaps in line widths.
-AXLE_WIDTH, AXLE_DASHES = 1.5, (4.0, 3.0)
+AXLE_WIDTH, AXLE_DASHES = 0.9, (4.0, 3.0)
 # Space: the view's elevation and azimuth in radians, azimuth zero looking along +y, the margin around the square
 # of ground it follows as a share of the larger side, and the pixels across it; the length of a dash along an axle
 # and of the gap after it, and the points around a rim; the widths in pixels of the axles' dashes, the frame, the
 # post, the rims and the trail.
 ELEVATION, AZIMUTH = np.radians(35.0), np.radians(25.0)
-MARGIN, N_PIXELS = 0.04, 600
+MARGIN, N_PIXELS = 0.04, 300
 DASH = 0.12
 N_RIM = 48
-DASH_WIDTH, FRAME_WIDTH, POST_WIDTH, RIM_WIDTH, TRAIL_WIDTH = 4.0, 6.0, 4.0, 4.0, 4.0
+DASH_WIDTH, FRAME_WIDTH, POST_WIDTH, RIM_WIDTH, TRAIL_WIDTH = 2.0, 3.0, 2.0, 2.0, 2.0
 
 
 def ground(points) -> np.ndarray:
@@ -70,17 +70,17 @@ def plane(contacts, forward, centre, middle) -> np.ndarray:
     wheels, ahead, middle = ground(contacts), ground(forward), ground(middle)
     extent = following(middle)
     centre = ground(centre)
-    figure, ax = plt.subplots(figsize=(5, 5))
-    ax.plot(*middle.T, color=TRAIL, linewidth=1.0)
+    figure, ax = plt.subplots(figsize=(3, 3))
+    ax.plot(*middle.T, color=TRAIL, linewidth=0.6)
     for start, end in zip(*axles(wheels, axle_ends(wheels, ahead, centre))):
         ax.plot(*np.stack([start, end]).T, color=AXLE, linewidth=AXLE_WIDTH, linestyle=(0, AXLE_DASHES))
     if np.isfinite(centre).all():
-        ax.scatter(*centre, color=CENTRE, s=30, zorder=4)
-    ax.plot(*np.stack([wheels[0], wheels[1]]).T, color=FRAME, linewidth=2.5)
-    ax.plot(*np.stack([(wheels[0] + wheels[1]) / 2, wheels[2]]).T, color=FRAME, linewidth=2.5)
+        ax.scatter(*centre, color=CENTRE, s=11, zorder=4)
+    ax.plot(*np.stack([wheels[0], wheels[1]]).T, color=FRAME, linewidth=1.5)
+    ax.plot(*np.stack([(wheels[0] + wheels[1]) / 2, wheels[2]]).T, color=FRAME, linewidth=1.5)
     for start, end in zip(wheels, ahead):
         step = (end - start) / np.linalg.norm(end - start) * WHEEL_RADIUS
-        ax.plot(*np.stack([start - step, start + step]).T, color=WHEEL, linewidth=5, solid_capstyle="round")
+        ax.plot(*np.stack([start - step, start + step]).T, color=WHEEL, linewidth=3, solid_capstyle="round")
     ax.set(xlim=extent[:, 0], ylim=extent[:, 1], aspect="equal")
     ax.axis("off")
     figure.tight_layout()
@@ -108,7 +108,7 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
                          at_height(np.concatenate([start + DASH * direction for start, direction in zip(starts, directions)]),
                                    WHEEL_RADIUS),
                          DASH_WIDTH / 2 * view.pixel)
-    hubs = at_height(wheels, WHEEL_RADIUS)                                               # [wheels] Point
+    hubs = at_height(wheels, WHEEL_RADIUS)                                               # [wheels] Point-
     frame = solids.rods(concatenate([hubs[:1], (hubs[:1] + hubs[1:2]) / 2]), concatenate([hubs[1:2], hubs[2:]]),
                         FRAME_WIDTH / 2 * view.pixel)
     parts = [(dashes, to_rgb(AXLE)), (frame, to_rgb(FRAME))]
@@ -119,9 +119,9 @@ def space(contacts, forward, centre, middle) -> np.ndarray:
     # the rim ahead of the hub.
     heading = (ahead - wheels) / np.linalg.norm(ahead - wheels, axis=-1, keepdims=True)
     level = np.zeros(len(wheels))
-    forward = sm.direction(np.stack([heading[:, 0], heading[:, 1], level], axis=-1))     # [wheels] Point
-    sideways = sm.direction(np.stack([-heading[:, 1], heading[:, 0], level], axis=-1))   # [wheels] Point
-    rims = meshes.circles(hubs + forward * WHEEL_RADIUS, (hubs & sideways) * solids.flip, N_RIM)   # [wheels, rim + 1] Point
+    forward = sm.direction(np.stack([heading[:, 0], heading[:, 1], level], axis=-1))     # [wheels] Point-
+    sideways = sm.direction(np.stack([-heading[:, 1], heading[:, 0], level], axis=-1))   # [wheels] Point-
+    rims = meshes.circles(hubs + forward * WHEEL_RADIUS, (hubs & sideways) * solids.flip, N_RIM)   # [wheels, rim + 1] Point-
     tyres = strokes.polylines([(rim, to_rgb(WHEEL)) for rim in rims], RIM_WIDTH, view)
     trail = strokes.polylines([(at_height(middle, 0.0), to_rgb(TRAIL))], TRAIL_WIDTH, view)
     return solids.draw(parts, view, BACKGROUND, inks=[], translucent=[], meshes=[(tyres, 1.0), (trail, 1.0)])

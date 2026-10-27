@@ -18,16 +18,16 @@ from numga.algebras import PGA2D
 
 ga = PGA2D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Motor = ga.gatype.rotor()
-Twist = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-StateCost = ga.gatype((Scalar, Twist, Twist))       # Scalar <- (Twist, Twist)
-EffortCost = ga.gatype((Scalar, Forque, Forque))    # Scalar <- (Forque, Forque)
-Dynamics = ga.gatype((Twist, Twist))               # Twist <- Twist
-Actuation = ga.gatype((Twist, Forque))              # Twist <- Forque
-Feedback = ga.gatype((Forque, Twist))              # Forque <- Twist
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
+Motor = ga.gatype.rotor()                           # Rotor+
+Twist = ga.gatype.bivector()                        # Bivector+
+Forque = ga.gatype.antibivector()                   # Antibivector-
+StateCost = ga.gatype((Scalar, Twist, Twist))       # Scalar+ <- (Twist+, Twist+)
+EffortCost = ga.gatype((Scalar, Forque, Forque))    # Scalar+ <- (Forque-, Forque-)
+Dynamics = ga.gatype((Twist, Twist))               # Twist+ <- Twist+
+Actuation = ga.gatype((Twist, Forque))              # Twist+ <- Forque-
+Feedback = ga.gatype((Forque, Twist))              # Forque- <- Twist+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -36,20 +36,20 @@ def riccati(value: StateCost, dynamics: Dynamics, actuation: Actuation, state_co
     """The cost still to pay and the feedback, one more step back from the given cost each time."""
     for _ in range(n_steps):
         # A push costs effort now and moves the error whose cost is paid next.
-        control_cost = effort_cost + value(actuation, actuation)             # [cases] Scalar <- (Forque, Forque)
+        control_cost = effort_cost + value(actuation, actuation)             # [cases] Scalar+ <- (Forque-, Forque-)
         # The push that cancels the cost's derivative, for every error at once.
-        feedback = -control_cost.solve(value(dynamics, actuation))           # [cases] Forque <- Twist
+        feedback = -control_cost.solve(value(dynamics, actuation))           # [cases] Forque- <- Twist+
         # The error's cost now, and its future cost through the step that feedback takes.
-        value = state_cost + value(dynamics, dynamics + actuation(feedback))  # [cases] Scalar <- (Twist, Twist)
+        value = state_cost + value(dynamics, dynamics + actuation(feedback))  # [cases] Scalar+ <- (Twist+, Twist+)
         yield value, feedback
 
 
 def rollout(initial: Twist, dynamics: Dynamics, actuation: Actuation,
             feedbacks: Feedback) -> Iterator[Twist]:
     """The initial error and its evolution under the finite-horizon feedback policy."""
-    error = initial                                                # [cases] Twist
+    error = initial                                                # [cases] Twist+
     yield error
     for feedback in feedbacks:
-        push = feedback(error)                                     # [cases] Forque
-        error = dynamics(error) + actuation(push)                  # [cases] Twist
+        push = feedback(error)                                     # [cases] Forque-
+        error = dynamics(error) + actuation(push)                  # [cases] Twist+
         yield error

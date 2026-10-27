@@ -39,29 +39,29 @@ from numga.backend.context import Context
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
-Plane = ga.gatype.vector()
-Point = ga.gatype.antivector()
+Plane = ga.gatype.vector()                          # Vector+
+Point = ga.gatype.antivector()                      # Antivector-
 # Where two hyperplanes meet: a point in the plane, a line in space.
-Meet = ga.gatype.bivector()
-Motor = ga.gatype.rotor()
+Meet = ga.gatype.bivector()                         # Bivector+
+Motor = ga.gatype.rotor()                           # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
 def axles(wheelbase: float, steering: np.ndarray) -> tuple[Plane, Plane, Motor]:
     """The rear axle, the front axle turned by each steering angle, and the steering motor that turns
     it."""
-    rear = mv.x                                                                 # [] Plane
-    rest = mv.x - wheelbase * mv.w                                              # [] Plane
-    axis = rest ^ mv.y                                                          # [] Meet
-    steer = (axis.normalized() * (-steering / 2)).exp()                         # [...] Motor
+    rear = mv.x                                                                 # [] Plane+
+    rest = mv.x - wheelbase * mv.w                                              # [] Plane+
+    axis = rest ^ mv.y                                                          # [] Meet+
+    steer = (axis.normalized() * (-steering / 2)).exp()                         # [...] Motor+
     return rear, steer >> rest, steer
 
 
 def drive(rear: Plane, front: Plane, step: float) -> Motor:
     """The tricycle's pose after each step, each step a motion about the turning centre of that step's
     axles, in the tricycle's own frame."""
-    steps = ((rear ^ front) * (-step / 2)).exp()                                # [steps] Motor
-    return steps.reverse().cumprod(axis=0).reverse()                            # [steps] Motor
+    steps = ((rear ^ front) * (-step / 2)).exp()                                # [steps] Motor+
+    return steps.reverse().cumprod(axis=0).reverse()                            # [steps] Motor+
 
 
 def wheels(wheelbase: float, track: float, steer: Motor) -> tuple[Point, Point]:
@@ -69,11 +69,11 @@ def wheels(wheelbase: float, track: float, steer: Motor) -> tuple[Point, Point]:
     ahead of each along the way it rolls, the front one turned by the steering, in the tricycle's own
     frame."""
     ahead = 0.1 * wheelbase
-    contacts = point([[0.0, -track / 2], [0.0, track / 2], [wheelbase, 0.0]])  # [wheels] Point
-    rear_ahead = point([[ahead, -track / 2], [ahead, track / 2]])             # [2] Point
-    front_ahead = steer >> point([wheelbase + ahead, 0.0])                     # [...] Point
+    contacts = point([[0.0, -track / 2], [0.0, track / 2], [wheelbase, 0.0]])  # [wheels] Point-
+    rear_ahead = point([[ahead, -track / 2], [ahead, track / 2]])             # [2] Point-
+    front_ahead = steer >> point([wheelbase + ahead, 0.0])                     # [...] Point-
     forward = concatenate([rear_ahead.broadcast_to(steer.shape + (2,)), front_ahead[..., None]], axis=-1)
-    return contacts, forward                                                    # [wheels], [..., wheels] Point
+    return contacts, forward                                                    # [wheels] Point-, [..., wheels] Point-
 
 
 # --- plumbing -------------------------------------------------------------------------

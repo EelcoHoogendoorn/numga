@@ -33,13 +33,13 @@ TRAIL = np.array([0.85, 0.20, 0.20])
 # At most this many segments of the trail are painted, evenly spaced along it; the pixels across the picture, and the
 # margin around the loop and the ball, as a share of the ball's radius.
 TRAIL_SEGMENTS = 64
-N_PIXELS = 500
+N_PIXELS = 300
 MARGIN = 1.3
 # The planes whose pairings with a point of the table are how far across and up the picture it lies; the point so far
 # along each is `(axes.dual() * at).sum()`.
-axes = stack((mv.x, mv.y))                                                    # [2] Vector
+axes = stack((mv.x, mv.y))                                                    # [2] Vector+
 # The direction the light comes from, the upper left, and the share of the light that falls everywhere.
-lamp = (mv.x * -0.4 + mv.y * 0.4 + mv.z * 0.82).dual()                        # [] Point
+lamp = (mv.x * -0.4 + mv.y * 0.4 + mv.z * 0.82).dual()                        # [] Point-
 AMBIENT = 0.4
 
 source = """
@@ -105,14 +105,14 @@ def coordinates(points) -> np.ndarray:
     return (axes & points[..., None]).to_array()
 
 
-def table(path, reach: float) -> np.ndarray:
-    """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `reach` of its middle: drawn
+def table(path, half_width: float) -> np.ndarray:
+    """The table from above with the loop on it, `[pixels, pixels, 3]` in [0, 1], within `half_width` of its middle: drawn
     once, for every frame to lay the ball over."""
     xy = coordinates(path)
     figure, ax = plt.subplots(figsize=(N_PIXELS / 100, N_PIXELS / 100), dpi=100, facecolor=TABLE)
     ax.set_facecolor(TABLE)
-    ax.plot(*xy.T, color=LOOP, linewidth=1.0)
-    ax.set(xlim=(-reach, reach), ylim=(-reach, reach), aspect="equal")
+    ax.plot(*xy.T, color=LOOP, linewidth=0.6)
+    ax.set(xlim=(-half_width, half_width), ylim=(-half_width, half_width), aspect="equal")
     ax.axis("off")
     figure.subplots_adjust(0, 0, 1, 1)
     image = capture(figure) / 255
@@ -120,11 +120,11 @@ def table(path, reach: float) -> np.ndarray:
     return image
 
 
-def frame(background: np.ndarray, reach: float, position, turn, trail, radius: float) -> np.ndarray:
+def frame(background: np.ndarray, half_width: float, position, turn, trail, radius: float) -> np.ndarray:
     """One frame: the ball, painted where it stands on the table, over the table and the loop, `[pixels, pixels, 3]`
     bytes."""
     marks = trail[np.linspace(0, len(trail) - 1, min(len(trail), TRAIL_SEGMENTS + 1)).astype(int)]
-    ball = shader()((N_PIXELS, N_PIXELS), turn=turn, centre=position, radius=radius, half_width=reach,
+    ball = shader()((N_PIXELS, N_PIXELS), turn=turn, centre=position, radius=radius, half_width=half_width,
                     marks=marks)["image"]
     # The ball's colour already weighted by its coverage, over what the table shows where it does not cover.
     shown = ball[..., :3] + (1 - ball[..., 3:]) * background
@@ -134,7 +134,7 @@ def frame(background: np.ndarray, reach: float, position, turn, trail, radius: f
 def animate(path, rolling, radius: float) -> Iterator[np.ndarray]:
     """One frame per state of the ball: its position, its turn and its contact point's trail, all over one view of the
     table, the loop drawn once."""
-    reach = np.abs(coordinates(path)).max() + MARGIN * radius
-    background = table(path, reach)
+    half_width = np.abs(coordinates(path)).max() + MARGIN * radius
+    background = table(path, half_width)
     for position, turn, trail in rolling:
-        yield frame(background, reach, position, turn, trail, radius)
+        yield frame(background, half_width, position, turn, trail, radius)
