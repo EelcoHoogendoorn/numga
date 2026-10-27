@@ -6,21 +6,21 @@ from numga import NumpyContext
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                         # Scalar+
 # Currents are directions in spacetime, antivectors.
-Antivector = ga.gatype.antivector()
-Spinor = ga.gatype.even()
+Antivector = ga.gatype.antivector()                 # Antivector-
+Spinor = ga.gatype.even()                           # Even+
 # The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
 # t's square.
-time = -mv.t.dual()
+time = -mv.t.dual()                                 # [] Antivector-
 
 # Phase, chirality and charge conjugation are right multiplications, maps from Spinor to Spinor.
-phase_unit = Spinor * mv.yx
-chirality_map = Spinor * mv.zt
-charge_conjugation = Spinor * mv.yt
-right_projector = (Spinor + chirality_map) / 2
-left_projector = (Spinor - chirality_map) / 2
-majorana_projector = (Spinor + charge_conjugation) / 2
+phase_unit = Spinor * mv.yx                         # [] Spinor+ <- Spinor+
+chirality_map = Spinor * mv.zt                      # [] Spinor+ <- Spinor+
+charge_conjugation = Spinor * mv.yt                 # [] Spinor+ <- Spinor+
+right_projector = (Spinor + chirality_map) / 2      # [] Spinor+ <- Spinor+
+left_projector = (Spinor - chirality_map) / 2       # [] Spinor+ <- Spinor+
+majorana_projector = (Spinor + charge_conjugation) / 2# [] Spinor+ <- Spinor+
 
 
 # --- math -----------------------------------------------------------------------------

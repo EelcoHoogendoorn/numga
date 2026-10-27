@@ -25,7 +25,7 @@ MARGIN = 0.1
 # The spin arrows' length, in the paths' units; the widths of the paths and the arrows and the arrowheads' length and
 # width, in pixels.
 SPIN_LENGTH = 0.4
-PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 3.0, 3.0, 18.0, 10.0
+PATH_WIDTH, ARROW_WIDTH, HEAD_LENGTH, HEAD_WIDTH = 1.5, 1.5, 9.0, 5.0
 
 
 def spatial(directions: core.Antivector) -> np.ndarray:
@@ -37,9 +37,15 @@ def spatial(directions: core.Antivector) -> np.ndarray:
 def framing(ax, spinors: list, paths: list) -> solids.View:
     """One view for every frame, framing the whole of each path and every spin arrow along it, as many pixels across
     as the axes' room holds."""
-    ends = [spatial(trace) + SPIN_LENGTH * unit(spatial(core.spin(psi))) for psi, trace in zip(spinors, paths)]
+    ends = [spatial(trace) + SPIN_LENGTH * unit(spatial(axis(psi))) for psi, trace in zip(spinors, paths)]
     return fitted(solids.view([sm.point(spatial(trace)) for trace in paths] + [sm.point(tips) for tips in ends], 0.0,
                               ELEVATION, AZIMUTH, MARGIN, 1), ax)
+
+
+def axis(psi: core.Spinor) -> core.Antivector:
+    """The spin's axis as the observer sees it, drawn as an arrow: the line where the spin's patch crosses the
+    observer's slice of space."""
+    return core.spin(psi) ^ core.mv.t
 
 
 def unit(directions: np.ndarray) -> np.ndarray:
@@ -51,7 +57,7 @@ def picture(spinors: list, paths: list, upto: int, view: solids.View) -> np.ndar
     rgb = np.array([to_rgb(colour) for colour in colours[: len(paths)]])
     traced = [spatial(trace)[:upto] for trace in paths]                         # [times, 3] each
     here = np.stack([xyz[-1] for xyz in traced])                                # [mixtures, 3]
-    spins = unit(np.stack([spatial(core.spin(psi[upto - 1])) for psi in spinors]))   # [mixtures, 3]
+    spins = unit(np.stack([spatial(axis(psi[upto - 1])) for psi in spinors]))   # [mixtures, 3]
     lines = strokes.polylines([(sm.point(xyz), colour) for xyz, colour in zip(traced, rgb)], PATH_WIDTH, view)
     shafts, heads = solids.arrows(sm.point(here), sm.point(here + SPIN_LENGTH * spins), ARROW_WIDTH / 2 * view.pixel,
                                   HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
@@ -64,13 +70,13 @@ def draw_scene(ax, spinors: list, paths: list, mixtures: tuple, upto: int, view:
     shown = show(ax, picture(spinors, paths, upto, view), view)
     # The tall image in the middle of the figure, the legend in the figure's corner beside it.
     ax.figure.legend(handles=[Line2D([], [], color=colour, label=f"{share:.0%} negative energy")
-                              for share, colour in zip(mixtures, colours)], loc="upper left", fontsize=8)
+                              for share, colour in zip(mixtures, colours)], loc="upper left", fontsize=6)
     return shown
 
 
 def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -> plt.Figure:
     """The paths the currents trace, one per share of negative energy, with the spin at the end."""
-    figure = plt.figure(figsize=(7, 7))
+    figure = plt.figure(figsize=(3.5, 3.5))
     ax = figure.add_axes((0, 0, 1, 1))
     draw_scene(ax, spinors, paths, mixtures, len(times), framing(ax, spinors, paths))
     return figure
@@ -78,7 +84,7 @@ def draw_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple) -
 
 def animate_paths(times: np.ndarray, spinors: list, paths: list, mixtures: tuple, every: int) -> Iterator[np.ndarray]:
     """The paths drawn as they are traced, with each electron's spin at its current position."""
-    figure = plt.figure(figsize=(5, 6))
+    figure = plt.figure(figsize=(2.5, 3))
     ax = figure.add_axes((0, 0, 1, 1))
     view = framing(ax, spinors, paths)
     # The figure and its legend set up once; only the picture changes between frames.

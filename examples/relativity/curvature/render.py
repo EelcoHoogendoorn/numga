@@ -34,7 +34,7 @@ animation_dpi = 64
 # width each diagram takes.
 ELEVATION, AZIMUTH = np.radians([15.0, 22.0])
 MARGIN = 0.08
-N_MAP_PIXELS = 500
+N_MAP_PIXELS = 250
 PANEL_WIDTH = 0.44
 BLUE_RGB, ORANGE_RGB, LIGHT, PATCH = (np.array(to_rgb(colour)) for colour in (BLUE, ORANGE, light_colour, BLUE))
 # How much each of a patch's two faces hides.
@@ -42,7 +42,7 @@ PATCH_OPACITY = 0.15
 # The axes' arrows and their names, in extents of the diagram; widths in pixels, of the axes' arrows and of the
 # patches' outlines, and an arrowhead's length and width in widths of its shaft.
 AXIS_LENGTH, LABEL_DISTANCE = 0.88, 0.97
-AXIS_WIDTH, OUTLINE_WIDTH = 3.0, 3.5
+AXIS_WIDTH, OUTLINE_WIDTH = 1.5, 1.8
 HEAD_LENGTH, HEAD_WIDTH = 4.5, 3.0
 # The colour of the names of the lines of the faint cross through a ring's centre.
 CROSS_LABEL_COLOUR = "#7b8794"
@@ -92,7 +92,7 @@ def panel(ax: plt.Axes, corners: np.ndarray, ends: list[tuple[np.ndarray, np.nda
     the area element `[4, 3]` as a translucent plate a pixel thick with its outline, rods joined round at the
     corners, and arrows `[arrows, 3]` each with its colour and width in pixels."""
     axis_ends = np.eye(3) * extent * AXIS_LENGTH
-    places = solids.mv.point(corners)                                          # [4] Point
+    places = solids.mv.point(corners)                                          # [4] Point-
     rims, joints = solids.edges(places, places[np.roll(np.arange(4), -1)], OUTLINE_WIDTH / 2 * view.pixel)
     parts = (arrows(axis_ends, LIGHT, AXIS_WIDTH, view) + [(rims, PATCH), (joints, PATCH)]
              + [part for points, colour, width in ends for part in arrows(points, colour, width, view)])
@@ -111,8 +111,8 @@ def draw_curvature_map(
     containing the wave's direction; the observer reads it as a tidal force, which the metric turns
     into an acceleration. The image is drawn as the plane of the wave's direction and that acceleration.
     """
-    readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector
-    across = readout / np.sqrt(readout.squared().to_array())             # [] Antivector
+    readout = -(observer & curvature(observer & edge)).dual()           # [] Antivector-
+    across = readout / np.sqrt(readout.squared().to_array())             # [] Antivector-
     patches = (patch(observer, edge), patch(wave, across))
     observer_end, wave_end, readout_end = spacetime(observer)[None], spacetime(wave)[None], spacetime(readout)[None]
     extent = max(1.0, float(np.abs(np.concatenate((*patches, observer_end, wave_end, readout_end))).max())) * 1.22
@@ -121,10 +121,10 @@ def draw_curvature_map(
                                                         np.eye(3) * extent * LABEL_DISTANCE)))], 0.0,
                        ELEVATION, AZIMUTH, MARGIN, N_MAP_PIXELS)
     rows, columns = view.shape
-    fig = plt.figure(figsize=(9.5, 9.5 * PANEL_WIDTH * rows / columns), dpi=120, facecolor="white")
+    fig = plt.figure(figsize=(9.5, 9.5 * PANEL_WIDTH * rows / columns), dpi=60, facecolor="white")
     before, after = fig.add_axes((0, 0, PANEL_WIDTH, 1)), fig.add_axes((1 - PANEL_WIDTH, 0, PANEL_WIDTH, 1))
-    panel(before, patches[0], [(observer_end, ORANGE_RGB, 4.0)], extent, view)
-    panel(after, patches[1], [(wave_end, BLUE_RGB, 4.5), (observer_end, ORANGE_RGB, 4.0), (readout_end, ORANGE_RGB, 5.0)],
+    panel(before, patches[0], [(observer_end, ORANGE_RGB, 2.0)], extent, view)
+    panel(after, patches[1], [(wave_end, BLUE_RGB, 2.2), (observer_end, ORANGE_RGB, 2.0), (readout_end, ORANGE_RGB, 2.5)],
           extent, view)
     # The map from the ribbon to its image, an arrow across the gap between the diagrams.
     before.annotate("", xy=(1 - PANEL_WIDTH + 0.01, 0.5), xytext=(PANEL_WIDTH - 0.01, 0.5),
@@ -137,7 +137,7 @@ def draw_curvature_map(
 def draw_packet(time: np.ndarray, strains: np.ndarray, curvatures: np.ndarray) -> plt.Figure:
     """The plus and cross strain profiles and the curvature's weights `[times, 2]`, plus in blue and cross in orange,
     each named beside its highest crest."""
-    fig, (top, bottom) = plt.subplots(2, 1, figsize=(10, 4.4), dpi=120, sharex=True, facecolor="white",
+    fig, (top, bottom) = plt.subplots(2, 1, figsize=(5.0, 2.6), dpi=90, sharex=True, facecolor="white",
                                       layout="constrained")
     for ax, values, name, across in ((top, strains, "strain", ""), (bottom, curvatures, "curvature", "time")):
         ax.plot(time, values[:, 0], color=BLUE, lw=1.6)
@@ -153,12 +153,12 @@ def draw_packet(time: np.ndarray, strains: np.ndarray, curvatures: np.ndarray) -
 
 def draw_doppler(rapidities: np.ndarray, amplitudes: Scalar) -> plt.Figure:
     """Tidal amplitude measured by observers boosted along the wave, against `np.exp(-2 * rapidities)`."""
-    measured = amplitudes.kernel[..., 0]                                 # [n] float
+    measured = amplitudes.to_array()                                     # [n]
     fine = np.linspace(rapidities.min(), rapidities.max(), 200)
-    fig, ax = plt.subplots(figsize=(7, 4), dpi=120, facecolor="white", layout="constrained")
+    fig, ax = plt.subplots(figsize=(4.4, 2.6), dpi=90, facecolor="white", layout="constrained")
     # The Doppler factor squared as a line, the tidal map's largest singular value as dots.
     ax.plot(fine, np.exp(-2 * fine), color=INK, lw=1.5)
-    ax.scatter(rapidities, measured, color=BLUE, s=36, zorder=5)
+    ax.scatter(rapidities, measured, color=BLUE, s=16, zorder=5)
     # The observer at rest, faint.
     ax.axvline(0, color=light_colour, lw=0.8, zorder=0)
     ax.set(ylim=(0, None))
@@ -180,7 +180,7 @@ def _detector(
     time: np.ndarray, reference: Antivector, displacement: Antivector, acceleration: Antivector, amplification: float,
 ) -> _Detector:
     """Read the beads out in initial-radius units, with displacements magnified for display."""
-    positions = reference + amplification * displacement                # [n_time, n_polarizations, n_beads] Antivector
+    positions = reference + amplification * displacement                # [n_time, n_polarizations, n_beads] Antivector-
     radius = float(np.linalg.norm(transverse(reference), axis=-1).mean())
     return _Detector(
         time=np.asarray(time),
@@ -211,12 +211,12 @@ def _ring(ax: plt.Axes, data: _Detector, polarization: int, static: bool):
     ax.plot(radius * np.cos(angles), radius * np.sin(angles), color=light_colour, ls=":", lw=1.5)
     ax.scatter([0], [0], s=22, color=ORANGE, zorder=8)
     # The cross through the centre, across the whole view but for room for its names at its ends.
-    reach = 0.9 * ax.get_xlim()[1]
-    ax.plot([-reach, reach], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
-    ax.plot([0, 0], [-reach, reach], color="#edf0f3", lw=0.8, zorder=0)
-    ax.annotate("x", (reach, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
+    half_span = 0.9 * ax.get_xlim()[1]
+    ax.plot([-half_span, half_span], [0, 0], color="#edf0f3", lw=0.8, zorder=0)
+    ax.plot([0, 0], [-half_span, half_span], color="#edf0f3", lw=0.8, zorder=0)
+    ax.annotate("x", (half_span, 0), xytext=(4, 0), textcoords="offset points", ha="left", va="center",
                 color=CROSS_LABEL_COLOUR)
-    ax.annotate("y", (0, reach), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
+    ax.annotate("y", (0, half_span), xytext=(0, 4), textcoords="offset points", ha="center", va="bottom",
                 color=CROSS_LABEL_COLOUR)
     outline, = ax.plot([], [], color=BLUE, lw=1.1, alpha=0.42, zorder=2)
     beads = ax.scatter([], [], s=19, color=BLUE, edgecolors="white", linewidths=0.4, zorder=5)
@@ -254,7 +254,7 @@ def draw_detector(
 ) -> plt.Figure:
     """The three polarizations at one shared instant of largest deformation, with faint full trails."""
     data = _detector(time, reference, displacement, acceleration, amplification)
-    fig = plt.figure(figsize=(14, 5.6), dpi=120, facecolor="white")
+    fig = plt.figure(figsize=(14, 5.6), dpi=60, facecolor="white")
     axes = _ring_axes(fig, data)
     offsets = data.positions - data.reference
     frame = int(np.argmax(np.sum(offsets * offsets, axis=(0, 2, 3))))

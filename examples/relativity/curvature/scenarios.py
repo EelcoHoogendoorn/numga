@@ -43,16 +43,16 @@ def detector() -> tuple[np.ndarray, np.ndarray, core.Antivector, core.Antivector
     and accelerations, integrated from rest."""
     plus, cross = core.polarizations()
     time = np.linspace(0.0, wave_duration, n_samples)
-    profiles, second = core.wave_packet(time, wave_duration, n_cycles, wave_amplitude)          # [times, 2] each
+    profiles, second = core.wave_packet(time, wave_duration, n_cycles, wave_amplitude)   # [times, 2] each
     # The weak-wave curvature is minus half the strain's second derivative times the unit maps.
-    waves = core.polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)        # [times, polarizations] Curvature
-    response = core.tidal_map(waves, time_direction)                                  # [times, polarizations] Tidal
+    waves = core.polarized(plus, cross, -0.5 * second[:, None] * polarization_weights)   # [times, polarizations] Bivector+ <- Antibivector-
+    response = core.tidal_map(waves, time_direction)                                  # [times, polarizations] Vector+ <- Antivector-
     # Each bead is x turned toward y by its angle.
     angles = np.linspace(0, 2 * np.pi, n_beads, endpoint=False)
-    reference = (mv.xy * (-angles / 2)).exp() >> mv.x.dual() * ring_radius                  # [beads] Antivector
+    reference = (mv.xy * (-angles / 2)).exp() >> mv.x.dual() * ring_radius            # [beads] Antivector-
     # The dual, the metric, turns each tidal force into an acceleration.
-    acceleration = -response[:, :, None](reference).dual()                            # [times, polarizations, beads] Antivector
-    displacement = core.integrate_acceleration(time, acceleration)                    # [times, polarizations, beads] Antivector
+    acceleration = -response[:, :, None](reference).dual()                            # [times, polarizations, beads] Antivector-
+    displacement = core.integrate_acceleration(time, acceleration)                    # [times, polarizations, beads] Antivector-
     return time, profiles[:, None] * polarization_weights, reference, displacement, acceleration
 
 
@@ -60,9 +60,9 @@ def doppler() -> tuple[np.ndarray, core.Scalar]:
     """The tidal amplitude of the unit plus wave as seen by observers boosted along the wave."""
     plus, _ = core.polarizations()
     rapidities = np.linspace(-max_rapidity, max_rapidity, n_observers)
-    observers = core.boosted_observers(rapidities, mv.z.dual())                       # [observers] Antivector
-    accelerations = -core.tidal_map(plus, observers).dual()                           # [observers] Antivector <- Antivector
-    return rapidities, accelerations.svdvals()[..., 0]                                # [observers] Scalar
+    observers = core.boosted_observers(rapidities, mv.z.dual())                       # [observers] Antivector-
+    accelerations = -core.tidal_map(plus, observers).dual()                           # [observers] Antivector- <- Antivector-
+    return rapidities, accelerations.svdvals()[..., 0]                                # [observers] Scalar+
 
 
 # --- plumbing -------------------------------------------------------------------------

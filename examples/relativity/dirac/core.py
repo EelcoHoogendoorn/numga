@@ -4,8 +4,9 @@ An electron's state at a point is an even multivector,
 `psi = (pseudoscalar * (beta / 2)).exp() * rotor * np.sqrt(density)`: a density, an angle beta and a
 Lorentz rotor. Sandwiching a vector with psi applies that rotor and scales by the density, so
 `psi >> Vector` is a map on spacetime: it carries the observer's frame to the electron's.
-Its image of the observer's direction in time is the electron's current, and its image of the z
-direction is its spin.
+Its image of the observer's direction in time is the electron's current, and the patch of its own sandwich
+of the spin plane, `(psi >> spin_plane).dual()`, is its spin: the plane the electron turns in, which,
+where beta is zero, holds the current and the spin's axis.
 beta does not act on vectors at all. It acts on bivectors, where the spinor's own sandwich differs
 from what its vector map extends to by the factor `(pseudoscalar * beta).exp() / density`.
 
@@ -30,27 +31,31 @@ from numga import NumpyContext, concatenate
 from numga.algebras import STA as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Bivector = ga.gatype.bivector()
-Even = ga.gatype.even()
+Scalar = ga.gatype.scalar()                         # Scalar+
+Vector = ga.gatype.vector()                         # Vector+
+Bivector = ga.gatype.bivector()                     # Bivector+
+Even = ga.gatype.even()                             # Even+
 # A Dirac spinor is an even multivector.
-Spinor = Even
+Spinor = Even                                       # Even+
 # The spinor's map on spacetime.
-Frame = ga.gatype((Vector, Vector))                 # Vector <- Vector
-# Currents, spins and positions are directions in spacetime, antivectors.
-Antivector = ga.gatype.antivector()
+Frame = ga.gatype((Vector, Vector))                 # Vector+ <- Vector+
+# Currents and positions are directions in spacetime, antivectors.
+Antivector = ga.gatype.antivector()                 # Antivector-
+# A spin is the patch of the plane it turns in, intrinsic.
+Spin = Bivector.derive.flipped_orientation          # Bivector-
 # Vectors in the observer's space, perpendicular to the time axis.
-Spatial = Vector.derive.within("x y z")
+Spatial = Vector.derive.within("x y z")             # Vector+
 # The plane-wave Dirac equation.
-Hamiltonian = ga.gatype((Even, Even))               # Even <- Even
+Hamiltonian = ga.gatype((Even, Even))               # Even+ <- Even+
+# What a spinor does to bivectors beyond its frame's extension.
+Duality = ga.gatype((Bivector, Bivector))           # Bivector+ <- Bivector+
 # The observer's direction in time, which pairs to one with its slice `mv.t`; the dual carries the minus of
 # t's square.
-time = -mv.t.dual()                                 # [] Antivector
+time = -mv.t.dual()                                 # [] Antivector-
 # The unit volume.
-pseudoscalar = mv.xyzt                              # [] Pseudoscalar
+pseudoscalar = mv.xyzt                              # [] Pseudoscalar+
 # The spin plane `mv.x ^ mv.y`: right multiplication by it squares to minus one.
-spin_plane = mv.xy                                  # [] Bivector
+spin_plane = mv.xy                                  # [] Bivector+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -70,7 +75,7 @@ def invariants(psi: Spinor) -> Even:
     return psi.symmetric_reverse_product()
 
 
-def duality(psi: Spinor):
+def duality(psi: Spinor) -> Duality:
     """What the spinor does to bivectors beyond what its frame does: its own sandwich on bivectors,
     composed with the inverse of the frame's extension to bivectors. It is multiplication by
     `(pseudoscalar * beta).exp() / density`."""
@@ -82,9 +87,11 @@ def current(psi: Spinor) -> Antivector:
     return psi >> time
 
 
-def spin(psi: Spinor) -> Antivector:
-    """The electron's spin, in units of half the reduced Planck constant: the z direction, carried by the spinor."""
-    return psi >> mv.z.dual()
+def spin(psi: Spinor) -> Spin:
+    """The electron's spin, in units of half the reduced Planck constant: the patch of the spin plane carried by
+    the spinor's own sandwich. Where beta is not zero, `(pseudoscalar * beta).exp()` turns it partly into its
+    complement; it stays defined where the density vanishes and beta with it."""
+    return (psi >> spin_plane).dual()
 
 
 def density(flow: Antivector) -> Scalar:
@@ -119,7 +126,7 @@ def evolve(momentum: Vector, mass: float, psi: Spinor, times: np.ndarray) -> Spi
     """
     E = energy(momentum, mass)
     positive = 0.5 * (psi + hamiltonian(momentum, mass)(psi) / E)
-    turn = (spin_plane * E * times).exp()                                   # [times] Rotor
+    turn = (spin_plane * E * times).exp()           # [times] Rotor+
     return positive * turn.reverse() + (psi - positive) * turn
 
 

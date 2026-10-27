@@ -29,27 +29,29 @@ from numga import Extensor, NumpyContext
 from numga.algebras import STA
 
 mv = NumpyContext(STA).multivector
-Scalar = STA.gatype.scalar()
+Scalar = STA.gatype.scalar()                        # Scalar+
 # Wave vectors, and the planes fields and curvature turn in: vectors and bivectors, extrinsic.
-Vector = STA.gatype.vector()
-Bivector = STA.gatype.bivector()
+Vector = STA.gatype.vector()                        # Vector+
+Bivector = STA.gatype.bivector()                    # Bivector+
 # Events, velocities and separations, and the areas their joins span: antivectors and antibivectors.
-Antivector = STA.gatype.antivector()
-Antibivector = STA.gatype.antibivector()
-Rotor = STA.gatype.rotor()
+Antivector = STA.gatype.antivector()                # Antivector-
+Antibivector = STA.gatype.antibivector()            # Antibivector-
+Rotor = STA.gatype.rotor()                          # Rotor+
 
-Curvature = STA.gatype((Bivector, Antibivector))    # Bivector <- Antibivector
-Tidal = STA.gatype((Vector, Antivector))            # Vector <- Antivector
-Strain = STA.gatype((Vector, Antivector))           # Vector <- Antivector
+Curvature = STA.gatype((Bivector, Antibivector))    # Bivector+ <- Antibivector-
+Tidal = STA.gatype((Vector, Antivector))            # Vector+ <- Antivector-
+Strain = STA.gatype((Vector, Antivector))           # Vector+ <- Antivector-
+# Curvature as a map on the two edges of a plane, in order.
+CurvatureForm = STA.gatype((Bivector, Antivector, Antivector))   # Bivector+ <- (Antivector-, Antivector-)
 
 t, x, y, z = mv.t, mv.x, mv.y, mv.z
 # One unit along the lab's time: the direction across the lab's slice of space `t`.
-time_direction = -t.dual()                                   # [] Antivector
+time_direction = -t.dual()                          # [] Antivector-
 # A wave travelling along z at the speed of light, and its wave vector, the slice its dual gives that direction.
-travel = time_direction + mv.z.dual()                        # [] Antivector
-wave_vector = -travel.dual()                                 # [] Vector
+travel = time_direction + mv.z.dual()               # [] Antivector-
+wave_vector = -travel.dual()                        # [] Vector+
 # An eighth of a turn in the plane across the wave.
-eighth_turn = (mv.xy * (-np.pi / 8)).exp()
+eighth_turn = (mv.xy * (-np.pi / 8)).exp()          # [] Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -59,14 +61,14 @@ def plane_wave_curvature(k: Vector, a: Vector, b: Vector) -> Curvature:
     Each null plane `k ^ a` is weighted by its pairing with the area; opposite weights cancel the Ricci
     contraction, the curvature of vacuum.
     """
-    na, nb = k ^ a, k ^ b                                                    # [] Bivector
-    return na * (na & Antibivector) - nb * (nb & Antibivector)               # [] Bivector <- Antibivector
+    na, nb = k ^ a, k ^ b                           # [] Bivector+
+    return na * (na & Antibivector) - nb * (nb & Antibivector)   # [] Bivector+ <- Antibivector-
 
 
 def polarizations() -> tuple[Curvature, Curvature]:
     """Unit plus and cross curvature maps for a wave travelling along +z: cross is plus turned an eighth of
     a turn in the plane across the wave, on its output and its input."""
-    plus = plane_wave_curvature(wave_vector, x, y)                           # [] Bivector <- Antibivector
+    plus = plane_wave_curvature(wave_vector, x, y)  # [] Bivector+ <- Antibivector-
     return plus, eighth_turn >> plus(eighth_turn << Antibivector)
 
 
@@ -76,14 +78,14 @@ def tidal_map(curvature: Curvature, observer: Antivector) -> Tidal:
     The observer and a separation span a ribbon of spacetime, the curvature turns it into a plane, and
     the observer reads the plane as a force, as a velocity reads a field.
     """
-    return observer & curvature(observer & Antivector)                       # [...] Vector <- Antivector
+    return observer & curvature(observer & Antivector)   # [...] Vector+ <- Antivector-
 
 
 def boosted_observers(rapidities: np.ndarray, direction: Antivector) -> Antivector:
     """Velocities of observers boosted along a spatial direction, one per rapidity."""
     # The plane of the boost is the join of the direction and time, which the dual turns into a generator.
-    boosts = ((direction & time_direction).dual() * (rapidities / 2)).exp()  # [n] Rotor
-    return boosts >> time_direction                                          # [n] Antivector
+    boosts = ((direction & time_direction).dual() * (rapidities / 2)).exp()   # [n] Rotor+
+    return boosts >> time_direction                 # [n] Antivector-
 
 
 def strain_patterns() -> tuple[Strain, Strain]:
@@ -94,7 +96,7 @@ def strain_patterns() -> tuple[Strain, Strain]:
     of the separation; the cross pattern is the same map turned an eighth of a turn in the plane across the
     wave, as the curvature's is.
     """
-    plus = x * (x & Antivector) - y * (y & Antivector)                       # [] Vector <- Antivector
+    plus = x * (x & Antivector) - y * (y & Antivector)   # [] Vector+ <- Antivector-
     return plus, eighth_turn >> plus(eighth_turn << Antivector)
 
 
@@ -103,14 +105,14 @@ def polarized(plus: Extensor, cross: Extensor, profiles: np.ndarray) -> Extensor
     return profiles[..., 0] * plus + profiles[..., 1] * cross
 
 
-def curvature_of_strain(k: Vector, second: Strain) -> Extensor:
+def curvature_of_strain(k: Vector, second: Strain) -> CurvatureForm:
     """Curvature as a map on pairs of directions, from the strain's second derivative along the wave.
 
     Applied to edges `a` and `b` it gives `(k & a) * (second(b) ^ k) - (second(a) ^ k) * (k & b)`; its two
     arguments are the plane's edges, in that order.
     """
-    bent = second ^ k                                                        # [...] Bivector <- Antivector
-    return (k & Antivector) * bent - bent * (k & Antivector)                 # [...] Bivector <- (Antivector, Antivector)
+    bent = second ^ k                               # [...] Bivector+ <- Antivector-
+    return (k & Antivector) * bent - bent * (k & Antivector)   # [...] Bivector+ <- (Antivector-, Antivector-)
 
 
 # --- plumbing -------------------------------------------------------------------------

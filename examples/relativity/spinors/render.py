@@ -41,7 +41,7 @@ def plain_axes(ax: plt.Axes, across: str, up: str) -> None:
     ax.set(xticks=[], yticks=[], xlabel=across, ylabel=up)
 
 
-def _read(directions: core.Antivector, *slices: str) -> np.ndarray:
+def _read(directions: core.Antivector, slices: tuple[str, ...]) -> np.ndarray:
     """Directions read by pairing with the named slices, on the last axis."""
     mv = directions.context.multivector
     return (stack(tuple(getattr(mv, name) for name in slices)) & directions[..., None]).to_array()
@@ -51,8 +51,8 @@ def animate_rotation(
     spin: core.Antivector, bright: core.Scalar, dark: core.Scalar,
 ) -> Iterator[np.ndarray]:
     """The spin direction beside two interference outputs against a fixed reference."""
-    directions = _read(spin, "x", "z")
-    figure, (axis, ports) = plt.subplots(1, 2, figsize=(6.8, 3.2), dpi=85, layout="constrained")
+    directions = _read(spin, ("x", "z"))
+    figure, (axis, ports) = plt.subplots(1, 2, figsize=(4.4, 2.1), dpi=85, layout="constrained")
     axis.add_patch(Circle((0, 0), 1, edgecolor="0.8", facecolor="none", linewidth=0.8))
     arrow = axis.quiver(0, 0, *directions[0], color=INK, angles="xy", scale_units="xy", scale=1, width=0.02)
     axis.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
@@ -78,9 +78,9 @@ def draw_chirality(
     left: core.Antivector, right: core.Antivector, current: core.Antivector,
 ) -> plt.Figure:
     """Two null currents and their timelike sum in the z–t plane."""
-    tips = np.stack([_read(direction, "z", "t") for direction in (left, right, current)])
+    tips = np.stack([_read(direction, ("z", "t")) for direction in (left, right, current)])
     extent = tips[:, 1].max() * 1.15
-    figure, ax = plt.subplots(figsize=(5, 3), layout="constrained")
+    figure, ax = plt.subplots(figsize=(3.6, 2.2), dpi=90, layout="constrained")
     ax.fill([-extent, 0, extent], [extent, 0, extent], color="0.97")
     ax.plot([-extent, 0, extent], [extent, 0, extent], color="0.8", linewidth=0.8)
     for tip, name, colour in zip(tips, ("left", "right", "Dirac"), (LEFT_COLOUR, RIGHT_COLOUR, INK)):
@@ -95,7 +95,7 @@ def draw_majorana(
     phases: np.ndarray, even_density: core.Scalar, odd_density: core.Scalar,
 ) -> plt.Figure:
     """A phase turn trades density between the two charge-conjugation eigenspaces."""
-    figure, ax = plt.subplots(figsize=(7, 2.8), layout="constrained")
+    figure, ax = plt.subplots(figsize=(4.6, 2.0), dpi=90, layout="constrained")
     ax.plot(phases / np.pi, even_density.to_array(), color=FIXED_COLOUR, label="conjugation +1")
     ax.plot(phases / np.pi, odd_density.to_array(), color=NEGATED_COLOUR, label="conjugation −1")
     ax.set(xlim=(phases[0] / np.pi, phases[-1] / np.pi), ylim=(0, 1.05))

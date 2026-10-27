@@ -24,22 +24,23 @@ frame_stride, frame_duration = 6, 40
 
 
 # --- math -----------------------------------------------------------------------------
-def trembling(momentum: core.Vector, seconds: float, n_times: int):
+def trembling(momentum: core.Vector, seconds: float, n_times: int
+              ) -> tuple[np.ndarray, core.Spinor, core.Antivector, core.Hamiltonian]:
     """Electrons of the given momentum with a share of negative energy mixed in, followed in time:
     the times, their spinors and the paths their currents trace, `[mixtures, times]`, and the
     plane-wave Hamiltonian."""
-    hamiltonian = core.hamiltonian(momentum, mass)                              # [] Even <- Even
-    energy = core.energy(momentum, mass)                                        # [] Scalar
+    hamiltonian = core.hamiltonian(momentum, mass)                              # [] Even+ <- Even+
+    energy = core.energy(momentum, mass)                                        # [] Scalar+
     one = mv.scalar([1.0])
     # A positive-energy state with spin along z, and a negative-energy state that turns the other way,
     # each scaled to unit density.
-    electron = 0.5 * (one + hamiltonian(one) / energy)                          # [] Spinor
-    positron = 0.5 * (mv.tx - hamiltonian(mv.tx) / energy)                      # [] Spinor
+    electron = 0.5 * (one + hamiltonian(one) / energy)                          # [] Spinor+
+    positron = 0.5 * (mv.tx - hamiltonian(mv.tx) / energy)                      # [] Spinor+
     electron, positron = electron / electron.scalar_norm_squared().square_root(), positron / (-positron.scalar_norm_squared()).square_root()
     times = np.linspace(0.0, seconds, n_times)
-    mixed = electron * np.sqrt(1 - mixtures) + positron * np.sqrt(mixtures)      # [mixtures] Spinor
-    spinors = core.evolve(momentum, mass, mixed[:, None], times)                 # [mixtures, times] Spinor
-    paths = core.path(core.velocity(core.current(spinors)), times[1] - times[0])  # [mixtures, times] Antivector
+    mixed = electron * np.sqrt(1 - mixtures) + positron * np.sqrt(mixtures)     # [mixtures] Spinor+
+    spinors = core.evolve(momentum, mass, mixed[:, None], times)                # [mixtures, times] Spinor+
+    paths = core.path(core.velocity(core.current(spinors)), times[1] - times[0])   # [mixtures, times] Antivector-
     return times, spinors, paths, hamiltonian
 
 
