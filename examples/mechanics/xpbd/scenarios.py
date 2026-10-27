@@ -4,11 +4,12 @@ stiff joints and light damping, in gravity of 0.5, stepped with NumPy and under 
 from __future__ import annotations
 
 from collections.abc import Iterator
+from functools import partial
 from itertools import islice
 
 import numpy as np
 
-from numga import Context, Extensor, NumpyContext
+from numga import Context, NumpyContext, stack
 from examples.mechanics.lie_integrators import inertia_from_points
 from examples.mechanics.xpbd import core
 from examples.mechanics.xpbd.core import Chain, Joints, Motor, Scalar
@@ -49,8 +50,8 @@ def chain(
     n_bodies = n_links + 1
 
     # Mass properties of one body, from its point cloud, replicated over all bodies.
-    reach = np.diag(semi_axes) * np.sqrt(3 / 5)
-    cloud = mv.point(np.concatenate([reach, -reach]))
+    offsets = np.diag(semi_axes) * np.sqrt(3 / 5)
+    cloud = mv.point(np.concatenate([offsets, -offsets]))
     inertia, inverse_inertia = inertia_from_points(cloud)
 
     # The pin has infinite mass: zero inverse inertia.
@@ -58,8 +59,8 @@ def chain(
 
     # From one body to the next along the arc; the bodies are its powers.
     half_shift = (mv.xw * (spacing / 4)).exp()
-    neighbour = half_shift * (mv.xy * (curl / 2)).exp() * half_shift                   # [] Motor
-    motors = (neighbour.log() * np.arange(n_bodies)).exp().cast(Motor.output_subspace)  # [bodies] Motor
+    neighbour = half_shift * (mv.xy * (curl / 2)).exp() * half_shift                   # [] Motor+
+    motors = (neighbour.log() * np.arange(n_bodies)).exp().cast(Motor.output_subspace)  # [bodies] Motor+
 
     state = Chain(
         motor=motors,
@@ -84,7 +85,8 @@ def chain(
 def swinging_chain(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tuple[Motor, Scalar]:
     """The bodies' motors over time, and the gap at every joint, stepped with NumPy."""
     initial, partitions = chain(NumpyContext(core.ga), n_links, LINK_SPACING, SEMI_AXES, CURL, COMPLIANCE, DAMPING, GRAVITY)
-    return trajectory(list(islice(states(initial, lambda state: core.advance(state, partitions, n_substeps, dt)), n_steps + 1)), partitions)
+    advance = partial(core.advance, partitions=partitions, n_substeps=n_substeps, dt=dt)
+    return trajectory(list(islice(states(initial, advance), n_steps + 1)), partitions)
 
 
 def swinging_chain_jax(n_links: int, n_steps: int, n_substeps: int, dt: float) -> tuple[Motor, Scalar]:
@@ -93,7 +95,7 @@ def swinging_chain_jax(n_links: int, n_steps: int, n_substeps: int, dt: float) -
     from numga.backend.jax import JaxContext
 
     initial, partitions = chain(JaxContext(core.ga), n_links, LINK_SPACING, SEMI_AXES, CURL, COMPLIANCE, DAMPING, GRAVITY)
-    compiled = jax.jit(lambda state: core.advance(state, partitions, n_substeps, dt))
+    compiled = jax.jit(partial(core.advance, partitions=partitions, n_substeps=n_substeps, dt=dt))
     # The first step runs eagerly: it settles the traits the initial state is built with, so that jit
     # traces the step once.
     first = core.advance(initial, partitions, n_substeps, dt)
@@ -109,8 +111,8 @@ def states(state: Chain, advance) -> Iterator[Chain]:
 
 def trajectory(history: list[Chain], partitions: list[Joints]) -> tuple[Motor, Scalar]:
     """Every body's motor, and every joint gap, stacked over time."""
-    motors = Extensor.stack([state.motor for state in history])                        # [steps + 1, bodies] Motor
-    gaps = Extensor.stack([core.joint_gaps(state.motor, partitions) for state in history])   # [steps + 1, joints] Scalar
+    motors = stack([state.motor for state in history])                        # [steps + 1, bodies] Motor+
+    gaps = stack([core.joint_gaps(state.motor, partitions) for state in history])   # [steps + 1, joints] Scalar+
     return motors, gaps
 
 

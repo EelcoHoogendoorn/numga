@@ -37,10 +37,10 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
     """Girders end to end along x, some fixed."""
     mv = core.mv
     count, modes, cases = len(fixed), shape.modes.shape[0], len(damping)
-    rest = shape.rest.batch()                                              # [vertices] Point
-    length = (rest[-1] - rest[1]).dual() | mv.x                            # [] Scalar
-    motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(core.Motor).broadcast_to((cases, count)).field()  # [cases] Motor[bodies]
-    amplitudes = mv.scalar(np.zeros((cases, modes, count, 1))).field()     # [cases, modes] Scalar[bodies]
+    rest = shape.rest.batch()                                              # [vertices] Point-
+    length = (rest[-1] - rest[1]).dual() | mv.x                            # [] Scalar+
+    motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(core.Motor).broadcast_to((cases, count)).field()  # [cases] Motor+[bodies]
+    amplitudes = mv.scalar(np.zeros((cases, modes, count, 1))).field()     # [cases, modes] Scalar+[bodies]
     moving = ~fixed
     return core.Bodies(
         motor=motor,
@@ -58,9 +58,9 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
 
 def constrained(core: ModuleType, shape, bodies: int, body_idx: np.ndarray, corner_idx: np.ndarray):
     """Constraints between the given bodies, of so many, at the given vertices."""
-    compliance = core.mv.scalar([SPLICE]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar[constraints]
-    ends = SparseExtensor.selection(core.ctx, body_idx, bodies)              # [sides] [constraints, bodies] Scalar
-    corners = SparseExtensor.selection(core.ctx, corner_idx, len(shape.rest.batch()))   # [sides] [constraints, vertices] Scalar
+    compliance = core.mv.scalar([SPLICE]).broadcast_to(body_idx.shape[-1:]).field()  # Scalar+[constraints]
+    ends = SparseExtensor.selection(core.ctx, body_idx, bodies)              # [sides] [constraints, bodies] Scalar+
+    corners = SparseExtensor.selection(core.ctx, corner_idx, len(shape.rest.batch()))   # [sides] [constraints, vertices] Scalar+
     return core.Constraints(body_idx, ends, corners * shape.rest, corners * shape.modes[:, None], compliance)
 
 
@@ -102,26 +102,26 @@ def clamped_beam(core: ModuleType, shape, count: int, damping: np.ndarray) -> tu
 def swing(core: ModuleType, shape, bodies, constraints, gravity, dt: float, frames: int) -> Iterator:
     """The bodies' points at every frame, under gravity, one step per frame."""
     for _ in range(frames):
-        yield core.points(bodies, shape)                                   # [cases, bodies] Point[vertices]
+        yield core.points(bodies, shape)                                   # [cases, bodies] Point-[vertices]
         bodies = core.step(bodies, constraints, dt, gravity)
 
 
 def displaced(core: ModuleType, bodies, rest, displacement: float):
     """The bodies with the last one displaced inward along x."""
-    driven = rest.batch()[..., -1] * (core.mv.xw * (-displacement / 2)).exp()   # [cases] Motor
+    driven = rest.batch()[..., -1] * (core.mv.xw * (-displacement / 2)).exp()   # [cases] Motor+
     return replace(bodies, motor=bodies.motor.batch().at[..., -1].set(driven).field().normalized())
 
 
 def compress(core: ModuleType, shape, bodies, constraints, displacements: np.ndarray, dt: float, substeps: int) -> Iterator[tuple]:
     """The beam's points and midspan point at every frame."""
     rest, middle = bodies.motor, bodies.motor.batch().shape[-1] // 2
-    weightless = (core.mv.y * 0.0).dual()                                  # [] Direction
+    weightless = (core.mv.y * 0.0).dual()                                  # [] Displacement-
     for displacement in displacements:
         bodies = displaced(core, bodies, rest, displacement)
         for _ in range(substeps):
             bodies = core.step(bodies, constraints, dt, weightless)
-        centres = bodies.motor.batch()[..., middle - 1:middle + 1] >> core.mv.w.dual()   # [cases, 2] Point
-        yield core.points(bodies, shape), centres.sum(axis=-1) / 2          # [cases, bodies] Point[vertices], [cases] Point
+        centres = bodies.motor.batch()[..., middle - 1:middle + 1] >> core.mv.w.dual()   # [cases, 2] Point-
+        yield core.points(bodies, shape), centres.sum(axis=-1) / 2          # [cases, bodies] Point-[vertices], [cases] Point-
 
 
 def critical(height: float, span: float) -> float:
@@ -136,7 +136,7 @@ def main():
     core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
     shape = core.girder(N_CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, N_MODES)
     bodies, constraints = hinged_chain(core, shape, N_LINKS, DAMPING)
-    gravity = (core.mv.y * -GRAVITY).dual()                                # [] Direction
+    gravity = (core.mv.y * -GRAVITY).dual()                                # [] Displacement-
     geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, N_FRAMES)
     save_animation(render.swinging_chain(geometry, shape.edges, core.points(bodies, shape)), "modal_xpbd_swing", DURATION_MS)
 

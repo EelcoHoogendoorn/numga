@@ -24,33 +24,33 @@ from typing import NamedTuple
 
 import numpy as np
 
-from numga import Extensor
+from numga import concatenate
 from numga.algebras import PGA3D
 from examples.mechanics import lie_integrators as lie
 
 ga = PGA3D
-Scalar = ga.gatype.scalar()
-Motor = ga.gatype.rotor()
-Rate = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
+Scalar = ga.gatype.scalar()                         # Scalar+
+Motor = ga.gatype.rotor()                           # Rotor+
+Rate = ga.gatype.bivector()                         # Bivector+
+Forque = ga.gatype.antibivector()                   # Antibivector-
 Inertia = ga.gatype((Forque, Rate))
 InverseInertia = ga.gatype((Rate, Forque))
-Point = ga.gatype.antivector()
+Point = ga.gatype.antivector()                      # Antivector-
 
 
 class Chain(NamedTuple):
     """Batched state of the rigid bodies in the chain."""
-    motor: Motor                  # [bodies] Motor
+    motor: Motor                  # [bodies] Motor+
     # The rate in the body frame.
-    rate: Rate                    # [bodies] Rate
+    rate: Rate                    # [bodies] Rate+
     # The mass-weighted centre, in the body frame.
-    first_moment: Point           # [bodies] Point
-    inertia: Inertia              # [bodies] Forque <- Rate
+    first_moment: Point           # [bodies] Point-
+    inertia: Inertia              # [bodies] Forque- <- Rate+
     # Zero for a fixed body.
-    inverse_inertia: InverseInertia   # [bodies] Rate <- Forque
-    damping: Scalar               # [bodies] Scalar
+    inverse_inertia: InverseInertia   # [bodies] Rate+ <- Forque-
+    damping: Scalar               # [bodies] Scalar+
     # An ideal point: the gravitational acceleration.
-    gravity: Point                # [bodies] Point
+    gravity: Point                # [bodies] Point-
 
 
 class Joints(NamedTuple):
@@ -58,16 +58,16 @@ class Joints(NamedTuple):
     # Indices of the joined bodies.
     bodies: np.ndarray            # [ends, joints] int
     # Anchor points, each in its own body frame.
-    anchors: Point                # [ends, joints] Point
+    anchors: Point                # [ends, joints] Point-
     # Inverse stiffness, alpha.
-    compliance: Scalar            # [joints] Scalar
+    compliance: Scalar            # [joints] Scalar+
 
 
 # --- math -----------------------------------------------------------------------------
 def project_distance_constraint(
     motors: Motor, anchors: Point, inverse_inertia: InverseInertia, compliance: Scalar, dt: float,
 ) -> Motor:
-    """Close the gap between the anchors of body pairs, motors and anchors of shape [2, ...]."""
+    """The motors of body pairs, `[2, ...]`, moved to close the gap between their anchors."""
     # 1. Transform anchor points to world frame via motor pushforward:
     world_anchors = motors >> anchors
 
@@ -80,15 +80,15 @@ def project_distance_constraint(
     direction = line / (magnitude + 1e-24)
 
     # 3. Pull the forque back into each body's local coordinate frame:
-    local_dir = motors << direction
+    local_direction = motors << direction
 
     # 4. Inverse inertia maps the forque to an impulsive twist step:
-    steps = inverse_inertia(local_dir)
+    steps = inverse_inertia(local_direction)
 
     # 5. Generalized inverse mass / compliance along the constraint line:
     # Pairing the twist with the forque gives the effective compliance:
-    # `inverse_inertia(local_dir) & local_dir`
-    inertial_compliances = steps & local_dir
+    # `inverse_inertia(local_direction) & local_direction`
+    inertial_compliances = steps & local_direction
     total_compliance = (compliance / (dt**2)) + inertial_compliances.sum(axis=0) + 1e-24
 
     # 6. XPBD Lagrange multiplier with body signs (+1 for body 0, -1 for body 1):
@@ -104,7 +104,8 @@ def project_distance_constraint(
 def project_velocity_constraint(
     motors: Motor, rates: Rate, anchors: Point, inverse_inertia: InverseInertia,
 ) -> Rate:
-    """Cancel the relative velocity of the anchors of body pairs, with an impulse along it."""
+    """The rates of body pairs, `[2, ...]`, with the relative velocity of their anchors cancelled by an impulse along
+    it."""
     # Relative anchor velocity in world coordinates:
     anchors_map = anchors & anchors.commutator(Rate)
     velocities = motors >> anchors_map(rates)
@@ -112,9 +113,9 @@ def project_velocity_constraint(
     magnitude = forque.norm().select[0]
     direction = forque / (magnitude + 1e-24)
 
-    local_dir = motors << direction
-    steps = inverse_inertia(local_dir)
-    inertial_compliances = steps & local_dir
+    local_direction = motors << direction
+    steps = inverse_inertia(local_direction)
+    inertial_compliances = steps & local_direction
     total_compliance = inertial_compliances.sum(axis=0) + 1e-24
     multiplier = (magnitude / total_compliance) * np.array([[+1], [-1]])
     impulse = steps * multiplier
@@ -122,23 +123,23 @@ def project_velocity_constraint(
 
 
 def external_forque(motor: Motor, rate: Rate, first_moment: Point, gravity: Point, damping: Scalar) -> Forque:
-    """Compute external forque line in body-local frame (gravity and damping)."""
+    """The external forque in the body frame: the weight, and the damping's drag."""
     # The weight is the line through the centre of mass along gravity: their join.
     gravity_local = motor << gravity
-    grav_forque = first_moment & gravity_local
-    damp_forque = -(rate * damping).dual()
-    return grav_forque + damp_forque
+    weight = first_moment & gravity_local
+    drag = -(rate * damping).dual()
+    return weight + drag
 
 
 def post_integrate(old_motor: Motor, relaxed_motor: Motor, dt: float) -> tuple[Motor, Rate]:
-    """Verlet post-integration: update rates from relaxed motors."""
+    """The relaxed motors, normalized, and the rates read back from their displacement: Verlet's post-integration."""
     motor_normalized = relaxed_motor.normalized()
     rate = (~old_motor * motor_normalized).log() * (-2.0 / dt)
     return motor_normalized, rate
 
 
 def step(chain: Chain, partitions: list[Joints], dt: float) -> Chain:
-    """Perform a single XPBD integration step on the chain."""
+    """The chain one XPBD step later."""
     def forque(motor: Motor, rate: Rate) -> Forque:
         return external_forque(motor, rate, chain.first_moment, chain.gravity, chain.damping)
 
@@ -165,10 +166,10 @@ def step(chain: Chain, partitions: list[Joints], dt: float) -> Chain:
     return chain._replace(motor=motor, rate=rate)
 
 
-def advance(chain: Chain, partitions: list[Joints], substeps: int, dt: float) -> Chain:
-    """Advance the chain by dt in equal substeps."""
-    for _ in range(substeps):
-        chain = step(chain, partitions, dt / substeps)
+def advance(chain: Chain, partitions: list[Joints], n_substeps: int, dt: float) -> Chain:
+    """The chain dt later, in equal substeps."""
+    for _ in range(n_substeps):
+        chain = step(chain, partitions, dt / n_substeps)
     return chain
 
 
@@ -179,4 +180,4 @@ def joint_gaps(motor: Motor, partitions: list[Joints]) -> Scalar:
         # The join of two points is a simple line: its norm has no pseudoscalar part.
         return (world_anchors[0] & world_anchors[1]).norm()
 
-    return Extensor.concatenate([gap(joints) for joints in partitions])
+    return concatenate([gap(joints) for joints in partitions])

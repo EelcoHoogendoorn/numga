@@ -37,8 +37,8 @@ pin_radius = 0.18
 pixels = 360
 # The lamp's direction at unit length; the light that falls everywhere, and the glint's share and sharpness, with the
 # lamp as `lamp_shading` takes them; and how much of the lamp's light falls in a shadow.
-toward_lamp = mv.direction([0.35, -0.45, 0.82])                                # [] Point
-lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point
+toward_lamp = mv.direction([0.35, -0.45, 0.82])                                # [] Point-
+lamp = toward_lamp / toward_lamp.dual().norm()                                 # [] Point-
 lighting = dict(lamp=lamp, ambient=0.3, fill_tilt=0.0, headlight=0.0, gloss=0.3, shininess=40.0)
 shadow = 0.25
 
@@ -136,11 +136,12 @@ def shader() -> Shader:
                   dict(axes=axes, shadow=shadow, floor_light=floor_light, floor_dark=floor_dark, background=background))
 
 
-def framing(points: Point, floor: Plane, reach: float) -> solids.View:
-    """A view framing points and their shadows on the floor, cast along the lamp, with `reach` to spare around each."""
+def framing(points: Point, floor: Plane, clearance: float) -> solids.View:
+    """A view framing points and their shadows on the floor, cast along the lamp, with `clearance` to spare around
+    each."""
     # Where the line through each point and the lamp meets the floor.
-    shadows = (points & lamp) ^ floor                                                       # [points] Point
-    return solids.view([points, shadows], reach, elevation, azimuth, margin, pixels)
+    shadows = (points & lamp) ^ floor                                                       # [points] Point-
+    return solids.view([points, shadows], clearance, elevation, azimuth, margin, pixels)
 
 
 def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float) -> Iterator[np.ndarray]:
@@ -149,16 +150,16 @@ def animate_chain(motors: Iterable[Motor], semi_axes: np.ndarray, spacing: float
     starts, the same half a turn about the vertical through the pin, and hung straight down from the pin."""
     motors = iter(motors)
     first = next(motors)
-    centres = first >> origin                                                                # [bodies] Point
+    centres = first >> origin                                                                # [bodies] Point-
     # How far the chain reaches along itself from the pin: the lengths of the offsets between neighbouring links.
-    length = (centres[1:] - centres[:-1]).dual().norm().sum()                                # [] Scalar
-    reach = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, (origin - mv.z.dual() * length)[None]])
-    place = (axes & reach[:, None]).to_array()                                               # [points, 3]
+    length = (centres[1:] - centres[:-1]).dual().norm().sum()                                # [] Scalar+
+    extremes = concatenate([centres, (mv.xy * (np.pi / 2)).exp() >> centres, (origin - mv.z.dual() * length)[None]])
+    place = (axes & extremes[:, None]).to_array()                                            # [points, 3]
     low, high = place.min(axis=0), place.max(axis=0)
-    floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane
-    view = framing(reach, floor, semi_axes.max())
+    floor = mv.z - mv.w * (low[2] - floor_drop * spacing)                                   # [] Plane+
+    view = framing(extremes, floor, semi_axes.max())
     # The pin sits at the joint of the fixed body and the first link.
-    pin = solids.ball(centres[0] + mv.x.dual() * (spacing / 2), pin_radius * spacing)        # [] Quadric
+    pin = solids.ball(centres[0] + mv.x.dual() * (spacing / 2), pin_radius * spacing)        # [] Plane+ <- Point-
     n_links = centres.shape[0] - 1
     for bodies in chain([first], motors):
         yield np.round(np.clip(shader()(view.shape, motors=bodies[1:], colours=link_colours[np.arange(n_links) % 2],

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 
+from numga import stack
 from numga.algebras import PGA2D as ga
 from examples.util.animation import capture
 
@@ -23,9 +24,15 @@ CHAIN_ROOM, CHAIN_ABOVE = 1.12, 0.15
 BEAM_ROOM, BEAM_END_ROOM = 1.2, 0.005
 
 
+def coordinates(points: Point) -> np.ndarray:
+    """Coordinates of points of unit weight, `[..., 2]`: their pairings with the lines x = 0 and y = 0."""
+    lines = points.context.multivector
+    return (stack((lines.x, lines.y)) & points.batch()[..., None]).to_array()
+
+
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
-    reference = rest.dual().cast(ga.subspace("x y")).kernel
-    positions = deformed.dual().cast(ga.subspace("x y")).kernel
+    reference = coordinates(rest)
+    positions = coordinates(deformed)
     figure = plt.figure(figsize=(8, 5), layout="constrained")
     columns = 2
     rows = (len(positions) + columns - 1) // columns
@@ -42,7 +49,7 @@ def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:
 def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
     vertices = points.batch()
     tips = (vertices[..., -1, -2] + vertices[..., -1, -1]) / 2
-    positions = tips.dual().cast(ga.subspace("x y")).kernel
+    positions = coordinates(tips)
     time = np.arange(len(positions)) * frame_dt
     figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
     for i, ratio in enumerate(damping):
@@ -57,7 +64,7 @@ def history(points: Point, damping: np.ndarray, frame_dt: float) -> plt.Figure:
 def chain_scene(edges: np.ndarray, reference: Point, lower: np.ndarray,
                 upper: np.ndarray) -> tuple[plt.Figure, LineCollection]:
     """The chain's figure between the corners `lower` and `upper`, its pivot marked, its bars still to be set."""
-    rest = reference[0, 1:].dual().cast(ga.subspace("x y")).kernel
+    rest = coordinates(reference[0, 1:])
     pivot = rest[0, 1]
     body_colours = np.asarray(COLOURS)[np.arange(len(rest)) % len(COLOURS)]
     edge_colours = np.repeat(body_colours, len(edges))
@@ -72,20 +79,19 @@ def chain_scene(edges: np.ndarray, reference: Point, lower: np.ndarray,
 
 
 def update_chain(points: Point, edges: np.ndarray, bars: LineCollection) -> None:
-    positions = points[0, 1:].dual().cast(ga.subspace("x y")).kernel
+    positions = coordinates(points[0, 1:])
     bars.set_segments(positions[:, edges].reshape(-1, 2, 2))
 
 
-def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point,
-                   room: float = CHAIN_ROOM) -> Iterator[np.ndarray]:
-    """Frames of the swinging chain, the first case, in a view spanning the first frame's reach from the pivot `room`
+def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point) -> Iterator[np.ndarray]:
+    """Frames of the swinging chain, the first case, in a view spanning the first frame's reach from the pivot `CHAIN_ROOM`
     times over, to either side and below, and a share of that above."""
     frames = iter(frames)
     first = next(frames)
-    pivot = reference[0, 1:].dual().cast(ga.subspace("x y")).kernel[0, 1]
-    positions = first[0, 1:].dual().cast(ga.subspace("x y")).kernel     # [bodies, vertices, 2]
-    reach = room * np.linalg.norm(positions - pivot, axis=-1).max()
-    figure, bars = chain_scene(edges, reference, pivot - reach, pivot + reach * np.array([1, CHAIN_ABOVE]))
+    pivot = coordinates(reference[0, 1:])[0, 1]
+    positions = coordinates(first[0, 1:])     # [bodies, vertices, 2]
+    extent = CHAIN_ROOM * np.linalg.norm(positions - pivot, axis=-1).max()
+    figure, bars = chain_scene(edges, reference, pivot - extent, pivot + extent * np.array([1, CHAIN_ABOVE]))
     for points in chain([first], frames):
         update_chain(points, edges, bars)
         yield capture(figure)
@@ -94,7 +100,7 @@ def swinging_chain(frames: Iterable[Point], edges: np.ndarray, reference: Point,
 
 def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     """The chain at one moment."""
-    positions = points[0, 1:].dual().cast(ga.subspace("x y")).kernel
+    positions = coordinates(points[0, 1:])
     lower, upper = positions.min(axis=(0, 1)), positions.max(axis=(0, 1))
     margin = (upper - lower).max() * 0.06
     figure, bars = chain_scene(edges, points, lower - margin, upper + margin)
@@ -102,28 +108,27 @@ def draw_chain(points: Point, edges: np.ndarray) -> plt.Figure:
     return figure
 
 
-def beam(frames: Iterable[Point], edges: np.ndarray, room: float = BEAM_ROOM,
-         end_room: float = BEAM_END_ROOM) -> Iterator[np.ndarray]:
+def beam(frames: Iterable[Point], edges: np.ndarray) -> Iterator[np.ndarray]:
     """Frames of the beam, the first case: moving girders coloured, fixed ones grey, in a view along the first frame,
-    running on past either end by `end_room` of its length, that spans above and below its axis `room` times its
+    running on past either end by `BEAM_END_ROOM` of its length, that spans above and below its axis `BEAM_ROOM` times its
     farthest point from the axis or a fortieth of its length, whichever is more."""
     frames = iter(frames)
     first = next(frames)
-    positions = first[0].dual().cast(ga.subspace("x y")).kernel         # [bodies, vertices, 2]
+    positions = coordinates(first[0])         # [bodies, vertices, 2]
     bodies = positions.shape[0]
     colours = np.where((np.arange(bodies) == 0) | (np.arange(bodies) == bodies - 1), "#94a3b8",
                        np.asarray(COLOURS)[np.arange(bodies) % len(COLOURS)])
     lower, upper = positions.min(axis=(0, 1)), positions.max(axis=(0, 1))
-    reach = room * max(np.abs(positions[..., 1]).max(), (upper[0] - lower[0]) / 40)
-    beyond = end_room * (upper[0] - lower[0])
+    extent = BEAM_ROOM * max(np.abs(positions[..., 1]).max(), (upper[0] - lower[0]) / 40)
+    beyond = BEAM_END_ROOM * (upper[0] - lower[0])
     figure, axes = plt.subplots(figsize=(10, 1.6), dpi=60, layout="constrained")
     bars = LineCollection([], colors=np.repeat(colours, len(edges)), linewidths=0.8)
     axes.add_collection(bars)
-    axes.set(xlim=(lower[0] - beyond, upper[0] + beyond), ylim=(-reach, reach))
+    axes.set(xlim=(lower[0] - beyond, upper[0] + beyond), ylim=(-extent, extent))
     axes.set_aspect("equal")
     axes.set_axis_off()
     for points in chain([first], frames):
-        frame = points[0].dual().cast(ga.subspace("x y")).kernel
+        frame = coordinates(points[0])
         bars.set_segments(frame[:, edges].reshape(-1, 2, 2))
         yield capture(figure)
     plt.close(figure)
@@ -131,7 +136,7 @@ def beam(frames: Iterable[Point], edges: np.ndarray, room: float = BEAM_ROOM,
 
 def buckling(displacements: np.ndarray, midspans: Point, critical: float) -> plt.Figure:
     """Midspan deflection against end displacement, the first case, with the critical value."""
-    deflection = np.abs(midspans[:, 0].dual().cast(ga.subspace("x y")).kernel[:, 1])
+    deflection = np.abs(coordinates(midspans[:, 0])[:, 1])
     figure, axes = plt.subplots(figsize=(6.5, 3), layout="constrained")
     axes.plot(displacements, deflection, color="#0f172a")
     # A faint cross through the origin, without scales, its lines named at their ends, each along itself; the
