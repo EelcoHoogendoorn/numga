@@ -13,22 +13,23 @@ from numga.algebras import PGA3D
 ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
+Point = ga.gatype.antivector()                      # Antivector-
+Plane = ga.gatype.vector()                          # Vector+
 Motor = ga.gatype.rotor()
 DualQuadric = ga.gatype((Point, Plane))
 
 
 # --- math ------------------------------------------------------------------
 def ellipsoid(semi_axes: Point, center: Point) -> DualQuadric:
-    """The ellipsoid with the given semi-axes, as ideal points, about the given center."""
+    """The ellipsoid with the given semi-axes, as ideal points, about the given center, is a sum of their dyads less
+    the center's."""
     # Ideal points encode the semi-axes. Their dyads give the directional shape;
     # subtracting the center dyad makes a closed envelope of tangent planes.
     return (semi_axes * (Plane & semi_axes)).sum(axis=0) - center * (Plane & center)
 
 
 def support_plane(quadric: DualQuadric, normal: Plane, infinity: Plane) -> Plane:
-    """Find an ellipsoid's tangent plane facing a given normal.
+    """An ellipsoid's tangent plane faces a given normal.
 
     quadric maps planes to points; infinity selects the affine chart.
     The normal's offset is discarded, retaining only its orientation.

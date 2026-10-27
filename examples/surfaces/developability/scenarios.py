@@ -14,7 +14,7 @@ mv = core.mv
 # up in the file, turned onto z.
 BUNNY = MODEL_DIR / "bunny.obj"
 SIZE = 2.0
-UPRIGHT = ((mv.y ^ mv.z) * (-np.pi / 4)).exp()
+UPRIGHT = (mv.yz * (-np.pi / 4)).exp()
 # The flow's step, as a share of what each vertex's faces can take, its number of steps, the steps between
 # kept states, and the duration of a frame.
 STEP = 0.3

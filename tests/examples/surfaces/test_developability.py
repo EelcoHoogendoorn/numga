@@ -15,9 +15,9 @@ mv = core.mv
 def cylinder(rings: int, sectors: int) -> tuple[core.Mesh, core.Point]:
     """An open cylinder of unit radius around the z axis, `rings` circles of `sectors` points."""
     angles = np.linspace(0, 2 * np.pi, sectors, endpoint=False)
-    around = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()           # [sectors] Point
-    height = mv.z.dual()                                             # [] Point
-    vertices = (around[None, :] + height * np.linspace(-1, 1, rings)[:, None]).reshape(-1).field()   # Point[V]
+    around = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()           # [sectors] Point-
+    height = mv.z.dual()                                             # [] Point-
+    vertices = (around[None, :] + height * np.linspace(-1, 1, rings)[:, None]).reshape(-1).field()   # Point-[vertices]
     ring, sector = np.meshgrid(np.arange(rings - 1), np.arange(sectors), indexing="ij")
     here, along = ring * sectors + sector, ring * sectors + (sector + 1) % sectors
     faces = np.concatenate([np.stack([here, along, along + sectors], axis=-1).reshape(-1, 3),
@@ -51,8 +51,8 @@ def test_the_gradient_is_the_energys_derivative():
     after, before = edges[[1, 2, 0]], edges[[2, 0, 1]]
     angles = (-(after.dual_inverse() & before) / (after.norm() * before.norm())).arccos()
     normals, spreads = core.spread(mesh, edges, angles)
-    _, vectors = spreads.batch().eigh()
-    gradient = core.gradient(mesh, edges, angles, normals, vectors[:, 0]).batch()     # [V] Vector
+    _, directions = spreads.batch().eigh()
+    gradient = core.gradient(mesh, edges, angles, normals, directions[:, 0]).batch()     # [vertices] Vector+
     points = render.coordinates(vertices)                                         # [V, 3]
     epsilon = 1e-6
     rng = np.random.default_rng(0)

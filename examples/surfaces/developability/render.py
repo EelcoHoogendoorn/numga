@@ -21,7 +21,7 @@ from examples.util.wgsl.library import samples_per_side
 # axes, and the share of light that falls everywhere; the camera's elevation and azimuth, its distance and half its
 # view; the frames' size and background.
 surface_colour = np.array([0.90, 0.89, 0.86])
-light_direction = core.mv.z.dual() * 0.6 - core.mv.x.dual() * 0.4 - core.mv.y.dual() * 0.7      # [] Point
+light_direction = core.mv.z.dual() * 0.6 - core.mv.x.dual() * 0.4 - core.mv.y.dual() * 0.7      # [] Point-
 ambient = 0.25
 elevation, azimuth = np.radians(24.0), np.radians(54.0)
 distance, half_view = 8.0, 0.17

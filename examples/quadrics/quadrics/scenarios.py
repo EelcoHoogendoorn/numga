@@ -27,28 +27,28 @@ def body() -> DualQuadric:
 def polar_reciprocity() -> tuple[DualQuadric, Plane, Point, Plane]:
     """The ellipsoid, its tangent plane facing a direction, the plane's contact point, and the tangent
     plane recovered from the point."""
-    dual = body()                                                              # [] Point <- Plane
-    tangent = support_plane(dual, mv.vector(FACING + [0.0]), mv.w)             # [] Plane
-    contact = dual(tangent)                                                    # [] Point
+    dual = body()                                                              # [] Point- <- Plane+
+    tangent = support_plane(dual, mv.vector(FACING + [0.0]), mv.w)             # [] Plane+
+    contact = dual(tangent)                                                    # [] Point-
     return dual, tangent, contact, dual.solve(contact)
 
 
 def carrier() -> Motor:
     """The motor that turns the ellipsoid in the xy plane, then moves its centre by the displacement."""
     # Each translation is a rotation about a line at infinity, the plane of an axis with w.
-    translation = (stack([mv.xw, mv.yw, mv.zw]) * DISPLACEMENT).sum(axis=-1)    # [] Bivector
-    return (translation / 2).exp() * (mv.xy * (TURN / 2)).exp()                # [] Motor
+    translation = (stack([mv.xw, mv.yw, mv.zw]) * DISPLACEMENT).sum(axis=-1)    # [] Bivector+
+    return (translation / 2).exp() * (mv.xy * (TURN / 2)).exp()                # [] Motor+
 
 
 def motor_transport() -> tuple[DualQuadric, Plane, Point, DualQuadric, Plane, Point]:
     """The ellipsoid with a tangent plane and its contact point, at rest and carried by a motor: the map
     moved by pulling planes into the body and pushing points back out."""
-    motor = carrier()                                                          # [] Motor
-    local = body()                                                             # [] Point <- Plane
-    tangent = support_plane(local, mv.vector(FACING + [0.0]), mv.w)            # [] Plane
-    contact = local(tangent)                                                   # [] Point
-    world = motor >> local(motor << Plane)                                     # [] Point <- Plane
-    world_tangent = motor >> tangent                                           # [] Plane
+    motor = carrier()                                                          # [] Motor+
+    local = body()                                                             # [] Point- <- Plane+
+    tangent = support_plane(local, mv.vector(FACING + [0.0]), mv.w)            # [] Plane+
+    contact = local(tangent)                                                   # [] Point-
+    world = motor >> local(motor << Plane)                                     # [] Point- <- Plane+
+    world_tangent = motor >> tangent                                           # [] Plane+
     return local, tangent, contact, world, world_tangent, world(world_tangent)
 
 
