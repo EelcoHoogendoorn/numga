@@ -10,9 +10,9 @@ import numpy as np
 
 from collections.abc import Iterator
 
-from numga import Extensor, concatenate, stack
+from numga import concatenate, stack
 from examples.quadrics.cyclides.core import (
-    Direction, Motor, Point, Quadric, Scalar, Sphere, chart_infinity, chart_origin, cone, cylinder, dilation, mv, sensor,
+    Direction, Motor, Point, Quadric, Scalar, Sphere, chart_infinity, chart_origin, cone, cylinder, mv, sensor,
     trace,
 )
 
@@ -26,9 +26,12 @@ DURATION_MS = 60
 
 # --- math -----------------------------------------------------------------------------
 def placement(toward: Sphere, ahead: np.ndarray, tilt: np.ndarray) -> Motor:
-    """Turn the point `toward` onto the point `ahead` rad in front of the eye, after a tilt that keeps it fixed."""
+    """The motion turning the point `toward` onto the point `ahead` rad in front of the eye, after a tilt that keeps it
+    fixed."""
     target = (mv.wx * (ahead / 2)).exp() >> mv.w
-    return (1 + target * toward).normalized() * (mv.yw * (tilt / 2)).exp()
+    onto_target = (1 + target * toward).normalized()
+    tilting = (mv.yw * (tilt / 2)).exp()
+    return onto_target * tilting
 
 
 def orientation(angles: list[float]) -> Motor:
@@ -40,19 +43,23 @@ def orientation(angles: list[float]) -> Motor:
 
 
 def view(centre: Sphere, angles: list[float], ahead: float, yaw: float, pitch: float) -> Motor:
-    """Turn the shape, carry its centre to `ahead` rad in front of the eye, then turn the eye onto it."""
+    """The motion turning the shape, carrying its centre to `ahead` rad in front of the eye, then turning the eye onto
+    it."""
     turned = orientation(angles)
     target = (mv.wx * (ahead / 2)).exp() >> mv.w
     carry = (1 + target * (turned >> centre)).normalized()
-    look = (mv.xy * (yaw / 2)).exp() * (mv.xz * (pitch / 2)).exp()
-    return look * carry * turned
+    yawing = (mv.xy * (yaw / 2)).exp()
+    pitching = (mv.xz * (pitch / 2)).exp()
+    return yawing * pitching * carry * turned
 
 
 def tori() -> tuple[Scalar, np.ndarray]:
     """Cylinders with tubes of 0.15, 0.5 and 0.9 rad, dilated towards z, a quarter turn from their whole
     core: the core shrinks evenly into a circle, and each tube becomes a torus. Seen from z the
     dilation is a uniform scaling, so it only sizes the torus; the tube sets its shape."""
-    place = placement(mv.z, 1.1, 0.8) * dilation(mv.z, np.array([1.55, 2.0, 2.4]))
+    # Dilations towards z: their exponentials keep z and its antipode, and seen from z they scale uniformly.
+    dilations = (mv.ze * (np.array([1.55, 2.0, 2.4]) / 2)).exp()
+    place = placement(mv.z, 1.1, 0.8) * dilations
     return trace(place >> cylinder(np.array([0.15, 0.5, 0.9]))(place << Point), PIXELS)
 
 
@@ -60,7 +67,8 @@ def vortex(frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
     """The middle torus carried once around a circle: its own core circle, tilted 0.4 rad in the yw
     plane. Around the core itself the flow would only spin the tube in place; tilted, it rolls and
     deforms the torus. Yields each frame's trace as it is consumed."""
-    place = placement(mv.z, 1.1, 0.8) * dilation(mv.z, 2.0)
+    dilation = (mv.ze * (2.0 / 2)).exp()
+    place = placement(mv.z, 1.1, 0.8) * dilation
     torus = place >> cylinder(0.5)(place << Point)
     # The meet of two great spheres, carried by unit versors: a unit circle, circle * circle == -1.
     circle = (place * (mv.yw * 0.2).exp()) >> mv.zw
@@ -85,8 +93,9 @@ def cyclide():
     # An off-centre sphere inversion gives the torus unequal tube widths.
     shift = (-0.5 * ((mv.x * 3.2) ^ chart_infinity)).exp()
     inversion = (shift >> (chart_origin - chart_infinity * 4.5)).normalized()
-    pose = (mv.xy * 0.12).exp() * (mv.yz * -0.22).exp()
-    placement = pose * inversion
+    turn_xy = (mv.xy * 0.12).exp()
+    turn_yz = (mv.yz * -0.22).exp()
+    placement = turn_xy * turn_yz * inversion
     return (), (placement >> surface(placement << Point),)
 
 
@@ -128,7 +137,7 @@ def pinched():
 
 def sphere_family(weights: np.ndarray) -> Quadric:
     # The paper's diagonal sphere-model quadrics, expressed as dyad sums.
-    spheres = Extensor.stack([mv.x, mv.y, mv.z, chart_origin - chart_infinity * 0.5])
+    spheres = stack([mv.x, mv.y, mv.z, chart_origin - chart_infinity * 0.5])
     return (spheres * (spheres & Point) * weights).sum(axis=0)
 
 
@@ -184,16 +193,18 @@ def linked_tori():
     # Matching the shift to radius * np.sin(tilt) keeps the initial gap fairly even.
     radius, offset = 1.4, 0.45
     surface = torus(radius, 0.16)
-    placement = (-0.5 * ((mv.x * offset) ^ chart_infinity)).exp() * (
-        mv.yz * (np.arcsin(offset / radius) / 2)
-    ).exp()
+    shift = (-0.5 * ((mv.x * offset) ^ chart_infinity)).exp()
+    tilt = (mv.yz * (np.arcsin(offset / radius) / 2)).exp()
+    placement = shift * tilt
     circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
     return ((placement >> surface(placement << Point), circle),), (torus(radius, 0.02),)
 
 
 def pinched_vortex():
     surface = pinched_surface()
-    placement = (-0.5 * ((mv.x * 1.8) ^ chart_infinity)).exp() * (mv.xz * (np.pi / 4)).exp()
+    shift = (-0.5 * ((mv.x * 1.8) ^ chart_infinity)).exp()
+    tilt = (mv.xz * (np.pi / 4)).exp()
+    placement = shift * tilt
     radius = 1.4
     circle = (mv.z ^ (chart_origin - chart_infinity * (radius * radius / 2))).normalized()
     return ((placement >> surface(placement << Point), circle),), (torus(radius, 0.02),)
@@ -223,7 +234,8 @@ def flat_camera(position: Direction, target: Direction) -> Motor:
     up = (forward | (forward ^ mv.z)).normalized()
     aim = (1 - forward * mv.x).normalized()
     roll = (1 + up * (aim >> mv.z)).normalized()
-    return ((-0.5 * (position ^ chart_infinity)).exp() * roll * aim).inverse()
+    translation = (-0.5 * (position ^ chart_infinity)).exp()
+    return (translation * roll * aim).inverse()
 
 
 def flat_scene(name: str, frames: int) -> Iterator[tuple[Scalar, np.ndarray]]:
@@ -247,7 +259,7 @@ def dupin() -> tuple[Scalar, np.ndarray]:
     the aim and swells on the other, the lopsided Dupin cyclides."""
     leans = np.array([0.7, 0.8, 0.5])
     aims = (mv.zx * (-leans / 2)).exp() >> mv.z
-    dilations = dilation(aims, np.array([1.5, 1.2, 1.8]))
+    dilations = ((aims ^ mv.e) * (np.array([1.5, 1.2, 1.8]) / 2)).exp()
     bent = dilations >> cylinder(np.array([0.25, 0.3, 0.2]))(dilations << Point)
     views = placement(aims, np.array([1.2, 1.3, 1.1]), np.array([-0.7, 0.6, 1.0]))
     return trace(views >> bent(views << Point), PIXELS)
@@ -258,15 +270,16 @@ def spindles() -> tuple[Scalar, np.ndarray]:
     towards y: its two vertices close into a spindle cyclide, and the leaning dilation bends the inner
     sheet into a banana. The eye sees both sides of the sheets, so facing is the unsigned cosine."""
     leans = np.array([0.0, 0.7])
-    dilations = dilation((mv.xy * (-leans / 2)).exp() >> mv.x, 3.0)
+    aims = (mv.xy * (-leans / 2)).exp() >> mv.x
+    dilations = ((aims ^ mv.e) * (3.0 / 2)).exp()
     bent = dilations >> cone(0.35)(dilations << Point)
 
     # The eye aims at the midpoint of the two dilated vertices, z and -z carried by the dilation. The
     # vertices are null vectors; scaled to one unit of e each, their sum less its e part, normalized, is
     # the midpoint, a point of S³ as a unit vector.
-    vertices = dilations[:, None] >> stack((mv.z + mv.e, -mv.z + mv.e))           # [spindles, 2] Sphere
-    unit_e = vertices / -(vertices | mv.e)                                    # [spindles, 2] Sphere
-    midpoints = (unit_e[:, 0] + unit_e[:, 1] - 2 * mv.e).normalized()         # [spindles] Sphere
+    vertices = dilations[:, None] >> stack((mv.z + mv.e, -mv.z + mv.e))           # [spindles, 2] Sphere+
+    unit_e = vertices / -(vertices | mv.e)                                    # [spindles, 2] Sphere+
+    midpoints = (unit_e[:, 0] + unit_e[:, 1] - 2 * mv.e).normalized()         # [spindles] Sphere+
 
     # Which spindle, its orientation in the six planes, the distance, and the eye's yaw and pitch.
     shots = [

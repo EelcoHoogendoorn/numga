@@ -32,16 +32,15 @@ Scalar = ga.gatype.scalar()
 # held by the great sphere through the eye across it, a vector in x, y and z; in the flat chart, the plane
 # through its origin across the direction. Motors rotate R⁴ and dilate conformally; a quadric maps a point to its
 # polar sphere.
-Sphere = ga.gatype.vector()
-Point = ga.gatype.antivector()
-Direction = ga.gatype.from_blades("x y z")
-Motor = ga.gatype.rotor()
-Quadric = ga.gatype((Sphere, Point))          # Sphere <- Point
-PointMap = ga.gatype((Point, Point))
+Sphere = ga.gatype.vector()                   # Vector+
+Point = ga.gatype.antivector()                # Antivector-
+Direction = ga.gatype.from_blades("x y z")    # Vector+
+Motor = ga.gatype.rotor()                     # Rotor+
+Quadric = ga.gatype((Sphere, Point))
 
 # The eye, at w on S³, and the point opposite it.
-origin = (mv.w + mv.e).dual()                 # [] Point
-antipode = (-mv.w + mv.e).dual()              # [] Point
+origin = (mv.w + mv.e).dual()                 # [] Point-
+antipode = (-mv.w + mv.e).dual()              # [] Point-
 
 # A flat chart about the eye, the stereographic projection from its antipode: the eye's null vector is the chart's
 # origin and the antipode's is its point at infinity. Constructions of the flat conformal model, written with these
@@ -74,10 +73,10 @@ def sensor(shape: tuple[int, int], fov: float) -> Direction:
     return mv(Direction, pixel_grid(shape, fov)).normalized()
 
 
-def nearest_angle(*coefficients: Scalar) -> np.ndarray:
+def nearest_angle(coefficients: list[Scalar]) -> np.ndarray:
     """Smallest positive angle of a great-circle hit, or inf on a miss.
 
-    Arguments are ascending coefficients of a polynomial in `u = np.tan(t / 2)`. The reversed
+    The coefficients are the ascending ones of a polynomial in `u = np.tan(t / 2)`. The reversed
     polynomial is solved, for `r = 1 / u`; each real root maps to `t = 2 * np.arctan2(1, r)`
     between 0 and `2 * np.pi`, so hits past the antipode (`r < 0`) and at it (`r == 0`) are
     ordered along the whole circle.
@@ -106,12 +105,6 @@ def cone(opening: float) -> Quadric:
     return mv.x * (mv.x & Point) + np.cos(opening) ** 2 * (mv.z * (mv.z & Point) - mv.e * (mv.e & Point))
 
 
-def dilation(aim: Sphere, strength: np.ndarray) -> Motor:
-    """The conformal map of S³ that pushes points towards `aim`, a point as a unit vector, keeping it
-    and its antipode fixed. Seen from `aim` it is a uniform scaling."""
-    return ((aim ^ mv.e) * (strength / 2)).exp()
-
-
 # --- math -----------------------------------------------------------------------------
 def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
     """Headlight facing, and the angle t of the nearest hit, per surface along the leading axis and per unit pixel
@@ -120,7 +113,7 @@ def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
     Facing is the cosine between the ray and the surface normal at the nearest hit.
     """
     # Zero on the surface:
-    form = Point & surfaces                                                 # [surfaces] Scalar <- (Point, Point)
+    form = Point & surfaces                                                 # [surfaces] Scalar+ <- (Point-, Point-)
 
     # form(X, X) along X = origin + ray_linear(d) * 2 * u + ray_bend(d, d) * u ** 2, one form per power of u:
     constant = form(origin, origin)
@@ -128,8 +121,8 @@ def trace(surfaces: Quadric, pixels: Direction) -> tuple[Scalar, np.ndarray]:
     quadratic = 4 * form(ray_linear, ray_linear) + 2 * form(origin, ray_bend)
     cubic = 4 * form(ray_linear, ray_bend)
     quartic = form(ray_bend, ray_bend)
-    angle = nearest_angle(constant[:, None], linear[:, None](pixels), quadratic[:, None](pixels, pixels),
-                          cubic[:, None](pixels, pixels, pixels), quartic[:, None](pixels, pixels, pixels, pixels))
+    angle = nearest_angle([constant[:, None], linear[:, None](pixels), quadratic[:, None](pixels, pixels),
+                           cubic[:, None](pixels, pixels, pixels), quartic[:, None](pixels, pixels, pixels, pixels)])
     t = np.where(np.isfinite(angle), angle, 0.0)
     hit = origin + ray_linear(pixels) * np.sin(t) + ray_quadratic(pixels, pixels) * (1 - np.cos(t))
     velocity = ray_linear(pixels) * np.cos(t) + ray_quadratic(pixels, pixels) * np.sin(t)

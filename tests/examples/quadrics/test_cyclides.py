@@ -8,7 +8,7 @@ from numga import stack
 
 from examples.quadrics.cyclides import render, scenarios
 from examples.quadrics.cyclides.core import (
-    Direction, Point, antipode, dilation, cylinder, mv, origin, ray_bend, ray_linear, ray_quadratic, ray_rotation,
+    Direction, Point, antipode, cylinder, mv, origin, ray_bend, ray_linear, ray_quadratic, ray_rotation,
 )
 
 direction = mv(Direction, [0.0, 0.6, 0.8])
@@ -38,7 +38,8 @@ def test_the_cylinder_polynomial_is_palindromic_and_a_dupin_cyclide_breaks_it():
     """Built from great spheres and e only, the cylinder's quartic in u has equal outer and opposite odd
     coefficients, so its hits come in antipodal pairs; an off-axis dilation breaks that symmetry."""
     aim = mv.z * np.cos(0.7) + mv.x * np.sin(0.7)
-    lopsided = dilation(aim, 1.5) >> cylinder(0.25)(dilation(aim, 1.5) << Point)
+    dilation = ((aim ^ mv.e) * (1.5 / 2)).exp()
+    lopsided = dilation >> cylinder(0.25)(dilation << Point)
     camera_map = mv.rotor() >> Point
     sample = scenarios.PIXELS[::20000]
     gaps = []

@@ -7,9 +7,13 @@ from collections.abc import Iterable, Iterator
 import matplotlib.pyplot as plt
 import numpy as np
 
+from examples.util.wgsl import image_figure
+
 BACKGROUND = np.array([0.013, 0.02, 0.036])
 TEAL = np.array([0.055, 0.42, 0.39])
 GOLD = np.array([0.6, 0.42, 0.08])
+# The white pixels between panels.
+GAP = 4
 # One colour per body, in turn.
 PALETTE = np.array([TEAL, [0.65, 0.38, 0.08], [0.35, 0.13, 0.40], [0.12, 0.35, 0.60]])
 
@@ -44,24 +48,25 @@ def linked_frames(traced: Iterable, shape: tuple[int, int]) -> Iterator[np.ndarr
     return scene_frames(traced, shape, np.stack([TEAL, GOLD]))
 
 
+def tiled(images: list[np.ndarray], columns: int) -> np.ndarray:
+    """RGB images of one size in a grid of the given number of columns, `GAP` white pixels apart, at their own pixels."""
+    rows = -(-len(images) // columns)
+    height, width = images[0].shape[:2]
+    grid = np.full((rows * (height + GAP) - GAP, columns * (width + GAP) - GAP, 3), 255, dtype=np.uint8)
+    for index, image in enumerate(images):
+        row, column = divmod(index, columns)
+        grid[row * (height + GAP):row * (height + GAP) + height, column * (width + GAP):column * (width + GAP) + width] = image
+    return grid
+
+
 def draw_facing(facing, angle: np.ndarray, shape: tuple[int, int]) -> plt.Figure:
-    """Headlight images, one panel per surface along the leading axis of a Scalar facing; angle is inf on a miss."""
+    """Headlight images, one panel per surface along the leading axis of a Scalar facing, side by side at their own
+    pixels; angle is inf on a miss."""
     rgb = headlight(facing.to_array(), np.isfinite(angle), TEAL).reshape(-1, *shape, 3)
-    figure, axes = plt.subplots(1, len(rgb), figsize=(4.5 * len(rgb), 3.6), squeeze=False)
-    for ax, image in zip(axes[0], rgb):
-        ax.imshow(image)
-        ax.axis("off")
-    figure.tight_layout()
-    return figure
+    images = list((rgb * 255).round().astype(np.uint8))
+    return image_figure(tiled(images, len(images)))
 
 
 def draw_images(images: list[np.ndarray], columns: int) -> plt.Figure:
-    """RGB images in a grid of the given number of columns."""
-    rows = -(-len(images) // columns)
-    figure, axes = plt.subplots(rows, columns, figsize=(4.0 * columns, 3.0 * rows), squeeze=False)
-    for ax in axes.flat:
-        ax.axis("off")
-    for ax, image in zip(axes.flat, images):
-        ax.imshow(image)
-    figure.tight_layout()
-    return figure
+    """RGB images in a grid of the given number of columns, at their own pixels."""
+    return image_figure(tiled(images, columns))

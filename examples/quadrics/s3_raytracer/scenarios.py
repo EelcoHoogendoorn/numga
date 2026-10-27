@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from examples.quadrics.s3_raytracer.core import (
-    Plane, direction, inside, mv, origin, outlines, pixel_chart, project, reproject,
+    Plane, direction, mv, origin, outlines, pixel_chart, project, reproject,
 )
 
 # The ellipsoid's angular half-widths along its axes; how far each copy lies along the line of sight, and
@@ -35,14 +35,17 @@ def walk(n_frames: int):
     colours, the light and the field of view."""
     # An ellipsoid: the dual quadric with the origin as centre, principal half-widths along the basis
     # directions, each the tangent of an angular half-width, and the -1 on the centre that closes it.
-    axes = direction(np.eye(3))                                                # [3] Point
-    ellipsoid = (axes * (axes & Plane) * np.tan(HALF_WIDTHS) ** 2).sum(axis=0) - origin * (origin & Plane)   # [] Point <- Plane
+    axes = direction(np.eye(3))                                                # [3] Point-
+    ellipsoid = (axes * (axes & Plane) * np.tan(HALF_WIDTHS) ** 2).sum(axis=0) - origin * (origin & Plane)   # [] Point- <- Plane+
     # Four copies of one shape, carried to increasing angular distances along x, offset so they don't overlap.
-    placed = ((mv.xw * (DISTANCES / 2)).exp() * (mv.yw * (SIDEWAYS / 2)).exp() * (mv.zw * (UPWARD / 2)).exp()
-              * (mv.xy * (TURN / 2)).exp())                                    # [bodies] Motor
-    bodies = placed >> ellipsoid(placed << Plane)                              # [bodies] Point <- Plane
+    to_distance = (mv.xw * (DISTANCES / 2)).exp()                              # [bodies] Motor+
+    to_side = (mv.yw * (SIDEWAYS / 2)).exp()                                   # [bodies] Motor+
+    to_height = (mv.zw * (UPWARD / 2)).exp()                                   # [bodies] Motor+
+    spin = (mv.xy * (TURN / 2)).exp()                                          # [] Motor+
+    placements = to_distance * to_side * to_height * spin                      # [bodies] Motor+
+    bodies = placements >> ellipsoid(placements << Plane)                      # [bodies] Point- <- Plane+
     # The eye walks along the x geodesic; the scene stays fixed in the world.
-    eye_frames = (mv.xw * (np.linspace(0.0, WALK, n_frames, endpoint=False) / 2)).exp()   # [frames] Motor
+    eye_frames = (mv.xw * (np.linspace(0.0, WALK, n_frames, endpoint=False) / 2)).exp()   # [frames] Motor+
     return eye_frames, bodies.inverse(), COLOURS, direction(LIGHT), FIELD_OF_VIEW
 
 
@@ -61,7 +64,8 @@ def main() -> None:
     # itself. The screen conic is that discriminant, and reprojected hits lie on their surfaces.
     _, surfaces, _, _, _ = scene
     chart = pixel_chart(FIELD_OF_VIEW, CHECK_SHAPE)
-    covered = inside(outlines(mv.rotor(), surfaces), chart)
+    cones = outlines(mv.rotor(), surfaces).reshape(-1, 1)
+    covered = (chart & cones(chart)) >= 0.0
     at_eye, along = surfaces.reshape(-1, 1)(origin), surfaces.reshape(-1, 1)(chart)
     a, b, c = (chart & along).to_array(), (chart & at_eye).to_array(), (origin & at_eye).to_array()
     discriminant = b * b - a * c

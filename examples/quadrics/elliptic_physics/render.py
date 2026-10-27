@@ -23,7 +23,7 @@ BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
 # Where the disk's rim begins: the squared distance from its centre, in its radii, past which a pixel is rim.
 RIM_START = 0.985
 # The planes x, y and z of S²'s space: a point of S² is the dual of their sum weighted by its unit coordinates.
-axes = stack((S2.mv.x, S2.mv.y, S2.mv.z))                                     # [3] Plane
+axes = stack((S2.mv.x, S2.mv.y, S2.mv.z))                                     # [3] Plane+
 # The colour of the pixels inside a body painted on the CPU, the pixels across a painting, on the CPU or the GPU, and
 # the samples along each side of a pixel on the CPU.
 INSIDE = "#38bdf8"
@@ -45,7 +45,7 @@ def hemisphere_points() -> S2.Point:
     """The points of S² on the front hemisphere under the samples of `draw_inside`'s painting, inside its disk: each
     the dual of its unit vector, as the shader builds it."""
     coordinates, _, _ = hemisphere(PAINTED * SUPERSAMPLE)
-    return (axes * coordinates).sum(axis=-1).dual()                            # [pixels] Point
+    return (axes * coordinates).sum(axis=-1).dual()                            # [pixels] Point-
 
 
 def paint(coverage: np.ndarray, colors: np.ndarray, inside: np.ndarray, rim: np.ndarray, supersample: int) -> np.ndarray:

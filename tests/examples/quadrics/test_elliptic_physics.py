@@ -47,14 +47,14 @@ def test_free_flight_conserves_energy_and_momentum():
     """The Lie midpoint step keeps the body-frame momentum's norm exactly and the energy closely."""
     points, masses = ellipse_mesh(np.radians(np.array([[35.0, 10.0]])), np.array([1.0]), 384, 10)
     inertia = S2.pointcloud_inertia(points, masses)[0]
-    I_inv = inertia.inverse()
+    inverse_inertia = inertia.inverse()
     motor, momentum = S2.mv.rotor(), inertia(S2.mv.yz * 2.5 + S2.mv.xy * 0.05)
-    energy = (I_inv(momentum) & momentum).to_array()
+    energy = (inverse_inertia(momentum) & momentum).to_array()
     size = momentum.norm().to_array()
     for _ in range(200):
-        motor, momentum = S2.step_motor(motor, momentum, I_inv, 0.01)
+        motor, momentum = S2.step_motor(motor, momentum, inverse_inertia, 0.01)
     np.testing.assert_allclose(momentum.norm().to_array(), size, atol=1e-14)
-    np.testing.assert_allclose((I_inv(momentum) & momentum).to_array(), energy, rtol=0.01)
+    np.testing.assert_allclose((inverse_inertia(momentum) & momentum).to_array(), energy, rtol=0.01)
 
 
 def test_collision_conserves_energy_and_momentum():

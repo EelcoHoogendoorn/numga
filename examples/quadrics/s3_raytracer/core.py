@@ -29,16 +29,16 @@ from numga.subspace import SubSpaceFactory
 ga = Algebra("x+y+z+w+", subspace_factory=partial(SubSpaceFactory, default="1 x y z w yz zx xy xw yw zw yzw zxw xyw zyx xyzw"))
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
 ScreenPoint = Point.derive.containing("w")
 ScreenConic = ga.gatype((ga.gatype.scalar(), ScreenPoint, ScreenPoint))
 ScreenPolar = ga.gatype((ga.gatype.scalar(), ScreenPoint))
-Plane = ga.gatype.vector()
-Motor = ga.gatype.rotor()
+Plane = ga.gatype.vector()                          # Vector+
+Motor = ga.gatype.rotor()                           # Rotor+
 # The primal quadric maps a point to its polar plane, the dual quadric a plane to its pole.
-Quadric = ga.gatype((Plane, Point))           # Plane <- Point
-DualQuadric = ga.gatype((Point, Plane))       # Point <- Plane
+Quadric = ga.gatype((Plane, Point))
+DualQuadric = ga.gatype((Point, Plane))
 
 
 def unit(points: Point) -> Point:
@@ -57,7 +57,7 @@ def direction(coords: np.ndarray) -> Point:
 def pixel_chart(fov: float, shape: tuple[int, int]) -> ScreenPoint:
     """Homogeneous screen points (1, u, v) of a pinhole grid looking along +x from the origin."""
     v, u = np.meshgrid(np.linspace(1.0, -1.0, shape[0]) * shape[0] / shape[1], np.linspace(-1.0, 1.0, shape[1]), indexing="ij")
-    axes = mv(ScreenPoint, np.eye(3))                                          # [3] ScreenPoint
+    axes = mv(ScreenPoint, np.eye(3))                                          # [3] ScreenPoint-
     return axes[0] + axes[1] * (np.tan(fov / 2) * u.ravel()) + axes[2] * (np.tan(fov / 2) * v.ravel())
 
 
@@ -68,11 +68,6 @@ def outlines(eye_frame: Motor, surfaces: Quadric) -> Quadric:
     eye = eye_frame >> origin
     polar = surfaces(eye)
     return polar * (Point & polar) - surfaces * (eye & polar)
-
-
-def inside(cone: Quadric, rays: ScreenPoint) -> np.ndarray:
-    """Hit test of ray directions against the bodies' outline cones."""
-    return (rays & cone.reshape(-1, 1)(rays)) >= 0.0
 
 
 def project(eye_frame: Motor, surfaces: Quadric) -> tuple[ScreenConic, ScreenPolar]:

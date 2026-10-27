@@ -108,7 +108,7 @@ fn sample(place: vec2<f32>) -> Sample {
 @cache
 def shader() -> Shader:
     # The points a quarter turn from the origin along x, y and z, ahead, right and up from the origin's own view.
-    frame = stack((mv.x, mv.y, mv.z)).dual()                                   # [3] Point
+    frame = stack((mv.x, mv.y, mv.z)).dual()                                   # [3] Point-
     return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric, Motor=Motor),
                   dict(origin=origin, frame=frame, background=background))
 

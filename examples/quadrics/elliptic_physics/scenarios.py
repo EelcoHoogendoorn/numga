@@ -118,7 +118,7 @@ def hyperbolic(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
         colors=["#f43f5e", "#fbbf24", "#34d399", "#a855f7"],
         n_phi=384,
     )
-    bodies = S2.Bodies.join(giant, swarm)
+    bodies = S2.Bodies.join([giant, swarm])
     trajectory = S2.simulate(bodies, frames, S2_TIME_STEP, 2)
     return trajectory, bodies.color
 
@@ -126,13 +126,15 @@ def hyperbolic(frames: int) -> tuple[S2.Trajectory, np.ndarray]:
 # --- S³ -------------------------------------------------------------------------------
 def placed(place: S3.Point, spin: S3.Bivector) -> S3.Motor:
     """Motors carrying the origin to the given points, spun by the given rotation bivectors."""
-    return (raytracer.unit(place) / raytracer.origin).square_root() * (spin * 0.5).exp()
+    carry = (raytracer.unit(place) / raytracer.origin).square_root()
+    turn = (spin * 0.5).exp()
+    return carry * turn
 
 
-def resting(color: np.ndarray, Q: S3.DualQuadric, rate: S3.Bivector, mass: float, rng: np.random.Generator) -> S3.Bodies:
+def resting(color: np.ndarray, dual: S3.DualQuadric, rate: S3.Bivector, mass: float, rng: np.random.Generator) -> S3.Bodies:
     """One large body at the origin, unturned."""
     motor = placed(raytracer.origin.reshape(1), S3.mv.bivector(np.zeros((1, 6))))
-    return S3.body(color[None], Q, motor, rate, *S3.filled(Q, np.array([mass]), 400, rng))
+    return S3.body(color[None], dual, motor, rate, *S3.filled(dual, np.array([mass]), 400, rng))
 
 
 def population(rng: np.random.Generator, candidates: int, sizes: tuple[float, float]) -> S3.Bodies:
@@ -146,8 +148,8 @@ def population(rng: np.random.Generator, candidates: int, sizes: tuple[float, fl
     place = S3.mv.antivector(rng.normal(size=(candidates, 4)))
     spin = S3.mv.bivector(rng.normal(size=(candidates, 6)) * np.array([1.0, 1.0, 1.0, 0.0, 0.0, 0.0]))
     color = render.hues(rng.permutation(candidates) / candidates)
-    Q = S3.ellipsoid(half_widths)
-    return S3.body(color, Q, placed(place, spin), S3.mv.bivector(rate), *S3.filled(Q, np.prod(half_widths, axis=-1) * 200.0, 400, rng))
+    dual = S3.ellipsoid(half_widths)
+    return S3.body(color, dual, placed(place, spin), S3.mv.bivector(rate), *S3.filled(dual, np.prod(half_widths, axis=-1) * 200.0, 400, rng))
 
 
 def admitted(bodies: S3.Bodies, given: int, count: int) -> S3.Bodies:
@@ -156,7 +158,7 @@ def admitted(bodies: S3.Bodies, given: int, count: int) -> S3.Bodies:
     i, j = S3.candidates_near(bodies)
     relative = bodies.motor[i].inverse() * bodies.motor[j]
     overlapping = np.zeros((bodies.color.shape[0],) * 2, dtype=bool)
-    overlapping[i, j] = overlapping[j, i] = S3.overlap(bodies.C[i], relative >> bodies.C[j](relative << S3.Point))[0] < 0.0
+    overlapping[i, j] = overlapping[j, i] = S3.overlap(bodies.form[i], relative >> bodies.form[j](relative << S3.Point))[0] < 0.0
     keep = list(range(given))
     for candidate in range(given, bodies.color.shape[0]):
         if not overlapping[candidate, keep].any():
@@ -190,7 +192,7 @@ def gap(frames: int):
     # The large object: an ellipsoid reaching 60°, 75° and 70° along x, y, z, so the belt around the great
     # sphere w == 0 between it and its antipodal image is 30°, 15° and 20° thick on either side.
     huge = resting(np.array([0.75, 0.7, 0.6]), S3.ellipsoid(np.tan(np.radians([[60.0, 75.0, 70.0]]))), S3.mv.bivector(np.zeros((1, 6))), 500.0, rng)
-    bodies = admitted(S3.Bodies.join(huge, population(rng, 2000, (0.03, 0.15))), 1, 60)
+    bodies = admitted(S3.Bodies.join([huge, population(rng, 2000, (0.03, 0.15))]), 1, 60)
     # The eye a quarter turn along x, in the middle of the belt's thick part, looking along y where
     # it thins; the light behind the eye and a little across the belt.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (-S3.mv.xy * (np.pi / 2) * 0.5).exp()
@@ -204,7 +206,7 @@ def needle(frames: int):
     # The large object: a heavy needle 80° long along x with a slightly oval cross-section, spinning
     # about its own axis, so its gap stays in the fixed view.
     long = resting(np.array([0.9, 0.85, 0.3]), S3.ellipsoid(np.tan(np.radians([[80.0, 4.0, 3.0]]))), S3.mv.yz.reshape(1) * 2.0, 50.0, rng)
-    bodies = admitted(S3.Bodies.join(long, population(rng, 1000, (0.05, 0.3))), 1, 40)
+    bodies = admitted(S3.Bodies.join([long, population(rng, 1000, (0.05, 0.3))]), 1, 40)
     # The eye at the ideal point of x, where the tips almost meet, lifted 35° along z and looking
     # back down at the gap; the light behind and above the eye.
     eye = (S3.mv.xw * (np.pi / 2) * 0.5).exp() * (S3.mv.zw * np.radians(35.0) * 0.5).exp() * (S3.mv.zx * (-np.pi / 2) * 0.5).exp()
@@ -222,7 +224,7 @@ def tunnel(frames: int):
     # Its inside, in the sense of its form, is the complementary solid torus; the crowd lives in the tube.
     tube = S3.quadric(np.array([[-1.0, -1.0 / 1.5**2, 1.0 / np.tan(np.radians(40.0))**2, 1.0 / np.tan(np.radians(20.0))**2]]))
     torus = resting(np.array([0.55, 0.65, 0.75]), tube, S3.mv.bivector(np.zeros((1, 6))), 500.0, rng)
-    bodies = admitted(S3.Bodies.join(torus, population(rng, 2000, (0.03, 0.1))), 1, 50)
+    bodies = admitted(S3.Bodies.join([torus, population(rng, 2000, (0.03, 0.1))]), 1, 50)
     # The eye in the wide section at +z, looking toward the narrow waist at -w; the light halfway to the wall, up and right.
     eye = (S3.mv.zw * (np.pi / 2) * 0.5).exp() * (S3.mv.zx * (np.pi / 2) * 0.5).exp()
     camera = eye >> raytracer.origin
