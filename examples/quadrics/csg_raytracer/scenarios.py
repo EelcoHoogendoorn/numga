@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 
-from numga import stack
+from numga import concatenate, stack
 from examples.quadrics.csg_raytracer import core
-from examples.quadrics.csg_raytracer.core import Point, Quadric, ellipsoid, half_space, hyperboloid, mv, placed, translator
+from examples.quadrics.csg_raytracer.core import Point, Quadric, ellipsoid, half_space, hyperboloid, mv
 
 # The hyperboloid's waist radius and its half-height, where two planes cut it.
 waist_axes = np.array([0.55, 0.55, 0.85])
@@ -43,27 +43,30 @@ n_rulings = 12
 def solids() -> tuple[Quadric, dict]:
     """Every solid's quadrics, solid after solid, and each solid's range of them, colour, reflectivity and
     checker planes."""
-    lift = translator(hyperboloid_place) * (mv.xz * (-hyperboloid_tilt / 2)).exp()                 # [] Motor
-    turn_bowl = translator(bowl_place) * (mv.yz * (-bowl_tilts[0] / 2)).exp() * (mv.xz * (-bowl_tilts[1] / 2)).exp()  # [] Motor
+    # Each solid is placed by one motor: a translation along its place, a direction from the origin, and its tilts.
+    lift = ((mv.w ^ hyperboloid_place.dual()) / 2).exp() * (mv.xz * (-hyperboloid_tilt / 2)).exp()   # [] Motor+
+    bowl_shift = ((mv.w ^ bowl_place.dual()) / 2).exp()                                              # [] Motor+
+    bowl_tilt = (mv.yz * (-bowl_tilts[0] / 2)).exp() * (mv.xz * (-bowl_tilts[1] / 2)).exp()          # [] Motor+
+    turn_bowl = bowl_shift * bowl_tilt                                                               # [] Motor+
+    mirror_shift = ((mv.w ^ mirror_place.dual()) / 2).exp()                                          # [] Motor+
     height = waist_axes[2]
-    shapes = [
-        # The hyperboloid between the planes a half-height above and below its waist.
-        [placed(hyperboloid(waist_axes), lift),
-         placed(half_space(mv.z - mv.w * height), lift),
-         placed(half_space(-mv.z - mv.w * height), lift)],
-        # The bowl: inside the outer ellipsoid, outside the inner one, below the cut.
-        [placed(ellipsoid(bowl_axes), turn_bowl),
-         -placed(ellipsoid(bowl_axes * wall_fraction), turn_bowl),
-         placed(half_space(bowl_cut / (bowl_cut | bowl_cut).square_root()), turn_bowl)],
-        [placed(ellipsoid(np.full(3, mirror_radius)), translator(mirror_place))],
-        # The floor: everything below the plane z = 0.
-        [half_space(mv.z).cast(Quadric)],
-    ]
-    counts = np.array([len(shape) for shape in shapes])
+    # The hyperboloid between the planes a half-height above and below its waist.
+    hyperboloid_parts = stack([hyperboloid(waist_axes), half_space(mv.z - mv.w * height),
+                               half_space(-mv.z - mv.w * height)])                                   # [parts] Plane+ <- Point-
+    # The bowl: inside the outer ellipsoid, outside the inner one, below the cut.
+    bowl_parts = stack([ellipsoid(bowl_axes), -ellipsoid(bowl_axes * wall_fraction),
+                        half_space(bowl_cut.normalized())])                                          # [parts] Plane+ <- Point-
+    mirror_parts = ellipsoid(np.full(3, mirror_radius)).reshape(1)                                   # [parts] Plane+ <- Point-
+    # The floor: everything below the plane z = 0.
+    floor_parts = half_space(mv.z).cast(Quadric).reshape(1)                                          # [parts] Plane+ <- Point-
+    # Each solid's parts placed by its motor: every point moved back, measured, and its plane moved forward.
+    shapes = [lift >> hyperboloid_parts(lift << Point), turn_bowl >> bowl_parts(turn_bowl << Point),
+              mirror_shift >> mirror_parts(mirror_shift << Point), floor_parts]
+    counts = np.array([shape.shape[0] for shape in shapes])
     ends = np.cumsum(counts)
-    quadrics = stack([quadric for shape in shapes for quadric in shape])          # [quadrics] Quadric
-    across = stack([lift >> (mv.x + mv.z) * stripes, 0 * mv.x, 0 * mv.x, mv.x * tiles])      # [solids] Plane
-    along = stack([lift >> (mv.y - mv.z) * stripes, 0 * mv.y, 0 * mv.y, mv.y * tiles])       # [solids] Plane
+    quadrics = concatenate(shapes)                                                                   # [quadrics] Plane+ <- Point-
+    across = stack([lift >> (mv.x + mv.z) * stripes, 0 * mv.x, 0 * mv.x, mv.x * tiles])      # [solids] Plane+
+    along = stack([lift >> (mv.y - mv.z) * stripes, 0 * mv.y, 0 * mv.y, mv.y * tiles])       # [solids] Plane+
     return quadrics, dict(first=ends - counts, end=ends, colour=colours, reflectivity=reflectivities,
                           across=across, along=along)
 
@@ -89,9 +92,11 @@ def main() -> None:
     # --- checks
     # Both families of straight lines through the hyperboloid's waist lie in its surface.
     waist, rising, falling = core.ruling_lines(waist_axes, n_rulings)
-    reach = np.linspace(-2, 2, 5)[:, None]
+    offsets = np.linspace(-2, 2, 5)[:, None]
+    surface = hyperboloid(waist_axes)
     for direction in (rising, falling):
-        np.testing.assert_allclose(core.evaluate(hyperboloid(waist_axes), waist + direction * reach).kernel, 0, atol=1e-12)
+        on_ruling = waist + direction * offsets
+        np.testing.assert_allclose((surface(on_ruling) & on_ruling).to_array(), 0, atol=1e-12)
     # Every camera looks at the target.
     cameras = orbit(n_frames)
     eyes = cameras >> core.origin

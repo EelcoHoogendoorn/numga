@@ -1,4 +1,4 @@
-"""Recover a principal frame and its motor with two eigenproblems.
+"""A principal frame and its motor, recovered with two eigenproblems.
 
 Both constructions start from the supplied inertia: an arbitrary mass cloud,
 and a moved diagonal tensor. The reference is just the canonical coordinate
@@ -15,18 +15,18 @@ from numga import Algebra, Extensor, NumpyContext
 
 # --- plumbing -------------------------------------------------------------------------
 def cloud(context: NumpyContext, seed: int) -> tuple[Extensor, np.ndarray]:
-    """Normalize random points and place the cloud with a random motor."""
+    """Random unit points placed by a random motor, and their masses."""
     ga, mv = context.algebra, context.multivector
     rng = np.random.default_rng(seed)
-    count = 80
-    points = mv.antivector(rng.normal(size=(count, ga.dimension))).normalized()
+    n_points = 80
+    points = mv.antivector(rng.normal(size=(n_points, ga.dimension))).normalized()
     placement = mv.bivector(rng.normal(size=len(ga.subspace.bivector())) * 0.3).exp()
-    return placement >> points, rng.uniform(0.5, 1.5, size=count)
+    return placement >> points, rng.uniform(0.5, 1.5, size=n_points)
 
 
 # --- math -----------------------------------------------------------------------------
 def second_moment(inertia: Extensor) -> Extensor:
-    """Recover the point cloud's second-moment map from its inertia.
+    """The point cloud's second-moment map, recovered from its inertia.
 
     The inertia is a single physical inertia map, AntiBivector <- Bivector, mapping
     rigid-body velocity to momentum in its current frame. The result is a Point <- Plane
@@ -49,7 +49,7 @@ def second_moment(inertia: Extensor) -> Extensor:
 
 
 def diagonalizing_motor(moment: Extensor, reference: Extensor) -> Extensor:
-    """Fit a motor taking the moment's principal planes onto a reference frame.
+    """The motor fitted to take the moment's principal planes onto a reference frame.
 
     The moment is the Point <- Plane second-moment map recovered from inertia. The
     reference is a batch of orthogonal unit target planes, with PGA's null plane last;
@@ -107,17 +107,17 @@ def main(signature: str, seed: int) -> tuple[Extensor, Extensor]:
     # 2. Diagonal second moments induce a diagonal energy form on bivectors.
     # Move that inertia, then find a diagonalizing motor from the moved tensor.
     diagonal = (point_basis & point_basis.commutator(Bivector) * second_moments).sum(axis=0)
-    moved = placement >> diagonal(placement << Bivector)
-    moment = second_moment(moved)
+    placed_inertia = placement >> diagonal(placement << Bivector)
+    moment = second_moment(placed_inertia)
     motor = diagonalizing_motor(moment, reference)
-    recovered = motor >> moved(motor << Bivector)
+    recovered_inertia = motor >> placed_inertia(motor << Bivector)
 
     # --- checks
     # Both aligned inertias have a diagonal energy form on the bivector blades. The round
     # trip recovers the diagonal it started from, up to a permutation of the axes.
     blades = mv.bivector(np.eye(len(Bivector.output_subspace)))
     energies = [(blades[:, None] & aligned(blades[None, :])).to_array().real
-                for aligned in (cloud_diagonal, recovered, diagonal)]
+                for aligned in (cloud_diagonal, recovered_inertia, diagonal)]
     for energy in energies[:2]:
         off_diagonal = energy - np.diag(np.diag(energy))
         assert np.abs(off_diagonal).max() < 1e-12 * np.abs(energy).max()

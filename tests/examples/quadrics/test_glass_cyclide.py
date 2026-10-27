@@ -13,7 +13,8 @@ ROUND_OFF = 1e-10
 
 def test_inverted_torus_lies_on_the_cyclide():
     points = scenarios.inversion >> core.torus_points(scenarios.torus_radius, scenarios.torus_tube, 16, 8)
-    surface = core.cyclide(scenarios.torus_radius, scenarios.torus_tube, scenarios.inversion)
+    inversion = scenarios.inversion
+    surface = inversion >> core.torus(scenarios.torus_radius, scenarios.torus_tube)(inversion << core.Point)
     form = (points & surface(points)) / (core.infinity & points).squared()
     np.testing.assert_allclose(form.kernel, 0, atol=ROUND_OFF)
 

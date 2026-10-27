@@ -22,7 +22,7 @@ from examples.util.wgsl import Shader, supersampled
 mv = core.mv
 types = dict(Sphere=core.Sphere, Euclidean=core.Euclidean, Point=core.Point, Rotation=core.Rotation, Quadric=core.Quadric)
 # The directions across and up the camera's own frame, which a place on the image weighs, `(axes * across).sum()`.
-axes = stack((mv.x, mv.y))                                                    # [2] Euclidean
+axes = stack((mv.x, mv.y))                                                    # [2] Euclidean+
 # The look: light where the lamp does not reach, the light glass lets into its shadow, the checker's darkening, and
 # the sky from the horizon up; the sun seen in a reflection, its brightness, and how tightly it gathers about the
 # lamp's direction; and the gamma the image is shown at.

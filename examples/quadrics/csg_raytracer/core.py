@@ -17,15 +17,15 @@ from numga import NumpyContext, stack
 from numga.algebras import PGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                  # Scalar+
 # Points and directions are antivectors, planes are vectors, and a direction is a point at infinity.
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Motor = ga.gatype.rotor()
-Quadric = ga.gatype((Plane, Point))                          # Plane <- Point
-origin = mv.point([0, 0, 0])                                 # [] Point
+Point = ga.gatype.antivector()                               # Antivector-
+Plane = ga.gatype.vector()                                   # Vector+
+Motor = ga.gatype.rotor()                                    # Rotor+
+Quadric = ga.gatype((Plane, Point))
+origin = mv.point([0, 0, 0])                                 # [] Point-
 # The planes through the origin square to each axis, and the plane at infinity.
-axes = stack((mv.x, mv.y, mv.z))                             # [3] Plane
+axes = stack((mv.x, mv.y, mv.z))                             # [3] Plane+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -48,36 +48,24 @@ def half_space(plane: Plane) -> Quadric:
     return (plane * (mv.w & Point) + mv.w * (plane & Point)) / 2
 
 
-def placed(quadric: Quadric, motor: Motor) -> Quadric:
-    """A quadric moved by a motor: each point moved back, measured, and its plane moved forward."""
-    return motor >> quadric(motor << Point)
-
-
-def translator(offset: Point) -> Motor:
-    """The motor carrying every point along a direction, a point at infinity."""
-    return ((mv.w ^ offset.dual()) / 2).exp()
-
-
 def orbit(target: Point, distance: float, elevation: float, azimuth: np.ndarray) -> Motor:
     """A camera's motor, from one at the origin looking along its own -z with y up: backed off by
     `distance`, tilted down to look from `elevation` above the horizon, turned to `azimuth` about the
     vertical, and carried to the target."""
-    pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()                          # [] Motor
-    turn = (mv.xy * (-azimuth / 2)).exp()                                            # [...] Motor
-    return translator(target - origin) * turn * pitch * translator(mv.z.dual() * distance)  # [...] Motor
+    back_off = (mv.zw * (distance / 2)).exp()                                        # [] Motor+
+    pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()                          # [] Motor+
+    turn = (mv.xy * (-azimuth / 2)).exp()                                            # [...] Motor+
+    # The translation along the direction from the origin to the target, a point at infinity.
+    carry = ((mv.w ^ (target - origin).dual()) / 2).exp()                           # [] Motor+
+    return carry * turn * pitch * back_off
 
 
 def ruling_lines(semi_axes: np.ndarray, n_rulings: int) -> tuple[Point, Point, Point]:
     """Points around the waist of a circular hyperboloid, and the directions of the two straight lines
     through each that lie in its surface: the point and its directions turned about z together."""
     radius, _, height = semi_axes
-    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rulings, endpoint=False) / 2)).exp()   # [rulings] Motor
-    waist = turns >> mv.point([radius, 0, 0])                                         # [rulings] Point
-    rising = turns >> mv.direction([0, radius, height])                               # [rulings] Point
-    falling = turns >> mv.direction([0, radius, -height])                             # [rulings] Point
+    turns = (mv.xy * (-np.linspace(0, 2 * np.pi, n_rulings, endpoint=False) / 2)).exp()   # [rulings] Motor+
+    waist = turns >> mv.point([radius, 0, 0])                                         # [rulings] Point-
+    rising = turns >> mv.direction([0, radius, height])                               # [rulings] Point-
+    falling = turns >> mv.direction([0, radius, -height])                             # [rulings] Point-
     return waist, rising, falling
-
-
-def evaluate(quadric: Quadric, point: Point) -> Scalar:
-    """A quadric's pairing with a point: zero on its surface, negative inside."""
-    return quadric(point) & point

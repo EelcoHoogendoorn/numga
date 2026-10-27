@@ -18,19 +18,19 @@ from numga.algebras import CGA3D
 
 ga = CGA3D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                  # Scalar+
 # Spheres and planes are vectors, and so are directions of flat space, planes through the origin, those within
 # x y z. Points are the duals of null vectors. Motors move and turn space conformally.
-Sphere = ga.gatype.vector()
-Euclidean = Sphere.derive.within("x y z")
-Point = ga.gatype.antivector()
-Motor = ga.gatype.rotor()
+Sphere = ga.gatype.vector()                                  # Vector+
+Euclidean = Sphere.derive.within("x y z")                    # Vector+
+Point = ga.gatype.antivector()                               # Antivector-
+Motor = ga.gatype.rotor()                                    # Rotor+
 # A camera only turns: a rotor of flat space.
-Rotation = Motor.derive.within("x y z")
-Quadric = ga.gatype((Sphere, Point))                         # Sphere <- Point
+Rotation = Motor.derive.within("x y z")                      # Rotor+
+Quadric = ga.gatype((Sphere, Point))
 # The origin, the dual of its null vector, and the null vector of the point at infinity.
-origin = ((mv.w + mv.e) / 2).dual()                          # [] Point
-infinity = mv.e - mv.w                                       # [] Sphere
+origin = ((mv.w + mv.e) / 2).dual()                          # [] Point-
+infinity = mv.e - mv.w                                       # [] Sphere+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -56,23 +56,13 @@ def translator(offset: Euclidean) -> Motor:
     return (-(offset ^ infinity) / 2).exp()
 
 
-def moved(quadric: Quadric, versor: Motor) -> Quadric:
-    """A quadric carried by a versor: each point carried back, measured, and its sphere carried forward."""
-    return versor >> quadric(versor << Point)
-
-
-def cyclide(radius: float, tube: float, inversion: Sphere) -> Quadric:
-    """A Dupin cyclide: the solid torus inverted in a sphere."""
-    return moved(torus(radius, tube), inversion)
-
-
 def torus_points(radius: float, tube: float, n_around: int, n_across: int) -> Point:
     """Points on a torus's surface: a point on the tube's circle turned about the core, then about z,
     `[across, around]`."""
-    around = (mv.xy * (-np.linspace(0, 2 * np.pi, n_around, endpoint=False) / 2)).exp()      # [around] Rotation
-    across = (mv.xz * (-np.linspace(0, 2 * np.pi, n_across, endpoint=False)[:, None] / 2)).exp()  # [across, 1] Rotation
-    on_tube = across >> (translator(mv.x * tube) >> origin)                                    # [across, 1] Point
-    return around >> (translator(mv.x * radius) >> on_tube)                                   # [across, around] Point
+    around = (mv.xy * (-np.linspace(0, 2 * np.pi, n_around, endpoint=False) / 2)).exp()      # [around] Rotation+
+    across = (mv.xz * (-np.linspace(0, 2 * np.pi, n_across, endpoint=False)[:, None] / 2)).exp()  # [across, 1] Rotation+
+    on_tube = across >> (translator(mv.x * tube) >> origin)                                    # [across, 1] Point-
+    return around >> (translator(mv.x * radius) >> on_tube)                                   # [across, around] Point-
 
 
 def outward(tangent: Sphere, point: Point) -> Euclidean:

@@ -6,7 +6,7 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.glass_cyclide import core
-from examples.quadrics.glass_cyclide.core import Quadric, ball, cyclide, infinity, moved, mv, origin, sphere, translator
+from examples.quadrics.glass_cyclide.core import Point, Quadric, ball, infinity, mv, origin, sphere, torus, translator
 
 # The torus the cyclide comes from, and the sphere it is inverted in: off the torus's centre, so the tube
 # swells on the far side.
@@ -45,23 +45,27 @@ duration_ms = 80
 # --- math -----------------------------------------------------------------------------
 def placement() -> core.Motor:
     """The cyclide's motor: its bounding centre to the origin, tilted about x, lifted above the floor."""
-    return translator(lift) * (mv.yz * (-cyclide_tilt / 2)).exp() * translator(-cyclide_centre)
+    centring = translator(-cyclide_centre)
+    tilt = (mv.yz * (-cyclide_tilt / 2)).exp()
+    return translator(lift) * tilt * centring
 
 
 def solids() -> tuple[Quadric, dict]:
     """Every solid's quadrics, solid after solid, and what the shader reads of each solid."""
     place = placement()
+    # The cyclide: the solid torus inverted in the sphere, a versor, and stood up by its placement.
+    cyclide = inversion >> torus(torus_radius, torus_tube)(inversion << Point)                # [] Sphere+ <- Point-
     shapes = [
         # The glass cyclide, less the bite: outside the bite's ball, the ball negated.
-        [moved(cyclide(torus_radius, torus_tube, inversion), place), -ball(place >> sphere(bite_centre, bite_radius))],
+        [place >> cyclide(place << Point), -ball(place >> sphere(bite_centre, bite_radius))],
         [ball(sphere(ball_centre, ball_radius))],
         # The floor: everything below the plane z = 0.
         [ball(-mv.z)],
     ]
     counts = np.array([len(shape) for shape in shapes])
     ends = np.cumsum(counts)
-    quadrics = stack([quadric.cast(Quadric) for shape in shapes for quadric in shape])      # [quadrics] Quadric
-    centres = stack([translator(lift) >> origin, ball_centre, origin])                      # [solids] Point
+    quadrics = stack([quadric.cast(Quadric) for shape in shapes for quadric in shape])      # [quadrics] Sphere+ <- Point-
+    centres = stack([translator(lift) >> origin, ball_centre, origin])                      # [solids] Point-
     return quadrics, dict(
         first=ends - counts, end=ends, centre=centres, radius=np.array([cyclide_radius, ball_radius * 1.01, floor_radius]),
         colour=colours, transparency=transparencies, refraction=refractions,
@@ -72,8 +76,8 @@ def cameras(n_cameras: int) -> tuple[core.Rotation, core.Point]:
     """Cameras orbiting the target, each a turn from one looking along -z with y up, and an eye."""
     azimuths = np.linspace(0, 2 * np.pi, n_cameras, endpoint=False)
     pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
-    turns = (mv.xy * (-azimuths / 2)).exp() * pitch                                       # [cameras] Rotation
-    return turns, translator((turns >> mv.z) * distance) >> target                        # [cameras] Rotation, [cameras] Point
+    turns = (mv.xy * (-azimuths / 2)).exp() * pitch                                       # [cameras] Rotation+
+    return turns, translator((turns >> mv.z) * distance) >> target
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -93,9 +97,10 @@ def main() -> None:
 
     # --- checks
     # The torus's points, inverted in the sphere, lie on the cyclide.
-    points = inversion >> core.torus_points(torus_radius, torus_tube, 24, 12)              # [across, around] Point
+    points = inversion >> core.torus_points(torus_radius, torus_tube, 24, 12)              # [across, around] Point-
     # The form scales with the square of a point's weight, its pairing with the point at infinity.
-    form = (points & cyclide(torus_radius, torus_tube, inversion)(points)) / (infinity & points).squared()
+    cyclide = inversion >> torus(torus_radius, torus_tube)(inversion << Point)
+    form = (points & cyclide(points)) / (infinity & points).squared()
     np.testing.assert_allclose(form.kernel, 0, atol=1e-10)
 
 
