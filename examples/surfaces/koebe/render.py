@@ -58,16 +58,16 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     every edge of both touching the sphere where the two circles of its ends touch; and the vertex circles and the
     face circles on the sphere."""
     pixel = frame.pixel
-    duals = core.face_circles(circles, faces)                                  # [faces] Vector
+    duals = core.face_circles(circles, faces)                                  # [faces] Vector-
     apexes, dual_apexes = sm.point(coordinates(core.apexes(circles))), sm.point(coordinates(core.apexes(duals)))
-    sides = core.beside(faces, edges)                                          # [edges, 2]
+    sides = core.Mesh(circles.shape[-1], faces).edge_faces                     # [edges, 2]
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
     marks = [(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
              (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
              (solids.ball(sm.point(coordinates(core.touching(circles, edges).dual())),
                           TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)]
     # The circles inked on the sphere, the only part of the second image, each coloured by its kind.
-    planes = concatenate([circle_planes(circles), circle_planes(duals)])      # [circles] Plane
+    planes = concatenate([circle_planes(circles), circle_planes(duals)])      # [circles] Plane+
     kinds = np.repeat(np.stack([PRIMAL_COLOUR, DUAL_COLOUR]), [circles.shape[-1], duals.shape[-1]], axis=0)   # [circles, 3]
     loops = solids.Ink(0, solids.half_space(planes), solids.everywhere[None].broadcast_to(planes.shape), kinds,
                        CIRCLE_WIDTH, 1.0)

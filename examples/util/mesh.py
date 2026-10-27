@@ -75,9 +75,9 @@ class Mesh:
         """A flat disk with concentric rings and a counter-clockwise triangular boundary."""
         angles = np.linspace(0, 2 * np.pi, sectors, endpoint=False)
         radii = np.linspace(radius / rings, radius, rings)
-        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [sectors] Point
-        positions = directions[None, :] * radii[:, None]                  # [rings, sectors] Point
-        vertices = concatenate([mv.antivector([[0, 0, 0]]), positions.reshape(-1)]).field()  # Point[V]
+        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [sectors] Point-
+        positions = directions[None, :] * radii[:, None]                  # [rings, sectors] Point-
+        vertices = concatenate([mv.antivector([[0, 0, 0]]), positions.reshape(-1)]).field()  # Point-[V]
 
         # Each sector starts with a centre triangle; successive rings contribute two triangles.
         indices = np.arange(rings * sectors).reshape(rings, sectors) + 1
@@ -108,9 +108,9 @@ class Mesh:
         ring = np.repeat(np.arange(len(radii)), populations)
         offsets = np.repeat(np.cumsum(populations) - populations, populations)
         angles = 2 * np.pi * (np.arange(populations.sum()) - offsets + (ring % 2) / 2) / populations[ring]
-        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [nodes] Point
-        vertices = concatenate((mv.antivector([[0, 0, 0]]), directions * radii[ring])).field()   # Point[V]
-        return cls._triangulate(vertices), vertices
+        directions = (mv.xy * (-angles / 2)).exp() >> mv.x.dual()   # [nodes] Point-
+        vertices = concatenate((mv.antivector([[0, 0, 0]]), directions * radii[ring])).field()   # Point-[V]
+        return cls.triangulate(vertices), vertices
 
     @classmethod
     def triangular_disk(cls, radius: float, divisions: int) -> tuple[Mesh, Point]:
@@ -123,27 +123,27 @@ class Mesh:
         layers = np.maximum.reduce((abs(columns), abs(rows), abs(columns + rows)))
         inside = (layers > 0) & (layers <= divisions)
         lattice = np.stack((columns[inside], rows[inside]), axis=-1)          # [nodes, axes]
-        unit = mv.x.dual()                                   # [] Point
-        axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))        # [axes] Point
-        positions = (axes * lattice).sum(axis=-1)                          # [nodes] Point
+        unit = mv.x.dual()                                   # [] Point-
+        axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))        # [axes] Point-
+        positions = (axes * lattice).sum(axis=-1)                          # [nodes] Point-
         # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
         positions = spacing * layers[inside] * positions / positions.norm()
-        vertices = concatenate((mv.antivector([[0, 0, 0]]), positions)).field()   # Point[V]
-        mesh = cls._triangulate(vertices)
+        vertices = concatenate((mv.antivector([[0, 0, 0]]), positions)).field()   # Point-[V]
+        mesh = cls.triangulate(vertices)
         boundary = np.flatnonzero(layers[inside] == divisions) + 1
 
         # Equal edge springs even out the circular map's distortion. Rim vertices can
         # slide along the circle; the incidence adjoint sums edge forces at each vertex.
-        a, b, c = vertices.batch()[mesh.faces.T]                           # [F] Point
+        a, b, c = vertices.batch()[mesh.faces.T]                           # [F] Point-
         area = ((b - a) & (c - a)).norm().sum() / 2
         target = (4 * area / (np.sqrt(3) * len(mesh.faces))).square_root()
         for _ in range(relaxation_steps):
-            edges = mesh.d0 * vertices                                     # Point[E]
-            force = edges * (1 - target / edges.norm())                    # Point[E]
-            positions = (vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Point
+            edges = mesh.d0 * vertices                                     # Point-[E]
+            force = edges * (1 - target / edges.norm())                    # Point-[E]
+            positions = (vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Point-
             positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].norm())
             vertices = positions.field()
-            mesh = cls._triangulate(vertices)
+            mesh = cls.triangulate(vertices)
         return mesh, vertices
 
     @classmethod
@@ -163,7 +163,7 @@ class Mesh:
         mesh = cls(len(vertices.batch()), faces)
         for _ in range(levels):
             # Each edge's midpoint, pushed out onto the sphere.
-            ends = vertices.batch()[mesh.edges.T]                          # [2, E] Point
+            ends = vertices.batch()[mesh.edges.T]                          # [2, E] Point-
             finer = concatenate([vertices.batch(), (ends[0] + ends[1]) / 2]).normalized().field()
             mesh, vertices = cls(len(finer.batch()), mesh.split_faces), finer
         return mesh, vertices
@@ -184,11 +184,11 @@ class Mesh:
         the xy plane."""
         major_angles = np.linspace(0.0, 2 * np.pi, major_count, endpoint=False)
         minor_angles = np.linspace(0.0, 2 * np.pi, minor_count, endpoint=False)
-        around_tube = (mv.xz * (-minor_angles / 2)).exp()                       # [minor_count] Rotor
-        around_axis = (mv.xy * (-major_angles / 2)).exp()                       # [major_count] Rotor
-        unit = mv.x.dual()                                       # [] Point
-        tube = unit * major_radius + (around_tube >> (unit * minor_radius))     # [minor_count] Point
-        vertices = (around_axis[:, None] >> tube[None, :]).reshape(-1).field()  # Point[V]
+        around_tube = (mv.xz * (-minor_angles / 2)).exp()                       # [minor_count] Rotor+
+        around_axis = (mv.xy * (-major_angles / 2)).exp()                       # [major_count] Rotor+
+        unit = mv.x.dual()                                       # [] Point-
+        tube = unit * major_radius + (around_tube >> (unit * minor_radius))     # [minor_count] Point-
+        vertices = (around_axis[:, None] >> tube[None, :]).reshape(-1).field()  # Point-[V]
 
         u, v = np.meshgrid(np.arange(major_count), np.arange(minor_count), indexing="ij")
         v00 = u * minor_count + v
@@ -202,7 +202,7 @@ class Mesh:
         return cls(major_count * minor_count, faces), vertices
 
     @classmethod
-    def _triangulate(cls, vertices: Point) -> Mesh:
+    def triangulate(cls, vertices: Point) -> Mesh:
         """Delaunay topology for vertices in the xy plane, with counter-clockwise faces."""
         from scipy.spatial import Delaunay
 
@@ -285,6 +285,32 @@ class Mesh:
     def boundary_edges(self) -> np.ndarray:
         """Indices of edges incident to only one face."""
         return np.flatnonzero(np.bincount(self.face_edges.ravel()) == 1)
+
+    @cached_property
+    def interior_edges(self) -> np.ndarray:
+        """Indices of edges between two faces."""
+        return np.flatnonzero(np.bincount(self.face_edges.ravel(), minlength=len(self.edges)) == 2)
+
+    @cached_property
+    def edge_faces(self) -> np.ndarray:
+        """`[interior edges, 2]`: the faces on the left and on the right of each interior edge, seen from outside
+        along the edge from its lower vertex to its higher. The face on the left runs along the edge, the face on
+        the right against it: the signs of the face-edge incidence, read the other way."""
+        return self._edge_sides(np.broadcast_to(np.arange(len(self.faces))[:, None], self.faces.shape))
+
+    @cached_property
+    def edge_opposites(self) -> np.ndarray:
+        """`[interior edges, 2]`: the vertex across each interior edge in the face on its left and in the face on
+        its right, the corner each face's edge faces."""
+        return self._edge_sides(self.faces)
+
+    def _edge_sides(self, per_corner: np.ndarray) -> np.ndarray:
+        """`[interior edges, 2]`: a value per corner of each face `[F, 3]`, gathered onto the edge the corner
+        faces, on the left where the face runs along the edge and on the right where it runs against it."""
+        along = self.face_edge_orientation > 0                                  # [F, 3]
+        left, right = np.empty((2, len(self.edges)), dtype=per_corner.dtype)
+        left[self.face_edges[along]], right[self.face_edges[~along]] = per_corner[along], per_corner[~along]
+        return np.stack([left, right], axis=-1)[self.interior_edges]
 
     def by_corner(self, cells: Extensor) -> SparseExtensor:
         """[F, E]: couplings from each face to the edge facing each of its corners, through `[3]` face

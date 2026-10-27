@@ -15,11 +15,11 @@ def test_face_planes_pair_to_one_with_their_vertices_on_a_fixed_mesh():
 
 
 def test_points_on_the_sphere_give_its_delaunay_mesh_with_poles_as_circumcentres():
-    points = scenarios.directions(scenarios.N_POINTS)                          # [points] Point
+    points = scenarios.DIRECTIONS                          # [points] Point-
     faces = core.hull(points)
     duals = core.poles(points, faces)
-    corners = points[faces]                                                    # [faces, 3] Point
-    centres = duals.normalized()                                               # [faces] Point
+    corners = points[faces]                                                    # [faces, 3] Point-
+    centres = duals.normalized()                                               # [faces] Point-
     # Each pole's image is equally far from the three corners of its face: their circumcentre.
     distances = (corners - centres[:, None]).norm().to_array()                 # [faces, 3]
     np.testing.assert_allclose(distances - distances[:, :1], 0, atol=1e-10)
@@ -33,12 +33,12 @@ def test_the_figure_and_two_frames_draw():
 
 def test_the_nearest_rescue_unfolds_the_mesh_steadily():
     settled = list(scenarios.settle())
-    faces = settled[0][1]
+    mesh = core.Mesh(scenarios.N_POINTS, settled[0][1])
     # The crossed dual edges are exactly the folded ones.
-    assert np.array_equal(core.dual_lengths(settled[0][0], faces).to_array() < 0,
-                          core.folds(scenarios.directions(scenarios.N_POINTS), np.ones(scenarios.N_POINTS), faces).to_array() < 0)
-    crossed = [(core.dual_lengths(points, faces).to_array() < 0).sum() for points, _, _ in settled]
+    assert np.array_equal(core.dual_lengths(settled[0][0], mesh) < 0,
+                          core.folds(scenarios.DIRECTIONS, np.ones(scenarios.N_POINTS), mesh) < 0)
+    crossed = [(core.dual_lengths(points, mesh) < 0).sum() for points, _, _ in settled]
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # Every image on the sphere is held.
-    images = [points.normalized() for points in (settled[0][0], settled[-1][0])]   # [points] Point each
+    images = [points.normalized() for points in (settled[0][0], settled[-1][0])]   # [points] Point-, Point-
     np.testing.assert_allclose((images[1] - images[0]).norm().to_array(), 0, atol=1e-12)

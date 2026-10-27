@@ -14,7 +14,7 @@ import numpy as np
 
 
 def essential_matrix(rays_1: np.ndarray, rays_2: np.ndarray) -> np.ndarray:
-    """Solve for the Essential matrix relating two sets of corresponding sight rays.
+    """The essential matrix relates two sets of corresponding sight rays.
 
     rays_1 and rays_2 are unit direction vectors of shape (N, 3) from Camera 1 and
     Camera 2. Each corresponding pair satisfies the epipolar coplanarity constraint:
@@ -126,7 +126,7 @@ def epipolar_lines(
     points_1: np.ndarray,
     essential: np.ndarray,
 ) -> np.ndarray:
-    """Compute 2D epipolar line coefficients in Camera 2 for points in Camera 1.
+    """The epipolar lines in Camera 2 of points in Camera 1 have these 2D line coefficients.
 
     points_1 has shape (N, 3) in normalized homogeneous coordinates (u, v, 1).
     Returns normalized line coefficients (a, b, c) where a * x + b * y + c == 0 in Camera 2.

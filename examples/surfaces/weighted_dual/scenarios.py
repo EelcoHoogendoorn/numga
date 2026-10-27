@@ -9,6 +9,7 @@ import numpy as np
 
 from scipy.optimize import LinearConstraint, linprog, minimize
 
+from numga import concatenate
 from examples.surfaces.weighted_dual import core
 
 # The number of points, how far their directions are nudged off an even spread, the seeds of the nudges
@@ -31,41 +32,40 @@ N_SETTLE_FRAMES = 48
 
 # --- math -----------------------------------------------------------------------------
 def directions(count: int) -> core.Point:
-    """Directions spread evenly over the sphere along a Fibonacci spiral, each nudged a little at random."""
+    """The directions are spread evenly over the sphere along a Fibonacci spiral, each nudged a little at random."""
     turns = np.arange(count) + 0.5
     polar = np.arccos(1 - 2 * turns / count)
     azimuth = np.pi * (1 + 5**0.5) * turns
     # The pole turned down towards x by its polar angle, then around the pole by its azimuth.
-    down = ((core.mv.z ^ core.mv.x) * (-polar / 2)).exp()
-    around = ((core.mv.x ^ core.mv.y) * (-azimuth / 2)).exp()
-    spiral = (around * down) >> core.mv.z.dual()                              # [points] Point
-    nudges = core.mv.vector(np.random.default_rng(DIRECTION_SEED).normal(size=(count, 3))).dual()   # [points] Point
-    return (spiral + JITTER * nudges).normalized()                             # [points] Point
+    down = (core.mv.zx * (-polar / 2)).exp()                                   # [points] Rotor+
+    around = (core.mv.xy * (-azimuth / 2)).exp()                               # [points] Rotor+
+    spiral = (around * down) >> core.mv.z.dual()                               # [points] Point-
+    nudges = core.mv.vector(np.random.default_rng(DIRECTION_SEED).normal(size=(count, 3))).dual()   # [points] Point-
+    return (spiral + JITTER * nudges).normalized()                             # [points] Point-
+
+
+DIRECTIONS = directions(N_POINTS)
 
 
 def breath() -> Iterator[tuple[core.Point, np.ndarray, core.Point]]:
-    """At each frame: the points, each at its own distance from the centre along a fixed direction, the
+    """The breath yields, at each frame, the points along their fixed directions at their own distances, the
     faces of the mesh they had on the sphere, held throughout, and the poles of those faces."""
-    faces = core.hull(directions(N_POINTS))                                    # [faces, 3]
+    faces = core.hull(DIRECTIONS)                                              # [faces, 3]
     phases = np.random.default_rng(PHASE_SEED).uniform(0, 2 * np.pi, N_POINTS)
     radii = 1 + AMPLITUDE * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)   # [frames, points]
-    for points in directions(N_POINTS) * radii:                                # [points] Point
-        yield points, faces, core.poles(points, faces)                         # [faces] Point
+    for points in DIRECTIONS * radii:                                          # [points] Point-
+        yield points, faces, core.poles(points, faces)
 
 
-def fold_map(faces: np.ndarray) -> np.ndarray:
-    """The folds of every edge as a linear map of the points' weights, one column per point: the folds with
-    that point's weight one and every other zero, all points as one batch."""
-    return core.folds(directions(N_POINTS), np.eye(N_POINTS), faces).to_array().T   # [edges, points]
-
-
-def widest(conditions: np.ndarray) -> tuple[np.ndarray, float]:
-    """The weights that make the smallest condition, each scaled to unit size, as large as it can be, with
-    the weights within their bounds and summing to their count, and that smallest condition: negative when
-    no weights meet them all."""
-    scaled = conditions / np.linalg.norm(conditions, axis=-1, keepdims=True)
-    count = conditions.shape[-1]
-    # The weights, then the smallest fold, which is maximised.
+def widest(conditions: core.Scalar) -> tuple[np.ndarray, float]:
+    """The widest margin is the largest smallest condition, each scaled to unit size, over the weights within
+    their bounds and summing to their count; it is negative when no weights meet every condition. A linear
+    program finds it, with its weights, outside the algebra."""
+    # The conditions as numbers for the solver, one row per condition and one column per point.
+    matrix = conditions.to_array().T                                           # [conditions, points]
+    scaled = matrix / np.linalg.norm(matrix, axis=-1, keepdims=True)
+    count = matrix.shape[-1]
+    # The weights, then the smallest condition, which is maximised.
     largest = np.concatenate([np.zeros(count), [-1.0]])
     total = np.concatenate([np.ones(count), [0.0]])[None]
     result = linprog(largest, A_ub=np.hstack([-scaled, np.ones((len(scaled), 1))]), b_ub=np.zeros(len(scaled)),
@@ -73,46 +73,34 @@ def widest(conditions: np.ndarray) -> tuple[np.ndarray, float]:
     return result.x[:-1], result.x[-1]
 
 
-def inside_map(faces: np.ndarray) -> np.ndarray:
-    """Every pole's signed distances inside its face as a linear map of the points' weights, one column per
-    point: the distances with that point's weight one and every other zero, all points as one batch."""
-    return np.moveaxis(core.insides(directions(N_POINTS), np.eye(N_POINTS), faces).to_array(), 0, -1)   # [faces, 3, points]
-
-
-def nearest(conditions: np.ndarray, margin: float, start: np.ndarray) -> np.ndarray:
-    """The weights nearest to the start, by the summed squares of the changes, that leave every condition,
-    scaled to unit size, at least the given margin: the change shared among many points rather than a few."""
-    scaled = conditions / np.linalg.norm(conditions, axis=-1, keepdims=True)
+def nearest(conditions: core.Scalar, margin: float, start: np.ndarray) -> np.ndarray:
+    """The nearest weights to the start, by the summed squares of the changes, leave every condition, scaled to
+    unit size, at least the given margin, which shares the change among many points rather than a few. A
+    quadratic program finds them outside the algebra."""
+    # The conditions as numbers for the solver, one row per condition and one column per point.
+    matrix = conditions.to_array().T                                           # [conditions, points]
+    scaled = matrix / np.linalg.norm(matrix, axis=-1, keepdims=True)
     result = minimize(lambda weights: ((weights - start) ** 2).sum(), start, jac=lambda weights: 2 * (weights - start),
                       method="SLSQP", constraints=[LinearConstraint(scaled, margin, np.inf)], bounds=[WEIGHT_BOUNDS] * len(start))
     return result.x
 
 
 def settle() -> Iterator[tuple[core.Point, np.ndarray, core.Point]]:
-    """The mesh of the hull of the points at random distances along their rays, held, with the points back on
-    the sphere, where some of its dual edges cross over; then the weights on the straight line to the nearest
-    weights that unfold it with every pole inside its face, closing in on them at the end: the points, faces
-    and poles at every frame."""
+    """The settling yields, at every frame, the points, faces and poles on the straight line in the weights from
+    the hull of points at random distances along their rays, held with the points back on the sphere, where
+    some of its dual edges cross over, to the nearest weights that unfold it with every pole inside its face,
+    closing in on them at the end."""
     radii = np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=N_POINTS))   # [points]
-    faces = core.hull(directions(N_POINTS) * radii)                            # [faces, 3]
+    faces = core.hull(DIRECTIONS * radii)                                      # [faces, 3]
     start = np.ones(N_POINTS)                                                  # [points]
-    # Every fold outward, and every pole inside its face.
-    conditions = np.concatenate([fold_map(faces), inside_map(faces).reshape(-1, N_POINTS)])   # [edges + faces * 3, points]
+    # Every fold outward and every pole inside its face, each linear in the weights: at one unit weighting per
+    # point, all as one batch, they give the columns of the map from weights to conditions.
+    unit_weights = np.eye(N_POINTS)                                            # [points, points]
+    conditions = concatenate([core.folds(DIRECTIONS, unit_weights, core.Mesh(N_POINTS, faces)),
+                              core.insides(DIRECTIONS, unit_weights, faces).reshape(N_POINTS, -1)], axis=-1)   # [points, conditions] Scalar+
     rescue = nearest(conditions, MARGIN_SHARE * widest(conditions)[1], start)  # [points]
-    for weights in start + timing(N_SETTLE_FRAMES)[:, None] * (rescue - start):   # [points]
-        points = core.weighted(directions(N_POINTS), weights)                  # [points] Point
-        yield points, faces, core.poles(points, faces)                         # [faces] Point
-
-
-def timing(frames: int) -> np.ndarray:
-    """How far along the way each frame is: at a steady pace for three quarters of the frames, then closing in
-    on the end over the last quarter, the way left shrinking by so many e-folds, the pace continuous where it
-    starts closing in."""
-    closing_start, e_folds = 3 / 4, 3
-    rate = e_folds / (1 - closing_start)
-    left = 1 / (1 + closing_start * rate)                                      # the way left where closing in starts
-    time = np.linspace(0, 1, frames)
-    return np.where(time < closing_start, time * left * rate, 1 - left * np.exp(-(time - closing_start) * rate))
+    for points in DIRECTIONS / (start + core.timing(N_SETTLE_FRAMES)[:, None] * (rescue - start)):   # [points] Point-
+        yield points, faces, core.poles(points, faces)
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -133,13 +121,12 @@ def main() -> None:
 
     # On the sphere some dual edges cross over, exactly where the polyhedron folds; along the straight line
     # to the rescue they only ever uncross, and at the rescue none is left.
-    faces = settled[0][1]
-    crossed = [(core.dual_lengths(points, faces).to_array() < 0).sum() for points, _, _ in settled]
-    assert np.array_equal(core.dual_lengths(settled[0][0], faces).to_array() < 0,
-                          core.folds(directions(N_POINTS), np.ones(N_POINTS), faces).to_array() < 0)
+    mesh = core.Mesh(N_POINTS, settled[0][1])
+    crossed = [(core.dual_lengths(points, mesh) < 0).sum() for points, _, _ in settled]
+    assert np.array_equal(core.dual_lengths(settled[0][0], mesh) < 0, core.folds(DIRECTIONS, np.ones(N_POINTS), mesh) < 0)
     assert crossed[0] > 0 and crossed[-1] == 0 and (np.diff(crossed) <= 0).all()
     # At the rescue every pole lies inside its face.
-    assert (core.sides(*settled[-1]).to_array() > 0).all()
+    assert (core.sides(*settled[-1]) > 0).all()
 
 
 if __name__ == "__main__":

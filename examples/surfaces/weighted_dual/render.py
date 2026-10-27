@@ -47,8 +47,8 @@ def arcs(ends: solids.Point) -> tuple[solids.Quadric, solids.Quadric]:
     the centre, `[pairs]` each."""
     start, end = ends[:, 0], ends[:, 1]
     # The direction from the centre to the chord's middle; the plane square to it through the start, facing the centre.
-    middle = (start - solids.origin) + (end - solids.origin)                  # [pairs] Point
-    across = middle.dual() - sm.w * (middle.dual() & start)                   # [pairs] Plane
+    middle = (start - solids.origin) + (end - solids.origin)                  # [pairs] Point-
+    across = middle.dual() - sm.w * (middle.dual() & start)                   # [pairs] Plane+
     return solids.half_space((solids.origin & start & end) * solids.flip), solids.half_space(across)
 
 
@@ -64,12 +64,13 @@ def picture(points: core.Point, faces: np.ndarray, duals: core.Point) -> np.ndar
     view = solids.View(solids.aim(solids.origin, ELEVATION, AZIMUTH), np.full(2, HALF), N_PIXELS)
     pixel = view.pixel
     xyz, poles = coordinates(points), coordinates(duals)                       # [points, 3], [faces, 3]
-    edges, beside = core.adjacency(faces)                                      # [edges, 2] each
+    mesh = core.Mesh(len(xyz), faces)
+    edges, beside = mesh.edges, mesh.edge_faces                                # [edges, 2], [edges, 2]
     vertices, dual_vertices = sm.point(xyz), sm.point(poles)                   # [points], [faces] Point
-    sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Quadric
+    sphere = solids.ball(solids.origin, 1.0)[None, None]                       # [1, 1] Plane+ <- Point-
     # The hull: inside the plane of every face, the plane that pairs to one with the face's points, whose dual is the
     # face's pole.
-    hull = (-(dual_vertices - solids.origin).dual() - sm.w)[None]              # [1, faces] Plane
+    hull = (-(dual_vertices - solids.origin).dual() - sm.w)[None]              # [1, faces] Plane+
     # Each vertex coloured by its distance from the sphere, blue inside, grey on it, red outside, on a stretch of
     # the ray from the centre it moves along.
     distance = np.linalg.norm(xyz, axis=-1)

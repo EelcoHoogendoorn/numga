@@ -1,4 +1,4 @@
-"""Load triangle meshes, build edge-collapse neighbourhood connectivity, and greedily select disjoint lowest-cost contractions."""
+"""Triangle meshes are loaded, their edge-collapse neighbourhoods connected, and disjoint lowest-cost contractions selected."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ mv = NumpyContext(PGA3D).multivector
 
 
 def read_mesh(path: Path, size: float):
-    """Load OBJ vertices and triangles, centred and scaled to the requested longest box side."""
+    """An OBJ file's vertices and triangles, centred and scaled to the requested longest box side, make the mesh."""
     rows = [line.split() for line in path.read_text().splitlines()]
     places = np.array([[float(word) for word in row[1:4]] for row in rows if row[:1] == ["v"]])
     faces = np.array([[int(word.split("/")[0]) - 1 for word in row[1:4]] for row in rows if row[:1] == ["f"]])
