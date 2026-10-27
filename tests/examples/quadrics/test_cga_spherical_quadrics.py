@@ -9,11 +9,9 @@ from examples.quadrics.cga_spherical_quadrics import render, scenarios
 from examples.quadrics.cga_spherical_quadrics.core import (
     mv,
     Quadric,
-    Bivector,
     make_spherical_donut,
     make_conical_donut,
     make_pinched_horn,
-    make_circle_intersection_vortex,
     point,
 )
 from examples.quadrics.elliptic_physics.render import hemisphere
@@ -61,13 +59,7 @@ def test_pinched_horn_cusp():
 
 def test_circle_intersection_vortex():
     """Verify intersection 2-blade of two circles generates a valid conformal rotor."""
-    generator = make_circle_intersection_vortex(
-        (mv.zx * (-0.35 / 2)).exp() >> mv.z,
-        np.radians(48.0),
-        (mv.zy * (-0.40 / 2)).exp() >> mv.z,
-        np.radians(52.0),
-    )
-    assert generator.gatype.subspaces == Bivector.subspaces
+    generator = scenarios.generator
     np.testing.assert_allclose(generator.squared().kernel[0], -1.0, atol=1e-12)
 
     rotor = (generator * 0.4).exp()

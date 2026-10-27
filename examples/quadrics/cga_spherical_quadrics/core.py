@@ -20,22 +20,16 @@ ctx = NumpyContext(ga)
 mv = ctx.multivector
 
 # A circle on S², the plane that cuts it out.
-Plane = ga.gatype.vector()
+Plane = ga.gatype.vector()                          # Vector+
 # A point of S²: an antivector with intrinsic orientation.
-Point = ga.gatype.antivector()
+Point = ga.gatype.antivector()                      # Antivector-
 Quadric = ga.gatype((Plane, Point))
-Bivector = ga.gatype.bivector()
-Rotor = ga.gatype.rotor()
+Bivector = ga.gatype.bivector()                     # Bivector+
 
 
 def point(xyz: np.ndarray) -> Point:
     """The points of S² at (..., 3) unit coordinates: the duals of their null vectors, x + y + z + w."""
     return ((stack((mv.x, mv.y, mv.z)) * xyz).sum(axis=-1) + mv.w).dual()
-
-
-def moved(quadric: Quadric, versor: Rotor) -> Quadric:
-    """A quadric carried by a versor: pull the point back, push the plane forward."""
-    return versor >> quadric(versor << Point)
 
 
 # --- shapes ---------------------------------------------------------------------------
@@ -67,7 +61,9 @@ def make_pinched_horn(r_outer: float) -> Quadric:
 
 def make_eccentric_cyclide(r_core: float, r_tube: float, boost_beta: float) -> Quadric:
     """Eccentric Dupin cyclide on S² with unequal tube width, by a dilation."""
-    return moved(make_spherical_donut(r_core, r_tube), (mv.xw * (boost_beta / 2.0)).exp())
+    dilation = (mv.xw * (boost_beta / 2.0)).exp()
+    # A versor carries a map as it carries anything: the point pulled back, the plane pushed forward.
+    return dilation >> make_spherical_donut(r_core, r_tube)(dilation << Point)
 
 
 def make_spherical_cassini(alpha1: float, alpha2: float, c_threshold: float) -> Quadric:
@@ -128,17 +124,7 @@ def make_spherical_parabola(weight_y: float, linear_x: float, bias: float) -> Qu
 
 
 # --- math -----------------------------------------------------------------------------
-def make_circle_intersection_vortex(
-    center1: Plane, radius1: float, center2: Plane, radius2: float,
-) -> Bivector:
-    """Intersection 2-blade of two off-center circles on S²: each circle is the vector of its
-    centre with weight the cosine of its radius."""
-    c1 = center1 + mv.w * np.cos(radius1)
-    c2 = center2 + mv.w * np.cos(radius2)
-    return (c1 ^ c2).normalized()
-
-
 def flow(quadrics: Quadric, generator: Bivector, phases: np.ndarray) -> Quadric:
     """The quadrics carried by (generator * (phase / 2)).exp(), batched as (phases, quadrics)."""
-    rotors = (generator * (phases / 2.0)).exp()
-    return moved(quadrics, rotors[:, None])
+    rotors = (generator * (phases / 2.0)).exp()[:, None]
+    return rotors >> quadrics(rotors << Point)

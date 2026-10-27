@@ -19,8 +19,11 @@ from matplotlib.colors import to_rgb
 import numpy as np
 
 from numga import concatenate, stack
-from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv
+from examples.quadrics.spherical_quadrics.core import Plane, Point, Polarity, Scalar, ga, mv, sphere
 from examples.util.wgsl import Shader, image_figure, supersampled
+
+# The sphere's grid the polarity's form is sampled on, for the range of its shading.
+GRID = (120, 60)
 
 # The view's elevation and azimuth in radians, azimuth zero looking along +y; half the image's height in the sphere's
 # radii, and the pixels across and up each view.
@@ -28,14 +31,14 @@ ELEVATION, AZIMUTH = np.radians(30.0), np.radians(30.0)
 HALF_HEIGHT, N_PIXELS = 1.45, 300
 PIXEL = 2 * HALF_HEIGHT / N_PIXELS
 # The turn from the view's own frame, x right, y up and z toward the viewer, to the sphere's.
-camera = (mv.xy * (-AZIMUTH / 2)).exp() * (mv.yz * (-(np.pi / 2 - ELEVATION) / 2)).exp()     # [] Rotor
+camera = (mv.xy * (-AZIMUTH / 2)).exp() * (mv.yz * (-(np.pi / 2 - ELEVATION) / 2)).exp()     # [] Rotor+
 # The points of the sphere right and up across the view and toward the viewer; the planes through the centre whose
 # pairings with a point are how far right and up it lies, and how far toward the viewer; and the lamp, up and to the
 # right of the viewer and in front, a plane through the centre: its pairing with a point is how squarely the point
 # faces it.
-right, up, toward = camera >> stack((mv.x, mv.y, mv.z)).dual()               # [3] Point
+right, up, toward = camera >> stack((mv.x, mv.y, mv.z)).dual()               # [3] Point-
 across_axes, depth_axis = camera >> stack((mv.x, mv.y)), camera >> mv.z      # [2] Plane, [] Plane
-lamp = (camera >> (mv.x * 0.35 + mv.y * 0.5 + mv.z * 0.8)).normalized()     # [] Plane
+lamp = (camera >> (mv.x * 0.35 + mv.y * 0.5 + mv.z * 0.8)).normalized()     # [] Plane+
 # The background; the form's colours below zero, at zero and above, and the polhodes' below and above; the oval, the
 # foci, the point the geodesics run to and the geodesics; the faint sphere and its great circles, the dual conic, the
 # pale sheet under the polhodes, the cone, and the rims of the marks.
@@ -323,13 +326,14 @@ def picture(source: str, **values) -> np.ndarray:
     return np.round(np.clip(image, 0, 1) * 255).astype(np.uint8)
 
 
-def draw_spherical_conic(curve: Point, foci: Point, sample: Point, tangents: Plane, potential: Scalar,
-                         conic: Polarity) -> plt.Figure:
+def draw_spherical_conic(curve: Point, foci: Point, sample: Point, tangents: Plane, conic: Polarity) -> plt.Figure:
     """The oval with its foci and the geodesics from them to one point, over the polarity's form; the oval as the
     envelope of its tangent great circles, with arrows toward their poles and the dual conic the poles trace, dotted;
     and the cone through it, with the level sets of the form, the polhodes."""
     # The oval's centre, the unit point its points sum toward; the form's least and greatest values on the sphere.
     shared = dict(conic=conic, centre=curve.sum(axis=0).normalized())
+    grid = sphere(*GRID)                                                        # [latitudes, longitudes] Point-
+    potential = grid & conic(grid)                                              # [latitudes, longitudes] Scalar+
     least, greatest = potential.to_array().min(), potential.to_array().max()
     marks = dict(place=concatenate([foci, sample[None]]), colour=np.stack([FOCUS, FOCUS, SAMPLE]),
                  radius=np.array([FOCUS_RADIUS, FOCUS_RADIUS, SAMPLE_RADIUS]) * PIXEL)

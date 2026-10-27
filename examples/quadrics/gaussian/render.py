@@ -6,7 +6,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from numga import stack
-from examples.quadrics.gaussian.core import Point, Scalar, mv
+from collections.abc import Callable
+
+from examples.quadrics.gaussian.core import Point, Polarity, Scalar, mv
+from examples.util.wgsl import pinned, room
+
+# The box the fit is shown over, along x and y, and the figure's width in inches, at 100 pixels an inch.
+BOX = np.array([[-5.0, -5.0], [6.0, 4.0]])
+WIDTH = 3.0
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -15,14 +22,22 @@ def euclidean(points: Point) -> np.ndarray:
     return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
-def draw_gaussian(points: Point, pixels: Point, density: Scalar, level: Scalar) -> plt.Figure:
-    """The fitted density over the pixels, the point cloud, and the 1σ quadric, orange."""
-    xy, sample_xy = euclidean(pixels), euclidean(points)
-    fig, ax = plt.subplots(figsize=(7, 7), dpi=140, layout="constrained")
-    ax.pcolormesh(xy[..., 0], xy[..., 1], density.to_array(), shading="auto", cmap="Blues", vmin=0, vmax=1, rasterized=True)
-    ax.scatter(sample_xy[:, 0], sample_xy[:, 1], s=10, c="#26364a", alpha=0.4, linewidths=0)
-    ax.contour(xy[..., 0], xy[..., 1], level.to_array(), levels=[0], colors=["#e56b24"], linewidths=2.2)
-    ax.set(aspect="equal", xlim=(xy[0, 0, 0], xy[0, -1, 0]), ylim=(xy[0, 0, 1], xy[-1, 0, 1]))
+def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipse: Polarity) -> plt.Figure:
+    """The density over the pixels, the point cloud, and the 1σ ellipse, orange, the zero contour of its form."""
+    (left, bottom), (right, top) = BOX
+    fig = plt.figure(figsize=(WIDTH, WIDTH * (top - bottom) / (right - left)), dpi=100)
+    ax = fig.add_axes((0, 0, 1, 1))
+    columns, rows = room(ax)
+    # One point at the middle of each pixel, rows down from the top.
+    across = left + (np.arange(columns) + 0.5) * (right - left) / columns
+    down = top - (np.arange(rows) + 0.5) * (top - bottom) / rows
+    pixels = mv.point(np.stack(np.meshgrid(across, down), axis=-1))             # [rows, columns] Point-
+    shades = plt.get_cmap("Blues")(np.clip(density(pixels).to_array(), 0, 1))
+    pinned(ax, np.round(shades[..., :3] * 255).astype(np.uint8), (left, right, bottom, top))
+    sample_xy = euclidean(points)
+    ax.scatter(sample_xy[:, 0], sample_xy[:, 1], s=4, c="#26364a", alpha=0.4, linewidths=0)
+    ax.contour(across, down, (ellipse(pixels) & pixels).to_array(), levels=[0], colors=["#e56b24"], linewidths=1.5)
+    ax.set(xlim=(left, right), ylim=(bottom, top))
     cross(ax, "x", "y")
     return fig
 
@@ -32,7 +47,7 @@ def cross(ax, across: str, up: str) -> None:
     ax.axhline(0, color="0.8", linewidth=0.7, zorder=1.5)
     ax.axvline(0, color="0.8", linewidth=0.7, zorder=1.5)
     ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(-4, -3), textcoords="offset points",
-                ha="right", va="top", fontsize=10, color="0.4")
+                ha="right", va="top", fontsize=8, color="0.4")
     ax.annotate(up, (0, 1), xycoords=("data", "axes fraction"), xytext=(4, -4), textcoords="offset points",
-                ha="left", va="top", fontsize=10, color="0.4")
+                ha="left", va="top", fontsize=8, color="0.4")
     ax.set_axis_off()

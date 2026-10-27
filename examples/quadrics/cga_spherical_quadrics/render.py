@@ -22,7 +22,7 @@ from examples.util.wgsl import Shader, supersampled
 BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
 RIM_START = 0.985
 # The vectors x, y and z, whose sum with w, each weighted by a unit coordinate, is a point's null vector.
-axes = stack((mv.x, mv.y, mv.z))                                              # [3] Plane
+axes = stack((mv.x, mv.y, mv.z))                                              # [3] Plane+
 
 source = """
 var<storage, read> quadrics: array<Quadric>;
