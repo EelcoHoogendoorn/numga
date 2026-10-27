@@ -244,11 +244,13 @@ def orbital_speed(radius: Scalar, orbit: Bivector, spin: Spin, mass: float) -> S
 
 
 def carried(position: Antivector, radius: Scalar, orbit: Bivector, spin: Spin, mass: float,
-            elapsed: np.ndarray) -> Antivector:
+            distance: float, elapsed: np.ndarray) -> Antivector:
     """The gas the camera sees at each disk event once a coordinate time `elapsed` has passed,
     followed back along its orbit to time zero, `[elapsed..., events]`. Each event's own time counts
-    too, earlier for light that travelled further, and inner rings lap outer ones."""
-    emitted = elapsed[..., None] + (mv.t & position)                                        # [elapsed..., events] Scalar+
+    too, earlier for light that travelled further, and inner rings lap outer ones; the clock starts when
+    light leaves the hole's centre for the camera at its `distance`, so that moving the camera does not
+    turn the disk."""
+    emitted = elapsed[..., None] + (mv.t & position) + distance                             # [elapsed..., events] Scalar+
     angle = orbital_speed(radius, orbit, spin, mass) * emitted                              # [elapsed..., events] Scalar+
     return (orbit * (angle / 2)).exp() >> position                                          # [elapsed..., events] Antivector-
 

@@ -200,7 +200,9 @@ async function start() {
       if (Math.abs(wanted - share) > 1e-3) { share = wanted; resize(); }
       paced = now;
     }
-    if (state.flowing) state.elapsed += seconds * C.start.flow_time / 10;
+    // The disk's clock runs through one loop of its flow, as the animations' does, so that a change of spin turns its
+    // texture by at most a loop's worth.
+    if (state.flowing) state.elapsed = (state.elapsed + seconds * C.start.flow_time / 10) % C.start.flow_time;
     if (state.spinning) state.sweep += seconds * 2 * Math.PI / C.limits.spin_period;
     const spin = C.limits.largest_spin * Math.sin(state.sweep);
 
@@ -210,8 +212,9 @@ async function start() {
     const weights = [ca * ci, ca * si, sa * ci, sa * si];
     setNumbers("orientation", C.rotor[0].map((_, index) => C.rotor.reduce((sum, term, which) => sum + weights[which] * term[index], 0)));
     setNumbers("distance", [state.distance]);
+    // The loop's waves faded into the last loop's as the clock runs round.
     setNumbers("elapsed", [state.elapsed]);
-    setNumbers("fade", [0]);
+    setNumbers("fade", [Math.PI / 2 * state.elapsed / C.start.flow_time]);
     setNumbers("step_fraction", [state.step]);
     uniforms.setUint32(C.offsets.n_steps, Math.ceil(C.start.scenario_step * C.start.scenario_steps / state.step), true);
     uniforms.setUint32(C.offsets.pixels, columns, true);

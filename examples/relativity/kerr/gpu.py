@@ -206,9 +206,10 @@ fn disk_opacity(crossing: Ray, radius: f32) -> f32 {
     return 1 - exp(-depth * slant);
 }
 
-// The disk's random waves where the gas seen at `position` was a time `before` ago.
+// The disk's random waves where the gas seen at `position` was a time `before` ago. The clock starts when light leaves
+// the hole's centre for the camera at its `distance`, so that moving the camera does not turn the disk.
 fn waves(position: Antivector, radius: f32, before: f32) -> f32 {
-    let angle = orbital_speed(radius) * (elapsed - before + (mv.t & position));
+    let angle = orbital_speed(radius) * (elapsed - before + (mv.t & position) + distance);
     let carried = (orbit * (angle / 2)).exp() >> position;
     let around = atan2(mv.y & carried, mv.x & carried);
     var total = 0.0;

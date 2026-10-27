@@ -166,8 +166,10 @@ def main() -> None:
     @canvas.request_draw
     def draw() -> None:
         now = time.perf_counter()
+        # The disk's clock runs through one loop of its flow, as the animations' does, so that a change of spin turns
+        # its texture by at most a loop's worth.
         if state["flowing"]:
-            state["elapsed"] += (now - clock["last"]) * scenarios.flow_time / 10
+            state["elapsed"] = (state["elapsed"] + (now - clock["last"]) * scenarios.flow_time / 10) % scenarios.flow_time
         if state["spinning"]:
             state["sweep"] += (now - clock["last"]) * 2 * np.pi / SPIN_PERIOD
         clock["last"] = now
@@ -175,7 +177,10 @@ def main() -> None:
         target = context.get_current_texture()
         columns, rows = target.size[0], target.size[1]
         frame = values | camera(state["azimuth"], state["inclination"], state["distance"]) | dict(spin=mv.xy.dual() * spin_size,
-            elapsed=state["elapsed"], fade=0.0, step_fraction=state["step_fraction"], n_steps=max_steps(state["step_fraction"]))
+            # The loop's waves faded into the last loop's as the clock runs round.
+            elapsed=state["elapsed"],
+            fade=np.pi / 2 * state["elapsed"] / scenarios.flow_time,
+            step_fraction=state["step_fraction"], n_steps=max_steps(state["step_fraction"]))
         encoder = device.create_command_encoder()
         outputs = tracer.encode(encoder, (rows, columns), ("viewer",), frame)
         samples, _, element_size = outputs["image"]

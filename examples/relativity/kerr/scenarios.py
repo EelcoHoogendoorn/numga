@@ -106,7 +106,8 @@ def disk_flow(image: core.Image, loop_frames: int) -> Iterator[core.Antivector]:
     points, _, _ = image.disk
     spin = core.mv.xy.dual() * camera_spin
     for elapsed in np.linspace(0, flow_time, loop_frames, endpoint=False):
-        yield core.carried(points, image.disk_radii, core.mv.xy, spin, mass, np.array([elapsed, elapsed - flow_time]))
+        yield core.carried(points, image.disk_radii, core.mv.xy, spin, mass, camera_distance,
+                          np.array([elapsed, elapsed - flow_time]))
 
 
 # --- plumbing -------------------------------------------------------------------------
