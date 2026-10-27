@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from examples.quadrics.conformal_elliptical.core import mv, planes_across_axes
+from examples.quadrics.conformal_elliptical.core import mv, planes
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -12,7 +12,6 @@ def main() -> None:
     from examples.util.animation import save_figure
     from examples.quadrics.conformal_elliptical import render
 
-    planes = planes_across_axes()                                                      # [planes] Vector
     save_figure(render.draw_planes(planes), "cube_axis_planes")
 
     # checks

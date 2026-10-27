@@ -10,20 +10,20 @@ import numpy as np
 from examples.util.wgsl import pinned
 from examples.util.wgsl import planar
 from examples.util.wgsl.planar import Curves, Lines, Marker, Marks, window
-from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, ga
+from numga import stack
+from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # The rows of pixels down the view.
-ROWS = 680
+ROWS = 340
 # Pixels a point, at the figure's 120 dots per inch; the width of the marks' outlines.
 POINT = 120 / 72
-OUTLINE = 1.5
+OUTLINE = 1.0
 
 
 def euclidean(points: Point) -> np.ndarray:
-    """Dehomogenize points to (..., 2) chart coordinates."""
-    k = points.cast(ga.subspace("yw wx xy")).kernel
-    return k[..., :2] / k[..., 2:]
+    """Chart coordinates of points, `[..., 2]`: their pairings with the lines x = 0 and y = 0, over their weights."""
+    return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def rgb(colour: str) -> np.ndarray:
@@ -46,30 +46,30 @@ def lines(lines: Line, colour: str, width: float) -> Lines:
 
 
 def draw_hyperbolic_plane(
-    C: Polarity, vertices: Point, sides: Line, angles: Scalar, area: Scalar, P: Point, foot: Point,
+    absolute: Polarity, vertices: Point, sides: Line, angles: Scalar, probe: Point, foot: Point,
     normal: Line, reflected: Point, pole: Point, circles: Polarity, centres: Point,
 ) -> plt.Figure:
     """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
     the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
     purple diamond. Right, the circles about the two centres, blue and orange."""
     view = window(BOX[:2], BOX[2:], ROWS)
-    fig, (left, right) = plt.subplots(1, 2, figsize=(13, 6), dpi=120)
+    fig, (left, right) = plt.subplots(1, 2, figsize=(6.5, 3), dpi=120)
     for ax in (left, right):
         ax.set_axis_off()
     fig.tight_layout()
-    hyperbolic = [level_sets(C[None], "black", 2.0),
-                  lines(sides, "#2563eb", 2.0),
-                  lines(normal[None], "#dc2626", 1.6),
-                  marks(vertices, "#1d4ed8", 40, Marker.DISC),
-                  marks(P[None], "#dc2626", 50, Marker.DISC),
-                  marks(foot[None], "#b91c1c", 40, Marker.SQUARE),
-                  marks(reflected[None], "#f97316", 45, Marker.DISC),
-                  marks(pole[None], "#a855f7", 45, Marker.DIAMOND)]
+    hyperbolic = [level_sets(absolute[None], "black", 1.2),
+                  lines(sides, "#2563eb", 1.2),
+                  lines(normal[None], "#dc2626", 1.0),
+                  marks(vertices, "#1d4ed8", 14, Marker.DISC),
+                  marks(probe[None], "#dc2626", 18, Marker.DISC),
+                  marks(foot[None], "#b91c1c", 14, Marker.SQUARE),
+                  marks(reflected[None], "#f97316", 16, Marker.DISC),
+                  marks(pole[None], "#a855f7", 16, Marker.DIAMOND)]
     pinned(left, planar.draw(view, hyperbolic, np.ones(3)), view.extent)
     for xy, theta in zip(euclidean(vertices), angles.to_array()):
-        left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(6, 6), fontsize=9)
+        left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3), fontsize=7)
 
-    rings = [level_sets(C[None], "black", 2.0)] + [level_sets(family, colour, 1.4)
+    rings = [level_sets(absolute[None], "black", 1.2)] + [level_sets(family, colour, 0.8)
                                                     for family, colour in zip(circles, ("#3b82f6", "#f97316"))]
-    pinned(right, planar.draw(view, rings + [marks(centres, "#111827", 35, Marker.DISC)], np.ones(3)), view.extent)
+    pinned(right, planar.draw(view, rings + [marks(centres, "#111827", 13, Marker.DISC)], np.ones(3)), view.extent)
     return fig

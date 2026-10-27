@@ -6,12 +6,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from examples.quadrics.conformal_elliptical import render
-from examples.quadrics.conformal_elliptical.core import mv, planes_across_axes
+from examples.quadrics.conformal_elliptical.core import mv, planes
 
 
 def test_thirteen_distinct_unit_planes_closed_under_the_cubes_rotations():
     """The planes are unit, no two of them equal up to sense, and every rotation of the cube permutes them."""
-    planes = planes_across_axes()
     assert planes.shape == (13,)
     np.testing.assert_allclose(planes.scalar_norm_squared().to_array(), 1.0, atol=1e-12)
     alignment = (planes[:, None] | planes).abs().to_array()
@@ -22,4 +21,4 @@ def test_thirteen_distinct_unit_planes_closed_under_the_cubes_rotations():
 
 
 def test_figure_renders():
-    assert isinstance(render.draw_planes(planes_across_axes()), plt.Figure)
+    assert isinstance(render.draw_planes(planes), plt.Figure)

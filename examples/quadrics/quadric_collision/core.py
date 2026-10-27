@@ -23,13 +23,13 @@ Point = ga.gatype.antivector()
 Motor = ga.gatype.rotor()
 # The dual quadric maps a tangent line to its contact point; the primal one maps a point to
 # its polar line.
-Quadric = ga.gatype((Point, Line))                  # Point <- Line
-Polarity = ga.gatype((Line, Point))                 # Line <- Point
+Quadric = ga.gatype((Point, Line))                  # Point- <- Line+
+Polarity = ga.gatype((Line, Point))                 # Line+ <- Point-
 
 # The line at infinity, the origin, and the directions along x and y.
-infinity = mv.w                                     # [] Line
-origin = mv.point([0.0, 0.0])                       # [] Point
-along_x, along_y = mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])   # [] Point each
+infinity = mv.w                                     # [] Line+
+origin = mv.point([0.0, 0.0])                       # [] Point-
+along_x, along_y = mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])   # [] Point-, Point-
 
 
 def ellipse(semi_x: float, semi_y: float) -> Quadric:
@@ -41,7 +41,7 @@ def ellipse(semi_x: float, semi_y: float) -> Quadric:
 
 def motor(shift_x: float, shift_y: float, angle: float) -> Motor:
     """The rigid motion turning by an angle about the origin, then moving it by the given shifts."""
-    translator = (infinity.wedge(mv.x * shift_x + mv.y * shift_y) * -0.5).exp()
+    translator = ((infinity ^ (mv.x * shift_x + mv.y * shift_y)) * -0.5).exp()
     rotor = (mv.xy * (-angle / 2.0)).exp()
     return translator * rotor
 
@@ -56,8 +56,8 @@ def tangent_line(dual: Quadric, normal: Line) -> Line:
     `b / a`; the outward one lies beyond it along the normal. Rescaling the dual rescales all three
     coefficients alike, so neither root moves.
     """
-    unit = normal.normalized()                                                 # [...] Line
-    a, b, c = infinity & dual(infinity), unit & dual(infinity), unit & dual(unit)   # [...] Scalar each
+    unit = normal.normalized()                                                 # [...] Line+
+    a, b, c = infinity & dual(infinity), unit & dual(infinity), unit & dual(unit)   # [...] Scalar+, Scalar+, Scalar+
     return unit - infinity * (b / a + ((b * b - a * c) / (a * a)).square_root())
 
 

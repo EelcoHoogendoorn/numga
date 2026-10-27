@@ -5,13 +5,14 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
-from examples.quadrics.conformal_elliptical.core import Point, Vector, mv
+from examples.quadrics.conformal_elliptical.core import Plane, Point, mv
+from examples.util.wgsl import image_figure
 
-# Pixels across the hemisphere before downsampling.
+# Samples across the hemisphere, BIN by BIN of them averaged into each pixel of the picture.
 RESOLUTION = 512
 # The tanh gain, which sets the antialiased width of a circle.
 SHARPNESS = 512.0
-# The downsampling factor.
+# The samples along each side of a pixel.
 BIN = 2
 
 
@@ -24,17 +25,15 @@ def hemisphere(n: int) -> tuple[Point, np.ndarray]:
     return mv.vector(np.stack([x, y, z], axis=-1)).dual(), (x**2 + y**2) > 1.0
 
 
-def draw_planes(planes: Vector) -> plt.Figure:
+def draw_planes(planes: Plane) -> plt.Figure:
     """The planes' great circles on the front hemisphere, the cells between them in two shades by the
     parity of the planes a point lies above."""
     points, outside = hemisphere(RESOLUTION)
     # Each point's height above each plane, by their pairing.
-    heights = (planes & points[:, :, None]).to_array()                                 # [n, n, planes]
+    heights = (planes & points[:, :, None]).to_array()                                 # [rows, columns, planes]
     shade = (np.prod(np.tanh(heights * SHARPNESS), axis=-1) + 1.0) / 2.0
     image = (shade + 1.0) * (1.0 - outside)
     size = RESOLUTION // BIN
     frame = image.reshape(size, BIN, size, BIN).mean(axis=(1, 3))
-    fig, ax = plt.subplots(dpi=150)
-    ax.imshow(frame, cmap="gray")
-    ax.axis("off")
-    return fig
+    grey = plt.get_cmap("gray")((frame - frame.min()) / (frame.max() - frame.min()))
+    return image_figure(np.round(grey[..., :3] * 255).astype(np.uint8))

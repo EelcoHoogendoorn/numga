@@ -24,11 +24,11 @@ mv = ctx.multivector
 # join of two points is a line oriented along itself instead, intrinsic; times an intrinsic scalar from
 # the data, it becomes a line with a side. The polarity maps a point to its polar line, and the pole map
 # a line to its pole:
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Line = ga.gatype.vector()
-Polarity = ga.gatype((Line, Point))       # Line <- Point
-Pole = ga.gatype((Point, Line))           # Point <- Line
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
+Line = ga.gatype.vector()                           # Vector+
+Polarity = ga.gatype((Line, Point))       # Line+ <- Point-
+Pole = ga.gatype((Point, Line))           # Point- <- Line+
 
 
 def invariant(pairing: Extensor, a: Extensor, b: Extensor) -> Scalar:
@@ -37,15 +37,15 @@ def invariant(pairing: Extensor, a: Extensor, b: Extensor) -> Scalar:
 
 
 # --- math -----------------------------------------------------------------------------
-def triangle(absolute: Polarity, vertices: Point):
+def triangle(absolute: Polarity, vertices: Point) -> tuple[Line, Scalar, Scalar, Scalar]:
     """The sides, angles, side lengths and area of a triangle, all from the absolute."""
-    dual_absolute = absolute.inverse()                                          # Pole
+    dual_absolute = absolute.inverse()                                          # [] Point- <- Line+
 
     # The invariant of two points is (a & absolute(b)) / ((a & absolute(a)) * (b & absolute(b))).square_root(),
     # and Cayley's distance is its arccosh. The invariant of two lines is the same with the dual absolute,
     # and the angle is its arccos. Both stay inside the algebra until the very last step.
-    distance_pairing = -(Point & absolute(Point))                         # [] Scalar <- (Point, Point)
-    angle_pairing = Line & dual_absolute(Line)                            # [] Scalar <- (Line, Line)
+    distance_pairing = -(Point & absolute(Point))                         # [] Scalar+ <- (Point-, Point-)
+    angle_pairing = Line & dual_absolute(Line)                            # [] Scalar+ <- (Line+, Line+)
 
     # A triangle: its sides are joins of consecutive vertices, batched, and the angle at
     # each vertex is between the two sides leaving it. Gauss-Bonnet gives the area as the
@@ -53,25 +53,25 @@ def triangle(absolute: Polarity, vertices: Point):
     neighbours = vertices[[1, 2, 0]]
     # The triangle's winding, an intrinsic scalar: the joins leaving each vertex times it are lines with a
     # side, which the absolute reads, and one factor on both lines of an angle leaves the angle as it is.
-    winding = vertices[0] & vertices[1] & vertices[2]                      # [] Scalar
-    to_next = (vertices & neighbours) * winding                            # [3] Line
-    to_prev = (vertices & vertices[[2, 0, 1]]) * winding                   # [3] Line
+    winding = vertices[0] & vertices[1] & vertices[2]                      # [] Scalar-
+    to_next = (vertices & neighbours) * winding                            # [3] Line+
+    to_prev = (vertices & vertices[[2, 0, 1]]) * winding                   # [3] Line+
     angles = invariant(angle_pairing, to_next, to_prev).clip(-1.0, 1.0).arccos()
     lengths = invariant(distance_pairing, vertices, neighbours).clip(1.0, np.inf).arccosh()
     area = np.pi - angles.sum()
     return to_next, angles, lengths, area
 
 
-def perpendicular(absolute: Polarity, side: Line, point: Point):
+def perpendicular(absolute: Polarity, side: Line, point: Point) -> tuple[Point, Line, Point, Point]:
     """The pole of a line, the perpendicular to it from a point, its foot, and the point reflected across
     the line."""
     # Every line perpendicular to a side passes through its pole, so the perpendicular from the point is
     # their join and the foot is its meet with the side. Reflection across the side is the harmonic
     # homology centred on the pole, and it preserves the distance to the foot.
-    pole = absolute.solve(side)                                            # [] Point
-    normal = point & pole                                                  # [] Line
-    foot = side ^ normal                                                   # [] Point
-    reflected = point - pole * (2.0 * (point & side) / (pole & side))      # [] Point
+    pole = absolute.solve(side)                                            # [] Point-
+    normal = point & pole                                                  # [] Line-
+    foot = side ^ normal                                                   # [] Point-
+    reflected = point - pole * (2.0 * (point & side) / (pole & side))      # [] Point-
     return pole, normal, foot, reflected
 
 
@@ -82,6 +82,6 @@ def circles(absolute: Polarity, centres: Point, radii: np.ndarray) -> Polarity:
     # times the centre's self-invariant times the absolute. One expression, batched over the
     # radii, drawn as the level set P & circle(P) == 0.
     centre = centres[:, None]
-    polar = absolute(centre)                                               # [centres, 1] Line
-    return polar * (polar & Point) - (centre & polar) * np.cosh(radii) ** 2 * absolute   # [centres, radii] Line <- Point
+    polar = absolute(centre)                                               # [centres, 1] Line+
+    return polar * (polar & Point) - (centre & polar) * np.cosh(radii) ** 2 * absolute   # [centres, radii] Line+ <- Point-
 

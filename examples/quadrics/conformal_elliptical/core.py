@@ -16,16 +16,13 @@ from numga.algebra import Algebra
 ga = Algebra("x+y+z+")
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Vector = ga.gatype.vector()
-Point = ga.gatype.antivector()
+Plane = ga.gatype.vector()                          # Vector+
+Point = ga.gatype.antivector()                      # Antivector-
 
 # One direction along each rotation axis of the cube: through its faces, its edges and its corners.
 FACE_AXES = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
 EDGE_AXES = [[1, 1, 0], [1, -1, 0], [1, 0, 1], [1, 0, -1], [0, 1, 1], [0, 1, -1]]
 CORNER_AXES = [[1, 1, 1], [1, 1, -1], [1, -1, 1], [-1, 1, 1]]
 
-
-# --- math -----------------------------------------------------------------------------
-def planes_across_axes() -> Vector:
-    """The unit plane across each rotation axis of the cube, through its centre."""
-    return mv.vector(FACE_AXES + EDGE_AXES + CORNER_AXES).normalized()                 # [planes] Vector
+# The unit plane across each rotation axis of the cube, through its centre.
+planes = mv.vector(FACE_AXES + EDGE_AXES + CORNER_AXES).normalized()               # [planes] Plane+
