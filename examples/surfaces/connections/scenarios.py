@@ -66,39 +66,40 @@ DURATION_MS = 70
 
 
 # --- math -----------------------------------------------------------------------------
-Pattern = tuple[core.Vector, core.Vector, core.Scalar]
+Pattern = tuple[core.Point, core.Point, core.Scalar]
 
 
-def holonomy() -> tuple[core.Mesh, core.Point, core.Vector, core.Vector]:
-    """The unit sphere and its vertices, three latitude circles on it `[steps + 1, rings] Vector`, and a
-    meridian tangent vector at the start of each `[rings] Vector`."""
+def holonomy() -> tuple[core.Mesh, core.Point, core.Vector, core.Point]:
+    """The unit sphere and its vertices come with three latitude circles on it, as their normals
+    `[steps + 1, rings] Vector-`, and a meridian tangent vector at the start of each, `[rings] Point-`."""
     sphere, vertices = core.Mesh.icosphere(SPHERE_LEVELS)
-    rings, starts = core.latitude_rings(COLATITUDES, N_RING_STEPS)              # [steps + 1, rings] Vector, [rings] Vector
+    rings, starts = core.latitude_rings(COLATITUDES, N_RING_STEPS)              # [steps + 1, rings] Vector-, [rings] Point-
     return sphere, vertices, rings, starts
 
 
-def carried_around(rings: core.Vector, starts: core.Vector, stride: int) -> Iterator[tuple[core.Vector, core.Vector]]:
+def carried_around(rings: core.Vector, starts: core.Point, stride: int) -> Iterator[tuple[core.Vector, core.Point]]:
     """Every `stride`-th step along the circles: the points, and the vectors carried there."""
     yield from islice(zip(rings, core.transported(rings, starts)), None, None, stride)
 
 
-def torus_fields() -> tuple[core.Mesh, core.Point, core.Vector, core.Vector, core.Vector, core.Scalar, core.SparseExtensor]:
+def torus_fields() -> tuple[core.Mesh, core.Point, core.Point, core.Point, core.Point, core.Scalar, core.SparseExtensor]:
     """Vector heat parallel transport and the smoothest global tangent fields on a torus: the torus and its
-    vertices, the diffused waves `[steps] Vector[V]`, the unit transported field `Vector[V]`, the harmonic modes
-    `[modes] Vector[V]` with their energies, and the covariant derivative."""
+    vertices, the diffused waves `[steps] Point-[vertices]`, the unit transported field `Point-[vertices]`, the
+    harmonic modes `[modes] Point-[vertices]` with their energies, and the covariant derivative."""
     torus, vertices = core.Mesh.torus(MAJOR_RADIUS, MINOR_RADIUS, N_HEAT_MAJOR, N_HEAT_MINOR)
-    unit_normals = core.vertex_normals(torus, vertices)                         # Vector[V]
-    areas = core.vertex_areas(torus, vertices)                                  # Scalar[V]
-    weights = core.cotangent_weights(torus, vertices, core.as_scalar(np.ones(len(torus.faces))).field())   # Scalar[E]
-    normals = unit_normals.batch()                                              # [V] Vector
-    centre = (mv.x * (MAJOR_RADIUS + MINOR_RADIUS)).dual()                      # [] Point
-    weight = ((vertices.batch() - centre).norm_squared() * (-0.5 / SOURCE_WIDTH**2)).exp()   # [V] Scalar
-    direction = (mv.y + mv.z).normalized()                                      # [] Vector
-    tangent_direction = direction - normals * (normals | direction)             # [V] Vector
-    source = (weight * tangent_direction).field()                               # Vector[V]
+    unit_normals = core.vertex_normals(torus, vertices)                         # Vector-[vertices]
+    areas = core.vertex_areas(torus, vertices)                                  # Scalar+[vertices]
+    weights = core.cotangent_weights(torus, vertices, core.as_scalar(np.ones(len(torus.faces))).field())   # Scalar+[edges]
+    normals = unit_normals.batch()                                              # [vertices] Vector-
+    centre = (mv.x * (MAJOR_RADIUS + MINOR_RADIUS)).dual()                      # [] Point-
+    weight = ((vertices.batch() - centre).norm_squared() * (-0.5 / SOURCE_WIDTH**2)).exp()   # [vertices] Scalar+
+    direction = (mv.y + mv.z).dual().normalized()                               # [] Point-
+    # The direction less its part along each normal: the normal's direction times its pairing with the patch.
+    tangent_direction = direction - normals.dual() * (normals & direction)      # [vertices] Point-
+    source = (weight * tangent_direction).field()                               # Point-[vertices]
 
     # The surface's own transport: no extra turn on any edge.
-    no_turns = core.as_scalar(np.zeros(len(torus.edges))).field()               # Scalar[E]
+    no_turns = core.as_scalar(np.zeros(len(torus.edges))).field()               # Scalar+[edges]
     covariant, laplacian = core.connection(torus, core.adjusted_transport(torus, unit_normals, no_turns), weights)
     waves, units = zip(*core.heat_transport(laplacian, areas, source, STEP_TIME, N_HEAT_STEPS))
     energies, modes = core.low_modes(laplacian, unit_normals, areas, NORMAL_STIFFNESS, N_MODES)
@@ -106,32 +107,31 @@ def torus_fields() -> tuple[core.Mesh, core.Point, core.Vector, core.Vector, cor
 
 
 def design(mesh: core.Mesh, normals: core.Vector, areas: core.Scalar, weights: core.Scalar,
-           index: np.ndarray, generators: list[np.ndarray]) -> tuple[core.Scalar, core.Vector, core.Scalar, core.Scalar]:
-    """The trivial connection with every face turning by its index `[F]` and its unit parallel field: the
-    extra turns on the edges, the field, the energies of the two parallel fields, and the circulation's
-    residual."""
+           index: np.ndarray, generators: list[np.ndarray]) -> tuple[core.Scalar, core.Point, core.Scalar, core.Scalar]:
+    """The trivial connection with every face turning by its index `[faces]` has a unit parallel field: the extra
+    turns on the edges, the field, the energies of the two parallel fields, and the circulation's residual."""
     angles, circulation, target = core.trivial_connection(mesh, normals, index, generators)
     _, laplacian = core.connection(mesh, core.adjusted_transport(mesh, normals, angles), weights)
     energies, fields = core.low_modes(laplacian, normals, areas, NORMAL_STIFFNESS, 2)
-    field = fields.batch()[0]                                                    # [V] Vector
+    field = fields.batch()[0]                                                    # [vertices] Point-
     return angles, (field / field.norm()).field(), energies, circulation(angles) - target
 
 
-def field_spheres() -> tuple[core.Mesh, core.Point, list[tuple[core.Vector, np.ndarray, list[int]]], list[core.Scalar],
+def field_spheres() -> tuple[core.Mesh, core.Point, list[tuple[core.Point, np.ndarray, list[int]]], list[core.Scalar],
                              list[core.Scalar]]:
     """The sphere and its vertices; for each scene its unit parallel field, singular faces and their indices; and each
     design's circulation residual and the energies of its two parallel fields."""
     sphere, vertices = core.Mesh.icosphere(SPHERE_LEVELS)
     normals, areas = core.vertex_normals(sphere, vertices), core.vertex_areas(sphere, vertices)
     weights = core.cotangent_weights(sphere, vertices, core.as_scalar(np.ones(len(sphere.faces))).field())
-    singulars = [np.array([core.faces_around(sphere, corner) for corner in corners]) for corners in SPHERE_CORNERS]
+    singulars = [sphere.vertex_faces[corners] for corners in SPHERE_CORNERS]
     designs = [design(sphere, normals, areas, weights, face_indices(sphere, singular, indices), [])
                for singular, indices in zip(singulars, SPHERE_INDICES)]
     scenes = [(field, singular, indices) for (_, field, _, _), singular, indices in zip(designs, singulars, SPHERE_INDICES)]
     return sphere, vertices, scenes, [residual for *_, residual in designs], [energies for _, _, energies, _ in designs]
 
 
-def field_tori() -> tuple[core.Mesh, core.Point, list[tuple[core.Vector, np.ndarray, list[int]]], list[core.Scalar],
+def field_tori() -> tuple[core.Mesh, core.Point, list[tuple[core.Point, np.ndarray, list[int]]], list[core.Scalar],
                           list[core.Scalar]]:
     """The torus and its vertices; for each scene its unit parallel field, singular faces and their indices; and each
     design's circulation residual and the energies of its two parallel fields."""
@@ -147,24 +147,25 @@ def field_tori() -> tuple[core.Mesh, core.Point, list[tuple[core.Vector, np.ndar
     return torus, vertices, scenes, [residual for *_, residual in designs], [energies for _, _, energies, _ in designs]
 
 
-def turning(mesh: core.Mesh, vertices: core.Point, field: core.Vector) -> core.Vector:
-    """The parallel field turned about every normal through a whole turn `[frames] Vector[V]`: every
-    turned field is parallel too, the null space being a field and its quarter turn."""
+def turning(mesh: core.Mesh, vertices: core.Point, field: core.Point) -> core.Point:
+    """The parallel field turned about every normal through a whole turn, `[frames] Point-[vertices]`, is parallel
+    at every turn, the null space being a field and its quarter turn."""
     angles = np.linspace(0, 2 * np.pi, N_TURNING_FRAMES, endpoint=False)         # [frames]
-    planes = core.vertex_normals(mesh, vertices).batch().dual()                  # [V] Bivector
-    return ((planes * (-angles[:, None] / 2)).exp() >> field.batch()).field()   # [frames] Vector[V]
+    planes = core.vertex_normals(mesh, vertices).batch().dual()                  # [vertices] Bivector+
+    return ((planes * (-angles[:, None] / 2)).exp() >> field.batch()).field()   # [frames] Point-[vertices]
 
 
 def pattern(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: core.Scalar, weights: core.Scalar,
             index: np.ndarray, generators: list[np.ndarray], frequency: float) -> tuple[Pattern, core.Scalar]:
-    """The stripes along the unit direction field of the trivial connection with every face turning by its
-    index `[F]`, and along the field turned a quarter turn: the two lines `[V, 2]`, the unit stripe field
-    of each `[V, 2]`, and the edges' targets for each `[E, 2]`; and the energies of each line's two
-    smoothest stripe fields `[2, 2]`."""
+    """The stripes run along the unit direction field of the trivial connection with every face turning by its
+    index `[faces]`, and along the field turned a quarter turn: the two lines `[vertices, 2]`, the unit stripe
+    field of each `[vertices, 2]`, and the edges' targets for each `[edges, 2]`; with the energies of each line's
+    two smoothest stripe fields `[2, 2]`."""
     angles, field, _, _ = design(mesh, normals, areas, weights, index, generators)
     # Every face is regular except the singular ones.
-    regular = core.as_scalar(np.where(index == 0, 1.0, 0.0)).field()           # Scalar[F]
-    quarter_turned = (field.batch() | normals.batch().dual()).field()           # Vector[V]
+    regular = core.as_scalar(np.where(index == 0, 1.0, 0.0)).field()           # Scalar+[faces]
+    # A quarter turn in every tangent plane: the commutator with the plane.
+    quarter_turned = field.batch().commutator(normals.batch().dual()).field()   # Point-[vertices]
     layers = [along(mesh, vertices, normals, areas, angles, direction, regular, frequency)
               for direction in (field, quarter_turned)]
     *families, energies = zip(*layers)
@@ -172,18 +173,18 @@ def pattern(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: 
 
 
 def along(mesh: core.Mesh, vertices: core.Point, normals: core.Vector, areas: core.Scalar, angles: core.Scalar,
-          field: core.Vector, regular: core.Scalar, frequency: float) -> tuple[core.Vector, core.Vector, core.Scalar, core.Scalar]:
-    """The unit stripe field along a direction field parallel for the connection of the given turns, at
-    the given frequency, with the field, the edges' targets and the two smallest energies: the smoothest
-    tangent field of the connection of the turns `angles` with every edge's phase advance added. Each
-    face adds its half-cotangents to its edges' weights only where it is regular `Scalar[F]`, one, and
-    not where the direction field turns inside it, zero: there the field's average across an edge means
-    nothing."""
-    advance = ((field.batch()[mesh.edges].sum(axis=-1) / 2 & (mesh.d0 * vertices).batch()) * frequency).field()   # Scalar[E]
+          field: core.Point, regular: core.Scalar, frequency: float) -> tuple[core.Point, core.Point, core.Scalar, core.Scalar]:
+    """The unit stripe field along a direction field parallel for the connection of the given turns, at the given
+    frequency, is the smoothest tangent field of the connection of the turns `angles` with every edge's phase
+    advance added; it comes with the field, the edges' targets and the two smallest energies. Each face adds its
+    half-cotangents to its edges' weights only where it is regular, `Scalar+[faces]`, one, and not where the
+    direction field turns inside it, zero: there the field's average across an edge means nothing."""
+    # The field read along each edge, by the metric: the paper's inner product of the field with the edge.
+    advance = ((field.batch()[mesh.edges].sum(axis=-1) / 2).dot((mesh.d0 * vertices).batch()) * frequency).field()   # Scalar+[edges]
     _, laplacian = core.connection(mesh, core.adjusted_transport(mesh, normals, angles + advance),
                                    core.cotangent_weights(mesh, vertices, regular))
     energies, stripe_fields = core.low_modes(laplacian, normals, areas, NORMAL_STIFFNESS, 2)
-    stripe = stripe_fields.batch()[0]                                            # [V] Vector
+    stripe = stripe_fields.batch()[0]                                            # [vertices] Point-
     return field, (stripe / stripe.norm()).field(), advance, energies
 
 
@@ -192,7 +193,7 @@ def stripe_spheres() -> tuple[core.Mesh, core.Point, list[Pattern], list[core.Sc
     sphere, vertices = core.Mesh.icosphere(STRIPE_SPHERE_LEVELS)
     normals, areas = core.vertex_normals(sphere, vertices), core.vertex_areas(sphere, vertices)
     weights = core.cotangent_weights(sphere, vertices, core.as_scalar(np.ones(len(sphere.faces))).field())
-    singulars = [np.array([core.faces_around(sphere, corner) for corner in corners]) for corners in SPHERE_CORNERS]
+    singulars = [sphere.vertex_faces[corners] for corners in SPHERE_CORNERS]
     scenes = [pattern(sphere, vertices, normals, areas, weights, face_indices(sphere, singular, indices), [], SPHERE_FREQUENCY)
               for singular, indices in zip(singulars, SPHERE_INDICES)]
     return sphere, vertices, *map(list, zip(*scenes))
@@ -225,33 +226,37 @@ def crosses() -> tuple[core.Mesh, core.Point, list[Pattern], list[core.Scalar]]:
     return sphere, vertices, patterns, angles
 
 
-def sliding(mesh: core.Mesh, vertices: core.Point, stripes: core.Vector) -> core.Vector:
-    """The stripe fields `[V, n]` turned about every normal through a whole turn `[frames, V, n]`: every
-    turn of one is a stripe field too, its stripes slid along its line by the turn's share of one
-    stripe."""
+def sliding(mesh: core.Mesh, vertices: core.Point, stripes: core.Point) -> core.Point:
+    """The stripe fields `[vertices, n]` turned about every normal through a whole turn, `[frames, vertices, n]`,
+    are stripe fields at every turn, their stripes slid along their lines by the turn's share of one stripe."""
     angles = np.linspace(0, 2 * np.pi, N_SLIDING_FRAMES, endpoint=False)         # [frames]
-    planes = core.vertex_normals(mesh, vertices).batch()[:, None].dual()         # [V, 1] Bivector
-    return (planes * (-angles[:, None, None] / 2)).exp() >> stripes              # [frames, V, n] Vector
+    planes = core.vertex_normals(mesh, vertices).batch()[:, None].dual()         # [vertices, 1] Bivector+
+    return (planes * (-angles[:, None, None] / 2)).exp() >> stripes              # [frames, vertices, n] Point-
+
+
 # --- plumbing -------------------------------------------------------------------------
 def face_indices(mesh: core.Mesh, singular: np.ndarray, indices: list[float]) -> np.ndarray:
-    """The index of every face `[F]`: the given indices on the singular faces `[S]`, and none elsewhere."""
+    """The index of every face, `[faces]`, is the given index on the singular faces `[singular]`, and none elsewhere."""
     index = np.zeros(len(mesh.faces))
     index[singular] = indices
     return index
 
 
 def nearest_faces(mesh: core.Mesh, vertices: core.Point, directions: core.Vector) -> np.ndarray:
-    """The face whose centre, the mean of its corners, lies furthest along each direction `[n]`."""
-    a, b, c = vertices.batch()[mesh.faces.T]                                     # [F] Point each
+    """The face whose centre, the mean of its corners, lies furthest along each direction `[n]`, read by the planes
+    through the centre across them."""
+    a, b, c = vertices.batch()[mesh.faces.T]                                     # [faces] Point-, Point-, Point-
     return np.argmax((((a + b + c) / 3)[:, None] & directions.batch()[None]).to_array(), axis=0)
 
 
-def stripe_mismatch(mesh: core.Mesh, vertices: core.Point, lines: core.Vector, stripes: core.Vector, advance: core.Scalar) -> np.ndarray:
-    """How far, in angle, the stripe phase across every edge misses its target `[E, n]`: the phase is the
-    angle from the stripe field to its line, about each vertex normal."""
-    normals = core.vertex_normals(mesh, vertices).batch()[:, None]               # [V, 1] Vector
-    sines = ((stripes ^ lines) | normals.dual()).to_array()                      # [V, n]
-    phase = np.arctan2(sines, (stripes | lines).to_array())
+def stripe_mismatch(mesh: core.Mesh, vertices: core.Point, lines: core.Point, stripes: core.Point, advance: core.Scalar) -> np.ndarray:
+    """The stripe phase across every edge misses its target by an angle `[edges, n]`; the phase is the angle from
+    the stripe field to its line, about each vertex normal."""
+    normals = core.vertex_normals(mesh, vertices).batch()[:, None]               # [vertices, 1] Vector-
+    # The sine of the angle from the stripe field to its line: the plane their commutator turns in, read across the
+    # tangent plane; the cosine is their inner product.
+    sines = (lines.commutator(stripes) | normals.dual()).to_array()              # [vertices, n]
+    phase = np.arctan2(sines, stripes.dot(lines).to_array())
     steps = phase[mesh.edges[:, 1]] - phase[mesh.edges[:, 0]] - advance.to_array()
     return np.abs(np.angle(np.exp(1j * steps)))
 
@@ -292,33 +297,34 @@ def main() -> None:
     # checks
     # Every transported vector stays tangent to the sphere and keeps unit length, and on closing the
     # loop it has turned by the enclosed cap's solid angle.
-    carried = stack(tuple(core.transported(rings, starts)))                      # [steps + 1, rings] Vector
-    np.testing.assert_allclose((carried | rings).to_array(), 0.0, atol=1e-12)
+    carried = stack(tuple(core.transported(rings, starts)))                      # [steps + 1, rings] Point-
+    # A direction's pairing with a normal, the tangent plane's patch, is its part along the normal.
+    np.testing.assert_allclose((carried & rings).to_array(), 0.0, atol=1e-12)
     np.testing.assert_allclose(carried.norm().to_array(), 1.0, atol=1e-12)
-    np.testing.assert_allclose((carried[-1] | starts).to_array(), np.cos(2 * np.pi * (1 - np.cos(COLATITUDES))), atol=2e-3)
+    np.testing.assert_allclose(carried[-1].dot(starts).to_array(), np.cos(2 * np.pi * (1 - np.cos(COLATITUDES))), atol=2e-3)
     # Each edge rotor carries the tail's normal to the head's, so neither heat diffusion nor the low
     # modes leak into the normal bundle.
-    torus_normals = core.vertex_normals(torus, torus_vertices)                   # Vector[V]
-    np.testing.assert_allclose((diffused | torus_normals).to_array(), 0.0, atol=1e-12)
-    np.testing.assert_allclose((modes | torus_normals).to_array(), 0.0, atol=1e-11)
+    torus_normals = core.vertex_normals(torus, torus_vertices)                   # Vector-[vertices]
+    np.testing.assert_allclose((diffused & torus_normals).to_array(), 0.0, atol=1e-12)
+    np.testing.assert_allclose((modes & torus_normals).to_array(), 0.0, atol=1e-11)
     np.testing.assert_allclose(transported.norm().to_array(), 1.0, atol=1e-12)
     # A quarter turn in every tangent plane commutes with the connection: the energies come in equal
     # pairs, and a quarter-turned mode keeps its energy.
     values = mode_energies.to_array()
     np.testing.assert_allclose(values[0::2], values[1::2], rtol=1e-10)
-    edge_weights = core.spdiag(core.cotangent_weights(torus, torus_vertices, core.as_scalar(np.ones(len(torus.faces))).field()))   # [E, E] Scalar
-    quarter_turned = (modes.batch() | torus_normals.batch().dual()).field()      # [modes] Vector[V]
+    edge_weights = core.spdiag(core.cotangent_weights(torus, torus_vertices, core.as_scalar(np.ones(len(torus.faces))).field()))   # Scalar+[edges <- edges]
+    quarter_turned = modes.batch().commutator(torus_normals.batch().dual()).field()   # [modes] Point-[vertices]
     np.testing.assert_allclose((edge_weights * covariant(quarter_turned).norm_squared()).sites.sum().to_array(),
                                (edge_weights * covariant(modes).norm_squared()).sites.sum().to_array(), rtol=1e-10)
     # Every design's indices add up to the Euler characteristic: the connection is trivial, and its
     # field and the field's quarter turn carry no energy.
     np.testing.assert_allclose(np.concatenate([residual.to_array() for residual in sphere_residuals + torus_residuals]), 0.0, atol=1e-12)
     np.testing.assert_allclose(np.concatenate([energies.to_array() for energies in sphere_energies + torus_energies]), 0.0, atol=1e-12)
-    sphere_normals = core.vertex_normals(sphere, sphere_vertices)                # Vector[V]
-    np.testing.assert_allclose(np.concatenate([(field | sphere_normals).to_array() for field, _, _ in sphere_scenes]), 0.0, atol=1e-12)
+    sphere_normals = core.vertex_normals(sphere, sphere_vertices)                # Vector-[vertices]
+    np.testing.assert_allclose(np.concatenate([(field & sphere_normals).to_array() for field, _, _ in sphere_scenes]), 0.0, atol=1e-12)
     # The face curvatures add up to two whole turns, and indices one short of the Euler characteristic
     # leave the missing turn spread over all faces.
-    curvature = core.loop_turn(sphere_normals.batch()[sphere.faces])             # [F] Scalar
+    curvature = core.loop_turn(sphere_normals.batch()[sphere.faces])             # [faces] Scalar+
     np.testing.assert_allclose(curvature.sum(axis=0).to_array(), 4 * np.pi, rtol=1e-12)
     angles, circulation, target = core.trivial_connection(sphere, sphere_normals, face_indices(sphere, np.array([0]), [1]), [])
     np.testing.assert_allclose((circulation(angles) - target).to_array(), 2 * np.pi / len(sphere.faces), rtol=1e-9)
@@ -333,11 +339,11 @@ def main() -> None:
     # Carried across every edge, each of the tail's lines lands along or against one of the head's
     # lines, and some edges trade the two lines or reverse them: around a singularity the cross turns
     # by a quarter or a half, not by a whole turn.
-    fine_normals = core.vertex_normals(fine, fine_vertices)                      # Vector[V]
+    fine_normals = core.vertex_normals(fine, fine_vertices)                      # Vector-[vertices]
     for (lines, _, _), angles in zip(cross_patterns, cross_angles):
-        forward = core.adjusted_transport(fine, fine_normals, angles)[:, 0]      # [E] Rotor
-        tails, heads = lines[fine.edges[:, 0]], lines[fine.edges[:, 1]]          # [E, 2] Vector each
-        match = (heads[:, :, None] | (forward[:, None] >> tails)[:, None, :]).to_array()   # [E, 2, 2]
+        forward = core.adjusted_transport(fine, fine_normals, angles)[:, 0]      # [edges] Rotor+
+        tails, heads = lines[fine.edges[:, 0]], lines[fine.edges[:, 1]]          # [edges, 2] Point-, [edges, 2] Point-
+        match = heads[:, :, None].dot((forward[:, None] >> tails)[:, None, :]).to_array()   # [edges, 2, 2]
         np.testing.assert_allclose(np.abs(match) * (1 - np.abs(match)), 0, atol=1e-8)
         assert (match[:, 0, 0] < 0.5).any()
 

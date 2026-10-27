@@ -14,6 +14,7 @@ fields on the vertices, edges and faces, coupling their elements through multive
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 
 import numpy as np
 
@@ -32,145 +33,131 @@ Even = ga.gatype.even()
 # Spot the cow, from the shared models, and the two quarter turns that stand her up facing along x: her y
 # axis, up in the file, turned onto z, and then x onto y.
 SPOT = MODEL_DIR / "spot.obj"
-UPRIGHT = ((context.multivector.x ^ context.multivector.y) * (-np.pi / 4)).exp() * ((context.multivector.y ^ context.multivector.z) * (-np.pi / 4)).exp()
+UPRIGHT = (context.multivector.xy * (-np.pi / 4)).exp() * (context.multivector.yz * (-np.pi / 4)).exp()   # [] Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
 def cotangent_weights(mesh: Mesh, sides: Point) -> Scalar:
-    """`Scalar[E]`: each edge's cotangent weight from the edge facing each corner `[3] Point[F]`, half the cotangents
-    of the angles facing it; a corner's cotangent is one edge's slice read along the other, over the size of the
-    plane they span."""
-    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point[F] each
-    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar[F]
+    """Each edge's cotangent weight, `Scalar+[edges]`, is half the cotangents of the angles facing it, from the edge
+    facing each corner, `[3] Point-[faces]`; a corner's cotangent is one edge's slice read along the other, over the
+    size of the plane they span."""
+    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
+    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar+[faces]
     return ~mesh.by_corner(cotangents / 2) * as_scalar(np.ones(len(mesh.faces))).field()
 
 
 def sense_of_space(mesh: Mesh, vertices: Point) -> Scalar:
-    """`Scalar`: the sense the counter-clockwise faces give space, plus or minus one: the faces' corners meeting
-    about the origin, summed over the solid, over its size."""
-    a, b, c = vertices.batch()[mesh.faces.T].field()                           # Point[F] each
-    volume = (a & b & c).sites.sum()                                           # [] Scalar
+    """The sense the counter-clockwise faces give space is plus or minus one: the faces' corners meeting about the
+    origin, summed over the solid, over its size."""
+    a, b, c = vertices.batch()[mesh.faces.T].field()                           # Point-[faces], Point-[faces], Point-[faces]
+    volume = (a & b & c).sites.sum()                                           # [] Scalar-
     return volume / volume.norm()
 
 
 def corner_cosines(mesh: Mesh, vertices: Point) -> Scalar:
-    """`[3] Scalar[F]`: the cosine of each corner's angle, kept exactly by a conformal map: one edge's slice read along
-    the other, over both their lengths."""
-    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point[F] each
+    """The cosine of each corner's angle, `[3] Scalar+[faces]`, which a conformal map keeps exactly, is one edge's
+    slice read along the other, over both their lengths."""
+    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    after, before = sides[[1, 2, 0]], sides[[2, 0, 1]]                         # [3] Point-[faces], Point-[faces]
     return -(after.dual_inverse() & before) / (after.norm() * before.norm())
 
 
 def spin_transform_deform(mesh: Mesh, vertices: Point, curvature_change: Scalar) -> Point:
-    """The vertices after the spin transformation that changes each face's mean curvature by
-    `curvature_change`, `Scalar[F]`: the field of least energy per unit of vertex area, divided by its
-    area-weighted mean, turning the edges."""
-    edge_means = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) / 2))   # [E, V] Scalar
-    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
-    edges = mesh.d0 * vertices                                                 # Point[E]
-    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar[F]
-    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # [F, F], [V, V] Scalar
-    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # [E, E] Scalar
-    laplacian = ~mesh.d0 * edge_weights * mesh.d0                              # [V, V] Scalar
+    """The spin transformation that changes each face's mean curvature by `curvature_change`, `Scalar+[faces]`,
+    turns the edges by the field of least energy per unit of vertex area, divided by its area-weighted mean, and
+    gives the vertices whose edges match the turned ones best."""
+    edge_means = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) / 2))   # Scalar+[edges <- vertices]
+    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    edges = mesh.d0 * vertices                                                 # Point-[edges]
+    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
+    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
+    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
+    laplacian = ~mesh.d0 * edge_weights * mesh.d0                              # Scalar+[vertices <- vertices]
 
-    residual = mesh.at_corners(sides / (2 * areas) - curvature_change * sense_of_space(mesh, vertices) / 3)   # [F, V] Even
-    _, (field,) = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, 1)   # Even[V]
-    quaternions = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())   # Even[V]
-    moved = ((edge_means * (quaternions << Point))(edges) + 2 * ((edge_means * quaternions) << edges)) / 3   # Point[E]
+    residual = mesh.at_corners(sides / (2 * areas) - curvature_change * sense_of_space(mesh, vertices) / 3)   # Even-[faces <- vertices]
+    _, (field,) = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, 1)   # Even+[vertices]
+    quaternions = field / ((vertex_areas * field).sites.sum() / areas.sites.sum())   # Even+[vertices]
+    moved = ((edge_means * (quaternions << Point))(edges) + 2 * ((edge_means * quaternions) << edges)) / 3   # Point-[edges]
     return (laplacian * Point).lstsq(~mesh.d0 * edge_weights * moved)
 
 
 def dirac_spheres(mesh: Mesh, vertices: Point, eigenvalues: np.ndarray, count: int) -> tuple[Scalar, Point]:
-    """The energies of the count least-energy fields for each constant curvature change, the eigenvalues
-    `[eigenvalues]`, and the vertices of the surfaces they spin the mesh into `[eigenvalues, count] Point[V]`.
+    """For each constant curvature change, one per eigenvalue, the `count` fields of least energy have their
+    energies and spin the mesh into surfaces with vertices `[eigenvalues, count] Point-[vertices]`.
 
     With the change constant, the fields of zero energy are the eigenfields of the Dirac operator itself:
     on the unit sphere the spinor spherical harmonics, and the surfaces are the Dirac spheres. Their
     eigenvalues are the integers but -1, each with multiplicity its value plus one. The fields are taken
     as they come, at unit size per unit of vertex area: their mean vanishes.
     """
-    edge_means = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) / 2))   # [E, V] Scalar
-    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
-    edges = mesh.d0 * vertices                                                 # Point[E]
-    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar[F]
-    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # [F, F], [V, V] Scalar
-    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # [E, E] Scalar
-    laplacian = ~mesh.d0 * edge_weights * mesh.d0                              # [V, V] Scalar
+    edge_means = as_ga_sparse(mesh.edges, as_scalar(np.ones_like(mesh.edges) / 2))   # Scalar+[edges <- vertices]
+    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    edges = mesh.d0 * vertices                                                 # Point-[edges]
+    sides = (edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
+    face_areas, vertex_areas = spdiag(areas), spdiag(~face_means * areas)      # Scalar+[faces <- faces], Scalar+[vertices <- vertices]
+    edge_weights = spdiag(cotangent_weights(mesh, sides))                      # Scalar+[edges <- edges]
+    laplacian = ~mesh.d0 * edge_weights * mesh.d0                              # Scalar+[vertices <- vertices]
 
-    constant = as_scalar(eigenvalues[:, None]) * sense_of_space(mesh, vertices) / 3   # [eigenvalues, 1] Scalar
-    residual = mesh.at_corners(sides / (2 * areas) - constant)                 # [eigenvalues] [F, V] Even
-    energies, fields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even[V]
-    moved = ((edge_means * (fields << Point))(edges) + 2 * ((edge_means * fields) << edges)) / 3   # [eigenvalues, count] Point[E]
+    constant = as_scalar(eigenvalues[:, None]) * sense_of_space(mesh, vertices) / 3   # [eigenvalues, 1] Scalar-
+    residual = mesh.at_corners(sides / (2 * areas) - constant)                 # [eigenvalues] Even-[faces <- vertices]
+    energies, fields = ((~residual * face_areas * residual) * Even).eigh(vertex_areas * Even, count)   # [eigenvalues, count] Even+[vertices]
+    moved = ((edge_means * (fields << Point))(edges) + 2 * ((edge_means * fields) << edges)) / 3   # [eigenvalues, count] Point-[edges]
     return energies, (laplacian * Point).lstsq(~mesh.d0 * edge_weights * moved)
 
 
 def geometric_derivative(mesh: Mesh, vertices: Point) -> SparseExtensor:
-    """The geometric derivative of fields on the vertices, linear on each face, `[F, V] Vector`: on
-    each face, each corner's coupling is the gradient of its hat function, the edge facing it paired with
+    """The geometric derivative of fields on the vertices, linear on each face, `Vector+[faces <- vertices]`,
+    couples each face to each corner by the gradient of the corner's hat function: the edge facing it paired with
     the face's unit normal, over twice the face's area."""
-    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar[F]
-    normals = (sides[0] & sides[1]) / (2 * areas)                              # Vector[F]
+    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
+    normals = (sides[0] & sides[1]) / (2 * areas)                              # Vector-[faces]
     return mesh.at_corners((sides | normals) / (2 * areas))
 
 
 def mean_curvature(mesh: Mesh, vertices: Point) -> Scalar:
-    """Pointwise signed mean curvature per face.
-
-    The cotan-laplacian of the positions gives the *area-integrated* mean
-    curvature normal `L x = 2 A_v H n` at each vertex; dividing by twice the
-    vertex (barycentric) area recovers the pointwise `H`, which we then average
-    onto faces (the domain the curvature change lives on).
-    """
-    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # [F, V] Scalar
-    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar[F]
-    laplacian = ~mesh.d0 * spdiag(cotangent_weights(mesh, sides)) * mesh.d0    # [V, V] Scalar
-    # each vertex's normal: its faces' normals, each twice the face's area long, summed and made unit
-    normals = (~face_means * (sides[0] & sides[1])).normalized()               # Vector[V]
-    # the integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal:
-    # its signed size, read against the sense the faces give space
-    integrated = ((laplacian * vertices) & normals) * sense_of_space(mesh, vertices)   # Scalar[V]
-    return face_means * (integrated / (2 * (~face_means * areas)))             # Scalar[F]
+    """Each face's signed mean curvature follows from the cotangent Laplacian of the positions, the
+    area-integrated mean-curvature normal at each vertex: met with the vertex's normal and divided by twice the
+    vertex's area, it is the mean curvature there, averaged onto the faces, where the curvature change lives."""
+    face_means = as_ga_sparse(mesh.faces, as_scalar(np.ones_like(mesh.faces) / 3))   # Scalar+[faces <- vertices]
+    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    areas = sides[1].commutator(sides[0]).norm() / 2                           # Scalar+[faces]
+    laplacian = ~mesh.d0 * spdiag(cotangent_weights(mesh, sides)) * mesh.d0    # Scalar+[vertices <- vertices]
+    # Each vertex's normal: its faces' normals, each twice the face's area long, summed and made unit.
+    normals = (~face_means * (sides[0] & sides[1])).normalized()               # Vector-[vertices]
+    # The integrated mean-curvature normal, a displacement at each vertex, met with the vertex's normal: its
+    # signed size, read against the sense the faces give space.
+    integrated = ((laplacian * vertices) & normals) * sense_of_space(mesh, vertices)   # Scalar+[vertices]
+    return face_means * (integrated / (2 * (~face_means * areas)))             # Scalar+[faces]
 
 
-def _recenter(vertices: Point) -> Point:
-    """Remove the translation/scale gauge freedom the flow leaves undetermined."""
-    v = vertices - vertices.sites.mean()
-    return v / v.norm().sites.mean()
+def recentred(vertices: Point) -> Point:
+    """The vertices are moved to their centre and scaled to unit mean distance from it, which is what a spin
+    transformation leaves free."""
+    vertices = vertices - vertices.sites.mean()
+    return vertices / vertices.norm().sites.mean()
 
 
-def conformal_smooth(mesh: Mesh, vertices: Point, iterations: int, rate: float):
-    """Conformal curvature flow via iterated spin transforms.
-
-    Each step prescribes `rho = -rate * (H - Hbar)`: a conformal *change* in mean
-    curvature that shaves off each face's deviation from the (area-weighted) mean.
-    This relaxes the surface toward constant mean curvature while every individual
-    step stays conformal (angle-preserving). Run on Spot the cow it draws in the legs,
-    horns and ears and rounds the body into a sphere, every square of a checkerboard on
-    the cow staying square.
-
-    Note `rho` is a *change* in curvature, so `rho = 0` (rate 0) is the identity;
-    feeding absolute curvature instead diverges. Yields the vertices before each step
-    and after the last.
-    """
-    vertices = _recenter(vertices)
+def conformal_smooth(mesh: Mesh, vertices: Point, iterations: int, rate: float) -> Iterator[Point]:
+    """Conformal curvature flow yields the vertices at the start and after each step, each step one spin
+    transformation whose curvature change takes away a share `rate` of each face's departure from the
+    area-weighted mean curvature. The surface relaxes towards constant mean curvature while every step keeps its
+    angles: Spot the cow draws in her legs, horns and ears and rounds into a sphere. The change is a change, so a
+    rate of zero leaves the surface as it is; asking for the absolute curvature instead diverges."""
+    vertices = recentred(vertices)
     yield vertices
     for _ in range(iterations):
-        h = mean_curvature(mesh, vertices)
-        sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-        areas = sides[1].commutator(sides[0]).norm() / 2                       # Scalar[F]
-        h_mean = (h * areas).sites.sum() / areas.sites.sum()
-        vertices = _recenter(spin_transform_deform(mesh, vertices, -rate * (h - h_mean)))
+        curvature = mean_curvature(mesh, vertices)                             # Scalar+[faces]
+        sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+        areas = sides[1].commutator(sides[0]).norm() / 2                       # Scalar+[faces]
+        mean = (curvature * areas).sites.sum() / areas.sites.sum()             # [] Scalar+
+        vertices = recentred(spin_transform_deform(mesh, vertices, -rate * (curvature - mean)))
         yield vertices
 
 
 # --- plumbing -------------------------------------------------------------------------
-icosphere = Mesh.icosphere
-
-
 def cube(divisions: int) -> tuple[Mesh, Point]:
     """The surface of the cube [-1, 1]^3, each side a grid of divisions by divisions squares, and its vertices."""
     grid = np.linspace(-1, 1, divisions + 1)

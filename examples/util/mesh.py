@@ -304,6 +304,39 @@ class Mesh:
         its right, the corner each face's edge faces."""
         return self._edge_sides(self.faces)
 
+    @cached_property
+    def vertex_faces(self) -> np.ndarray:
+        """`[V]`: the first face at each vertex, of those with the vertex as a corner."""
+        faces = np.full(self.n_vertices, len(self.faces))
+        np.minimum.at(faces, self.faces.reshape(-1), np.repeat(np.arange(len(self.faces)), 3))
+        return faces
+
+    @cached_property
+    def spanning_tree(self) -> tuple[np.ndarray, np.ndarray]:
+        """Every vertex but the first `[V - 1]`, and the edge joining each to its parent `[V - 1]`, in a
+        breadth-first tree from the first vertex."""
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import breadth_first_order
+        graph = coo_matrix((np.ones(len(self.edges)), (self.edges[:, 0], self.edges[:, 1])), shape=(self.n_vertices,) * 2)
+        order, parents = breadth_first_order(graph.tocsr(), 0, directed=False)
+        children = order[1:]
+        low, high = np.minimum(children, parents[children]), np.maximum(children, parents[children])
+        return children, np.searchsorted(self.edges[:, 0] * self.n_vertices + self.edges[:, 1], low * self.n_vertices + high)
+
+    def circulation(self, loops: list[np.ndarray]) -> SparseExtensor:
+        """`Scalar[F + L <- E]`: the circulation of edge values around each face, counter-clockwise, the signed
+        face-edge incidence, then around each given closed loop of vertices `[steps]`, in its own order."""
+        rows, columns, signs = [np.repeat(np.arange(len(self.faces)), 3)], [self.face_edges.reshape(-1)], [self.face_edge_orientation.reshape(-1)]
+        keys = self.edges[:, 0] * self.n_vertices + self.edges[:, 1]           # [E], sorted
+        for row, loop in enumerate(loops, start=len(self.faces)):
+            steps = np.stack([loop, np.roll(loop, -1)], axis=-1)                 # [steps, 2]
+            low, high = steps.min(axis=-1), steps.max(axis=-1)
+            rows.append(np.full(len(loop), row))
+            columns.append(np.searchsorted(keys, low * self.n_vertices + high))
+            signs.append(np.where(steps[:, 0] < steps[:, 1], 1.0, -1.0))
+        shape = (len(self.faces) + len(loops), len(self.edges))
+        return SparseExtensor.from_indices(as_scalar(np.concatenate(signs)), np.concatenate(rows), np.concatenate(columns), shape) * Scalar
+
     def _edge_sides(self, per_corner: np.ndarray) -> np.ndarray:
         """`[interior edges, 2]`: a value per corner of each face `[F, 3]`, gathered onto the edge the corner
         faces, on the left where the face runs along the edge and on the right where it runs against it."""

@@ -12,7 +12,7 @@ def flow(mesh, vertices, inlet, outlet):
     streamfunction = 1.5 * (ordinate - 4 * ordinate.squared() * ordinate / (3 * scenarios.HEIGHT**2))
     ends = SparseExtensor.selection(core.mv.context, np.concatenate((inlet, outlet)), len(mesh.edges))
     prescribed = ~ends * (ends * (mesh.d0 * streamfunction))
-    boundary_circulation = core.mv.scalar(np.zeros((mesh.n_vertices, 1))).field()
+    boundary_circulation = operators.dual_patches * 0
     result = core.stokes(operators, scenarios.VISCOSITY, prescribed, mesh.boundary_edges, boundary_circulation)
     return operators, prescribed, result
 
@@ -23,6 +23,7 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     for derivative in (operators.d0, operators.d1):
         assert derivative.gatype == core.ga.gatype((core.Scalar, core.Scalar))
         np.testing.assert_array_equal(np.unique(derivative.cells.kernel), [-1, 1])
+    assert operators.d0_vorticity.gatype == core.ga.gatype((core.Bivector, core.Bivector))
     assert not np.any(operators.d1(operators.d0).cells.kernel)
 
     # Scaling and stretching geometry leave every oriented boundary sum unchanged.
@@ -37,37 +38,53 @@ def test_incidence_is_topological_and_hodges_supply_geometry_and_duality():
     np.testing.assert_allclose(scaled.star1.cells.kernel, operators.star1.cells.kernel, atol=1e-11)
     np.testing.assert_allclose(scaled.star2.cells.kernel, operators.star2.cells.kernel / scale**2, atol=1e-11)
     np.testing.assert_allclose(stretched.areas.kernel, 1.2 * 0.85 * operators.areas.kernel, atol=1e-11)
-    assert np.max(np.abs(stretched.h1.kernel - operators.h1.kernel)) > 0.01
+    assert np.max(np.abs(stretched.edge_ratios.kernel - operators.edge_ratios.kernel)) > 0.01
 
     # Circumcentres are equidistant from each triangle's corners; dual weights are length ratios.
     corners = vertices.batch()[mesh.faces.T].field()
     radii_squared = (corners - operators.circumcentres).norm_squared()
     np.testing.assert_allclose((radii_squared - radii_squared[0]).kernel, 0, atol=1e-11)
     ratio = operators.dual_edges.norm() / operators.edges.norm()
-    np.testing.assert_allclose(operators.h1.kernel, ratio.kernel, atol=1e-11)
-    assert np.all(operators.h1.kernel > 0)
+    np.testing.assert_allclose(operators.edge_ratios.kernel, ratio.kernel, atol=1e-11)
+    assert np.all(operators.edge_ratios.kernel > 0)
 
     # Constant flow reads positive circulation along the displayed dual direction.
-    potential = (core.mv.y & vertices) - 0.3 * (core.mv.x & vertices)
-    circulation = ((core.mv.x + 0.3 * core.mv.y) & operators.dual_edges).dual()
+    gradient = core.mv.y - 0.3 * core.mv.x
+    potential = gradient & vertices
+    circulation = -gradient.dual() & operators.dual_edges
     np.testing.assert_allclose(operators.star1(operators.d0(potential)).kernel,
                                circulation.kernel, atol=1e-11)
 
     for hodge in (operators.star0, operators.star1, operators.star2):
-        assert hodge.gatype == core.ga.gatype((core.Amount, core.Scalar))
+        assert hodge.gatype == core.ga.gatype((core.Patch, core.Scalar))
+    assert operators.inverse_star0.gatype == core.ga.gatype((core.Bivector, core.Patch))
+    assert operators.curl.gatype == core.ga.gatype((core.Bivector, core.Scalar))
+
     vertex_values = core.mv.scalar(np.cos(np.arange(mesh.n_vertices))[:, None]).field()
+    vertex_vorticity = (core.mv.xy * np.cos(np.arange(mesh.n_vertices))).field()
     edge_values = core.mv.scalar(np.sin(np.arange(len(mesh.edges)))[:, None]).field()
     dual_edges = operators.star1(edge_values)
-    np.testing.assert_allclose(operators.inverse_star0(operators.star0(vertex_values)).kernel,
+    np.testing.assert_allclose(operators.star0.solve(operators.star0(vertex_values)).kernel,
                                vertex_values.kernel, atol=1e-11)
+    np.testing.assert_allclose(operators.inverse_star0(operators.star0(vertex_values)).kernel,
+                               vertex_vorticity.kernel, atol=1e-11)
     np.testing.assert_allclose(operators.star1.solve(dual_edges).kernel, edge_values.kernel, atol=1e-11)
-    np.testing.assert_allclose((edge_values & dual_edges).kernel,
-                               (edge_values.squared() * ratio).kernel, atol=1e-11)
 
-    # The incidence's adjugate reads the same primal-dual work from either side.
-    edge_work = (operators.d0(vertex_values) & dual_edges).sites.sum()
-    vertex_work = (vertex_values & operators.d0.adjugate()(dual_edges)).sites.sum()
-    np.testing.assert_allclose(edge_work.kernel, vertex_work.kernel, atol=1e-11)
+    # The incidence's adjugate and the Hodge map's adjugate read the same dissipation from all three sides.
+    vertex_work = (vertex_vorticity & operators.d0_vorticity.adjugate()(dual_edges)).sites.sum()
+    dual_edge_work = (operators.d0_vorticity(vertex_vorticity) & dual_edges).sites.sum()
+    primal_edge_work = (operators.star1.adjugate()(operators.d0_vorticity(vertex_vorticity)) & edge_values).sites.sum()
+    np.testing.assert_allclose(vertex_work.kernel, dual_edge_work.kernel, atol=1e-11)
+    np.testing.assert_allclose(dual_edge_work.kernel, primal_edge_work.kernel, atol=1e-11)
+
+    # Reflecting the mesh transforms the vorticity bivector by the reflection and leaves the viscous map unchanged.
+    mirror = core.mv.y
+    mirrored = core.Operators(mesh, mirror >> vertices)
+    np.testing.assert_allclose(mirrored.curl(edge_values).kernel,
+                               (mirror >> operators.curl(edge_values)).kernel, atol=1e-11)
+    viscous = operators.star1.adjugate()(operators.d0_vorticity(operators.curl))
+    mirrored_viscous = mirrored.star1.adjugate()(mirrored.d0_vorticity(mirrored.curl))
+    np.testing.assert_allclose(mirrored_viscous.cells.kernel, viscous.cells.kernel, atol=1e-11)
 
 
 def test_straight_channel_converges_to_poiseuille_velocity_pressure_and_vorticity():

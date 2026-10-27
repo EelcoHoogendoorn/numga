@@ -25,23 +25,23 @@ N_STATES = 3
 def dipole() -> tuple[core.Mesh, core.Point, core.Scalar, core.Point]:
     """The sphere and its vertices, the change in mean curvature on each face, growing along y, and the
     vertices after the spin transformation that makes it."""
-    mesh, vertices = core.icosphere(N_SUBDIVISIONS)
+    mesh, vertices = core.Mesh.icosphere(N_SUBDIVISIONS)
     centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices
     # Each centroid paired with the direction y: its height along y.
-    curvature_change = (centroids & core.context.multivector.y) * DIPOLE        # Scalar[F]
+    curvature_change = (centroids & core.context.multivector.y) * DIPOLE        # Scalar+[faces]
     return mesh, vertices, curvature_change, core.spin_transform_deform(mesh, vertices, curvature_change)
 
 
 def rounding() -> tuple[core.Mesh, list[core.Point]]:
     """Spot the cow under conformal curvature flow: her mesh, and its vertices at every step."""
     mesh, vertices = core.spot()
-    return mesh, list(core.conformal_smooth(mesh, vertices, N_STEPS, RATE))     # [steps + 1] Point[V]
+    return mesh, list(core.conformal_smooth(mesh, vertices, N_STEPS, RATE))     # [steps + 1] Point-[vertices]
 
 
 def dirac() -> tuple[core.Mesh, core.Point, dict[int, core.Point], np.ndarray]:
     """The sphere and its vertices; a few of the Dirac spheres for each of the eigenvalues, the vertices
     of the surfaces spun by the Dirac operator's eigenfields; and the energies of their fields."""
-    mesh, vertices = core.icosphere(N_DIRAC_SUBDIVISIONS)
+    mesh, vertices = core.Mesh.icosphere(N_DIRAC_SUBDIVISIONS)
     energies, spun = core.dirac_spheres(mesh, vertices, np.array(EIGENVALUES, dtype=float), N_STATES)   # [eigenvalues, states]
     return mesh, vertices, {eigenvalue: spheres for eigenvalue, spheres in zip(EIGENVALUES, spun)}, energies.to_array().ravel()
 
@@ -50,9 +50,9 @@ def dirac() -> tuple[core.Mesh, core.Point, dict[int, core.Point], np.ndarray]:
 def roundness(mesh: core.Mesh, vertices: core.Point) -> float:
     """The spread of the vertices' distances from the surface's centre, its area-weighted centroid, over
     their mean: nothing on a sphere, however its vertices crowd."""
-    centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices   # Point[F]
-    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    areas = sides[1].commutator(sides[0]).norm() / 2                            # Scalar[F]
+    centroids = core.as_ga_sparse(mesh.faces, core.as_scalar(np.ones_like(mesh.faces) / 3)) * vertices   # Point-[faces]
+    sides = ((mesh.d0 * vertices).batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point-[faces]
+    areas = sides[1].commutator(sides[0]).norm() / 2                            # Scalar+[faces]
     middle = (centroids * areas).sites.sum() / areas.sites.sum()
     distances = (vertices - middle).norm().to_array()
     return distances.std() / distances.mean()
@@ -77,7 +77,7 @@ def main() -> None:
     # The deformation keeps every corner's angle, up to the mesh's resolution, and mean curvature rises
     # where it was asked to rise.
     np.testing.assert_allclose((cosines(mesh, deformed) - cosines(mesh, vertices)).to_array(), 0.0, atol=0.05)
-    risen = core.mean_curvature(mesh, core._recenter(deformed)) - core.mean_curvature(mesh, vertices)
+    risen = core.mean_curvature(mesh, core.recentred(deformed)) - core.mean_curvature(mesh, vertices)
     assert np.corrcoef(risen.to_array().ravel(), curvature_change.to_array().ravel())[0, 1] > 0.5
     # Spot rounds: the spread of the vertices' distances from her centre falls tenfold, while the angles
     # hold up to the mesh's resolution, in the median.

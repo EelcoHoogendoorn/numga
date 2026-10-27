@@ -8,7 +8,6 @@ from itertools import islice
 import numpy as np
 
 from numga import stack
-from examples.surfaces.spin_transformations.core import icosphere
 from examples.surfaces.dirac_waves import core
 
 mv = core.mv
@@ -28,22 +27,22 @@ N_PHASES = 20
 
 # --- math -----------------------------------------------------------------------------
 def pulse() -> tuple[core.Mesh, core.Point, list[tuple[core.Even, core.Even]]]:
-    """A bump of the xy plane at the north pole, spreading: the sphere and its points, and the vertex and face
-    fields at every step `Even[V]` and `Even[F]`."""
-    sphere, points = icosphere(SUBDIVISIONS)
-    start = ((points - mv.z.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * mv.xy   # Even[V]
+    """A bump of the xy plane at the north pole spreads over the sphere: the sphere and its points, with the vertex
+    and face fields at every step, `Even+[vertices]` and `Even-[faces]`."""
+    sphere, points = core.Mesh.icosphere(SUBDIVISIONS)
+    start = ((points - mv.z.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * mv.xy   # Even+[vertices]
     return sphere, points, list(islice(core.spread(sphere, points, start, INTERVAL), N_STEPS))
 
 
 def modes() -> tuple[core.Mesh, core.Point, core.Scalar, core.Even, core.Even]:
-    """The standing waves of the first few frequencies, one of each, over its period: the sphere and its
+    """The standing waves of the first few frequencies, one of each, swing over their periods: the sphere and its
     points, the frequencies squared of all the waves found, and the vertex and face fields
-    `[frequencies, phases] Even[V]` and `[frequencies, phases] Even[F]`."""
-    sphere, points = icosphere(SUBDIVISIONS)
+    `[frequencies, phases] Even+[vertices]` and `[frequencies, phases] Even-[faces]`."""
+    sphere, points = core.Mesh.icosphere(SUBDIVISIONS)
     sizes = N_CONSTANT + 8 * np.cumsum(np.arange(N_LEVELS + 1))               # [levels + 1]
     # Of each frequency's waves, the part of a bump on the equator they hold, in all three planes: every
     # frequency drawn the same way round.
-    probe = ((points - mv.x.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * (mv.yz + mv.zx + mv.xy)   # Even[V]
+    probe = ((points - mv.x.dual()).norm_squared() * (-0.5 / WIDTH**2)).exp() * (mv.yz + mv.zx + mv.xy)   # Even+[vertices]
     frequencies = np.arange(1, N_LEVELS + 1)
     phases = np.linspace(0.0, 2 * np.pi, N_PHASES, endpoint=False)
     squared, vertices, faces = core.modes(sphere, points, sizes, probe, frequencies, phases)
@@ -51,15 +50,13 @@ def modes() -> tuple[core.Mesh, core.Point, core.Scalar, core.Even, core.Even]:
 
 
 # --- plumbing -------------------------------------------------------------------------
-
-
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.surfaces.dirac_waves import render
 
     sphere, points, states = pulse()
     frames = states[::STRIDE]
-    vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames] Even[V], [frames] Even[F]
+    vertices, faces = stack([state[0] for state in frames]), stack([state[1] for state in frames])   # [frames] Even+[vertices], [frames] Even-[faces]
     save_animation(render.animate_pulse(sphere, points, vertices, faces), "dirac_waves_pulse", 80)
     _, _, squared, mode_vertices, mode_faces = modes()
     save_animation(render.animate_modes(sphere, points, mode_vertices, mode_faces), "dirac_waves_modes", 50)

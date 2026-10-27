@@ -5,9 +5,10 @@ the dual edges, and its boundary sum gives vorticity on the dual cells around ve
 Viscous resistance balances the pressure that enforces zero net flux. Incidences contain
 only signed connectivity; lengths and areas enter through separate Hodge maps.
 
-Integrated primal values are scalar fields and their duals are antiscalar fields,
-paired by the regressive product. Their form degree belongs to the cells they occupy:
-vertices, edges or faces, rather than to the ambient blade grade of each stored value.
+Integrated primal fluxes are scalar fields on edges, while the circumcentric dual cells
+carry oriented area patches from the regressive product of vertex displacements. Summing
+dual-edge circulation around each dual polygon and dividing by its area gives the vertex
+vorticity bivector, whose edge differences drive the viscous response.
 """
 
 from __future__ import annotations
@@ -22,64 +23,66 @@ from examples.fluids.dec_stokes.numerical import solve_stokes
 
 mesh_module = instantiate("examples.util.mesh", ga)
 Mesh, mv = mesh_module.Mesh, mesh_module.mv
-Scalar = ga.gatype.scalar()
-Bivector = ga.gatype.bivector()
-Point = ga.gatype.antivector()
-Amount = ga.gatype.antiscalar()
+Scalar = ga.gatype.scalar()                                                  # Scalar+
+Bivector = ga.gatype.bivector()                                              # Bivector+
+Point = ga.gatype.antivector()                                               # Antivector-
+Patch = ga.gatype.antibivector()                                             # Antibivector-
+Amount = ga.gatype.antiscalar()                                              # Antiscalar-
 
 
 # --- math -----------------------------------------------------------------------------
 class Operators:
-    """Topological exterior derivatives and separate circumcentric Hodge maps."""
+    """Topological exterior derivatives and circumcentric Hodge maps relative to the mesh pseudo-volume."""
 
     def __init__(self, mesh: Mesh, vertices: Point):
         self.mesh, self.vertices = mesh, vertices
         # Integrated cochains carry one value per cell. These derivatives contain
         # only the incidence signs; their composition is zero before any geometry.
-        self.d0 = mesh.d0 * Scalar                                           # Scalar[E] <- Scalar[V]
-        self.d1 = mesh.d1 * Scalar                                           # Scalar[F] <- Scalar[E]
-        self.edges = mesh.d0 * vertices                                      # Point[E]
-        corners = vertices.batch()[mesh.faces.T].field()                     # [corners] Point[F]
+        self.d0 = mesh.d0 * Scalar                                           # (Scalar+ <- Scalar+)[edges <- vertices]
+        self.d1 = mesh.d1 * Scalar                                           # (Scalar+ <- Scalar+)[faces <- edges]
+        self.d0_vorticity = mesh.d0 * Bivector                               # (Bivector+ <- Bivector+)[edges <- vertices]
+        self.edges = mesh.d0 * vertices                                      # Point-[edges]
+        corners = vertices.batch()[mesh.faces.T].field()                     # [corners] Point-[faces]
         a, b, c = corners
         u, v = b - a, c - a
-        self.area_blades = (u & v) / 2                                       # Antibivector[F]
-        self.areas = self.area_blades.norm()                                  # Scalar[F]
-        self.sense = (self.area_blades / self.areas).sites.mean()             # Antibivector
-        self.face_centres = corners.sum(axis=0) / 3                          # Point[F]
+        self.face_patches = (u & v) / 2                                      # Patch-[faces]
+        self.areas = self.face_patches.norm()                                # Scalar+[faces]
+        self.face_centres = corners.sum(axis=0) / 3                          # Point-[faces]
 
-        # The triangle's area turns the squared-length-weighted edge difference
+        # The triangle's signed area patch turns the squared-length-weighted edge difference
         # into the offset equidistant from all three corners.
-        weighted = v.norm_squared() * u - u.norm_squared() * v
-        self.circumcentres = a + weighted.commutator(self.area_blades.dual()) / (4 * self.areas.squared())
+        weighted = v.norm_squared() * u - u.norm_squared() * v               # Point-[faces]
+        self.circumcentres = a + weighted.commutator(self.face_patches.inverse().dual()) / 4  # Point-[faces]
 
-        one_face = mv.scalar(np.ones((len(mesh.faces), 1))).field()
+        one_face = mv.scalar(np.ones((len(mesh.faces), 1))).field()          # Scalar+[faces]
         tail, head = mesh.edge_ends
-        midpoints = (tail * vertices + head * vertices) / 2                   # Point[E]
-        boundary = ~mesh.d1 * one_face                                       # Scalar[E]
+        midpoints = (tail * vertices + head * vertices) / 2                  # Point-[edges]
+        boundary = ~mesh.d1 * one_face                                       # Scalar+[edges]
         # Interior dual edges join adjacent circumcentres. At the boundary they
         # finish at the primal edge's midpoint, closing the truncated dual cells.
         # The dual edge crosses to the primal edge's right, matching positive flux.
-        self.dual_edges = boundary * midpoints - ~mesh.d1 * self.circumcentres  # Point[E]
+        self.dual_edges = boundary * midpoints - ~mesh.d1 * self.circumcentres  # Point-[edges]
 
-        # Signed dual/primal edge-length ratios, and the dual areas made of
-        # the quarter-kites incident to each vertex.
-        self.h1 = (self.dual_edges & self.edges) / (self.sense * self.edges.norm_squared())
-        self.dual_areas = (~tail + ~head) * (self.h1 * self.edges.norm_squared() / 4)
+        # Oriented dual/primal edge ratios and dual cell patches from the quarter-kites
+        # incident to each vertex.
+        self.edge_ratios = (self.dual_edges & self.edges) / self.edges.norm_squared()  # Patch-[edges]
+        self.dual_patches = (~tail + ~head) * ((self.dual_edges & self.edges) / 4)     # Patch-[vertices]
+        self.dual_areas = self.dual_patches.norm()                           # Scalar+[vertices]
 
-        # Each Hodge map changes orientation and scales by the measure of the
-        # complementary dual cell divided by that of its primal cell.
-        self.star0 = spdiag(self.dual_areas * Scalar.dual())                  # Amount[V] <- Scalar[V]
-        self.star1 = spdiag(self.h1 * Scalar.dual())                          # Amount[E] <- Scalar[E]
-        self.star2 = spdiag(Scalar.dual() / self.areas)                       # Amount[F] <- Scalar[F]
-        self.inverse_star0 = spdiag(Amount.dual_inverse() / self.dual_areas)  # Scalar[V] <- Amount[V]
+        # Each Hodge map scales by the oriented patch of the complementary dual cell
+        # divided by that of its primal cell.
+        self.star0 = spdiag(self.dual_patches * Scalar)                      # (Patch- <- Scalar+)[vertices <- vertices]
+        self.star1 = spdiag(self.edge_ratios * Scalar)                       # (Patch- <- Scalar+)[edges <- edges]
+        self.star2 = spdiag(self.face_patches.inverse() * Scalar)            # (Patch- <- Scalar+)[faces <- faces]
+        self.inverse_star0 = spdiag(Patch.dual_inverse() / self.dual_areas)  # (Bivector+ <- Patch-)[vertices <- vertices]
 
         # The adjugate sums dual-edge circulation around each dual cell.
-        # Dividing by that cell's area gives its vorticity density.
-        self.curl = self.inverse_star0(self.d0.adjugate()(self.star1))        # Scalar[V] <- Scalar[E]
+        # Dividing by that cell's area gives the vertex vorticity bivector directly.
+        self.curl = self.inverse_star0(self.d0_vorticity.adjugate()(self.star1))  # (Bivector+ <- Scalar+)[vertices <- edges]
 
 
 def stokes(operators: Operators, viscosity: float, prescribed_flux: Scalar,
-           fixed_edges: np.ndarray, boundary_circulation: Scalar
+           fixed_edges: np.ndarray, boundary_circulation: Patch
            ) -> tuple[Scalar, Scalar, Bivector, Point]:
     """Steady flow with prescribed boundary fluxes and tangential boundary circulation.
 
@@ -87,24 +90,24 @@ def stokes(operators: Operators, viscosity: float, prescribed_flux: Scalar,
     up to a constant; the returned field has zero area-weighted mean.
     """
     mesh = operators.mesh
-    # Vorticity differences drive viscous resistance. The Hodge map supplies
-    # the paired edge response, whose work is the fluid's dissipation.
-    viscous = viscosity * operators.star1(operators.d0(operators.curl))      # Amount[E] <- Scalar[E]
-    boundary_vorticity = boundary_circulation / operators.dual_areas         # Scalar[V]
-    boundary_resistance = viscosity * operators.star1(operators.d0(boundary_vorticity))
+    # Vorticity differences across primal edges drive the paired edge response
+    # through the adjugate of the dual-edge Hodge map.
+    viscous = viscosity * operators.star1.adjugate()(operators.d0_vorticity(operators.curl))  # (Amount- <- Scalar+)[edges <- edges]
+    boundary_vorticity = operators.inverse_star0(boundary_circulation)       # Bivector+[vertices]
+    boundary_resistance = viscosity * operators.star1.adjugate()(operators.d0_vorticity(boundary_vorticity))  # Amount-[edges]
 
     free_edges = np.setdiff1d(np.arange(len(mesh.edges)), fixed_edges)
-    embedding = ~SparseExtensor.selection(mv.context, free_edges, len(mesh.edges)) * Scalar
-    stiffness = embedding.adjugate()(viscous(embedding))                    # Amount[free] <- Scalar[free]
-    divergence = operators.d1(embedding)                                   # Scalar[F] <- Scalar[free]
-    force = -embedding.adjugate()(viscous(prescribed_flux) + boundary_resistance)
-    balance = -operators.d1(prescribed_flux)                                # Scalar[F]
-    unknown, pressure = solve_stokes(stiffness, divergence, force, balance)
-    flux = prescribed_flux + embedding(unknown)                             # Scalar[E]
-    pressure = pressure - (pressure * operators.areas).sites.sum() / operators.areas.sites.sum()
-    vorticity = operators.sense.dual_inverse() * (operators.curl(flux) + boundary_vorticity)  # Bivector[V]
+    embedding = ~SparseExtensor.selection(mv.context, free_edges, len(mesh.edges)) * Scalar  # (Scalar+ <- Scalar+)[edges <- free_edges]
+    stiffness = embedding.adjugate()(viscous(embedding))                     # (Amount- <- Scalar+)[free_edges <- free_edges]
+    divergence = operators.d1(embedding)                                     # (Scalar+ <- Scalar+)[faces <- free_edges]
+    force = -embedding.adjugate()(viscous(prescribed_flux) + boundary_resistance)  # Amount-[free_edges]
+    balance = -operators.d1(prescribed_flux)                                 # Scalar+[faces]
+    free_flux, pressure = solve_stokes(stiffness, divergence, force, balance)  # Scalar+[free_edges], Scalar+[faces]
+    flux = prescribed_flux + embedding(free_flux)                            # Scalar+[edges]
+    pressure = pressure - (pressure * operators.areas).sites.sum() / operators.areas.sites.sum()  # Scalar+[faces]
+    vorticity = operators.curl(flux) + boundary_vorticity                    # Bivector+[vertices]
     # The first moment of the outward flux gives the face's mean velocity.
-    corners = operators.vertices.batch()[mesh.faces.T].field()
-    outward = (flux.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()
-    velocity = -((corners - operators.face_centres) * outward).sum(axis=0) / (2 * operators.areas)
+    corners = operators.vertices.batch()[mesh.faces.T].field()               # [corners] Point-[faces]
+    outward_flux = (flux.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()  # [corners] Scalar+[faces]
+    velocity = -((corners - operators.face_centres) * outward_flux).sum(axis=0) / (2 * operators.areas)  # Point-[faces]
     return flux, pressure, vorticity, velocity

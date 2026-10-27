@@ -60,8 +60,8 @@ def view(mesh: Mesh, positions: core.Point) -> tuple:
 
 def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even, columns: int,
             room: float = 1.0) -> Iterator[np.ndarray]:
-    """Frames of vertex and face fields `[tiles, frames] Even[V]` and `[tiles, frames] Even[F]` on the mesh at the
-    positions `Point[V]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
+    """Frames of vertex and face fields `[tiles, frames] Even+[vertices]` and `[tiles, frames] Even-[faces]` on the mesh at the
+    positions `Point-[vertices]`, the tiles in rows of the given count, each exposed by its first frame, `room` times over."""
     corners, sides = planes(vertices), planes(faces)                          # [tiles, frames, V, 3], [tiles, frames, F, 3]
     first = np.concatenate([corners[:, :1], sides[:, :1]], axis=2)            # [tiles, 1, V + F, 3]
     level = room * np.percentile(first, exposure, axis=(1, 2, 3), keepdims=True)
@@ -78,20 +78,20 @@ def animate(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.
 
 def animate_pulse(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = pulse_room) -> Iterator[np.ndarray]:
-    """Frames of a wave's vertex and face fields `[frames] Even[V]` and `[frames] Even[F]`, exposed by its first frame,
+    """Frames of a wave's vertex and face fields `[frames] Even+[vertices]` and `[frames] Even-[faces]`, exposed by its first frame,
     `room` times over."""
     return animate(mesh, positions, vertices[None], faces[None], 1, room)
 
 
 def animate_modes(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even,
                   room: float = mode_room) -> Iterator[np.ndarray]:
-    """Frames of standing waves' vertex and face fields `[waves, frames] Even[V]` and `[waves, frames] Even[F]`, side
+    """Frames of standing waves' vertex and face fields `[waves, frames] Even+[vertices]` and `[waves, frames] Even-[faces]`, side
     by side, each exposed by its first frame, `room` times over."""
     return animate(mesh, positions, vertices, faces, vertices.shape[0], room)
 
 
 def still(mesh: Mesh, positions: core.Point, vertices: core.Even, faces: core.Even) -> plt.Figure:
-    """A vertex field `Even[V]` and a face field `Even[F]` on the surface at the positions `Point[V]`, exposed
+    """A vertex field `Even+[vertices]` and a face field `Even-[faces]` on the surface at the positions `Point-[vertices]`, exposed
     together."""
     picture, = animate(mesh, positions, vertices[None, None], faces[None, None], 1)
     figure, ax = plt.subplots(figsize=(3, 3))

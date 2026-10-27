@@ -47,8 +47,8 @@ def channel_vertices(n_divisions: int) -> tuple[Point, Point, np.ndarray, np.nda
     random = np.random.default_rng(MESH_SEED)
     along += random.uniform(-jitter, jitter, along.shape) * spacing
     across += random.uniform(-jitter, jitter, across.shape) * spacing
-    inside = along < LENGTH - 0.7 * spacing
-    interior = horizontal * along[inside] + vertical * (across[inside] - HEIGHT / 2)
+    inside_mask = along < LENGTH - 0.7 * spacing
+    interior = horizontal * along[inside_mask] + vertical * (across[inside_mask] - HEIGHT / 2)
     return boundary, interior, inlet, outlet
 
 
@@ -106,14 +106,14 @@ def main() -> None:
 
     # The inlet and outlet carry the same parabolic flow. Its integral between each
     # edge's ends gives the edge flux; the solid walls carry no normal flow.
-    ordinate = mv.y & vertices
-    streamfunction = 1.5 * MEAN_SPEED * (ordinate - 4 * ordinate.squared() * ordinate / (3 * HEIGHT**2))
+    ordinate = mv.y & vertices                                               # Scalar+[vertices]
+    streamfunction = 1.5 * MEAN_SPEED * (ordinate - 4 * ordinate.squared() * ordinate / (3 * HEIGHT**2))  # Scalar+[vertices]
     ends = SparseExtensor.selection(mesh_module.ctx, np.concatenate((inlet, outlet)), len(mesh.edges))
-    prescribed_flux = ~ends * (ends * (mesh.d0 * streamfunction))
-    boundary_circulation = mv.scalar(np.zeros((mesh.n_vertices, 1))).field()
+    prescribed_flux = ~ends * (ends * (mesh.d0 * streamfunction))            # Scalar+[edges]
+    boundary_circulation = operators.dual_patches * 0                        # Patch-[vertices]
     flux, pressure, vorticity, velocity = stokes(operators, VISCOSITY, prescribed_flux,
-                                               mesh.boundary_edges, boundary_circulation)
-    streamfunction = (mesh.d0 * Scalar).lstsq(flux)
+                                                 mesh.boundary_edges, boundary_circulation)
+    streamfunction = (mesh.d0 * Scalar).lstsq(flux)                          # Scalar+[vertices]
 
     save_figure(render.draw_mesh(mesh, vertices), "dec_stokes_mesh")
     save_figure(render.draw_complex(mesh, vertices, operators.circumcentres, operators.dual_edges), "dec_stokes_complex")

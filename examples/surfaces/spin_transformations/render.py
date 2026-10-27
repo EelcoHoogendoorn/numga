@@ -117,7 +117,7 @@ def draw_textured(mesh: Mesh, vertices: Point, reference: Point) -> plt.Figure:
 
 
 def draw_dirac(mesh: Mesh, gallery: dict[int, Point], reference: Point) -> plt.Figure:
-    """A row of Dirac spheres for each eigenvalue, the vertices of each `[spheres] Point[V]` on the sphere's mesh,
+    """A row of Dirac spheres for each eigenvalue, the vertices of each `[spheres] Point-[vertices]` on the sphere's mesh,
     textured with the sphere's checkerboard."""
     rows, columns = len(gallery), max(len(spheres) for spheres in gallery.values())
     figure, axes = plt.subplots(rows, columns, figsize=(2 * columns, 2 * rows), squeeze=False)
