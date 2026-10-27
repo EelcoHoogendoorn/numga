@@ -37,16 +37,12 @@ WALL_PIECES = 12
 SECTION_LIMIT = 1.2
 ARROW, TIP_ARROW = 0.45, 2.4
 OUTLINE_EVERY = 10
-# The view of the stubby beam, nearly from the side, elevation and azimuth in radians, and how much the beam with its
-# slides held rigid hides of what lies behind it.
-STUBBY_ELEVATION, STUBBY_AZIMUTH = np.radians([12.0, 20.0])
-RIGID_OPACITY = 0.45
 # The clamp's square, along the beam, across and up, around the walls at the clamp.
 CLAMP = np.array([[0.0, -1.0, -1.0], [0.0, 1.0, -1.0], [0.0, 1.0, 1.0], [0.0, -1.0, 1.0]])
 # The colours of the line of shear centres and of the clamp.
 SHEAR_LINE, CLAMP_COLOUR = "#0f172a", "#475569"
 # The view of the beams, elevation and azimuth in radians, azimuth zero looking along +y; the margin around them
-# as a share of the larger side, the pixels across the stubby beam's picture, how much each side of a straight
+# as a share of the larger side, the pixels across a view before it is fitted to its axes, how much each side of a straight
 # beam's wall hides, and the strips' sheen.
 ELEVATION, AZIMUTH = np.radians([22.0, -58.0 + 90.0])
 MARGIN = 0.1
@@ -56,8 +52,6 @@ GLOSS = 0.1
 # The radii of the shear centres' dashes, of the clamp's rods and of the load's shaft, in pixels; the load's head,
 # its length a share of the arrow's, and its radius a share of its own length.
 DASH_RADIUS, CLAMP_RADIUS, SHAFT_RADIUS = 0.85, 1.2, 1.7
-# The radii of the clamp's rods and of the load's shaft in the stubby beam's larger picture, in pixels.
-STUBBY_CLAMP_RADIUS, STUBBY_SHAFT_RADIUS = 1.4, 2.0
 HEAD_SHARE = 0.25
 HEAD_WIDTH = 0.4
 
@@ -149,15 +143,22 @@ def mark_centres(ax, centre: core.Point, shear: core.Point) -> None:
     ax.plot(*flat(shear), "o", markerfacecolor="none", markeredgecolor="#0f172a", markersize=7, markeredgewidth=1.4)
 
 
+def draw_sections(sections: list[tuple[core.Point, np.ndarray, np.ndarray]]) -> plt.Figure:
+    """The sections' walls along their midlines."""
+    figure, axes = plt.subplots(1, len(sections), figsize=(4 * len(sections), 3.8), dpi=50)
+    for ax, (nodes, ends, _) in zip(axes, sections):
+        ax.add_collection(LineCollection(flat(nodes[ends]), colors=STRAIGHT, linewidths=WALL_WIDTH, capstyle="round"))
+        frame_section(ax, SECTION_LIMIT)
+    figure.tight_layout()
+    return figure
+
+
 def draw_walls(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centres: list[core.Point],
                shears: list[core.Point]) -> plt.Figure:
     """The sections' walls along their midlines, each with its centroid and its shear centre."""
-    figure, axes = plt.subplots(1, len(sections), figsize=(4 * len(sections), 3.8))
-    for ax, (nodes, ends, _), centre, shear in zip(axes, sections, centres, shears):
-        ax.add_collection(LineCollection(flat(nodes[ends]), colors=STRAIGHT, linewidths=WALL_WIDTH, capstyle="round"))
+    figure = draw_sections(sections)
+    for ax, centre, shear in zip(figure.axes, centres, shears):
         mark_centres(ax, centre, shear)
-        frame_section(ax, SECTION_LIMIT)
-    figure.tight_layout()
     return figure
 
 
@@ -220,7 +221,7 @@ def swept(bent: np.ndarray, colour: str, view: solids.View) -> meshes.Samples:
 def ghost(bent: np.ndarray, view: solids.View) -> solids.Plane:
     """The straight beam beside a bent one `[pieces + 1, walls, 2, 3]`: each wall a plate a pixel thick, from its
     ends at the clamp to its ends at the tip, bounded by planes `[walls, 6]`."""
-    straight = solids.mv.point(straightened(bent))                           # [pieces + 1, walls, 2] Point
+    straight = solids.mv.point(straightened(bent))                           # [pieces + 1, walls, 2] Point-
     return solids.plates(stack([straight[0, :, 0], straight[0, :, 1], straight[-1, :, 1], straight[-1, :, 0]],
                                axis=-1), view.pixel)
 
@@ -230,7 +231,7 @@ def clamped(through: core.Point, load: core.Point, length: float, radii: tuple[f
     """The clamp, and the tip load where it acts, drawn a length long; the radii of the clamp's rods and of the load's
     shaft in pixels."""
     clamp_radius, shaft_radius = radii
-    clamp = solids.mv.point(CLAMP)                                           # [4] Point
+    clamp = solids.mv.point(CLAMP)                                           # [4] Point-
     clamp_rods, clamp_joints = solids.edges(clamp, clamp[[1, 2, 3, 0]], clamp_radius * view.pixel)
     shaft, head = solids.arrows(solids.mv.point(space(through)), solids.mv.point(load_tip(through, load, length)),
                                 shaft_radius * view.pixel, HEAD_SHARE * length, HEAD_WIDTH * HEAD_SHARE * length)
@@ -245,8 +246,8 @@ def draw_beam(walls: core.Point, shears: core.Point, through: core.Point, load: 
     acts."""
     bent = space(walls)                                                      # [pieces + 1, walls, 2, 3]
     # The line of shear centres in dashes, every other piece of it.
-    line = solids.mv.point(space(shears))                                    # [pieces + 1] Point
-    dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Quadric
+    line = solids.mv.point(space(shears))                                    # [pieces + 1] Point-
+    dashes = solids.rods(line[:-1:2], line[1::2], DASH_RADIUS * view.pixel)  # [dashes, 3] Plane+ <- Point-
     opaque = [(dashes, np.array(to_rgb(SHEAR_LINE)))] + clamped(through, load, TIP_ARROW, (CLAMP_RADIUS, SHAFT_RADIUS),
                                                                 view)
     return solids.draw(opaque, view, np.ones(3), inks=[],
@@ -259,7 +260,7 @@ def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centre
                beams: list[tuple[core.Twist, core.Motor, core.Strain, core.Scalar]]) -> plt.Figure:
     """Top, each section with its stress at the clamp; below, each cantilever bent under the load
     through its centroid."""
-    figure = plt.figure(figsize=(4.4 * len(sections), 8.6), dpi=110)
+    figure = plt.figure(figsize=(4.4 * len(sections), 8.6), dpi=55)
     count = len(sections)
     section_axes = [figure.add_subplot(2, count, case + 1) for case in range(count)]
     beam_axes = [figure.add_subplot(2, count, count + case + 1) for case in range(count)]
@@ -278,26 +279,11 @@ def draw_beams(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centre
     return figure
 
 
-def draw_stubby(section: tuple[core.Point, np.ndarray, np.ndarray], frames: list[core.Motor], centre: core.Point,
-                load: core.Point) -> plt.Figure:
-    """A stubby beam nearly from the side, bent with the walls' shear stiffness, and translucent with the slides held
-    rigid, beside the straight beam, with the clamp and the load at the tip."""
-    nodes, ends, _ = section
-    bent = [space(placed[:, None, None] >> nodes[ends]) for placed in frames]   # [pieces + 1, walls, 2, 3] each
-    through = frames[0][-1] >> centre
-    seen = view(bent, [load_tip(through, load, ARROW)], STUBBY_ELEVATION, STUBBY_AZIMUTH)
-    held = clamped(through, load, ARROW, (STUBBY_CLAMP_RADIUS, STUBBY_SHAFT_RADIUS), seen)
-    return image_figure(solids.draw(held, seen, np.ones(3),
-                                    inks=[],
-                                    translucent=[(ghost(bent[0], seen), np.array(to_rgb(STRAIGHT)), STRAIGHT_OPACITY)],
-                                    meshes=[(swept(bent[0], BEAM, seen), 1.0), (swept(bent[1], PRINCIPAL, seen), RIGID_OPACITY)]))
-
-
 def animate_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
                   through: core.Point, loads: core.Point,
                   beam: tuple[core.Twist, core.Motor, core.Strain, core.Scalar]) -> Iterator[np.ndarray]:
-    """Each frame of a changing tip load, as `sized_loads` draws it at 100 pixels to the inch."""
-    return sized_loads(section, centre, shear, through, loads, beam, 100)
+    """Each frame of a changing tip load, as `sized_loads` draws it at 50 pixels to the inch."""
+    return sized_loads(section, centre, shear, through, loads, beam, 50)
 
 
 def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core.Point, shear: core.Point,
@@ -310,10 +296,10 @@ def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core
     strains, frames, principal, stress = beam
     count = frames.shape[0]
     through, loads = through.broadcast_to((count,)), loads.broadcast_to((count,))
-    walls = frames[..., None, None] >> nodes[ends]                           # [frames, pieces + 1, walls, 2] Point
+    walls = frames[..., None, None] >> nodes[ends]                           # [frames, pieces + 1, walls, 2] Point-
     largest = np.abs(stress.to_array()).max()
     limit = section_limit(walls[:, -1])
-    moved = frames[:, -1] >> through                                         # [frames] Point
+    moved = frames[:, -1] >> through                                         # [frames] Point-
     # The figure and the section's still parts drawn once; the beam's picture, the stress, the tip's walls, the
     # neutral axis and the load's arrow set for each frame.
     figure = plt.figure(figsize=(9.0, 4.6), dpi=dpi)
@@ -339,7 +325,7 @@ def sized_loads(section: tuple[core.Point, np.ndarray, np.ndarray], centre: core
 def kern(polars: core.Strain, centre: core.Point) -> np.ndarray:
     """The kern as a polygon `[corners, 2]`: the view cut down to the centroid's side of every node's
     polar. Each polar is read as the stretch it gives the fibres, affine across the section."""
-    probes = core.point([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])               # [3] Point
+    probes = core.point([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]])               # [3] Point-
     values = (polars[:, None] & (core.beam_direction & probes)).to_array()  # [nodes, 3]
     lines = np.stack([values[:, 1] - values[:, 0], values[:, 2] - values[:, 0], values[:, 0]], axis=-1)
     lines *= np.sign(lines @ np.append(flat(centre), 1.0))[:, None]          # positive on the centroid's side
@@ -373,7 +359,7 @@ def draw_pushes(sections: list[tuple[core.Point, np.ndarray, np.ndarray]], centr
                 points: core.Point, pushes: list[tuple[core.Strain, core.Scalar, core.Strain]]) -> plt.Figure:
     """A row per push point and a column per section: the section pushed along the beam through the
     point, with its kern."""
-    figure = plt.figure(figsize=(4.0 * len(sections), 8.4), dpi=110)
+    figure = plt.figure(figsize=(4.0 * len(sections), 8.4), dpi=55)
     largest = max(np.abs(stress.to_array()).max() for _, stress, _ in pushes)
     for push in range(points.shape[0]):
         for case, ((nodes, ends, _), centre, (strains, stress, polars)) in enumerate(zip(sections, centres, pushes)):

@@ -1,8 +1,8 @@
 """Scenes for thin-walled beam bending and twisting: an I-section, a turned I-section, a Z-section and a
 slotted tube, each clamped at one end and loaded straight down at the other through its centroid; the
 Z-section with its load turning once around; the slotted tube with its load moved across, through its
-shear centre; a stubby I-beam, with its walls' shear stiffness and with its slides held rigid; and each
-section pushed along the beam off its centroid, once inside its kern and once outside."""
+shear centre; and each section pushed along the beam off its centroid, once inside its kern and once
+outside."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from examples.mechanics.bending.mesh import NAMES, section_walls
 
 mv, Strain = core.mv, core.Strain
 # The point at infinity up the section.
-up_direction = mv.y.dual()                                                   # [] Point
+up_direction = mv.y.dual()                                                   # [] Point-
 # The material's modulus and Poisson's ratio, the beam's length, the pieces it is cut into, and the load at
 # its tip.
 MODULUS = 1.0
@@ -27,11 +27,6 @@ N_FRAMES = 48
 DURATION_MS = 60
 # The ends of the slotted tube's load's move across, across and up.
 ACROSS = [[0.4, 0.0], [-1.15, 0.0]]
-# The stubby beam's length and load, and a shear modulus a million times the material's: the slides held
-# practically rigid, as Euler–Bernoulli theory takes them.
-STUBBY_LENGTH = 2.0
-STUBBY_LOAD = 1.5e-3
-RIGID_SHEAR = 1e6 * SHEAR_MODULUS
 # The pushes along the beam: their size, and the points they go through, across and up, one inside
 # every section's kern and one outside.
 PUSH = 1e-3
@@ -55,31 +50,31 @@ def cantilever(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, loads
     step = length / N_PIECES
     # The middle of each piece.
     stations = (np.arange(N_PIECES) + 0.5) * step                             # [pieces]
-    walls = nodes[ends]                                                     # [walls, 2] Point
+    walls = nodes[ends]                                                     # [walls, 2] Point-
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
-    whole = core.stiffness(nodes, ends, thickness, MODULUS, shear_modulus)  # [] Forque <- Twist
+    whole = core.stiffness(nodes, ends, thickness, MODULUS, shear_modulus)  # [] Forque- <- Twist+
     # Lever arms are measured on the straight reference beam. A strain moves the frames by
     # `exp(strain * step / 2)`, against its own sense, so it is solved against the load turned in sign.
-    strains = whole.solve(-core.loads_at_stations(loads, stations))         # [..., pieces] Twist
-    frames = core.bend(strains, step)                                       # [..., pieces + 1] Motor
+    strains = whole.solve(-core.loads_at_stations(loads, stations))         # [..., pieces] Twist+
+    frames = core.bend(strains, step)                                       # [..., pieces + 1] Motor+
     # Principal bending axes pass through the centroid; the metric does not see the shift along the
     # beam. Weakest first, then the shift.
-    _, axes = (Strain | Strain).eigh(Strain & rigidity)                    # [3] Strain
-    stress = core.stress(strains[..., 0, None, None], MODULUS, walls)      # [..., walls, 2] Scalar
+    _, axes = (Strain | Strain).eigh(Strain & rigidity)                    # [3] Strain+
+    stress = core.stress(strains[..., 0, None, None], MODULUS, walls)      # [..., walls, 2] Scalar+
     return strains, frames, axes[:2], stress
 
 
 def turning_loads() -> core.Point:
     """The tip load turning once around the beam, in the plane of the section."""
     angles = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)               # [frames]
-    return (mv.xy * (-angles / 2)).exp() >> (LOAD * -up_direction)           # [frames] Point
+    return (mv.xy * (-angles / 2)).exp() >> (LOAD * -up_direction)           # [frames] Point-
 
 
 def across_points() -> core.Point:
     """The points the slotted tube's load goes through as it moves across the section."""
-    start, end = core.point(ACROSS)                                          # [] Point each
+    start, end = core.point(ACROSS)                                          # [] Point-, Point-
     fractions = np.linspace(0, 1, N_FRAMES)                                    # [frames]
-    return start * (1 - fractions) + end * fractions                        # [frames] Point
+    return start * (1 - fractions) + end * fractions                        # [frames] Point-
 
 
 def push_section(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, points: core.Point
@@ -88,10 +83,10 @@ def push_section(nodes: core.Point, ends: np.ndarray, thickness: np.ndarray, poi
     ends of the section's walls `[pushes, walls, 2]`; and the polar of every node `[nodes]`, the neutral
     axis of a pull through it. By reciprocity a pull through a point on a node's polar leaves that node's
     fibre unstretched, so the polars bound the kern, the points whose push squeezes every fibre."""
-    walls = nodes[ends]                                                     # [walls, 2] Point
+    walls = nodes[ends]                                                     # [walls, 2] Point-
     rigidity = core.bending(walls, thickness, MODULUS)                      # [] Resultant <- Strain
-    strains = -PUSH * core.pulls(rigidity, points)                          # [pushes] Strain
-    stress = core.stress(strains[..., None, None], MODULUS, walls)           # [pushes, walls, 2] Scalar
+    strains = -PUSH * core.pulls(rigidity, points)                          # [pushes] Strain+
+    stress = core.stress(strains[..., None, None], MODULUS, walls)           # [pushes, walls, 2] Scalar+
     return strains, stress, core.pulls(rigidity, nodes)
 
 
@@ -101,7 +96,7 @@ def main() -> None:
     from examples.mechanics.bending import render
 
     sections = section_walls()
-    down = LOAD * -up_direction                                              # [] Point
+    down = LOAD * -up_direction                                              # [] Point-
     centres = [core.centroid(nodes[ends], thickness) for nodes, ends, thickness in sections]
     beams = [cantilever(*section, tip(centre, LENGTH) & down, LENGTH, SHEAR_MODULUS) for section, centre in zip(sections, centres)]
     zed = sections[NAMES.index("Z-section")]
@@ -110,12 +105,10 @@ def main() -> None:
     tube = sections[NAMES.index("slotted tube")]
     across = across_points()
     moved = cantilever(*tube, tip(across, LENGTH) & down, LENGTH, SHEAR_MODULUS)
-    stubby = sections[NAMES.index("I-section")]
-    stubby_load = tip(centres[NAMES.index("I-section")], STUBBY_LENGTH) & (STUBBY_LOAD * -up_direction)   # [] Forque
-    stubs = [cantilever(*stubby, stubby_load, STUBBY_LENGTH, shear) for shear in (SHEAR_MODULUS, RIGID_SHEAR)]
-    points = core.point(PUSH_POINTS)                                         # [pushes] Point
+    points = core.point(PUSH_POINTS)                                         # [pushes] Point-
     pushes = [push_section(*section, points) for section in sections]
     shear_centres = [core.shear_centre(*section) for section in sections]
+    save_figure(render.draw_sections(sections), "bending_cross_sections")
     save_figure(render.draw_walls(sections, centres, shear_centres), "bending_walls")
     save_figure(render.draw_beams(sections, centres, shear_centres, down, beams), "bending_sections")
     save_figure(render.draw_pushes(sections, centres, points, pushes), "bending_kern")
@@ -126,8 +119,6 @@ def main() -> None:
     # Gallery picture: this makes plots/bending.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
     save_animation(render.sized_loads(tube, centres[NAMES.index("slotted tube")], shear_centres[NAMES.index("slotted tube")],
                                       across, down, moved, GALLERY_DPI), "bending", DURATION_MS, forward_then_back=True)
-    save_figure(render.draw_stubby(stubby, [frames for _, frames, _, _ in stubs], centres[NAMES.index("I-section")],
-                                   STUBBY_LOAD * -up_direction), "bending_stubby")
 
     # checks
     tips = np.array([render.flat(frames[-1] >> centre) - render.flat(centre)
@@ -144,9 +135,6 @@ def main() -> None:
     assert twist_rates[0] * twist_rates[-1] < 0
     passing = np.argmin(np.abs(render.flat(across)[:, 0] - render.flat(shear_centres[-1])[0]))
     assert np.abs(twist_rates[passing]) < 0.1 * np.abs(twist_rates).max()
-    # The stubby beam's slides add a deflection comparable to its bending's.
-    sliding, rigid = (render.flat(frames[-1] >> centres[0])[1] for _, frames, _, _ in stubs)
-    assert sliding < rigid < 0 and sliding < 1.2 * rigid
     for (nodes, ends, thickness), (strains, stress, polars) in zip(sections, pushes):
         # The push inside the kern squeezes every fibre; the one outside stretches some.
         squeezed = stress.to_array()                                         # [pushes, walls, 2]

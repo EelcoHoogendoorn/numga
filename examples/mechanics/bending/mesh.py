@@ -19,7 +19,7 @@ ARC_SEGMENTS = 48
 def slotted_tube(radius: float, opening: float, segments: int) -> tuple[Point, np.ndarray]:
     """The nodes of an arc of a circle, and its walls between neighbours; the slot faces right."""
     angles = np.linspace(opening / 2, 2 * np.pi - opening / 2, segments + 1)
-    nodes = (mv.xy * (-angles / 2)).exp() >> point([radius, 0.0])           # [segments + 1] Point
+    nodes = (mv.xy * (-angles / 2)).exp() >> point([radius, 0.0])           # [segments + 1] Point-
     return nodes, np.stack([np.arange(segments), np.arange(1, segments + 1)], axis=-1)
 
 

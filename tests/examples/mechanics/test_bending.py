@@ -56,9 +56,10 @@ def test_stiffness_holds_the_area_and_the_second_moments():
 
 def test_small_tip_load_deflects_by_the_cantilever_formula():
     """Bending along the inverse second moment, and the slide along the inverse shear area, on the slender
-    beams and on the stubby one, where the slide is a large part of the deflection."""
+    beams and on a stubby one, about twice as long as it is deep, where the slide is a large part of the deflection."""
     load = 1e-3 * scenarios.LOAD
-    for length in (scenarios.LENGTH, scenarios.STUBBY_LENGTH):
+    stubby_length = 2.0
+    for length in (scenarios.LENGTH, stubby_length):
         for (nodes, ends, thickness), spread, shear in zip(section_walls(), second_moments(), shear_areas()):
             centre = core.centroid(nodes[ends], thickness)
             _, frames, _, _ = scenarios.cantilever(nodes, ends, thickness,
@@ -87,7 +88,7 @@ def test_slotted_tube_matches_a_thin_circular_arc():
     square = stack([core.mv.y, core.mv.x])                                  # [2] Plane
     turns = (square - (square & centre) * core.mv.w) ^ core.section_plane   # [2] Line
     # The tolerances measure the polygonal approximation to the arc.
-    np.testing.assert_allclose((core.lengths(walls) * thickness).sum(axis=0).to_array(), area, rtol=1e-2)
+    np.testing.assert_allclose(((walls[..., 0] & walls[..., 1]).norm() * thickness).sum(axis=0).to_array(), area, rtol=1e-2)
     np.testing.assert_allclose(render.flat(centre), [centre_x, 0.0], rtol=1e-2, atol=1e-12)
     np.testing.assert_allclose((turns & rigidity(turns)).to_array(),
                                scenarios.MODULUS * np.array([up, across]), rtol=1e-2)
@@ -170,6 +171,4 @@ def test_scenes_draw():
     across = scenarios.across_points()[:1]
     moved = scenarios.cantilever(*tube, scenarios.tip(across, scenarios.LENGTH) & down, scenarios.LENGTH, scenarios.SHEAR_MODULUS)
     assert len(list(render.animate_loads(tube, centres[-1], shears[-1], across, down, moved))) == 1
-    stubs = [scenarios.cantilever(*sections[0], scenarios.tip(centres[0], scenarios.STUBBY_LENGTH) & down,
-                                  scenarios.STUBBY_LENGTH, shear)[1] for shear in (scenarios.SHEAR_MODULUS, scenarios.RIGID_SHEAR)]
-    plt.close(render.draw_stubby(sections[0], stubs, centres[0], down))
+    plt.close(render.draw_sections(sections))
