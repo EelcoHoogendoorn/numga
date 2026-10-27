@@ -10,17 +10,19 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
+
 from examples.util.animation import capture
 from examples.fluids.floating import core
 from examples.util.wgsl import image_figure, meshes, solids
 
-ga, mv = core.ga, core.mv
+mv = core.mv
 # The colours of the hull, of its wet surface by depth, of the water, of the weight and of the buoyancy;
 # the colour maps of the loads and of the cube's map.
 HULL, DECK, WATER, WEIGHT, BUOYANCY = "#e7e2d6", "#c9bfa8", "#5aa9c9", "#d06c36", "#1f6f99"
 WET_MAP, LOAD_MAP, ARM_MAP = "Blues", "viridis", "RdBu"
-# The depth at which the hull's wet surface is darkest, the reach of the water drawn around it, the drawn
-# length of the forces, and the heels over which each curve's tangent is drawn.
+# The depth at which the hull's wet surface is darkest, the half length and half breadth of the water drawn around
+# it, the drawn length of the forces, and the heels over which each curve's tangent is drawn.
 DEEPEST = 0.6
 SEA = (3.0, 1.8)
 FORCE = 0.9
@@ -30,7 +32,7 @@ TANGENT = 25.0
 # so the wet hull shows through it.
 ELEVATION, AZIMUTH = np.radians([18.0, 35.0])
 MARGIN = 0.04
-N_PIXELS = 1400
+N_PIXELS = 700
 WATER_OPACITY = 0.13
 # The glint on the hull, faint, so its facets do not glitter.
 HULL_GLOSS = 0.1
@@ -45,36 +47,33 @@ CUBE_VIEW = 0.95
 # the length of the force lines' dashes, the radii of the force lines, the arrows' shafts and heads, the arm, the
 # waterline, the centre of gravity and the marker of each load, and the arrows' heads' length.
 END_ON = np.radians(90.0)
-N_END_PIXELS, N_CUBE_PIXELS = 400, 260
+N_END_PIXELS, N_CUBE_PIXELS = 200, 130
 END_WATER_OPACITY = 0.3
-DASH = 6.0
+DASH = 3.0
 LINE_RADIUS, SHAFT_RADIUS, HEAD_RADIUS, ARM_RADIUS, WATERLINE_RADIUS, CENTRE_RADIUS, MARKER_RADIUS = (
-    0.6, 1.6, 6.0, 1.6, 0.7, 4.0, 5.0)
-HEAD_LENGTH = 14.0
-# The resolution of the plots beside the end views, in dots per inch.
+    0.4, 0.8, 3.0, 0.8, 0.4, 2.0, 2.5)
+HEAD_LENGTH = 7.0
+# The resolution of the plots beside the end views, in dots per inch, and the size of the text of the one beside the
+# rolling hull, in points.
 DPI = 90
+PLOT_TEXT = 7
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing."""
-    return values.cast(ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of points, on the last axis."""
-    kernel = points.cast(ga.subspace("ywz wxz xwy xyz")).kernel
-    return kernel[..., :3] / kernel[..., 3:]
+    """x, y and z of points, on the last axis: their pairings, at unit weight, with the planes x, y and z."""
+    planes = points.context.multivector
+    return (stack((planes.x, planes.y, planes.z)) & points.normalized()[..., None]).to_array()
 
 
 def degrees(rolls: core.Twist) -> np.ndarray:
-    """The angle of turns about the axis of heel, in degrees."""
-    return np.degrees(rolls.cast(ga.subspace("yz")).kernel[..., 0])
+    """The angle of turns about the axis of heel, in degrees: their pairing with the axis's dual."""
+    return np.degrees((rolls & core.heel_axis.dual()).to_array())
 
 
 def arms(couples: core.Forque, weight: core.Scalar) -> np.ndarray:
     """The righting arm of each couple: its turn back about the axis of heel, over the weight."""
-    return scalars(-(couples & core.heel_axis) / weight)
+    return (-(couples & core.heel_axis) / weight).to_array()
 
 
 def end_view(window: tuple[tuple[float, float], tuple[float, float]], pixels: int) -> solids.View:
@@ -132,9 +131,9 @@ def end_on(triangles: np.ndarray, view: solids.View, parts: list[tuple[solids.Qu
     across, up = view.half + view.pixel
     centre = middle(view)                                                       # [2]
     depth = up - centre[1]
-    reach = np.abs(triangles[..., 0]).max() + view.pixel
+    half_length = np.abs(triangles[..., 0]).max() + view.pixel
     water = solids.boxes(solids.translator(on_end(np.array([centre[0], -depth / 2]), 0.0) - solids.origin),
-                         np.array([reach, across, depth / 2]))
+                         np.array([half_length, across, depth / 2]))
     front = ahead(triangles, view)
     waterline = solids.rods(on_end(np.array([centre[0] - across, 0.0]), front),
                             on_end(np.array([centre[0] + across, 0.0]), front), WATERLINE_RADIUS * view.pixel)
@@ -156,8 +155,9 @@ def in_water(triangles: np.ndarray) -> np.ndarray:
     depth = np.clip(-triangles[..., 2].mean(axis=-1) / DEEPEST, 0, 1)        # [triangles]
     wet = plt.get_cmap(WET_MAP)(0.35 + 0.6 * depth)[:, :3]
     colours = np.where((depth > 0)[:, None], wet, to_rgb(HULL))              # [triangles, 3]
-    reach, breadth = SEA
-    sea = np.array([[-reach, -breadth, 0], [reach, -breadth, 0], [reach, breadth, 0], [-reach, breadth, 0]])
+    half_length, half_breadth = SEA
+    sea = np.array([[-half_length, -half_breadth, 0], [half_length, -half_breadth, 0], [half_length, half_breadth, 0],
+                    [-half_length, half_breadth, 0]])
     corners = solids.mv.point(triangles.reshape(-1, 3))
     faces = np.arange(len(corners)).reshape(-1, 3)
     view = solids.view([solids.mv.point(sea), corners], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
@@ -165,7 +165,7 @@ def in_water(triangles: np.ndarray) -> np.ndarray:
     hull = meshes.samples(corners, faces, np.zeros(3), normals, view, face_values=colours, colour=meshes.by_face,
                           gloss=HULL_GLOSS)
     # The water's surface, a plate a pixel thick.
-    water = solids.plates(solids.mv.point(sea)[None], view.pixel)             # [1, 6] Plane
+    water = solids.plates(solids.mv.point(sea)[None], view.pixel)             # [1, 6] Plane+
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[(water, np.array(to_rgb(WATER)), WATER_OPACITY)],
                        meshes=[(hull, 1.0)])
 
@@ -185,9 +185,9 @@ def draw_curves(heels: np.ndarray, couples: core.Forque, weight: core.Scalar, st
     """The righting arm of each load over the heels `[heels, loads]`, with the tangent at upright that the
     stiffness gives, and the line of no righting."""
     righting = arms(couples, weight)                                         # [heels, loads]
-    slopes = scalars(stiffness(mv.yz, mv.yz) / weight)                       # [loads]
+    slopes = (stiffness(mv.yz, mv.yz) / weight).to_array()                       # [loads]
     colours = plt.get_cmap(LOAD_MAP)(np.linspace(0.05, 0.85, righting.shape[1]))
-    figure, ax = plt.subplots(figsize=(8, 4.2), dpi=110)
+    figure, ax = plt.subplots(figsize=(4.4, 2.6), dpi=DPI)
     ax.axhline(0, color="0.6", lw=0.8)
     near = heels[heels <= TANGENT]
     for curve, slope, colour in zip(righting.T, slopes, colours):
@@ -207,19 +207,18 @@ def draw_cubes(densities: np.ndarray, heels: np.ndarray, couples: core.Forque, f
     """Above, cubes of a few densities at rest; below, the cube's righting couple over density and heel, blue
     turning it back upright and red over, its rests where it turns from over to back drawn thick, its
     balances the other way thin, and the cubes above marked on them."""
-    moments = scalars(-(couples & core.heel_axis) / fluid_weight)            # [densities, heels]
+    moments = (-(couples & core.heel_axis) / fluid_weight).to_array()            # [densities, heels]
     # A rest is stable where the couple turns from pushing over to pushing back as the heel grows.
     rising = np.gradient(moments, heels, axis=1) > 0
     cube_view = end_view(((-CUBE_VIEW, CUBE_VIEW), (-CUBE_VIEW, CUBE_VIEW)), N_CUBE_PIXELS)
     cubes = side_by_side([end_on(coordinates(placed >> cube), cube_view, []) for placed in shown])
     figure, ax = plt.subplots(figsize=(cubes.shape[1] / DPI, 0.6 * cubes.shape[1] / DPI), dpi=DPI)
     largest = np.abs(moments).max()
-    ax.imshow(moments.T, origin="lower", aspect="auto", cmap=ARM_MAP, vmin=-largest, vmax=largest, interpolation="bilinear",
-              extent=(densities[0], densities[-1], heels[0], heels[-1]))
+    ax.contourf(densities, heels, moments.T, levels=np.linspace(-largest, largest, 41), cmap=ARM_MAP)
     for stable, width in ((True, 3), (False, 0.8)):
         ax.contour(densities, heels, np.where(rising == stable, moments, np.nan).T, levels=[0], colors="0.1",
                    linewidths=width)
-    ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1", markersize=7)
+    ax.plot(shown_densities, rests, "o", color="white", markeredgecolor="0.1", markersize=4)
     ax.set(xlim=(densities[0], densities[-1]), ylim=(-3, 93), yticks=[0, 45, 90])
     ax.set(xlabel="density over the water's", ylabel="heel (degrees)")
     figure.subplots_adjust(left=0.1, right=0.98, bottom=0.12, top=0.98)
@@ -242,19 +241,21 @@ def animate_release(hull: core.Point, centres: core.Point, frames: Iterable[tupl
     rows = view.shape[0]
     marker = np.array([0.9 * END[0][0], 0.85 * END[1][1]])
     # The curves set up once; each load's heel so far and its heel now move.
-    figure, ax = plt.subplots(figsize=(1.4 * rows / DPI, rows / DPI), dpi=DPI)
+    figure, ax = plt.subplots(figsize=(1.6 * rows / DPI, rows / DPI), dpi=DPI)
     ax.axhline(0, color="0.6", lw=0.8)
     so_far, now = [], []
     for case, colour in enumerate(colours):
-        ax.plot(extended, extended_curves[:, case], color=colour, lw=1.6, alpha=0.5)
-        so_far += ax.plot([], [], color=colour, lw=2)
-        now += ax.plot([], [], "o", color=colour, markersize=7)
+        ax.plot(extended, extended_curves[:, case], color=colour, lw=1.2, alpha=0.5)
+        so_far += ax.plot([], [], color=colour, lw=1.5)
+        now += ax.plot([], [], "o", color=colour, markersize=4)
     ax.set_xticks([0, 90, 180])
     ax.set_xlim(-30, 215)
-    ax.set(xlabel="heel (degrees)", ylabel="righting arm (m)")
+    ax.tick_params(labelsize=PLOT_TEXT)
+    ax.set_xlabel("heel (degrees)", fontsize=PLOT_TEXT)
+    ax.set_ylabel("righting arm (m)", fontsize=PLOT_TEXT)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
-    figure.subplots_adjust(left=0.16, right=0.97, bottom=0.17, top=0.97)
+    figure.subplots_adjust(left=0.24, right=0.97, bottom=0.25, top=0.97)
     states = []
     for roll, placed, push, weighing in frames:
         states.append([degrees(roll), arms(push + weighing, weight)])

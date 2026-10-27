@@ -8,18 +8,19 @@ presses on it until it turns at the one rate that leaves no torque on it, found 
 
 The particle is an ellipsoid, a stretch of the unit sphere along its own axes. Its shape is its dual
 quadric, a map from planes to offsets, `Shape = Point <- Plane`: the unit sphere's, `Plane.dual()`, carried
-by the stretch, the offsets forward and the planes back by its adjugate, `stretch(Plane.dual()(stretch.adjugate()))`.
-Roundness is where the metric enters, and the surface is the offsets with `shape.solve(offset) & offset == 1`.
+by the stretch, the offsets forward and the planes back by its adjugate,
+`stretch(Plane.dual()(stretch.adjugate()))`. Roundness is where the metric enters, and the surface is the
+offsets with `shape.solve(offset) & offset == 1`.
 Jeffery's spin, a bivector, satisfies one equation between maps:
 
     Point.commutator(spin)(shape) + shape(Plane.commutator(spin)) == gradient(shape) - shape(gradient.adjugate())
 
 On the left, the shape's rate of change as the body turns at the spin: its offsets turn, and so do the
-planes that read them. On the right, the gradient acting on the shape's offsets, less its pairing transpose
-acting on the planes. Both sides are antisymmetric, so their joins with a free offset,
-`(Point & map(Plane)).trace(1, 2)`, carry them whole, with no metric: a linear map from the spin to a join,
-and one solve. A sphere spins at the flow's own rate, half the curl of the gradient. A rod lingers along the flow, then flips end over end, and its
-axis comes back to where it started after a fixed time, on a closed path on the sphere of
+planes that read them. On the right, the gradient acting on the shape's offsets, less its adjugate acting on the
+planes. Both sides are antisymmetric, so their joins with a free offset, `(Point & map(Plane)).trace(1, 2)`,
+carry them whole, with no metric: a linear map from the spin to a join, and one solve. A sphere spins at
+the flow's own rate, half the curl of the gradient. A rod lingers along the flow, then flips end over end,
+and its axis comes back to where it started after a fixed time, on a closed path on the sphere of
 directions: a Jeffery orbit. An ellipsoid with three different axes never quite repeats.
 
 In the index notation of suspension mechanics, in the particle's principal frame, the relative
@@ -37,19 +38,22 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                # Scalar+
 # Offsets, and their velocities, are antivectors with intrinsic orientation.
-Point = ga.gatype.antivector()
-Bivector = ga.gatype.bivector()
-Rotor = ga.gatype.rotor()
+Point = ga.gatype.antivector()                             # Antivector-
+Bivector = ga.gatype.bivector()                            # Bivector+
+Rotor = ga.gatype.rotor()                                  # Rotor+
 # The planes that read offsets are vectors, with extrinsic orientation.
-Plane = ga.gatype.vector()
-Stretch = ga.gatype((Point, Point))                        # Point <- Point: the unit sphere onto the body
-Shape = ga.gatype((Point, Plane))                          # Point <- Plane: the body's dual quadric
-Gradient = ga.gatype((Point, Point))                       # Point <- Point: velocity per offset
+Plane = ga.gatype.vector()                                 # Vector+
+# A stretch, carrying the unit sphere onto the body.
+Stretch = ga.gatype((Point, Point))                        # Point- <- Point-
+# The body's dual quadric.
+Shape = ga.gatype((Point, Plane))                          # Point- <- Plane+
+# A flow's gradient: the velocity per offset.
+Gradient = ga.gatype((Point, Point))                       # Point- <- Point-
 
 # The planes across the flow and across the gradient, and the vortex plane, the plane the fluid turns in.
-axes = mv.basis()                                          # [3] Plane
+axes = mv.basis()                                          # [3] Plane+
 
 
 # --- math -----------------------------------------------------------------------------
@@ -57,34 +61,34 @@ def stretch(semi_axes: np.ndarray) -> Stretch:
     """Ellipsoids in their own frames: the unit sphere stretched by each semi-axis `[..., 3]` along
     its axis."""
     # Each point carried along each axis by its height above the axis's plane, times the semi-axis.
-    return (axes.dual() * semi_axes * (axes & Point)).sum(axis=-1)            # [...] Stretch
+    return (axes.dual() * semi_axes * (axes & Point)).sum(axis=-1)   # [...] Point- <- Point-
 
 
 def curl(gradient: Gradient) -> Bivector:
     """The curl of a flow's gradient: the bivector whose turning map is the gradient less its
     adjoint, twice the spin of the fluid. The reciprocal of a unit antivector is its reverse, and the
     commutator of two directions is the plane they span."""
-    return Point.reverse().commutator(gradient(Point)).contract(1, 2)        # [...] Bivector
+    return Point.reverse().commutator(gradient(Point)).contract(1, 2)   # [...] Bivector+
 
 
 def spin(shape: Shape, gradient: Gradient) -> Bivector:
     """The spin of a rigid ellipsoid of the given shape in a flow of the given gradient, free of
     torque: Jeffery's."""
     # The shape's rate of change as the body turns at a spin: its offsets turn, and the planes that read them.
-    turning_rate = Point.commutator(Bivector)(shape) + shape(Plane.commutator(Bivector))   # [...] Point <- (Plane, Bivector)
-    # The gradient on the shape's offsets, less its pairing transpose on the planes.
-    flow_rate = gradient(shape) - shape(gradient.adjugate())                  # [...] Point <- Plane
+    turning_rate = Point.commutator(Bivector)(shape) + shape(Plane.commutator(Bivector))   # [...] Point- <- (Plane+, Bivector+)
+    # The gradient on the shape's offsets, less its adjugate on the planes.
+    flow_rate = gradient(shape) - shape(gradient.adjugate())   # [...] Point- <- Plane+
     # Both sides are antisymmetric: their joins with a free offset carry them whole, a map on spins and a join.
-    return (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)).trace(1, 2))   # [...] Bivector
+    return (Point & turning_rate(Plane)).trace(1, 2).solve((Point & flow_rate(Plane)).trace(1, 2))   # [...] Bivector+
 
 
 def placed(stretches: Stretch, rotors: Rotor) -> Shape:
     """The shape of each body turned by its rotor: the unit sphere's dual quadric, carried by the turned
     stretch."""
-    stretch = rotors >> stretches(rotors << Point)                            # [...] Stretch
+    stretch = rotors >> stretches(rotors << Point)         # [...] Point- <- Point-
     # The unit sphere is where the metric enters: each plane to the direction across it.
-    sphere = Plane.dual()                                                     # [] Shape
-    return stretch(sphere(stretch.adjugate()))                                # [...] Shape
+    sphere = Plane.dual()                                  # [] Point- <- Plane+
+    return stretch(sphere(stretch.adjugate()))             # [...] Point- <- Plane+
 
 
 def step(rotors: Rotor, stretches: Stretch, gradient: Gradient, dt: float) -> Rotor:

@@ -62,83 +62,83 @@ CIRCULATION = mv(core.Circulation, [1.0])
 
 
 # --- math -----------------------------------------------------------------------------
-def flying(points: core.Vector) -> core.Vector:
+def flying(points: core.Point) -> core.Point:
     """The smoke ring flow's velocity at every vertex."""
     return core.velocity(points, CIRCULATION)
 
 
-def line_speeds(curves: core.Vector) -> core.Scalar:
+def line_speeds(curves: core.Point) -> core.Scalar:
     """The smoke ring flow's speed at every vertex of open lines `[..., n]`: inside them as on a closed curve; at the
     two ends, which the closing edge would bend, their neighbours'."""
-    inner = flying(curves).norm()[..., 1:-1]                                     # [..., n - 2] Scalar
-    return concatenate([inner[..., :1], inner, inner[..., -1:]], axis=-1)        # [..., n] Scalar
+    inner = flying(curves).norm()[..., 1:-1]                                     # [..., n - 2] Scalar+
+    return concatenate([inner[..., :1], inner, inner[..., -1:]], axis=-1)        # [..., n] Scalar+
 
 
-def pushed(points: core.Vector) -> core.Vector:
+def pushed(points: core.Point) -> core.Point:
     """The velocity the leapfrogging rings induce at every vertex of both `[rings, n]`."""
     return core.induced(points, FROG_CIRCULATIONS, FROG_CORE)
 
 
-def sweep(points: core.Vector, step: float, n_steps: int, stride: int) -> core.Vector:
-    """The curves of the smoke ring flow, every `stride` steps `[times, n] Vector`."""
+def sweep(points: core.Point, step: float, n_steps: int, stride: int) -> core.Point:
+    """The curves of the smoke ring flow, every `stride` steps `[times, n] Point`."""
     return stack(list(islice(core.flow(points, flying, step), 0, n_steps + 1, stride)))
 
 
-def wavy_surface() -> core.Vector:
-    """The Hashimoto surface of the wavy ring: its curves through the flow `[times, n] Vector`."""
+def wavy_surface() -> core.Point:
+    """The Hashimoto surface of the wavy ring: its curves through the flow `[times, n] Point`."""
     return sweep(core.wavy_ring(N_WAVY, WAVY_MODE, WAVY_TILT), SURFACE_STEP, N_SURFACE_STEPS, SURFACE_STRIDE)
 
 
-def knot() -> core.Vector:
-    """The trefoil of vortex through the flow `[times, n] Vector`."""
+def knot() -> core.Point:
+    """The trefoil of vortex through the flow `[times, n] Point`."""
     return sweep(core.torus_knot(*KNOT_WINDINGS, *KNOT_RADII, N_KNOT), KNOT_STEP, N_KNOT_STEPS, KNOT_STRIDE)
 
 
-def discrete() -> core.Vector:
+def discrete() -> core.Point:
     """The plain and the wavy ring through the discrete-time flow, one Bäcklund transformation per step:
-    their curves `[steps + 1, rings, n] Vector`, the wavy ring's sweeping a discrete Hashimoto surface."""
-    rings = stack([core.ring(N_DISCRETE), core.wavy_ring(N_DISCRETE, WAVY_MODE, WAVY_TILT)])   # [rings, n] Vector
-    twist = mv(core.Parameter, [PARAMETER])                                      # [] Parameter
+    their curves `[steps + 1, rings, n] Point`, the wavy ring's sweeping a discrete Hashimoto surface."""
+    rings = stack([core.ring(N_DISCRETE), core.wavy_ring(N_DISCRETE, WAVY_MODE, WAVY_TILT)])   # [rings, n] Point-
+    twist = mv(core.Parameter, [PARAMETER])                                      # [] Parameter-
 
-    def stepped() -> Iterator[core.Vector]:
+    def stepped() -> Iterator[core.Point]:
         curves = rings
         while True:
             yield curves
             curves = core.advance(curves, twist)
 
-    return stack(list(islice(stepped(), N_DISCRETE_STEPS + 1)))                 # [steps + 1, rings, n] Vector
+    return stack(list(islice(stepped(), N_DISCRETE_STEPS + 1)))                  # [steps + 1, rings, n] Point-
 
 
-def soliton() -> core.Vector:
+def soliton() -> core.Point:
     """A loop made on a straight vortex line by one Bäcklund transformation, from an offset leaning just
     off the line's forward direction, and carried along it by the discrete-time flow: the curves
-    `[steps + 1, n] Vector`."""
-    line = mv.x.dual() * (np.arange(N_SOLITON) - N_SOLITON / 2)                  # [n] Point
-    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x.dual()) * SOLITON_OFFSET_LENGTH        # [] Point
-    twist, carry = mv(core.Parameter, [SOLITON_PARAMETER]), mv(core.Parameter, [CARRY_PARAMETER])   # [] Parameter
+    `[steps + 1, n] Point`."""
+    line = mv.x.dual() * (np.arange(N_SOLITON) - N_SOLITON / 2)                  # [n] Point-
+    start = ((mv.zx * SOLITON_LEAN).exp() >> mv.x.dual()) * SOLITON_OFFSET_LENGTH   # [] Point-
+    twist, carry = mv(core.Parameter, [SOLITON_PARAMETER]), mv(core.Parameter, [CARRY_PARAMETER])   # [] Parameter-, Parameter-
 
-    def carried() -> Iterator[core.Vector]:
-        curve = core.backlund(line, start, twist)                                # [n] Vector
+    def carried() -> Iterator[core.Point]:
+        curve = core.backlund(line, start, twist)                                # [n] Point-
         while True:
             yield curve
             # Offsets of unit length from minus the first edge: on the straight end, each vertex moves
             # onto the one before, and relabelled the end stays where it is.
-            moved = core.backlund(curve, curve[0] - curve[1], carry)[1:]         # [n - 1] Vector
+            moved = core.backlund(curve, curve[0] - curve[1], carry)[1:]         # [n - 1] Point-
             # The line runs on straight past its last vertex.
-            curve = concatenate([moved, 2 * moved[-1:] - moved[-2:-1]])         # [n] Vector
+            curve = concatenate([moved, 2 * moved[-1:] - moved[-2:-1]])          # [n] Point-
 
-    return stack(list(islice(carried(), N_SOLITON_STEPS + 1)))                  # [steps + 1, n] Vector
+    return stack(list(islice(carried(), N_SOLITON_STEPS + 1)))                   # [steps + 1, n] Point-
 
 
-def leapfrog() -> core.Vector:
+def leapfrog() -> core.Point:
     """Two coaxial vortex rings moving each other by the Biot–Savart law, through two cycles of
-    leapfrogging: the rings `[times, rings, n] Vector`."""
-    rings = core.coaxial_rings(FROG_RADIUS, N_FROG, FROG_HEIGHTS)                 # [rings, n] Vector
-    return stack(list(islice(core.flow(rings, pushed, FROG_STEP), N_FROG_STEPS + 1)))   # [times, rings, n] Vector
+    leapfrogging: the rings `[times, rings, n] Point`."""
+    rings = core.coaxial_rings(FROG_RADIUS, N_FROG, FROG_HEIGHTS)                # [rings, n] Point-
+    return stack(list(islice(core.flow(rings, pushed, FROG_STEP), N_FROG_STEPS + 1)))   # [times, rings, n] Point-
 
 
 # --- plumbing -------------------------------------------------------------------------
-def passes(curves: core.Vector) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def passes(curves: core.Point) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """The mean height and radius of each ring at each time `[times, rings]`, and the times just before
     one ring passes through the other."""
     # Each point paired with the axis: its height along it.
@@ -151,7 +151,7 @@ def main() -> None:
     from examples.util.animation import save_animation, save_figure
     from examples.fluids.smoke_rings import render
 
-    velocities = flying(core.ring(N_RING))                                       # [n] Vector
+    velocities = flying(core.ring(N_RING))                                       # [n] Point-
     surface, trefoil = wavy_surface(), knot()
     save_figure(render.draw_surface(core.closed(surface)), "smoke_rings_surface")
     save_animation(render.animate_curves(core.closed(trefoil), core.closed(flying(trefoil).norm())), "smoke_rings_knot",
@@ -165,7 +165,7 @@ def main() -> None:
     frogs = leapfrog()
     save_figure(render.draw_swept(core.closed(frogs)), "smoke_rings_swept")
     # Each time's rings pushed by both: the induced flow couples every vertex of a time, and times are a batch.
-    frog_speeds = stack([pushed(rings) for rings in frogs]).norm()                 # [times, rings, n] Scalar
+    frog_speeds = stack([pushed(rings) for rings in frogs]).norm()               # [times, rings, n] Scalar+
     save_animation(render.animate_curves(core.closed(frogs), core.closed(frog_speeds)), "smoke_rings_leapfrog", DURATION_MS)
 
     # checks
@@ -197,14 +197,14 @@ def main() -> None:
     np.testing.assert_allclose(angles.sum(axis=-1), 2 * np.pi, atol=1e-3)
     # The loop keeps its shape, up to how the vertices sample it, and travels further than its width.
     along = np.arange(angles.shape[-1])
-    centres = (angles * along).sum(axis=-1) / (2 * np.pi)                       # [steps + 1]
+    centres = (angles * along).sum(axis=-1) / (2 * np.pi)                        # [steps + 1]
     spreads = (angles * (along - centres[:, None]) ** 2).sum(axis=-1) / (2 * np.pi)
     np.testing.assert_allclose(spreads, spreads[0], rtol=1e-2)
     assert centres[-1] - centres[0] > 2 * np.sqrt(spreads[0])
     # A ring alone flies along its axis without changing shape, and the leapfrogging rings keep their
     # impulse, each ring's vector area times its circulation; the tolerance tests the steps along the
     # filaments and in time.
-    alone = core.induced(frogs[0, :1], FROG_CIRCULATIONS[:1], FROG_CORE)         # [1, n] Vector
+    alone = core.induced(frogs[0, :1], FROG_CIRCULATIONS[:1], FROG_CORE)         # [1, n] Point-
     np.testing.assert_allclose((alone - alone[:, :1]).norm().to_array(), 0.0, atol=1e-12)
     impulse = (core.impulse(frogs) * FROG_CIRCULATIONS).sum(axis=-1).kernel      # [times, 3]
     np.testing.assert_allclose(impulse, np.broadcast_to(impulse[0], impulse.shape), atol=3e-3 * np.abs(impulse[0]).max())

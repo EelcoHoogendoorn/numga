@@ -28,25 +28,25 @@ from numga.algebras import PGA3D as ga
 from examples.mechanics.simplex import simplex_inertia_weights
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Plane = ga.gatype.vector()
-Point = ga.gatype.antivector()
-Twist = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-Motor = ga.gatype.rotor()
+Scalar = ga.gatype.scalar()                                             # Scalar+
+Plane = ga.gatype.vector()                                              # Vector+
+Point = ga.gatype.antivector()                                          # Antivector-
+Twist = ga.gatype.bivector()                                            # Bivector+
+Forque = ga.gatype.antibivector()                                       # Antibivector-
+Motor = ga.gatype.rotor()                                               # Rotor+
 # Turns about horizontal lines through the origin: heel and trim.
-Tilt = Twist.derive.nondegenerate.derive.containing("z")
+Tilt = Twist.derive.nondegenerate.derive.containing("z")                # Bivector+
 # The energy of a small tilt.
-Stiffness = ga.gatype((Scalar, Tilt, Tilt))                 # Scalar <- (Tilt, Tilt)
+Stiffness = ga.gatype((Scalar, Tilt, Tilt))                             # Scalar+ <- (Tilt+, Tilt+)
 
 # The still water surface, the point at infinity upward, the vertical shift, and the axis of heel through
 # the origin, along the body: the meet of the planes y = 0 and z = 0.
-water = mv.z                                                # [] Plane
-up = water.dual()                                           # [] Point
-heave = mv.w ^ water                                        # [] Twist
-heel_axis = mv.y ^ mv.z                                     # [] Twist
+water = mv.z                                                            # [] Plane+
+up = water.dual()                                                       # [] Point-
+heave = mv.w ^ water                                                    # [] Twist+
+heel_axis = mv.yz                                                       # [] Twist+
 # The origin, from which the hull's enclosed volume is summed.
-ORIGIN = mv.point([0.0, 0.0, 0.0])                          # [] Point
+ORIGIN = mv.point([0.0, 0.0, 0.0])                                      # [] Point-
 # Per triangle, the points halfway between each corner and the centroid: they integrate anything quadratic
 # over the triangle exactly, each standing for a third of its area.
 RULE = 3 * simplex_inertia_weights(3)
@@ -57,13 +57,13 @@ def pressing(triangles: Point, surface: Plane) -> tuple[Point, Forque]:
     """Sample points of the wet part of each triangle `[triangles, 3]` under each water surface, and the
     water's push at each per unit of pressure `[..., triangles, parts, samples]`: a line through the point,
     square to the triangle, against its outward normal, with a third of the part's area."""
-    parts = wet(triangles, surface)                                     # [..., triangles, parts, 3] Point
-    samples = (parts[..., None, :] * RULE).sum(axis=-1)                 # [..., triangles, parts, samples] Point
+    parts = wet(triangles, surface)                                     # [..., triangles, parts, 3] Point-
+    samples = (parts[..., None, :] * RULE).sum(axis=-1)                 # [..., triangles, parts, samples] Point-
     # The plane through a part's corners, wound as its triangle, has twice the part's area as its weight.
     # The hull's enclosed volume, signed by the same winding, is positive exactly when those planes face
     # outward: times its sign, every plane faces outward, whichever way the hull is wound.
-    volume = (ORIGIN & triangles[..., 0] & triangles[..., 1] & triangles[..., 2]).sum(axis=-1)   # [] Scalar
-    planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())   # [..., triangles, parts] Plane
+    volume = (ORIGIN & triangles[..., 0] & triangles[..., 1] & triangles[..., 2]).sum(axis=-1)   # [] Scalar+
+    planes = (parts[..., 0] & parts[..., 1] & parts[..., 2]) * (volume / volume.norm())   # [..., triangles, parts] Plane+
     return samples, -(samples | planes[..., None]) / 6
 
 
@@ -71,9 +71,9 @@ def buoyancy(triangles: Point, surface: Plane, fluid_weight: float) -> tuple[For
     """The water's push on the body below each water surface, the sum of the pressure lines over its wet
     surface, each pressure the fluid's weight times the depth; and how the push grows as the surface rises."""
     samples, lines = pressing(triangles, surface)                       # [..., triangles, parts, samples]
-    depths = -(surface[..., None, None, None] & samples)                # [..., triangles, parts, samples] Scalar
-    push = (fluid_weight * depths * lines).sum(axis=(-3, -2, -1))       # [...] Forque
-    growth = (fluid_weight * lines).sum(axis=(-3, -2, -1))              # [...] Forque
+    depths = -(surface[..., None, None, None] & samples)                # [..., triangles, parts, samples] Scalar+
+    push = (fluid_weight * depths * lines).sum(axis=(-3, -2, -1))       # [...] Forque-
+    growth = (fluid_weight * lines).sum(axis=(-3, -2, -1))              # [...] Forque-
     return push, growth
 
 
@@ -83,15 +83,15 @@ def afloat(triangles: Point, turns: Motor, weight: Scalar, heights: Scalar, flui
     floats: its buoyancy balancing its weight, by Newton's method from the given heights."""
     for _ in range(steps):
         push, growth = buoyancy(triangles, turns << (water - heights * mv.w), fluid_weight)
-        lifting = turns << heave                                        # [...] Twist
+        lifting = turns << heave                                        # [...] Twist+
         heights = heights + (weight - (push & lifting)) / (growth & lifting)
-    return heights                                                      # [...] Scalar
+    return heights                                                      # [...] Scalar+
 
 
 def placement(turns: Motor, heights: Scalar) -> Motor:
     """The motion taking the body's frame to the world's, the water surface at the world's `water`: the
     turn, then down by the height of the water surface over the body's origin."""
-    return (heave * (heights / 2)).exp() * turns                        # [...] Motor
+    return (heave * (heights / 2)).exp() * turns                        # [...] Motor+
 
 
 def forces(triangles: Point, turns: Motor, heights: Scalar, weight: Scalar, centre: Point,
@@ -100,21 +100,21 @@ def forces(triangles: Point, turns: Motor, heights: Scalar, weight: Scalar, cent
     buoyancy, and its weight, a line straight down through its centre of gravity. Their sum is the righting
     couple."""
     push, _ = buoyancy(triangles, turns << (water - heights * mv.w), fluid_weight)
-    return push, weight * (centre & (turns << -up))                     # [...] Forque each
+    return push, weight * (centre & (turns << -up))                     # [...] Forque-
 
 
 def stiffness(triangles: Point, heights: Scalar, weight: Scalar, centre: Point, fluid_weight: float) -> Stiffness:
     """The energy of a small tilt of the upright body floating at each height: the change of the net force
     under the tilt, the water surface turning against the body and the weight turning with it, paired with
     the tilt."""
-    surface = water - heights * mv.w                                    # [...] Plane
+    surface = water - heights * mv.w                                    # [...] Plane+
     samples, lines = pressing(triangles, surface)                       # [..., triangles, parts, samples]
     # In the body's frame a small tilt turns the water surface, deepening each wet point by its height above
     # the change of the surface, and turns the direction of the weight with it.
-    tilted = surface[..., None, None, None].commutator(Tilt)            # [..., 1, 1, 1] Plane <- Tilt
-    pushing = (fluid_weight * -(tilted & samples) * lines).sum(axis=(-3, -2, -1))   # [...] Forque <- Tilt
-    weighing = weight * (centre & (-up).commutator(Tilt))               # [...] Forque <- Tilt
-    return Tilt & (pushing + weighing)                                  # [...] Scalar <- (Tilt, Tilt)
+    tilted = surface[..., None, None, None].commutator(Tilt)            # [..., 1, 1, 1] Plane+ <- Tilt+
+    pushing = (fluid_weight * -(tilted & samples) * lines).sum(axis=(-3, -2, -1))   # [...] Forque- <- Tilt+
+    weighing = weight * (centre & (-up).commutator(Tilt))               # [...] Forque- <- Tilt+
+    return Tilt & (pushing + weighing)                                  # [...] Scalar+ <- (Tilt+, Tilt+)
 
 
 # --- the step outside the algebra ---------------------------------------------------------
@@ -122,7 +122,7 @@ def wet(triangles: Point, surface: Plane) -> Point:
     """The wet part of each triangle `[triangles, 3]` below each water surface, as two triangles wound as
     the triangle, either or both of no area `[..., triangles, parts, 3]`: with the corners ordered from
     deepest to highest, the deepest corner fanned to the points where the edges leave the water."""
-    depths = -(surface[..., None, None] & triangles)                    # [..., triangles, 3] Scalar
+    depths = -(surface[..., None, None] & triangles)                    # [..., triangles, 3] Scalar+
     head = depths.cast(ga.subspace.scalar()).kernel[..., 0]
     corners = np.broadcast_to(triangles.cast(ga.subspace.antivector()).kernel, head.shape + (4,))
     order = np.argsort(-head, axis=-1)

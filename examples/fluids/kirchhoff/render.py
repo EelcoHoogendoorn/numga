@@ -26,16 +26,16 @@ GAP = 1.0
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    """x and y of points, on the last axis, the view from above: each point paired with the planes across
-    x and y, over its pairing with the plane at infinity."""
-    return ((stack((mv.x, mv.y), axis=-1) & points[..., None]) / (mv.w & points[..., None])).to_array()
+    """x and y of points, on the last axis, the view from above: each point, at unit weight, paired with the planes
+    across x and y."""
+    return (stack((mv.x, mv.y), axis=-1) & points.normalized()[..., None]).to_array()
 
 
 def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
     """The fluid's kinetic energy over the solid's for spheroids of each aspect `[aspects, 3]`, against
     the aspect: discs on the left, rods on the right."""
     values = ratios.to_array()                                                # [aspects, 3]
-    figure, ax = plt.subplots(figsize=(6.0, 3.6), dpi=120)
+    figure, ax = plt.subplots(figsize=(4.4, 2.6), dpi=90)
     for column, colour in enumerate(COEFFICIENTS):
         ax.plot(aspects, values[:, column], color=colour, linewidth=1.8)
     ax.axvline(1, color="#cbd5e1", linewidth=0.8, zorder=0)
@@ -55,7 +55,7 @@ def draw_coefficients(aspects: np.ndarray, ratios: core.Scalar) -> plt.Figure:
 def impulse_line(impulse: core.Forque, extent: tuple[float, float]) -> np.ndarray:
     """The ends of the impulse's line within the given extent along the first axis `[2, 2]`: where it
     meets the planes square to that axis there."""
-    ends = impulse ^ (mv.x - np.array(extent) * mv.w)                         # [2] Point
+    ends = impulse ^ (mv.x - np.array(extent) * mv.w)                         # [2] Point-
     return coordinates(ends)
 
 
@@ -74,7 +74,7 @@ def animate_gliding(impulse: core.Forque,
     line = impulse_line(impulse, extent)                                     # [2, 2]
     height = lane * count
     # The lanes and their impulses set up once; each body, its path so far and its nose move.
-    figure = plt.figure(figsize=(12.0, 12.0 * height / (extent[1] - extent[0])), dpi=100)
+    figure = plt.figure(figsize=(4.0, 4.0 * height / (extent[1] - extent[0])), dpi=100)
     ax = figure.add_axes((0, 0, 1, 1))
     trails, bodies, dots = [], [], []
     for case in range(count):

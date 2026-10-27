@@ -25,11 +25,11 @@ background = np.ones(3)
 # a share of its larger side; the pictures' pixels across, and the gloss of the swept surfaces.
 elevation, azimuth = np.radians([50.0, 40.0])
 margin = 0.05
-n_picture_pixels = 660
-n_frame_pixels = 500
+n_picture_pixels = 330
+n_frame_pixels = 250
 surface_gloss = 0.1
 # A curve's width in pixels.
-curve_width = 12.0
+curve_width = 6.0
 # The share of the largest motion above which a vertex counts as moving, for framing a curve's trail, and
 # the trail's opacity, so that the curve shows through it.
 moving_share = 0.01
@@ -38,8 +38,9 @@ trail_opacity = 0.6
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    """The x, y and z coordinates of points, antivectors."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """The x, y and z coordinates of points, antivectors: their pairings with the planes x, y and z."""
+    mv = core.mv
+    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
 def places(points: np.ndarray) -> solids.Point:
@@ -147,12 +148,13 @@ def animate_trail(curves: core.Point, speeds: core.Scalar) -> Iterator[np.ndarra
 def draw_turns(turns: core.Rotor) -> plt.Figure:
     """The turning angle at every inner vertex of a curve through time `[times, n]`: vertices across,
     times down, the angle as darkness."""
-    parts = turns.cast(core.ga.subspace("1 yz zx xy")).kernel                  # [times, n, 4]
-    angles = np.arctan2(np.linalg.norm(parts[..., 1:], axis=-1), parts[..., 0])   # [times, n]
-    figure = plt.figure(figsize=(6.0, 4.0), dpi=110)
+    # The angle of each turn: the size of its logarithm.
+    angles = turns.log().norm().to_array()                                     # [times, n]
+    figure = plt.figure(figsize=(3.6, 2.4), dpi=90)
     ax = figure.add_axes((0.1, 0.12, 0.86, 0.84))
-    ax.imshow(angles, cmap="Greys", origin="upper", aspect="auto", interpolation="nearest",
-              extent=(0.5, angles.shape[1] + 0.5, angles.shape[0] - 0.5, -0.5))
+    # Each vertex and time a cell of its own, drawn as the cell it is.
+    ax.pcolormesh(np.arange(angles.shape[1] + 1) + 0.5, np.arange(angles.shape[0] + 1) - 0.5, angles, cmap="Greys")
+    ax.invert_yaxis()
     ax.set(xlabel="vertex", ylabel="time", xticks=[], yticks=[])
     ax.spines[:].set_visible(False)
     return figure

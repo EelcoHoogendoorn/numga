@@ -43,6 +43,8 @@ STEP = 0.05
 N_FRAMES = 80
 N_STEPS_PER_FRAME = 3
 DURATION_MS = 50
+# The animation's palette.
+N_COLOURS = 64
 
 
 # --- math -----------------------------------------------------------------------------
@@ -54,28 +56,28 @@ def heeled(degrees: np.ndarray) -> core.Motor:
 def ship() -> tuple[core.Point, core.Scalar, core.Point]:
     """The hull; its weight, the water it displaces upright at its waterline; and its centre of gravity at
     each height `[loads]`."""
-    hull = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, N_CELLS)                  # [triangles, 3] Point
-    upright, _ = core.buoyancy(hull, core.water, FLUID_WEIGHT)               # [] Forque
-    centres = mv.point([[0, 0, height] for height in CENTRE_HEIGHTS])         # [loads] Point
+    hull = core.wigley(LENGTH, BEAM, DRAFT, FREEBOARD, N_CELLS)              # [triangles, 3] Point-
+    upright, _ = core.buoyancy(hull, core.water, FLUID_WEIGHT)               # [] Forque-
+    centres = mv.point([[0, 0, height] for height in CENTRE_HEIGHTS])        # [loads] Point-
     return hull, upright & core.heave, centres
 
 
 def shown_ship(hull: core.Point, weight: core.Scalar) -> tuple[core.Motor, core.Forque]:
     """The hull heeled by the shown angle and floating: its placement in the world, and its buoyancy."""
-    turn = heeled(np.array([SHOWN_HEEL]))                                    # [1] Motor
-    height = core.afloat(hull, turn, weight, mv.scalar([[0.0]]), FLUID_WEIGHT, N_NEWTON_STEPS)   # [1] Scalar
-    push, _ = core.buoyancy(hull, turn << (core.water - height * mv.w), FLUID_WEIGHT)   # [1] Forque
+    turn = heeled(np.array([SHOWN_HEEL]))                                    # [1] Motor+
+    height = core.afloat(hull, turn, weight, mv.scalar([[0.0]]), FLUID_WEIGHT, N_NEWTON_STEPS)   # [1] Scalar+
+    push, _ = core.buoyancy(hull, turn << (core.water - height * mv.w), FLUID_WEIGHT)   # [1] Forque-
     return core.placement(turn, height)[0], push[0]
 
 
 def righting_curves(hull: core.Point, weight: core.Scalar, centres: core.Point) -> tuple[core.Forque, core.Stiffness]:
     """The righting couple of the hull with each load at each heel `[heels, loads]`, and its stiffness
     against a small tilt upright `[loads]`."""
-    turns = heeled(HEELS)                                                    # [heels] Motor
+    turns = heeled(HEELS)                                                    # [heels] Motor+
     start = mv.scalar(np.zeros((len(HEELS), 1)))
     # Every load weighs the same, so the hull floats at the same height at each heel, whatever the load.
-    heights = core.afloat(hull, turns, weight, start, FLUID_WEIGHT, N_NEWTON_STEPS)   # [heels] Scalar
-    push, weighing = core.forces(hull, turns[:, None], heights[:, None], weight, centres, FLUID_WEIGHT)   # [heels, loads] Forque each
+    heights = core.afloat(hull, turns, weight, start, FLUID_WEIGHT, N_NEWTON_STEPS)   # [heels] Scalar+
+    push, weighing = core.forces(hull, turns[:, None], heights[:, None], weight, centres, FLUID_WEIGHT)   # [heels, loads] Forque-, Forque-
     # Upright, the hull floats at its waterline, its weight being the water it displaces there.
     return push + weighing, core.stiffness(hull, mv.scalar([0.0]), weight, centres, FLUID_WEIGHT)
 
@@ -83,19 +85,19 @@ def righting_curves(hull: core.Point, weight: core.Scalar, centres: core.Point) 
 def cubes() -> tuple[core.Point, core.Scalar, core.Forque]:
     """The unit cube, the weights of the densities `[densities, 1]`, and its righting couple at each density
     and heel `[densities, heels]`, its centre of gravity at its middle."""
-    cube = core.box(np.ones(3))                                              # [triangles, 3] Point
-    weights = mv.scalar((FLUID_WEIGHT * DENSITIES)[:, None, None])          # [densities, 1] Scalar
-    turns = heeled(CUBE_HEELS)                                               # [heels] Motor
+    cube = core.box(np.ones(3))                                              # [triangles, 3] Point-
+    weights = mv.scalar((FLUID_WEIGHT * DENSITIES)[:, None, None])           # [densities, 1] Scalar+
+    turns = heeled(CUBE_HEELS)                                               # [heels] Motor+
     start = mv.scalar(np.zeros((len(DENSITIES), len(CUBE_HEELS), 1)))
-    heights = core.afloat(cube, turns, weights, start, FLUID_WEIGHT, N_NEWTON_STEPS)   # [densities, heels] Scalar
-    push, weighing = core.forces(cube, turns, heights, weights, mv.w.dual(), FLUID_WEIGHT)   # [densities, heels] Forque each
+    heights = core.afloat(cube, turns, weights, start, FLUID_WEIGHT, N_NEWTON_STEPS)   # [densities, heels] Scalar+
+    push, weighing = core.forces(cube, turns, heights, weights, mv.w.dual(), FLUID_WEIGHT)   # [densities, heels] Forque-, Forque-
     return cube, weights, push + weighing
 
 
 def resting(cube: core.Point, densities: list[float], heels: np.ndarray) -> core.Motor:
     """The placements of cubes of the given densities, floating at the given heels."""
-    weights = mv.scalar([[FLUID_WEIGHT * density] for density in densities])   # [shown] Scalar
-    turns = heeled(heels)                                                    # [shown] Motor
+    weights = mv.scalar([[FLUID_WEIGHT * density] for density in densities])   # [shown] Scalar+
+    turns = heeled(heels)                                                    # [shown] Motor+
     start = mv.scalar(np.zeros((len(densities), 1)))
     return core.placement(turns, core.afloat(cube, turns, weights, start, FLUID_WEIGHT, N_NEWTON_STEPS))
 
@@ -105,19 +107,19 @@ def released(hull: core.Point, weight: core.Scalar, centres: core.Point
     """The hull released from a heel with each load `[loads]`: at every frame its roll, its placement in the
     world, its buoyancy and its weight. The hull turns about its axis of heel, floating at each moment at the
     height where its buoyancy carries its weight, its roll driven by the righting couple and damped."""
-    inertia = weight / GRAVITY * (GYRATION * BEAM) ** 2                     # [] Scalar
+    inertia = weight / GRAVITY * (GYRATION * BEAM) ** 2                      # [] Scalar+
     # The roll and its rate are turns about the axis of heel, the axis scaled by the angle and the rate.
-    roll = mv.yz * np.full(centres.shape[0], np.radians(RELEASE_HEEL))      # [loads] Twist
-    spin = mv.yz * np.zeros(centres.shape[0])                               # [loads] Twist
-    turns = (roll * (-1 / 2)).exp()                                         # [loads] Motor
+    roll = mv.yz * np.full(centres.shape[0], np.radians(RELEASE_HEEL))       # [loads] Twist+
+    roll_rate = mv.yz * np.zeros(centres.shape[0])                           # [loads] Twist+
+    turns = (roll * (-1 / 2)).exp()                                          # [loads] Motor+
     heights = core.afloat(hull, turns, weight, mv.scalar(np.zeros((centres.shape[0], 1))), FLUID_WEIGHT, N_NEWTON_STEPS)
-    push, weighing = core.forces(hull, turns, heights, weight, centres, FLUID_WEIGHT)   # [loads] Forque each
+    push, weighing = core.forces(hull, turns, heights, weight, centres, FLUID_WEIGHT)   # [loads] Forque-, Forque-
     for _ in range(N_FRAMES):
         yield roll, core.placement(turns, heights), push, weighing
         for _ in range(N_STEPS_PER_FRAME):
             # The righting couple about the axis of heel turns the roll, against its damping.
-            spin = spin + (mv.yz * (((push + weighing) & core.heel_axis) / inertia) - DAMPING * spin) * STEP
-            roll = roll + spin * STEP
+            roll_rate = roll_rate + (mv.yz * (((push + weighing) & core.heel_axis) / inertia) - DAMPING * roll_rate) * STEP
+            roll = roll + roll_rate * STEP
             turns = (roll * (-1 / 2)).exp()
             heights = core.afloat(hull, turns, weight, heights, FLUID_WEIGHT, N_WARM_STEPS)
             push, weighing = core.forces(hull, turns, heights, weight, centres, FLUID_WEIGHT)
@@ -128,10 +130,10 @@ def stable_heels(couples: core.Forque) -> np.ndarray:
     """For each row of righting couples over the heels of the cube's map, the smallest heel from upright at
     which the cube rests stably: where the couple turns from pushing the cube over to pushing it back,
     between the two heels around it in proportion to the couples there."""
-    arms = (-(couples & core.heel_axis)).to_array()                         # [rows, heels]
+    arms = (-(couples & core.heel_axis)).to_array()                          # [rows, heels]
     below, above = arms[:, :-1], arms[:, 1:]
     share = -below / np.where(above == below, 1, above - below)
-    rests = CUBE_HEELS[:-1] + share * np.diff(CUBE_HEELS)                   # [rows, heels - 1]
+    rests = CUBE_HEELS[:-1] + share * np.diff(CUBE_HEELS)                    # [rows, heels - 1]
     stable = (below < 0) & (above >= 0) & (rests > -1e-6)
     return rests[np.arange(len(arms)), np.argmax(stable, axis=1)]
 
@@ -153,11 +155,11 @@ def main() -> None:
                 "floating_cubes")
     frames = list(released(hull, weight, centres[RELEASED]))
     save_animation(render.animate_release(hull, centres[RELEASED], frames, HEELS, couples[:, RELEASED], weight),
-                   "floating_release", DURATION_MS)
+                   "floating_release", DURATION_MS, N_COLOURS)
 
     # checks
-    arms = (-(couples & core.heel_axis) / weight).to_array()              # [heels, loads]
-    heights = (stiffness(mv.yz, mv.yz) / weight).to_array()              # [loads]
+    arms = (-(couples & core.heel_axis) / weight).to_array()                 # [heels, loads]
+    heights = (stiffness(mv.yz, mv.yz) / weight).to_array()                  # [loads]
     # The slope of each righting arm curve at upright is the metacentric height in roll.
     assert np.abs(arms[1] / np.sin(np.radians(HEELS[1])) - heights).max() < 1e-2
     # A cube floats face up only below a density of (3 - sqrt(3)) / 6 or above (3 + sqrt(3)) / 6.

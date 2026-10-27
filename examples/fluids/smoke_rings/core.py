@@ -52,9 +52,9 @@ by the sandwich with the reverse, and the null paravector `1 + v.dual_inverse()`
 the turn about it, `exp(-(rapidity * S.dual_inverse() + angle * S) / 2)`, with `rapidity + i angle` the
 logarithm of `1 - 2 i / twist`. Folding once around a closed polygon is the product of these; the boosts in a
 long product grow from edge to edge until round-off swamps the offsets, so the offsets are folded one
-after another, and the product serves where a whole lap is meant. For a closed polygon the offsets must come round to where they started: carried
-once around the lap, any start lands on the lap's attracting fixed point. With offsets near minus the
-edge before, of unit length, the new polygon lies one vertex back along the old one, moved by the smoke
+after another, and the product serves where a whole lap is meant. For a closed polygon the offsets must
+come round to where they started: carried once around the lap, any start lands on the lap's attracting
+fixed point. With offsets near minus the edge before, of unit length, the new polygon lies one vertex back along the old one, moved by the smoke
 ring flow over a time of about half the parameter: relabelled by one vertex, the transformation is a
 time step that keeps every edge exactly of unit length, and moves a discrete elastic curve, a ring among
 them, exactly rigidly.
@@ -83,50 +83,52 @@ from numga import NumpyContext, concatenate, stack
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Vector = ga.gatype.vector()
-Rotor = ga.gatype.rotor()
+Scalar = ga.gatype.scalar()                                                      # Scalar+
+Vector = ga.gatype.vector()                                                      # Vector+
+Rotor = ga.gatype.rotor()                                                        # Rotor+
 # Points, and their differences, the edges and offsets: antivectors, intrinsic.
-Point = ga.gatype.antivector()
+Point = ga.gatype.antivector()                                                   # Antivector-
 # The filament's circulation changes sign under a mirror: an intrinsic scalar.
-Circulation = Scalar.derive.flipped_orientation
+Circulation = Scalar.derive.flipped_orientation                                  # Scalar-
 # The Bäcklund transformation's parameter, added to the quad's diagonal, a point: an intrinsic scalar too.
-Parameter = Scalar.derive.flipped_orientation
+Parameter = Scalar.derive.flipped_orientation                                    # Scalar-
+# A polygon's vector area, the join of its points: an intrinsic vector, a patch.
+Patch = Vector.derive.flipped_orientation                                        # Vector-
 
 
 # --- math -----------------------------------------------------------------------------
 def edges(points: Point) -> Point:
     """The edges of closed polygons `[..., n]`, edge k from point k to point k + 1."""
-    return concatenate([points[..., 1:], points[..., :1]], axis=-1) - points    # [..., n] Point
+    return concatenate([points[..., 1:], points[..., :1]], axis=-1) - points     # [..., n] Point-
 
 
 def velocity(points: Point, circulation: Circulation) -> Point:
     """The smoke ring flow's velocity at each vertex `[..., n]` of a filament of the given circulation:
     the turn's Cayley parameter, twice, times the circulation, over the mean edge length."""
-    outgoing = edges(points)                                                     # [..., n] Point
-    incoming = concatenate([outgoing[..., -1:], outgoing[..., :-1]], axis=-1)    # [..., n] Point
-    lengths = outgoing.norm() * incoming.norm()                                  # [..., n] Scalar
+    outgoing = edges(points)                                                     # [..., n] Point-
+    incoming = concatenate([outgoing[..., -1:], outgoing[..., :-1]], axis=-1)    # [..., n] Point-
+    lengths = outgoing.norm() * incoming.norm()                                  # [..., n] Scalar+
     # The commutator of the two edges is the bivector of the turn; over the lengths plus the edges paired,
     # it is the tangent of half the turning angle.
-    binormal_step = 2 * incoming.commutator(outgoing) * circulation / (lengths + outgoing.dot(incoming))   # [..., n] Point
-    return binormal_step / ((outgoing.norm() + incoming.norm()) / 2)             # [..., n] Point
+    binormal_step = 2 * incoming.commutator(outgoing) * circulation / (lengths + outgoing.dot(incoming))   # [..., n] Point-
+    return binormal_step / ((outgoing.norm() + incoming.norm()) / 2)             # [..., n] Point-
 
 
-def impulse(points: Point) -> Vector:
+def impulse(points: Point) -> Patch:
     """The vector area of closed polygons, twice over: the sum of each point joined with the next."""
-    return (points & (points + edges(points))).sum(axis=-1)                     # [...] Vector
+    return (points & (points + edges(points))).sum(axis=-1)                      # [...] Patch-
 
 
 def induced(points: Point, circulations: Circulation, core_radius: float) -> Point:
     """The velocity at every vertex of closed polygonal vortex filaments `[rings, n]`, of the given
     circulations `[rings]`, induced by every segment of every filament: the commutator of the vertex's
     separation from the segment's middle with the segment, over the softened cube of the separation."""
-    segments = edges(points)                                                     # [rings, n] Point
-    separations = points.reshape(-1)[:, None] - (points + segments / 2).reshape(-1)[None, :]   # [rings n, rings n] Point
-    softened = separations.norm_squared() + core_radius**2                       # [rings n, rings n] Scalar
+    segments = edges(points)                                                     # [rings, n] Point-
+    separations = points.reshape(-1)[:, None] - (points + segments / 2).reshape(-1)[None, :]   # [rings n, rings n] Point-
+    softened = separations.norm_squared() + core_radius**2                       # [rings n, rings n] Scalar+
     strengths = circulations[..., None].broadcast_to(points.shape).reshape(-1) / (4 * np.pi)   # [rings n] Circulation
     pulls = separations.commutator(segments.reshape(-1)) * strengths / (softened * softened.square_root())
-    return pulls.sum(axis=1).reshape(points.shape)                               # [rings, n] Point
+    return pulls.sum(axis=1).reshape(points.shape)                               # [rings, n] Point-
 
 
 def flow(points: Point, rate: Callable[[Point], Point], step: float) -> Iterator[Point]:
@@ -145,13 +147,13 @@ def fold(edge: Point, offset: Point, twist: Parameter) -> Point:
     """The next offset of a Bäcklund transformation across an edge: the current one turned about the
     diagonal `edge - offset` of the quad between them, by the quaternion the diagonal and the parameter
     make together."""
-    return ((edge - offset) + twist).normalized() >> offset                      # [...] Point
+    return ((edge - offset) + twist).normalized() >> offset                      # [...] Point-
 
 
 def backlund(points: Point, start: Point, twist: Parameter) -> Point:
     """One Bäcklund transformation of a polygon `[..., n]` with the given parameter, from the offset at its
     first vertex: every later offset is the one before, folded across the edge between them."""
-    sides = points[..., 1:] - points[..., :-1]                                   # [..., n - 1] Point
+    sides = points[..., 1:] - points[..., :-1]                                   # [..., n - 1] Point-
 
     def offsets() -> Iterator[Point]:
         offset = start
@@ -160,56 +162,56 @@ def backlund(points: Point, start: Point, twist: Parameter) -> Point:
             offset = fold(sides[..., index], offset, twist)
             yield offset
 
-    return points + stack(list(offsets()), axis=-1)                              # [..., n] Point
+    return points + stack(list(offsets()), axis=-1)                              # [..., n] Point-
 
 
 def periodic(points: Point, twist: Parameter) -> Point:
     """The unit offset at the first vertex of closed polygons of unit edges `[..., n]` that comes round to
     itself after a lap: minus the last edge, carried once around by the lap's Lorentz transformation,
     which lands it on the lap's attracting fixed point."""
-    sides = edges(points)                                                        # [..., n] Point
+    sides = edges(points)                                                        # [..., n] Point-
     # Every fold is a boost along its edge and a turn about it: the boost's generator the direction the
     # edge's point stands for, its rapidity and the turn's angle the two parts of one logarithm.
-    rapidity = (1 + 4 / twist.squared()).log() / 2                              # [] Scalar
-    angle = -(2 * twist.inverse()).arctan()                                      # [] Parameter
-    folds = (-(rapidity * sides.dual_inverse() + angle * sides) / 2).exp()       # [..., n] Lorentz rotor
-    lap = folds.cumprod(axis=-1)[..., -1]                                        # [...] Lorentz rotor
+    rapidity = (1 + 4 / twist.squared()).log() / 2                               # [] Scalar+
+    angle = -(2 * twist.inverse()).arctan()                                      # [] Parameter-
+    folds = (-(rapidity * sides.dual_inverse() + angle * sides) / 2).exp()       # [..., n] Multivector+
+    lap = folds.cumprod(axis=-1)[..., -1]                                        # [...] Multivector+
     # The offset's paravector, one plus the direction it stands for, carried once around.
-    image = lap * (1 - sides[..., -1].dual_inverse()) * lap.reverse()            # [...] null paravector
+    image = lap * (1 - sides[..., -1].dual_inverse()) * lap.reverse()            # [...] Multivector+
     # The paravector's bivector and volume parts are zero.
-    return (image.cast(Vector) / image.cast(Scalar)).dual()                      # [...] Point
+    return (image.cast(Vector) / image.cast(Scalar)).dual()                      # [...] Point-
 
 
 def advance(points: Point, twist: Parameter) -> Point:
     """One step of the discrete-time smoke ring flow of closed polygons of unit edges `[..., n]`: the
     Bäcklund transformation with periodic offsets, relabelled by one vertex, a time of about half the
     parameter along the flow."""
-    return backlund(closed(points), periodic(points, twist), twist)[..., 1:]     # [..., n] Point
+    return backlund(closed(points), periodic(points, twist), twist)[..., 1:]     # [..., n] Point-
 
 
 def turns(points: Point) -> Rotor:
     """The turn at every inner vertex of polygons of unit edges `[..., n]`: the rotor from the incoming
     edge to the outgoing one, the square of the rotor that carries one onto the other."""
-    sides = points[..., 1:] - points[..., :-1]                                   # [..., n - 1] Point
-    return sides[..., 1:] * ~sides[..., :-1]                                     # [..., n - 2] Rotor
+    sides = points[..., 1:] - points[..., :-1]                                   # [..., n - 1] Point-
+    return sides[..., 1:] * ~sides[..., :-1]                                     # [..., n - 2] Rotor+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def closed(points: Point) -> Point:
     """Closed polygons `[..., n]` as polylines `[..., n + 1]`: the first vertex again at the end."""
-    return concatenate([points, points[..., :1]], axis=-1)                     # [..., n + 1] Point
+    return concatenate([points, points[..., :1]], axis=-1)                       # [..., n + 1] Point-
 
 
 def ring(count: int) -> Point:
     """A regular polygon of `count` unit edges around the z axis."""
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    return ((mv.xy * (-angles / 2)).exp() >> mv.x.dual()) / (2 * np.sin(np.pi / count))   # [count] Point
+    return ((mv.xy * (-angles / 2)).exp() >> mv.x.dual()) / (2 * np.sin(np.pi / count))   # [count] Point-
 
 
 def coaxial_rings(radius: float, count: int, heights: np.ndarray) -> Point:
     """Regular polygons of `count` vertices and the given radius around the z axis, one at each height
     `[rings]` along it."""
-    return (ring(count) * (radius * 2 * np.sin(np.pi / count)))[None, :] + mv.z.dual() * heights[:, None]   # [rings, count] Point
+    return (ring(count) * (radius * 2 * np.sin(np.pi / count)))[None, :] + mv.z.dual() * heights[:, None]   # [rings, count] Point-
 
 
 def wavy_ring(count: int, mode: int, tilt: float) -> Point:
@@ -217,15 +219,16 @@ def wavy_ring(count: int, mode: int, tilt: float) -> Point:
     `tilt` times the sine of `mode` times its angle around the axis: a ring with a standing wave on it.
     The tilts' sines and their cosines have no component going once around the axis, so the edges close."""
     angles = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    around = (mv.xy * (-angles / 2)).exp()                                      # [count] Rotor
-    lifted = (mv.yz * (-tilt * np.sin(mode * angles) / 2)).exp() >> mv.y.dual()  # [count] Point: before turning around
-    steps = around >> lifted                                                    # [count] Point
-    return concatenate([mv.antivector([[0, 0, 0]]), steps[:-1]]).cumsum(axis=0)   # [count] Point
+    around = (mv.xy * (-angles / 2)).exp()                                       # [count] Rotor+
+    # Each edge tilted out of the plane, before turning around the axis.
+    lifted = (mv.yz * (-tilt * np.sin(mode * angles) / 2)).exp() >> mv.y.dual()  # [count] Point-
+    steps = around >> lifted                                                     # [count] Point-
+    return concatenate([mv.antivector([[0, 0, 0]]), steps[:-1]]).cumsum(axis=0)  # [count] Point-
 
 
 def torus_knot(around_axis: int, around_tube: int, major_radius: float, minor_radius: float, count: int) -> Point:
     """A closed polygon of `count` points on a torus knot, winding `around_axis` times around the z axis
     and `around_tube` times around the tube of the given radii."""
     turns = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    tube = (mv.zx * (-around_tube * turns / 2)).exp() >> (mv.x.dual() * minor_radius)   # [count] Point
-    return (mv.xy * (-around_axis * turns / 2)).exp() >> (mv.x.dual() * major_radius + tube)   # [count] Point
+    tube = (mv.zx * (-around_tube * turns / 2)).exp() >> (mv.x.dual() * minor_radius)   # [count] Point-
+    return (mv.xy * (-around_axis * turns / 2)).exp() >> (mv.x.dual() * major_radius + tube)   # [count] Point-
