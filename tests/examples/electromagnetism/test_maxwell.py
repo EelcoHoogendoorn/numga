@@ -13,7 +13,6 @@ from examples.electromagnetism.maxwell import (
     electric,
     flow,
     isotropic_cloud,
-    magnetic,
     main,
     mv,
     normal_stress,
@@ -26,7 +25,7 @@ from examples.electromagnetism.maxwell import (
 def test_maxwell_stress_tracelessness_and_symmetry():
     """Verify Maxwell stress-energy extensor is traceless and symmetric."""
     Ex, By = 2.5, 2.5
-    wave = Ex * electric(along_x) + By * magnetic(along_y)
+    wave = Ex * electric(along_x) + By * mv.zx
     T_em = 0.5 * (wave >> Antivector)
     assert np.isclose(T_em.trace().kernel, 0.0, atol=1e-14)
 
@@ -69,7 +68,7 @@ def test_particle_cloud_is_an_ideal_fluid():
 
 def test_pure_wave_is_a_null_dyad_and_the_commutator_form_holds():
     E = 3.0
-    wave = E * electric(along_x) + E * magnetic(along_y)
+    wave = E * electric(along_x) + E * mv.zx
     T = 0.5 * (wave >> Antivector)
     ray = time + along_z
     np.testing.assert_allclose(T.kernel, (E**2 * flow(ray)).kernel, atol=1e-14)
@@ -107,7 +106,7 @@ def test_fluid_equation_of_state_interpolation():
 def test_lorentz_4force_density():
     """Verify the Lorentz force density J x F on a moving charge density."""
     Ex, By = 3.0, 2.0
-    wave = Ex * electric(along_x) + By * magnetic(along_y)
+    wave = Ex * electric(along_x) + By * mv.zx
     zeta = np.arctanh(0.5)
     boost = (mv.zt * (zeta / 2.0)).exp()
     velocity = boost >> time

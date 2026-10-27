@@ -41,16 +41,14 @@ Bivector = STA.gatype.bivector()
 Antivector = STA.gatype.antivector()
 Antibivector = STA.gatype.antibivector()
 # A stress-energy map takes a translation to the current of energy and momentum that goes with it.
-StressEnergy = STA.gatype((Antivector, Antivector))  # Antivector <- Antivector
+StressEnergy = STA.gatype((Antivector, Antivector))                            # Antivector <- Antivector
 # The vacuum's constitutive law, from a field to its excitation: the one place the field meets the metric.
-vacuum = Bivector.dual()                             # Antibivector <- Bivector
+vacuum = Bivector.dual()                                                       # Antibivector <- Bivector
 
 # The observer at rest: its slice of space `mv.t` and its direction in time, which pairs to one with that
 # slice; the dual carries the minus of t's square. And the directions of space.
 time = -mv.t.dual()
 along_x, along_y, along_z = mv.x.dual(), mv.y.dual(), mv.z.dual()
-# The unit volume.
-pseudoscalar = mv.xyzt
 # The plane wave's electric and magnetic field strengths; a field of no special form, its coefficients on
 # xt, yt, zt, yz, zx and xy.
 electric_strength, magnetic_strength = 2.0, 2.0
@@ -65,11 +63,6 @@ n_particles, cloud_speed, seed = 2000, 0.5, 0
 def electric(direction: Antivector) -> Bivector:
     """The unit electric field along a direction: the dual of the plane it sweeps through time."""
     return (direction & time).dual()
-
-
-def magnetic(direction: Antivector) -> Bivector:
-    """The unit magnetic field along a direction: the unit volume times the electric one."""
-    return pseudoscalar * electric(direction)
 
 
 def normal_stress(stress: StressEnergy, normal: Antivector) -> Scalar:
@@ -123,9 +116,9 @@ def flow(velocities: Antivector) -> StressEnergy:
 def main() -> None:
     rng = np.random.default_rng(seed)
 
-    # A plane wave along +z, its electric field along x and its magnetic field along y, and its
+    # A plane wave along +z, its electric field along x and its magnetic field the plane zx, and its
     # stress-energy: for the observer at rest, the energy density and the Poynting flux.
-    wave = electric_strength * electric(along_x) + magnetic_strength * magnetic(along_y)   # [] Bivector
+    wave = electric_strength * electric(along_x) + magnetic_strength * mv.zx   # [] Bivector
     wave_stress = stress_energy(wave, vacuum(wave))                            # [] Antivector <- Antivector
     current = wave_stress(time)                                                # [] Antivector
     energy = mv.t & current                                                    # [] Scalar
@@ -167,8 +160,8 @@ def main() -> None:
 
     # The ideal fluid of the cloud's energy and pressure, and the radiation fluid of pressure a third of
     # its density.
-    fluid = (cloud_energy + pressure) * flow(time) - pressure * Antivector      # StressEnergy
-    radiation = (density + density / 3.0) * flow(time) - (density / 3.0) * Antivector  # StressEnergy
+    fluid = (cloud_energy + pressure) * flow(time) - pressure * Antivector     # StressEnergy
+    radiation = (density + density / 3.0) * flow(time) - (density / 3.0) * Antivector   # StressEnergy
 
     # The Lorentz force density on the current the moving dust carries, a form on directions: the field
     # read on the plane each direction sweeps along the current, as charges at rest read it on the plane

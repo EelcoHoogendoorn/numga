@@ -37,13 +37,13 @@ from numga import NumpyContext
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                # Scalar+
 # Offsets and directions are antivectors with intrinsic orientation.
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Rotor = ga.gatype.rotor()
+Point = ga.gatype.antivector()                             # Antivector-
+Plane = ga.gatype.vector()                                 # Vector+
+Rotor = ga.gatype.rotor()                                  # Rotor+
 # The change of the metric a wave carries: the plane that reads each offset's stretch.
-Strain = ga.gatype((Plane, Point))                         # Plane <- Point
+Strain = ga.gatype((Plane, Point))                         # Plane+ <- Point-
 
 
 # --- math -----------------------------------------------------------------------------
@@ -64,25 +64,25 @@ def strains(frames: Rotor) -> tuple[Strain, Strain]:
     """The plus and cross strains of waves from the direction each frame's first axis points to, with
     its second and third axes across the wave."""
     # The planes facing east and north across the wave, each weighted by an offset's height above them.
-    east, north = frames >> mv.y, frames >> mv.z                             # [...] Plane each
-    plus = east * (east & Point) - north * (north & Point)                   # [...] Strain
-    cross = east * (north & Point) + north * (east & Point)                  # [...] Strain
+    east, north = frames >> mv.y, frames >> mv.z           # [...] Plane+, Plane+
+    plus = east * (east & Point) - north * (north & Point)   # [...] Plane+ <- Point-
+    cross = east * (north & Point) + north * (east & Point)   # [...] Plane+ <- Point-
     return plus, cross
 
 
 def arms(sites: Rotor, azimuths: np.ndarray) -> Point:
     """The arms of detectors at their sites `[...]`, from their azimuths `[..., 2]` in radians,
     clockwise from north: north turned towards east in each site's level plane."""
-    east, north = sites[..., None] >> mv.y, sites[..., None] >> mv.z          # [..., 1] Plane each
-    return ((north ^ east) * (-azimuths / 2)).exp() >> north.dual()          # [..., 2] Point
+    east, north = sites[..., None] >> mv.y, sites[..., None] >> mv.z   # [..., 1] Plane+, Plane+
+    return ((north ^ east) * (-azimuths / 2)).exp() >> north.dual()   # [..., 2] Point-
 
 
 def response(arms: Point, strain: Strain) -> Scalar:
     """The interferometer's reading: the difference between its two arms' stretches, each arm
     lengthening by the fraction `(strain(arm) & arm) / 2`, the arm read against the plane the strain
     hands it."""
-    stretches = (strain[..., None](arms) & arms) / 2                          # [..., 2] Scalar
-    return stretches[..., 0] - stretches[..., 1]                             # [...] Scalar
+    stretches = (strain[..., None](arms) & arms) / 2       # [..., 2] Scalar+
+    return stretches[..., 0] - stretches[..., 1]           # [...] Scalar+
 
 
 def sensitivity(plus: Scalar, cross: Scalar) -> Scalar:

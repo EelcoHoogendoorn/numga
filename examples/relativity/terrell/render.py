@@ -26,16 +26,16 @@ grid_colour = "#0369a1"
 outline_colour = "#0c4a6e"
 edge_colour = "#334155"
 # The slices of space the cube's faces face along, outward, in the order of their colours.
-face_slices = stack((mv.z, -mv.z, mv.x, -mv.x, -mv.y, mv.y))                 # [6] Vector
+face_slices = stack((mv.z, -mv.z, mv.x, -mv.x, -mv.y, mv.y))                 # [6] Vector+
 # The slices of space whose pairings with a place on the map's chart are how far across and up the map it lies: along
 # the travel and up; the place so far along each is `(axes.dual() * at).sum()`.
-axes = stack((mv.x, mv.z))                                                   # [2] Vector
+axes = stack((mv.x, mv.z))                                                   # [2] Vector+
 # The window of the map each lane shows, across and up, the pixels across it, and the pixels between the lanes; in
 # pixels, the widths of the cube's edges, of the sphere's grid and of its outline.
 window = ((-0.61, 0.61), (-0.39, 0.34))
-n_pixels = 900
-lane_gap = 10
-edge_width, grid_width, outline_width = 2.4, 1.2, 2.2
+n_pixels = 400
+lane_gap = 5
+edge_width, grid_width, outline_width = 1.1, 0.6, 1.0
 
 
 source = """

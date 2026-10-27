@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import patheffects
 
+from numga import stack
 from examples.util.animation import capture
 from examples.relativity.ligo import core
 
-ga = core.ga
 # Colour maps for signed responses, for sensitivities and for likeness; the colours of the sites, the
 # ring and the arms; the drawn reach of the arms on the ring, the samples of the ring at rest, and the
 # ring view's half width; the polarization animation's figure size, in inches.
@@ -21,18 +21,13 @@ SITE, LABEL, RING, REST, ARM = "#22d3ee", "#0f172a", "#0369a1", "#cbd5e1", "#f97
 ARM_REACH = 1.25
 REST_SAMPLES = 200
 RING_LIMIT = 1.5
-POLARIZATION_SIZE = (12, 4.0)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing and checks."""
-    return values.cast(ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of each point, on the last axis."""
-    return points.cast(ga.subspace("yz zx xy")).kernel
+    """x, y and z of each point, on the last axis: its pairings with the planes x, y and z."""
+    mv = core.mv
+    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
 def lonlat(directions: core.Point) -> np.ndarray:
@@ -44,7 +39,7 @@ def lonlat(directions: core.Point) -> np.ndarray:
 def sky_map(ax: plt.Axes, directions: core.Point, values: core.Scalar, cmap: str, low: float, high: float) -> None:
     """One map over the sky, with a faint graticule and no tick labels."""
     longitudes, latitudes = np.moveaxis(lonlat(directions), -1, 0)
-    ax.pcolormesh(longitudes, latitudes, scalars(values), shading="gouraud", cmap=cmap, vmin=low, vmax=high)
+    ax.pcolormesh(longitudes, latitudes, values.to_array(), shading="gouraud", cmap=cmap, vmin=low, vmax=high)
     ax.grid(color="white", alpha=0.25, linewidth=0.5)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
@@ -61,7 +56,7 @@ def mark_sites(ax: plt.Axes, zeniths: core.Point, names: list[str]) -> None:
 def draw_patterns(directions: core.Point, plus: core.Scalar, cross: core.Scalar, sensitivities: core.Scalar,
                   zeniths: core.Point, names: list[str]) -> plt.Figure:
     """A row per detector: its response to the plus strain, to the cross strain, and its sensitivity."""
-    figure = plt.figure(figsize=(14, 2.5 * len(names) + 0.2), dpi=110)
+    figure = plt.figure(figsize=(7, 1.25 * len(names) + 0.1), dpi=110)
     for detector, name in enumerate(names):
         maps = [plus[detector], cross[detector], sensitivities[detector]]
         for column, (values, cmap, low) in enumerate(zip(maps, [SIGNED, SIGNED, SENSITIVE], [-1, -1, 0])):
@@ -75,7 +70,7 @@ def draw_patterns(directions: core.Point, plus: core.Scalar, cross: core.Scalar,
 def draw_network(directions: core.Point, network: core.Scalar, alike: core.Scalar, zeniths: core.Point,
                  names: list[str]) -> plt.Figure:
     """The network's sensitivity, and how alike the detectors' readings of the same wave are."""
-    figure = plt.figure(figsize=(11, 2.9), dpi=110)
+    figure = plt.figure(figsize=(5.5, 1.45), dpi=110)
     for column, (values, cmap, low, high) in enumerate([(network, SENSITIVE, 0, np.sqrt(len(names))),
                                                         (alike, SIGNED, -1, 1)]):
         ax = figure.add_subplot(1, 2, column + 1, projection="mollweide")
@@ -104,14 +99,7 @@ def draw_ring(ax: plt.Axes, site: core.Rotor, arms: core.Point, ring: core.Point
 
 
 def animate_polarization(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
-                         rings: core.Point, name: str) -> list[np.ndarray]:
-    """Each frame: the ring stretched by the plus strain at the polarization angle, beside the detector's
-    response to it over the sky."""
-    return animate_polarization_sized(directions, responses, site, arms, rings, name, POLARIZATION_SIZE)
-
-
-def animate_polarization_sized(directions: core.Point, responses: core.Scalar, site: core.Rotor, arms: core.Point,
-                               rings: core.Point, name: str, size: tuple[float, float]) -> list[np.ndarray]:
+                         rings: core.Point, name: str, size: tuple[float, float]) -> list[np.ndarray]:
     """Each frame, in a figure `size` inches wide and high: the ring stretched by the plus strain at the
     polarization angle, beside the detector's response to it over the sky."""
 

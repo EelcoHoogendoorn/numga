@@ -23,6 +23,8 @@ N_FRAMES = 48
 N_MASSES = 24
 STRAIN_SHOWN = 0.3
 DURATION_MS = 80
+# The polarization animation's size, in inches.
+POLARIZATION_SIZE = (6, 2)
 # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
 GALLERY_SIZE = (7.2, 2.4)
 GALLERY_FRAMES = 32
@@ -31,7 +33,7 @@ GALLERY_FRAMES = 32
 # --- math -----------------------------------------------------------------------------
 def detectors() -> tuple[core.Rotor, core.Point]:
     """Each detector's site frame `[detectors]` and arms `[detectors, 2]`."""
-    sites = core.place(np.radians(SITE_LATITUDES), np.radians(SITE_LONGITUDES))   # [detectors] Rotor
+    sites = core.place(np.radians(SITE_LATITUDES), np.radians(SITE_LONGITUDES))   # [detectors] Rotor+
     return sites, core.arms(sites, np.radians(AZIMUTHS))
 
 
@@ -39,12 +41,12 @@ def sky() -> core.Rotor:
     """The frame of each direction on the sky: its first axis to the direction, the others across."""
     latitudes = np.radians(np.linspace(-90, 90, N_SKY_SAMPLES))
     longitudes = np.radians(np.linspace(-180, 180, 2 * N_SKY_SAMPLES - 1))
-    return core.place(latitudes[:, None], longitudes)                        # [latitudes, longitudes] Rotor
+    return core.place(latitudes[:, None], longitudes)                        # [latitudes, longitudes] Rotor+
 
 
 def patterns(arms: core.Point, frames: core.Rotor) -> tuple[core.Scalar, core.Scalar]:
     """Each detector's responses to the plus and cross strains of waves from each frame's direction."""
-    plus, cross = core.strains(frames)                                       # [latitudes, longitudes] Plane <- Point each
+    plus, cross = core.strains(frames)                                       # [latitudes, longitudes] Plane+ <- Point-, Plane+ <- Point-
     return core.response(arms[:, None, None], plus), core.response(arms[:, None, None], cross)
 
 
@@ -52,15 +54,15 @@ def polarization(site: core.Rotor, arms: core.Point, frames: core.Rotor, angles:
                  ) -> tuple[core.Scalar, core.Point]:
     """One detector's response to the plus strain over the sky as the polarization turns by each angle,
     and a ring of free masses across a wave from straight overhead, stretched by that strain."""
-    turned, _ = core.strains(core.polarized(frames, angles[:, None, None]))  # [frames, latitudes, longitudes] Plane <- Point
+    turned, _ = core.strains(core.polarized(frames, angles[:, None, None]))  # [frames, latitudes, longitudes] Plane+ <- Point-
     # Straight overhead, the axes across the wave are the site's east and north.
-    east, north = site >> core.mv.y, site >> core.mv.z                       # [] Plane each
+    east, north = site >> core.mv.y, site >> core.mv.z                       # [] Plane+, Plane+
     turns = np.linspace(0, 2 * np.pi, N_MASSES, endpoint=False)
-    ring = ((east ^ north) * (-turns / 2)).exp() >> east.dual()              # [masses] Point
-    overhead, _ = core.strains(core.polarized(site, angles))                 # [frames] Plane <- Point
+    ring = ((east ^ north) * (-turns / 2)).exp() >> east.dual()              # [masses] Point-
+    overhead, _ = core.strains(core.polarized(site, angles))                 # [frames] Plane+ <- Point-
     # Each mass moves perpendicular to the plane its strain hands it: the metric turns that reading
     # into a direction.
-    moved = ring + STRAIN_SHOWN * overhead[:, None](ring).dual()             # [frames, masses] Point
+    moved = ring + STRAIN_SHOWN * overhead[:, None](ring).dual()             # [frames, masses] Point-
     return core.response(arms, turned), moved
 
 
@@ -72,22 +74,22 @@ def main() -> None:
     sites, arms = detectors()
     frames = sky()
     directions, zeniths = frames >> core.mv.x.dual(), sites >> core.mv.x.dual()   # [latitudes, longitudes], [detectors] Point
-    to_plus, to_cross = patterns(arms, frames)                               # [detectors, latitudes, longitudes] Scalar each
+    to_plus, to_cross = patterns(arms, frames)                               # [detectors, latitudes, longitudes] Scalar+, Scalar+
     sensitivities = core.sensitivity(to_plus, to_cross)
-    network = sensitivities.squared().sum(axis=0).square_root()              # [latitudes, longitudes] Scalar
+    network = sensitivities.squared().sum(axis=0).square_root()              # [latitudes, longitudes] Scalar+
     # The cosine between the two detectors' pairs of responses: minus one where they read the same wave
     # with opposite signs.
     alike = (to_plus[0] * to_plus[1] + to_cross[0] * to_cross[1]) / (sensitivities[0] * sensitivities[1])
     angles = np.linspace(0, np.pi, N_FRAMES, endpoint=False)
-    responses, rings = polarization(sites[0], arms[0], frames, angles)        # [frames, latitudes, longitudes] Scalar, [frames, masses] Point
+    responses, rings = polarization(sites[0], arms[0], frames, angles)       # [frames, latitudes, longitudes] Scalar+, [frames, masses] Point-
     save_figure(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, NAMES), "ligo_patterns")
     save_figure(render.draw_network(directions, network, alike, zeniths, NAMES), "ligo_network")
-    save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0]),
+    save_animation(render.animate_polarization(directions, responses, sites[0], arms[0], rings, NAMES[0], POLARIZATION_SIZE),
                    "ligo_polarization", DURATION_MS)
     gallery_angles = np.linspace(0, np.pi, GALLERY_FRAMES, endpoint=False)
     gallery_responses, gallery_rings = polarization(sites[0], arms[0], frames, gallery_angles)
     # Gallery picture: this makes plots/ligo.gif for docs/extensors.md, tuned as a visual for the gallery. Don't change it; to experiment, copy it.
-    save_animation(render.animate_polarization_sized(directions, gallery_responses, sites[0], arms[0], gallery_rings,
+    save_animation(render.animate_polarization(directions, gallery_responses, sites[0], arms[0], gallery_rings,
                                                      NAMES[0], GALLERY_SIZE),
                    "ligo", DURATION_MS * N_FRAMES // GALLERY_FRAMES)
 
@@ -99,7 +101,7 @@ def main() -> None:
     assert render.scalars(sensitivities).max() <= 1 + 1e-12
     # A wave along the line halfway between the arms, in their plane, is not seen at all; any frame with
     # its first axis along that line will do.
-    halfway = (arms[:, 0] + arms[:, 1]).normalized()                         # [detectors] Point
+    halfway = (arms[:, 0] + arms[:, 1]).normalized()                         # [detectors] Point-
     blind = core.sensitivity(*(core.response(arms, strain) for strain in core.strains((1 + halfway * ~core.mv.x.dual()).normalized())))
     assert np.abs(render.scalars(blind)).max() < 1e-12
     # Spin two: turning the axes across the wave by an angle mixes plus and cross by twice that angle.

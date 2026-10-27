@@ -21,7 +21,7 @@ def test_sensitivity_is_the_closed_form_for_a_detector_at_the_pole():
     seen = core.sensitivity(core.response(arms, plus), core.response(arms, cross))
     polar, azimuth = np.pi / 2 - latitudes, longitudes
     expected = ((1 + np.cos(polar)**2) / 2)**2 * np.cos(2 * azimuth)**2 + np.cos(polar)**2 * np.sin(2 * azimuth)**2
-    assert np.abs(render.scalars(seen.squared()) - expected).max() < 1e-12
+    assert np.abs(seen.squared().to_array() - expected).max() < 1e-12
 
 
 def test_figures_draw():
@@ -33,4 +33,4 @@ def test_figures_draw():
     plt.close(render.draw_patterns(directions, to_plus, to_cross, sensitivities, zeniths, scenarios.NAMES))
     plt.close(render.draw_network(directions, sensitivities[0], sensitivities[1], zeniths, scenarios.NAMES))
     responses, rings = scenarios.polarization(sites[0], arms[0], frames, np.zeros(1))
-    assert len(render.animate_polarization(directions, responses, sites[0], arms[0], rings, scenarios.NAMES[0])) == 1
+    assert len(render.animate_polarization(directions, responses, sites[0], arms[0], rings, scenarios.NAMES[0], scenarios.POLARIZATION_SIZE)) == 1

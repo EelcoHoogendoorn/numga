@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb, to_rgb
 
+from numga import stack
 from examples.util.animation import capture
 from examples.relativity.twistors import core
 from examples.util.wgsl import fitted, image_figure, labels, show, solids, strokes
@@ -23,25 +24,27 @@ DIAGRAM_ELEVATION, DIAGRAM_AZIMUTH = np.radians(15.0), np.radians(22.0)
 # The margins around what is drawn in space and in the diagram, as shares of the larger side; the pixels across the
 # congruence and across the field lines' frame.
 MARGIN, DIAGRAM_MARGIN = 0.1, 0.15
-CONGRUENCE_PIXELS, FIELD_PIXELS = 600, 330
+CONGRUENCE_PIXELS, FIELD_PIXELS = 300, 330
 # The view the field lines are carried through, as a multiple of the one framing them at the first instant, holding
 # them at every instant shown.
 FIELD_ROOM = 1.35
 # The widths in pixels of the curves, the ray and the axes, the axes' arrowheads' length and width, and the events'
 # radius; how far the axes reach past what they hold, and their names past their tips.
-CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 2.4, 2.3, 3.4, 1.8, 14.0, 8.0, 5.0
+CURVE_WIDTH, FIELD_WIDTH, RAY_WIDTH, AXIS_WIDTH, HEAD_LENGTH, HEAD_WIDTH, EVENT_RADIUS = 1.2, 2.3, 1.7, 0.9, 7.0, 4.0, 2.5
 AXIS_REACH, LABEL_DISTANCE = 1.12, 1.24
 
 
 # --- plumbing -----------------------------------------------------------------------
 def spatial(events: core.Event) -> np.ndarray:
-    """The x, y and z components of events."""
-    return events.cast(events.algebra.subspace("x y z")).kernel
+    """The x, y and z components of events: their pairings with the slices x, y and z."""
+    mv = events.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & events[..., None]).to_array()
 
 
 def spacetime(events: core.Event) -> np.ndarray:
-    """The x, z and t components of events."""
-    return events.cast(events.algebra.subspace("x z t")).kernel
+    """The x, z and t components of events: their pairings with the slices x, z and t."""
+    mv = events.context.multivector
+    return (stack((mv.x, mv.z, mv.t)) & events[..., None]).to_array()
 
 
 def colours(count: int) -> np.ndarray:
@@ -58,7 +61,7 @@ def space_view(pixels: int, *curves: core.Event) -> solids.View:
 def draw_curves(curves: core.Event, width: float, view: solids.View) -> np.ndarray:
     """Each spatial curve as a stroke of a width in pixels, in its own colour."""
     points = sm.point(spatial(curves))
-    points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point
+    points = points.reshape((-1, points.shape[-1]))                           # [curves, samples] Point-
     lines = strokes.polylines(list(zip(points, colours(len(points)))), width, view)
     return solids.draw([], view, BACKGROUND, inks=[], translucent=[], meshes=[(lines, 1.0)])
 
@@ -68,8 +71,8 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     spacetime diagram, x, z and t drawn along the scene's x, y and z, its axes arrows named at their tips."""
     positions, lines = spacetime(events), spacetime(rays)
     extent = AXIS_REACH * max(np.max(np.abs(positions)), np.max(np.abs(lines)))
-    names = sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))      # [3] Point
-    figure = plt.figure(figsize=(10, 5), facecolor="white")
+    names = sm.point(LABEL_DISTANCE / AXIS_REACH * extent * np.eye(3))        # [3] Point-
+    figure = plt.figure(figsize=(5, 2.5), facecolor="white")
     panels = [figure.add_axes((column / len(positions), 0.0, 1 / len(positions), 1.0))
               for column in range(len(positions))]
     # One view for both panels, framing the axes, their names and every ray, as many pixels across as a panel holds.
@@ -78,12 +81,12 @@ def draw_incidence(events: core.Event, rays: core.Event) -> plt.Figure:
     shafts, heads = solids.frame(extent, AXIS_WIDTH / 2 * view.pixel, HEAD_LENGTH * view.pixel, HEAD_WIDTH / 2 * view.pixel)
     for ax, points, line in zip(panels, positions, lines):
         # The ray, straight, as a rod from its first sample to its last.
-        ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Quadric
+        ray = solids.rods(sm.point(line[:1]), sm.point(line[-1:]), RAY_WIDTH / 2 * view.pixel)   # [1, 3] Plane+ <- Point-
         marks = [(shafts, AXIS_COLOUR), (heads, AXIS_COLOUR), (ray, to_rgb(BLUE)),
                  (solids.ball(sm.point(points), EVENT_RADIUS * view.pixel)[:, None], to_rgb(ORANGE))]
         show(ax, solids.draw(marks, view, BACKGROUND, inks=[], translucent=[], meshes=[]), view)
         # Each axis named just past its arrow's tip.
-        labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=12, color=AXIS_COLOUR)
+        labels(ax, view, names, list("xzt"), ha="center", va="center", fontsize=8, color=AXIS_COLOUR)
     return figure
 
 

@@ -36,11 +36,12 @@ duration_ms = 60
 def cameras() -> Iterator[core.Antivector]:
     """Per frame, where the camera is in each body's frame `[cases]` when the centre of the pair is seen along that
     frame's line of sight."""
-    frame = core.boost(body_speeds)                                                 # [cases] Rotor
+    frame = core.boost(body_speeds)                                                 # [cases] Rotor+
     for sighting in sightings:
-        yield core.rest_camera(frame, core.sighting(track_distance, sighting))     # [cases] Antivector
+        yield core.rest_camera(frame, core.sighting(track_distance, sighting))      # [cases] Antivector-
 
 
+# --- plumbing -------------------------------------------------------------------------
 def photographs(cameras: Iterator[core.Antivector]) -> Iterator[np.ndarray]:
     """The pair photographed from each of the cameras, one lane per speed."""
     from examples.relativity.terrell import render
@@ -49,7 +50,6 @@ def photographs(cameras: Iterator[core.Antivector]) -> Iterator[np.ndarray]:
                                       half_width, meridian_spacing, parallel_spacing, parallel_reach)
 
 
-# --- plumbing -------------------------------------------------------------------------
 def main() -> None:
     from examples.util.animation import save_animation
 
@@ -58,20 +58,20 @@ def main() -> None:
     # checks
     # Seen at right angles to its motion, the body is photographed from behind the perpendicular, by the
     # speed's fraction of the distance: turned by the arcsine of the speed.
-    frame = core.boost(body_speeds)                                                 # [cases] Rotor
-    camera = core.rest_camera(frame, core.sighting(track_distance, np.pi / 2))      # [cases] Antivector
-    leaning = (mv.x & camera) / camera.squared().square_root()                # [cases] Scalar
+    frame = core.boost(body_speeds)                                                 # [cases] Rotor+
+    camera = core.rest_camera(frame, core.sighting(track_distance, np.pi / 2))      # [cases] Antivector-
+    leaning = (mv.x & camera) / camera.squared().square_root()                      # [cases] Scalar+
     np.testing.assert_allclose(leaning.to_array(), -body_speeds, atol=1e-12)
     # The sphere's outline is a circle on the sky in every frame: its rays lie in one hyperplane through
     # the camera, so the join of any four of them vanishes.
-    camera = core.rest_camera(frame, core.sighting(track_distance, sightings[0]))   # [cases] Antivector
+    camera = core.rest_camera(frame, core.sighting(track_distance, sightings[0]))   # [cases] Antivector-
     angles = np.linspace(0, 2 * np.pi, n_outline + 1)
-    grazing = core.outline(camera, height * up, sphere_radius, angles)             # [cases, outline + 1] Antivector
-    outline = frame[:, None] >> core.rays(camera[:, None], grazing)              # [cases, outline + 1] Antivector
+    grazing = core.outline(camera, height * up, sphere_radius, angles)              # [cases, outline + 1] Antivector-
+    outline = frame[:, None] >> core.rays(camera[:, None], grazing)                 # [cases, outline + 1] Antivector-
     # Each ray scaled to one unit of the camera's time.
-    points = outline / (mv.t & outline)                                        # [cases, outline + 1] Antivector
+    points = outline / (mv.t & outline)                                             # [cases, outline + 1] Antivector-
     quarter = n_outline // 4
-    joined = points[:, 0] & points[:, quarter] & points[:, 2 * quarter] & points[:, 3 * quarter - 5]   # [cases] Scalar
+    joined = points[:, 0] & points[:, quarter] & points[:, 2 * quarter] & points[:, 3 * quarter - 5]   # [cases] Scalar+
     np.testing.assert_allclose(joined.to_array(), 0, atol=1e-12)
 
 
