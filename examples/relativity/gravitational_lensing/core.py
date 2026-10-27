@@ -35,36 +35,36 @@ from numga.algebras import VGA2D
 
 ga = VGA2D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                                    # Scalar+
 # Directions on the sky are points, antivectors with intrinsic orientation.
-Point = ga.gatype.antivector()
-LocalMap = ga.gatype((Point, Point))                                           # Point <- Point
+Point = ga.gatype.antivector()                                                 # Antivector-
+LocalMap = ga.gatype((Point, Point))                                           # Point- <- Point-
 
 
 # --- math -----------------------------------------------------------------------------
 def deflected(observed: Point, positions: Point, masses: np.ndarray) -> Point:
     """The source direction each observed direction reaches."""
-    separation = observed[..., None] - positions                               # [..., masses] Point
-    return observed - (masses * separation.inverse()).sum(axis=-1)             # [...] Point
+    separation = observed[..., None] - positions                               # [..., masses] Point-
+    return observed - (masses * separation.inverse()).sum(axis=-1)             # [...] Point-
 
 
 def local_map(observed: Point, positions: Point, masses: np.ndarray) -> LocalMap:
     """The map from a small displacement of each observed direction to the displacement it makes at
     the source: the identity plus each mass's reflection in the line along its separation."""
-    inverse = (observed[..., None] - positions).inverse()                     # [..., masses] Point
+    inverse = (observed[..., None] - positions).inverse()                      # [..., masses] Point-
     # A step changes each separation's inverse by minus the step between two inverses.
-    return Point + (masses * (inverse * Point * inverse)).sum(axis=-1)        # [...] Point <- Point
+    return Point + (masses * (inverse * Point * inverse)).sum(axis=-1)         # [...] Point- <- Point-
 
 
 def brightness(directions: Point, centre: Point, width: float) -> Scalar:
     """A round Gaussian source of unit peak brightness and the given angular standard deviation."""
-    offset = directions - centre                                               # [...] Point
-    return (-(offset | offset) / (2 * width**2)).exp()                         # [...] Scalar
+    offset = directions - centre                                               # [...] Point-
+    return (-offset.dot(offset) / (2 * width**2)).exp()                        # [...] Scalar+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def sky(half_width: float, resolution: int) -> Point:
     """Directions at the centres of a square of pixels about the optical axis."""
     angles = (np.arange(resolution) + 0.5) * (2 * half_width / resolution) - half_width
-    return (mv.x * angles[None, :] + mv.y * angles[:, None]).dual()           # [rows, columns] Point
+    return (mv.x * angles[None, :] + mv.y * angles[:, None]).dual()            # [rows, columns] Point-
 

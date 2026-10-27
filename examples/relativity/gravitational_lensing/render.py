@@ -27,8 +27,8 @@ HALF = 1.4
 PANEL = 4.3
 MARGIN = 0.1
 # The still's resolution, and the animation's, below it: the blurred source needs no more.
-STILL_DPI = 100
-ANIMATION_DPI = 72
+STILL_DPI = 60
+ANIMATION_DPI = 50
 
 
 def xy(directions: core.Point) -> np.ndarray:
@@ -41,7 +41,7 @@ def pixels(ax: plt.Axes, mv) -> core.Point:
     """The directions at the centres of the pixels the axes' room holds over the shown square, top row first."""
     resolution = min(room(ax))
     angles = (np.arange(resolution) + 0.5) * (2 * HALF / resolution) - HALF
-    return (mv.x * angles[None, :] + mv.y * angles[::-1, None]).dual()           # [rows, columns] Point
+    return (mv.x * angles[None, :] + mv.y * angles[::-1, None]).dual()           # [rows, columns] Point-
 
 
 def critical_curve(ax: plt.Axes, directions: core.Point, area: core.Scalar, colour: str) -> list[core.Point]:
@@ -60,7 +60,7 @@ def figure_at(directions: core.Point, area: core.Scalar, lens: Callable[[core.Po
     figure, (source_ax, sky_ax) = plt.subplots(1, 2, figsize=(width, height), dpi=dpi, facecolor="white")
     figure.subplots_adjust(left=MARGIN / width, right=1 - MARGIN / width, bottom=MARGIN / height,
                            top=1 - MARGIN / height, wspace=2 * MARGIN / PANEL)
-    shown = pixels(sky_ax, directions.context.multivector)                     # [rows, columns] Point
+    shown = pixels(sky_ax, directions.context.multivector)                     # [rows, columns] Point-
     norm = PowerNorm(gamma=0.65, vmin=0, vmax=1)
     images = []
     for ax, light in zip((source_ax, sky_ax), step):

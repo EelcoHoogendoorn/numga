@@ -23,15 +23,17 @@ camera_spin = 0.8 * mass
 camera_distance = 28.0 * mass
 camera_inclination = np.deg2rad(75.0)
 half_view = np.tan(np.deg2rad(19.0))
-image_width = 480
+image_width = 320
 image_height = image_width * 2 // 3
 camera_step_fraction = 0.2
 n_camera_steps = 720
 disk_outer_radius = 12.0 * mass
 # The disk's optical depth straight through its thickness, at its inner edge.
 inner_depth = 4.0
-disk_temperature_scale = 58500.0                               # K, (accretion rate c^6 / (σ G^2 M^2))^(1/4)
-exposure_temperature = 6500.0                                 # K, shown at mid-grey
+# In kelvin: (accretion rate c^6 / (σ G^2 M^2))^(1/4).
+disk_temperature_scale = 58500.0
+# In kelvin, shown at mid-grey.
+exposure_temperature = 6500.0
 escape_radius = 100.0 * mass
 # Captured inside every photon orbit, where no ray turns back out.
 capture_radius = 1.05 * (mass + np.sqrt(mass**2 - camera_spin**2))
@@ -55,8 +57,8 @@ def scene() -> tuple[core.Antivector, core.Antivector]:
     """Rays sent along x past the hole, one sweep of its spin, and the horizon's cut through the
     equatorial plane at each spin."""
     x, y = core.mv.x.dual(), core.mv.y.dual()
-    spin = core.mv.xy.dual() * spins[:, None]                  # [frames, 1] Spin
-    position = -x * extent + y * offsets                        # [rays] Antivector
+    spin = core.mv.xy.dual() * spins[:, None]                  # [frames, 1] Spin-
+    position = -x * extent + y * offsets                        # [rays] Antivector-
     momentum = core.initial_momentum(position, x, spin, mass)
     position = position.broadcast_to(momentum.shape)
     paths, _ = core.trace(position, momentum, spin, mass, step_size, n_steps, stop_fraction, core.rates)

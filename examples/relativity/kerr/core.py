@@ -1,16 +1,16 @@
 """Light rays in the Kerr geometry, driven by geometric derivatives of their Hamiltonian.
 
-Events and the directions between them are antivectors, and a ray's momentum is a covector, a vector
-that pairs with a direction to a number, `momentum & direction`. The geometry is gauge theory gravity's:
+Events and the directions between them are antivectors, and a ray's momentum is a vector, extrinsic,
+which pairs with a direction to a number, `momentum & direction`. The geometry is gauge theory gravity's:
 a flat background, and a position gauge field that carries the directions of a local frame, measured flat,
 to the directions of the Kerr geometry, `gauge(geometry)`: the identity plus the profile times the null
 dyad. The dyad squares to zero, so its inverse is the identity less the dyad. An observer's squared
 proper time is minus the flat square of its direction carried back into the local frame, and a
 ray's Hamiltonian is minus half the flat square of its momentum raised and carried into it. Differentiating
 with respect to momentum gives the tangent, a direction, and differentiating with respect to position
-gives minus the momentum rate, a covector. The rotation gauge field, `rotation(geometry, direction)`,
+gives minus the momentum rate, a vector. The rotation gauge field, `rotation(geometry, direction)`,
 is the plane the local frame turns in per step along a direction. The scalar profile's gradient is a
-covector, paired with a small step to give the profile's change, and the null direction's derivative is a
+vector, paired with a small step to give the profile's change, and the null direction's derivative is a
 map from a step to the null direction's change along it; together they give the Hamiltonian's gradient,
 minus the force on the ray, without component equations. Camera rays are followed until each is captured
 or escapes; the disk takes a share of each ray it crosses, by its optical depth along the ray. What each
@@ -47,20 +47,20 @@ Rotor = ga.gatype.rotor()
 Screen = Antivector.derive.containing("t z")
 # The camera's slices x and y, which read screen directions: vectors, extrinsic.
 ScreenSlice = Vector.derive.within("x y")
-ScreenFrame = ga.gatype((Antivector, Screen))                # Antivector <- Screen
+ScreenFrame = ga.gatype((Antivector, Screen))                # Antivector- <- Screen
 # The light's polarization covariance, from the slices that read the screen to screen directions.
 Coherency = ga.gatype((Screen, ScreenSlice))                 # Screen <- ScreenSlice
-DirectionGradient = ga.gatype((Antivector, Antivector))      # Antivector <- Antivector
+DirectionGradient = ga.gatype((Antivector, Antivector))      # Antivector- <- Antivector-
 # The position gauge field: from a direction of the local frame to one of the Kerr geometry.
-GaugeField = ga.gatype((Antivector, Antivector))             # Antivector <- Antivector
+GaugeField = ga.gatype((Antivector, Antivector))             # Antivector- <- Antivector-
 # One unit along the lab's time, the direction across the lab's slice of space `mv.t`, and the part of a
 # direction within that slice.
-time = -mv.t.dual()                                          # [] Antivector
-space = Antivector - time * (mv.t & Antivector)              # Antivector <- Antivector
+time = -mv.t.dual()                                          # [] Antivector-
+space = Antivector - time * (mv.t & Antivector)              # Antivector- <- Antivector-
 # The camera's own axes in its rest frame, before it is turned: it looks along -z, with its right +y and its up -x.
-camera_forward = -mv.z.dual()                                # [] Antivector
-camera_right = mv.y.dual()                                   # [] Antivector
-camera_up = -mv.x.dual()                                     # [] Antivector
+camera_forward = -mv.z.dual()                                # [] Antivector-
+camera_right = mv.y.dual()                                   # [] Antivector-
+camera_up = -mv.x.dual()                                     # [] Antivector-
 # The crossings of the disk a camera ray keeps: its direct, secondary and tertiary images, and one more.
 CROSSINGS = 4
 
@@ -68,113 +68,113 @@ CROSSINGS = 4
 # --- math -----------------------------------------------------------------------------
 def field(position: Antivector, spin: Spin, mass: float) -> Field:
     """The Kerr profile, null direction and their derivatives at a batch of events."""
-    spatial = space(position)                                                               # [...] Antivector
+    spatial = space(position)                                                               # [...] Antivector-
     # The plane the hole turns in, whose dual is its spin.
-    turning = spin.dual_inverse()                                                           # [...] Bivector
+    turning = spin.dual_inverse()                                                           # [...] Bivector+
     # The volume the position spans with the turning plane: the plane times the position's height off it,
     # held by its complement along time. Wedged with the plane it is that height along the spin, times the
     # spin squared; the plane enters twice, so its sense of turning drops out.
-    volume = spatial.anticommutator(turning)                                                # [...] Vector
-    height = volume ^ turning                                                               # [...] Antivector
-    spin_squared = spin.squared()                                                           # [...] Scalar
-    offset = spatial.squared() - spin_squared                                               # [...] Scalar
-    discriminant = (offset.squared() - 4 * volume.squared()).square_root()                  # [...] Scalar
-    radius_squared = (offset + discriminant) / 2                                            # [...] Scalar
-    radius = radius_squared.square_root()                                                   # [...] Scalar
+    volume = spatial.anticommutator(turning)                                                # [...] Vector+
+    height = volume ^ turning                                                               # [...] Antivector-
+    spin_squared = spin.squared()                                                           # [...] Scalar+
+    offset = spatial.squared() - spin_squared                                               # [...] Scalar+
+    discriminant = (offset.squared() - 4 * volume.squared()).square_root()                  # [...] Scalar+
+    radius_squared = (offset + discriminant) / 2                                            # [...] Scalar+
+    radius = radius_squared.square_root()                                                   # [...] Scalar+
     # Paired with a small step, how far the step changes the oblate radius.
-    radius_gradient = (radius_squared * spatial - height).dual() / (radius * discriminant)  # [...] Vector
+    radius_gradient = (radius_squared * spatial - height).dual() / (radius * discriminant)  # [...] Vector+
     # The hole turns as `(turning * (-angle / 2)).exp()` does, and drags the frame with it: the outgoing
     # direction twists against the turning, by the position's commutator with the plane.
-    direction = (radius * spatial - spatial.commutator(turning) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector
-    lever = spatial - 2 * radius * direction + height / radius_squared                      # [...] Antivector
+    direction = (radius * spatial - spatial.commutator(turning) - height / radius) / (radius_squared + spin_squared)  # [...] Antivector-
+    lever = spatial - 2 * radius * direction + height / radius_squared                      # [...] Antivector-
     direction_gradient = (
         lever * (radius_gradient & Antivector)
         + radius * space - space.commutator(turning)
         - (space.anticommutator(turning) ^ turning) / radius
-    ) / (radius_squared + spin_squared)                                                     # [...] Antivector <- Antivector
-    denominator = radius_squared.squared() - volume.squared()                               # [...] Scalar
-    profile = mass * radius**3 / denominator                                                # [...] Scalar
+    ) / (radius_squared + spin_squared)                                                     # [...] Antivector- <- Antivector-
+    denominator = radius_squared.squared() - volume.squared()                               # [...] Scalar+
+    profile = mass * radius**3 / denominator                                                # [...] Scalar+
     profile_gradient = profile * (3 * radius_gradient / radius
-        - (4 * radius**3 * radius_gradient - 2 * height.dual()) / denominator)              # [...] Vector
-    # The curl of the null covector, `-(Vector ^ null_gradient(Antivector).dual()).trace(1, 2)`, piece by
-    # piece: the rank-one piece gives its two covectors wedged, the twist by the plane twice the plane, the
+        - (4 * radius**3 * radius_gradient - 2 * height.dual()) / denominator)              # [...] Vector+
+    # The curl of the null vector, `-(Vector ^ null_gradient(Antivector).dual()).trace(1, 2)`, piece by
+    # piece: the rank-one piece gives its two vectors wedged, the twist by the plane twice the plane, the
     # rest none.
-    null_curl = ((radius_gradient ^ lever.dual()) - 2 * turning) / (radius_squared + spin_squared)  # [...] Bivector
+    null_curl = ((radius_gradient ^ lever.dual()) - 2 * turning) / (radius_squared + spin_squared)  # [...] Bivector+
     return Field(radius, profile, time - direction, profile_gradient, -direction_gradient, null_curl)  # [...] Field
 
 
 def dyad(geometry: Field) -> GaugeField:
     """The null dyad, weighted by the profile: the null direction, read by its null plane."""
-    return geometry.profile * geometry.null * (geometry.null_plane & Antivector)            # [...] Antivector <- Antivector
+    return geometry.profile * geometry.null * (geometry.null_plane & Antivector)            # [...] Antivector- <- Antivector-
 
 
 def gauge(geometry: Field) -> GaugeField:
     """The position gauge field: the identity plus the weighted null dyad, from a direction of the local
     frame to one of the Kerr geometry."""
-    return Antivector + dyad(geometry)                                                      # [...] Antivector <- Antivector
+    return Antivector + dyad(geometry)                                                      # [...] Antivector- <- Antivector-
 
 
 def gauge_inverse(geometry: Field) -> GaugeField:
     """The gauge field's inverse: the dyad squares to zero, so the identity less the dyad."""
-    return Antivector - dyad(geometry)                                                      # [...] Antivector <- Antivector
+    return Antivector - dyad(geometry)                                                      # [...] Antivector- <- Antivector-
 
 
 def local(geometry: Field, momentum: Vector) -> Antivector:
-    """A covector momentum's direction in the local frame: raised flat, `-momentum.dual()`, and carried
+    """A momentum's direction in the local frame: raised flat, `-momentum.dual()`, and carried
     through the gauge field. Minus half its flat square is the ray's Hamiltonian."""
-    return gauge(geometry)(-momentum.dual())                                                # [...] Antivector
+    return gauge(geometry)(-momentum.dual())                                                # [...] Antivector-
 
 
 def proper_squared(geometry: Field, direction: Antivector) -> Scalar:
     """The squared proper length of a timelike direction: minus the flat square of the direction carried
     back into the local frame."""
-    return -gauge_inverse(geometry)(direction).squared()                                    # [...] Scalar
+    return -gauge_inverse(geometry)(direction).squared()                                    # [...] Scalar+
 
 
 def hamiltonian(geometry: Field, momentum: Vector) -> Scalar:
     """The ray Hamiltonian, positive for a timelike momentum in the physical +--- convention."""
-    return -local(geometry, momentum).squared() / 2                                         # [...] Scalar
+    return -local(geometry, momentum).squared() / 2                                         # [...] Scalar+
 
 
 def overlap_gradient(geometry: Field, momentum: Vector) -> Vector:
     """The gradient of the momentum's pairing with the null direction, `momentum & null`: the momentum
     pulled back through the null direction's derivative."""
-    return geometry.null_gradient.adjugate()(momentum)                                      # [...] Vector
+    return geometry.null_gradient.adjugate()(momentum)                                      # [...] Vector+
 
 
 def motion(geometry: Field, momentum: Vector) -> tuple[Antivector, Vector]:
     """The two Hamiltonian derivatives at a field: the ray tangent and minus its position gradient."""
-    overlap = momentum & geometry.null                                                      # [...] Scalar
+    overlap = momentum & geometry.null                                                      # [...] Scalar+
     # Minus half the flat square of the momentum's local direction is the Hamiltonian; its momentum derivative
     # is that direction carried through the gauge field once more.
-    tangent = gauge(geometry)(local(geometry, momentum))                                    # [...] Antivector
+    tangent = gauge(geometry)(local(geometry, momentum))                                    # [...] Antivector-
     # The gradient of profile * overlap squared, by the product rule.
     gradient = (geometry.profile_gradient * overlap.squared()
-                + 2 * geometry.profile * overlap * overlap_gradient(geometry, momentum))      # [...] Vector
-    return tangent, -gradient                                                               # [...] Antivector, [...] Vector
+                + 2 * geometry.profile * overlap * overlap_gradient(geometry, momentum))      # [...] Vector+
+    return tangent, -gradient                                                               # [...] Antivector-, [...] Vector+
 
 
 def rates(position: Antivector, momentum: Vector, spin: Spin, mass: float) -> tuple[Antivector, Vector]:
     """The two Hamiltonian derivatives: ray tangent and minus its position gradient."""
-    return motion(field(position, spin, mass), momentum)                                    # [...] Antivector, [...] Vector
+    return motion(field(position, spin, mass), momentum)                                    # [...] Antivector-, [...] Vector+
 
 
 def camera_rates(position: Antivector, momentum: Vector, spin: Spin, mass: float) -> tuple[Antivector, Vector]:
     """Past-directed Hamiltonian motion per unit of decreasing coordinate time."""
-    tangent, momentum_rate = rates(position, momentum, spin, mass)                          # [...] Antivector, [...] Vector
-    clock = -(mv.t & tangent)                                                               # [...] Scalar
-    return tangent / clock, momentum_rate / clock                                           # [...] Antivector, [...] Vector
+    tangent, momentum_rate = rates(position, momentum, spin, mass)                          # [...] Antivector-, [...] Vector+
+    clock = -(mv.t & tangent)                                                               # [...] Scalar+
+    return tangent / clock, momentum_rate / clock                                           # [...] Antivector-, [...] Vector+
 
 
 def rotation(geometry: Field, direction: Antivector) -> Bivector:
     """The rotation gauge field: the plane the local frame turns or boosts in, per unit step along a
     direction."""
     # The null plane's reading of the direction.
-    null = geometry.null_plane                                                              # [...] Vector
-    along = null & direction                                                                # [...] Scalar
+    null = geometry.null_plane                                                              # [...] Vector+
+    along = null & direction                                                                # [...] Scalar+
     # The gradient of profile * along.
-    turning = geometry.profile_gradient * along + geometry.profile * overlap_gradient(geometry, -direction.dual())  # [...] Vector
-    return -(turning ^ null) - geometry.profile * geometry.null_curl * along                # [...] Bivector
+    turning = geometry.profile_gradient * along + geometry.profile * overlap_gradient(geometry, -direction.dual())  # [...] Vector+
+    return -(turning ^ null) - geometry.profile * geometry.null_curl * along                # [...] Bivector+
 
 
 def polarized_rates(position: Antivector, momentum: Vector, screen: ScreenFrame,
@@ -182,25 +182,25 @@ def polarized_rates(position: Antivector, momentum: Vector, screen: ScreenFrame,
     """Hamiltonian ray motion and parallel transport of its camera screen, per unit of decreasing
     coordinate time."""
     geometry = field(position, spin, mass)                                                  # [...] Field
-    tangent, momentum_rate = motion(geometry, momentum)                                     # [...] Antivector, [...] Vector
-    screen_rate = -rotation(geometry, local(geometry, momentum)).commutator(screen)         # [...] Antivector <- Screen
-    clock = -(mv.t & tangent)                                                               # [...] Scalar
-    return tangent / clock, momentum_rate / clock, screen_rate / clock                      # [...] Antivector, [...] Vector, [...] Antivector <- Screen
+    tangent, momentum_rate = motion(geometry, momentum)                                     # [...] Antivector-, [...] Vector+
+    screen_rate = -rotation(geometry, local(geometry, momentum)).commutator(screen)         # [...] Antivector- <- Screen
+    clock = -(mv.t & tangent)                                                               # [...] Scalar+
+    return tangent / clock, momentum_rate / clock, screen_rate / clock                      # [...] Antivector-, [...] Vector+, [...] Antivector- <- Screen
 
 
 def disk_coherency(position: Antivector, momentum: Vector, screen: ScreenFrame,
                   normal: Vector, spin: Spin, mass: float, polarization_degree: float) -> Coherency:
     """Unit-intensity disk emission resolved along the parallel-transported camera axes; `normal` is the
-    disk's plane, the covector that measures height above it."""
-    heading = local(field(position, spin, mass), momentum)                                  # [...] Antivector
-    direction = space(heading) / (mv.t & heading)                                           # [...] Antivector
+    disk's plane, the vector that measures height above it."""
+    heading = local(field(position, spin, mass), momentum)                                  # [...] Antivector-
+    direction = space(heading) / (mv.t & heading)                                           # [...] Antivector-
     # The magnetic direction circles the normal, square to the plane through the normal and the
     # emitter. Emission is polarized perpendicular to it across the ray: in that plane, square to the ray.
-    meridian = space(position).dual() ^ normal                                              # [...] Bivector
-    polarization_axis = meridian.commutator(direction) / meridian.norm()                    # [...] Antivector
+    meridian = space(position).dual() ^ normal                                              # [...] Bivector+
+    polarization_axis = meridian.commutator(direction) / meridian.norm()                    # [...] Antivector-
     polarization = screen.adjoint()(polarization_axis)                                      # [...] Screen
     # Polarization vanishes smoothly when looking along the magnetic direction.
-    polarized_fraction = polarization_degree * polarization.squared()                       # [...] Scalar
+    polarized_fraction = polarization_degree * polarization.squared()                       # [...] Scalar+
     # Unpolarized light is round, where the metric enters; the polarized part weights the polarization by
     # each slice's reading of it.
     return ((1 - polarized_fraction) / 2 * ScreenSlice.dual()
@@ -210,33 +210,33 @@ def disk_coherency(position: Antivector, momentum: Vector, screen: ScreenFrame,
 def transmitted(coherency: Coherency, analyzers: ScreenSlice) -> Scalar:
     """The power each unit analyzer passes, an analyzer being the slice that reads the screen across its
     axis's normal: its reading of the coherency's image of itself."""
-    return analyzers & coherency(analyzers)                                                 # [...] Scalar
+    return analyzers & coherency(analyzers)                                                 # [...] Scalar+
 
 
 def frequency_ratio(position: Antivector, momentum: Vector, camera: Antivector, orbit: Bivector,
                     spin: Spin, mass: float) -> Scalar:
     """The frequency a camera at rest at `camera` sees, over the one emitted by gas on a circular
     orbit in the unit plane `orbit`, for rays whose momenta are given at the gas."""
-    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Antivector
-    at_rest = time / proper_squared(field(camera, spin, mass), time).square_root()         # [] Antivector
+    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Antivector-
+    at_rest = time / proper_squared(field(camera, spin, mass), time).square_root()         # [] Antivector-
     # The momentum paired with time is conserved along the ray, so the camera's frequency reads here.
-    return (momentum & at_rest) / (momentum & gas)                                          # [...] Scalar
+    return (momentum & at_rest) / (momentum & gas)                                          # [...] Scalar+
 
 
 def orbiting_gas(position: Antivector, orbit: Bivector, spin: Spin, mass: float) -> Antivector:
     """The unit velocity of gas on a circular equatorial orbit in the unit plane `orbit`, at each event."""
     geometry = field(position, spin, mass)                                                  # [...] Field
-    angular_speed = orbital_speed(geometry.radius, orbit, spin, mass)                       # [...] Scalar
+    angular_speed = orbital_speed(geometry.radius, orbit, spin, mass)                       # [...] Scalar+
     # A point turned by `(orbit * (-angle / 2)).exp()` moves by its commutator with the orbit's plane.
-    flow = time + angular_speed * space(position).commutator(orbit)                         # [...] Antivector
-    return flow / proper_squared(geometry, flow).square_root()                              # [...] Antivector
+    flow = time + angular_speed * space(position).commutator(orbit)                         # [...] Antivector-
+    return flow / proper_squared(geometry, flow).square_root()                              # [...] Antivector-
 
 
 def orbital_speed(radius: Scalar, orbit: Bivector, spin: Spin, mass: float) -> Scalar:
     """Kepler's angular speed, per coordinate time, of a circular equatorial orbit in the unit plane
     `orbit` at each oblate radius, the spin counted along the orbit."""
-    alignment = orbit & spin                                                                # [] Scalar
-    return np.sqrt(mass) / (radius * radius.square_root() + alignment * np.sqrt(mass))      # [...] Scalar
+    alignment = orbit & spin                                                                # [] Scalar+
+    return np.sqrt(mass) / (radius * radius.square_root() + alignment * np.sqrt(mass))      # [...] Scalar+
 
 
 def carried(position: Antivector, radius: Scalar, orbit: Bivector, spin: Spin, mass: float,
@@ -244,21 +244,21 @@ def carried(position: Antivector, radius: Scalar, orbit: Bivector, spin: Spin, m
     """The gas the camera sees at each disk event once a coordinate time `elapsed` has passed,
     followed back along its orbit to time zero, `[elapsed..., events]`. Each event's own time counts
     too, earlier for light that travelled further, and inner rings lap outer ones."""
-    emitted = elapsed[..., None] + (mv.t & position)                                        # [elapsed..., events] Scalar
-    angle = orbital_speed(radius, orbit, spin, mass) * emitted                              # [elapsed..., events] Scalar
-    return (orbit * (angle / 2)).exp() >> position                                          # [elapsed..., events] Antivector
+    emitted = elapsed[..., None] + (mv.t & position)                                        # [elapsed..., events] Scalar+
+    angle = orbital_speed(radius, orbit, spin, mass) * emitted                              # [elapsed..., events] Scalar+
+    return (orbit * (angle / 2)).exp() >> position                                          # [elapsed..., events] Antivector-
 
 
 def innermost_stable_orbit(orbit: Bivector, spin: Spin, mass: float) -> Scalar:
     """The radius of the innermost stable circular equatorial orbit in the unit plane `orbit`, the spin
     counted along the orbit, negative for gas orbiting against the hole: 6M without spin, and at the
     extreme M with the hole and 9M against it (Bardeen, Press and Teukolsky, 1972)."""
-    ratio = (orbit & spin) / mass                                                           # [] Scalar
-    first = 1 + cube_root(1 - ratio**2) * (cube_root(1 + ratio) + cube_root(1 - ratio))     # [] Scalar
-    second = (3 * ratio**2 + first**2).square_root()                                        # [] Scalar
+    ratio = (orbit & spin) / mass                                                           # [] Scalar+
+    first = 1 + cube_root(1 - ratio**2) * (cube_root(1 + ratio) + cube_root(1 - ratio))     # [] Scalar+
+    second = (3 * ratio**2 + first**2).square_root()                                        # [] Scalar+
     # Gas orbiting with the hole reaches inward of the radius without spin, gas orbiting against it outward.
-    reach = ((3 - first) * (3 + first + 2 * second)).square_root()                      # [] Scalar
-    return mass * (3 + second - where(ratio < 0, -reach, reach))                         # [] Scalar
+    reach = ((3 - first) * (3 + first + 2 * second)).square_root()                      # [] Scalar+
+    return mass * (3 + second - where(ratio < 0, -reach, reach))                         # [] Scalar+
 
 
 def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, scale: float) -> Scalar:
@@ -266,25 +266,25 @@ def disk_temperature(radius: Scalar, orbit: Bivector, spin: Spin, mass: float, s
     (1974), for gas orbiting in the unit plane `orbit`, the spin counted along the orbit: zero at the
     innermost stable orbit, falling as the radius to the power -3/4 far out. `scale` is
     (accretion rate c^6 / (σ G^2 M^2))^(1/4), K."""
-    ratio = (orbit & spin) / mass                                                           # [] Scalar
-    root_radius = (radius / mass).square_root()                                             # [...] Scalar
-    edge = (innermost_stable_orbit(orbit, spin, mass) / mass).square_root()                 # [] Scalar
+    ratio = (orbit & spin) / mass                                                           # [] Scalar+
+    root_radius = (radius / mass).square_root()                                             # [...] Scalar+
+    edge = (innermost_stable_orbit(orbit, spin, mass) / mass).square_root()                 # [] Scalar+
     # The roots of the cubic `root_radius**3 - 3 * root_radius + 2 * ratio`, and the weight of each in
     # the torque; the product of a root's differences from the other two is the cubic's derivative there.
-    roots = 2 * ((ratio.arccos() + np.array([-np.pi, np.pi, 3 * np.pi])) / 3).cos()       # [3] Scalar
-    weights = (roots - ratio) ** 2 / (roots * (roots ** 2 - 1))                             # [3] Scalar
+    roots = 2 * ((ratio.arccos() + np.array([-np.pi, np.pi, 3 * np.pi])) / 3).cos()       # [3] Scalar+
+    weights = (roots - ratio) ** 2 / (roots * (roots ** 2 - 1))                             # [3] Scalar+
     # The torque the disk carries, zero at the innermost stable orbit; round-off kept non-negative.
     torque = (root_radius - edge - 1.5 * ratio * (root_radius / edge).log()
-              - (weights * ((root_radius[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar
-    flux = 3 / (8 * np.pi) * torque / (root_radius ** 4 * (root_radius ** 3 - 3 * root_radius + 2 * ratio))  # [...] Scalar
-    return scale * flux.square_root().square_root()                                         # [...] Scalar
+              - (weights * ((root_radius[..., None] - roots) / (edge - roots)).log()).sum(axis=-1)).clip(0, np.inf)  # [...] Scalar+
+    flux = 3 / (8 * np.pi) * torque / (root_radius ** 4 * (root_radius ** 3 - 3 * root_radius + 2 * ratio))  # [...] Scalar+
+    return scale * flux.square_root().square_root()                                         # [...] Scalar+
 
 
 def disk_depth(radius: Scalar, inner_radius: Scalar, outer_radius: float, depth: float) -> Scalar:
     """The disk's optical depth straight through its thickness at each oblate radius: `depth` at the
     inner edge, where the gas is densest, thinning outwards to none at the outer edge."""
-    fraction = (radius - inner_radius) / (outer_radius - inner_radius)                      # [...] Scalar
-    return depth * (1 - fraction) * (1 - fraction)                                          # [...] Scalar
+    fraction = (radius - inner_radius) / (outer_radius - inner_radius)                      # [...] Scalar+
+    return depth * (1 - fraction) * (1 - fraction)                                          # [...] Scalar+
 
 
 def disk_opacity(position: Antivector, momentum: Vector, depth: Scalar, normal: Vector,
@@ -293,21 +293,21 @@ def disk_opacity(position: Antivector, momentum: Vector, depth: Scalar, normal: 
     the ray is the depth through its thickness over the cosine of the ray's slant as the orbiting gas
     sees it: the ray's energy in the gas's frame over its momentum along the normal. Gas moving away
     from the light's source sees the ray more obliquely, and absorbs more."""
-    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Antivector
-    slant = ((momentum & gas) / (momentum & normal.dual())).abs()                           # [...] Scalar
-    return 1 - (-depth * slant).exp()                                                       # [...] Scalar
+    gas = orbiting_gas(position, orbit, spin, mass)                                         # [...] Antivector-
+    slant = ((momentum & gas) / (momentum & normal.dual())).abs()                           # [...] Scalar+
+    return 1 - (-depth * slant).exp()                                                       # [...] Scalar+
 
 
 def crossing_fraction(start: Antivector, end: Antivector, normal: Vector) -> Scalar:
-    """How far along a ray segment it crosses the plane `normal`, the covector of height above it."""
-    return -(normal & start) / (normal & (end - start))                                     # [...] Scalar
+    """How far along a ray segment it crosses the plane `normal`, the vector of height above it."""
+    return -(normal & start) / (normal & (end - start))                                     # [...] Scalar+
 
 
 def disk_crossing(start: tuple[Extensor, ...], end: tuple[Extensor, ...], normal: Vector,
                   spin: Spin, mass: float) -> tuple[tuple[Extensor, ...], Scalar]:
     """A ray's state, its event first, where its segment from `start` to `end` crosses the central disk
     plane `normal`, and its oblate radius there."""
-    fraction = crossing_fraction(start[0], end[0], normal)                                  # [...] Scalar
+    fraction = crossing_fraction(start[0], end[0], normal)                                  # [...] Scalar+
     state = tuple(value + fraction * (stop - value) for value, stop in zip(start, end))     # [...] state
     return state, field(state[0], spin, mass).radius                                        # [...] state, [...] Scalar
 
@@ -331,23 +331,23 @@ def resolve(state: tuple[Extensor, ...], spin: Spin, mass: float, step_fraction:
     # The loop carries the event in the full antivector layout, whatever layout the rays start in.
     event, *rest = state
     traced = tuple(value.materialize(context) for value in (event.retyped(Antivector), *rest))
-    remaining = mv.scalar(np.ones((n_rays, 1))).materialize(context)                       # [rays] Scalar
+    remaining = mv.scalar(np.ones((n_rays, 1))).materialize(context)                       # [rays] Scalar+
     # Each ray's crossings, empty while their weight is zero, and its escape, empty likewise.
     crossed = tuple(value[:, None].broadcast_to((n_rays, CROSSINGS)) for value in traced)    # [rays, crossings] state
     crossed_radii, crossed_weights = remaining[:, None] * np.zeros(CROSSINGS), remaining[:, None] * np.zeros(CROSSINGS)
     filled = np.zeros(n_rays, dtype=int)                                                   # [rays]
-    sky, sky_weights = traced[0], remaining * 0                                            # [rays] Antivector, Scalar
+    sky, sky_weights = traced[0], remaining * 0                                            # [rays] Antivector-, Scalar+
 
     def going(state: tuple[Extensor, ...], remaining: Scalar) -> np.ndarray:
         """The rays still traced: with light left, neither escaped nor captured."""
-        radius = field(state[0], spin, mass).radius                                        # [rays] Scalar
+        radius = field(state[0], spin, mass).radius                                        # [rays] Scalar+
         return (remaining > 0) & (radius <= escape_radius) & (radius >= capture_radius)    # [rays]
 
     def step(carry):
         index, state, remaining, crossed, crossed_radii, crossed_weights, filled, sky, sky_weights = carry
         traced = going(state, remaining)                                                   # [rays]
         # A ray that has ended takes no step.
-        size = where(traced, step_fraction * field(state[0], spin, mass).radius, remaining * 0)   # [rays] Scalar
+        size = where(traced, step_fraction * field(state[0], spin, mass).radius, remaining * 0)   # [rays] Scalar+
         end = runge_kutta(lambda *values: dynamics(*values, spin, mass), state, size)
         # A crossing of the disk between its radii, where the segment changes side of its plane.
         at_plane, radii = disk_crossing(state, end, normal, spin, mass)                    # [rays] state, Scalar
@@ -396,7 +396,7 @@ class Field:
     def null_plane(self) -> Vector:
         """The null direction's plane, the light cone's tangent plane along it, which contains the
         direction: minus its dual."""
-        return -self.null.dual()                                                            # [...] Vector
+        return -self.null.dual()                                                            # [...] Vector+
 
 
 @dataclass(frozen=True)
@@ -431,12 +431,12 @@ def runge_kutta(rates: Callable[..., tuple[Extensor, ...]], state: tuple[Extenso
 
 
 def initial_momentum(position: Antivector, direction: Antivector, spin: Spin, mass: float) -> Vector:
-    """A future null covector with the given unit spatial direction in the Kerr–Schild frame."""
+    """A future null momentum with the given unit spatial direction in the Kerr–Schild frame."""
     geometry = field(position, spin, mass)                                                  # [...] Field
-    local_null = time + direction                                                           # [...] Antivector
+    local_null = time + direction                                                           # [...] Antivector-
     # Carried back out of the local frame and lowered flat.
-    momentum = -gauge_inverse(geometry)(local_null).dual()                                  # [...] Vector
-    return momentum / (momentum & time)                                                     # [...] Vector
+    momentum = -gauge_inverse(geometry)(local_null).dual()                                  # [...] Vector+
+    return momentum / (momentum & time)                                                     # [...] Vector+
 
 
 def trace(position: Antivector, momentum: Vector, spin: Spin, mass: float,
@@ -468,8 +468,8 @@ def trace(position: Antivector, momentum: Vector, spin: Spin, mass: float,
 
 def camera_boost(geometry: Field) -> Rotor:
     """A coordinate-static camera's rest frame in the Kerr–Schild frame, outside the static limit."""
-    observer = gauge_inverse(geometry)(time) / proper_squared(geometry, time).square_root()  # [...] Antivector
-    return (1 - observer * time).normalized()                                               # [...] Rotor
+    observer = gauge_inverse(geometry)(time) / proper_squared(geometry, time).square_root()  # [...] Antivector-
+    return (1 - observer * time).normalized()                                               # [...] Rotor+
 
 
 def camera_rays(eye: Antivector, orientation: Rotor, pixel_width: int, pixel_height: int,
@@ -495,13 +495,13 @@ def camera_screen(position: Antivector, momentum: Vector, orientation: Rotor,
     """Orthonormal transverse camera axes, with horizontal x and vertical y screen inputs."""
     geometry = field(position, spin, mass)
     boost = camera_boost(geometry)
-    heading = boost.reverse() >> local(geometry, momentum)                                 # [...] Antivector
-    direction = space(heading) / -(mv.t & heading)                                          # [...] Antivector
+    heading = boost.reverse() >> local(geometry, momentum)                                 # [...] Antivector-
+    direction = space(heading) / -(mv.t & heading)                                          # [...] Antivector-
     # The turn carrying the camera's forward onto the direction it looks to see the ray: the reflection in
     # the forward, then in the direction halfway between the two.
-    forward = orientation >> camera_forward                                                 # [] Antivector
-    halfway = direction + forward                                                           # [...] Antivector
-    turn = halfway * forward / halfway.squared().square_root()                              # [...] Rotor
+    forward = orientation >> camera_forward                                                 # [] Antivector-
+    halfway = direction + forward                                                           # [...] Antivector-
+    turn = halfway * forward / halfway.squared().square_root()                              # [...] Rotor+
     # The camera's own right and up, turned with it; a screen direction is read by pairing with the
     # camera's slices x and y.
-    return (boost * turn * orientation) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen))  # [...] Antivector <- Screen
+    return (boost * turn * orientation) >> (camera_right * (mv.x & Screen) + camera_up * (mv.y & Screen))  # [...] Antivector- <- Screen
