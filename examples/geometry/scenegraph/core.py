@@ -46,8 +46,8 @@ def anisotropic_scale(scale_x: float, scale_y: float, scale_z: float) -> PointMa
     return (scaled_axes * (coordinate_planes & Point)).sum(axis=0)             # [] Point- <- Point-
 
 
-def robot_arm(joint_angles: tuple) -> PointMap:
-    """Each body of the five-part arm is the canonical unit box scaled to shape and placed into the world by its cumulative joint motor."""
+def robot_arm(joint_angles: tuple) -> tuple[PointMap, Motor]:
+    """Each body of the five-part arm is the canonical unit box scaled to shape and placed into the world by its cumulative joint motor; and the four joints' pivots."""
     theta_base, theta_shoulder, theta_elbow, theta_wrist = joint_angles
 
     # Body 0: Base pedestal resting on the floor z == 0
@@ -69,7 +69,9 @@ def robot_arm(joint_angles: tuple) -> PointMap:
     pivot_wrist = pivot_elbow * (mv.zw * 1.0 / 2).exp() * (mv.zx * theta_wrist / 2).exp()
     body_4 = (pivot_wrist * (mv.zw * 0.15 / 2).exp()) >> anisotropic_scale(0.28, 0.14, 0.3)
 
-    return stack([body_0, body_1, body_2, body_3, body_4])                     # [bodies] Point- <- Point-
+    bodies = stack([body_0, body_1, body_2, body_3, body_4])                   # [bodies] Point- <- Point-
+    pivots = stack([pivot_turret, pivot_shoulder, pivot_elbow, pivot_wrist])   # [joints] Motor+
+    return bodies, pivots
 
 
 def thin_lens(center: Point, plane: Plane, focal_length: float) -> LineMap:

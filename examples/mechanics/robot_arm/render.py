@@ -36,10 +36,10 @@ def solid_boxes(corners: Point) -> solids.Plane:
     """The boxes of corner points `[boxes, 8]` as solids bounded by planes `[boxes, 6]`: each face the join of three
     of its corners, made extrinsic by the intrinsic scalar one, and turned so that the box's middle lies on its
     negative side."""
-    faces = corners[:, BOX_FACES]                                              # [boxes, 6, 3] Point
-    planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * solids.flip     # [boxes, 6] Plane
+    faces = corners[:, BOX_FACES]                                              # [boxes, 6, 3] Point-
+    planes = (faces[..., 0] & faces[..., 1] & faces[..., 2]) * solids.flip     # [boxes, 6] Plane+
     planes = planes / (planes | planes).square_root()
-    middles = corners.sum(axis=-1)[:, None]                                    # [boxes, 1] Point
+    middles = corners.sum(axis=-1)[:, None]                                    # [boxes, 1] Point-
     return planes * -np.sign((planes & middles).to_array())
 
 
@@ -55,7 +55,7 @@ def animate_tracking(states: Iterable, room: float = VIEW_ROOM) -> Iterator[np.n
         # The tip's path up to this frame's tip.
         path.append(tip)
         trail = strokes.polylines([(stack(path), TARGET_COLOUR)], TRAIL_WIDTH, view)
-        ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Quadric
+        ball = solids.ball(target, TARGET_RADIUS * view.pixel)[None, None]      # [1, 1] Plane+ <- Point-
         yield solids.draw([(ball, TARGET_COLOUR)], view, BACKGROUND,
                           inks=[], translucent=[(solid_boxes(boxes), LINK_COLOURS, LINK_OPACITY)],
                           meshes=[(trail, TRAIL_OPACITY)])

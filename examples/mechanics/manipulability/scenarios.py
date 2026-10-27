@@ -41,8 +41,8 @@ def ellipsoids(joint_angles: tuple, velocity_scale: float, force_scale: float):
     """
     bodies, tip, axes = core.arm_axes(joint_angles)
     # The velocity ellipsoid as a point quadric.
-    velocity = core.velocity_ellipsoid(tip, axes * velocity_scale).inverse()   # [] Plane <- Point
-    force = core.force_ellipsoid(tip, axes * force_scale)                      # [] Plane <- Point
+    velocity = core.velocity_ellipsoid(tip, axes * velocity_scale).inverse()   # [] Plane+ <- Point-
+    force = core.force_ellipsoid(tip, axes * force_scale)                      # [] Plane+ <- Point-
     return bodies, tip, velocity, force
 
 
@@ -73,13 +73,13 @@ def main() -> None:
         unit_velocity, unit_force = core.velocity_ellipsoid(tip, axes), core.force_ellipsoid(tip, axes)
         sphere = core.unit_sphere(tip)
         np.testing.assert_allclose(unit_force.kernel, sphere(unit_velocity(sphere(core.Point))).kernel, rtol=1e-8, atol=1e-8)
-        along = core.mv.direction(CHECKED_FORCES / np.linalg.norm(CHECKED_FORCES, axis=-1, keepdims=True))   # [forces] Direction
+        along = core.mv.direction(CHECKED_FORCES / np.linalg.norm(CHECKED_FORCES, axis=-1, keepdims=True))   # [forces] Direction-
         torques = (axes[:, None] & (tip & along)).to_array()                   # [joints, forces]
         held = tip + along
         np.testing.assert_allclose((held & unit_force(held)).to_array(), 1 - (torques**2).sum(axis=0), atol=1e-8)
-        reach = np.sqrt((torques**2).sum(axis=0))
+        radius = np.sqrt((torques**2).sum(axis=0))
         normal = along.dual()
-        tangent = normal - core.w * (normal & (tip + along * reach))
+        tangent = normal - core.w * (normal & (tip + along * radius))
         np.testing.assert_allclose((tangent & unit_velocity(tangent)).to_array(), 0.0, atol=1e-8)
 
 

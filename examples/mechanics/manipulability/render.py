@@ -21,7 +21,7 @@ velocity_colour, force_colour = np.array([0.25, 0.45, 0.85]), np.array([0.92, 0.
 quadric_opacity = 0.33
 background = np.ones(3)
 # The unit cube's six planes, half a unit from the origin across the axes, the cube on their negative sides.
-cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Plane
+cube = solids.boxes(mv.rotor(), np.full(3, 0.5))                         # [6] Plane+
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -32,7 +32,7 @@ def image(bodies: core.arm.PointMap, surface: core.Quadric, colour: np.ndarray, 
     bytes."""
     elevation, azimuth = np.radians(view[0]), np.radians(view[1] + 90)
     seen = solids.View(solids.aim(mv.point(centre), elevation, azimuth), np.full(2, extent), pixels)
-    boxes = bodies[:, None].adjugate().solve(cube)                           # [boxes, 6] Plane
+    boxes = bodies[:, None].adjugate().solve(cube)                           # [boxes, 6] Plane+
     return solids.draw([(boxes, box_colours)], seen, background, inks=[],
                        translucent=[(surface[None, None], colour, quadric_opacity)], meshes=[])
 

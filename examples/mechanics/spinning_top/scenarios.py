@@ -66,17 +66,17 @@ def top(tip_radius: float, disc_height: float, disc_mass: float
     centres = np.array([[0, 0, disc_height], [0, 0, disc_height + STEM_ABOVE_DISC], [0, 0, TIP_HEIGHT]])
     semi = np.stack([DISC_SEMI, STEM_SEMI, np.array([tip_radius, tip_radius, TIP_HEIGHT])])
     mass = np.array([disc_mass, STEM_MASS, TIP_MASS])
-    com = (centres * mass[:, None]).sum(0) / mass.sum()
-    centres = centres - com
-    parts = core.ellipsoid(core.mv.point(centres), semi)                       # [parts] Plane <- Point
+    centre_of_mass = (centres * mass[:, None]).sum(0) / mass.sum()
+    centres = centres - centre_of_mass
+    parts = core.ellipsoid(core.mv.point(centres), semi)                       # [parts] Plane+ <- Point-
     points, masses = core.sigma_points(centres, semi, mass)
-    inertia = core.inertia(points, masses)                                     # [] Forque <- Rate
-    return parts, inertia, inertia.inverse(), mass.sum(), com[2]
+    inertia = core.inertia(points, masses)                                     # [] Forque- <- Rate+
+    return parts, inertia, inertia.inverse(), mass.sum(), centre_of_mass[2]
 
 
 def spin(setup: Setup, seconds: float, dt: float, n_steps_per_frame: int
          ) -> Iterator[tuple[core.Motor, core.Rate, core.Quadric, core.Quadric]]:
-    """Simulate from a slight tilt; yield the pose, the rate, the parts and the ground every few steps. A frame's steps
+    """The pose, the rate, the parts and the ground every few steps, simulated from a slight tilt. A frame's steps
     run under `jax.lax.scan`: each is a few hundred small operations on one top, which the compiled loop does at once."""
     import jax
     from numga.backend.jax import JaxContext

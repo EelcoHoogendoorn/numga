@@ -100,13 +100,13 @@ def frame(motor: core.Motor, parts: core.Quadric, ground: core.Quadric, view: tu
           extent: float, pixels: int) -> np.ndarray:
     """One RGB image of the top placed by the motor on the ground, square, of half-width extent about the centre,
     seen from an elevation and azimuth in degrees, the azimuth measured from x."""
-    camera = solids.aim(centre, np.radians(view[0]), np.radians(view[1] + 90))                  # [] Motor
+    camera = solids.aim(centre, np.radians(view[0]), np.radians(view[1] + 90))                  # [] Motor+
     # The lamp above the viewer's left shoulder.
-    toward = camera >> mv.direction([-0.3, 0.8, 1.0])                                         # [] Point
+    toward = camera >> mv.direction([-0.3, 0.8, 1.0])                                         # [] Point-
     lighting = dict(lamp=toward / toward.dual().norm(), ambient=ambient, fill_tilt=0.0, headlight=0.0, gloss=gloss,
                     shininess=shininess)
-    placed = motor >> parts(motor << core.Point)                                                # [parts] Quadric
-    traced = shader()((pixels, pixels), quadrics=concatenate([ground[None], placed]),
+    placed_parts = motor >> parts(motor << core.Point)                                          # [parts] Plane+ <- Point-
+    traced = shader()((pixels, pixels), quadrics=concatenate([ground[None], placed_parts]),
                       paints=dict(colour=part_colours, contrast=sector_contrast), motor=motor, camera=camera,
                       back=20 * extent, half_height=extent, **lighting)["image"]
     return np.round(np.clip(traced, 0, 1) * 255).astype(np.uint8)

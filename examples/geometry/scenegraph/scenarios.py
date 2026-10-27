@@ -48,7 +48,7 @@ def photograph(joint_angles, corners: list[int]):
     """A posed robot arm has world vertices, sensor pixel projections, a camera pose, and rays traced through both lenses from the chosen gripper corners."""
     unit_box = canonical_unit_box()
     pose, front_lens, rear_lens, rear_plane, pupil, sensor_plane, world_to_pixel = camera_rig()
-    bodies_to_world = robot_arm(joint_angles)
+    bodies_to_world, _ = robot_arm(joint_angles)
     # The whole pipeline, kinematics to pixels, as one map per body, applied to every vertex in one pass.
     raw_pixels = world_to_pixel(bodies_to_world)[:, None](unit_box[None, :])   # [bodies, vertices] Point-
     projected = raw_pixels / (mv.w & raw_pixels)                               # [bodies, vertices] Point-

@@ -22,7 +22,7 @@ def test_anisotropic_scale_extensor():
 def test_robot_arm_kinematics():
     """Forward kinematics yields five rigidly placed bodies."""
     unit_box = core.canonical_unit_box()
-    bodies_to_world = core.robot_arm((0.2, -0.3, 0.5, -0.2))
+    bodies_to_world, _ = core.robot_arm((0.2, -0.3, 0.5, -0.2))
     assert bodies_to_world.shape == (5,)
     verts = bodies_to_world[:, None](unit_box[None, :])
     np.testing.assert_allclose((mv.w & verts).to_array(), 1.0, atol=1e-10)

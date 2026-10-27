@@ -10,33 +10,35 @@ joint is the pairing of the carried axis with that forque. No transpose is ever 
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from numga import NumpyContext, concatenate
 from numga.algebras import PGA3D
 
 ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Point = ga.gatype.antivector()
+Point = ga.gatype.antivector()                      # Antivector-
 # A joint's axis scaled by an angle or a rate: a twist, the meet of two planes; and a force line, a forque.
-Twist = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-Motor = ga.gatype.rotor()
-Scalar = ga.gatype.scalar()
+Twist = ga.gatype.bivector()                        # Bivector+
+Forque = ga.gatype.antibivector()                   # Antibivector-
+Motor = ga.gatype.rotor()                           # Rotor+
+Scalar = ga.gatype.scalar()                         # Scalar+
 
 
 # --- math -----------------------------------------------------------------------------
 def forward_kinematics(joints: Twist) -> tuple[Motor, Motor]:
-    """Return the tip pose and the frame before each joint's rotation."""
-    steps = (joints * 0.5).exp()                                               # [joints] Motor
+    """The tip pose, and the frame before each joint's rotation."""
+    steps = (joints * 0.5).exp()                                               # [joints] Motor+
     # The steps multiply on the right: their running product is the reverse of the running product of
     # their reverses.
-    poses = steps.reverse().cumprod(axis=0).reverse()                          # [joints] Motor
+    poses = steps.reverse().cumprod(axis=0).reverse()                          # [joints] Motor+
     return poses[-1], concatenate([mv.rotor().reshape(1), poses[:-1]])
 
 
 def mechanics(joints: Twist, axis: Twist, rates: Twist, tip_home: Point,
               forque: Forque) -> tuple[Point, Scalar]:
-    """Compute tip velocity and joint torques at the supplied configuration."""
+    """The tip velocity and the joint torques at a configuration."""
     pose, frames = forward_kinematics(joints)
     tip = pose >> tip_home
 
@@ -51,9 +53,9 @@ def mechanics(joints: Twist, axis: Twist, rates: Twist, tip_home: Point,
 
 
 def inverse_kinematics(joints: Twist, axis: Twist, tip_home: Point, target: Point,
-                       iterations: int):
-    """Solve towards a target; return updated joints, link poses and the tip."""
-    for _ in range(iterations):
+                       n_steps: int) -> tuple[Twist, Motor, Point]:
+    """The joints solved towards a target, the link poses, and the tip."""
+    for _ in range(n_steps):
         pose, frames = forward_kinematics(joints)
         tip = pose >> tip_home
         # Tip velocity per unit rate, per joint.
@@ -68,8 +70,8 @@ def inverse_kinematics(joints: Twist, axis: Twist, tip_home: Point, target: Poin
 
 
 def track(joints: Twist, axis: Twist, tip_home: Point, targets: Point,
-          iterations: int):
-    """Follow targets, yielding joints, link poses, target and tip after each solve."""
+          n_steps: int) -> Iterator[tuple[Twist, Motor, Point, Point]]:
+    """The joints, the link poses, the target and the tip after each solve, following the targets."""
     for target in targets:
-        joints, link_motors, tip = inverse_kinematics(joints, axis, tip_home, target, iterations)
+        joints, link_motors, tip = inverse_kinematics(joints, axis, tip_home, target, n_steps)
         yield joints, link_motors, target, tip

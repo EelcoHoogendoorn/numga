@@ -23,16 +23,16 @@ from numga import NumpyContext
 from numga.algebras import PGA3D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
+Scalar = ga.gatype.scalar()                               # Scalar+
+Point = ga.gatype.antivector()                            # Antivector-
+Plane = ga.gatype.vector()                                # Vector+
 # A rate of motion, and a force line, the load along it.
-Rate = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-Inertia = ga.gatype((Forque, Rate))                       # Forque <- Rate
-InverseInertia = ga.gatype((Rate, Forque))                # Rate <- Forque
-Motor = ga.gatype.rotor()
-Direction = Point.derive.degenerate
+Rate = ga.gatype.bivector()                               # Bivector+
+Forque = ga.gatype.antibivector()                         # Antibivector-
+Inertia = ga.gatype((Forque, Rate))                       # Forque- <- Rate+
+InverseInertia = ga.gatype((Rate, Forque))                # Rate+ <- Forque-
+Motor = ga.gatype.rotor()                                 # Rotor+
+Direction = Point.derive.degenerate                       # Antivector-
 Quadric = ga.gatype((Plane, Point))
 w = mv.w
 axes = mv(Plane.derive.nondegenerate, np.eye(3))
@@ -49,7 +49,7 @@ def clamp(value: Scalar, limit: Scalar) -> Scalar:
 # --- shapes and mass ---------------------------------------------------------------------------
 def ellipsoid(centre: Point, semi: np.ndarray) -> Quadric:
     """Solid ellipsoids about centres with the given semi-axes: dyads of the planes through each centre."""
-    through = axes - w * (axes & centre[..., None])                           # [..., 3] Plane
+    through = axes - w * (axes & centre[..., None])                           # [..., 3] Plane+
     return (through * (through & Point) / semi**2).sum(axis=-1) - w * (w & Point)
 
 
@@ -114,23 +114,23 @@ def compliance(motor: Motor, inverse_inertia: InverseInertia, lines: Forque) -> 
 
 
 def move(motor: Motor, step: Rate, forque: Scalar) -> Motor:
-    """Carry the body by the summed twists of the forques."""
+    """The body carried by the summed twists of the forques."""
     return (motor * ((step * forque).sum(axis=0) * -0.5).exp()).normalized()
 
 
 def project_contacts(before: Motor, motor: Motor, inverse_inertia: InverseInertia, parts: Quadric, ground: Quadric,
                      static: float, dynamic: float, dt: float) -> tuple[Motor, Rate]:
-    """Correct the predicted pose one part after another, so that each sees the corrections before it:
-    press it out by its depth, then hold it against sliding within the friction cone; then slow the rate
-    by each part's dynamic friction in turn. The parts are taken in a compiled loop, in the motor's
+    """The predicted pose corrected one part after another, so that each sees the corrections before it:
+    pressed out by its depth, then held against sliding within the friction cone; then the rate slowed by
+    each part's dynamic friction in turn. The parts are taken in a compiled loop, in the motor's
     context."""
-    parts = parts.materialize(motor.context)                                # [parts] Plane <- Point
+    parts = parts.materialize(motor.context)                                # [parts] Plane+ <- Point-
 
     def touching(motor: Motor, part: Quadric) -> tuple[Point, Direction, Scalar]:
         # One part, as a set of one, so that the contact helpers apply as they are.
-        placed = motor >> part[None](motor << Point)                         # [1] Plane <- Point
-        centre = placed.solve(w)                                             # [1] Point
-        contact = lowest_point(placed, ground_normal(ground, centre / (w & centre)))
+        placed_part = motor >> part[None](motor << Point)                         # [1] Plane+ <- Point-
+        centre = placed_part.solve(w)                                             # [1] Point-
+        contact = lowest_point(placed_part, ground_normal(ground, centre / (w & centre)))
         # The ground's form at the contact over its gradient's length: how far the point lies below the
         # ground, to first order in the depth; a part in the air has none.
         depth = (-(ground(contact) & contact) / (2 * ground(contact).norm())).clip(0, np.inf)
@@ -139,27 +139,27 @@ def project_contacts(before: Motor, motor: Motor, inverse_inertia: InverseInerti
     def press(motor: Motor, part: Quadric) -> tuple[Motor, Scalar]:
         contact, normal, depth = touching(motor, part)
         # Press out along the normal line through the contact, by its depth.
-        step, give = compliance(motor, inverse_inertia, contact & normal)
-        pressed = depth / give
-        motor = move(motor, step, pressed)
+        step, line_compliance = compliance(motor, inverse_inertia, contact & normal)
+        press_impulse = depth / line_compliance
+        motor = move(motor, step, press_impulse)
         # Sticking is possible only when its full correction fits the static friction limit.
-        slid = along_ground(contact - (before >> (motor << contact)), normal)
-        back = slid.dual().norm()
-        step, give = compliance(motor, inverse_inertia, contact & (-slid / (back + 1e-12)))
-        sticking = back / (give + 1e-12)
-        return move(motor, step, sticking * (sticking <= pressed * static)), pressed
+        slip = along_ground(contact - (before >> (motor << contact)), normal)
+        slip_length = slip.dual().norm()
+        step, line_compliance = compliance(motor, inverse_inertia, contact & (-slip / (slip_length + 1e-12)))
+        stick_impulse = slip_length / (line_compliance + 1e-12)
+        return move(motor, step, stick_impulse * (stick_impulse <= press_impulse * static)), press_impulse
 
-    motor, pressures = jax.lax.scan(press, motor, parts)                    # [] Motor, [parts, 1] Scalar
+    motor, pressures = jax.lax.scan(press, motor, parts)                    # [] Motor+, [parts, 1] Scalar+
     rate = (before.inverse() * motor).normalized().log() * (-2.0 / dt)
 
     def slow(rate: Rate, part_and_pressure: tuple[Quadric, Scalar]) -> tuple[Rate, None]:
-        part, pressed = part_and_pressure
+        part, press_impulse = part_and_pressure
         contact, normal, _ = touching(motor, part)
         # The contact's remaining slip, held by at most the dynamic coefficient times its pressing impulse.
         sliding = along_ground(contact.commutator(motor >> rate), normal)
         speed = sliding.dual().norm()
-        step, give = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
-        return rate + (step * clamp(speed / (give + 1e-12), pressed * (dynamic / dt))).sum(axis=0), None
+        step, line_compliance = compliance(motor, inverse_inertia, contact & (-sliding / (speed + 1e-12)))
+        return rate + (step * clamp(speed / (line_compliance + 1e-12), press_impulse * (dynamic / dt))).sum(axis=0), None
 
     rate, _ = jax.lax.scan(slow, rate, (parts, pressures))
     return motor, rate

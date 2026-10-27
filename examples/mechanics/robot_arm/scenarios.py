@@ -34,10 +34,10 @@ def arm():
     """The joint axes in the home pose, the tip in the home pose, and a rest configuration."""
     # Joint axes in the home pose: yaw about z at the base, then two pitch joints about y, at the elbow
     # and the wrist. Each axis is a line to turn about: the meet of two planes.
-    axis = stack([mv.y ^ mv.x, mv.x ^ (mv.z - ELBOW_HEIGHT * mv.w), mv.x ^ (mv.z - WRIST_HEIGHT * mv.w)])   # [joints] Twist
-    tip_home = mv.point([0.0, 0.0, TIP_HEIGHT])                                # [] Point
+    axis = stack([mv.y ^ mv.x, mv.x ^ (mv.z - ELBOW_HEIGHT * mv.w), mv.x ^ (mv.z - WRIST_HEIGHT * mv.w)])   # [joints] Twist+
+    tip_home = mv.point([0.0, 0.0, TIP_HEIGHT])                                # [] Point-
     # A joint's state: its axis times its angle.
-    return axis, tip_home, axis * REST_ANGLES                                  # [joints] Twist, [] Point, [joints] Twist
+    return axis, tip_home, axis * REST_ANGLES                                  # [joints] Twist+, [] Point-, [joints] Twist+
 
 
 def loop_targets() -> Point:
@@ -55,14 +55,14 @@ def link_boxes(n_links: int, width: float, depth: float) -> Point:
 def statics() -> tuple[Point, Scalar]:
     """Tip velocity under joint rates, and the joint torques of a forque at the tip, at rest."""
     axis, tip_home, rest = arm()
-    rates = axis * RATES                                                       # [joints] Twist
+    rates = axis * RATES                                                       # [joints] Twist+
     # A force at a point is a forque: the point joined with the weighted direction.
-    forque = mv.point(LOAD_AT) & mv.direction(LOAD)                            # [] Forque
+    forque = mv.point(LOAD_AT) & mv.direction(LOAD)                            # [] Forque-
     return core.mechanics(rest, axis, rates, tip_home, forque)
 
 
 def homing() -> tuple[Scalar, Scalar]:
-    """Solve from rest onto the start of the loop: the remaining tip error and the joint angles."""
+    """The remaining tip error and the joint angles, solved from rest onto the start of the loop."""
     axis, tip_home, rest = arm()
     target = loop_targets()[0]
     joints, _, tip = core.inverse_kinematics(rest, axis, tip_home, target, N_HOMING_STEPS)
