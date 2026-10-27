@@ -16,7 +16,7 @@ def test_strokes_are_force_free_and_only_the_loop_advances():
     every_cycle = slice(scenarios.N_STEPS_PER_CYCLE, None, scenarios.N_STEPS_PER_CYCLE)
     # The tolerance tests the steps per cycle.
     np.testing.assert_allclose((motors[every_cycle, 1] - motors[0, 1]).kernel, 0.0, atol=1e-4)
-    advances = np.diff((core.separation(positions[every_cycle, 0], core.ORIGIN) | core.mv.x).to_array(), prepend=0.0)
+    advances = np.diff((core.mv.x & (positions[every_cycle, 0] - core.ORIGIN)).to_array(), prepend=0.0)
     assert np.all(np.abs(advances) > 0.04)
 
 

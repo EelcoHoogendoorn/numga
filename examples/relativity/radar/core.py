@@ -15,21 +15,21 @@ from numga import Algebra, NumpyContext
 ga = Algebra("x+t-w0")
 mv = NumpyContext(ga).multivector
 # Events are intrinsic homogeneous points: a nonzero common scale leaves their location unchanged.
-Event = ga.gatype.antivector()
+Event = ga.gatype.antivector()                             # Antivector-
 # An extrinsic line equation pairs to zero with events on a worldline or simultaneous slice.
-Slice = ga.gatype.vector()
-Scalar = ga.gatype.scalar()
-EventMap = ga.gatype((Event, Event))
+Slice = ga.gatype.vector()                                 # Vector+
+Scalar = ga.gatype.scalar()                                # Scalar+
+EventMap = ga.gatype((Event, Event))                       # Event- <- Event-
 
 # The signed blade complement gives an origin with homogeneous weight mv.w & origin == 1.
-origin = mv.w.dual()
+origin = mv.w.dual()                                       # [] Event-
 # Weight-zero events are ideal points: spatial and temporal directions.
-across = mv.x.dual()
-time = -mv.t.dual()
+across = mv.x.dual()                                       # [] Event-
+time = -mv.t.dual()                                        # [] Event-
 # Joining these directions to the origin gives light rays whose line squares are zero.
 # Every ideal point itself squares to zero, including across and time.
-outgoing = time + across
-incoming = time - across
+outgoing = time + across                                   # [] Event-
+incoming = time - across                                   # [] Event-
 
 
 def echo_maps(receiver: Slice, reflector: Slice, outward: Event, inward: Event,

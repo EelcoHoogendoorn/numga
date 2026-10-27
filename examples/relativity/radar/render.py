@@ -85,9 +85,10 @@ def exchange_frames(worldlines: Event, emitted: Event, reflected: Event, receive
 
 
 def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received: Event,
-                   located: Event, simultaneous: Event, clock: Slice,
+                   located: Event, simultaneous: Event, radar_time: Scalar, radar_range: Scalar, clock: Slice,
                    window: planar.Window) -> np.ndarray:
-    """The radar assignment for the middle pulse, with every recovered reflection marked."""
+    """The radar assignment for the middle pulse, with every recovered reflection marked and the middle one's clock
+    readings, radar time and range written beside it."""
     tracks, sent, hits, returned, measured, midpoints = map(
         coordinates, (worldlines, emitted, reflected, received, located, simultaneous))
     index = len(sent) // 2
@@ -106,25 +107,10 @@ def reconstruction(worldlines: Event, emitted: Event, reflected: Event, received
     layers += dots(np.stack((sent[index], returned[index])), INK, 3)
     layers += dots(midpoints[index:index + 1], GREEN, 3)
     readings = (clock & stack((emitted[index], received[index]))).to_array()
-    middle = readings.mean()
-    distance = (readings[1] - readings[0]) / 2
+    middle, distance = radar_time[index].to_array(), radar_range[index].to_array()
     range_label = (midpoints[index] + measured[index]) / 2
     labels = [(sent[index, 0], sent[index, 1], f"τ− = {readings[0]:.2f}", INK, (-10, 0), "rm"),
               (returned[index, 0], returned[index, 1], f"τ+ = {readings[1]:.2f}", INK, (-10, 0), "rm"),
               (*midpoints[index], f"T = {middle:.2f}", GREEN, (-10, 0), "rm"),
               (*range_label, f"R = {distance:.2f}", GREEN, (0, -12), "mm")]
     return written(window, layers, labels)
-
-
-def measurements(emitted: Event, received: Event, clock: Slice, radar_time: Scalar,
-                 radar_range: Scalar, stretch: Scalar, velocity: Scalar, initial_range: Scalar) -> str:
-    """A compact table of the measured times and inferred trajectory."""
-    rows = np.stack(((clock & emitted).to_array(), (clock & received).to_array(),
-                     radar_time.to_array(), radar_range.to_array()), axis=-1)
-    heading = "  sent    return    radar time    range"
-    body = "\n".join(f"{sent:6.2f}  {returned:8.2f}  {time:12.2f}  {distance:7.2f}"
-                     for sent, returned, time, distance in rows)
-    inferred = (f"Echo stretch: {float(stretch.to_array()):.3f}\n"
-                f"Relative velocity: {float(velocity.to_array()):.3f} c\n"
-                f"Range at clock zero: {float(initial_range.to_array()):.3f}")
-    return f"{heading}\n{body}\n\n{inferred}"

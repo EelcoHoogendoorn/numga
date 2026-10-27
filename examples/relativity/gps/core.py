@@ -1,7 +1,8 @@
 """Satellite navigation recovers a reception event and its uncertainty from transmission events.
 
 Projective spacetime algebra describes events as intrinsic antivectors and readouts as
-extrinsic vectors. A translated Lorentz correlation gives each signal's light cone.
+extrinsic vectors. Each signal's light cone is a correlation from events to planes: the line from
+the transmission to an event, contracted with the transmission, `emitted | (emitted & Event)`.
 Timing sensitivities contribute positive dyads to an information map; its inverse
 describes uncertainty in both location and reception time.
 
@@ -23,13 +24,12 @@ Cone = ga.gatype((Slice, Event))
 Information = ga.gatype((Readout, Step))
 Covariance = ga.gatype((Step, Readout))
 Orbit = ga.gatype.bivector()
+# The position readouts, the planes across x, y and z.
+Spatial = ga.gatype.from_blades("x y z")
 
 origin = mv.w.dual()
 across = mv.x.dual()
 time = -mv.t.dual()
-# The Lorentz form, reading a displacement's interval: the homogeneous direction squares to zero, so the
-# complement carries it.
-spacetime_metric = Event.dual_inverse().cast(Readout)
 
 
 def orbit_positions(planes: Orbit, phases: Scalar, radius: float,
@@ -39,6 +39,12 @@ def orbit_positions(planes: Orbit, phases: Scalar, radius: float,
     return origin + (rotation >> across) * radius + time * times
 
 
+def spatial_distance(first: Event, second: Event) -> Scalar:
+    """The distance between events of unit weight in the frame whose time `mv.t` reads: minus the squared norm of the
+    line joining them, their interval, with the square of the time between them added back."""
+    return ((mv.t & (first - second)).squared() - (first & second).scalar_norm_squared()).square_root()
+
+
 def emitted_events(receiver: Event, planes: Orbit, phases: Scalar, radius: float,
                    angular_speed: float, n_steps: int) -> Event:
     """Retarded transmission events on the orbits whose signals reach the receiver together."""
@@ -46,18 +52,15 @@ def emitted_events(receiver: Event, planes: Orbit, phases: Scalar, radius: float
     emission_time = reception_time
     for _ in range(n_steps):
         satellites = orbit_positions(planes, phases, radius, angular_speed, emission_time)
-        separation = receiver - satellites
-        # The separation's length in the receiver's space: its interval, with the time it spans added back.
-        distance = ((separation & spacetime_metric(separation)) + (mv.t & separation).squared()).square_root()
-        emission_time = reception_time - distance
+        emission_time = reception_time - spatial_distance(receiver, satellites)
     return orbit_positions(planes, phases, radius, angular_speed, emission_time)
 
 
 def light_cones(emitted: Event) -> Cone:
     """Homogeneous quadratic correlations whose vertices are the transmission events."""
-    centred = Event - (emitted - origin) * (mv.w & Event)
-    # Carry the interval form through the translation on both its arguments.
-    return centred.adjugate()(spacetime_metric(centred))
+    # The line from the transmission to an event, contracted with the transmission: a plane, which the event pairs
+    # with to the line's interval, zero exactly when the line is a light ray.
+    return emitted | (emitted & Event)
 
 
 def intersect_cones(cones: Cone) -> Event:
@@ -122,3 +125,9 @@ def locate(emitted: Event, initial: Event, sigma: float,
     information = (readout * (readout & Step) / (lever * sigma) ** 2).sum(axis=-1)
     covariance = information.inverse()
     return receiver, information, covariance
+
+def position_spread(covariance: Covariance) -> Event:
+    """The semi-axes of the position's one-standard-deviation ellipsoid `[..., 3]`: over the principal planes of the
+    covariance between position readouts, each plane's covariance over its standard deviation."""
+    variances, principal = (Spatial & covariance(Spatial)).eigh()
+    return covariance(principal) / variances.square_root()

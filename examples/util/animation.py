@@ -69,7 +69,9 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
     samples = [Image.fromarray(frames[index]).resize((PALETTE_SIZE, PALETTE_SIZE), Image.Resampling.NEAREST)
                for index in indices]
     sampled = np.concatenate([np.asarray(sample) for sample in samples], axis=0)
-    palette = Image.fromarray(sampled).quantize(colors=colors)
+    # One entry of the 256 left free, which Pillow takes for the pixels a frame leaves as they were, drawn transparent
+    # over the frame before, so that what does not move costs next to nothing.
+    palette = Image.fromarray(sampled).quantize(colors=min(colors, 255))
     # Each entry snapped to the commonest colour among the pixels it stands for, rather than their mean, so that flat
     # colours, a white background above all, stay exact.
     entries = np.array(palette.getpalette(), dtype=np.uint8).reshape(-1, 3)
@@ -86,7 +88,7 @@ def save_gif(frames: Iterable[np.ndarray], path: str, duration_ms: int, colors: 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     images[0].save(
         path, save_all=True, append_images=images[1:], palette=palette.getpalette(),
-        duration=duration_ms, loop=0,
+        duration=duration_ms, loop=0, optimize=True,
     )
     return path
 

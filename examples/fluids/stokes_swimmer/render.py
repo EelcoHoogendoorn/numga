@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.artist import Artist
 
+from numga import stack
 from examples.util.animation import capture
 from examples.fluids.stokes_swimmer import core
 
@@ -23,14 +24,17 @@ CROSS_COLOUR, LABEL_COLOUR = "#cbd5e1", "0.4"
 HINGE_MARGIN, HINGE_ROOM = 0.12, 0.5
 
 
-def point_coords(points: core.Point | core.Direction) -> np.ndarray:
-    """The `(x, y)` coordinates of planar points or ideal displacements."""
-    return points.dual().cast(core.ga.subspace("x y")).kernel
+def point_coords(points: core.Point) -> np.ndarray:
+    """The `(x, y)` coordinates of planar points at unit weight, or of ideal displacements: their pairings with the
+    lines x and y."""
+    mv = core.mv
+    return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
 def force_coords(forces: core.Force) -> np.ndarray:
-    """The `(x, y)` components of planar forces."""
-    return forces.cast(core.ga.subspace("x y")).kernel
+    """The `(x, y)` components of planar forces: their pairings with the unit displacements along x and y."""
+    mv = core.mv
+    return (forces[..., None] & stack((mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])))).to_array()
 
 
 def _cross(ax, across: str, up: str) -> None:
@@ -106,7 +110,7 @@ def draw_summary(
     """Left: instantaneous Stokes flow around Purcell's swimmer with bead forces and centre trail;
     middle: centre displacement along x over the three cycles for both strokes; right: the two strokes
     in hinge-angle space."""
-    figure, (ax_flow, ax_path, ax_hinge) = plt.subplots(1, 3, figsize=(12.2, 3.8), dpi=100)
+    figure, (ax_flow, ax_path, ax_hinge) = plt.subplots(1, 3, figsize=(8.2, 2.6), dpi=75)
 
     grid_xy = point_coords(grid)                                                # [gy, gx, 2]
     flow_xy = point_coords(flow)                                                # [gy, gx, 2]
@@ -162,7 +166,7 @@ def animate_swimmers(
     x_min = min(float(all_pos_xy[:, 0, 0].min()), 0.0) - 2.3
     x_max = max(float(all_pos_xy[:, 0, 0].max()), 0.0) + 2.3
     # The figure set up once; the flow, the trails and the swimmers move.
-    figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=85)
+    figure, axes = plt.subplots(2, 1, figsize=(6.2, 4.6), dpi=55)
     arrows = axes[0].quiver(
         grid_xy[..., 0], grid_xy[..., 1],
         np.zeros(grid_xy.shape[:-1]), np.zeros(grid_xy.shape[:-1]),

@@ -48,13 +48,13 @@ def strokes() -> tuple[np.ndarray, core.Point, core.Twist, core.Force, core.Moto
     ], axis=1)                                                                  # [steps, swimmers, 2]
 
     sites, shape_velocity = core.three_link_shape(HINGE_HALF_SPAN, CENTRE_OFFSETS, ARM_OFFSETS, angles, rates)
-    body_rate, forces = core.swim(sites, shape_velocity, BEAD_RADIUS)           # [steps, swimmers] Twist, Force[beads]
+    body_rate, forces = core.swim(sites, shape_velocity, BEAD_RADIUS)           # [steps, swimmers] Twist+, Force+[beads]
 
-    start_motor = (mv.xy * np.array([0.0, 0.0])).exp()                          # [swimmers] Motor
-    motors = core.integrate_pose(body_rate, dt, start_motor)                    # [steps + 1, swimmers] Motor
-    positions = motors >> core.ORIGIN                                           # [steps + 1, swimmers] Point
-    world_sites = motors[:-1] >> sites                                          # [steps, swimmers] Point[beads]
-    world_forces = (motors[:-1] >> forces.dual()).dual()                        # [steps, swimmers] Force[beads]
+    start_motor = (mv.xy * np.array([0.0, 0.0])).exp()                          # [swimmers] Motor+
+    motors = core.integrate_pose(body_rate, dt, start_motor)                    # [steps + 1, swimmers] Motor+
+    positions = motors >> core.ORIGIN                                           # [steps + 1, swimmers] Point-
+    world_sites = motors[:-1] >> sites                                          # [steps, swimmers] Point-[beads]
+    world_forces = (motors[:-1] >> forces.dual()).dual()                        # [steps, swimmers] Force+[beads]
     return angles, sites, body_rate, forces, motors, positions, world_sites, world_forces
 
 
@@ -84,18 +84,18 @@ def main() -> None:
 
     # checks
     # At zero separation the regularized Stokeslet is `(2 / BEAD_RADIUS) * Force.dual()`.
-    self_mobility = core.stokeslet(0.0 * mv.x + 0.0 * mv.y, BEAD_RADIUS)
+    self_mobility = core.stokeslet(core.ORIGIN, core.ORIGIN, BEAD_RADIUS)
     np.testing.assert_allclose((self_mobility - (2.0 / BEAD_RADIUS) * core.Force.dual()).kernel, 0.0, atol=1e-12)
     # Every step is force-free and torque-free: `rigid.adjugate()(forces) == 0`.
-    rigid = sites.commutator(core.Twist)                                        # [steps, swimmers] Direction[beads] <- Twist
-    net_forque = rigid.adjugate()(forces)                                       # [steps, swimmers] Forque
+    rigid = sites.commutator(core.Twist)                                        # [steps, swimmers] Direction-[beads] <- Twist+
+    net_forque = rigid.adjugate()(forces)                                       # [steps, swimmers] Forque-
     np.testing.assert_allclose(net_forque.kernel, 0.0, atol=1e-12)
     # Scallop theorem: after each full cycle the reciprocal swimmer returns to its starting motor,
     # while Purcell's swimmer advances by the same nonzero distance each cycle.
-    cycle_motors = motors[N_STEPS_PER_CYCLE::N_STEPS_PER_CYCLE]                 # [cycles, swimmers] Motor
+    cycle_motors = motors[N_STEPS_PER_CYCLE::N_STEPS_PER_CYCLE]                 # [cycles, swimmers] Motor+
     np.testing.assert_allclose((cycle_motors[:, 1] - motors[0, 1]).kernel, 0.0, atol=1e-4)
-    cycle_centres = positions[N_STEPS_PER_CYCLE::N_STEPS_PER_CYCLE]             # [cycles, swimmers] Point
-    purcell_x = (core.separation(cycle_centres[:, 0], core.ORIGIN) | mv.x).to_array()
+    cycle_centres = positions[N_STEPS_PER_CYCLE::N_STEPS_PER_CYCLE]             # [cycles, swimmers] Point-
+    purcell_x = (mv.x & (cycle_centres[:, 0] - core.ORIGIN)).to_array()
     step_advances = np.diff(np.concatenate([[0.0], purcell_x]))
     assert np.all(np.abs(step_advances) > 0.04)
     np.testing.assert_allclose(step_advances, step_advances[0], rtol=1e-2)

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.fluids.sphere_vortices import core
 from examples.util.wgsl import solids, strokes
 from examples.util.wgsl.scene import Scene
@@ -22,14 +23,14 @@ STRANDS = np.array([to_rgb(colour) for colour in
                     ("#c84b31", "#2d6a9f", "#4c956c", "#e0a458", "#8e7dbe", "#d17a9b", "#5fa8d3", "#7f6a4f")])
 SPHERE_COLOUR = np.array([0.90, 0.91, 0.93])
 TRAIL = 60
-TRAIL_WIDTH, DOT_RADIUS = 3.0, 4.0
-N_PIXELS, MARGIN = 300, 0.08
+TRAIL_WIDTH, DOT_RADIUS = 1.6, 2.2
+N_PIXELS, MARGIN = 160, 0.08
 
 
 def coordinates(pivots: core.Pivot) -> np.ndarray:
     """The unit directions `[..., 3]` of points of the sphere: where they lie on it."""
-    parts = pivots.cast(core.ga.subspace("yz zx xy")).kernel
-    return parts / np.linalg.norm(parts, axis=-1, keepdims=True)
+    mv = core.mv
+    return (stack((mv.x, mv.y, mv.z)) & pivots.normalized()[..., None]).to_array()
 
 
 def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) -> Iterator[np.ndarray]:
@@ -48,7 +49,7 @@ def animate(histories: list[core.Pivot], view: tuple[float, float], every: int) 
                        np.array([count, 1.0]) * (1 + MARGIN), count * N_PIXELS)
     # Each vortex and its antipode, in one colour, on its sphere in the row.
     places = sm.point(np.concatenate([np.concatenate([coordinates(pivots), -coordinates(pivots)], axis=1) + centre
-                                      for pivots, centre in zip(histories, centres)], axis=1))   # [steps, points] Point
+                                      for pivots, centre in zip(histories, centres)], axis=1))   # [steps, points] Point-
     n_points = [2 * pivots.shape[1] for pivots in histories]
     colours = np.concatenate([STRANDS[np.arange(n) % (n // 2) % len(STRANDS)] for n in n_points])   # [points, 3]
     scene = Scene(seen, np.ones(3), [(solids.ball(sm.point(centres), 1.0)[:, None], SPHERE_COLOUR)], [], inks=[],

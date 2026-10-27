@@ -53,17 +53,17 @@ def history(vortices: core.Vortices, step: Callable[[core.Vortices], core.Vortic
         return later, later
 
     # The pivots carried into JAX for the loop, and the history back.
-    start = vortices.pivots.materialize(JaxContext(core.ga))                       # [vortices] Pivot
-    _, later = jax.lax.scan(advance, start, length=n_steps)                         # [steps, vortices] Pivot
+    start = vortices.pivots.materialize(JaxContext(core.ga))                         # [vortices] Pivot+
+    _, later = jax.lax.scan(advance, start, length=n_steps)                          # [steps, vortices] Pivot+
     return concatenate([start[None], later]).materialize(core.mv.context)
 
 
 def turned(colatitudes: np.ndarray, longitudes: np.ndarray) -> core.Pivot:
     """Points at the given angles from the pole and around it `[vortices]`: the pole, the meet of the
     great circles x = 0 and y = 0, turned about the point (0, 1, 0), then about itself."""
-    pole, across = core.mv.x ^ core.mv.y, core.mv.z ^ core.mv.x                      # [] Pivot each
-    tilted = (across * (-colatitudes / 2)).exp() >> pole                             # [vortices] Pivot
-    return (pole * (-longitudes / 2)).exp() >> tilted                               # [vortices] Pivot
+    pole, across = core.mv.xy, core.mv.zx                                            # [] Pivot+, Pivot+
+    tilted = (across * (-colatitudes / 2)).exp() >> pole                             # [vortices] Pivot+
+    return (pole * (-longitudes / 2)).exp() >> tilted                                # [vortices] Pivot+
 
 
 def rings() -> list[core.Pivot]:
@@ -72,8 +72,8 @@ def rings() -> list[core.Pivot]:
     rng = np.random.default_rng(SEED)
 
     def ring(size: int) -> core.Pivot:
-        places = turned(np.full(size, RING_ANGLE), 2 * np.pi * np.arange(size) / size)   # [vortices] Pivot
-        nudges = (core.pivot(rng.normal(size=(size, 3))) * DISTURBANCE).exp()       # [vortices] Rotor
+        places = turned(np.full(size, RING_ANGLE), 2 * np.pi * np.arange(size) / size)   # [vortices] Pivot+
+        nudges = (core.pivot(rng.normal(size=(size, 3))) * DISTURBANCE).exp()        # [vortices] Rotor+
         return history(core.Vortices(nudges >> places, np.ones(size), RING_CORE), midpoint, RING_STEPS)
 
     return [ring(size) for size in RING_COUNTS]
@@ -93,7 +93,7 @@ def midpoint(vortices: core.Vortices) -> core.Vortices:
 
 def chord_change(pivots: core.Pivot) -> float:
     """The largest change of any squared chord between two vortices, over the steps `[steps + 1, vortices]`."""
-    chords = (pivots[:, :, None] - pivots[:, None, :]).norm_squared().to_array()         # [steps + 1, vortices, vortices]
+    chords = (pivots[:, :, None] - pivots[:, None, :]).norm_squared().to_array()     # [steps + 1, vortices, vortices]
     return np.abs(chords - chords[0]).max()
 
 
@@ -127,12 +127,12 @@ def main() -> None:
     # vorticity, which the midpoint turns, each vortex about the other, follow to their second order; the
     # tolerance tests that. The leapfrogging pairs stay mirror images across the equator, the mirror
     # taking each positive vortex onto the negative one beside it.
-    chords = (dipole[:, 0] - dipole[:, 1]).norm_squared().to_array()               # [steps + 1]
+    chords = (dipole[:, 0] - dipole[:, 1]).norm_squared().to_array()                 # [steps + 1]
     np.testing.assert_allclose(chords, chords[0], rtol=1e-2)
     # The mirror in the equator takes each positive vortex's flow, its circulation times its bivector, onto the
     # flow of the negative vortex beside it.
-    equator = core.mv.z                                                              # [] Plane
-    mirrored = equator >> (frogs[:, ::2] * LEAPFROG_CIRCULATIONS[::2])               # [steps + 1, pairs] Pivot
+    equator = core.mv.z                                                              # [] Plane+
+    mirrored = equator >> (frogs[:, ::2] * LEAPFROG_CIRCULATIONS[::2])               # [steps + 1, pairs] Pivot+
     np.testing.assert_allclose(np.abs((mirrored - frogs[:, 1::2] * LEAPFROG_CIRCULATIONS[1::2]).kernel).max(), 0.0, atol=1e-8)
     # The pairs keep the impulse to round-off; the midpoint turns, each vortex by its own rotor, only
     # closely, the tolerance testing their accuracy; and both steps agree closely, being of second order.
