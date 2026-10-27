@@ -36,12 +36,12 @@ shaft_radius, head_radius, head_length = 2.4, 6.5, 19.5
 
 
 def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def screen_coordinates(motor: Motor, image: Point) -> np.ndarray:
-    """Read (x, y) screen coordinates of image points on a rig moved by motor."""
+    """The (x, y) screen coordinates of image points in the frame of a posed camera rig."""
     return euclidean(motor << image)[..., :2]
 
 
@@ -59,8 +59,7 @@ def render_shadow_scene(
     point_light: Point,
     sun: Point,
 ) -> None:
-    """Draw the body, blue, its shadows under the point light, yellow, and the sun, purple, the point light, the
-    sun's direction, and one corner's shadow trail as the light moves, beaded."""
+    """Render the lit cube, its shadows under the point light and the sun, the lights, and the corner's shadow trail."""
     point_shadow, sun_shadow, shadow_trail = shadows
     ends = np.array(edges)                                                     # [edges, 2]
     # The sun's direction, its pairings with the planes x, y and z.
@@ -85,8 +84,7 @@ def render_shadow_scene(
 
 
 def screen_line_endpoints(rig: Motor, lines: Line, half_width: float) -> np.ndarray:
-    """Clip lines on a rig's screen at x == -half_width and x == half_width, returning (..., 2, 2)
-    screen coordinates."""
+    """The screen coordinates where lines on a rig's screen meet its left and right edges at x = ±half_width."""
     return np.stack([screen_coordinates(rig, lines ^ (rig >> (mv.x - mv.w * x))) for x in (-half_width, half_width)], axis=-2)
 
 
@@ -97,9 +95,7 @@ def render_stereo_scene(
     rig_1: Motor, rig_2: Motor,
     margin: float,
 ) -> None:
-    """Draw both images, the subject's edges, blue; camera 2's also shows its corners, red, on the epipolar
-    lines of camera 1's corners. Both are framed alike, by the images with a margin as a fraction of their
-    larger side."""
+    """Draw the two camera views of the subject, with camera 2's corners on the epipolar lines of camera 1's corners."""
     image_1, image_2, _epipole_2, epipolar_lines_2, _correspondence = stereo
     px_1 = screen_coordinates(rig_1, image_1)
     px_2 = screen_coordinates(rig_2, image_2)

@@ -1,13 +1,8 @@
-"""Garland–Heckbert Quadric Error Metrics (QEM) in PGA3D.
+"""Garland–Heckbert quadric error metrics simplify a triangle mesh by collapsing edges to vertices that minimize squared distances to incident face planes.
 
-In mesh simplification and surface decimation, each triangle face defines a
-supporting plane. A point's squared distance to a plane is a rank-one dyad.
-Summing these dyads across incident faces yields the quadric error metric (QEM):
-an extensor mapping points to polar planes.
+In 3D projective geometric algebra, a plane is modelled as a vector and a point is modelled as an antivector (`Point`), so their regressive pairing `plane & point` gives the point's signed distance from a unit plane. A plane's dyad `plane * (plane & Point)` maps points to polar planes, and pairing that polar plane back with the point evaluates the squared distance. The error quadric of a vertex is the sum of its incident triangles' plane dyads, and collapsing an edge adds the quadrics of its two endpoints. Solving for a spatial direction offset `Direction` from the edge's midpoint finds the minimum at unit homogeneous weight and selects the minimizer nearest the midpoint when a flat patch or crease leaves directions free, following the quadric error metric of Garland and Heckbert, https://www.cs.cmu.edu/~garland/quadrics/.
 
-Edge contraction combines the quadrics of its endpoints by extensor addition. The optimal
-collapsed vertex has vanishing spatial gradient at unit homogeneous weight. Solving for a
-direction from the edge midpoint also gives a definite answer on a flat patch or a crease.
+In homogeneous matrix notation each unit plane reads as a four-vector $\\mathbf p = (n_x, n_y, n_z, d)^{\\mathsf T}$, its plane dyad reads as the outer product $Q = \\mathbf p\\mathbf p^{\\mathsf T}$, and the squared distance at $\\mathbf x = (x, y, z, 1)^{\\mathsf T}$ reads as the quadratic form $\\mathbf x^{\\mathsf T} Q\\,\\mathbf x$.
 """
 
 from __future__ import annotations
@@ -25,33 +20,36 @@ ga = PGA3D
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
+Point = ga.gatype.antivector()                      # Antivector-
+Plane = ga.gatype.vector()                          # Vector+
+# A quadric: the polar plane of each point.
 Quadric = ga.gatype((Plane, Point))
-Spatial = ga.gatype.from_blades("x y z")
-Direction = Spatial.dual().output_gatype
+Spatial = ga.gatype.from_blades("x y z")            # Vector+
+Direction = Spatial.dual().output_gatype            # Antivector-
 
 
 # --- math -----------------------------------------------------------------------------
 def collapse_position(quadric: Quadric, midpoint: Point) -> Point:
-    """The unit-weight minimum, nearest the midpoint when the quadric has flat directions."""
+    """The collapse position is the unit-weight minimum of the quadric, the one nearest the midpoint where flat directions leave a choice."""
     # A direction changes position without changing homogeneous weight. Only the spatial
     # part of the polar plane must vanish; its constant part is the residual minimum error.
-    correction = quadric(Direction).cast(Spatial).lstsq(-quadric(midpoint).cast(Spatial))
-    return midpoint + correction
+    gradient = quadric(Direction).cast(Spatial)                                 # [...] Plane+ <- Direction-
+    residual = quadric(midpoint).cast(Spatial)                                  # [...] Plane+
+    correction = gradient.lstsq(-residual)                                      # [...] Direction-
+    return midpoint + correction                                                # [...] Point-
 
 
 def simplify(vertices: Point, faces: np.ndarray, targets: np.ndarray) -> Iterator[tuple[Point, np.ndarray]]:
-    """A closed triangle mesh, then its QEM contractions at descending face-count targets.
+    """Yield a closed triangle mesh and its QEM contractions at descending face-count targets.
 
     The initial face planes remain the reference surface: every merged vertex retains the
-    sum of its original vertices' quadrics. Each pass contracts separate neighbourhoods,
+    sum of its initial vertices' quadrics. Each pass contracts separate neighbourhoods,
     choosing the least errors first and preserving the topology and the sense of each face.
     """
-    corners = vertices[faces]
-    planes = (corners[:, 0] & corners[:, 1] & corners[:, 2]).normalized()
-    face_quadrics = planes * (planes & Point)
-    quadrics = (face_quadrics[0] * 0).broadcast_to((len(vertices),))
+    corners = vertices[faces]                                                   # [faces, 3] Point-
+    planes = (corners[:, 0] & corners[:, 1] & corners[:, 2]).normalized()       # [faces] Plane-
+    face_quadrics = planes * (planes & Point)                                   # [faces] Plane+ <- Point-
+    quadrics = (face_quadrics[0] * 0).broadcast_to((len(vertices),))            # [vertices] Plane+ <- Point-
     quadrics = quadrics.at[faces.reshape(-1)].add(face_quadrics[:, None].broadcast_to((len(faces), 3)).reshape(-1))
     yield vertices, faces
 
@@ -59,26 +57,26 @@ def simplify(vertices: Point, faces: np.ndarray, targets: np.ndarray) -> Iterato
         while len(faces) > target:
             topology = plumbing.Topology(faces, len(vertices))
             first, second = topology.edges.T
-            edge_quadrics = quadrics[first] + quadrics[second]
-            midpoints = (vertices[first] + vertices[second]) / 2
-            optima = collapse_position(edge_quadrics, midpoints)
-            errors = edge_quadrics(optima) & optima
+            edge_quadrics = quadrics[first] + quadrics[second]                  # [edges] Plane+ <- Point-
+            midpoints = (vertices[first] + vertices[second]) / 2                # [edges] Point-
+            optima = collapse_position(edge_quadrics, midpoints)                # [edges] Point-
+            errors = edge_quadrics(optima) & optima                             # [edges] Scalar+
 
             # Test every surviving triangle in an edge's neighbourhood with that edge
             # contracted. Its plane must keep its sense and a nonzero area.
-            before = vertices[faces[topology.trial_faces]]
-            after = before.at[np.arange(len(before)), topology.trial_corners].set(optima[topology.trial_edges])
-            old_planes = before[:, 0] & before[:, 1] & before[:, 2]
-            new_planes = after[:, 0] & after[:, 1] & after[:, 2]
-            consistent = (old_planes.scalar_product(new_planes) > 0) & (new_planes.squared() > old_planes.squared() * 1e-12)
-            selected = plumbing.select_edges(topology, errors, consistent, max(1, (len(faces) - target) // 2))
-            if not len(selected):
+            old_corners = vertices[faces[topology.trial_faces]]                 # [trials, 3] Point-
+            new_corners = old_corners.at[np.arange(len(old_corners)), topology.trial_corners].set(optima[topology.trial_edges])
+            old_planes = old_corners[:, 0] & old_corners[:, 1] & old_corners[:, 2]  # [trials] Plane-
+            new_planes = new_corners[:, 0] & new_corners[:, 1] & new_corners[:, 2]  # [trials] Plane-
+            valid_trials = (old_planes.scalar_product(new_planes) > 0) & (new_planes.squared() > old_planes.squared() * 1e-12)
+            chosen_edges = plumbing.select_edges(topology, errors, valid_trials, max(1, (len(faces) - target) // 2))
+            if not len(chosen_edges):
                 raise ValueError(f"No legal contraction remains at {len(faces)} faces before target {target}.")
 
-            # The selected stars do not share changed faces, so their independent
+            # The chosen stars do not share changed faces, so their independent
             # contractions can be applied together without invalidating the face tests.
-            vertices = vertices.at[first[selected]].set(optima[selected])
-            quadrics = quadrics.at[first[selected]].set(edge_quadrics[selected])
-            retained, faces = plumbing.contract(topology, selected)
-            vertices, quadrics = vertices[retained], quadrics[retained]
+            vertices = vertices.at[first[chosen_edges]].set(optima[chosen_edges])
+            quadrics = quadrics.at[first[chosen_edges]].set(edge_quadrics[chosen_edges])
+            kept_vertices, faces = plumbing.contract(topology, chosen_edges)
+            vertices, quadrics = vertices[kept_vertices], quadrics[kept_vertices]
         yield vertices, faces

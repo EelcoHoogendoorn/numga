@@ -1,5 +1,4 @@
-"""The face of a horizontal sundial, and the sun's rays past the nodus onto it: the dial in space drawn on the GPU,
-its face by matplotlib."""
+"""Rendering for the horizontal sundial draws the dial face with its hour lines and seasonal conics in matplotlib and traces the sun's daily cone of rays past the nodus in space on the GPU."""
 
 from __future__ import annotations
 
@@ -42,43 +41,35 @@ DIAL = np.array([[EAST[0], NORTH[0], 0], [EAST[1], NORTH[0], 0], [EAST[1], NORTH
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for drawing and checks."""
-    return values.cast(core.ga.subspace.scalar()).kernel[..., 0]
-
-
 def coordinates(points: core.Point) -> np.ndarray:
-    """East, north and up of each point, on the last axis."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """Read out the east, north, and up coordinates of each point on the last axis."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
 
 
 def shadows(nodus: core.Point, suns: core.Point) -> np.ndarray:
-    """East and north of the nodus's shadow for each sun, and nothing where the sun is below the horizon
-    or the shadow falls off the dial."""
-    tips = coordinates(core.shadow(nodus, suns))[..., :2]
-    inside = (scalars(core.dial & suns) > 0) & (tips[..., 0] > EAST[0]) & (tips[..., 0] < EAST[1]) \
+    """Project the nodus onto the dial for each sun direction, masking suns below the horizon or shadows outside the dial face."""
+    tips = coordinates(nodus - suns * ((core.dial & nodus) / (core.dial & suns)))[..., :2]
+    inside = ((core.dial & suns) > 0) & (tips[..., 0] > EAST[0]) & (tips[..., 0] < EAST[1]) \
         & (tips[..., 1] > NORTH[0]) & (tips[..., 1] < NORTH[1])
     return np.where(inside[..., None], tips, np.nan)
 
 
 def season_colours(seasons: np.ndarray) -> np.ndarray:
-    """A colour per season by how far it lies from the equinox: a summer and a winter season as far from it
-    alike."""
+    """Colour each season by its distance from the equinox so that conjugate summer and winter declinations share a colour."""
     return plt.get_cmap(SEASON_MAP)(0.15 + 0.7 * np.abs(seasons) / np.abs(seasons).max())
 
 
 def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point,
               suns: core.Point, hours: np.ndarray, faint: bool) -> None:
-    """The dial's face: each season's shadow path, each hour line through the shadows at that hour from
-    solstice to solstice, numbered where it leaves the dial, and the gnomon's edge along the noon line."""
+    """Draw the dial face with each season's shadow path, the numbered hour lines from solstice to solstice, and the gnomon's base along the noon line."""
     paths = shadows(nodus, days)                                               # [seasons, samples, 2]
     ax.add_collection(LineCollection(paths, colors=season_colours(seasons), linewidths=1.6, alpha=0.35 if faint else 1.0))
-    lines = shadows(nodus, suns)                                               # [hours, samples, 2]
+    lines = shadows(nodus, suns)                                               # [hours, declinations, 2]
     ax.add_collection(LineCollection(lines, colors=HOUR_COLOUR, linewidths=0.8))
     for hour, line in zip(hours, lines):
-        drawn = line[~np.isnan(line[:, 0])]
-        outward = drawn[0] - drawn[-1]
-        place = drawn[0] - INSET * outward / np.linalg.norm(outward)
+        segment = line[~np.isnan(line[:, 0])]
+        outward = segment[0] - segment[-1]
+        place = segment[0] - INSET * outward / np.linalg.norm(outward)
         ax.text(*place, f"{hour}", fontsize=8, color=HOUR_COLOUR, ha="center", va="center",
                 bbox=dict(facecolor="white", edgecolor="none", pad=0.5))
     # The gnomon's edge seen from above: from the foot of the style to the point below the nodus.
@@ -90,82 +81,77 @@ def draw_face(ax: plt.Axes, nodus: core.Point, foot: core.Point, seasons: np.nda
 
 def draw_dial(nodus: core.Point, foot: core.Point, seasons: np.ndarray, days: core.Point, suns: core.Point,
               hours: np.ndarray) -> plt.Figure:
+    """Render the static dial face figure."""
     figure, ax = plt.subplots(figsize=(6.0, 4.6), layout="constrained")
     draw_face(ax, nodus, foot, seasons, days, suns, hours, faint=False)
     return figure
 
 
 def daylight(nodus: core.Point, rays: core.Point) -> tuple[np.ndarray, np.ndarray]:
-    """The rays while the sun is up, from beyond the nodus towards the sun, and down to the shadow in the dial's
-    plane, east, north and up: `[up, 3]` each."""
-    up = scalars(core.dial & rays) > 0                                        # [hours]
-    return coordinates(nodus) + SUNWARD * coordinates(rays)[up], coordinates(core.shadow(nodus, rays))[up]
+    """Return the ray start points sunward of the nodus and their shadow points on the dial plane for all daytime rays."""
+    daytime = (core.dial & rays) > 0                                           # [ray_hours]
+    tips = nodus - rays * ((core.dial & nodus) / (core.dial & rays))           # [ray_hours] Point-
+    return coordinates(nodus) + SUNWARD * coordinates(rays)[daytime], coordinates(tips)[daytime]
 
 
 def sky_view(ax: plt.Axes, nodus: core.Point, rays: core.Point) -> solids.View:
-    """One view of the dial, its gnomon, and the rays of every day while the sun is up, as many pixels across as the
-    axes' room holds."""
-    sunward = np.concatenate([daylight(nodus, day)[0] for day in rays])
-    return fitted(solids.view([solids.mv.point(DIAL), solids.mv.point(sunward)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
+    """Frame a view of the dial plate and all daytime rays across the year to fit the axes."""
+    sunward_points = np.concatenate([daylight(nodus, day)[0] for day in rays])
+    return fitted(solids.view([solids.mv.point(DIAL), solids.mv.point(sunward_points)], 0.0, ELEVATION, AZIMUTH, MARGIN, 1), ax)
 
 
 def day_path(nodus: core.Point, day: core.Point) -> solids.Ink:
-    """The day's shadow path inked on the dial: the cone the day's rays sweep about the pole, through the nodus, on
-    the side of it away from the sun. The day's suns lie on a circle about the pole, so the pole is square to the
-    plane through them; the cone takes it squared, so its sense does not matter."""
-    suns = solids.mv.point(coordinates(day))                                   # [hours] Point
-    apex = solids.mv.point(coordinates(nodus))                                 # [] Point
-    # The plane through the suns, at unit weight; the equator's, through the origin square to the pole; and its
-    # pairing with the first sun's direction at unit length, the sine of the declination.
-    circle = ((suns[0] & suns[1] & suns[2]) * solids.flip).normalized()        # [] Plane
-    equator = circle - solids.mv.w * (circle & solids.origin)                  # [] Plane
-    sun = suns[0] - solids.origin                                              # [] Point
+    """Build the ink for a day's shadow path by intersecting the dial plate with the cone swept by the day's sun rays about the pole."""
+    suns = solids.mv.point(coordinates(day))                                   # [samples] Point-
+    apex = solids.mv.point(coordinates(nodus))                                 # [] Point-
+    # The day's suns lie on a circle about the pole, so the pole is square to the plane through them; the cone takes
+    # the axial plane squared, so its sense does not matter.
+    circle = ((suns[0] & suns[1] & suns[2]) * solids.flip).normalized()        # [] Plane+
+    equator = circle - solids.mv.w * (circle & solids.origin)                  # [] Plane+
+    sun = suns[0] - solids.origin                                              # [] Point-
     height = float((equator & sun).to_array() / sun.dual().norm().to_array())
     # The planes through the nodus: square to the pole, and across x, y and z.
-    axial = equator - solids.mv.w * (equator & apex)                           # [] Plane
-    across = solids.axes - solids.mv.w * (solids.axes & apex)                  # [3] Plane
+    axial = equator - solids.mv.w * (equator & apex)                           # [] Plane+
+    across = solids.axes - solids.mv.w * (solids.axes & apex)                  # [3] Plane+
     # Zero on a ray from the nodus at the sun's angle to the pole: its part along the pole squared, less the sine of the
-    # declination squared of its length squared.
-    cone = axial * (axial & solids.Point) - height**2 * (across * (across & solids.Point)).sum(axis=0)
+    # declination squared times its length squared.
+    cone = axial * (axial & solids.Point) - height**2 * (across * (across & solids.Point)).sum(axis=0)  # [] Plane+ <- Point-
     # The shadow lies away from the sun: along the pole, opposite to the sun.
     shadow_side = solids.half_space(axial * height)
     return solids.Ink(0, cone[None], shadow_side[None], np.array(to_rgb(DAY_COLOUR)), PATH_WIDTH, 1.0)
 
 
 def dial_in_space(nodus: core.Point, foot: core.Point) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The dial's plate in space, the first part, which the day's shadow path is inked on, and its gnomon, as
-    solids."""
-    middle = np.array([np.mean(EAST), np.mean(NORTH), -PLATE_THICKNESS / 2])
-    halves = np.array([np.ptp(EAST) / 2, np.ptp(NORTH) / 2, PLATE_THICKNESS / 2])
-    slab = solids.boxes(solids.translator(solids.mv.point(middle) - solids.origin), halves)[None]   # [1, 6] Plane
-    tip = solids.mv.point(coordinates(nodus))                                  # [] Point
-    # The gnomon's triangle: the foot of the style, the nodus, and the point of the dial below the nodus.
-    below = tip - solids.mv.z.dual() * (solids.mv.z & tip)                     # [] Point
-    gnomon = solids.plates(stack([solids.mv.point(coordinates(foot)), tip, below])[None], GNOMON_THICKNESS)   # [1, 5] Plane
+    """Build the dial plate and the triangular gnomon as solids in space."""
+    center = np.array([np.mean(EAST), np.mean(NORTH), -PLATE_THICKNESS / 2])
+    half_extents = np.array([np.ptp(EAST) / 2, np.ptp(NORTH) / 2, PLATE_THICKNESS / 2])
+    slab = solids.boxes(solids.translator(solids.mv.point(center) - solids.origin), half_extents)[None]  # [1, 6] Plane+
+    tip = solids.mv.point(coordinates(nodus))                                  # [] Point-
+    # The gnomon's triangle joins the foot of the style, the nodus, and the point of the dial below the nodus.
+    base_point = tip - solids.mv.z.dual() * (solids.mv.z & tip)                # [] Point-
+    gnomon = solids.plates(stack([solids.mv.point(coordinates(foot)), tip, base_point])[None], GNOMON_THICKNESS)  # [1, 5] Plane+
     return [(slab, np.array(to_rgb(DIAL_COLOUR))), (gnomon, np.array(to_rgb(GNOMON_COLOUR)))]
 
 
 def sunlight(nodus: core.Point, rays: core.Point, day: core.Point,
              view: solids.View) -> tuple[list[tuple[solids.Quadric, np.ndarray]], list[solids.Ink]]:
-    """The day's rays of sunlight past the nodus onto the dial, as solids: the cone they sweep about the pole, on
-    both sides of the nodus; and its cut with the dial, the shadow path inked on the dial's plate."""
-    sunward, ends = daylight(nodus, rays)
-    # Each ray cut where it leaves the space above the dial, at the walls standing on its edges, so that a ray whose
-    # shadow moves off the dial shortens at its edge rather than vanishing.
-    sides = stack([-solids.mv.x, solids.mv.x, -solids.mv.y, solids.mv.y])     # [4] Plane
-    corners = solids.mv.point(DIAL[[0, 2, 0, 2]])                              # [4] Point
+    """Build the daytime sun rays clipped to the walls above the dial plate and the inked shadow conic on the dial."""
+    ray_starts, shadow_points = daylight(nodus, rays)
+    # Each ray is clipped where it leaves the space above the dial, at the walls standing on its edges, so that a ray
+    # whose shadow moves off the dial shortens at its edge rather than vanishing.
+    sides = stack([-solids.mv.x, solids.mv.x, -solids.mv.y, solids.mv.y])      # [4] Plane+
+    corners = solids.mv.point(DIAL[[0, 2, 0, 2]])                              # [4] Point-
     walls = solids.half_space(sides - solids.mv.w * (sides & corners))
-    rods = solids.rods(solids.mv.point(sunward), solids.mv.point(ends), RAY_WIDTH / 2 * view.pixel)   # [rays, 3]
-    beams = concatenate([rods, walls[None].broadcast_to((len(sunward), 4))], axis=-1)               # [rays, 7]
-    # The rays as lightly as they show over the white page.
+    rods = solids.rods(solids.mv.point(ray_starts), solids.mv.point(shadow_points), RAY_WIDTH / 2 * view.pixel)  # [rays, 3] Plane+ <- Point-
+    beams = concatenate([rods, walls[None].broadcast_to((len(ray_starts), 4))], axis=-1)                         # [rays, 7] Plane+ <- Point-
+    # Blend the ray colour over the white background according to its opacity.
     beam_colour = RAY_OPACITY * np.array(to_rgb(RAY_COLOUR)) + (1 - RAY_OPACITY)
     return [(beams, beam_colour)], [day_path(nodus, day)]
 
 
 def animate_year(declinations: np.ndarray, rays: core.Point, days: core.Point, nodus: core.Point, foot: core.Point,
                  seasons: np.ndarray, season_days: core.Point, suns: core.Point, hours: np.ndarray) -> Iterator[np.ndarray]:
-    """Per frame of the year: the day's rays past the nodus in space, traced among the dial and its gnomon, and the
-    day's shadow path over the dial's face."""
+    """Yield each frame of the year with the day's rays past the nodus in space on the left and the day's shadow path across the dial face on the right."""
     dial = dial_in_space(nodus, foot)
     # Lay the figure out once; only the sky and the day's shadow path change between frames.
     figure = plt.figure(figsize=(10.0, 4.6))

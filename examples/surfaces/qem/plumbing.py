@@ -1,4 +1,4 @@
-"""Mesh input, connectivity and scalar priority selection for the QEM contractions."""
+"""Load triangle meshes, build edge-collapse neighbourhood connectivity, and greedily select disjoint lowest-cost contractions."""
 
 from __future__ import annotations
 
@@ -6,11 +6,14 @@ from pathlib import Path
 
 import numpy as np
 
+from numga import NumpyContext
+from numga.algebras import PGA3D
+
+mv = NumpyContext(PGA3D).multivector
+
 
 def read_mesh(path: Path, size: float):
-    """OBJ vertices and triangles, centred and scaled to the requested longest box side."""
-    from examples.surfaces.qem.core import mv
-
+    """Load OBJ vertices and triangles, centred and scaled to the requested longest box side."""
     rows = [line.split() for line in path.read_text().splitlines()]
     places = np.array([[float(word) for word in row[1:4]] for row in rows if row[:1] == ["v"]])
     faces = np.array([[int(word.split("/")[0]) - 1 for word in row[1:4]] for row in rows if row[:1] == ["f"]])
@@ -20,14 +23,14 @@ def read_mesh(path: Path, size: float):
 
 
 class Topology:
-    """The edges, vertex stars and surviving trial triangles of one triangle mesh."""
+    """Record the edges, vertex stars, and surviving trial triangles of a triangle mesh."""
 
-    def __init__(self, faces: np.ndarray, vertex_count: int):
+    def __init__(self, faces: np.ndarray, n_vertices: int):
         self.faces = faces
         self.edges = np.unique(np.sort(np.stack((faces, np.roll(faces, -1, axis=1)), axis=-1).reshape(-1, 2), axis=1), axis=0)
-        self.neighbours = [set() for _ in range(vertex_count)]
-        self.stars = [set() for _ in range(vertex_count)]
-        corners = [[] for _ in range(vertex_count)]
+        self.neighbours = [set() for _ in range(n_vertices)]
+        self.stars = [set() for _ in range(n_vertices)]
+        corners = [[] for _ in range(n_vertices)]
         for face, vertices in enumerate(faces):
             for corner, vertex in enumerate(vertices):
                 self.stars[vertex].add(face)
@@ -39,10 +42,10 @@ class Topology:
 
         trial_edges, trial_faces, trial_corners = [], [], []
         for edge, (first, second) in enumerate(self.edges):
-            removed = self.stars[first] & self.stars[second]
+            flanking_faces = self.stars[first] & self.stars[second]
             for vertex in (first, second):
                 for face, corner in corners[vertex]:
-                    if face not in removed:
+                    if face not in flanking_faces:
                         trial_edges.append(edge)
                         trial_faces.append(face)
                         trial_corners.append(corner)
@@ -51,43 +54,43 @@ class Topology:
         self.trial_corners = np.asarray(trial_corners, dtype=int)
 
 
-def select_edges(topology: Topology, errors, consistent: np.ndarray, limit: int) -> np.ndarray:
-    """Lowest-cost legal contractions with disjoint changed triangle neighbourhoods."""
+def select_edges(topology: Topology, errors, valid_trials: np.ndarray, max_edges: int) -> np.ndarray:
+    """Select the lowest-cost legal contractions with disjoint changed triangle neighbourhoods."""
     costs = errors.to_array()
-    admissible = np.isfinite(costs)
-    np.logical_and.at(admissible, topology.trial_edges, consistent)
-    blocked = np.zeros(len(topology.neighbours), dtype=bool)
-    selected = []
-    for edge in np.argsort(np.where(admissible, costs, np.inf)):
-        if not admissible[edge]:
+    valid_edges = np.isfinite(costs)
+    np.logical_and.at(valid_edges, topology.trial_edges, valid_trials)
+    locked_vertices = np.zeros(len(topology.neighbours), dtype=bool)
+    chosen_edges = []
+    for edge in np.argsort(np.where(valid_edges, costs, np.inf)):
+        if not valid_edges[edge]:
             break
         first, second = topology.edges[edge]
-        if blocked[first] or blocked[second]:
+        if locked_vertices[first] or locked_vertices[second]:
             continue
-        shared = topology.stars[first] & topology.stars[second]
-        if len(shared) != 2:
+        shared_faces = topology.stars[first] & topology.stars[second]
+        if len(shared_faces) != 2:
             continue
-        common = topology.neighbours[first] & topology.neighbours[second]
-        opposite = set(topology.faces[list(shared)].reshape(-1)) - {first, second}
-        if common != opposite:
+        common_neighbours = topology.neighbours[first] & topology.neighbours[second]
+        opposite_vertices = set(topology.faces[list(shared_faces)].reshape(-1)) - {first, second}
+        if common_neighbours != opposite_vertices:
             continue
         # The vertex-link test also excludes identifying two surviving triangles.
         # In a tetrahedral neighbourhood their opposite edge belongs to both links.
-        if tuple(sorted((first, *common))) in topology.face_keys and tuple(sorted((second, *common))) in topology.face_keys:
+        if tuple(sorted((first, *common_neighbours))) in topology.face_keys and tuple(sorted((second, *common_neighbours))) in topology.face_keys:
             continue
-        selected.append(edge)
-        blocked[list(topology.neighbours[first] | topology.neighbours[second] | {first, second})] = True
-        if len(selected) == limit:
+        chosen_edges.append(edge)
+        locked_vertices[list(topology.neighbours[first] | topology.neighbours[second] | {first, second})] = True
+        if len(chosen_edges) == max_edges:
             break
-    return np.asarray(selected, dtype=int)
+    return np.asarray(chosen_edges, dtype=int)
 
 
-def contract(topology: Topology, selected: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Identify selected endpoint pairs, discard their collapsed faces and compact indices."""
+def contract(topology: Topology, chosen_edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Identify chosen endpoint pairs, discard their collapsed faces, and compact vertex indices."""
     mapping = np.arange(len(topology.neighbours))
-    first, second = topology.edges[selected].T
+    first, second = topology.edges[chosen_edges].T
     mapping[second] = first
     faces = mapping[topology.faces]
-    survives = (faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 2] != faces[:, 0])
-    retained, reindexed = np.unique(faces[survives], return_inverse=True)
-    return retained, reindexed.reshape(-1, 3)
+    surviving_faces = (faces[:, 0] != faces[:, 1]) & (faces[:, 1] != faces[:, 2]) & (faces[:, 2] != faces[:, 0])
+    kept_vertices, reindexed_faces = np.unique(faces[surviving_faces], return_inverse=True)
+    return kept_vertices, reindexed_faces.reshape(-1, 3)

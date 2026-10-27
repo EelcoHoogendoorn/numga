@@ -1,50 +1,39 @@
-"""Loop subdivision of motors.
+"""Loop subdivision of motors refines a triangle mesh whose vertices carry rigid placements of frames instead of points. A Loop step refines a mesh by averaging: every vertex of the finer mesh is a fixed average of vertices of the coarser one, with shares that depend only on how the mesh is connected. When neighbouring frames are twisted relative to one another, averaging their positions cuts across the chord of the turn and wrings the surface thin, whereas averaging their rigid placements and normalizing back to a rigid motion interpolates along the arc between them and keeps the surface wide.
 
-A mesh can carry a motor at every vertex, a rigid placement of a frame, and the Loop step averages them like
-anything else at the sites: the same sparse map of shares, applied to the motors as they are. An average of
-motors is not a motor, so each step is followed by normalizing every averaged motor back to a motor, and the
-next step starts from there: average in the algebra, return to the group. Between two frames turned about an
-axis, the average is the frame turned halfway, on the arc between them; the average of the two positions cuts
-across the chord instead.
+Each placement is a motor, and one Loop step is a linear map from the coarser mesh's vertex sites to the finer one's that applies to whatever sits there, `step * motors`. A weighted sum of motors is not a motor, so every averaged motor is normalized back after each step, `(step * motors).normalized()`: average in the algebra, return to the group. The surface is the origin each motor carries, `motors >> origin`.
+
+In the matrix and dual-quaternion notation of subdivision surfaces, a Loop step reads as a subdivision matrix $S$ acting on the stacked vertex positions $P' = S P$, while motor subdivision applies the same $S$ to the stacked unit dual quaternions and normalizes each row back to unit norm.
 """
 
 from __future__ import annotations
-
-from collections.abc import Iterator
 
 import numpy as np
 
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from numga.sparse import SparseExtensor
 from examples import instantiate
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
-Mesh = instantiate("examples.util.mesh", ga).Mesh
-Plane = ga.gatype.vector()
-Line = ga.gatype.bivector()
-Point = ga.gatype.antivector()
-Motor = ga.gatype.rotor()
+mesh_module = instantiate("examples.util.mesh", ga)
+Mesh, SubdividedMesh = mesh_module.Mesh, mesh_module.SubdividedMesh
+Line = ga.gatype.bivector()                         # Bivector+
+Point = ga.gatype.antivector()                      # Antivector-
+Motor = ga.gatype.rotor()                           # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
-def refinements(mesh: Mesh, motors: Motor, pinned: np.ndarray, depth: int) -> Iterator[tuple[SparseExtensor, Mesh, Motor]]:
-    """Each of so many Loop steps on a mesh with motors at its vertices, with the vertices pinned `[V]` staying
-    where they are: the averaging map, built once from the faces, the finer mesh, and its motors, every averaged
-    motor normalized back to a motor."""
-    for _ in range(depth):
-        step = mesh.loop(pinned)                                               # [finer, coarser] Scalar
-        motors = (step * motors).normalized()                                  # Motor[finer]
-        mesh, pinned = Mesh(step.shape[0], mesh.split_faces), mesh.split_pins(pinned)
-        yield step, mesh, motors
+def subdivide_motors(mesh: SubdividedMesh, motors: Motor) -> Motor:
+    """Motor subdivision averages the motors at every Loop step of the mesh and normalizes each average back to a motor."""
+    for step in mesh.steps:
+        motors = (step * motors).normalized()                                  # [...] Motor+[finer]
+    return motors
 
 
 # --- plumbing -------------------------------------------------------------------------
-def grid_faces(rows: int, columns: int) -> np.ndarray:
-    """The faces of a grid of `rows` by `columns` vertices, row by row, two triangles per cell, all turning
-    the same way."""
-    index = np.arange(rows * columns).reshape(rows, columns)
-    corner, right, up, across = index[:-1, :-1], index[:-1, 1:], index[1:, :-1], index[1:, 1:]
-    return np.concatenate([np.stack([corner, right, across], axis=-1).reshape(-1, 3),
-                           np.stack([corner, across, up], axis=-1).reshape(-1, 3)])
+def grid_faces(n_rows: int, n_columns: int) -> np.ndarray:
+    """The counter-clockwise triangle faces of a grid of `n_rows` by `n_columns` vertices, two triangles per cell."""
+    index = np.arange(n_rows * n_columns).reshape(n_rows, n_columns)
+    corner, right, up, opposite = index[:-1, :-1], index[:-1, 1:], index[1:, :-1], index[1:, 1:]
+    return np.concatenate([np.stack([corner, right, opposite], axis=-1).reshape(-1, 3),
+                           np.stack([corner, opposite, up], axis=-1).reshape(-1, 3)])

@@ -9,42 +9,33 @@ import numpy as np
 
 from examples.geometry.rubiks_cube import core
 
-# The scramble's quarter turns and its seed, and how many turns the search goes from each side.
+# The scramble's quarter-turn count and random seed, and the search depth from each end.
 N_SCRAMBLE = 10
 SEED = 4
 DEPTH = 5
-# The animation's frames per quarter turn, and a frame's duration in milliseconds.
+# The animation's frames per quarter turn, and each frame's duration in milliseconds.
 N_STEPS = 6
 FRAME_DURATION = 60
 
 
 # --- math -----------------------------------------------------------------------------
 def random_turns(rng: np.random.Generator) -> Iterator[np.ndarray]:
-    """Random quarter turns without end, each a direction, a side and an axis, none undoing the one
-    before."""
-    last = rng.integers((2, 2, 3))
-    yield last
+    """An endless stream of random quarter turns `(direction, side, axis)` with no move immediately undoing the one before."""
+    previous_move = rng.integers((2, 2, 3))
+    yield previous_move
     while True:
         move = rng.integers((2, 2, 3))
-        if (1 - move[0], *move[1:]) != tuple(last):
-            last = move
+        if (1 - move[0], *move[1:]) != tuple(previous_move):
+            previous_move = move
             yield move
 
 
-def scramble(stickers: core.Point, moves: np.ndarray) -> core.Point:
-    """The stickers after the quarter turns `[turns, 3]`, one after another."""
-    for direction, side, axis in moves:
-        stickers = core.turned(stickers, core.turns[direction, side, axis], core.faces[side, axis])   # [54] Point
-    return stickers
-
-
-def scrambled_and_solved():
-    """A scramble of random quarter turns and the turns that solve it, each a direction, a side and an
-    axis `[turns, 3]`, with the scrambled cube."""
-    solved, _, _ = core.solved_cube()
+def scramble_and_solution() -> tuple[np.ndarray, np.ndarray, core.Point]:
+    """A random scramble of quarter turns, the sequence of turns that solves it, and the scrambled sticker points."""
+    solved_stickers, _, _ = core.solved_cube()                              # [stickers] Point-
     moves = np.array(list(islice(random_turns(np.random.default_rng(SEED)), N_SCRAMBLE)))
-    scrambled = scramble(solved, moves)
-    return moves, core.solve(scrambled, solved, DEPTH), scrambled
+    scrambled_stickers = core.scramble(solved_stickers, moves)              # [stickers] Point-
+    return moves, core.solve(scrambled_stickers, solved_stickers, DEPTH), scrambled_stickers
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -52,17 +43,18 @@ def main() -> None:
     from examples.util.animation import save_animation
     from examples.geometry.rubiks_cube import render
 
-    moves, solution, scrambled = scrambled_and_solved()
-    solved, corners, colours = core.solved_cube()
-    states = core.animate(solved, corners, np.concatenate([moves, solution]), N_STEPS)
+    moves, solution, scrambled_stickers = scramble_and_solution()
+    solved_stickers, solved_corners, colours = core.solved_cube()
+    states = core.animate(solved_stickers, solved_corners, np.concatenate([moves, solution]), N_STEPS)
     save_animation(render.animate(states, colours), "rubiks_cube", FRAME_DURATION)
 
     # checks
-    # Every turn moves stickers onto sticker points: the scrambled cube's points are the solved cube's. The
-    # solution takes the scrambled cube back exactly, in no more turns than the scramble.
-    points = lambda cube: sorted(map(bytes, core.codes(cube[None]).reshape(-1, 3)))
-    assert points(scrambled) == points(solved)
-    assert (core.codes(scramble(scrambled, solution)[None]) == core.codes(solved[None])).all()
+    # Every turn permutes the 54 sticker positions, and the solution restores the solved cube in no more turns than the scramble.
+    np.testing.assert_allclose(
+        np.unique(np.rint(scrambled_stickers.kernel), axis=0),
+        np.unique(np.rint(solved_stickers.kernel), axis=0),
+    )
+    np.testing.assert_allclose((core.scramble(scrambled_stickers, solution) - solved_stickers).kernel, 0.0, atol=1e-12)
     assert len(solution) <= N_SCRAMBLE
 
 

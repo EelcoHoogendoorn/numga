@@ -1,5 +1,4 @@
-"""Drawing for the fitting example, ray traced on the GPU: the samples as small balls, with the true primitive,
-grey, and the fitted one, red."""
+"""GPU rendering for projective primitive fitting draws the samples as blue balls or rods, the true primitive in grey, and the fitted primitive in red."""
 
 from __future__ import annotations
 
@@ -23,13 +22,12 @@ sample_radius, point_radius, line_radius = 0.035, 0.09, 0.022
 
 # --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def draw(framed: list[Point], reach: float, parts: list[tuple[solids.Quadric, np.ndarray]]) -> plt.Figure:
-    """One figure of solids in parts, each a batch of solids with one colour, framed around batches of points
-    with `reach` to spare."""
+    """Render a figure of coloured quadric batches framed around the given point sets."""
     return image_figure(solids.draw(parts, solids.view(framed, reach, elevation, azimuth, margin, pixels), background,
                                     inks=[], translucent=[], meshes=[]))
 
@@ -39,15 +37,14 @@ def balls(centres: Point, radius: float) -> solids.Quadric:
 
 
 def draw_point_fit(points: Point, truth: Point, fit: Point) -> plt.Figure:
-    """The noisy cloud, blue, with the true centre, grey, and the fitted one, red."""
+    """Draw the noisy point cloud in blue with the true centre in grey and the fitted centroid in red."""
     return draw([points, truth, fit], point_radius,
                 [(balls(points, sample_radius), sample_colour),
                  (balls(truth, point_radius), true_colour), (balls(fit, point_radius), fit_colour)])
 
 
 def draw_line_fit(points: Point, truth_ends: Point, fit_ends: Point) -> plt.Figure:
-    """The noisy points, blue, with the true line, grey, and the fitted one, red, each drawn between its two
-    end points."""
+    """Draw the noisy sample points in blue with the true line in grey and the fitted line in red."""
     return draw([points, truth_ends, fit_ends], line_radius,
                 [(balls(points, sample_radius), sample_colour),
                  (solids.rods(truth_ends[:1], truth_ends[1:], line_radius), true_colour),
@@ -55,8 +52,7 @@ def draw_line_fit(points: Point, truth_ends: Point, fit_ends: Point) -> plt.Figu
 
 
 def draw_plane_fit(points: Point, truth_quad: Point, fit_quad: Point) -> plt.Figure:
-    """The noisy points, blue, with the true plane, grey, and the fitted one, red, each drawn as the edges of
-    a quad."""
+    """Draw the noisy sample points in blue with the true plane in grey and the fitted plane in red as quad outlines."""
     def edges(corners: Point) -> solids.Quadric:
         return solids.rods(corners, corners[np.roll(np.arange(len(corners)), -1)], line_radius)
     return draw([points, truth_quad, fit_quad], line_radius,
@@ -65,8 +61,7 @@ def draw_plane_fit(points: Point, truth_quad: Point, fit_quad: Point) -> plt.Fig
 
 
 def draw_bundle_fit(ends: Point, truth: Point, fit: Point) -> plt.Figure:
-    """The bundle, blue, each line drawn between its paired end points, with the true point, grey, and the
-    fitted one, red."""
+    """Draw the line bundle in blue with the true point in grey and the fitted point in red."""
     return draw([ends, truth, fit], point_radius,
                 [(solids.rods(ends[0], ends[1], line_radius / 2), sample_colour),
                  (balls(truth, point_radius), true_colour), (balls(fit, point_radius), fit_colour)])

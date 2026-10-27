@@ -14,28 +14,27 @@ mv = core.mv
 
 def test_anisotropic_scale_extensor():
     """The anisotropic scaling extensor scales each coordinate and keeps the weight."""
-    scaled = core.anisotropic_scale(2.0, 0.5, 3.0)(mv.point(np.array([3.0, 4.0, 5.0])))
+    scaled = core.anisotropic_scale(2.0, 0.5, 3.0)(mv.point([3.0, 4.0, 5.0]))
     np.testing.assert_allclose(euclidean(scaled), [6.0, 2.0, 15.0], atol=1e-12)
     np.testing.assert_allclose((mv.w & scaled).to_array(), 1.0, atol=1e-12)
 
 
 def test_robot_arm_kinematics():
-    """Forward kinematics yields five rigidly placed bodies and four joint pivots."""
+    """Forward kinematics yields five rigidly placed bodies."""
     unit_box = core.canonical_unit_box()
-    bodies_to_world, pivots = core.robot_arm((0.2, -0.3, 0.5, -0.2))
+    bodies_to_world = core.robot_arm((0.2, -0.3, 0.5, -0.2))
     assert bodies_to_world.shape == (5,)
-    assert len(pivots) == 4
     verts = bodies_to_world[:, None](unit_box[None, :])
     np.testing.assert_allclose((mv.w & verts).to_array(), 1.0, atol=1e-10)
 
 
 def test_compound_optics_lands_on_the_sensor():
     """The multi-lens camera sends world points onto the sensor plane z = -1.25."""
-    pose = core.look_at(np.array([0.0, -4.0, 1.5]), np.array([0.0, 0.0, 1.0]))
+    pose = core.look_at(mv.point([0.0, -4.0, 1.5]), mv.point([0.0, 0.0, 1.0]))
     front_lens, rear_lens, _ = core.lens_train(1.0, 0.8, -0.3)
     pupil = (mv.xw * 0.02).exp() >> core.origin
     camera = core.lens_camera(pose, front_lens, rear_lens, pupil, mv.z + 1.25 * mv.w)
-    sensor_hit = camera(mv.point(np.array([0.1, 0.2, 1.0])))
+    sensor_hit = camera(mv.point([0.1, 0.2, 1.0]))
     np.testing.assert_allclose(euclidean(sensor_hit)[2], -1.25, atol=1e-10)
 
 

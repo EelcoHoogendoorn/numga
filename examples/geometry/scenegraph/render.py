@@ -55,30 +55,28 @@ ANIMATION_THICKNESS = 0.37
 
 # --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points: their pairings with the planes x, y and z, over their weights."""
+    """The Euclidean coordinates of points are their pairings with the coordinate planes divided by their weights."""
     return ((stack((mv.x, mv.y, mv.z)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 # --- 3D scene view ----------------------------------------------------------------------
 def floor() -> np.ndarray:
-    """The floor grid's lines in the plane z == 0, across x and across y, `[lines, 2, 3]`."""
+    """The floor grid's lines lie in the plane z == 0 across x and y."""
     # Lines along x, from end to end of the grid, at each place across y; and the same with x and y swapped.
     along_x = np.stack(np.broadcast_arrays(FLOOR_LINES[None, [0, -1]], FLOOR_LINES[:, None], 0.0), axis=-1)
     return np.concatenate([along_x, along_x[..., [1, 0, 2]]])
 
 
 def optics(camera_pose: Motor) -> tuple[Point, Point]:
-    """The optical elements in the camera frame, moved into the world by the camera pose: the front lens rim,
-    radius 0.3 at z == 0, and the rear lens rim, radius 0.25 at z == -0.3, `[2, rim + 1]`; and the corners of the
-    1.6 x 1.2 sensor chip at z == -1.25, `[4]`."""
+    """The front and rear lens rims and the sensor chip corners are placed in the world by the camera pose."""
     # Each rim from its point on the plane x, turned about the optical axis, the camera's z.
-    rims = meshes.circles(mv.point([[0.0, 0.3, 0.0], [0.0, 0.25, -0.3]]), mv.x ^ mv.y, N_RIM)   # [2, rim + 1] Point
+    rims = meshes.circles(mv.point([[0.0, 0.3, 0.0], [0.0, 0.25, -0.3]]), mv.xy, N_RIM)        # [2, rim + 1] Point-
     sensor = np.array([[-0.8, -0.6, -1.25], [0.8, -0.6, -1.25], [0.8, 0.6, -1.25], [-0.8, 0.6, -1.25]])
     return camera_pose >> rims, camera_pose >> mv.point(sensor)
 
 
 def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
-    """One view framing the arm, the optics, the rays and the floor of every scene."""
+    """The view frames the arm, the optics, the rays, and the floor across every scene."""
     points = [mv.point(floor())]
     for world_vertices, camera_pose, rays in scenes:
         rims, sensor = optics(camera_pose)
@@ -87,9 +85,7 @@ def framing(scenes: list[tuple[Point, Motor, tuple]]) -> solids.View:
 
 
 def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) -> tuple[list, list, list]:
-    """What stands with the camera, and the floor: the floor grid and the sensor's edge as solids, the sensor chip as
-    a translucent solid, and the lens rims as strokes, for `solids.draw` and `Scene`; their widths a share `thickness`
-    of those set above."""
+    """The floor grid, sensor edge, translucent sensor chip, and lens rims form the static camera and floor geometry."""
     rims, sensor = optics(camera_pose)
     # The sensor chip as a plate a pixel thick, with its edge.
     chip = solids.plates(sensor[None], view.pixel)                            # [1, 6] Plane
@@ -104,8 +100,7 @@ def camera_and_floor(camera_pose: Motor, view: solids.View, thickness: float) ->
 
 def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View,
                  thickness: float) -> list[tuple[solids.Quadric, np.ndarray]]:
-    """The articulated robot arm and the traced rays, with their hits on the sensor, as solids; the rays' widths and
-    the hits' radius a share `thickness` of those set above."""
+    """The articulated robot arm and the traced rays with their hits on the sensor are built as solid quadrics."""
     _, faces = unit_box_topology()
     # Every body a box, the half-spaces inside its faces.
     arm = solids.polyhedra(world_vertices, faces)                             # [bodies, faces] Plane
@@ -123,7 +118,7 @@ def arm_and_rays(world_vertices: Point, rays: tuple, view: solids.View,
 
 
 def scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple, view: solids.View) -> np.ndarray:
-    """The 3D world scene: articulated robot arm, camera lenses and sensor, and traced rays, `[rows, columns, 3]`."""
+    """Render the 3D world scene with the articulated robot arm, camera lenses, sensor, and traced rays."""
     parts, translucent, lenses = camera_and_floor(camera_pose, view, 1.0)
     return solids.draw(parts + arm_and_rays(world_vertices, rays, view, 1.0), view, np.ones(3), inks=[],
                        translucent=translucent,
@@ -137,8 +132,7 @@ PHOTO_GLOSS = 0.15
 
 
 def sensor_view(ax: plt.Axes) -> solids.View:
-    """The sensor seen square on, its middle at the photograph's, as many pixels across as the room the axes get,
-    bare as the photograph leaves them, holds."""
+    """The sensor view looks square on at the sensor's pixel grid, fitted to the axes."""
     ax.set_axis_off()
     middle = mv.point([SENSOR_PIXELS[0] / 2, -SENSOR_PIXELS[1] / 2, 0.0])
     return fitted(solids.View(solids.aim(middle, np.pi / 2, 0.0), SENSOR_PIXELS / 2, SENSOR_PIXELS[0]), ax)
@@ -146,8 +140,7 @@ def sensor_view(ax: plt.Axes) -> solids.View:
 
 def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor,
                      view: solids.View) -> np.ndarray:
-    """The photograph on the sensor's pixels, as the sensor's view sees it: each box's faces at their places on the
-    sensor, held at their depth in front of the lens, so nearer faces hide farther ones."""
+    """Render the photograph on the sensor's pixels, holding each face at its depth in front of the lens."""
     _, faces = unit_box_topology()
     pixels = euclidean(projected_pixels)[..., :2]                              # [bodies, vertices, 2]
     # The depth in front of the lens, along the camera's own z.
@@ -168,8 +161,7 @@ def photograph_image(world_vertices: Point, projected_pixels: Point, camera_pose
 
 def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Point, camera_pose: Motor,
                       view: solids.View) -> AxesImage:
-    """The photograph on the sensor as the sensor's view sees it, with the sensor's edge. The photograph shown, for
-    an animation to set its data."""
+    """Draw the sensor photograph and its border on the axes."""
     shown = show(ax, photograph_image(world_vertices, projected_pixels, camera_pose, view), view)
     left, _, bottom, _ = view.extent
     ax.add_patch(Rectangle((left, bottom), *SENSOR_PIXELS, fill=False, edgecolor="#4A5568", linewidth=1.2))
@@ -178,19 +170,19 @@ def plot_camera_image(ax: plt.Axes, world_vertices: Point, projected_pixels: Poi
 
 # --- figures ----------------------------------------------------------------------------
 def draw_scene_3d(world_vertices: Point, camera_pose: Motor, rays: tuple) -> plt.Figure:
-    """The 3D scene on its own."""
+    """Draw the 3D scene on its own."""
     return image_figure(scene_3d(world_vertices, camera_pose, rays, framing([(world_vertices, camera_pose, rays)])))
 
 
 def draw_camera_image(world_vertices: Point, projected_pixels: Point, camera_pose: Motor) -> plt.Figure:
-    """The sensor photograph on its own."""
+    """Draw the sensor photograph on its own."""
     fig, ax = plt.subplots(figsize=(6.4, 4.8), dpi=140, layout="constrained")
     plot_camera_image(ax, world_vertices, projected_pixels, camera_pose, sensor_view(ax))
     return fig
 
 
 def scenegraph_axes(dpi: int):
-    """Side-by-side 3D scene and sensor photograph."""
+    """Create the side-by-side 3D scene and sensor photograph axes."""
     fig = plt.figure(figsize=(11.5, 5.5), dpi=dpi)
     ax_3d = fig.add_axes([0.0, 0.0, 0.56, 1.0])
     ax_2d = fig.add_axes([0.56, 0.08, 0.41, 0.84])
@@ -198,7 +190,7 @@ def scenegraph_axes(dpi: int):
 
 
 def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose: Motor, rays: tuple) -> plt.Figure:
-    """The 3D scene with its optics beside the photograph on the sensor."""
+    """Draw the 3D scene with its optics beside the photograph on the sensor."""
     fig, ax_3d, ax_2d = scenegraph_axes(140)
     view = fitted(framing([(world_vertices, camera_pose, rays)]), ax_3d)
     show(ax_3d, scene_3d(world_vertices, camera_pose, rays, view), view)
@@ -209,9 +201,7 @@ def draw_scenegraph(world_vertices: Point, projected_pixels: Point, camera_pose:
 # README picture: this makes plots/scenegraph.gif, tuned as a visual for the README. Don't change it; to
 # experiment, copy it.
 def animate_scenegraph(frames: Iterable) -> Iterator[np.ndarray]:
-    """RGB frames of the two-panel figure, one per state, the scene seen by one view that frames them all. The camera
-    stands still: its optics and the floor are set up once, from the first state, and the arm and the rays drawn among
-    them."""
+    """Yield RGB frames of the side-by-side 3D scene and sensor photograph across the trajectory."""
     frames = list(frames)
     fig, ax_3d, ax_2d = scenegraph_axes(52)
     view = fitted(framing([(world_vertices, camera_pose, rays) for world_vertices, _, camera_pose, rays in frames]),

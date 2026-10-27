@@ -1,23 +1,8 @@
-"""A Rubik's cube represents its 54 stickers as integer-coordinate points in 3D space that are turned, drawn, and solved with the same quarter-turn rotor maps.
+"""A Rubik's cube models its 54 stickers as integer-coordinate points in 3D space that are turned, drawn, and solved with the same quarter-turn rotor maps.
 
-The cube is 27 cubies, their centres at -1, 0 and 1 along each axis, and a sticker is a cubie's face
-on the cube's surface: a face is a plane, a side times an axis, and a cubie shows the faces whose side
-it lies on. Each sticker is a point, its cubie's centre plus half its face, in units of half a cubie,
-`2 * cubie + face.dual()`, so every coordinate is an integer, and so are its corners. A face's layer is
-the stickers that reach past 1 along it, `face & sticker > 1`, and a quarter turn is the rotor
-`1 + plane`, the bivector of the plane the face turns in, as a map on points halved: its sandwich doubles
-lengths, so `((1 + plane) >> Point) * 0.5` turns by exactly a quarter, with coefficients 0 and ±1, and
-`1 - plane` turns it back. Which way a quarter turn goes is the notation's choice: Singmaster's turns each
-face clockwise seen from outside, a hand the notation picks, and in a mirror R reads as L'. A point turned
-any number of times keeps integer coordinates, and the cube is solved when every sticker is back at its
-own point.
+Each sticker is a point at integer coordinates in half-cubie units, and each face is a plane whose pairing `face & stickers > 1` selects the stickers in its turning layer. A quarter turn of a face is the rotor `1 + plane` for the bivector plane the face turns in; its sandwich doubles lengths, so as a halved map on points, `((1 + plane) >> Point) * 0.5`, it turns by a quarter turn with coefficients 0 and ±1 only. Stickers keep integer coordinates through any number of turns, so cube states compare without round-off. Applying the batch of twelve quarter-turn maps to a batch of states turns every state every way at once, and bidirectional breadth-first search widens the states reachable from the scrambled and solved cubes one quarter turn at a time until the two frontiers share a state.
 
-The same maps turn the whole frontier of a search at once: every state by both directions of every
-face in one batched application. The solver meets in the middle, widening the states reachable from
-the scramble and from the solved cube a quarter turn at a time until they share one. Drawing turns a
-layer by the rotor of a fraction of the quarter, `(plane * (-angle / 2)).exp()`.
-
-In Singmaster's notation the faces along +x, -x, +y, -y, +z and -z read as R, L, B, F, U and D.
+In Singmaster's notation the faces along $+x, -x, +y, -y, +z,$ and $-z$ read as $\\mathrm{R}, \\mathrm{L}, \\mathrm{B}, \\mathrm{F}, \\mathrm{U},$ and $\\mathrm{D}$ for clockwise quarter turns seen from outside and $\\mathrm{R}', \\mathrm{L}', \\mathrm{B}', \\mathrm{F}', \\mathrm{U}',$ and $\\mathrm{D}'$ for their inverses, generating the Rubik's cube group as a subgroup of the symmetric group $S_{48}$ on the 48 moving facelets.
 """
 
 from __future__ import annotations
@@ -30,117 +15,111 @@ from numga import NumpyContext, stack
 from numga.algebras import VGA3D as ga
 
 mv = NumpyContext(ga).multivector
-# Stickers, cubies and corners are points: antivectors with intrinsic orientation.
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
+# Stickers, cubies, and corners are points (antivectors), and faces are planes through the origin (vectors).
+Point = ga.gatype.antivector()                      # Antivector-
+Plane = ga.gatype.vector()                          # Vector+
+Turn = ga.gatype((Point, Point))
 
-# The six faces, by side and axis: planes, `face & point` how far a point reaches along the face.
-sides = np.array([1.0, -1.0])
-faces = sides[:, None] * mv.basis()                                        # [2, 3] Plane
-# The plane each face turns in, oriented as Singmaster's notation turns it: clockwise seen from outside,
-# the notation's hand.
-planes = sides[:, None] * stack([mv.yz, mv.zx, mv.xy])                     # [2, 3] Bivector
-# The quarter turns, each face clockwise and back.
-directions = np.array([1.0, -1.0])
-turns = ((1 + directions[:, None, None] * planes) >> Point) * 0.5          # [2, 2, 3] Point <- Point
+# Each of the six faces is a plane along an axis on either side; `face & point` reads how far a point reaches along it.
+sides = np.array([1, -1])
+faces = sides[:, None] * mv.basis()                                         # [sides, axes] Plane+
+# Each face turns in the bivector plane perpendicular to its axis, oriented clockwise seen from outside as in Singmaster's notation.
+planes = sides[:, None] * stack([mv.yz, mv.zx, mv.xy])                      # [sides, axes] Bivector+
+# Each quarter turn is a map on points, clockwise and anticlockwise around each face.
+directions = np.array([1, -1])
+turns = ((1 + directions[:, None, None] * planes) >> Point) * 0.5           # [directions, sides, axes] Point- <- Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def turned(stickers: Point, turn: Point, face: Plane) -> Point:
-    """The stickers after a quarter turn of a face: those in its layer turned, the rest left."""
-    layer = (face & stickers) > 1                                          # [...] boolean
-    return stickers + layer * (turn(stickers) - stickers)                  # [...] Point
+def turn_layer(stickers: Point, turn: Turn, face: Plane) -> Point:
+    """The stickers after a quarter turn of `face` turns the stickers in its outer layer and leaves the rest in place."""
+    layer = (face & stickers) > 1                                           # [...]
+    return stickers + layer * (turn(stickers) - stickers)                   # [...] Point-
 
 
-def frontier(stickers: Point) -> Point:
-    """Every quarter turn, each way round each face, applied to each of the given states:
-    `[2, 2, 3, states, 54]`."""
-    return turned(stickers, turns[..., None, None], faces[..., None, None])
+def scramble(stickers: Point, moves: np.ndarray) -> Point:
+    """The stickers after applying the sequence of quarter turns `moves` one after another."""
+    for direction, side, axis in moves:
+        stickers = turn_layer(stickers, turns[direction, side, axis], faces[side, axis])  # [stickers] Point-
+    return stickers
 
 
-def solve(scramble: Point, solved: Point, depth: int) -> np.ndarray:
-    """The quarter turns `[turns, 3]`, each a direction, a side and an axis, that take the scrambled
-    cube to the solved one, found by widening the states reachable from each, a turn at a time and each
-    side in turn, up to depth turns each, until they meet."""
-    searches = [Search(scramble[None]), Search(solved[None])]
+def solve(scrambled_stickers: Point, solved_stickers: Point, depth: int) -> np.ndarray:
+    """The sequence of quarter turns `(direction, side, axis)` that carries `scrambled_stickers` to `solved_stickers`, found by bidirectional search up to `depth` turns from each end."""
+    searches = [Search(scrambled_stickers[None]), Search(solved_stickers[None])]
     for level in range(2 * depth):
-        search, other = searches[level % 2], searches[1 - level % 2]
-        search.widen()
-        here, there = meeting(search.states[-1], other.states[-1])
-        if len(here):
-            forward, backward = (search, other) if level % 2 == 0 else (other, search)
-            ends = (here[0], there[0]) if level % 2 == 0 else (there[0], here[0])
-            back = backward.path(ends[1])[::-1]                                # [turns, 3]
-            return np.concatenate([forward.path(ends[0]), np.concatenate([1 - back[:, :1], back[:, 1:]], axis=-1)])
+        active, opposite = searches[level % 2], searches[1 - level % 2]
+        active.widen()
+        active_matches, opposite_matches = meeting(active.states[-1], opposite.states[-1])
+        if len(active_matches):
+            forward, backward = (active, opposite) if level % 2 == 0 else (opposite, active)
+            forward_end, backward_end = (active_matches[0], opposite_matches[0]) if level % 2 == 0 else (opposite_matches[0], active_matches[0])
+            backward_moves = backward.path(backward_end)[::-1]              # [turns, 3]
+            return np.concatenate([forward.path(forward_end), np.concatenate([1 - backward_moves[:, :1], backward_moves[:, 1:]], axis=-1)])
     raise ValueError(f"no solution within {depth} quarter turns from each side")
 
 
-def animate(stickers: Point, corners: Point, moves: np.ndarray, steps: int) -> Iterator[tuple[Point, Point]]:
-    """The stickers' corners `[54, 4]` and the cut under the turning layer, on both sides `[2, 9, 4]`,
-    through the given quarter turns `[turns, 3]`, each turn's layer turned smoothly over the given
-    steps."""
+def animate(stickers: Point, corners: Point, moves: np.ndarray, n_steps: int) -> Iterator[tuple[Point, Point]]:
+    """The sticker corners and the two sides of the inner cut across `moves`, with each quarter turn interpolated smoothly over `n_steps` frames."""
     for direction, side, axis in moves:
-        layer = (faces[side, axis] & stickers) > 1                             # [54] boolean
-        # The cut: the faces of the layer's cubies towards the middle.
-        cut = 2 * cubies[outward[:, side, axis]][:, None] + squares[1 - side, axis]   # [9, 4] Point
-        for fraction in np.arange(steps) / steps:
-            rotor = (planes[side, axis] * (np.pi / 4 * fraction * directions[direction])).exp()   # [] Rotor
+        layer = (faces[side, axis] & stickers) > 1                          # [stickers]
+        # The cut consists of the inner square faces of the turning layer's cubies.
+        cut = 2 * cubies[outward[:, side, axis]][:, None] + squares[1 - side, axis]  # [layer_cubies, corners] Point-
+        for fraction in np.arange(n_steps) / n_steps:
+            rotor = (planes[side, axis] * (np.pi / 4 * fraction * directions[direction])).exp()  # [] Rotor+
             yield corners + layer[:, None] * ((rotor >> corners) - corners), stack([cut, rotor >> cut])
         turn, face = turns[direction, side, axis], faces[side, axis]
-        stickers, corners = turned(stickers, turn, face), corners + layer[:, None] * (turn(corners) - corners)
+        stickers, corners = turn_layer(stickers, turn, face), corners + layer[:, None] * (turn(corners) - corners)
     yield corners, stack([cut, cut])
 
 
 # --- plumbing -------------------------------------------------------------------------
-# The cubies' centres, and the faces each shows on the cube's surface, those whose side it lies on.
-cubies = mv.vector(np.stack(np.meshgrid(*[[-1, 0, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)).dual()   # [27] Point
-outward = (faces & cubies[:, None, None]) > 0.5                            # [27, 2, 3] boolean
+# The 27 cubie centres lie at -1, 0, and 1 along each axis, and a cubie shows the faces whose side it lies on.
+cubies = mv.vector(np.stack(np.meshgrid(*[[-1, 0, 1]] * 3, indexing="ij"), axis=-1).reshape(-1, 3)).dual()  # [cubies] Point-
+outward = (faces & cubies[:, None, None]) > 0.5                             # [cubies, sides, axes]
 
 
 def face_corners() -> Point:
-    """The corners of each face of a cubie, about its centre, in order round the face: one corner on
-    the face's side, then its quarter turns about it."""
-    corner = (mv.vector([1.0, 1.0, 1.0]) - mv.basis() + faces).dual()      # [2, 3] Point
-    around = [corner]
+    """The four corners of each face of a cubie about its centre, ordered around the face by quarter turns."""
+    first_corner = (mv.vector([1, 1, 1]) - mv.basis() + faces).dual()       # [sides, axes] Point-
+    corners = [first_corner]
     for _ in range(3):
-        around.append(turns[0](around[-1]))
-    return stack(around, axis=-1)                                          # [2, 3, 4] Point
+        corners.append(turns[0](corners[-1]))
+    return stack(corners, axis=-1)                                          # [sides, axes, corners] Point-
 
 
-squares = face_corners()                                                   # [2, 3, 4] Point
+squares = face_corners()                                                    # [sides, axes, corners] Point-
 
 
 def solved_cube() -> tuple[Point, Point, np.ndarray]:
-    """The solved cube: its 54 sticker points, their corners `[54, 4]`, and the face each belongs to,
-    `side * 3 + axis`."""
-    points = (2 * cubies[:, None, None] + faces.dual())[outward]             # [54] Point
-    corners = (2 * cubies[:, None, None, None] + squares)[outward]           # [54, 4] Point
+    """The solved cube's 54 sticker points, their four corners each, and the face index `side * 3 + axis` of each sticker."""
+    stickers = (2 * cubies[:, None, None] + faces.dual())[outward]          # [stickers] Point-
+    corners = (2 * cubies[:, None, None, None] + squares)[outward]          # [stickers, corners] Point-
     _, side, axis = np.nonzero(outward)
-    return points, corners, side * 3 + axis
+    return stickers, corners, side * 3 + axis
 
 
 class Search:
-    """The states reached from one cube, a quarter turn at a time: each level's new states, with the
-    state one turn back and the turn that led there, a direction, a side and an axis."""
+    """A breadth-first search tree records the states reached from a starting cube one quarter turn at a time, together with each state's parent index and move."""
 
     def __init__(self, start: Point) -> None:
-        self.states = [start]                                                  # [level] [states, 54] Point
+        self.states = [start]                                               # [levels][states, stickers] Point-
         self.parents = [np.zeros(1, dtype=int)]
         self.moves = [np.zeros((1, 3), dtype=int)]
-        self.seen = keys(start)
+        self.visited_keys: set[bytes] = set()
+        fresh(start, self.visited_keys)
 
     def widen(self) -> None:
-        """The states one turn on from the last level, not reached before."""
-        flat = frontier(self.states[-1]).reshape(-1, 54)                       # [12 * states, 54] Point
-        index = fresh(flat, self.seen)
-        self.states.append(flat[index])
-        *move, parent = np.unravel_index(index, (2, 2, 3, len(self.states[-2])))
+        """Advance one quarter turn from the last level, keeping only states not visited before."""
+        candidates = turn_layer(self.states[-1], turns[..., None, None], faces[..., None, None]).reshape(-1, 54)  # [candidates, stickers] Point-
+        indices = fresh(candidates, self.visited_keys)
+        self.states.append(candidates[indices])
+        *move, parent = np.unravel_index(indices, (2, 2, 3, len(self.states[-2])))
         self.parents.append(parent)
         self.moves.append(np.stack(move, axis=-1))
-        self.seen |= keys(flat[index])
 
     def path(self, index: int) -> np.ndarray:
-        """The turns `[turns, 3]` from the start to the given state of the last level."""
+        """The sequence of moves `(direction, side, axis)` from the starting cube to state `index` of the last level."""
         moves = []
         for level in range(len(self.states) - 1, 0, -1):
             moves.append(self.moves[level][index])
@@ -149,27 +128,23 @@ class Search:
 
 
 def codes(states: Point) -> np.ndarray:
-    """Each state's sticker coefficients `[states, 54 * 3]`, as exact small integers: the search compares
-    states by their coefficients, which say nothing geometric beyond being equal or not."""
+    """Each state's sticker coordinates packed as a row of exact small integers for state comparison."""
     return np.rint(states.kernel).astype(np.int8).reshape(len(states), -1)
 
 
-def keys(states: Point) -> set[bytes]:
-    """Each state's sticker coordinates as bytes."""
-    return {row.tobytes() for row in codes(states)}
-
-
-def fresh(states: Point, seen: set[bytes]) -> np.ndarray:
-    """The indices of the first copy of each state not already seen."""
+def fresh(states: Point, visited_keys: set[bytes]) -> np.ndarray:
+    """The indices of the first occurrence of each state not in `visited_keys`, recording the newly visited keys."""
     rows = codes(states)
-    _, first = np.unique(rows, axis=0, return_index=True)
-    first = np.sort(first)
-    return first[[rows[i].tobytes() not in seen for i in first]]
+    _, first_indices = np.unique(rows, axis=0, return_index=True)
+    first_indices = np.sort(first_indices)
+    kept = first_indices[[rows[i].tobytes() not in visited_keys for i in first_indices]]
+    visited_keys.update(rows[i].tobytes() for i in kept)
+    return kept
 
 
-def meeting(these: Point, those: Point) -> tuple[np.ndarray, np.ndarray]:
-    """The indices of the states the two sets share, in each."""
-    index = {row.tobytes(): i for i, row in enumerate(codes(those))}
-    rows = codes(these)
-    here = [i for i, row in enumerate(rows) if row.tobytes() in index]
-    return np.array(here, dtype=int), np.array([index[rows[i].tobytes()] for i in here], dtype=int)
+def meeting(first_states: Point, second_states: Point) -> tuple[np.ndarray, np.ndarray]:
+    """The matching state indices in `first_states` and `second_states` where the two frontiers share a state."""
+    lookup = {row.tobytes(): i for i, row in enumerate(codes(second_states))}
+    rows = codes(first_states)
+    first_matches = [i for i, row in enumerate(rows) if row.tobytes() in lookup]
+    return np.array(first_matches, dtype=int), np.array([lookup[rows[i].tobytes()] for i in first_matches], dtype=int)

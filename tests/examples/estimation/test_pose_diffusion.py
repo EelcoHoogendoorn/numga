@@ -1,4 +1,4 @@
-"""A held pose under noise: the settled covariance zeroes the growth, and the scenario renders."""
+"""Station keeping under white-noise gusts solves the steady-state Lyapunov equation and renders the fleet clouds."""
 
 from __future__ import annotations
 
@@ -9,16 +9,17 @@ from examples.estimation.pose_diffusion import core, render, scenarios
 
 
 def test_settled_covariance_zeroes_the_growth():
-    """The map solved for stops the covariance's growth, in every setup."""
+    """The steady-state covariance solved for stops the covariance's growth in every scene."""
+    noise = core.covariance(scenarios.GUSTS)
     for rate in scenarios.RATES.values():
-        dynamics = core.drift(rate, scenarios.RELAXATION)
-        noise = core.covariance(scenarios.GUSTS)
+        dynamics = core.Twist.commutator(rate) - scenarios.RELAXATION * core.Twist
         limit = core.settled(dynamics, noise)
-        np.testing.assert_allclose(core.growth(dynamics, limit, noise).kernel, 0.0, atol=1e-10)
+        growth = dynamics(limit) + limit(dynamics.adjugate()) + noise
+        np.testing.assert_allclose(growth.kernel, 0.0, atol=1e-10)
 
 
 def test_clouds_render():
-    """A short run passes its checks against the settled state and draws."""
+    """A short simulation run converges toward the steady-state covariance and draws."""
     runs = {name: list(scenarios.diffuse(rate, scenarios.GUSTS, 8.0, 0.02, 800, 100, 1)) for name, rate in scenarios.RATES.items()}
     figure = render.draw_settled({name: states[-1] for name, states in runs.items()}, 1.6)
     assert isinstance(figure, plt.Figure)

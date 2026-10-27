@@ -28,52 +28,44 @@ N_RAYS, RAY_SPREAD, RAY_HALF_LENGTH = 30, 0.05, 2.0
 
 # --- math -----------------------------------------------------------------------------
 def point_to_points():
-    """Fit the centroid of a noisy point cloud: the samples, the true centre and the fitted one."""
+    """A point fitted to a noisy cloud recovers its centroid."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> cloud(N_CLOUD, CLOUD_SPREAD, rng), NOISE, rng)     # [samples] Point
-    centroid = fit(Point, points)                                               # [] Point
+    points = jitter(POSE >> cloud(N_CLOUD, CLOUD_SPREAD, rng), NOISE, rng)     # [samples] Point-
+    centroid = fit(Point, points)                                               # [] Point-
     return points, POSE >> mv.w.dual(), centroid
 
 
 def line_to_points():
-    """Fit the principal line through a noisy segment: the samples, and the true and fitted lines, each
-    clipped by two end planes."""
+    """A line fitted to a noisy segment recovers its principal axis, clipped with the true line by two end planes."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> segment(N_SEGMENT, HALF_LENGTH), NOISE, rng)        # [samples] Point
-    line = fit(Line, points)                                                    # [] Line
-    truth = POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))                     # [] Line
-    ends = POSE >> end_planes(DRAWN_HALF_LENGTH)                                # [2] Plane
+    points = jitter(POSE >> segment(N_SEGMENT, HALF_LENGTH), NOISE, rng)        # [samples] Point-
+    line = fit(Line, points)                                                    # [] Line-
+    truth = POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))                     # [] Line-
+    ends = POSE >> end_planes(DRAWN_HALF_LENGTH)                                # [2] Plane+
     return points, truth ^ ends, line ^ ends
 
 
 def plane_to_points():
-    """Fit a plane through a noisy patch: the samples, and the true and fitted planes, each cut into a quad
-    by four edge lines."""
+    """A plane fitted to a noisy patch recovers the patch plane, cut with the true plane into a quad by four edge lines."""
     rng = np.random.default_rng(SEED)
-    points = jitter(POSE >> patch(N_PATCH, HALF_WIDTH, rng), NOISE, rng)        # [samples] Point
-    plane = fit(Plane, points)                                                  # [] Plane
-    edges = POSE >> patch_edges(HALF_WIDTH)                                     # [4] Line
+    points = jitter(POSE >> patch(N_PATCH, HALF_WIDTH, rng), NOISE, rng)        # [samples] Point-
+    plane = fit(Plane, points)                                                  # [] Plane+
+    edges = POSE >> patch_edges(HALF_WIDTH)                                     # [4] Line-
     return points, (POSE >> mv.z) ^ edges, plane ^ edges
 
 
 def point_to_lines():
-    """Triangulate the point of closest approach to a bundle of lines: the end points of each line's segment
-    through the fitted point, the true point and the fitted one."""
+    """A point fitted to a bundle of lines triangulates their point of closest approach."""
     rng = np.random.default_rng(SEED)
-    rays = POSE >> bundle(N_RAYS, RAY_SPREAD, rng)                              # [rays] Line
-    intersection = fit(Point, rays).normalized()                                # [] Point
+    rays = POSE >> bundle(N_RAYS, RAY_SPREAD, rng)                              # [rays] Line-
+    intersection = fit(Point, rays).normalized()                                # [] Point-
 
     # Each line's point at infinity is its direction. An ideal point has no weight to
     # normalize; its length is the norm of its dual, a Euclidean vector.
-    directions = rays ^ mv.w                                                    # [rays] Point
+    directions = rays ^ mv.w                                                    # [rays] Point-
     unit_directions = directions / directions.dual().norm()
-    ends = intersection + unit_directions * np.array([[-RAY_HALF_LENGTH], [RAY_HALF_LENGTH]])   # [2, rays] Point
+    ends = intersection + unit_directions * np.array([[-RAY_HALF_LENGTH], [RAY_HALF_LENGTH]])   # [2, rays] Point-
     return ends, POSE >> mv.w.dual(), intersection
-
-
-def distance(point: Point, primitive):
-    """The distance of points of unit weight from a unit point, line or plane: the norm of their join."""
-    return (point.normalized() & primitive.normalized()).norm()
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -92,13 +84,13 @@ def main() -> None:
     # of its count; the fitted line's and plane's drawn ends lie within 5 cm of the truth, and so does the
     # triangulated point.
     _, truth, centroid = cloud_fit
-    assert distance(centroid, truth).to_array() < 0.1
-    _, truth_ends, fit_ends = line_fit
-    assert distance(fit_ends, POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))).to_array().max() < 0.05
-    _, truth_quad, fit_quad = plane_fit
-    assert distance(fit_quad, POSE >> mv.z).to_array().max() < 0.05
+    assert (centroid.normalized() & truth.normalized()).norm() < 0.1
+    _, _, fit_ends = line_fit
+    assert (fit_ends.normalized() & (POSE >> (mv.w.dual() & mv.direction([0, 1, 0]))).normalized()).norm().to_array().max() < 0.05
+    _, _, fit_quad = plane_fit
+    assert (fit_quad.normalized() & (POSE >> mv.z).normalized()).norm().to_array().max() < 0.05
     _, truth, intersection = bundle_fit
-    assert distance(intersection, truth).to_array() < 0.05
+    assert (intersection.normalized() & truth.normalized()).norm() < 0.05
 
 
 if __name__ == "__main__":

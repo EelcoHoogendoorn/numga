@@ -1,6 +1,4 @@
-"""The rays of a quadratic curve and its complement in the three dimensions of x, y and weight, the cone they
-sweep, and where both meet the unit sphere: drawn on the GPU, the sphere traced and translucent with the equator and
-the cone's loops inked on it, the control rays rods, the curves strokes, the swept rays a translucent mesh."""
+"""GPU rendering for the rational Bézier curve example draws the rays of a quadratic curve and its complement in homogeneous space, the cone they sweep, and their projection onto the unit sphere."""
 
 from __future__ import annotations
 
@@ -9,6 +7,7 @@ from collections.abc import Iterator
 import numpy as np
 from matplotlib.colors import to_rgb
 
+from numga import stack
 from examples.geometry.bezier import core
 from examples.util.wgsl import meshes, solids, strokes
 
@@ -30,26 +29,20 @@ DOT_SPACING, DOT_RADIUS, POINT_RADIUS = 7.0, 1.4, 3.5
 
 
 # --- plumbing -------------------------------------------------------------------------
-def scalars(values: core.Scalar) -> np.ndarray:
-    """The values of a batch of scalars, for printing and checks."""
-    return values.cast(values.algebra.subspace.scalar()).kernel[..., 0]
-
-
 def homogeneous(points: core.Point) -> np.ndarray:
-    """x, y and weight of each point, on the last axis."""
-    return points.cast(core.ga.subspace("yz zx xy")).kernel
+    """The x, y, and weight coordinates of each point are its pairings with the three coordinate planes."""
+    return (stack((core.mv.x, core.mv.y, core.mv.z)) & points[..., None]).to_array()
 
 
 def cone(shape: core.Conic) -> solids.Quadric:
-    """A conic's cone in the drawing's space, x, y and weight along x, y and z: its form read on each pair of the
-    axes' rays, `shape(a) & b`, as the quadric pairing those coordinates of a point alike."""
-    rays = core.mv.vector(np.eye(3)).dual()                                    # [3] Point
-    form = scalars(shape(rays[:, None]) & rays[None, :])                       # [3, 3]
+    """A conic's form in the drawing's space is the quadric cone with the same pairings on the three coordinate rays."""
+    rays = core.mv.vector(np.eye(3)).dual()                                    # [3] Point-
+    form = (shape(rays[:, None]) & rays[None, :]).to_array()                   # [3, 3]
     return (solids.axes[:, None] * (solids.axes & solids.Point)[None, :] * form).sum(axis=(-1, -2))
 
 
 def dotted(polygon: np.ndarray, spacing: float) -> np.ndarray:
-    """Dots along a polyline `[corners, 3]`, about `spacing` apart, `[dots, 3]`."""
+    """The dots along a closed polyline are spaced evenly along each edge."""
     # Along each side, as many dots as fit at the spacing, from its start up to the next side's; the last corner closes it.
     counts = np.maximum(1, np.round(np.linalg.norm(np.diff(polygon, axis=0), axis=-1) / spacing).astype(int))
     return np.concatenate([start + np.linspace(0, 1, count, endpoint=False)[:, None] * (end - start)
@@ -57,18 +50,14 @@ def dotted(polygon: np.ndarray, spacing: float) -> np.ndarray:
 
 
 def fan(xyw: np.ndarray, offset: int) -> np.ndarray:
-    """The triangles from the origin, vertex `offset`, to each step along a curve, its vertices following it."""
+    """The triangle fan connects the origin at vertex `offset` to each step along a curve."""
     steps = offset + 1 + np.arange(len(xyw) - 1)
     return np.stack([np.full_like(steps, offset), steps, steps + 1], axis=-1)
 
 
 def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, shape: core.Conic,
               view: solids.View) -> np.ndarray:
-    """A curve and its complement as their sums are, in the three dimensions of x, y and weight, with their
-    weighted control points, and with the rays from the origin to the curves filled in: the part of the
-    conic's cone each sweeps. Where the rays pierce
-    the unit sphere, the curves normalised, and where the cone does, its two antipodal loops. The equator
-    is the line at infinity."""
+    """Render a curve and its complement in homogeneous space with their weighted control points, the ray fans from the origin, and their projection onto the unit sphere."""
     polygons = homogeneous(controls)                                           # [2, controls, 3]
     arcs = [homogeneous(curve), homogeneous(complement)]                       # [samples, 3] each
     colours = [CURVE_COLOUR, COMPLEMENT_COLOUR]
@@ -101,19 +90,17 @@ def draw_rays(controls: core.Point, curve: core.Point, complement: core.Point, s
 
 
 def views(points: list[core.Point], azimuths: np.ndarray) -> list[solids.View]:
-    """Views at the origin from each azimuth, in degrees, one size for all: framing every point of the batches, as
-    its sum is, and the unit sphere, from every azimuth."""
+    """The camera views orbit the origin across the given azimuths at a shared framing."""
     elevation, turns = np.radians(ELEVATION), np.radians(azimuths + 90)
     cameras = [solids.aim(solids.origin, elevation, turn) for turn in turns]
-    seen = sm.point(np.concatenate([homogeneous(batch).reshape(-1, 3) for batch in points]))
-    places = np.concatenate([solids.View(camera, np.ones(2), N_PIXELS).across(seen) for camera in cameras])
+    framed_points = sm.point(np.concatenate([homogeneous(batch).reshape(-1, 3) for batch in points]))
+    places = np.concatenate([solids.View(camera, np.ones(2), N_PIXELS).across(framed_points) for camera in cameras])
     half = np.maximum(np.abs(places).max(axis=0), 1.0)
     return [solids.View(camera, half + MARGIN * half.max(), N_PIXELS) for camera in cameras]
 
 
 def animate_rays(controls: core.Point, curves: core.Point, complements: core.Point, shapes: core.Conic) -> Iterator[np.ndarray]:
-    """The ray figure for each conic of a batch, viewed from turning once around, at one framing: the curves and the
-    sphere's, which the weighted control points of the most hyperbolic conics run out of."""
-    seen = views([curves, complements], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
+    """Yield the rendered frame for each conic in the batch as the camera orbits once around the origin."""
+    camera_views = views([curves, complements], AZIMUTH + np.linspace(0, 360, curves.shape[0], endpoint=False))
     for index in range(curves.shape[0]):
-        yield draw_rays(controls[index], curves[index], complements[index], shapes[index], seen[index])
+        yield draw_rays(controls[index], curves[index], complements[index], shapes[index], camera_views[index])

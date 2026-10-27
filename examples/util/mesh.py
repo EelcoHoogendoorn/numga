@@ -21,7 +21,8 @@ constructors place the vertices as points, antivectors, intrinsic like all geome
 
 from __future__ import annotations
 
-from functools import cached_property
+from functools import cached_property, reduce
+from operator import mul
 from pathlib import Path
 
 import numpy as np
@@ -56,6 +57,9 @@ class Mesh:
     from outside, with its edges `[E, 2]` from lower to higher vertex, the edge facing each corner of
     each face `[F, 3]`, and that edge's orientation relative to the face. A mesh does not change, so
     each map derived from it is computed once."""
+
+    # A mesh that was not subdivided has no Loop steps behind it.
+    steps: tuple[SparseExtensor, ...] = ()
 
     def __init__(self, n_vertices: int, faces: np.ndarray) -> None:
         corner = np.arange(3)
@@ -223,16 +227,16 @@ class Mesh:
 
     @cached_property
     def d0(self) -> SparseExtensor:
-        """[E, V] Scalar: oriented differences from edge tails to heads."""
+        """Scalar[E <- V]: oriented differences from edge tails to heads."""
         return as_ga_sparse(self.edges, as_scalar(np.ones_like(self.edges) * [-1, 1]))
 
     @cached_property
     def d1(self) -> SparseExtensor:
-        """[F, E] Scalar: oriented circulation around each face."""
+        """Scalar[F <- E]: oriented circulation around each face."""
         return as_ga_sparse(self.face_edges, as_scalar(self.face_edge_orientation))
 
     def loop(self, pinned: np.ndarray) -> SparseExtensor:
-        """[V + E, V] Scalar: one Loop step, from the vertices to those of the finer mesh, its vertices
+        """Scalar[V + E <- V]: one Loop step, from the vertices to those of the finer mesh, its vertices
         followed by one per edge, with the vertices pinned `[V]` staying where they are.
 
         An interior vertex of valence n keeps `1 - n * beta` of itself and takes `beta` of each neighbour,
@@ -269,10 +273,13 @@ class Mesh:
         corners = np.stack([self.faces, np.roll(middle, 1, axis=1), np.roll(middle, -1, axis=1)], axis=-1)   # [F, 3, 3]
         return np.concatenate([middle, corners.reshape(-1, 3)])
 
-    def split_pins(self, pinned: np.ndarray) -> np.ndarray:
-        """[V + E]: the pinned vertices of the finer mesh, the same vertices; the vertices of the edges are
-        free."""
-        return np.concatenate([pinned, np.zeros(len(self.edges), dtype=bool)])
+    def loop_subdivided(self, pinned: np.ndarray, n_steps: int) -> SubdividedMesh:
+        """The mesh after `n_steps` Loop steps of this one, the vertices pinned `[V]` staying where they are.
+        Each finer mesh holds the one before it and the map from its vertices, so the steps compose."""
+        mesh = SubdividedMesh(self, pinned)
+        for _ in range(n_steps - 1):
+            mesh = SubdividedMesh(mesh, mesh.pinned)
+        return mesh
 
     @cached_property
     def boundary_edges(self) -> np.ndarray:
@@ -290,3 +297,25 @@ class Mesh:
         fields of cells, one per corner."""
         return SparseExtensor.from_indices(cells.batch(), np.arange(len(self.faces)), self.faces.T,
                                            (len(self.faces), self.n_vertices))
+
+
+class SubdividedMesh(Mesh):
+    """The finer mesh of one Loop step of a coarser one, every face split in four. It holds the coarser mesh, the map
+    from the coarser mesh's vertices to its own, `from_coarser`, and its pinned vertices, the coarser mesh's pinned
+    vertices followed by the free vertices of its edges, so that it can be subdivided again."""
+
+    def __init__(self, coarser: Mesh, pinned: np.ndarray) -> None:
+        self.coarser = coarser
+        self.from_coarser = coarser.loop(pinned)                                  # Scalar+[V + E <- V]
+        self.pinned = np.concatenate([pinned, np.zeros(len(coarser.edges), dtype=bool)])   # [V + E]
+        super().__init__(self.from_coarser.shape[0], coarser.split_faces)
+
+    @property
+    def steps(self) -> tuple[SparseExtensor, ...]:
+        """The Loop steps from the first mesh to this one, coarsest first."""
+        return self.coarser.steps + (self.from_coarser,)
+
+    @cached_property
+    def subdivision(self) -> SparseExtensor:
+        """The map from the first mesh's vertices to this one's: its Loop steps composed, the finest acting last."""
+        return reduce(mul, reversed(self.steps))

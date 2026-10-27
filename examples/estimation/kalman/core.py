@@ -1,10 +1,8 @@
-"""Pose filtering on the motor manifold tracks a moving body's pose and uncertainty in the plane.
+"""A Kalman filter tracks a vehicle's pose in the plane, and how uncertain it is, from dead-reckoned motion commands and sparse noisy pose readings.
 
-The state is a pose motor and its uncertainty is a covariance over body-frame twist perturbations. A linear readout of a twist is a line, so the covariance is a linear map `Twist <- Line` taking each readout line to the twist correlated with it. Prediction carries the covariance through each motion step as it moves any map, its readout pulled through the step and its twist pushed back, and measurement updates correct the motor and covariance using the logarithm of the relative pose innovation.
+The pose is a motor, and an error in it is a small twist on its right. The uncertainty is a covariance of those twists, typed as a map from a line, a linear readout of a twist through their pairing, to the twist correlated with it, `Twist <- Line`. Being a map, it moves through each step of the drive the way any map does, its readout pulled through the step and its twist pushed back, `step << sigma(step >> Line)`, with no Jacobian to derive. The gain at a reading is a ratio of two such maps, and the position ellipse is the covariance read through the map from twists to the motion of the vehicle's centre.
 
-In 2D Projective Geometric Algebra (`PGA2D`, signature `x+y+w0`), lines are vectors, points and infinitesimal twists are bivectors, and rigid motions in the plane are even-grade motors.
-
-In the matrix notation of the extended Kalman filter the covariance reads as a three-by-three matrix propagated and updated by the Jacobians of the motion and measurement models.
+In the matrix notation of the extended Kalman filter on $\\mathrm{SE}(2)$ the covariance reads as a $3 \\times 3$ matrix $P$, propagated as $F P F^{\\mathsf T} + Q$ with the adjoint matrix $F$ of each step and updated with the Kalman gain $K = P (P + R)^{-1}$.
 """
 
 from __future__ import annotations
@@ -15,73 +13,54 @@ from numga import NumpyContext
 from numga.algebras import PGA2D
 
 ga = PGA2D
-ctx = NumpyContext(ga)
-mv = ctx.multivector
-Point = ga.gatype.antivector()
-Motor = ga.gatype.rotor()
-# A pose perturbation, the twist that carries the estimate to the truth.
-Twist = ga.gatype.bivector()
-Scalar = ga.gatype.scalar()
-Line = ga.gatype.antibivector()
-# A linear readout of a twist is a line; the covariance takes it to the correlated twist.
-Covariance = ga.gatype((Twist, Line))         # Twist <- Line
+mv = NumpyContext(ga).multivector
+Point = ga.gatype.antivector()                      # Antivector-
+Plane = ga.gatype.vector()                          # Vector+
+# A linear readout of a twist is an antibivector line; a covariance maps it to the correlated twist.
+Line = ga.gatype.antibivector()                     # Antibivector-
+# A pose perturbation, the twist on the right that carries the estimate to the truth.
+Twist = ga.gatype.bivector()                        # Bivector+
+Motor = ga.gatype.rotor()                           # Rotor+
+Covariance = ga.gatype((Twist, Line))
+Quadric = ga.gatype((Plane, Point))
 
 
 # --- math -----------------------------------------------------------------------------
-def predict(estimate: Motor, sigma: Covariance, step: Motor, motion_noise: Covariance) -> tuple[Motor, Covariance]:
-    """Carry the estimate and its covariance through one body-frame step, adding the motion noise.
-
-    Pose errors are right perturbations, `estimate * (delta * 0.5).exp()`, with sigma their
-    covariance on twists. A perturbation on the right of the estimate is carried through the step by
-    step << delta: the adjoint of the step is its sandwich, step << Twist.
-    """
-    # The covariance takes a readout of the perturbation to the twist correlated with it,
-    # so it moves like any map: pull the readout through the step, push the twist back.
-    return estimate * step, (step << sigma(step >> Line)) + motion_noise
-
-
-def update(estimate: Motor, sigma: Covariance, measured: Motor, measurement_noise: Covariance) -> tuple[Motor, Covariance]:
-    """Correct the estimate and its covariance by a noisy pose measurement, its error a right perturbation
-    with the measurement noise as covariance."""
+def update(estimate: Motor, sigma: Covariance, reading: Motor, measurement_noise: Covariance) -> tuple[Motor, Covariance]:
+    """A noisy pose reading, its error a right perturbation with covariance `measurement_noise`, corrects the estimate and shrinks its covariance."""
     # The innovation is the log of the relative motor, the gain is a ratio of covariance maps, and the
     # correction is exponentiated.
-    innovation = (estimate.inverse() * measured).log() * 2
-    gain = sigma((sigma + measurement_noise).inverse())
-    return estimate * (gain(innovation) * 0.5).exp(), sigma - gain(sigma)
+    innovation = (estimate.inverse() * reading).log() * 2                       # [] Twist+
+    gain = sigma((sigma + measurement_noise).inverse())                         # [] Twist+ <- Twist+
+    correction = (gain(innovation) * 0.5).exp()                                 # [] Motor+
+    return estimate * correction, sigma - gain(sigma)
 
 
-def position_ellipse(estimate: Motor, sigma: Covariance, origin: Point):
-    """The estimated position, with the principal variances and axes of its uncertainty.
-
-    A readout of position along a line l, `l & shift(delta)`, is a readout of the twist through the
-    incidence pairing, so the covariance of those readouts is a form on lines. The readout takes
-    only the lines that see a displacement, those through the origin, which the line metric
-    measures fully, so against it the principal readouts are the ellipse axes.
-    """
-    here = estimate >> origin                                  # [readings] Point
-    shift = Twist.commutator(here)(estimate >> Twist)          # [readings] Point <- Twist
-    readout = shift.adjugate()                                 # [readings] Line <- Line
-    position = readout & sigma(readout)                        # [readings] Scalar <- (Line, Line)
-    variances, axes = position.eigh()                          # [readings, modes] Scalar, [readings, modes] Line
-    return here, variances, axes
+def position_ellipse(estimate: Motor, sigma: Covariance, positions: Point, sigmas: float) -> Quadric:
+    """The quadric of each estimated position's uncertainty vanishes on its confidence ellipse, `sigmas` standard deviations out."""
+    # A twist moves the position by its commutator with it: a map from twists to displacements.
+    shift = Twist.commutator(positions)(estimate >> Twist)                      # [states] Point- <- Twist+
+    # Its adjugate pulls each plane back to the line that reads the same displacement from the twist.
+    readout = shift.adjugate()                                                  # [states] Line- <- Plane+
+    # The covariance pushed forward through the motion adds to the position's own dyad: its second moment.
+    moment = positions * (Plane & positions) + shift(sigma(readout))            # [states] Point- <- Plane+
+    return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)           # [states] Plane+ <- Point-
 
 
-# --- plumbing: covariance, sampling and simulation --------------------------------------
+# --- plumbing -------------------------------------------------------------------------
 def covariance(translation_std: float, rotation_std: float) -> Covariance:
-    """Body-frame noise: isotropic translation, and rotation about the body origin."""
-    translation = mv.yw * (mv.yw & Line) + mv.wx * (mv.wx & Line)   # [] Twist <- Line
-    rotation = mv.xy * (mv.xy & Line)                               # [] Twist <- Line
+    """A body-frame noise covariance is isotropic in translation and in rotation about the body's origin."""
+    translation = mv.yw * (mv.yw & Line) + mv.wx * (mv.wx & Line)               # [] Twist+ <- Line-
+    rotation = mv.xy * (mv.xy & Line)                                           # [] Twist+ <- Line-
     return translation * translation_std**2 + rotation * rotation_std**2
 
 
-def sample(cov: Covariance, normals: np.ndarray) -> Twist:
-    """Twists drawn from a covariance map, given independent standard normal draws `[..., 3]`.
-
-    Readouts orthonormal in the covariance's own form carry independent unit normal draws:
-    the twists they select, `cov(lines)`, then have covariance
-    `(cov(lines) * (cov(lines) & Line)).sum(axis=0)`, which is `cov` itself.
+def sample(noise: Covariance, normals: np.ndarray) -> Twist:
+    """The sampled twists have covariance `noise`: readouts orthonormal in its own form are independent under it,
+    so the twists they select, `noise(lines)`, weighted by the independent standard normal draws `[..., 3]`,
+    reproduce it, `(noise(lines) * (noise(lines) & Line)).sum(axis=0) == noise`.
     """
-    readouts = Line & cov                                      # [] Scalar <- (Line, Line)
+    readouts = Line & noise                                                     # [] Scalar+ <- (Line-, Line-)
     # Lines orthonormal in the form itself.
-    _, lines = readouts.eigh(readouts)                         # [modes] Line
-    return (cov(lines) * normals).sum(axis=-1)                 # [...] Twist
+    _, lines = readouts.eigh(readouts)                                          # [modes] Line-
+    return (noise(lines) * normals).sum(axis=-1)                                # [...] Twist+

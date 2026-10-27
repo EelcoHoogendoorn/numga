@@ -22,21 +22,19 @@ SUBJECT_SIDE, SUBJECT_DEPTH = 1.6, 5.0
 
 # --- math -----------------------------------------------------------------------------
 def projection():
-    """A lit body over the ground, and the same rig posed twice over one subject. Returns the body, its
-    edges, its shadows and a corner's shadow trail, both lights, the stereo pair's images, epipole,
-    epipolar lines and correspondence, and the two rigs."""
+    """The shadow scene of a lit cube over the ground and the stereo views of a second cube from two camera poses."""
     origin = mv.w.dual()
-    body = (mv.zw * (BODY_HEIGHT / 2)).exp() >> cube(BODY_SIDE)               # [corners] Point
+    body = (mv.zw * (BODY_HEIGHT / 2)).exp() >> cube(BODY_SIDE)               # [corners] Point-
     ground = mv.z
     point_light, sun = mv.point(POINT_LIGHT), mv.direction(SUN)
     path_shift = (stack((mv.xw, mv.yw, mv.zw)) * LIGHT_PATH_CENTRE).sum(axis=0) / 2
-    light_path = path_shift.exp() >> circle(N_LIGHT_PATH)                     # [lights] Point
+    light_path = path_shift.exp() >> circle(N_LIGHT_PATH)                     # [lights] Point-
 
     # Two copies of the rig, shifted apart along x and turned about y so they converge.
     screen = mv.z - mv.w
     rig_1 = (mv.xw * -RIG_SHIFT).exp() * (mv.xz * +RIG_TURN).exp()
     rig_2 = (mv.xw * +RIG_SHIFT).exp() * (mv.xz * -RIG_TURN).exp()
-    subject = (mv.zw * (SUBJECT_DEPTH / 2)).exp() >> cube(SUBJECT_SIDE)       # [corners] Point
+    subject = (mv.zw * (SUBJECT_DEPTH / 2)).exp() >> cube(SUBJECT_SIDE)       # [corners] Point-
 
     cast = shadows(body, ground, point_light, sun, body[7], light_path)
     views = stereo(subject, origin, screen, rig_1, rig_2)

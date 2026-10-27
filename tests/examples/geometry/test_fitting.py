@@ -5,6 +5,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.geometry.fitting import render, scenarios
 from examples.geometry.fitting.core import (
     Line, Plane, Point, bundle, cloud, ctx, fit, jitter, end_planes, mv, patch, segment,
@@ -20,11 +21,12 @@ def same_element(a, b, atol: float) -> bool:
     ka, kb = ka / np.abs(ka).max(), kb / np.abs(kb).max()
     return np.allclose(ka, kb, atol=atol) or np.allclose(ka, -kb, atol=atol)
 
+
 def test_unit_forms_are_degenerate_on_the_free_coefficients():
     ranks = {}
     for name, Unknown in (("point", Point), ("line", Line), ("plane", Plane)):
         unit = Unknown.scalar_norm_squared()
-        ranks[name] = np.linalg.matrix_rank(np.asarray(ctx.lower(unit).kernel).squeeze())
+        ranks[name] = np.linalg.matrix_rank(unit.materialize(ctx).kernel[0])
     assert ranks == {"point": 1, "line": 3, "plane": 3}
 
 
@@ -46,11 +48,11 @@ def test_line_fit_matches_principal_axis_and_is_a_line():
     points = jitter(POSE >> segment(200, 2.0), 0.05, rng)
     line = fit(Line, points)
     scale = float(np.abs(line.kernel).max()) ** 2
-    np.testing.assert_allclose(line.wedge(line).kernel / scale, 0.0, atol=1e-13)
+    np.testing.assert_allclose((line ^ line).kernel / scale, 0.0, atol=1e-13)
 
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
-    ends = euclidean(line.wedge(POSE >> end_planes(2.0)))
+    ends = euclidean(line ^ (POSE >> end_planes(2.0)))
     d = ends[1] - ends[0]
     d = d / np.linalg.norm(d)
     assert np.isclose(abs(d @ vt[0]), 1.0, atol=1e-6)
@@ -62,10 +64,10 @@ def test_plane_fit_matches_svd_normal_through_centroid():
     plane = fit(Plane, points)
     xyz = euclidean(points)
     _, _, vt = np.linalg.svd(xyz - xyz.mean(axis=0))
-    n = plane.kernel[:3]
+    n = (stack((mv.x, mv.y, mv.z)) & plane.dual()).to_array()
     n = n / np.linalg.norm(n)
     assert np.isclose(abs(n @ vt[-1]), 1.0, atol=1e-6)
-    np.testing.assert_allclose(mv.point(xyz.mean(axis=0)).regressive(plane).kernel, 0.0, atol=1e-10)
+    np.testing.assert_allclose((mv.point(xyz.mean(axis=0)) & plane).to_array(), 0.0, atol=1e-10)
 
 
 def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
@@ -76,12 +78,12 @@ def test_point_fitted_to_a_bundle_is_the_point_of_closest_approach():
     rays = POSE >> bundle(40, 0.05, rng)
     meet = fit(Point, rays)
     # Compare with the classical closed form: the least-squares intersection of lines.
-    directions = rays.wedge(mv.w).cast(Point.output_subspace).kernel[:, :3]
+    directions = (stack((mv.x, mv.y, mv.z)) & (rays ^ mv.w)[..., None]).to_array()
     directions = directions / np.linalg.norm(directions, axis=1, keepdims=True)
     projector = np.eye(3)[None] - directions[:, :, None] * directions[:, None, :]
     # A point on each line: meet the line with the plane through the origin perpendicular to it.
     normals = mv.x * directions[:, 0] + mv.y * directions[:, 1] + mv.z * directions[:, 2]
-    on_line = euclidean(rays.wedge(normals))
+    on_line = euclidean(rays ^ normals)
     A = projector.sum(axis=0)
     b = np.einsum("nij,nj->i", projector, on_line)
     np.testing.assert_allclose(euclidean(meet), np.linalg.solve(A, b), atol=1e-8)

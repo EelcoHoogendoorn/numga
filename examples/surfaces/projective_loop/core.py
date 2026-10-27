@@ -1,38 +1,18 @@
-"""Loop subdivision of weighted points of projective space.
+r"""Loop subdivision smooths a triangle mesh by splitting every triangle into four, moving each existing vertex to a weighted average of itself and its neighbours, and placing a new vertex on each edge between its endpoints and the two opposite corners. When the vertices are points of projective space carrying homogeneous weights and the subdivision averages those weighted points directly, each vertex weight acts as a handle on the limit surface: a heavy vertex pulls the surface toward itself, and a light vertex releases it. And subdivision commutes with perspective: refining and then viewing in perspective gives what viewing in perspective and then refining gives, where averaging Euclidean positions does not.
 
-A Loop step splits every triangle of a closed mesh in four. Each vertex moves to an average of itself and
-its neighbours, and each edge gets a new vertex, an average of its two ends and the two vertices across
-from it. The averages are a map on the vertex sites. Here the sites hold points of projective space, each
-with its own weight, and the step adds and scales the points as they are: a heavy vertex pulls the surface
-towards itself, a light one lets it go. A projective map acts on the points at the sites and the step on
-the sites themselves, so the two commute, whatever the weights; averaging positions instead commutes with
-affine maps only.
+The vertices are points of projective geometric algebra, and one Loop step is a linear map from the coarser mesh's vertex sites to the finer one's, `step * controls`, and the steps compose into one map. A perspective is a map on points, the identity plus one term, `Point + centre * (axis & Point) * strength`. The step acts across the sites and the perspective on the point at each site, so the two commute.
+
+In the homogeneous-coordinate notation of computer-aided geometric design, each weighted vertex reads as a four-vector $(w\,\mathbf p,\ w)$, a Loop step reads as a subdivision matrix $S$ acting across the vertices, and a projective transformation reads as a $4 \times 4$ homography matrix $H$ acting on each vertex, so $(S V) H^{\mathsf T} = S (V H^{\mathsf T})$.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
-import numpy as np
-
 from numga import NumpyContext
 from numga.algebras import PGA3D as ga
-from numga.sparse import SparseExtensor
 from examples import instantiate
 
 ctx = NumpyContext(ga)
 mv = ctx.multivector
 Mesh = instantiate("examples.util.mesh", ga).Mesh
-Scalar = ga.gatype.scalar()
-Plane = ga.gatype.vector()
-Point = ga.gatype.antivector()
-PointMap = ga.gatype((Point, Point))                                           # Point <- Point
+Point = ga.gatype.antivector()                      # Antivector-
 
-
-# --- math -----------------------------------------------------------------------------
-def refinements(mesh: Mesh, pinned: np.ndarray, n_steps: int) -> Iterator[tuple[SparseExtensor, Mesh]]:
-    """The map of each of so many Loop steps from a mesh, with the finer mesh it gives."""
-    for _ in range(n_steps):
-        step = mesh.loop(pinned)                                               # [finer, coarser] Scalar
-        mesh, pinned = Mesh(step.shape[0], mesh.split_faces), mesh.split_pins(pinned)
-        yield step, mesh

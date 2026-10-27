@@ -1,5 +1,4 @@
-"""Shaded surfaces over their control meshes, and the gap between two refinements, drawn on the GPU: each surface a
-smooth-shaded mesh, its control mesh a dotted line of beads along every edge."""
+"""Render subdivided surfaces over their dotted control meshes and shade the discrepancy between perspective-first and subdivision-first refinement on the GPU."""
 
 from __future__ import annotations
 
@@ -9,6 +8,7 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.surfaces.projective_loop import core
 from examples.util.wgsl import image_figure, meshes, solids
 
@@ -17,34 +17,31 @@ SURFACE_COLOUR = np.array([0.16, 0.5, 0.63])
 GAP_COLOUR = np.array([0.82, 0.42, 0.21])
 CONTROL_COLOUR = np.full(3, 0.45)
 background = np.ones(3)
-# The view's elevation and azimuth in radians, azimuth zero looking along +y; the margin around the control mesh as
-# a share of its larger side, and the pixels across each panel.
+# Camera elevation and azimuth in radians (with azimuth zero looking along +y), the viewport margin as a
+# share of the control mesh's larger side, and the pixel width of each panel.
 ELEVATION, AZIMUTH = np.radians(18.0), np.radians(30.0)
 MARGIN, N_PIXELS = 0.25, 360
-# The beads along each edge of the control mesh, and their radius in pixels.
+# Number of beads along each control-mesh edge and their radius in pixels.
 N_DOTS, DOT_RADIUS = 28, 1.4
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    """x, y and z of each point at the sites of a field, on the last axis."""
-    xyzw = points.batch().cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
-    return xyzw[..., :3] / xyzw[..., 3:]
+    """The Euclidean coordinates of finite points at the sites of a field."""
+    mv = core.mv
+    batch = points.batch()
+    return ((stack((mv.x, mv.y, mv.z)) & batch[..., None]) / (mv.w & batch)[..., None]).to_array()
 
 
 def edges(faces: np.ndarray) -> np.ndarray:
-    return np.unique(np.sort(np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1), axis=-1).reshape(-1, 2), axis=0)
-
-
-def view(control: np.ndarray) -> solids.View:
-    """A view framing a control mesh `[vertices, 3]`."""
-    return solids.view([sm.point(control)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
+    """The unique undirected edges `[edges, 2]` of a triangle face array."""
+    directed_edges = np.stack([faces, np.roll(faces, -1, axis=1)], axis=-1).reshape(-1, 2)
+    return np.unique(np.sort(directed_edges, axis=-1), axis=0)
 
 
 def picture(control: np.ndarray, control_faces: np.ndarray, surface: np.ndarray, faces: np.ndarray, colours: np.ndarray,
             frame: solids.View) -> np.ndarray:
-    """A surface `[refined, 3]` in the given face colours `[faces, 3]`, smooth shaded, over its control mesh
-    `[vertices, 3]`, dotted."""
+    """Render a smooth-shaded surface `[refined, 3]` in the given face colours `[faces, 3]` inside its dotted control mesh `[vertices, 3]`."""
     places = sm.point(surface)
     sheet = meshes.samples(places, faces, np.zeros(3), meshes.smooth(places, faces), frame, face_values=colours,
                            colour=meshes.by_face, gloss=solids.gloss)
@@ -56,23 +53,21 @@ def picture(control: np.ndarray, control_faces: np.ndarray, surface: np.ndarray,
 
 
 def draw_weights(controls: core.Point, control_faces: np.ndarray, surfaces: core.Point, faces: np.ndarray) -> plt.Figure:
-    """Each case's control mesh, dotted, and the surface it refines to, one camera framing every control mesh."""
-    controls, surfaces = coordinates(controls), coordinates(surfaces)         # [cases, vertices, 3], [cases, refined, 3]
-    frame = view(controls.reshape(-1, 3))
+    """Render each weight case's dotted control mesh and subdivided surface side by side from a shared camera."""
+    control_coords, surface_coords = coordinates(controls), coordinates(surfaces)  # [cases, vertices, 3], [cases, refined, 3]
+    frame = solids.view([sm.point(control_coords.reshape(-1, 3))], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     colours = np.broadcast_to(SURFACE_COLOUR, (len(faces), 3))
     return image_figure(np.concatenate([picture(control, control_faces, surface, faces, colours, frame)
-                                        for control, surface in zip(controls, surfaces)], axis=1))
+                                        for control, surface in zip(control_coords, surface_coords)], axis=1))
 
 
 def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders: core.Point, positional_orders: core.Point,
                 faces: np.ndarray) -> plt.Figure:
-    """For points with their weights and for positions: the surface refined after the perspective, each
-    face coloured by how far the surface refined before it lies, on one scale for both, from blue where
-    they agree to orange at the largest gap."""
+    """Render the surfaces subdivided after the perspective collineation for weighted points and for Euclidean positions, colouring each face from blue where the two refinement orders agree to orange at the largest discrepancy."""
     xyz = coordinates(control)
-    frame = view(xyz)
+    frame = solids.view([sm.point(xyz)], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     gaps = [np.linalg.norm(np.subtract(*coordinates(orders)), axis=-1)[faces].mean(axis=-1)
-            for orders in (weighted_orders, positional_orders)]                # [faces] each
+            for orders in (weighted_orders, positional_orders)]
     largest = max(gap.max() for gap in gaps)
     return image_figure(np.concatenate([picture(xyz, control_faces, coordinates(orders)[0], faces,
                                                 SURFACE_COLOUR * (1 - share) + GAP_COLOUR * share, frame)
@@ -82,11 +77,10 @@ def draw_orders(control: core.Point, control_faces: np.ndarray, weighted_orders:
 
 def animate_weights(frames: Iterable[tuple[core.Point, core.Point]], control_faces: np.ndarray, faces: np.ndarray
                     ) -> Iterator[np.ndarray]:
-    """One frame per weighting: the control mesh `Point[vertices]`, dotted, and the surface it refines to
-    `Point[refined]`, all framed on the first control mesh."""
-    frames = ((coordinates(controls), coordinates(surface)) for controls, surface in frames)
-    first = next(frames)
-    frame = view(first[0])
+    """Yield rendered frames of the dotted control mesh and its subdivided surface from a camera framed on the first control mesh."""
+    coord_frames = ((coordinates(control), coordinates(surface)) for control, surface in frames)
+    first = next(coord_frames)
+    frame = solids.view([sm.point(first[0])], 0.0, ELEVATION, AZIMUTH, MARGIN, N_PIXELS)
     colours = np.broadcast_to(SURFACE_COLOUR, (len(faces), 3))
-    for control, surface in chain([first], frames):
+    for control, surface in chain([first], coord_frames):
         yield picture(control, control_faces, surface, faces, colours, frame)

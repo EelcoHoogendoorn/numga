@@ -1,23 +1,8 @@
-"""Station keeping in gusts: how far a vessel on dynamic positioning wanders from its set point, in
-PGA2D.
+"""Station keeping in gusts computes how far a vessel on dynamic positioning wanders from its set point under random wind and wave disturbances. A vessel holds a fixed position and heading with its thrusters while wind and wave gusts push it off course and the controller pushes it back in proportion to the error. Because gusts hit the side of the hull harder than the bow, the vessel wanders further sideways than forward, and the covariance of its excursions determines how much clearance the vessel needs and how stiff the controller must be.
 
-A vessel on dynamic positioning holds a fixed position and heading with its thrusters. Wind and
-wave gusts push it off; the controller pushes it back in proportion to the error. The vessel
-never sits exactly on its set point. It moves about it at random, further sideways than forward,
-because gusts hit the side of the hull harder than the bow. How far it wanders, and in which
-directions, is a covariance. Knowing it tells you how much clearance the vessel needs and how
-stiff the controller has to be.
+The vessel's pose error is a twist, the small motion from the set point to where the vessel is, and a linear measurement of that error is a line, paired with it by `line & error`. Their spread is a covariance map taking each measurement line to the twist correlated with it, so `line & covariance(line)` is the variance of the measurement. The controller and any steady turn define a linear drift map on twists, which acts on the covariance from both sides—on the twists it returns and, through `dynamics.adjugate()`, on the lines it takes—so the steady spread where the controller removes uncertainty as fast as the gusts add it is found in a single linear solve.
 
-The position error is a twist, the small motion from the set point to the actual pose. Its
-covariance is a map from lines to twists. For a line l and a twist t, `l & t` is one measurement of
-the error, for example its component across the line, and `l & covariance(l)` is the variance of
-that measurement. The covariance grows from zero as gusts accumulate and levels off where the
-controller balances them. This module computes that level both by integrating the growth over
-time and by solving directly for the covariance at which growth stops.
-
-In matrix notation the growth reads as the dynamics matrix times the covariance matrix, plus that
-product transposed, plus the noise covariance, and the steady state solves the continuous Lyapunov
-equation.
+In matrix notation the error reads as a coordinate vector $(v_x, v_y, \\omega)$, the covariance reads as a symmetric $3 \\times 3$ matrix $P$ evolving as $\\dot P = F P + P F^{\\mathsf T} + Q$, and the steady-state covariance solves the continuous Lyapunov equation $F P + P F^{\\mathsf T} + Q = 0$.
 """
 
 from __future__ import annotations
@@ -25,99 +10,43 @@ from __future__ import annotations
 import numpy as np
 
 from numga import NumpyContext
-from numga.algebras import PGA2D as ga
+from numga.algebras import PGA2D
 
+ga = PGA2D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Motor = ga.gatype.rotor()
-Twist = ga.gatype.bivector()
-# A line measures a twist, so it is an antibivector.
-Line = ga.gatype.antibivector()
-# A measurement line to the correlated twist.
-Covariance = ga.gatype((Twist, Line))             # Twist <- Line
-# Rate of change of a position error.
-Dynamics = ga.gatype((Twist, Twist))              # Twist <- Twist
-# Covariance of two position measurements.
-Spread = ga.gatype((Scalar, Line, Line))          # Scalar <- (Line, Line)
-# White noise to a gust's push on the vessel.
-Gusts = ga.gatype((Twist, Line))                  # Twist <- Line
-# The set point; in PGA2D a point is a bivector.
-ORIGIN = mv.w.dual()                              # [] Point
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
+# A line measures a twist through the regressive product, so it is an antibivector.
+Line = ga.gatype.antibivector()                     # Antibivector-
+Twist = ga.gatype.bivector()                        # Bivector+
+Motor = ga.gatype.rotor()                           # Rotor+
+Covariance = ga.gatype((Twist, Line))
+Dynamics = ga.gatype((Twist, Twist))
+Spread = ga.gatype((Scalar, Line, Line))
+Gusts = ga.gatype((Twist, Line))
+# The commanded set point at the origin.
+ORIGIN = mv.w.dual()                                # [] Point-
 
 
 # --- math -----------------------------------------------------------------------------
-def drift(rate: Twist, relaxation: float) -> Dynamics:
-    """Rate of change of a position error.
-
-    If the vessel turns on the spot, the error turns with it, which is the commutator with the
-    turning rate. The controller reduces the error in proportion to its size; the relaxation rate
-    is that proportion, per second.
-    """
-    return Twist.commutator(rate) - relaxation * Twist
-
-
-def growth(dynamics: Dynamics, covariance: Covariance, noise: Covariance) -> Covariance:
-    """Rate of change of the covariance.
-
-    The first term applies the dynamics to the twists the covariance returns, the second applies
-    them to the lines it takes as input, and the third is the covariance the gusts add per second.
-    On lines the dynamics act through their adjugate: measuring the changed error `dynamics(t)`
-    with a line l gives the same number as measuring t itself with the line
-    `dynamics.adjugate()(l)`.
-
-    In matrix notation the adjugate reads as the transpose of the dynamics.
-    """
-    return dynamics(covariance) + covariance(dynamics.adjugate()) + noise
-
-
 def covariance(gusts: Gusts) -> Covariance:
-    """Covariance per second of the gusts.
-
-    A gust is white noise mapped to a twist by the gust map. White noise is defined in a frame of
-    lines, with unit variance along each and no correlation between them, so the covariance is the
-    sum over that frame of the dyad formed by each line's gust.
-    """
-    # The frame the white noise is sampled in.
-    frame = mv.antibivector(np.eye(3))                                        # [3] Line
-    return (gusts(frame) * (gusts(frame) & Line)).sum(axis=0)
-
-
-def step(dynamics: Dynamics, noise: Covariance, errors: Twist, covariance: Covariance,
-         gusts: Twist, dt: float) -> tuple[Twist, Covariance]:
-    """One explicit Euler step of length dt, for the errors and for their predicted covariance.
-
-    The gusts passed in must already be scaled by the square root of dt: the variance of white
-    noise over an interval grows with the length of the interval.
-    """
-    return errors + dynamics(errors) * dt + gusts, covariance + growth(dynamics, covariance, noise) * dt
+    """The noise covariance added per second by white-noise gusts."""
+    # White noise has unit variance along each axis of an orthonormal line frame, so each axis adds its gust dyad.
+    frame = mv.antibivector(np.eye(3))                                              # [axes] Line-
+    return (gusts(frame) * (gusts(frame) & Line)).sum(axis=0)                       # [] Twist+ <- Line-
 
 
 def settled(dynamics: Dynamics, noise: Covariance) -> Covariance:
-    """The covariance at which growth stops.
-
-    Growth is linear in the covariance, so setting it to zero gives a linear equation whose
-    unknown is a map. Write the covariance as a sum of dyads t * (s & l), with twists t and s and
-    a line l; as a function of all three, growth becomes a map with three inputs, and lstsq
-    matches its line input against the noise and solves for the coefficients on the two twist
-    inputs. The solution is a map from twists to twists; it takes a line through the line's dual,
-    the twist whose coefficients are the line's measurements of the basis twists.
-    """
-    # Growth as a function of the dyad: the dynamics applied to t, and applied to s.
-    lyapunov = dynamics(Twist) * (Twist & Line) + Twist * (dynamics(Twist) & Line)   # Twist <- (Twist, Twist, Line)
-    return lyapunov.lstsq(-noise)(Line.dual())
+    """The steady-state covariance at which the controller removes uncertainty as fast as the gusts add it."""
+    # Writing the covariance as a dyad t * (s & l) turns its rate of change into a linear map of both twists and the line.
+    lyapunov = dynamics(Twist) * (Twist & Line) + Twist * (dynamics(Twist) & Line)  # [...] Twist+ <- (Twist+, Twist+, Line-)
+    # Match the line input against -noise and solve for both twist inputs; Line.dual() feeds a line in as a twist.
+    return lyapunov.lstsq(-noise)(Line.dual())                                      # [...] Twist+ <- Line-
 
 
 def position_spread(covariance: Covariance) -> Spread:
-    """Covariance of measurements of the vessel's position.
-
-    An error moves the set point, and the commutator gives that displacement per twist. Measuring
-    the displacement with a line is the same as measuring the twist with a different line, found
-    by the displacement's adjugate. Pairing two such measurements through
-    the covariance gives a symmetric form on lines. Its eigenpairs are the principal axes and
-    variances of the position's uncertainty ellipse.
-    """
-    # The displacement of the set point, and position measurements as twist measurements.
-    shift = Twist.commutator(ORIGIN)                                          # Point <- Twist
-    readout = shift.adjugate()                                                # Line <- Line
-    return readout & covariance(readout)
+    """The symmetric covariance form on lines measuring displacements of the set point, pulled back from the twist covariance."""
+    # An error moves the set point by their commutator; its adjugate pulls a displacement-measuring line back to a twist measurement.
+    shift = Twist.commutator(ORIGIN)                                                # [] Point- <- Twist+
+    readout = shift.adjugate()                                                      # [] Line- <- Line+
+    return readout & covariance(readout)                                            # [...] Scalar+ <- (Line+, Line+)

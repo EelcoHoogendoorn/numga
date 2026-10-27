@@ -1,37 +1,8 @@
-"""As rigid as possible: a surface bent by moving a few of its vertices, every neighbourhood of it
-kept as close to a turn of its rest shape as it can be, in the geometric algebra of three-dimensional
-space.
+r"""As-rigid-as-possible surface deformation bends a triangle mesh to follow displaced handle vertices while keeping every local neighbourhood as close as possible to a rigid rotation of its rest shape.
 
-The surface's energy is the cotangent-weighted squared mismatch, over every edge at each of its two
-ends, between the edge as it is and the rest edge turned by a rotor of that end's own. A rotor keeps
-lengths, so an edge's two mismatches add up to `2 * (edge**2 + rest**2 - 2 * edge.dot(turned))`, with
-`turned` the rest edge turned by the mean of its two ends' turns. The energy falls in two alternating
-steps.
+The best rotor at a vertex comes from a quadratic form on rotors: `edges.dot(Rotor >> rest_edges)` is a form `Scalar <- (Rotor, Rotor)` satisfying `form(R, R) == edges.dot(R >> rest_edges)`, and summed over a vertex's edges like numbers its top eigenvector is the rotor, every vertex in one batched `eigh`, with no singular value decomposition and no correction for reflections. The best vertices then come from the rotation itself, `rotors >> Point`, a map averaged over each edge's two ends that does not depend on the sign the eigensolver gives each rotor. The mesh's operators are maps between fields on its vertices and edges, so the cotangent Laplacian is `~T10 * H1 * T10`, following the local-global iteration of Sorkine and Alexa (2007), https://igl.ethz.ch/projects/ARAP/arap_web.pdf.
 
-With the vertices held, each vertex's best rotor `R` turns its rest edges onto its edges as they are:
-it makes the most of `edge.dot(R >> rest)`, summed over the vertex's edges. Multiplied by `Even`, the
-space of even multivectors, `Even >> rest` is the rest edge turned by any even multivector, a map
-`Point <- (Even, Even)` of the rotor in both places the sandwich holds it. Paired with the edge it is a form
-`Scalar <- (Even, Even)`, a number for every two rotors, with `form(R, R) == edge.dot(R >> rest)`. The
-sparse mean over each edge's ends sums each vertex's forms as it would sum numbers, weighted by the
-edges, and the rotor that makes the most of each sum is its top eigenvector: one batched `eigh` over
-every vertex.
-
-With the rotors held, the best vertices match every edge to its rest edge turned by its two ends'
-rotors. A rotor sandwiching `Point`, the space of all points, `R >> Point`, is the turn itself, a
-map `Point <- Point`; the sparse mean averages the two turns at each edge's ends as maps, and the
-averaged map takes the rest edge. The average of the maps does not depend on the sign the eigensolver
-gives each rotor, as an average of rotors would: `R >> Point` and `-R >> Point` are one map. The
-vertices then follow from one sparse Poisson solve with the cotangent Laplacian, its right side
-`~T10 * H1 * turned`, as in the last step of a spin transformation. The handles are held to where they
-are moved by a stiff penalty in the same solve.
-
-Laplacian editing is the same solve without the turns: every rest edge matched as it is, so the
-surface shears and shrinks where it is bent.
-
-In the notation of Sorkine and Alexa the energy reads as
-$E = \\sum_i \\sum_{j \\in N(i)} w_{ij} \\|(p'_i - p'_j) - R_i (p_i - p_j)\\|^2$, the rotor's form as
-the trace of $R_i S_i$ with the covariance $S_i = \\sum_j w_{ij} e_{ij} {e'_{ij}}^\\top$.
+In the matrix notation of Sorkine and Alexa the energy reads as $E = \sum_i \sum_{j \in N(i)} w_{ij} \|(\mathbf p'_i - \mathbf p'_j) - R_i (\mathbf p_i - \mathbf p_j)\|^2$, each rotation matrix $R_i$ comes from the singular value decomposition of the covariance $S_i = \sum_j w_{ij}\, \mathbf e_{ij} {\mathbf e'_{ij}}^{\mathsf T}$, and the vertices follow from one linear system with the cotangent Laplacian.
 """
 
 from __future__ import annotations
@@ -41,66 +12,75 @@ from collections.abc import Iterable, Iterator
 import numpy as np
 
 from numga import stack
+from numga.algebras import VGA3D
 from numga.sparse import spdiag
-from examples.surfaces.spin_transformations.core import Mesh, Point, as_ga_sparse, as_scalar, context, corner_cosines, cube
+from examples import instantiate
+from examples.surfaces.spin_transformations.core import corner_cosines, cube
 
-mv = context.multivector
-ga = context.algebra
-Scalar = ga.gatype.scalar()
-Even = ga.gatype.even()
+ga = VGA3D
+mesh_module = instantiate("examples.util.mesh", ga)
+Mesh, as_ga_sparse, as_scalar = mesh_module.Mesh, mesh_module.as_ga_sparse, mesh_module.as_scalar
+mv = mesh_module.ctx.multivector
+Scalar = ga.gatype.scalar()                         # Scalar+
+Point = ga.gatype.antivector()                      # Antivector-
+Rotor = ga.gatype.rotor()                           # Rotor+
 
 
 # --- math -----------------------------------------------------------------------------
-def deform(mesh: Mesh, at_rest: Point, handles: np.ndarray, poses: Iterable[Point], stiffness: float,
-           n_iterations: int) -> Iterator[tuple[Point, Point, Scalar]]:
-    """For each pose of the handles, the targets of every vertex `Point[V]` of which the handles' are
-    held: the mesh, at rest at the given vertices, as rigid as possible after the given iterations, each
-    pose starting from the last one's; the mesh by Laplacian editing; and the energy at each iteration
-    `[iterations] Scalar`."""
-    # the boundary, taking each edge's tail from its head, and the mean over each edge
-    I10 = mesh.edges                                                        # [E, 2]
-    T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))        # [E, V] Scalar
-    A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))              # [E, V] Scalar
+def deform(
+    mesh: Mesh,
+    rest_vertices: Point,
+    handles: np.ndarray,
+    poses: Iterable[Point],
+    stiffness: float,
+    n_iterations: int,
+) -> Iterator[tuple[Point, Point, Scalar]]:
+    """For each handle pose, the as-rigid-as-possible vertices after `n_iterations` alternating steps
+    warm-started from the previous pose, the Laplacian-edited vertices, and the energy at each iteration."""
+    # Incidence operators: oriented edge differences from tail to head, and midpoint averages across each edge.
+    I10 = mesh.edges
+    T10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) * [-1, 1]))                 # Scalar+[edges <- vertices]
+    A10 = as_ga_sparse(I10, as_scalar(np.ones_like(I10) / 2))                       # Scalar+[edges <- vertices]
 
-    rest = T10 * at_rest                                                    # Point[E]
-    # The edge facing each corner of each face, one of the edges signed as the face runs along it; the
-    # cotangent at each corner, one edge's slice read along the other, over the size of the plane they
-    # span; and each edge's cotangent weight, half the cotangents of the angles facing it.
-    triangle_edges = (rest.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()   # [3] Point[F]
-    after, before = triangle_edges[[1, 2, 0]], triangle_edges[[2, 0, 1]]    # [3] Point[F] each
-    cotangents = -(after.dual_inverse() & before) / after.commutator(before).norm()   # [3] Scalar[F]
-    cotangent_weights = ~mesh.by_corner(cotangents / 2) * as_scalar(np.ones(len(mesh.faces))).field()   # Scalar[E]
+    rest_edges = T10 * rest_vertices                                                # Point-[edges]
+    # The directed edge opposite each corner of each face, its corner cotangent from the inner product
+    # over the spanned plane norm, and each edge's cotangent weight summed from its opposite corners.
+    triangle_edges = (rest_edges.batch()[mesh.face_edges.T] * mesh.face_edge_orientation.T).field()  # [corners] Point-[faces]
+    next_edges, prev_edges = triangle_edges[[1, 2, 0]], triangle_edges[[2, 0, 1]]   # [corners] Point-[faces], Point-[faces]
+    cotangents = -(next_edges.dual_inverse() & prev_edges) / next_edges.commutator(prev_edges).norm()  # [corners] Scalar+[faces]
+    cotangent_weights = ~mesh.by_corner(cotangents / 2) * as_scalar(np.ones(len(mesh.faces))).field()  # Scalar+[edges]
 
-    # diagonal operators: each edge's cotangent weight, and the handles' stiffness
-    H1 = spdiag(cotangent_weights)                                         # [E, E] Scalar
-    P = spdiag(as_scalar(handles * stiffness).field())                     # [V, V] Scalar
+    # Diagonal weights for the edge cotangents and the handle penalty stiffness.
+    H1 = spdiag(cotangent_weights)                                                  # Scalar+[edges <- edges]
+    P = spdiag(as_scalar(handles * stiffness).field())                              # Scalar+[vertices <- vertices]
 
-    # the cotangent Laplacian, with the handles held
-    held = (~T10 * H1 * T10 + P) * Point                                    # Point[V] <- Point[V]
+    # The cotangent Laplacian on vertex positions with the handle penalty added.
+    handle_laplacian = (~T10 * H1 * T10 + P) * Point                                # (Point- <- Point-)[vertices <- vertices]
 
-    vertices = at_rest                                                      # Point[V]
+    vertices = rest_vertices                                                        # Point-[vertices]
     for targets in poses:
         energies = []
         for _ in range(n_iterations):
-            edges = T10 * vertices                                          # Point[E]
-            # each vertex's best rotor: the top eigenvector of its edges' summed form
-            forms = ~A10 * H1 * edges.dot(Even >> rest)                     # Scalar[V] <- (Even, Even)
-            rotors = forms.batch().eigh()[1][..., -1].field()                       # Even[V]
-            # each rest edge turned by its two ends' rotors, the turns averaged
-            turned = (A10 * (rotors >> Point))(rest)                        # Point[E]
-            mismatch = H1 * (edges.norm_squared() + rest.norm_squared() - 2 * edges.dot(turned))   # Scalar[E]
-            penalty = P * (vertices - targets).norm_squared()               # Scalar[V]
+            edges = T10 * vertices                                                  # Point-[edges]
+            # Each vertex's optimal rotor is the top eigenvector of its incident edges' summed quadratic form.
+            forms = ~A10 * H1 * edges.dot(Rotor >> rest_edges)                      # (Scalar+ <- (Rotor+, Rotor+))[vertices]
+            _, modes = forms.batch().eigh()                                         # [vertices, modes] Rotor+
+            rotors = modes[..., -1].field()                                         # Rotor+[vertices]
+            # Average the endpoint rotation maps across each edge and apply the mean map to the rest edge.
+            turned_edges = (A10 * (rotors >> Point))(rest_edges)                    # Point-[edges]
+            # Because a rotor keeps lengths, an edge's two endpoint mismatches sum to 2 * (edge^2 + rest^2 - 2 * edge . turned).
+            mismatch = H1 * (edges.norm_squared() + rest_edges.norm_squared() - 2 * edges.dot(turned_edges))  # Scalar+[edges]
+            penalty = P * (vertices - targets).norm_squared()                       # Scalar+[vertices]
             energies.append(2 * mismatch.sites.sum() + penalty.sites.sum())
-            # the vertices whose edges best match the turned ones
-            vertices = held.solve(~T10 * H1 * turned + P * targets)         # Point[V]
-        # the vertices whose edges best match the rest edges as they are
-        laplacian = held.solve(~T10 * H1 * rest + P * targets)              # Point[V]
-        yield vertices, laplacian, stack(energies)
+            # Solve for the vertex positions whose edges best match the rotated rest edges.
+            vertices = handle_laplacian.solve(~T10 * H1 * turned_edges + P * targets)  # Point-[vertices]
+        # Solve for the vertex positions whose edges best match the unrotated rest edges.
+        laplacian_vertices = handle_laplacian.solve(~T10 * H1 * rest_edges + P * targets)  # Point-[vertices]
+        yield vertices, laplacian_vertices, stack(energies)
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bar(divisions: int, length: float) -> tuple[Mesh, Point]:
-    """A closed bar along x, its square cross section 2 across and its length the given one, each side
-    of the cube it is stretched from a grid of divisions by divisions squares: its mesh and its vertices."""
-    box, corners = cube(divisions)
+def bar(n_divisions: int, length: float) -> tuple[Mesh, Point]:
+    """A closed square bar along x with cross-section width 2 and the given length, stretched from a subdivided cube."""
+    box, corners = cube(n_divisions)
     return box, corners + (mv.x & corners) * mv.x.dual() * (length / 2 - 1)

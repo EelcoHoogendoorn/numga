@@ -1,8 +1,6 @@
-"""Depth-tested paper layers on the GPU, two-sided: an orange front and a cream back, the creases inked.
+"""GPU rendering for origami draws depth-tested, two-sided paper layers with an orange front, a cream back, and inked creases.
 
-Each paper face is a convex polygon, drawn as a fan of triangles. Layers that lie in one plane are held apart by
-their offsets, a few hundredths of a pixel each, which the depth test resolves; the creases are inked by the faces
-themselves, where a pixel lies near an edge of its polygon, so a crease buried under a flap stays hidden.
+Each paper face is a convex polygon drawn as a fan of triangles. Layers that lie in one plane are held apart by their offsets, a few hundredths of a pixel each, which the depth test resolves; the creases are inked by the faces themselves where a pixel lies near an edge of its polygon, so a crease buried under a flap stays hidden.
 """
 
 from __future__ import annotations
@@ -13,6 +11,7 @@ from itertools import chain
 import matplotlib.pyplot as plt
 import numpy as np
 
+from numga import stack
 from examples.geometry.origami import core
 from examples.util.wgsl import fitted, meshes, show, solids
 
@@ -20,7 +19,7 @@ front_colour = np.array([0.90, 0.46, 0.30])
 back_colour = np.array([0.98, 0.88, 0.65])
 edge_colour = np.array([0.37, 0.24, 0.17])
 background = np.ones(3)
-pixels = 600
+n_pixels = 600
 # The view, elevation and azimuth in radians, azimuth zero looking along +y; the margin around the paper as a
 # share of its larger side.
 elevation, azimuth = np.radians([35.0, 200.0])
@@ -45,13 +44,13 @@ fn colour(values: vec4<f32>, face_values: vec4<f32>, corner: vec3<f32>, front: b
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: core.Point) -> np.ndarray:
-    values = points.cast(core.ga.subspace("wzy wxz wyx xyz")).kernel
-    return values[..., :3] / values[..., 3:]
+    """Read out the Euclidean coordinates of finite points."""
+    mv = core.mv
+    return (stack((mv.x, mv.y, mv.z)) & points.normalized()[..., None]).to_array()
 
 
 def fans(paper: core.Paper) -> tuple[np.ndarray, np.ndarray]:
-    """Each polygon as a fan of triangles from its first corner `[triangles, 3]`, and which edge of each triangle,
-    the one opposite each corner, is an edge of the polygon `[triangles, 3]`."""
+    """Triangulate each polygon as a fan from its first corner `[triangles, 3]`, and mark which edge opposite each corner lies on the polygon's perimeter `[triangles, 3]`."""
     triangles, perimeter = [], []
     for face in paper.faces():
         steps = np.arange(1, len(face) - 1)
@@ -61,20 +60,21 @@ def fans(paper: core.Paper) -> tuple[np.ndarray, np.ndarray]:
 
 
 def viewport(points: core.Point) -> solids.View:
-    """A view framing points in a square image."""
-    return solids.view([points], 0.0, elevation, azimuth, margin, pixels).squared()
+    """Frame a batch of points in a square view."""
+    return solids.view([points], 0.0, elevation, azimuth, margin, n_pixels).squared()
 
 
 def picture(paper: core.Paper, view: solids.View) -> np.ndarray:
-    """The paper as the view sees it, `[pixels, pixels, 3]` bytes."""
+    """Render the paper from a view as an `[n_pixels, n_pixels, 3]` image."""
     # Each corner held off its layer by its facet's offset, carried with the facet through every fold.
-    corners = paper.points + paper.offsets[np.repeat(np.arange(len(paper.counts)), paper.counts)] * layer_spacing
+    corners = paper.points + paper.offsets[np.repeat(np.arange(len(paper.counts)), paper.counts)] * layer_spacing  # [corners] Point-
     triangles, perimeter = fans(paper)
     return meshes.draw(corners, triangles, np.zeros(3), meshes.flat(corners, triangles), view, background,
                        face_values=perimeter, colour=colour, gloss=0.0)
 
 
 def draw(paper: core.Paper) -> plt.Figure:
+    """Render a single paper state in a figure."""
     figure, ax = plt.subplots(figsize=(6, 6), layout="constrained")
     # The axes as bare as the picture leaves them, for the layout to give them their room.
     ax.set_axis_off()
@@ -84,10 +84,10 @@ def draw(paper: core.Paper) -> plt.Figure:
 
 
 def animate(states: Iterator[core.Paper], room: float = view_room) -> Iterator[np.ndarray]:
-    """The paper through its folds, all from one view framing the paper as it starts, `room` times over."""
+    """Render each state of the folding sequence from a single view framing the initial sheet `room` times over."""
     states = iter(states)
-    first = next(states)
-    framed = viewport(first.points)
-    view = framed._replace(half=framed.half * room)
-    for state in chain([first], states):
+    initial_paper = next(states)
+    initial_view = viewport(initial_paper.points)
+    view = initial_view._replace(half=initial_view.half * room)
+    for state in chain([initial_paper], states):
         yield picture(state, view)

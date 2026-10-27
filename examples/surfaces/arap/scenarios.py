@@ -1,5 +1,4 @@
-"""As rigid as possible: a bar held at one end and bent a quarter turn up at the other, as
-rigid as possible beside Laplacian editing."""
+"""The bending scene holds a square bar at one end and bends the other a quarter turn up, comparing as-rigid-as-possible deformation against Laplacian editing."""
 
 from __future__ import annotations
 
@@ -9,65 +8,70 @@ from numga import stack
 from examples.surfaces.arap import core
 
 mv = core.mv
-# The bar: its squares per side of the cube it is stretched from, and its length.
+# Grid divisions per side of the cube the bar is stretched from, and the bar's length along x.
 N_DIVISIONS = 10
 LENGTH = 6.0
-# How stiffly the handles are held, how far the far end turns, and the frames over the bend with the
-# iterations at each, each frame starting from the last.
+# Handle penalty stiffness, total bend angle, tolerance for selecting end vertices, frame count, and iterations per frame.
 STIFFNESS = 1e3
-BEND = np.pi / 2
+BEND_ANGLE = np.pi / 2
+MARGIN = 1e-6
 N_FRAMES = 24
 N_ITERATIONS = 6
-# The checkerboard's cell, one square of the bar at rest, and the duration of a frame in milliseconds.
+# Checkerboard cell dimensions matching one square of the bar at rest, and frame duration in milliseconds.
 CELL = np.array([LENGTH, 2.0, 2.0]) / N_DIVISIONS
 DURATION_MS = 80
 
 
 # --- math -----------------------------------------------------------------------------
 def bending():
-    """The bar bent over the frames, as rigid as possible and by Laplacian editing: the bar and its vertices
-    at rest, and the vertices at each frame `[frames] Point[V]`, both ways; then which vertices are handles, where
-    they are moved at the last frame, and the energy over the iterations of the last frame."""
-    bar, at_rest = core.bar(N_DIVISIONS, LENGTH)
-    along = mv.x & at_rest                                                     # Scalar[V]
-    near, far = along < -LENGTH / 2 + 1e-6, along > LENGTH / 2 - 1e-6
-    moved = core.as_scalar(far).field()                                        # Scalar[V]
-    poses = [at_rest + moved * (bent(at_rest, angle) - at_rest)                # Point[V]
-             for angle in np.linspace(0.0, BEND, N_FRAMES + 1)[1:]]
-    frames = list(core.deform(bar, at_rest, near | far, poses, STIFFNESS, N_ITERATIONS))
-    rigid, laplacian = stack([shape for shape, _, _ in frames]), stack([edited for _, edited, _ in frames])
-    return bar, at_rest, rigid, laplacian, near | far, poses[-1], frames[-1][2]
+    """The bar bent across the handle poses by as-rigid-as-possible iteration and by Laplacian editing."""
+    bar_mesh, rest_vertices = core.bar(N_DIVISIONS, LENGTH)
+    axial_position = mv.x & rest_vertices                                           # Scalar+[vertices]
+    near_end = axial_position < -LENGTH / 2 + MARGIN                                # [vertices]
+    far_end = axial_position > LENGTH / 2 - MARGIN                                  # [vertices]
+    handles = near_end | far_end                                                    # [vertices]
+    far_weight = core.as_scalar(far_end).field()                                    # Scalar+[vertices]
+    poses = [
+        rest_vertices + far_weight * (far_end_pose(rest_vertices, angle) - rest_vertices)  # Point-[vertices]
+        for angle in np.linspace(0.0, BEND_ANGLE, N_FRAMES + 1)[1:]
+    ]
+    frames = list(core.deform(bar_mesh, rest_vertices, handles, poses, STIFFNESS, N_ITERATIONS))
+    rigid_frames = stack([rigid_vertices for rigid_vertices, _, _ in frames])       # [frames] Point-[vertices]
+    laplacian_frames = stack([laplacian_vertices for _, laplacian_vertices, _ in frames])  # [frames] Point-[vertices]
+    return bar_mesh, rest_vertices, rigid_frames, laplacian_frames, handles, poses[-1], frames[-1][2]
 
 
 # --- plumbing -------------------------------------------------------------------------
-def bent(vertices: core.Point, angle: float) -> core.Point:
-    """The far end of the bar where an arc of its length would carry it, turned by the angle about y:
-    its centre on the arc from the near end, curving up."""
+def far_end_pose(vertices: core.Point, angle: float) -> core.Point:
+    """The vertices carried to the far-end pose on a circular arc of the bar's length turned by `angle` in the xz plane."""
     radius = LENGTH / angle
-    centre = (mv.x * (-LENGTH / 2 + radius * np.sin(angle)) + mv.z * (radius * (1 - np.cos(angle)))).dual()   # [] Point
-    turn = ((mv.x ^ mv.z) * (-angle / 2)).exp()                                # [] Rotor
-    return centre + (turn >> (vertices - mv.x.dual() * (LENGTH / 2)))
+    turn = (mv.xz * (-angle / 2)).exp()                                             # [] Rotor+
+    # The arc bends about a centre above the near end; the far end's centre is the near end's turned about it.
+    bend_centre = (mv.x * (-LENGTH / 2) + mv.z * radius).dual()                     # [] Point-
+    far_centre = bend_centre + (turn >> (mv.z.dual() * -radius))                    # [] Point-
+    return far_centre + (turn >> (vertices - mv.x.dual() * (LENGTH / 2)))           # Point-[vertices]
 
 
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.surfaces.arap import render
 
-    bar, at_rest, rigid, laplacian, handles, target, last_energies = bending()
-    save_animation(render.animate(bar, at_rest, rigid, CELL), "arap_bending", DURATION_MS)
+    bar_mesh, rest_vertices, rigid_frames, laplacian_frames, handles, target_pose, last_energies = bending()
+    save_animation(render.animate(bar_mesh, rest_vertices, rigid_frames, CELL), "arap_bending", DURATION_MS)
 
     # checks
-    # At the last frame the energy falls with every iteration, and the handles are where they were moved to.
-    energies = last_energies.to_array()
-    assert np.all(np.diff(energies) <= 1e-9 * energies[0])
-    assert (rigid[-1] - target).norm().batch()[handles].to_array().max() < 1e-3
-    # The bar keeps its angles: its corners' cosines change a fraction as much as by Laplacian editing.
-    change = [np.abs((core.corner_cosines(bar, shape) - core.corner_cosines(bar, at_rest)).to_array()).mean()
-              for shape in (rigid[-1], laplacian[-1])]
-    assert change[0] < 0.5 * change[1]
-    # Left at rest, the bar stays as it is.
-    (still, _, _), = core.deform(bar, at_rest, handles, [at_rest], STIFFNESS, 2)
-    np.testing.assert_allclose((still - at_rest).kernel, 0.0, atol=1e-9)
+    # At the final frame the energy decreases at every iteration and the handles match their target pose.
+    assert np.all((last_energies[1:] - last_energies[:-1]) <= 1e-9 * last_energies[0])
+    assert np.all((rigid_frames[-1] - target_pose).norm().batch()[handles] < 1e-3)
+    # Corner angle cosines change less than half as much as under Laplacian editing.
+    angle_changes = [
+        (core.corner_cosines(bar_mesh, shape) - core.corner_cosines(bar_mesh, rest_vertices)).abs().sites.mean().mean()
+        for shape in (rigid_frames[-1], laplacian_frames[-1])
+    ]
+    assert angle_changes[0] < 0.5 * angle_changes[1]
+    # Left at rest, the bar remains unchanged.
+    (rest_result, _, _), = core.deform(bar_mesh, rest_vertices, handles, [rest_vertices], STIFFNESS, 2)
+    np.testing.assert_allclose((rest_result - rest_vertices).kernel, 0.0, atol=1e-9)
 
 
 if __name__ == "__main__":

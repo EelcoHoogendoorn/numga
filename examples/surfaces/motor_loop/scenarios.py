@@ -1,111 +1,114 @@
-"""A ribbon wound up by twisting, refined as points and as motors."""
+"""Scenes for Loop subdivision of motors compare point and motor subdivision on a twisted ribbon and on a flat ribbon whose vertex frames turn in place."""
 
 from __future__ import annotations
 
-from functools import reduce
 
 import numpy as np
 
 from numga import stack
 from examples.surfaces.motor_loop import core
 
-# The ribbon's control mesh: its vertices along and across, its length and width, and its four corners,
-# pinned.
+# The ribbon's control mesh has vertices along z and across x, with its four corners pinned.
 N_ALONG, N_ACROSS = 5, 3
 LENGTH, WIDTH = 4.0, 1.2
 CORNERS = [0, N_ACROSS - 1, N_ALONG * N_ACROSS - N_ACROSS, N_ALONG * N_ACROSS - 1]
-# The turn of the far end at the top of the wind-up, the near end held, the twist building towards the far
-# end as the square of the distance; the frames of one wind-up and release, and the duration of each.
-WOUND = 3 * np.pi
+# The twist angle of the far end at the peak of the wind-up while the near end is held fixed,
+# together with the frame count and frame duration of the animation.
+TWIST_ANGLE = 3 * np.pi
 N_FRAMES = 48
 DURATION_MS = 60
-# How far each frame turns either way about its own axis as the ribbon lies flat, and the seed of the axes
-# and of the phases of the turns.
-TURNING = np.pi / 3
-TURNING_SEED = 2
-# Loop steps taken, and the length of the drawn frame axes.
+# The amplitude and random seed for turning each vertex frame in place about its own axis.
+TURN_AMPLITUDE = np.pi / 3
+TURN_SEED = 2
+# The number of Loop subdivision steps and the length of the rendered frame axes.
 N_LOOP_STEPS = 3
-AXIS = 0.3
+AXIS_LENGTH = 0.3
 
 
 # --- math -----------------------------------------------------------------------------
 def winding() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
-    """At every frame of the wind-up, which the animation plays forward and back: the control frames, and the
-    surfaces refined as points and as motors."""
-    along, across = grid()
-    wound = WOUND * (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2   # [frames]
-    held = ((along + LENGTH / 2) / LENGTH) ** 2                                # [vertices]
-    # Frames on the ribbon down the z axis: slid along it and out across it along x, then turned about the axis.
-    motors = ((core.mv.xy * (-wound[:, None] * held / 2)).exp()
-              * (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp())
-    return refined(motors.field())                                             # [frames] Motor[vertices]
+    """The control frames and the point- and motor-subdivided surfaces across one wind-up of the ribbon."""
+    z_coords, x_coords = grid()
+    twist_angles = TWIST_ANGLE * (1 - np.cos(np.linspace(0, np.pi, N_FRAMES // 2 + 1))) / 2  # [frames]
+    twist_profile = ((z_coords + LENGTH / 2) / LENGTH) ** 2                    # [vertices]
+    # Place each frame on the flat ribbon along z and across x, then twist around the z axis.
+    rest_motors = (core.mv.zw * (z_coords / 2)).exp() * (core.mv.xw * (x_coords / 2)).exp()  # [vertices] Motor+
+    twist_motors = (core.mv.xy * (-twist_angles[:, None] * twist_profile / 2)).exp()  # [frames, vertices] Motor+
+    motors = (twist_motors * rest_motors).field()                              # [frames] Motor+[vertices]
+    return subdivide_ribbon(motors)
 
 
 def turning() -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
-    """At every frame, the ribbon held flat with every frame turning back and forth about its own axis
-    through its origin, each with its own phase: the control frames, and the surfaces refined as points and
-    as motors."""
-    along, across = grid()
-    rng = np.random.default_rng(TURNING_SEED)
-    axes = core.mv(core.Line.derive.nondegenerate, rng.normal(size=(len(along), 3))).normalized()   # [vertices] Line
-    phases = rng.uniform(0, 2 * np.pi, len(along))
-    angles = TURNING * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)   # [frames, vertices]
-    flat = (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp()
-    return refined((flat * (axes * (-angles / 2)).exp()).field())              # [frames] Motor[vertices]
+    """The control frames and the point- and motor-subdivided surfaces as each frame turns in place on the flat ribbon."""
+    z_coords, x_coords = grid()
+    rng = np.random.default_rng(TURN_SEED)
+    axes = core.mv(core.Line.derive.nondegenerate, rng.normal(size=(len(z_coords), 3))).normalized()  # [vertices] Line+
+    phases = rng.uniform(0, 2 * np.pi, len(z_coords))
+    angles = TURN_AMPLITUDE * np.sin(np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)[:, None] + phases)  # [frames, vertices]
+    rest_motors = (core.mv.zw * (z_coords / 2)).exp() * (core.mv.xw * (x_coords / 2)).exp()  # [vertices] Motor+
+    local_turns = (axes * (-angles / 2)).exp()                                 # [frames, vertices] Motor+
+    motors = (rest_motors * local_turns).field()                               # [frames] Motor+[vertices]
+    return subdivide_ribbon(motors)
 
 
-def refined(motors: core.Motor) -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
-    """The control frames of motors at the vertices of the ribbon, each its origin and the ends of its x, y
-    and z axes, and the surface refined two ways: as the points the motors carry, through the steps composed
-    into one map, and as the motors themselves, normalized after every step; with the faces of the control
-    mesh and of the surfaces."""
+def subdivide_ribbon(motors: core.Motor) -> tuple[core.Point, core.Point, np.ndarray, np.ndarray]:
+    """The control frames, point- and motor-subdivided surfaces, and coarse and refined triangle faces of the ribbon."""
     faces = core.grid_faces(N_ALONG, N_ACROSS)
     pinned = np.isin(np.arange(N_ALONG * N_ACROSS), CORNERS)
-    markers = stack([core.mv.w.dual(), core.mv.point([AXIS, 0.0, 0.0]), core.mv.point([0.0, AXIS, 0.0]),
-                     core.mv.point([0.0, 0.0, AXIS])])                         # [axes + 1] Point
-    origin = markers[0]                                                        # [] Point
-    steps, meshes, refined_motors = zip(*core.refinements(core.Mesh(N_ALONG * N_ACROSS, faces), motors, pinned, N_LOOP_STEPS))
-    points = reduce(lambda total, step: step * total, steps) * (motors >> origin)   # [frames] Point[refined]
-    surfaces = stack([points, refined_motors[-1] >> origin], axis=1)           # [frames, schemes] Point[refined]
-    return motors[:, None] >> markers, surfaces, faces, meshes[-1].faces       # [frames, axes + 1] Point[vertices]
+    markers = stack([
+        core.mv.w.dual(),
+        core.mv.point([AXIS_LENGTH, 0.0, 0.0]),
+        core.mv.point([0.0, AXIS_LENGTH, 0.0]),
+        core.mv.point([0.0, 0.0, AXIS_LENGTH]),
+    ])                                                                         # [axes + 1] Point-
+    origin = markers[0]                                                        # [] Point-
+    refined_mesh = core.Mesh(N_ALONG * N_ACROSS, faces).loop_subdivided(pinned, N_LOOP_STEPS)
+    point_surface = refined_mesh.subdivision * (motors >> origin)              # [frames] Point-[refined]
+    motor_surface = core.subdivide_motors(refined_mesh, motors) >> origin      # [frames] Point-[refined]
+    surfaces = stack([point_surface, motor_surface], axis=1)                   # [frames, schemes] Point-[refined]
+    control_frames = motors[:, None] >> markers                                # [frames, axes + 1] Point-[vertices]
+    return control_frames, surfaces, faces, refined_mesh.faces
 
 
 # --- plumbing -------------------------------------------------------------------------
 def grid() -> tuple[np.ndarray, np.ndarray]:
-    """How far along and across the ribbon each vertex of its control mesh lies, row by row."""
-    along, across = np.meshgrid(np.linspace(-LENGTH / 2, LENGTH / 2, N_ALONG),
-                                np.linspace(-WIDTH / 2, WIDTH / 2, N_ACROSS), indexing="ij")
-    return along.reshape(-1), across.reshape(-1)
+    """The flattened coordinates along z and across x for the vertices of the ribbon's control mesh."""
+    z_coords, x_coords = np.meshgrid(
+        np.linspace(-LENGTH / 2, LENGTH / 2, N_ALONG),
+        np.linspace(-WIDTH / 2, WIDTH / 2, N_ACROSS),
+        indexing="ij",
+    )
+    return z_coords.reshape(-1), x_coords.reshape(-1)
 
 
 def main() -> None:
     from examples.util.animation import save_animation
     from examples.surfaces.motor_loop import render
 
-    wound = winding()
-    turned = turning()
-    save_animation(render.animate(*wound), "motor_loop_ribbon", DURATION_MS, forward_then_back=True)
-    save_animation(render.animate(*turned), "motor_loop_turning", DURATION_MS)
+    winding_scene = winding()
+    turning_scene = turning()
+    save_animation(render.animate(*winding_scene), "motor_loop_ribbon", DURATION_MS, forward_then_back=True)
+    save_animation(render.animate(*turning_scene), "motor_loop_turning", DURATION_MS)
 
     # checks
-    # Untwisted the two agree; wound up, the points wring the ribbon towards its axis and the motors do not.
-    # How far each surface reaches from the z axis on average, at rest and wound up: a point joined with the line
-    # through the origin and z is a plane as large as their distance.
-    centre_line = core.mv.w.dual() & core.mv.point([0.0, 0.0, 1.0])           # [] Line
-    reach = (centre_line & wound[1][[0, N_FRAMES // 2]].batch()).norm().mean(axis=-1)   # [cases, schemes] Scalar
-    (points_rest, motors_rest), (points_peak, motors_peak) = reach.to_array()
-    assert abs(points_rest - motors_rest) < 1e-12
+    # Untwisted, the two schemes agree; wound up, point subdivision wrings the ribbon toward its axis
+    # while motor subdivision preserves its width. Joining a unit point with the z axis line forms a
+    # plane whose norm is the point's radial distance from the axis.
+    centre_line = core.mv.w.dual() & core.mv.point([0.0, 0.0, 1.0])            # [] Line-
+    distance = (centre_line & winding_scene[1][[0, N_FRAMES // 2]].batch()).norm().mean(axis=-1)  # [cases, schemes] Scalar+
+    (points_rest, motors_rest), (points_peak, motors_peak) = distance
+    assert (points_rest - motors_rest).abs() < 1e-12
     assert points_peak < 0.7 * points_rest and motors_peak >= motors_rest
-    # Turning the frames about their origins leaves the points alone and bends the motors: two points joined are
-    # a line as long as their distance.
-    points, motors = turned[1][:, 0].batch(), turned[1][:, 1].batch()          # [frames, refined] Point
-    assert (points & points[:1]).norm().to_array().max() < 1e-12
-    assert (motors & points).norm().to_array().max() > 0.05
-    # A turn common to every frame changes nothing.
-    along, across = grid()
-    flat = (core.mv.z * core.mv.w * (along / 2)).exp() * (core.mv.x * core.mv.w * (across / 2)).exp()   # [vertices] Motor
-    cases = refined(stack([flat, flat * (core.mv.yz * (-0.7 / 2)).exp()]).field())[1][:, 1].batch()   # [cases, refined] Point
-    assert (cases[0] & cases[1]).norm().to_array().max() < 1e-12
+    # Turning the frames about their origins leaves the control points fixed while bending the motor surface.
+    point_surfaces, motor_surfaces = turning_scene[1][:, 0].batch(), turning_scene[1][:, 1].batch()  # [frames, refined] Point-
+    assert np.all((point_surfaces & point_surfaces[:1]).norm() < 1e-12)
+    assert np.any((motor_surfaces & point_surfaces).norm() > 0.05)
+    # A rigid turn shared by every control frame leaves the subdivided surface unchanged.
+    z_coords, x_coords = grid()
+    rest_motors = (core.mv.zw * (z_coords / 2)).exp() * (core.mv.xw * (x_coords / 2)).exp()  # [vertices] Motor+
+    shared_turn = (core.mv.yz * (-0.7 / 2)).exp()                              # [] Motor+
+    cases = subdivide_ribbon(stack([rest_motors, rest_motors * shared_turn]).field())[1][:, 1].batch()  # [cases, refined] Point-
+    assert np.all((cases[0] & cases[1]).norm() < 1e-12)
 
 
 if __name__ == "__main__":

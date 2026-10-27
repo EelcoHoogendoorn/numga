@@ -1,4 +1,4 @@
-"""Camera pose recovery by gradient descent on the image misfit, in JAX."""
+"""Gradient descent on the reprojection misfit in JAX recovers the camera pose."""
 
 import pytest
 
