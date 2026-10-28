@@ -1,5 +1,5 @@
 """Drawing for the Cayley-Klein example, on the GPU by `planar`: the level sets of polarities, the curves where they
-vanish; lines, whole across the view; and points, as marks. The angles' labels over it in matplotlib."""
+vanish; planes and lines, whole across the view; and points, as marks. The angles' labels over it in matplotlib."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import numpy as np
 
 from examples.util.wgsl import pinned
 from examples.util.wgsl import planar
-from examples.util.wgsl.planar import Curves, Lines, Marker, Marks, window
+from examples.util.wgsl.planar import Curves, Flats, Marker, Marks, window
 from numga import stack
-from examples.quadrics.cayley_klein.core import Line, Point, Polarity, Scalar, mv
+from examples.quadrics.cayley_klein.core import Line, Plane, Point, Polarity, Scalar, mv
 
 BOX = (-1.2, 1.9, -1.2, 1.6)
 # The rows of pixels down the view.
@@ -22,7 +22,7 @@ OUTLINE = 1.0
 
 
 def euclidean(points: Point) -> np.ndarray:
-    """Chart coordinates of points, `[..., 2]`: their pairings with the lines x = 0 and y = 0, over their weights."""
+    """Chart coordinates of points, `[..., 2]`: their pairings with the planes x = 0 and y = 0, over their weights."""
     return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
@@ -40,26 +40,26 @@ def level_sets(quadrics: Polarity, colour: str, width: float) -> Curves:
     return Curves(quadrics.reshape(-1), width * POINT, rgb(colour), 1.0)
 
 
-def lines(lines: Line, colour: str, width: float) -> Lines:
-    """Lines whole across the view, `width` points across."""
-    return Lines(lines.reshape(-1), width * POINT, rgb(colour), 1.0)
+def flats(flats: Plane, colour: str, width: float) -> Flats:
+    """Planes and lines whole across the view, `width` points across."""
+    return Flats(flats.reshape(-1), width * POINT, rgb(colour), 1.0)
 
 
-def draw_hyperbolic_plane(
-    absolute: Polarity, vertices: Point, sides: Line, angles: Scalar, probe: Point, foot: Point,
-    normal: Line, reflected: Point, pole: Point, circles: Polarity, centres: Point,
+def draw_hyperbolic_space(
+    absolute: Polarity, vertices: Point, sides: Plane, angles: Scalar, probe: Point, foot: Point,
+    normal: Line, reflected: Point, pole: Point, spheres: Polarity, centres: Point,
 ) -> plt.Figure:
     """Left, inside the absolute, black: the triangle, blue, with its angles, the perpendicular, red, from
     the point, red, to its foot, dark red square, the point's reflection, orange, and the side's pole,
-    purple diamond. Right, the circles about the two centres, blue and orange."""
+    purple diamond. Right, the spheres about the two centres, blue and orange."""
     view = window(BOX[:2], BOX[2:], ROWS)
     fig, (left, right) = plt.subplots(1, 2, figsize=(6.5, 3), dpi=120)
     for ax in (left, right):
         ax.set_axis_off()
     fig.tight_layout()
     hyperbolic = [level_sets(absolute[None], "black", 1.2),
-                  lines(sides, "#2563eb", 1.2),
-                  lines(normal[None], "#dc2626", 1.0),
+                  flats(sides, "#2563eb", 1.2),
+                  flats(normal[None], "#dc2626", 1.0),
                   marks(vertices, "#1d4ed8", 14, Marker.DISC),
                   marks(probe[None], "#dc2626", 18, Marker.DISC),
                   marks(foot[None], "#b91c1c", 14, Marker.SQUARE),
@@ -70,6 +70,6 @@ def draw_hyperbolic_plane(
         left.annotate(f"{np.degrees(theta):.1f}°", xy, textcoords="offset points", xytext=(3, 3), fontsize=7)
 
     rings = [level_sets(absolute[None], "black", 1.2)] + [level_sets(family, colour, 0.8)
-                                                    for family, colour in zip(circles, ("#3b82f6", "#f97316"))]
+                                                    for family, colour in zip(spheres, ("#3b82f6", "#f97316"))]
     pinned(right, planar.draw(view, rings + [marks(centres, "#111827", 13, Marker.DISC)], np.ones(3)), view.extent)
     return fig

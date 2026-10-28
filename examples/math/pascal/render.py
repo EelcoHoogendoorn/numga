@@ -1,4 +1,4 @@
-"""Drawing for Pascal's theorem, on the GPU by `planar`: the conic, the curve where it vanishes; the sides of the
+"""Drawing for Pascal's theorem, on the GPU by `planar`: the quadric, the curve where it vanishes; the sides of the
 hexagon and the line through the crossings of opposite sides, whole across the view; the hexagon, and its corners and
 the crossings as discs."""
 
@@ -12,20 +12,19 @@ import numpy as np
 
 from examples.util.wgsl import image_figure
 from examples.util.wgsl import planar
-from examples.util.wgsl.planar import Curves, Lines, Marker, Marks, Polygons, window
+from examples.util.wgsl.planar import Curves, Flats, Marker, Marks, Polygons, window
 from examples.math.pascal import core
 
 # The view: x from -2.5 to 4.5, y from -2.5 to 5.5, and the rows of pixels down it.
-BOX = np.array([[-2.5, -2.5], [4.5, 5.5]])
-ROWS = 590
+box = np.array([[-2.5, -2.5], [4.5, 5.5]])
+rows = 320
 # Colours of the three pairs of opposite sides and their crossings.
-PAIRS = np.array(["#1f77b4", "#2a9d4a", "#9b59b6"])
-# Pixels a point, at 100 dots per inch. The widths of the conic, of the sides and of the line through the crossings;
-# the areas of the marks of the corners, of the sixth corner and of the crossings, in square points, and the width of
-# their outlines.
-POINT = 100 / 72
-CONIC_WIDTH, SIDE_WIDTH, PASCAL_WIDTH = 1.6, 0.8, 2.0
-CORNER_AREA, SIXTH_AREA, CROSSING_AREA, OUTLINE = 28.0, 60.0, 55.0, 1.5
+pair_colours = np.array(["#1f77b4", "#2a9d4a", "#9b59b6"])
+# Pixels a point. The widths of the quadric, of the sides and of the line through the crossings; the areas of the marks
+# of the corners, of the sixth corner and of the crossings, in square points, and the width of their outlines.
+point = 0.75
+quadric_width, side_width, pascal_width = 1.6, 1.1, 2.0
+corner_area, sixth_area, crossing_area, outline = 28.0, 60.0, 55.0, 1.5
 
 
 def rgb(colours) -> np.ndarray:
@@ -34,34 +33,34 @@ def rgb(colours) -> np.ndarray:
 
 def disc(points: core.Point, area: float, colour) -> Marks:
     """Points as discs of the area, with an outline in their colour."""
-    return Marks(points, Marker.DISC, 0.0, (np.sqrt(area) / 2 + OUTLINE / 2) * POINT, rgb(colour), 1.0)
+    return Marks(points, Marker.DISC, 0.0, (np.sqrt(area) / 2 + outline / 2) * point, rgb(colour), 1.0)
 
 
-def picture(shape: core.Conic, hexagon: core.Point, sides: core.Plane, crossing: core.Point,
-            pascal_line: core.Plane) -> np.ndarray:
-    """The hexagon under the conic, its sides in the colours of their pairs and the line through the crossings; its
+def picture(shape: core.Quadric, hexagon: core.Point, sides: core.Line, crossing: core.Crossing,
+            pascal_line: core.Line) -> np.ndarray:
+    """The hexagon under the quadric, its sides in the colours of their pairs and the line through the crossings; its
     corners, the sixth orange, and the crossings, ringed in the line's colour: RGB bytes."""
-    ring = np.sqrt(CROSSING_AREA) / 2
+    ring = np.sqrt(crossing_area) / 2
     layers = [Polygons(hexagon[None], rgb("0.85"), 0.5),
-              Curves(shape[None], CONIC_WIDTH * POINT, rgb("0.25"), 1.0),
-              Lines(sides, SIDE_WIDTH * POINT, rgb(np.tile(PAIRS, 2)), 0.6),
-              Lines(pascal_line[None], PASCAL_WIDTH * POINT, rgb("#c0392b"), 1.0),
-              disc(hexagon, CORNER_AREA, "0.15"),
-              disc(hexagon[-1:], SIXTH_AREA, "#e67e22"),
-              Marks(crossing, Marker.DISC, 0.0, ring * POINT, rgb(PAIRS), 1.0),
-              Marks(crossing, Marker.DISC, (ring - OUTLINE / 2) * POINT, (ring + OUTLINE / 2) * POINT, rgb("#c0392b"),
+              Curves(shape[None], quadric_width * point, rgb("0.25"), 1.0),
+              Flats(sides, side_width * point, rgb(np.tile(pair_colours, 2)), 0.6),
+              Flats(pascal_line[None], pascal_width * point, rgb("#c0392b"), 1.0),
+              disc(hexagon, corner_area, "0.15"),
+              disc(hexagon[-1:], sixth_area, "#e67e22"),
+              Marks(crossing, Marker.DISC, 0.0, ring * point, rgb(pair_colours), 1.0),
+              Marks(crossing, Marker.DISC, (ring - outline / 2) * point, (ring + outline / 2) * point, rgb("#c0392b"),
                     1.0)]
-    return planar.draw(window(BOX[:, 0], BOX[:, 1], ROWS), layers, np.ones(3))
+    return planar.draw(window(box[:, 0], box[:, 1], rows), layers, np.ones(3))
 
 
-def draw(shape: core.Conic, hexagon: core.Point, sides: core.Plane, crossing: core.Point,
-         pascal_line: core.Plane) -> plt.Figure:
-    """Six points on a conic as a hexagon, its opposite sides in matching colours, and the three
+def draw(shape: core.Quadric, hexagon: core.Point, sides: core.Line, crossing: core.Crossing,
+         pascal_line: core.Line) -> plt.Figure:
+    """Six points on a quadric as a hexagon, its opposite sides in matching colours, and the three
     points where they meet on one line."""
     return image_figure(picture(shape, hexagon, sides, crossing, pascal_line))
 
 
-def animate(scenes: list[tuple[core.Conic, core.Point, core.Plane, core.Point, core.Plane]]) -> Iterator[np.ndarray]:
+def animate(scenes: list[tuple[core.Quadric, core.Point, core.Line, core.Crossing, core.Line]]) -> Iterator[np.ndarray]:
     """One frame per scene."""
     for scene in scenes:
         yield picture(*scene)

@@ -25,20 +25,20 @@ HINGE_MARGIN, HINGE_ROOM = 0.12, 0.5
 
 
 def point_coords(points: core.Point) -> np.ndarray:
-    """The `(x, y)` coordinates of planar points at unit weight, or of ideal displacements: their pairings with the
-    lines x and y."""
+    """The `(x, y)` coordinates of points at unit weight, or of ideal displacements: their pairings with the
+    planes x = 0 and y = 0."""
     mv = core.mv
     return (stack((mv.x, mv.y)) & points[..., None]).to_array()
 
 
 def force_coords(forces: core.Force) -> np.ndarray:
-    """The `(x, y)` components of planar forces: their pairings with the unit displacements along x and y."""
+    """The `(x, y)` components of forces: their pairings with the unit displacements along x and y."""
     mv = core.mv
     return (forces[..., None] & stack((mv.direction([1.0, 0.0]), mv.direction([0.0, 1.0])))).to_array()
 
 
 def _cross(ax, across: str, up: str) -> None:
-    """A plane without scales: a faint cross through the origin, its lines named at their ends, each along itself,
+    """No scales: a faint cross through the origin, its lines named at their ends, each along itself,
     the line across named just past its end."""
     ax.axhline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)
     ax.axvline(0.0, color=CROSS_COLOUR, linewidth=0.8, zorder=0)

@@ -1,6 +1,6 @@
-"""Pascal's theorem: the conic through five points passes through them and every sixth point found on
+"""Pascal's theorem: the quadric through five points passes through them and every sixth point found on
 it, the crossings of the hexagon's opposite sides lie on one line, and Pascal's condition on the sixth
-point is the conic."""
+point is the quadric."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import numpy as np
 from examples.math.pascal import core, render, scenarios
 
 
-def test_the_crossings_of_opposite_sides_lie_on_one_line_and_pascal_is_the_conic():
-    five = scenarios.ellipse_points(np.array([0.2, 1.9, 2.8, 4.0, 5.5]))
+def test_the_crossings_of_opposite_sides_lie_on_one_line_and_pascal_is_the_quadric():
+    five = scenarios.ellipsoid_points(np.array([0.2, 1.9, 2.8, 4.0, 5.5]))
     shape, hexagon, _, crossing, _ = scenarios.run(five, np.linspace(0.1, 3.0, 7))
     np.testing.assert_allclose((shape(hexagon) & hexagon).to_array(), 0.0, atol=1e-11)
     join = (crossing[..., 0] & crossing[..., 1] & crossing[..., 2]).to_array()

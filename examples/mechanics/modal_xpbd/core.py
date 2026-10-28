@@ -1,5 +1,5 @@
 """Modal extended position-based dynamics: flexible bodies joined by point constraints, in the projective
-geometric algebra of the plane.
+geometric algebra of space.
 
 Each body is a girder of bars. Its rigid motion is a motor and its deformation a combination of its
 lowest vibration modes, the eigenfields of its sparse stiffness against its masses. Bodies are
@@ -32,16 +32,16 @@ from numga.sparse import SparseExtensor, spdiag
 from examples.mechanics import lie_integrators as lie
 
 
-# Supplied by examples.instantiate: the plane's algebra, PGA2D, and the context to compute in.
+# Supplied by examples.instantiate: the algebra, PGA2D, and the context to compute in.
 ga: Algebra
 ctx: Context
 mv = ctx.multivector
-Scalar = ga.gatype.scalar()
-Point = ga.gatype.antivector()
-Twist = ga.gatype.bivector()
-Forque = ga.gatype.antibivector()
-Motor = ga.gatype.rotor()
-# A displacement is a point at infinity, an antivector through the null direction w; a force is a line through the
+Scalar = ga.gatype.scalar()                                                # Scalar+
+Point = ga.gatype.antivector()                                             # Antivector-
+Twist = ga.gatype.bivector()                                               # Bivector+
+Forque = ga.gatype.antibivector()                                          # Antibivector-
+Motor = ga.gatype.rotor()                                                  # Rotor+
+# A displacement is a point at infinity, an antivector through the null direction w; a force is a plane through the
 # origin, a sum of x and y, and a force joined with a displacement, `force & displacement`, is the work done moving
 # that way.
 Displacement = ga.gatype.antivector().derive.degenerate                    # Antivector-

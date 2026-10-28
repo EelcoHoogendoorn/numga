@@ -1,4 +1,4 @@
-"""Render the station-keeping clouds, their two-standard-deviation position quadrics, and the ellipse half-widths against the controller gain."""
+"""Render the station-keeping clouds, their two-standard-deviation position quadrics, and the ellipsoid half-widths against the controller gain."""
 
 from __future__ import annotations
 
@@ -12,38 +12,37 @@ from numga import stack
 from examples.util.animation import capture
 from examples.util.wgsl import pinned, planar, room
 from examples.util.wgsl.planar import Curves, Regions, filling
-from examples.estimation.pose_diffusion.core import Covariance, Motor, Point, Spread, Twist, ga, mv, origin
+from examples.estimation.pose_diffusion.core import Covariance, Motor, Plane, Point, Spread, Twist, ga, mv, origin
 
-ELLIPSE_RGB = np.array(mcolors.to_rgb("#c0392b"))
+ELLIPSOID_RGB = np.array(mcolors.to_rgb("#c0392b"))
 HEADING_FRACTION = 0.08
 SIGMAS = 2.0
 POINT = 100 / 72
-Line = ga.gatype.vector()                           # Vector+
-Quadric = ga.gatype((Line, Point))
+Quadric = ga.gatype((Plane, Point))
 
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
-    """The x and y coordinates of each point, from its pairings with the coordinate lines."""
+    """The x and y coordinates of each point, from its pairings with the coordinate planes."""
     return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
 
 
-def position_ellipse(covariance: Covariance, sigmas: float) -> Quadric:
+def position_ellipsoid(covariance: Covariance, sigmas: float) -> Quadric:
     """The confidence quadric `sigmas` standard deviations out around the set point."""
     shift = Twist.commutator(origin)                                            # [] Point- <- Twist+
-    readout = shift.adjugate()                                                  # [] Line- <- Line+
-    moment = origin * (Line & origin) + shift(covariance(readout))              # [...] Point- <- Line+
-    return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)           # [...] Line+ <- Point-
+    readout = shift.adjugate()                                                  # [] Line- <- Plane+
+    moment = origin * (Plane & origin) + shift(covariance(readout))             # [...] Point- <- Plane+
+    return moment.inverse() - (1 + sigmas**2) * mv.w * (mv.w & Point)           # [...] Plane+ <- Point-
 
 
 def quadric_layers(predicted: Covariance, limit: Covariance) -> list:
-    """The planar layers for the shaded steady-state ellipse and the predicted ellipse curve."""
-    steady_quadric = position_ellipse(limit, SIGMAS)[None]                      # [1] Line+ <- Point-
-    predicted_quadric = position_ellipse(predicted, SIGMAS)[None]               # [1] Line+ <- Point-
+    """The planar layers for the shaded steady-state ellipsoid and the predicted ellipsoid curve."""
+    steady_quadric = position_ellipsoid(limit, SIGMAS)[None]                    # [1] Plane+ <- Point-
+    predicted_quadric = position_ellipsoid(predicted, SIGMAS)[None]             # [1] Plane+ <- Point-
     return [
-        Regions(steady_quadric, ELLIPSE_RGB, 0.14),
-        Curves(steady_quadric, 1.0 * POINT, ELLIPSE_RGB, 0.45),
-        Curves(predicted_quadric, 1.4 * POINT, ELLIPSE_RGB, 1.0),
+        Regions(steady_quadric, ELLIPSOID_RGB, 0.14),
+        Curves(steady_quadric, 1.0 * POINT, ELLIPSOID_RGB, 0.45),
+        Curves(predicted_quadric, 1.4 * POINT, ELLIPSOID_RGB, 1.0),
     ]
 
 
@@ -107,7 +106,7 @@ def animate_clouds(runs: dict, extent: float) -> Iterator[np.ndarray]:
 
 
 def draw_envelope(gains: np.ndarray, spreads: Spread, tolerance: float) -> plt.Figure:
-    """Plot the two-standard-deviation half-widths of the position ellipse along its long and short axes against the controller gain."""
+    """Plot the two-standard-deviation half-widths of the position ellipsoid along its long and short axes against the controller gain."""
     variances = spreads.eigvalsh().to_array()                                   # [gains, modes]
     half_widths = 2.0 * np.sqrt(np.sort(variances, axis=-1)[:, ::-1])
     figure, ax = plt.subplots(figsize=(7, 4.5))

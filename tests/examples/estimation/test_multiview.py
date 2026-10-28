@@ -51,13 +51,13 @@ def test_triangulate_cones():
     pixels = images / (mv.w & images)
 
     # A sensor quadric at the principal point, moved to each pixel, pulled back into cones.
-    sensor_disc = mv.x * (mv.x & Point)
-    sensor_discs = core.sensor_disc_at(pixels, mv.point([0, 1]), sensor_disc)
-    local_cones = cameras.adjugate()(sensor_discs(cameras))
+    sensor_ball = mv.x * (mv.x & Point)
+    sensor_balls = core.sensor_ball_at(pixels, mv.point([0, 1]), sensor_ball)
+    local_cones = cameras.adjugate()(sensor_balls(cameras))
     points, fused_splats = core.triangulate(motors, local_cones)
     np.testing.assert_allclose(coordinates(points), xy, atol=1e-5)
 
-    # The fused precision is positive on every displacement, so the splat is a bounded ellipse.
+    # The fused precision is positive on every displacement, so the splat is a bounded ellipsoid.
     angles = np.linspace(0.0, np.pi, 12, endpoint=False)
     displacements = mv.direction(np.stack([np.cos(angles), np.sin(angles)], axis=-1))
     precision = fused_splats[:, None](displacements[None, :]) & displacements[None, :]
@@ -177,9 +177,9 @@ def rig_3d(instance) -> tuple:
     images = cameras(true_motors << mv3.point(xyz)[:, None])
     pixels = images / (mv3.w & images)
     # 2D transverse uncertainty on the sensor plane (z = 1) around the principal point.
-    sensor_disc = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
-    sensor_discs = instance.sensor_disc_at(pixels, mv3.point([0, 0, 1]), sensor_disc)
-    return true_motors, xyz, cameras.adjugate()(sensor_discs(cameras))
+    sensor_ball = mv3.x * (mv3.x & instance.Point) + mv3.y * (mv3.y & instance.Point)
+    sensor_balls = instance.sensor_ball_at(pixels, mv3.point([0, 0, 1]), sensor_ball)
+    return true_motors, xyz, cameras.adjugate()(sensor_balls(cameras))
 
 
 @pytest.mark.parametrize("rotation_deg, translation, iterations", [

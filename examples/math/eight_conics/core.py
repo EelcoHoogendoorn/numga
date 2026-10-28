@@ -1,9 +1,9 @@
-"""Penrose's eight-conic theorem, in the projective geometric algebra of the plane.
+"""Penrose's eight-conic theorem, in the projective geometric algebra of space.
 
-Conics on the corners of a cube touch their neighbours in double contact: two points with common
-tangents. Each conic maps a point to its polar line, and adding the dyad of a line changes it everywhere
-but on that line, so double contact is an addition of maps. Three compatible faces determine the eighth
-conic in three ways, by one more contact dyad from each of its neighbours, and the three are one map.
+Quadrics on the corners of a cube touch their neighbours in double contact: two points with common
+tangents. Each quadric maps a point to its polar plane, and adding the dyad of a plane changes it everywhere
+but on that plane, so double contact is an addition of maps. Three compatible faces determine the eighth
+quadric in three ways, by one more contact dyad from each of its neighbours, and the three are one map.
 """
 
 from __future__ import annotations
@@ -14,12 +14,12 @@ from numga import NumpyContext, stack
 from numga.algebras import PGA2D as ga
 
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Plane = ga.gatype.vector()
-Point = ga.gatype.antivector()
-Conic = ga.gatype((Plane, Point))
+Scalar = ga.gatype.scalar()                         # Scalar+
+Plane = ga.gatype.vector()                          # Vector+
+Point = ga.gatype.antivector()                      # Antivector-
+Quadric = ga.gatype((Plane, Point))
 
-# The three faces opposite the first neighbours use the other two chords.
+# The three faces opposite the first neighbours use the other two contact planes.
 FORWARD = np.array([1, 2, 0])
 BACKWARD = np.array([2, 0, 1])
 EDGES = np.array([[0, 1], [0, 2], [0, 4], [1, 3], [2, 3], [1, 5],
@@ -27,57 +27,57 @@ EDGES = np.array([[0, 1], [0, 2], [0, 4], [1, 3], [2, 3], [1, 5],
 
 
 # --- math -----------------------------------------------------------------------------
-def configuration(base: Conic, chords: Plane, couplings: np.ndarray) -> tuple[Conic, Plane, Conic]:
-    """The cube completed from a conic, three weighted chords and three face couplings: its eight conics,
-    its twelve contact chords, and the eighth conic's three independent completions, on the last axis."""
-    double_lines = chords * (chords & Point)                                  # [3] Plane <- Point
-    neighbours = base + double_lines                                         # [3] Plane <- Point
-    left = chords[FORWARD]                                                   # [3] Plane
-    right = chords[BACKWARD]                                                 # [3] Plane
+def configuration(base: Quadric, contact_planes: Plane, couplings: np.ndarray) -> tuple[Quadric, Plane, Quadric]:
+    """The cube completed from a quadric, three weighted contact planes and three face couplings: its eight quadrics,
+    its twelve contact planes, and the eighth quadric's three independent completions, on the last axis."""
+    double_planes = contact_planes * (contact_planes & Point)               # [3] Plane+ <- Point-
+    neighbours = base + double_planes                                       # [3] Plane+ <- Point-
+    left = contact_planes[FORWARD]                                          # [3] Plane+
+    right = contact_planes[BACKWARD]                                        # [3] Plane+
     face_scales = 1 - couplings ** 2
 
-    # Each face conic shares one contact chord with each of two neighbours.
-    cross_terms = left * (right & Point) + right * (left & Point)             # [3] Plane <- Point
-    faces = (base * face_scales + double_lines[FORWARD] + double_lines[BACKWARD]
-             + cross_terms * couplings)                                     # [..., 3] Plane <- Point
+    # Each face quadric shares one contact plane with each of two neighbours.
+    cross_terms = left * (right & Point) + right * (left & Point)             # [3] Plane+ <- Point-
+    faces = (base * face_scales + double_planes[FORWARD] + double_planes[BACKWARD]
+             + cross_terms * couplings)                                     # [..., 3] Plane+ <- Point-
 
-    # The three closing chords determine the same eighth conic independently.
+    # The three closing contact planes determine the same eighth quadric independently.
     closing_scale = 1 - np.sum(couplings ** 2, axis=-1) - 2 * np.prod(couplings, axis=-1)
-    closing_chords = (chords * face_scales
+    closing_planes = (contact_planes * face_scales
                       + left * (couplings[..., BACKWARD] + couplings * couplings[..., FORWARD])
                       + right * (couplings[..., FORWARD] + couplings * couplings[..., BACKWARD]))
     completions = ((faces * closing_scale[..., None]
-                    + closing_chords * (closing_chords & Point)) / face_scales)  # [..., 3] Plane <- Point
+                    + closing_planes * (closing_planes & Point)) / face_scales)  # [..., 3] Plane+ <- Point-
 
     # Binary vertex labels make each cube edge change one of the three choices.
     shape = completions.shape[:-1]
-    conics = stack((base.broadcast_to(shape), neighbours[0].broadcast_to(shape),
+    quadrics = stack((base.broadcast_to(shape), neighbours[0].broadcast_to(shape),
                     neighbours[1].broadcast_to(shape), faces[..., 2],
                     neighbours[2].broadcast_to(shape), faces[..., 1], faces[..., 0],
-                    completions[..., 0]), axis=-1)                           # [..., 8] Plane <- Point
-    left_chords = left * couplings + right                                  # [..., 3] Plane
-    right_chords = left + right * couplings                                 # [..., 3] Plane
-    edge_chords = stack((chords[0].broadcast_to(shape), chords[1].broadcast_to(shape),
-                         chords[2].broadcast_to(shape), left_chords[..., 2], right_chords[..., 2],
-                         right_chords[..., 1], left_chords[..., 1], left_chords[..., 0],
-                         right_chords[..., 0], closing_chords[..., 2],
-                         closing_chords[..., 1], closing_chords[..., 0]), axis=-1)  # [..., 12] Plane
-    return conics, edge_chords, completions
+                    completions[..., 0]), axis=-1)                           # [..., 8] Plane+ <- Point-
+    left_planes = left * couplings + right                                  # [..., 3] Plane+
+    right_planes = left + right * couplings                                 # [..., 3] Plane+
+    edge_planes = stack((contact_planes[0].broadcast_to(shape), contact_planes[1].broadcast_to(shape),
+                         contact_planes[2].broadcast_to(shape), left_planes[..., 2], right_planes[..., 2],
+                         right_planes[..., 1], left_planes[..., 1], left_planes[..., 0],
+                         right_planes[..., 0], closing_planes[..., 2],
+                         closing_planes[..., 1], closing_planes[..., 0]), axis=-1)  # [..., 12] Plane+
+    return quadrics, edge_planes, completions
 
 
 # --- plumbing -------------------------------------------------------------------------
-def intersections(conics: Conic, lines: Plane) -> Point:
-    """The two real crossings of each conic with its line, on the last batch axis."""
+def intersections(quadrics: Quadric, planes: Plane) -> Point:
+    """The two real crossings of each quadric with its plane, on the last batch axis."""
     origin = mv.w.dual()
-    lines = lines.normalized()
+    planes = planes.normalized()
     # Reflection gives the foot of the perpendicular from the chart origin.
-    anchor = (origin + (lines >> origin)) / 2                                # [...] Point
-    direction = (lines | mv.xy).dual()                                      # [...] Point
-    quadratic = conics(direction) & direction                               # [...] Scalar
-    linear = conics(anchor) & direction                                     # [...] Scalar
-    constant = conics(anchor) & anchor                                      # [...] Scalar
+    anchor = (origin + (planes >> origin)) / 2                              # [...] Point-
+    direction = (planes | mv.xy).dual()                                     # [...] Point-
+    quadratic = quadrics(direction) & direction                             # [...] Scalar+
+    linear = quadrics(anchor) & direction                                   # [...] Scalar+
+    constant = quadrics(anchor) & anchor                                    # [...] Scalar+
     root_signs = np.array([-1, 1])
     distances = (-linear[..., None]
                  + (linear.squared() - quadratic * constant).square_root()[..., None]
-                 * root_signs) / quadratic[..., None]                       # [..., 2] Scalar
-    return anchor[..., None] + direction[..., None] * distances               # [..., 2] Point
+                 * root_signs) / quadratic[..., None]                       # [..., 2] Scalar+
+    return anchor[..., None] + direction[..., None] * distances               # [..., 2] Point-

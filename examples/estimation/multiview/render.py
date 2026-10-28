@@ -1,6 +1,6 @@
 """Render top-down views and convergence animations for planar multi-camera reconstruction on the GPU.
 
-Every pixel sample is a point of the plane: a sight cone or a fused splat covers it where its quadric's value
+Every pixel sample is a point of space: a sight cone or a fused splat covers it where its quadric's value
 there, `quadric(point) & point`, lies below the level it is drawn at, while the cameras' field-of-view wedges, sight lines, sensors, axes,
 and pose covariances cover it through the pairings of their lines with the sample point.
 """
@@ -19,9 +19,9 @@ from numga.algebras import PGA2D
 
 from examples import instantiate
 from examples.util.wgsl import image_figure
-from examples.util.wgsl.planar import SOLID, Cap, Conics, Polygons, Regions, Strokes, draw, window
+from examples.util.wgsl.planar import SOLID, Cap, Quadrics, Polygons, Regions, Strokes, draw, window
 
-# The figures are top-down views of the plane: they draw PGA2D geometry.
+# The figures draw PGA2D geometry, from above.
 core = instantiate("examples.estimation.multiview.core", PGA2D)
 Motor, Point, Quadric, Scalar = core.Motor, core.Point, core.Quadric, core.Scalar
 mv = core.mv
@@ -54,29 +54,29 @@ N_CURVE_SEGMENTS = 96
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
-    """The Cartesian (x, y) coordinates of points from their pairings with the coordinate lines."""
+    """The Cartesian (x, y) coordinates of points from their pairings with the coordinate planes."""
     return (stack((mv.x, mv.y)) & (points / (mv.w & points))[..., None]).to_array()
 
 
-def cones(motors: Motor, world_cones: Quadric) -> list[Conics]:
-    """Each camera's sight-cone layer in its colour, widened with depth in front of the focal line by `PIXEL_ANGLE`."""
-    focal_lines = motors >> mv.y                                                 # [cameras] Plane+
-    return [Conics(world_cones[:, camera], np.zeros(1), focal_lines[camera] * PIXEL_ANGLE, np.full(1, PIXEL_ANGLE * 0.05),
-                   (focal_lines[camera] - mv.w * 0.02)[None], colour, 0.30)
+def cones(motors: Motor, world_cones: Quadric) -> list[Quadrics]:
+    """Each camera's sight-cone layer in its colour, widened with depth in front of the focal plane by `PIXEL_ANGLE`."""
+    focal_planes = motors >> mv.y                                                # [cameras] Plane+
+    return [Quadrics(world_cones[:, camera], np.zeros(1), focal_planes[camera] * PIXEL_ANGLE, np.full(1, PIXEL_ANGLE * 0.05),
+                   (focal_planes[camera] - mv.w * 0.02)[None], colour, 0.30)
             for camera, colour in enumerate(CAMERA_COLORS[:motors.shape[0]])]
 
 
-def splats(motors: Motor, fused_splats: Quadric, points: Point) -> list[Conics]:
+def splats(motors: Motor, fused_splats: Quadric, points: Point) -> list[Quadrics]:
     """The layer of fused splat quadrics around the triangulated points where they lie in front of a camera."""
     floor = np.maximum((fused_splats(points) & points).to_array(), 0.0)          # [landmarks]
     depth = ((motors >> mv.y)[None, :] & points[:, None]).to_array().mean(axis=1)  # [landmarks]
     radius = np.sqrt((PIXEL_ANGLE * np.maximum(depth, 0.2)) ** 2 + floor)        # [landmarks]
     front_planes = ((motors >> mv.y) - mv.w * 0.02)[None]                        # [clips, cameras] Plane+
-    return [Conics(fused_splats, floor, mv.w * radius, np.zeros(1), front_planes, SPLAT_COLOR, 0.95)]
+    return [Quadrics(fused_splats, floor, mv.w * radius, np.zeros(1), front_planes, SPLAT_COLOR, 0.95)]
 
 
 def cameras(motors: Motor) -> list:
-    """The field-of-view wedge, bounding sight lines, sensor line, and dashed optical axis for each camera."""
+    """The field-of-view wedge, bounding sight lines, sensor, and dashed optical axis for each camera."""
     reach = WEDGE_DEPTH * np.tan(HALF_FIELD)
     local_marks = mv.point([[0.0, 0.0], [reach, WEDGE_DEPTH], [-reach, WEDGE_DEPTH], [0.0, WEDGE_DEPTH * AXIS_REACH]])
     marks = motors[:, None] >> local_marks                                       # [cameras, marks] Point-
@@ -91,15 +91,15 @@ def cameras(motors: Motor) -> list:
     return [layer for camera in wedges + sensors for layer in camera]
 
 
-def pose_covariances(motors: Motor, ellipses: Quadric, spreads: Scalar) -> list:
-    """Each camera's position uncertainty ellipse and dotted heading-spread fan."""
-    # The outline: from each ellipse's centre, the pole of the line at infinity, out along each direction to where the
-    # ellipse vanishes.
-    centres = ellipses.solve(mv.w)                                               # [cameras] Point-
+def pose_covariances(motors: Motor, ellipsoids: Quadric, spreads: Scalar) -> list:
+    """Each camera's position uncertainty ellipsoid and dotted heading-spread fan."""
+    # The outline: from each ellipsoid's centre, the pole of the plane at infinity, out along each direction to where the
+    # ellipsoid vanishes.
+    centres = ellipsoids.solve(mv.w)                                             # [cameras] Point-
     centres = centres / (mv.w & centres)                                         # [cameras] Point-
     turns = np.linspace(0.0, 2 * np.pi, N_CURVE_SEGMENTS + 1)
     headings = mv.direction(np.stack([np.cos(turns), np.sin(turns)], axis=-1))[:, None]   # [segments + 1, cameras] Direction-
-    reach = (-(ellipses(centres) & centres) / (ellipses(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar+
+    reach = (-(ellipsoids(centres) & centres) / (ellipsoids(headings) & headings)).square_root()   # [segments + 1, cameras] Scalar+
     outlines = centres + headings * reach                                        # [segments + 1, cameras] Point-
     layers = []
     for camera, colour in enumerate(CAMERA_COLORS[:motors.shape[0]]):
@@ -109,7 +109,7 @@ def pose_covariances(motors: Motor, ellipses: Quadric, spreads: Scalar) -> list:
         arc_points = ARC_RADIUS * np.stack([-np.sin(turns), np.cos(turns)], axis=-1)
         fan = motors[camera] >> mv.point(arc_points)                             # [segments + 1] Point-
         spokes = motors[camera] >> mv.point(np.stack([np.zeros((2, 2)), arc_points[[0, -1]]], axis=1))   # [spokes, ends] Point-
-        layers += [Regions(ellipses[camera:camera + 1], colour, 0.28),
+        layers += [Regions(ellipsoids[camera:camera + 1], colour, 0.28),
                    Strokes(outlines[:, camera][None], OUTLINE_WIDTH, colour, 0.28, OUTLINE_WIDTH * DASHED, Cap.BUTT),
                    Strokes(fan[None], ARC_WIDTH, colour, 1.0, ARC_WIDTH * DOTTED, Cap.BUTT),
                    Strokes(spokes, SPOKE_WIDTH, colour, 1.0, SPOKE_WIDTH * DOTTED, Cap.BUTT)]
@@ -117,7 +117,7 @@ def pose_covariances(motors: Motor, ellipses: Quadric, spreads: Scalar) -> list:
 
 
 def draw_rig(motors: Motor) -> plt.Figure:
-    """Draw the camera rig in the plane."""
+    """Draw the camera rig."""
     return image_figure(draw(window(X_RANGE, Y_RANGE, PIXELS), cameras(motors), np.ones(3)))
 
 
@@ -133,10 +133,10 @@ def draw_reconstruction(motors: Motor, world_cones: Quadric, fused_splats: Quadr
 
 
 def draw_reconstruction_with_covariance(
-    motors: Motor, world_cones: Quadric, fused_splats: Quadric, points: Point, ellipses: Quadric, spreads: Scalar,
+    motors: Motor, world_cones: Quadric, fused_splats: Quadric, points: Point, ellipsoids: Quadric, spreads: Scalar,
 ) -> plt.Figure:
-    """Draw the reconstruction with each camera's position uncertainty ellipse and heading spread."""
-    layers = cones(motors, world_cones) + splats(motors, fused_splats, points) + cameras(motors) + pose_covariances(motors, ellipses, spreads)
+    """Draw the reconstruction with each camera's position uncertainty ellipsoid and heading spread."""
+    layers = cones(motors, world_cones) + splats(motors, fused_splats, points) + cameras(motors) + pose_covariances(motors, ellipsoids, spreads)
     return image_figure(draw(window(X_RANGE, Y_RANGE, PIXELS), layers, np.ones(3)))
 
 

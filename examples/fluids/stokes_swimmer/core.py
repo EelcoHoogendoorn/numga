@@ -1,4 +1,4 @@
-"""Swimming without inertia, in the projective geometric algebra of the plane.
+"""Swimming without inertia, in the projective geometric algebra of space.
 
 In slow, thick flow nothing coasts: the moment a swimmer stops moving its body, it stops. At every
 instant the pushes its body gives the fluid balance, with no net force and no net turning, and the
@@ -39,7 +39,7 @@ Point = ga.gatype.antivector()                                                  
 Twist = ga.gatype.bivector()                                                    # Bivector+
 Forque = ga.gatype.antibivector()                                               # Antibivector-
 Motor = ga.gatype.rotor()                                                       # Rotor+
-# A force is a line through the origin, extrinsic, read by its pairing with a velocity or a displacement, an ideal
+# A force is a plane through the origin, extrinsic, read by its pairing with a velocity or a displacement, an ideal
 # point, `force & direction`.
 Force = ga.gatype.vector().derive.nondegenerate                                 # Vector+
 Direction = Force.dual().output_gatype                                          # Antivector-
@@ -117,10 +117,10 @@ def three_link_shape(
 ) -> tuple[Point, Direction]:
     """Bead points `[...] Point[beads]` and body-frame deformation velocities `[...] Direction[beads]`
     for a three-link Purcell swimmer with hinge angles `angles` `[..., 2]` and angular rates `rates` `[..., 2]`."""
-    # The beads lie along the swimmer's axis, the line y = 0, at their offsets from the origin.
+    # The beads lie along the swimmer's axis, through the origin along x, at their offsets from the origin.
     along = mv.direction([1.0, 0.0])                                            # [] Point-
     centre_beads = origin + along * centre_offsets                              # [centre] Point-
-    # In PGA2D a hinge is the meet of two lines through it, the swimmer's axis and the line across it, a
+    # A hinge is the meet of two planes through it, the plane along the swimmer's axis and the plane across it, a
     # bivector generating turns about itself.
     left_hinge = (mv.x + hinge_half_span * mv.w) ^ mv.y                         # [] Twist+
     right_hinge = (mv.x - hinge_half_span * mv.w) ^ mv.y                        # [] Twist+

@@ -1,27 +1,29 @@
-"""Pictures of the plane, drawn on the GPU: PGA2D geometry in, the RGB bytes of a window onto the plane out.
+"""Pictures of space, drawn on the GPU: PGA2D geometry in, the RGB bytes of a window onto space out.
 
-A window is a rectangle of the plane and its rows and columns of square pixels. Each pixel's centre is a point of the
-plane, and every primitive covers a share of the pixel by a pairing with that point, worked out analytically, so one
+A window is a rectangle of space and its rows and columns of square pixels. Each pixel's centre is a point of
+space, and every primitive covers a share of the pixel by a pairing with that point, worked out analytically, so one
 point a pixel draws soft edges:
 
-- a conic, a map `Plane <- Point`, drawn about the radius it is drawn at: the distance between that radius, a line
-  paired with the point and held above a floor, and the square root of `conic(p) & p` less an offset, eased over three
-  quarters of a pixel; only on the positive side of any of its clip lines;
-- a region, where `conic(p) & p` is negative: its value over its polar's slope, `conic(p)`, is the distance to its edge;
-- a curve, where `conic(p) & p` vanishes, stroked about that distance; an envelope, a map from lines to the points
-  they touch, is drawn as the curve of its inverse, the conic of its points;
-- a line, whole across the window: the line at unit weight paired with the point is the distance across it;
+- a quadric, a map `Plane <- Point`, drawn about the radius it is drawn at: the distance between that radius, a plane
+  paired with the point and held above a floor, and the square root of `quadric(p) & p` less an offset, eased over three
+  quarters of a pixel; only on the positive side of any of its clip planes;
+- a region, where `quadric(p) & p` is negative: its value over its polar's slope, `quadric(p)`, is the distance to its
+  edge;
+- a curve, where `quadric(p) & p` vanishes, stroked about that distance; an envelope, a map from planes to the points
+  they touch, is drawn as the curve of its inverse, the quadric of its points;
+- a flat, a plane or a line, whole across the window: the flat at unit weight paired with the point is the distance
+  across it;
 - a polygon, where its edges wind about the point: each triangle of the fan from its first corner counts with its
   sign, on the inner side of each edge's line, the line at unit weight paired with the point its distance;
 - a stroke along the segments of a polyline: each segment's line at unit weight paired with the point is the distance
-  across it, and the line square to it through its start paired with the point the distance along it, on dashes of a
+  across it, and the plane square to it through its start paired with the point the distance along it, on dashes of a
   pattern along the polyline, each dash ended by its cap and its segments joined round;
 - a mark about a point: a disc, by the join of the two points, whose norm is their distance; a square or a diamond, by
-  the pairings of two square lines through it.
+  the pairings of two square planes through it.
 
 Across an edge, a primitive covers the share of the pixel's width on its side. The primitives are composited in the
-order given, each in its colour, by its opacity times its share of the pixel. Points and lines of either orientation
-are drawn alike.
+order given, each in its colour, by its opacity times its share of the pixel. Points of either orientation are drawn
+alike, and so are planes and the lines of PGA2D, which share their grade.
 """
 
 from __future__ import annotations
@@ -39,17 +41,17 @@ from examples.util.wgsl import Shader
 from examples.util.wgsl.library import intrinsic_one
 
 mv = NumpyContext(ga).multivector
-Point = ga.gatype.antivector()
-Plane = ga.gatype.vector()
-Quadric = ga.gatype((Plane, Point))                                          # Plane <- Point
-Envelope = ga.gatype((Point, Plane))                                         # Point <- Plane
-origin = mv.w.dual()                                                         # [] Point
-# The whole plane, as a clip line: the line at infinity pairs every point of unit weight to one.
-everywhere = mv.w                                                            # [] Plane
-# A conic that covers no point of unit weight.
-nothing = (mv.w * (mv.w & Point)).cast(Quadric)                              # [] Plane <- Point
+Point = ga.gatype.antivector()                                               # Antivector-
+Plane = ga.gatype.vector()                                                   # Vector+
+Quadric = ga.gatype((Plane, Point))                                          # Plane+ <- Point-
+Envelope = ga.gatype((Point, Plane))                                         # Point- <- Plane+
+origin = mv.w.dual()                                                         # [] Point-
+# Everywhere, as a clip plane: the plane at infinity pairs every point of unit weight to one.
+everywhere = mv.w                                                            # [] Plane+
+# A quadric that covers no point of unit weight.
+nothing = (mv.w * (mv.w & Point)).cast(Quadric)                              # [] Plane+ <- Point-
 # The intrinsic scalar one: a product with it keeps every coefficient and flips only the orientation.
-flip = intrinsic_one(mv)                                                     # [] Scalar
+flip = intrinsic_one(mv)                                                     # [] Scalar-
 # A solid stroke: one dash, no gap.
 SOLID = (1.0, 0.0)
 
@@ -71,23 +73,23 @@ class Marker(IntEnum):
 
 class Kind(IntEnum):
     """What a primitive is, as the shader reads it."""
-    CONIC = 0
+    QUADRIC = 0
     REGION = 1
     CURVE = 2
-    LINE = 3
+    FLAT = 3
     POLYGON = 4
     STROKE = 5
     MARK = 6
 
 
 source = """
-// A primitive, composited in order, of its kind, and where its parts lie: `first` among the conics for a conic, a
-// region or a curve, among the planes for a line, among the points for a mark, and its points from `first` up to `end`
-// for a polygon or a stroke. A conic, drawn about the radius `planes[plane_first]` and above its floor, less its
-// offset, on the positive side of any of the clip lines after it up to `planes[plane_end]`; a curve or a line, `width`
-// across; a stroke, its width, the lengths of its dashes and of the gaps between them, in the plane's units, and its
-// cap, its `shape`; a mark, its marker, its `shape`, covering from `inner` to `outer` from its point. Its colour, and
-// how much of what lies under it it hides.
+// A primitive, composited in order, of its kind, and where its parts lie: `first` among the quadrics for a quadric, a
+// region or a curve, among the planes for a flat, among the points for a mark, and its points from `first` up to
+// `end` for a polygon or a stroke. A quadric, drawn about the radius `planes[plane_first]` and above its floor, less its
+// offset, on the positive side of any of the clip planes after it up to `planes[plane_end]`; a curve or a flat,
+// `width` across; a stroke, its width, the lengths of its dashes and of the gaps between them, in units of length,
+// and its cap, its `shape`; a mark, its marker, its `shape`, covering from `inner` to `outer` from its point. Its
+// colour, and how much of what lies under it it hides.
 struct Primitive {
     kind: u32,
     first: u32,
@@ -107,12 +109,12 @@ struct Primitive {
 }
 
 var<storage, read> primitives: array<Primitive>;
-var<storage, read> conics: array<Quadric>;
+var<storage, read> quadrics: array<Quadric>;
 var<storage, read> planes: array<Plane>;
 var<storage, read> points: array<Point>;
 // How far along its polyline each point of a stroke lies.
 var<storage, read> phases: array<f32>;
-// The window's top left corner, a pixel's width in the plane, and what lies under every primitive at each pixel.
+// The window's top left corner, a pixel's width, and what lies under every primitive at each pixel.
 var<uniform> corner: Point;
 var<uniform> pixel: f32;
 var<storage, read> background: array<vec3<f32>>;
@@ -130,31 +132,31 @@ fn inner(distance: f32) -> f32 {
     return clamp(0.5 + distance / pixel, 0.0, 1.0);
 }
 
-fn conic_share(primitive: Primitive, point: Point) -> f32 {
+fn quadric_share(primitive: Primitive, point: Point) -> f32 {
     var shown = false;
     for (var index = primitive.plane_first + 1; index < primitive.plane_end; index++) {
         shown = shown || (planes[index] & point) > 0;
     }
-    let value = max((conics[primitive.first](point) & point) - primitive.offset, 0.0);
+    let value = max((quadrics[primitive.first](point) & point) - primitive.offset, 0.0);
     let distance = max(planes[primitive.plane_first] & point, primitive.floor) - sqrt(value);
     return select(0.0, 1 / (1 + exp(clamp(-distance / (0.75 * pixel), -30.0, 30.0))), shown);
 }
 
 // Inside a region by its value over twice the slope of its polar: the distance to its edge, to first order.
 fn region_share(index: u32, point: Point) -> f32 {
-    let polar = conics[index](point);
+    let polar = quadrics[index](point);
     return inner(-(polar & point) / (2 * polar.norm()));
 }
 
 // Within half the width of a curve by the same distance; nowhere where the polar has no slope.
 fn curve_share(primitive: Primitive, point: Point) -> f32 {
-    let polar = conics[primitive.first](point);
+    let polar = quadrics[primitive.first](point);
     let slope = 2 * polar.norm();
     let distance = (polar & point) / slope;
     return select(overlap(-primitive.width / 2, primitive.width / 2, distance), 0.0, slope == 0);
 }
 
-fn line_share(primitive: Primitive, point: Point) -> f32 {
+fn flat_share(primitive: Primitive, point: Point) -> f32 {
     return overlap(-primitive.width / 2, primitive.width / 2, planes[primitive.first].normalized() & point);
 }
 
@@ -180,7 +182,7 @@ fn polygon_share(primitive: Primitive, point: Point) -> f32 {
 }
 
 // The share of a pixel's width that lies along the longest edge of a triangle of points at unit weight, between its
-// two ends: the line square to the edge through its first end, pointing to its other end, paired with the point.
+// two ends: the plane square to the edge through its first end, pointing to its other end, paired with the point.
 fn spanned(a: Point, b: Point, c: Point, point: Point) -> f32 {
     let ab = (a & b).norm();
     let bc = (b & c).norm();
@@ -233,7 +235,7 @@ fn stroke_share(primitive: Primitive, point: Point) -> f32 {
         if ((start & end).norm() == 0) {
             continue;
         }
-        // Across the segment: its line at unit weight paired with the point; along it: the line square to it through
+        // Across the segment: its line at unit weight paired with the point; along it: the plane square to it through
         // its start, pointing to its end. Along the polyline, from its start.
         let line = (start & end).normalized();
         let square = -(line | start);
@@ -266,7 +268,7 @@ fn stroke_share(primitive: Primitive, point: Point) -> f32 {
 }
 
 // About a disc's point by its distance, the norm of their join; about a square's or a diamond's by the pairings of the
-// lines x = 0 and y = 0 with the two, their offsets across the window's columns and rows, turned an eighth of a turn
+// planes x = 0 and y = 0 with the two, their offsets across the window's columns and rows, turned an eighth of a turn
 // for a diamond.
 fn mark_share(primitive: Primitive, point: Point) -> f32 {
     let centre = points[primitive.first];
@@ -295,14 +297,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var index = 0u; index < arrayLength(&primitives); index++) {
         let primitive = primitives[index];
         var share = 0.0;
-        if (primitive.kind == kind_conic) {
-            share = conic_share(primitive, point);
+        if (primitive.kind == kind_quadric) {
+            share = quadric_share(primitive, point);
         } else if (primitive.kind == kind_region) {
             share = region_share(primitive.first, point);
         } else if (primitive.kind == kind_curve) {
             share = curve_share(primitive, point);
-        } else if (primitive.kind == kind_line) {
-            share = line_share(primitive, point);
+        } else if (primitive.kind == kind_flat) {
+            share = flat_share(primitive, point);
         } else if (primitive.kind == kind_polygon) {
             share = polygon_share(primitive, point);
         } else if (primitive.kind == kind_stroke) {
@@ -319,14 +321,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 @cache
 def shader() -> Shader:
-    # Each kind, cap and marker as a constant of the shader, `kind_conic`, `cap_round`.
+    # Each kind, cap and marker as a constant of the shader, `kind_quadric`, `cap_round`.
     constants = {f"{kind.__name__.lower()}_{member.name.lower()}": member.value
                  for kind in (Kind, Cap, Marker) for member in kind}
     return Shader(source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric), constants)
 
 
 class Window(NamedTuple):
-    """A rectangle of the plane: its top left corner, a pixel's width, and its rows and columns of square pixels."""
+    """A rectangle of space: its top left corner, a pixel's width, and its rows and columns of square pixels."""
     left: float
     top: float
     pixel: float
@@ -359,9 +361,9 @@ def oriented(value: Extensor, kind: GAType) -> Extensor:
     return (value if value.gatype.orientation is kind.orientation else value * flip).cast(kind)
 
 
-def point_conics(maps: Extensor) -> Quadric:
-    """Maps between points and lines of either orientation as maps `Plane <- Point`: each side through the intrinsic
-    scalar one where its orientation differs."""
+def point_quadrics(maps: Extensor) -> Quadric:
+    """Maps between points and planes, or lines, of either orientation as maps `Plane <- Point`: each side through
+    the intrinsic scalar one where its orientation differs."""
     if maps.gatype.input_orientations[0] is not Point.orientation:
         maps = maps(Point * flip)
     return oriented(maps, Quadric)
@@ -373,10 +375,10 @@ def unit(points: Extensor) -> Point:
 
 
 class Parts:
-    """The conics, planes, points and the points' phases that primitives draw from, gathered as layers add them."""
+    """The quadrics, planes, points and the points' phases that primitives draw from, gathered as layers add them."""
 
     def __init__(self) -> None:
-        self.conics, self.planes, self.points, self.phases = [], [], [], []
+        self.quadrics, self.planes, self.points, self.phases = [], [], [], []
 
     @staticmethod
     def add(held: list, values) -> int:
@@ -400,12 +402,12 @@ def fields(kind: Kind, first: np.ndarray, colour: np.ndarray, opacity: float, **
                 **{name: np.broadcast_to(value, size) for name, value in rest.items()})
 
 
-class Conics(NamedTuple):
-    """Conics `[n]` drawn about a radius: covering a pixel by its centre's distance inside the radius, a line `[n]`
-    paired with the point, at least the floor `[n]`, beyond the square root of `conic(p) & p` less the offset `[n]`,
-    eased over three quarters of a pixel; and only on the positive side of any of the clip lines `[n, clips]`,
+class Quadrics(NamedTuple):
+    """Quadrics `[n]` drawn about a radius: covering a pixel by its centre's distance inside the radius, a plane `[n]`
+    paired with the point, at least the floor `[n]`, beyond the square root of `quadric(p) & p` less the offset `[n]`,
+    eased over three quarters of a pixel; and only on the positive side of any of the clip planes `[n, clips]`,
     `everywhere` for no clip. One colour `[3]` or one each `[n, 3]`, and the opacity of all."""
-    conics: Quadric
+    quadrics: Quadric
     offsets: np.ndarray
     radii: Plane
     floors: np.ndarray
@@ -414,46 +416,46 @@ class Conics(NamedTuple):
     opacity: float
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
-        # Each conic's radius, then its clip lines.
-        size, n_clips = self.conics.shape[0], self.clips.shape[-1]
-        radii = oriented(self.radii, Plane).broadcast_to(self.conics.shape)[:, None]
-        clips = oriented(self.clips, Plane).broadcast_to(self.conics.shape + (n_clips,))
+        # Each quadric's radius, then its clip planes.
+        size, n_clips = self.quadrics.shape[0], self.clips.shape[-1]
+        radii = oriented(self.radii, Plane).broadcast_to(self.quadrics.shape)[:, None]
+        clips = oriented(self.clips, Plane).broadcast_to(self.quadrics.shape + (n_clips,))
         plane_first = parts.add(parts.planes, concatenate([radii, clips], axis=1).reshape(size * (n_clips + 1)))
         plane_firsts = plane_first + (n_clips + 1) * np.arange(size)
-        first = parts.add(parts.conics, point_conics(self.conics)) + np.arange(size)
-        return fields(Kind.CONIC, first, self.colour, self.opacity, plane_first=plane_firsts,
+        first = parts.add(parts.quadrics, point_quadrics(self.quadrics)) + np.arange(size)
+        return fields(Kind.QUADRIC, first, self.colour, self.opacity, plane_first=plane_firsts,
                       plane_end=plane_firsts + n_clips + 1, offset=self.offsets, floor=self.floors)
 
 
 class Regions(NamedTuple):
-    """The regions where conics `[n]` are negative; one colour `[3]` or one each `[n, 3]`, and the opacity of all."""
-    conics: Quadric
+    """The regions where quadrics `[n]` are negative; one colour `[3]` or one each `[n, 3]`, and the opacity of all."""
+    quadrics: Quadric
     colour: np.ndarray
     opacity: float
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
-        first = parts.add(parts.conics, point_conics(self.conics)) + np.arange(self.conics.shape[0])
+        first = parts.add(parts.quadrics, point_quadrics(self.quadrics)) + np.arange(self.quadrics.shape[0])
         return fields(Kind.REGION, first, self.colour, self.opacity)
 
 
 class Curves(NamedTuple):
-    """The curves where conics `[n]`, maps from points to lines, vanish, stroked `width` pixels across; one colour
+    """The curves where quadrics `[n]`, maps from points to planes, vanish, stroked `width` pixels across; one colour
     `[3]` or one each `[n, 3]`, and the opacity of all."""
-    conics: Quadric
+    quadrics: Quadric
     width: float
     colour: np.ndarray
     opacity: float
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
-        # Each conic at its largest coefficient one, which draws the same curve.
-        conics = point_conics(self.conics)
-        first = parts.add(parts.conics, conics / np.abs(conics.kernel).max(axis=(-1, -2))) + np.arange(conics.shape[0])
+        # Each quadric at its largest coefficient one, which draws the same curve.
+        quadrics = point_quadrics(self.quadrics)
+        first = parts.add(parts.quadrics, quadrics / np.abs(quadrics.kernel).max(axis=(-1, -2))) + np.arange(quadrics.shape[0])
         return fields(Kind.CURVE, first, self.colour, self.opacity, width=self.width * pixel)
 
 
 class Envelopes(NamedTuple):
-    """The curves that envelopes `[n]`, maps from lines to points, touch, stroked `width` pixels across: the curves of
-    their inverses, the conics of their points. One colour `[3]` or one each `[n, 3]`, and the opacity of all."""
+    """The curves that envelopes `[n]`, maps from planes to points, touch, stroked `width` pixels across: the curves of
+    their inverses, the quadrics of their points. One colour `[3]` or one each `[n, 3]`, and the opacity of all."""
     envelopes: Envelope
     width: float
     colour: np.ndarray
@@ -463,17 +465,17 @@ class Envelopes(NamedTuple):
         return Curves(self.envelopes.inverse(), self.width, self.colour, self.opacity).primitives(parts, pixel)
 
 
-class Lines(NamedTuple):
-    """Lines `[n]`, whole across the window, stroked `width` pixels across; one colour `[3]` or one each `[n, 3]`, and
-    the opacity of all."""
-    lines: Plane
+class Flats(NamedTuple):
+    """Flats `[n]`, planes or lines, whole across the window, stroked `width` pixels across; one colour `[3]` or one
+    each `[n, 3]`, and the opacity of all."""
+    flats: Plane
     width: float
     colour: np.ndarray
     opacity: float
 
     def primitives(self, parts: Parts, pixel: float) -> dict:
-        first = parts.add(parts.planes, oriented(self.lines, Plane)) + np.arange(self.lines.shape[0])
-        return fields(Kind.LINE, first, self.colour, self.opacity, width=self.width * pixel)
+        first = parts.add(parts.planes, oriented(self.flats, Plane)) + np.arange(self.flats.shape[0])
+        return fields(Kind.FLAT, first, self.colour, self.opacity, width=self.width * pixel)
 
 
 class Polygons(NamedTuple):
@@ -531,7 +533,7 @@ class Marks(NamedTuple):
 
 
 def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
-    """The layers, `Conics`, `Regions`, `Curves`, `Envelopes`, `Lines`, `Polygons`, `Strokes` and `Marks`, composited
+    """The layers, `Quadrics`, `Regions`, `Curves`, `Envelopes`, `Flats`, `Polygons`, `Strokes` and `Marks`, composited
     in order over the background, a colour `[3]` or a picture of the window `[rows, columns, 3]`, each primitive of a
     layer after the one before: the window's RGB bytes `[rows, columns, 3]`."""
     parts = Parts()
@@ -542,7 +544,7 @@ def draw(window: Window, layers: list, background: np.ndarray) -> np.ndarray:
     primitives = {name: np.concatenate([layer.get(name, np.zeros(len(layer["first"]), dtype=int)) for layer in found])
                   for name in names}
     # A storage array binds at least one element: an empty one holds a filler that no primitive reads.
-    fillers = dict(conics=nothing, planes=everywhere, points=origin)
+    fillers = dict(quadrics=nothing, planes=everywhere, points=origin)
     arrays = {name: concatenate(getattr(parts, name)) if getattr(parts, name) else fillers[name].broadcast_to((1,))
               for name in fillers}
     image = shader()(window.shape, **arrays, phases=np.concatenate(parts.phases or [np.zeros(1)]),

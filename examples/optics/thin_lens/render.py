@@ -1,7 +1,7 @@
 """Ray diagrams of the thin-lens example: drawing only.
 
-Coordinates leave the algebra here: a point is read by its pairings with the lines x = 0 and y = 0 over its
-weight, and a ray's direction of travel by where it meets the line at infinity.
+Coordinates leave the algebra here: a point is read by its pairings with the planes x = 0 and y = 0 over its
+weight, and a ray's direction of travel by where it meets the plane at infinity.
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ dot_area = 12
 
 # --- plumbing -------------------------------------------------------------------------
 def xy(points: Point) -> np.ndarray:
-    """(..., 2) Euclidean coordinates of finite points: their pairings with the lines x = 0 and y = 0,
+    """(..., 2) Euclidean coordinates of finite points: their pairings with the planes x = 0 and y = 0,
     over their weights."""
     mv = points.context.multivector
     return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
 def travel(rays: Line, handedness: np.ndarray) -> np.ndarray:
-    """Unit direction of travel along each ray: where it meets the line at infinity, times the handedness."""
+    """Unit direction of travel along each ray: where it meets the plane at infinity, times the handedness."""
     mv = rays.context.multivector
     direction = (stack((mv.x, mv.y)) & (rays ^ mv.w)[..., None]).to_array()
     return handedness[:, None] * direction / np.linalg.norm(direction, axis=-1, keepdims=True)
@@ -51,18 +51,18 @@ def segments(ax, start: np.ndarray, stop: np.ndarray, color: str) -> list[Line2D
 
 
 def draw_rays(ax, rays: Line, start: Line, stop: Line, color: str) -> None:
-    """Draw ray segments between two planes (vertical lines)."""
+    """Draw ray segments between two planes."""
     segments(ax, xy(rays ^ start), xy(rays ^ stop), color)
 
 
 def plane_ends(planes: Plane, half_height: float) -> tuple[np.ndarray, np.ndarray]:
-    """Where elements' planes `[...]` meet the lines y == half_height and y == -half_height, `[..., 2]` each."""
+    """Where elements' planes `[...]` meet the planes y == half_height and y == -half_height, `[..., 2]` each."""
     mv = planes.context.multivector
     return xy(planes ^ (mv.y + mv.w * half_height)), xy(planes ^ (mv.y - mv.w * half_height))
 
 
 def draw_plane(ax, plane: Plane, half_height: float) -> Line2D:
-    """Draw an element's plane between the lines y == -half_height and y == half_height."""
+    """Draw an element's plane between the planes y == -half_height and y == half_height."""
     a, b = plane_ends(plane, half_height)
     return ax.plot([a[0], b[0]], [a[1], b[1]], color="gray", linewidth=plane_width)[0]
 
@@ -114,7 +114,7 @@ def bundle_legs(subject: Point, planes: Plane, legs: Line, train: LineMap) -> li
 def draw_scene(ax, subject: Point, planes: Plane, legs: Line, train: LineMap,
                picture: Crossing) -> tuple[list[list[Line2D]], list[Line2D], list[PathCollection]]:
     """Draw the bundle leg by leg, each element's plane after the leg that reaches it, and the subject and its image;
-    the lines of each leg, the planes' lines and the two points are returned for `place_scene` to move."""
+    the segments of each leg and of the planes, and the two points, are returned for `place_scene` to move."""
     count = planes.shape[0]
     rays, elements = [], []
     for stage, (start, stop) in enumerate(bundle_legs(subject, planes, legs, train)):

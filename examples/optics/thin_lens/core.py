@@ -27,7 +27,7 @@ Line = ga.gatype.antibivector()                                                 
 Plane = ga.gatype.vector()                                                      # Vector+
 Point = ga.gatype.antivector()                                                  # Antivector-
 # Where two lines cross: a meet, oriented by what crosses it.
-Crossing = Point.derive.flipped_orientation                                     # Bivector+
+Crossing = ga.gatype.bivector()                                                 # Bivector+
 LineMap = ga.gatype((Line, Line))
 Motor = ga.gatype.rotor()                                                       # Rotor+
 

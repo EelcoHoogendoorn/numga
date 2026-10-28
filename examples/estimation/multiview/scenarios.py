@@ -49,16 +49,16 @@ def rig(offsets: np.ndarray, turns: np.ndarray) -> Motor:
 
 
 def observe(poses: Motor) -> tuple[Point, Camera, Quadric]:
-    """The landmarks, the pinhole cameras at `poses`, and the sight cones pulled back from their pixel discs."""
+    """The landmarks, the pinhole cameras at `poses`, and the sight cones pulled back from their pixel balls."""
     landmarks = mv.point(LANDMARKS)                                             # [landmarks] Point-
-    # The pinhole at the origin and the sensor, the line one unit in front of it.
+    # The pinhole at the origin and the sensor, the plane one unit in front of it.
     pinhole = mv.point([0, 0])                                                  # [] Point-
     sensor = mv.y - mv.w                                                        # [] Plane+
     cameras = ((pinhole & Point) ^ sensor).broadcast_to(poses.shape)            # [cameras] Point- <- Point-
     images = cameras(poses << landmarks[:, None])                               # [landmarks, cameras] Point-
     pixels = images / (core.w & images)                                         # [landmarks, cameras] Point-
-    discs = core.sensor_disc(pixels)                                            # [landmarks, cameras] Plane+ <- Point-
-    return landmarks, cameras, cameras.adjugate()(discs(cameras))
+    balls = core.sensor_ball(pixels)                                            # [landmarks, cameras] Plane+ <- Point-
+    return landmarks, cameras, cameras.adjugate()(balls(cameras))
 
 
 def alignment(poses: Motor, guess: Motor, damping: float, free_cameras: np.ndarray) -> Iterator[tuple[Motor, Quadric, Quadric, Point]]:

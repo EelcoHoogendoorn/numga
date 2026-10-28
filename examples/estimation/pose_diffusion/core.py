@@ -18,11 +18,13 @@ Scalar = ga.gatype.scalar()                         # Scalar+
 Point = ga.gatype.antivector()                      # Antivector-
 # A line measures a twist through the regressive product, so it is an antibivector.
 Line = ga.gatype.antibivector()                     # Antibivector-
+# A plane measures a displacement of a point the same way, so it is a vector.
+Plane = ga.gatype.vector()                          # Vector+
 Twist = ga.gatype.bivector()                        # Bivector+
 Motor = ga.gatype.rotor()                           # Rotor+
 Covariance = ga.gatype((Twist, Line))
 Dynamics = ga.gatype((Twist, Twist))
-Spread = ga.gatype((Scalar, Line, Line))
+Spread = ga.gatype((Scalar, Plane, Plane))
 Gusts = ga.gatype((Twist, Line))
 # The commanded set point at the origin.
 origin = mv.w.dual()                                # [] Point-
@@ -45,8 +47,8 @@ def settled(dynamics: Dynamics, noise: Covariance) -> Covariance:
 
 
 def position_spread(covariance: Covariance) -> Spread:
-    """The symmetric covariance form on lines measuring displacements of the set point, pulled back from the twist covariance."""
-    # An error moves the set point by their commutator; its adjugate pulls a displacement-measuring line back to a twist measurement.
+    """The symmetric covariance form on planes measuring displacements of the set point, pulled back from the twist covariance."""
+    # An error moves the set point by their commutator; its adjugate pulls a displacement-measuring plane back to a twist measurement.
     shift = Twist.commutator(origin)                                                # [] Point- <- Twist+
-    readout = shift.adjugate()                                                      # [] Line- <- Line+
-    return readout & covariance(readout)                                            # [...] Scalar+ <- (Line+, Line+)
+    readout = shift.adjugate()                                                      # [] Line- <- Plane+
+    return readout & covariance(readout)                                            # [...] Scalar+ <- (Plane+, Plane+)

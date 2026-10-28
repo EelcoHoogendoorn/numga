@@ -28,7 +28,8 @@ REACH = 2.0
 # Half the width of the view, which follows the middle of the rear axle.
 VIEW = 3.0
 BACKGROUND = np.ones(3)
-# The plane: the width in points of the axles' lines, and the lengths of their dashes and gaps in line widths.
+# The plane view: the width in points of the axles, drawn dashed, and the lengths of their dashes and gaps in stroke
+# widths.
 AXLE_WIDTH, AXLE_DASHES = 0.9, (4.0, 3.0)
 # Space: the view's elevation and azimuth in radians, azimuth zero looking along +y, the margin around the square
 # of ground it follows as a share of the larger side, and the pixels across it; the length of a dash along an axle
@@ -59,7 +60,7 @@ def axle_ends(contacts: np.ndarray, forward: np.ndarray, centre: np.ndarray) -> 
 
 
 def axles(wheels: np.ndarray, ends: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Where the axles' lines run from and to `[axles, 2]` each: the rear wheels share one axle, drawn once from the
+    """Where the axles are drawn from and to `[axles, 2]` each: the rear wheels share one axle, drawn once from the
     rear wheel nearer its far end, and the front wheel has its own."""
     nearer = np.argmin(np.linalg.norm(ends[:2] - wheels[:2], axis=-1))
     return wheels[[nearer, 2]], ends[[nearer, 2]]

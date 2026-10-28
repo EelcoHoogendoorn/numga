@@ -26,11 +26,11 @@ POINT = 100 / 72
 
 # --- plumbing -------------------------------------------------------------------------
 def coordinates(points: Point) -> np.ndarray:
-    """Read out the x and y coordinates of each point from its pairings with the coordinate lines."""
+    """Read out the x and y coordinates of each point from its pairings with the coordinate planes."""
     return (stack((mv.x, mv.y)) & points.normalized()[..., None]).to_array()
 
 
-def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Point, ellipses,
+def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Point, ellipsoids,
                      readings: Motor) -> Iterator[np.ndarray]:
     """Yield one frame per state of the drive with the trails of the true, dead-reckoned, and filtered paths, the pose readings, the implicit position quadric, and the three vehicles."""
     origin = mv.w.dual()
@@ -60,8 +60,8 @@ def animate_tracking(truth: Motor, dead: Motor, estimates: Motor, positions: Poi
     vehicles = {colour: ax.fill(*shape[0].T, color=colour, alpha=0.9, linewidth=0)[0]
                 for colour, shape in shapes.items()}
     for step in range(len(true_xy)):
-        layers = [Regions(ellipses[step:step + 1], FILTER_RGB, 0.18),
-                  Curves(ellipses[step:step + 1], 1.0 * POINT, FILTER_RGB, 1.0)]
+        layers = [Regions(ellipsoids[step:step + 1], FILTER_RGB, 0.18),
+                  Curves(ellipsoids[step:step + 1], 1.0 * POINT, FILTER_RGB, 1.0)]
         image.set_data(planar.draw(view, layers, np.ones(3)))
         true_trail.set_data(*true_xy[:step + 1].T)
         dead_trail.set_data(*dead_xy[:step + 1].T)

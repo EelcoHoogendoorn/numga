@@ -37,7 +37,7 @@ Inertia = PGA2D.gatype((Forque, Twist))
 
 @dataclass(frozen=True)
 class Suspension:
-    """Geometry and masses prepared for one planar suspension."""
+    """Geometry and masses prepared for one suspension."""
 
     body: Point                     # [corners] Point-
     attachments: Point              # [springs] Point-

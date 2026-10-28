@@ -11,7 +11,7 @@ from numga import stack
 from numga.algebras import PGA2D as ga
 from examples.util.animation import capture
 
-Point = ga.gatype.antivector()
+Point = ga.gatype.antivector()  # Antivector-
 
 
 COLOURS = ("#2563eb", "#0d9488", "#d97706", "#9333ea")
@@ -25,9 +25,9 @@ BEAM_ROOM, BEAM_END_ROOM = 1.2, 0.005
 
 
 def coordinates(points: Point) -> np.ndarray:
-    """Coordinates of points of unit weight, `[..., 2]`: their pairings with the lines x = 0 and y = 0."""
-    lines = points.context.multivector
-    return (stack((lines.x, lines.y)) & points.batch()[..., None]).to_array()
+    """Coordinates of points of unit weight, `[..., 2]`: their pairings with the planes x = 0 and y = 0."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y)) & points.batch()[..., None]).to_array()
 
 
 def mode_shapes(rest: Point, deformed: Point, edges: np.ndarray) -> plt.Figure:

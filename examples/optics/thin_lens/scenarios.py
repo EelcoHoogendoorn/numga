@@ -41,7 +41,7 @@ def lenses() -> tuple[Line, Crossing, Line, Crossing, Plane]:
     The result is each system's bundle before and after each lens [legs, rays], with the image and the
     focus, and the planes of the two lenses.
     """
-    # Each lens is a plane (a vertical line) and a focal length; nothing else is stored.
+    # Each lens is a plane and a focal length; nothing else is stored.
     first_plane, second_plane = mv.x - mv.w * first_station, mv.x - mv.w * second_station   # [] Plane+, Plane+
     first_lens = thin_lens(first_plane, first_focal)                            # [] Line- <- Line-
     second_lens = thin_lens(second_plane, second_focal)                         # [] Line- <- Line-
@@ -54,7 +54,7 @@ def lenses() -> tuple[Line, Crossing, Line, Crossing, Plane]:
     pupil = (first_plane ^ axis) + mv.direction([0, 1]) * np.linspace(-pupil_height, pupil_height, n_rays)   # [rays] Point-
     rays = subject & pupil                                                      # [rays] Line-
     refracted = first_lens(rays)                                                # [rays] Line-
-    image = refracted[0] ^ refracted[1]                                         # [] Point+
+    image = refracted[0] ^ refracted[1]                                         # [] Crossing+
 
     # 2. Two lenses. The system is a composition of maps. Parallel rays are joins with the ideal point
     #    along x; where they meet after the system is the back focal point.
@@ -62,7 +62,7 @@ def lenses() -> tuple[Line, Crossing, Line, Crossing, Plane]:
     parallel = mv.direction([1, 0]) & pupil                                    # [rays] Line-
     between_lenses = first_lens(parallel)                                       # [rays] Line-
     focused = system(parallel)                                                  # [rays] Line-
-    focus = focused[0] ^ focused[1]                                             # [] Point+
+    focus = focused[0] ^ focused[1]                                             # [] Crossing+
 
     imaging = stack([rays, refracted])                                          # [legs, rays] Line-
     focusing = stack([parallel, between_lenses, focused])                       # [legs, rays] Line-
@@ -104,7 +104,7 @@ def main() -> None:
 
     # checks
     # Every refracted ray passes through the image. A point's incidence with the lens plane over its
-    # incidence with the line at infinity, its weight, is its signed distance, which gives the thin lens
+    # incidence with the plane at infinity, its weight, is its signed distance, which gives the thin lens
     # equation and, for two lenses, Gullstrand's back focal distance. Through the train every output ray
     # passes through the image, wherever the elements stand.
     first_plane, second_plane = planes[0], planes[1]

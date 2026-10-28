@@ -153,7 +153,11 @@ class Layout:
         """A value's bytes, laid out as the type is in a storage buffer."""
         form, detail = self.shape(kind)
         alignment, size = self.size(kind)
-        if isinstance(value, Extensor):
+        if form == "array":
+            # An array's entries in turn, a batch of the algebra's type value by value along its axis.
+            element = self.resolve(detail[0])
+            data = b"".join(self.pack(element, entry) for entry in value)
+        elif isinstance(value, Extensor):
             data = coefficients(value, detail if form == "algebra" else self.scalar)
         elif form == "struct":
             data = bytearray()
@@ -161,9 +165,6 @@ class Layout:
                 member_alignment, _ = self.size(member_type)
                 data += bytes(-len(data) % member_alignment) + self.pack(member_type, value[member])
             data = bytes(data)
-        elif form == "array":
-            element = self.resolve(detail[0])
-            data = b"".join(self.pack(element, entry) for entry in value)
         else:
             data = np.asarray(value, dtype=self.dtype(detail)).tobytes()
         return data + bytes(size - len(data)) if size > len(data) else data

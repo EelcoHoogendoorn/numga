@@ -1,6 +1,6 @@
-"""A Kalman filter tracks a vehicle's pose in the plane, and how uncertain it is, from dead-reckoned motion commands and sparse noisy pose readings.
+"""A Kalman filter tracks a vehicle's pose in space, and how uncertain it is, from dead-reckoned motion commands and sparse noisy pose readings.
 
-The pose is a motor, and an error in it is a small twist on its right. The uncertainty is a covariance of those twists, typed as a map from a line, a linear readout of a twist through their pairing, to the twist correlated with it, `Twist <- Line`. Being a map, it moves through each step of the drive the way any map does, its readout pulled through the step and its twist pushed back, `step << sigma(step >> Line)`, with no Jacobian to derive. The gain at a reading is a ratio of two such maps, and the position ellipse is the covariance read through the map from twists to the motion of the vehicle's centre.
+The pose is a motor, and an error in it is a small twist on its right. The uncertainty is a covariance of those twists, typed as a map from a line, a linear readout of a twist through their pairing, to the twist correlated with it, `Twist <- Line`. Being a map, it moves through each step of the drive the way any map does, its readout pulled through the step and its twist pushed back, `step << sigma(step >> Line)`, with no Jacobian to derive. The gain at a reading is a ratio of two such maps, and the position ellipsoid is the covariance read through the map from twists to the motion of the vehicle's centre.
 
 In the matrix notation of the extended Kalman filter on $\\mathrm{SE}(2)$ the covariance reads as a $3 \\times 3$ matrix $P$, propagated as $F P F^{\\mathsf T} + Q$ with the adjoint matrix $F$ of each step and updated with the Kalman gain $K = P (P + R)^{-1}$.
 """
@@ -36,8 +36,8 @@ def update(estimate: Motor, sigma: Covariance, reading: Motor, measurement_noise
     return estimate * correction, sigma - gain(sigma)
 
 
-def position_ellipse(estimate: Motor, sigma: Covariance, positions: Point, sigmas: float) -> Quadric:
-    """The quadric of each estimated position's uncertainty vanishes on its confidence ellipse, `sigmas` standard deviations out."""
+def position_ellipsoid(estimate: Motor, sigma: Covariance, positions: Point, sigmas: float) -> Quadric:
+    """The quadric of each estimated position's uncertainty vanishes on its confidence ellipsoid, `sigmas` standard deviations out."""
     # A twist moves the position by its commutator with it: a map from twists to displacements.
     shift = Twist.commutator(positions)(estimate >> Twist)                      # [states] Point- <- Twist+
     # Its adjugate pulls each plane back to the line that reads the same displacement from the twist.

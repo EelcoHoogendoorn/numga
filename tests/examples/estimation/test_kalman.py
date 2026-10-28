@@ -13,13 +13,13 @@ def test_filter_beats_dead_reckoning_and_animates():
     origin = core.mv.w.dual()
     truth, dead, estimates, covariances, readings = scenarios.tracking()
     positions = estimates >> origin
-    ellipses = core.position_ellipse(estimates, covariances, positions, scenarios.SIGMAS)
+    ellipsoids = core.position_ellipsoid(estimates, covariances, positions, scenarios.SIGMAS)
     true_positions = truth >> origin
     dead_error = (true_positions & (dead >> origin)).norm()
     filtered_error = (true_positions & positions).norm()
     assert filtered_error.mean(axis=0) < 0.25 * dead_error.mean(axis=0)
 
-    frames = list(render.animate_tracking(truth[:3], dead[:3], estimates[:3], positions[:3], ellipses[:3], readings[:3]))
+    frames = list(render.animate_tracking(truth[:3], dead[:3], estimates[:3], positions[:3], ellipsoids[:3], readings[:3]))
     assert len(frames) == 3 and all(frame.shape == frames[0].shape for frame in frames)
 
 

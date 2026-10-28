@@ -18,12 +18,12 @@ WIDTH = 3.0
 
 # --- plumbing -------------------------------------------------------------------------
 def euclidean(points: Point) -> np.ndarray:
-    """Coordinates of points, `[..., 2]`: their pairings with the lines x = 0 and y = 0, over their weights."""
+    """Coordinates of points, `[..., 2]`: their pairings with the planes x = 0 and y = 0, over their weights."""
     return ((stack((mv.x, mv.y)) & points[..., None]) / (mv.w & points)[..., None]).to_array()
 
 
-def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipse: Polarity) -> plt.Figure:
-    """The density over the pixels, the point cloud, and the 1σ ellipse, orange, the zero contour of its form."""
+def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipsoid: Polarity) -> plt.Figure:
+    """The density over the pixels, the point cloud, and the 1σ ellipsoid, orange, the zero contour of its form."""
     (left, bottom), (right, top) = BOX
     fig = plt.figure(figsize=(WIDTH, WIDTH * (top - bottom) / (right - left)), dpi=100)
     ax = fig.add_axes((0, 0, 1, 1))
@@ -36,14 +36,15 @@ def draw_gaussian(points: Point, density: Callable[[Point], Scalar], ellipse: Po
     pinned(ax, np.round(shades[..., :3] * 255).astype(np.uint8), (left, right, bottom, top))
     sample_xy = euclidean(points)
     ax.scatter(sample_xy[:, 0], sample_xy[:, 1], s=4, c="#26364a", alpha=0.4, linewidths=0)
-    ax.contour(across, down, (ellipse(pixels) & pixels).to_array(), levels=[0], colors=["#e56b24"], linewidths=1.5)
+    ax.contour(across, down, (ellipsoid(pixels) & pixels).to_array(), levels=[0], colors=["#e56b24"], linewidths=1.5)
     ax.set(xlim=(left, right), ylim=(bottom, top))
     cross(ax, "x", "y")
     return fig
 
 
 def cross(ax, across: str, up: str) -> None:
-    """No scales: a faint cross through the origin over the density, its lines named at their ends."""
+    """No scales: a faint cross through the origin over the density, the coordinate planes through it, each named at its
+    end."""
     ax.axhline(0, color="0.8", linewidth=0.7, zorder=1.5)
     ax.axvline(0, color="0.8", linewidth=0.7, zorder=1.5)
     ax.annotate(across, (1, 0), xycoords=("axes fraction", "data"), xytext=(-4, -3), textcoords="offset points",

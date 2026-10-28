@@ -15,7 +15,7 @@ core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
 
 
 def coordinates(points: core.Point) -> np.ndarray:
-    """Coordinates `[..., 2]` of points of unit weight, or of displacements: their pairings with the lines x = 0 and y = 0."""
+    """Coordinates `[..., 2]` of points of unit weight, or of displacements: their pairings with the planes x = 0 and y = 0."""
     return (stack((core.mv.x, core.mv.y)) & points.batch()[..., None]).to_array()
 
 

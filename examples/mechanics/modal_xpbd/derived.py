@@ -28,7 +28,7 @@ Bodies, Constraints, Displacement, Force, Forque, Motor, Scalar, Twist = (
 )
 # A load on a mode is the complement of its amplitude, as a forque is the complement of a twist; a mode
 # of unit mass takes it back to an amplitude.
-Load = Scalar.dual().output_gatype
+Load = Scalar.dual().output_gatype                                          # Antiscalar-
 # A gap is the second anchor's position less the first's.
 SIDES = np.array([-1, 1])
 

@@ -16,9 +16,9 @@ def test_density_peaks_at_the_mean_and_level_matches_the_covariance():
     rng = np.random.default_rng(0)
     xy = rng.normal(size=(500, 2)) * [2.0, 0.5] + [1.0, -1.0]
     queries = np.array([[0.0, 0.0], [2.0, 1.0], [-1.0, -3.0]])
-    precision, ellipse = fit_gaussian(mv.point(xy))
+    precision, ellipsoid = fit_gaussian(mv.point(xy))
     samples = mv.point(np.concatenate([xy.mean(axis=0)[None], queries]))
-    level = ellipse(samples) & samples
+    level = ellipsoid(samples) & samples
     np.testing.assert_allclose(density(precision, samples).to_array()[0], 1.0, atol=1e-12)
     offset = queries - xy.mean(axis=0)
     covariance = np.cov(xy.T, bias=True)
@@ -27,6 +27,6 @@ def test_density_peaks_at_the_mean_and_level_matches_the_covariance():
 
 
 def test_scenario_renders():
-    points, precision, ellipse = scenarios.gaussian()
-    figure = render.draw_gaussian(points, partial(density, precision), ellipse)
+    points, precision, ellipsoid = scenarios.gaussian()
+    figure = render.draw_gaussian(points, partial(density, precision), ellipsoid)
     assert isinstance(figure, plt.Figure)
