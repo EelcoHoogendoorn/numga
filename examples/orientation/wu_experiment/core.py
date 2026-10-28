@@ -13,23 +13,19 @@ the original ones: the law holds an intrinsic constant that no mirror of the app
 
 from __future__ import annotations
 
-from numga import NumpyContext, Orientation
+from numga import NumpyContext
 from numga.algebras import VGA3D
 
 ga = VGA3D
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
+Scalar = ga.gatype.scalar()                                                       # Scalar+
 # Directions are antivectors, intrinsic like all geometry.
-Direction = ga.gatype.antivector()
-Mirror = ga.gatype.vector()
+Direction = ga.gatype.antivector()                                                # Antivector-
+Mirror = ga.gatype.vector()                                                       # Vector+
 # A spin is an angular momentum: the patch its current circulates around, intrinsic.
-Spin = ga.gatype.vector().derive.flipped_orientation
+Spin = ga.gatype.vector().derive.flipped_orientation                              # Vector-
 # A constant of the decay with a sense of its own: measured against a handedness.
-Asymmetry = ga.gatype(ga.subspace.scalar(), orientation=Orientation.intrinsic)
+Asymmetry = Scalar.derive.flipped_orientation                                     # Scalar-
 
 
 # --- math -----------------------------------------------------------------------------
-def emission(spin: Spin, directions: Direction, asymmetry: Asymmetry) -> Scalar:
-    """The rate of electrons leaving along each unit direction, relative to unpolarized nuclei, from
-    nuclei polarized by a unit spin."""
-    return 1 + asymmetry * (spin & directions)                                   # [...] Scalar

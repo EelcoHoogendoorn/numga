@@ -9,26 +9,30 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import hsv_to_rgb
 
+from numga import stack
+
 from examples.math.spin_groups import core
 from examples.util.wgsl import fitted, meshes, show, solids, strokes
 from examples.util.wgsl.scene import Scene
 
 sm = solids.mv
-BACKGROUND = np.ones(3)
+background = np.ones(3)
 # One view for all three families: the elevation and azimuth in radians, azimuth zero looking along +y, the margin
 # around the orbits as a share of the larger side, and the pixels across a panel of a frame.
-ELEVATION, AZIMUTH = np.radians(24.0), np.radians(35.0)
-MARGIN = 0.14
-FRAME_PIXELS = 440
+elevation, azimuth = np.radians(24.0), np.radians(35.0)
+margin = 0.14
+frame_pixels = 300
 # The widths in pixels of the circles and the knots in the still, and of the faint orbits in the animation, and their
-# opacity; the riders' radius in pixels.
-CIRCLE_WIDTH, KNOT_WIDTH, FAINT_WIDTH, FAINT_OPACITY = 2.0, 3.2, 1.6, 0.45
-RIDER_RADIUS = 3.2
+# opacity; the riders' radius in pixels, and the count of riders along each knot.
+circle_width, knot_width, faint_width, faint_opacity = 1.1, 1.8, 1.1, 0.45
+rider_radius = 2.2
+n_riders = 6
 
 
-def components(points: core.Extensor) -> np.ndarray:
-    """The x, y and z components of points in space."""
-    return points.cast(points.algebra.subspace("x y z")).kernel
+def coordinates(points: core.Euclidean) -> np.ndarray:
+    """The x, y and z coordinates of points in space, `[..., 3]`."""
+    mv = points.context.multivector
+    return (stack((mv.x, mv.y, mv.z)) & points[..., None]).to_array()
 
 
 def colours(shape: tuple[int, int]) -> np.ndarray:
@@ -38,9 +42,9 @@ def colours(shape: tuple[int, int]) -> np.ndarray:
     return hsv_to_rgb(np.stack([hue, np.full(shape, 0.75), value], axis=-1))
 
 
-def view(pixels: int, *drawn: np.ndarray) -> solids.View:
+def view(pixels: int, drawn: list[np.ndarray]) -> solids.View:
     """One view for every panel, `pixels` across, framing everything drawn `[..., 3]`."""
-    return solids.view([sm.point(points) for points in drawn], 0.0, ELEVATION, AZIMUTH, MARGIN, pixels)
+    return solids.view([sm.point(points) for points in drawn], 0.0, elevation, azimuth, margin, pixels)
 
 
 def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes.Samples:
@@ -52,40 +56,40 @@ def orbit_samples(orbits: np.ndarray, width: float, view: solids.View) -> meshes
 
 def dots(positions: np.ndarray, rgb: np.ndarray, view: solids.View) -> tuple[solids.Quadric, np.ndarray]:
     """A dot at each position `[n, 3]`, in its colour `[n, 3]`, as an opaque part."""
-    return solids.ball(sm.point(positions), RIDER_RADIUS * view.pixel)[:, None], rgb
+    return solids.ball(sm.point(positions), rider_radius * view.pixel)[:, None], rgb
 
 
-def draw_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor) -> plt.Figure:
+def draw_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euclidean) -> plt.Figure:
     """The orbits of the two isoclinic flows, each a family of circles filling nested tori and linked
     in opposite senses, beside the orbits of a rotation combining them at different rates: trefoil
     knots, one on each torus."""
-    drawn = [components(orbits) for orbits in (left, right, knotted)]
-    figure = plt.figure(figsize=(16, 5.5))
+    drawn = [coordinates(orbits) for orbits in (left, right, knotted)]
+    figure = plt.figure(figsize=(9, 3.1))
     axes = [figure.add_axes((index / len(drawn), 0.0, 1 / len(drawn), 1.0)) for index in range(len(drawn))]
     # The panels' rooms alike, one view fitted to the first holds them all.
-    panel = fitted(view(1, *drawn), axes[0])
-    for ax, orbits, width in zip(axes, drawn, (CIRCLE_WIDTH, CIRCLE_WIDTH, KNOT_WIDTH)):
-        show(ax, solids.draw([], panel, BACKGROUND, inks=[], translucent=[],
+    panel = fitted(view(1, drawn), axes[0])
+    for ax, orbits, width in zip(axes, drawn, (circle_width, circle_width, knot_width)):
+        show(ax, solids.draw([], panel, background, inks=[], translucent=[],
                              meshes=[(orbit_samples(orbits, width, panel), 1.0)]), panel)
     return figure
 
 
-def animate_flows(left: core.Extensor, right: core.Extensor, knotted: core.Extensor,
-                  frames: int) -> Iterator[np.ndarray]:
+def animate_flows(left: core.Euclidean, right: core.Euclidean, knotted: core.Euclidean,
+                  n_frames: int) -> Iterator[np.ndarray]:
     """The points of the three-sphere carried along every flow at once, their orbits drawn faintly;
-    six points ride along each knot. The three panels side by side, seen by one camera."""
-    drawn = [components(orbits) for orbits in (left, right, knotted)]
-    frame = view(FRAME_PIXELS, *drawn)
+    a few points ride along each knot. The three panels side by side, seen by one camera."""
+    drawn = [coordinates(orbits) for orbits in (left, right, knotted)]
+    frame = view(frame_pixels, drawn)
     # Each panel's faint orbits, set up once.
-    panels = [Scene(frame, BACKGROUND, [], [(orbit_samples(orbits, FAINT_WIDTH, frame), FAINT_OPACITY)], inks=[],
+    panels = [Scene(frame, background, [], [(orbit_samples(orbits, faint_width, frame), faint_opacity)], inks=[],
                     translucent=[])
               for orbits in drawn]
     length = drawn[0].shape[2] - 1
-    steps = np.linspace(0, length, frames, endpoint=False).astype(int)
-    riders = np.arange(6) * length // 6
+    steps = np.linspace(0, length, n_frames, endpoint=False).astype(int)
+    riders = np.arange(n_riders) * length // n_riders
     knots = drawn[2]
     for step in steps:
-        # Every start carried along the two flows, and six points along each knot.
+        # Every start carried along the two flows, and the riders along each knot.
         riding = [(orbits[:, :, step].reshape(-1, 3), colours(orbits.shape[:2]).reshape(-1, 3)) for orbits in drawn[:2]]
         riding.append((knots[:, :, (step + riders) % length].reshape(-1, 3),
                        np.repeat(colours(knots.shape[:2]).reshape(-1, 3), len(riders), axis=0)))
