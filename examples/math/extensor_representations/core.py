@@ -10,22 +10,24 @@ def readout(representations: Extensor, state_map: Extensor, Space: GAType) -> Ex
     onto the representations of Space, under the trace pairing.
 
     Each blade's coefficient is the map composed with the representation of that blade's inverse,
-    traced over the state and divided by the number of state components; solving against the
-    scalar product supplies the inverse blades. The representation of an element of Space returns
-    that element, and a smaller Space reads out only its own blades, since blades are orthogonal
-    under the scalar product.
+    traced over the state and divided by the number of state components. The representation of an
+    element of Space returns that element, and a smaller Space reads out only its own blades, since
+    blades are orthogonal under the scalar product.
     """
-    pairing = Space.scalar_product(Space)                 # [] Scalar <- (Space, Space)
-    state_dimension = len(representations.output_subspace)
-    return pairing.solve(representations(Space, state_map).trace(0, 2) / state_dimension)   # [] Space
+    pairing = Space.scalar_product(Space)                                # [] Scalar+ <- (Space+, Space+)
+    n_state_components = len(representations.output_subspace)
+    # Composed with the representations and traced over the state, the map is the scalar product with
+    # the element sought, a form on Space; solving against the scalar product gives the element itself.
+    return pairing.solve(representations(Space, state_map).trace(0, 2) / n_state_components)   # [] Space+
 
 
 # --- plumbing -------------------------------------------------------------------------
 def spinor_layout(algebra: Algebra) -> tuple[GAType, tuple[int, ...]]:
-    """Choose commuting involutions and one blade per coset for a nondegenerate algebra.
+    """The space of states of a nondegenerate algebra, one blade from each coset of the group that
+    its chosen commuting involutions generate, and those involutions.
 
-    Blade masks describe the layout only. Their products and signs come from the
-    algebra; the projector and its action are constructed as extensors in main.
+    Blade masks describe the layout only. Their products and signs come from the algebra; the
+    projector and its action are built from them as extensors.
     """
     involutions = ()
     span = {0}

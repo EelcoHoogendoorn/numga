@@ -34,7 +34,7 @@ def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negati
     ga = representations.algebra
     algebra_axis, state_axis = representations.input_subspaces
     Full, Spinor = representations.gatype.derive.axis(1), representations.gatype.derive.axis(2)
-    state_dimension = len(state_axis)
+    n_state_components = len(state_axis)
     context = NumpyContext(ga)
     basis = context.multivector.full(np.eye(ga.blade_count))
 
@@ -42,7 +42,7 @@ def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negati
     # complete multivector, including both components of a split algebra.
     pairing = Full.scalar_product(Full)
     blade_representations = representations(basis)
-    readouts = representations(Full, blade_representations).trace(0, 2) / state_dimension
+    readouts = representations(Full, blade_representations).trace(0, 2) / n_state_components
     recovered = pairing.solve(readouts)
     np.testing.assert_array_equal((recovered - basis).kernel, 0)
 
@@ -51,12 +51,12 @@ def test_trace_recovers_every_blade_and_projects_arbitrary_maps(positive, negati
     # representation, and projecting a second time changes nothing.
     one = ga.exact.multivector.scalar()
     arbitrary = one * one.scalar_product(Spinor)
-    readout = representations(Full, arbitrary).trace(0, 2) / state_dimension
+    readout = representations(Full, arbitrary).trace(0, 2) / n_state_components
     projected = representations(pairing.solve(readout))
     residual = arbitrary - projected
     orthogonality = representations(Full, residual).trace(0, 2)
     np.testing.assert_array_equal(orthogonality.kernel.values, 0)
 
-    projected_readout = representations(Full, projected).trace(0, 2) / state_dimension
+    projected_readout = representations(Full, projected).trace(0, 2) / n_state_components
     projected_twice = representations(pairing.solve(projected_readout))
     np.testing.assert_array_equal((projected_twice - projected).kernel.values, 0)

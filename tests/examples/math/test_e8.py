@@ -13,7 +13,7 @@ from examples.math.e8 import core, scenarios
 def test_roots_and_four_plane_rotation():
     roots, plane_x, plane_y, planes, rates, coxeter, seeds = scenarios.root_system()
     simple_roots = core.simple_roots()
-    n_steps = core.COXETER_ORDER
+    n_steps = core.coxeter_order
     tolerance = 1e-10
 
     # checks

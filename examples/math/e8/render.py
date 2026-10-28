@@ -7,6 +7,8 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Arc, Circle
 
+from numga.extensor import stack
+
 from examples.util.animation import capture
 from examples.math.e8.core import Vector
 
@@ -23,9 +25,9 @@ COLOURS = np.array([
 ])
 
 
-def coordinates(points: Vector, horizontal: Vector, vertical: Vector) -> np.ndarray:
-    """Project vectors onto the two orthonormal directions of a drawing plane."""
-    return np.stack([(points | horizontal).to_array(), (points | vertical).to_array()], axis=-1)
+def coordinates(vectors: Vector, horizontal: Vector, vertical: Vector) -> np.ndarray:
+    """The coordinates of vectors in a drawing plane, their inner products with its two orthonormal vectors."""
+    return (stack((horizontal, vertical), axis=-1) | vectors[..., None]).to_array()
 
 
 def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figure:
@@ -51,13 +53,13 @@ def draw_roots(roots: Vector, horizontal: Vector, vertical: Vector) -> plt.Figur
     return figure
 
 
-def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector,
+def animate_planes(turning_roots: Iterable[Vector], roots: Vector, horizontal: Vector,
                    vertical: Vector) -> Iterator[np.ndarray]:
     """Eight coloured roots moving in each invariant plane, with trails of equal duration."""
     projected = coordinates(roots[:, None, :], horizontal[None, :, None], vertical[None, :, None])
     positions = np.stack([
-        coordinates(points[None, :], horizontal[:, None], vertical[:, None])
-        for points in turning
+        coordinates(frame_roots[None, :], horizontal[:, None], vertical[:, None])
+        for frame_roots in turning_roots
     ])
     n_frames, n_planes, n_orbits = positions.shape[:3]
     radius = np.linalg.norm(projected, axis=-1).max() * 1.08
@@ -65,21 +67,21 @@ def animate_planes(turning: Iterable[Vector], roots: Vector, horizontal: Vector,
     history = np.arange(1 - n_trail, 1)
     trail_alpha = np.linspace(0.12, 0.85, n_trail - 1)
 
-    figure, axes = plt.subplots(1, n_planes, figsize=(10, 2.6), facecolor=BACKGROUND)
+    figure, axes = plt.subplots(1, n_planes, figsize=(4.4, 1.14), facecolor=BACKGROUND)
     riders, trails = [], []
     for index, ax in enumerate(axes):
         arcs = []
         for orbit, colour in enumerate(COLOURS):
             orbit_radius = np.linalg.norm(projected[0, index, orbit])
-            ax.add_patch(Circle((0, 0), orbit_radius, fill=False, color=colour, alpha=0.26, linewidth=0.65))
+            ax.add_patch(Circle((0, 0), orbit_radius, fill=False, color=colour, alpha=0.26, linewidth=0.29))
             for alpha in trail_alpha:
-                arc = Arc((0, 0), 2 * orbit_radius, 2 * orbit_radius, color=colour, alpha=alpha, linewidth=1.8)
+                arc = Arc((0, 0), 2 * orbit_radius, 2 * orbit_radius, color=colour, alpha=alpha, linewidth=0.79)
                 ax.add_patch(arc)
                 arcs.append(arc)
         trails.append(arcs)
         dots = projected[:, index].reshape((-1, 2))
-        ax.scatter(*dots.T, c=np.tile(COLOURS, (roots.shape[0], 1)), s=3, alpha=0.35, linewidths=0)
-        riders.append(ax.scatter(*positions[0, index].T, c=COLOURS, s=23, edgecolors="white", linewidths=0.45, zorder=4))
+        ax.scatter(*dots.T, c=np.tile(COLOURS, (roots.shape[0], 1)), s=0.58, alpha=0.35, linewidths=0)
+        riders.append(ax.scatter(*positions[0, index].T, c=COLOURS, s=4.5, edgecolors="white", linewidths=0.2, zorder=4))
         ax.set(xlim=(-radius, radius), ylim=(-radius, radius), aspect="equal")
         ax.set_axis_off()
     figure.subplots_adjust(0, 0, 1, 1, wspace=0.025)

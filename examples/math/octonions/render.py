@@ -8,21 +8,27 @@ import numpy as np
 
 from examples.math.octonions import core
 
-LINE_COLOUR = "#287fa0"
-POINT_COLOUR = "0.15"
+line_colour = "#287fa0"
+point_colour = "0.15"
+# The figure's side in inches, and the widths of its lines and point rims, its point size and font size.
+figure_side = 4.6
+line_width = 1.6
+rim_width = 1.4
+point_size = 260
+font_size = 12
 # Where each basis vector is drawn: the corners of a triangle at b, d and g, the midpoints of its sides at f,
 # c and e, and its centre at a, so that every triple lies on a side, a median, or the circle through the
 # midpoints.
-CORNER = 1.0
-PLACES = {
+corner = 1.0
+places_by_name = {
     "a": (0.0, 0.0),
-    "b": (0.0, CORNER), "d": (-CORNER * np.sqrt(3) / 2, -CORNER / 2), "g": (CORNER * np.sqrt(3) / 2, -CORNER / 2),
-    "f": (-CORNER * np.sqrt(3) / 4, CORNER / 4), "e": (CORNER * np.sqrt(3) / 4, CORNER / 4), "c": (0.0, -CORNER / 2),
+    "b": (0.0, corner), "d": (-corner * np.sqrt(3) / 2, -corner / 2), "g": (corner * np.sqrt(3) / 2, -corner / 2),
+    "f": (-corner * np.sqrt(3) / 4, corner / 4), "e": (corner * np.sqrt(3) / 4, corner / 4), "c": (0.0, -corner / 2),
 }
-ARROW = dict(arrowstyle="-|>", mutation_scale=14, color=LINE_COLOUR, linewidth=0)
+arrow_style = dict(arrowstyle="-|>", mutation_scale=14, color=line_colour, linewidth=0)
 # How far along each segment, and along each arc of the circle, its arrowhead sits: off the middle, where the
 # medians cross the circle.
-ALONG, AROUND = 0.65, 0.3
+segment_fraction, arc_fraction = 0.65, 0.3
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -36,19 +42,19 @@ def triples(cycles: core.Trivector) -> list[str]:
 
 def arrow(ax: plt.Axes, start: np.ndarray, end: np.ndarray) -> None:
     """An arrowhead part of the way from start to end, pointing towards end."""
-    place = start + ALONG * (end - start)
+    place = start + segment_fraction * (end - start)
     step = (end - start) / np.linalg.norm(end - start) * 0.02
-    ax.add_patch(FancyArrowPatch(place - step, place + step, **ARROW))
+    ax.add_patch(FancyArrowPatch(place - step, place + step, **arrow_style))
 
 
 def draw_fano(cycles: core.Trivector) -> plt.Figure:
     """The Fano plane: each basis vector a point, each multiplication triple a line, the sides and medians
     of the triangle and the circle through the midpoints, its arrows running in the order of the product."""
-    figure, ax = plt.subplots(figsize=(4.6, 4.6), layout="constrained")
-    radius = CORNER / 2
-    ax.add_patch(Circle((0, 0), radius, fill=False, color=LINE_COLOUR, linewidth=1.6))
+    figure, ax = plt.subplots(figsize=(figure_side, figure_side), layout="constrained")
+    radius = corner / 2
+    ax.add_patch(Circle((0, 0), radius, fill=False, color=line_colour, linewidth=line_width))
     for triple in triples(cycles):
-        places = np.array([PLACES[name] for name in triple])                   # [3, 2]
+        places = np.array([places_by_name[name] for name in triple])           # [3, 2]
         if np.allclose(np.linalg.norm(places, axis=-1), radius):
             # On the circle: an arrowhead on each arc, running from each point to the next.
             angles = np.arctan2(places[:, 1], places[:, 0])
@@ -56,22 +62,22 @@ def draw_fano(cycles: core.Trivector) -> plt.Figure:
             for start, turn in zip(angles, (following - angles) % (2 * np.pi)):
                 # The shorter way round from each point to the next, and part of the way along it.
                 way = turn if turn < np.pi else turn - 2 * np.pi
-                angle = start + AROUND * way
+                angle = start + arc_fraction * way
                 tangent = np.array([-np.sin(angle), np.cos(angle)]) * np.sign(way)
                 point = radius * np.array([np.cos(angle), np.sin(angle)])
-                ax.add_patch(FancyArrowPatch(point - tangent * 0.02, point + tangent * 0.02, **ARROW))
+                ax.add_patch(FancyArrowPatch(point - tangent * 0.02, point + tangent * 0.02, **arrow_style))
             continue
         # On a straight line: the two points furthest apart are its ends.
         span = places[:, None] - places[None, :]
         first, last = np.unravel_index(np.linalg.norm(span, axis=-1).argmax(), (3, 3))
-        ax.plot(*places[[first, last]].T, color=LINE_COLOUR, linewidth=1.6)
+        ax.plot(*places[[first, last]].T, color=line_colour, linewidth=line_width)
         for start, end in zip(places, places[[1, 2, 0]]):
             # Arrowheads on the segments the cycle runs along without passing through the third point.
             if np.linalg.norm(end - start) < np.linalg.norm(places[first] - places[last]) - 1e-9:
                 arrow(ax, start, end)
-    for name, place in PLACES.items():
-        ax.scatter(*place, s=260, color="white", edgecolors=POINT_COLOUR, linewidths=1.4, zorder=3)
-        ax.text(*place, name, ha="center", va="center", fontsize=12, color=POINT_COLOUR, zorder=4)
+    for name, place in places_by_name.items():
+        ax.scatter(*place, s=point_size, color="white", edgecolors=point_colour, linewidths=rim_width, zorder=3)
+        ax.text(*place, name, ha="center", va="center", fontsize=font_size, color=point_colour, zorder=4)
     ax.set(xlim=(-1.05, 1.05), ylim=(-0.75, 1.15), aspect="equal")
     ax.set_axis_off()
     return figure

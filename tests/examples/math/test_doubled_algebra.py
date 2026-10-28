@@ -51,7 +51,7 @@ def test_dyads_extend_to_blades_by_the_product_rule():
 
 def test_exponentiating_a_shear_moves_vectors_and_their_wedge_together():
     amounts = np.array([-1.25, 0., .75])
-    motion = core.shear(amounts)
+    motion = core.representations((core.shear_generator * amounts).exp())
     expected = core.Vector + amounts * core.mv.x * core.mv.y.scalar_product(core.Vector)
     np.testing.assert_allclose((motion(core.Vector) - expected).kernel, 0, atol=1e-12)
 
@@ -97,12 +97,12 @@ def test_split_algebra_recovers_arbitrary_maps_through_eight_dimensions(dimensio
     creators = [(first + second) / 2 for first, second in zip(positive, negative)]
     removers = [(first - second) / 2 for first, second in zip(positive, negative)]
     projector = reduce(mul, (remove * create for remove, create in zip(removers, creators)))
-    state_size = 2 ** dimension
+    n_state_components = 2 ** dimension
     embedder = State * projector
-    state_readout = (state_size * Full).cast(State)
+    state_readout = (n_state_components * Full).cast(State)
     representations = state_readout(Full * embedder)
     rng = np.random.default_rng(0)
-    arbitrary = context.extensor(ga.gatype((State, State)), rng.normal(size=(state_size, state_size)))
+    arbitrary = context.extensor(ga.gatype((State, State)), rng.normal(size=(n_state_components, n_state_components)))
     recovered = readout(representations, arbitrary, Full)
 
     # Recovering unrestricted maps exercises the complete algebra, rather than one grade.
