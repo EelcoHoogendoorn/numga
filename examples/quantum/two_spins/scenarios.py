@@ -19,10 +19,9 @@ four = stack([np.sqrt(2) * core.singlet * up_down, np.sqrt(2) * core.triplet * u
 # around and down its sphere of unit planes, the duration of a frame of the steering animation in
 # milliseconds, and the seed of the random planes and turns the checks run on.
 N_FRAMES = 121
-N_STEERING_FRAMES = 61
 N_AROUND = 24
 N_DOWN = 12
-DURATION_MS = 120
+DURATION_MS = 60
 SEED = 0
 # The exchange rate while a field in the xy planes rises, the number of fields, and the largest field.
 EXCHANGE_RATE = 1.0
@@ -102,7 +101,7 @@ def main() -> None:
     print("Bell combination of the singlet:", reached.to_array())
     angles, first, second, bells, states = swap(N_FRAMES)
     save_figure(render.draw_exchange(angles, bells, first, render.SPIN_PLANES), "two_spins")
-    planes, probability, steered, measured_states = steering(N_STEERING_FRAMES, N_AROUND, N_DOWN)
+    planes, probability, steered, measured_states = steering(N_FRAMES, N_AROUND, N_DOWN)
     save_animation(render.animate_steering(planes, probability, steered, render.SPIN_PLANES), "two_spins_steering", DURATION_MS)
     fields = np.linspace(0.0, MAX_FIELD, N_FIELDS)
     four_first, four_second = core.spin_planes(four)                           # [states] FirstPlanes+, SecondPlanes+

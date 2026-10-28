@@ -33,8 +33,8 @@ def test_loss_cone_and_magnetic_moment():
     """Escape through the coils exactly inside the loss cone of the field on the axis; the trapped
     particles keep their magnetic moment, averaged over a turn, through their bounces."""
     pieces, midpoints, events, velocities = bottle()
-    on_axis = core.field(core.axis * np.linspace(scenarios.coil_heights[0], scenarios.coil_heights[-1], 401), pieces, midpoints, scenarios.coil_current)
-    strengths = on_axis.scalar_norm_squared().square_root().to_array()
+    field_on_axis = core.field(core.axis * np.linspace(scenarios.coil_heights[0], scenarios.coil_heights[-1], scenarios.n_axis), pieces, midpoints, scenarios.coil_current)
+    strengths = field_on_axis.scalar_norm_squared().square_root().to_array()
     loss_cone = np.degrees(np.arcsin(np.sqrt(strengths.min() / strengths.max())))
     escaped = np.abs((mv.z & events[-1]).to_array()) > scenarios.coil_heights[-1]
     np.testing.assert_array_equal(escaped, scenarios.launch_pitches < loss_cone)

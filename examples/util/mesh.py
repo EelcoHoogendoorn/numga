@@ -126,8 +126,9 @@ class Mesh:
         unit = mv.x.dual()                                   # [] Point-
         axes = stack((unit, (mv.xy * (-np.pi / 6)).exp() >> unit))        # [axes] Point-
         positions = (axes * lattice).sum(axis=-1)                          # [nodes] Point-
-        # Map complete hexagonal rings to circles, keeping their six-neighbour topology.
-        positions = spacing * layers[inside] * positions / positions.norm()
+        # Map complete hexagonal rings to circles, keeping their six-neighbour topology. A direction's size is the root
+        # of its square's size, whichever sign the square has in the algebra.
+        positions = spacing * layers[inside] * positions / positions.squared().norm().square_root()
         vertices = concatenate((mv.antivector([[0, 0, 0]]), positions)).field()   # Point-[V]
         mesh = cls.triangulate(vertices)
         boundary = np.flatnonzero(layers[inside] == divisions) + 1
@@ -135,13 +136,13 @@ class Mesh:
         # Equal edge springs even out the circular map's distortion. Rim vertices can
         # slide along the circle; the incidence adjoint sums edge forces at each vertex.
         a, b, c = vertices.batch()[mesh.faces.T]                           # [F] Point-
-        area = ((b - a) & (c - a)).norm().sum() / 2
+        area = ((b - a) & (c - a)).squared().norm().square_root().sum() / 2
         target = (4 * area / (np.sqrt(3) * len(mesh.faces))).square_root()
         for _ in range(relaxation_steps):
             edges = mesh.d0 * vertices                                     # Point-[E]
-            force = edges * (1 - target / edges.norm())                    # Point-[E]
+            force = edges * (1 - target / edges.squared().norm().square_root())   # Point-[E]
             positions = (vertices - relaxation_rate * (~mesh.d0 * force)).batch()   # [V] Point-
-            positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].norm())
+            positions = positions.at[boundary].set(radius * positions[boundary] / positions[boundary].squared().norm().square_root())
             vertices = positions.field()
             mesh = cls.triangulate(vertices)
         return mesh, vertices

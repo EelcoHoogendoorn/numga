@@ -16,8 +16,8 @@ tether = 0.15 * stiffness
 field_strength = 3.05
 n_newton_steps = 4
 n_load_samples = 25
-n_frames = 60
-duration_ms = 84
+n_frames = 72
+duration_ms = 70
 dipole_scale = 4.0
 field_scale = 0.65 / field_strength
 

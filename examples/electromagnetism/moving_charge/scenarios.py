@@ -18,17 +18,20 @@ half_width = 0.45
 half_height = 0.9
 n_columns = 150
 n_rows = 300
-n_frames = 60
+n_frames = 90
 duration_ms = 60
 
 orbit_charge = 1.0
 orbit_radius = 1.0
-# A slow and a fast orbit, as fractions of the speed of light, with the names of their animations, and their
-# pictures' pixels a side, the fast charge's finer for its narrow pulses.
+# A slow and a fast orbit, as fractions of the speed of light, with the names of their animations; their pictures'
+# pixels a side, each pixel sampled twice along each side and averaged back, the colours of their palettes, and the
+# frames of a turn.
 orbit_speeds = np.array([0.5, 0.9])
 orbit_names = ("slow", "fast")
 orbit_half_width = 10.0
-n_orbit_pixels = (300, 420)
+n_orbit_pixels = 240
+samples_per_pixel = 2
+n_orbit_colours = 32
 n_orbit_frames = 60
 # The coarser window the checks sample.
 n_check_columns = 30
@@ -53,10 +56,10 @@ def speed_up() -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector
         yield events, field, current
 
 
-def circling(orbit: core.Orbit, n_pixels: int) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
+def circling(orbit: core.Orbit, n_samples: int) -> Iterator[tuple[core.Antivector, core.Bivector, core.Antivector]]:
     """Over one turn: the events in the orbit's plane at each lab time, the field there, and the
     charge."""
-    plane = core.grid(orbit_half_width, orbit_half_width, n_pixels, n_pixels)   # [rows, columns] Antivector-
+    plane = core.grid(orbit_half_width, orbit_half_width, n_samples, n_samples)   # [rows, columns] Antivector-
     period = 2 * np.pi * orbit.radius / orbit.speed
     for time in period * np.arange(n_orbit_frames) / n_orbit_frames:
         events = plane + core.time * time                                    # [rows, columns] Antivector-
@@ -72,9 +75,10 @@ def main() -> None:
 
     # Slowing down plays the rise back.
     save_animation(render.animate(speed_up()), "moving_charge", duration_ms, forward_then_back=True)
-    for name, speed, n_pixels in zip(orbit_names, orbit_speeds, n_orbit_pixels):
+    for name, speed in zip(orbit_names, orbit_speeds):
         orbit = core.Orbit(orbit_charge, orbit_radius, speed)
-        save_animation(render.animate_waves(circling(orbit, n_pixels)), f"radiating_charge_{name}", duration_ms)
+        frames = render.animate_waves(circling(orbit, n_orbit_pixels * samples_per_pixel), samples_per_pixel)
+        save_animation(frames, f"radiating_charge_{name}", duration_ms, colors=n_orbit_colours)
 
     # checks
     # At the top speed the field's derivative vanishes, and the current is the softened density carried

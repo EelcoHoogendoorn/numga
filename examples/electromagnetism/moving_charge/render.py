@@ -81,9 +81,9 @@ def coloured(values: np.ndarray, colours: Colormap, norm: Normalize) -> np.ndarr
     return colours(np.ma.filled(norm(values), 0.0))[..., ::-1, :, :3]
 
 
-def panels(n_panels: int, events: core.Antivector) -> tuple[Figure, list[Axes]]:
-    """A figure of panels side by side, each with room for exactly the grid's own pixels, a gap between them."""
-    rows, columns = events.shape[-2:]
+def panels(n_panels: int, pixels: tuple[int, int]) -> tuple[Figure, list[Axes]]:
+    """A figure of panels side by side, each with room for exactly its pixels, rows and columns, a gap between them."""
+    rows, columns = pixels
     width = n_panels * columns + (n_panels - 1) * panel_gap
     figure = plt.figure(figsize=(width / figure_dpi, rows / figure_dpi), dpi=figure_dpi)
     axes = figure.subplots(1, n_panels, squeeze=False)[0]
@@ -109,7 +109,7 @@ def outline(ax: Axes, events: core.Antivector, current: core.Antivector):
 def fields(events: core.Antivector, field: core.Bivector) -> Figure:
     """Electric field strength and magnetic field side by side for each case, the cases side by side."""
     strengths, magnetic = electric_strength(field), magnetic_across(field)       # [cases, rows, columns] each
-    figure, axes = panels(2 * len(strengths), events)
+    figure, axes = panels(2 * len(strengths), events.shape[-2:])
     for left, right, strength, across in zip(axes[::2], axes[1::2], strengths, magnetic):
         panel(left, events, strength, strength_colours, electric_norm)
         panel(right, events, across, signed_colours, magnetic_norm)
@@ -120,7 +120,7 @@ def densities(events: core.Antivector, current: core.Antivector) -> Figure:
     """The charge density, signed, one panel per case, on one colour scale."""
     values = density(current)                                                   # [cases, rows, columns]
     limit = np.abs(values).max()
-    figure, axes = panels(len(values), events)
+    figure, axes = panels(len(values), events.shape[-2:])
     for ax, value in zip(axes, values):
         panel(ax, events, value, signed_colours, TwoSlopeNorm(0.0, -limit, limit))
     return figure
@@ -131,7 +131,7 @@ def animate(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivect
     lab's views over one grid of events: one figure set up for the first, its images' data set for each."""
     states = iter(frames)
     events, field, current = next(states)
-    figure, (left, right) = panels(2, events)
+    figure, (left, right) = panels(2, events.shape[-2:])
     images = (panel(left, events, electric_strength(field), strength_colours, electric_norm),
               panel(right, events, magnetic_across(field), signed_colours, magnetic_norm))
     for _, field, current in chain([(events, field, current)], states):
@@ -160,27 +160,38 @@ def compressed_waves(events: core.Antivector, field: core.Bivector, limit: np.nd
     return np.sign(scaled) * np.abs(scaled) ** wave_power
 
 
-def mark_charge(ax: Axes, events: core.Antivector, charge: core.Antivector):
-    """The charge as a dot with a dark rim, sized with the picture."""
-    columns = events.shape[-1]
+def mark_charge(ax: Axes, columns: int, charge: core.Antivector):
+    """The charge as a dot with a dark rim, sized with the picture, the given pixels across."""
     position = coordinates(charge).reshape(-1, 2)
     diameter, rim = charge_size * columns * 72 / figure_dpi, charge_rim * columns * 72 / figure_dpi
     return ax.scatter(position[:, 0], position[:, 1], s=diameter**2, color=charge_colour,
                       edgecolors=charge_rim_colour, linewidths=rim, zorder=3)
 
 
-def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]]) -> Iterator[np.ndarray]:
+def averaged(image: np.ndarray, samples: int) -> np.ndarray:
+    """A picture sampled `samples` times along each side of its pixels, `[rows * samples, columns * samples, 3]`,
+    averaged back to exactly its pixels."""
+    rows, columns = image.shape[0] // samples, image.shape[1] // samples
+    return image.reshape(rows, samples, columns, samples, 3).mean(axis=(1, 3))
+
+
+def animate_waves(frames: Iterable[tuple[core.Antivector, core.Bivector, core.Antivector]], samples: int
+                  ) -> Iterator[np.ndarray]:
     """The waves over one turn, on the first frame's colour scale, the charge marked: one figure set up for the
-    first frame, its image's data and the charge's place set for each."""
+    first frame, its image's data and the charge's place set for each. The events sample each pixel `samples` times
+    along each side, and the colours are averaged back to the pixel."""
     frames = iter(frames)
     first = next(frames)
     events, field, charge = first
     limit = wave_limit(events, field)
-    figure, (ax,) = panels(1, events)
-    image = panel(ax, events, compressed_waves(events, field, limit), signed_colours, wave_norm)
-    marker = mark_charge(ax, events, charge)
+    pixels = (events.shape[-2] // samples, events.shape[-1] // samples)
+    figure, (ax,) = panels(1, pixels)
+    image = pinned(ax, averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples),
+                   extent(events))
+    ax.set_autoscale_on(False)
+    marker = mark_charge(ax, pixels[1], charge)
     for events, field, charge in chain([first], frames):
-        image.set_data(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm))
+        image.set_data(averaged(coloured(compressed_waves(events, field, limit), signed_colours, wave_norm), samples))
         marker.set_offsets(coordinates(charge).reshape(-1, 2))
         yield capture(figure)
     plt.close(figure)
@@ -190,8 +201,8 @@ def radiation(events: core.Antivector, field: core.Bivector, charge: core.Antive
     """The waves of circling charges side by side, one panel per case, each on its own colour scale,
     with the charge marked."""
     values = compressed_waves(events, field, wave_limit(events, field))           # [cases, rows, columns]
-    figure, axes = panels(len(values), events)
+    figure, axes = panels(len(values), events.shape[-2:])
     for case, (ax, value) in enumerate(zip(axes, values)):
         panel(ax, events, value, signed_colours, wave_norm)
-        mark_charge(ax, events, charge[case])
+        mark_charge(ax, events.shape[-1], charge[case])
     return figure
