@@ -3,22 +3,14 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from numga import Algebra, NumpyContext, stack
+from numga import stack
 
-from examples.orientation.conformal_circle import core, render
+from examples.orientation.conformal_circle import core, render, scenarios
+from examples.orientation.conformal_circle.core import mv
 
 
 def test_circle_constructions_commute_with_reflection():
-    ga = Algebra("x+y+z+w+e-")
-    mv = NumpyContext(ga).multivector
-    vertices = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])
-    angles = np.linspace(0, 2 * np.pi, 49)
-    longitudes = np.linspace(0, 2 * np.pi, 13)
-    latitudes = np.linspace(-np.pi / 2, np.pi / 2, 7)
-    curve = core.circle_samples(vertices[0], mv.xy, angles)
-    surface = core.sphere_samples(vertices[0], mv.xy, mv.xz, longitudes, latitudes)
-    points, curve, surface, planes, spheres = core.reflected_scene(
-        vertices, curve, surface, mv.z, mv.w, mv.z)
+    points, curve, surface, planes, spheres = scenarios.circle()
     through_points, from_surfaces = core.constructions(points[0], planes[0], spheres[0])
     mirror = planes[0]
     rebuilt_path, rebuilt_cut = core.constructions(points[1], planes[1], spheres[1])
@@ -31,8 +23,8 @@ def test_circle_constructions_commute_with_reflection():
     # Building from reflected ingredients gives the corresponding reflected result.
     np.testing.assert_allclose(rebuilt_path.kernel, (mirror >> through_points).kernel, atol=1e-12)
     np.testing.assert_allclose(rebuilt_cut.kernel, (mirror >> from_surfaces).kernel, atol=1e-12)
-    np.testing.assert_allclose((planes[0] & curve[0]).kernel, 0, atol=1e-12)
-    np.testing.assert_allclose((spheres[0] & curve[0]).kernel, 0, atol=1e-12)
+    np.testing.assert_allclose((planes[0] & curve[0]).to_array(), 0, atol=1e-12)
+    np.testing.assert_allclose((spheres[0] & curve[0]).to_array(), 0, atol=1e-12)
 
     figure = render.draw_circle(points, curve, surface, planes, spheres)
     figure.canvas.draw()
@@ -40,16 +32,14 @@ def test_circle_constructions_commute_with_reflection():
 
 
 def test_circulation_and_glide_preserve_circle_with_different_motion():
-    ga = Algebra("x+y+z+w+e-")
-    mv = NumpyContext(ga).multivector
-    points = stack([(mv.x + mv.e).dual(), (-mv.y + mv.e).dual(), (-mv.x + mv.e).dual()])
+    points = stack([mv.x.dual() + mv.e.dual(), -mv.y.dual() + mv.e.dual(), -mv.x.dual() + mv.e.dual()])
     circle, _ = core.constructions(points, mv.z, mv.w)
-    infinity = mv.e + mv.w
+    horizon = mv.e + mv.w
     amounts = np.array([0., .4, .8])
-    axis = (circle.dual() | infinity).normalized()
+    axis = (circle.dual() | horizon).normalized()
     rotation = (-axis * (amounts / 2)).exp()
     glide = mv.x * ((mv.x | circle.dual()) * amounts).exp()
-    fixed = stack([(mv.y + mv.e).dual(), (-mv.y + mv.e).dual()])
+    fixed = stack([mv.y.dual() + mv.e.dual(), -mv.y.dual() + mv.e.dual()])
     rotated = rotation[:, None] >> points[None, :]
     glided = glide[:, None] >> points[None, :]
 
@@ -69,3 +59,4 @@ def test_circulation_and_glide_preserve_circle_with_different_motion():
     glide_separation = np.linalg.norm(np.diff(render.coordinates(glided), axis=-2), axis=-1)
     np.testing.assert_allclose(rotation_separation - separation, 0, atol=1e-12)
     assert np.all(np.abs(glide_separation[-1] - separation) > .5)
+

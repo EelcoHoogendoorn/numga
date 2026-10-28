@@ -3,6 +3,7 @@ the centred circles balance."""
 
 import numpy as np
 
+from numga import stack
 from examples.surfaces.koebe import core, render, scenarios
 
 
@@ -24,6 +25,7 @@ def test_circles_touch_along_every_edge_and_both_polyhedra_touch_the_sphere_unde
 
 def test_the_centred_circles_balance_and_the_figure_draws():
     circles, faces, edges = scenarios.centred()
-    tangents = core.touching(circles, edges)                                   # [edges] Vector+
-    assert ((tangents / -(tangents | core.mv.w)).mean() - core.mv.w).norm() < 1e-4
+    touches = core.touching(circles, edges)                                    # [edges] Point-
+    balance = (touches / (core.mv.w & touches)).mean()                         # [] Point-
+    assert np.abs((stack((core.mv.x, core.mv.y, core.mv.z)) & balance).to_array()).max() < 1e-4
     assert len(list(render.animate(circles[None], faces, edges))) == 1

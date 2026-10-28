@@ -1,7 +1,7 @@
 """Spherical quadrics on S², painted on the GPU by a shader whose geometry is written in numga.
 
-Each pixel of the front hemisphere, seen along z, is a point of S², the dual of its null vector,
-`(mv.x * u + mv.y * v + mv.z * height + mv.w).dual()`, and it takes the colour of the last body whose
+Each pixel of the front hemisphere, seen along z, is a point of S², the sphere's centre plus a unit direction,
+`centre + (directions * vec3<f32>(across, height)).sum()`, and it takes the colour of the last body whose
 quadric's form, `quadrics[body](point) & point`, is negative there.
 """
 
@@ -21,8 +21,9 @@ from examples.util.wgsl import Shader, supersampled
 # disk's centre, in its radii, past which a pixel is rim.
 BACKGROUND, DISK, RIM = "#0a0f1d", "#111827", "#334155"
 RIM_START = 0.985
-# The vectors x, y and z, whose sum with w, each weighted by a unit coordinate, is a point's null vector.
-axes = stack((mv.x, mv.y, mv.z))                                              # [3] Plane+
+# The sphere's centre and the directions x, y and z: the centre plus a unit direction is a point of S².
+centre = mv.w.dual()                                                          # [] Point-
+directions = stack((mv.x.dual(), mv.y.dual(), mv.z.dual()))                   # [3] Direction-
 
 source = """
 var<storage, read> quadrics: array<Quadric>;
@@ -39,8 +40,8 @@ fn sample(place: vec2<f32>) -> Sample {
     if (squared > rim_start) {
         return rim;
     }
-    // The point of S² under the sample, on the front hemisphere: the dual of its null vector.
-    let point = ((axes * vec3<f32>(across, sqrt(1 - squared))).sum() + mv.w).dual();
+    // The point of S² under the sample, on the front hemisphere: the centre plus a unit direction.
+    let point = centre + (directions * vec3<f32>(across, sqrt(1 - squared))).sum();
     var colour = disk;
     for (var body = 0u; body < arrayLength(&quadrics); body++) {
         if ((quadrics[body](point) & point) < 0) {
@@ -56,7 +57,7 @@ fn sample(place: vec2<f32>) -> Sample {
 @cache
 def shader() -> Shader:
     return Shader(supersampled() + source, ga, dict(Point=Point, Plane=Plane, Quadric=Quadric),
-                  dict(axes=axes, rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
+                  dict(centre=centre, directions=directions, rim_start=RIM_START, disk=to_rgb(DISK), rim=to_rgb(RIM), background=to_rgb(BACKGROUND)))
 
 
 def vortex_frames(world: Quadric, colors: list[str], resolution: int) -> Iterator[np.ndarray]:

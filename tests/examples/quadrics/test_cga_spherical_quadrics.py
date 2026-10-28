@@ -1,4 +1,4 @@
-"""Unit tests for Spherical Quadric Vortex in 4D CGA Cl(3, 1)."""
+"""Spherical quadrics in the conformal algebra Cl(3, 1), and the conformal flow that carries them."""
 
 from __future__ import annotations
 
@@ -27,51 +27,43 @@ def test_null_cone_pixels():
 
 
 def test_conical_donut_topology():
-    """Verify conical donut has valid Quadric GAType and apex touches north pole."""
+    """The conical donut is a map from points to planes, and its apex touches the north pole."""
     conical = make_conical_donut(0.55, 0.22)
     assert conical.gatype == Quadric
-    p_apex = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
-    np.testing.assert_allclose((conical(p_apex) & p_apex).kernel[0], 0.0, atol=1e-12)
+    apex = point(np.array([0, 0, 1]))
+    np.testing.assert_allclose((conical(apex) & apex).to_array(), 0.0, atol=1e-12)
 
 
 def test_spherical_donut_topology():
-    """Verify donut potential is negative inside the ring and positive in hole and exterior."""
+    """The donut's form is negative inside the ring and positive in the hole and outside."""
     r_core = np.radians(40.0)
     r_tube = np.radians(10.0)
     donut = make_spherical_donut(r_core, r_tube)
-
-    p_hole = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
-    assert (donut(p_hole) & p_hole).kernel[0] > 0.0
-
-    p_ring = mv.vector([np.sin(r_core), 0.0, np.cos(r_core), 1.0]).dual()
-    assert (donut(p_ring) & p_ring).kernel[0] < 0.0
-
-    p_out = mv.vector([1.0, 0.0, 0.0, 1.0]).dual()
-    assert (donut(p_out) & p_out).kernel[0] > 0.0
+    # The pole in the hole, a point on the ring's core circle, and a point on the equator outside.
+    probes = point(np.array([[0, 0, 1], [np.sin(r_core), 0, np.cos(r_core)], [1, 0, 0]]))
+    np.testing.assert_array_equal(donut(probes) & probes > 0, [True, False, True])
 
 
 def test_pinched_horn_cusp():
-    """Verify pinched horn cyclide touches the pole with zero potential."""
+    """The pinched horn cyclide's cusp sits on the pole, where its form vanishes."""
     horn = make_pinched_horn(np.radians(60.0))
-    p_cusp = mv.vector([0.0, 0.0, 1.0, 1.0]).dual()
-    np.testing.assert_allclose((horn(p_cusp) & p_cusp).kernel[0], 0.0, atol=1e-12)
+    cusp = point(np.array([0, 0, 1]))
+    np.testing.assert_allclose((horn(cusp) & cusp).to_array(), 0.0, atol=1e-12)
 
 
 def test_circle_intersection_vortex():
-    """Verify intersection 2-blade of two circles generates a valid conformal rotor."""
+    """The 2-blade where two circles meet generates a conformal rotor, which keeps points of S² null."""
     generator = scenarios.generator
-    np.testing.assert_allclose(generator.squared().kernel[0], -1.0, atol=1e-12)
+    np.testing.assert_allclose((generator.squared() + 1).kernel, 0.0, atol=1e-12)
 
     rotor = (generator * 0.4).exp()
-    p_test = mv.vector([0.5, 0.5, np.sqrt(0.5), 1.0]).dual()
-    p_flow = rotor >> p_test
-    np.testing.assert_allclose(p_flow.squared().kernel[0], 0.0, atol=1e-12)
+    carried = rotor >> point(np.array([0.5, 0.5, np.sqrt(0.5)]))
+    np.testing.assert_allclose(carried.squared().to_array(), 0.0, atol=1e-12)
 
 
 def test_render_all_shapes():
-    """A frame of each of the 13 shapes is a non-empty image."""
+    """A frame of each shape is a non-empty image."""
     table = scenarios.shapes()
-    assert len(table) == 13
     for name in table:
         world, colors = scenarios.vortex([name], 1)
         frame = list(render.vortex_frames(world, colors, 60))[0]

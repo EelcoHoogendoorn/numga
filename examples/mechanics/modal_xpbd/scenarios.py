@@ -38,7 +38,7 @@ def girders(core: ModuleType, shape, fixed: np.ndarray, damping: np.ndarray, fle
     mv = core.mv
     count, modes, cases = len(fixed), shape.modes.shape[0], len(damping)
     rest = shape.rest.batch()                                              # [vertices] Point-
-    length = (rest[-1] - rest[1]).dual() | mv.x                            # [] Scalar+
+    length = mv.x & (rest[-1] - rest[1])                                   # [] Scalar+
     motor = (mv.xw * ((np.arange(count) - 0.5) * length) * 0.5).exp().cast(core.Motor).broadcast_to((cases, count)).field()  # [cases] Motor+[bodies]
     amplitudes = mv.scalar(np.zeros((cases, modes, count, 1))).field()     # [cases, modes] Scalar+[bodies]
     moving = ~fixed
@@ -115,7 +115,7 @@ def displaced(core: ModuleType, bodies, rest, displacement: float):
 def compress(core: ModuleType, shape, bodies, constraints, displacements: np.ndarray, dt: float, substeps: int) -> Iterator[tuple]:
     """The beam's points and midspan point at every frame."""
     rest, middle = bodies.motor, bodies.motor.batch().shape[-1] // 2
-    weightless = (core.mv.y * 0.0).dual()                                  # [] Displacement-
+    weightless = core.mv.direction([0, 0])                                 # [] Displacement-
     for displacement in displacements:
         bodies = displaced(core, bodies, rest, displacement)
         for _ in range(substeps):
@@ -136,7 +136,7 @@ def main():
     core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
     shape = core.girder(N_CELLS, LENGTH, HEIGHT, STIFFNESS, DENSITY, N_MODES)
     bodies, constraints = hinged_chain(core, shape, N_LINKS, DAMPING)
-    gravity = (core.mv.y * -GRAVITY).dual()                                # [] Displacement-
+    gravity = core.mv.direction([0, -GRAVITY])                             # [] Displacement-
     geometry = swing(core, shape, bodies, constraints, gravity, INTERVAL, N_FRAMES)
     save_animation(render.swinging_chain(geometry, shape.edges, core.points(bodies, shape)), "modal_xpbd_swing", DURATION_MS)
 

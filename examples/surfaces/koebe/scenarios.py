@@ -7,7 +7,7 @@ import numpy as np
 from numga import stack
 from examples.surfaces.koebe import core
 
-# The number of points, how far their directions are nudged off an even spread, and its seed; the spread and
+# The number of points, how far their directions are turned off an even spread, and its seed; the spread and
 # seed of the random distances whose hull gives the triangulation, every point on it.
 N_POINTS = 32
 JITTER = 0.03
@@ -16,8 +16,8 @@ MESH_SPREAD, MESH_SEED = 0.06, 57
 # The Gauss-Newton steps of the Koebe solve, and the iterations finding the centre.
 N_NEWTON_STEPS = 6
 N_CENTRE_ITERATIONS = 8
-# The boosts the centred polyhedron is carried through: their largest rapidity, the tilt of the direction
-# they turn about the z axis through, the frames of one turn, and the duration of each.
+# The boosts the centred polyhedron is carried through: their largest rapidity, the angle by which their plane
+# through w is tilted from x towards the z axis it turns about, the frames of one turn, and the duration of each.
 RAPIDITY = 0.6
 TILT = 0.4
 N_FRAMES = 48
@@ -25,12 +25,14 @@ FRAME_DURATION = 80
 
 
 # --- math -----------------------------------------------------------------------------
-def triangulation() -> tuple[core.Vector, np.ndarray, np.ndarray]:
-    """The triangulation is the directions along a Fibonacci spiral, each nudged a little at random, with the faces
+def triangulation() -> tuple[core.Point, np.ndarray, np.ndarray]:
+    """The triangulation is the directions along a Fibonacci spiral, each turned a little at random, with the faces
     and edges of the hull of the points at random distances along them, triangles of uneven shape."""
-    axes = stack((core.mv.x, core.mv.y, core.mv.z))                           # [3] Vector+
-    nudges = (axes * np.random.default_rng(DIRECTION_SEED).normal(size=(N_POINTS, 3))).sum(axis=-1)   # [points] Vector+
-    directions = (core.spiral(N_POINTS) + nudges * JITTER).normalized()        # [points] Vector+
+    coordinate_planes = stack((core.mv.yz, core.mv.zx, core.mv.xy))           # [3] Bivector+
+    nudge_weights = np.random.default_rng(DIRECTION_SEED).normal(size=(N_POINTS, 3))   # [points, 3]
+    nudge_planes = (coordinate_planes * nudge_weights).sum(axis=-1)            # [points] Bivector+
+    nudges = (nudge_planes * (JITTER / 2)).exp()                               # [points] Rotor+
+    directions = nudges >> core.spiral(N_POINTS)                               # [points] Point-
     faces = core.hull(directions * np.exp(MESH_SPREAD * np.random.default_rng(MESH_SEED).normal(size=N_POINTS)))
     edges = core.Mesh(N_POINTS, faces).edges                                   # [edges, 2]
     return directions, faces, edges
@@ -41,24 +43,27 @@ def centred() -> tuple[core.Vector, np.ndarray, np.ndarray]:
     directions, faces, edges = triangulation()
     # The angle across each edge, the size of the turn from one end's direction to the other's.
     angles = (directions[edges[:, 1]] * directions[edges[:, 0]]).log().norm()  # [edges] Scalar+
-    # Caps around the directions, half as wide as the mean angle across an edge: the plane at the cosine along
-    # each direction, scaled to square to one.
+    # Caps around the directions, half as wide as the mean angle across an edge: each the polar of the apex of the
+    # cone touching the sphere along it, out along its direction at the reciprocal of the cosine, scaled so that
+    # the circle squares to one.
     radius = angles.mean() / 2                                                 # [] Scalar+
-    start = (directions + core.mv.w * radius.cos()) / radius.sin()             # [points] Vector+
+    cap_apexes = (directions + core.origin * radius.cos()) / radius.sin()      # [points] Point-
+    start = cap_apexes.dual()                                                  # [points] Vector+
     circles = core.koebe(start, edges, N_NEWTON_STEPS)                         # [points] Vector+
-    centre = core.centre(core.touching(circles, edges), N_CENTRE_ITERATIONS)   # [] Vector+
-    # The boost along the centre's spatial part carries it onto w.
-    centring = (1 - core.mv.w * centre).normalized()                           # [] Rotor+
+    centre = core.centre(core.touching(circles, edges), N_CENTRE_ITERATIONS)   # [] Point-
+    # The boost along the line through both centres carries the balancing centre onto the centre of the sphere.
+    centring = (1 - core.origin * centre).normalized()                         # [] Rotor+
     return centring >> circles, faces, edges
 
 
 def boosted() -> tuple[core.Vector, np.ndarray, np.ndarray]:
-    """The centred circles are carried by boosts whose direction turns once about the z axis, tilted towards it,
-    with a rapidity rising and falling twice per turn."""
+    """The centred circles are carried by boosts whose plane through w turns once about the z axis, tilted
+    towards it, with a rapidity rising and falling twice per turn."""
     circles, faces, edges = centred()
     turn_angles = np.linspace(0, 2 * np.pi, N_FRAMES, endpoint=False)          # [frames]
-    directions = ((core.mv.xy * (-turn_angles / 2)).exp() >> (core.mv.x + core.mv.z * TILT)).normalized()   # [frames] Vector+
-    rotors = ((directions ^ core.mv.w) * (RAPIDITY * np.sin(turn_angles) ** 2 / 2)).exp()   # [frames] Rotor+
+    tilted_plane = (core.mv.zx * (TILT / 2)).exp() >> core.mv.xw              # [] Bivector+
+    boost_planes = (core.mv.xy * (-turn_angles / 2)).exp() >> tilted_plane     # [frames] Bivector+
+    rotors = (boost_planes * (RAPIDITY * np.sin(turn_angles) ** 2 / 2)).exp()  # [frames] Rotor+
     return rotors[:, None] >> circles, faces, edges                            # [frames, points] Vector+
 
 
@@ -85,10 +90,11 @@ def main() -> None:
     lines = apexes[..., edges[:, 0]] & apexes[..., edges[:, 1]]                # [frames, edges] Bivector-
     distances = ((lines | core.mv.w).squared() / (lines ^ core.mv.w).squared()).square_root()   # [frames, edges] Scalar+
     assert np.abs(distances.to_array() - 1).max() < 1e-10
-    # Centred, the touching points balance about the centre: their tangent planes at unit weight along w, each its
-    # touching point plus w, average to w.
-    tangents = core.touching(circles, edges)                                   # [edges] Vector+
-    assert ((tangents / -(tangents | core.mv.w)).mean() - core.mv.w).norm() < 1e-4
+    # Centred, the touching points balance about the centre of the sphere: at unit weight they average to a point
+    # on the planes x, y and z through it.
+    touches = core.touching(circles, edges)                                    # [edges] Point-
+    balance = (touches / (core.mv.w & touches)).mean()                         # [] Point-
+    assert np.abs((stack((core.mv.x, core.mv.y, core.mv.z)) & balance).to_array()).max() < 1e-4
 
 
 if __name__ == "__main__":

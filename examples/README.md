@@ -184,7 +184,7 @@
 
 - [Hopf fibration](math/hopf/) — Spinors with the same spin direction form linked circles on the three-sphere.
 - [Spin groups](math/spin_groups/) — Rotors of every signature up to six dimensions are compared inside one algebra.
-- [Invariant decomposition](math/invariant_decomposition.py) — A six-dimensional rotation separates into three commuting plane rotations.
+- [Invariant decomposition](math/invariant_decomposition/) — A six-dimensional rotation separates into three commuting plane rotations.
 - [Klein quadric](math/klein_quadric/) — The quadric of lines determines the two lines meeting four given lines in space.
 - [Pascal's theorem](math/pascal/) — Five points determine a conic whose inscribed hexagons exhibit Pascal's collinearity.
 - [Poncelet's porism](math/poncelet/) — Tangent steps between two conics close into polygons independently of their starting point.

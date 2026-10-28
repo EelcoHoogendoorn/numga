@@ -136,7 +136,7 @@ def main():
 
     shape = core.girder(scenarios.N_CELLS, scenarios.LENGTH, scenarios.HEIGHT, scenarios.STIFFNESS, scenarios.DENSITY, scenarios.N_MODES)
     bodies, constraints = scenarios.hinged_chain(core, shape, scenarios.N_LINKS, scenarios.DAMPING)
-    gravity = (mv.y * -scenarios.GRAVITY).dual()                            # [] Displacement-
+    gravity = mv.direction([0, -scenarios.GRAVITY])                         # [] Displacement-
     points = jax.jit(lambda moment: core.points(moment, shape))
     frames = (points(moment) for moment in swing(bodies, constraints, gravity, scenarios.INTERVAL, scenarios.N_FRAMES))
     save_animation(render.swinging_chain(frames, shape.edges, core.points(bodies, shape)), "modal_xpbd_derived_swing", scenarios.DURATION_MS)

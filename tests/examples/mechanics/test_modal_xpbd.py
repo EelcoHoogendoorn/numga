@@ -6,11 +6,17 @@ from functools import partial
 import numpy as np
 import pytest
 
+from numga import stack
 from numga.algebras import PGA2D
 from examples import instantiate
 from examples.mechanics.modal_xpbd import scenarios
 
 core = instantiate("examples.mechanics.modal_xpbd.core", PGA2D)
+
+
+def coordinates(points: core.Point) -> np.ndarray:
+    """Coordinates `[..., 2]` of points of unit weight, or of displacements: their pairings with the lines x = 0 and y = 0."""
+    return (stack((core.mv.x, core.mv.y)) & points.batch()[..., None]).to_array()
 
 
 def test_cantilever_static_sag_matches_full_truss():
@@ -20,11 +26,11 @@ def test_cantilever_static_sag_matches_full_truss():
     initial = core.points(bodies, shape)
     # Implicit compliance keeps large steps stable; the over-damped girder settles within them.
     dt, steps, acceleration = 0.2, 60, -0.1
-    gravity = (core.mv.y * acceleration).dual()
+    gravity = core.mv.direction([0, acceleration])
     for _ in range(steps):
         bodies = core.step(bodies, constraints, dt, gravity)
 
-    positions = shape.rest.dual().cast(core.Force).kernel
+    positions = coordinates(shape.rest)
     difference = positions[shape.edges[:, 1]] - positions[shape.edges[:, 0]]
     lengths = np.linalg.norm(difference, axis=-1)
     directions = difference / lengths[:, None]
@@ -34,7 +40,7 @@ def test_cantilever_static_sag_matches_full_truss():
     masses = shape.masses.kernel[:, 0]
     forces = np.stack([np.zeros_like(masses), masses * acceleration], axis=-1).reshape(-1)
     reference = np.linalg.solve(full_stiffness[4:, 4:], forces[4:]).reshape(-1, 2)
-    displacement = (core.points(bodies, shape) - initial).dual().cast(core.Force).kernel[0, 1]
+    displacement = coordinates(core.points(bodies, shape) - initial)[0, 1]
     np.testing.assert_allclose(displacement[-1, 1], reference[-1, 1], rtol=0.02)
     assert np.linalg.norm(bodies.rate.kernel) < 1e-5
     np.testing.assert_allclose(core.points(bodies, shape).kernel[:, 0], initial.kernel[:, 0], atol=1e-11)
@@ -44,19 +50,19 @@ def test_hinged_chain_sustains_large_rotations_with_small_flex():
     shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
     bodies, hinges = scenarios.hinged_chain(core, shape, 4, np.array([0.02]))
     initial = core.points(bodies, shape)
-    gravity = (core.mv.y * -4).dual()
+    gravity = core.mv.direction([0, -4])
     dt, steps = 0.008, 200
     peak_gap = peak_flex = 0.0
     for _ in range(steps):
         bodies = core.step(bodies, hinges, dt, gravity)
         peak_gap = max(peak_gap, np.abs(core.coupling(bodies, hinges)[3].kernel).max())
         offsets = (shape.modes[:, None] * bodies.amplitudes.batch()).sum(axis=-2)
-        peak_flex = max(peak_flex, offsets.dual().norm().kernel.max())
+        peak_flex = max(peak_flex, (offsets.dual_inverse() & offsets).square_root().kernel.max())
     kinetic = (bodies.rate & shape.inertia(bodies.rate)).sites.sum() / 2
     kinetic = kinetic + bodies.rates.squared().sites.sum().sum(axis=-1) / 2
     elastic = (bodies.amplitudes * bodies.frequencies).squared().sites.sum().sum(axis=-1) / 2
     centres = bodies.motor >> core.mv.w.dual()
-    potential = -((centres.dual() | gravity.dual()) * bodies.masses).sites.sum()
+    potential = -((gravity.dual_inverse() & centres) * bodies.masses).sites.sum()
     assert np.isfinite(core.points(bodies, shape).kernel).all()
     assert (kinetic + elastic + potential).kernel.max() < 1e-8
     assert peak_gap < 0.001
@@ -76,7 +82,7 @@ def test_a_clamped_beam_buckles_past_its_euler_load():
     bodies = replace(bodies, motor=(bodies.motor * (core.mv.yw * (lift / 2)).exp().field()).cast(core.Motor))
     displacements = scenarios.END_DISPLACEMENT * np.arange(frames) / frames
     midspans = [midspan for _, midspan in scenarios.compress(core, beam, bodies, constraints, displacements, dt, substeps)]
-    deflection = np.array([abs(midspan.dual().cast(core.Force).kernel[0, 1]) for midspan in midspans])
+    deflection = np.array([abs(coordinates(midspan)[0, 1]) for midspan in midspans])
     critical = scenarios.critical(scenarios.BEAM_HEIGHT, scenarios.N_BEAM_GIRDERS * scenarios.N_BEAM_CELLS)
     assert deflection[displacements < 0.8 * critical].max() < 1e-6
     assert deflection[displacements > 2 * critical].min() > 0.5
@@ -92,7 +98,7 @@ def test_the_derived_step_follows_the_sparse_step():
     shape, jax_shape = core.girder(4, 1.0, 0.2, 300.0, 1.0, 8), derived.core.girder(4, 1.0, 0.2, 300.0, 1.0, 8)
     bodies, hinges = scenarios.hinged_chain(core, shape, 4, np.array([0.02]))
     jax_bodies, jax_hinges = scenarios.hinged_chain(derived.core, jax_shape, 4, np.array([0.02]))
-    gravity, jax_gravity = (core.mv.y * -4).dual(), (derived.mv.y * -4).dual()
+    gravity, jax_gravity = core.mv.direction([0, -4]), derived.mv.direction([0, -4])
     jax_step = jax.jit(partial(derived.step, constraints=jax_hinges, dt=dt, gravity=jax_gravity))
     for _ in range(steps):
         bodies, jax_bodies = core.step(bodies, hinges, dt, gravity), jax_step(jax_bodies)

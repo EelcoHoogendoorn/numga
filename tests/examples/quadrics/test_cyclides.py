@@ -8,10 +8,10 @@ from numga import stack
 
 from examples.quadrics.cyclides import render, scenarios
 from examples.quadrics.cyclides.core import (
-    Direction, Point, antipode, cylinder, mv, origin, ray_bend, ray_linear, ray_quadratic, ray_rotation,
+    Point, antipode, cylinder, mv, origin, ray_bend, ray_linear, ray_quadratic, ray_rotation,
 )
 
-direction = mv(Direction, [0.0, 0.6, 0.8])
+direction = mv.y.dual() * 0.6 + mv.z.dual() * 0.8
 angles = np.array([0.7, 2.5])
 
 
@@ -19,9 +19,9 @@ def test_ray_is_a_great_circle():
     """The eye turned exactly by t, and the circle through the ray maps, lie on the sphere of radius t about the eye."""
     exact = (ray_rotation(direction) * angles).exp() >> origin
     circle = origin + ray_linear(direction) * np.sin(angles) + ray_quadratic(direction, direction) * (1 - np.cos(angles))
-    reach = mv.w + mv.e * np.cos(angles)
-    np.testing.assert_allclose((reach & exact).to_array(), 0.0, atol=1e-7)
-    np.testing.assert_allclose((reach & circle).to_array(), 0.0, atol=1e-12)
+    radius_spheres = mv.w + mv.e * np.cos(angles)
+    np.testing.assert_allclose((radius_spheres & exact).to_array(), 0.0, atol=1e-7)
+    np.testing.assert_allclose((radius_spheres & circle).to_array(), 0.0, atol=1e-12)
 
 
 def test_the_bend_of_the_ray_parabola_is_the_antipode():
@@ -37,14 +37,13 @@ def test_the_bend_of_the_ray_parabola_is_the_antipode():
 def test_the_cylinder_polynomial_is_palindromic_and_a_dupin_cyclide_breaks_it():
     """Built from great spheres and e only, the cylinder's quartic in u has equal outer and opposite odd
     coefficients, so its hits come in antipodal pairs; an off-axis dilation breaks that symmetry."""
-    aim = mv.z * np.cos(0.7) + mv.x * np.sin(0.7)
-    dilation = ((aim ^ mv.e) * (1.5 / 2)).exp()
+    aim = (mv.zx * (-0.7 / 2)).exp() >> mv.z.dual()
+    dilation = ((mv.e.dual() & aim).dual() * (1.5 / 2)).exp()
     lopsided = dilation >> cylinder(0.25)(dilation << Point)
-    camera_map = mv.rotor() >> Point
     sample = scenarios.PIXELS[::20000]
     gaps = []
     for surface in (cylinder(0.3), lopsided):
-        form = camera_map & surface(camera_map)
+        form = Point & surface
         outer = form(ray_bend, ray_bend)(sample, sample, sample, sample) - form(origin, origin)
         odd = (4 * form(ray_linear, ray_bend))(sample, sample, sample) + (4 * form(origin, ray_linear))(sample)
         gaps.append(np.abs(outer.to_array()).max() + np.abs(odd.to_array()).max())

@@ -6,22 +6,22 @@ import numpy as np
 
 from numga import stack
 from examples.quadrics.glass_cyclide import core
-from examples.quadrics.glass_cyclide.core import Point, Quadric, ball, infinity, mv, origin, sphere, torus, translator
+from examples.quadrics.glass_cyclide.core import Point, Quadric, ball, horizon, mv, origin, sphere, torus, translator
 
 # The torus the cyclide comes from, and the sphere it is inverted in: off the torus's centre, so the tube
 # swells on the far side.
 torus_radius, torus_tube = 2.5, 0.9
-inversion = (translator(mv.x * 8.0) >> sphere(origin, 6.25)).normalized()
+inversion = (translator(mv.x.dual() * 8.0) >> sphere(origin, 6.25)).normalized()
 # Where the inverted torus lies, and how it is stood up above the floor: the centre of its bounding
 # sphere carried by `lift`, after a tilt about x.
-cyclide_centre = mv.x * 2.04
+cyclide_centre = mv.x.dual() * 2.04
 cyclide_radius = 2.6
 cyclide_tilt = np.radians(55.0)
-lift = mv.z * 2.25
+lift = mv.z.dual() * 2.25
 # A ball taken out of the cyclide's thick side, and a ball resting on the floor behind it.
-bite_centre = translator(mv.x * 0.6 + mv.y * 1.2 + mv.z * 0.9) >> origin
+bite_centre = translator(mv.x.dual() * 0.6 + mv.y.dual() * 1.2 + mv.z.dual() * 0.9) >> origin
 bite_radius = 0.9
-ball_centre = translator(mv.x * 0.6 + mv.y * 3.4 + mv.z * 1.1) >> origin
+ball_centre = translator(mv.x.dual() * 0.6 + mv.y.dual() * 3.4 + mv.z.dual() * 1.1) >> origin
 ball_radius = 1.1
 floor_radius = 60.0
 # Each solid's colour or glass tint, transparency and refractive index, in the order of `solids`:
@@ -30,9 +30,13 @@ colours = np.array([[0.9, 0.96, 0.97], [0.85, 0.22, 0.16], [0.88, 0.87, 0.85]])
 transparencies = np.array([0.96, 0.0, 0.0])
 refractions = np.array([1.5, 1.0, 1.0])
 tiles = 0.8
-lamp = (mv.x * 0.5 - mv.y * 0.6 + mv.z * 0.9).normalized()
+# The lamp's direction: x raised towards z by its elevation, then turned towards y by its azimuth.
+lamp_elevation = np.radians(49.0)
+lamp_azimuth = np.radians(-50.0)
+lamp_turn = (mv.xy * (-lamp_azimuth / 2)).exp() * (mv.xz * (-lamp_elevation / 2)).exp()
+lamp = lamp_turn >> mv.x.dual()
 # The camera orbits the cyclide.
-target = translator(mv.z * 1.9) >> origin
+target = translator(mv.z.dual() * 1.9) >> origin
 distance = 11.0
 elevation = np.radians(20.0)
 half_view = 0.31
@@ -77,7 +81,7 @@ def cameras(n_cameras: int) -> tuple[core.Rotation, core.Point]:
     azimuths = np.linspace(0, 2 * np.pi, n_cameras, endpoint=False)
     pitch = (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
     turns = (mv.xy * (-azimuths / 2)).exp() * pitch                                       # [cameras] Rotation+
-    return turns, translator((turns >> mv.z) * distance) >> target
+    return turns, translator((turns >> mv.z.dual()) * distance) >> target
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -98,9 +102,9 @@ def main() -> None:
     # --- checks
     # The torus's points, inverted in the sphere, lie on the cyclide.
     points = inversion >> core.torus_points(torus_radius, torus_tube, 24, 12)              # [across, around] Point-
-    # The form scales with the square of a point's weight, its pairing with the point at infinity.
+    # The form scales with the square of a point's weight, its pairing with the plane at infinity.
     cyclide = inversion >> torus(torus_radius, torus_tube)(inversion << Point)
-    form = (points & cyclide(points)) / (infinity & points).squared()
+    form = (points & cyclide(points)) / (horizon & points).squared()
     np.testing.assert_allclose(form.kernel, 0, atol=1e-10)
 
 

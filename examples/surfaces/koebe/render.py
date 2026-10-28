@@ -64,7 +64,7 @@ def panels(circles: core.Vector, faces: np.ndarray, edges: np.ndarray, frame: so
     sphere = [(solids.ball(solids.origin, 1.0)[None, None], SPHERE_COLOUR, SPHERE_OPACITY)]
     marks = [(solids.rods(apexes[edges[:, 0]], apexes[edges[:, 1]], EDGE_WIDTH / 2 * pixel), PRIMAL_COLOUR),
              (solids.rods(dual_apexes[sides[:, 0]], dual_apexes[sides[:, 1]], EDGE_WIDTH / 2 * pixel), DUAL_COLOUR),
-             (solids.ball(sm.point(coordinates(core.touching(circles, edges).dual())),
+             (solids.ball(sm.point(coordinates(core.touching(circles, edges))),
                           TOUCH_RADIUS * pixel)[:, None], TOUCH_COLOUR)]
     # The circles inked on the sphere, the only part of the second image, each coloured by its kind.
     planes = concatenate([circle_planes(circles), circle_planes(duals)])      # [circles] Plane+

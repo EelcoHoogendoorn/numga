@@ -43,6 +43,8 @@ import examples.math.extensor_representations.core
 import examples.math.extensor_representations.scenarios
 import examples.math.hopf.core
 import examples.math.hopf.scenarios
+import examples.math.invariant_decomposition.core
+import examples.math.invariant_decomposition.scenarios
 import examples.math.klein_quadric.core
 import examples.math.klein_quadric.scenarios
 import examples.math.pascal.core

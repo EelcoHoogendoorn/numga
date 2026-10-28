@@ -41,10 +41,11 @@ Point = ga.gatype.antivector()
 Twist = ga.gatype.bivector()
 Forque = ga.gatype.antibivector()
 Motor = ga.gatype.rotor()
-# A force in the plane is a line through the origin, a sum of x and y; a displacement is its dual, a point at
-# infinity, and a force joined with a displacement, `force & displacement`, is the work done moving that way.
+# A displacement is a point at infinity, an antivector through the null direction w; a force is a line through the
+# origin, a sum of x and y, and a force joined with a displacement, `force & displacement`, is the work done moving
+# that way.
+Displacement = ga.gatype.antivector().derive.degenerate                    # Antivector-
 Force = ga.gatype.vector().derive.nondegenerate                            # Vector+
-Displacement = Force.dual().output_gatype                                  # Antivector-
 Inertia = ga.gatype((Forque, Twist))                                       # Forque- <- Twist+
 InverseInertia = ga.gatype((Twist, Forque))                                # Twist+ <- Forque-
 
@@ -94,11 +95,12 @@ class Constraints:
     compliance: Scalar                                                      # Scalar+[constraints]
 
 
-def truss(cells: int, length: float, height: float) -> tuple[Force, np.ndarray]:
+def truss(cells: int, length: float, height: float) -> tuple[Point, np.ndarray]:
     """The girder's rest points and bars."""
     stations = np.arange(cells + 1)
     levels = np.array([-0.5, 0.5])
-    positions = (mv.x * (stations[:, None] * length / cells) + mv.y * (levels[None, :] * height)).reshape(-1).field()  # Force+[vertices]
+    # The origin moved along x to each station and along y to each level.
+    positions = (mv.w.dual() + mv.x.dual() * (stations[:, None] * length / cells) + mv.y.dual() * (levels[None, :] * height)).reshape(-1).field()  # Point-[vertices]
     lower = 2 * stations[:-1]
     # Longitudinal bars, both diagonals, and one upright at every station.
     edges = np.concatenate([
@@ -113,27 +115,35 @@ def truss(cells: int, length: float, height: float) -> tuple[Force, np.ndarray]:
 
 # --- math -----------------------------------------------------------------------------
 # Leading ... axes hold independent cases.
-def girder(cells: int, length: float, height: float, stiffness: float, density: float, modes: int) -> Shape:
+def girder(cells: int, length: float, height: float, stiffness: float, density: float, n_modes: int) -> Shape:
     """A cross-braced girder, reduced to its lowest vibration modes."""
-    positions, edges = truss(cells, length, height)                         # Force+[vertices], [edges, ends]
+    positions, edges = truss(cells, length, height)                         # Point-[vertices], [edges, ends]
     vertices = positions.batch().shape[-1]
-    # Each bar's tail taken from its head.
+    # Each bar's tail taken from its head: the bar as a displacement, its two points' weights cancelling.
     ends = SparseExtensor.from_columns(edges, mv.scalar((np.ones_like(edges) * [-1, 1])[..., None]), vertices)  # Scalar+[edges <- vertices]
-    difference = ends * positions                                           # Force+[edges]
-    lengths = difference.norm()                                             # Scalar+[edges]
-    directions = difference / lengths                                       # Force+[edges]
-    # Each bar's stiffness acts along its direction.
-    bars = spdiag(directions * (directions | Force) * stiffness / lengths)  # (Force+ <- Force+)[edges <- edges]
+    difference = (ends * positions).cast(Displacement)                      # Displacement-[edges]
+    # The metric enters once, turning each bar into the force along it; that force paired with the bar is its
+    # squared length.
+    pulls = difference.dual_inverse()                                       # Force+[edges]
+    lengths = (pulls & difference).square_root()                            # Scalar+[edges]
+    unit_forces = pulls / lengths                                           # Force+[edges]
+    # A bar reads its stretch by pairing its unit force with the relative displacement of its ends, and pulls back
+    # along itself.
+    bars = spdiag(unit_forces * (unit_forces & Displacement) * stiffness / lengths)  # (Force+ <- Displacement-)[edges <- edges]
+    # The relative displacements of the bars' ends.
+    stretching = ends * Displacement                                        # (Displacement- <- Displacement-)[edges <- vertices]
     masses = mv.scalar(np.full((vertices, 1), density * length * height / vertices)).field()  # Scalar+[vertices]
-    weights = spdiag(masses) * Force                                        # (Force+ <- Force+)[vertices <- vertices]
+    # The masses as maps from accelerations to the forces that cause them.
+    weights = spdiag(masses * Displacement.dual_inverse())                  # (Force+ <- Displacement-)[vertices <- vertices]
+    # The girder's stiffness: the bars' forces, at the relative displacements of their ends, carried back to the vertices.
+    girder_stiffness = stretching.adjugate()(bars(stretching))              # (Force+ <- Displacement-)[vertices <- vertices]
     # The stiffness against the masses; the three zero modes are rigid motions, carried by the motor.
-    values, fields = (~ends * bars(ends * Force)).eigh(weights, 3 + modes)  # [3 + modes] Scalar+, [3 + modes] Force+[vertices]
-    values, fields = values[3:], fields[3:]                                 # [modes] Scalar+, [modes] Force+[vertices]
-    centre = (positions * masses).sites.sum() / masses.sites.sum()  # [] Force+
-    rest = (positions - centre + mv.w).dual()                               # Point-[vertices]
-    inertia = ((rest & rest.commutator(Twist)) * masses).sites.sum()  # [] Forque- <- Twist+
-    # The modes as displacements, their angular frequencies, and their compliances.
-    modes = fields.dual()                                                   # [modes] Displacement-[vertices]
+    values, modes = girder_stiffness.eigh(weights, 3 + n_modes)             # [3 + modes] Scalar+, [3 + modes] Displacement-[vertices]
+    values, modes = values[3:], modes[3:]                                   # [modes] Scalar+, [modes] Displacement-[vertices]
+    centre = (positions * masses).sites.sum() / masses.sites.sum()          # [] Point-
+    rest = positions - centre + mv.w.dual()                                 # Point-[vertices]
+    inertia = ((rest & rest.commutator(Twist)) * masses).sites.sum()        # [] Forque- <- Twist+
+    # The modes' angular frequencies and their compliances.
     frequencies = values.square_root()                                      # [modes] Scalar+
     compliance = 1 / values                                                 # [modes] Scalar+
     return Shape(rest=rest, modes=modes, frequencies=frequencies, compliance=compliance, masses=masses, edges=edges, inertia=inertia)
