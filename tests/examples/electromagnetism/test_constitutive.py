@@ -6,14 +6,10 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 
-from numga import stack
-
 from examples.electromagnetism.constitutive import core, scenarios, render
 
 mv = core.mv
-t = core.t
-x = core.x
-z = core.z
+t, x, z = mv.t, mv.x, mv.z
 Bivector = core.Bivector
 
 
@@ -22,16 +18,16 @@ def isotropic(permittivity, permeability):
 
 
 def phase_speeds(medium, direction, speeds):
-    return speeds[1:-1][core.dips(speeds, core.residuals(speeds * t - direction, medium), 2e-3)]
+    return speeds[1:-1][core.dips(core.residuals(speeds * t - direction, medium), 2e-3)]
 
 
-SPEEDS = np.linspace(0.05, 1.5, 6001)
-SCAN_TOLERANCE = SPEEDS[1] - SPEEDS[0]
-# The observer's reflection keeps magnetic planes and reverses electric ones.
+trial_speeds = np.linspace(0.05, 1.5, 6001)
+scan_tolerance = trial_speeds[1] - trial_speeds[0]
 # The observer's direction in time, which pairs to one with t; the dual carries the minus of t's square.
 time = -t.dual()
-ELECTRIC = (Bivector - t * Bivector * t.inverse()) / 2
-MAGNETIC = Bivector - ELECTRIC
+# The observer's reflection keeps magnetic planes and reverses electric ones.
+electric_part = (Bivector - t * Bivector * t.inverse()) / 2
+magnetic_part = Bivector - electric_part
 
 
 def test_unit_medium_is_the_vacuum():
@@ -42,8 +38,8 @@ def test_unit_medium_is_the_vacuum():
 def test_isotropic_medium_speed_is_one_over_n():
     for permittivity, permeability in ((2.25, 1.0), (4.0, 1.5)):
         medium = isotropic(permittivity, permeability)
-        np.testing.assert_allclose(phase_speeds(medium, z, SPEEDS), [1.0 / np.sqrt(permittivity * permeability)],
-                                   atol=SCAN_TOLERANCE)
+        np.testing.assert_allclose(phase_speeds(medium, z, trial_speeds), [1.0 / np.sqrt(permittivity * permeability)],
+                                   atol=scan_tolerance)
 
 
 def test_material_and_stress_forms_give_the_electric_and_magnetic_energy():
@@ -51,7 +47,7 @@ def test_material_and_stress_forms_give_the_electric_and_magnetic_energy():
     medium = isotropic(permittivity, permeability)
     rng = np.random.default_rng(318)
     fields = mv.bivector(rng.normal(size=(17, 6)))
-    electric_fields, magnetic_fields = ELECTRIC(fields), MAGNETIC(fields)
+    electric_fields, magnetic_fields = electric_part(fields), magnetic_part(fields)
     electric_squared = electric_fields.scalar_product(electric_fields)
     magnetic_squared = magnetic_fields.scalar_product(magnetic_fields)
     bilinear_form = Bivector & medium
@@ -78,22 +74,24 @@ def test_material_and_stress_forms_give_the_electric_and_magnetic_energy():
 
 
 def test_crystal_is_birefringent_along_z_and_not_along_x():
-    _, crystal, _ = scenarios.media()
-    np.testing.assert_allclose(phase_speeds(crystal, z, SPEEDS), [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)], atol=SCAN_TOLERANCE)
-    np.testing.assert_allclose(phase_speeds(crystal, x, SPEEDS), [1.0 / np.sqrt(1.5)], atol=SCAN_TOLERANCE)
+    _, crystal, _ = scenarios.media
+    np.testing.assert_allclose(phase_speeds(crystal, z, trial_speeds), [1.0 / np.sqrt(2.25), 1.0 / np.sqrt(1.5)], atol=scan_tolerance)
+    np.testing.assert_allclose(phase_speeds(crystal, x, trial_speeds), [1.0 / np.sqrt(1.5)], atol=scan_tolerance)
 
 
 def test_crystal_fields_satisfy_maxwell_and_lie_in_their_material_planes():
     _, (speeds, fields) = scenarios.modes()
-    _, crystal, _ = scenarios.media()
+    _, crystal, _ = scenarios.media
     wavevectors = speeds * t - z
-    electric_planes = stack((mv.tx, mv.ty))
-    magnetic_planes = stack((mv.xz, mv.yz))
+    # The plane z sweeps through time reads the electric field along z, and the patch of the plane xy the
+    # magnetic field in it: the electric fields lie along x and y, the magnetic planes contain z.
+    along_z = mv.z.dual() & time
+    across_z = mv.xy.dual()
 
     np.testing.assert_allclose((wavevectors ^ fields).kernel, 0.0, atol=1e-12)
     np.testing.assert_allclose((wavevectors ^ crystal(fields)).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((ELECTRIC(fields) - electric_planes * (electric_planes | fields)).kernel, 0.0, atol=1e-12)
-    np.testing.assert_allclose((MAGNETIC(fields) + magnetic_planes * (magnetic_planes | fields)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((fields & along_z).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((fields & across_z).kernel, 0.0, atol=1e-12)
 
 
 def test_vacuum_wave_has_two_transverse_field_modes():
@@ -112,12 +110,12 @@ def test_vacuum_wave_has_two_transverse_field_modes():
 
 
 def test_ferrite_lifts_permeability_through_the_dual_field():
-    _, _, ferrite = scenarios.media()
-    np.testing.assert_allclose(phase_speeds(ferrite, z, SPEEDS), [1.0 / np.sqrt(4.5), 1.0 / np.sqrt(2.25)], atol=SCAN_TOLERANCE)
+    _, _, ferrite = scenarios.media
+    np.testing.assert_allclose(phase_speeds(ferrite, z, trial_speeds), [1.0 / np.sqrt(4.5), 1.0 / np.sqrt(2.25)], atol=scan_tolerance)
 
 
 def test_axion_term_is_invisible_to_bulk_waves():
-    glass, _, _ = scenarios.media()
+    glass, _, _ = scenarios.media
     field = mv.tx * 2.0 + mv.yz * 3.0
     base_form = Bivector & glass
     base_current = core.stress_energy(field, glass(field))
@@ -126,7 +124,7 @@ def test_axion_term_is_invisible_to_bulk_waves():
         axion = glass + coupling * Bivector
         axion_form = Bivector & axion
         action_change = (axion_form(field, field) - base_form(field, field)) / 2
-        np.testing.assert_allclose(phase_speeds(axion, z, SPEEDS), phase_speeds(glass, z, SPEEDS), atol=SCAN_TOLERANCE)
+        np.testing.assert_allclose(phase_speeds(axion, z, trial_speeds), phase_speeds(glass, z, trial_speeds), atol=scan_tolerance)
         np.testing.assert_allclose((action_change - coupling * (field & field) / 2).kernel, 0.0, atol=1e-12)
         np.testing.assert_allclose((core.stress_energy(field, axion(field)) - base_current).kernel, 0.0, atol=1e-12)
 
@@ -156,11 +154,11 @@ def test_material_and_stress_forms_transform_with_the_field_and_observer():
 
 
 def test_moving_glass_shows_exact_fresnel_drag():
-    glass, _, _ = scenarios.media()
+    glass, _, _ = scenarios.media
     fractions = np.array([0.0, 0.3, -0.5])
     for fraction, (expected, _) in zip(fractions, scenarios.relativistic_sum(fractions).T):
         moving = scenarios.moving(glass, np.array(fraction))
-        np.testing.assert_allclose(phase_speeds(moving, z, SPEEDS), [expected], atol=SCAN_TOLERANCE)
+        np.testing.assert_allclose(phase_speeds(moving, z, trial_speeds), [expected], atol=scan_tolerance)
 
 
 def test_figures_and_animation_draw():

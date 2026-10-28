@@ -135,7 +135,6 @@
 
 ## Electromagnetism
 
-- [Stress-energy maps](electromagnetism/maxwell.py) — Electromagnetic fields, particles and fluids map spacetime directions to energy-momentum currents.
 - [Constitutive maps](electromagnetism/constitutive/) — A material response maps electromagnetic fields to their excitations in spacetime algebra.
 - [Moving charges](electromagnetism/moving_charge/) — Derivatives of a moving charge's potential determine its electromagnetic field.
 - [Fresnel wave surfaces](electromagnetism/fresnel/) — A crystal's constitutive map determines the directions and speeds of light propagation.

@@ -30,7 +30,7 @@ def test_all_cubic_couplings_match_root_triangles():
     _, _, _, _, masses, _, roots, plane_x, plane_y = scenarios.spectrum()
     species, triangles, closure, couplings, areas = scenarios.interactions()
     tolerance = 1e-10
-    radii = ((roots[0] | plane_x).squared() + (roots[0] | plane_y).squared()).square_root()
+    radii = (roots[0] | (plane_x ^ plane_y)).scalar_norm_squared().square_root()
     allowed = closure < tolerance
     mass_areas = areas * (masses[0] / radii[0]).squared()
 
