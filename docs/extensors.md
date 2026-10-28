@@ -270,9 +270,9 @@ stretches = (strain[..., None](arms) & arms) / 2          # [..., 2] Scalar
 <p align="center"><img src="../plots/radiating_charge_fast.gif" alt="A charge circling fast, its field spiralling outward" width="420" /></p>
 
 ```python
-at_rest = weight * mv.t * (separations | Antivector)                  # [...] Vector <- Antivector
-gradients = charges.boost >> at_rest(charges.boost << Antivector)     # [...] Vector <- Antivector
-field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bivector
+at_rest = weight * mv.t * (separations | Antivector)                  # [...] Vector+ <- Antivector-
+gradients = charges.boost >> at_rest(charges.boost << Antivector)     # [...] Vector+ <- Antivector-
+field = (Vector ^ gradients(Antivector)).trace(1, 2)                  # [...] Bivector+
 ```
 
 * A moving charge is its gradient at rest, moved by its boost: `boost >> at_rest(boost << Antivector)`.

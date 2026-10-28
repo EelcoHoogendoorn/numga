@@ -7,7 +7,7 @@ from examples.electromagnetism.moving_charge import core, scenarios
 
 def test_maxwell_by_incidence_with_the_metric_in_the_vacuum():
     moving = scenarios.charge(scenarios.top_rapidity)
-    events = core.grid(scenarios.half_width, scenarios.half_height, 15, 10)  # [rows, columns] Antivector
+    events = core.grid(scenarios.half_width, scenarios.half_height, 15, 10)  # [rows, columns] Antivector-
 
     # The field's derivative vanishes.
     gradients = core.field_gradient(moving, events)
@@ -27,7 +27,7 @@ def test_maxwell_by_incidence_with_the_metric_in_the_vacuum():
     density = 3 * scenarios.strength * scenarios.core_radius**2 / (4 * np.pi) / (softened * softened * softened.square_root())
     current = core.current(gradients)
     np.testing.assert_allclose((current - density * (moving.boost >> core.time)).kernel, 0.0, atol=1e-9)
-    assert np.all((core.mv.t & current).to_array() > 0)
+    assert np.all((core.mv.t & current) > 0)
 
 
 def test_the_circling_charge_is_seen_along_light_rays():
