@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.colors import to_rgb
 
 from numga import stack
-from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Point, Rotor, Scalar, ga, mv
+from examples.mechanics.symmetry.core import Conductivity, Direction, Field, Gyration, Point, Rotor, ga, mv
 from examples.util.wgsl import Shader, fitted, meshes, show, solids, supersampled
 
 driving_rgb, flow_rgb = np.array(to_rgb("#262b32")), np.array(to_rgb("#d44e1a"))
@@ -23,7 +23,7 @@ surface_colour = np.array([0.36, 0.60, 0.80])
 # The heat-flow ellipsoid's share of what lies behind it hidden, so that the flow within it shows; the arrows' shaft
 # widths, head lengths and head widths in pixels, the driving field's and the flow's.
 surface_opacity = 0.45
-driving_arrow, flow_arrow = (4.9, 23.0, 14.8), (6.6, 26.0, 18.0)
+driving_arrow, flow_arrow = (3.0, 14.0, 9.0), (4.0, 16.0, 11.0)
 stiffness_colour = np.array([0.88, 0.52, 0.30])
 site_colours = {"centre": [0.20, 0.22, 0.26], "axial": [0.88, 0.45, 0.22], "diagonal": [0.30, 0.56, 0.75], "corner": [0.78, 0.78, 0.80]}
 background = np.array([1.0, 1.0, 1.0])
@@ -90,15 +90,16 @@ def spiral(count: int) -> Rotor:
     latitude = np.arcsin(1 - 2 * (np.arange(count) + 0.5) / count)
     # The golden angle on from one direction to the next, as an angle within one turn.
     longitude = np.pi * (3 - np.sqrt(5)) * np.arange(count) % (2 * np.pi)
-    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp()     # [count] Rotor
+    return (mv.xy * (-longitude / 2)).exp() * (mv.xz * (-latitude / 2)).exp()     # [directions] Rotor+
 
 
 def image_of_sphere(conductivity: Conductivity) -> tuple[solids.Quadric, Point]:
     """The solid ellipsoid a conductivity makes of the unit ball of driving fields, the flows whose driving field,
     `conductivity.inverse()`, is at most of unit length, and points on its surface to frame it by: the flows of unit
     fields."""
-    # The unit ball's dual quadric, each field to the flow across it, carried by the conductivity.
-    image = conductivity(Direction.dual()(conductivity.adjugate()))           # Direction <- Field
+    # The unit ball's dual quadric, carried by the conductivity: the ball's metric, the dual, between the
+    # conductivity and its adjugate.
+    image = conductivity(conductivity.adjugate().dual())                      # [] Direction- <- Field+
     quadric = solids.lift_vga3d_dual_quadric_to_pga3d(image, stack((mv.x, mv.y, mv.z)))
     return quadric, placed(conductivity(spiral(n_framing) >> mv.x))
 
@@ -121,7 +122,7 @@ def draw_conduction(conductivities: Conductivity, driving: Field, fluxes: Direct
     driving_tip, flows = placed(driving.dual() * largest), placed(fluxes)
     ellipsoids = [image_of_sphere(conductivity) for conductivity in conductivities]
     view = solids.view([framed for _, framed in ellipsoids] + [driving_tip, flows], 0.0, elevation, azimuth, margin, 1)
-    fig, axes = figure([view.half] * conductivities.shape[0], 3.6)
+    fig, axes = figure([view.half] * conductivities.shape[0], 2.2)
     # The panels' rooms alike, one view fitted to the first holds them all.
     view = fitted(view, axes[0])
     for ax, (ellipsoid, _), flow in zip(axes, ellipsoids, flows):
@@ -148,7 +149,7 @@ def lattice(centre: Point, axial: Point, diagonal: Point, corners: Point) -> lis
 
 def stiffness_mesh(stiffness: Direction) -> tuple[Point, np.ndarray]:
     """The stiffness along every direction as a radius, sampled on a latitude-longitude grid, as a mesh."""
-    vertices = placed(stiffness)                                              # [latitudes, longitudes] Point
+    vertices = placed(stiffness)                                              # [latitudes, longitudes] Point-
     rows, columns = vertices.shape
     index = np.arange(rows * columns).reshape(rows, columns)
     corner = index[:-1, :-1].ravel(), index[:-1, 1:].ravel(), index[1:, 1:].ravel(), index[1:, :-1].ravel()
@@ -167,7 +168,7 @@ def draw_crystal(centre: Point, axial: Point, diagonal: Point, corners: Point, c
     conduction_view = solids.view([framed], 0.0, elevation, azimuth, margin, 1)
     points, faces = stiffness_mesh(stiffness)
     stiffness_view = solids.view([points], 0.0, elevation, azimuth, margin, 1)
-    fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 4.0)
+    fig, axes = figure([lattice_view.half, conduction_view.half, stiffness_view.half], 2.5)
     lattice_view, conduction_view, stiffness_view = (fitted(view, ax) for view, ax in
                                                      zip((lattice_view, conduction_view, stiffness_view), axes))
     show(axes[0], solids.draw(parts, lattice_view, background, inks=[], translucent=[], meshes=[]), lattice_view)
@@ -185,12 +186,12 @@ def sphere_shader(rotary: object) -> Shader:
     return Shader(supersampled() + sphere_source, ga, dict(Rotary=rotary, Rotor=ga.gatype.rotor(), Field=Field, Direction=Direction), {})
 
 
-def draw_optical_activity(rotary: Scalar) -> plt.Figure:
+def draw_optical_activity(rotary: Gyration) -> plt.Figure:
     """For the candidate and each group's average, the sphere of light directions coloured by the rotary
     power along each, red for one sense and blue for the other, shaded by the lamp."""
     turn = (mv.xy * (-azimuth / 2)).exp() * (mv.yz * (-(np.pi / 2 - elevation) / 2)).exp()
     toward_lamp = turn >> (mv.x * 0.4 + mv.y * 0.7 + mv.z * 0.6)
-    directions = spiral(n_framing) >> mv.x.dual()                             # [directions] Direction
+    directions = spiral(n_framing) >> mv.x.dual()                             # [directions] Direction-
     limit = np.abs(rotary[:, None](directions, directions).to_array()).max()
     # The sphere about the origin, seen as the other views see it.
     view = solids.View(solids.aim(solids.origin, elevation, azimuth), np.full(2, 1 + margin), 1)

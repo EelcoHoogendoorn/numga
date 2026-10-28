@@ -17,7 +17,7 @@ def test_metric_matches_heat_capacity_and_pressure_response():
     mechanical = form(core.mv.v.dual()) & core.mv.v.dual()
     np.testing.assert_allclose(thermal.to_array(), 1.5 / temps**2, atol=1e-11)
     np.testing.assert_allclose(mechanical.to_array(), (-pressure_change(core.mv.v.dual()) / core.temperature(states)).to_array(), atol=1e-11)
-    assert np.all(mechanical.to_array() > 0)
+    assert np.all(mechanical > 0)
     np.testing.assert_allclose((form(core.mv.t.dual()) & core.mv.v.dual()).to_array(), 0, atol=1e-11)
 
 
@@ -39,6 +39,7 @@ def test_spinodal_is_where_the_mechanical_cost_vanishes_and_frames_are_drawn():
     spinodal = core.mv.t.dual() * (2 * 9 / 8 * (volumes - 1 / 3) ** 2 / volumes ** 3) + core.mv.v.dual() * volumes
     mechanical = core.metric(spinodal, 9/8, 1/3, 1.5)(core.mv.v.dual()) & core.mv.v.dual()
     np.testing.assert_allclose(mechanical.to_array(), 0, atol=1e-11)
-    frames = render.fluctuations(scenarios.metric_of, scenarios.curvature_of, scenarios.pressure_of, scenarios.approach(4))
+    frames = render.fluctuations(scenarios.metric_of, scenarios.curvature_of, scenarios.pressure_of,
+                                 scenarios.approach(np.linspace(1.8, 1.02, 4)))
     frame = next(itertools.islice(frames, 2, None))
     assert frame.ndim == 3 and frame.dtype == np.uint8
