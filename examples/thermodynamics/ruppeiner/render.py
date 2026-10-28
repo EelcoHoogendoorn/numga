@@ -37,8 +37,8 @@ THIN, BOLD = 1.0, 2.2
 
 
 def coefficients(metric_of: Function, states: Extensor) -> np.ndarray:
-    """The metric's entries on variations of volume and of temperature, in that order `[..., 2, 2]`: each variation's
-    covector paired with the other."""
+    """The metric's entries on variations of volume and of temperature, in that order `[..., 2, 2]`: the metric's image of
+    each variation paired with the other."""
     mv = states.context.multivector
     steps = [mv.v.dual(), mv.t.dual()]
     form = metric_of(states)

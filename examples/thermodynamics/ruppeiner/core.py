@@ -1,7 +1,7 @@
 """The fluctuation metric of a van der Waals fluid and its curvature near the critical point.
 
 A state of the fluid is an antivector of the plane spanned by temperature, `mv.t.dual()`, and volume, `mv.v.dual()`.
-The metric is a map from a variation of the state to a covector, which pairs with the variation to the variation's
+The metric is a map from a variation of the state to the gradient of half its cost, which pairs with the variation to the variation's
 cost: how improbable a fluctuation that large is. It is built from the Helmholtz energy's second derivative in its own
 variables, temperature and volume, the thermal part with its sign turned, both over the temperature; near the critical
 point the pressure hardly changes with the volume, the mechanical part of the cost vanishes, and fluctuations of the
@@ -22,8 +22,8 @@ mv = JaxContext(ga, np.float64).multivector
 
 Scalar = ga.gatype.scalar()
 State = ga.gatype.antivector()
-Covector = ga.gatype.vector()
-Metric = ga.gatype((Covector, State))
+Gradient = ga.gatype.vector()
+Metric = ga.gatype((Gradient, State))
 
 # Regressive pairings read coordinates without assuming a metric.
 temperature = mv.t & State                                    # Scalar <- State

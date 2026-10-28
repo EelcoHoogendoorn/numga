@@ -12,28 +12,28 @@ from collections.abc import Iterator
 
 import numpy as np
 
-from numga import Extensor
+from numga import Extensor, stack
 from examples.thermodynamics import rendering as art
 
 # The charts' size in pixels and their ranges: entropy and energy, temperature and Helmholtz energy.
-ROWS, COLUMNS = 300, 330
-ENTROPIES, ENERGIES = (-0.8, 1.25), (0.0, 3.4)
-TEMPERATURES, FREE_ENERGIES = (0.0, 2.2), (0.0, 3.4)
+n_rows, n_columns = 300, 330
+entropy_range, energy_range = (-0.8, 1.25), (0.0, 3.4)
+temperature_range, free_energy_range = (0.0, 2.2), (0.0, 3.4)
 # Every so many samples of the section, a faint tangent; the samples along each tangent line; line widths.
-EVERY, N_LINE = 3, 60
-THIN, BOLD = 1.0, 2.2
+tangent_every, n_line_samples = 3, 60
+thin_width, bold_width, tangent_width = 1.0, 2.2, 1.6
 
 
 def readings(points: Extensor) -> np.ndarray:
     """The entropy and the energy of points, read by pairing `[..., 2]`; after the Legendre change, the temperature and
     the Helmholtz energy."""
     mv = points.context.multivector
-    return np.stack([(mv.s & points).to_array(), (mv.u & points).to_array()], axis=-1)
+    return (stack((mv.s, mv.u)) & points[..., None]).to_array()
 
 
 def tangent_lines(points: np.ndarray, slopes: np.ndarray, across: tuple[float, float]) -> list[tuple[np.ndarray, np.ndarray]]:
-    """Lines through points `[n, 2]` with slopes `[n]`, sampled across a range."""
-    x = np.linspace(*across, N_LINE)
+    """Lines through points `[lines, 2]` with slopes `[lines]`, sampled across a range."""
+    x = np.linspace(*across, n_line_samples)
     return [(x, point[1] + slope * (x - point[0])) for point, slope in zip(points, slopes)]
 
 
@@ -45,53 +45,68 @@ class Chart:
         self.diagram, self.intercept_name = diagram, intercept_name
         self.family, self.section = readings(family), readings(points)                   # [volumes, samples, 2], [samples, 2]
         steps = readings(tangents)
-        self.slopes = steps[:, 1] / steps[:, 0]
-        self.layers = (art.polylines(diagram, tangent_lines(self.section[::EVERY], self.slopes[::EVERY], diagram.across),
-                                     THIN, art.FAMILIES["level"], 0.6, art.SOLID)
-                       + art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], THIN,
-                                       art.FAMILIES["volume"], 1.0, art.SOLID))
+        slopes = steps[:, 1] / steps[:, 0]
+        self.layers = (art.polylines(diagram, tangent_lines(self.section[::tangent_every], slopes[::tangent_every],
+                                                            diagram.across),
+                                     thin_width, art.FAMILIES["level"], 0.6, art.SOLID)
+                       + art.polylines(diagram, [(curve[:, 0], curve[:, 1]) for curve in self.family], thin_width,
+                                       art.FAMILIES["volume"], 1.0, art.SOLID)
+                       + art.polylines(diagram, [(self.section[:, 0], self.section[:, 1])], thin_width, art.INK, 1.0,
+                                       art.SOLID))
 
-    def picture(self, index: int) -> np.ndarray:
-        point, slope = self.section[index], self.slopes[index]
-        intercept = point[1] - slope * point[0]
+    def picture(self, point: Extensor, tangent: Extensor, trace: np.ndarray) -> np.ndarray:
+        """The chart with the tangent at a point of the section, and the section traced up to it `[samples, 2]` bold."""
+        position, step = readings(point), readings(tangent)
+        slope = step[1] / step[0]
+        intercept = position[1] - slope * position[0]
         layers = (self.layers
-                  + art.polylines(self.diagram, [(self.section[:, 0], self.section[:, 1])], THIN, art.INK, 1.0, art.SOLID)
-                  + art.polylines(self.diagram, [(self.section[:index + 1, 0], self.section[:index + 1, 1])], BOLD,
-                                  art.INK, 1.0, art.SOLID)
-                  + art.polylines(self.diagram, tangent_lines(point[None], np.array([slope]), self.diagram.across), 1.6,
-                                  art.ORANGE, 1.0, art.SOLID)
+                  + art.polylines(self.diagram, [(trace[:, 0], trace[:, 1])], bold_width, art.INK, 1.0, art.SOLID)
+                  + art.polylines(self.diagram, tangent_lines(position[None], np.array([slope]), self.diagram.across),
+                                  tangent_width, art.ORANGE, 1.0, art.SOLID)
                   + art.dots(self.diagram, 0.0, intercept, art.GREEN)
-                  + art.dots(self.diagram, point[0], point[1], art.ORANGE))
+                  + art.dots(self.diagram, position[0], position[1], art.ORANGE))
         labels = [art.Label(0.0, intercept, self.intercept_name, art.GREEN, art.NAME_SIZE, "rm", (-8, 0))]
         names = [art.Floating(*art.along([(curve[:, 0], curve[:, 1]) for curve in self.family], 4), "V = const",
                               art.FAMILIES["volume"], art.LABEL_SIZE, "lb")]
         return art.floated(self.diagram, art.picture(self.diagram, layers, labels), names)
 
 
-def charts(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor, changed: Extensor,
-           changed_tangents: Extensor) -> tuple[Chart, Chart]:
-    energy = art.Diagram(ENTROPIES, ENERGIES, (0.0, 0.0), ROWS, COLUMNS, ("S", "U"))
-    free = art.Diagram(TEMPERATURES, FREE_ENERGIES, (0.0, 0.0), ROWS, COLUMNS, ("T", "F"))
-    return Chart(energy, family, points, tangents, "F"), Chart(free, changed_family, changed, changed_tangents, "U")
+def charts(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor,
+           changed_points: Extensor, changed_tangents: Extensor) -> tuple[Chart, Chart]:
+    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"))
+    free = art.Diagram(temperature_range, free_energy_range, (0.0, 0.0), n_rows, n_columns, ("T", "F"))
+    return (Chart(energy, family, points, tangents, "F"),
+            Chart(free, changed_family, changed_points, changed_tangents, "U"))
 
 
-def legendre(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor, changed: Extensor,
-             changed_tangents: Extensor, moving: Iterator) -> Iterator[np.ndarray]:
-    """The two charts as the point of tangency moves along the section."""
-    left, right = charts(family, changed_family, points, tangents, changed, changed_tangents)
-    for index, _ in enumerate(moving):
-        yield art.beside([left.picture(index), right.picture(index)])
+def legendre(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor,
+             changed_points: Extensor, changed_tangents: Extensor,
+             moving: Iterator[tuple[Extensor, Extensor, Extensor, Extensor]]
+             ) -> Iterator[np.ndarray]:
+    """The two charts as the point of tangency moves along the section, before and after the change, each section
+    traced bold behind it."""
+    left, right = charts(family, changed_family, points, tangents, changed_points, changed_tangents)
+    trace, changed_trace = [], []
+    for point, tangent, changed_point, changed_tangent in moving:
+        trace.append(readings(point))
+        changed_trace.append(readings(changed_point))
+        yield art.beside([left.picture(point, tangent, np.stack(trace)),
+                          right.picture(changed_point, changed_tangent, np.stack(changed_trace))])
 
 
-def draw(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor, changed: Extensor,
-         changed_tangents: Extensor):
+def draw(family: Extensor, changed_family: Extensor, points: Extensor, tangents: Extensor,
+         changed_points: Extensor, changed_tangents: Extensor):
     """The two charts with the tangent at the middle of the section."""
-    left, right = charts(family, changed_family, points, tangents, changed, changed_tangents)
+    left, right = charts(family, changed_family, points, tangents, changed_points, changed_tangents)
     middle = points.shape[0] // 2
-    return art.figure(art.beside([left.picture(middle), right.picture(middle)]))
+    return art.figure(art.beside([
+        left.picture(points[middle], tangents[middle], left.section[:middle + 1]),
+        right.picture(changed_points[middle], changed_tangents[middle], right.section[:middle + 1])]))
 
 
 def draw_energy(family: Extensor, points: Extensor, tangents: Extensor):
     """The energy chart alone, with the tangent at the middle of the section."""
-    energy = art.Diagram(ENTROPIES, ENERGIES, (0.0, 0.0), ROWS, COLUMNS, ("S", "U"))
-    return art.figure(Chart(energy, family, points, tangents, "F").picture(points.shape[0] // 2))
+    energy = art.Diagram(entropy_range, energy_range, (0.0, 0.0), n_rows, n_columns, ("S", "U"))
+    chart = Chart(energy, family, points, tangents, "F")
+    middle = points.shape[0] // 2
+    return art.figure(chart.picture(points[middle], tangents[middle], chart.section[:middle + 1]))
