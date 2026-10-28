@@ -24,7 +24,7 @@ def test_hopping_product_rule_exclusion_and_interacting_spin_sectors():
     zero_repulsion = np.zeros(())
     orbitals = core.mv.vector(np.eye(len(core.Orbital.output_subspace)))
     first, second = orbitals[:, None], orbitals[None, :]
-    single = core.hopping(strength)
+    single = -strength * core.hop
     lifted = core.hamiltonian(strength, zero_repulsion)
     product_rule = (single(first) ^ second) + (first ^ single(second))
     np.testing.assert_allclose(
@@ -36,17 +36,17 @@ def test_hopping_product_rule_exclusion_and_interacting_spin_sectors():
     # cancels by exchange signs. Repulsion leaves all three triplets untouched.
     hamiltonians = core.hamiltonian(strength, scenarios.REPULSIONS)
     np.testing.assert_allclose(
-        hamiltonians[..., None](core.TRIPLETS).kernel, 0,
+        hamiltonians[..., None](core.triplets).kernel, 0,
         atol=ROUND_OFF_TOLERANCE, rtol=0,
     )
     np.testing.assert_allclose(
-        (hamiltonians(core.SINGLET) + 2 * strength * core.SYMMETRIC_DOUBLE).kernel, 0,
+        (hamiltonians(core.singlet) + 2 * strength * core.symmetric_double).kernel, 0,
         atol=ROUND_OFF_TOLERANCE, rtol=0,
     )
     np.testing.assert_allclose(
-        (hamiltonians(core.SYMMETRIC_DOUBLE)
-         - scenarios.REPULSIONS * core.SYMMETRIC_DOUBLE
-         + 2 * strength * core.SINGLET).kernel, 0,
+        (hamiltonians(core.symmetric_double)
+         - scenarios.REPULSIONS * core.symmetric_double
+         + 2 * strength * core.singlet).kernel, 0,
         atol=ROUND_OFF_TOLERANCE, rtol=0,
     )
 
@@ -113,8 +113,8 @@ def test_exchange_matches_free_hopping_and_interacting_charge_dynamics(exchange_
     )
     expected_swap = np.abs((1 - singlet_amplitude) / 2)**2
     np.testing.assert_allclose(
-        (core.expectation(cosine_part, core.DOUBLE_OCCUPANCY)
-         + core.expectation(sine_part, core.DOUBLE_OCCUPANCY)).kernel[..., 0], expected_doubles,
+        (core.expectation(cosine_part, core.double_occupancy)
+         + core.expectation(sine_part, core.double_occupancy)).kernel[..., 0], expected_doubles,
         atol=ROUND_OFF_TOLERANCE, rtol=0,
     )
     np.testing.assert_allclose(
@@ -124,8 +124,8 @@ def test_exchange_matches_free_hopping_and_interacting_charge_dynamics(exchange_
 
 def test_large_repulsion_approaches_localized_spin_exchange(exchange_history):
     cosine_part, sine_part = exchange_history
-    doubles = (core.expectation(cosine_part, core.DOUBLE_OCCUPANCY)
-               + core.expectation(sine_part, core.DOUBLE_OCCUPANCY)).kernel[..., 0]
+    doubles = (core.expectation(cosine_part, core.double_occupancy)
+               + core.expectation(sine_part, core.double_occupancy)).kernel[..., 0]
     swapped = (core.probabilities(cosine_part) + core.probabilities(sine_part)).kernel[..., 0][..., 3]
     _, gaps = scenarios.spectrum(scenarios.REPULSIONS)
     perturbative_gap = 4 * scenarios.HOPPING**2 / scenarios.REPULSIONS[-1]
@@ -145,7 +145,7 @@ def test_the_dials_draw(exchange_history):
 
 
 def test_a_field_difference_keeps_up_down_and_freezes_the_swap():
-    field = core.field_difference()
+    field = core.field_difference
     np.testing.assert_allclose((field(core.mv.ad) - core.mv.ad).kernel, 0, atol=ROUND_OFF_TOLERANCE, rtol=0)
     cosine_part, sine_part = scenarios.field_exchange(scenarios.FIELD_RATIOS, scenarios.PHASE)
     probabilities = (core.probabilities(cosine_part) + core.probabilities(sine_part)).kernel[..., 0]

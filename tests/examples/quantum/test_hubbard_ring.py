@@ -10,13 +10,13 @@ from examples.quantum.hubbard_ring import core, scenarios
 
 def test_the_lift_acts_on_each_of_four_electrons_in_turn():
     mv = core.mv
-    single = -(core.FOLLOWING * (core.ORBITALS | core.Orbital) + core.ORBITALS * (core.FOLLOWING | core.Orbital)).sum(axis=0).sum(axis=0)
+    single = -(core.following * (core.orbitals | core.Orbital) + core.orbitals * (core.following | core.Orbital)).sum(axis=0).sum(axis=0)
     first, second, third, fourth = mv.a, mv.d, mv.e, mv.h
     rule = ((single(first) ^ second ^ third ^ fourth) + (first ^ single(second) ^ third ^ fourth)
             + (first ^ second ^ single(third) ^ fourth) + (first ^ second ^ third ^ single(fourth)))
     np.testing.assert_allclose((core.hopping(1.0)(first ^ second ^ third ^ fourth) - rule).kernel, 0.0, atol=1e-12)
     # Two sites holding both spins, two holding none.
-    np.testing.assert_allclose((core.double_occupancy()(mv.a ^ mv.b ^ mv.c ^ mv.d) - 2 * (mv.a ^ mv.b ^ mv.c ^ mv.d)).kernel, 0.0, atol=1e-12)
+    np.testing.assert_allclose((core.double_occupancy(mv.a ^ mv.b ^ mv.c ^ mv.d) - 2 * (mv.a ^ mv.b ^ mv.c ^ mv.d)).kernel, 0.0, atol=1e-12)
 
 
 def test_spins_approach_the_heisenberg_ring_and_a_flipped_spin_crosses_it():

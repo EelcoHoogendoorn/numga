@@ -1,4 +1,4 @@
-"""Two qubits kept in four: the checks, the stored state, single errors and noise."""
+"""The four-qubit stabilizer code: the checks, the stored state, single errors and noise."""
 
 import matplotlib.pyplot as plt
 import numpy as np

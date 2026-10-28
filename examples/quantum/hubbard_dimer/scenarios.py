@@ -9,7 +9,7 @@ from examples.quantum.hubbard_dimer import core
 
 HOPPING = 1.0
 NAMES = ("Delocalized", "Crossover", "Localized spins")
-REPULSIONS = HOPPING * np.array([0.0, 4.0, 20.0])
+REPULSIONS = HOPPING * np.array([0, 4, 20])
 N_SAMPLES = 241
 SWEEP = np.linspace(0.0, REPULSIONS[-1], N_SAMPLES)
 # The large-repulsion approximation of the gap, away from zero repulsion where it is singular.
@@ -23,34 +23,35 @@ SPIN_ONLY = np.sin(PHASE / 2)**2
 DIAL_STRIDE = 6
 DIAL_MS = 40
 # Field differences between the sites, in units of the exchange at the strongest repulsion.
-FIELD_RATIOS = np.array([0.0, 1.0, 5.0])
+FIELD_RATIOS = np.array([0, 1, 5])
 # Asymmetries between the sites, up to twice the strongest repulsion.
-ASYMMETRIES = HOPPING * np.linspace(0.0, 2 * REPULSIONS[-1], 401)
+N_ASYMMETRIES = 401
+ASYMMETRIES = HOPPING * np.linspace(0.0, 2 * REPULSIONS[-1], N_ASYMMETRIES)
 
 
 # --- math -----------------------------------------------------------------------------
 def spectrum(repulsion: np.ndarray) -> tuple[core.Scalar, np.ndarray]:
-    """The six energy levels, and the singlet-triplet gap from the singlet block: its rate less half
+    """The six energy levels, and the singlet-triplet gap from the singlet block, its rate less half
     the repulsion."""
-    energies = core.hamiltonian(HOPPING, repulsion).eigvalsh()   # [samples, modes] Scalar
+    energies = core.hamiltonian(HOPPING, repulsion).eigvalsh()  # [samples, modes] Scalar+
     return energies, core.block_rate(HOPPING, repulsion) - repulsion / 2
 
 
 def ground_states(repulsion: np.ndarray) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
-    """Configuration probabilities, double occupancy and spin correlation in each ground state."""
-    ground = core.ground(HOPPING, repulsion)                  # [cases] Pair
+    """Each ground state has these configuration probabilities, double occupancy and spin correlation."""
+    ground = core.ground(HOPPING, repulsion)                    # [cases] Pair+
     return (
         core.probabilities(ground),
-        core.expectation(ground, core.DOUBLE_OCCUPANCY),
-        core.expectation(ground, core.SPIN_CORRELATION),
+        core.expectation(ground, core.double_occupancy),
+        core.expectation(ground, core.spin_correlation),
     )
 
 
 def exchange(repulsion: np.ndarray, phase: np.ndarray) -> tuple[core.Pair, core.Pair]:
-    """Start with opposite spins on different sites; follow one cycle set by the gap. Returns the
-    cosine and sine parts of the state."""
+    """Opposite spins on different sites, over one cycle set by the gap, give a state in time with these
+    cosine and sine parts."""
     gap = core.block_rate(HOPPING, repulsion) - repulsion / 2   # [cases]
-    times = phase / gap[..., None]                            # [cases, times]
+    times = phase / gap[..., None]                              # [cases, times]
     return core.exchange(HOPPING, repulsion[..., None], times)
 
 
@@ -59,24 +60,26 @@ def field_exchange(field_ratios: np.ndarray, phase: np.ndarray) -> tuple[core.Pa
     spin down on the right over one exchange cycle, as its cosine and sine parts."""
     strong = REPULSIONS[-1]
     gap = core.block_rate(HOPPING, strong) - strong / 2
-    energies, modes = (core.hamiltonian(HOPPING, strong) + field_ratios * gap * core.field_difference()).eigh()
+    hamiltonians = core.hamiltonian(HOPPING, strong) + field_ratios * gap * core.field_difference   # [cases] Pair+ <- Pair+
+    energies, modes = hamiltonians.eigh()                       # [cases, modes] Scalar+, Pair+
     return core.turn(energies, modes, core.mv.ad, phase / gap)
 
 
 def charge_transfer(repulsion: np.ndarray, asymmetry: np.ndarray) -> core.Scalar:
-    """How much charge the ground state moves to the lower site: its occupation of the left site less the
+    """The charge the ground state moves to the lower site is its occupation of the left site less the
     right, minus twice the lifted site difference."""
-    _, modes = (core.hamiltonian(HOPPING, repulsion[:, None]) + asymmetry * core.site_difference()).eigh()
-    ground = modes[..., 0]                                      # [cases, samples] Pair
-    return -2 * core.expectation(ground, core.site_difference())   # [cases, samples] Scalar
+    hamiltonians = core.hamiltonian(HOPPING, repulsion[:, None]) + asymmetry * core.site_difference   # [cases, samples] Pair+ <- Pair+
+    _, modes = hamiltonians.eigh()                              # [cases, samples, modes] Pair+
+    ground = modes[..., 0]                                      # [cases, samples] Pair+
+    return -2 * core.expectation(ground, core.site_difference)  # [cases, samples] Scalar+
 
 
 def dials(parts: list[core.Pair]) -> list[core.Scalar]:
-    """Each configuration's amplitude in the cosine and sine parts, and the share of the triplet of zero
-    spin in each."""
-    triplet = core.TRIPLETS[1]
+    """The dials read each configuration's amplitude in the cosine and sine parts, and in the share of
+    the triplet of zero spin in each."""
+    triplet = core.zero_triplet
     shares = [triplet * triplet.reverse().scalar_product(part) for part in parts]
-    return [core.CONFIGURATIONS.reverse().scalar_product(state[..., None]) for state in (*parts, *shares)]
+    return [core.configurations.reverse().scalar_product(state[..., None]) for state in (*parts, *shares)]
 
 
 # --- plumbing -------------------------------------------------------------------------
@@ -104,11 +107,12 @@ def main() -> None:
     # --- checks
     # On the singlet block the shifted Hamiltonian applied twice is the rate squared; the gap from the
     # block matches the full spectrum; the state in time stays normalized.
-    hamiltonians = core.hamiltonian(HOPPING, SWEEP[:, None])                             # [samples, 1] Pair <- Pair
-    shift, rate = SWEEP[:, None] / 2, core.block_rate(HOPPING, SWEEP[:, None])             # [samples, 1] each
-    block = stack([core.SINGLET, core.SYMMETRIC_DOUBLE])                                  # [2] Pair
-    once = hamiltonians(block) - shift * block                                            # [samples, 2] Pair
-    np.testing.assert_allclose((hamiltonians(once) - shift * once - rate**2 * block).kernel, 0.0, atol=1e-10)
+    hamiltonians = core.hamiltonian(HOPPING, SWEEP[:, None])    # [samples, 1] Pair+ <- Pair+
+    shift = SWEEP[:, None] / 2                                  # [samples, 1]
+    rate = core.block_rate(HOPPING, SWEEP[:, None])             # [samples, 1]
+    block = stack([core.singlet, core.symmetric_double])        # [block] Pair+
+    shifted_block = hamiltonians(block) - shift * block         # [samples, block] Pair+
+    np.testing.assert_allclose((hamiltonians(shifted_block) - shift * shifted_block - rate**2 * block).kernel, 0.0, atol=1e-10)
     np.testing.assert_allclose(gap, energies.to_array()[:, 1] - energies.to_array()[:, 0], atol=1e-10)
     np.testing.assert_allclose(probabilities.to_array().sum(axis=-1), 1.0, atol=1e-11)
     print("Hubbard dimer checks passed.")

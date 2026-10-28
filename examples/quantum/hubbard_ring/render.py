@@ -15,36 +15,37 @@ PLACES = np.array([[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]]) * 0.7
 
 
 # --- plumbing -------------------------------------------------------------------------
-def draw_levels(ratios: np.ndarray, excitations: core.Scalar, heisenberg: np.ndarray) -> plt.Figure:
+def draw_levels(ratios: np.ndarray, excitations: core.Scalar, heisenberg_levels: np.ndarray) -> plt.Figure:
     """The lowest levels above the ground state, in units of the exchange, against the repulsion; the
     Heisenberg ring's levels dashed."""
-    figure, ax = plt.subplots(figsize=(8, 3.6), layout="constrained")
-    ax.plot(ratios, excitations.to_array(), color=LEVELS, linewidth=1.0)
-    for level in heisenberg:
-        ax.axhline(level, color="0.5", linestyle="--", linewidth=0.8)
+    figure, ax = plt.subplots(figsize=(4, 2.3), layout="constrained")
+    ax.plot(ratios, excitations.to_array(), color=LEVELS, linewidth=0.7)
+    for level in heisenberg_levels:
+        ax.axhline(level, color="0.5", linestyle="--", linewidth=0.6)
     # The levels read off where the Heisenberg ring puts them, in units of the exchange.
-    ax.set(xlim=(ratios[0], ratios[-1]), ylim=(0, heisenberg[-1] + 0.6), xticks=[], yticks=np.arange(heisenberg[-1] + 1),
-           xlabel=r"repulsion / hopping, $U/t$", ylabel=r"above the ground state, $\Delta E\,U/4t^2$")
+    ax.set(xlim=(ratios[0], ratios[-1]), ylim=(0, heisenberg_levels[-1] + 0.6), xticks=[], yticks=np.arange(heisenberg_levels[-1] + 1),
+           xlabel=r"repulsion / hopping, $U/t$", ylabel=r"excitation, $\Delta E\,U/4t^2$")
     ax.spines[["top", "right"]].set_visible(False)
     return figure
 
 
-def animate_ring(labels: list[str], occupation: core.Scalar) -> Iterator[np.ndarray]:
+def animate_ring(ratios: np.ndarray, occupation: core.Scalar) -> Iterator[np.ndarray]:
     """Each site's spin-up count as an arrow up and its spin-down count as an arrow down, one ring per
-    case, frame by frame."""
+    ratio of repulsion to hopping, frame by frame."""
     counts = occupation.to_array()                                            # [cases, times, sites, spins]
-    figure = plt.figure(figsize=(3.3 * len(labels), 3.6), dpi=80)
+    labels = [f"$U/t = {ratio:g}$" for ratio in ratios]
+    figure = plt.figure(figsize=(2.8 * len(labels), 3.0), dpi=80)
     turn = np.linspace(0, 2 * np.pi, 120)
     arrows = []
     for case, label in enumerate(labels):
         ax = figure.add_axes((case / len(labels), 0.08, 1 / len(labels), 0.9))
         ax.plot(0.99 * np.cos(turn), 0.99 * np.sin(turn), color="0.85", linewidth=0.8)
-        ax.scatter(*PLACES.T, color="0.3", s=12, zorder=3)
-        ups = [ax.plot([], [], color=UP, linewidth=4.0, solid_capstyle="butt")[0] for _ in PLACES]
-        downs = [ax.plot([], [], color=DOWN, linewidth=4.0, solid_capstyle="butt")[0] for _ in PLACES]
+        ax.scatter(*PLACES.T, color="0.3", s=9, zorder=3)
+        ups = [ax.plot([], [], color=UP, linewidth=3.4, solid_capstyle="butt")[0] for _ in PLACES]
+        downs = [ax.plot([], [], color=DOWN, linewidth=3.4, solid_capstyle="butt")[0] for _ in PLACES]
         arrows.append((ups, downs))
         ax.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), xticks=[], yticks=[])
-        ax.set_xlabel(label, fontsize=10)
+        ax.set_xlabel(label, fontsize=9)
         ax.set_aspect("equal")
         for side in ax.spines.values():
             side.set_visible(False)

@@ -13,23 +13,24 @@ RATES = np.linspace(0.0, 0.5, 51)
 
 
 # --- math -----------------------------------------------------------------------------
-def stored() -> tuple[core.State, core.Scalar, core.Scalar]:
-    """The stored state, both checks on it, and each logical qubit's flip and phase flip on it."""
-    state = core.encoded(ANGLES)                                               # [] State
-    checks = core.expectation(core.checks, state[..., None])                   # [checks] Scalar
-    logical = stack([core.logical_flips, core.logical_phase_flips], axis=-1)   # [logical, 2] Full
-    return state, checks, core.expectation(logical, state[..., None, None])    # [logical, 2] Scalar
+def stored() -> tuple[core.Operator, core.Scalar, core.Scalar]:
+    """The stored state, both checks' expectations in it, and those of each logical qubit's flip and phase flip."""
+    state = core.encoded(ANGLES)                                               # [] Operator+
+    checks = core.n_amplitudes * core.checks.scalar_product(state)             # [checks] Scalar+
+    logical = stack([core.logical_flips, core.logical_phase_flips], axis=-1)   # [logical, 2] Operator+
+    return state, checks, core.n_amplitudes * logical.scalar_product(state)    # [logical, 2] Scalar+
 
 
-def single_errors(state: core.State) -> core.Scalar:
-    """Both checks after each kind of error on each qubit."""
-    return core.expectation(core.checks, core.action(core.errors, state)[..., None])  # [qubits, kinds, checks] Scalar
+def single_errors(state: core.Operator) -> core.Scalar:
+    """Both checks' expectations after each kind of error on each qubit."""
+    corrupted = core.errors * state * core.errors.inverse()                    # [qubits, kinds] Operator+
+    return core.n_amplitudes * core.checks.scalar_product(corrupted[..., None])   # [qubits, kinds, checks] Scalar+
 
 
-def noisy(state: core.State) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
+def noisy(state: core.Operator) -> tuple[core.Scalar, core.Scalar, core.Scalar]:
     """At each rate: acceptance, conditional infidelity of kept runs, and bare-qubit infidelity."""
-    kept, fidelity = core.detected(state, RATES)                               # [rates] Scalar each
-    return kept, 1 - fidelity / kept, 1 - core.unprotected(ANGLES, RATES)      # [rates] Scalar each
+    kept, fidelity = core.detected(state, RATES)                               # [rates] Scalar+, Scalar+
+    return kept, 1 - fidelity / kept, 1 - core.unprotected(ANGLES, RATES)      # [rates] Scalar+, Scalar+, Scalar+
 
 
 # --- plumbing -------------------------------------------------------------------------

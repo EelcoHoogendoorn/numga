@@ -24,112 +24,109 @@ from numga import Algebra, NumpyContext, stack
 
 ga = Algebra("a+b+c+d+")
 mv = NumpyContext(ga).multivector
-Scalar = ga.gatype.scalar()
-Orbital = ga.gatype.vector()
-Pair = ga.gatype.bivector()
-Complement = ga.gatype.antivector()
+Scalar = ga.gatype.scalar()                                     # Scalar+
+Orbital = ga.gatype.vector()                                    # Vector+
+Pair = ga.gatype.bivector()                                     # Bivector+
+Complement = ga.gatype.antivector()                             # Antivector-
 Hopping = ga.gatype((Orbital, Orbital))
 Hamiltonian = ga.gatype((Pair, Pair))
 
 # Orbitals within each site are ordered by spin, up then down.
-LEFT = stack([mv.a, mv.b])                                      # [spins] Orbital
-ORBITALS = stack([mv.a, mv.b, mv.c, mv.d])                      # [orbitals] Orbital
+left = stack([mv.a, mv.b])                                      # [spins] Orbital+
+right = stack([mv.c, mv.d])                                     # [spins] Orbital+
+orbitals = stack([mv.a, mv.b, mv.c, mv.d])                      # [orbitals] Orbital+
 # A field along z that differs between the sites raises up and lowers down on the left, the other way
 # round on the right.
-FIELD_SIGNS = np.array([1.0, -1.0, -1.0, 1.0])
+FIELD_SIGNS = np.array([1, -1, -1, 1])
 # An asymmetry between the sites lowers the left one and raises the right, for both spins alike.
-SITE_SIGNS = np.array([-1.0, -1.0, 1.0, 1.0])
-RIGHT = stack([mv.c, mv.d])                                     # [spins] Orbital
-CONFIGURATIONS = stack([mv.ab, mv.ac, mv.ad, mv.bc, mv.bd, mv.cd]) # [configurations] Pair
-DOUBLES = stack([mv.ab, mv.cd])                                 # [sites] Pair
-SINGLET = (mv.ad - mv.bc) / np.sqrt(2)
-TRIPLETS = stack([mv.ac, (mv.ad + mv.bc) / np.sqrt(2), mv.bd])    # [spin_projections] Pair
-SYMMETRIC_DOUBLE = (mv.ab + mv.cd) / np.sqrt(2)
+SITE_SIGNS = np.array([-1, -1, 1, 1])
+configurations = stack([mv.ab, mv.ac, mv.ad, mv.bc, mv.bd, mv.cd])   # [configurations] Pair+
+doubles = stack([mv.ab, mv.cd])                                 # [sites] Pair+
+singlet = (mv.ad - mv.bc) / np.sqrt(2)                          # [] Pair+
+zero_triplet = (mv.ad + mv.bc) / np.sqrt(2)                     # [] Pair+
+triplets = stack([mv.ac, zero_triplet, mv.bd])                  # [spin_projections] Pair+
+symmetric_double = (mv.ab + mv.cd) / np.sqrt(2)                 # [] Pair+
 
 # Each dyad measures a configuration and returns that same configuration.
-DOUBLE_OCCUPANCY = (DOUBLES * DOUBLES.reverse().scalar_product(Pair)).sum(axis=0)
-SINGLET_WEIGHT = SINGLET * SINGLET.reverse().scalar_product(Pair)
+double_occupancy = (doubles * doubles.reverse().scalar_product(Pair)).sum(axis=0)   # [] Pair+ <- Pair+
+singlet_weight = singlet * singlet.reverse().scalar_product(Pair)   # [] Pair+ <- Pair+
 # Empty and doubly occupied sites carry no spin. Singlets have correlation -3/4,
 # triplets +1/4, measured in hbar squared.
-SPIN_CORRELATION = (Pair - DOUBLE_OCCUPANCY - 4 * SINGLET_WEIGHT) / 4
+spin_correlation = (Pair - double_occupancy - 4 * singlet_weight) / 4   # [] Pair+ <- Pair+
 
 
 # --- math -----------------------------------------------------------------------------
-def hopping(strength: float) -> Hopping:
-    """Move an electron to the other site without changing its spin."""
-    return -strength * (LEFT * (RIGHT | Orbital) + RIGHT * (LEFT | Orbital)).sum(axis=0)
-
-
 def lift(one_electron: Hopping) -> Hamiltonian:
     """A one-electron map acting on either electron of a pair in turn. The trace pairs the orbital
     removed from the state with its replacement:
     lift(single)(first ^ second) == single(first) ^ second + first ^ single(second)."""
-    return (one_electron ^ (Pair & Complement)).trace(1, 3)   # [] Pair <- Pair
+    return (one_electron ^ (Pair & Complement)).trace(1, 3)     # [] Pair+ <- Pair+
+
+
+# An electron moved to the other site with its spin kept, at unit hopping strength, and lifted to pairs.
+hop = (left * (right | Orbital) + right * (left | Orbital)).sum(axis=0)   # [] Orbital+ <- Orbital+
+pair_hop = lift(hop)                                            # [] Pair+ <- Pair+
+# A unit field along z differing between the sites, by half on each, lifted to pairs.
+field_difference = lift(0.5 * (FIELD_SIGNS * (orbitals * (orbitals | Orbital))).sum(axis=0))   # [] Pair+ <- Pair+
+# A unit asymmetry between the sites, by half on each, lifted to pairs: half the right site's occupation
+# less the left's.
+site_difference = lift(0.5 * (SITE_SIGNS * (orbitals * (orbitals | Orbital))).sum(axis=0))   # [] Pair+ <- Pair+
 
 
 def hamiltonian(strength: float, repulsion: np.ndarray) -> Hamiltonian:
-    """Let either electron hop, and charge repulsion when both occupy the same site."""
-    return lift(hopping(strength)) + repulsion * DOUBLE_OCCUPANCY   # [...] Pair <- Pair
-
-
-def field_difference() -> Hamiltonian:
-    """A unit field along z differing between the sites, by half on each, lifted to pairs."""
-    return lift(0.5 * (FIELD_SIGNS * (ORBITALS * (ORBITALS | Orbital))).sum(axis=0))   # [] Pair <- Pair
+    """Either electron hops, and sharing a site costs the repulsion."""
+    return -strength * pair_hop + repulsion * double_occupancy  # [...] Pair+ <- Pair+
 
 
 def block_rate(strength: float, repulsion: np.ndarray) -> np.ndarray:
-    """The rate of the singlet block: the shifted Hamiltonian applied twice on the singlet and the
-    symmetric double occupancy is its square."""
+    """The singlet block has a rate whose square is the shifted Hamiltonian applied twice on the singlet
+    and the symmetric double occupancy."""
     return np.sqrt((repulsion / 2) ** 2 + 4 * strength**2)
 
 
 def shifted_singlet(strength: float, repulsion: np.ndarray) -> Pair:
-    """The Hamiltonian less half the repulsion, on the singlet."""
-    return hamiltonian(strength, repulsion)(SINGLET) - repulsion / 2 * SINGLET   # [...] Pair
+    """The Hamiltonian less half the repulsion takes the singlet to this state."""
+    return hamiltonian(strength, repulsion)(singlet) - repulsion / 2 * singlet   # [...] Pair+
 
 
 def ground(strength: float, repulsion: np.ndarray) -> Pair:
-    """The lowest state: the singlet projected onto the lower state of its block, by the rate less
+    """The lowest state is the singlet projected onto the lower state of its block, by the rate less
     the shifted Hamiltonian, and normalized."""
-    lower = block_rate(strength, repulsion) * SINGLET - shifted_singlet(strength, repulsion)   # [...] Pair
-    return lower / lower.scalar_norm_squared().square_root()   # [...] Pair
+    lower = block_rate(strength, repulsion) * singlet - shifted_singlet(strength, repulsion)   # [...] Pair+
+    return lower / lower.scalar_norm_squared().square_root()    # [...] Pair+
 
 
 def exchange(strength: float, repulsion: np.ndarray, times: np.ndarray) -> tuple[Pair, Pair]:
-    """Spin up on the left and spin down on the right, half singlet and half triplet of zero spin,
-    after the given times: the cosine and the sine of the Hamiltonian times time, applied to it. The
+    """After the given times, spin up on the left and spin down on the right, half singlet and half
+    triplet of zero spin, has become the cosine and the sine of the Hamiltonian times time applied to it. The
     triplet, at zero energy, sits in the cosine part. On the singlet's block the Hamiltonian is half
     the repulsion plus a shifted part whose cosine and sine act on the singlet as the cosine and sine
     of the rate; the half repulsion mixes the two by its own cosine and sine."""
     rate = block_rate(strength, repulsion)
-    along = np.cos(rate * times) * SINGLET                      # [...] Pair
-    across = np.sin(rate * times) / rate * shifted_singlet(strength, repulsion)   # [...] Pair
-    half = 0.5 * repulsion * times
-    cosine_part = (TRIPLETS[1] + np.cos(half) * along - np.sin(half) * across) / np.sqrt(2)   # [...] Pair
-    sine_part = (np.sin(half) * along + np.cos(half) * across) / np.sqrt(2)                  # [...] Pair
+    singlet_cosine = np.cos(rate * times) * singlet             # [...] Pair+
+    singlet_sine = np.sin(rate * times) / rate * shifted_singlet(strength, repulsion)   # [...] Pair+
+    half_phase = 0.5 * repulsion * times
+    cosine_part = (zero_triplet + np.cos(half_phase) * singlet_cosine - np.sin(half_phase) * singlet_sine) / np.sqrt(2)   # [...] Pair+
+    sine_part = (np.sin(half_phase) * singlet_cosine + np.cos(half_phase) * singlet_sine) / np.sqrt(2)   # [...] Pair+
     return cosine_part, sine_part
 
 
-def site_difference() -> Hamiltonian:
-    """A unit asymmetry between the sites, by half on each, lifted to pairs: half the right site's
-    occupation less the left's."""
-    return lift(0.5 * (SITE_SIGNS * (ORBITALS * (ORBITALS | Orbital))).sum(axis=0))   # [] Pair <- Pair
-
-
 def turn(energies: Scalar, modes: Pair, start: Pair, times: np.ndarray) -> tuple[Pair, Pair]:
-    """The cosine and the sine of a Hamiltonian times time applied to a start, from the Hamiltonian's
-    states: each keeps its share of the start and turns by its own energy."""
-    shares = modes * modes.reverse().scalar_product(start)     # [..., modes] Pair
-    angles = energies[..., None, :] * times[..., :, None]      # [..., times, modes] Scalar
-    return (shares[..., None, :] * angles.cos()).sum(axis=-1), (shares[..., None, :] * angles.sin()).sum(axis=-1)
+    """The cosine and the sine of a Hamiltonian times time applied to a start follow from the
+    Hamiltonian's states: each keeps its share of the start and turns by its own energy."""
+    shares = modes * modes.reverse().scalar_product(start)      # [..., modes] Pair+
+    angles = energies[..., None, :] * times[..., :, None]       # [..., times, modes] Scalar+
+    cosine_part = (shares[..., None, :] * angles.cos()).sum(axis=-1)   # [..., times] Pair+
+    sine_part = (shares[..., None, :] * angles.sin()).sum(axis=-1)   # [..., times] Pair+
+    return cosine_part, sine_part
 
 
 def probabilities(state: Pair) -> Scalar:
-    """Occupation probabilities of a real state in the six two-electron configurations; for a state
-    in time, the sum over its cosine and sine parts."""
-    return CONFIGURATIONS.reverse().scalar_product(state[..., None]).squared()
+    """A real state occupies the six two-electron configurations with these probabilities; for a state
+    in time, they are the sum over its cosine and sine parts."""
+    return configurations.reverse().scalar_product(state[..., None]).squared()
 
 
 def expectation(state: Pair, observable: Hamiltonian) -> Scalar:
-    """Quadratic expectation contribution of a real state to a real observable."""
+    """A real state contributes this quadratic expectation to a real observable."""
     return state.reverse().scalar_product(observable(state))
